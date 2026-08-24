@@ -1,0 +1,33 @@
+{
+  "name": "hollowmere-conquest",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/check-collision.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json",
+    "collision": "node scripts/bake-collision.mjs",
+    "build:server": "vite build -c vite.server.config.ts",
+    "server": "node dist-server/index.js",
+    "simulate": "vite build -c vite.server.config.ts && node dist-server/simulate.js",
+    "parity": "node scripts/check-world-parity.mjs",
+    "shots": "node scripts/capture-map-shots.mjs",
+    "textures": "node scripts/generate-water-textures.mjs",
+    "icons": "node scripts/generate-icons.mjs"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^9.19.1",
+    "@babylonjs/havok": "^1.3.14",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/ws": "^8.18.1",
+    "playwright": "^1.61.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

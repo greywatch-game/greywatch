@@ -1,0 +1,269 @@
+/*
+ * touch.css — the on-screen controls, and only those: the two zones, the
+ * floating stick and the button cluster.
+ * Owns everything under #touch. Written against `TouchControls.ts`, which
+ * publishes the two numbers this sheet cannot own — the stick's radius and the
+ * width of the movement zone — as custom properties, so the ring drawn here and
+ * the deflection computed there cannot drift.
+ *
+ * House rules from base.css apply: no `border-radius` — every control here is a
+ * chamfered `.frame`, cut on the same two corners as the panels, so a phone's
+ * controls read as part of the same machined set rather than as a web app
+ * bolted to the front of it.
+ *
+ * #touch is `position: fixed` and NOT `absolute`, which is load-bearing rather
+ * than incidental: the stick is placed at the `clientX/clientY` of the finger
+ * that made it, and #hud carries the safe-area padding, so an absolutely
+ * positioned layer would draw the ring one notch's width away from the thumb
+ * holding it. The groups take their own safe-area insets instead.
+ */
+
+#touch {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  /* The cluster is authored at the size a tablet wants and scaled down for a
+     phone held sideways, exactly as `--ov-scale` does for the menu — a 350px
+     tall viewport has no room for a 96px trigger and three columns above it.
+     Each group scales about its own anchored corner, so nothing drifts off
+     the edge it was pinned to.
+     It stops WELL short of `--ov-scale`'s 0.45, and that is the constraint
+     this ladder is really written against: a control smaller than about 44 CSS
+     px is one a thumb misses, so past this point the room has to come from
+     somewhere else. It does — `--hud-touch` in base.css shrinks the gauges
+     that were sitting in these corners. Scaling the controls further instead
+     would trade a legible HUD for an unusable one. */
+  --tscale: 1;
+}
+@media (max-height: 620px) { #touch { --tscale: 0.82; } }
+@media (max-height: 430px) { #touch { --tscale: 0.72; } }
+#touch.hidden { display: none; }
+
+/* --- the two zones ---
+   Between them they cover the viewport, because a drag has to be able to start
+   anywhere a button is not. The split is what stops a thumb reaching for the
+   stick from spinning the camera; the buttons are later siblings, so they win
+   the hit test over whichever zone they sit in. */
+#touch-move,
+#touch-look {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: auto;
+}
+#touch-move { left: 0; width: var(--move-zone); }
+#touch-look { left: var(--move-zone); right: 0; }
+
+/* --- the floating stick ---
+   Placed at the finger, so `left`/`top` are written from JS and the margins
+   are what centre it on them. Invisible until a thumb is down: an empty ring
+   sitting in the corner of every frame is chrome the game does not need, and
+   the thumb already knows where it is. */
+#touch-stick {
+  position: absolute;
+  width: calc(var(--stick-r) * 2);
+  height: calc(var(--stick-r) * 2);
+  margin: calc(var(--stick-r) * -1) 0 0 calc(var(--stick-r) * -1);
+  --frame-edge: rgba(255, 255, 255, 0.34);
+  /* Mostly opaque, and that is a CONSTRAINT rather than a taste: `.frame`
+     paints its edge across the whole shape and hides it under the fill, so the
+     fill's alpha decides how much of that edge shows through EVERYWHERE, not
+     just at the rim. At 0.14 the "hairline" was the whole disc and the stick
+     rendered as a 116 px white smear under the thumb; at 0.78 the rim is a rim
+     and the interior sits within a few values of a night scene instead of
+     glowing over it. Both numbers are one expression — raising the edge means
+     raising the fill to keep it buried. */
+  --frame-fill: rgba(6, 8, 13, 0.78);
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+/* Eight cuts, not the panels' two. base.css is right that four corners read as
+   a sticker — on a PANEL, which is a rectangle pretending to be machined. This
+   is a dial, the one control here that is round in every game that has ever
+   drawn one, and a symmetric octagon is as close to round as this HUD's
+   vocabulary goes. The knob repeats it so the two read as concentric. */
+#touch-stick::before,
+#touch-stick::after,
+#touch-stick i {
+  clip-path: polygon(
+    30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%
+  );
+}
+/* Two pixels of rim rather than the panels' one: this is read in the corner of
+   the eye by someone aiming at the middle of the screen. */
+#touch-stick::after { inset: 2px; }
+#touch-stick.live { opacity: 1; }
+#touch-stick i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46%;
+  height: 46%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.8);
+}
+/* Running: the knob goes to the team's own amber, which is the one colour on
+   this HUD that already means "you". */
+#touch-move.running #touch-stick i {
+  background: rgba(255, 196, 107, 0.3);
+  box-shadow: inset 0 0 0 2px var(--mine);
+}
+#touch-move.running #touch-stick { --frame-edge: rgba(255, 196, 107, 0.5); }
+
+/* --- the button groups ---
+   Three, because they are pinned to three different corners and each has to
+   scale toward the one it is pinned to. The group boxes carry the safe-area
+   insets #touch gave up by being `fixed`. */
+.tb-group {
+  position: absolute;
+  pointer-events: none;
+}
+.g-main {
+  right: calc(18px + env(safe-area-inset-right));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  width: 260px;
+  height: 312px;
+  transform: scale(var(--tscale));
+  transform-origin: 100% 100%;
+}
+.g-left {
+  left: env(safe-area-inset-left);
+  top: calc(50% - 50px);
+  width: 100px;
+  height: 100px;
+  transform: scale(var(--tscale));
+  transform-origin: 0% 50%;
+}
+.g-top {
+  right: calc(14px + env(safe-area-inset-right));
+  top: calc(10px + env(safe-area-inset-top));
+  width: 148px;
+  height: 40px;
+  transform: scale(var(--tscale));
+  transform-origin: 100% 0%;
+}
+
+/* --- a button ---
+   Translucent by design: it sits over a moonlit street that the player is
+   trying to shoot somebody in, and an opaque control panel is the thing that
+   turns a game into an app. The label is the same condensed all-caps the rest
+   of the HUD names things in. */
+.tb {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  --cham: 9px;
+  --frame-edge: rgba(255, 255, 255, 0.28);
+  --frame-fill: rgba(10, 13, 20, 0.26);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.95);
+  transition: color 0.08s linear;
+}
+/* Held: a finger is on it this instant. Lit: a latch it flipped is on. The two
+   are separate states because ADS is both at once for the moment it is
+   tapped. */
+.tb.held {
+  --frame-edge: var(--hot);
+  --frame-fill: rgba(255, 230, 128, 0.22);
+  color: #fff;
+}
+/* `lit` is a latch this layer owns (ADS, the scoreboard); `on` is a state the
+   game pushed back in (the body is crouched). They look the same on purpose —
+   the player is being told the same thing, that something is still switched on
+   — but they are separate classes because only one of them is this file's to
+   decide, and `releaseAll` has to be able to tell them apart. */
+/* The trigger stays HOT when it is held rather than going amber with the rest:
+   it is the one control whose colour already means something (it is the only
+   red thing on this layer), and a fire button that turns the same yellow as
+   ADS is a fire button the eye has to read to identify. */
+.tb-fire.held,
+.tb-fire2.held {
+  --frame-edge: #ff5a4f;
+  --frame-fill: rgba(255, 90, 79, 0.42);
+  color: #fff;
+}
+.tb.lit,
+.tb.on {
+  --frame-edge: var(--mine);
+  --frame-fill: rgba(255, 196, 107, 0.2);
+  color: var(--mine);
+}
+.tb span { pointer-events: none; }
+
+.tb-fire {
+  right: 4px;
+  bottom: 96px;
+  width: 96px;
+  height: 96px;
+  --cham: 16px;
+  --frame-edge: rgba(255, 90, 79, 0.55);
+  --frame-fill: rgba(255, 90, 79, 0.14);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+}
+.tb-ads { right: 108px; bottom: 130px; width: 66px; height: 66px; }
+.tb-jump { right: 14px; bottom: 200px; width: 66px; height: 66px; }
+.tb-crouch { right: 108px; bottom: 208px; width: 66px; height: 66px; }
+.tb-reload { right: 190px; bottom: 96px; width: 62px; height: 62px; }
+.tb-grenade { right: 190px; bottom: 170px; width: 62px; height: 62px; font-size: 9px; }
+.tb-swap { right: 190px; bottom: 244px; width: 62px; height: 62px; }
+
+/* The claw grip's trigger: a left index finger on the edge, clear of the
+   corner the left THUMB works the stick in. Quieter than the main one because
+   most players never use it. */
+.tb-fire2 {
+  left: 8px;
+  top: 19px;
+  width: 62px;
+  height: 62px;
+  --frame-edge: rgba(255, 90, 79, 0.4);
+  --frame-fill: rgba(255, 90, 79, 0.1);
+  opacity: 0.75;
+  font-size: 9px;
+}
+
+/* Scoreboard and pause, in the top band with the rest of the round's
+   instruments rather than down among the controls: neither is something a
+   thumb reaches for mid-fight, and both would be a mis-tap there. */
+.tb-score,
+.tb-menu {
+  top: 0;
+  width: 70px;
+  height: 40px;
+  font-size: 9px;
+}
+.tb-score { right: 78px; }
+.tb-menu { right: 0; }
+
+/* The magazine is out. Pulses rather than merely colouring, because this is
+   read in peripheral vision by someone who is looking at a doorway. */
+.tb-reload.due {
+  --frame-edge: var(--theirs);
+  --frame-fill: rgba(255, 90, 79, 0.18);
+  color: #fff;
+  animation: touchPulse 0.85s ease-in-out infinite;
+}
+@keyframes touchPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* --- under something else ---
+   `Game.pushTouchControls` is what actually takes the layer away, because it
+   also has to drop whatever was being held (a pause with the trigger down must
+   not come back with it down). These are the same one-frame belt every other
+   piece of chrome wears: the push happens on the NEXT tick, and a trigger drawn
+   over the pause card for one frame is a trigger somebody tries to press. */
+#hud.paused #touch,
+#hud.overlaid #touch,
+#hud.dying #touch,
+#hud.editing #touch {
+  display: none;
+}

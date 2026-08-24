@@ -1,0 +1,190 @@
+/**
+ * panel.css — The dev-only map editor's panel.
+ * Owns: #editor-panel and everything under it.
+ * Imported by EditorPanel.ts, which is only reachable through the dynamic
+ * import() in Game.toggleEditor — so this rides the editor's own chunk and no
+ * part of it reaches a production build. It must never be imported from
+ * index.html or from anything on the static graph.
+ */
+
+/* The editor keeps the old interface font on purpose: it is a dense
+   numeric tool, not part of the game's presentation, and it should not
+   move when the HUD is restyled. */
+#editor-panel { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+
+/* Same opt-in as #deploy: #hud is pointer-events:none. */
+#editor-panel {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 240px;
+  padding: 12px 14px;
+  background: rgba(6, 8, 14, 0.9);
+  border: 2px solid #000;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  pointer-events: auto;
+  font-size: 12px;
+}
+/* Terrain mode owns the pointer, so it has to be unmistakable from the
+   corner of the eye — a mode you forget you are in makes every click in
+   the viewport feel broken. */
+#editor-panel.ed-mode-terrain {
+  border-color: #c58cff;
+  box-shadow: 0 0 0 1px rgba(197, 140, 255, 0.5);
+}
+/* And one level down: sculpt and level both answer a left drag and do
+   different things with it, so the panel carries the armed tool's colour
+   the same way the brush itself does. */
+#editor-panel.ed-mode-terrain.ed-tool-level {
+  border-color: #ff9ad5;
+  box-shadow: 0 0 0 1px rgba(255, 154, 213, 0.5);
+}
+#editor-panel.ed-mode-terrain.ed-tool-level #ed-tool {
+  color: #ff9ad5;
+}
+#editor-panel h2 {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #35f0ff;
+  margin-bottom: 10px;
+}
+#editor-panel .ed-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+#editor-panel .ed-key {
+  color: #ffe680;
+  letter-spacing: 2px;
+  opacity: 0.75;
+}
+#editor-panel .ed-warn {
+  margin-top: 8px;
+  padding: 5px 7px;
+  border-left: 2px solid #ff5a4f;
+  background: rgba(255, 90, 79, 0.08);
+  font-size: 10px;
+  line-height: 1.4;
+  opacity: 0.65;
+}
+#editor-panel .ed-status {
+  margin-top: 8px;
+  padding: 4px 7px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  border-left: 2px solid currentColor;
+}
+#editor-panel .ed-status.idle { color: #8a93a6; }
+#editor-panel .ed-status.busy { color: #ffe680; }
+#editor-panel .ed-status.ok { color: #7fd66a; }
+#editor-panel .ed-status.error { color: #ff5a4f; }
+#editor-panel .ed-add {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+#editor-panel .ed-add .ed-title { width: 100%; margin-bottom: 2px; }
+#editor-panel .ed-add select { flex: 1 1 0; min-width: 0; }
+#editor-panel .ed-add button { width: 100%; }
+#editor-panel input,
+#editor-panel select,
+#editor-panel button {
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #dfe6f2;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  padding: 2px 4px;
+}
+#editor-panel input:focus,
+#editor-panel select:focus {
+  outline: none;
+  border-color: #35f0ff;
+}
+#editor-panel input::placeholder { color: #8a93a6; opacity: 0.8; }
+#editor-panel button {
+  cursor: pointer;
+  color: #ffe680;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+#editor-panel button:hover { background: rgba(255, 230, 128, 0.16); }
+#editor-panel .ed-field input[type="number"],
+#editor-panel .ed-field input[type="text"],
+#editor-panel .ed-field select {
+  width: 108px;
+  text-align: right;
+}
+#editor-panel .ed-field input[type="checkbox"] {
+  width: auto;
+  accent-color: #35f0ff;
+}
+/* A colour swatch is the control AND the value, so it takes the same width
+   the numbers and dropdowns line up on. The padding is squeezed because a
+   native swatch draws its colour inside the box, and the shared 2px would
+   leave a dark border thick enough to misread the tone against the map. */
+#editor-panel .ed-field input[type="color"] {
+  width: 108px;
+  height: 18px;
+  padding: 1px 2px;
+  cursor: pointer;
+}
+#editor-panel .ed-field { align-items: center; }
+#editor-panel .ed-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+#editor-panel .ed-delete {
+  color: #ff5a4f;
+  padding: 1px 6px;
+}
+#editor-panel .ed-delete:hover { background: rgba(255, 90, 79, 0.18); }
+#editor-panel .ed-inspector {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+#editor-panel .ed-title {
+  color: #35f0ff;
+  font-weight: 800;
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+}
+#editor-panel .ed-findings {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  max-height: 34vh;
+  overflow-y: auto;
+}
+#editor-panel .ed-finding {
+  padding: 3px 6px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  line-height: 1.35;
+  cursor: pointer;
+  border-left: 2px solid currentColor;
+  background: rgba(255, 255, 255, 0.04);
+}
+#editor-panel .ed-finding:hover { background: rgba(255, 255, 255, 0.12); }
+#editor-panel .ed-finding.error { color: #ff5a4f; }
+#editor-panel .ed-finding.warning { color: #ffc46b; }
+#editor-panel .ed-finding.info { color: #8a93a6; }
+#editor-panel .ed-ok { color: #7fd66a; font-size: 11px; letter-spacing: 1px; }
+#editor-panel .ed-help {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  line-height: 1.7;
+  opacity: 0.6;
+}
+#editor-panel .ed-help b { color: #ffc46b; font-weight: 700; }

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- `viewport-fit=cover` paints under a notch (the HUD keeps clear of it
+         with the safe-area insets below); `user-scalable=no` is what stops a
+         two-finger look from pinch-zooming the page instead. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>HOLLOWMERE — Cel-Shaded Conquest</title>
+
+    <!-- Installable app. The manifest asks for fullscreen landscape; the two
+         apple-* tags are iOS's own equivalents, which it reads instead of the
+         manifest. `black-translucent` is the one that lets the scene run to
+         the top of the screen rather than under a white bar. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#05070b" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Hollowmere" />
+    <link rel="icon" href="/icons/icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- The ONLY styling that lives here, and it is not the interface's. Every
+         other rule is a `.css` file imported by the module that writes the
+         markup it styles (src/ui/*.css, src/editor/panel.css); a production
+         build links them from this head as one hashed stylesheet, so there is
+         nothing to flash. The dev server injects them from JS instead, which
+         leaves one frame of default white before the first module evaluates —
+         on a night game that reads as a camera flash.
+
+         The background and the boot screen below, and NOTHING else — this must
+         never grow into a second place interface rules are written. Both are
+         here for the same reason, and it is the reason that bounds the
+         exception: they are what the page shows while there is no interface
+         yet. `src/ui/` cannot draw the wait for its own download, so the boot
+         screen is markup the HTML parser puts up before a single module has
+         evaluated, and `main.ts` is the only thing that ever touches it again.
+         It is self-contained on purpose — no var, no class, nothing from
+         base.css — because in DEV none of that has arrived either, and a boot
+         screen that flashes unstyled is worse than the black it replaced.
+         Anything that reacts to game state is an interface and belongs in a
+         module with its own stylesheet. -->
+    <style>
+      html,
+      body {
+        background: #000;
+      }
+
+      /* Full-bleed and above the canvas, because until the Game's constructor
+         returns the canvas is an empty black rectangle anyway. Removed from
+         the DOM outright by `main.ts` — not hidden, since a fixed layer over
+         a first-person shooter that is merely transparent still eats the
+         pointer. */
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #05070b;
+        /* The HUD's stack, repeated rather than shared: `--font` is declared
+           on #hud by base.css, which in dev has not loaded yet. */
+        font-family: "Bahnschrift", "DIN Alternate", "DIN Condensed",
+          "Roboto Condensed", "Oswald", "Ubuntu Condensed",
+          "Franklin Gothic Medium", "Arial Narrow", "Liberation Sans Narrow",
+          "Nimbus Sans Narrow", "DejaVu Sans Condensed", "Segoe UI", sans-serif;
+        text-align: center;
+        padding: 24px;
+        user-select: none;
+      }
+      #boot h1 {
+        margin: 0;
+        font-size: clamp(34px, 9vw, 64px);
+        font-weight: 900;
+        letter-spacing: 0.22em;
+        text-indent: 0.22em;
+        color: #ffe680;
+        text-shadow: 4px 4px 0 #000, -2px -2px 0 #35f0ff;
+      }
+      #boot p {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: #35f0ff;
+        animation: boot-pulse 1.4s ease-in-out infinite;
+      }
+      /* An INDETERMINATE bar, and it has to be: there is no progress to
+         report. The bundle arrives as one module script — nothing observes it
+         part-way — and the constructor behind it is a single synchronous
+         block. A percentage here would be invented, and an invented one always
+         sticks at 90% while the real work finishes. A sweep says "still
+         working" without claiming to know how much is left, which is the whole
+         of what can honestly be said. */
+      #boot-bar {
+        position: relative;
+        width: min(300px, 60vw);
+        height: 3px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      /* TRANSFORM ONLY — see the note in overlay.css on `.ov-bar i`, which is
+         the same rule for the harder case. Animating `width` or `left` here
+         would put every frame of it through layout on the main thread. */
+      #boot-bar i {
+        position: absolute;
+        /* `left: 0` is NOT decoration. Without it an absolutely positioned box
+           falls back to its STATIC position, which `#boot`'s `text-align:
+           center` puts in the middle of the track — so the segment began at
+           the centre and swept off the right-hand end, leaving an empty track
+           for most of every cycle. */
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 34%;
+        background: #35f0ff;
+        box-shadow: 0 0 12px 1px rgba(53, 240, 255, 0.85),
+          0 0 32px rgba(53, 240, 255, 0.4);
+        will-change: transform;
+        animation: boot-sweep 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite
+          alternate;
+      }
+      /* Travels the track and comes back rather than running off the end and
+         reappearing: 194% is (100 - 34) / 34, the width of the track in units
+         of the segment's own, so it arrives exactly at the right edge and is
+         never off it. A one-way sweep is off-screen for a slice of every
+         cycle, which on a card that may only be up for a second reads as an
+         empty bar. */
+      @keyframes boot-sweep {
+        from { transform: translateX(0); }
+        to { transform: translateX(194%); }
+      }
+      /* The failure text is prose, not a status line: it has to be readable
+         rather than stylish, and it must not pulse — a message that throbs
+         reads as something still in progress. The bar goes for the same
+         reason, and it is the louder half of it: a loading bar still sweeping
+         under an error message says the game is coming when it is not. */
+      #boot.failed #boot-bar { display: none; }
+      #boot.failed p {
+        animation: none;
+        color: #ff5a4f;
+        max-width: 34em;
+        font-size: 15px;
+        font-weight: 400;
+        letter-spacing: 0.04em;
+        text-transform: none;
+        line-height: 1.5;
+      }
+      @keyframes boot-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.35; }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+    <div id="hud"></div>
+    <!-- Deliberately NOT inside #hud: the HUD writes `#hud.innerHTML` on
+         construction and would wipe this on its way past. -->
+    <div id="boot">
+      <h1>HOLLOWMERE</h1>
+      <p>Loading</p>
+      <div id="boot-bar"><i></i></div>
+    </div>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>

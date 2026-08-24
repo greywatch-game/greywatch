@@ -1,0 +1,26 @@
+#!/bin/sh
+# 14-resolvers.envsh — publish this container's DNS servers as
+# NGINX_LOCAL_RESOLVERS, for `resolver` in default.conf.template.
+#
+# Sourced (not run) by the nginx image's entrypoint, before
+# 20-envsubst-on-templates.sh substitutes the template. The number is what
+# orders it: it has to come after nothing in particular and before the 20.
+#
+# The stock image ships 15-local-resolvers.envsh, which does the same awk and is
+# what this is derived from. It is not used because it is opt-in and, when it is
+# on, exports an EMPTY string if /etc/resolv.conf has no nameserver — and an
+# empty `resolver ;` is a config error, so the whole site would fail to start on
+# a box with unusual DNS. That is precisely the failure the variable upstream
+# exists to prevent, so the fallback below is the point of this file: something
+# always lands in the variable, and a name that cannot be resolved is a 502 on
+# two paths rather than a game that does not serve.
+#
+# 127.0.0.11 is Docker's embedded DNS, which is what a compose network has.
+
+set -eu
+
+NGINX_LOCAL_RESOLVERS=$(awk 'BEGIN{ORS=" "} $1=="nameserver" {if ($2 ~ ":") {print "["$2"]"} else {print $2}}' /etc/resolv.conf)
+NGINX_LOCAL_RESOLVERS="${NGINX_LOCAL_RESOLVERS% }"
+[ -n "$NGINX_LOCAL_RESOLVERS" ] || NGINX_LOCAL_RESOLVERS="127.0.0.11"
+
+export NGINX_LOCAL_RESOLVERS

@@ -1,0 +1,300 @@
+/**
+ * settings.css — The settings screen: a list of choices, the panel that says
+ * what the cursor is on, and the key-cap table one page carries.
+ * Owns #settings and nothing else. Drawn in the shell (`.ui-screen` /
+ * `.ui-veil` in base.css); what is here is the list itself.
+ * Still in --ov-scale's selector list (base.css) as the safety valve of last
+ * resort — unlike #loadout, this screen has no hole in it for the 3D scene to
+ * show through, so a transform is safe.
+ */
+
+/* Above #loadout's 11, and that is load-bearing rather than tidy: this
+   screen is reachable from the PAUSE lid as well as the menu, so it can
+   be raised over a pause card that is itself over the deploy map. It
+   takes pointer events for its whole area for the same reason the pause
+   card does — a click on the empty half must not fall through to the
+   deploy map's markers or the menu's mouse-down confirm underneath. */
+#settings {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  pointer-events: auto;
+}
+
+/* --- the list ---
+   TWO COLUMNS, and the row is `display: contents` so they are the grid's,
+   not the row's — a row centred on its own contents puts its label and
+   its control at an x nothing else on the screen shares, which is what
+   reads as a pile rather than as a panel.
+
+   The control column is fixed rather than `1fr` so a long label cannot
+   push the toggles around, and its width is set by the SLIDER rows: the
+   whole option ladder is laid along that track, and sixteen rungs over
+   150px is under ten pixels a rung.
+
+   The HINT was a third column here and is the panel's now. It stays in
+   the markup because the one-column layout at the bottom of this file
+   brings it back — a screen too narrow for the panel is a screen that
+   still owes the player the sentence. */
+#settings .se-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(150px, 17vw, 230px);
+  align-items: center;
+  align-content: center;
+  gap: 0 clamp(12px, 1.6vw, 26px);
+  min-width: 0;
+}
+#settings .se-row { display: contents; }
+#settings .se-row > .se-hint { display: none; }
+/* The page selector is a row like any other — same grid, same highlight,
+   same left/right — so what marks it as chrome rather than as a setting is
+   a rule under it. It has to be drawn on the CELLS, because the row is
+   `display: contents` and has no box of its own; the same reason the
+   highlight is. */
+#settings .se-row.se-tabs > * {
+  padding-bottom: clamp(9px, 1.4vh, 15px);
+  margin-bottom: clamp(6px, 1vh, 11px);
+  border-bottom: 1px solid var(--rule);
+}
+/* The highlight has to be painted on the CELLS, because the row itself
+   is `display: contents` and therefore has no box of its own to fill.
+   Two rules rather than one, so the bar lands only on the left edge. */
+#settings .se-row > * {
+  padding: clamp(7px, 1.1vh, 12px) 0;
+  transition: background 0.12s;
+}
+#settings .se-row.active > * { background: rgba(255, 255, 255, 0.05); }
+#settings .se-row > .se-label {
+  padding-left: 12px;
+  border-left: 2px solid transparent;
+  font-size: var(--ui-row);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #cdd6e6;
+}
+#settings .se-row.active > .se-label {
+  border-left-color: var(--hot);
+  color: var(--hot);
+}
+#settings .se-row > .se-hint {
+  padding-right: 12px;
+  font-size: var(--ui-cap);
+  letter-spacing: 0.1em;
+  color: var(--dimmer);
+}
+
+#settings .se-choice { display: flex; gap: 5px; }
+#settings button.se-opt {
+  font: inherit;
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: clamp(6px, 0.9vh, 10px) 0;
+  color: rgba(255, 255, 255, 0.5);
+  background: var(--plate);
+  border: 0;
+  cursor: pointer;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  transition: background 0.12s, color 0.12s;
+}
+#settings button.se-opt:hover { background: var(--plate-hi); }
+#settings button.se-opt.on {
+  color: #10131b;
+  background: var(--hot);
+}
+
+/* The slider a long option list is laid along — see `SettingsScreen`'s
+   `style`. The whole ladder is on the track, one rung per equal share of
+   it, which is why the control column is wider than a toggle needs: a
+   sixteen-rung ladder over 146px is ~10px a rung, and under that the
+   thumb lands somewhere the player did not aim. */
+#settings .se-choice.slider { align-items: center; gap: 10px; }
+#settings .se-slider {
+  /* The thumb's size is declared HERE and nowhere else. The script reads it
+     back off the DOM to turn a pointer into a rung, so the hit maths and the
+     paint cannot drift apart the way two copies of a number would. */
+  --thumb: 13px;
+  position: relative;
+  flex: 1 1 auto;
+  /* Taller than the line it draws: this is the grab target, and a 3px one
+     is a target you miss. */
+  height: 20px;
+  cursor: pointer;
+  /* Without this a touch drag scrolls the panel instead of moving the
+     thumb — the browser claims the gesture before the first pointermove. */
+  touch-action: none;
+  user-select: none;
+}
+#settings .se-track,
+#settings .se-fill {
+  position: absolute;
+  top: 50%;
+  height: 3px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+#settings .se-track {
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.1);
+}
+/* Ends under the thumb's centre rather than at its leading edge, so the
+   filled part reads as "up to here" at both ends of the travel. */
+#settings .se-fill {
+  left: 0;
+  width: calc(var(--t) * (100% - var(--thumb)) + var(--thumb) / 2);
+  background: rgba(255, 230, 128, 0.5);
+}
+#settings .se-thumb {
+  position: absolute;
+  top: 50%;
+  /* The thumb is centred on its value, so its travel is the track less its
+     own width — the same span the script maps a pointer over. */
+  left: calc(var(--t) * (100% - var(--thumb)));
+  width: var(--thumb);
+  height: var(--thumb);
+  transform: translateY(-50%);
+  background: var(--hot);
+  pointer-events: none;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+#settings .se-slider:hover .se-thumb,
+#settings .se-row.active .se-thumb {
+  box-shadow: 0 0 0 3px rgba(255, 230, 128, 0.16);
+}
+#settings .se-choice > .se-value {
+  /* Fixed and right-aligned, so the track's right edge is the same x on
+     every slider row and the number does not shove it about as it steps. */
+  flex: 0 0 42px;
+  text-align: right;
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--hot);
+  /* The one figure on this screen that changes under a held key or a drag:
+     proportional digits make it jitter on its own baseline. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- the panel beside the list --- */
+/* Centred, not top-aligned: the panel is the full height of the body and
+   what it holds is between two lines and a key table, so hugging the top
+   leaves the short pages reading as a heading marooned in a column. */
+#settings .se-side { justify-content: center; }
+#settings .se-side-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+#settings .se-side h3 {
+  font-size: clamp(15px, 2.4vmin, 26px);
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #fff;
+}
+#settings .se-side-hint {
+  max-width: 46ch;
+  font-size: clamp(11px, 1.45vmin, 14px);
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+/* --- the key-cap table ---
+   It is what the Controls page is ABOUT, which is why it is in the panel
+   rather than under the list: eleven rows under a list of three sliders is
+   the longest block on the screen and the thing that used to decide the
+   panel's height. Beside the list it costs that list nothing at all, and
+   the cursor never had anything to do with it — there is nothing here to
+   pick.
+
+   Its own three columns are action / keyboard / pad, set independently of
+   the list's: an action name is short where a setting's label is long, and
+   matching the two would leave the key chips stranded mid-panel with the
+   pad column adrift at the far edge. */
+#settings .se-binds {
+  margin-top: clamp(6px, 1.4vh, 16px);
+  padding-top: clamp(6px, 1.2vh, 14px);
+  border-top: 1px solid var(--rule);
+}
+#settings .se-bind-head,
+#settings .se-bind {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: clamp(8px, 1.2vw, 20px);
+}
+#settings .se-bind-head {
+  padding-bottom: 6px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+#settings .se-bind-head span:not(:first-child),
+#settings .se-bind-pad { justify-self: end; }
+#settings .se-bind { padding: clamp(1px, 0.35vh, 4px) 0; }
+#settings .se-bind-act {
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #dfe5ee;
+}
+#settings .se-bind-keys,
+#settings .se-bind-pad { display: flex; gap: 4px; }
+/* The list's own hints and the footer's chips are base.css's; these are the
+   plates the table is made of. */
+#settings .se-binds kbd {
+  font: inherit;
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 3px 7px;
+  min-width: 24px;
+  text-align: center;
+  color: #cfd6e2;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+/* Pad glyphs are tinted, the same tell the footer's hints use, so the two
+   halves of a binding read as alternatives rather than as a chord. */
+#settings .se-binds kbd.pad {
+  color: var(--hot);
+  box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.3);
+}
+
+/* The footer — the hint line and the Back button at the end of it — is
+   `.ui-foot` / `.ui-back` in base.css, shared with the kit screen and the
+   lobby. This screen adds nothing to it. */
+
+/* --- one column ---
+   `.ui-optional` has taken the panel away (base.css), so the hint comes back
+   into the list as its third column: a viewport this size still owes the
+   player the sentence, and the list is the only place left to put it.
+
+   The key-cap table goes with the panel, and that is the one thing on this
+   screen a small viewport loses. It is the right thing to lose: a window
+   narrow enough to reach this rule is a phone held sideways, the table names
+   a keyboard and a pad, and the game on that device is played with the touch
+   controls — which are drawn on screen and name themselves. */
+@media (max-width: 900px), (max-height: 460px) {
+  #settings .se-body {
+    grid-template-columns: minmax(0, 1fr) clamp(140px, 30vw, 200px) minmax(0, 1.1fr);
+  }
+  #settings .se-row > .se-hint { display: block; }
+}
+@media (max-width: 620px) {
+  #settings .se-body {
+    grid-template-columns: minmax(0, 1fr) clamp(130px, 40vw, 190px);
+  }
+  #settings .se-row > .se-hint { display: none; }
+}

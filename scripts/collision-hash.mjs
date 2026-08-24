@@ -1,0 +1,59 @@
+/**
+ * The map table and the source hash, shared by `bake-collision.mjs` (which
+ * writes it) and `check-collision.mjs` (which enforces it).
+ *
+ * One module rather than a copy in each, because the two agreeing is the whole
+ * mechanism: a check that hashed a different set of files from the bake would
+ * pass forever, and that is a guard which exists but does not guard.
+ */
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * The maps to bake, and what to call each one's generated constant.
+ *
+ * A literal table for the same reason `vite.config.ts`'s `WRITABLE` is one: it
+ * is used to build paths under `src/world/`, and deriving it from a directory
+ * listing trades an explicit list for a glob that will one day match something
+ * unintended. A new map adds one entry.
+ */
+export const MAPS = [
+  { id: "hollowmere", constant: "HollowmereCollision" },
+  { id: "greyfen", constant: "GreyfenCollision" },
+  { id: "coldharbour", constant: "ColdharbourCollision" },
+  { id: "harrowmead", constant: "HarrowmeadCollision" },
+];
+
+/** The files a map's collider boxes are derived from. */
+const SOURCES = ["layout.ts", "heights.ts"];
+
+/**
+ * Hash of everything a map's collider boxes depend on.
+ *
+ * `heights.ts` is in here as well as `layout.ts` because an authored `y` is an
+ * offset above the local floor — move the terrain and every box standing on it
+ * moves, with the layout untouched. Hashing only the layout would leave exactly
+ * that edit undetected, which is the silent half of the failure this guard
+ * exists to prevent.
+ */
+export function sourceHash(id) {
+  const h = createHash("sha256");
+  for (const file of SOURCES) {
+    h.update(readFileSync(join(root, "src", "world", id, file)));
+  }
+  return h.digest("hex").slice(0, 16);
+}
+
+/** The hash recorded in a map's generated `collision.ts`, or null if absent. */
+export function bakedHash(id) {
+  try {
+    const src = readFileSync(join(root, "src", "world", id, "collision.ts"), "utf8");
+    return /sourceHash:\s*"([0-9a-f]+)"/.exec(src)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}

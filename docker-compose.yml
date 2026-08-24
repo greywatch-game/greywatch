@@ -1,0 +1,55 @@
+# docker-compose.yml — the game and the match server it can be played against.
+#
+#   docker compose up --build
+#   open http://localhost:8080          single player, and Multiplayer on the menu
+#   open http://localhost:8080/?mp      straight into a match, skipping the menu
+#
+# Two containers out of one Dockerfile. `web` is nginx serving the bundle and
+# proxying `/ws` and `/matches`; `match-server` is the authoritative simulation.
+# Nothing in the game knows the difference — the client opens a socket on its own
+# origin and reads the match list from it, and nginx is what decides where those
+# land. BOTH of those paths need a `location` block: anything nginx does not name
+# falls through to the static root and 404s, and the lobby then works in dev and
+# returns nothing in production.
+#
+# The single-player game does not need `match-server` at all. Bring up `web`
+# alone and it plays exactly as it always has; the socket simply never opens and
+# the lobby says it could not reach a server. (That is true because the nginx
+# upstream is resolved per request rather than at startup — see
+# `docker/default.conf.template`, where undoing it costs the whole site.)
+#
+# This file BUILDS from the checkout, which is what a development machine wants.
+# `docker-compose.prod.yml` is the same two services from the images CI pushes.
+
+services:
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "8080:80"
+    depends_on:
+      - match-server
+    restart: unless-stopped
+
+  match-server:
+    build:
+      context: .
+      target: server
+    # Deliberately NOT published. The only route in is nginx's `/ws` proxy, so
+    # the simulation is not reachable from outside the compose network — which
+    # matters because it is the thing that decides who is alive.
+    expose:
+      - "8080"
+    environment:
+      # One match server, one process. Scaling is more than a replica count:
+      # matches live in memory, so two replicas behind one proxy would put
+      # players who joined "the same" match into two different worlds. A shared
+      # matchmaker is what that needs, and it is not built.
+      PORT: 8080
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

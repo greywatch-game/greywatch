@@ -1,0 +1,100 @@
+# docker-compose.prod.yml — the deployment, from published images.
+#
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# The difference from `docker-compose.yml` next door is only where the images
+# come from: that one BUILDS from this checkout and is what you run on a
+# development machine, this one PULLS what CI pushed and wants no source tree on
+# the box at all. Everything else — the two services, the private network
+# between them, the fact that only nginx is published — is the same shape.
+#
+# **TLS is not here.** The `web` container speaks plain HTTP on the host's
+# 127.0.0.1:8080, and the reverse proxy that already terminates HTTPS for the
+# domain forwards to it. That proxy has one job the ordinary static site did not
+# need: `/ws` is a WebSocket, so the Upgrade and Connection headers have to
+# survive it. See `docs/multiplayer.md` for the nginx and Caddy forms.
+#
+# Pinning: `:latest` is what a hands-off box wants and `:sha-<short>` is what a
+# rollback is. Both images are built from the same commit and the wire protocol
+# is versioned, so move them together — a client refused at the handshake is a
+# legible failure but still one.
+#
+# **A REGION is this same file on a box somewhere else.** There is no
+# region-aware image and nothing in the server knows which region it is: bring
+# this up, point a hostname of its own at it (`us-east-1.example.com`, with the
+# same `/ws` Upgrade forwarding), and name that host in the `regions.json`
+# mounted below — on whichever box SERVES THE PAGE, since a client reads that
+# list from its own origin and from nowhere else. The client then asks each
+# region directly and shows the round trip to each, so nothing here has to know
+# about the others. See `docs/multiplayer.md`.
+#
+# **Every box runs BOTH containers, including the ones that only host a region.**
+# `web` is not just the bundle — it is the nginx that proxies `/ws` and
+# `/matches` to the match server beside it, which is published nowhere else. A
+# region box needs it exactly as much as the origin box does, and the copy of
+# the bundle it serves to nobody is the failover for the day the origin box is
+# the one that is down.
+
+services:
+  web:
+    image: idrum4316/hollowmere:latest
+    # Bound to the loopback, not 0.0.0.0: the only thing that should reach this
+    # is the reverse proxy on the same host. Published on every interface it
+    # would answer :8080 from the internet, beside the domain, without TLS and
+    # without whatever the proxy is doing about rate limits or logging.
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      # Where the match server is. The image already defaults to exactly this;
+      # it is written out because this file is the one a deployer reads, and a
+      # setting they cannot see is one they cannot move.
+      MATCH_SERVER: match-server:8080
+    volumes:
+      # The region list — the ONE file a deployer is expected to edit on the box.
+      # It ships inside the image (it is `public/regions.json`, copied into the
+      # bundle), so without this mount "edit it, no rebuild" is a promise nothing
+      # keeps: an edit made inside a container dies on the next `pull && up -d`,
+      # which is the moment you would least like to lose it. Read-only, because
+      # nothing in the container writes it.
+      #
+      # **Create the file before the first `up`.** Docker answers a bind mount
+      # whose source does not exist by creating a DIRECTORY at it, and this URL
+      # then answers with anything but a region list — which does not merely
+      # break the lobby: `/regions.json` is in the precache manifest, and
+      # `cache.addAll` fails whole if one entry 404s, so the service worker
+      # cannot install at all. The shipped single-region file is:
+      #
+      #   { "regions": [{ "id": "local", "name": "This server" }] }
+      #
+      # **Edit it IN PLACE.** A bind mount of a single file binds the inode, so
+      # an editor that writes a new file and renames over it (vim's default,
+      # `sed -i`) leaves this container serving the old one from an inode nothing
+      # can see any more. Write over it (`cat >`, `tee`), or accept the mystery
+      # once and `docker compose restart web` afterwards.
+      - ./regions.json:/usr/share/nginx/html/regions.json:ro
+    depends_on:
+      - match-server
+    restart: unless-stopped
+
+  match-server:
+    image: idrum4316/hollowmere-server:latest
+    # Deliberately NOT published, not even on loopback. The only route in is
+    # nginx's `/ws` proxy over the compose network — which matters because this
+    # is the process that decides who is alive.
+    expose:
+      - "8080"
+    environment:
+      PORT: 8080
+      # How many rounds this process will hold at once. Node is single-threaded,
+      # so all of them share one core: four measured at 13-25% of a core and
+      # 278 MB together, one at ~9% and 154 MB. Raise it against the box you are
+      # actually on — the cap is what makes "New match" a safe button, so it
+      # wants to be a number somebody chose rather than one nobody did.
+      MAX_MATCHES: 4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -1,0 +1,308 @@
+/**
+ * ObstacleField.ts — Sub-cell collision: collider boxes bucketed at load,
+ * queried per bot step to push a body clear of thin obstacles (trees,
+ * gravestones, drums) that fall between NavGrid cell centres.
+ * Invariants: the push-out is a PREFERENCE, never a veto — callers (Bot) keep
+ * the overlapping position if the pushed-clear one isn't walkable; frozen is
+ * worse than clipping. HEADROOM and CONFIG.nav.stepHeight must stay in sync
+ * with NavGrid. Height tests use box planes and the box frame is entered
+ * through `rotateToLocalXZ` (boxGeometry.ts, shared with NavGrid) so ramps push
+ * correctly and a rotated box is not pushed out of backwards.
+ */
+import { Vector3 } from "@babylonjs/core";
+import { CONFIG } from "../config";
+import {
+  halfDepth,
+  type LocalXZ,
+  rotateToLocalXZ,
+  slabThickness,
+  topFaceAtLocalZ,
+  topFaceHeight,
+} from "./boxGeometry";
+import type { WorldBox } from "./MapBuilder";
+
+/**
+ * "Is there a body's width of space here?", answered against the collider boxes
+ * themselves rather than the nav grid.
+ *
+ * ## Why the nav grid isn't enough
+ *
+ * `NavGrid` samples one column per 1.5 m cell *centre*. A collider narrower than
+ * a cell can sit entirely between two centres and leave every cell around it
+ * walkable — and most of Hollowmere's props are exactly that: a scattered dead
+ * tree or gravestone gets a 1.1 m collider, a fire drum 1.2 m. Flow fields then
+ * route bots straight through the trunk. Even for the buildings the grid only
+ * knows about walls that happen to cross a cell centre, so a bot can stand with
+ * half its body inside a cottage wall.
+ *
+ * That is not just a visual glitch. `CombatSystem.fire` caps every shot at the
+ * first `solid` hit and only counts a target sphere *closer* than that, so a bot
+ * embedded in a prop has the prop soaking up every round aimed at it — the
+ * "bots are stuck in things and impossible to shoot" pair is one bug.
+ *
+ * ## How
+ *
+ * Box footprints are bucketed once at load. A query pulls the handful of boxes
+ * over one spot and pushes the body back out to `CONFIG.nav.bodyRadius` of any
+ * face that is too tall to step onto and too low to duck under. Height is
+ * evaluated from the top-face *plane* at the contact point, the same way
+ * `NavGrid` does it, so a ramp reads as a floor at its foot rather than a wall.
+ *
+ * The map changes in exactly one way and in one direction: a pane of glass
+ * breaks and never mends (`BoxSpec.glass`). So the buckets are built once, read
+ * from then on, and only ever have entries TAKEN OUT — by `remove`, which is
+ * the one writer and is called a handful of times in a round. Nothing here may
+ * grow at runtime, and nothing may be added back.
+ */
+
+/** Bucket edge in metres. Comfortably larger than any query radius. */
+const BUCKET = 4;
+/** Query radii are expanded by this when bucketing, so a query hits one bucket. */
+const MAX_RADIUS = 1.0;
+/** Vertical clearance a body needs; matches `NavGrid`'s headroom. */
+const HEADROOM = 1.7;
+
+export class ObstacleField {
+  private readonly dim: number;
+  private readonly origin: number;
+  /** Box indices per bucket, `null` where nothing overlaps. */
+  private readonly buckets: (number[] | null)[];
+  private readonly boxes: WorldBox[] = [];
+  /** Scratch for the box-frame transform; `push` runs it per bot per box per step. */
+  private readonly localScratch: LocalXZ = { lx: 0, lz: 0 };
+
+  constructor(size: number, boxes: WorldBox[]) {
+    this.dim = Math.ceil(size / BUCKET) + 2;
+    this.origin = -size / 2 - BUCKET;
+    this.buckets = new Array(this.dim * this.dim).fill(null);
+
+    for (const box of boxes) {
+      // Same exclusions as the nav grid: the ground plane is the floor and the
+      // ridge is pure boundary, which the grid's own extents already enforce.
+      if (box.w > 200 || box.d > 200) continue;
+      const index = this.boxes.push(box) - 1;
+      this.eachCell(box, (cell) => {
+        (this.buckets[cell] ??= []).push(index);
+      });
+    }
+  }
+
+  /**
+   * Takes a box out of every bucket it was stamped into. True when it was
+   * there.
+   *
+   * **The box's slot in `this.boxes` is left behind**, holes and all, because
+   * every bucket entry is an index into that array and compacting it would
+   * silently renumber every box after the removed one. A retired slot costs one
+   * `WorldBox` of memory and is never reached again — `resolve` walks buckets,
+   * never `boxes`.
+   *
+   * Removal recomputes the same cell rectangle the constructor stamped with
+   * rather than remembering it: one arithmetic expression in one place cannot
+   * disagree with itself, and two copies of it can — by a cell, leaving an
+   * entry stranded in a bucket that goes on pushing bodies out of glass that
+   * is no longer there.
+   */
+  remove(box: WorldBox): boolean {
+    const index = this.boxes.indexOf(box);
+    if (index < 0) return false;
+    this.eachCell(box, (cell) => {
+      const bucket = this.buckets[cell];
+      if (!bucket) return;
+      const at = bucket.indexOf(index);
+      if (at >= 0) bucket.splice(at, 1);
+    });
+    return true;
+  }
+
+  /** The cells a box is stamped into: the conservative footprint, plus slack. */
+  private eachCell(box: WorldBox, fn: (cell: number) => void): void {
+    // Conservative footprint: the rotated half-diagonal, plus the query slack.
+    const reach =
+      Math.hypot(box.w, box.d) / 2 +
+      (box.h / 2) * Math.abs(Math.sin(box.rotX)) +
+      MAX_RADIUS;
+    const minX = this.clampCell(this.toCell(box.cx - reach));
+    const maxX = this.clampCell(this.toCell(box.cx + reach));
+    const minZ = this.clampCell(this.toCell(box.cz - reach));
+    const maxZ = this.clampCell(this.toCell(box.cz + reach));
+    for (let cx = minX; cx <= maxX; cx++) {
+      for (let cz = minZ; cz <= maxZ; cz++) fn(cz * this.dim + cx);
+    }
+  }
+
+  /**
+   * Pushes a body standing at `(x, y, z)` out of anything it overlaps, writing
+   * the corrected position into `out` (`y` is passed through untouched) and
+   * returning true when it had to move at all.
+   *
+   * Boxes are resolved in sequence against the running position and the whole
+   * set is swept twice, so an inside corner settles instead of ping-ponging
+   * between its two walls.
+   */
+  resolve(x: number, y: number, z: number, radius: number, out: Vector3): boolean {
+    out.set(x, y, z);
+    const cx = this.clampCell(this.toCell(x));
+    const cz = this.clampCell(this.toCell(z));
+    const bucket = this.buckets[cz * this.dim + cx];
+    if (!bucket) return false;
+
+    let moved = false;
+    for (let pass = 0; pass < 2; pass++) {
+      let touched = false;
+      for (const index of bucket) {
+        if (this.push(this.boxes[index], y, radius, out)) touched = true;
+      }
+      if (!touched) break;
+      moved = true;
+    }
+    return moved;
+  }
+
+  /**
+   * The highest collider top face directly above `floor` and at or below
+   * `ceiling` at `(x, z)`, or null when no box spans that band here.
+   *
+   * **NOTHING CALLS THIS YET, AND THAT IS ON PURPOSE.** It is written and
+   * measured against the ray it replaces, and it is one line from being switched
+   * on; what it waits for is below, and FINDINGS 6 carries the numbers. Do not
+   * delete it as dead code, and do not wire it up without reading that entry.
+   *
+   * THIS IS THE GROUND PROBE'S ANSWER, and it exists to retire a whole-scene
+   * ray pick. `Player.probeGround` ran `scene.pickWithRay` with a `solid`
+   * predicate on every frame: Babylon walked all ~1,800 meshes and ray-tested
+   * all ~820 colliders to answer "what is under my feet", which measured as the
+   * single largest piece of the game's own per-frame JS — five times the next
+   * item, and scaling with how big the map is rather than with what is on
+   * screen. The boxes were already bucketed here, and `NavGrid.rasterize` was
+   * already computing exactly this at bake time from the same primitive.
+   *
+   * The band is closed at both ends because a floor is not the only thing above
+   * a foot: `ceiling` is the probe's own origin (a step-height above the feet,
+   * so a rise reads as a step rather than a wall) and `floor` is as far down as
+   * the probe reaches. A roof overhead is outside the band and correctly
+   * ignored.
+   *
+   * NOT the terrain. The heightfield has no box standing in for it — that is
+   * the one documented exception to the visual/collider rule — so the caller
+   * takes the higher of this and `TerrainField.surfaceAt`. And it is
+   * `surfaceAt`, the floor as DRAWN, rather than `heightAt`, the smooth field
+   * the floor is cut from: what the ray used to hit was a clone of the visual's
+   * own vertices.
+   *
+   * ## What it is waiting on
+   *
+   * Over the nav graph's own walkable surfaces — the only honest domain, since
+   * sweeping the map on a grid asks about positions a body cannot occupy and the
+   * RAY is the one that lies there — this and `pickWithRay` agree on 99.8% of
+   * 51k standable positions. The 116 that differ run both ways, and one class is
+   * a blocker: along a fence line the analytic claims a surface half a metre up
+   * that the ray passes straight through. That is the shared primitive rather
+   * than this query. `topFaceAtLocalZ` extrapolates a box's top-face plane
+   * across a footprint `halfDepth` INFLATES for anything pitched, so a tall thin
+   * box tilted a few degrees claims ground beside itself. `NavGrid` lives with
+   * that — a phantom node is a routing nuisance — and a ground probe cannot,
+   * because it stands the player on air. **The fix is a footprint test bounded
+   * by the box's real extent rather than its projected one**, and it belongs in
+   * `boxGeometry`, where `NavGrid` gets it too.
+   */
+  groundAt(x: number, z: number, ceiling: number, floor: number): number | null {
+    const cx = this.clampCell(this.toCell(x));
+    const cz = this.clampCell(this.toCell(z));
+    const bucket = this.buckets[cz * this.dim + cx];
+    if (!bucket) return null;
+
+    let best: number | null = null;
+    for (const index of bucket) {
+      const box = this.boxes[index];
+      const top = topFaceHeight(box, x, z);
+      if (top === null) continue;
+      if (top > ceiling || top < floor) continue;
+      if (best === null || top > best) best = top;
+    }
+    return best;
+  }
+
+  /** One box against one body. Returns true when `out` was corrected. */
+  private push(box: WorldBox, y: number, radius: number, out: Vector3): boolean {
+    // Into the box's frame through the shared transform rather than a private
+    // copy of the yaw convention — that convention has already been got wrong
+    // once, and a push resolved in a mirrored frame would shove a bot the wrong
+    // way out of every rotated wall. Through `rotateToLocalXZ` rather than
+    // `toLocalXZ` because this needs `lx`/`lz` even for a point outside the
+    // footprint, which is exactly the case that helper answers with a bare null.
+    const { lx, lz } = rotateToLocalXZ(box, out.x, out.z, this.localScratch);
+    const hw = box.w / 2;
+    const hd = halfDepth(box);
+
+    const qx = clamp(lx, -hw, hw);
+    const qz = clamp(lz, -hd, hd);
+
+    // Height of the top face at the contact point, from the plane rather than
+    // the bounding box — a ramp's peak must not be reported across its whole
+    // footprint. `boxGeometry` owns that math; NavGrid reads the same plane.
+    const top = topFaceAtLocalZ(box, qz);
+    if (top === null) return false;
+    // Low enough to step onto, so it is floor rather than obstruction.
+    if (top <= y + CONFIG.nav.stepHeight) return false;
+    // High enough to walk under: a lintel, a hayloft, a bridge deck.
+    if (top - slabThickness(box) >= y + HEADROOM) return false;
+
+    let nx: number;
+    let nz: number;
+    if (lx > -hw && lx < hw && lz > -hd && lz < hd) {
+      // Already inside. Leave by the nearest face, since any other exit would
+      // drag the body through the whole box.
+      const penX = hw - Math.abs(lx);
+      const penZ = hd - Math.abs(lz);
+      if (penX < penZ) {
+        nx = (lx < 0 ? -1 : 1) * (hw + radius);
+        nz = lz;
+      } else {
+        nx = lx;
+        nz = (lz < 0 ? -1 : 1) * (hd + radius);
+      }
+    } else {
+      const ox = lx - qx;
+      const oz = lz - qz;
+      const dist = Math.hypot(ox, oz);
+      if (dist >= radius) return false;
+      if (dist < 1e-6) {
+        // Exactly on a face. Push straight out of the nearer one.
+        if (hw - Math.abs(lx) < hd - Math.abs(lz)) {
+          nx = (lx < 0 ? -1 : 1) * (hw + radius);
+          nz = lz;
+        } else {
+          nx = lx;
+          nz = (lz < 0 ? -1 : 1) * (hd + radius);
+        }
+      } else {
+        nx = qx + (ox / dist) * radius;
+        nz = qz + (oz / dist) * radius;
+      }
+    }
+
+    // Back to world. `rotateToLocalXZ` owns the sign convention — these are its
+    // world→local angles read back to be undone, not a second opinion about
+    // which way the box faces. Computed HERE rather than beside the transform
+    // because every refusal above leaves without them, and most calls refuse:
+    // a box is usually steppable, duckable, or simply out of reach.
+    const c = Math.cos(-box.rotY);
+    const s = Math.sin(-box.rotY);
+    out.x = box.cx + nx * c - nz * s;
+    out.z = box.cz + nx * s + nz * c;
+    return true;
+  }
+
+  private toCell(world: number): number {
+    return Math.floor((world - this.origin) / BUCKET);
+  }
+
+  private clampCell(cell: number): number {
+    return cell < 0 ? 0 : cell >= this.dim ? this.dim - 1 : cell;
+  }
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}

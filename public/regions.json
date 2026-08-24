@@ -1,0 +1,4 @@
+{
+  "$comment": "Which match servers this deployment offers, and the ONE file to edit when that changes — no rebuild. Each entry: an id (remembered as the player's pick, never shown), a short name (the lobby's region column), and the match server's host. Omit `host` for the server behind this page's own origin, which is the single-box deployment shipped here. The scheme is the page's, so name an authority and not a URL. See docs/multiplayer.md. Two regions look like: { \"id\": \"us-west-1\", \"name\": \"US West\", \"host\": \"us-west-1.example.com\" }, { \"id\": \"us-east-1\", \"name\": \"US East\", \"host\": \"us-east-1.example.com\" }",
+  "regions": [{ "id": "local", "name": "This server" }]
+}

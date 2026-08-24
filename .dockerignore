@@ -1,0 +1,16 @@
+# Everything the image build must not carry. The build stage COPYs explicit
+# paths, so this is belt-and-braces plus a smaller build context.
+.git
+.gitignore
+node_modules
+dist
+tmp_shots
+undefined
+models
+specs
+# NOT scripts/: the build stage COPYs it, because `npm run build` runs
+# scripts/check-collision.mjs — the gate that refuses a bake older than the
+# layout it came from. Excluding it fails the image build at the COPY.
+*.md
+Dockerfile
+.dockerignore

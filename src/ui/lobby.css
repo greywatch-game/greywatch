@@ -1,0 +1,311 @@
+/**
+ * lobby.css — The match browser: the list of matches and the two picker rows
+ * under it.
+ * Owns #lobby and nothing else. Drawn in the shell (`.ui-screen` / `.ui-veil`
+ * / `.ui-solid` in base.css) — the head carries the title and the status line,
+ * the foot carries the hints and Back, and what is here is the list.
+ * Still in --ov-scale's selector list (base.css) as the safety valve of last
+ * resort — like #settings and unlike #loadout, this screen has no hole in it
+ * for the 3D scene, so a transform is safe.
+ */
+
+/* Level with #loadout at 11 rather than above it: both are lids raised
+   from the main menu and the two can never be up together. It takes
+   pointer events across its whole area for the reason the pause card
+   does — the menu underneath confirms on mouse-DOWN, so a click on the
+   empty half of this screen would otherwise deploy a single-player
+   round out from under it. */
+#lobby {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  pointer-events: auto;
+}
+
+#lobby.hidden { display: none; }
+
+/* The list's own width, and the one thing on this screen that is capped
+   rather than fluid. A match row is five short cells — a region, a map, a
+   state, a count and a ping — and spread across an ultrawide the count ends
+   up a foot away from the name it belongs to, which is a table nobody can
+   read across. `.lb-panel` also survives as what the row grids are scoped
+   to: `.multi` on it is what turns the three-column screen into the
+   five-column one. */
+#lobby .lb-panel {
+  width: 100%;
+  max-width: min(100%, 1080px);
+  margin: 0 auto;
+  align-self: center;
+}
+
+/* The status line, in the head's right-hand slot: how many matches, or why
+   there are none to show. It holds its height when empty so the head does
+   not shift between a fetch and its answer. */
+#lobby .lb-status { min-height: 1em; }
+
+/* The round trip to this server, on the status line rather than in a row of
+   its own: with ONE region it is one fact about the machine every row is
+   running on, and the line above the list is where the screen already talks
+   about the server as a whole. Empty when the fetch failed — or whenever there
+   is more than one region, which moves the reading into the rows, where two of
+   them can be compared — and the gap collapses with it. */
+#lobby .lb-ping {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.5);
+}
+#lobby .ui-meta .lb-ping:empty { display: none; }
+/* A good connection is the ordinary case and says nothing; the two that are
+   worth a player's attention are the two that are coloured. Shared by the
+   status line and the per-row column, because `ui/ping.ts` exists so that two
+   readings of one number cannot say different things. */
+#lobby .lb-ping.fair,
+#lobby .lb-lat.fair { color: var(--hot); }
+#lobby .lb-ping.poor,
+#lobby .lb-lat.poor { color: var(--theirs); }
+
+#lobby .lb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  /* Bounded so a server running many matches scrolls rather than pushing
+     the foot off a short viewport. The frame's body row is already
+     `minmax(0, 1fr)`, so this is the second line of defence and the one that
+     decides WHERE the overflow goes. */
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+/* THREE COLUMNS, and every row states the same template so the map
+   names, the states and the counts line up down the panel. Unlike the
+   settings rows these are real boxes rather than `display: contents`,
+   because each one is a target — it takes a hover and a click, and a
+   row with no box of its own has nothing to hit. */
+#lobby .lb-row {
+  display: grid;
+  /* Two proportional tracks and a fixed one, rather than the `1fr auto 74px`
+     this was while the panel was 640px wide. A shrink-to-fit middle column is
+     pinned to whatever is on its right, so on a list given the width of a
+     window the state ends up against the count with a hand's width of nothing
+     between it and the name it describes. */
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 74px;
+  align-items: center;
+  gap: 0 clamp(10px, 1.4vw, 24px);
+  padding: clamp(8px, 1.2vh, 14px) clamp(10px, 1vw, 18px);
+  border-left: 2px solid transparent;
+  background: rgba(255, 255, 255, 0);
+  transition: background 0.12s, border-color 0.12s;
+  cursor: pointer;
+}
+#lobby .lb-row.sel {
+  background: rgba(255, 255, 255, 0.05);
+  border-left-color: var(--hot);
+}
+
+/* FIVE COLUMNS once there is a choice of server: which region, then the same
+   three, then what the round trip to that region measured. The template is
+   declared on the rows inside a multi-region panel rather than always, so a
+   single-server deployment — an untouched regions.json — keeps the three-column
+   screen it has always had instead of a five-column one with two blanks in it.
+   Each row is its own grid, so this is the whole of the change. */
+#lobby .lb-panel.multi .lb-row {
+  /* The name column has a FLOOR, which the three-column form does not need.
+     An item that clips contributes nothing to its track's minimum, so with a
+     region column and a ping column taking width off either end, a long hint
+     beside it ("Start a fresh round on Hollowmere") wins the whole row and
+     "New match" clips to "Ne…". The floor fits the longest label this screen
+     has; a hostile map id still clips, which is what that cell is for. */
+  grid-template-columns: 88px minmax(104px, 1.15fr) minmax(0, 1fr) 74px 44px;
+}
+
+/* A picker row's buttons take everything past the label instead of squeezing
+   into the column the states share. With a region column and a ping column
+   either side there is not enough left between them for three choices, and what
+   a grid does about that is wrap the labels inside the buttons onto two lines —
+   so the picker rows say outright that nothing follows their buttons. */
+#lobby .lb-panel.multi .lb-pickline {
+  grid-template-columns: 88px auto 1fr;
+}
+/* And the same for the three-column screen. A picker's buttons belong beside
+   the word that names them: left in the row's first proportional track they
+   would sit halfway across the list, which reads as a control for the column
+   it has drifted into rather than for its own row. */
+#lobby .lb-pickline { grid-template-columns: minmax(72px, auto) 1fr auto; }
+/* The labels ("Map", "Region") clip like every other first cell, and an item
+   that clips contributes NOTHING to its column's minimum — so a wide enough row
+   of buttons collapses the label to zero width and the row loses its name with
+   nothing to say it has. This floor is what stops that. */
+#lobby .lb-pickline .lb-id { min-width: 72px; }
+
+/* Which server a row is on. Narrow on purpose — it is a label repeated down a
+   column and read by shape after the first glance, so it wants to be the
+   quietest thing in the row and to clip rather than to push the map name
+   about. A deploy-time file writes this string, so it can be any length. */
+#lobby .lb-region {
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#lobby .lb-row.sel .lb-region { color: rgba(255, 255, 255, 0.6); }
+
+/* The ping column: the number that the whole screen is here to be compared on.
+   Tabular figures so two rows' digits line up vertically, which is what makes
+   a column of them readable at a glance rather than one at a time. */
+#lobby .lb-lat {
+  text-align: right;
+  font-size: var(--ui-cap);
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* A line about a region rather than a round in one: it is being asked, it has
+   nothing to list, or it did not answer. Dimmer than a match row and not a
+   target — the cursor still lands on it (it is a row like any other) and the
+   confirm is refused in `activate`. */
+#lobby .lb-note {
+  cursor: default;
+}
+#lobby .lb-note .lb-id {
+  font-size: var(--ui-cap);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: none;
+  color: rgba(255, 255, 255, 0.32);
+}
+#lobby .lb-note.sel .lb-id { color: rgba(255, 255, 255, 0.5); }
+
+#lobby .lb-id {
+  font-size: var(--ui-row);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #cdd6e6;
+  /* A map id this build has never heard of is shown verbatim, so this
+     cell can be handed an arbitrary string off the wire. It clips rather
+     than wrapping, which keeps a hostile-length name from making one row
+     as tall as the panel. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#lobby .lb-row.sel .lb-id { color: #fff; }
+
+#lobby .lb-state {
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+#lobby .lb-count {
+  text-align: right;
+  font-size: var(--ui-cap);
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.4);
+}
+#lobby .lb-count b {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--hot);
+}
+
+/* A full match stays in the list and stops being a target — knowing a
+   round is there and full is worth more than a shorter list. The cursor
+   still lands on it (it is a row like any other) and the confirm is
+   refused in `activate`. */
+#lobby .lb-row.full {
+  opacity: 0.42;
+  cursor: default;
+}
+#lobby .lb-row.full .lb-count b { color: var(--theirs); }
+
+/* The row a join is in flight on. */
+#lobby .lb-row.busy .lb-state { color: var(--hot); }
+
+/* The actions under the matches, separated by a rule rather than a gap so
+   they read as a different KIND of row without needing a heading to say
+   so. The adjacent-sibling selector is the whole rule and deliberately so:
+   the divider exists to separate the actions FROM the list, so with nothing
+   listed there is nothing to divide and the rule must not draw.
+   `:first-of-type` was wrong here — it selects on the element type (every
+   row is a div), so it matched the first action whether or not any match
+   preceded it, and an empty lobby drew a line under its own subtitle.
+   A note counts as list: a region saying it has no matches is still a line
+   about a server, and the actions below it are still a different kind of row. */
+#lobby :is(.lb-match, .lb-note) + .lb-action {
+  margin-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+#lobby .lb-action .lb-id { color: #aeb6c2; }
+#lobby .lb-action.sel .lb-id { color: var(--hot); }
+
+/* The two picker rows — the map a new match starts on, and the region it
+   starts in — one button per choice in the middle column the states and
+   hints share. Their own strip rather than the overlay's `.tier` — those
+   rules are scoped to #overlay, and a shared class between two screens that
+   are never on together would be a shared constraint for nothing. */
+#lobby .lb-picks {
+  display: flex;
+  gap: 6px;
+}
+/* The rows whose BODY is not a target — they pick rather than fire, so
+   only the buttons in them take a click and the row must not offer a hand
+   across the rest of its width. */
+#lobby .lb-pickline { cursor: default; }
+#lobby button.lb-pick {
+  font: inherit;
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  /* Never two lines. A region's name comes out of a deploy-time file and can be
+     any length, and a button that wraps takes its whole row's height with it. */
+  white-space: nowrap;
+  padding: 5px 12px;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  cursor: pointer;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+  transition: color 0.12s, background 0.12s;
+}
+#lobby button.lb-pick:hover { color: #fff; background: rgba(255, 255, 255, 0.11); }
+#lobby button.lb-pick.on {
+  color: #0a0d14;
+  background: var(--hot);
+  box-shadow: none;
+}
+
+/* A region button carries its ping beside its name, because this row is where
+   the choice is actually made — a player stepping across it is reading the two
+   numbers, and making them look up at the column above to find the one for the
+   row they are on would be a picker that hid its own answer. */
+#lobby button.lb-pick {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+}
+#lobby button.lb-pick .lb-lat {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+/* The lit button is a light plate with dark text on it, where the quality
+   colours are tuned against the dark panel — so the chosen region's ping takes
+   the plate's own ink rather than a yellow that vanishes into it. Its band is
+   still readable: it is the one the row above is coloured by. */
+#lobby button.lb-pick.on .lb-lat {
+  color: inherit;
+  opacity: 0.6;
+}
+
+/* The footer — the hint line and the Back button at the end of it — is
+   `.ui-foot` / `.ui-back` in base.css, shared with the settings and kit
+   screens. Back is a button THERE rather than a row in the list above,
+   which is the whole reason that block exists: see base.css. This screen
+   adds nothing to it. */

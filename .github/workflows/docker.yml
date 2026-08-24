@@ -1,0 +1,95 @@
+# .github/workflows/docker.yml — build the images and push them to Docker Hub.
+#
+# TWO images, because the deployment is two containers and the Dockerfile has a
+# runtime stage for each:
+#
+#   web     idrum4316/hollowmere         nginx + dist/ — the game
+#   server  idrum4316/hollowmere-server  node + dist-server/ — the authority
+#
+#   main    -> :main    + :latest
+#   develop -> :develop
+#
+# Every push also gets an immutable :sha-<short> tag, which is what you roll
+# back to; the branch tags move. **The two images are tagged from the same
+# commit and are meant to be deployed together** — the wire protocol is versioned
+# (`PROTOCOL_VERSION`), and a client one version off is refused at the handshake
+# with a message saying so, which is a legible failure but still a failure.
+#
+# `target:` is not optional here and was the bug: without it Docker builds the
+# LAST stage in the Dockerfile, which is `web`, so the server image was never
+# built and there was nothing to deploy the match server FROM.
+#
+# Requires two repository secrets:
+#   DOCKERHUB_USERNAME — the Docker Hub account (idrum4316)
+#   DOCKERHUB_TOKEN    — a Docker Hub access token with Read & Write scope,
+#                        NOT the account password
+name: Docker
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# A second push to the same branch makes the in-flight build irrelevant — the
+# tags it would move are about to be moved again. The group covers the whole
+# run, so both images in a superseded build are cancelled together and a branch
+# can never end up with a new web image beside a stale server one.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    strategy:
+      # Both images or neither: a web build that succeeded while the server
+      # build failed is a deployment that half-updates.
+      fail-fast: true
+      matrix:
+        include:
+          - target: web
+            image: idrum4316/hollowmere
+          - target: server
+            image: idrum4316/hollowmere-server
+
+    name: ${{ matrix.target }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # `npm ci` is the slow layer and the lockfile rarely moves, so the
+          # cache is worth more here than the ~1 min the build itself takes.
+          #
+          # Scoped per target because the two legs run concurrently and a shared
+          # `mode=max` scope has them writing the same cache manifest. The price
+          # is that the `build` stage — which both runtime stages copy from — is
+          # cached twice; it is the same bytes and it is not worth a serialised
+          # pipeline to save.
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}

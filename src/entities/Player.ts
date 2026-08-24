@@ -1,0 +1,1796 @@
+/**
+ * Player.ts — Player controller: movement/sprint/crouch/jump physics,
+ * health/regen, weapon state (fire/reload/spread), gunfeel dressing (muzzle
+ * flash mesh, ejected brass), and the first-person viewmodel wiring.
+ * Owns: the player Combatant, and the ViewModel hanging off the camera.
+ * The carried weapon is a resolved `WeaponSetup`, never CONFIG read at the
+ * use site: damage, rate, magazine, spread, range and the recoil multipliers
+ * all come off it, so swapping guns is one assignment in `setWeapon`.
+ * TWO weapons are carried — the kit's primary and the sidearm everyone has —
+ * and each keeps its own magazine in a `Holster` while it is slung, which is
+ * the whole point of the second slot: there is no reserve ammunition in this
+ * game, so a swap buys you a loaded weapon in a third of a second where a
+ * reload costs one and a half. `swapWeapon` starts the gesture and
+ * `completeSwap` is the one place the hands change, partway through it and
+ * behind the bottom of the frame. Nothing fires while it is in flight.
+ * Invariants: probeGround and step-up ray tests filter metadata.solid === true.
+ * `position` is the FEET, as `Combatant` requires, and is NOT `root.position`
+ * — the capsule's centre, half a body higher. Anything wanting the middle of
+ * the body wants `center`. The three exported points (`position`, `center`,
+ * `eyePos`) are derived in `syncCombatant` and are the only ones anything
+ * outside this file may read.
+ * Crouch moves `eyePos` AND `center` on one blend — the eye is the camera, the
+ * LOS target and the bots' aim point at once, so lowering it without lowering
+ * the hit sphere makes crouching a liability rather than cover.
+ * Health regenerates after CONFIG.player.regenDelay — with 8 hostile bots and
+ * no medics this is load-bearing, not decoration. The player has no world body
+ * mesh at all: the camera is inside the head, so the only thing on screen is
+ * the viewmodel (and the blob shadow ShadowSystem draws underfoot). The flash
+ * mesh and casing pool are player-only visuals (bots get neither — see
+ * CONFIG.gunfeel), and the flash must join VIEWMODEL_GROUP with the rifle it
+ * hangs off. Damage flows out via the onDamaged callback wired in Game.
+ * The RECOIL VECTOR is built here (`recoilKick`) and nowhere else: every number
+ * in it is the weapon's or the body's, and Game only wires the result to the
+ * camera. The horizontal is drawn ONCE per shot into `kickDrift`, read by the
+ * aim, by the viewmodel's lean and by the view punch — a second draw anywhere
+ * would have the weapon leaning one way while the muzzle walked the other.
+ * `stringed` is the single test both string-shaped terms share
+ * (`firstShotMult` and `recoil.pattern`); splitting them hands the DMR and the
+ * pistol a 20% climb discount for firing at their own rate limit.
+ * The viewmodel's kick spring is stepped in CLOSED FORM, not integrated: at
+ * 6 Hz semi-implicit Euler makes the peak a function of the frame rate (0.08 at
+ * 30 fps against 0.78 at 120). CameraSystem.land's 2 Hz is inside where Euler
+ * holds and is deliberately not the same code.
+ * Footfalls are read off the CAMERA's bob phase, never a step timer of their
+ * own — the sound has to land on the dip you can see — and leave here as
+ * PlayerEvents rather than as a sound: this file owns no audio.
+ * Grenades are a count, a cooldown and a clock here and nothing else — the
+ * thrown body belongs to GrenadeSystem, which is Game's. The clock is what
+ * makes the throw a gesture rather than an event: `beginThrow` starts it,
+ * `throwReleaseDue` reports the frame the hand reaches full extension, and
+ * only then does Game ask the pool to carry a grenade and `spendGrenade` book
+ * it. The count is still debited last, for the reason it always was — the pool
+ * may refuse, and a count spent on a grenade that never arrives is worse than
+ * one not thrown.
+ */
+import {
+  Mesh,
+  MeshBuilder,
+  type Node,
+  Ray,
+  Scene,
+  TransformNode,
+  Vector3,
+} from "@babylonjs/core";
+import { CONFIG } from "../config";
+import { SOLID_ONLY } from "../world/solid";
+import { CelMaterialFactory } from "../shaders/CelShader";
+import type { CameraSystem } from "../core/CameraSystem";
+import type { InputManager } from "../core/InputManager";
+import type { FinishId } from "./finishes";
+import type { SightId } from "./sights";
+import {
+  DEFAULT_WEAPON,
+  SIDEARM,
+  weaponSetup,
+  type PrimaryWeaponId,
+  type ReportVoice,
+  type WeaponId,
+  type WeaponSetup,
+} from "./weapons";
+import { ViewModel, VIEWMODEL_GROUP, type ViewModelParams } from "./ViewModel";
+import { TerrainField } from "../world/TerrainField";
+import type { Combatant, Team } from "./Combatant";
+import type { ShotOptions } from "../systems/CombatSystem";
+
+/**
+ * One weapon the player is carrying: what it is, and the magazine that stays
+ * with it while it is slung.
+ *
+ * A holster rather than a bare id because the ammunition is the whole reason
+ * the second slot is worth having: a weapon put away half-empty comes back
+ * half-empty, so swapping is a way to keep shooting rather than a way to
+ * refill. There is no reserve pool in this game — a reload always fills the
+ * magazine — so if a swap handed back a full one the sidearm would be a free
+ * reload and nothing else would ever be reloaded at all.
+ */
+interface Holster {
+  setup: WeaponSetup;
+  /** Rounds left in this weapon's magazine, carried across a swap. */
+  ammo: number;
+}
+
+/** A weapon picked up with a full magazine. */
+function holster(id: WeaponId): Holster {
+  const setup = weaponSetup(id);
+  return { setup, ammo: setup.magSize };
+}
+
+/**
+ * The two slots, by index — which is not an implementation detail: it is
+ * exactly what the `1` and `2` keys name, so the number on the key and the
+ * number here are the same fact and there is no table in between them to
+ * disagree.
+ */
+export const PRIMARY_SLOT = 0;
+export const SIDEARM_SLOT = 1;
+
+/** Run-scoped stat modifiers granted by loot. */
+export interface PlayerMods {
+  damageMult: number;
+  speedMult: number;
+  maxHpBonus: number;
+  magBonus: number;
+}
+
+/** One live brass case: world-space ballistic, despawned on `t` expiry. */
+interface Casing {
+  mesh: Mesh;
+  vel: Vector3;
+  spin: number;
+  t: number;
+}
+
+/** Scratch for the eject direction — no allocation per shot. */
+const _casingDir = new Vector3();
+
+/**
+ * Bob phase of the first of the two footfalls in a stride.
+ *
+ * The camera's vertical bob is `sin(bobPhase * 2)`, so its two dips per cycle
+ * — the moments the head is lowest — are at 3pi/4 and 7pi/4. That is where a
+ * foot is taking the weight, so that is where the sound goes. Deriving it from
+ * the phase rather than running a step timer is the same rule the viewmodel
+ * follows: two things fed the same drive stay together, and a step heard off
+ * the beat of the dip you can see is worse than no step at all.
+ */
+const FOOTFALL_PHASE = (3 * Math.PI) / 4;
+
+/**
+ * Whether the bob phase passed a footfall this frame. Phase wraps at 2pi and
+ * only ever advances, so this measures forward distance to each of the two
+ * marks and asks whether the frame's advance covered it.
+ */
+function crossedFootfall(prev: number, next: number): boolean {
+  const tau = Math.PI * 2;
+  const advance = (next - prev + tau) % tau;
+  if (advance <= 0) return false;
+  const first = (FOOTFALL_PHASE - prev + tau) % tau;
+  const second = (FOOTFALL_PHASE + Math.PI - prev + tau) % tau;
+  return (first > 0 && first <= advance) || (second > 0 && second <= advance);
+}
+
+/**
+ * What happened to the player this frame that something outside it has to
+ * react to. Returned from `update` and reused between frames — Game reads it
+ * immediately and keeps nothing.
+ */
+export interface PlayerEvents {
+  jumped: boolean;
+  /** Loudness 0..1 of a foot going down this frame; 0 if none did. */
+  footstep: number;
+  /** Impact speed (m/s) of a landing this frame; 0 if the player didn't. */
+  landed: number;
+}
+
+/**
+ * Player pawn: movement (walk/jump/gravity) with Babylon collision sliding,
+ * weapon state (ammo/reload/fire cooldown), and the smoothed signals that
+ * drive the first-person weapon (movement, sprint, reload, turn rate, kick).
+ *
+ * The invisible root capsule stays the physics collider. In first person the
+ * pawn has no visible body — the camera sits at its eye — so the only meshes
+ * it owns are the viewmodel's, the muzzle flash and the brass.
+ */
+export class Player implements Combatant {
+  root: Mesh;
+  /** Which side the player fights for. Set by Game when a round starts. */
+  team: Team = 0;
+  /**
+   * FEET, as `Combatant` requires — NOT `root.position`, which is the collider
+   * capsule's centre and sits `groundY` above them.
+   *
+   * The distinction is invisible offline, where nothing outside this file reads
+   * the `y` at all, and it is the whole ballgame over a wire: the server and
+   * every other client take a combatant's `position.y` as the ground under it
+   * and build the body, the centre and the eye up from there. Handed a capsule
+   * centre they build all three half a body too high — the remote body floats,
+   * its hit spheres float with it, and the movement validator asks whether
+   * there is room for a player standing 0.9 m in the air, which is how a door
+   * lintel becomes a wall. Kept in sync beside `center` and `eyePos`.
+   */
+  readonly position = new Vector3();
+  /** Body centre and eye line, kept in sync each frame for hitscan and LOS. */
+  readonly center = new Vector3();
+  readonly eyePos = new Vector3();
+  readonly hitRadius = CONFIG.player.hitRadius;
+  /**
+   * Wired by Game. Bots damage the player straight through `CombatSystem`, so
+   * this is how the flash, the sound, and the death handling still happen.
+   */
+  onDamaged: (amount: number, died: boolean, from?: Vector3) => void = () => {};
+  /** The rifle and hands on screen; the only visible thing the player owns. */
+  private view: ViewModel;
+  /** Whether the viewmodel is hidden (menu, deploy screen, editor). */
+  private bodyHidden = true;
+  /**
+   * Whether the weapon is on the loadout screen's turntable. Its own flag
+   * rather than a case of `bodyHidden`: every state the kit screen covers has
+   * the gun put away, and showing it there must not mean the player is
+   * holding it.
+   */
+  private inspecting = false;
+
+  // Smoothed inputs for the viewmodel pose.
+  private moveBlend = 0;
+  private airBlend = 0;
+  private reloadBlend = 0;
+  private sprintBlend = 0;
+  /** Smoothed camera yaw/pitch rates (rad/s): the weapon trails both. */
+  private turnRate = 0;
+  private pitchRate = 0;
+  private prevYaw = 0;
+  private prevPitch = 0;
+  /** Last frame's bob phase, for the footfall crossing test. */
+  private prevBobPhase = 0;
+  /** This frame's outgoing events; rewritten each update, never reallocated. */
+  private readonly events: PlayerEvents = { jumped: false, footstep: 0, landed: 0 };
+
+  health: number = CONFIG.player.maxHealth;
+  alive = true;
+  grounded = true;
+  /**
+   * Grenades left this life. Refilled by `fullReset` and by nothing else —
+   * there is no resupply, so two a life is the whole economy.
+   */
+  grenades: number = CONFIG.grenade.carried;
+
+  /**
+   * The two things the player carries: the kit's primary, and the sidearm
+   * everybody has. Both are resolved `WeaponSetup`s, so everything about how a
+   * gun behaves is read off the carried one rather than from CONFIG at the use
+   * site — which is what makes "the player is holding the pistol now" a single
+   * reassignment of `carried`.
+   */
+  private readonly slots: Holster[] = [holster(DEFAULT_WEAPON), holster(SIDEARM)];
+  /** Which of `slots` is in the hands. The index IS what `1`/`2` name. */
+  private slot = PRIMARY_SLOT;
+  /**
+   * Wired by Game: the weapon in the player's hands changed. The camera zooms,
+   * slows and blends by whatever is being carried, and the HUD names it, so
+   * both have to be told — and a swap happens mid-round where `applyLoadout`
+   * cannot reach.
+   */
+  onCarryChanged: () => void = () => {};
+  /**
+   * Wired by Game: a reload gesture has just begun.
+   *
+   * `startReload` is the only thing that begins one, and it is reached two ways
+   * — the reload key, and `tryShot` firing the last round in the magazine — so
+   * a caller that wanted to react to a reload had to catch both and would go on
+   * having to catch the next one. The sound is hung off this for that reason,
+   * and in a networked round so is the announcement that lets fifteen other
+   * players hear it: an unannounced reload is a cue the whole match loses, and
+   * the auto-reload is exactly the case a call site would forget.
+   *
+   * The counterpart of `Bot.onReload`, which `BattleSystem` wires for the same
+   * cue on every bot in the pool.
+   */
+  onReload: () => void = () => {};
+  /**
+   * Seconds into the swap gesture, or -1 when neither hand is busy. Counts UP
+   * like the throw's clock and for the same reason: there is an event in the
+   * middle of it (the weapons changing places) and "how long ago" is the only
+   * thing that says which side of it we are on.
+   */
+  private swapT = -1;
+  /** How long this particular swap takes — the INCOMING weapon's draw time. */
+  private swapTime = 0;
+  /** Whether the weapons have yet to change places in this gesture. */
+  private swapPending = false;
+  /** The slot this swap ends on. Read once, by `completeSwap`. */
+  private swapTo = PRIMARY_SLOT;
+  reloading = false;
+  /** True while the sprint key is held and the player is actually running. */
+  sprinting = false;
+  /** True while crouch is asked for (held or latched) and not sprinting. */
+  crouching = false;
+  /**
+   * Eased 0..1 stance blend. Drives the eye height, the hit sphere's centre,
+   * the move speed, the spread and the bob together — one number, so the
+   * transition reads as a single motion the way ADS does.
+   */
+  private crouchBlend = 0;
+  /**
+   * That blend, for the one thing outside this class that needs the eased
+   * number rather than the `crouching` intent: the stand-in body `DeathCam`
+   * stands up has to be posed in the stance the eye and the hit sphere were
+   * actually in, and both of those ride this. The boolean would round a body
+   * caught a third of the way into a crouch to a full one — half a metre of
+   * pop on the frame of death, on the one body the camera is about to spend
+   * four seconds pointing at.
+   */
+  get stance(): number {
+    return this.crouchBlend;
+  }
+  /** Counts down from `regenDelay` after each hit; regen resumes at zero. */
+  private regenLockT = 0;
+  private reloadT = 0;
+  /**
+   * 0..1 through the reload, and it FREEZES rather than resetting when one
+   * ends. The viewmodel plays the whole gesture off this (see
+   * `CONFIG.viewmodel.reload`), so a reload cancelled at a third of the way
+   * through has to leave the phase at a third: `reloadBlend` is what eases the
+   * weapon back out of the pose, and a phase that snapped to 1 underneath it
+   * would take the pose off in a single frame instead. Reset by
+   * `startReload`, which is the only thing that begins a gesture.
+   */
+  private reloadPhase = 1;
+  private fireCooldown = 0;
+  /**
+   * Whether the trigger has been down since before the last thing it asked
+   * for. A semi-automatic weapon needs a release between pulls, and this is
+   * the only state that remembers one — `InputManager.fire` is held state and
+   * has no idea what it was last used for.
+   */
+  private triggerHeld = false;
+  /**
+   * Rounds still owed by the burst in flight, or 0 when there is none.
+   *
+   * This is the whole of what makes a burst a burst rather than three quick
+   * shots: the trigger has already said everything it is going to say, so the
+   * remaining rounds leave on the weapon's clock and a release cannot stop
+   * them. It is therefore also the one piece of firing state that has to be
+   * ABANDONED rather than allowed to run out — see the guards in `tryShot`,
+   * which drop it on anything that takes the weapon away.
+   */
+  private burstLeft = 0;
+  private velY = 0;
+  /** Seconds until the arm is ready to throw another grenade. */
+  private throwCooldown = 0;
+  /**
+   * Seconds since the throw was asked for, or -1 when the arm is idle. The
+   * clock the whole gesture runs on: the viewmodel poses the arm from it and
+   * `throwReleaseDue` reports the one frame it crosses `throw.windup`, which
+   * is when the grenade actually leaves.
+   */
+  private throwT = -1;
+  /** Whether this throw's grenade is still in the hand. */
+  private throwPending = false;
+  /** Extra spread accumulated by sustained fire; bleeds off when not firing. */
+  private spreadBloom = 0;
+  /**
+   * Rounds fired in the current string, and seconds since the last one.
+   *
+   * Together they answer one question — is the next round a FIRST round? —
+   * which is what `recoil.firstShotMult` is applied to. They live here beside
+   * `spreadBloom` because they have exactly its lifecycle: raised by a shot,
+   * bled off by time, and dropped by anything that takes the weapon away.
+   *
+   * `sinceShot` starts at the reset window rather than at 0 so the very first
+   * round of a life is a first shot. It is a plain time integral compared
+   * against a time threshold, so nothing here varies with the frame rate.
+   */
+  private stringShots = 0;
+  // Annotated, not inferred: `CONFIG` is `as const`, so the initialiser's type
+  // is the literal 0.35 and every later assignment fails to compile.
+  private sinceShot: number = CONFIG.recoil.stringResetTime;
+  /**
+   * How hard the player is currently being shot at, 0..1. Raised by every
+   * round that cracks past and bled off by time.
+   *
+   * It reaches exactly one thing — the aimed hold sway, through the drive
+   * `update` already pushes at the camera — and that restraint is the design.
+   * Suppression that blurs or desaturates the screen is a mechanic that takes
+   * INFORMATION away from a player who is already losing, and it is the first
+   * thing anyone points at when this feature is disliked. An aimed weapon
+   * getting less steady while rounds go past is the same pressure made out of
+   * something the player can answer: break the sightline, or crouch, which
+   * `aimSway.crouchMult` already rewards.
+   *
+   * Hip fire is untouched for free, because the sway itself rides the ADS
+   * blend. `CONFIG.player.suppressSwayMult` at 0 disables the whole feature.
+   */
+  private suppression = 0;
+  /**
+   * The weapon punch on the viewmodel: a damped spring, not a fading level.
+   *
+   * `kickDisp` is how far the weapon is displaced along its kick axes, 1 being
+   * a single round's peak at the shipped spring numbers (`CONFIG.recoil.kick`
+   * derives that peak and says so). A shot adds VELOCITY rather than setting a
+   * displacement, which is what gives the motion a rise, an overshoot past the
+   * carry and a settle — and what makes a second round arriving on a weapon
+   * that has not come home add to what is already there instead of restarting
+   * it. The same arrangement, and the same argument, as `CameraSystem.land`.
+   *
+   * `kickDrift` is the SIGNED lateral of the round that last fired, -1..+1: the
+   * same number the aim kick's horizontal is built from, kept so the model can
+   * lean the way the muzzle actually walked. One shot's worth — it is replaced,
+   * never accumulated, because the pose it feeds is about the last round.
+   *
+   * This system owns the spring and `ViewModel` reads it, the split the bob
+   * phase and the landing dip already document: two integrators on one impact
+   * drift apart and the weapon swims against the view.
+   */
+  private kickDisp = 0;
+  private kickVel = 0;
+  /** Public because `Game` throws the view punch the same way (`addPunch`). */
+  kickDrift = 0;
+  /** Muzzle flash star: shown for `gunfeel.flashTime` after each shot. */
+  private flashRoot!: TransformNode;
+  private flashT = 0;
+  /** Ejected brass pool; a case is live while its `t > 0`. */
+  private casings: Casing[] = [];
+  /** Scratch for casing integration — no per-frame allocation. */
+  private readonly casingStep = new Vector3();
+  /**
+   * Scratch for the camera-relative movement basis. Two, because the vector
+   * being built and the one being added into it are live at the same moment.
+   */
+  private readonly moveScratch = new Vector3();
+  private readonly basisScratch = new Vector3();
+  /**
+   * The pose parameters handed to `ViewModel.update`, filled in place each
+   * frame. See the fill site in `animate` for why it is not a literal.
+   */
+  private readonly viewParams: ViewModelParams = {
+    adsBlend: 0,
+    moveBlend: 0,
+    sprintBlend: 0,
+    reloadBlend: 0,
+    reloadPhase: 0,
+    reloading: false,
+    swapBlend: 0,
+    throwTime: -1,
+    kick: 0,
+    kickDrift: 0,
+    kickWeight: 0,
+    turnRate: 0,
+    pitchRate: 0,
+    bobPhase: 0,
+    velY: 0,
+    landDip: 0,
+  };
+
+  mods: PlayerMods = { damageMult: 1, speedMult: 1, maxHpBonus: 0, magBonus: 0 };
+
+  private readonly groundY = CONFIG.player.height / 2;
+  /**
+   * The surface height `probeGround` found under the feet this frame — the
+   * floor the body is standing on, or falling toward.
+   *
+   * Public because it is the answer to a question more than one thing asks,
+   * and the asking is expensive: the probe is a whole-scene ray pick, so a
+   * second caller casting its own identical ray doubles the most expensive
+   * piece of per-frame CPU in the game. `ShadowSystem.updateBlobs` is that
+   * caller and now reads this instead. Written every `update`, so anything
+   * reading it must run after Player in the frame — everything in
+   * `updateGameplay`'s tail does.
+   */
+  floorY = 0;
+  /** Reused so the per-frame ground probe allocates nothing. */
+  private readonly probeRay = new Ray(new Vector3(), new Vector3(0, -1, 0), 1);
+  private scene: Scene;
+  /** The map's floor, for the probe's miss case. Flat until a map is built. */
+  private terrain: TerrainField = new TerrainField();
+
+  constructor(scene: Scene, mats: CelMaterialFactory, camera: Node) {
+    const p = CONFIG.player;
+    this.scene = scene;
+
+    // Invisible collider capsule — physics only, never rendered.
+    this.root = MeshBuilder.CreateCapsule(
+      "player",
+      { height: p.height, radius: p.radius },
+      scene,
+    );
+    this.root.position = new Vector3(0, this.groundY, 0);
+    this.root.isVisible = false;
+    this.root.ellipsoid = new Vector3(p.radius, p.height / 2 - 0.05, p.radius);
+
+    // The weapon hangs off the camera, not off this capsule: in first person
+    // the rifle you see is a viewmodel, posed in camera space.
+    this.view = new ViewModel(scene, mats, camera);
+
+    // --- gunfeel dressing: muzzle flash star + brass pool (player only) ---
+    // The flash is three crossed emissive petals at the muzzle; per shot it
+    // gets a random roll and scale so no two shots strobe identically.
+    this.flashRoot = new TransformNode("player_muzzleFlash", scene);
+    // The viewmodel's own muzzle node, not the carried model's: the model can
+    // be switched off under a loadout change and the flash must not go with it.
+    this.flashRoot.parent = this.view.muzzle;
+    this.flashRoot.setEnabled(false);
+    const flashMat = mats.getEmissive("#ffd9a0");
+    for (let i = 0; i < 3; i++) {
+      const petal = MeshBuilder.CreatePlane(
+        `player_flashPetal${i}`,
+        { width: 0.34, height: 0.15, sideOrientation: Mesh.DOUBLESIDE },
+        scene,
+      );
+      petal.parent = this.flashRoot;
+      petal.rotation.y = Math.PI / 2; // length runs along the barrel
+      petal.rotation.z = (i * Math.PI) / 3;
+      petal.position.z = 0.14;
+      petal.material = flashMat;
+      petal.metadata = { noOutline: true };
+      petal.isPickable = false;
+      // The flash lives on the viewmodel, so it has to be drawn in the same
+      // depth-cleared pass — left in the world group it would be hidden
+      // behind the very barrel it sits on.
+      petal.renderingGroupId = VIEWMODEL_GROUP;
+      petal.alwaysSelectAsActiveMesh = true;
+    }
+
+    const casingMat = mats.get("#b99b4e");
+    for (let i = 0; i < CONFIG.gunfeel.casingPool; i++) {
+      const m = MeshBuilder.CreateBox(
+        `player_casing${i}`,
+        { width: 0.016, height: 0.016, depth: 0.05 },
+        scene,
+      );
+      m.material = casingMat;
+      m.isPickable = false;
+      m.isVisible = false;
+      this.casings.push({ mesh: m, vel: new Vector3(), spin: 0, t: 0 });
+    }
+    // Brass is thrown into the WORLD, not onto the camera, so it stays in the
+    // ordinary rendering group and is occluded by geometry like anything else.
+
+    this.applyVisibility();
+    // `position`, `center` and `eyePos` are read by things that run before the
+    // player has ever been placed — the shadow focus and the carried lamp are
+    // both live under the menu — so they start correct rather than at origin.
+    this.syncCombatant();
+  }
+
+  /** Whatever is in the hands right now. Everything weapon-shaped reads this. */
+  private get weapon(): WeaponSetup {
+    return this.carried.setup;
+  }
+
+  private get carried(): Holster {
+    return this.slots[this.slot];
+  }
+
+  /**
+   * Rounds in the magazine of the weapon being held. An accessor onto the
+   * holster rather than a field of its own: two slots each keep their own
+   * count, and a mirrored copy here is a second source of truth that a swap
+   * would have to remember to keep in step.
+   */
+  get ammo(): number {
+    return this.carried.ammo;
+  }
+
+  set ammo(rounds: number) {
+    this.carried.ammo = rounds;
+  }
+
+  /** Which weapon is in the hands — for the camera's fit and the HUD's caption. */
+  get carriedWeapon(): WeaponId {
+    return this.weapon.id;
+  }
+
+  /**
+   * The optic actually being looked through, which is not always the one the
+   * kit fitted — the sidearm carries its own. Read by Game and pushed at the
+   * camera, which must agree with the viewmodel's aimed pose about it.
+   */
+  get carriedSight(): SightId {
+    return this.view.carriedSight;
+  }
+
+  /**
+   * The slot that is NOT in the hands: the weapon a swap would bring up, and
+   * the magazine it kept while it was down.
+   *
+   * Nothing about the weapon being fired depends on it. It exists for the
+   * HUD's stowed row, because the second slot is the one part of the kit a
+   * player can carry a whole round without discovering — the viewmodel shows
+   * one weapon, the ammunition readout counts one magazine, and a slung pistol
+   * with eight rounds in it is only ever announced by the key that draws it.
+   */
+  private get slung(): Holster {
+    return this.slots[this.slot === PRIMARY_SLOT ? SIDEARM_SLOT : PRIMARY_SLOT];
+  }
+
+  get slungWeapon(): WeaponId {
+    return this.slung.setup.id;
+  }
+
+  /**
+   * Which slot it is, which is also which key names it — the digit is
+   * `slot + 1`, and that is the same one fact `drawSlot` and `1`/`2` share.
+   */
+  get slungSlot(): number {
+    return this.slot === PRIMARY_SLOT ? SIDEARM_SLOT : PRIMARY_SLOT;
+  }
+
+  get slungAmmo(): number {
+    return this.slung.ammo;
+  }
+
+  /** The same expression as `magSize`, so both counts are read one way. */
+  get slungMagSize(): number {
+    return this.slung.setup.magSize + this.mods.magBonus;
+  }
+
+  /** True while a swap is in flight: the weapon is down and nothing can fire. */
+  get swapping(): boolean {
+    return this.swapT >= 0;
+  }
+
+  get maxHealth(): number {
+    return CONFIG.player.maxHealth + this.mods.maxHpBonus;
+  }
+
+  get magSize(): number {
+    return this.weapon.magSize + this.mods.magBonus;
+  }
+
+  get damage(): number {
+    return this.weapon.damage * this.mods.damageMult;
+  }
+
+  /**
+   * The carried weapon's fall-off, as the object `CombatSystem.fire` takes.
+   *
+   * One object, filled in on read rather than rebuilt: a fresh literal per
+   * round is exactly the per-shot allocation the effect pools exist to avoid,
+   * and a field cached on a carry change is a thing to forget on the next one
+   * — the weapon, the mods and the magazine all change from different places.
+   * Deriving it here cannot go stale and costs three writes.
+   *
+   * `mods.damageMult` scales the far end as well as the near one, or a damage
+   * buff would quietly stop applying at range.
+   */
+  get shotOptions(): ShotOptions {
+    const o = this.shotOpts;
+    o.damageFar = this.weapon.damageFar * this.mods.damageMult;
+    o.falloffNear = this.weapon.falloffNear;
+    o.falloffFar = this.weapon.falloffFar;
+    return o;
+  }
+
+  /**
+   * `headMult` is set once and never cleared: the head zone is the PLAYER's,
+   * and this object is the only place in the game that asks for it. Bots fire
+   * through `BOT_SHOT`, which omits the field, so their rounds never test the
+   * sphere at all — see the header of `CombatSystem`.
+   */
+  private readonly shotOpts: ShotOptions = {
+    damageFar: 0,
+    falloffNear: 0,
+    falloffFar: 0,
+    headMult: CONFIG.combat.headshotMult,
+  };
+
+  /** Where a round from the carried weapon stops (m). */
+  get range(): number {
+    return this.weapon.range;
+  }
+
+  /**
+   * The whole of `recoil.firstShotMult`, resolved here so the call site reads
+   * one number: what the round about to leave multiplies its kick by.
+   *
+   * **It is 1 on a weapon that is a string of one**, and that exclusion is the
+   * feature rather than an exception to it. The multiplier is about the
+   * difference between a settled weapon and one mid-burst; on the DMR and the
+   * pistol every shot is a first shot, so it would not be texture at all —
+   * just a flat 60% recoil increase wearing feel's clothing, and on the DMR's
+   * 2.2 multiplier that is 6.0 deg on every deliberate scoped round. Their
+   * `recoilMult` already carries the punch a single shot is supposed to have.
+   *
+   * The carbine is `semiAuto` too and is deliberately included: `burst > 1`
+   * means one pull is three rounds that climb as one motion, which is exactly
+   * the thing that has a first round in it.
+   */
+  private get recoilRamp(): number {
+    if (!this.stringed) return 1;
+    return this.stringShots === 1 ? CONFIG.recoil.firstShotMult : 1;
+  }
+
+  /**
+   * Whether the carried weapon HAS a string — whether there is such a thing as
+   * being in the middle of a cycle on it. `!semiAuto` is a held trigger and
+   * `burst > 1` is one pull that climbs as a single motion; a weapon that is
+   * neither is the DMR or the pistol, where the trigger comes up between every
+   * round and every round is a first round.
+   *
+   * **Both string-shaped terms share this test**, and they have to. Applied to
+   * a string of one, `firstShotMult` is a flat 60% increase and `pattern`'s
+   * taper is a flat 20% DECREASE — and the decrease is the worse of the two,
+   * because both weapons' fire rates sit just inside `stringResetTime` (the
+   * DMR's 0.333 s against 0.35) and so only a player firing them as fast as the
+   * weapon allows would collect it. That is a discount for spamming a precision
+   * weapon, which is the opposite of what the rate limit is for. Excluded, they
+   * fire shot one every time: full climb, minimum drift, nothing to learn and
+   * nothing to game.
+   */
+  private get stringed(): boolean {
+    const w = this.weapon;
+    return !w.semiAuto || w.burst > 1;
+  }
+
+  /**
+   * The aim kick owed by the round `tryShot` has just fired, for `Game` to hand
+   * the camera. Call it exactly once per successful shot and no other time: it
+   * reads `stringShots` and `kickDrift`, both of which belong to that round.
+   *
+   * **It lives here because every number in it is the WEAPON's**, and
+   * `docs/weapons.md` has always said the recoil multipliers reach nothing but
+   * `Player`. They used to reach `Game`, which assembled the vector out of
+   * three getters and a random draw — so the weapon's kick was described in one
+   * file and built in another, and the horizontal was drawn a second time from
+   * the one the viewmodel needed. One draw, in `tryShot`, read by both.
+   *
+   * Five things scale it and they are deliberately separate questions: how hard
+   * the weapon kicks (`recoilMult`), whether this is a first round
+   * (`recoilRamp`), how far into a string it is (`pattern`), whether the weapon
+   * is braced against a shoulder (`adsMult`), and what the body under it is
+   * doing (`crouchMult`/`moveMult`/`airMult`).
+   */
+  /**
+   * How much of the carried weapon's kick reaches the MODEL, as opposed to the
+   * aim. A compression of `recoilMult`, and the compression is the point: 2.2
+   * is a defensible thing to do to an aim measured in fractions of a degree and
+   * an indefensible thing to do to a pose measured in centimetres, which is why
+   * the model used to ignore the weapon entirely rather than read this. At
+   * `kick.compress` 0.6 the rifle is 1.00, the DMR 1.61 and the SMG 0.70.
+   */
+  private get kickWeight(): number {
+    return Math.pow(this.weapon.recoilMult, CONFIG.recoil.kick.compress);
+  }
+
+  recoilKick(adsBlend: number): { pitch: number; yaw: number } {
+    const r = CONFIG.recoil;
+    const pat = r.pattern;
+    // How far into the string this round is, 0 on the first and 1 once the
+    // pattern has settled. `stringShots` was raised by the shot this is for, so
+    // round one reads exactly 0 and both envelopes are at their opening value.
+    // A weapon with no string is pinned there — see `stringed`, which is also
+    // what excludes those weapons from `firstShotMult`.
+    const into =
+      !this.stringed || pat.patternShots <= 1
+        ? 0
+        : Math.min(1, (this.stringShots - 1) / (pat.patternShots - 1));
+    // The stance. ADS is a blend because the sight comes up over time; crouch
+    // and movement are blends for the same reason and are already eased by
+    // `update`. Airborne is the one step function here — feet are on the ground
+    // or they are not — but it rides `airBlend` so a hop does not switch the
+    // weapon's character on and off between two frames.
+    const stance =
+      (1 - (1 - r.adsMult) * adsBlend) *
+      (1 - (1 - r.crouchMult) * this.crouchBlend) *
+      (1 + (r.moveMult - 1) * this.moveBlend) *
+      (1 + (r.airMult - 1) * this.airBlend);
+    const kickMult = stance * this.weapon.recoilMult * this.recoilRamp;
+    return {
+      pitch: r.pitchPerShot * (1 + (pat.pitchSettled - 1) * into) * kickMult,
+      yaw:
+        this.kickDrift *
+        r.yawPerShot *
+        (pat.yawStart + (1 - pat.yawStart) * into) *
+        kickMult,
+    };
+  }
+
+  /**
+   * A round cracked past. Wired from `CombatSystem.onNearMiss` through Game,
+   * the same event that already feeds `BattleSystem.suppress` for bots — so
+   * the player is suppressed by exactly the thing that suppresses everyone
+   * else, rather than by a rule of their own.
+   *
+   * It saturates rather than accumulating: being shot at by three men is
+   * being shot at, and a value that could climb with the volume of fire would
+   * make a machine gun a hard counter to aiming at all.
+   */
+  suppress(): void {
+    this.suppression = Math.min(
+      1,
+      this.suppression + CONFIG.player.suppressPerMiss,
+    );
+  }
+
+  /** How the shot and the reload are voiced — see `ReportVoice`. */
+  get report(): ReportVoice {
+    return this.weapon.report;
+  }
+
+  get reloadTime(): number {
+    return this.weapon.reloadTime;
+  }
+
+  /** The weapon's caption on the HUD's magazine strip. */
+  get weaponName(): string {
+    return this.weapon.short;
+  }
+
+  /**
+   * Picks up a primary. The magazine comes with it — this is only reachable
+   * from the menu and the deploy screen, where the gun is already put away,
+   * so there is no half-spent magazine to carry across and no reload to
+   * interrupt.
+   *
+   * It puts the primary back IN THE HANDS as well, for the same reason: the
+   * kit screen shows the weapon that was just chosen, and closing it holding
+   * the pistol instead would be a screen that lied about what it did.
+   */
+  setWeapon(id: PrimaryWeaponId): void {
+    this.slots[PRIMARY_SLOT] = holster(id);
+    this.slot = PRIMARY_SLOT;
+    this.swapT = -1;
+    this.swapPending = false;
+    this.reloading = false;
+    this.reloadT = 0;
+    this.fireCooldown = 0;
+    this.burstLeft = 0;
+    this.spreadBloom = 0;
+    // The string belongs to the WEAPON, not to the finger — the same split
+    // `burstLeft` and `triggerHeld` already draw. A gun that has just come
+    // into your hands has not been fired, whatever the last one was doing.
+    this.stringShots = 0;
+    this.sinceShot = CONFIG.recoil.stringResetTime;
+    this.ammo = this.magSize;
+    this.view.setWeapon(id);
+    this.onCarryChanged();
+  }
+
+  /**
+   * Puts a named slot in the hands — what the `1` and `2` keys ask for.
+   *
+   * The gesture takes the INCOMING weapon's `drawTime` and nothing can be
+   * fired for the whole of it — that wait is the cost the sidearm's whole case
+   * is measured against, and the reason its own figure is the smallest here.
+   * The weapons change places partway through (`viewmodel.swap.switchFrac`),
+   * behind the bottom of the frame, so the model never pops.
+   *
+   * Asking for the weapon already carried is refused rather than replayed: the
+   * animation would cost half a second and change nothing, and a key pressed
+   * twice in a firefight must not be the reason a shot was late. So is a swap
+   * while a grenade is in the air, because that is the same off hand.
+   *
+   * A reload in progress is CANCELLED rather than remembered: the magazine
+   * being worked on is going away with the weapon, and a reload that resumed
+   * on a gun the player has since put down would finish invisibly.
+   */
+  drawSlot(slot: number): boolean {
+    if (slot < 0 || slot >= this.slots.length) return false;
+    if (!this.alive || this.swapping || this.throwT >= 0) return false;
+    // `slot` is where the gesture ENDS, so a request for the weapon already up
+    // is a no-op — including one arriving while the last swap is still landing,
+    // which is why this tests the destination rather than the current hands.
+    if (slot === this.slot) return false;
+    this.swapT = 0;
+    this.swapTime = this.slots[slot].setup.drawTime;
+    this.swapPending = true;
+    this.swapTo = slot;
+    this.reloading = false;
+    this.reloadT = 0;
+    return true;
+  }
+
+  /** The other weapon, whichever it is — what the wheel and pad Y ask for. */
+  swapWeapon(): boolean {
+    return this.drawSlot(this.slot === PRIMARY_SLOT ? SIDEARM_SLOT : PRIMARY_SLOT);
+  }
+
+  /** How long the swap now in flight takes, for the sound that has to fit it. */
+  get swapTotal(): number {
+    return this.swapTime;
+  }
+
+  /**
+   * The weapons changing places, at the point in the gesture where neither is
+   * on screen. The fire cooldown and the spread bloom are dropped with the
+   * weapon that earned them — they are facts about a gun now on a sling, and
+   * the swap has already cost more time than either.
+   *
+   * The trigger latch deliberately is NOT: it belongs to the finger rather
+   * than to the weapon, so a trigger held down across a swap still has to be
+   * released before the new weapon fires, exactly as it does across a reload.
+   * A burst is the weapon's, not the finger's, and goes with it.
+   */
+  private completeSwap(): void {
+    this.slot = this.swapTo;
+    this.swapPending = false;
+    this.fireCooldown = 0;
+    this.burstLeft = 0;
+    this.spreadBloom = 0;
+    // Explicitly, not by relying on the clock: the sidearm's `drawTime` is
+    // 0.34 s against a 0.35 s reset window, so a swap to it would otherwise
+    // land one hundredth of a second inside the old weapon's string and hand
+    // the pistol's first round the rifle's settled kick.
+    this.stringShots = 0;
+    this.sinceShot = CONFIG.recoil.stringResetTime;
+    this.view.setWeapon(this.weapon.id);
+    this.onCarryChanged();
+  }
+
+  /**
+   * Fits an optic. Pure pass-through to the viewmodel — the sight changes
+   * what the player can see, never what the weapon does, so nothing about
+   * damage, spread or recoil is downstream of this.
+   */
+  setSight(id: SightId): void {
+    this.view.setSight(id);
+  }
+
+  /**
+   * Paints a weapon. The purest pass-through on this class — a finish changes
+   * what the gun looks like and nothing else at all, so unlike the optic it is
+   * not even upstream of what the player can SEE.
+   */
+  setFinish(weapon: PrimaryWeaponId, id: FinishId): void {
+    this.view.setFinish(weapon, id);
+  }
+
+  /**
+   * Bullet spread half-angle for the next shot, including recoil bloom.
+   * Bloom is damped in ADS by the same factor as the aim kick — a braced
+   * stance would otherwise lose far more precision than it has to give.
+   *
+   * Crouching scales the whole result, bloom included: it is a steadier
+   * platform, not a second set of sights, so it helps most where the sights
+   * help least (hip fire, deep into a burst).
+   */
+  spread(adsBlend: number): number {
+    const w = this.weapon;
+    const base = w.spreadHip + (w.spreadAds - w.spreadHip) * adsBlend;
+    const bloomMult = 1 - (1 - CONFIG.recoil.adsMult) * adsBlend;
+    const crouchMult =
+      1 - (1 - CONFIG.player.crouchSpreadMult) * this.crouchBlend;
+    return (base + this.spreadBloom * bloomMult) * crouchMult;
+  }
+
+  /** Full reset at the start of a run (permadeath — mods are cleared too). */
+  fullReset(): void {
+    this.regenLockT = 0;
+    this.mods = { damageMult: 1, speedMult: 1, maxHpBonus: 0, magBonus: 0 };
+    this.health = this.maxHealth;
+    this.alive = true;
+    // A fresh body comes up with the primary in its hands and both magazines
+    // full. The slung weapon has to be refilled explicitly: only the carried
+    // one is reachable through `startReload`, so a sidearm left empty last
+    // life would otherwise be drawn empty in this one.
+    this.swapT = -1;
+    this.swapPending = false;
+    this.slot = PRIMARY_SLOT;
+    this.view.setWeapon(this.weapon.id);
+    for (const h of this.slots) h.ammo = h.setup.magSize;
+    this.ammo = this.magSize;
+    this.grenades = CONFIG.grenade.carried;
+    this.throwCooldown = 0;
+    this.throwT = -1;
+    this.throwPending = false;
+    this.reloading = false;
+    this.fireCooldown = 0;
+    // A body that died mid-burst does not owe the rounds: `dying` stops
+    // `tryShot` being called at all, so the guards that would abandon it never
+    // run and the remainder would leave out of the next life's first frame.
+    this.burstLeft = 0;
+    this.velY = 0;
+    this.spreadBloom = 0;
+    this.stringShots = 0;
+    this.sinceShot = CONFIG.recoil.stringResetTime;
+    // A fresh body is not under fire, whatever the last one died in.
+    this.suppression = 0;
+    // The spring's velocity as well as its displacement: a body that died with
+    // the weapon still travelling would otherwise come back carrying the last
+    // life's kick and finish it in the new one's first frames.
+    this.kickDisp = 0;
+    this.kickVel = 0;
+    this.kickDrift = 0;
+    this.flashT = 0;
+    this.flashRoot.setEnabled(false);
+    for (const c of this.casings) {
+      c.t = 0;
+      c.mesh.isVisible = false;
+    }
+    this.crouching = false;
+    this.crouchBlend = 0;
+    this.moveBlend = 0;
+    this.airBlend = 0;
+    this.reloadBlend = 0;
+    this.sprintBlend = 0;
+    this.turnRate = 0;
+    this.pitchRate = 0;
+    this.prevBobPhase = 0;
+    this.view.reset();
+    // The hands changed — a life that ended holding the pistol starts the next
+    // one holding the primary — so the camera's fit and the HUD's caption both
+    // owe a repush.
+    this.onCarryChanged();
+  }
+
+  placeAt(spawn: Vector3): void {
+    this.root.position.copyFrom(spawn);
+    this.root.position.y = spawn.y + this.groundY;
+    this.velY = 0;
+    this.grounded = true;
+    // The spawn IS a standable surface, so it is the right answer until the
+    // first probe runs — without this the blob shadow spends the frame the
+    // player appears on at whatever floor the last life ended over.
+    this.floorY = spawn.y;
+    this.syncCombatant();
+  }
+
+  /**
+   * Moves the body to `feet` without touching what it is doing.
+   *
+   * This is the small end of a networked correction, and the difference from
+   * `placeAt` is the point: a spawn is a body arriving on solid ground, so it
+   * lands stopped and grounded, while a correction is the authority disagreeing
+   * with a body that is still living its life. Zeroing `velY` here would eat a
+   * jump or a fall, and every accepted step near a wall would strip the arc off
+   * a player who is merely brushing it.
+   *
+   * `feet`, like everything else that crosses the wire — see `position`.
+   */
+  nudgeTo(feet: Vector3): void {
+    this.root.position.set(feet.x, feet.y + this.groundY, feet.z);
+    this.syncCombatant();
+  }
+
+  /**
+   * Height of the surface underfoot: the first `solid` thing the downward ray
+   * finds, or the terrain field where it finds nothing at all.
+   *
+   * The ray starts a step-height above the feet so a rise reads as a step to
+   * walk up rather than a wall to stop against, and runs `groundProbeLength`
+   * from there — a roof over your head is behind the origin and never tested.
+   * A miss means it outran the floor (off the map, or a drop deeper than it
+   * reaches), and `TerrainField` is the floor's own answer for that case.
+   *
+   * **THIS IS THE MOST EXPENSIVE THING THE GAME DOES PER FRAME, AND IT IS
+   * DELIBERATELY STILL HERE.** `scene.pickWithRay` with a `solid` predicate
+   * walks all ~1,800 meshes in the scene and ray-tests all ~820 colliders to
+   * find the floor. Measured, it is the largest single piece of the game's own
+   * per-frame JS by a factor of five — about 2.4 ms — and it scales with how
+   * big the map is rather than with anything on screen. `Player.floorY` exists
+   * because of that: a second caller casting an identical ray would double it.
+   *
+   * The replacement is WRITTEN and NOT SWITCHED ON. `ObstacleField.groundAt` is
+   * the bucketed analytic answer, and turning it on is one line — this call
+   * `max`'d against `terrain.surfaceAt`, since the heightfield is the one floor
+   * with no box standing in for it, and `surfaceAt` rather than the `heightAt`
+   * used below because what the ray hits is a clone of the floor's own VISUAL
+   * vertices, which the smooth field disagrees with by centimetres on every
+   * twisted quad.
+   *
+   * What stops it is measured too. Over the 51,000 positions the nav graph says
+   * a body can stand on, the two agree on 99.8% and disagree on 116 running
+   * BOTH ways: at the valley rim the analytic matches the nav graph and the ray
+   * is the one that finds nothing, while along one Greyfen fence line the
+   * analytic reports a surface half a metre up that the ray passes straight
+   * through. That second class is the blocker, and it is a property of the
+   * primitive rather than of this call site — `topFaceAtLocalZ` extrapolates a
+   * box's top-face PLANE across a footprint that `halfDepth` inflates for
+   * anything pitched, so a tall thin box tilted a few degrees claims ground
+   * beside itself. `NavGrid` can live with that (a phantom node is a routing
+   * nuisance); a ground probe cannot, because it puts the player standing on
+   * air. It waits on a footprint test bounded by the box's REAL extent.
+   * `FINDINGS.md` 6 carries the numbers; `groundAt`'s own header carries the
+   * fix.
+   */
+  private probeGround(): number {
+    const p = CONFIG.player;
+    const pos = this.root.position;
+    this.probeRay.origin.set(
+      pos.x,
+      pos.y - this.groundY + p.stepHeight + 0.05,
+      pos.z,
+    );
+    this.probeRay.length = p.groundProbeLength;
+    const hit = this.scene.pickWithRay(this.probeRay, SOLID_ONLY);
+    if (hit?.hit && hit.pickedPoint) return hit.pickedPoint.y;
+    // A miss means the probe outran the floor — off the map, or falling into
+    // something deeper than it reaches. The terrain field is the floor's own
+    // answer, and on a flat map it is the 0 this used to return outright.
+    return this.terrain.heightAt(pos.x, pos.z);
+  }
+
+  /** Points the ground probe's miss case at the current map's floor. */
+  setTerrain(terrain: TerrainField): void {
+    this.terrain = terrain;
+  }
+
+
+  update(dt: number, input: InputManager, cam: CameraSystem): PlayerEvents {
+    const p = CONFIG.player;
+    const ev = this.events;
+    ev.jumped = false;
+    ev.footstep = 0;
+    ev.landed = 0;
+
+    // --- stance ---
+    // Sprinting is mutually exclusive with aiming, and blocks firing (see
+    // `tryShot`) — otherwise it is strictly better than walking.
+    //
+    // Sprint outranks crouch, and is resolved first so the two can't argue:
+    // asking to run stands the player up. Crouch is deliberately NOT gated on
+    // `grounded` — jumping out of it would pop the camera half a metre at the
+    // worst possible moment, and the collider capsule never changes size, so
+    // there is nothing underfoot to reconcile.
+    //
+    // **A LATCH IS SPENT BY WHAT OVERRIDES IT, NEVER SUSPENDED BY IT**, and
+    // this is where that is enforced, because this is the only place that
+    // knows whether a sprint is actually happening: `input.sprint` is the ask,
+    // and the stick, the optic and the reload are what decide. So the two
+    // edges below are the state changing, not a button.
+    //
+    // Starting to run spends a latched crouch, or the run would drop the
+    // player back into a crouch they asked for before it. Ending a run spends
+    // the sprint latch, or a pad player who stops for a corner starts running
+    // again the moment they touch the stick — the L3 press is a sprint, not a
+    // standing intention to sprint whenever moving. Both are one-way: neither
+    // clears an input that is *held*, so Shift and Ctrl still mean what they
+    // say for as long as they are down, and a held Ctrl still comes back after
+    // a sprint because the player never stopped asking for it.
+    const wasSprinting = this.sprinting;
+    this.sprinting =
+      input.sprint && input.moveY > 0.1 && cam.adsBlend < 0.4 && !this.reloading;
+    if (this.sprinting && !wasSprinting) input.clearCrouchToggle();
+    if (wasSprinting && !this.sprinting) input.clearSprintToggle();
+    this.crouching = input.crouch && !this.sprinting;
+    this.crouchBlend +=
+      ((this.crouching ? 1 : 0) - this.crouchBlend) *
+      Math.min(1, dt * p.crouchBlendSpeed);
+
+    // --- horizontal movement (camera-relative), with collision sliding ---
+    const speed =
+      p.moveSpeed *
+      this.mods.speedMult *
+      (cam.adsBlend > 0.4 ? p.adsMoveMult : 1) *
+      (this.sprinting ? p.sprintMult : 1) *
+      (1 - (1 - p.crouchMoveMult) * this.crouchBlend);
+    // Built in scratch: this used to be six `Vector3`s a frame — two basis
+    // vectors, two scales, an add and the final scale — on the one path that
+    // runs on every frame of every round.
+    const move = cam.flatForwardToRef(this.moveScratch).scaleInPlace(input.moveY);
+    move.addInPlace(cam.flatRightToRef(this.basisScratch).scaleInPlace(input.moveX));
+    const moveInput = Math.min(1, move.length());
+    if (move.lengthSquared() > 1) move.normalize();
+    if (move.lengthSquared() > 0.0001) {
+      this.root.moveWithCollisions(move.scaleInPlace(speed * dt));
+    }
+
+    // --- jump & gravity, against whatever surface is actually underfoot ---
+    if (input.jumpPressed && this.grounded) {
+      this.velY = p.jumpVelocity;
+      this.grounded = false;
+      ev.jumped = true;
+    }
+    this.velY -= p.gravity * dt;
+    this.root.position.y += this.velY * dt;
+
+    // Hollowmere has terraces, embankments, ramps and a hayloft, so the floor
+    // is wherever the probe finds it rather than a fixed plane. Ground rising
+    // under the feet is always snapped up to (a step, not a wall).
+    //
+    // The tolerance BELOW the feet is grounded-only, and that is load-bearing.
+    // It exists so walking off a kerb or down a slope keeps the feet on the
+    // floor instead of starting a fall every stride. Extend it to a body in
+    // the air — which is what testing `velY <= 0` did — and a jump lands a
+    // full `stepHeight` early, teleporting the last 0.6 m in a single frame:
+    // over a third of a jump's own height gone between two frames, with no
+    // impact where the eye can see one. That is what read as a dropped frame.
+    // Airborne, the landing is where the feet actually meet the floor, and the
+    // only thing the snap resolves is one frame's worth of overlap.
+    const floorY = this.probeGround();
+    this.floorY = floorY;
+    const foot = this.root.position.y - this.groundY;
+    const stick = this.grounded ? p.stepHeight : 0;
+    if (foot <= floorY + stick) {
+      // Report the arrival before the snap eats the speed it arrived at. Only
+      // a fall counts: walking on level ground touches down every frame at
+      // roughly one frame of gravity, which is well under `landMinSpeed`.
+      if (!this.grounded) {
+        ev.landed = Math.max(0, -this.velY);
+        // The eye absorbs it. Pushed straight at the camera rather than routed
+        // through `PlayerEvents` for the same reason the bob drive is: the
+        // camera owns the spring, this owns the movement that excites it, and
+        // Game's copy would arrive a frame late. The sound still goes out as
+        // an event, because audio is Game's.
+        cam.land(ev.landed);
+      }
+      this.root.position.y = floorY + this.groundY;
+      this.velY = 0;
+      this.grounded = true;
+    } else {
+      this.grounded = false;
+    }
+
+    // --- the capsule still faces the camera yaw ---
+    // Nothing renders off it any more, but the blob shadow underfoot is
+    // oriented from it, and a capsule that never turned would drag an
+    // unturning oval around with the player.
+    this.root.rotation.y = cam.yaw;
+
+    // --- health regeneration ---
+    // Stay hurt for a few seconds after the last hit, then heal back to full.
+    // Without this, sixteen hostile bots and no medic turns the round into a
+    // respawn queue for anyone who wins a fight at half health.
+    this.regenLockT = Math.max(0, this.regenLockT - dt);
+    if (this.regenLockT <= 0 && this.health < this.maxHealth) {
+      this.health = Math.min(this.maxHealth, this.health + p.regenRate * dt);
+    }
+
+    // --- weapon timers ---
+    this.fireCooldown -= dt;
+    this.throwCooldown -= dt;
+    // The throw clock counts UP, and it is parked rather than clamped: the
+    // gesture has a release in the middle of it, so "how long ago" is the only
+    // thing that says where in it the arm is. It is stopped once the arm is
+    // home so a long round cannot walk it off into imprecision.
+    if (this.throwT >= 0) {
+      const th = CONFIG.viewmodel.throw;
+      this.throwT += dt;
+      if (this.throwT > th.windup + th.recover) this.throwT = -1;
+    }
+    // The swap runs on the same shape of clock, and the weapons change places
+    // partway through it rather than at either end — see `completeSwap`.
+    if (this.swapT >= 0) {
+      this.swapT += dt;
+      if (
+        this.swapPending &&
+        this.swapT >= this.swapTime * CONFIG.viewmodel.swap.switchFrac
+      ) {
+        this.completeSwap();
+      }
+      if (this.swapT >= this.swapTime) this.swapT = -1;
+    }
+    this.spreadBloom = Math.max(
+      0,
+      this.spreadBloom - CONFIG.recoil.bloomRecovery * dt,
+    );
+    // The string's clock. It is only ever read against `stringResetTime`, so
+    // it is left to run rather than clamped — no shot in the game cares how
+    // long ago the last one was beyond "longer than the window".
+    this.sinceShot += dt;
+    this.suppression = Math.max(
+      0,
+      this.suppression - CONFIG.player.suppressDecay * dt,
+    );
+    if (this.reloading) {
+      this.reloadT -= dt;
+      this.reloadPhase = Math.min(1, 1 - this.reloadT / this.weapon.reloadTime);
+      if (this.reloadT <= 0) {
+        this.reloading = false;
+        this.ammo = this.magSize;
+      }
+    }
+
+    this.syncCombatant();
+    this.updateGunfeel(dt);
+    this.animate(dt, moveInput, cam);
+    return ev;
+  }
+
+  /**
+   * Smooths this frame's movement/look into the signals the viewmodel poses
+   * from, and pushes them. All the easing stays here so the weapon's response
+   * is frame-rate independent, the same reason it lived here for the body.
+   *
+   * The bob phase comes back off the camera rather than being integrated
+   * again here: two integrators on the same drive would drift apart and the
+   * weapon would swim against the view. Player runs before the camera in
+   * Game's frame order, so the phase read is one frame old — 16 ms of an
+   * ~0.8 s cycle, against a visible desync if the weapon kept its own.
+   */
+  private animate(dt: number, moveInput: number, cam: CameraSystem): void {
+    // Smoothed blend weights so poses ease in/out instead of snapping.
+    const ease = (current: number, target: number, rate: number) =>
+      current + (target - current) * Math.min(1, dt * rate);
+    this.moveBlend = ease(this.moveBlend, moveInput, 10);
+    this.airBlend = ease(this.airBlend, this.grounded ? 0 : 1, 9);
+    this.reloadBlend = ease(this.reloadBlend, this.reloading ? 1 : 0, 12);
+    this.sprintBlend = ease(this.sprintBlend, this.sprinting ? 1 : 0, 6);
+    // Camera yaw/pitch rates, wrapped and smoothed: the weapon trails both.
+    let dYaw = cam.yaw - this.prevYaw;
+    this.prevYaw = cam.yaw;
+    if (dYaw > Math.PI) dYaw -= Math.PI * 2;
+    else if (dYaw < -Math.PI) dYaw += Math.PI * 2;
+    this.turnRate = ease(this.turnRate, dt > 0 ? dYaw / dt : 0, 8);
+    const dPitch = cam.pitch - this.prevPitch;
+    this.prevPitch = cam.pitch;
+    this.pitchRate = ease(this.pitchRate, dt > 0 ? dPitch / dt : 0, 8);
+
+    // --- weapon punch: a damped spring settling back to the carry ---
+    // **Stepped in CLOSED FORM, not integrated**, and that is not a flourish.
+    // The landing absorb next door can afford semi-implicit Euler because it is
+    // a 2 Hz spring; this one is 6 Hz, and at 30 fps `omega * dt` is 1.26,
+    // which is far outside where that integrator is accurate. Measured on the
+    // Euler version: one round peaked at 0.08 of its intended travel at 30 fps,
+    // 0.54 at 60 and 0.78 at 120 — the recoil visibly growing with the frame
+    // rate, the exact failure `recoil.recovery`'s true exponential exists to
+    // avoid one field over. The analytic step is right at any dt and costs two
+    // trigonometric calls on the frames a weapon is actually moving.
+    //
+    // Parking it exactly is not tidiness either. The kick is an additive offset
+    // on the viewmodel's pose, so a spring left ringing at a micrometre puts
+    // all twenty-six sight pictures a micrometre off the camera axis forever,
+    // and the alignment check in VERIFYING.md reads that as a geometry bug.
+    if (this.kickDisp !== 0 || this.kickVel !== 0) {
+      const k = CONFIG.recoil.kick;
+      const wn = Math.PI * 2 * k.frequency;
+      const wd = wn * Math.sqrt(1 - k.damping * k.damping);
+      const e = Math.exp(-k.damping * wn * dt);
+      const c = Math.cos(wd * dt);
+      const s = Math.sin(wd * dt);
+      const x = this.kickDisp;
+      const v = this.kickVel;
+      this.kickDisp = e * (x * c + ((v + k.damping * wn * x) / wd) * s);
+      this.kickVel =
+        e * (v * c - ((wn * wn * x + k.damping * wn * v) / wd) * s);
+      if (Math.abs(this.kickDisp) < 1e-4 && Math.abs(this.kickVel) < 1e-3) {
+        this.kickDisp = 0;
+        this.kickVel = 0;
+      }
+    }
+
+    // The camera bobs on the same drive the weapon does; it owns the phase.
+    // The drive is movement *intent*, not speed, so the crouch damping has to
+    // be applied here — a half-speed shuffle covering ground at a full jog's
+    // stride tempo is the tell.
+    cam.setBobDrive(
+      this.moveBlend *
+        (1 - (1 - CONFIG.camera.bobCrouchMult) * this.crouchBlend),
+      this.grounded,
+    );
+
+    // How steady the stance is, for the camera's hold sway. Off the same two
+    // blends the bob uses and for the same reason — movement owns them — but
+    // it is a multiplier around 1 rather than a 0..1 drive: a player standing
+    // still still breathes. Crouching is the one thing that buys steadiness,
+    // which is what makes it worth doing for a shot rather than only for cover.
+    const sw = CONFIG.camera.aimSway;
+    cam.setSwayDrive(
+      (1 + (sw.moveMult - 1) * this.moveBlend) *
+        (1 - (1 - sw.crouchMult) * this.crouchBlend) *
+        (1 + CONFIG.player.suppressSwayMult * this.suppression),
+    );
+
+    // --- footfalls, off that same phase ---
+    // The phase read here is a frame behind (the camera has not run yet), the
+    // same 16 ms the viewmodel's bob is behind, and for the same reason.
+    //
+    // Amplitude, cadence and loudness all come off one drive: the bob stalls
+    // when the player stops, so the steps stop with it, and the crouch damping
+    // above slows the cadence while `crouchMult` below takes the level down.
+    // Sprinting does NOT speed this up — the drive is movement *intent*, which
+    // is already 1 at a walk — so a sprint reads as heavier boots at the same
+    // pace rather than a faster gait.
+    const f = CONFIG.audio.footstep;
+    if (this.grounded && this.moveBlend > 0.15) {
+      if (crossedFootfall(this.prevBobPhase, cam.bobPhase)) {
+        this.events.footstep =
+          (f.walkVol + (f.sprintVol - f.walkVol) * this.sprintBlend) *
+          (1 - (1 - f.crouchMult) * this.crouchBlend) *
+          this.moveBlend;
+      }
+    }
+    this.prevBobPhase = cam.bobPhase;
+    // Filled in place rather than rebuilt. `ViewModel.update` is documented as
+    // allocating nothing and holds to it across 200 lines; the sixteen-field
+    // literal that CALLED it was the one allocation on the path. ViewModel
+    // reads the fields and keeps no reference, so one object outlives the call.
+    const v = this.viewParams;
+    v.adsBlend = cam.adsBlend;
+    v.moveBlend = this.moveBlend * (1 - this.airBlend);
+    v.sprintBlend = this.sprintBlend;
+    v.reloadBlend = this.reloadBlend;
+    v.reloadPhase = this.reloadProgress;
+    v.reloading = this.reloading;
+    v.swapBlend = this.swapWeight();
+    v.throwTime = this.throwT;
+    v.kick = this.kickDisp;
+    v.kickDrift = this.kickDrift;
+    v.kickWeight = this.kickWeight;
+    v.turnRate = this.turnRate;
+    v.pitchRate = this.pitchRate;
+    v.bobPhase = cam.bobPhase;
+    v.velY = this.velY;
+    v.landDip = cam.landDip;
+    this.view.update(dt, v);
+  }
+
+  /**
+   * How far the weapon is out of frame for the swap: 0 in the hands, 1 fully
+   * away, peaking where the two change places.
+   *
+   * A triangle rather than a blend toward a state, and it is the same curve
+   * either way round — one weapon rides it down and the next rides it back up,
+   * which is why the peak has to be exactly where `completeSwap` fires. The
+   * easing is the viewmodel's; this is only the clock read as a weight.
+   */
+  private swapWeight(): number {
+    if (this.swapT < 0) return 0;
+    const switchT = this.swapTime * CONFIG.viewmodel.swap.switchFrac;
+    return this.swapT <= switchT
+      ? this.swapT / switchT
+      : Math.max(0, 1 - (this.swapT - switchT) / (this.swapTime - switchT));
+  }
+
+  /**
+   * Consumes one shot if the weapon can fire right now.
+   * Auto-reloads when the magazine empties.
+   *
+   * Takes the trigger rather than being called behind it, because a
+   * semi-automatic weapon has to see the trigger come UP: the release is what
+   * arms the next pull, and a caller that only speaks when the trigger is
+   * down can never report one. Every path through here therefore ends with
+   * the latch matching the trigger.
+   *
+   * The latch is set before the guards below, not after a successful shot, so
+   * holding the trigger through a reload or a sprint does not fire the instant
+   * either ends — which is exactly what a trigger that was never released
+   * should do.
+   *
+   * A burst already in flight does not ask the trigger anything. It is the
+   * one case where a released trigger still fires a round: the pull spent all
+   * three, and a burst that stopped halfway because the finger came up would
+   * be a fire mode nobody could aim, since the release lands mid-burst every
+   * time it is tapped. The latch is still maintained underneath, so the pull
+   * after it needs a genuine release exactly as the first one did.
+   */
+  tryShot(trigger: boolean): boolean {
+    const wasHeld = this.triggerHeld;
+    this.triggerHeld = trigger;
+    // What a pull is allowed to ask for: a fresh round (or burst) needs the
+    // trigger down, and needs it to have come up first on a weapon that says
+    // so. A burst owed rounds asks on its own behalf.
+    if (this.burstLeft <= 0) {
+      if (!trigger) return false;
+      if (this.weapon.semiAuto && wasHeld) return false;
+    }
+    // The cooldown is the weapon's clock and is NOT a refusal: mid-burst it is
+    // the gap between the rounds, so it must be tested before anything that
+    // would abandon the burst below.
+    if (this.fireCooldown > 0) return false;
+    if (
+      !this.alive ||
+      this.reloading ||
+      this.sprinting ||
+      this.swapping ||
+      this.ammo <= 0
+    ) {
+      // Whatever the burst had left is gone with the weapon, the magazine or
+      // the body. Remembering it would fire the remainder out of a reload or
+      // out of a fresh spawn, seconds after the pull that asked for it.
+      this.burstLeft = 0;
+      return false;
+    }
+    const r = CONFIG.recoil;
+    this.ammo -= 1;
+    // A burst opens on its first round and closes on its last: within it the
+    // gap is the weapon's rate, and at the end it is `burstCycle` — the dwell
+    // that is the entire cost of the mode.
+    if (this.weapon.burst > 1) {
+      if (this.burstLeft <= 0) this.burstLeft = this.weapon.burst;
+      this.burstLeft -= 1;
+      this.fireCooldown =
+        this.burstLeft > 0 ? this.weapon.shotInterval : this.weapon.burstCycle;
+    } else {
+      this.fireCooldown = this.weapon.shotInterval;
+    }
+    // Weapon-side recoil: the spread bloom the next shot inherits, and the
+    // punch the body rides out. The aim kick itself belongs to the camera.
+    // The ceiling takes the weapon's multiplier along with the per-shot term:
+    // a weapon that blooms faster has to be allowed to bloom further, or the
+    // extra rounds per second cost it nothing after the second shot.
+    this.spreadBloom = Math.min(
+      r.maxBloom * this.weapon.bloomMult,
+      this.spreadBloom + r.bloomPerShot * this.weapon.bloomMult,
+    );
+    // A weapon quiet long enough for the spring to settle is firing a first
+    // round again. No reload or ADS reset is needed on top: the shortest
+    // reload here is 1.05 s, so the clock has already done it.
+    if (this.sinceShot >= r.stringResetTime) this.stringShots = 0;
+    this.stringShots += 1;
+    this.sinceShot = 0;
+    // Which way this round goes, drawn ONCE and read by both the aim
+    // (`recoilKick`) and the model (`ViewModel`'s kick). The bias SCALES the
+    // random term and offsets it rather than being added to it, so the total
+    // stays inside -1..+1 whatever the bias is — which is what keeps every
+    // ceiling documented for `maxYaw` true, and makes a bias of 0 bit-for-bit
+    // the symmetric noise this replaced.
+    const bias = this.weapon.yawBias;
+    this.kickDrift = (Math.random() * 2 - 1) * (1 - Math.abs(bias)) + bias;
+    // The weapon takes a velocity, not a displacement: see `kickDisp`. It
+    // ACCUMULATES on a weapon still coming home, which is the whole reason a
+    // held trigger looks different from a string of taps.
+    this.kickVel += r.kick.speed * this.kickWeight;
+    // Muzzle flash: a single-frame-scale strobe with a random roll and scale,
+    // so full-auto reads as flicker rather than one static sprite.
+    const g = CONFIG.gunfeel;
+    this.flashT = g.flashTime;
+    this.flashRoot.setEnabled(true);
+    this.flashRoot.rotation.z = Math.random() * Math.PI;
+    this.flashRoot.scaling.setAll(0.85 + Math.random() * 0.4);
+    this.ejectCasing();
+    if (this.ammo === 0) this.startReload();
+    return true;
+  }
+
+  /**
+   * Whether a grenade could leave the hand right now.
+   *
+   * Sprinting is not a bar: a grenade is an off-hand action and running is
+   * exactly when you want to get one over a wall. Reloading is not either, for
+   * the same reason — the hand that works the magazine is not the hand that
+   * throws.
+   */
+  canThrowGrenade(): boolean {
+    return this.alive && this.grenades > 0 && this.throwCooldown <= 0;
+  }
+
+  /**
+   * Starts the gesture. The arm is booked here and the grenade is not: a throw
+   * takes `throw.windup` to reach the release, and what the pool can carry is
+   * a question about the moment the thing has to exist, not about the moment
+   * the button went down.
+   *
+   * The cooldown is spent up front all the same, or the button would restart
+   * the wind-up under itself every frame it was held.
+   */
+  beginThrow(): boolean {
+    if (!this.canThrowGrenade()) return false;
+    this.throwT = 0;
+    this.throwPending = true;
+    this.throwCooldown = CONFIG.grenade.throwInterval;
+    return true;
+  }
+
+  /**
+   * True on the single frame the hand reaches full extension — the release.
+   * Consumed by the asking, so the caller may throw exactly once per gesture,
+   * and false forever if the player died mid-wind-up (the arm is gone with the
+   * body, and a grenade must not appear where it was).
+   */
+  throwReleaseDue(): boolean {
+    if (!this.throwPending) return false;
+    if (this.throwT < CONFIG.viewmodel.throw.windup) return false;
+    this.throwPending = false;
+    return this.alive;
+  }
+
+  /**
+   * Books the grenade the pool has just agreed to carry. Deliberately separate
+   * from `throwReleaseDue`, and for the same reason it was always separate from
+   * `canThrowGrenade`: a count debited for a grenade that never made it into
+   * the air is the most confusing thing this feature could hand a player. A
+   * refused release costs the arm's cooldown and nothing else.
+   */
+  spendGrenade(): void {
+    this.grenades -= 1;
+  }
+
+  /** Where the throwing hand is, which is where the grenade leaves from. */
+  throwHandWorld(): Vector3 {
+    return this.view.throwHandWorld();
+  }
+
+  /**
+   * Pops one brass case out of the eject port: sideways off the rifle with a
+   * random upward toss and tumble. Pool-starved shots just skip the case.
+   */
+  private ejectCasing(): void {
+    const c = this.casings.find((c) => c.t <= 0);
+    if (!c) return;
+    const g = CONFIG.gunfeel;
+    // The port is on the viewmodel, so this is a camera-space frame resolved
+    // to world: the brass leaves the gun you can see and then falls in the
+    // world, which is exactly where it should end up. The node is the
+    // viewmodel's rather than the model's, so it follows a weapon swap.
+    const port = this.view.ejectPort;
+    c.mesh.position.copyFrom(port.getAbsolutePosition());
+    Vector3.TransformNormalToRef(
+      _casingDir.set(1, 0, -0.2),
+      port.getWorldMatrix(),
+      c.vel,
+    );
+    c.vel.normalize().scaleInPlace(g.casingEject * (0.8 + Math.random() * 0.4));
+    c.vel.y += g.casingUp * (0.7 + Math.random() * 0.6);
+    c.spin = (Math.random() * 2 - 1) * 25;
+    c.mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    c.t = g.casingLife;
+    c.mesh.isVisible = !this.bodyHidden;
+  }
+
+  /**
+   * Advances the flash strobe and the live brass. Cases fall ballistically
+   * and come to rest on the ground plane under the player (an approximation
+   * — they're never more than a toss away) until their lifetime expires.
+   */
+  private updateGunfeel(dt: number): void {
+    if (this.flashT > 0) {
+      this.flashT -= dt;
+      if (this.flashT <= 0) this.flashRoot.setEnabled(false);
+    }
+    const g = CONFIG.gunfeel;
+    const restY = this.root.position.y - this.groundY + 0.02;
+    for (const c of this.casings) {
+      if (c.t <= 0) continue;
+      c.t -= dt;
+      if (c.t <= 0) {
+        c.mesh.isVisible = false;
+        continue;
+      }
+      if (c.vel.y !== 0 || c.mesh.position.y > restY) {
+        c.vel.y -= g.casingGravity * dt;
+        c.mesh.position.addInPlace(
+          this.casingStep.copyFrom(c.vel).scaleInPlace(dt),
+        );
+        if (c.mesh.position.y <= restY && c.vel.y < 0) {
+          c.mesh.position.y = restY;
+          c.vel.setAll(0); // bounced to rest; tumble stops with it
+          c.spin = 0;
+        } else {
+          c.mesh.rotation.x += c.spin * dt;
+          c.mesh.rotation.z += c.spin * 0.7 * dt;
+        }
+      }
+    }
+  }
+
+  startReload(): boolean {
+    // Not during a swap: the magazine being worked would be on a weapon that
+    // is halfway into a holster.
+    if (this.reloading || this.swapping || this.ammo >= this.magSize) return false;
+    this.reloading = true;
+    this.reloadT = this.weapon.reloadTime;
+    this.reloadPhase = 0;
+    // Raised AFTER the state is set, so a handler reading `reloadTime` or
+    // `reloading` sees the gesture that has begun rather than the one before it.
+    this.onReload();
+    return true;
+  }
+
+  /** Where the gesture is, 0..1 — frozen where a cancelled reload left it. */
+  get reloadProgress(): number {
+    return this.reloadPhase;
+  }
+
+  /** World position of the rifle muzzle (tracer origin). */
+  muzzleWorld(): Vector3 {
+    return this.view.muzzleWorld();
+  }
+
+  /** Returns true if this damage killed the player. */
+  /**
+   * Keeps `center`/`eyePos` current; called once per frame from `update`.
+   *
+   * Both ride the crouch blend, and they must ride it together. `eyePos` is
+   * the camera, the line-of-sight target and the point bots aim at all at
+   * once, so dropping it alone would leave the player harder to see and
+   * *easier* to hit — every incoming round aimed at the middle of an unmoved
+   * sphere instead of grazing its top. Moving `center` down by the same half
+   * metre keeps the sphere's top the same 0.05 m above the eye it is when
+   * standing, so the profile shrinks honestly.
+   *
+   * The collider capsule itself is untouched: `moveWithCollisions` is
+   * horizontal-only and the ground probe places the feet, so a shorter body
+   * would buy nothing and would need a stand-up clearance test to be safe.
+   */
+  private syncCombatant(): void {
+    const c = CONFIG.player;
+    const p = this.root.position;
+    const feet = p.y - this.groundY;
+    const centerH =
+      this.groundY + (c.crouchCenterHeight - this.groundY) * this.crouchBlend;
+    const eyeH =
+      CONFIG.camera.eyeHeight +
+      (c.crouchEyeHeight - CONFIG.camera.eyeHeight) * this.crouchBlend;
+    this.position.set(p.x, feet, p.z);
+    this.center.set(p.x, feet + centerH, p.z);
+    this.eyePos.set(p.x, feet + eyeH, p.z);
+  }
+
+  /**
+   * `from` is the shooter's firing origin, forwarded straight back out through
+   * `onDamaged` — the player controller has no use for it, but the HUD's
+   * directional indicator does and this is the only path damage takes.
+   */
+  takeDamage(amount: number, from?: Vector3): boolean {
+    if (!this.alive) return false;
+    this.health = Math.max(0, this.health - amount);
+    this.regenLockT = CONFIG.player.regenDelay;
+    const died = this.health <= 0;
+    if (died) this.alive = false;
+    this.onDamaged(amount, died, from);
+    return died;
+  }
+
+  heal(amount: number): void {
+    this.health = Math.min(this.maxHealth, this.health + amount);
+  }
+
+  /**
+   * The networked half of `takeDamage`: health the authority decided, plus the
+   * regen lock that came with it.
+   *
+   * A multiplayer round assigns health rather than subtracting it, for the
+   * reason `Game.onNetEvent` gives — but the LOCK is the other half of the same
+   * event and the client still has to arm it, because regen is PREDICTED here.
+   * Nothing on the wire carries a health except a hit, so a client that took
+   * the number without the lock healed straight back to full over the next few
+   * seconds off a server that had never healed it, and the lie held until the
+   * next round landed and knocked it back down to what it had always been.
+   *
+   * Everything else a hit does — the vignette, the arc, the flinch — is
+   * `Game`'s and stays there; the callback is deliberately NOT raised, because
+   * the authority already told `Game` what happened and this is only the
+   * bookkeeping that goes with it.
+   */
+  applyServerHealth(health: number): void {
+    this.health = health;
+    this.regenLockT = CONFIG.player.regenDelay;
+  }
+
+  /**
+   * Shows/hides everything the player renders — which in first person is the
+   * viewmodel and its brass, nothing else. Hidden outside gameplay: the menu
+   * and deploy screen sit over a live view of the world, and the editor flies
+   * the same camera the weapon is parented to, so a visible rifle would ride
+   * along in front of it.
+   */
+  setBodyHidden(hidden: boolean): void {
+    this.bodyHidden = hidden;
+    // Putting the gun away and taking it out both end an inspection, which is
+    // what stops a turntable pose surviving into a round — and it is why the
+    // three places that hide the kit screen from underneath (the menu, the
+    // editor, a round starting) owe nothing beyond the call they already make.
+    if (this.inspecting) this.inspectWeapon(false);
+    else this.applyVisibility();
+  }
+
+  /**
+   * Hands the weapon to the loadout screen's turntable, or takes it back.
+   * Pure pass-through apart from the visibility: the pose is the viewmodel's,
+   * and nothing about the weapon's state — magazine, reload, spread — changes
+   * because it is being looked at.
+   */
+  inspectWeapon(on: boolean): void {
+    this.inspecting = on;
+    if (on) this.view.beginInspect();
+    else this.view.endInspect();
+    this.applyVisibility();
+  }
+
+  /**
+   * Turns the inspected weapon and re-poses it — one call per frame from the
+   * loadout state, which is the only place that has a camera standing still
+   * long enough for a turntable to mean anything.
+   */
+  updateInspect(dYaw: number, dPitch: number, fovY: number, aspect: number): void {
+    if (!this.inspecting) return;
+    this.view.spinInspect(dYaw, dPitch);
+    this.view.updateInspect({ fovY, aspect });
+  }
+
+  private applyVisibility(): void {
+    this.view.setVisible(!this.bodyHidden || this.inspecting);
+    // The flash goes out with the weapon, and it has to be ENDED here rather
+    // than left to retire itself. It hangs off the viewmodel's muzzle node but
+    // is not one of the viewmodel's meshes, so the call above does not reach
+    // it, and the strobe that would switch it off is `updateGunfeel` — which
+    // stops being called the moment the body is put away. A death taken inside
+    // the 50 ms of a shot's flash would otherwise freeze the star mid-strobe
+    // and, because it draws in the viewmodel's depth-cleared group, hang it
+    // over the middle of the screen for the whole death cam. It never *starts*
+    // while the weapon is stowed, which is what made this look self-managing;
+    // being stowed part-way through one is the case that was missing.
+    if (this.bodyHidden) {
+      this.flashT = 0;
+      this.flashRoot.setEnabled(false);
+    }
+    // Live brass goes with it. Brass is deliberately NOT part of an
+    // inspection: it is thrown into the world, and the world is not what the
+    // kit screen is showing.
+    for (const c of this.casings) {
+      c.mesh.isVisible = c.t > 0 && !this.bodyHidden;
+    }
+  }
+}

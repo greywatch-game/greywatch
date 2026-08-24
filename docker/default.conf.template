@@ -1,0 +1,180 @@
+# default.conf.template — serves dist/, and proxies the two endpoints that are
+# not static.
+#
+# A TEMPLATE, not a conf: it is copied to /etc/nginx/templates/ and the nginx
+# image's own entrypoint runs `envsubst` over it into /etc/nginx/conf.d/ before
+# starting. That buys `MATCH_SERVER` — where this instance's match server is —
+# without a second image or a hand-edited config on the box.
+#
+# Everything the game needs to be PLAYED is static; `/ws` and `/matches` are the
+# multiplayer match server, and they are the only dynamic things here.
+# Single-player never touches either, so an instance deployed without the server
+# still works: the socket never opens and the lobby says it could not reach one.
+#
+# **That last claim is why the upstream is a VARIABLE.** With a literal
+# `proxy_pass http://match-server:8080`, nginx resolves the name at CONFIG LOAD
+# and exits when it does not resolve — `host not found in upstream
+# "match-server"` — so a web container brought up on its own, which is what a
+# single-player-only deployment is, would not start at all. Through a variable
+# the lookup happens per request instead: the whole static game serves normally
+# and only the two proxied paths answer 502. A named upstream also needs a
+# `resolver`, which is what `14-resolvers.envsh` puts in NGINX_LOCAL_RESOLVERS.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+
+    # Where to look names up, and how long to believe the answer. Docker's
+    # embedded DNS re-points a service name whenever its container is replaced,
+    # so a long-lived cache here outlives the address it holds; ten seconds is
+    # short enough that a `docker compose up -d` on the server is invisible.
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+
+    # The match server, substituted at deploy time and defaulted in the
+    # Dockerfile to the compose service name. Assigned to a variable HERE rather
+    # than written into each `proxy_pass` so both locations cannot disagree.
+    set $match_server "${MATCH_SERVER}";
+
+    # WHO THE BROWSER IS, and this is not optional plumbing — the match server's
+    # per-address socket cap is what it decides.
+    #
+    # There are two proxies in front of the game, not one: an edge proxy
+    # terminates HTTPS for the domain and forwards to this container's published
+    # port on the host's loopback. Docker rewrites the source of that connection,
+    # so `$remote_addr` here is the bridge gateway (measured: 172.20.0.1) for
+    # EVERY player on the box — and `proxy_set_header X-Real-IP $remote_addr`
+    # below would then hand the match server one key for the whole internet, so
+    # sixteen players connect and the seventeenth is refused. The edge proxy's
+    # `X-Forwarded-For` is the only thing in the request that knows better.
+    #
+    # `real_ip_header` moves it into `$remote_addr` itself rather than being read
+    # at each `proxy_pass`, which is what makes the two locations below correct
+    # without either one mentioning it — and puts the right address in the access
+    # log as well. With no edge proxy and no header it does nothing at all, so a
+    # container reached directly still counts its true peer.
+    #
+    # The trusted set is the private space, deliberately the same ranges as
+    # `isLocalPeer` in `server/index.ts`: this port is published on the host's
+    # loopback, so nothing else can reach it, and an untrusted peer's header is
+    # ignored — which is what stops a browser choosing its own bucket.
+    set_real_ip_from 127.0.0.0/8;
+    set_real_ip_from 10.0.0.0/8;
+    set_real_ip_from 172.16.0.0/12;
+    set_real_ip_from 192.168.0.0/16;
+    set_real_ip_from ::1/128;
+    set_real_ip_from fc00::/7;
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive on;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # The bundle is a few hundred KB of JS before compression; Babylon.js
+    # dominates it and gzips well.
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json application/manifest+json image/svg+xml;
+
+    # Vite writes content-hashed filenames into /assets, so a given URL's bytes
+    # never change — cache them for a year.
+    # (`expires 1y` would emit a second, competing Cache-Control header of its
+    # own, so the max-age is written by hand here instead.)
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # index.html is the one unhashed file. It must not be cached, or a deploy
+    # leaves clients loading the previous build's asset URLs.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # The service worker is the app's update mechanism: the browser re-fetches
+    # it to find out whether a new build exists, so a cached copy is a client
+    # that can never learn there is one. (`types { }` empties the map for this
+    # location only, which forces default_type — the whole-server form of that
+    # block would replace the inherited map for every other file too.)
+    location = /sw.js {
+        add_header Cache-Control "no-cache";
+    }
+
+    # The region list: which match servers this deployment offers. Unhashed and
+    # hand-edited on the box — it is what a region being added or drained is
+    # written into — so a cached copy is a client that keeps pointing players at
+    # a server somebody has already taken out. The service worker exempts it for
+    # the same reason; this is the HTTP half of that.
+    location = /regions.json {
+        add_header Cache-Control "no-cache";
+    }
+
+    # nginx's bundled mime.types may predate the web app manifest, and served
+    # as anything else it is ignored — no install prompt, no app.
+    location = /manifest.webmanifest {
+        types { }
+        default_type application/manifest+json;
+        add_header Cache-Control "no-cache";
+    }
+
+    # Install icons are unhashed (a home screen keeps the URL it installed
+    # with), so they get a day rather than a year.
+    location /icons/ {
+        add_header Cache-Control "public, max-age=86400";
+        try_files $uri =404;
+    }
+
+    # The match server. A WebSocket, so the Upgrade and Connection headers have
+    # to be forwarded by hand — without them nginx sends a plain HTTP request
+    # upstream, the handshake fails, and the client sees a socket that opens and
+    # immediately closes with no error worth reading.
+    #
+    # `proxy_read_timeout` is long because a WebSocket is idle by design between
+    # snapshots when a match is empty; the default 60 s would drop a connection
+    # that is perfectly healthy.
+    location /ws {
+        proxy_pass http://$match_server;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        # `$remote_addr` is the browser rather than the edge proxy, because of
+        # the `real_ip` block above. Both headers are written, and written from
+        # the same variable: the server prefers `X-Real-IP` and falls back to the
+        # first `X-Forwarded-For` entry, and a client can prepend to a list — so
+        # the list it sent is replaced here rather than passed through, and the
+        # fallback cannot be aimed either.
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    # The lobby's match list. An ordinary GET, unlike `/ws` above, but it has to
+    # be named here for the same reason: everything not matched by a `location`
+    # falls through to the static root below and comes back as a 404. That
+    # failure is a nasty one to debug, because the lobby works perfectly against
+    # `npm run server` on a dev machine — where the client talks to the match
+    # server directly and nginx is not in the picture at all — and returns an
+    # empty list only once deployed.
+    #
+    # No `proxy_read_timeout` needed: this answers immediately and holds nothing
+    # open. No caching either — the server sends `no-store`, and a lobby served
+    # from a cache shows rooms that filled up minutes ago. The service worker
+    # has to be told the same thing by hand, and is: see `src/pwa/sw.js`.
+    location /matches {
+        proxy_pass http://$match_server;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        # Same pair, same reason, as `/ws` above.
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+
+    # No client-side router, so a missing path is a genuine 404 rather than an
+    # SPA fallback — an asset typo should show up as one, not as the game page.
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}

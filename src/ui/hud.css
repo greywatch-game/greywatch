@@ -1,0 +1,1299 @@
+/**
+ * hud.css — Everything HUD.ts writes markup for: the gameplay chrome (scrim,
+ * killfeed, scoreboard, ticket gauge, flag strip, capture panel, vitals, ammo,
+ * the stowed slot, crosshair, hitmarker, vignette, damage arcs, messages,
+ * toasts, lock hint) and the full-screen overlay screens (menu, round over,
+ * pause).
+ * Owns: the .overlaid / .paused / .editing state rules too — HUD sets those
+ * classes on #hud, so the rules keyed off them live with it even where they
+ * reach an element another screen owns (#hud.paused #deploy).
+ */
+
+/* --- edge scrim ---
+   Gameplay readouts live in the top and bottom bands, and the scene
+   behind them is not reliably dark — snow-lit cobbles under the moon
+   will swallow white text outright. A gradient at each edge buys the
+   contrast without putting a box around anything. */
+#scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.45), transparent 15%),
+    linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent 20%);
+}
+
+/* --- frame-rate readout (a player setting, off by default) ---
+   Top right, in the gap above the killfeed's 104px — the minimap owns
+   the left corner and the ticket gauge the middle. It is an INSTRUMENT
+   rather than chrome, which is why it is deliberately absent from the
+   .overlaid, .paused and .editing lists further down: you want it on the
+   menu, you want it while a round is held, and you especially want it in
+   the editor. `.kitting` is a blanket rule and carves it out by name.
+
+   Above every screen, which is the whole point of it: #overlay (10),
+   #loadout (11) and #settings (12) are later siblings under #hud with
+   z-indices of their own, so without one of its own the readout is
+   painted over by the menu, the pause card and the settings screen —
+   which is to say by every state where it is not simply the round.
+   Being exempt from the .overlaid list buys nothing if a scrim covers
+   it. It stays pointer-events:none (inherited from #hud and never opted
+   out of), because the menu's confirm is a mouse-down ANYWHERE and a
+   readout that claimed events would be a dead patch that silently
+   refuses to start the round.
+
+   Tabular figures and a fixed min-width, so a rate crossing 99 -> 100
+   does not shift the label under it. */
+#hud-fps {
+  position: absolute;
+  z-index: 13;
+  top: 18px;
+  right: 20px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.62);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+#hud-fps span {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+#hud-fps b {
+  text-align: right;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+#hud-fps em {
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.32);
+}
+/* The rate leads; the frame time and the 1% low are what you read once the
+   rate has already told you something is odd, so they are set smaller and
+   dimmer rather than given equal weight. Each number carries a min-width so
+   a field crossing 9 -> 10 or 99 -> 100 does not shuffle the two beside it. */
+#hud-fps .fps-main b { min-width: 34px; font-size: 15px; }
+#hud-fps .fps-main em { font-size: 9px; }
+#hud-fps .fps-sub {
+  color: rgba(255, 255, 255, 0.4);
+}
+#hud-fps .fps-sub b { min-width: 26px; font-size: 11px; }
+#hud-fps .fps-sub em { font-size: 8px; color: rgba(255, 255, 255, 0.24); }
+
+/* --- killfeed ---
+   Flat lines with a colour flag on the outer edge, not bordered boxes:
+   six stacked cards is a wall, six stacked lines is chatter you can
+   ignore until one of them has your name on it. */
+#killfeed {
+  position: absolute;
+  top: 104px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  /* Names arrive as CONFIG.teams entries ("Valeguard"), and mixed case
+     against an all-caps HUD reads as a different piece of software. */
+  text-transform: uppercase;
+}
+.kill {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 9px 4px 14px;
+  border-right: 2px solid rgba(255, 255, 255, 0.28);
+  background: linear-gradient(to right, transparent, rgba(6, 8, 13, 0.72));
+  transition: opacity 0.6s ease-out;
+  animation: killIn 0.18s ease-out;
+}
+.kill.fade { opacity: 0; }
+.kill .k { color: #e6ebf3; }
+.kill .v { color: #9aa3b1; }
+/* The kill glyph as a chamfered chip: it reads as a slot on the line
+   rather than as a piece of punctuation between two names. */
+.kill .x {
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 5px;
+  color: #cfd6e2;
+  background: rgba(255, 255, 255, 0.1);
+  clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px);
+}
+/* Anything the player did or had done to them reads brighter. */
+.kill.mine {
+  border-right-color: var(--mine);
+  background: linear-gradient(to right, transparent, rgba(255, 196, 107, 0.16));
+}
+.kill.mine .k { color: var(--hot); }
+.kill.mine .x { background: rgba(255, 196, 107, 0.25); color: var(--hot); }
+@keyframes killIn {
+  from { opacity: 0; transform: translateX(16px); }
+}
+
+/* --- score feed ---
+   What you were just paid, over the ammunition column and under the
+   killfeed's stretch of the same edge. Right-hand side because that is
+   where the numbers of the HUD already live (ammo, magazine, grenades)
+   and the left is vitals; centre would put it under the crosshair, where
+   `#capture-status` and `#message` already are and where anything that
+   moves is read as something to shoot at.
+
+   Anchored by its BOTTOM edge, so the newest line — appended last, and
+   therefore drawn last — sits still at a fixed height and the older ones
+   ride up off it. A top-anchored stack would slide the line the player is
+   actually reading downward every time another award landed. */
+#scorefeed {
+  position: absolute;
+  right: 34px;
+  bottom: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+.score-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.62);
+  transition: opacity 0.5s ease-out;
+  animation: scoreIn 0.16s ease-out;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+.score-line.fade { opacity: 0; }
+/* The number in the colour the HUD keeps for the player and nothing else,
+   which is what makes a line about YOU rather than about the round — the
+   killfeed's `.mine` tint is the same idea one panel over. */
+.score-line b {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--hot);
+}
+@keyframes scoreIn {
+  from { opacity: 0; transform: translateX(14px); }
+}
+
+/* --- scoreboard (hold Tab) --- */
+#scoreboard {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* Above the DEPLOY SCREEN and below everything else that covers a round.
+     `#hud` is written first and every screen appends itself after, so DOM
+     order alone would put this under a screen it is meant to be read over —
+     and the deploy screen is the one place a player sits and reads it. The
+     number is chosen against the other roots rather than plucked: `#overlay`
+     is 10, the loadout and lobby 11, settings 12. Those are all lids the
+     player asked for, and the board is not pushed under any of them; this
+     only has to beat `#deploy`, which takes the default. */
+  z-index: 9;
+  --cham: 20px;
+  --frame-fill: rgba(6, 8, 13, 0.94);
+  /* Wide enough for the score column on both sides of the panel and the
+     ping column beside it, and no wider: this is inside #hud and so is NOT
+     scaled by --ov-scale (see base.css), which makes the width a promise to
+     the shortest viewport the game runs on rather than a layout preference. */
+  min-width: 700px;
+  padding: 0 0 15px;
+}
+#scoreboard .sb-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 26px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+#scoreboard .sb-mode {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.32em;
+  color: var(--hot);
+}
+#scoreboard .sb-map {
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  color: rgba(255, 255, 255, 0.4);
+}
+#scoreboard .sb-cols,
+#scoreboard .sb-row {
+  display: grid;
+  grid-template-columns: 1fr 190px 74px 74px 74px 74px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 26px;
+}
+#scoreboard .sb-cols {
+  padding-top: 11px;
+  padding-bottom: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.38);
+  text-align: right;
+}
+#scoreboard .sb-row {
+  position: relative;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: right;
+}
+/* A colour flag down the left of the row, the way a team is marked in a
+   real scoreboard — the row itself stays neutral so the numbers read. */
+#scoreboard .sb-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 4px;
+  background: currentColor;
+}
+#scoreboard .sb-row.mine { color: var(--mine); }
+#scoreboard .sb-row.theirs { color: var(--theirs); }
+#scoreboard .sb-row.mine { background: rgba(255, 196, 107, 0.06); }
+#scoreboard .sb-row.theirs { background: rgba(255, 90, 79, 0.06); }
+#scoreboard .sb-name {
+  text-align: left;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+#scoreboard .sb-n { color: #dfe5ee; }
+/* The team's points, in the row's own team colour rather than the neutral
+   the other counts take: it is the column the bodies below are ordered by,
+   and the one number on the panel that is a summary of the whole round. */
+#scoreboard .sb-score { color: currentColor; }
+#scoreboard .sb-tickets {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+#scoreboard .sb-gauge {
+  display: block;
+  width: 108px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  transform: skewX(-20deg);
+}
+#scoreboard .sb-gauge u { display: block; height: 100%; background: currentColor; }
+/* --- the two columns of bodies ---
+   One row per combatant, bots included: the round is 8v8 whoever is driving,
+   so a board that listed only the people in it would be reporting a fraction
+   of the fight. Your side is always the left column — see `setScoreboard`. */
+#scoreboard .sb-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 26px;
+  margin: 12px 26px 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+#scoreboard .sb-col.mine { color: var(--mine); }
+#scoreboard .sb-col.theirs { color: var(--theirs); }
+#scoreboard .sb-prow {
+  display: grid;
+  grid-template-columns: 1fr 52px 34px 34px;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: right;
+  /* The rows are neutral and the team's colour is spent on the heading and on
+     your own line — sixteen coloured rows is a wash of two hues with the one
+     row that matters lost in it. */
+  color: #cfd6e2;
+}
+#scoreboard .sb-pname {
+  text-align: left;
+  letter-spacing: 0.1em;
+  /* A name is up to MAX_NAME_LENGTH characters of somebody else's choosing, so
+     the column clips rather than growing the panel around it. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Points lead the row and kills follow them, so the eye goes down the
+   column the board is sorted by. Tabular figures because it is four digits
+   by the end of a round and a proportional font makes a sorted column look
+   unsorted. */
+#scoreboard .sb-ps {
+  color: #f2f5fa;
+  font-variant-numeric: tabular-nums;
+}
+#scoreboard .sb-pd { color: rgba(255, 255, 255, 0.45); }
+/* The ping column exists only in a match — offline there is no server to be
+   any distance from — so the fourth track is added by a class on the panel
+   rather than sitting empty in every single-player round. */
+#scoreboard.pinged .sb-prow { grid-template-columns: 1fr 52px 34px 34px 46px; }
+#scoreboard .sb-ping {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.45);
+}
+/* Three bands and one of them is silence: a good connection is the ordinary
+   case and shouting it in green would put sixteen coloured numbers on a board
+   whose whole job is that the one bad row stands out. */
+#scoreboard .sb-ping.fair { color: var(--hot); }
+#scoreboard .sb-ping.poor { color: var(--theirs); }
+#scoreboard .sb-ping.none { color: rgba(255, 255, 255, 0.22); }
+#scoreboard .sb-phead {
+  color: inherit;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+#scoreboard .sb-phead .sb-pname { letter-spacing: 0.22em; }
+/* Your own line, in the colour the HUD keeps for you and nothing else. */
+#scoreboard .sb-pyou {
+  color: var(--hot);
+  background: rgba(255, 196, 107, 0.1);
+}
+
+/* --- conquest: the reinforcement gauge ---
+   Two counts with a gauge each, draining away from the centre. The bar
+   is the fraction of the round's starting pool still standing, so "we
+   are losing" is a shape rather than a subtraction. */
+#ticket-bar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#ticket-bar .side {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 168px;
+}
+#ticket-bar .side.mine { justify-content: flex-end; }
+#ticket-bar .tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: rgba(255, 255, 255, 0.55);
+}
+#ticket-bar .n {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+#ticket-bar .side.mine .n { color: var(--mine); }
+#ticket-bar .side.theirs .n { color: var(--theirs); }
+/* Running out is the round ending, so it gets the one animated readout
+   in the top band. */
+#ticket-bar .n.critical { animation: pulse 0.9s ease-in-out infinite; }
+#ticket-bar .gauge { display: flex; gap: 5px; }
+#ticket-bar .track {
+  position: relative;
+  width: 108px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  transform: skewX(-20deg);
+}
+#ticket-bar .track i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  transition: width 0.4s linear;
+}
+/* Both fills are anchored at the centre of the pair, so the two teams
+   meet in the middle at full strength and retreat outward as they bleed. */
+#ticket-bar .track.mine i { right: 0; background: var(--mine); }
+#ticket-bar .track.theirs i { left: 0; background: var(--theirs); }
+
+/* --- conquest: the A..E flag strip ---
+   A hexagon per point, filling from the bottom with the capture meter.
+   `clip-path` clips a border away, so the coloured hull IS the outer
+   element and `.core` is the dark inset that leaves a 2px rim. */
+#flag-strip {
+  position: absolute;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 7px;
+}
+.flag {
+  --hex: polygon(50% 0, 100% 26%, 100% 74%, 50% 100%, 0 74%, 0 26%);
+  position: relative;
+  width: 36px;
+  height: 42px;
+  clip-path: var(--hex);
+  background: var(--neutral);
+}
+.flag.mine { background: var(--mine); }
+.flag.theirs { background: var(--theirs); }
+.flag .core {
+  position: absolute;
+  inset: 2px;
+  clip-path: var(--hex);
+  background: rgba(6, 8, 13, 0.88);
+  overflow: hidden;
+}
+.flag .cap-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  opacity: 0.55;
+  transition: height 0.15s linear;
+}
+.flag .cap-fill.mine { background: var(--mine); }
+.flag .cap-fill.theirs { background: var(--theirs); }
+.flag .id {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #d3d9e2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+.flag.mine .id { color: var(--mine); }
+.flag.theirs .id { color: var(--theirs); }
+/* A contested flag pulses so it reads from the corner of the eye. It has
+   to be `drop-shadow` and not `box-shadow`: the hull is clipped to the
+   hexagon, and a box shadow is clipped away with the corners.
+   `#capture-status` borrows the same keyframes for the same reason. */
+.flag.contested { animation: flagPulse 0.7s ease-in-out infinite alternate; }
+@keyframes flagPulse {
+  from { filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
+  to { filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.85)); }
+}
+
+/* --- conquest: the "you are standing in it" panel ---
+   Shown only while the player is inside a capture zone. The ring drawn
+   on the ground says where the boundary is; this says which side of it
+   you are on, so it sits low and centred, under the crosshair and clear
+   of the vitals and ammo. */
+#capture-status {
+  position: absolute;
+  left: 50%;
+  bottom: 104px;
+  transform: translateX(-50%);
+  width: 288px;
+  padding: 8px 12px 9px;
+  text-align: center;
+  --cham: 11px;
+}
+#capture-status .cap-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+/* The letter as a chamfered chip, matching the flag strip's cells. */
+#capture-status .cap-id {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 4px 7px;
+  color: #12141a;
+  background: var(--neutral);
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+#capture-status .cap-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  color: rgba(255, 255, 255, 0.85);
+}
+#capture-status.mine .cap-id { background: var(--mine); }
+#capture-status.theirs .cap-id { background: var(--theirs); }
+#capture-status .cap-meter {
+  position: relative;
+  height: 7px;
+  margin: 7px 0 6px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+#capture-status .cap-meter-fill {
+  height: 100%;
+  width: 0;
+  transition: width 0.15s linear;
+}
+#capture-status .cap-meter-fill.mine { background: var(--mine); }
+#capture-status .cap-meter-fill.theirs { background: var(--theirs); }
+/* Notches over the fill: a segmented meter reads as an instrument, and
+   the ticks give the eye something to measure progress against. */
+#capture-status .cap-meter .ticks {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0 10px,
+    rgba(0, 0, 0, 0.5) 10px 11px
+  );
+}
+#capture-status .cap-state {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: rgba(255, 255, 255, 0.9);
+}
+#capture-status.contested {
+  --frame-edge: rgba(255, 90, 79, 0.75);
+  animation: flagPulse 0.7s ease-in-out infinite alternate;
+}
+#capture-status.contested .cap-state { color: var(--theirs); }
+
+/* --- bottom band: vitals and ammunition ---
+   Deliberately un-panelled. The old version was two bordered cards, and
+   a bordered card over a 3D scene is the single thing that makes a HUD
+   look like a web page. The scrim carries the legibility instead. */
+#hud-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 26px 34px;
+}
+#hud-left { display: flex; flex-direction: column; gap: 5px; }
+#hud-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+#hud-left .cap-row,
+#hud-right .cap-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+/* The skew is the signature of the set: bars, gauges and magazine ticks
+   all lean the same 20 degrees, which is what ties the top band to the
+   bottom one without drawing a single box. */
+.hp-bar {
+  position: relative;
+  width: 224px;
+  height: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  transform: skewX(-20deg);
+}
+#health-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(to bottom, #b6ffc4, var(--good));
+  transition: width 0.12s ease-out;
+}
+.hp-bar .segs {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0 21px,
+    rgba(0, 0, 0, 0.5) 21px 23px
+  );
+}
+.hp-bar.low #health-fill { background: linear-gradient(to bottom, #ff9a92, var(--theirs)); }
+.hp-bar.low { animation: lowPulse 0.8s ease-in-out infinite alternate; }
+@keyframes lowPulse {
+  from { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55); }
+  to { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 10px rgba(255, 90, 79, 0.65); }
+}
+.hp-num { display: flex; align-items: baseline; gap: 6px; }
+#health-text {
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 0.9;
+  letter-spacing: 0.02em;
+}
+#health-text.low { color: var(--theirs); }
+.hp-num em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* The ammunition LINE holds both slots: the carried magazine at the right
+   end of it, where the whole column is anchored, and the stowed one at the
+   far left, in the space a two- or three-digit number was already leaving
+   empty. Spread across the same 224px the health bar, the magazine strip
+   and the kit caption are all measured in, so the pair costs the corner no
+   height and no width — the stowed slot is drawn in a hole that was
+   already there.
+
+   `min-width` rather than `width`: the pair is spread across the column's
+   own 224 and the longest primary name is allowed to push the line a few
+   pixels wider instead of squeezing the count, because everything here
+   is anchored to the RIGHT edge and growth simply reaches further into
+   the empty middle of the screen. */
+#hud-right .ammo-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 224px;
+}
+#hud-right .ammo { display: flex; align-items: baseline; gap: 8px; }
+#ammo-mag {
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 0.85;
+  letter-spacing: 0.01em;
+}
+#ammo-mag.low { color: var(--theirs); }
+#ammo-cap {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.42);
+}
+/* One tick per round left in the magazine. The count is legible without
+   reading the number, which is what the strip is for — the number is the
+   confirmation, not the reading.
+
+   The BOX is fixed at the health bar's width and the ticks are laid into
+   it from the right, because a strip sized by its contents is a strip
+   whose width is the carried weapon's magazine: 24 rounds and 75 rounds
+   would draw two different HUDs. `HUD.setAmmo` writes the three custom
+   properties when it rebuilds the row, and the fallbacks here are the
+   authored size — what everything up to 32 rounds still gets.
+
+   The box is a COLUMN of rows, and all but the belt have exactly one. The
+   LMG's 75 rounds cannot be read at one row's pitch, so it is built as two,
+   and the second is paid for out of the tick's height rather than the box's:
+   `--pip-h` and the 1px row gap divide the same 13px, so the ammo count and
+   the weapon label under it do not move when the weapon is swapped. The 1px
+   here and `MAG_ROW_GAP` in `HUD.ts` are the same number. */
+#mag-strip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 1px;
+  width: 224px;
+  height: 13px;
+  overflow: hidden;
+  transform: skewX(-20deg);
+}
+#mag-strip b {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--pip-gap, 2px);
+  height: var(--pip-h, 13px);
+}
+#mag-strip i {
+  display: block;
+  flex: 0 0 auto;
+  width: var(--pip-w, 5px);
+  height: 100%;
+  background: var(--hot);
+  box-shadow: 0 0 4px rgba(255, 230, 128, 0.35);
+}
+#mag-strip i.spent {
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: none;
+}
+/* The grenade pouch. Diamonds rather than the magazine's ticks: two of
+   anything in a row of five-pixel bars would read as a nearly-empty
+   magazine, and the two counts sit one above the other. */
+#nade-pips { display: flex; gap: 6px; align-items: center; }
+#nade-pips i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  background: var(--hot);
+  box-shadow: 0 0 5px rgba(255, 230, 128, 0.4);
+  transform: rotate(45deg);
+}
+#nade-pips i.spent {
+  background: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+/* An empty pouch dims its own label, so the row stops asking to be read. */
+#hud-right.no-nades .nades .cap { color: rgba(255, 255, 255, 0.24); }
+/* --- the stowed weapon ---
+   The second slot, which nothing else on screen mentions: the viewmodel
+   shows one weapon and the count beside this one counts one magazine, so
+   without it the sidearm exists only for whoever already pressed the key.
+   It shares the ammunition line rather than taking a row of its own —
+   two slots on one line, the carried one shouting at the right end and
+   the slung one murmuring at the left, which is the hierarchy stated as
+   a layout instead of as a caption.
+
+   Three parts, each set to its own weight rather than the group being
+   dimmed as a whole: the KEY is the instruction and is the brightest
+   thing here, the count is the fact you act on, and the name is only
+   there to say which weapon the other two are about. It gets no strip of
+   its own — a second row of ticks beside the magazine's is two
+   instruments competing to be read, and a count is enough for a weapon
+   you are not currently firing. */
+#stowed {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+/* The key that draws it, as a chamfered chip — the same idiom as the
+   killfeed's glyph and the capture panel's letter, and sized to be READ
+   at a glance, since a hint you have to squint at is one nobody follows.
+   Dark on near-white is the strongest pair available on a HUD whose
+   scrim cannot be relied on to be dark. `slot + 1` is the digit, and
+   HUD.setStowedKit is handed it rather than deciding it. */
+#stowed .key {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 3px 0 4px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  color: #0b0d12;
+  background: rgba(255, 255, 255, 0.86);
+  text-shadow: none;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  transition: background 0.15s linear;
+}
+/* The least of the three, and the only one that would wrap: at the
+   HUD's letter-spacing "CARBINE" is the widest thing this line ever has
+   to carry, and a caption breaking over two lines would move the count
+   off the ammunition's baseline. */
+#stowed .cap {
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.5);
+}
+#stowed .n {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+#stowed .n b {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 0.85;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.78);
+}
+#stowed .n em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.3);
+}
+/* The two states worth raising a voice for, and they are opposites.
+   `dry` is the slung magazine being empty too — the mirror of
+   `#ammo-mag.low`, and it means a swap will not save you. `ready` is
+   there being nothing to fire in your HANDS while there is here, which
+   is the one moment in a round when the second slot is the whole answer.
+
+   `ready` is a HANDOVER, not an alarm, and that is why it is three
+   colour changes and no animation: the carried readout dims itself
+   through a reload (`#hud-right.reloading .ammo` below), so this coming
+   up as that goes down already reads as the corner pointing at the
+   faster option. A pulse on top would be the HUD shouting at the player
+   once per magazine, which is how a cue gets ignored. */
+#stowed.dry .key { background: rgba(255, 90, 79, 0.72); }
+#stowed.dry .n b { color: var(--theirs); }
+#stowed.ready .key { background: var(--hot); }
+#stowed.ready .cap { color: rgba(255, 255, 255, 0.7); }
+#stowed.ready .n b { color: var(--hot); }
+#hud-right .reload-note {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  color: var(--hot);
+  opacity: 0;
+}
+#hud-right.reloading .reload-note { opacity: 1; }
+#hud-right.reloading .ammo { opacity: 0.3; }
+/* A sweep across the strip while the magazine is being changed. The 1.4s
+   cycle mirrors the RIFLE's `CONFIG.weapons.rifle.reloadTime` so one
+   pass ≈ one reload; the SMG's is a little shorter and the sweep simply
+   runs on, and the LMG's 3.4 s belt change takes two and a half passes,
+   which reads as the long job it is. It is cosmetic, and nothing reads it
+   back. */
+#hud-right.reloading #mag-strip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 230, 128, 0.75),
+    transparent
+  );
+  animation: magSweep 1.4s linear infinite;
+}
+@keyframes magSweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+/* --- crosshair ---
+   Four ticks around a centre dot. The GAP between them is the live
+   bullet spread: HUD.setCrosshair writes `--sp` once per frame and all
+   four ticks read it off, so recoil bloom is the crosshair opening up.
+   No transition on opacity — the ADS blend is already eased, and a
+   second easing on top of it lags the sight it is handing over to. */
+#crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  --sp: 26px;
+}
+#crosshair i {
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.65), 0 0 3px rgba(0, 0, 0, 0.9);
+  transition: transform 0.08s linear;
+}
+#crosshair i.t,
+#crosshair i.b { width: 2px; height: 9px; margin: -4.5px 0 0 -1px; }
+#crosshair i.l,
+#crosshair i.r { width: 9px; height: 2px; margin: -1px 0 0 -4.5px; }
+#crosshair i.t { transform: translateY(calc(var(--sp) / -2 - 5px)); }
+#crosshair i.b { transform: translateY(calc(var(--sp) / 2 + 5px)); }
+#crosshair i.l { transform: translateX(calc(var(--sp) / -2 - 5px)); }
+#crosshair i.r { transform: translateX(calc(var(--sp) / 2 + 5px)); }
+#crosshair .dot {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+}
+
+/* --- hitmarker ---
+   Four diagonal ticks, the shooter convention, plus a ring the kill
+   brings with it. The pop, the fade and the ring's travel are all written
+   as transforms by HUD.update rather than run as keyframes: at full auto
+   the mark re-triggers several times a second, and restarting a CSS
+   animation needs a forced reflow each time.
+
+   THE TICKS ARE TAPERED, and they taper INWARD — widest at the outer end,
+   drawn down to a blunt point aimed at the centre. Four wedges converging
+   on a spot say where the round landed; four bars of even width say only
+   that one did. It also buys the reach: a needle can be half again as long
+   as a bar without weighing any more on the screen, which is the whole
+   trade this shape exists to make — the marks below are larger than the
+   bars they replaced and thinner through most of their length.
+
+   THE FOUR FLAVOURS ARE FOUR NUMBERS, not four rule blocks. `--tick`,
+   `--len`, `--thick` and `--gap` are everything a flavour is allowed to
+   move, and the state classes below move them — so `.kill.head` is one
+   line rather than a fourth copy of the geometry, and the two axes the
+   marker carries (how bad it was, and whether it was a head) compose
+   instead of arguing over the same declarations. See HUD.flashHitmarker
+   for which of them wins what.
+
+   The ladder is deliberately monotonic on WEIGHT as well as colour: a
+   plain hit is the smallest and quietest thing here because it is the one
+   that happens ten times a second, and every step up is longer and
+   broader at the base. That is the half of the read that survives a dark map, a
+   muzzle flash across the middle of the screen and a player whose eye is
+   on the body rather than on the crosshair — which is the situation every
+   one of these marks is actually seen in. */
+#hitmarker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  --tick: #fff;
+  --len: 17px;
+  --thick: 3px;
+  --gap: 6px;
+  /* The wedge both halves of every tick are cut from. `0 0` and `100% 0`
+     are the OUTER end — the ticks are translated away from the centre, so
+     local y = 0 is the end furthest from it — and the pair at `100%` is
+     the blunt point aimed inward. 32% of the base rather than a true
+     vertex: a wedge run to nothing loses its last millimetre to
+     antialiasing and stops looking aimed at anything. */
+  --wedge: polygon(0 0, 100% 0, 66% 100%, 34% 100%);
+  /* The soft half of the legibility pair, and it is a FILTER rather than a
+     box-shadow because a box-shadow is drawn from the border box and these
+     ticks are not their border box — it would hang a rectangular smudge
+     behind every wedge. `drop-shadow` works off the clipped silhouette, so
+     it follows the taper, and one on the container does the whole mark
+     (ticks and ring alike) instead of nine. The hard half is the ink
+     element under each tick, below. */
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.85));
+}
+/* A head hit: longer, thicker ticks in a warm tone, standing further off
+   the centre, so it reads as "more than a hit" without reading as "stop
+   shooting" — which is what the kill owns. The ding does most of this
+   read (see Sfx.headshot); this is the corroboration, and the reason it
+   is an axis of its own is that a headshot which KILLED should be able to
+   say both things at once. */
+#hitmarker.head {
+  --tick: #ffd257;
+  --len: 22px;
+  --thick: 3.5px;
+  --gap: 7px;
+}
+/* The kill. Red is the colour this HUD already uses for the other side,
+   and the ring below is the part that does not depend on the player
+   having seen a colour. Shorter than the head's ticks and thicker: a
+   kill is a HEAVIER mark rather than a bigger one, which keeps the two
+   apart when both are on the same mark. */
+#hitmarker.kill {
+  --tick: var(--theirs);
+  --len: 20px;
+  --thick: 4px;
+  --gap: 5px;
+}
+/* A headshot that killed: the kill's colour and its ring, drawn at the
+   head hit's reach. Both statements, and the urgent one still decides
+   what colour the player sees. */
+#hitmarker.kill.head { --len: 25px; }
+
+/* Each tick is TWO elements, and the outer one is the drawn edge. A tick
+   is white and the world behind it is not reliably dark — a snow-lit
+   cobble swallows one outright, and the soft shadow above gives the mark
+   presence without giving it a boundary. `i` is that boundary: the same
+   wedge, one pixel proud on every side, in near-black. It is the tight
+   1px ring the crosshair next door gets from a box-shadow, done the one
+   way that survives being clipped to a shape. */
+#hitmarker i {
+  position: absolute;
+  width: calc(var(--thick) + 2px);
+  height: calc(var(--len) + 2px);
+  margin: calc((var(--len) + 2px) / -2) 0 0 calc((var(--thick) + 2px) / -2);
+  background: rgba(0, 0, 0, 0.62);
+  clip-path: var(--wedge);
+  /* The gap is measured to the tick's INNER end, which is what keeps the
+     hole in the middle the same size as the ticks grow: the element is
+     centred on the origin, so half its own length has to come out of the
+     translation. The ink's extra pixel falls outside that on both ends,
+     which is exactly where an outline belongs. */
+  transform: rotate(var(--a)) translateY(calc(-1 * (var(--gap) + var(--len) / 2)));
+}
+/* The tick itself, inset a pixel inside its ink. `inset: 1px` and not a
+   width of its own, so the two shapes cannot disagree about how long a
+   tick is — there is one length in this file and both read it. */
+#hitmarker i b {
+  position: absolute;
+  inset: 1px;
+  background: var(--tick);
+  clip-path: var(--wedge);
+}
+
+#hitmarker i:nth-of-type(1) { --a: 45deg; }
+#hitmarker i:nth-of-type(2) { --a: 135deg; }
+#hitmarker i:nth-of-type(3) { --a: 225deg; }
+#hitmarker i:nth-of-type(4) { --a: 315deg; }
+
+/* The kill's ring: thrown out from the centre over the whole life of the
+   mark while the ticks are still settling from their pop, so the kill has
+   a SHAPE nothing else on the crosshair has and a duration nothing else
+   has either. Driven by HUD.update, which is also the only thing that
+   ever gives it an opacity — every other flavour leaves it at 0. */
+#hitmarker .ring {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border: 2px solid var(--theirs);
+  border-radius: 50%;
+  opacity: 0;
+  /* Its own drawn edge, for the ticks' reason. The soft lift comes from
+     the container's filter, which is why there is only one shadow here. */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+/* --- damage vignette --- */
+#vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 30, 30, 0.85) 100%);
+}
+
+/* --- directional damage arcs ---
+   One pooled element per live arc, centred on the crosshair and rotated
+   by HUD.update() every frame; opacity and rotation are the only things
+   written per frame, so this stays a compositor-only change. */
+#damage-dirs {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+}
+#damage-dirs .arc {
+  position: absolute;
+  top: -150px;
+  left: -150px;
+  width: 300px;
+  height: 300px;
+  display: none;
+  opacity: 0;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
+}
+#damage-dirs .arc path {
+  fill: #a5120a;
+  stroke: rgba(0, 0, 0, 0.7);
+  stroke-width: 1.2;
+}
+
+/* --- centre message (flag captured, and so on) --- */
+#message {
+  position: absolute;
+  top: 24%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 9px 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-align: center;
+  white-space: nowrap;
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  animation: msgIn 0.25s ease-out;
+}
+@keyframes msgIn {
+  from { opacity: 0; letter-spacing: 0.5em; }
+}
+
+/* --- the leash: leaving the battlefield ---
+   Drawn where nothing else is and where a player cannot avoid reading it:
+   above the crosshair, in the lane `#message` uses, but HIGHER than it and
+   anchored rather than transient. The two can be on screen together — walk
+   off the map in the second a flag falls — which is why this sits at 13% and
+   the message stays at 24%.
+
+   It is the loudest thing on the HUD on purpose. On a map with an open
+   boundary there is no wall, no rock and deliberately no invisible barrier:
+   this panel IS the edge of the map, and a player who does not notice it dies
+   of something they never saw. Everything else here whispers; this does not.
+
+   The count is dark red from the start rather than turning red at the end,
+   because the alternative is a warning that reads as advisory for six seconds
+   and as an emergency for four, and the first six are the ones a player can
+   still act on. `.urgent` changes the RATE it pulses, not the colour — motion
+   is what the eye catches in peripheral vision while somebody is being shot
+   at, and a hue change is not. */
+#outbounds {
+  position: absolute;
+  top: 13%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  white-space: nowrap;
+  animation: obIn 0.2s ease-out;
+}
+#outbounds .ob-head {
+  padding: 5px 18px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  color: #ffd9d3;
+  background: rgba(120, 12, 6, 0.5);
+  border-top: 1px solid rgba(255, 120, 100, 0.55);
+  border-bottom: 1px solid rgba(255, 120, 100, 0.55);
+}
+#outbounds .ob-count {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  animation: obPulse 1s ease-in-out infinite;
+}
+#outbounds.urgent .ob-count {
+  animation-duration: 0.4s;
+}
+#outbounds .ob-count b {
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1;
+  color: #ff5544;
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.85);
+  /* Tabular so a two-digit count does not shove the word beside it sideways
+     on the tick from 10 to 9. */
+  font-variant-numeric: tabular-nums;
+}
+#outbounds .ob-count em {
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  color: rgba(255, 255, 255, 0.72);
+}
+@keyframes obIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+}
+@keyframes obPulse {
+  50% { opacity: 0.45; }
+}
+
+/* --- toasts ---
+   The bottom-centre column is a stack, and the offsets have to clear
+   each other because all three can be on screen at once: the lock hint
+   at 58, the capture panel at 104 (about 72 tall), toasts above that.
+   The vitals and ammo are anchored to the corners, so the centre lane is
+   theirs alone. */
+#toasts {
+  position: absolute;
+  bottom: 194px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.toast {
+  padding: 6px 15px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  /* Same reason as the killfeed: the text is a ControlPoint's own name. */
+  text-transform: uppercase;
+  color: var(--hot);
+  background: rgba(6, 8, 13, 0.72);
+  border-left: 2px solid var(--hot);
+  transition: opacity 0.7s;
+  animation: killIn 0.2s ease-out;
+}
+.toast.fade { opacity: 0; }
+
+#lock-hint {
+  position: absolute;
+  bottom: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  color: rgba(255, 255, 255, 0.65);
+}
+#lock-hint b { color: var(--hot); }
+
+/* --- behind a full-screen overlay ---
+   The menu and the round-over card sit over a live scene, so last
+   round's gauges and killfeed read through them and make the HUD look
+   like it is still running. HUD.setOverlaid() puts .overlaid on #hud;
+   the deploy screen deliberately does not use it — tickets and flags are
+   what you are picking a spawn against. */
+#hud.overlaid #ticket-bar,
+#hud.overlaid #flag-strip,
+#hud.overlaid #capture-status,
+#hud.overlaid #crosshair,
+#hud.overlaid #hitmarker,
+#hud.overlaid #damage-dirs,
+#hud.overlaid #hud-bottom,
+#hud.overlaid #killfeed,
+#hud.overlaid #scorefeed,
+#hud.overlaid #message,
+#hud.overlaid #toasts { display: none; }
+
+/* --- paused ---
+   Unlike .overlaid, this keeps the gauges, the flag strip and the vitals:
+   under a pause they are this round's and still true, and the frozen
+   scene behind them is the one they describe. What goes is what would be
+   lying — a crosshair with nothing to shoot, a hitmarker and damage arcs
+   stopped mid-decay, and the hint telling you to click for a mouse you
+   have already got. */
+/* The pause overlay is the one that swallows clicks. Everywhere else the
+   overlay stays inert and only its buttons opt in — but the deploy map
+   underneath takes pointer events of its own, and a click through the
+   empty half of a pause screen must not deploy the player. */
+#hud.paused #overlay { pointer-events: auto; }
+/* A pause taken while waiting out a respawn lands on top of the deploy
+   screen, and that screen is a full column of its own headed chrome —
+   "SELECT DEPLOYMENT" landed across "PAUSED" and its Deploy button sat
+   under the resume prompt. Dimmed rather than hidden: the map behind a
+   pause is still context worth having, it just is not the thing being
+   read. The overlay above it already swallows the clicks. */
+#hud.paused #deploy { opacity: 0.18; }
+#hud.paused #crosshair,
+#hud.paused #hitmarker,
+#hud.paused #damage-dirs,
+#hud.paused #capture-status,
+#hud.paused #lock-hint { display: none; }
+
+/* --- the on-screen controls are up (HUD.setTouching) ---
+   The bottom band scales about its own bottom CENTRE, which is what makes one
+   rule free both corners: `#hud-bottom` is a full-width row with the vitals
+   pinned left and the ammo right, so shrinking it toward the middle walks both
+   ends inward as well as down. The ladder is `--hud-touch` in base.css and is 1
+   on a screen with room for both, so a desktop and a tablet are untouched.
+   See `docs/pwa.md` for what is standing where. */
+#hud.touching #hud-bottom {
+  transform: scale(var(--hud-touch));
+  transform-origin: bottom center;
+}
+
+/* --- death cam ---
+   Raised by HUD.setDeathCam while the player is down and the camera is
+   watching their body. It hides the same four things a pause does and is
+   a class of its own anyway: the two agree by coincidence, not by
+   meaning. A pause hides them because the world stopped; this hides them
+   because the world did NOT and the player is simply no longer in it —
+   a crosshair over a camera nobody is aiming, a capture panel for a zone
+   nobody is standing in, arcs bearing on a yaw that is now the cam's.
+   The gauges stay for the mirror-image reason: they are live and true,
+   and watching the tickets run while you wait is half of why the cam is
+   worth showing at all. The lock hint goes because the lock is still
+   held — asking for it back would be the one instruction on screen that
+   is not merely useless but wrong. */
+#hud.dying #crosshair,
+#hud.dying #hitmarker,
+#hud.dying #damage-dirs,
+#hud.dying #capture-status,
+#hud.dying #lock-hint { display: none; }
+
+/* --- map editor (dev only) --- */
+/* The gameplay chrome is meaningless with no player, and the crosshair
+   actively gets in the way of clicking things. HUD.setEditing() puts
+   .editing on #hud; hiding here rather than per element means update()
+   can keep writing to those nodes without fighting the toggle. */
+#hud.editing #scrim,
+#hud.editing #ticket-bar,
+#hud.editing #flag-strip,
+#hud.editing #capture-status,
+#hud.editing #crosshair,
+#hud.editing #hitmarker,
+#hud.editing #damage-dirs,
+#hud.editing #hud-bottom,
+#hud.editing #killfeed,
+#hud.editing #scorefeed,
+#hud.editing #lock-hint { display: none; }
