@@ -43,6 +43,13 @@ import {
 const TUBE_BORE = 0.105;
 
 /**
+ * Where the loaded round turns about — the seam between the skirt and the head,
+ * which is both where the round balances and where a hand actually holds one.
+ * See the `setPivotPoint` call in `buildRpg` for why it has to be said at all.
+ */
+const ROUND_PIVOT_Z = 0.95;
+
+/**
  * **The origin is at the VENTURI, not at the middle of the weapon**, and that
  * is the one thing about this model that is a framing decision rather than a
  * shape.
@@ -134,7 +141,9 @@ const SUPPORT_ELBOW = new Vector3(-0.28, -0.52, 0.47);
  * launcher" rather than "pipe" at any distance, and the one part of this
  * weapon that visibly LEAVES when it is fired.
  *
- * ~90 parts, merged to one mesh per colour like every other weapon here. It
+ * ~90 parts, merged to one mesh per colour like every other weapon here —
+ * twice over, because the loaded ROUND is a node of its own so the load
+ * gesture can take it out of the tube and slide a fresh one back in. It
  * is 1.39 long against the rifle's 1.27 — the longest thing in the kit and
  * deliberately only just, because the hip pose frames a weapon from a fixed
  * point and everything past the rifle's length is a warhead off the edge of
@@ -192,17 +201,6 @@ export function buildRpg(
   b.box("foreCap", RUBBER, 0.042, 0.018, 0.054, 0, -0.148, 0, fore);
   b.box("foreYoke", BODY, 0.044, 0.05, 0.06, 0, -0.02, 0.64);
 
-  // --- the warhead: an over-calibre head on a thin boom, standing out past
-  // the muzzle. It is the loaded rocket, so it is drawn as one ---
-  b.tube("boom", METAL, 0.05, 0.05, 0.12, 0, 0, 0.83);
-  b.tube("headSkirt", POLYMER, 0.115, 0.055, 0.09, 0, 0, 0.91);
-  b.tube("headBody", POLYMER, 0.115, 0.115, 0.11, 0, 0, 1);
-  b.tube("headCone", POLYMER, 0.03, 0.115, 0.12, 0, 0, 1.11);
-  b.tube("fuze", METAL, 0.018, 0.026, 0.05, 0, 0, 1.18);
-  // The band where the head meets the skirt, in metal, so the two polymer
-  // sections do not merge into one long lozenge.
-  b.tube("headBand", METAL, 0.12, 0.12, 0.016, 0, 0, 0.95);
-
   // --- the sight mount: a bracket off the left of the tube. Both parts are
   // capped by the optic they carry rather than sized by hand, and the cap is
   // the HOUSING's underside at the bracket's own FRONT face, where the
@@ -214,10 +212,60 @@ export function buildRpg(
   b.box("mountArm", METAL, 0.08, 0.014, MOUNT_D, -0.065, armTop - 0.007, SIGHT_Z);
   b.box("mountClamp", METAL, 0.028, 0.012, 0.05, SIGHT_X, armTop, SIGHT_Z);
 
-  // Everything above is the weapon and the loaded rocket, which is one piece
-  // of kit: no magazine, so `merge` is called once and the finish list is
-  // taken here — before the sight, exactly as every other builder does it.
+  // Everything above is the LAUNCHER, and it is merged before the round is
+  // built for the reason the rifle merges before its magazine: what comes out
+  // of a weapon cannot be inside the weapon's own colour groups.
   b.merge("rpg", root);
+
+  // --- the ROUND: an over-calibre head on a thin boom, standing out past the
+  // muzzle, and the sustainer motor behind it that is inside the tube ---
+  //
+  // It is the loaded rocket, so it is drawn as one — and it is the one part of
+  // this weapon that visibly LEAVES when it is fired, which is what makes it a
+  // node of its own rather than more launcher. See `WeaponParts.warhead`.
+  //
+  // **The sustainer is the half of the round that makes the load READ**, and
+  // it is invisible for as long as nothing is happening to it: seated, all
+  // 0.33 of it is inside a solid cylinder of tube and the depth buffer eats
+  // it, so it costs the carried weapon nothing. Pulled forward for a reload it
+  // comes out of the bore — a third of a metre of motor tube leaving and going
+  // back in is the whole gesture, where a warhead sliding about in front of an
+  // unchanged muzzle would read as the head coming loose. Its diameter is
+  // under the bore's for that reason and not as dressing — which also means it
+  // can never stand outside the launch tube's own silhouette, so it is
+  // incapable of intruding on the optic's picture whatever the load is doing.
+  // (The bore clearance measured for `buildRpgSight` is unaffected by this
+  // file's ROUND for exactly that reason.)
+  const warhead = new TransformNode(`${prefix}_warhead`, scene);
+  warhead.parent = root;
+  b.tube("sustainer", BODY, 0.062, 0.058, 0.33, 0, 0, 0.605);
+  b.tube("sustainerCap", METAL, 0.05, 0.036, 0.026, 0, 0, 0.427);
+  b.tube("boom", METAL, 0.05, 0.05, 0.12, 0, 0, 0.83);
+  b.tube("headSkirt", POLYMER, 0.115, 0.055, 0.09, 0, 0, 0.91);
+  b.tube("headBody", POLYMER, 0.115, 0.115, 0.11, 0, 0, 1);
+  b.tube("headCone", POLYMER, 0.03, 0.115, 0.12, 0, 0, 1.11);
+  b.tube("fuze", METAL, 0.018, 0.026, 0.05, 0, 0, 1.18);
+  // The band where the head meets the skirt, in metal, so the two polymer
+  // sections do not merge into one long lozenge.
+  b.tube("headBand", METAL, 0.12, 0.12, 0.016, 0, 0, 0.95);
+  b.merge("rpgRound", warhead);
+  // **The round turns about the ROUND, and it takes a pivot point to say so.**
+  // The node is at the weapon's own origin, which is the venturi — half a metre
+  // BEHIND the rocket — so a tilt of the node is a tilt of a half-metre lever
+  // and the round swings through an arc rather than turning in a hand.
+  // Measured before this line: the offer tilt alone moved the warhead's nose
+  // 220 px, which put a round that is supposed to be out of frame in the middle
+  // of it. `setPivotPoint` leaves `position` a translation in the parent's
+  // frame and leaves the node at identity when nothing is set, so `stow()` and
+  // `WeaponParts.warhead`'s "position is a pure offset from seated" both still
+  // hold; only the centre of rotation moves. It is on the bore, so the index
+  // roll about z is unaffected either way — this is for the two axes that are
+  // not.
+  warhead.setPivotPoint(new Vector3(0, 0, ROUND_PIVOT_Z));
+
+  // Taken after the round's merge and before the sight's, exactly as the rifle
+  // takes it after its magazine: a finish paints what the weapon IS, which
+  // includes the round it carries and excludes the optic bolted to it.
   const finish = b.takeFinish();
 
   const sight = buildRpgSight(b, root, prefix);
@@ -234,6 +282,7 @@ export function buildRpg(
     ejectPort: new Vector3(0, 0, -0.15),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
+    warhead,
     sights: { kind: "fixed", sight: "prism", assembly: sight },
     finish,
     meshes: root.getChildMeshes(false) as Mesh[],

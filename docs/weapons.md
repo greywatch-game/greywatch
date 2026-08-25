@@ -41,7 +41,9 @@ and on `spawnPlayer`.
 run spends a latched crouch; ending a run spends the sprint latch (so a pad player
 who stops for a corner walks out of it); pressing either latch clears the other.
 `Player.update` owns both edges, because `input.sprint`/`input.crouch` are only the
-*ask* — the stick, the optic and the reload decide whether a sprint is happening —
+*ask* — the stick, the optic and the hands being full decide whether a sprint is
+happening (`Player.loading`, which is a magazine going into a well OR a rocket
+going down a bore) —
 and it calls back into `InputManager.clearCrouchToggle`/`clearSprintToggle`. **Held
 keys are exempt**: Shift and Ctrl are a live ask, so a Ctrl held through a sprint
 still crouches you when the sprint ends.
@@ -297,6 +299,17 @@ machine gun without a per-weapon number anywhere.
   seated rifle magazine sit inside the bottom of the frame (roughly y 600–720),
   the magazine leaves through that edge, and the aimed reload keeps the whole
   middle of the screen clear.
+
+**There is a SECOND gesture built on this one and it is not a reload**: the
+launcher is loaded through the MUZZLE, off `CONFIG.viewmodel.load`, and it runs
+on the fire cooldown rather than on a `reloadTime` the anti-tank slot does not
+have. Everything above about a timeline, an aim break, an impulse landing on a
+clack and a moving part merged into a node of its own holds for it word for
+word; what differs is that nothing is dropped, nothing is caught, and the part
+that moves goes back down a bore instead of up into a well. `poseReload` and
+`poseLoad` are exclusive — a rig carries a `magazine` or a `warhead` and never
+both — and the argument for each beat is in
+[`docs/antitank.md`](antitank.md#the-load-and-why-a-weapon-with-no-reload-has-one).
 
 ## The report: one shape, six deviations from it
 

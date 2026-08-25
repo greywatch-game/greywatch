@@ -3940,6 +3940,13 @@ export class Game {
     // place that can say so.
     this.battle.hearGunshot(this.ordnanceAt, this.player.team);
     this.sfx.launcher(this.ordnanceAt);
+    // The next rocket going into the tube, laid out across the fire cooldown
+    // the shot above has just set — which on a two-shot weapon IS the loader,
+    // and which `ViewModel` is playing the gesture off at the same moment.
+    // Zero on the last rocket: there is nothing behind it and `tryShot` is
+    // already putting the empty tube away.
+    const load = this.player.loadTime;
+    if (load > 0) this.sfx.rpgLoad(load);
     const lc = CONFIG.lighting;
     this.lighting.pulse(
       this.ordnanceAt,

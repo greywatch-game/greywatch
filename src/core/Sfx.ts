@@ -462,6 +462,52 @@ export class Sfx {
   }
 
   /**
+   * Loading a launcher: the next rocket coming out of the bag, tapped onto the
+   * mouth of the tube, driven home, and the hammer thumbed back.
+   *
+   * `reload` reasoned about from the other end, and the differences are all the
+   * same difference — this is a MUZZLE load. There is no catch and no magazine
+   * falling free, because nothing was released; the first thing you hear is
+   * webbing, because the round has to be fetched. The last thing is the hammer
+   * rather than a bolt, and it is the one that matters: an RPG is cocked by
+   * hand, so the cock IS the sound that says the weapon will fire.
+   *
+   * Player-local and unspatialised like the grenade's throw and the mine's
+   * plate: it is a thing happening in your own hands. What somebody else's
+   * launcher is heard as is `launcher`, and nothing between.
+   *
+   * **The four offsets are `CONFIG.viewmodel.load`'s beats and must move with
+   * them** — the same contract `reload` has with `viewmodel.reload`, and for
+   * the same reason: the whole of what makes a gesture legible is that what
+   * you SEE lands on what you HEAR. Change a fraction in either file and
+   * change it in both.
+   */
+  rpgLoad(duration: number): void {
+    const t = duration;
+    // The round out of the bag: cloth and webbing, which is the one soft
+    // event in a family of metallic ones and is what says a thing was
+    // FETCHED rather than worked.
+    this.burst({
+      dur: 0.22, vol: 0.09, type: "bandpass", freq: 520, freqEnd: 1400,
+      q: 0.8, delay: t * 0.26, send: 0.2,
+    });
+    // The boom tapped onto the muzzle as the round is offered to the bore.
+    // Light and high: it is a rim being found, not a part going home.
+    this.clack(2900, 0.45, t * 0.56);
+    // The motor driven down the tube — the long one, and the only sound here
+    // with any length to it, because it is the only event that is a SLIDE.
+    this.burst({
+      dur: 0.17, vol: 0.14, type: "lowpass", freq: 1500, freqEnd: 380,
+      delay: t * 0.6, send: 0.3,
+    });
+    // Home. The heaviest of the four: a kilogram of rocket against a stop.
+    this.clack(620, 1, t * 0.78);
+    this.tone(210, 0.09, "sine", 0.05, 0.5, null, { delay: t * 0.78 });
+    // The hammer back. Bright, short, and last — the launcher's bolt.
+    this.clack(3300, 0.7, t * 0.9);
+  }
+
+  /**
    * A mine going down on the road: the plate settling, then the fuze arming a
    * beat later.
    *

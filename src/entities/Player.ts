@@ -491,6 +491,7 @@ export class Player implements Combatant {
     reloadBlend: 0,
     reloadPhase: 0,
     reloading: false,
+    loadPhase: 1,
     swapBlend: 0,
     throwTime: -1,
     kick: 0,
@@ -1266,8 +1267,9 @@ export class Player implements Combatant {
     // **A LATCH IS SPENT BY WHAT OVERRIDES IT, NEVER SUSPENDED BY IT**, and
     // this is where that is enforced, because this is the only place that
     // knows whether a sprint is actually happening: `input.sprint` is the ask,
-    // and the stick, the optic and the reload are what decide. So the two
-    // edges below are the state changing, not a button.
+    // and the stick, the optic and the hands being full are what decide — see
+    // `loading`, which is a magazine going in OR a rocket going down a bore.
+    // So the two edges below are the state changing, not a button.
     //
     // Starting to run spends a latched crouch, or the run would drop the
     // player back into a crouch they asked for before it. Ending a run spends
@@ -1279,7 +1281,7 @@ export class Player implements Combatant {
     // a sprint because the player never stopped asking for it.
     const wasSprinting = this.sprinting;
     this.sprinting =
-      input.sprint && input.moveY > 0.1 && cam.adsBlend < 0.4 && !this.reloading;
+      input.sprint && input.moveY > 0.1 && cam.adsBlend < 0.4 && !this.loading;
     if (this.sprinting && !wasSprinting) input.clearCrouchToggle();
     if (wasSprinting && !this.sprinting) input.clearSprintToggle();
     this.crouching = input.crouch && !this.sprinting;
@@ -1525,6 +1527,7 @@ export class Player implements Combatant {
     v.reloadBlend = this.reloadBlend;
     v.reloadPhase = this.reloadProgress;
     v.reloading = this.reloading;
+    v.loadPhase = this.loadProgress;
     v.swapBlend = this.swapWeight();
     v.throwTime = this.throwT;
     v.kick = this.kickDisp;
@@ -1830,6 +1833,75 @@ export class Player implements Combatant {
   /** Where the gesture is, 0..1 — frozen where a cancelled reload left it. */
   get reloadProgress(): number {
     return this.reloadPhase;
+  }
+
+  /**
+   * Where the LAUNCHER's load is, 0..1, and 1 whenever nothing is being
+   * loaded — the clock `ViewModel` plays `CONFIG.viewmodel.load` off.
+   *
+   * **It is the fire cooldown read as a gesture, and that is the whole idea.**
+   * An anti-tank item has no reload and `startReload` refuses the slot
+   * outright (see there, and `docs/antitank.md`) — there is no reserve to load
+   * FROM, so a reload could only ever conjure a rocket. What there IS is
+   * `shotInterval`, which on a two-shot weapon is the loader and nothing else:
+   * `equipment.rpg.carry.fireRate` is written as the time it takes to put the
+   * next rocket in the tube. So the gesture needs no state of its own, no
+   * cancel path and no blend to ease it off — it is a pure function of a clock
+   * that is already kept, already dropped by a swap (`completeSwap`) and
+   * already zeroed by a fresh weapon in the hands.
+   *
+   * `ammo` is the other half of it, and the reason there is no "is this a
+   * launcher" test here: a spent tube has nothing to load and `tryShot` is
+   * already putting it away. What a weapon with a round left actually SHOWS is
+   * the viewmodel's business — the mine, which comes through here too, has no
+   * round to move and no gesture to play.
+   */
+  get loadProgress(): number {
+    if (!this.alive || !this.carriedEquipment || this.ammo <= 0) return 1;
+    const total = this.weapon.shotInterval;
+    if (this.fireCooldown <= 0 || total <= 0) return 1;
+    return Math.max(0, 1 - this.fireCooldown / total);
+  }
+
+  /**
+   * Whether ammunition is going INTO the weapon right now — a magazine into a
+   * well, or a rocket down a bore.
+   *
+   * The two gestures share almost nothing (see `loadProgress`), but everything
+   * that has to ask "are the hands free?" wants both, and asking it as one
+   * question is what stops the answer being right for one weapon and wrong for
+   * the other. `reloading` and `loadProgress` stay separate underneath because
+   * the viewmodel needs to know WHICH; nothing outside it does.
+   *
+   * The sprint is the caller that matters: a body cannot run with both hands
+   * on the front of a launcher any more than it can run while changing a
+   * magazine, and a launcher that could be loaded at a sprint would be the one
+   * weapon in the kit whose reload is free. Firing needs no term from this —
+   * `tryShot` is already refused by `fireCooldown`, which for the launcher IS
+   * this gesture's clock.
+   *
+   * **`muzzleLoad` is why this is not simply `loadProgress < 1`.** Both AT
+   * items run a cooldown and they mean opposite things: the launcher's is a
+   * rocket going down a tube, the mine's is how fast a man can set one down
+   * and stand up. Pinning somebody for the mine's half-second would be an
+   * unexplained stop — there is no gesture on screen for it — at the exact
+   * moment `layMine` already refuses to punish, which is a player backing away
+   * from a hull.
+   */
+  get loading(): boolean {
+    if (this.reloading) return true;
+    const id = this.carriedEquipment;
+    return id !== null && CONFIG.equipment[id].muzzleLoad && this.loadProgress < 1;
+  }
+
+  /**
+   * How long the load now beginning takes, or 0 when there is none — for the
+   * sound that has to fit it. `swapTotal`'s opposite number, and it exists for
+   * the same reason: the gesture and the noise over it are one event, and the
+   * only way they can stay one is if both read the same number.
+   */
+  get loadTime(): number {
+    return this.loadProgress < 1 ? this.weapon.shotInterval : 0;
   }
 
   /** World position of the rifle muzzle (tracer origin). */

@@ -6,13 +6,16 @@
  * Owns: the on-screen weapon. Nothing else may reparent or pose it.
  *
  * Invariants:
- * - The magazine is the one part of a weapon that may move on its own, and it
- *   is only movable because the model merged it into a node of its own (see
- *   `WeaponParts.magazine`). Nothing else may be animated off a weapon without
- *   the same split — everything else is inside one merged mesh per colour.
- *   `stow()` is the only place that state is cleared, and every way out of a
- *   half-finished reload has to go through it or the weapon comes back without
- *   a magazine in it.
+ * - A weapon's AMMUNITION is the only part of it that may move on its own,
+ *   and it is only movable because the model merged it into a node of its own
+ *   — `WeaponParts.magazine` for a weapon loaded through a well, and
+ *   `WeaponParts.warhead` for the one loaded through the bore. A rig has at
+ *   most one of the two, which is what lets `poseReload` and `poseLoad` each
+ *   own the support arm outright. Nothing else may be animated off a weapon
+ *   without the same split — everything else is inside one merged mesh per
+ *   colour. `stow()` is the only place that state is cleared, and every way
+ *   out of a half-finished gesture has to go through it or the weapon comes
+ *   back with nothing in it.
  * - The ADS pose is DERIVED, never authored: `adsPos` places the weapon so
  *   that the FITTED sight's own `sightCenter` lands on the camera's axis at
  *   that sight's `eyeRelief`. The reticle then projects to the exact centre
@@ -250,6 +253,20 @@ export interface ViewModelParams {
    */
   reloading: boolean;
   /**
+   * 0..1 through the LAUNCHER's load, and 1 whenever nothing is being loaded
+   * — the whole timeline in `CONFIG.viewmodel.load` is read off it, from the
+   * empty tube coming down off the shoulder to the hammer going back.
+   *
+   * It needs no gate beside it the way the reload does, and that is the shape
+   * of the thing rather than an omission: `Player.loadProgress` is the fire
+   * cooldown read as a fraction, so it starts at rest and ENDS at rest, and
+   * everything that would cancel a reload — a swap, a death, a fresh weapon —
+   * puts the clock back to zero rather than leaving a gesture stranded
+   * halfway. A weapon with nothing to load reads 1 forever and this costs it
+   * one comparison.
+   */
+  loadPhase: number;
+  /**
    * 0 = the weapon is in the hands, 1 = it is fully out of frame. A TRIANGLE
    * over the swap rather than a blend toward a state, because a swap is a
    * round trip: the same curve carries one weapon away and brings the next one
@@ -372,6 +389,13 @@ interface WeaponRig {
   supportArm: TransformNode;
   /** This weapon's magazine, or null if it has nothing that comes out. */
   magazine: TransformNode | null;
+  /**
+   * This weapon's loaded ROUND, or null if it is not loaded through the
+   * muzzle. The magazine's twin, and exclusive with it: a rig has one of the
+   * two at most, which is what lets the two gestures own the support arm
+   * without arbitrating for it.
+   */
+  warhead: TransformNode | null;
   /**
    * The unit axis that magazine leaves along, weapon-local, resolved once from
    * the model's own rake. Straight down for anything standing vertically in
@@ -505,6 +529,13 @@ export class ViewModel {
    * scales with the model, and the angle at the eye comes out unchanged.
    */
   private readonly off = new Vector3();
+  /**
+   * Scratch for the loaded round's own offset while it is being put in — where
+   * it is relative to seated, and how far it is turned getting there. Two,
+   * because the hand riding it reads both after they are written.
+   */
+  private readonly roundPos = new Vector3();
+  private readonly roundRot = new Vector3();
   /** Scratch for the turntable's rotation — built per frame, never allocated. */
   private readonly spinYaw = Matrix.Identity();
   private readonly spinPitch = Matrix.Identity();
@@ -552,6 +583,7 @@ export class ViewModel {
         parts,
         supportArm,
         magazine: parts.magazine ?? null,
+        warhead: parts.warhead ?? null,
         // Straight down is the default, and it is right for anything standing
         // upright in its well — only a raked magazine has to say otherwise.
         magDrop: parts.magDrop ? parts.magDrop.clone() : new Vector3(0, -1, 0),
@@ -649,8 +681,10 @@ export class ViewModel {
    *
    * It takes a `CarriedId` and resolves through `carriedSetup`, which is the
    * one line in this file that knows the two tables exist. Everything past it
-   * — the fit, the aimed pose, the arms, the magazine — reads the resolved
-   * `WeaponSetup` and cannot tell a launcher from a rifle.
+   * — the fit, the aimed pose, the arms — reads the resolved `WeaponSetup` and
+   * cannot tell a launcher from a rifle. What a weapon is LOADED by is the one
+   * thing that can: the rig carries a magazine or a warhead or neither, and
+   * `update` picks the gesture off that rather than off the id.
    */
   setWeapon(id: CarriedId): void {
     this.weaponFit = carriedSetup(id);
@@ -807,17 +841,27 @@ export class ViewModel {
   }
 
   /**
-   * Puts every rig back the way it is carried: both hands on the weapon and
-   * the magazine in it. The one place that state is cleared, because there are
-   * three ways to leave a reload half-finished — a swap, a round starting, and
-   * the kit screen coming up over one — and a magazine left out of frame by
-   * any of them is a weapon that comes back without one.
+   * Puts every rig back the way it is carried: both hands on the weapon, the
+   * magazine in it and the round in the tube. The one place that state is
+   * cleared, because there are three ways to leave a reload half-finished — a
+   * swap, a round starting, and the kit screen coming up over one — and a
+   * magazine left out of frame by any of them is a weapon that comes back
+   * without one. The launcher's round is here for the same reason and not
+   * quite the same argument: its own clock cannot strand it (see
+   * `ViewModelParams.loadPhase`), but the kit screen freezes every clock
+   * there is, and a rocket left hanging beside the turntable would be exactly
+   * the magazine bug wearing a different hat.
    */
   private stow(): void {
     for (const id of CARRIED_IDS) {
       const rig = this.rigs[id];
       rig.supportArm.position.setAll(0);
       rig.supportArm.setEnabled(true);
+      if (rig.warhead) {
+        rig.warhead.position.setAll(0);
+        rig.warhead.rotation.setAll(0);
+        rig.warhead.setEnabled(true);
+      }
       if (!rig.magazine) continue;
       rig.magazine.position.setAll(0);
       rig.magazine.rotation.x = 0;
@@ -953,7 +997,21 @@ export class ViewModel {
       p.reloadBlend *
       ramp(0, r.tiltIn, rp) *
       (1 - ramp(r.tiltOut[0], r.tiltOut[1], rp));
-    const t = smoothstep01(clamp(p.adsBlend, 0, 1)) * (1 - reloadW * r.aimBreak);
+    // The launcher's load is the same shape one beat further on: a weight over
+    // a phase, gating the aim exactly as the reload's does. The two are never
+    // both live — a weapon is loaded through a well or through the bore — so
+    // the aim takes both terms rather than choosing between them.
+    const l = v.load;
+    const lp = p.loadPhase;
+    const rig = this.rigs[this.weaponFit.id];
+    const loading = rig.warhead !== null && lp < 1;
+    const loadW = loading
+      ? ramp(0, l.tiltIn, lp) * (1 - ramp(l.tiltOut[0], l.tiltOut[1], lp))
+      : 0;
+    const t =
+      smoothstep01(clamp(p.adsBlend, 0, 1)) *
+      (1 - reloadW * r.aimBreak) *
+      (1 - loadW * l.aimBreak);
 
     // --- base pose: hip -> aimed, with sprint and reload layered on top ---
     // The state offsets are additive rather than exclusive, so a reload that
@@ -993,6 +1051,27 @@ export class ViewModel {
       if (bolt > 0.001) {
         addScaled(this.off, r.boltKick.pos, bolt);
         addScaled(this.rot, r.boltKick.rot, bolt);
+      }
+    }
+    // The launcher coming down off the shoulder to be loaded and going back up
+    // onto it, and the two impacts in the middle of that — the rocket driven
+    // home and the hammer thumbed back. Same construction as the reload above
+    // it, because it is the same kind of thing: a pose over a timeline, with
+    // the events laid on as impulses so each one lands on the sound it is.
+    if (loadW > 0.001) {
+      addScaled(this.off, v.loadPos, loadW);
+      addScaled(this.rot, v.loadRot, loadW);
+    }
+    if (loading) {
+      const seat = impulse(lp, l.seat, l.kickFall);
+      if (seat > 0.001) {
+        addScaled(this.off, l.seatKick.pos, seat);
+        addScaled(this.rot, l.seatKick.rot, seat);
+      }
+      const cock = impulse(lp, l.cock, l.kickFall);
+      if (cock > 0.001) {
+        addScaled(this.off, l.cockKick.pos, cock);
+        addScaled(this.rot, l.cockKick.rot, cock);
       }
     }
     // The swap, on the same additive footing as the two above — which is what
@@ -1134,9 +1213,14 @@ export class ViewModel {
     this.weapon.rotation.copyFrom(this.rot);
     this.weapon.scaling.setAll(v.scale * k);
 
-    // --- the magazine change: the hand's trip and the magazine's ---
-    this.poseReload(p);
-    const supportArm = this.rigs[this.weaponFit.id].supportArm;
+    // --- the round change: the magazine's trip, or the launcher's ---
+    // One or the other and never both. They are exclusive because a rig holds
+    // at most one of the two nodes (see `WeaponParts.warhead`) and because
+    // both write the support arm — run together, whichever went second would
+    // simply be the answer.
+    if (rig.warhead) this.poseLoad(p, rig, throwing);
+    else this.poseReload(p);
+    const supportArm = rig.supportArm;
     // ...and off the weapon entirely for a throw. The hand that throws IS the
     // support hand, so leaving it welded to the handguard would put two left
     // arms on screen at once — and hiding it is what motivates the give above:
@@ -1309,6 +1393,116 @@ export class ViewModel {
         o.x * w + axis.x * d,
         o.y * w + axis.y * d,
         o.z * w + axis.z * d,
+      );
+    }
+  }
+
+  /**
+   * The launcher's load: where the fresh rocket is on the timeline, and where
+   * the hand putting it there is.
+   *
+   * `poseReload`'s opposite number, and it is worth reading them side by side
+   * because the difference between them is the difference between the two
+   * weapons. A magazine is RELEASED — it falls out of the well under gravity
+   * with no hand on it, clears the frame, and a second one comes up from
+   * below. A rocket is never released at all: what left the tube left it under
+   * power and is a hundred metres away, so there is nothing to drop, nothing
+   * to catch and no fall to animate. What there is instead is a REACH — the
+   * hand goes out of frame after the next round and comes back with it — and
+   * then the one motion this gesture exists to show: the round offered to the
+   * mouth of the bore and pushed back down it.
+   *
+   * The two halves are one motion by the same construction the magazine's are:
+   * from the moment the round is in the hand, the hand rides EXACTLY the
+   * travel the round rides, offset by where a hand sits on a rocket. Before
+   * that they are the same trip anyway, because the hand is going to fetch the
+   * thing rather than following it.
+   *
+   * The round appears at `offerFrom` and is simply NOT THERE before it, which
+   * is the frame's whole account of a launcher between rockets: an empty tube
+   * with a hand away from it. Nothing fades and nothing is half-loaded — a
+   * rocket is in the weapon or it is not.
+   */
+  private poseLoad(p: ViewModelParams, rig: WeaponRig, throwing: boolean): void {
+    const l = CONFIG.viewmodel.load;
+    const round = rig.warhead;
+    if (!round) return;
+    const ph = p.loadPhase;
+
+    // Where the round is relative to seated, and how far it is still turned
+    // out of the notch. Three segments, and the seams between them agree by
+    // construction rather than by matching keys: each begins where the last
+    // one ended.
+    this.roundPos.setAll(0);
+    this.roundRot.setAll(0);
+    // How far through the reach the hand is — 1 from the moment it has the
+    // round. It is what the hand's own trip out of frame runs on, and it is
+    // the one part of this the round is not in.
+    let reach = 1;
+    if (ph < l.offerFrom) {
+      // Fetching. There is no round yet, and the hand is on its way down to
+      // where one will be — which is the same place, so the two never have to
+      // be reconciled.
+      reach = smoothstep01(ph / l.offerFrom);
+      this.roundPos.set(
+        l.offerPos.x * reach,
+        l.offerPos.y * reach,
+        l.offerPos.z * reach,
+      );
+    } else if (ph < l.alignAt) {
+      // Coming up and turning onto the bore. Eased at both ends: this is an
+      // arm lifting something heavy into place, not a part travelling on a
+      // rail, and it is the half of the gesture the player has time to read.
+      const x = smoothstep01((ph - l.offerFrom) / (l.alignAt - l.offerFrom));
+      this.roundPos.set(
+        l.offerPos.x * (1 - x),
+        l.offerPos.y * (1 - x),
+        l.offerPos.z + (l.alignDist - l.offerPos.z) * x,
+      );
+      this.roundRot.set(l.offerRot.x * (1 - x), l.offerRot.y * (1 - x), l.indexTurn);
+    } else {
+      // Going home down the bore, and the index turn unwinding with it. The
+      // distance falls as (1 - x²), so the round is at its FASTEST on the
+      // frame it arrives — the magazine's rule, and it is what makes the seat
+      // an impact the weapon can flinch from rather than a part being parked.
+      // This arm also covers seated: at x = 1 it is identity, which is where
+      // the round spends every frame nothing is happening to it.
+      const x = Math.min(1, (ph - l.alignAt) / (l.seat - l.alignAt));
+      const k = 1 - x * x;
+      this.roundPos.z = l.alignDist * k;
+      this.roundRot.z = l.indexTurn * k;
+    }
+
+    round.position.copyFrom(this.roundPos);
+    round.rotation.copyFrom(this.roundRot);
+    // Gated on the phase rather than eased, because a rocket has two places to
+    // be and nothing in between. Written only on the frames it changes: this
+    // runs every frame of the game the launcher is carried, and `setEnabled`
+    // walks the subtree under it.
+    //
+    // **A throw takes the round with the hand**, and it has to: the throwing
+    // hand IS the support hand, so `update` switches that arm off for the
+    // gesture — and a round left drawn is then a rocket hanging in mid-air in
+    // front of the camera with nothing holding it. The magazine next door gets
+    // away with staying put because it spends the throw below the frame; this
+    // one is half a metre of warhead in the middle of it. The two come back
+    // together on the same frame, still in each other's company, because the
+    // hand's position is this round's position plus a constant.
+    const shown = ph >= l.offerFrom && !throwing;
+    if (round.isEnabled(false) !== shown) round.setEnabled(shown);
+
+    // The hand. Off the shield as it goes down for the round, carrying it for
+    // the whole of the trip up and in, and home again once the motor is
+    // seated — the return laid over the top so the arm walks back to the
+    // handguard instead of arriving there.
+    const arm = rig.supportArm;
+    const w = reach * (1 - ramp(l.handHome[0], l.handHome[1], ph));
+    if (w > 0.0001 || arm.position.lengthSquared() > 0) {
+      const o = l.loadHand;
+      arm.position.set(
+        (o.x + this.roundPos.x) * w,
+        (o.y + this.roundPos.y) * w,
+        (o.z + this.roundPos.z) * w,
       );
     }
   }

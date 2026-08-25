@@ -214,6 +214,23 @@ export interface WeaponParts {
    * the well it is sliding out of.
    */
   magDrop?: Vector3;
+  /**
+   * The loaded ROUND on a weapon that is loaded through the muzzle, under a
+   * node of its own so the load gesture can take it out and put a fresh one
+   * back — the launcher's warhead, and the second part of a weapon that is
+   * not welded to the rest of it.
+   *
+   * It is the magazine's twin and deliberately not the magazine itself: a
+   * magazine is pulled DOWN out of a well and thrown away, and this goes
+   * BACK out of a bore and comes home along it, so the two share the split
+   * (a `merge` call of their own, `ViewModel` the only writer, seated
+   * whenever nothing is in flight) and nothing else. A weapon may have
+   * either, and no weapon in the kit has both.
+   *
+   * Optional for the reason `magazine` is: a weapon that sets neither simply
+   * has nothing that comes out, which is what the mine does.
+   */
+  warhead?: TransformNode;
   /** A rail's worth of optics, or the one sight this weapon was born with. */
   sights: WeaponSights;
   /**

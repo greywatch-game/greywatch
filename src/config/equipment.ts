@@ -65,6 +65,22 @@ export const equipment = {
      */
     carried: 2,
     /**
+     * **The gap between rounds is a LOAD, not a rate of fire**, and this is
+     * where that is said rather than left to be inferred from `fireRate`.
+     *
+     * The two AT items both have a cooldown and they mean opposite things.
+     * This one is a man putting a rocket down a tube: it is drawn as one (see
+     * `CONFIG.viewmodel.load` and `RpgModel`'s round, which is the same fact
+     * seen from the model's end) and it is PAID for as one — `Player.loading`
+     * reads this, so a launcher cannot be loaded at a sprint any more than a
+     * magazine can be changed at one. The mine's is a placement rate and says
+     * so, which is why it does not carry this: a player backing away from a
+     * hull must not be pinned for half a second by a gesture that is not
+     * happening, and that is the same argument `layMine`'s "never refused for
+     * want of somewhere to put it" already makes.
+     */
+    muzzleLoad: true,
+    /**
      * What the rocket does to the HULL it strikes, before `resist.shell`
      * (which is 1, so this is the number that lands).
      *
@@ -274,6 +290,16 @@ export const equipment = {
     short: "Mines",
     /** Mines a life, and the number that may be live at once. */
     carried: 2,
+    /**
+     * **A mine is PLACED, not loaded**, so the gap between two of them is a
+     * rate and not a gesture — see `rpg.muzzleLoad`, which is the same field
+     * saying the opposite thing about the other item in this slot.
+     *
+     * Stated rather than left out, because the consequence is movement: this
+     * is what keeps `Player.loading` false while the half-second runs down, and
+     * a player backing away from a hull must not be pinned by it.
+     */
+    muzzleLoad: false,
     /**
      * What a mine does to the hull that runs over it. A tracked vehicle
      * driving onto a shaped charge is the worst thing that happens to it in

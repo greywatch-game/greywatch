@@ -442,6 +442,47 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
   slower half: a launcher's swap is over a second of GAME time, which is ~40 s
   of wall clock at 2 fps, and reading `player.swapping` too early shows the
   previous weapon still in the hands.
+- **A viewmodel GESTURE is checked by posing the weapon yourself, and none of it
+  needs a round.** `ViewModel.update(dt, params)` is a pure function of a
+  sixteen-field `ViewModelParams`, and the rigs exist from `Game`'s constructor
+  — so a whole timeline is a loop that builds the params by hand, calls
+  `update` twenty or thirty times to let the sway settle, and reads or
+  photographs the result. Three things make it worth doing this way rather than
+  entering a round and driving the real clock:
+  - **Build a map but stop in `deploy`.** The lid holds the world, so
+    `updateGameplay` never runs and nothing overwrites the pose you pushed —
+    while the map is still standing, which is what LIGHTS the weapon. Posed
+    from the `menu` instead the rigs are there but the environment is not, and
+    every shot comes back too dark to read.
+    `player.view.setVisible(true)` after the lid is up is what puts the weapon
+    on screen.
+  - **It is minutes rather than half an hour.** Driving the real clock costs a
+    launcher swap (~40 s of wall clock), a live round at 2 fps and three
+    rendered frames per sample; two attempts at it timed out or lost the
+    browser outright. The same sweep posed by hand ran in about two minutes.
+  - **`drawSlot` is refused while a swap is in flight**, and the deploy's own
+    `applyLoadout` starts one — so a script that confirms the deploy and asks
+    for the third slot on the next line is refused silently and then waits
+    forever on a predicate that can never come true. Poll and re-ask rather
+    than calling it once.
+
+  What to READ is the landmark projected to pixels: `Vector3.Project(p,
+  Matrix.Identity(), scene.getTransformMatrix(), viewport)`, with the point
+  built by `Vector3.TransformCoordinates(local, node.getWorldMatrix())` so a
+  weapon's own coordinates can be named directly (the muzzle at z 1.24, the
+  round's nose at 1.2, its motor's tail at 0.44). There is no `BABYLON` global:
+  take the classes off live objects (`cameraSys.camera.position.constructor`,
+  `scene.getTransformMatrix().constructor`). The support hand
+  (`local(supportArm, -0.01, -0.16, 0.64)`) is the self-check — it reads
+  **(725, 634)** at rest, which is the figure `docs/antitank.md` recorded when
+  the launcher's carry was first framed, so a harness that disagrees with it is
+  wrong before anything else it says is worth reading.
+
+  **Photograph the CROP, not the frame.** The weapon lives in the lower middle
+  and right of a 1280x720 picture, so `page.screenshot({ clip })` around
+  roughly `{x: 340, y: 300, width: 720, height: 420}` is the difference between
+  a legible gesture and a dark smudge — the first pass at this was judged from
+  full frames and a sleeve was mistaken for the rocket.
 - **A fire mode is a synchronous test, and the burst has to be one.** Its rounds
   are 0.05 s apart and headless frames are 0.5 s, so nothing about it is
   observable by holding a key down. `player.tryShot(trigger)` is a pure state

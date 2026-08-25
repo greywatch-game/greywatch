@@ -198,6 +198,122 @@ export const viewmodel = {
     kickFall: 0.12,
   },
   /**
+   * The LAUNCHER's load, which is not a reload and is deliberately not built
+   * out of one.
+   *
+   * **What it runs on is the FIRE COOLDOWN, because on a two-shot weapon the
+   * cooldown IS the loader** — `equipment.rpg.carry.fireRate` says so in as
+   * many words, and two seconds of a tube sitting still between rockets was
+   * the only place in the kit where a wait had nothing on screen to be. So
+   * nothing here goes near `Player.startReload`: there is no magazine, no
+   * reserve and no reload on this slot (`docs/antitank.md`), and the gesture
+   * is what the weapon is DOING while the clock the trigger already sets runs
+   * down. A launcher with no round left never plays it — the tube is spent and
+   * `tryShot` is putting it away.
+   *
+   * **It is a MUZZLE load, and every beat below is that fact.** A rifle's
+   * magazine is released, falls away and is replaced from underneath; a rocket
+   * is fetched whole, offered to the mouth of the bore nose-first and pushed
+   * back down it until the motor is home. Nothing is dropped and nothing is
+   * thrown away, which is why there is no `dropTime` here and no drop axis:
+   * what left the weapon left it at forty-five metres a second.
+   *
+   * The order the beats run in, all fractions of `weapons[id].shotInterval`:
+   * - `0` — the shot. The round is GONE (`ViewModel` disables the node), the
+   *   tube comes down off the shoulder under `loadPos`/`loadRot`, and the
+   *   support hand leaves the heat shield.
+   * - `[0, offerFrom]` — the hand goes down out of frame after the next
+   *   rocket. There is nothing to see; the empty tube is the picture.
+   * - `[offerFrom, alignAt]` — the round rises back into frame WITH the hand,
+   *   offered up to the muzzle and turned onto the bore.
+   * - `[alignAt, seat]` — it slides straight back down the bore, at its
+   *   fastest on the frame it arrives.
+   * - `seat` — home. `seatKick` is the weapon taking it.
+   * - `cock` — the hammer is thumbed back and the weapon is live again;
+   *   `cockKick` is the bolt's opposite number and the last thing that
+   *   happens.
+   */
+  loadPos: { x: 0.02, y: -0.02, z: -0.05 },
+  loadRot: { x: 0.05, y: -0.16, z: -0.22 },
+  load: {
+    /** The hand comes back into frame with the round here. */
+    offerFrom: 0.3,
+    /** The round is on the bore, tail toward the mouth, ready to go in. */
+    alignAt: 0.56,
+    /** The motor is home. */
+    seat: 0.78,
+    /** The hammer back — the launcher's answer to the bolt going forward. */
+    cock: 0.9,
+    /**
+     * The tube's trip down off the shoulder and back up onto it. The return
+     * starts on the seat rather than on the cock, because a launcher is a
+     * metre and a half of tube and it takes the whole of the tail of the
+     * gesture to get back where it was — and it finishes just short of the
+     * end for the reload's reason: the rocket the player is waiting on is
+     * fired from the carry.
+     */
+    tiltIn: 0.12,
+    tiltOut: [0.78, 0.98],
+    /**
+     * How much of the AIM the gesture takes away. Higher than the rifle's,
+     * and for a reason the rifle does not have: this optic is a 2x prism
+     * standing off the LEFT of the tube, so the aimed pose swings the bore
+     * across the middle of the screen and the load happens at the muzzle —
+     * the far end of the thing that would be lying over the picture. Not 1,
+     * on `reload.aimBreak`'s argument: the sight comes back to the axis from
+     * near it rather than swinging up from the shoulder on the last beat.
+     */
+    aimBreak: 0.9,
+    /**
+     * Where the round is when the hand first has it, weapon-local and
+     * relative to SEATED (as every offset in this file is): below the frame,
+     * outboard and forward of the muzzle, nose up and turned across the bore.
+     *
+     * The depth is not composition. One node stands in for the round that
+     * left and the round that comes back, so the frame it reappears on is a
+     * JUMP from nothing to here, and it has to happen far enough under the
+     * bottom edge that neither the bob nor the tube's own tip can bring it
+     * into view. The travel eases late, so the round is still in frame for
+     * the last half of its trip up.
+     */
+    offerPos: { x: 0.16, y: -0.78, z: 0.26 },
+    offerRot: { x: -0.5, y: 0.34, z: 0 },
+    /**
+     * How far ahead of seated the round sits once it is ON the bore, along
+     * the bore. It has to clear the MOTOR and not merely the warhead: the
+     * sustainer's tail is 0.35 behind the muzzle when the round is home, so
+     * anything under that is a round that never actually came out of the tube
+     * and the whole gesture reads as the head wobbling.
+     */
+    alignDist: 0.46,
+    /**
+     * Radians the round is still turned by when it reaches the bore, unwound
+     * across the slide. A rocket indexes on a lug and the last thing a loader
+     * does is turn it into the notch — and it is the one thing on a round
+     * this symmetric that says it was PUT there rather than parked.
+     */
+    indexTurn: 0.9,
+    /**
+     * Where the support hand holds the round, relative to its home on the
+     * heat shield and weapon-local — the hand rides this PLUS the round's own
+     * travel from `offerFrom` on, so it is carrying the rocket rather than
+     * arriving with it, exactly as the magazine's hand does.
+     */
+    loadHand: { x: 0.05, y: -0.02, z: 0.3 },
+    /** The hand's trip back to the shield, once the motor is home. */
+    handHome: [0.78, 0.94],
+    /**
+     * The two impacts, as impulses on the weapon — the round going home and
+     * the hammer coming back — in the same shape and for the same reason as
+     * `reload.seatKick`/`boltKick`: they are impacts, and the weapon answers
+     * one the way it answers a shot. Both roll AGAINST `loadRot.z`, the rule
+     * the reload's pair already follow.
+     */
+    seatKick: { pos: { x: 0, y: 0.012, z: -0.03 }, rot: { x: -0.05, y: 0.04, z: 0.09 } },
+    cockKick: { pos: { x: 0, y: -0.008, z: 0.012 }, rot: { x: 0.04, y: 0, z: 0.05 } },
+    kickFall: 0.13,
+  },
+  /**
    * The weapon swap: one gun goes away below the frame and the other comes
    * up in its place, on a triangle that peaks halfway through
    * `weapons[id].drawTime`.

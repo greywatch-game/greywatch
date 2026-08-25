@@ -137,7 +137,8 @@ src/
   entities/
     Player.ts           # Movement, sprint, crouch, jump, weapon state
     ViewModel.ts        # The first-person weapon: carried gun + gloved arms on
-                        #   the camera, hip/ADS/sprint/reload, sway, bob, and
+                        #   the camera, hip/ADS/sprint/reload/muzzle-load, sway,
+                        #   bob, and
                         #   the kit turntable with the dark card behind it.
                         #   Builds every weapon, enables one
     weaponKit.ts        # The build accumulator every weapon model is written
@@ -205,7 +206,8 @@ src/
                         #   simulates them and by the one that only draws them
     RpgModel.ts         # The launcher on the shoulder and the rocket that
                         #   leaves it. Built from its VENTURI, not its middle,
-                        #   and the one weapon with a `hipYaw` of its own
+                        #   the one weapon with a `hipYaw` of its own, and the
+                        #   one whose loaded ROUND is a node that comes out
     MineModel.ts        # The mine in the hands and the plate in the road. The
                         #   one thing in the kit that is not a weapon at all
   systems/

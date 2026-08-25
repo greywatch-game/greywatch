@@ -634,7 +634,15 @@ because the choice is the feature.
 `equipmentSetup` hands back a plain `WeaponSetup`, so the holster, the draw, the
 swap, the rig and the trigger gate need no teaching — and every field that would
 make it a gun is a constant saying it is not, **`reloadTime` included**: no
-resupply, and the pouch is refilled by death exactly as the grenades' is.
+resupply, and the pouch is refilled by death exactly as the grenades' is. **The
+launcher is nonetheless LOADED on screen, off the fire cooldown rather than off
+a reload** — on a two-shot weapon that cooldown IS the loader — and it is a
+MUZZLE load, so the round is fetched and pushed back down the bore rather than
+dropped and replaced. `Player.loadProgress` is the whole of its state, and
+**`Player.loading` is the one question anything else asks** — a magazine going
+into a well OR a rocket going down a bore, which is what stops the sprint. The
+MINE is exempt by `muzzleLoad`: its cooldown is a placement rate, not a
+gesture.
 
 **The ROCKET FLIES — the second thing in this game that is not hitscan.** **The
 MINE is not a projectile at all**, and **only a hull sets one off**. **What a hit
@@ -648,7 +656,8 @@ rocket, never its mine, and never either one's blast.
 → **[`docs/antitank.md`](docs/antitank.md)** — why the two items are one slot,
 what `equipmentSetup` makes constant, the three things `tryShot` skips, the
 rocket's arm distance, the mine's cap, the bots' band and their worn tube, the
-shoulder carry and `hipYaw`'s counter-intuitive sign, and what is not built.
+shoulder carry and `hipYaw`'s counter-intuitive sign, the muzzle load's seven
+beats and the sustainer that makes them read, and what is not built.
 
 ### Breakable glass
 

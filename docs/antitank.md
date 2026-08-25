@@ -75,7 +75,9 @@ What is NOT there is every field that would make it a gun, and each constant in
   else — the economy `CONFIG.grenade.carried` already runs on.
 - **`reloadTime` is 0 and unreachable.** `Player.startReload` refuses the slot
   outright, and `tryShot` does not auto-start one on an empty magazine. A spent
-  launcher is a spent launcher until the next life.
+  launcher is a spent launcher until the next life. That is a statement about
+  the AMMUNITION and not about the animation: the launcher does have a load
+  gesture, and it runs on the fire cooldown rather than on this — see below.
 - **`semiAuto` is true and `burst` is 1.** One pull is one rocket or one mine,
   and a held trigger may never spend the second.
 - **The spreads are 0.** A rocket goes where the tube points and a mine goes
@@ -226,6 +228,131 @@ spot ahead and falls back to the player's own feet, because a trigger pull that
 spends a mine and produces nothing is the worst thing this could hand somebody
 under fire. `dropMax` is what rules the spot ahead out — a mine laid over the
 edge of a terrace has to land on the terrace.
+
+## The load, and why a weapon with no reload has one
+
+`carry.fireRate` is 0.5, and the comment on it has always said what that number
+is: *"rounds per second, which on a two-shot weapon is the loader"*. Two seconds
+between rockets is not a rate of fire — it is the time it takes to put the next
+one in the tube. It was also, for a while, the only wait in the kit with nothing
+on screen to be: the tube sat still, the warhead never left it, and the second
+rocket appeared out of a weapon that had visibly never been touched.
+
+**So the gesture runs on the FIRE COOLDOWN, and it is the only clock it needs.**
+`Player.loadProgress` is that cooldown read as a fraction, `ViewModel` plays
+`CONFIG.viewmodel.load` off it, and `Sfx.rpgLoad` lays its four events across the
+same duration (`Player.loadTime`, so the picture and the sound cannot be given
+different numbers). Nothing goes near `startReload`: the rule above stands
+exactly as written — there is no reserve, no magazine and no reload on this slot
+— and what this animates is a rocket that was already in the pouch going into a
+tube it was always going to go into.
+
+**That buys the whole feature with no state.** A reload needs a blend beside its
+phase because it can be CANCELLED — a swap or a death leaves the gesture
+stranded halfway and something has to ease the pose back off. A load cannot be:
+the clock it reads starts at rest, ends at rest, is dropped to zero by
+`completeSwap` and by every path that puts a fresh weapon in the hands, and is
+gated on there being a round left to load at all. So there is no `loadBlend`, no
+frozen phase, no cancel path, and a weapon with nothing to load reads 1 for the
+whole round and costs one comparison a frame.
+
+### It is a MUZZLE load, and every beat is that fact
+
+A rifle's magazine is released, falls out of the well under gravity with no hand
+on it, clears the frame, and a second one comes up from underneath. **None of
+that is available here**, and the reason is not stylistic: what left this weapon
+left it at 45 m/s and is a hundred metres away. There is nothing to drop,
+nothing to catch, and no fall to animate. What there is instead is a REACH —
+the hand goes out of frame after the next rocket and comes back with it — and
+then the one motion the gesture exists to show, the round offered to the mouth
+of the bore and pushed back down it.
+
+| beat | fraction | what happens |
+| --- | --- | --- |
+| the shot | 0 | the round node is DISABLED. The tube is empty, and that is the picture for the next third of a second |
+| the tip | `tiltIn` | the launcher comes down off the shoulder under `loadPos`/`loadRot`, and the support hand leaves the heat shield |
+| the reach | `[0, offerFrom]` | the hand goes down out of frame. Nothing is drawn; the empty tube is the whole of it |
+| the offer | `[offerFrom, alignAt]` | the round rises back into frame WITH the hand and turns onto the bore |
+| the slide | `[alignAt, seat]` | it goes home down the bore, distance-to-go falling as `1 - x²` so it is at its fastest on the frame it arrives |
+| the seat | `seat` | home. `seatKick` is the weapon taking it, and the index turn finishes unwinding |
+| the cock | `cock` | the hammer thumbed back. `cockKick`, and the launcher's answer to a bolt going forward — an RPG is cocked by hand, so this is the beat that says the weapon will fire |
+
+Five things are load-bearing:
+
+- **The SUSTAINER is what makes the load read, and it is invisible the rest of
+  the time.** The round's motor tube is 0.33 of weapon length behind the
+  warhead, under the bore's own diameter, so when the round is seated the whole
+  of it is inside a solid cylinder and the depth buffer eats it — the carried
+  weapon is pixel for pixel what it was. Pulled out for a load it is a third of
+  a metre of motor leaving the tube, which is the difference between a rocket
+  being LOADED and a warhead wobbling about in front of a muzzle that never
+  changed. `alignDist` is sized off it and not off the head: the tail is 0.35
+  behind the muzzle when seated, so anything under that is a round that never
+  actually came out.
+- **`offerPos` is deep for the reason `reload.insertDist` is.** One node stands
+  in for the round that left and the round that comes back, so the frame it
+  reappears on is a jump from nothing to there, and it has to happen far enough
+  under the bottom edge that neither the bob nor the tube's own tip can bring
+  it into view.
+- **The hand rides the round exactly**, from `offerFrom` to the seat, offset by
+  `loadHand` — where a hand sits on a rocket rather than on a handguard. Before
+  `offerFrom` the two are the same trip anyway, because the hand is going to
+  fetch the thing rather than following it, which is what lets the reach and
+  the offer meet with no seam to key.
+- **`aimBreak` is 0.9, higher than the rifle's**, and the reason is this
+  weapon's own geometry: the optic is a 2x prism standing off the LEFT of the
+  tube, so the aimed pose already swings the bore across the middle of the
+  screen — and the load happens at the MUZZLE, the far end of the thing that
+  would be lying over the picture. It is not 1, on `reload.aimBreak`'s
+  argument.
+- **Measured at 1280x720** (posed by hand — see `VERIFYING.md`), which is what
+  the two depth figures above are tuned against. The round's nose is at
+  **(554, 851)** on the last frame it is hidden and **(594, 807)** on the first
+  frame it is drawn, so it appears 87 px under the bottom edge rather than the
+  35 px an earlier `offerPos` left — inside the bob, and the same failure
+  `reload.insertDist` records at 40 px. It is fully in frame by `0.48`, on the
+  bore at **(514, 512)** with its tail at the mouth, and seated its nose lands
+  on **(585, 502)** against the launcher's own muzzle landmark at (579, 500).
+  Nothing crosses the middle of the screen at any point.
+- **The slide reads as DEPTH rather than as travel, and that is the geometry
+  being honest.** A tube's mouth is its FAR end and the venturi is at the
+  shoulder, so a rocket going in is a rocket coming toward the eye: over the
+  whole slide the nose moves 10 px, while the round's on-screen length goes
+  from 117 px to 235 px and the motor's tail sweeps down-right past the tube
+  mouth and is swallowed by it. That growth is the animation. It is also why
+  the sustainer had to exist — without it the only thing moving is a warhead in
+  front of a muzzle that never changes, at almost no apparent speed.
+- **It blocks the SPRINT, exactly as a reload does**, through `Player.loading`
+  — one question ("is ammunition going in?") rather than two gates that could
+  drift apart. A body cannot run with both hands on the front of a launcher,
+  and a launcher that could be loaded at a sprint would be the one weapon in
+  the kit whose reload is free. Firing needs no term added for it:
+  `tryShot` is already refused by `fireCooldown`, which for this weapon IS the
+  gesture's clock. A SPENT tube does not block it either — `loadProgress` is
+  gated on there being a round left, so the two seconds after the last rocket
+  are a swap and not a load.
+- **`muzzleLoad` is what tells the two items apart, and it had to be said.**
+  Both run a cooldown and they mean opposite things: the launcher's is a rocket
+  going down a tube, the mine's is "as fast as a man can set one down and stand
+  up". Read as one, the mine would pin a player for half a second with no
+  gesture on screen to explain it, at the exact moment `layMine` already
+  refuses to punish — somebody backing away from a hull. So the flag lives on
+  the ITEM, beside `carried`, and the mine states `false` rather than omitting
+  it: the consequence is movement, which is too far from this table to leave to
+  a default. Its counterpart at the model's end is `WeaponParts.warhead` — one
+  says the cooldown is a load, the other draws it.
+- **A THROW takes the round with the hand.** The throwing hand is the support
+  hand, so the arm is switched off for the gesture — and a round left drawn is
+  a rocket hanging in mid-air with nothing holding it. The magazine next door
+  gets away with staying put because it spends a throw below the frame; this is
+  a warhead in the middle of one. Both come back on the same frame and still
+  together, because the hand's position is the round's plus a constant.
+- **A swap does not cheat it and does not need a rule to stop it.**
+  `completeSwap` drops the fire cooldown with the weapon that earned it, so a
+  launcher put away mid-load comes back loaded — which is the existing rule for
+  every weapon in the game (a swap has already cost more time than the cooldown
+  it drops), and the round trip costs two draws of a 1.4 m tube. `stow()` puts
+  the round back in the tube on the way, so nothing is left hanging.
 
 ## A launcher bot per squad, and the one thing it is allowed to do
 
@@ -392,6 +519,10 @@ A kit with no third slot pushes null and the row is not drawn at all.
   street the enemy's armour uses is a weapon with a customer, and laying one is
   a decision about where the other side's tank is going rather than a bet on
   where a person will drive one.
+- **A reload.** The gesture above is a LOAD and the distinction is the whole of
+  the slot's economy: nothing is conjured, the pouch is still two rockets a
+  life, and an empty tube stays empty. What was added is the two seconds
+  between the first rocket and the second having something in them.
 - **A launcher on the bot's HANDS.** The tube is slung across the back and the
   rifle stays in the hands, so a rocket visibly leaves a body holding a rifle.
   At the range this happens at, the flame is the read and the slung tube is the
