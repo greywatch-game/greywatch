@@ -40,12 +40,24 @@ authored by hand:
   carrying four separate rules to make it survivable. The FOAM mask stays
   because it is doing what a texture is good at — breaking up a metre-wide band
   through a smoothstep, where a repeat is neither visible nor a problem.
-- `shots/<map>.jpg` (~700 KB, three of them) — what the main menu stands on:
+- `shots/<map>.jpg` (~700 KB, four of them) — what the main menu stands on:
   a photograph of each map, taken by `npm run shots` from the vantage that
   map's row in `src/ui/mapShots.ts` states, and imported the same `?url` way.
   It bends nothing, because a picture of a procedural world is still not
   authored art — the script rebuilds it out of the tree, and the pose that
   produced it is committed beside it rather than lost in the pixels.
+
+  **This generator alone needs a machine with a GPU and a display**, and that
+  requirement arrived with WebGPU. A headless Chromium cannot present a WebGPU
+  canvas at all — the first `getCurrentTexture()` destroys the device — so the
+  script launches HEADED, through `scripts/browser.mjs`, and on a box with
+  neither it fails as a timeout waiting for a map that cannot draw. The other
+  two browser-driven scripts (`npm run collision`, `npm run parity`) read state
+  back out of the page rather than photographing it, so they stay headless and
+  need only the WebGPU flag that module also owns. **It is a requirement of the
+  generator rather than of testing it**: a shot is one of the four exceptions
+  precisely because it has a generator, so what that generator costs to run is
+  part of the bargain and belongs written down here.
 
 The common shape of all four: a **generator** in `package.json`, its output
 **committed**, and the input that produced it committed beside it. That is what

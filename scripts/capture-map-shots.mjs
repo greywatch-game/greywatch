@@ -17,6 +17,17 @@
  * collision bake does: the point is a picture of what the CLIENT actually
  * builds, and the only way to be sure of that is to let the client build it.
  *
+ * **It needs a machine with a GPU and a display, and that is a REQUIREMENT of
+ * this generator rather than an inconvenience of testing it.** The game runs on
+ * WebGPU, and a headless Chromium cannot present a WebGPU canvas at all — the
+ * first `getCurrentTexture()` destroys the device, so the round never draws and
+ * the script fails as `waitForFunction` timing out on a map that cannot be
+ * photographed. So it launches HEADED (`launchClient({ headed: true })`), which
+ * the other two browser-driven scripts do not need because neither of them
+ * wants a picture. `docs/build.md` carries this as part of the four generated
+ * assets' contract: a shot exists because it has a generator, and this is what
+ * that generator now costs to run.
+ *
  * Four things have to be true of the frame before it is worth keeping, and all
  * four are arranged below rather than assumed:
  *
@@ -41,7 +52,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { chromium } from "playwright";
+import { launchClient } from "./browser.mjs";
 import { root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
 
@@ -186,7 +197,7 @@ console.log(`dev server on ${vite.url}`);
 
 let browser;
 try {
-  browser = await chromium.launch();
+  browser = await launchClient({ headed: true });
 
   // The vantages come from the module the MENU reads, fetched through the dev
   // server so this script and the game cannot hold two ideas of where the

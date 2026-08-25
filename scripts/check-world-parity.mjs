@@ -15,7 +15,7 @@
  * matched. See `src/world/fingerprint.ts`.
  */
 import { spawnSync } from "node:child_process";
-import { chromium } from "playwright";
+import { launchClient } from "./browser.mjs";
 import { MAPS, root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
 
@@ -78,7 +78,7 @@ const vite = await startDevServer(root);
 let browser;
 let failures = 0;
 try {
-  browser = await chromium.launch();
+  browser = await launchClient();
 
   for (const { id } of MAPS) {
     const client = await clientFingerprint(browser, vite.url, id);

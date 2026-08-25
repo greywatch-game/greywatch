@@ -32,7 +32,7 @@
  */
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { chromium } from "playwright";
+import { launchClient } from "./browser.mjs";
 import { MAPS, root, sourceHash } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
 
@@ -240,7 +240,7 @@ console.log(`dev server on ${vite.url}`);
 
 let browser;
 try {
-  browser = await chromium.launch();
+  browser = await launchClient();
 
   for (const { id, constant } of MAPS) {
     const baked = await bakeMap(browser, vite.url, id);

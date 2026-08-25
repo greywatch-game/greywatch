@@ -67,13 +67,34 @@ bite before any of the quirks below do.**
     What it looks like is a WebGPU port bug and it is not one — the same map on
     the same machine bakes all forty probes in ONE frame on WebGL2 and runs at
     ~32 fps, because WebGL2 gets the real GPU and WebGPU gets SwiftShader.
-    **Two ways round it, and which you want depends on the question**:
+    **Three ways round it, and which you want depends on the question**:
     `g.reflections.build = () => {}` before `startRound` gives a Coldharbour
     that renders (99% of pixels lit, everything but the glazing correct), and
     truncating `map.paneGroups` inside a wrapper round `build` keeps a few
-    probes so the mirrors are still testable. **Anything that actually needs
-    forty baked probes needs real hardware.** Hollowmere, Greyfen and
-    Harrowmead are unaffected — Hollowmere has no glazed block at all.
+    probes so the mirrors are still testable. **The third keeps all forty, and
+    it is the one to reach for**: the frame is the problem and the bake is not,
+    so PARK the cube targets and release them a few at a time.
+    - `build` sets every probe's render list and calls `resetRefreshCounter`,
+      and `newProbe` has already pushed each `cubeTexture` into
+      `scene.customRenderTargets` — which is the only thing that renders them.
+      Filter them back out of that array inside a wrapper round `build`, then
+      push four back, wait one `onAfterRenderObservable`, and filter those four
+      out again. Measured: **ten frames at ~10 s a batch bakes all forty, no
+      device loss, and the round then draws at 99% lit** with the city in its
+      glass.
+    - **Wait for the round to be UP and every `ShaderMaterial` ready before
+      releasing the first batch.** A render target whose meshes are not ready
+      renders EMPTY and is still marked rendered, so a version of this that
+      pumps from `onBeforeRenderObservable` starting on the install frame hands
+      back its first eight probes blank — and blank probes read as a Y-flip
+      regression that is not there (coverage 0.586, face 2 at 0.800), because
+      every mean is over forty probes of which eight are zero.
+    - **It proves the probe PATH and not the shipped bake.** The game still
+      queues all forty on one frame; only a GPU can finish that. **Anything
+      that needs the one-frame bake itself needs real hardware.**
+
+    Hollowmere, Greyfen and Harrowmead are unaffected — Hollowmere has no
+    glazed block at all.
   - **Headless still runs the whole of the DOM and the whole of the
     simulation** — the boot path, `__celshock`, state transitions, the screens,
     rules, damage arithmetic, nav — none of which needs a presented frame, and
@@ -883,6 +904,16 @@ Headless quirks that have already cost time:
   OUTSIDE `updateGameplay`. Check the floor by grabbing twice and diffing before
   trusting any measurement; a method that cannot reach zero is not measuring what
   you think.
+  - **Turning the post chain OFF is the blunt version, and pinning the grain's
+    CLOCK is the one to use.** `Object.defineProperty(g.post, "time", { get: ()
+    => 0 })` kills the re-hash and leaves the vignette, the desaturation, the
+    aberration, the god rays and the motion blur in the picture — measured
+    under WebGPU, the floor still reaches **0.000%** that way. What it buys is
+    that the three post fragments are IN the frame, so a reference set taken
+    this way can diff them; one taken with `setEnabled(false)` cannot.
+  - The 42–47% figure above is the WebGL2 floor. **It was re-derived under
+    WebGPU rather than assumed to have followed** — same three movers, same
+    zero.
 - **The pause lid is a free camera**, and it is raised with `g.raiseLid("paused")`
   — **`g.state` is a getter and assigning it throws**, since nothing in the
   codebase assigns a state (see `Game`'s three moves). The lid stops
