@@ -59,6 +59,21 @@ bite before any of the quirks below do.**
     and slow.** A round runs at ~16 fps, not 59. Never quote a frame time
     measured here; `FINDINGS.md` numbers need real hardware. Correctness, which
     is what parity diffs are, is unaffected.
+  - **And "slow" has a cliff in it: COLDHARBOUR'S REFLECTION BAKE KILLS THE
+    DEVICE, headed and with the GPU toggle on.** Forty cube probes is 240 face
+    renders over 488 meshes, and the CPU rasteriser does not finish that frame
+    before Chromium's watchdog takes the device: `copyExternalImageToTexture`
+    fails, "WebGPU context lost" follows, and the round never draws a pixel.
+    What it looks like is a WebGPU port bug and it is not one — the same map on
+    the same machine bakes all forty probes in ONE frame on WebGL2 and runs at
+    ~32 fps, because WebGL2 gets the real GPU and WebGPU gets SwiftShader.
+    **Two ways round it, and which you want depends on the question**:
+    `g.reflections.build = () => {}` before `startRound` gives a Coldharbour
+    that renders (99% of pixels lit, everything but the glazing correct), and
+    truncating `map.paneGroups` inside a wrapper round `build` keeps a few
+    probes so the mirrors are still testable. **Anything that actually needs
+    forty baked probes needs real hardware.** Hollowmere, Greyfen and
+    Harrowmead are unaffected — Hollowmere has no glazed block at all.
   - **Headless still runs the whole of the DOM and the whole of the
     simulation** — the boot path, `__celshock`, state transitions, the screens,
     rules, damage arithmetic, nav — none of which needs a presented frame, and
@@ -359,8 +374,13 @@ Headless quirks that have already cost time:
   `getCompilationInfo()`, which returns `{type, lineNum, linePos, message}`
   against the very source you are holding. Do not reimplement the old one.
   Warnings come back through the same call, and Dawn emits a wall of
-  `'textureSample' must only be called from uniform control flow` for Babylon's
-  own WGSL shaders — filter on `type === "error"` or every run reads as broken.
+  `'textureSample' must only be called from uniform control flow` — filter on
+  `type === "error"` or every run reads as broken. **Most of that wall is OURS
+  and it is not a symptom of anything**: `shadowVisibility` samples the depth
+  map inside a branch and `band` takes an `fwidth`, which is what a cel shader
+  is, and `glslScaffold` turns the diagnostic off for exactly that reason. A
+  run in which those messages arrive as `type === "error"` instead means the
+  scaffold did not install — that is the thing to check, not the shader.
 - Assigning `input.ads` or `cameraSys.adsBlend` does not stick;
   `InputManager.update()` rewrites the flag every tick. Redefine instead —
   `Object.defineProperty(g.input, "ads", { get: () => true, set: () => {} })` —

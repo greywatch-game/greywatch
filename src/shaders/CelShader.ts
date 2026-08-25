@@ -1397,6 +1397,22 @@ export class CelMaterialFactory {
       this.applyCamera(mat);
       this.applyWind(mat);
       this.applyEnvironment(mat);
+      // **The ink samples no shadow and is still BOUND one, because a sampler
+      // that is DECLARED has to be bound whether or not the variant reads
+      // it.** `SAMPLERS` is one list for every cel variant, so `CEL_INK`
+      // carries `shadowMap` into the bind group layout like all the others,
+      // and a layout entry with nothing behind it is not the harmless no-op it
+      // was under WebGL2 — the bind group fails to build and the draw is lost
+      // with it. Measured on Hollowmere: two swaying merge groups, two ink
+      // twins, `Failed to read the 'resource' property from
+      // 'GPUBindGroupEntry'` and a black frame.
+      //
+      // This is NOT the migration's scaffolding and does not come out with it.
+      // What comes out is the `if` in `applyShadow`, if the map ever stops
+      // being bound after the materials exist. Point lights are the same shape
+      // and need no equivalent: they are UNIFORMS, and an unwritten uniform in
+      // a UBO reads as zeros rather than failing.
+      this.applyShadow(mat);
       this.cache.set(cacheKey, mat);
     }
     return mat;

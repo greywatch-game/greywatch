@@ -571,4 +571,8 @@ src/
     GodRays.ts          # Moon shafts: screen-space radial blur
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim angles
     HorrorPost.ts       # Vignette / grain / aberration / damage flash
+    glslScaffold.ts     # SCAFFOLDING for the WebGPU port, and all of it: the
+                        #   three things that are only true while the engine is
+                        #   WebGPU and every shader here is still GLSL. Deleted
+                        #   whole when the last one is ported
 ```

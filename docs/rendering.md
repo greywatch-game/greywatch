@@ -933,6 +933,19 @@ hole in a lit field.
 - Flat shading is recovered in the fragment shader from screen-space derivatives of
   the world position. Do not call `convertToFlatShadedMesh()`; it would unweld vertices
   on every prop and clone for no visual gain.
+- **A sampler a material DECLARES has to be bound, whether or not the variant
+  it compiles sampling it.** The cel shader has one `samplers` list for all
+  eight variants, so `shadowMap` reaches the bind group layout of every one of
+  them — and a layout entry with nothing behind it is not the harmless no-op it
+  was on WebGL2, where an unbound sampler read as black and the frame carried
+  on. The bind group fails to build and every draw using it is lost.
+  `CelMaterialFactory.getInk` is the case that found it: `CEL_INK` is unlit,
+  binds no lights and used to bind no shadow either, so Hollowmere's two
+  swaying merge groups took their ink twins, `Failed to read the 'resource'
+  property from 'GPUBindGroupEntry'` and a black frame with them.
+  **UNIFORMS are the opposite and need no equivalent care**: an unwritten
+  uniform in the leftover UBO reads as zeros, which is why the ink still binds
+  no point lights.
 - `renderOutline` draws a back-face shell expanded by `outlineWidth` in every
   direction, so an emissive detail must protrude past its neighbours' shells or the
   glow is swallowed (why the player's visor slit and the lamp lens stick out).

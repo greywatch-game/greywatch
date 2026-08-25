@@ -55,7 +55,7 @@ import {
   Matrix,
   Mesh,
   Scene,
-  StandardMaterial,
+  type StandardMaterial,
   type SubMesh,
   Vector3,
   Viewport,
@@ -70,6 +70,7 @@ import {
 import { GodRays } from "../shaders/GodRays";
 import { HorrorPost } from "../shaders/HorrorPost";
 import { MotionBlur } from "../shaders/MotionBlur";
+import { scaffoldSceneGLSL } from "../shaders/glslScaffold";
 import { Bot } from "../entities/Bot";
 import { difficultyNames } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
@@ -703,24 +704,15 @@ export class Game {
   ) {
     this.canvas = canvas;
     this.engine = engine;
-    // **SCAFFOLDING, and it comes out with `EmissiveFog`'s WGSL port.** Under
-    // WebGPU a `StandardMaterial` picks WGSL for itself
-    // (`Material._createUniformBuffer`), and a `MaterialPluginBase` answers
-    // `isCompatible(GLSL)` and nothing else — so the first emissive material
-    // `CelMaterialFactory.getEmissive` builds THROWS out of this constructor,
-    // and the boot screen says "something went wrong" about a shader language.
-    // Forcing GLSL is what makes the engine swap a swap of the ENGINE only:
-    // every shader in the game, ours and Babylon's, stays the source it was,
-    // and a failure between here and then is an engine failure by
-    // construction. `ShaderMaterial` needs no equivalent — it defaults to
-    // GLSL and is told otherwise per material.
-    //
-    // This is ONE line to delete, and deleting it is the last step of the
-    // migration rather than a tidy-up: the game must stop needing it, not stop
-    // saying it. Nothing may be built that depends on it being here.
-    StandardMaterial.ForceGLSL = true;
     this.scene = new Scene(this.engine);
     this.scene.collisionsEnabled = true;
+    // **SCAFFOLDING, and the whole argument is in `glslScaffold.ts`.** The
+    // engine is WebGPU and every shader in this tree is still GLSL, and this
+    // is the scene half of what that arrangement costs: Babylon's outline pass
+    // picks WGSL for itself under WebGPU, which leaves `OutlineFog` patching a
+    // source nothing reads. The engine half is `main.ts`'s, and both go when
+    // the last shader is ported. Nothing may be built that depends on either.
+    scaffoldSceneGLSL(this.scene);
 
     // The scene has no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
