@@ -12,9 +12,9 @@
 # The game was static-only until multiplayer; single-player still is, and the
 # `web` target on its own remains a complete deployment of it.
 #
-#   docker build --target web    -t hollowmere .
-#   docker build --target server -t hollowmere-server .
-#   docker run --rm -p 8080:80 hollowmere
+#   docker build --target web    -t greywatch .
+#   docker build --target server -t greywatch-server .
+#   docker run --rm -p 8080:80 greywatch
 #
 # Or both together, wired up, with `docker compose up`.
 

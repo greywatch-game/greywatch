@@ -20,6 +20,14 @@
 # is versioned, so move them together — a client refused at the handshake is a
 # legible failure but still one.
 #
+# **The images are on GHCR and the pull above is anonymous**, which holds only
+# while both packages are PUBLIC — a GHCR package is created private even from a
+# public repository, and until somebody flips each one this file's `pull` answers
+# `denied`, which reads like a misspelt image name rather than a permission. If
+# they are ever deliberately kept private, every box (this one and each region)
+# needs `docker login ghcr.io` with a `read:packages` token before the pull, and
+# that credential then has to live on all of them.
+#
 # **A REGION is this same file on a box somewhere else.** There is no
 # region-aware image and nothing in the server knows which region it is: bring
 # this up, point a hostname of its own at it (`us-east-1.example.com`, with the
@@ -38,7 +46,7 @@
 
 services:
   web:
-    image: idrum4316/hollowmere:latest
+    image: ghcr.io/greywatch-game/greywatch:latest
     # Bound to the loopback, not 0.0.0.0: the only thing that should reach this
     # is the reverse proxy on the same host. Published on every interface it
     # would answer :8080 from the internet, beside the domain, without TLS and
@@ -78,7 +86,7 @@ services:
     restart: unless-stopped
 
   match-server:
-    image: idrum4316/hollowmere-server:latest
+    image: ghcr.io/greywatch-game/greywatch-server:latest
     # Deliberately NOT published, not even on loopback. The only route in is
     # nginx's `/ws` proxy over the compose network — which matters because this
     # is the process that decides who is alive.

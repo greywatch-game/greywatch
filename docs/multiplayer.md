@@ -1740,10 +1740,21 @@ Stated so nobody assumes otherwise:
 is nginx serving `dist/` and `match-server` is this process, deliberately
 unpublished so the only route in is the proxy. On a server,
 `docker-compose.prod.yml` is the same two services from the images CI pushes —
-`idrum4316/hollowmere` and `idrum4316/hollowmere-server`, **two images from one
-Dockerfile, and the workflow needs `target:` on each**; without it Docker builds
-the last stage in the file, which is `web`, and the server image silently never
-exists.
+`ghcr.io/greywatch-game/greywatch` and `ghcr.io/greywatch-game/greywatch-server`,
+**two images from one Dockerfile, and the workflow needs `target:` on each**;
+without it Docker builds the last stage in the file, which is `web`, and the
+server image silently never exists.
+
+**The registry is GHCR, which is why the workflow holds no credential**:
+`GITHUB_TOKEN` and `packages: write` are the whole of the push, so there is
+nothing to rotate and nothing to leak. The price is paid once, by hand, and it is
+the thing most likely to make a first deploy fail: **a GHCR package is created
+PRIVATE even from a public repository**, so until each of the two is set Public
+in its own package settings, `docker compose -f docker-compose.prod.yml pull`
+answers `denied` — which reads like a misspelt image name rather than a
+permission, and which fails on every region box as well, since each one pulls
+both images for itself. Kept private on purpose, the alternative is a
+`read:packages` token and a `docker login ghcr.io` on every box, forever.
 
 **Both `/ws` and `/matches` need a `location` block** — anything nginx does not
 name falls through to the static root and comes back as a 404, and that failure
@@ -1896,9 +1907,9 @@ much as the box the page comes from. Two boxes, one in Oregon and one in
 Virginia:
 
 ```
-hollowmere.example.com            → Oregon     the page, and regions.json
-us-west-1.hollowmere.example.com  → Oregon     same box, same two containers
-us-east-1.hollowmere.example.com  → Virginia
+greywatch.example.com            → Oregon     the page, and regions.json
+us-west-1.greywatch.example.com  → Oregon     same box, same two containers
+us-east-1.greywatch.example.com  → Virginia
 ```
 
 Oregon answers to two names and does double duty; Virginia serves a copy of the
@@ -1928,7 +1939,7 @@ single origin simply does not have:
   way around needing DNS-01.
 
 **Make the origin a CNAME to the region host it lives on** —
-`hollowmere.example.com CNAME us-west-1.hollowmere.example.com`. Both names are
+`greywatch.example.com CNAME us-west-1.greywatch.example.com`. Both names are
 then one certificate on one box, moving the page to the other box later is a
 one-line DNS change, and the `originRegion()` fallback lands on a single process
 BY CONSTRUCTION rather than by nobody having exercised it.
