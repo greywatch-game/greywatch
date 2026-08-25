@@ -11,7 +11,7 @@
  *
  * `loadHavok` is awaited in `main.ts` and the instance is handed to `Game`,
  * which hands it here — so a failure is the boot screen's failure message
- * beside "no WebGL2", and by the time this class exists the engine does too.
+ * beside "no WebGPU", and by the time this class exists the engine does too.
  * Every "has it arrived yet" question is therefore gone, and so is every
  * fallback that used to answer one: there is no init state, no `ready`, no
  * pending map, no client built later than its own constructor, and no setting.

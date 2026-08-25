@@ -8,20 +8,64 @@ when you are reasoning about a change.
 
 Playwright + Chromium are devDeps for ad-hoc smoke tests; write throwaway scripts
 to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock`
-(`g` below). Headless quirks that have already cost time:
+(`g` below).
+
+**READ THIS FIRST, because the game runs on WebGPU and three things about it
+bite before any of the quirks below do.**
+
+- **Launch with `--enable-unsafe-webgpu`.** Without it `navigator.gpu` is there
+  and `requestAdapter()` returns null — which is the shape of "this browser has
+  no WebGPU", so a script with no flag reports a boot-gate failure that is its
+  own doing. No other flag is needed: the DEFAULT `chromium_headless_shell`
+  carries Dawn's SwiftShader backend, and `channel: "chromium"` buys nothing.
+  `--use-angle=swiftshader`, `--use-webgpu-adapter=swiftshader`,
+  `--enable-features=Vulkan` and `--enable-unsafe-swiftshader` were each tried
+  and changed nothing either way.
+- **`navigator.gpu` is a SECURE-CONTEXT property, so probe on a real origin.**
+  On `about:blank` it is `undefined` and every check downstream reads as "no
+  WebGPU here". `http://localhost` and `http://127.0.0.1` both count as secure;
+  serve a blank page off a `node:http` server rather than testing on
+  `about:blank`.
+- **On a machine with no GPU, a WebGPU CANVAS cannot be rendered to, and that is
+  a hard limit rather than a tuning problem.** `getContext("webgpu")` +
+  `configure()` succeeds, and then the FIRST `getCurrentTexture()` destroys the
+  device — `device.lost` resolves `reason: "destroyed"`, and Babylon reports
+  "WebGPU context lost" a beat later, tries to restore, and fails with "Could
+  not retrieve a WebGPU adapter". Measured across seven flag sets, both
+  browser binaries, headless and headed, and all three canvas kinds (DOM,
+  detached `OffscreenCanvas`, `transferControlToOffscreen`): **one frame, every
+  time.** OFFSCREEN rendering into a `device.createTexture()` colour attachment
+  is unaffected — 480 frames in 8 s, no loss — so the broken piece is the swap
+  chain specifically, not WebGPU and not SwiftShader. Check `ls /dev/dri`: if
+  it is missing, this is the machine you are on.
+  - **What that leaves testable is the whole of the DOM and the whole of the
+    simulation** — the boot path, `__celshock`, state transitions, the screens,
+    rules, damage arithmetic, nav — all of which run on the main thread and
+    none of which needs a presented frame. It gets two frames in before the
+    device goes, so `scene.getFrameId()` stops at 2 and `engine.getFps()` reads
+    ~3 forever; do not read either as a stall.
+  - **What it rules out is every PICTURE.** `page.screenshot()` of the canvas,
+    the frozen-frame diff methodology below, and **`npm run shots`** (which
+    times out waiting for the map to build) all need a real GPU. Photograph
+    from a machine that has one.
+
+Headless quirks that have already cost time:
 
 - Headless SwiftShader runs at ~2 fps and `dt` is clamped to 0.05, so **game time
   runs at ~25% of wall clock**. Don't wait for bots to cross a map (240 m, or
   Coldharbour's 320) — force a
   skirmish by overriding `battle.spawnPointFor`, or drive rules directly with
   `conquest.update(1/60, fakeCombatants)` in a loop.
-- **`window.__celshock` now appears one WASM download later than it used to.**
-  `main.ts` awaits `loadHavok()` before constructing `Game`, so a script that
-  polls for the handle is waiting on the physics binary as well as on the bundle
-  — give `waitForFunction` a generous timeout and do not read the absence of the
-  handle as a construction failure. The upside is that `g.physics.plugin` and
-  both pools are non-null on the FIRST evaluate, so nothing has to wait for the
-  engine separately. To exercise the failure branch, `page.route("**/*.wasm", r
+- **`window.__celshock` now appears TWO awaits later than it used to.**
+  `main.ts` awaits an adapter and a device (`hasWebGPU`, then
+  `new WebGPUEngine(...)` + `initAsync()`) and then `loadHavok()` before
+  constructing `Game`, so a script that polls for the handle is waiting on a GPU
+  device and a ~2 MB physics binary as well as on the bundle — give
+  `waitForFunction` a generous timeout and do not read the absence of the handle
+  as a construction failure. The upside is unchanged and is the whole point of
+  keeping the constructor synchronous: `g.engine`, `g.physics.plugin` and both
+  pools are non-null on the FIRST evaluate, so nothing has to wait for anything
+  separately. To exercise the failure branch, `page.route("**/*.wasm", r
   => r.abort())` before `goto` and assert on `#boot.failed`'s message; the game
   is never constructed, so there is no handle at all on that path.
 - **`page.screenshot()` waits for the load event, so it cannot photograph the
@@ -274,10 +318,20 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
   get is `FRAGMENT SHADER ERROR: 0:56: 'water' : syntax error` — a word from the
   middle of your prose, at a line number offset from the file by Babylon's own
   prologue. A comment on a line of its OWN is fine; it is only the trailing kind
-  that gets split. To read what the driver actually saw, hook
-  `WebGL2RenderingContext.prototype.shaderSource` in an `addInitScript` and keep
-  the sources — a failed effect is not in `engine._compiledEffects`, so there is
-  nothing to read afterwards.
+  that gets split. **Whether this still bites on the WGSL path is not yet
+  settled** — the shaders it was measured on were GLSL, and Babylon's WGSL
+  processor is a different one; re-derive it rather than assuming either way.
+- **To read what the driver actually saw, hook
+  `GPUDevice.prototype.createShaderModule` in an `addInitScript` and keep
+  `descriptor.code`** — a failed effect is not in `engine._compiledEffects`, so
+  there is nothing to read afterwards. This is strictly better than the
+  `WebGL2RenderingContext.prototype.shaderSource` hook it replaces, and not only
+  because the backend moved: the module you captured answers
+  `getCompilationInfo()`, which returns `{type, lineNum, linePos, message}`
+  against the very source you are holding. Do not reimplement the old one.
+  Warnings come back through the same call, and Dawn emits a wall of
+  `'textureSample' must only be called from uniform control flow` for Babylon's
+  own WGSL shaders — filter on `type === "error"` or every run reads as broken.
 - Assigning `input.ads` or `cameraSys.adsBlend` does not stick;
   `InputManager.update()` rewrites the flag every tick. Redefine instead —
   `Object.defineProperty(g.input, "ads", { get: () => true, set: () => {} })` —

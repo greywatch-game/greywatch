@@ -1,5 +1,5 @@
 /**
- * Game.ts — Orchestrator: engine/scene init, main loop, and ALL cross-system
+ * Game.ts — Orchestrator: scene init, main loop, and ALL cross-system
  * wiring. The only place systems meet — systems never import each other; new
  * cross-system behavior is a callback wired here.
  * WHERE THINGS ARE, because this is a long file and a change should not need a
@@ -51,7 +51,6 @@
 import {
   Color3,
   DefaultRenderingPipeline,
-  Engine,
   GlowLayer,
   Matrix,
   Mesh,
@@ -60,6 +59,7 @@ import {
   type SubMesh,
   Vector3,
   Viewport,
+  type WebGPUEngine,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import {
@@ -225,14 +225,16 @@ function eyeDistanceSq(sub: SubMesh, eye: Vector3): number {
 const kitLampId = (n: number) => `kit-lamp-${n}`;
 
 /**
- * Top-level orchestrator: owns the engine/scene, all systems, the game state
- * machine, and the per-frame update loop.
+ * Top-level orchestrator: owns the scene, all systems, the game state machine,
+ * and the per-frame update loop. The ENGINE is the one thing here it does not
+ * own — `main.ts` builds it (WebGPU's is async) and hands it in, exactly as it
+ * hands in Havok.
  *
  * Systems never import each other — `Game` is the only place they meet, and
  * cross-system behavior belongs in this wiring rather than in an import.
  */
 export class Game {
-  private engine: Engine;
+  private engine: WebGPUEngine;
   private scene: Scene;
   private mats: CelMaterialFactory;
   private input: InputManager;
@@ -673,29 +675,50 @@ export class Game {
   private readonly scores = new ScoreBook();
 
   /**
-   * `havok` is the instantiated WASM module, awaited by `main.ts` before this
-   * constructor is reached — see `PhysicsWorld`. It is a constructor argument
-   * rather than something this file loads because the engine is REQUIRED: a
-   * failure is the boot screen's business, beside "no WebGL2", and nothing in
-   * here has to be written twice for a machine that never got it.
+   * **The two things the game cannot start without are both arguments now, and
+   * they are arguments for the same reason.** `havok` is the instantiated WASM
+   * module (see `PhysicsWorld`); `engine` is a `WebGPUEngine` whose
+   * `initAsync` has already resolved. Both are REQUIRED, both are awaited by
+   * `main.ts` before this constructor is reached, and a failure of either is
+   * the boot screen's business — so nothing in here has to be written twice
+   * for a machine that never got one.
+   *
+   * The engine used to be built here, back when it was a `WebGLEngine` and its
+   * constructor was synchronous. WebGPU's is not: an adapter and a device are
+   * both `await`s. What did NOT change is that this constructor stays
+   * synchronous — `Game` is not a `static async create()`, because
+   * `window.__celshock` existing with every pool non-null the moment the
+   * constructor returns is what ~40 smoke scripts rest on (`VERIFYING.md`).
+   * Awaiting in `main.ts` and injecting the result is what keeps both of those
+   * true at once, and it is the move `havok` already made.
+   *
+   * The MSAA and stencil arguments moved with the options they are about, and
+   * are in `main.ts` beside the `initAsync` call — where there is also a note
+   * on why `WebGPUEngine.CreateAsync` is not what builds this.
    */
-  constructor(canvas: HTMLCanvasElement, havok: HavokInstance) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    havok: HavokInstance,
+    engine: WebGPUEngine,
+  ) {
     this.canvas = canvas;
-    // **No MSAA, and that is a saving rather than a downgrade.** Asking for it
-    // gave a 4x multisampled DEFAULT framebuffer — but the pipeline runs FXAA,
-    // so every pass of the scene renders into post-process render targets and
-    // the only thing ever drawn to the default framebuffer is the final
-    // full-screen quad. The multisampling was antialiasing one quad's edges, of
-    // which there are none, and paying a resolve every frame and ~30 MB at 720p
-    // (66 MB at 1080p) to do it. FXAA still does the actual antialiasing.
+    this.engine = engine;
+    // **SCAFFOLDING, and it comes out with `EmissiveFog`'s WGSL port.** Under
+    // WebGPU a `StandardMaterial` picks WGSL for itself
+    // (`Material._createUniformBuffer`), and a `MaterialPluginBase` answers
+    // `isCompatible(GLSL)` and nothing else — so the first emissive material
+    // `CelMaterialFactory.getEmissive` builds THROWS out of this constructor,
+    // and the boot screen says "something went wrong" about a shader language.
+    // Forcing GLSL is what makes the engine swap a swap of the ENGINE only:
+    // every shader in the game, ours and Babylon's, stays the source it was,
+    // and a failure between here and then is an engine failure by
+    // construction. `ShaderMaterial` needs no equivalent — it defaults to
+    // GLSL and is told otherwise per material.
     //
-    // No stencil either: nothing in `src/` uses one, and there is no
-    // `HighlightLayer` (the effect layer that would).
-    //
-    // `adaptToDeviceRatio` is deliberately still not passed. It would pin the
-    // backing store to the display, and the resolution is a player setting —
-    // `applyRenderScale` owns the scaling level from the first `applySettings`.
-    this.engine = new Engine(canvas, false, {});
+    // This is ONE line to delete, and deleting it is the last step of the
+    // migration rather than a tidy-up: the game must stop needing it, not stop
+    // saying it. Nothing may be built that depends on it being here.
+    StandardMaterial.ForceGLSL = true;
     this.scene = new Scene(this.engine);
     this.scene.collisionsEnabled = true;
 

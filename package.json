@@ -26,6 +26,7 @@
   "devDependencies": {
     "@types/node": "^26.2.0",
     "@types/ws": "^8.18.1",
+    "@webgpu/types": "0.1.72",
     "playwright": "^1.61.1",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"

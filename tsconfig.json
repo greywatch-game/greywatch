@@ -13,7 +13,12 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": []
+    // Ambient type packages, and the list is CLOSED rather than empty: `[]`
+    // was the point before WebGPU, and one entry keeps that — @types/node and
+    // whatever else lands in node_modules stay out of the global scope. The
+    // one entry is the backend the game renders through, and `navigator.gpu`
+    // is not in TypeScript's DOM lib.
+    "types": ["@webgpu/types"]
   },
   "include": ["src", "main.ts"]
 }
