@@ -25,9 +25,12 @@ import {
   type GrenadeState,
   type MatchSummary,
   type PointState,
+  type MineState,
+  type RocketState,
   type ServerEvent,
   type ServerMessage,
   type Snapshot,
+  type VehicleState,
 } from "../src/net/protocol";
 import { CONFIG } from "../src/config";
 import {
@@ -38,10 +41,16 @@ import {
   WEAPON_IDS,
   type WeaponSetup,
 } from "../src/entities/weapons";
+import {
+  DEFAULT_EQUIPMENT,
+  equipmentSetup,
+  isEquipmentId,
+  type EquipmentId,
+} from "../src/entities/equipment";
 import { MAPS } from "../src/world/maps";
 import { HeadlessGame } from "./HeadlessGame";
 import { Roster } from "./Roster";
-import { validateMove } from "./validate";
+import { validateDrive, validateMove } from "./validate";
 import { readClientMessage } from "./wire";
 
 /** One connected human. */
@@ -117,6 +126,43 @@ const MAX_MOVE_GAP = 0.5;
  * would start refusing honest shots from anyone turning quickly.
  */
 const SHOT_CONE_COS = Math.cos((25 * Math.PI) / 180);
+
+/**
+ * The same bound for a tank gun, and it is WIDER — about 50 degrees.
+ *
+ * Measured against the driver's reported LOOK rather than against the gun,
+ * because the gun's bearing is the thing being claimed. The turret walks
+ * toward the look at `traverseRate`, so the two legitimately disagree by
+ * however far the traverse has not caught up — which after a fast look across
+ * the field is most of a quarter turn. What is left is still a bound worth
+ * having: it refuses a shell claimed to have left backwards, and everything
+ * inside it is a direction the gun could genuinely have been pointing.
+ */
+const SHELL_CONE_COS = Math.cos((50 * Math.PI) / 180);
+
+/**
+ * How far a claimed shell's muzzle may be from the hull's own centre, in
+ * metres.
+ *
+ * `onShot`'s origin gate, sized for a vehicle: the muzzle is at the end of a
+ * barrel on a turret that traverses, so the honest distance is most of the
+ * hull's length. Generous, and it costs nothing to be — the round is fired
+ * down the authority's own gun from the authority's own muzzle whatever this
+ * says, so all this bounds is which hull a client may claim to be shooting
+ * out of.
+ */
+const SHELL_ORIGIN_SLACK = 9;
+
+/**
+ * …and how far a rocket's tube or a mine's plate may be from the layer's own
+ * eye. A body's reach plus the launch clearance the muzzle already stands off
+ * at, which is what stops a mine being posted across the street.
+ */
+const ORDNANCE_ORIGIN_SLACK = 4;
+
+/** Scratch for an ordnance ask, so the path allocates nothing. */
+const ORDNANCE_AT = new Vector3();
+const ORDNANCE_DIR = new Vector3();
 
 /**
  * The same bound for a thrown grenade, and wider because the throw itself is
@@ -316,6 +362,9 @@ export class Match {
    * left OFF the snapshot rather than sent — see `Snapshot.grenades`.
    */
   private readonly grenadeScratch: GrenadeState[] = [];
+  /** …and the hulls, and the rockets. Same reason, same lifetime. */
+  private readonly vehicleScratch: VehicleState[] = [];
+  private readonly rocketScratch: RocketState[] = [];
 
   /** Last broadcast position per slot, for deriving a player's walk cycle. */
   private readonly lastSeen: ({ x: number; z: number } | undefined)[] = [];
@@ -330,11 +379,46 @@ export class Match {
    */
   private readonly loadouts = new Map<number, WeaponSetup>();
 
+  /**
+   * What each seated player has in the THIRD slot, resolved from the equipment
+   * table here for `loadouts`' reason exactly.
+   *
+   * A separate map rather than a field on the `WeaponSetup` beside it, because
+   * they are answers to different questions: one is the weapon this person is
+   * shooting people with and the other is the thing they carry for armour, and
+   * `equipmentSetup` deliberately resolves to a `WeaponSetup` whose every
+   * combat field says it is not a gun.
+   */
+  private readonly equipment = new Map<number, EquipmentId>();
+
   /** When each slot last fired, for the rate limit. */
   private readonly lastShot: number[] = [];
 
   /** …and last announced a reload, for that message's own gate. */
   private readonly lastReload: number[] = [];
+
+  /**
+   * …and last spent an AT item, and last fired a tank gun.
+   *
+   * Two more of `lastShot`'s clock, and both are needed for its reason: a
+   * client asking for a rocket or a shell is asking the authority to put an
+   * object in the world, and without a gate the rate at which it may do so
+   * would be a client-side opinion. The gun's own reload already refuses a
+   * shell fired early (`Tank.fireGun` returns false) — this is the cheaper
+   * refusal in front of it, so a flood costs a comparison rather than a hull
+   * lookup.
+   */
+  private readonly lastOrdnance: number[] = [];
+  private readonly lastShell: number[] = [];
+
+  /**
+   * The `AntiTankSystem.version` the clients have been told about, or -1 for
+   * "tell them".
+   *
+   * `sentScoreVersion`'s twin, for the table that behaves the same way: a mine
+   * never moves, so the list goes out when the SET changes and not otherwise.
+   */
+  private sentMineVersion = -1;
 
   /**
    * How many rounds each slot has fired since the last snapshot went out.
@@ -376,11 +460,11 @@ export class Match {
    */
   constructor(readonly id: string, wantedMap?: string) {
     this.mapId = MAPS.find((m) => m.id === wantedMap)?.id ?? MAPS[0].id;
-    // A bot went down, however it was done. The bearing and the size of the
-    // killing blow ride along because a client throws its corpse with them —
-    // `Bot.takeDamage` captured both before this fired, which is the same pair
-    // the offline game hands `RagdollSystem` and the reason it does not need a
-    // second copy of any of it.
+    // A bot went down, however it was done. The bearing, the size and the KIND
+    // of the killing blow ride along because a client throws its corpse with
+    // them — `Bot.takeDamage` captured all three before this fired, which is
+    // the same triple the offline game hands `RagdollSystem` and the reason it
+    // does not need a second copy of any of it.
     this.game.onKillEvent = (bot, killer, headshot) => {
       this.queue({
         e: "kill",
@@ -389,6 +473,7 @@ export class Match {
         headshot,
         from: [bot.deathFrom.x, bot.deathFrom.y, bot.deathFrom.z],
         amount: bot.deathDamage,
+        kind: bot.deathKind,
       });
     };
     // A bot pulled its trigger. Taken HERE rather than in `HeadlessGame.wire`
@@ -427,7 +512,7 @@ export class Match {
         this.queueTo(slot, { e: "score", kind, points });
       }
     };
-    this.game.onPlayerDamaged = (player, amount, from, killed) => {
+    this.game.onPlayerDamaged = (player, amount, from, killed, kind) => {
       // Addressed to the victim, and the sharpest case for it: this is the ONE
       // message in the protocol carrying a health, so broadcasting it published
       // every player's exact pool to everybody, live, along with the bearing
@@ -443,6 +528,10 @@ export class Match {
         amount,
         from: from ? [from.x, from.y, from.z] : [0, 0, 0],
         health: player.health,
+        // The victim's own corpse is thrown from this rather than from the
+        // `kill` below: a client reads its OWN death off the `damage`/`died`
+        // pair, and only somebody else's off the kill.
+        kind,
       });
       if (killed) {
         // The other half of "one kill event per death". A person goes down
@@ -471,6 +560,7 @@ export class Match {
           headshot: false,
           from: from ? [from.x, from.y, from.z] : [0, 0, 0],
           amount,
+          kind,
         });
         this.queue({
           e: "died",
@@ -480,8 +570,36 @@ export class Match {
         });
       }
     };
-    this.game.onExplosion = (at) =>
-      this.queue({ e: "explode", at: [at.x, at.y, at.z] });
+    // How big it LOOKS goes with it now that more than one thing explodes: a
+    // grenade is 1 by definition, a tank shell 1.85, the AT kit its own. Left
+    // off at 1 for the reason `fire`'s `n` is left off at one round — that is
+    // what the field's absence has always meant and what every grenade in the
+    // game still is.
+    this.game.onExplosion = (at, power) =>
+      this.queue(
+        power === 1
+          ? { e: "explode", at: [at.x, at.y, at.z] }
+          : { e: "explode", at: [at.x, at.y, at.z], power },
+      );
+    // A tank gun. Public, and `fire`'s counterpart for the one weapon nobody
+    // is carrying — it reaches a client no other way, because no client runs
+    // the crew that pulled the trigger or resolves the round it fired.
+    this.game.onCannon = (tank) => {
+      const i = this.game.vehicles.tanks.indexOf(tank);
+      if (i >= 0) this.queue({ e: "cannon", tank: i });
+    };
+    // The answer to a mount or a dismount, addressed to the one person who
+    // asked — see the `seat` event. It is raised for the hull BURNING as well,
+    // which is the one seat change nobody asked for and the one a client can
+    // least afford to miss: without it the driver's own screen keeps the chase
+    // camera on a wreck for the rest of the round.
+    this.game.onSeatChanged = (player, tank, at, yaw) =>
+      this.queueTo(
+        player.slot,
+        tank >= 0
+          ? { e: "seat", slot: player.slot, tank }
+          : { e: "seat", slot: player.slot, tank, pos: [at.x, at.y, at.z], yaw },
+      );
     // Glass. One event for however many panes the round crossed, carrying the
     // FIRST crossing and the round's direction — see the `glass` event for why
     // the shards of the panes behind it are thrown from a point a few metres
@@ -532,7 +650,12 @@ export class Match {
    * asking "is there room" and this method acting on the answer are two separate
    * moments and a race between them is exactly how a seventeenth player gets in.
    */
-  async admit(socket: WebSocket, rawName: string, weapon?: string): Promise<void> {
+  async admit(
+    socket: WebSocket,
+    rawName: string,
+    weapon?: string,
+    equipment?: string,
+  ): Promise<void> {
     const id = `p${nextPeerId++}`;
     // Cleaned HERE, at the one door into the roster, rather than at the
     // handshake — the same placement as the weapon lookup below, and for the
@@ -628,10 +751,25 @@ export class Match {
       slot.index,
       weaponSetup(weapon && isPrimaryWeaponId(weapon) ? weapon : DEFAULT_WEAPON),
     );
+    // The third slot, resolved the same way and for the same reason: what a
+    // rocket is worth and how many mines a person may have on the field are
+    // this side's numbers. An id this build has never heard of falls back to
+    // the launcher rather than being refused, exactly as an unknown weapon
+    // falls back to the rifle.
+    //
+    // It is resolved on every map, including the two that offer no third slot
+    // at all: the kit is the MAP's question and `armourOffered` is where a
+    // client answers it, so what happens on a map with no armour is simply
+    // that no `ordnance` message ever arrives to spend this on. Resolving it
+    // conditionally would mean a rotation onto a map WITH armour leaving this
+    // player carrying nothing.
+    const kit = equipment && isEquipmentId(equipment) ? equipment : DEFAULT_EQUIPMENT;
+    this.equipment.set(slot.index, kit);
+    player.ordnanceCarried = equipmentSetup(kit).magSize;
+    player.ordnance = player.ordnanceCarried;
     // Not spawned here: a fresh player is dead with a zero timer, which is
     // exactly the state the reinforcement pass in `HeadlessGame.step` picks up.
     // Joining and redeploying are the same act and go through the same door.
-    void player;
 
     this.send(peer, {
       t: "welcome",
@@ -678,7 +816,10 @@ export class Match {
     if (!this.peers.delete(peer.id)) return;
     this.game.removePlayer(peer.slot);
     this.loadouts.delete(peer.slot);
+    this.equipment.delete(peer.slot);
     delete this.lastShot[peer.slot];
+    delete this.lastOrdnance[peer.slot];
+    delete this.lastShell[peer.slot];
     delete this.lastReload[peer.slot];
     delete this.lastSeen[peer.slot];
     const slot = this.roster.release(peer.id);
@@ -903,6 +1044,10 @@ export class Match {
     // catch it anyway — resetting here is what covers the case where it has not
     // moved, which is a rotation nobody scored in.
     this.sentScoreVersion = -1;
+    // …and the mines, for the same reason with a sharper edge: `startRound`
+    // cleared the field, and a rotation that left the last map's list standing
+    // would draw sixteen mines over a street that is not there.
+    this.sentMineVersion = -1;
     this.broadcast({ t: "roundstart", mapId: this.mapId, now: Date.now() });
     this.broadcastRoster();
     console.log(`[${this.id}] rotated to ${this.mapId}`);
@@ -1000,6 +1145,43 @@ export class Match {
       });
     });
 
+    // Every hull the map has, whole. A hull that has been taken off the field
+    // entirely is left OUT rather than flagged, which is the grenades' rule
+    // above: a client hides whatever this snapshot did not mention, and the
+    // hardstanding's index brings the fresh one back under the same name.
+    //
+    // `by` is the roster slot inside it, and it is the one place occupancy is
+    // stated — see `VehicleState.by`. A bot crew puts a slot here exactly as a
+    // person does, which is what stops a client drawing a crewman standing in
+    // the street beside the tank he is driving.
+    this.vehicleScratch.length = 0;
+    for (const [i, tank] of this.game.vehicles.tanks.entries()) {
+      if (!tank.body.isEnabled()) continue;
+      this.vehicleScratch.push({
+        i,
+        p: [tank.position.x, tank.position.y, tank.position.z],
+        yaw: tank.yaw,
+        tyaw: tank.turretYaw,
+        gun: tank.gunPitch,
+        alive: tank.alive,
+        hp: tank.health,
+        by: this.occupantOf(i),
+      });
+    }
+
+    // Everything in the air that is not a grenade. `by` is the shooter's slot,
+    // for the one client that must not draw this because it is already
+    // watching its own copy leave its own tube.
+    this.rocketScratch.length = 0;
+    this.game.antiTank.forEachRocket((id, at, vel, by) => {
+      this.rocketScratch.push({
+        i: id,
+        p: [at.x, at.y, at.z],
+        dir: [vel.x, vel.y, vel.z],
+        by: this.slotOf(by),
+      });
+    });
+
     const snap: Snapshot = {
       t: "snap",
       tick: this.ticks,
@@ -1012,7 +1194,22 @@ export class Match {
     // so that the twenty snapshots a second in which nothing is do not carry
     // an empty array to say so.
     if (this.grenadeScratch.length > 0) snap.grenades = this.grenadeScratch;
+    if (this.rocketScratch.length > 0) snap.rockets = this.rocketScratch;
+    // …and the hulls, absent on the maps that state none, which is what a
+    // round with no armour in it should look like from the far side.
+    if (this.vehicleScratch.length > 0) snap.vehicles = this.vehicleScratch;
     this.broadcast(snap);
+
+    // The mines, on the ticks the SET has moved — a handful of times a round
+    // against a snapshot every 50 ms, which is why they are a message of their
+    // own rather than sixteen more positions on the one above. After the
+    // snapshot for the scores' reason: a mine that has just gone off is a
+    // fireball in this snapshot, and the list that no longer holds it should
+    // not arrive ahead of it.
+    if (this.game.antiTank.version !== this.sentMineVersion) {
+      this.broadcast(this.mines());
+      this.sentMineVersion = this.game.antiTank.version;
+    }
 
     // The board, on the ticks it has moved — a few times a minute against a
     // snapshot every 50 ms, which is why it is a message of its own rather than
@@ -1180,6 +1377,11 @@ export class Match {
       case "shot":
       case "grenade":
       case "reload":
+      case "drive":
+      case "mount":
+      case "dismount":
+      case "shell":
+      case "ordnance":
         // The four that belong to a round in progress, gated on the same fact
         // `step` is: between a round ending and the next one being built there
         // is a window in which `game.map` is the map `startRound` has already
@@ -1197,6 +1399,11 @@ export class Match {
         if (msg.t === "move") this.onMove(peer, msg);
         else if (msg.t === "shot") this.onShot(peer, msg);
         else if (msg.t === "grenade") this.onGrenade(peer, msg);
+        else if (msg.t === "drive") this.onDrive(peer, msg);
+        else if (msg.t === "mount") this.onMount(peer, msg);
+        else if (msg.t === "dismount") this.onDismount(peer);
+        else if (msg.t === "shell") this.onShell(peer, msg);
+        else if (msg.t === "ordnance") this.onOrdnance(peer, msg);
         else this.onReload(peer);
         break;
       case "deploy":
@@ -1273,6 +1480,12 @@ export class Match {
     // A dead player reports nothing worth keeping. Their body is wherever they
     // fell and the server owns it until they redeploy.
     if (!player.alive) return;
+    // …and neither does a driver: their body is the HULL's, written by the
+    // step loop off the tank every frame, and a `move` accepted here would put
+    // one person in two places for as long as the packets kept arriving. A
+    // client in a seat sends `drive` instead — see `DriveMessage` on why it
+    // replaces this message rather than riding beside it.
+    if (player.seat >= 0) return;
 
     const [x, y, z] = msg.pos;
     const verdict = validateMove(this.game.map, player.position, { x, y, z }, dt);
@@ -1348,6 +1561,11 @@ export class Match {
   private onShot(peer: Peer, msg: Extract<ClientMessage, { t: "shot" }>): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive || !this.game.map) return;
+    // There is no rifle in a driver's hands — the viewmodel is put away and
+    // the trigger fires the main gun. A `shot` from a seat is a confused
+    // client at best, and at worst somebody firing a carbine out of a hull
+    // that nothing can shoot back at.
+    if (player.seat >= 0) return;
 
     const weapon = this.loadouts.get(peer.slot);
     if (!weapon) return;
@@ -1433,6 +1651,8 @@ export class Match {
    * client's: a client that tracked its own would throw as many as it liked.
    */
   private onGrenade(peer: Peer, msg: Extract<ClientMessage, { t: "grenade" }>): void {
+    // Nothing is thrown from inside a hull, for `onShot`'s reason exactly.
+    if ((this.game.players.get(peer.slot)?.seat ?? -1) >= 0) return;
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
     if (player.grenades <= 0) return;
@@ -1485,6 +1705,222 @@ export class Match {
    * player announcing every real reload and a dishonest one no faster than a
    * player who genuinely reloaded that often.
    */
+  /**
+   * One reported HULL sample, from the person driving it.
+   *
+   * `onMove`'s twin, and every line it does not have is a decision:
+   *
+   *   - **`validateDrive`, not `validateMove`.** The speed bound is the tank's
+   *     — see `server/validate.ts` for why the ground and solid checks are
+   *     wrong for a hull rather than merely skipped.
+   *   - **No correction on a refusal.** A `correct` message moves the local
+   *     BODY, and a client that received one while driving would be told to
+   *     put its feet somewhere without being told anything about its tank.
+   *     What a refused step costs instead is simply that it is not applied:
+   *     the authority's hull stays where it was, the next snapshot says so,
+   *     and `Tank.updateRemote`'s resync pulls the driver's own copy back.
+   *   - **No seat is granted here.** A `drive` naming a hull this player is
+   *     not in is dropped, not obeyed. Getting into a tank is `onMount`'s, and
+   *     it is one door for the reason spawning is one door.
+   */
+  private onDrive(peer: Peer, msg: Extract<ClientMessage, { t: "drive" }>): void {
+    const player = this.game.players.get(peer.slot);
+    if (!player || !this.game.map) return;
+    if (msg.seq <= player.seq) return;
+    // The clock advances whether or not the step is accepted, for the reason
+    // `onMove` spells out at length: a rejection that left `lastTime` behind
+    // measures every later sample against the whole elapsed gap.
+    const raw =
+      player.lastTime > 0 ? (msg.time - player.lastTime) / 1000 : 1 / INPUT_HZ;
+    const dt = Math.min(Math.max(raw, 1 / TICK_HZ), MAX_MOVE_GAP);
+    player.lastTime = msg.time;
+    if (!player.alive || player.seat !== msg.tank) return;
+
+    const tank = this.game.hullOf(player);
+    if (!tank) return;
+    const [x, y, z] = msg.pos;
+    if (!validateDrive(this.game.map, tank.position, { x, y, z }, dt).ok) return;
+
+    player.seq = msg.seq;
+    peer.seq = msg.seq;
+    // The LOOK, kept on the body it belongs to. It is the chase camera's aim
+    // rather than the gun's, and it is what the shell's cone is measured
+    // against — see `DriveMessage.aimYaw`. Nothing draws it: the snapshot
+    // sends the hull's angles, and a driver's own body is not on screen.
+    player.yaw = msg.aimYaw;
+    player.pitch = msg.aimPitch;
+    this.game.applyDrive(player, x, y, z, msg.yaw, msg.tyaw, msg.gun);
+  }
+
+  /**
+   * "Put me in that hull." The authority re-derives every term of the offer
+   * against its own copy and answers with a `seat` either way.
+   *
+   * Answered even on a refusal, and that is the point of it being addressed:
+   * the client mounted nothing locally and is waiting to be told what it is
+   * in, so silence would leave a player who pressed the key next to their own
+   * tank with no idea whether it worked. The answer to a refusal is "you are
+   * on foot", which is true.
+   */
+  private onMount(peer: Peer, msg: Extract<ClientMessage, { t: "mount" }>): void {
+    const player = this.game.players.get(peer.slot);
+    if (!player || !player.alive) return;
+    const offered = this.game.seatOffered(player);
+    // Named hull and offered hull must be the SAME hull. The client picked one
+    // and this is the authority's own answer to the same question; granting
+    // whatever is nearest instead would seat somebody in a tank they did not
+    // choose on the day a map states two.
+    const tank =
+      offered && this.game.vehicles.tanks.indexOf(offered) === msg.tank
+        ? offered
+        : null;
+    const taken = tank ? this.game.seat(player, tank) : null;
+    this.game.onSeatChanged(
+      player,
+      taken ? msg.tank : -1,
+      player.position,
+      player.yaw,
+    );
+  }
+
+  /** "Let me out." Where the body lands is the authority's — see the `seat` event. */
+  private onDismount(peer: Peer): void {
+    const player = this.game.players.get(peer.slot);
+    const tank = player ? this.game.hullOf(player) : null;
+    if (!player || !tank) return;
+    // Read BEFORE the seat is given up: `exitSpot` measures from the hull, and
+    // `seat` is what stops this player being on it.
+    const spot = this.game.vehicles.exitSpot(tank);
+    const x = spot.x;
+    const y = spot.y;
+    const z = spot.z;
+    this.game.seat(player, null);
+    // The body is placed by the authority, exactly as a spawn is, and with
+    // `dt` of 0 so the stance blend is written rather than eased from
+    // whatever the drive left it at.
+    player.apply(0, x, y, z, player.yaw, 0, false, false);
+    this.game.onSeatChanged(player, -1, player.position, player.yaw);
+  }
+
+  /**
+   * A shell a client says it fired. The authority decides what it hit.
+   *
+   * `onShot`'s three gates, minus the one that does not apply: there is no
+   * weapon slot to look up, because a hull has one gun. The RATE gate is the
+   * cheap refusal in front of `Tank.fireGun`, which owns the real reload; the
+   * CONE is measured against the driver's reported look rather than against
+   * the gun, because the gun's bearing is the very thing being claimed; and
+   * the ORIGIN must be near the hull, not near a head.
+   */
+  private onShell(peer: Peer, msg: Extract<ClientMessage, { t: "shell" }>): void {
+    const player = this.game.players.get(peer.slot);
+    if (!player || !player.alive) return;
+    const tank = this.game.hullOf(player);
+    if (!tank) return;
+
+    const now = Date.now();
+    if (now - (this.lastShell[peer.slot] ?? 0) < CONFIG.vehicles.tank.gun.cooldown * 1000 * 0.9) {
+      return;
+    }
+    const [dx, dy, dz] = msg.dir;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-3) return;
+    // The cone, against where this driver last said they were LOOKING. It is
+    // generous for `SHOT_CONE_COS`'s reason and then some: the gun is walking
+    // toward the look at the turret's own rate, so the two legitimately differ
+    // by a whole traverse — which is exactly why the shell is fired down the
+    // gun's own axis below and not down this vector.
+    const cp = Math.cos(player.pitch);
+    const aimX = cp * Math.sin(player.yaw);
+    const aimY = Math.sin(player.pitch);
+    const aimZ = cp * Math.cos(player.yaw);
+    if ((dx * aimX + dy * aimY + dz * aimZ) / len < SHELL_CONE_COS) return;
+    // The origin, against the hull rather than the head. A client that could
+    // name any origin could fire from inside somebody else's tank.
+    const [ox, oy, oz] = msg.origin;
+    if (
+      Math.hypot(ox - tank.center.x, oy - tank.center.y, oz - tank.center.z) >
+      SHELL_ORIGIN_SLACK
+    ) {
+      return;
+    }
+
+    // …and then nothing of the claim is used. The round goes down the
+    // authority's own gun, from the authority's own muzzle, at the authority's
+    // own reload — which is the whole security property, and the reason the
+    // checks above bound a LIE rather than measure an aim.
+    if (this.game.resolveShell(tank, player)) this.lastShell[peer.slot] = now;
+  }
+
+  /**
+   * A rocket out of the tube, or a mine on the ground.
+   *
+   * The pouch is the SERVER's, exactly as the grenade pouch is, and it is
+   * debited only on an item that actually reached the world — the refusal
+   * contract `AntiTankSystem` states and `Game` obeys, unchanged by arriving
+   * over a socket.
+   *
+   * A mine ignores the direction and lands where the ORIGIN says, bounded to
+   * arm's length of where the authority holds this player: a client that could
+   * name any point could mine the enemy hardstanding from its own spawn.
+   */
+  private onOrdnance(
+    peer: Peer,
+    msg: Extract<ClientMessage, { t: "ordnance" }>,
+  ): void {
+    const player = this.game.players.get(peer.slot);
+    if (!player || !player.alive || player.ordnance <= 0) return;
+    // Not from inside a tank. The third slot is carried by a body, and
+    // `Player.tryShot` cannot even reach the trigger while driving — this is
+    // the authority saying the same thing rather than trusting it.
+    if (player.seat >= 0) return;
+    const kind = this.equipment.get(peer.slot);
+    if (!kind) return;
+
+    const now = Date.now();
+    const interval = equipmentSetup(kind).shotInterval * 1000 * 0.9;
+    if (now - (this.lastOrdnance[peer.slot] ?? 0) < interval) return;
+
+    const [ox, oy, oz] = msg.origin;
+    if (
+      Math.hypot(ox - player.eyePos.x, oy - player.eyePos.y, oz - player.eyePos.z) >
+      ORDNANCE_ORIGIN_SLACK
+    ) {
+      return;
+    }
+
+    let placed = false;
+    if (kind === "mine") {
+      ORDNANCE_AT.set(ox, oy, oz);
+      placed = this.game.layMine(ORDNANCE_AT, player);
+    } else {
+      const [dx, dy, dz] = msg.dir;
+      const len = Math.hypot(dx, dy, dz);
+      if (len < 1e-3) return;
+      // The same cone a rifle round is bounded by, and for the same reason —
+      // it stops a claimed rocket leaving backwards or through the shooter's
+      // own feet, and it stops nothing else.
+      const cp = Math.cos(player.pitch);
+      const dot =
+        (dx * (cp * Math.sin(player.yaw)) +
+          dy * Math.sin(player.pitch) +
+          dz * (cp * Math.cos(player.yaw))) /
+        len;
+      if (dot < SHOT_CONE_COS) return;
+      ORDNANCE_AT.set(ox, oy, oz);
+      ORDNANCE_DIR.set(dx / len, dy / len, dz / len);
+      placed = this.game.launchRocket(ORDNANCE_AT, ORDNANCE_DIR, player);
+    }
+    if (!placed) return;
+    player.ordnance -= 1;
+    this.lastOrdnance[peer.slot] = now;
+    // Heard as a shot is, so the fifteen other clients get the report and the
+    // minimap reveal a launcher earns. A mine is silent on the wire for the
+    // same reason it is nearly silent in the world — there is nothing to hear
+    // and nothing to give away.
+    if (kind === "rpg") this.noteFire(peer.slot);
+  }
+
   private onReload(peer: Peer): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
@@ -1503,6 +1939,33 @@ export class Match {
    * the one a round hit, or the one that threw a grenade. `null` (a grenade
    * nobody owns) is a slotless body like any other and comes back as -1.
    */
+  /**
+   * Who is in the hull on hardstanding `i`, as a roster slot, or -1.
+   *
+   * Derived at the snapshot rather than tracked, and that is deliberate: the
+   * two things that can be in a tank keep the fact in two different places
+   * (`NetPlayer.seat` for a person, `TankCrew`'s pairing for a bot), and a
+   * third copy kept in step with both is the copy that would be wrong. It is
+   * sixteen comparisons twenty times a second on a map with armour.
+   */
+  private occupantOf(i: number): number {
+    for (const player of this.game.players.values()) {
+      if (player.seat === i) return player.slot;
+    }
+    const tank = this.game.vehicles.tanks[i];
+    const crew = tank ? this.game.crew.crewOf(tank) : null;
+    return crew ? this.game.battle.bots.indexOf(crew) : -1;
+  }
+
+  /** Every mine on the field, whole — see `MinesMessage`. */
+  private mines(): ServerMessage {
+    const mines: MineState[] = [];
+    this.game.antiTank.forEachMine((i, at, team, armed, by) => {
+      mines.push({ i, p: [at.x, at.y, at.z], team, armed, by: this.slotOf(by) });
+    });
+    return { t: "mines", mines };
+  }
+
   private slotOf(target: unknown): number {
     for (const [slot, player] of this.game.players) {
       if (player === target) return slot;

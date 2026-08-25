@@ -33,11 +33,13 @@ second renderer for corpses.
 
 `src/systems/PhysicsWorld.ts` holds the `HavokPlugin`, the map as one static
 body and the fixed-substep clock. It is the only place `@babylonjs/havok` is
-reached and the only place `_step` is called. It has two clients —
-`RagdollSystem` for corpses and `DebrisSystem` for the shards a broken pane
-throws — and both are handed it by `Game` in their constructor, which is the
+reached and the only place `_step` is called. It has three clients —
+`RagdollSystem` for corpses, `DebrisSystem` for the shards a broken pane throws,
+and `BlastDebrisSystem` for the rubble a blast tears out of the ground — and all
+three are handed it by `Game` in their constructor, which is the
 `BattleSystem`←`CombatSystem` precedent in `CLAUDE.md`: injected, never imported
-system-to-system.
+system-to-system. **The three pools are one budget** (80 corpse bodies, 48
+shards, 30 chunks) and want raising together or not at all.
 
 **It was `RagdollSystem`'s privately, and the split is not tidiness.** Two things
 made a second consumer impossible rather than merely awkward, and both would
@@ -233,8 +235,62 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
 The bone table, pivots and joint limits live in `SoldierModel.ts` with the boxes
 they are measured from; `CONFIG.bots.death` owns the sim (impulse, gravity, damping,
 corpse life). The impulse needs no new plumbing: `takeDamage` is already handed the
-shooter's origin (or the blast centre), so `Bot` captures `deathFrom`/`deathDamage`
-there and `Game.registerBotKill` offers the body to the pool.
+shooter's origin (or the blast centre) and what delivered it, so `Bot` captures
+`deathFrom`/`deathDamage`/`deathKind` there and `Game.registerBotKill` offers the
+body to the pool.
+
+## The throw is TWO throws, and a round is not an explosion
+
+**A round is a BLOW and an explosion is a VELOCITY.** That is the whole of the
+split in `RagdollSystem.applyImpulse`, and it is why `CONFIG.bots.death.impulse`
+has a second row rather than a multiplier on its first. A rifle round arrives at
+a point: the top-level figures are a newton-second on the CHEST, applied `lift`
+above its centre of mass so the fold falls out of the geometry, and the nine
+other bones follow because they hang off it — a body dropped where it stood. A
+blast arrives on all of a body at once, so `impulse.blast` is a SPEED, spent as
+`speed * mass` on every bone at its own origin. Every bone leaves at the same
+velocity and nothing is dragged through a joint to catch up.
+
+**Putting a blast's whole throw on the chest instead is a body coming apart, not
+a body thrown**, and that is the trap worth naming: 34 kg of torso leaving at 12
+m/s with nine limbs on constraints behind it is a corpse with its legs trailing
+a metre back. The units differ between the two rows for the same reason and the
+config says so — do not read `blast.max` as another 22.
+
+**How far it flies is `deathDamage`, and nothing had to be plumbed to make that
+true.** `GrenadeSystem.blastAt` scales its damage by the falloff before
+`takeDamage` ever sees it, so what a corpse recorded is already the strength of
+the explosion AT THE PLACE THE BODY WAS STANDING. A frag at the feet throws
+further than one across the street, a rocket further than the frag and a tank
+shell further than either, with no second number to keep in step with `power` —
+which stays what it has always been, the SIZE OF THE PICTURE and nothing else.
+
+**`rise` is added to the UNIT direction**, so it means an angle and not a
+distance. Without it a charge going off level with a body — on a windowsill, on
+a parapet, against the far wall of a room — skids it along the floor, and what a
+blast does to a man is take him off it.
+
+Measured on Hollowmere's open ground, a body killed standing with the blast two
+metres away at ankle height, horizontal distance travelled before the corpse
+freezes:
+
+| what killed it | damage recorded | flew |
+| --- | --- | --- |
+| rifle round | 34 | 0.12 m (it folds where it stood) |
+| a frag's fringe | 30 | 1.6 m |
+| a frag at the feet | 130 | 4.2 m |
+| a rocket's splash | 220 | 7.2 m |
+| a tank shell | 350 / 600 | 8.6 m (both at `blast.max`) |
+
+A grenade that goes off directly UNDERNEATH a body is the one case that reads as
+no throw at all, and it is right: the direction is straight up, the body is
+lifted about a metre and a half and comes down on the spot it stood on.
+
+**`DamageKind` is the vocabulary and the test is "not a bullet"**, never a list
+of the kinds that are explosions — a new one is thrown without this file having
+to be told about it. `blast` is the grenade's, `shell` is the tank's gun, its
+splash, both anti-tank items and a HULL BREWING UP with somebody inside it
+(`docs/vehicles.md`, "four ways out"), and only `bullet` folds.
 
 **The pool holds `RagdollSubject`s and cannot tell the two kinds apart.** That
 interface lives in `SoldierModel.ts`, beside the rig and bone table it is a fact

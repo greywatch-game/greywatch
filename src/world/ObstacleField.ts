@@ -163,25 +163,30 @@ export class ObstacleField {
    * The highest collider top face directly above `floor` and at or below
    * `ceiling` at `(x, z)`, or null when no box spans that band here.
    *
-   * **NOTHING CALLS THIS YET, AND THAT IS ON PURPOSE.** It is written and
-   * measured against the ray it replaces, and it is one line from being switched
-   * on; what it waits for is below, and FINDINGS 6 carries the numbers. Do not
-   * delete it as dead code, and do not wire it up without reading that entry.
+   * **ONE THING CALLS THIS, AND IT IS A VEHICLE.** `Tank.supportAt` asks it ten
+   * times a frame, once per track contact, which is what lets a hull stand on a
+   * PLANK rather than on a single point and therefore what lets a tank drive
+   * over a parked car. `Player.probeGround` is still the ray, and turning THAT
+   * over waits on what is below — FINDINGS 6 carries the numbers.
    *
    * THIS IS THE GROUND PROBE'S ANSWER, and it exists to retire a whole-scene
-   * ray pick. `Player.probeGround` ran `scene.pickWithRay` with a `solid`
-   * predicate on every frame: Babylon walked all ~1,800 meshes and ray-tested
-   * all ~820 colliders to answer "what is under my feet", which measured as the
+   * ray pick. `Player.probeGround` runs `scene.pickWithRay` with a `solid`
+   * predicate on every frame: Babylon walks all ~1,800 meshes and ray-tests all
+   * ~820 colliders to answer "what is under my feet", which measures as the
    * single largest piece of the game's own per-frame JS — five times the next
    * item, and scaling with how big the map is rather than with what is on
    * screen. The boxes were already bucketed here, and `NavGrid.rasterize` was
    * already computing exactly this at bake time from the same primitive.
+   * Measured against it in one headless session on Coldharbour: ten of these
+   * cost 0.0009 ms against 0.567 ms for one ray.
    *
    * The band is closed at both ends because a floor is not the only thing above
-   * a foot: `ceiling` is the probe's own origin (a step-height above the feet,
-   * so a rise reads as a step rather than a wall) and `floor` is as far down as
-   * the probe reaches. A roof overhead is outside the band and correctly
-   * ignored.
+   * a foot: `ceiling` is how high a rise still reads as something to step (or
+   * drive) up rather than as a wall, and `floor` is as far down as the caller
+   * cares to look. A roof overhead is outside the band and correctly ignored.
+   * **A caller owes the same ceiling to whatever decides what it is BLOCKED
+   * by**, or it drives through the bottom of things it then refuses to stand
+   * on; `CONFIG.vehicles.tank.drive.climbHeight` is the worked example.
    *
    * NOT the terrain. The heightfield has no box standing in for it — that is
    * the one documented exception to the visual/collider rule — so the caller
@@ -205,7 +210,59 @@ export class ObstacleField {
    * because it stands the player on air. **The fix is a footprint test bounded
    * by the box's real extent rather than its projected one**, and it belongs in
    * `boxGeometry`, where `NavGrid` gets it too.
+   *
+   * **A HULL can live with it and a body cannot**, which is why the vehicle is
+   * this query's first customer: a spurious surface half a metre up is one of
+   * ten contacts under a seven-metre plank, and the rise it asks for is rate-
+   * limited before it reaches the drawn tank. The same half metre under a pair
+   * of feet is a player standing in the air.
    */
+  /**
+   * Is there something at `(x, z)` that a hull whose tracks are on the ground
+   * CANNOT ride over — a wall rather than a step?
+   *
+   * `groundAt`'s mirror, and the pair are meant to be read together: that one
+   * asks what a track contact would stand ON and answers with a height, this
+   * one asks what is IN THE WAY and answers yes or no. A tank needs both,
+   * because the two questions come apart exactly where a vehicle is
+   * interesting — a kerb is ground and a shopfront is not, and the only thing
+   * separating them is how far above the tracks the top face stands.
+   *
+   * The band is the caller's and both ends are load-bearing, exactly as
+   * `groundAt`'s are. `floor` is the highest top face that is still a STEP —
+   * the hull's own climb ceiling, and anything at or below it is something the
+   * vehicle drives over rather than into. `ceiling` is the underside above
+   * which a box is HEADROOM: a bridge deck or an arcade a hull passes beneath
+   * is not in its way, and asking about the top face alone would read a
+   * ten-metre tower and the archway through it as the same obstruction.
+   *
+   * Same three lines `resolve`'s push-out already tests a body against
+   * (`CONFIG.nav.stepHeight` and `HEADROOM` there, a hull's own two numbers
+   * here), and it costs the same one bucket walk. It is a STEERING answer and
+   * never a collision one — `moveWithCollisions` is what actually stops a
+   * hull, and this is what lets an AI driver turn before it gets there. It may
+   * therefore be wrong in the safe direction (an overhang read as a wall costs
+   * a detour) and must never be relied on to be wrong in the other.
+   */
+  wallAt(x: number, z: number, floor: number, ceiling: number): boolean {
+    const cx = this.clampCell(this.toCell(x));
+    const cz = this.clampCell(this.toCell(z));
+    const bucket = this.buckets[cz * this.dim + cx];
+    if (!bucket) return false;
+
+    for (const index of bucket) {
+      const box = this.boxes[index];
+      const top = topFaceHeight(box, x, z);
+      if (top === null) continue;
+      // Low enough to ride onto, so it is a step rather than an obstruction.
+      if (top <= floor) continue;
+      // High enough to pass under: an arch, a deck, a footbridge.
+      if (top - slabThickness(box) >= ceiling) continue;
+      return true;
+    }
+    return false;
+  }
+
   groundAt(x: number, z: number, ceiling: number, floor: number): number | null {
     const cx = this.clampCell(this.toCell(x));
     const cz = this.clampCell(this.toCell(z));

@@ -48,6 +48,28 @@ export class NetRoster {
   /** The slot the local player owns, or -1 while spectating. */
   localSlot = -1;
 
+  /**
+   * Which slots are inside a hull, by slot.
+   *
+   * A body in a tank is not drawn: offline `Game.mount` hides the player's
+   * viewmodel and `BattleSystem.setCrewed` takes a bot's rig off the field,
+   * and this is the same statement made from the wire. Without it a crewed
+   * hull drives down the street with its driver standing in the road at the
+   * hull's own position, at the hull's own SPEED — which reads as a man being
+   * dragged along under the tracks.
+   *
+   * Written by `NetSession` off `VehicleState.by`, which is the one place
+   * occupancy is stated. It is a fact about the ROUND rather than about a
+   * body, exactly as the bench is in `BattleSystem`, which is why it lives
+   * here as an array rather than as a flag on `NetSoldier`.
+   */
+  private readonly riding: boolean[] = [];
+
+  /** See `riding`. */
+  setRiding(slot: number, on: boolean): void {
+    this.riding[slot] = on;
+  }
+
   /** One per team, reused by `hittablesAgainst` so a shot allocates nothing. */
   private readonly hittableScratch: [Hittable[], Hittable[]] = [[], []];
 
@@ -185,6 +207,15 @@ export class NetRoster {
         if (soldier.alive) this.onRetire(soldier);
         else this.onDeath(soldier);
       }
+      // In a hull. Hidden AFTER the update above rather than instead of it,
+      // which is what keeps the ragdoll edges honest: a crew burned inside its
+      // tank goes from alive to dead on this slot like any other body, and
+      // `onDeath` is what puts a corpse beside the wreck. What is skipped is
+      // only the drawing.
+      if (this.riding[soldier.slot]) {
+        soldier.setEnabled(false);
+        continue;
+      }
       const d = Vector3.Distance(soldier.position, cameraPos);
       if (d > this.viewDistance) {
         soldier.setEnabled(false);
@@ -224,6 +255,12 @@ export class NetRoster {
     out.length = 0;
     for (const soldier of this.soldiers) {
       if (soldier.slot === this.localSlot) continue;
+      // A body inside a hull is not a target, for the reason
+      // `Game.mount` makes the player invulnerable: the TANK is what is being
+      // shot at. Left in, the local prediction would stop every round on an
+      // invisible man at the hull's centre — a tracer dying in mid-air and a
+      // hitmarker the authority never confirms.
+      if (this.riding[soldier.slot]) continue;
       if (soldier.alive && soldier.team !== team) out.push(soldier);
     }
     return out;

@@ -311,6 +311,34 @@ to match. Bots hold a fight instead of losing it and going looking.
   the tucked-in half of the peek cycle holds fire. Without both, bots walked into walls
   holding fire for the whole round.
 
+## A bot in a tank is not a bot
+
+On a map with armour a bot can climb into a hull, and when it does it leaves
+this file entirely. Every part of the FSM above — cover, the peek cycle, the
+crouch, the separation pass, the flow field walked a cell at a time — is about a
+body standing up, and none of it survives contact with a seven-metre vehicle. So
+a crewed bot is taken OUT of the fight exactly as a mounted player is, and
+`systems/TankCrew.ts` is the second brain that drives in its place.
+
+What this file owes it is two things:
+
+- **`BattleSystem.aside` is the one skip test, and every loop over `bots` owes
+  it.** `crewed` is a second `Set<Bot>` beside `benched` — the same exclusions
+  (not respawned, not thought for, not a target, not drawn, not in a formation)
+  for a different reason, and written only through `setCrewed`. Never test
+  `benched.has` directly: two reasons is exactly the number at which a third one
+  gets added at one call site and missed at eighteen.
+- **A driver still gets its squad's ORDER.** `update` runs `applyOrder` over the
+  crewed set explicitly, because a driver skips the think pass that would
+  otherwise refresh `Bot.objective` — and that field is what the tank steers on.
+  The armour goes where its crewman's squad was going, which is why there is no
+  second objective planner and no way for the two to disagree.
+
+Unlike a benched bot a driver is still ALIVE: it holds its ticket, its scoreboard
+row and its position, which the crew slaves to the hull with `Bot.nudgeTo`. See
+[`vehicles.md`](vehicles.md) for the rest — how a crew is picked, why a tank is
+never a destination, and why the player can always turn one out of the seat.
+
 ## Squads and objectives
 
 **Squad orders are planned as a group** (`ConquestSystem.planSquads`), on their own

@@ -27,8 +27,12 @@
  * through people. Bots whose roster slot a human has taken are BENCHED: not
  * respawned, not thought for, not shootable, not drawn — and un-benching drops
  * them back into the ordinary respawn queue with skill and squad intact, which
- * is what makes a human joining and leaving symmetrical. Every loop over
- * `bots` must skip the bench; `Bot` itself knows nothing about any of it.
+ * is what makes a human joining and leaving symmetrical. Bots inside a TANK
+ * are the bench's twin (`crewed`, written by `TankCrew` through `setCrewed`):
+ * the same exclusions for a different reason, except that a driver is still
+ * alive and still gets its squad's order. Every loop over `bots` must skip
+ * both, and the one test that does it is `aside` — never `benched.has`
+ * directly. `Bot` itself knows nothing about any of it.
  * A HUMAN ALWAYS HOLDS A SLOT, offline as well as on the server: `seatPlayer`
  * benches the local player's, which is what makes a single-player round 8v8
  * rather than 8v9.
@@ -161,6 +165,22 @@ export class BattleSystem {
     false;
 
   /**
+   * Wired by `Game`: a launcher bot's rocket, from `from` toward `at`.
+   *
+   * The same shape as the grenade's and for the same reasons — the pool and
+   * the flight are `AntiTankSystem`'s, this file forwards the ask and its
+   * answer, and the bot spends nothing on a false. It carries the shooter for
+   * the same reason the grenade does: a rocket is in the air for over a second
+   * and whoever it kills has to be credited to somebody.
+   *
+   * The default is a refusal, which is what the server runs on: there are no
+   * vehicles in a netplay round, so no bot there ever acquires armour and the
+   * ask is never made — but a callback that defaulted to firing into the void
+   * would be a thing to find out about later.
+   */
+  fireRocketFor: (bot: Bot, from: Vector3, at: Vector3) => boolean = () => false;
+
+  /**
    * One board per team: the contact calls its squads have made and the marks
    * its own deaths have left. Built with the system and cleared on `reset`, so
    * a new round starts with a team that remembers nothing.
@@ -205,6 +225,27 @@ export class BattleSystem {
    */
   private readonly benched = new Set<Bot>();
   /**
+   * Bots that are inside a tank.
+   *
+   * **The bench's twin, and the pair are the whole of "out of the fight but
+   * not dead".** A crewed bot is not respawned, not thought for, not a target,
+   * not drawn and not part of any squad's formation — the identical list, for
+   * a different reason: the bench says a HUMAN has this slot, and this says
+   * the body is doing something a body's FSM has no answer for. Two sets
+   * rather than one because they are cleared by different things and confusing
+   * them would un-bench a driver, and `aside` is what spares every reader from
+   * having to know which is which.
+   *
+   * Unlike a benched bot this one is still ALIVE: it holds its ticket, its
+   * scoreboard row and its position, which `TankCrew` slaves to the hull. What
+   * it does NOT do is walk, shoot a rifle, take cover or get shot at — the
+   * hull is what is being shot at, exactly as it is for a mounted player.
+   *
+   * Written only through `setCrewed`, which `Game` wires to `TankCrew`'s two
+   * announcements. Nothing in this file decides who is driving.
+   */
+  private readonly crewed = new Set<Bot>();
+  /**
    * The roster slot the offline player sits in, or -1 before a round has
    * seated them. Written only by `seatPlayer`, and read by the scoreboard,
    * which draws the player's line in place of that slot's bot.
@@ -225,7 +266,14 @@ export class BattleSystem {
   private thinkDebt = 0;
   private ctx: BattleCtx;
   private readonly ray = new Ray(new Vector3(), new Vector3(), 1);
-  private readonly hittableScratch: Hittable[][] = [[], []];
+  /**
+   * `Combatant` rather than `Hittable`, which is the wider of the two and is
+   * everything that ever goes in: bots and humans alike declare a team, a
+   * position and whether they are armour, and a tank AI choosing what to shoot
+   * needs all three. Handed out as `Hittable[]` to `CombatSystem.fire`, which
+   * asks for less.
+   */
+  private readonly hittableScratch: Combatant[][] = [[], []];
   private readonly candidateScratch: { c: Combatant; d: number }[] = [];
 
   constructor(
@@ -237,6 +285,14 @@ export class BattleSystem {
       for (let i = 0; i < CONFIG.bots.perTeam; i++) {
         const bot = new Bot(scene, mats, team as Team);
         bot.squad = Math.floor(i / CONFIG.bots.squadSize);
+        // One launcher per squad, and it is the squad's FIRST body — a fixed
+        // slot rather than a roll, so a team fields exactly
+        // `antiTankBots.perSquad` of them however the pool is seeded and
+        // however many squads a map's roster cuts into. It rides the pool slot
+        // like the skill seed does, so it survives a bench, a respawn and a
+        // round: which body carries the launcher is a fact about the roster,
+        // not about the life.
+        bot.launcher = i % CONFIG.bots.squadSize < CONFIG.antiTankBots.perSquad;
         // A stream per bot, seeded off the pool slot: movement personality
         // differs between bots but is identical between runs.
         bot.seedRandom(CONFIG.bots.skill.seed + team * 131 + i * 17);
@@ -320,6 +376,7 @@ export class BattleSystem {
       },
       separation: (bot, out) => this.separation(bot, out),
       throwGrenade: (bot, at) => this.throwGrenadeFor(bot, bot.eyePos, at),
+      fireRocket: (bot, at) => this.fireRocketFor(bot, bot.muzzleWorld(), at),
       clearObstacles: (x, y, z, out) =>
         this.obstacles
           ? this.obstacles.resolve(x, y, z, CONFIG.nav.bodyRadius, out)
@@ -391,6 +448,35 @@ export class BattleSystem {
     return this.benched.has(bot);
   }
 
+  /**
+   * Takes a bot out of the fight because it has climbed into a tank, or puts
+   * it back. `setBenched`'s twin — see `crewed` — and like it, it tears
+   * nothing down.
+   *
+   * It deliberately does NOT touch `alive`, `state` or `respawnT`, all three
+   * of which benching writes: a driver is a living body in a different place,
+   * not a slot standing empty. Nor does it hide the rig, which is
+   * `TankCrew`'s to do and undo, because that system is also the one that
+   * knows where to put the body back down.
+   */
+  setCrewed(bot: Bot, crewed: boolean): void {
+    if (crewed) this.crewed.add(bot);
+    else this.crewed.delete(bot);
+  }
+
+  /**
+   * Is this bot out of the fight without being dead — a human in its slot, or
+   * a hull around it?
+   *
+   * **Every loop over `bots` in this file owes this test**, and it is one
+   * method rather than two `Set.has` calls at nineteen call sites precisely so
+   * that a third reason can never be added and missed at eighteen of them. It
+   * is public because `TankCrew` asks it before handing anybody a seat.
+   */
+  aside(bot: Bot): boolean {
+    return this.benched.has(bot) || this.crewed.has(bot);
+  }
+
   /** The slot the offline player holds, or -1 if none has been taken. */
   get playerSlot(): number {
     return this.seated;
@@ -438,7 +524,7 @@ export class BattleSystem {
     const p = CONFIG.bots.perception;
     const range2 = p.hearRange * p.hearRange;
     for (const bot of this.bots) {
-      if (!bot.alive || this.benched.has(bot)) continue;
+      if (!bot.alive || this.aside(bot)) continue;
       const dx = bot.position.x - at.x;
       const dz = bot.position.z - at.z;
       if (dx * dx + dz * dz > range2) continue;
@@ -465,6 +551,20 @@ export class BattleSystem {
   }
 
   /**
+   * Is `to` visible from `from`, against the same `OPAQUE_ONLY` world a bot's
+   * own line of sight is tested against?
+   *
+   * The public door onto `visible`, which bots already reach through
+   * `BattleCtx`. It is here for `TankCrew`, whose crews need exactly the ray a
+   * bot needs and must get the identical answer — a tank that could see
+   * through a wall a rifleman cannot would be a different game running in the
+   * same window. Budgeted by the caller, as every LOS ray in this file is.
+   */
+  losBetween(from: Vector3, to: Vector3): boolean {
+    return this.visible(from, to);
+  }
+
+  /**
    * Re-draws every bot's skill for the given difficulty tier. Called on round
    * start, so a difficulty picked in the menu applies without rebuilding the
    * (never-disposed) rig pool.
@@ -488,13 +588,13 @@ export class BattleSystem {
   }
 
   /** Living enemies of `team`, as hitscan targets. Reused, not reallocated. */
-  hittablesAgainst(team: Team): Hittable[] {
+  hittablesAgainst(team: Team): Combatant[] {
     const out = this.hittableScratch[team];
     out.length = 0;
     for (const bot of this.bots) {
       // A benched bot is not in the fight and must not be shootable: its slot
       // belongs to a human who is somewhere else entirely.
-      if (bot.alive && bot.team !== team && !this.benched.has(bot)) out.push(bot);
+      if (bot.alive && bot.team !== team && !this.aside(bot)) out.push(bot);
     }
     // Humans must be hittable too — acquire() aims bots at them, so leaving
     // them out here makes enemy shots fly through people. The team check keeps
@@ -520,7 +620,7 @@ export class BattleSystem {
 
     // --- respawn ---
     for (const bot of this.bots) {
-      if (this.benched.has(bot)) continue;
+      if (this.aside(bot)) continue;
       if (bot.alive || bot.respawnT > 0) continue;
       const spawn = this.spawnPointFor(bot);
       if (spawn) {
@@ -530,6 +630,13 @@ export class BattleSystem {
     }
 
     this.updateSquads(dt);
+    // ...and orders reach a DRIVER too, which is the one thing being aside
+    // does not take away. `TankCrew` steers a hull down its crewman's squad
+    // objective, and that bot skips the think pass below where `applyOrder`
+    // would ordinarily refresh it — so a tank would drive on the order its
+    // crewman happened to hold at the moment he climbed in. At most two
+    // iterations, and none at all on the two maps with no armour.
+    for (const bot of this.crewed) this.applyOrder(bot);
 
     // --- staggered thinking ---
     // Budget = roster * rate * dt, so each bot thinks `thinkRate` times a
@@ -549,7 +656,7 @@ export class BattleSystem {
       // Benched skips for the same reason dead does: spending a think slot on a
       // bot that is not in the fight makes the living think slower than
       // `thinkRate` advertises.
-      if (!bot.alive || this.benched.has(bot)) continue;
+      if (!bot.alive || this.aside(bot)) continue;
       this.applyOrder(bot);
       bot.think(this.ctx, this.zoneFor(bot));
       done++;
@@ -561,7 +668,7 @@ export class BattleSystem {
     // and two copies is how that one came to be pinned to `lodFreezeDistance`.
     const fogEnd = this.viewDistance;
     for (const bot of this.bots) {
-      if (this.benched.has(bot)) continue;
+      if (this.aside(bot)) continue;
       if (bot.state === "dead" && bot.respawnT <= 0 && !bot.rig.root.isEnabled()) {
         continue;
       }
@@ -607,7 +714,7 @@ export class BattleSystem {
           counts.push(0);
           held.push(this.squadOrders[team][held.length]?.pointId ?? "");
         }
-        if (!bot.alive || this.benched.has(bot)) continue;
+        if (!bot.alive || this.aside(bot)) continue;
         centroids[bot.squad].addInPlace(bot.position);
         counts[bot.squad] += 1;
       }
@@ -673,7 +780,7 @@ export class BattleSystem {
       if (d < range && this.inView(bot, c)) candidates.push({ c, d });
     };
     for (const other of this.bots) {
-      if (!this.benched.has(other)) consider(other);
+      if (!this.aside(other)) consider(other);
     }
     for (const human of this.humans) consider(human);
     if (candidates.length === 0) return null;
@@ -815,7 +922,7 @@ export class BattleSystem {
   private anchored(bot: Bot): boolean {
     for (const other of this.bots) {
       if (other === bot || other.team !== bot.team) continue;
-      if (!other.alive || this.benched.has(other)) continue;
+      if (!other.alive || this.aside(other)) continue;
       if (other.coverAnchor) return true;
     }
     return false;
@@ -828,7 +935,7 @@ export class BattleSystem {
     const r2 = r * r;
     for (const other of this.bots) {
       if (other === asking || other.team !== asking.team) continue;
-      if (!other.alive || this.benched.has(other)) continue;
+      if (!other.alive || this.aside(other)) continue;
       const anchor = other.coverAnchor;
       if (!anchor) continue;
       const dx = anchor.x - x;
@@ -859,7 +966,7 @@ export class BattleSystem {
     const min = CONFIG.bots.separation;
     const spacing = m.spacing;
     for (const other of this.bots) {
-      if (other === bot || !other.alive || this.benched.has(other)) continue;
+      if (other === bot || !other.alive || this.aside(other)) continue;
       // De-penetration is owed to everybody — two bodies may not stand inside
       // each other whichever side they are on — but the formation is only
       // owed to our own: an enemy at four metres is a fight, not a queue.

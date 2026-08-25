@@ -21,6 +21,7 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../src/config";
 import type { Combatant, Team } from "../src/entities/Combatant";
+import type { DamageKind } from "../src/systems/CombatSystem";
 import { Leash } from "../src/world/leash";
 
 export class NetPlayer implements Combatant {
@@ -115,12 +116,62 @@ export class NetPlayer implements Combatant {
   grenades: number = CONFIG.grenade.carried;
 
   /**
+   * Anti-tank items left in the third slot — rockets or mines, whichever this
+   * player brought.
+   *
+   * The SERVER's count, for `grenades`' reason exactly: there is no resupply,
+   * the pouch is refilled by death and nothing else, and a client keeping its
+   * own would fire as many as it liked. What the number MEANS is the
+   * loadout's; `Match` holds that and debits this.
+   */
+  ordnance = 0;
+
+  /**
+   * The hardstanding this player is sitting in, or -1 on foot.
+   *
+   * **The authority's copy of `Game.driving`, and the single fact the feature
+   * turns on over here as well.** It decides which validator a reported
+   * position goes through (`validateDrive` rather than `validateMove`), whether
+   * a `shell` may be resolved at all, and whether this body is a target: a
+   * driver is inside the hull, so `invulnerable` goes up for exactly as long as
+   * this is set, and what is being shot at is the tank.
+   *
+   * Written only through `HeadlessGame.seat`, which is the pair of
+   * `Game.mount`/`clearVehicle` on this side and must be read as one thing with
+   * them.
+   */
+  seat = -1;
+
+  /**
+   * True while this body is riding in a hull: nothing may hurt it, because the
+   * armour around it is what is being shot at.
+   *
+   * `Player.invulnerable`'s twin and the same three words of justification —
+   * without it a driver is a soft target sitting at the hull's own position,
+   * killable through six inches of plate by anybody who aims at the tank. What
+   * kills a driver is the hull burning, and that arrives through
+   * `VehicleSystem.onDestroyed` like it does offline.
+   */
+  invulnerable = false;
+
+  /**
    * Counts down from `regenDelay` after each hit; regen resumes at zero. The
    * server's copy of `Player.regenLockT`, and it has to exist here because the
    * authority owns the health: regen is a rule about the number, and a rule
    * about the number belongs wherever the number is decided.
    */
   private regenLockT = 0;
+
+  /**
+   * How many AT items a full pouch is for the item this player brought, which
+   * `Match` writes off the resolved loadout.
+   *
+   * Here rather than looked up at each respawn because this class must not
+   * import the equipment table to find out: what is in the third slot is the
+   * loadout's, and this object's business is only that death refills whatever
+   * it was.
+   */
+  ordnanceCarried = 0;
 
   constructor(
     readonly slot: number,
@@ -185,18 +236,32 @@ export class NetPlayer implements Combatant {
    * `takeDamage` and cares only whether it killed — the whole event, with the
    * bearing and the remaining health on it, has to leave by another door.
    */
-  onDamaged: (amount: number, from: Vector3 | undefined, killed: boolean) => void =
-    () => {};
+  onDamaged: (
+    amount: number,
+    from: Vector3 | undefined,
+    killed: boolean,
+    kind: DamageKind,
+  ) => void = () => {};
 
   /**
    * Damage from a bot or another player. The server is the only thing that may
    * call this, and the client is told the outcome.
    *
    * `from` is where the round started, which the client turns into the
-   * directional damage arc. Every damage path in the game already passes it.
+   * directional damage arc. Every damage path in the game already passes it,
+   * and `kind` rides beside it for the same reason `Player.takeDamage` forwards
+   * one: the corpse a client throws is a different corpse for a blast.
    */
-  takeDamage(amount: number, from?: Vector3): boolean {
+  takeDamage(
+    amount: number,
+    from?: Vector3,
+    kind: DamageKind = "bullet",
+  ): boolean {
     if (!this.alive) return false;
+    // In a hull. The tank is the target — see `invulnerable`. Refused rather
+    // than absorbed, so `CombatSystem.fire` reads "nothing happened" and no
+    // hitmarker is sent back for a round that hit six inches of plate.
+    if (this.invulnerable) return false;
     this.health -= amount;
     this.regenLockT = CONFIG.player.regenDelay;
     const killed = this.health <= 0;
@@ -205,7 +270,7 @@ export class NetPlayer implements Combatant {
       this.alive = false;
       this.respawnT = CONFIG.conquest.respawnDelay;
     }
-    this.onDamaged(amount, from, killed);
+    this.onDamaged(amount, from, killed, kind);
     return killed;
   }
 
@@ -237,8 +302,17 @@ export class NetPlayer implements Combatant {
   spawn(at: Vector3, yaw: number): void {
     this.health = CONFIG.player.maxHealth;
     this.regenLockT = 0;
-    // Death is the only resupply. See the field's note.
+    // Death is the only resupply. See the fields' notes — the AT pouch follows
+    // the same rule, and `Match` is what knows how many that is.
     this.grenades = CONFIG.grenade.carried;
+    this.ordnance = this.ordnanceCarried;
+    // A fresh body is on foot. A driver who died inside a hull was put out of
+    // it by `HeadlessGame.seat` on the frame it burned, so this is belt and
+    // braces — and it is the belt that matters: a seat left set across a death
+    // would send every one of this player's reported walks through the hull
+    // validator.
+    this.seat = -1;
+    this.invulnerable = false;
     this.alive = true;
     this.crouching = false;
     this.sprinting = false;
@@ -255,6 +329,12 @@ export class NetPlayer implements Combatant {
   /** Takes this player out of the fight without killing them — a disconnect. */
   retire(): void {
     this.alive = false;
+    // Out of whatever they were in. `HeadlessGame.removePlayer` gives the hull
+    // up through `seat` before this runs, so this is the same belt `spawn`
+    // fastens: a retired player holding a seat index is one whose hull can
+    // never be offered to anybody again.
+    this.seat = -1;
+    this.invulnerable = false;
     // A rotation retires everybody and then builds a different map. The request
     // is an index into the OLD map's spawn table, so carrying it across would
     // deploy the player at whatever happens to be in that slot on the new one.

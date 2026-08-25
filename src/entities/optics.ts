@@ -70,7 +70,7 @@ export interface OpticMount {
  * `ViewModel.applyFit`, which derives the aimed pose from the same two numbers
  * in the other direction.
  */
-const eyeDistance = (id: SightId): number =>
+export const eyeDistance = (id: SightId): number =>
   CONFIG.sights[id].eyeRelief / CONFIG.viewmodel.scale;
 
 /**
@@ -237,12 +237,12 @@ const scopeBore = (dz: number): number =>
  * The floor under both is the same as the scope's: a wall thinner than the ink
  * shell `renderOutline` extrudes reads as a line rather than a rim.
  */
-const PRISM_WALL = 0.005;
+export const PRISM_WALL = 0.005;
 const PRISM_SECTIONS = 3;
 const PRISM_OCULAR_DZ = -0.06;
 const PRISM_OBJECTIVE_DZ = 0.05;
 const PRISM_FLOOR_GAP = 0.0025;
-const PRISM_CONE =
+export const PRISM_CONE =
   (PRISM_RISE - PRISM_FLOOR_GAP) /
   (eyeDistance("prism") + RAIL_REACH - PRISM_OCULAR_DZ);
 

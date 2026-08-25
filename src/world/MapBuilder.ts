@@ -105,6 +105,29 @@ export interface SpawnPointDef {
 }
 
 /**
+ * Where one team's vehicle stands at the start of a round, and where a fresh
+ * one is put after the last was destroyed.
+ *
+ * **A hardstanding, not a spawn point.** It is deliberately not a
+ * `SpawnPointDef` with a flag on it: a soldier's spawn is one of a set the
+ * deploy screen offers and the conquest rules hand out, and this is a single
+ * fixed place that belongs to a team for the whole round whatever they hold.
+ * Sharing the type would have put a `vehicle?: true` on every infantry spawn on
+ * every map and given `ConquestSystem.spawnFor` something to skip.
+ *
+ * The MapBuilder does one thing with these and it is not building anything:
+ * they join `keepClear`, so blocking scatter cannot be sown on top of a
+ * hardstanding. What stands here is `VehicleSystem`'s, from `GameMap`.
+ */
+export interface VehicleSpawnDef {
+  team: 0 | 1;
+  /** Absolute, like a control point's — the ground here is where the hull rests. */
+  pos: Vector3;
+  /** Which way the hull faces when it arrives. */
+  yaw: number;
+}
+
+/**
  * A rectangular body of shallow surface water. Purely visual: no collider,
  * no nav cost — combatants wade across the ground beneath. Consumed by the
  * WaterSystem, not by the MapBuilder (water is never merged or frozen).
@@ -307,6 +330,16 @@ export interface GameMap {
   margin: number;
   controlPoints: ControlPointDef[];
   spawns: SpawnPointDef[];
+  /**
+   * The vehicle hardstandings, one per team on a map that has them and empty on
+   * every map that does not — which is two of the four shipped.
+   *
+   * Carried on the built map rather than read off the layout by whoever wants
+   * it, for the reason everything else here is: `VehicleSystem` is handed a
+   * `GameMap` by `installMap` and must never reach for a named map's own
+   * modules. See `VehicleSpawnDef`.
+   */
+  vehicleSpawns: VehicleSpawnDef[];
   /** Invisible collider proxies — the only pickable, collidable geometry. */
   colliders: Mesh[];
   /** The same colliders as plain boxes, for the nav grid. */
@@ -716,6 +749,17 @@ export class MapBuilder {
     this.keepClear = [
       ...layout.controlPoints.map((cp) => ({ x: cp.pos.x, z: cp.pos.z, r: 3.5 })),
       ...layout.spawns.map((sp) => ({ x: sp.pos.x, z: sp.pos.z, r: 3 })),
+      // A hardstanding is cleared to the HULL's own half-length plus a body's
+      // standing room, because the thing that arrives here is seven metres long
+      // and does not walk around a bollard. A blocking prop sown on one is worse
+      // than a prop on a flag: a flag inside a collider merely cannot be
+      // captured, while a tank that materialises inside one is a hull the
+      // ground probe puts on top of a skip.
+      ...(layout.vehicles ?? []).map((v) => ({
+        x: v.pos.x,
+        z: v.pos.z,
+        r: CONFIG.vehicles.tank.hull.length / 2 + 1.5,
+      })),
     ];
     this.panes = [];
     this.paneGroups = [];
@@ -987,6 +1031,7 @@ export class MapBuilder {
       obstacles: new ObstacleField(size, this.boxes),
       controlPoints: layout.controlPoints,
       spawns: layout.spawns,
+      vehicleSpawns: layout.vehicles ?? [],
       colliders,
       colliderBoxes: this.boxes,
       rayGroups: this.rayGroups,

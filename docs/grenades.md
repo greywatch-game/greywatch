@@ -1,6 +1,7 @@
 # Grenades
 
-The one thing in this game that is not hitscan, and everything that follows from
+One of the two things in this game that are not hitscan (the anti-tank rocket is
+the other — see [`antitank.md`](antitank.md)), and everything that follows from
 that: the pool, the bounce, the blast, the dust, the throw gesture and the bots'
 range band. Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps the summary;
 this file is the contract for `GrenadeSystem` and both throwers.
@@ -9,8 +10,13 @@ Everyone carries two and there is no resupply, so the pouch is refilled by death
 and nothing else (`Player.fullReset`, `Bot.spawn`). Two a life makes each throw a
 decision rather than a second trigger.
 
-**This is the only thing in the game that is not hitscan**, and everything about
-`src/systems/GrenadeSystem.ts` follows from that:
+**This is one of the two things in the game that are not hitscan** — the
+anti-tank rocket is the other, and it lives in `AntiTankSystem` because it
+shares nothing with a grenade but the fact of flying (no fuse, no bounce, no
+rest, no tumble). What it DOES share is the first two rules below, copied
+deliberately: they are the two things about flying through this world that were
+got wrong first. Everything about `src/systems/GrenadeSystem.ts` follows from
+being a thrown thing with a clock in it:
 
 - **ONE ray per grenade per frame**, cast along the step and a radius past it so a
   fast grenade cannot tunnel between frames, filtered on `metadata.solid === true`.
@@ -40,13 +46,113 @@ decision rather than a second trigger.
   `ctx.throwGrenade` returns true. A count debited for a throw that never arrived is
   the most confusing thing this could hand a player.
 
-**The blast is a fireball, embers and DUST, and the dust outlives the rest.**
-`BlastDust` is a few dozen soft quads expanding, slowing and fading over
-`dust.life`, not emissive, `BLENDMODE_STANDARD`, tinted from the map's `mistColor`
-toward its key light. **This is the one place a GPU particle system may be spawned
-per event** — the rule against it (muzzle smoke, brass) is about per-shot effects at
-eighty shots a second; there are seconds between detonations. Four of these six are
-Babylon's rather than the game's:
+## The blast is EIGHT layers, and there is only one blast in this game
+
+**`blastAt` takes a `power`, the grenade passes 1, and everything else is a
+multiple of it.** That is the same bargain the weapon table makes with the
+rifle's `report`: one thing is the reference, every number in it is 1, and a
+second thing says only how it differs. A tank shell is
+`CONFIG.vehicles.tank.gun.blastPower` (1.85) of exactly these eight layers and
+declares nothing else about its own explosion — no second fireball, no second
+dust cloud, no second set of numbers to keep in step. `CONFIG.grenade`'s "The
+blast, as a picture" is the table; six of the layers are drawn from
+`GrenadeSystem` and two from `BlastDebrisSystem`.
+
+| layer | when | what it says | owner |
+| --- | --- | --- | --- |
+| `flash` | 0 – 0.14 s | something detonated HERE | `GrenadeSystem` |
+| `fireball` | 0 – 0.6 s | and it was this big | `GrenadeSystem` |
+| `shock` | 0 – 0.34 s | and it reached this far along the ground | `GrenadeSystem` |
+| embers | 0 – 0.8 s | and it threw hot metal | `GrenadeSystem` |
+| `debris` | 0 – 7 s | out of THIS ground | `BlastDebrisSystem` |
+| `dust` | 0 – 2.4 s | which is still hanging in the air | `GrenadeSystem` |
+| `smoke` | 0 – 4 s | and is now a column you can see from the flag | `GrenadeSystem` |
+| `scorch` | 0 – 15 s | and this is where it happened | `BlastDebrisSystem` |
+
+Four rules hold the picture together, and each of them is a thing that was got
+wrong first:
+
+- **The top of the list is SHORT.** The flash and the fireball are over inside
+  two-thirds of a second between them. What makes a blast read as violent is
+  how fast it arrives and how much is still going on after it has gone, not how
+  long the fire lasts — lengthening the fireball is the first thing anybody
+  reaches for and the one change that turns the whole thing into a special
+  effect.
+- **`power` scales SIZE and COUNT, never TIME.** A blast that lasted longer
+  because it was bigger would leave the tank's fireball still burning while its
+  own smoke column was already up, and the ORDER the layers arrive in is what
+  the effect is made of.
+- **What the blast went off ON is answered once.** `GrenadeSystem.probeGround`
+  casts a single downward ray, `OPAQUE_ONLY` (debris comes off things that stop
+  rounds, so a fence's coarse run is not one), and reads the same
+  `metadata.surface` a bullet's impact reads. The answer is a `BlastGround` —
+  the surface kind and its normal — and it is the SYSTEM's scratch: valid for
+  the length of the call and no longer, exactly as `forEachLive`'s position is.
+  A blast in open air finds nothing and is told it is over level earth, which is
+  the right answer for both consumers.
+- **`drawBlast` is public, because there are two ways a blast can happen and
+  only one of them is a rule.** Offline `blastAt` resolves the damage and then
+  draws. In a netplay round the damage is the authority's and arrives as an
+  `explode` event with nothing but a position on it, so `Game` calls `drawBlast`
+  directly — which is also what put a fireball on somebody ELSE's grenade, an
+  event that used to arrive as a light and a bang with nothing burning in the
+  middle of it.
+
+### The fireball is a CLUSTER, and its colour is a ladder of shared materials
+
+One expanding sphere is a balloon: perfectly round, growing at one rate, and the
+eye reads the silhouette as the primitive it is. `fireball.lobes` spheres churn
+instead — each with its own bearing off the golden angle, its own size, its own
+reach and its own start delay inside `stagger`, so the outline changes shape
+while it grows.
+
+**A lobe's arrangement is decided at CONSTRUCTION and not at the detonation.**
+Four slots is four arrangements, which is more variety than an eye gets out of
+an event lasting half a second, and it means a burst is property writes and no
+arithmetic. It is also what keeps the server honest: nothing in that
+constructor calls `Math.random()`.
+
+**Colour is four SHARED materials rather than one animated one**, and that is
+`CelMaterialFactory.getEmissive`'s doing rather than a saving — it hands out one
+material per colour to the whole game, so a lobe writing its own `emissiveColor`
+would repaint every brazier flame, tracer and lit window that happened to share
+the hex. `FIRE_LADDER` is white for the first eighth (a real fireball is only
+white in the frames the eye cannot resolve), then the orange it is mostly seen
+as, then the deep red of it going out, then the char that hands over to the
+smoke. A lobe steps down the ladder and fades on `mesh.visibility`, which IS per
+mesh.
+
+**The shock ring is the only layer that says how far the blast REACHED**, and it
+is a ground-plane cue on purpose: the fireball and the smoke are both read
+against the sky, so neither tells a player standing thirty metres away whether
+they were inside it. It is a torus built at diameter 2 so a uniform scale of `r`
+IS a ring of radius `r`, with its tube quoted as a fraction of that — so the band
+widens in proportion as the ring runs out, which is what a wave front does —
+turned onto the surface normal, and easing out so most of the distance is
+covered in the first third. `squash` is the one axis that does not scale with the
+rest, and is what keeps it lying on the ground rather than standing up. `shock.radius` is deliberately under `blastRadius`:
+it is where the ring has faded to nothing, not where the damage stops, and a
+ring drawn at the true 8.5 m is a promise the falloff does not keep. **`peak` is
+a cap and not a taste**: it is unlit emissive inside the glow layer, and at full
+alpha it blooms into a solid band of light lying on the street.
+
+### The dust and the smoke are the same class twice
+
+**`BlastDust` is built twice with different numbers**, and what makes one of
+them smoke is entirely in those numbers: fewer puffs, much bigger, much
+longer-lived, a real `rise` instead of a nudge, and a `lit` near zero so it
+reads as the dark side of the fire rather than as more of the ground. A second
+implementation would be a second place the four Babylon constraints below have
+to be remembered, and they are the whole of what is hard about this.
+
+**They are drawn together and not instead of one another**: the dust is what a
+body standing next to the blast sees and the smoke is what everybody else does.
+As fill it is the cheaper of the two — fourteen puffs against thirty-four.
+
+**This is the one place a GPU particle system may be spawned per event** — the
+rule against it (muzzle smoke, brass) is about per-shot effects at eighty shots
+a second; there are seconds between detonations. Four of these six are Babylon's
+rather than the game's:
 
 - **It is a POOL of GPU systems, one per concurrent cloud.** In
   emit-rate-controlled mode a `GPUParticleSystem` re-emits into a ring of
@@ -66,15 +172,23 @@ Babylon's rather than the game's:
 - **The fade cannot be curved.** `addColorGradient` on a GPU system in Babylon
   9.19.1 throws on the next render and takes the whole scene's rendering down with it
   — a black frame, not a fallback. Size and velocity gradients are fine. So alpha runs
-  linearly from `color1`/`color2` to `colorDead`, and `dust.opacity` is set for how
+  linearly from `color1`/`color2` to `colorDead`, and `opacity` is set for how
   the cloud reads at half life rather than at birth.
-- **The cloud is lifted off the detonation** (`dust.lift`). A puff is a billboard
+- **The cloud is lifted off the detonation** (`lift`). A puff is a billboard
   metres across, so one centred where the grenade went off has its lower half under
   the cobbles and reads as a smear painted on the street. Only the cloud moves —
   damage, light and embers still resolve at the blast.
 - **Its colour is the map's, through `installMap`** (`grenades.setEnvironment`) —
   the same place `grenades.reset()` clears the standing clouds and the grenades. A
   fuse that outlived its map would go off over terrain that no longer exists.
+
+**`power` reaches a cloud through the three properties the update shader reads
+inside its EMISSION branch** — `scaleRange` (`minScaleX`/`maxScaleX`/…),
+`emitPower`, and the emitter's own radius and height — and that branch runs only
+for a particle being born. So a burst may change them freely: the puffs already
+in the ring were sized when they were emitted and are not resized under a later
+blast. A size GRADIENT could not do this, because gradients are baked at
+`start()` and shared by everything in the ring.
 
 **The player's throw is a GESTURE with a release inside it**, which is what stops
 it reading as a second trigger. It was once an event — the button spent a grenade,

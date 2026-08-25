@@ -1,8 +1,9 @@
 /**
  * config/wind.ts — the one wind, and what each layer that moves in it does
  * with it.
- * Owns: the air's direction and speed, and the two layers keyed off it — the
- * grass field and the world's foliage. Contract: `docs/rendering.md`.
+ * Owns: the air's direction and speed, and the layers keyed off it — the grass
+ * field, the world's foliage, and (bearing only, amplitude its own) a tank's
+ * whip antennae. Contract: `docs/rendering.md`.
  * Gotcha: `dir` is not normalised here. Every reader normalises on use, so a
  * hand-tuned pair need not be a unit vector.
  *

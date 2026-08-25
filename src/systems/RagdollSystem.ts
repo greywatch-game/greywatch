@@ -31,6 +31,13 @@
  *   can see is ever refused a fall. The pool being full is not a refusal any
  *   more either: `takeSlot` ends by evicting the OLDEST corpse, which was the
  *   death cam's exception and is now everyone's. See it for why that is safe.
+ * - **A round DROPS a body and an explosion THROWS it, and they are not one
+ *   number scaled.** A round is a newton-second on the chest; a blast is a SPEED
+ *   spent on every bone at once, because the same throw on the 34 kg chest alone
+ *   drags nine limbs through their constraints to catch up. `subject.deathKind`
+ *   picks and the test is "not a bullet"; how far it flies is the falloff-scaled
+ *   `deathDamage` the corpse already recorded, so a blast's `power` is left
+ *   alone. See `applyImpulse`.
  * - The sim is a FIXED step with a CARRIED remainder, so a tumble is identical
  *   at 30, 60 and 144 fps and reproducible headless, where `dt` is clamped to
  *   0.05. That clock is `PhysicsWorld`'s now; what stays here is the half that
@@ -67,6 +74,13 @@ interface Bone {
   /** The node Havok writes. The rig's joint is parented to it while active. */
   proxy: TransformNode;
   body: PhysicsBody;
+  /**
+   * `RAGDOLL_BONES`' own mass, kept because a blast's throw is a SPEED and an
+   * impulse is what Havok takes — see `applyImpulse`. Copied rather than read
+   * back off the body, which would be a `getMassProperties` allocation per bone
+   * on the frame somebody was killed.
+   */
+  mass: number;
 }
 
 /** One corpse's worth of bodies, reused for the life of the process. */
@@ -444,7 +458,7 @@ export class RagdollSystem implements PhysicsClient {
         body.setMassProperties({ mass: spec.mass });
         body.setLinearDamping(d.linearDamping);
         body.setAngularDamping(d.angularDamping);
-        return { joint: spec.joint, proxy, body };
+        return { joint: spec.joint, proxy, body, mass: spec.mass };
       });
 
       const byJoint = new Map(bones.map((b) => [b.joint, b]));
@@ -564,38 +578,91 @@ export class RagdollSystem implements PhysicsClient {
     return oldest;
   }
 
+  /**
+   * The throw, and it is TWO throws with one direction between them.
+   *
+   * **A round is a blow and an explosion is a velocity**, which is the whole of
+   * the split and the reason it is not a multiplier. A rifle round lands at a
+   * point: `imp` is a newton-second on the chest, applied `lift` above the
+   * centre of mass so the fold falls out of the geometry, and the nine other
+   * bones follow because they are hanging off it. A blast arrives on all of a
+   * body at once, so `imp.blast` is a SPEED spent as `speed * mass` on every
+   * bone at its own origin — every one of them leaves at the same velocity and
+   * nothing is dragged through a joint to catch up. Putting a blast's whole
+   * throw on the 34 kg chest instead is the same corpse with its limbs trailing
+   * a metre behind it, which is a body coming apart rather than one thrown.
+   *
+   * **How far it flies is `deathDamage` and nothing else needed plumbing for
+   * it**: `GrenadeSystem.blastAt` scales its damage by the falloff before
+   * `takeDamage` ever sees it, so what a corpse recorded is already the
+   * strength of the explosion AT THE PLACE IT WAS STANDING. A frag at the feet
+   * throws further than one across the street, and a tank shell throws further
+   * than either, with no second number to keep in step.
+   */
   private applyImpulse(slot: Slot, subject: RagdollSubject): void {
     const imp = CONFIG.bots.death.impulse;
     const chest = slot.bones.find((b) => b.joint === "torso");
     if (!chest) return;
+
+    // "Not a bullet" rather than a list of the two kinds that are explosions,
+    // so a new one is thrown without being remembered here. `DamageKind` is
+    // the vocabulary and `CombatSystem` owns it.
+    const blast = subject.deathKind !== "bullet";
 
     // Direction is free: `deathFrom` is the shooter's eye or the blast centre.
     // Y is kept, so a round from a rooftop pushes a body down.
     subject.center.subtractToRef(subject.deathFrom, this.v1);
     if (this.v1.lengthSquared() < 1e-6) this.v1.copyFrom(UP);
     this.v1.normalize();
-    const mag = Math.min(
-      imp.max,
-      imp.base + subject.deathDamage * imp.perDamage,
-    );
-    this.v1.scaleInPlace(mag);
+    if (blast) {
+      // Up as well as out, and it is added to the UNIT direction so it means
+      // an angle rather than a distance: a charge going off level with a body
+      // — on a windowsill, on a parapet, against the far wall of a room —
+      // would otherwise skid it along the floor, and what a blast does to a
+      // man is lift him off it.
+      this.v1.y += imp.blast.rise;
+      this.v1.normalize();
+    }
 
-    // Applied ABOVE the centre of mass, so the tumble falls out of the
-    // off-centre application instead of needing an authored spin.
-    chest.proxy.getAbsolutePosition().addToRef(
-      this.v2.copyFrom(UP).scaleInPlace(imp.lift),
-      this.v2,
-    );
-    chest.body.applyImpulse(this.v1, this.v2);
+    if (blast) {
+      const speed = Math.min(
+        imp.blast.max,
+        imp.blast.base + subject.deathDamage * imp.blast.perDamage,
+      );
+      for (const bone of slot.bones) {
+        this.v2.copyFrom(this.v1).scaleInPlace(speed * bone.mass);
+        // At the proxy's own origin, which for these nodes IS their world
+        // position — a proxy is parented to nothing, and `spawn` wrote this
+        // one from the joint's world matrix a few lines ago. The shape's
+        // centre is offset from it by `RAGDOLL_BONES`, so each bone picks up a
+        // little turn of its own, which is exactly the free tumble the round's
+        // `lift` is asking for by hand.
+        bone.body.applyImpulse(this.v2, bone.proxy.position);
+      }
+    } else {
+      this.v1.scaleInPlace(
+        Math.min(imp.max, imp.base + subject.deathDamage * imp.perDamage),
+      );
+      // Applied ABOVE the centre of mass, so the tumble falls out of the
+      // off-centre application instead of needing an authored spin.
+      chest.proxy.getAbsolutePosition().addToRef(
+        this.v2.copyFrom(UP).scaleInPlace(imp.lift),
+        this.v2,
+      );
+      chest.body.applyImpulse(this.v1, this.v2);
+    }
 
     // A seeded kick so two identical deaths do not fall identically. THIS
     // POOL'S stream — never Math.random, which would make a death impossible
     // to reproduce, and never the subject's own, which is what `SPIN_SEED`
-    // is about.
+    // is about. Bigger for a blast, because a body in the air has the room to
+    // spend it — a corpse merely knocked over spends its first step against
+    // the floor.
+    const spin = blast ? imp.blast.spin : imp.spin;
     this.v2.set(
-      (this.rand() * 2 - 1) * imp.spin,
-      (this.rand() * 2 - 1) * imp.spin,
-      (this.rand() * 2 - 1) * imp.spin,
+      (this.rand() * 2 - 1) * spin,
+      (this.rand() * 2 - 1) * spin,
+      (this.rand() * 2 - 1) * spin,
     );
     chest.body.applyAngularImpulse(this.v2);
   }

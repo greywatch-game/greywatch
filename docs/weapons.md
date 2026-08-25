@@ -69,6 +69,23 @@ parented to the camera and posed in camera space.
   the screen; `viewmodel.scale` shrinks it and `hipPos.z` pushes it out. That pose is
   authored for the rifle's length, so a shorter weapon adds its own `hipZ` or an SMG
   reads as being held at arm's length.
+  - **`hipZ` also decides WHERE THE WEAPON PIVOTS, which for the launcher is the
+    whole of how it is carried.** The offset is applied to a model's own origin,
+    so for six guns it is a length correction and for the one weapon built from
+    its back end it is the difference between a tube resting on a shoulder and a
+    plank held out in two hands. See [`antitank.md`](antitank.md); the number is
+    -0.36, and what bounds it is `rocket.launchAhead`, which the muzzle must
+    stay past.
+  - **`hipYaw` is the third of those knobs and it is about SHAPE rather than
+    length.** Every gun in the kit is a receiver held below and right of the eye,
+    which one shared `hipRot` frames. A launcher is a tube, and a tube pointed
+    down the line of sight foreshortens into a pipe with a sight on it —
+    turning it across the view is what makes it read as a launcher. **The sign
+    is the counter-intuitive part** — the weapon is held to the RIGHT of the
+    eye, so turning the muzzle outboard swings the bore ONTO the line of sight
+    and inboard opens it. It is 0 on all six guns and only the hip pose takes
+    it: the aimed pose is DERIVED, and a yaw baked into that would swing the
+    reticle off the axis the rounds fly down.
 - **The per-shot kick is a SPRING, and the spring is `Player`'s.** A shot hands
   it a *velocity* (`recoil.kick.speed`) rather than setting a level, so a round
   travels, overshoots the carry by ~0.07 on the way home and settles, and a round
@@ -389,7 +406,11 @@ kit's own story about which weapon owns a fight.
 ## The loadout: five weapons, five optics, a finish each, and a sidearm
 
 Two tables, two slots, neither knowing about the other (a third table, the
-finishes, is below and knows about neither). `CONFIG.weapons` declares
+finishes, is below and knows about neither; a FOURTH, the anti-tank kit, is
+[`antitank.md`](antitank.md)'s and knows about none of them — it is a slot the
+map decides the existence of, and everything about it that touches this file is
+that it resolves to an ordinary `WeaponSetup` and is carried by exactly this
+machinery). `CONFIG.weapons` declares
 what can be carried and `CONFIG.sights` what can be bolted to it;
 `entities/weapons.ts` and `entities/sights.ts` derive `WeaponId`/`SightId` **from
 those tables**, so each is declared in exactly one place. Every weapon *with a

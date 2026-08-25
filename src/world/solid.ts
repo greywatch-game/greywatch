@@ -42,6 +42,26 @@
  * `WorldBox.glass` exists for the readers that must skip a pane rather than
  * merely pass a round through it — `CoverMap`, the AO bake, and the collision
  * bake that carries it to the authority — and for none of the picking.
+ *
+ * **Both predicates END on `isPickable`, and that term is load-bearing rather
+ * than tidy.** `scene.pickWithRay(ray, predicate)` runs the predicate INSTEAD
+ * of Babylon's own `isEnabled && isVisible && isPickable` filter, not as well
+ * as it. So a predicate that does not ask leaves every collider in the game
+ * permanently pickable whatever the flag says, and the three places that take a
+ * mesh out of a ray by clearing it — the tank's ground probe, the chase
+ * camera's pull-in, the dismount's floor test, none of which may mint a
+ * predicate of its own for the reason above — were writing a flag nothing read.
+ * Two of the three were saved by their geometry; the probe is cast from INSIDE
+ * the box it is meant to ignore, so it found the hull's own underside every
+ * frame and `floorY` came back as whatever height the tracks already had. A
+ * tank lifted by anything — Babylon's collision response climbing a barrier —
+ * stayed there for the rest of the round, and none could fall at all. The same
+ * term is what finally takes a hull off the field: `Tank.hide` disables and
+ * unpickles the mesh, and until this read it, a wreck that had been carried
+ * away went on stopping rounds in the street. It is LAST so the metadata
+ * rejection still short-circuits ahead of it for the ~1,800 visuals that are
+ * not solid, and it must stay a flag rather than an `isEnabled()` call, which
+ * walks the parent chain on the hottest predicate in the game.
  */
 import type { AbstractMesh } from "@babylonjs/core";
 
@@ -68,7 +88,10 @@ import type { AbstractMesh } from "@babylonjs/core";
  * for a property at all.
  */
 export const SOLID_ONLY = (m: AbstractMesh): boolean =>
-  !!m.metadata && m.metadata.solid === true && m.metadata.rayOnly !== true;
+  !!m.metadata &&
+  m.metadata.solid === true &&
+  m.metadata.rayOnly !== true &&
+  m.isPickable;
 
 /**
  * The solid world MINUS what a round or a sightline passes through:
@@ -91,4 +114,7 @@ export const SOLID_ONLY = (m: AbstractMesh): boolean =>
  * `solid` test — a few hundred boxes per ray, none of the ~1,800 visuals.
  */
 export const OPAQUE_ONLY = (m: AbstractMesh): boolean =>
-  !!m.metadata && m.metadata.solid === true && m.metadata.porous !== true;
+  !!m.metadata &&
+  m.metadata.solid === true &&
+  m.metadata.porous !== true &&
+  m.isPickable;

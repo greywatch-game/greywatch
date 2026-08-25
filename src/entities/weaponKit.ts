@@ -338,8 +338,8 @@ export class WeaponBuild {
   }
 
   /**
-   * A round shell around the barrel axis at x = 0: `sides` slabs, each turned
-   * to face its own facet. Used for optic housings and muzzle cages.
+   * A round shell around an axis parallel to the bore: `sides` slabs, each
+   * turned to face its own facet. Used for optic housings and muzzle cages.
    *
    * Built from slabs rather than from a primitive because a hollow tube is the
    * one shape the primitives will not give you. A capped cylinder has no bore;
@@ -354,6 +354,11 @@ export class WeaponBuild {
    * shell has no seams. `span` below 1 opens those joints into slots (the
    * muzzle cage); `a0` turns the whole ring, which is what puts a slot rather
    * than a strut at top dead centre.
+   *
+   * `x` comes last and defaults to the bore, because on every weapon here but
+   * one a housing stands over the barrel. The launcher's optic is mounted off
+   * the side of its tube — a sight is the one thing whose axis is the EYE's
+   * rather than the weapon's, and that one is the only caller that passes it.
    */
   shell(
     name: string,
@@ -366,6 +371,7 @@ export class WeaponBuild {
     sides = FACETS,
     a0 = 0,
     span = 1,
+    x = 0,
   ): void {
     const rMid = bore / 2 + wall / 2;
     const w = 2 * (bore / 2 + wall) * Math.tan(Math.PI / sides) * span;
@@ -378,7 +384,7 @@ export class WeaponBuild {
         w,
         wall,
         len,
-        Math.sin(a) * rMid,
+        x + Math.sin(a) * rMid,
         y + Math.cos(a) * rMid,
         z,
         this.root,

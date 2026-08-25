@@ -21,6 +21,9 @@ import {
 import { CONFIG } from "../config";
 import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
+// Type-only, so no runtime edge is created — the same import `Tank` takes
+// for the same reason. `DamageKind` lives with the shot that carries it.
+import type { DamageKind } from "../systems/CombatSystem";
 
 /**
  * The bot soldier rig: a humanoid built to be cheap enough to draw sixteen
@@ -465,6 +468,15 @@ export interface SoldierRig {
   ankleR: TransformNode;
   /** The rifle held across the chest. A ragdoll bone of its own. */
   gun: TransformNode;
+  /**
+   * The rocket launcher slung across the back — disabled on every rig until a
+   * bot is told it carries one, which `BattleSystem` decides per squad.
+   *
+   * Deliberately NOT a ragdoll bone and deliberately not in `RAGDOLL_BONES`:
+   * it is welded to the torso, so it falls with the body under Havok as part
+   * of the chest and needs no joint of its own. See `Bot.launcher`.
+   */
+  launcher: TransformNode;
   /** Muzzle landmark, for tracer origins. */
   muzzle: TransformNode;
   /** Every drawn mesh, for LOD visibility and outline toggling. */
@@ -496,6 +508,16 @@ export interface RagdollSubject {
   readonly deathFrom: Vector3;
   /** How much of it there was, which scales the throw. */
   readonly deathDamage: number;
+  /**
+   * What delivered it, which chooses WHICH throw.
+   *
+   * A round is a blow on the chest and an explosion is a velocity given to the
+   * whole body — two different rows of `CONFIG.bots.death.impulse`, and this is
+   * all that picks between them. It is the same `DamageKind` the damage path
+   * has carried since the tank went in, captured beside `deathFrom` by whoever
+   * took the blow, so nothing new travels to get here.
+   */
+  readonly deathKind: DamageKind;
   /**
    * Set by the pool for as long as it owns the joints. Whoever poses this rig
    * has to leave it alone in that window, or two writers fight over one node.
@@ -706,6 +728,31 @@ export function buildSoldier(
   muzzle.parent = gun;
   muzzle.position.set(0, 0.01, 0.56);
 
+  // --- the launcher, slung across the back. Off on every rig until a bot says
+  // otherwise, and one bot in each squad does ---
+  //
+  // **It is worn rather than held**, and that is the honest shape as well as
+  // the cheap one: an AT gunner carries a rifle and a tube, and the tube is
+  // over their shoulder until there is armour to point it at. What it buys is
+  // the thing a player actually needs, which is being able to tell WHICH body
+  // in a squad is the one that can hurt the tank they are sitting in — from
+  // the side, at range, in one silhouette. It is a `TransformNode` of its own
+  // so that enabling it is one write and costs nothing on the fifteen rigs
+  // that do not have one.
+  const launcher = new TransformNode("bot-launcher", scene);
+  launcher.parent = torso;
+  launcher.position.set(-0.08, 0.26, -0.2);
+  // Canted across the back: down to the left and tipped out from the spine, so
+  // it reads as slung rather than as a plank bolted on.
+  launcher.rotation.set(0.22, 0, 0.75);
+  segment("bot-launcher-m", launcher, [
+    [0.11, 0.11, 0.86, 0, 0, 0, GUN],
+    [0.16, 0.16, 0.1, 0, 0, -0.44, GUN],
+    [0.2, 0.2, 0.16, 0, 0, 0.46, GUN],
+    [0.09, 0.13, 0.14, 0, -0.1, -0.12, GUN],
+  ]);
+  launcher.setEnabled(false);
+
   // --- legs ---
   /**
    * Thigh, shin and boot, hung off a hip, a knee and an ankle.
@@ -773,6 +820,7 @@ export function buildSoldier(
     ankleR,
     gun,
     muzzle,
+    launcher,
     meshes,
     centerHeight,
     rest: [],

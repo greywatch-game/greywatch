@@ -3,9 +3,9 @@
  * single static body, and the fixed-step clock everything under it advances on.
  * Owns: the plugin, the static world, the substep accumulator, and the register
  * of clients that have bodies in it.
- * Owns NO bodies of its own. `RagdollSystem` has the corpses and `DebrisSystem`
- * the shards; this file is what they share, and it is the only place
- * `@babylonjs/havok` is reached.
+ * Owns NO bodies of its own. `RagdollSystem` has the corpses, `DebrisSystem` the
+ * glass shards and `BlastDebrisSystem` the rubble a blast throws; this file is
+ * what the three share, and it is the only place `@babylonjs/havok` is reached.
  *
  * ## Havok is REQUIRED, and that is what makes this file short
  *
@@ -59,8 +59,9 @@
  *
  * Bit 0 is the world's. `RagdollSystem` takes bits 1..30, one per pooled corpse,
  * so a body does not collide with itself; `DEBRIS_GROUP` is bit 31's neighbour
- * and is shared by every shard. A client picking a group takes it from here, so
- * the whole allocation is readable in one place.
+ * and is shared by every shard AND by every blast chunk — neither decides
+ * anything, and neither may shove the other or a corpse. A client picking a
+ * group takes it from here, so the whole allocation is readable in one place.
  */
 import {
   HavokPlugin,
@@ -121,11 +122,11 @@ export const WORLD_GROUP = 1;
  * Every shard's group. Bit 31, which is the one bit `RagdollSystem` can never
  * reach: its slots take `1 << (1 + slot % 30)`, so bits 1 through 30.
  *
- * One group for every shard rather than one each, and it collides with
- * `WORLD_GROUP` alone. Shards must not shove corpses — a body knocked over by
- * falling glass is a corpse DECIDING something, and nothing under this engine
- * decides anything — and shard-on-shard buys a pile nobody looks at for a
- * solver cost quadratic in the burst.
+ * One group for every shard and every blast chunk rather than one each, and it
+ * collides with `WORLD_GROUP` alone. Debris must not shove corpses — a body
+ * knocked over by falling glass is a corpse DECIDING something, and nothing
+ * under this engine decides anything — and debris-on-debris buys a pile nobody
+ * looks at for a solver cost quadratic in the burst.
  *
  * Written as a hex literal because `1 << 31` is negative in JavaScript and this
  * crosses into the WASM as a uint32.
@@ -134,7 +135,7 @@ export const DEBRIS_GROUP = 0x80000000;
 
 /**
  * Something with bodies in the world. Registered once at construction and
- * never removed — there are two of them and they live as long as the game.
+ * never removed — there are three of them and they live as long as the game.
  *
  * A client builds its own pool in its own constructor, because the engine is
  * already up by then. It is built up front rather than at the moment a body is

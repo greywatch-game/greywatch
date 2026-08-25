@@ -341,13 +341,23 @@ to land. And every death is in the snapshot stream by construction, whereas an
 event is a message a reconnect can drop — a missed killfeed line is a missed
 line, but a missed corpse is a body that never falls.
 
-**The `kill` event still has to arrive, because it carries the throw.** `from`
-and `amount` are the killing blow's origin and size — the pair `damage` already
-carried, and the pair `RagdollSystem.applyImpulse` needs — so the event ARMS a
-soldier and the interpolated death SPENDS it. An unarmed death is still a death:
-a zero-length direction reads as "straight up", so the body falls over instead of
-being thrown, which is what a lost `kill` should look like and is never a body
-that fails to fall.
+**The `kill` event still has to arrive, because it carries the throw.** `from`,
+`amount` and `kind` are the killing blow's origin, size and nature — the triple
+`damage` already carried, and the triple `RagdollSystem.applyImpulse` needs — so
+the event ARMS a soldier and the interpolated death SPENDS it. An unarmed death
+is still a death: a zero-length direction reads as "straight up" and a missing
+`kind` reads as a round, so the body falls over where it stood instead of being
+thrown, which is what a lost `kill` should look like and is never a body that
+fails to fall. **`kind` is OPTIONAL on both events and absent means `bullet`**,
+which is what a server built before a blast could throw a body sends and what
+every death on this wire used to mean.
+
+**A person reads their OWN death off `damage`, and somebody else's off `kill`.**
+That is why the kind is on both: the pair `damage`/`died` is the only thing a
+client is told about its own body going down (`kill` names the victim but the
+local player has no roster soldier to arm), and `Game` holds the triple in
+`netDamageFrom`/`netDamageAmount`/`netDamageKind` from the `damage` until the
+`died` that spends it on the death cam.
 
 **One `kill` event per death, and the server has two doors onto that.**
 `onKillEvent` sees every bot go down and `onPlayerDamaged` sees every person,
@@ -1111,6 +1121,104 @@ is the last `interpDelay` of arc, which is nothing for the ordinary detonation
 — a grenade that has already come to rest — and a stride for one caught still
 bouncing. Playing the tail out instead would draw a grenade flying through the
 middle of its own explosion.
+
+## Armour, and the one other thing a person can be inside
+
+Hulls, mines and rockets cross the wire, and the whole design is one sentence:
+**the person driving a tank is trusted about it exactly as far as a person
+walking is trusted about their own legs, and about nothing else.** The full
+argument is in [`docs/vehicles.md`](vehicles.md) under "Armour in a match"; what
+belongs here is the wire's half of it.
+
+`PROTOCOL_VERSION` went to 4 for this, and it is worth being clear about why,
+because every field added was additive in the ordinary sense. A version-3
+client would ignore `Snapshot.vehicles`, draw no hulls and send no `mount` —
+and what it would be ignoring is a seven-metre SOLID object the authority is
+driving across the map, shooting people with, and stopping rounds on. It would
+be killed by a shell out of an empty street and watch its own bullets stop in
+mid-air. That is not a degraded picture, it is a different game, so the
+handshake refuses it.
+
+**What travels, and on which channel, is decided by how often it CHANGES**, and
+armour needed all three answers this protocol already has:
+
+| | shape | cadence | why |
+| --- | --- | --- | --- |
+| hulls | `Snapshot.vehicles` | every snapshot, whole | a driven one changes every tick, and a map states two |
+| rockets | `Snapshot.rockets` | every snapshot, absent when empty | `GrenadeState`'s case exactly — it takes a second and a half to arrive |
+| mines | `MinesMessage` | when the SET changes | a mine never moves; twenty copies a second of an unchanging table is the one shape this wire should not take |
+
+The mine table is `ScoresMessage`'s trade made again, down to the version
+counter (`AntiTankSystem.version`) and to being sent WHOLE: a dropped message
+is corrected by the next one, and a client joining mid-round is right on
+arrival rather than blind to every mine laid before it connected — which on
+that particular object is not a cosmetic difference.
+
+**A driver reports a HULL instead of a body.** `DriveMessage` replaces
+`MoveMessage` for as long as the seat is held, because a driver has no body of
+their own to report: the tank carries them, and both sides slave
+`Player.position` / `NetPlayer.position` to it. `Match.onMove` refuses a seated
+player for exactly that reason, and `onShot` and `onGrenade` refuse one for a
+plainer one — there is no rifle in a driver's hands.
+
+**`validateDrive` is the speed bound that knows what a player is sitting in.**
+Running a tank through `validateMove` would reject every honest driver at a
+stroke: the bound there is a sprint and a hull at road speed covers three times
+it. What it keeps is the speed and the map's extent; what it drops is the
+ground test (the authority stands the reported hull on its own ten track
+contacts, so a claimed height is never taken) and the solid test (a hull
+legitimately stands inside `map.obstacles` — it drives OVER what a body walks
+around). A refused step is not corrected, either: a `correct` message moves the
+local BODY, and a client told to put its feet somewhere while nothing is said
+about its tank is worse off than one whose report was simply not applied.
+
+**Getting in and getting out are asks the authority answers.** `mount` names a
+hardstanding and `HeadlessGame.seatOffered` re-derives the whole offer against
+its own copy of the hull, the team, the distance and the crew; `dismount` names
+nothing, because the server knows which seat a peer is in. Both are answered
+with a `seat` event addressed to the asker — including a refusal, which answers
+"you are on foot", and including the seat change nobody asked for, which is the
+hull burning underneath them. Where a dismount lands rides on that event: a
+client could compute it, but it is a POSITION, and a position is the
+authority's for the reason a spawn's is.
+
+**Occupancy is stated once, on the hull.** `VehicleState.by` answers both
+questions a client has — may I get into that one, and is the man in that slot
+drawn standing up — and carrying it on `EntityState` as well would be two
+copies of one fact with the stale one deciding whether a body is on screen.
+`NetRoster.setRiding` also takes a riding body out of `hittablesAgainst`, for
+the reason a mounted player is invulnerable: the tank is what is being shot at,
+and a soldier left in the list would stop every predicted round on an invisible
+man at the hull's centre.
+
+**One health on the wire is public, and it is the hull's.** `damage` is
+addressed to its victim because knowing who is hurt is the read a wallhack
+wants; `VehicleState.hp` is broadcast because everybody can already see the
+tank burning, it is the gauge on the driver's own HUD, and how many more
+rockets it will take is a decision the fight is supposed to be able to make.
+
+**The shell and the AT kit are re-resolved, never trusted.** `ShellMessage`
+takes `onShot`'s three gates and then uses none of the claim — the round goes
+down the authority's own gun, from its own muzzle, at its own reload — and its
+cone is measured against the driver's reported LOOK rather than the gun,
+because the gun's bearing is the thing being claimed. `OrdnanceMessage` is ONE
+ask for both AT items, because the third slot is one slot and which item is in
+it is a fact the server already holds off `Join.equipment`; the pouch is the
+server's count exactly as the grenade pouch is.
+
+**What a client predicts, and what it does not, is decided per object.** A
+rocket is predicted (a warhead appearing six metres downrange a round trip
+later reads as a misfire) and a mine is not (it is laid at the feet and never
+moves, so the trip is invisible and a local copy would be a second plate to
+reconcile). A shell's tracer is predicted and its BLAST is not, which is where
+it parts company with a thrown grenade: a grenade's local copy goes off within
+centimetres of the authority's, and a shell's would go off wherever this
+client's own ray happened to land — a body the server rewound elsewhere, a pane
+it has already broken — which can be a street away.
+
+**`explode` carries a `power` now.** It is the only field on that event that
+says what went off, and absent still reads as 1 — which is what every server
+before armour meant by it, and what the only blast in the game then was.
 
 ## The lobby, and why there is no central registry
 

@@ -67,6 +67,11 @@ import { SOLID_ONLY } from "../world/solid";
 import { CelMaterialFactory } from "../shaders/CelShader";
 import type { CameraSystem } from "../core/CameraSystem";
 import type { InputManager } from "../core/InputManager";
+import {
+  equipmentSetup,
+  isEquipmentId,
+  type EquipmentId,
+} from "./equipment";
 import type { FinishId } from "./finishes";
 import type { SightId } from "./sights";
 import {
@@ -75,13 +80,14 @@ import {
   weaponSetup,
   type PrimaryWeaponId,
   type ReportVoice,
+  type CarriedId,
   type WeaponId,
   type WeaponSetup,
 } from "./weapons";
 import { ViewModel, VIEWMODEL_GROUP, type ViewModelParams } from "./ViewModel";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
-import type { ShotOptions } from "../systems/CombatSystem";
+import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
 
 /**
  * One weapon the player is carrying: what it is, and the magazine that stays
@@ -107,6 +113,20 @@ function holster(id: WeaponId): Holster {
 }
 
 /**
+ * An anti-tank item picked up with a life's worth of it.
+ *
+ * The same shape as a weapon's holster and it has to be, or the third slot
+ * would be a second carry path — but what is in `ammo` is not a magazine. It
+ * is the whole of the ammunition, `magSize` IS `CONFIG.equipment[id].carried`,
+ * and there is no reload to put more in: `startReload` refuses this slot, so
+ * a spent launcher stays spent until the body does.
+ */
+function equipHolster(id: EquipmentId): Holster {
+  const setup = equipmentSetup(id);
+  return { setup, ammo: setup.magSize };
+}
+
+/**
  * The two slots, by index — which is not an implementation detail: it is
  * exactly what the `1` and `2` keys name, so the number on the key and the
  * number here are the same fact and there is no table in between them to
@@ -114,6 +134,16 @@ function holster(id: WeaponId): Holster {
  */
 export const PRIMARY_SLOT = 0;
 export const SIDEARM_SLOT = 1;
+/**
+ * The anti-tank slot — `3`, and the one slot that may not be there at all.
+ *
+ * A kit carries it only on a map with armour on it (`Game.applyLoadout`), so
+ * `slots` is two long or three and every reader of it has to cope with both.
+ * That is why `drawSlot` bounds-checks rather than switching on a constant,
+ * and why the wheel swaps between the first two: a slot that exists on one map
+ * and not the next cannot be half of "the other weapon".
+ */
+export const EQUIP_SLOT = 2;
 
 /** Run-scoped stat modifiers granted by loot. */
 export interface PlayerMods {
@@ -208,7 +238,12 @@ export class Player implements Combatant {
    * Wired by Game. Bots damage the player straight through `CombatSystem`, so
    * this is how the flash, the sound, and the death handling still happen.
    */
-  onDamaged: (amount: number, died: boolean, from?: Vector3) => void = () => {};
+  onDamaged: (
+    amount: number,
+    died: boolean,
+    from?: Vector3,
+    kind?: DamageKind,
+  ) => void = () => {};
   /** The rifle and hands on screen; the only visible thing the player owns. */
   private view: ViewModel;
   /** Whether the viewmodel is hidden (menu, deploy screen, editor). */
@@ -238,6 +273,22 @@ export class Player implements Combatant {
 
   health: number = CONFIG.player.maxHealth;
   alive = true;
+  /**
+   * Nothing may hurt this body — read by `CombatSystem.fire`,
+   * `GrenadeSystem.blastAt` and `AimAssistSystem`, exactly as `Hittable`
+   * describes it, and written by nothing in this file.
+   *
+   * Today it is true for one reason: the player is inside a vehicle, and the
+   * HULL is what is being shot at. `Game` also takes them out of
+   * `BattleSystem`'s combatant list for the same span, which is the belt to
+   * this brace — a bot that could still ACQUIRE an unkillable target would sit
+   * firing at it forever, and this flag only stops the rounds landing.
+   *
+   * Deliberately NOT checked inside `takeDamage`: that would give the flag a
+   * second meaning, and the one caller that must get through it regardless is
+   * the vehicle that has just been destroyed with this body inside it.
+   */
+  invulnerable = false;
   grounded = true;
   /**
    * Grenades left this life. Refilled by `fullReset` and by nothing else —
@@ -567,8 +618,23 @@ export class Player implements Combatant {
   }
 
   /** Which weapon is in the hands — for the camera's fit and the HUD's caption. */
-  get carriedWeapon(): WeaponId {
+  get carriedWeapon(): CarriedId {
     return this.weapon.id;
+  }
+
+  /**
+   * The anti-tank item in the hands, or null for anything else.
+   *
+   * The one question the shooting path has to ask about the third slot, and it
+   * is asked of what is CARRIED rather than of what the kit chose: a launcher
+   * in the kit and a rifle in the hands fires bullets. `Game` branches on this
+   * to send a rocket or lay a mine instead of resolving a hitscan round, and
+   * `tryShot` reads it for the three things an AT item does not do — eject
+   * brass, flash a muzzle, or reload when it runs out.
+   */
+  get carriedEquipment(): EquipmentId | null {
+    const id = this.weapon.id;
+    return isEquipmentId(id) ? id : null;
   }
 
   /**
@@ -581,7 +647,7 @@ export class Player implements Combatant {
   }
 
   /**
-   * The slot that is NOT in the hands: the weapon a swap would bring up, and
+   * The slot the wheel would bring up NEXT: the weapon a swap arrives at, and
    * the magazine it kept while it was down.
    *
    * Nothing about the weapon being fired depends on it. It exists for the
@@ -591,19 +657,27 @@ export class Player implements Combatant {
    * with eight rounds in it is only ever announced by the key that draws it.
    */
   private get slung(): Holster {
-    return this.slots[this.slot === PRIMARY_SLOT ? SIDEARM_SLOT : PRIMARY_SLOT];
+    return this.slots[this.slungSlot];
   }
 
-  get slungWeapon(): WeaponId {
+  get slungWeapon(): CarriedId {
     return this.slung.setup.id;
   }
 
   /**
-   * Which slot it is, which is also which key names it — the digit is
-   * `slot + 1`, and that is the same one fact `drawSlot` and `1`/`2` share.
+   * Which slot the wheel would bring up, which is also which key names it —
+   * the digit is `slot + 1`, and that is the same one fact `drawSlot` and the
+   * number row share.
    */
   get slungSlot(): number {
-    return this.slot === PRIMARY_SLOT ? SIDEARM_SLOT : PRIMARY_SLOT;
+    // **The wheel CYCLES and the number keys NAME**, which with two slots is
+    // the toggle this has always been and with three is the only shape that
+    // works: a phone has no number keys and a pad has no button left for one,
+    // so a third slot reachable only by `3` would be a third slot two of the
+    // three input devices could not get at. Wrapping through the slots that
+    // exist costs a second press to come back to the primary and is what every
+    // shooter's wheel already does.
+    return (this.slot + 1) % this.slots.length;
   }
 
   get slungAmmo(): number {
@@ -613,6 +687,19 @@ export class Player implements Combatant {
   /** The same expression as `magSize`, so both counts are read one way. */
   get slungMagSize(): number {
     return this.slung.setup.magSize + this.mods.magBonus;
+  }
+
+  /**
+   * Rockets or mines left in the third slot, or 0 when the kit has no third
+   * slot at all.
+   *
+   * Read off the SLOT rather than kept as a count of its own, exactly as
+   * `ammo` is: the AT item keeps its ammunition in its holster like every
+   * other weapon, and a mirrored copy here would be a second source of truth
+   * for the HUD to get out of step with across a swap.
+   */
+  get equipmentLeft(): number {
+    return this.slots.length > EQUIP_SLOT ? this.slots[EQUIP_SLOT].ammo : 0;
   }
 
   /** True while a swap is in flight: the weapon is down and nothing can fire. */
@@ -871,9 +958,9 @@ export class Player implements Combatant {
     return true;
   }
 
-  /** The other weapon, whichever it is — what the wheel and pad Y ask for. */
+  /** The NEXT weapon, wrapping — what the wheel, pad Y and the touch button ask for. */
   swapWeapon(): boolean {
-    return this.drawSlot(this.slot === PRIMARY_SLOT ? SIDEARM_SLOT : PRIMARY_SLOT);
+    return this.drawSlot(this.slungSlot);
   }
 
   /** How long the swap now in flight takes, for the sound that has to fit it. */
@@ -904,6 +991,35 @@ export class Player implements Combatant {
     // the pistol's first round the rifle's settled kick.
     this.stringShots = 0;
     this.sinceShot = CONFIG.recoil.stringResetTime;
+    this.view.setWeapon(this.weapon.id);
+    this.onCarryChanged();
+  }
+
+  /**
+   * Puts an anti-tank item in the third slot, or takes the slot away.
+   *
+   * **Null is not "carry nothing" — it is a kit with two slots**, which is
+   * what every map without armour on it hands the player and what the AT
+   * screen row is hidden for. So this is the one loadout call that changes how
+   * many slots there ARE, and the two things that follow from that are both
+   * here: a body holding the item when the slot goes has to end up holding
+   * something (the primary), and a swap in flight toward a slot that is about
+   * to stop existing has to be abandoned rather than landing on nothing.
+   *
+   * Reachable only from the menu and the deploy screen, exactly as `setWeapon`
+   * is, so there is no half-spent launcher to carry across.
+   */
+  setEquipment(id: EquipmentId | null): void {
+    if (id === null) {
+      if (this.slots.length <= EQUIP_SLOT) return;
+      this.slots.length = EQUIP_SLOT;
+      if (this.slot === EQUIP_SLOT) this.slot = PRIMARY_SLOT;
+      if (this.swapTo === EQUIP_SLOT) this.swapTo = PRIMARY_SLOT;
+    } else {
+      this.slots[EQUIP_SLOT] = equipHolster(id);
+    }
+    this.swapT = -1;
+    this.swapPending = false;
     this.view.setWeapon(this.weapon.id);
     this.onCarryChanged();
   }
@@ -950,6 +1066,10 @@ export class Player implements Combatant {
     this.mods = { damageMult: 1, speedMult: 1, maxHpBonus: 0, magBonus: 0 };
     this.health = this.maxHealth;
     this.alive = true;
+    // A fresh body is in nobody's vehicle. Cleared here as well as on the
+    // dismount, because a hull destroyed with the player inside it kills them
+    // and there is no dismount on that path.
+    this.invulnerable = false;
     // A fresh body comes up with the primary in its hands and both magazines
     // full. The slung weapon has to be refilled explicitly: only the carried
     // one is reachable through `startReload`, so a sidearm left empty last
@@ -1004,6 +1124,30 @@ export class Player implements Combatant {
     this.onCarryChanged();
   }
 
+  /**
+   * Health regeneration, and the lock that holds it off after a hit.
+   *
+   * Its own method because it is the one part of a player's frame that is owed
+   * even when the body is not being simulated at all: a driver sitting inside a
+   * tank still heals, and `Game` does not call `update` for them (the tank is
+   * what moves, aims and probes the ground). Without this split, mounting at
+   * forty health meant staying at forty for as long as you stayed in the hull.
+   *
+   * Everything else in `update` is about a body standing on the ground and
+   * would be wrong to run for one that is not, which is why this is the only
+   * thing that leaves.
+   */
+  updateVitals(dt: number): void {
+    // Stay hurt for a few seconds after the last hit, then heal back to full.
+    // Without this, sixteen hostile bots and no medic turns the round into a
+    // respawn queue for anyone who wins a fight at half health.
+    const p = CONFIG.player;
+    this.regenLockT = Math.max(0, this.regenLockT - dt);
+    if (this.regenLockT <= 0 && this.health < this.maxHealth) {
+      this.health = Math.min(this.maxHealth, this.health + p.regenRate * dt);
+    }
+  }
+
   placeAt(spawn: Vector3): void {
     this.root.position.copyFrom(spawn);
     this.root.position.y = spawn.y + this.groundY;
@@ -1051,13 +1195,15 @@ export class Player implements Combatant {
    * big the map is rather than with anything on screen. `Player.floorY` exists
    * because of that: a second caller casting an identical ray would double it.
    *
-   * The replacement is WRITTEN and NOT SWITCHED ON. `ObstacleField.groundAt` is
-   * the bucketed analytic answer, and turning it on is one line — this call
-   * `max`'d against `terrain.surfaceAt`, since the heightfield is the one floor
-   * with no box standing in for it, and `surfaceAt` rather than the `heightAt`
-   * used below because what the ray hits is a clone of the floor's own VISUAL
-   * vertices, which the smooth field disagrees with by centimetres on every
-   * twisted quad.
+   * The replacement is WRITTEN, RUNNING ELSEWHERE, and still not switched on
+   * HERE. `ObstacleField.groundAt` is the bucketed analytic answer and
+   * `Tank.supportAt` already takes it ten times a frame — a hull stands on it
+   * entirely. Turning it on for a body is one line — this call `max`'d against
+   * `terrain.surfaceAt`, since the heightfield is the one floor with no box
+   * standing in for it, and `surfaceAt` rather than the `heightAt` used below
+   * because what the ray hits is a clone of the floor's own VISUAL vertices,
+   * which the smooth field disagrees with by centimetres on every twisted
+   * quad.
    *
    * What stops it is measured too. Over the 51,000 positions the nav graph says
    * a body can stand on, the two agree on 99.8% and disagree on 116 running
@@ -1070,7 +1216,10 @@ export class Player implements Combatant {
    * anything pitched, so a tall thin box tilted a few degrees claims ground
    * beside itself. `NavGrid` can live with that (a phantom node is a routing
    * nuisance); a ground probe cannot, because it puts the player standing on
-   * air. It waits on a footprint test bounded by the box's REAL extent.
+   * air — which is exactly why a VEHICLE could take the query and a body could
+   * not: half a metre of phantom under one of ten track contacts is rocked out
+   * by a plank and a rate limit, and half a metre under a pair of feet is not.
+   * It waits on a footprint test bounded by the box's REAL extent.
    * `FINDINGS.md` 6 carries the numbers; `groundAt`'s own header carries the
    * fix.
    */
@@ -1208,14 +1357,7 @@ export class Player implements Combatant {
     // unturning oval around with the player.
     this.root.rotation.y = cam.yaw;
 
-    // --- health regeneration ---
-    // Stay hurt for a few seconds after the last hit, then heal back to full.
-    // Without this, sixteen hostile bots and no medic turns the round into a
-    // respawn queue for anyone who wins a fight at half health.
-    this.regenLockT = Math.max(0, this.regenLockT - dt);
-    if (this.regenLockT <= 0 && this.health < this.maxHealth) {
-      this.health = Math.min(this.maxHealth, this.health + p.regenRate * dt);
-    }
+    this.updateVitals(dt);
 
     // --- weapon timers ---
     this.fireCooldown -= dt;
@@ -1502,6 +1644,18 @@ export class Player implements Combatant {
     // ACCUMULATES on a weapon still coming home, which is the whole reason a
     // held trigger looks different from a string of taps.
     this.kickVel += r.kick.speed * this.kickWeight;
+    // **The three things an anti-tank item does not do**, and they are one
+    // test rather than three because they are one fact: it is not a gun. No
+    // brass, because nothing here is cased; no muzzle strobe, because a
+    // launcher's light is the motor leaving and `Game` puts that at the
+    // rocket; and no auto-reload, because there is nothing behind the last
+    // round to load. What DOES happen instead is a swap back to the primary
+    // once the tube is empty — an empty launcher in the hands is a player
+    // holding a pipe, and every shooter that has ever had one puts it away.
+    if (this.carriedEquipment) {
+      if (this.ammo === 0) this.drawSlot(PRIMARY_SLOT);
+      return true;
+    }
     // Muzzle flash: a single-frame-scale strobe with a random roll and scale,
     // so full-auto reads as flicker rather than one static sprite.
     const g = CONFIG.gunfeel;
@@ -1512,6 +1666,24 @@ export class Player implements Combatant {
     this.ejectCasing();
     if (this.ammo === 0) this.startReload();
     return true;
+  }
+
+  /**
+   * Gives back the round `tryShot` has just spent, for a shot that turned out
+   * not to be makeable.
+   *
+   * The mirror of `spendGrenade`, arrived at from the other direction. A
+   * throw is two calls a frame apart, so the pool can be asked BEFORE the
+   * count is debited; a trigger is one call, so the count goes first and this
+   * is what puts it back. The COOLDOWN is deliberately not refunded — the
+   * weapon did cycle, and the alternative is a trigger that can be held
+   * against a full pool at the frame rate.
+   *
+   * Bounded by the magazine for the reason every other write to `ammo` is:
+   * two returns for one shot would be a rocket out of nowhere.
+   */
+  returnRound(): void {
+    this.ammo = Math.min(this.magSize, this.ammo + 1);
   }
 
   /**
@@ -1639,6 +1811,13 @@ export class Player implements Combatant {
     // Not during a swap: the magazine being worked would be on a weapon that
     // is halfway into a holster.
     if (this.reloading || this.swapping || this.ammo >= this.magSize) return false;
+    // **An anti-tank item has no reload and this is the only place that is
+    // said.** There is no reserve behind it — what is in the hands is the whole
+    // of a life's rockets or mines — so a reload could only ever conjure one,
+    // and the gesture the viewmodel would play is a magazine change on a
+    // weapon that has no magazine. `tryShot` does not auto-start one either,
+    // for the same reason.
+    if (this.carriedEquipment) return false;
     this.reloading = true;
     this.reloadT = this.weapon.reloadTime;
     this.reloadPhase = 0;
@@ -1689,17 +1868,21 @@ export class Player implements Combatant {
   }
 
   /**
-   * `from` is the shooter's firing origin, forwarded straight back out through
-   * `onDamaged` — the player controller has no use for it, but the HUD's
-   * directional indicator does and this is the only path damage takes.
+   * `from` is the shooter's firing origin and `kind` is what delivered it, both
+   * forwarded straight back out through `onDamaged` — the player controller has
+   * no use for either, but the HUD's directional indicator wants the first and
+   * the death cam's corpse wants the second, and this is the only path damage
+   * takes. Neither is stored: a player has no `deathFrom` because a player has
+   * no rig, and the stand-in body that does is stood up by `Game` from what
+   * arrives here.
    */
-  takeDamage(amount: number, from?: Vector3): boolean {
+  takeDamage(amount: number, from?: Vector3, kind?: DamageKind): boolean {
     if (!this.alive) return false;
     this.health = Math.max(0, this.health - amount);
     this.regenLockT = CONFIG.player.regenDelay;
     const died = this.health <= 0;
     if (died) this.alive = false;
-    this.onDamaged(amount, died, from);
+    this.onDamaged(amount, died, from, kind);
     return died;
   }
 

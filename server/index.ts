@@ -567,7 +567,7 @@ wss.on("connection", (socket: WebSocket, req: IncomingMessage) => {
     // `admit` builds the world on the first arrival, so it is async. A
     // failure there must close the socket rather than leave a client waiting
     // on a welcome that is never coming.
-    route.match.admit(socket, msg.name, msg.weapon).catch((err: unknown) => {
+    route.match.admit(socket, msg.name, msg.weapon, msg.equipment).catch((err: unknown) => {
       console.error("admit failed:", err);
       refuse("could not start a match");
     });

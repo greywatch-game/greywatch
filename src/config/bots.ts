@@ -550,9 +550,13 @@ export const bots = {
     /** Near zero. A bouncing body is the second funniest. */
     restitution: 0.02,
     /**
-     * The throw. `from` is the shooter's eye or the blast centre, so the
-     * direction comes free; the magnitude scales with the blow, which is what
-     * makes a 130-damage frag throw a body and a 25-damage round drop it.
+     * The throw, and there are TWO of them — one for a round and one for an
+     * explosion, chosen by the `DamageKind` the corpse was killed with.
+     *
+     * `from` is the shooter's eye or the blast centre, so the direction comes
+     * free in both cases; what differs is what arrives. Everything at this
+     * level is the ROUND: a newton-second on the chest, scaling with the blow,
+     * which is what makes a 40-damage rifle round drop a body where it stood.
      * Applied `lift` above the centre of mass, so the tumble falls out of the
      * off-centre application rather than needing an authored spin.
      *
@@ -561,8 +565,53 @@ export const bots = {
      * never Math.random, which would make a death impossible to reproduce,
      * and deliberately not the dying body's, which would put a bot's own
      * behaviour stream downstream of whether its corpse was accepted.
+     *
+     * `blast` is the other one and is documented on itself.
      */
-    impulse: { base: 6, perDamage: 0.06, max: 22, lift: 0.25, spin: 1.2 },
+    impulse: {
+      base: 6,
+      perDamage: 0.06,
+      max: 22,
+      lift: 0.25,
+      spin: 1.2,
+      /**
+       * ## What an EXPLOSION does instead, and the units are different
+       *
+       * Everything above is a newton-second on the CHEST, which is what a
+       * round is: a small blow landing at a point, and the body folding round
+       * it. A blast is not that — it arrives everywhere on a body at once —
+       * and the difference is the whole of why this is a second row rather
+       * than a multiplier on the first. Two things follow from it:
+       *
+       * - **These figures are METRES PER SECOND of the whole body**, not
+       *   impulses. `RagdollSystem.applyImpulse` spends `speed * mass` on
+       *   every bone at its own origin, so all ten leave at the same velocity
+       *   and nothing is sheared through a joint. The alternative — the same
+       *   throw applied to the 34 kg chest alone — is nine limbs being caught
+       *   up by their constraints, which is a body coming apart rather than a
+       *   body being thrown.
+       * - **`base` is small and `perDamage` carries it**, because the blast
+       *   already told us how hard it hit: `blastAt` scales its damage by the
+       *   falloff before `takeDamage` ever sees it, so `deathDamage` IS the
+       *   strength of the explosion where this body was standing. A frag at
+       *   the feet (130) leaves at 9.8 m/s, a rocket (220) at 15, a tank
+       *   shell's splash (350) at the cap, and a body caught at the fringe
+       *   of the same radius is shoved rather than thrown. There is nothing
+       *   here that has to be kept in step with `power` — one number, and the
+       *   picture is the other's business.
+       *
+       * `rise` is added to the (normalised) direction before it is re-normalised,
+       * so a blast at the same height as the body still throws it up and away
+       * rather than sliding it along the floor: 0.5 is about 27 degrees of
+       * elevation, which against `gravity` (-18) and `linearDamping` is roughly
+       * four metres of flight for a frag and ten for a shell.
+       *
+       * `spin` is the same seeded angular kick, larger because a body that is
+       * off the ground has the room to use it — a corpse merely knocked over
+       * spends its tumble against the floor within the first step.
+       */
+      blast: { base: 2, perDamage: 0.04, max: 12, rise: 0.5, spin: 4 },
+    },
     /**
      * Hard stop on simulating, and the early-out for a body that stopped
      * moving on its own. Once every bone is under `sleepSpeed` AND

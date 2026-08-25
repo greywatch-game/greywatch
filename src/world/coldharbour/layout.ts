@@ -1,8 +1,12 @@
 /**
  * coldharbour/layout.ts — THE MAP, as data: structure placements, scatter
- * regions, control points, spawns, and the civic square's lawn. No water — a
- * downtown has none. The floor's shape is generated data and lives in
- * heights.ts.
+ * regions, control points, spawns, the two vehicle hardstandings and the civic
+ * square's lawn. No water — a downtown has none. The floor's shape is generated
+ * data and lives in heights.ts.
+ * The first map with `vehicles` on it, and the avenues are why: sixteen metres
+ * wide, four each way, and one runs the full 320 m. See `vehicles` below.
+ * Harrowmead is the other, and it answers the same question with open country
+ * rather than with a street.
  * Consumed by MapBuilder; nothing here is code to special-case.
  * Gotchas that have already cost time: collider top faces within
  * CONFIG.nav.stepHeight of adjacent ground or bots treat decks as walls;
@@ -18,6 +22,7 @@ import type {
   Placement,
   ScatterSpec,
   SpawnPointDef,
+  VehicleSpawnDef,
 } from "../layout";
 import { ColdharbourHeights } from "./heights";
 
@@ -536,6 +541,33 @@ const spawns: SpawnPointDef[] = [
 ];
 
 /**
+ * One hardstanding per side, in the corner yard that side already deploys into.
+ *
+ * **The yards are the only two 32 m squares on the map with nothing in them**,
+ * which is why the home spawns are there and why the armour is: everywhere else
+ * on Coldharbour is either a 26 m tower footprint or a 16 m avenue, and a
+ * seven-metre hull needs somewhere to be that is neither. The NE and SW corners
+ * carry towers (`x: -144, z: -144` and `x: 144, z: 144` in the placements
+ * above); these two do not.
+ *
+ * Each stands at the INNER corner of its yard rather than in the middle of it,
+ * eight-ish metres off the three infantry spawns, so a hull arriving on the
+ * respawn timer cannot be sitting where somebody just deployed — and so the
+ * first thing a driver does is roll onto an avenue rather than a three-point
+ * turn against the boundary. The heading is the yard's own: 3pi/4 is
+ * south-east out of the north-west corner, which is the same bearing the
+ * infantry spawns face, and the pair of avenues at `x = -120` and `z = +120`
+ * are both one hull-length away.
+ *
+ * **Two, and exactly two.** The respawn is per hardstanding, so the number of
+ * entries here IS how many tanks a side can ever have on the field at once.
+ */
+const vehicles: VehicleSpawnDef[] = [
+  { team: 0, pos: new Vector3(-138, 0, 136), yaw: (Math.PI * 3) / 4 },
+  { team: 1, pos: new Vector3(138, 0, -136), yaw: -Math.PI / 4 },
+];
+
+/**
  * The civic square's lawn: one rect per quarter of the block, laid to the same
  * lines as the four paths and stopping 2 m short of them on each side.
  *
@@ -570,6 +602,7 @@ export const ColdharbourLayout: MapLayout = {
   scatter,
   controlPoints,
   spawns,
+  vehicles,
   grass,
   terrain: ColdharbourHeights,
   /**

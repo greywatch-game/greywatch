@@ -27,6 +27,7 @@ import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Combatant, Team } from "./Combatant";
+import type { DamageKind } from "../systems/CombatSystem";
 import {
   animateSoldier,
   buildSoldier,
@@ -90,6 +91,12 @@ export class NetSoldier implements Combatant, RagdollSubject {
    */
   readonly deathFrom = new Vector3();
   deathDamage = 0;
+  /**
+   * …and what delivered it, armed and spent with the pair above. A frame from
+   * a server too old to send one reads as a round, which is what every death
+   * looked like before there was anything else it could be.
+   */
+  deathKind: DamageKind = "bullet";
   /** Set by `RagdollSystem` for as long as it owns the joints. See `update`. */
   ragdolling = false;
 
@@ -359,6 +366,7 @@ export class NetSoldier implements Combatant, RagdollSubject {
     this.hasPosition = false;
     this.alive = false;
     this.deathDamage = 0;
+    this.deathKind = "bullet";
     // Belt to `RagdollSystem.release`'s braces, exactly as `Bot.spawn` clears
     // it: a rig handed back late must never come up with a live body still
     // claiming its joints.

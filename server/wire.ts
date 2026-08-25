@@ -105,12 +105,13 @@ export function readClientMessage(raw: string): ClientMessage | null {
       // `version` is compared with `!==` downstream, so a non-number is already
       // refused there; it is checked anyway so that the refusal names the
       // protocol mismatch it looks like rather than depending on a coincidence.
-      // The three ids are optional by design — a client that sends none of them
+      // The four ids are optional by design — a client that sends none of them
       // is `?mp` and every build that predates the lobby.
       return isNum(m.version) &&
         optionalString(m.matchId) &&
         optionalString(m.map) &&
-        optionalString(m.weapon)
+        optionalString(m.weapon) &&
+        optionalString(m.equipment)
         ? msg
         : null;
 
@@ -132,10 +133,41 @@ export function readClientMessage(raw: string): ClientMessage | null {
         ? msg
         : null;
 
-    // Nothing on it to check, and it still owes this arm: the `default` below
-    // refuses what it does not recognise, so a message type with no fields is
-    // the one shape that would be dropped for having nothing wrong with it.
+    // One arm for the same four fields again — a shell and an AT item are
+    // both a claim about a thing leaving a barrel at an instant, checked the
+    // same way and re-resolved by the authority the same way.
+    case "shell":
+    case "ordnance":
+      return isNum(m.seq) && isNum(m.time) && isVec3(m.origin) && isVec3(m.dir)
+        ? msg
+        : null;
+
+    // A driver's hull, which carries a position and five angles. The
+    // hardstanding index is an INDEX, so it is checked as an integer for
+    // `deploy`'s reason — everything downstream uses it to subscript the
+    // fleet, and `seat` asks again about what it MEANS.
+    case "drive":
+      return isNum(m.seq) &&
+        isNum(m.time) &&
+        Number.isInteger(m.tank) &&
+        isVec3(m.pos) &&
+        isNum(m.yaw) &&
+        isNum(m.tyaw) &&
+        isNum(m.gun) &&
+        isNum(m.aimYaw) &&
+        isNum(m.aimPitch)
+        ? msg
+        : null;
+
+    case "mount":
+      return Number.isInteger(m.tank) ? msg : null;
+
+    // Nothing on them to check, and they still owe this arm: the `default`
+    // below refuses what it does not recognise, so a message type with no
+    // fields is the one shape that would be dropped for having nothing wrong
+    // with it.
     case "reload":
+    case "dismount":
       return msg;
 
     case "deploy":

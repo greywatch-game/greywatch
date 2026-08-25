@@ -22,6 +22,7 @@
  * fields precisely so that swapping in a binary encoder later is a change to
  * `encode`/`decode` and to nothing that calls them.
  */
+import type { DamageKind } from "../systems/CombatSystem";
 import type { ScoreKind } from "../systems/ScoreBook";
 
 /**
@@ -33,8 +34,17 @@ import type { ScoreKind } from "../systems/ScoreBook";
  * `deploy` — would sit dead in a live match forever, alive on its own screen
  * and absent from everyone else's. Refusing it at the handshake turns that into
  * a sentence the lobby can print.
+ *
+ * 4 is armour, and it is a version bump for a sharper reason than 3 was. Every
+ * field it adds is additive in the ordinary sense — a client that ignores
+ * `Snapshot.vehicles` draws no hulls and sends no `mount` — but what it would
+ * be ignoring is a seven-metre SOLID object that the authority is driving
+ * across the map, shooting people with, and stopping rounds on. An older
+ * client in a version-4 match would be killed by a shell out of an empty
+ * street and would watch its own bullets stop in mid-air. That is not a
+ * degraded picture, it is a different game, so the handshake refuses it.
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /**
  * The longest display name a client may claim, in characters.
@@ -253,6 +263,150 @@ export interface GrenadeState {
   fuse: number;
 }
 
+/**
+ * One hull on the field, as the client needs to draw it.
+ *
+ * **State and not a drive**, for `GrenadeState`'s reason carried one scale up:
+ * a tank is the heaviest thing in the game to simulate and the easiest to
+ * disagree about, so what travels is where it ENDED UP rather than what its
+ * sticks were doing. Sixteen clients integrating one throttle against sixteen
+ * frame times, over a heightfield, through `moveWithCollisions`, would put the
+ * hull in sixteen places inside a second — and unlike a grenade, this one is
+ * solid, so the disagreement would be about which rounds hit a wall.
+ *
+ * **A driver is the one exception, and it is the same exception movement
+ * already is.** The person actually holding the sticks simulates their own
+ * hull exactly as they simulate their own body, reports it through
+ * `DriveMessage`, and the authority validates the step and relays it. So the
+ * driver has no latency on their own vehicle, everybody else is a tenth of a
+ * second behind it, and the server is the only thing that ever decides what
+ * the hull hit — which is the trade `docs/multiplayer.md` argues for movement,
+ * applied to the one other thing a person can be inside.
+ *
+ * What is deliberately NOT here is the picture: no pitch, no roll, no heave,
+ * no track run, no antenna bend. Every one of those is a fact about the ground
+ * the hull is standing on, and every client holds the identical collider world
+ * and heightfield — so `Tank.updateRemote` derives them locally off the
+ * position that did arrive, which is both cheaper than sending them and more
+ * stable than interpolating them. See `docs/vehicles.md`.
+ */
+export interface VehicleState {
+  /**
+   * Which hardstanding this hull belongs to — its index in
+   * `GameMap.vehicleSpawns`, and its identity for the whole round.
+   *
+   * A hull is never created or destroyed inside a round: it is live, it is a
+   * wreck, or it is away being rebuilt, and the same index comes back with the
+   * fresh one. That is `SlotState.index`'s bargain applied to armour, and it
+   * is what lets a client pool one `Tank` per hardstanding and never learn
+   * that the hull it is drawing is a different one.
+   */
+  i: number;
+  /** Feet — where the tracks rest, matching `Tank.position`. */
+  p: Vec3;
+  /** The hull's heading, radians. */
+  yaw: number;
+  /** Where the GUN points, in WORLD radians. Never the hull's. */
+  tyaw: number;
+  /** The gun's elevation, radians. */
+  gun: number;
+  /**
+   * False for a wreck. A hull that has been taken away entirely is simply
+   * ABSENT from the array, which is `GrenadeState`'s rule and reads the same
+   * way: a client hides whatever it was not told about this snapshot.
+   */
+  alive: boolean;
+  /**
+   * What is left of it, in the same points `CONFIG.vehicles.tank.maxHealth`
+   * counts.
+   *
+   * **The one health on the wire that is not addressed to one person**, and
+   * the exception is deliberate rather than an oversight of the rule `damage`
+   * follows. A player's pool is private because knowing who is hurt is the
+   * read a wallhack wants; a hull's is public because it is the gauge on the
+   * driver's own HUD and because armour is the most conspicuous object in the
+   * round — everybody can see it burning, and how many more rockets it will
+   * take is a decision the fight is supposed to be able to make.
+   *
+   * It is sent as state rather than derived from `damage` events for
+   * `ScoresMessage`'s reason: a client that added up the blows it happened to
+   * hear would show a different tank on every screen.
+   */
+  hp: number;
+  /**
+   * The roster slot sitting in this hull, or -1 for an empty one.
+   *
+   * **The single source for occupancy, and it is on the HULL rather than on
+   * the body**, because both questions a client asks are the hull's: may I get
+   * into that one, and is the man in that slot drawn standing up. Carried on
+   * `EntityState` as well it would be two copies of one fact, and the copy
+   * that went stale would be the one deciding whether a body is on screen.
+   *
+   * It is also the filter the driver's own client reads: a hull with this
+   * client's slot on it is one it is already simulating, and drawing the
+   * authority's copy as well would be two tanks a tenth of a second apart —
+   * exactly the trap `GrenadeState.by` exists for.
+   */
+  by: number;
+}
+
+/**
+ * One rocket in the air.
+ *
+ * The THIRD thing in this game that is not hitscan, and it is on the wire for
+ * `GrenadeState`'s reason exactly: it takes the better part of a second to
+ * arrive, so it is state at the snapshot cadence rather than a launch
+ * announced once and re-flown on sixteen machines that would each detonate it
+ * somewhere else.
+ *
+ * There is no fuse and no bounce here because a rocket has neither — it flies
+ * straight, it goes off on what it touches, and it is gone. `dir` rides along
+ * so a client can point the body down its own flight without differencing two
+ * samples, which at a hundred metres a second is a rocket that flickers
+ * between headings whenever a packet is late.
+ */
+export interface RocketState {
+  /** Names the FLIGHT, monotonic and never reused — see `GrenadeState.i`. */
+  i: number;
+  p: Vec3;
+  dir: Vec3;
+  /** The shooter's roster slot, or -1. The one client that must not draw it. */
+  by: number;
+}
+
+/**
+ * One mine on the ground.
+ *
+ * Sent in a message of its OWN rather than on the snapshot, and that is the
+ * `ScoresMessage` trade rather than a special case: a mine moves exactly
+ * never, so twenty copies a second of sixteen unchanging positions is the one
+ * shape the wire should not take. `Match` watches `AntiTankSystem.version` and
+ * re-sends the whole list when it moves, which is a handful of times a round.
+ *
+ * Whole rather than incremental for that class's reason as well: a dropped
+ * message is corrected by the next one, and a client joining mid-round is
+ * right on arrival instead of missing every mine laid before it connected.
+ */
+export interface MineState {
+  /** Pool index — an identity only for the length of one message. */
+  i: number;
+  p: Vec3;
+  /** Whose it is, so a client can tell a mine it may walk over from one it may not. */
+  team: NetTeam;
+  /**
+   * The layer's roster slot, or -1 for one nobody on the roster laid.
+   *
+   * `GrenadeState.by`'s field doing a different job: nothing here is filtered
+   * on it, because a mine is not predicted locally and there is no second copy
+   * to suppress. What it is for is the COUNT on the layer's own HUD — the
+   * per-owner cap retires your oldest when you lay a third, so how many of
+   * yours are on the field is a number you are making a decision with.
+   */
+  by: number;
+  /** True once it will actually go off. Dark until then, which is the whole tell. */
+  armed: boolean;
+}
+
 /** A control point, mirrored onto the client's `ConquestSystem`. */
 export interface PointState {
   id: string;
@@ -296,6 +450,20 @@ export interface Snapshot {
    * as "nothing is flying", which is also what an older server means by it.
    */
   grenades?: GrenadeState[];
+  /**
+   * Every hull the map has, and ABSENT on the maps that state none — which is
+   * two of the four shipped, and every netplay round before armour existed.
+   *
+   * Present in FULL rather than only when something changed, unlike the mines
+   * next door: a hull that is being driven changes every tick, and the two or
+   * three of them a map states are a few dozen bytes against a snapshot
+   * carrying sixteen bodies. What absence means is "this round has no armour
+   * in it", which is exactly what a client that has never been sent the field
+   * should draw.
+   */
+  vehicles?: VehicleState[];
+  /** Rockets in the air, absent when there are none — see `grenades`. */
+  rockets?: RocketState[];
 }
 
 // --- events ---------------------------------------------------------------
@@ -312,14 +480,16 @@ export type ServerEvent =
   /**
    * A body went down, whoever it belonged to and whoever put it there.
    *
-   * `from` and `amount` are the killing blow's origin and size — the same pair
-   * `damage` carries, and for the same reason on the far side: they are what a
-   * client throws the corpse with. Without them every death would be a body
-   * lifted straight up, because a zero-length direction is all
-   * `RagdollSystem.applyImpulse` would have to work from. They are on the KILL
-   * rather than on the snapshot because a death is an instant and a snapshot is
-   * a state — sending a bearing every tick for the one tick it matters is the
-   * trade this event type exists to avoid.
+   * `from`, `amount` and `kind` are the killing blow's origin, size and nature
+   * — the same triple `damage` carries, and for the same reason on the far
+   * side: they are what a client throws the corpse with. Without the first
+   * every death would be a body lifted straight up, because a zero-length
+   * direction is all `RagdollSystem.applyImpulse` would have to work from; without
+   * the last every death would be a body folding where it stood, including the
+   * ones a grenade landed under. They are on the KILL rather than on the
+   * snapshot because a death is an instant and a snapshot is a state — sending
+   * a bearing every tick for the one tick it matters is the trade this event
+   * type exists to avoid.
    *
    * Raised exactly once per death, for a bot and a person alike. `Match` is
    * where the two paths converge and where that "exactly once" is argued.
@@ -341,6 +511,12 @@ export type ServerEvent =
       headshot: boolean;
       from: Vec3;
       amount: number;
+      /**
+       * OPTIONAL, and absent reads as `bullet` — which is what a server built
+       * before a blast could throw a body sends, and what every death on the
+       * wire meant then. A client must never require it.
+       */
+      kind?: DamageKind;
     }
   /**
    * A blow one player took: how big, which way it came from, and what it left
@@ -352,7 +528,15 @@ export type ServerEvent =
    * live, with the bearing they were shot from beside it. `victim` stays on the
    * wire and the client still checks it, for the reason `hit` below does.
    */
-  | { e: "damage"; victim: number; amount: number; from: Vec3; health: number }
+  | {
+      e: "damage";
+      victim: number;
+      amount: number;
+      from: Vec3;
+      health: number;
+      /** As `kill`'s: optional, and absent is a round. */
+      kind?: DamageKind;
+    }
   /**
    * A round cracked past this client's own head without connecting.
    *
@@ -459,7 +643,52 @@ export type ServerEvent =
    * nothing for the server to re-derive — see `ReloadMessage`.
    */
   | { e: "reload"; slot: number; w?: string }
-  | { e: "explode"; at: Vec3 }
+  /**
+   * A blast went off here, and how big it LOOKS.
+   *
+   * `power` is `BlastSpec.power` — the grenade is 1 by definition and
+   * everything else is a multiple of it (the tank shell is 1.85, a rocket and
+   * a mine their own). ABSENT reads as 1, which is what every server before
+   * armour meant by this event and what the only blast in the game then was.
+   * It scales SIZE and COUNT and never TIME, so a client spending it is
+   * drawing the same eight layers in the same order at a different scale —
+   * see `docs/grenades.md`.
+   */
+  | { e: "explode"; at: Vec3; power?: number }
+  /**
+   * The authority's answer to a `MountMessage` or a `DismountMessage`, and the
+   * ONLY thing that ever puts a person into a hull or takes them out of one.
+   *
+   * **Addressed to the one player it is about**, on `hit`'s rule: it is the
+   * answer to their own ask. What everybody else needs — that a hull now has
+   * somebody in it — is already on `VehicleState.by`, at the snapshot cadence,
+   * and deriving it from an event a reconnect can drop would be a client
+   * holding an opinion about a seat.
+   *
+   * `tank` is the hardstanding index, or **-1 for "you are on foot"** — which
+   * is the answer to a dismount, to a hull that burned under them, and to a
+   * refusal of a mount they were never close enough to make.
+   *
+   * `pos`/`yaw` are where the body was PUT DOWN and are present only on the
+   * way out. Where a dismount lands is geometry (`VehicleSystem.exitSpot`) and
+   * a client could compute it — but it is a position, and a position is the
+   * authority's for the same reason `spawn` carries one rather than letting
+   * sixteen clients each pick a spot beside the same tank.
+   */
+  | { e: "seat"; slot: number; tank: number; pos?: Vec3; yaw?: number }
+  /**
+   * A tank gun went off in this hull. Public, and `fire`'s counterpart for the
+   * one weapon that is not carried by a body.
+   *
+   * It carries a hull and no position for `fire`'s reason exactly: where that
+   * hull is has already arrived in the snapshot every client holds, so a
+   * position here would be a second copy of one on a different clock and the
+   * report would come from somewhere the barrel visibly is not.
+   *
+   * NOT coalesced, unlike `fire`: a tank gun fires once every few seconds by
+   * its own reload, so the count `fire` exists to bound cannot happen here.
+   */
+  | { e: "cannon"; tank: number }
   /**
    * Panes of glass that just went in, by their index in `GameMap.panes`.
    *
@@ -678,6 +907,28 @@ export interface PingsMessage {
   ms: number[];
 }
 
+/**
+ * Every mine on the field, whole.
+ *
+ * **Sent only when the set changes**, which is `ScoresMessage`'s cadence and
+ * for a stronger version of its reason: a mine never moves, so re-stating one
+ * twenty times a second is the one thing on this wire that would be pure
+ * repetition. `Match` watches `AntiTankSystem.version`.
+ *
+ * Whole rather than incremental, again like the board: a dropped message is
+ * corrected by the next one and a client that joined mid-round is right on
+ * arrival rather than blind to every mine laid before it connected — which on
+ * this particular object is not a cosmetic difference.
+ *
+ * Additive: an older client ignores a message type it has no case for, and a
+ * newer client against an older server simply sees no mines. It arrives
+ * alongside the `PROTOCOL_VERSION` bump armour needed anyway.
+ */
+export interface MinesMessage {
+  t: "mines";
+  mines: MineState[];
+}
+
 export type ServerMessage =
   | Welcome
   | RoundStart
@@ -686,6 +937,7 @@ export type ServerMessage =
   | EventsMessage
   | ScoresMessage
   | PingsMessage
+  | MinesMessage
   | Correction
   | Rejected;
 
@@ -752,6 +1004,22 @@ export interface Join {
    * wire: a client that could state its own would state whatever it liked.
    */
   weapon?: string;
+  /**
+   * The anti-tank item in the third slot — `"rpg"` or `"mine"`.
+   *
+   * Resolved against the server's own `CONFIG.equipment` exactly as `weapon`
+   * is, and for the identical reason: what a rocket is worth and how many
+   * mines a person may have on the field are the authority's numbers, and a
+   * client that named them would name whatever it liked.
+   *
+   * A REQUEST like the rest of this message, and one the map may simply not
+   * grant: the third slot exists on maps that state a hardstanding and nowhere
+   * else (`Game.armourOffered`), so on the two shipped maps with no armour the
+   * server resolves this and then never has an ordnance message to spend it
+   * on. Absent means the default launcher, which is what a client that predates
+   * the field would have been carrying if it could carry one at all.
+   */
+  equipment?: string;
 }
 
 /**
@@ -841,6 +1109,132 @@ export interface DeployMessage {
 }
 
 /**
+ * One reported hull sample, from the person actually driving it.
+ *
+ * **`MoveMessage` for a body that weighs sixty tonnes**, and it is the same
+ * bargain for the same reason: `Tank.update` reads a `DriveInput`, ten ground
+ * probes and `moveWithCollisions` and mutates thirty fields, so replaying a
+ * driver's sticks on the authority is the refactor that was declined for
+ * `Player.update`. The driver simulates and reports; the server checks that
+ * the step was possible for a tank and keeps it, or refuses and corrects.
+ *
+ * It REPLACES `move` for as long as this player is in a seat, rather than
+ * riding beside it, because a driver has no body of their own to report: the
+ * hull carries them, and `Game.updateDriver` slaves `Player.position` to it.
+ * A client sending both would be reporting one person in two places.
+ *
+ * What is validated is deliberately narrower than a body's step (see
+ * `server/validate.ts`): the speed bound is the TANK's, and the ground and
+ * solid checks are dropped outright. A hull legitimately stands inside the
+ * obstacle field — it drives over the props a body has to walk around — and it
+ * is stood on its own ten track contacts by `Tank.updateRemote` on the
+ * authority's side, which is a better answer than any claim about `y` a client
+ * could make.
+ */
+export interface DriveMessage {
+  t: "drive";
+  /** Monotonic per client, shared with `move`'s counter — see `MoveMessage`. */
+  seq: number;
+  /** Client clock in ms when this was sampled. */
+  time: number;
+  /** The hardstanding index of the hull being driven. */
+  tank: number;
+  /** The hull's feet. */
+  pos: Vec3;
+  yaw: number;
+  /** Where the GUN points, world radians, and its elevation. */
+  tyaw: number;
+  gun: number;
+  /**
+   * Where the DRIVER is looking, which is the chase camera's own aim and not
+   * the gun's.
+   *
+   * On the wire even though nothing draws it, because it is what the shell's
+   * cone check is measured against — the same job `MoveMessage.yaw`/`pitch` do
+   * for a rifle. The gun is walking toward it at the turret's own rate, so the
+   * two differ by whatever the traverse has not caught up with yet, and
+   * checking a claimed shell against the reported GUN would be checking a
+   * number against itself.
+   */
+  aimYaw: number;
+  aimPitch: number;
+}
+
+/**
+ * "Put me in that hull."
+ *
+ * An ASK, and the authority answers with a `seat` event or with silence.
+ * `tank` is the hardstanding index; everything about whether it may be granted
+ * — that the hull is this player's own side's, alive, within `enterRadius` of
+ * where the server holds this player, and either empty or holding a bot crew
+ * that may be turned out — is re-derived there against the authority's own
+ * copy of all four. A client naming a hull across the map is refused rather
+ * than corrected, exactly as a deploy naming a spawn its team has lost is.
+ */
+export interface MountMessage {
+  t: "mount";
+  tank: number;
+}
+
+/**
+ * "Let me out."
+ *
+ * It names no hull for `ReloadMessage`'s reason: the server knows which seat
+ * this peer is in and a field saying so is a field that can disagree with it.
+ * Answered with a `seat` event carrying -1 and the position the body was put
+ * down at.
+ */
+export interface DismountMessage {
+  t: "dismount";
+}
+
+/**
+ * A round out of a tank gun the client believes it fired.
+ *
+ * `ShotMessage` for the one weapon that is not carried: same rewind, same cone
+ * check, same re-resolution on the authority, and the same rule that the
+ * client's hitmarker is a guess until this comes back. There is no `slot`,
+ * because a hull has one gun and the server knows which hull this peer is in.
+ *
+ * The DIRECTION is the gun's axis rather than the camera's, and that is the
+ * whole of `docs/vehicles.md`'s reticle rule crossing the wire: the look is an
+ * order the turret is still walking toward, and a shell fired down the look
+ * would leave a barrel that is visibly pointing somewhere else.
+ */
+export interface ShellMessage {
+  t: "shell";
+  seq: number;
+  /** Client render time in ms — what the shooter was looking at. */
+  time: number;
+  origin: Vec3;
+  dir: Vec3;
+}
+
+/**
+ * An anti-tank item leaving the hands: a rocket down the reticle, or a mine on
+ * the ground.
+ *
+ * ONE message for both, because the third slot is one slot and which item is
+ * in it is a fact the authority already holds off `Join.equipment` — a client
+ * naming the item here could name the one it did not bring. `dir` is the aim
+ * for a rocket and is ignored for a mine, which goes where the feet are.
+ *
+ * **The authority owns the object either way**, and the two differ in what the
+ * client draws in the meantime: a rocket is PREDICTED locally, exactly as a
+ * thrown grenade is, because a warhead that appeared six metres downrange a
+ * round trip later would read as a misfire; a mine is not predicted at all,
+ * because it is laid at the feet and never moves, so the round trip is
+ * invisible and a local copy would be a second mine to reconcile.
+ */
+export interface OrdnanceMessage {
+  t: "ordnance";
+  seq: number;
+  time: number;
+  origin: Vec3;
+  dir: Vec3;
+}
+
+/**
  * "I have started a reload", so the fifteen other clients can hear it.
  *
  * The one message in this protocol that announces something the authority has
@@ -875,7 +1269,12 @@ export type ClientMessage =
   | ShotMessage
   | GrenadeMessage
   | ReloadMessage
-  | DeployMessage;
+  | DeployMessage
+  | DriveMessage
+  | MountMessage
+  | DismountMessage
+  | ShellMessage
+  | OrdnanceMessage;
 
 // --- encoding -------------------------------------------------------------
 

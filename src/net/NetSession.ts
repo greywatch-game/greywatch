@@ -24,7 +24,9 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { ControlPoint } from "../systems/ConquestSystem";
 import { Connection, type ConnectionState, type JoinOptions } from "./Connection";
 import { NetGrenades } from "./NetGrenades";
+import { NetOrdnance } from "./NetOrdnance";
 import { NetRoster } from "./NetRoster";
+import { NetVehicles } from "./NetVehicles";
 import {
   INPUT_HZ,
   type ServerEvent,
@@ -47,6 +49,24 @@ export interface LocalState {
   pitch: number;
   crouching: boolean;
   sprinting: boolean;
+  /**
+   * The hull this player is driving, or null on foot.
+   *
+   * Non-null for exactly as long as `Game.driving` is, which is what makes the
+   * upload's two branches one fact rather than two flags that can disagree: a
+   * driver has no body of their own to report, because the tank carries them.
+   */
+  hull: LocalHull | null;
+}
+
+/** One driven hull, as the upload needs it. `Tank`'s own fields, by reference. */
+export interface LocalHull {
+  /** The hardstanding index — the hull's identity on the wire. */
+  tank: number;
+  position: Vector3;
+  yaw: number;
+  turretYaw: number;
+  gunPitch: number;
 }
 
 export class NetSession {
@@ -59,6 +79,15 @@ export class NetSession {
    * why it is state on the wire and not a throw announced once.
    */
   readonly grenades: NetGrenades;
+
+  /**
+   * Everybody else's armour, and every hull nobody is in. The one thing on the
+   * wire that is a moving `solid` mesh — see `NetVehicles`.
+   */
+  readonly vehicles = new NetVehicles();
+
+  /** …and the anti-tank kit: rockets in the air, mines on the ground. */
+  readonly ordnance: NetOrdnance;
 
   /** The roster slot this client owns, or -1 before the welcome lands. */
   slot = -1;
@@ -177,6 +206,7 @@ export class NetSession {
   constructor(scene: Scene, mats: CelMaterialFactory) {
     this.roster = new NetRoster(scene, mats);
     this.grenades = new NetGrenades(scene, mats);
+    this.ordnance = new NetOrdnance(scene, mats);
     this.conn.onStateChange = (s) => this.onStateChange(s);
     this.conn.onMessage = (msg) => this.receive(msg);
   }
@@ -215,11 +245,39 @@ export class NetSession {
     const renderTime = this.conn.renderTime();
     this.roster.update(renderTime, cameraPos);
     this.grenades.update(renderTime);
+    // The hulls and the AT kit, on the SAME render time as the bodies for the
+    // reason the grenades share it: a tank, the man beside it and the rocket
+    // coming at it are one instant of one round, and three reads of a clock
+    // that moves would draw them at three.
+    this.vehicles.update(renderTime);
+    this.ordnance.update(renderTime);
 
     if (!this.seated || !alive) return;
     this.uploadT += dt;
     if (this.uploadT < UPLOAD_INTERVAL) return;
     this.uploadT = 0;
+    // **A driver reports their HULL and not their body**, and the two are
+    // exclusive — see `DriveMessage`. `local.hull` is non-null for exactly as
+    // long as `Game.driving` is, so this branch and the seat are one fact.
+    if (local.hull) {
+      const h = local.hull;
+      this.conn.send({
+        t: "drive",
+        seq: ++this.seq,
+        time: Date.now(),
+        tank: h.tank,
+        pos: [h.position.x, h.position.y, h.position.z],
+        yaw: h.yaw,
+        tyaw: h.turretYaw,
+        gun: h.gunPitch,
+        // The chase camera's own aim, which is the ORDER the turret is walking
+        // toward rather than where the gun has got to. It is what the shell's
+        // cone is measured against on the far side.
+        aimYaw: local.yaw,
+        aimPitch: local.pitch,
+      });
+      return;
+    }
     this.conn.send({
       t: "move",
       seq: ++this.seq,
@@ -335,6 +393,70 @@ export class NetSession {
     });
   }
 
+  /**
+   * Asks to be put into a hull, by hardstanding index.
+   *
+   * An ASK and nothing more, on `sendDeploy`'s model: this client mounts
+   * nothing locally and the authority answers with a `seat` event either way,
+   * having re-derived every term of the offer against its own copy — the
+   * hull's team, its life, the distance to it, and whether the crew inside may
+   * be turned out.
+   *
+   * Fire-and-forget rather than standing, unlike a deploy: a mount that was
+   * dropped by a socket is a key press, and the player is standing next to the
+   * tank and can press it again. A request that outlived its own frame would
+   * be worse — it would put somebody in a tank a second after they walked away
+   * from it.
+   */
+  sendMount(tank: number): void {
+    if (!this.seated) return;
+    this.conn.send({ t: "mount", tank });
+  }
+
+  /** …and asks to get out. It names no hull — the authority knows which. */
+  sendDismount(): void {
+    if (!this.seated) return;
+    this.conn.send({ t: "dismount" });
+  }
+
+  /**
+   * Reports a round out of the tank gun.
+   *
+   * `dir` is the GUN's axis and not the camera's, which is the reticle rule
+   * crossing the wire: the look is an order the turret is still walking
+   * toward, and the shell goes where the barrel is pointing. The server fires
+   * down its own copy of that axis regardless — this is what the cone check
+   * bounds, not what the round is resolved along.
+   */
+  sendShell(origin: Vector3, dir: Vector3): void {
+    if (!this.seated) return;
+    this.conn.send({
+      t: "shell",
+      seq: ++this.seq,
+      time: this.conn.renderTime(),
+      origin: [origin.x, origin.y, origin.z],
+      dir: [dir.x, dir.y, dir.z],
+    });
+  }
+
+  /**
+   * Reports an anti-tank item leaving the hands — a rocket, or a mine.
+   *
+   * One method for both, because the third slot is one slot and which item is
+   * in it is a fact the authority already holds off the join. `dir` is the aim
+   * for a rocket and is ignored for a mine, which goes where `origin` says.
+   */
+  sendOrdnance(origin: Vector3, dir: Vector3): void {
+    if (!this.seated) return;
+    this.conn.send({
+      t: "ordnance",
+      seq: ++this.seq,
+      time: this.conn.renderTime(),
+      origin: [origin.x, origin.y, origin.z],
+      dir: [dir.x, dir.y, dir.z],
+    });
+  }
+
   /** Mirrored ticket counts, for the HUD. */
   get tickets(): readonly [number, number] {
     return this.roster.tickets;
@@ -386,6 +508,13 @@ export class NetSession {
         // dropped here for the same reason `Game.installMap` drops the local
         // one — and the local `Player`'s own copy is dropped with it there.
         this.grenades.reset();
+        // Last round's armour, over last round's streets, and last round's
+        // mines under them. Both for the grenades' reason: nothing will ever
+        // send the end of a flight or the removal of a plate that a rotation
+        // interrupted, and `installMap` rebuilds the fleet underneath either
+        // way.
+        this.vehicles.reset();
+        this.ordnance.reset();
         this.onRoundStart(msg.mapId);
         break;
 
@@ -419,10 +548,26 @@ export class NetSession {
         break;
 
       case "snap":
+        // The hulls FIRST, because the roster reads them: a body inside a tank
+        // is not drawn standing in the street, and which bodies those are is
+        // what the hulls have just said. See `NetRoster.setRiding`.
+        this.vehicles.applySnapshot(msg, this.slot);
+        for (const soldier of this.roster.soldiers) {
+          this.roster.setRiding(soldier.slot, this.vehicles.riding(soldier.slot));
+        }
         this.roster.applySnapshot(msg, this.points);
-        // Our own slot, so the grenades we threw are left to the local copy
-        // already flying out of our own hand.
+        // Our own slot, so the grenades we threw and the rockets we fired are
+        // left to the local copies already flying out of our own hand.
         this.grenades.applySnapshot(msg, this.slot);
+        this.ordnance.applySnapshot(msg, this.slot);
+        break;
+
+      // The mine table, whole, and only when it has moved — see
+      // `MinesMessage`. There is no local-slot filter on it: a player's own
+      // mine is drawn from here like everybody else's, because a mine is laid
+      // at the feet and never moves.
+      case "mines":
+        this.ordnance.applyMines(msg);
         break;
 
       case "events":
@@ -474,5 +619,6 @@ export class NetSession {
     this.conn.close();
     this.roster.dispose();
     this.grenades.dispose();
+    this.ordnance.dispose();
   }
 }

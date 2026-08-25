@@ -42,6 +42,7 @@
 import { Ray, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
+import type { DamageKind } from "./CombatSystem";
 import {
   animateSoldier,
   buildSoldier,
@@ -65,6 +66,7 @@ class Corpse implements RagdollSubject {
   readonly center = new Vector3();
   readonly deathFrom = new Vector3();
   deathDamage = 0;
+  deathKind: DamageKind = "bullet";
   ragdolling = false;
   readonly alive = false;
 
@@ -162,7 +164,11 @@ export class DeathCam {
   prepare(team: Team): void {
     if (this.builtFor === team && this.corpse) return;
     this.stop();
-    this.corpse?.rig.root.dispose(false, true);
+    // Nodes only, never the materials: the body is painted from
+    // `CelMaterialFactory`'s shared caches, so disposing them here takes the
+    // paint out from under every bot on the field and the map with them. See
+    // `Tank.dispose`.
+    this.corpse?.rig.root.dispose(false);
     const rig = buildSoldier(this.scene, this.mats, team);
     rig.root.setEnabled(false);
     this.corpse = new Corpse(rig);
@@ -175,7 +181,10 @@ export class DeathCam {
    * `from` is the shooter's eye or the blast centre — the same vector every
    * damage path in the game already carries — and it is what sends the body the
    * way the round was travelling. Without one, `RagdollSystem` reads the
-   * zero-length direction and throws it straight up instead.
+   * zero-length direction and throws it straight up instead. `kind` is the
+   * other half of the same fact and travels the same way: it is what decides
+   * whether the player watches their own body fold where it stood or leave the
+   * ground, and a player killed by a grenade should never be shown the first.
    *
    * `feet` is the player's FEET, not `Player.position`, which is the middle of
    * the collider capsule. `Player.floorY` is the height to use and is already
@@ -194,6 +203,7 @@ export class DeathCam {
     forward: Vector3,
     from: Vector3 | undefined,
     damage: number,
+    kind: DamageKind,
     crouch: number,
   ): void {
     if (!this.corpse) return;
@@ -215,6 +225,7 @@ export class DeathCam {
       feet.z,
     );
     corpse.deathDamage = damage;
+    corpse.deathKind = kind;
     if (from) corpse.deathFrom.copyFrom(from);
     else corpse.deathFrom.copyFrom(corpse.center);
 
@@ -306,7 +317,8 @@ export class DeathCam {
   }
 
   dispose(): void {
-    this.corpse?.rig.root.dispose(false, true);
+    // Nodes only — see `prepare`.
+    this.corpse?.rig.root.dispose(false);
     this.corpse = null;
     this.builtFor = null;
   }

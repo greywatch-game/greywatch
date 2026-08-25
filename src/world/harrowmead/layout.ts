@@ -20,6 +20,7 @@ import type {
   Placement,
   ScatterSpec,
   SpawnPointDef,
+  VehicleSpawnDef,
   WaterRect,
 } from "../layout";
 import { HarrowmeadHeights } from "./heights";
@@ -29,11 +30,12 @@ import { HarrowmeadHeights } from "./heights";
  *
  * **400 x 400 m**, origin at the market green, +Z is north — the largest map
  * yet, laid out at a scale where the ground between flags is country rather
- * than street: long lanes, hedged fields and rolling hills that a future
- * vehicle can mean something on. `MapLayout.size` states it and everything
- * downstream takes the extent as an argument; the heightfield is 100 cells of
- * 4 m (Coldharbour's cell at half again the area) so the slope limit stays an
- * authorable number.
+ * than street: long lanes, hedged fields and rolling hills that a vehicle can
+ * mean something on — and one does: this is the second map with armour on it,
+ * a hardstanding a side in the home yards (see `vehicles` below).
+ * `MapLayout.size` states the extent and everything downstream takes it as an
+ * argument; the heightfield is 100 cells of 4 m (Coldharbour's cell at half
+ * again the area) so the slope limit stays an authorable number.
  *
  * ```
  *                              N
@@ -87,8 +89,9 @@ import { HarrowmeadHeights } from "./heights";
  *   belongs to scatter props, not buildings.
  * - Roads end at junctions, wall faces, or yard mouths — never under a
  *   building, an embankment, or a fence line. Two roads FORD the stream on
- *   purpose (they conform to the terrain and dip through the water); a ford
- *   is a crossing a vehicle can also one day take.
+ *   purpose (they conform to the terrain and dip through the water); the banks
+ *   grade under 0.25 the whole run, so a ford is a line a hull takes rather
+ *   than the only place one can cross.
  * - Fences and stone walls split with a gate wherever a road or lane passes
  *   through them, and enclosure corners are left open.
  * - No lamps: the sun is still up, and a carried flame would spend
@@ -485,6 +488,53 @@ const spawns: SpawnPointDef[] = [
 ];
 
 /**
+ * One hardstanding a side, standing in the home yard behind the gatehouse.
+ * The second map to field armour, and the vale is what earns it: the header
+ * above says these hills were laid out at a scale "a future vehicle can mean
+ * something on", and a 400 m map whose flags are 150 m apart across open
+ * pasture is one where crossing the ground is the problem armour exists to
+ * answer. Coldharbour's tank is a thing that owns a street; this one is a
+ * thing that owns a field.
+ *
+ * Each stands on the INNER edge of its yard's flat pad — the SW yard is level
+ * at 2.2 over x -172..-140, z -172..-140 and the NE at 2.0 over x 140..172,
+ * z 140..172, which is where the whole yard was flattened for the spawns — so
+ * a hull arrives level and its ten track contacts all read the same plane.
+ * Eight metres off the nearest infantry spawn, which is Coldharbour's spacing
+ * and for its reason: a hull landing on the respawn timer must not be sitting
+ * where somebody just deployed.
+ *
+ * **The heading is the yard's own**, the same NE-SW diagonal the three spawns
+ * beside it face, so the first thing a driver does is drive at the map rather
+ * than turn around in it. There is no avenue to roll onto here — that was the
+ * city's answer — so what matters instead is the GROUND ahead, and both
+ * bearings were walked: south-west's climbs the knoll at (-140,-132) at a
+ * 0.28 gradient and crests it 25 m out with the vale laid open below;
+ * north-east's runs up the orchard hill's north shoulder at 0.24, well inside
+ * what `climbHeight` accepts a surface from. Neither is a wall, and neither
+ * needs a road to not be one.
+ *
+ * Both spots are held clear of every blocking scatter region on the map by
+ * more than `keepClear`'s radius (hull half-length plus a body's standing
+ * room, 5.1 m), which is deliberate rather than lucky: a hardstanding whose
+ * circle clipped the ash copse at (-132,-152) or the pine wood at (130,178)
+ * would reject candidates out of a stream every field below it draws from,
+ * and re-roll half the dressing on the map. Adding these two entries changes
+ * the layout HASH and nothing else, so `npm run collision` is owed and
+ * `npm run parity` still passes.
+ *
+ * **Two, and exactly two.** The respawn is per hardstanding, so the number of
+ * entries here IS how many tanks a side can ever have on the field at once —
+ * and it is also what turns the kit's third slot on (`Game.armourOffered`),
+ * so this is the map's second launcher-and-mine map as well as its second
+ * armour one.
+ */
+const vehicles: VehicleSpawnDef[] = [
+  { team: 0, pos: new Vector3(-160, 2.2, -142), yaw: Math.PI / 4 },
+  { team: 1, pos: new Vector3(160, 2, 142), yaw: -Math.PI * 0.75 },
+];
+
+/**
  * The stream is carved in `heights.ts` to a constant -0.95 bed (-1.25 in the
  * millpond), so this single rect at -0.3 is wet along the whole run and dry
  * everywhere the ground stands above it — Greyfen's construction. Banks grade
@@ -584,6 +634,7 @@ export const HarrowmeadLayout: MapLayout = {
   scatter,
   controlPoints,
   spawns,
+  vehicles,
   water,
   grass,
   terrain: HarrowmeadHeights,

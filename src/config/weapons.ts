@@ -169,6 +169,12 @@ export const weapons = {
      */
     hipY: 0,
     /**
+     * Not turned at all. Every gun here is framed by the shared
+     * `viewmodel.hipRot`; the field exists for a weapon whose SHAPE the shared
+     * pose cannot frame, which today is the launcher. See `WeaponSetup.hipYaw`.
+     */
+    hipYaw: 0,
+    /**
      * Scales `camera.aimSway` — how steady this weapon is to hold. Mass and
      * where the hands sit, nothing else: a heavier weapon wanders less and
      * a light one carried high wanders more. The rifle is the reference.
@@ -343,6 +349,7 @@ export const weapons = {
     /** Short overall — a bullpup's barrel is inside its stock. */
     hipZ: -0.05,
     hipY: 0,
+    hipYaw: 0,
     /** Mass sat back over the shoulder: steadier than its length suggests. */
     swayMult: 0.95,
     drawTime: 0.5,
@@ -410,6 +417,7 @@ export const weapons = {
     adsSpeedMult: 1.3,
     hipZ: -0.07,
     hipY: 0,
+    hipYaw: 0,
     /** Light, short, and held high — the liveliest thing in the kit. */
     swayMult: 1.2,
     drawTime: 0.48,
@@ -507,6 +515,7 @@ export const weapons = {
      *  frame — the SMG's offset, in the other direction. */
     hipZ: 0.06,
     hipY: 0,
+    hipYaw: 0,
     /**
      * The steadiest weapon here, and it has to be. Sway is angular, so the
      * scope this weapon exists to carry magnifies it 3.5x; at the rifle's
@@ -628,6 +637,7 @@ export const weapons = {
      *  out than the rifle or the muzzle fills the frame. */
     hipZ: 0.05,
     hipY: 0,
+    hipYaw: 0,
     /** Heavy, and carried low on a bipod's worth of nose weight. Steadier than
      *  anything but the DMR, which is the trade its own optic pays for. */
     swayMult: 0.75,
@@ -714,6 +724,7 @@ export const weapons = {
     hipZ: -0.12,
     /** Held up into the frame — see the field's note on the rifle. */
     hipY: 0.09,
+    hipYaw: 0,
     /** Light, and held out on the arms rather than braced on a shoulder. */
     swayMult: 1.45,
     /** The number the whole weapon exists for. */

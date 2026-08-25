@@ -18,7 +18,9 @@ server/               # The authoritative match server. Node, NullEngine, no
                       #   what a client may claim, round rotation
   Roster.ts           #   The sixteen slots, team balance, human<->bot handover
   HeadlessGame.ts     #   The simulation: the server's answer to core/Game.ts,
-                      #   wired by the same rules
+                      #   wired by the same rules. Owns the armour too — the
+                      #   fleet, the bot crews and the AT kit — plus `seat`,
+                      #   which is `Game.mount`/`clearVehicle` as one method
   NetPlayer.ts        #   A connected human as the simulation sees one — the
                       #   only position anything on the server trusts
   world.ts            #   Rebuilds the solid world from the baked boxes: the
@@ -29,7 +31,9 @@ server/               # The authoritative match server. Node, NullEngine, no
                       #   The one door a frame becomes a ClientMessage through,
                       #   so no handler past it re-checks a field
   validate.ts         #   Is a reported step physically possible? speed, ground,
-                      #   solid — and nothing else
+                      #   solid — and nothing else. `validateDrive` beside it is
+                      #   the same question for a HULL: the tank's speed bound,
+                      #   and neither of the other two (see its header)
   simulate.ts         #   `npm run simulate`: a whole round, headless, no clients
   parity.ts           #   Fingerprint dump for `npm run parity`
 ```
@@ -73,7 +77,14 @@ src/
     glass.ts            # Breakable glazing: the sweep's cap, the shard pool,
                         #   the size band a piece is cut to and how far one is
                         #   worth simulating
-    grenade.ts          # The throw, bounce, fuse and blast
+    grenade.ts          # The throw, bounce, fuse and blast — including the
+                        #   eight layers the blast is DRAWN as, quoted for the
+                        #   grenade, which every other explosion scales off
+    equipment.ts        # The anti-tank slot: the launcher, the mines, and the
+                        #   bots' launcher band. Two numbers per item — what
+                        #   the HULL it struck takes, and the blast for
+                        #   everything else — because one falloff cannot serve
+                        #   a seven-metre vehicle and a one-metre body
     camera.ts           # Look, FOV, view punch, shake
     aimAssist.ts        # Controller aim assist and its three invariants
     input.ts            # Deadzones, curves, haptics — pad and phone alike
@@ -92,6 +103,12 @@ src/
     wind.ts             # The one wind: a shared bearing, and what the grass
                         #   field and the world's foliage each do with it
     teams.ts            # The two sides; index 0 is the player's
+    vehicles.ts         # The one vehicle: its hull, drive, turret, gun, camera
+                        #   — `climbHeight`, the one number deciding what a tank
+                        #   drives over and what stops it — and `resist`, which
+                        #   is where what each kind of damage is worth against
+                        #   armour is written down (a rifle 0.05, a blast 0.3,
+                        #   a shell 1 — and the AT kit fires shells)
   core/
     Game.ts             # Orchestrator + main loop + all cross-system wiring.
                         #   Constructor is construction only; wiring is
@@ -143,10 +160,32 @@ src/
                         #   weapon's OpticMount asked for them
     weapons.ts          # WeaponId + WeaponSetup, + SIDEARM/PRIMARY_WEAPON_IDS
     sights.ts           # SightId + magnification -> FOV, sensitivity, zoomComp
+    equipment.ts        # EquipmentId + the resolution of an AT item into an
+                        #   ordinary WeaponSetup (no fall-off, no spread, no
+                        #   reload, `magSize` IS a life's ammunition) and into
+                        #   the OrdnanceEffect a detonation is spent through
     finishes.ts         # FinishId + the four colour schemes each weapon is
                         #   offered, and the repaint over its colour groups.
                         #   The one kit table that decides nothing
     Combatant.ts        # Team + the shared shootable/shooter interface
+    Tank.ts             # The one vehicle: the hull's collider (the only MOVING
+                        #   `solid` mesh in the game, and invisible to the nav
+                        #   graph for the reason a corpse is), the drive, the
+                        #   ten TRACK CONTACTS it stands on and the rate-limited
+                        #   climb that rides it over a car, the leading-end
+                        #   collision sphere, the turret's slew, the gun's
+                        #   clock, the springs behind its lean, its SPRUNG
+                        #   body and its two whips, `rideableAt` (the climb band
+                        #   spent on where the hull is ABOUT to be, which is the
+                        #   whole of an AI driver's road graph), and what a
+                        #   hull feels of each DamageKind. Knows nothing about
+                        #   a player
+    TankModel.ts        # ~180 boxes and cylinders merged to twenty-four, with a
+                        #   SPRUNG body over running gear that is not, a
+                        #   turret and a gun that turn, two link strips and a
+                        #   toothed sprocket a side that RUN, two whip antennae
+                        #   that BOW, and the charred repaint a wreck takes.
+                        #   Art only — the extents that are RULES are CONFIG's
     callsigns.ts        # What to call an AI on the scoreboard: roster index ->
                         #   phonetic name, derived on both sides, never sent
     Bot.ts              # Bot FSM (advance/hunt/engage/takeCover/suppressed/
@@ -164,6 +203,11 @@ src/
     GrenadeModel.ts     # What a grenade looks like — body, fuse pip, and the
                         #   blink that reads the fuse. Built by the system that
                         #   simulates them and by the one that only draws them
+    RpgModel.ts         # The launcher on the shoulder and the rocket that
+                        #   leaves it. Built from its VENTURI, not its middle,
+                        #   and the one weapon with a `hipYaw` of its own
+    MineModel.ts        # The mine in the hands and the plate in the road. The
+                        #   one thing in the kit that is not a weapon at all
   systems/
     BattleSystem.ts     # Bot pool, AI scheduling, LOS, distance LOD
     ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads
@@ -174,7 +218,17 @@ src/
                         #   the one place a payout's shape is decided
     CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, beacon
     CombatSystem.ts     # Hitscan, fall-off, the head zone; pooled tracers, sparks, impacts
-    GrenadeSystem.ts    # The one thing that isn't hitscan + BlastDust
+    GrenadeSystem.ts    # The one thing that isn't hitscan, and six of the
+                        #   eight layers a blast is drawn as: the flash, the
+                        #   fireball's lobes, the shock ring, the embers, and
+                        #   BlastDust built TWICE — the low dust and the smoke
+                        #   column. `blastAt` is the one blast in the game and
+                        #   `drawBlast` the one place one is drawn
+    AntiTankSystem.ts   # The AT kit in the world: the rocket pool (the SECOND
+                        #   thing that isn't hitscan), the mine pool, the arm
+                        #   clocks and the hull trigger. Owns no blast and has
+                        #   never heard of a tank — it asks `hullNear` and
+                        #   announces `onDetonated`, and Game spends both
     GlassSystem.ts      # Breakable panes: the segment sweep, the break, and
                         #   the amortised flow-field rebuild it owes. The one
                         #   mutable thing in the world, and monotonically so
@@ -189,11 +243,39 @@ src/
                         #   own face along the cracks a round put in it; refuses
                         #   past its own apparent-size gate, and evicts only a
                         #   burst that has already landed
+    BlastDebrisSystem.ts# The two blast layers that outlive the fire, and the
+                        #   THIRD Havok client: the rubble a detonation throws —
+                        #   keyed on what it went off ON, so a crater turns up
+                        #   that map's own subsoil or pale stone — and the
+                        #   scorch it leaves, a decal that MULTIPLIES the ground
+                        #   rather than painting a colour onto it. A chunk's
+                        #   size and shape are decided at construction, so a
+                        #   burst never touches the WASM heap
     glassFracture.ts    # The crack pattern itself: radials out of the hole,
                         #   concentrics across them, clipped to the frame. Pure
                         #   arithmetic — no Babylon, no state
     DeathCam.ts         # The player's own death; the only occlusion pick
                         #   outside combat
+    VehicleSystem.ts    # The armour on the field: one hull per hardstanding, the
+                        #   wreck clock and the respawn clock (two, so a side can
+                        #   never field both), and where a dismount lands. Owns
+                        #   no player and no AI — `update` asks a `VehicleOrders`
+                        #   what is inside each hull and where the ones somebody
+                        #   ELSE is driving got to, and `Game`/`HeadlessGame` are
+                        #   the only things that can answer. A `predicted` fleet
+                        #   is a netplay client's: both clocks stand down
+    VehicleCamera.ts    # The view from twelve metres behind a hull: its own yaw
+                        #   and pitch, its occlusion pull-in, and the gun's kick.
+                        #   `DeathCam`'s shape — it produces an eye and a look
+                        #   and `Game` hands both to CameraSystem.place. `aim`
+                        #   and `place` straddle the world step on purpose
+    TankCrew.ts         # The bots that drive: which body is in which hull, and
+                        #   what it asks the hull to do. A crewed bot leaves
+                        #   `Bot`'s FSM entirely (`BattleSystem.aside`) and
+                        #   keeps its life, its position and its squad's order.
+                        #   Steers on the body flow field for a BEARING and on
+                        #   `Tank.rideableAt` for what is a wall; `evict` is
+                        #   what stops the AI holding a side's only armour
     AimAssistSystem.ts  # Gamepad-only: outer bubble slows the stick, inner one
                         #   rotates. Bounded by the player's own turn rate
     LightingSystem.ts   # Dynamic point lights: fixtures, flashes, lamps
@@ -283,9 +365,12 @@ src/
     CoverMap.ts         # Baked per-surface directional cover masks
     boxGeometry.ts      # Analytic WorldBox primitives, shared by NavGrid /
                         #   ObstacleField / CoverMap
-    ObstacleField.ts    # Sub-cell collision push-out for thin props, and the
-                        #   bucketed ground query (measured, not yet switched on
-                        #   — see FINDINGS.md 6)
+    ObstacleField.ts    # Sub-cell collision push-out for thin props, and two
+                        #   bucketed queries over the same boxes: `groundAt`,
+                        #   what a track contact stands on (the player's probe
+                        #   is still a ray — see FINDINGS.md 6), and `wallAt`,
+                        #   its mirror — what is IN THE WAY, which is what an
+                        #   AI driver's whiskers ask
     boxIndex.ts         # The build-time uniform grid over collider boxes, so
                         #   scatter placement and the occlusion bake stop
                         #   walking all of them
@@ -323,8 +408,9 @@ src/
                               #   morning two hours after sunrise
     greyfen/collision.ts      # GENERATED collider boxes (`npm run collision`)
     coldharbour/layout.ts     # The third map: a city's business district. The
-                              #   first that is not 240 m (`size: 320`) and the
-                              #   first that stacks floors (`surfaces: 4`)
+                              #   first that is not 240 m (`size: 320`), the
+                              #   first that stacks floors (`surfaces: 4`) and
+                              #   the only one with `vehicles` on it
     coldharbour/heights.ts    # GENERATED floor heights — dead level under the
                               #   city, a 1.2 m skirt into the rim outside it
     coldharbour/environment.ts# Palette, sun, sky — a clear afternoon, and the
@@ -332,7 +418,8 @@ src/
     coldharbour/collision.ts  # GENERATED collider boxes (`npm run collision`)
     harrowmead/layout.ts      # The fourth map: a farming town in a green
                               #   vale. The largest yet (`size: 400`) — five
-                              #   farmyard flags in rolling, hedged country
+                              #   farmyard flags in rolling, hedged country,
+                              #   and the second map with armour on it
     harrowmead/heights.ts     # GENERATED floor heights — rolling hills and a
                               #   stream carved to a constant wadeable bed
     harrowmead/environment.ts # Palette, sun, sky — high summer, late
@@ -435,6 +522,15 @@ src/
     NetGrenades.ts    #   Everybody else's grenades in the air, interpolated on
                       #   the same clock as the bodies. The thrower's own is
                       #   skipped — they are watching their local copy
+    NetVehicles.ts    #   Somebody else's armour: one interpolation buffer per
+                      #   HARDSTANDING, feeding Tank.updateRemote. Owns no hull
+                      #   — the fleet is VehicleSystem's on both sides — and the
+                      #   hull the local player is driving is skipped, because
+                      #   they are simulating it
+    NetOrdnance.ts    #   The AT kit off the wire: rockets interpolated like
+                      #   grenades, mines applied whole from the versioned
+                      #   `mines` table. The shooter's own rocket is skipped;
+                      #   their own mine is NOT, because it is never predicted
     lobby.ts          #   GET /matches for ONE region. The only part of
                       #   multiplayer that is not the WebSocket. Times its own
                       #   request, which is the ping shown beside that region —

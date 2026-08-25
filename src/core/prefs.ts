@@ -20,6 +20,11 @@ import {
   type FinishId,
 } from "../entities/finishes";
 import {
+  DEFAULT_EQUIPMENT,
+  isEquipmentId,
+  type EquipmentId,
+} from "../entities/equipment";
+import {
   DEFAULT_SIGHT,
   isSightId,
   type SightId,
@@ -38,6 +43,15 @@ const MAP_KEY = "hollowmere.map";
 /** …and the loadout. Same store, same tolerance for it not working. */
 const SIGHT_KEY = "hollowmere.sight";
 const WEAPON_KEY = "hollowmere.weapon";
+/**
+ * …and which anti-tank item the kit's third slot holds.
+ *
+ * Remembered even on the maps that do not offer the slot, and deliberately:
+ * the pick is the player's, not the map's, so walking off Coldharbour and back
+ * onto it must not have quietly swapped their launcher for a stack of mines.
+ * `Game` is where "is there a slot at all" is decided.
+ */
+const EQUIPMENT_KEY = "hollowmere.equipment";
 /**
  * …and the finish, which is the one preference here that is remembered PER
  * WEAPON rather than once.
@@ -177,6 +191,28 @@ export function readWeapon(): PrimaryWeaponId {
 export function writeWeapon(id: PrimaryWeaponId): void {
   try {
     window.localStorage.setItem(WEAPON_KEY, id);
+  } catch {
+    // As above.
+  }
+}
+
+/**
+ * The remembered anti-tank item. Validated exactly as the weapon and the optic
+ * are, and for the same reason: it indexes a table of built models.
+ */
+export function readEquipment(): EquipmentId {
+  try {
+    const raw = window.localStorage.getItem(EQUIPMENT_KEY);
+    if (raw !== null && isEquipmentId(raw)) return raw;
+  } catch {
+    // As above.
+  }
+  return DEFAULT_EQUIPMENT;
+}
+
+export function writeEquipment(id: EquipmentId): void {
+  try {
+    window.localStorage.setItem(EQUIPMENT_KEY, id);
   } catch {
     // As above.
   }

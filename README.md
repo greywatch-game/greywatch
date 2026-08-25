@@ -173,6 +173,8 @@ either way round, with no setting to find.
 | Jump       | A / ✕               | Space            |
 | Reload     | X / ▢               | R                |
 | Grenade    | RB / R1             | G                |
+| Draw slot  | —                   | 1 / 2 / 3        |
+| Use (tank) | D-pad Up            | E                |
 | Scoreboard | Back / Share        | Tab              |
 | Loadout    | Y / △ (menus)       | L (menus)        |
 | Confirm    | A or Start          | Enter / Click    |
@@ -187,6 +189,10 @@ than holds; the second, smaller fire button on the left edge is for a claw
 grip. They are drawn only while a finger is what is playing, and the HUD's own
 gauges shrink out of the corners while they are up. Touch look speed has its
 own row in Settings.
+
+**Use** is how you get into a tank and out of it again, and on a map with no
+armour it does nothing. Slot **3** is the anti-tank item, and it is only in the
+kit on the maps that have armour — see the map notes below.
 
 Click the page once to capture the mouse (pointer lock). Gamepads use the
 browser's standard mapping and are hot-pluggable — press any button after
@@ -271,16 +277,39 @@ the top.
 - **Ragdolls are cosmetic.** Havok runs the fall and nothing else: a corpse is
   absent from navigation, cover and hit detection, so bots walk through bodies
   and rounds pass through them.
-- Five primaries, a fixed sidearm and five optics — but **no classes and no
-  vehicles**, and the sidearm is not a choice.
+- Five primaries, a fixed sidearm and five optics — but **no classes**, and the
+  sidearm is not a choice.
+- **There is one vehicle, on the two maps that state one, online and off.**
+  Coldharbour and Harrowmead give each side a tank on a hardstanding in its home
+  yard: walk up, press **E**, drive it in third person, and put shells down the
+  avenues. Destroy one and a fresh hull arrives at that side's hardstanding after
+  45 seconds, with the burnt-out one standing as cover for the first sixteen. In
+  a match the authority owns the hull exactly as it owns everything else — a
+  driver simulates their own tank and reports it, the way they already do their
+  own legs, and getting in and out are asks the server answers. Bots crew one
+  too: a body that walks past its own side's hardstanding climbs in and takes
+  the tank to its squad's objective, and if you want it back, walk up to it and
+  press **E** — the crew gets out. One thing about it is honestly unfinished:
+  **bots do not route around a parked one**, and walk through hulls exactly as
+  they walk through corpses.
+- **A map with armour on it puts a third slot in the kit**, and a map without
+  one does not have the slot at all. It holds a rocket launcher or two mines,
+  never both, because choosing is the point: two rockets are 1240 against a
+  hull's 1200, so one launcher is one dead tank provided both land, and a mine
+  is 800 that a driver never sees coming. Neither resupplies — the pouch is
+  refilled by dying, like the grenades — and a mine is set off by vehicles
+  only, so everybody's infantry walks over them.
 - Nav cells hold a few surfaces each — three by default, and a map states its
   own where it stacks floors (Coldharbour's offices are three deep). Unusually
   deep stacks still need that number raised, and overflow is silent.
-- Three maps: **Hollowmere**, a fog-drowned village at night; **Greyfen**, a
+- Four maps: **Hollowmere**, a fog-drowned village at night; **Greyfen**, a
   jungle valley two hours after sunrise, with the sun coming down through the
-  canopy in shafts; and **Coldharbour**, a city's business district before dusk — larger than the other two, with no
-  fog wall, and with buildings you can fight through on three floors. The system
-  supports more; a fourth is one layout file plus an environment.
+  canopy in shafts; **Coldharbour**, a city's business district before dusk —
+  larger than the first two, with no fog wall and with buildings you can fight
+  through on three floors; and **Harrowmead**, the biggest of them, with no wall
+  around it at all — the floor simply carries on and a leash counts you back.
+  The last two are the two with armour on them. The system supports more; a
+  fifth is one layout file plus an environment.
 - **Multiplayer is one server process, and the lobby lists only that one.**
   Matches live in its memory, so it cannot be scaled by running a second copy
   behind the same address — that needs a shared matchmaker, which is not built.
@@ -294,12 +323,16 @@ the top.
 
 ## Next steps for expansion
 
-- A third map: one new `layout.ts` plus an `EnvironmentSpec`.
+- A fifth map: one new `layout.ts` plus an `EnvironmentSpec`.
 - Player-issued squad orders. Bots already plan their objectives as squads;
   what is missing is a way for you to tell one which flag to take.
 - A sixth weapon or a sixth optic — both are a config entry plus a builder.
-- Vehicles, which would need physics driving something other than corpses, new
-  camera modes, and AI.
+- **Bots that route around a parked hull.** `NavGrid`, `CoverMap` and
+  `ObstacleField` are all baked once from the finished collider set, and a tank
+  moves — so armour is invisible to every one of them, exactly as a corpse is.
+- **A second vehicle.** Nothing in the code is special-cased to a tank, but
+  nothing has been designed for two either: a second one is a model, a `CONFIG`
+  block and a hard look at everything in `docs/vehicles.md` that says "the hull".
 
 ## License
 

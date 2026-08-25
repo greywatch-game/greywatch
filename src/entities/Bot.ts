@@ -56,6 +56,8 @@ import { profileFor, type BotProfile } from "./BotSkill";
 import { mulberry32 } from "../world/rng";
 import { BotMemory } from "./BotMemory";
 import type { Combatant, Team } from "./Combatant";
+// Type-only, and erased — this file still knows nothing about a system.
+import type { DamageKind } from "../systems/CombatSystem";
 
 /**
  * `advance` walks the flow field to the squad's objective; `engage` fights a
@@ -150,6 +152,22 @@ export interface BattleCtx {
    */
   throwGrenade(bot: Bot, at: Vector3): boolean;
   /**
+   * Fires this bot's launcher at `at` — a point on a hull, never a body.
+   *
+   * False when the rocket could not be put in the air, and a bot that gets one
+   * must not spend a rocket on it: the same contract `throwGrenade` has, for
+   * the same reason. The flight is deliberately not the bot's, exactly as the
+   * grenade's ballistics are not: a bot says what it wants to hit and is told
+   * whether the launcher could oblige.
+   *
+   * Wired on BOTH sides — `Game` offline and `HeadlessGame` in a match — and
+   * it has to be: the authority fields the same hulls, so a launcher bot that
+   * only fired offline would leave a netplay tank with nothing but the other
+   * team's tank to answer it. The rocket is the AUTHORITY's object in a match
+   * exactly as the bot's rounds are.
+   */
+  fireRocket(bot: Bot, at: Vector3): boolean;
+  /**
    * Tells this bot's SQUAD that it can see an enemy at `at`.
    *
    * The squad and not the team: a team-wide broadcast turns one sighting into
@@ -197,6 +215,7 @@ const _sep = new Vector3();
 const _to = new Vector3();
 const _spot = new Vector3();
 const _nade = new Vector3();
+const _rocket = new Vector3();
 
 export class Bot implements Combatant {
   readonly team: Team;
@@ -226,6 +245,12 @@ export class Bot implements Combatant {
    */
   readonly deathFrom = new Vector3();
   deathDamage = 0;
+  /**
+   * …and WHAT it was, which is the third thing `takeDamage` has been handed
+   * since the tank went in and the one that says whether this body is dropped
+   * or thrown. `RagdollSystem` is the only reader; see its `applyImpulse`.
+   */
+  deathKind: DamageKind = "bullet";
   /**
    * True while `RagdollSystem` owns this rig's joints. `Bot.update` writes no
    * pose at all in that window — see the dead branch.
@@ -440,6 +465,40 @@ export class Bot implements Combatant {
   private grenades = CONFIG.grenade.carried;
   /** While positive, this bot will not throw another. */
   private grenadeT = 0;
+  /**
+   * This bot carries a rocket launcher. Written once by `BattleSystem` when
+   * the squads are cut, and never by the bot itself — one per squad is a fact
+   * about the SQUAD, and a bot that decided for itself would give a team
+   * anywhere between none and eight of them.
+   *
+   * It changes nothing about how the bot fights infantry: the rifle is still
+   * the weapon, the rig still carries one, and the launcher exists only in
+   * `considerRocket`. What a launcher bot IS, is the one body in its squad
+   * that can hurt a tank.
+   */
+  private hasLauncher = false;
+
+  /**
+   * Whether this bot carries a launcher, and the one place the rig is told.
+   *
+   * A property rather than a field because the tube on its back has to follow
+   * it: `BattleSystem` writes this once when it cuts the squads, before the
+   * bot has ever been spawned, and the rig it was built with is the rig it
+   * keeps for the life of the process — so the write and the mesh can be the
+   * same statement instead of two that have to be kept in step.
+   */
+  get launcher(): boolean {
+    return this.hasLauncher;
+  }
+
+  set launcher(on: boolean) {
+    this.hasLauncher = on;
+    this.rig.launcher.setEnabled(on);
+  }
+  /** Rockets left this life. Refilled by `spawn`, like the grenade pouch. */
+  private rockets = CONFIG.antiTankBots.carried;
+  /** While positive, this bot will not fire another. */
+  private rocketT = 0;
   /** Consecutive shots stopped by geometry with no target found. */
   private blockedStreak = 0;
   /** While positive, a recent hit is disrupting aim and speed. */
@@ -512,6 +571,8 @@ export class Bot implements Combatant {
     this.fireCooldown = 0;
     this.grenades = CONFIG.grenade.carried;
     this.grenadeT = 0;
+    this.rockets = CONFIG.antiTankBots.carried;
+    this.rocketT = 0;
     this.stuckT = 0;
     this.detourT = 0;
     this.stuckStreak = 0;
@@ -537,6 +598,26 @@ export class Bot implements Combatant {
     this.rig.root.setEnabled(on);
   }
 
+  /**
+   * Carries this body to `at` without simulating a step to get there.
+   *
+   * `Player.nudgeTo`'s twin, and it exists for the identical reason: a body
+   * inside a vehicle is CARRIED rather than walked, and every downstream
+   * reader — the conquest occupancy count, the minimap blip, a squad's
+   * centroid — asks where it is and deserves the honest answer, which is "in
+   * that tank". The eye and the hit sphere come with it, because
+   * `syncTransform` is the one place they are ever written.
+   *
+   * It is also what puts a crewman down beside the hull he has just been
+   * burned out of: the corpse a ragdoll is built from is posed off this rig,
+   * so a body still standing at the middle of a wreck would fall through a
+   * collider that is deliberately still there.
+   */
+  nudgeTo(at: Vector3): void {
+    this.position.copyFrom(at);
+    this.syncTransform();
+  }
+
   /** LOD hook: distant bots stop animating but keep moving. */
   setOutlines(on: boolean): void {
     for (const m of this.rig.meshes) {
@@ -550,7 +631,14 @@ export class Bot implements Combatant {
    * reacted with a directionless `pressure` scalar and nothing else — no turn,
    * no idea where the round came from.
    */
-  takeDamage(amount: number, from?: Vector3): boolean {
+  takeDamage(
+    amount: number,
+    from?: Vector3,
+    // Annotated with the default the interface already implies, so a caller
+    // that has no opinion — the leash, a crew burning with its hull — is a
+    // round rather than an explosion.
+    kind: DamageKind = "bullet",
+  ): boolean {
     if (!this.alive) return false;
     this.hp -= amount;
     this.pressure = 1;
@@ -571,6 +659,7 @@ export class Bot implements Combatant {
       if (from) this.deathFrom.copyFrom(from);
       else this.deathFrom.copyFrom(this.center);
       this.deathDamage = amount;
+      this.deathKind = kind;
       // Reinforcements are not instant: the delay is what makes losing a
       // firefight cost the team ground as well as a ticket. The scatter on top
       // is what stops a squad that was wiped together coming back together —
@@ -642,6 +731,7 @@ export class Bot implements Combatant {
     this.coverCooldownT = Math.max(0, this.coverCooldownT - dt);
     this.squeezeT = Math.max(0, this.squeezeT - dt);
     this.grenadeT = Math.max(0, this.grenadeT - dt);
+    this.rocketT = Math.max(0, this.rocketT - dt);
     this.strafeT -= dt;
     if (this.strafeT <= 0) {
       this.strafeT = 0.8 + this.rand() * 1.6;
@@ -1317,6 +1407,7 @@ export class Bot implements Combatant {
     // facing. See `hazard`.
     this.hazardW = ctx.hazardNear(this, this.hazard, this.hazardFrom);
     this.considerGrenade(ctx);
+    this.considerRocket(ctx);
 
     let want: BotState;
     if (this.target) {
@@ -1526,6 +1617,56 @@ export class Bot implements Combatant {
   }
 
   /**
+   * Whether to put a rocket into the armour this bot is already looking at.
+   *
+   * **A launcher bot fires at ARMOUR and at nothing else**, and that test is
+   * the first line rather than a band or a chance, because it is the rule and
+   * the rest is tuning. A rocket is a one-shot kill on a body with five metres
+   * of splash around it; sixteen bots that could reach for one would turn
+   * every firefight in the game into indirect fire. The launcher exists so
+   * that a tank is a decision rather than a free ride, and it is allowed to do
+   * that and nothing else.
+   *
+   * Considered on the ordinary think tick beside the grenade, and for the same
+   * reason: it is a decision about a target the bot already has.
+   *
+   * **It fires at where the hull IS, with no lead at all**, and that is the
+   * counterplay rather than an approximation. A rocket takes over a second to
+   * cross an avenue and a tank does 11 m/s, so a hull that keeps moving is
+   * caught by the splash at worst and a hull that stops to line up its own
+   * shot is hit squarely. That is exactly the trade a driver should be making,
+   * and a bot that solved for the intercept would take it away.
+   *
+   * Skill scales the chance rather than the accuracy, the argument
+   * `considerGrenade` makes at length.
+   */
+  private considerRocket(ctx: BattleCtx): void {
+    const cfg = CONFIG.antiTankBots;
+    const t = this.target;
+    if (!this.hasLauncher || !t?.armoured) return;
+    if (this.rockets <= 0 || this.rocketT > 0) return;
+    const dx = t.center.x - this.position.x;
+    const dz = t.center.z - this.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < cfg.minRange || dist > cfg.maxRange) return;
+    if (this.rand() > cfg.chance * (0.4 + this.skill)) return;
+    // Scatter, pro rata with the range: a launcher bot that hit a stationary
+    // hull dead centre every time would be a guided missile, and the splash
+    // means a near miss is still worth firing.
+    const spread = cfg.scatter * (dist / cfg.maxRange);
+    _rocket.set(
+      t.center.x + (this.rand() * 2 - 1) * spread,
+      t.center.y + (this.rand() * 2 - 1) * spread * 0.3,
+      t.center.z + (this.rand() * 2 - 1) * spread,
+    );
+    // The pool gets the last word, exactly as the arm does for a grenade: a
+    // launch that never happened must not cost a rocket.
+    if (!ctx.fireRocket(this, _rocket)) return;
+    this.rockets -= 1;
+    this.rocketT = cfg.cooldown;
+  }
+
+  /**
    * Turns the flow field's raw output into something a body could plausibly
    * walk, in place: smooths it, weaves it, hugs walls with it, and notices when
    * the route has just turned a corner.
@@ -1716,7 +1857,16 @@ export class Bot implements Combatant {
     return this.rig.muzzle.getAbsolutePosition();
   }
 
+  /**
+   * Frees the rig. The pool is built once and never disposed, so nothing in a
+   * round reaches this — but the flag it does NOT pass is the load-bearing
+   * half: a soldier is painted out of `CelMaterialFactory`'s shared caches
+   * (`mats.get`, `mats.getEmissive`), so disposing this rig's materials would
+   * dispose the paint every other bot and the map itself are holding, and the
+   * factory would hand the dead material out again on the next `get`. See
+   * `Tank.dispose`, where the same flag took most of a city off the screen.
+   */
   dispose(): void {
-    this.rig.root.dispose(false, true);
+    this.rig.root.dispose(false);
   }
 }

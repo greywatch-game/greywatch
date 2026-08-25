@@ -68,6 +68,175 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
   block can come from the teardown either side of it and show the card
   half-dismantled; take the middle 80% and let PNG payload size stand in for
   "did this frame contain the bright thing" across the lot.
+- **A tank is easiest to test by stepping the fleet directly, and the camera is
+  the trap.** `g.vehicles.tanks` is the fleet, `g.mount(tank)` takes the seat and
+  `g.vehicles.update(dt, g.vehicleOrders)` is the real drive path with no
+  rendering in it — sixty calls at `1/20` is three seconds of driving in one
+  synchronous `evaluate`, which is the only way to move a vehicle at 0.1 fps.
+  **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
+  crew can be driving one hull while the player drives another: write the sticks
+  into `g.drive` for the hull `g.driving` points at, and everything else is
+  answered by `g.crew`. Two things that have already cost time: **do not read `speed` after
+  a phase with the throttle at zero** (the brake is 9 m/s², so a second of
+  turning takes 11 down to 2 and it looks like a stall that is not there), and
+  **do not call `spawnPlayer()` if you are placing the camera by hand** —
+  `playing` runs `updateCameraAndLighting`, which puts the eye back in the
+  player's head every frame and points your carefully aimed shot at the rim.
+  Photograph a vehicle from `deploy`, exactly as `capture-map-shots.mjs` does.
+- **The TRACKS are read off the rig, not off a screenshot.** At 2 fps two
+  photographs of a moving strip prove nothing about which way it went;
+  `tank.rig.tracks[i]` is `{lower, upper, sprocket}` per side, and the three
+  numbers that settle it are `lower.position.z` (in `(-LINK_PITCH, 0]`),
+  `upper.position.z` (its mirror) and `sprocket.rotation.x`. Drive a straight
+  run and the two sprockets step together; drive `steer: 1` at `throttle: 0`
+  and their deltas are equal and opposite — a track runs
+  `turnRate * TRACK_GAUGE / 2` (1.179 m/s on the shipped numbers) and the
+  sprocket turns that over `END_R`, so half a second of pivot is 1.179 rad
+  each way. **Take that delta modulo 2 pi before believing it**: the angle is
+  wrapped, so a track running backwards reads as a large positive step (5.104
+  is -1.179) rather than as a negative one.
+- **The ANTI-TANK kit is easiest to drive through `g.antiTank`, and the trap is
+  the SAME world-matrix one the fleet has.** `g.antiTank.launch(from, dir, team,
+  by)` and `g.antiTank.place(at, team, by)` are the real entry points, and
+  `g.antiTank.update(1/60)` in a `while (rockets.some(r => r.live))` loop flies a
+  rocket home inside one synchronous `evaluate`. But a rocket's step ray is a
+  `pickWithRay` against the hull's collider, and that collider's absolute
+  position is `(0,0,0)` until something computes its world matrix — so the FIRST
+  script run after a build reports a rocket flying straight through a tank and
+  every run after it reports a hit. Check `tank.body.getAbsolutePosition()` before
+  believing a miss, or drive a frame first. Measured on Coldharbour once the
+  matrix is current: 1200 → 580 on a clean strike, which is `damage` exactly and
+  no splash — `blastAt` needs line of sight to the hull's centre and the hull is
+  in the way.
+- **A BOT CREW is stepped with `g.crew.update(dt)` immediately before the
+  fleet**, in that order and never the other way round — it writes the drive
+  input `vehicles.update` then consumes, exactly as `updateDriver` writes the
+  player's. Four things that have already cost time:
+  - **Boarding is on its own 1.5 s clock** (`crew.boardDelay`), so a script that
+    spawns a bot beside a hardstanding and steps two frames sees nothing. Step
+    ~2 s of game time, or read `g.crew.crews.length` rather than asserting on
+    the first tick. The bot has to be ALIVE, of its hull's own team, within
+    `crew.boardRadius` and not `g.battle.aside(...)` — and `seatPlayer` has
+    already benched the lowest slot on the player's side, so picking
+    `bots.find(b => b.team === 0)` hands you a benched body that can never crew.
+  - **A driver steers on `Bot.objective`, which is a squad ORDER and is empty
+    until `battle.update` has planned one.** A crew with no objective holds
+    station and fights, which is correct and looks exactly like a driver that is
+    broken. Set `bot.objective = g.conquest.points[i].def.id` by hand (it is
+    `def.id`, not `id`) or step `battle.update` for a second first.
+  - **Ask line of sight through the crew's own door, not `battle.losBetween`.** A
+    hull's cupola sits five centimetres above the top of its own collider, so
+    every sightline to anything shorter dives back into the box: the raw call
+    reports no visibility in any direction and looks like a broken map.
+    `g.crew.ctx.visibleFrom(tank, point)` is the one that takes the hull out of
+    the pick.
+  - `g.crew.clearAlong(tank, yaw)` and `g.crew.pickBearing(tank, wantYaw)` are
+    the whiskers, and sweeping 24 bearings through the first is the fastest way
+    to see what a stuck driver thinks the world looks like. A hull with the
+    throttle at 1.0 and `travel` near zero is `moveWithCollisions` refusing —
+    which means the whiskers said clear and were wrong, and the sweep is where
+    that shows.
+- **A NETPLAY tank is driven the same way, and three things about the harness
+  bite before the feature does.** Point the page at `?mp=ws://host:port/ws`, set
+  `localStorage["hollowmere.map"]` in an `addInitScript` (the map a match is
+  created on is the one the JOINING client asks for, and there is no URL
+  parameter for it), and deploy with `g.net.sendDeploy(i)` where `i` indexes
+  `g.map.spawns` — the deploy screen's own list is derived and is not that
+  index. Then:
+  - **`g.mount()` is not the way in.** In a match the seat is an ask:
+    `g.net.sendMount(hullIndex)` and then `waitForFunction(() => !!g.driving)`.
+    The authority refuses it unless the body IT holds is inside `enterRadius`,
+    so the player has to genuinely walk there.
+  - **Walking there fights the movement validator, and the frame rate is what
+    makes it fight.** `placeAt` in a loop is fine at ~3 m a step, but at 2 fps a
+    loop with a 100 ms wait runs several steps between frames — the uploads
+    then carry the whole jump, get refused, and the player is snapped back with
+    nothing on screen to say why. Wait ~500 ms per step, or accept that the
+    walk never arrives.
+  - **Sixty synchronous `vehicles.update` calls will be REFUSED.** The
+    offline recipe above drives three seconds inside one `evaluate`; a netplay
+    driver reporting that jump has covered 19 m since its last accepted sample
+    and `validateDrive` allows about 7. Drive in bursts of ~4 steps with a frame
+    in between, which is what a real driver's reports look like.
+  - **After a dismount, `g.net.vehicles.stateFor(i)` is the authority's own copy
+    of the hull** — the client's samples for a hull it was driving are skipped
+    while it drives it, so this is the only way to see whether the drive was
+    accepted at all. Agreement to within a metre is a pass; a hull still sitting
+    where it started means every report was refused.
+- **A remote hull's derived `speed` is a frame-rate reading and is CLAMPED.**
+  `Tank.updateRemote` measures speed from the ground covered over a clamped
+  `dt`, so at 2 fps the interpolator's catch-up divides out at 80 m/s. It is
+  bounded to the hull's own top speed, which means a headless run reads exactly
+  `drive.maxSpeed` while driving — treat that as "moving", not as a measurement.
+- **A stepped mine has to be told the hull moved.** The trigger is
+  `hullNear(at, contactRadius, team)`, which reads `tank.center`; teleporting a
+  hull by writing `.x` moves the centre and the collider agrees only at the next
+  render, which is fine for the mine (no ray) and not for anything else in the
+  same script.
+- **`Player.tryShot` refuses in `deploy` for a reason that looks like a bug.**
+  `drawSlot` starts a swap and only `Player.update` lands it, so a script that
+  calls `drawSlot(2)` then `completeSwap()` still has `swapping` true and every
+  trigger pull returns false. Set `swapT = -1` and `swapPending = false` by hand
+  after `completeSwap`, and clear `fireCooldown`/`triggerHeld` between shots —
+  the AT items are semi-automatic, so a held trigger is refused on purpose.
+- **A bot's launcher is a per-tick CHANCE, so call `considerRocket` in a loop.**
+  `bot.rocketT = 0` before each call or the cooldown eats the run;
+  `bot.target = tank` is what the decision is about, and it will never fire at a
+  body however long the loop runs — that is the rule, not a flaky test.
+- **The ANTENNAE are read off the rig too, and the number you want is the SUM of
+  two nodes.** `tank.rig.antennae[i]` is `{base, tip}`, and the tip's rotation is
+  LOCAL — the mast's actual angle is `base.rotation.x + tip.rotation.x` (and the
+  same in `z`), so reading either alone reports a bend that is not there. Two
+  more things that have already cost time: the terms are in the TURRET's frame,
+  so a script that has been steering for a while is reading a hull rock in `z`
+  rather than in `x` and has found nothing wrong; and **the whips answer to a
+  shot in two stages** — `fireGun` kicks them forward, and the drive braking the
+  recoil shove out over the next quarter second lays them back, so a script that
+  samples one frame after the shot gets a number roughly a third of the peak.
+  Sample the whole two seconds. Because the world is frozen in `deploy`, a pose
+  stepped by hand STAYS on the hull, which is what makes photographing one
+  possible at all.
+- **The CLIMB is read off `tank.position.y` and the hull node's pitch, and the
+  contacts are readable too.** `tank.contacts` is the ten track-contact surface
+  heights in `standOnGround`'s order (fore to aft, right belt then left within
+  each row), which is what tells you whether a stumble is the ground query or
+  the rate limit. Broadside over a parked car on Coldharbour at road speed, the
+  shape to expect is monotonic: `position.y` 0 → 0.55 → 1.1, about 6.8
+  degrees nose-up going on and 6.4 nose-down coming off, over 1.1 s. **Coming
+  off is a FALL and not the climb mirrored** — `tank.grounded` goes false for
+  about 18 frames and `position.y` drops under gravity — so a script asserting
+  a symmetric shape is reading the fix as a bug. **The SUSPENSION is
+  `tank.heave`, which is `tank.rig.sprung.position.y`**: negative is
+  compressed, it bottoms out at `suspension.heaveBump` landing off the car, and
+  it is the one part of the vehicle whose Y moves against tracks that do not. A
+  `heave` that never leaves zero on a drive usually means `standOnGround` found
+  nothing — read `tank.floorY` before believing the springs are broken. **Find
+  the car by its collider rather than by eye** — it is the only 4.4 x 1.1 x 1.86
+  box on the map — and check the run-up is clear of everything else solid, or
+  you are photographing the tank riding a planter it met first. **Both belts
+  have to CROSS it**: `w`/`d` are the box's LOCAL extents and most cars are
+  turned a quarter turn, so an approach picked off those two without `rotY`
+  runs the hull down the car's long axis, where the belts (2.62 m apart)
+  straddle a 1.86 m body and the tank drives over nothing at all with `floorY`
+  flat at 0 the whole way. Take the world extents
+  (`|cos rotY| * w + |sin rotY| * d`, and its mirror) and drive across the
+  SHORTER one.
+- **Where a tank STOPS is the hull's nose, not its centre.** The collision
+  sphere rides at the leading end (`Tank.aimCollider`), so a hull driven at a
+  wall parks with `position.z + 3.6` a couple of centimetres off the face. A
+  script that checks `position` against the wall and expects `collideRadius`
+  will report a bug that is the fix.
+- **A stepped fleet COLLIDES WITH NOTHING unless you compute the world matrix
+  yourself**, and it fails silently in the direction that looks like a finding.
+  `moveWithCollisions` starts from `getAbsolutePosition()`, which only catches up
+  with `position` when something computes the world matrix — a render, and there
+  is not one inside a synchronous `evaluate`. So every step after the first
+  collides from where the hull stood at the last drawn frame: the hull advances,
+  nothing is ever in the way, and a script "proves" a tank drives through the
+  rim, through a barrier and out of the map. Put
+  `tank.body.computeWorldMatrix(true)` immediately before each
+  `vehicles.update`, which is what the render loop was doing for you. Anything
+  driving another `moveWithCollisions` body in a tight loop owes the same call.
 - **`startRound()` does not build the map — it books it.** The state goes to
   `loading` and `buildRound()` runs two animation frames later, so a script that
   calls it and reads the world on the next line gets last round's (or nothing at
@@ -250,10 +419,29 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
     has to clear the plane is the SIGHT, which the kick's pitch and roll swing
     by another ~4 mm — derived, the DMR with the prism reads 6.2 cm and
     measures 3.8.
-  **Alignment is not occlusion, and only the second needs a picture**: a sight can
-  read a perfect zero and still be looking at the weapon's own stock, which is what
-  the DMR's irons did. `optics.ts`'s `ironSightFloor` keeps geometry out of the
-  aperture; a screenshot at `adsBlend === 1` confirms it.
+  **Alignment is not occlusion, and the second is a MEASUREMENT and not a
+  picture**: a sight can read a perfect zero and still be looking at the
+  weapon's own stock, which is what the DMR's irons did. `optics.ts`'s
+  `ironSightFloor` keeps geometry out of the aperture; what proves it is a grid
+  of rays down the sight's own cone, and that needs no round and no map at all —
+  every weapon and every optic is built in `Game`'s constructor, so the rigs are
+  in the scene while the MENU is up. Take the weapon's root
+  (`view_<weapon>_<weapon>`) and its `sightCenter`, put the eye on the sight
+  axis at `eyeRelief / viewmodel.scale` behind the centre IN THE WEAPON'S OWN
+  FRAME, and fire a disc of rays at the cone's rim plane one unit ahead —
+  `scene.pickWithRay(ray, m => own.includes(m))`, whose custom predicate is what
+  gets you past `isPickable === false` without touching the meshes. Two things
+  make it a diagnosis rather than a number: the hit MESH names the group that is
+  in the way (the sight's own housing, the weapon under it, the reticle), and
+  the hit point transformed back through the root's inverse world matrix says
+  WHERE along the weapon it stands, which is how a bracket at z = 0.4 is told
+  apart from a heat shield at z = 0.6. The launcher's optic read 0 clear of 313
+  as a solid body and 270 of 313 as a tube; a `Ray` constructor with no import
+  is `scene.createPickingRay(0, 0, null, scene.activeCamera).constructor`. A
+  screenshot at `adsBlend === 1` is worth taking afterwards, and it is the
+  slower half: a launcher's swap is over a second of GAME time, which is ~40 s
+  of wall clock at 2 fps, and reading `player.swapping` too early shows the
+  previous weapon still in the hands.
 - **A fire mode is a synchronous test, and the burst has to be one.** Its rounds
   are 0.05 s apart and headless frames are 0.5 s, so nothing about it is
   observable by holding a key down. `player.tryShot(trigger)` is a pure state
@@ -269,6 +457,23 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
   `hittablesAgainst` then leaves it out, which reads exactly like broken falloff.
   "0 damage" at a plausible range is usually the LOS ray finding a wall: sample the
   same distance in all four compass directions before believing it.
+- **A whole BLAST is one synchronous evaluate, and `blastAt` is the door.**
+  `g.grenades.blastAt(at, team, by, {radius, inner, damage, kind, power})` runs
+  the damage and the six drawn layers; `g.grenades.drawBlast(at, power)` runs the
+  picture alone and hands back the `BlastGround` the ground probe found. Neither
+  fires the light, the sound, the shake or the two Havok layers — those are
+  `Game`'s, so a script that wants the whole thing calls
+  `g.onExplosion(at, power, g.grenades.probeGround(at))` after it. Step it with
+  `grenades.update(dt)`, then `physics.update(dt)`, then `blastDebris.update(dt)`,
+  in that order, exactly as a frame does.
+- **Every layer is readable rather than photographable, which matters at 2 fps.**
+  `g.grenades.blasts[i]` is `{t, power, flash, lobes[], ring}` — a lobe's `rung`
+  is its rung of `FIRE_LADDER` and `-1` means parked, so the colour ramp is an
+  assertion and not a screenshot. `g.blastDebris.activeCount` is live bursts and
+  `g.blastDebris.bursts[i].chunks[j].mesh.position` is where a chunk actually
+  went; `g.blastDebris.scorch.marks` is the decal pool. **Put the blast on OPEN
+  GROUND**: a control point on Coldharbour is a monument, and a mark laid on its
+  plinth is inside the plinth.
 - **The blast DUST is not steppable that way** — the puffs run on the GPU and
   advance on RENDERED frames by `updateSpeed * scene.getAnimationRatio()`, and
   headless that ratio is the real frame delta (~30 at 2 fps, not clamped), so a
@@ -277,7 +482,15 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
   `scene.onAfterRenderObservable`) steps the cloud to a known age and holds it.
   Also: `dust.burst()` needs a real `Vector3` (`copyFrom` reads `_x`/`_y`/`_z`, so
   a plain `{x,y,z}` silently gives a cloud at NaN), and `getActiveCount()` is the
-  ring size, not live puffs.
+  ring size, not live puffs. **There are TWO of these pools now** —
+  `g.grenades.dust` and `g.grenades.smoke`, the same class with different
+  numbers — and the freeze has to cover both, because they share the one clock.
+- **`Game.setMap` takes the INDEX into `MAPS`, not a `MapDef` and not an id.**
+  A script that hands it the def gets `Cannot read properties of undefined
+  (reading 'id')` from inside `setMap`, which reads like the map is missing. The
+  list itself is reachable in dev with `await import("/src/world/maps.ts")` —
+  Vite serves the module — so `MAPS.findIndex((d) => d.id === "coldharbour")` is
+  the whole of it.
 - **The throw and swap ANIMATIONS are still-frame jobs**, and 2 fps is plenty.
   Redefine the clock each is posed from — `Object.defineProperty(g.player,
   "throwT", { get: () => 0.145 })` with `throwPending = false` so the frozen frame
@@ -451,6 +664,24 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
   covered fraction. Feed it a hit at the centre AND one a handful of
   centimetres from a corner: the second is the case the reach retry exists
   for.
+- **A THROWN corpse is measured off the PROXY and only until it FREEZES**, and
+  both halves have already cost time. `slot.bones[i].proxy.position` is the
+  corpse while the solver owns it — a root node, so the local position IS the
+  world one and no `computeWorldMatrix` is owed. But `freeze` bakes the pose
+  back into the rig and parks the bodies, and a parked proxy sits at the ORIGIN:
+  keep sampling past that and a corpse on Hollowmere's north spawn reads as
+  having flown 138.62 m, which is exactly the distance from that spawn to
+  (0, 0, 0) and is the tell. Break on `slot.subject !== bot || slot.frozen`.
+  Two more that look like the throw not working: a body placed by hand needs
+  `rig.root` at `position.y + rig.centerHeight` and NOT at the feet (the root is
+  the body's middle, so feet-aligning it buries the corpse to the hip and the
+  floor eats the whole impulse), and `ragdolls.spawn(subject, camPos)` takes a
+  CAMERA position — pass the body's own if the camera is still at the map centre,
+  or every offer past the fog wall comes back refused. Measured with all three
+  right, a body killed standing with the blast 2 m away at ankle height: a rifle
+  round 0.12 m, a frag 4.2 m, a rocket 7.2 m, a tank shell 8.6 m — and a charge
+  directly UNDERNEATH throws it straight up and puts it back on the same spot,
+  which is correct rather than a failure.
 - **A ragdoll is steppable synchronously, like a grenade, and must be**:
   `g.ragdolls.update(1/60)` in a loop runs a whole tumble, settle, sink and retire
   in a fraction of a second. Move a bot, `bot.takeDamage(999, shooterOrigin)`, then
@@ -493,7 +724,7 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
   afterwards, plus each one's parent and local position against `rig.rest`. There
   is no fallback path left to reach — the body is at the camera, so the distance
   gate cannot refuse it, and a full pool evicts its oldest corpse instead of
-  saying no. **`deathCam.start(feet, yaw, eye, forward, from, damage, crouch)` is
+  saying no. **`deathCam.start(feet, yaw, eye, forward, from, damage, kind, crouch)` is
   callable directly**, which gets the whole ragdoll-and-restore check (including a
   crouched death: pass `crouch: 1`) without spending 80 s of wall clock on the
   cam's own clock. Step `g.physics.update(1/60)` + `g.ragdolls.update(1/60)` in a

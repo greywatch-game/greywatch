@@ -167,6 +167,67 @@ export function validateMove(
 }
 
 /**
+ * The fastest a HULL can legitimately travel, in m/s.
+ *
+ * Ahead rather than in reverse, because the check is on distance covered and
+ * has no opinion about which way the tank was pointing. It is an order of
+ * magnitude over a body's walk, which is exactly why a driver may not be
+ * judged by `validateMove` — see `validateDrive`.
+ */
+const MAX_HULL_SPEED = CONFIG.vehicles.tank.drive.maxSpeed;
+
+/**
+ * Checks one reported HULL step, from the person driving it.
+ *
+ * **The speed bound that knows what a player is sitting in.** A driver reports
+ * where their tank ended up exactly as a body reports where it walked to, and
+ * running that through `validateMove` would reject every honest driver in the
+ * game at a stroke: the bound there is a sprint, and a tank at road speed
+ * covers three times it.
+ *
+ * What is checked is the speed and the map's extent, and that is deliberately
+ * all — the other two tests a body takes are wrong for a hull rather than
+ * merely expensive:
+ *
+ *   - **No ground test.** `Tank.updateRemote` stands the reported hull on its
+ *     own ten track contacts on THIS side, against the same colliders the
+ *     driver used, so the authority never takes a client's word for a height
+ *     in the first place. There is nothing left for a claim to be wrong about.
+ *   - **No solid test.** A hull legitimately stands inside `map.obstacles`: it
+ *     drives OVER the fences, the crates and the saplings a body has to walk
+ *     around, which is what `climbHeight` is for. `resolve` would push it out
+ *     of every one of them and read the push as a player standing in a wall.
+ *
+ * What that leaves uncovered is a driver who cheats within the tolerance, and
+ * it is the same acceptance the body's check makes for the same reason — with
+ * one thing in its favour here: a hull is the most conspicuous object on the
+ * map, and it cannot go anywhere fifteen other people are not watching.
+ */
+export function validateDrive(
+  map: GameMap,
+  from: Vector3,
+  to: { x: number; y: number; z: number },
+  dt: number,
+): Verdict {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  if (Math.hypot(dx, dz) > MAX_HULL_SPEED * SPEED_TOLERANCE * dt) {
+    return { ok: false, reason: "speed" };
+  }
+  // The same extent a body is held to, and for the same reason: past the
+  // borderland there is no floor, no nav cell and four boundary colliders in
+  // the way. A tank is not leashed — the nav graph and the hardstandings are
+  // both inside the play square — but nothing here needs to know that, because
+  // "there is nothing out there" is true whatever is claiming to be standing
+  // in it.
+  const half = map.size / 2 + map.margin;
+  if (Math.abs(to.x) > half || Math.abs(to.z) > half) {
+    return { ok: false, reason: "solid" };
+  }
+  return OK;
+}
+
+/**
  * Reused so validation allocates nothing per player per tick.
  *
  * A real `Vector3` and not a `{x, y, z}` literal: `ObstacleField.resolve`

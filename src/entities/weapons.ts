@@ -13,6 +13,7 @@
  * you can see when you send it. Neither reads the other.
  */
 import { CONFIG } from "../config";
+import { EQUIPMENT_IDS, equipmentSetup, isEquipmentId, type EquipmentId } from "./equipment";
 
 /**
  * A weapon. Derived from the config table rather than written out, so the two
@@ -52,6 +53,33 @@ export const PRIMARY_WEAPON_IDS = WEAPON_IDS.filter(
 export function isPrimaryWeaponId(value: string): value is PrimaryWeaponId {
   return isWeaponId(value) && value !== SIDEARM;
 }
+
+/**
+ * Anything the player may have in their hands — a weapon out of the kit, the
+ * sidearm, or the anti-tank item in the third slot.
+ *
+ * The two id spaces are deliberately disjoint tables rather than one: an AT
+ * item is not offered by the weapon row, takes no optic, takes no finish and
+ * is not ranked on the kit screen's stat chart, and every one of those would
+ * have to be written here as an exception if it were a seventh entry in
+ * `CONFIG.weapons`. It is `WeaponSetup.id`'s type because a holster holds one
+ * of either and everything downstream of a holster reads that field.
+ *
+ * The import it rests on is TYPE-ONLY in both directions, so `equipment.ts`
+ * and this file are a cycle the compiler resolves and the module graph never
+ * has.
+ */
+export type CarriedId = WeaponId | EquipmentId;
+
+/**
+ * Every id `ViewModel` has to have a rig for — the weapons and both AT items.
+ *
+ * The one list that spans the two tables, and it exists because the viewmodel
+ * is the one place that genuinely does not care which of them a thing came
+ * out of: it builds a rig per id, enables one, and poses whatever is enabled.
+ * Everything else in the game reads one table or the other.
+ */
+export const CARRIED_IDS: CarriedId[] = [...WEAPON_IDS, ...EQUIPMENT_IDS];
 
 /** The default carry: the weapon the game shipped with. */
 export const DEFAULT_WEAPON: PrimaryWeaponId = "rifle";
@@ -99,7 +127,7 @@ export interface ReportVoice {
  * stats as numbers that happen to differ from one to the next.
  */
 export interface WeaponSetup {
-  id: WeaponId;
+  id: CarriedId;
   name: string;
   short: string;
   /** What a round does at or inside `falloffNear`. */
@@ -137,6 +165,24 @@ export interface WeaponSetup {
   hipZ: number;
   /** …and across it, for a weapon that hangs below its bore rather than above. */
   hipY: number;
+  /**
+   * How far the weapon is TURNED in the hands at hip, in radians, on top of
+   * the shared `viewmodel.hipRot`.
+   *
+   * The third of the hip-pose knobs and the one that is about SHAPE rather
+   * than length: every gun in the kit is a receiver held below and right of
+   * the eye, so a small shared yaw frames all six. A launcher is a tube whose
+   * rear end is a bell fifteen centimetres across half a metre from the lens —
+   * pointed away it is a disc with the rest of the weapon hidden behind it,
+   * and no amount of `hipZ` or `hipY` fixes that, because the problem is that
+   * the eye is looking down the bore. Turning it outboard is what puts the
+   * tube, the shield and the warhead broadside where they can be read.
+   *
+   * Positive is OUTBOARD — Babylon is left-handed, so a positive `rotY` takes
+   * the muzzle (+z) toward +x, the same convention `viewmodel.sprintRot`
+   * documents from the other side.
+   */
+  hipYaw: number;
   /** Seconds this weapon takes to come up when swapped to. */
   drawTime: number;
   /** What this weapon sounds like — see `ReportVoice`. */
@@ -175,8 +221,22 @@ export function weaponSetup(id: WeaponId): WeaponSetup {
     swayMult: w.swayMult,
     hipZ: w.hipZ,
     hipY: w.hipY,
+    hipYaw: w.hipYaw,
     drawTime: w.drawTime,
     report: w.report,
     shotInterval: 1 / w.fireRate,
   };
+}
+
+/**
+ * Resolves whatever is in the hands, out of whichever table owns it.
+ *
+ * The one place the two id spaces are joined, and it exists because a handful
+ * of call sites genuinely hold a `CarriedId` and want the numbers behind it —
+ * the viewmodel building a rig, the camera taking a fit, the HUD captioning a
+ * slot. Everything else knows which table it is asking about and calls
+ * `weaponSetup` or `equipmentSetup` directly.
+ */
+export function carriedSetup(id: CarriedId): WeaponSetup {
+  return isEquipmentId(id) ? equipmentSetup(id) : weaponSetup(id);
 }

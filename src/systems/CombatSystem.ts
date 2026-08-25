@@ -42,6 +42,24 @@ import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { OPAQUE_ONLY } from "../world/solid";
 
+/**
+ * What DELIVERED a hit, for the one kind of target that answers differently
+ * depending on the answer.
+ *
+ * A body does not care: 30 damage is 30 damage however it arrived, which is why
+ * this is the last parameter and an optional one, and why `Player`, `Bot` and
+ * `NetSoldier` all still implement `takeDamage` without mentioning it. A HULL
+ * cares about nothing else — see `CONFIG.vehicles.tank.resist` — and the
+ * alternative to naming the kind here was giving a tank an armour figure large
+ * enough to shrug off a rifle and then inflating every anti-tank number in the
+ * game to get back through it.
+ *
+ * `bullet` is the default rather than a value anything writes: `fire` says it
+ * for every round in the game unless the shooter's `ShotOptions` say otherwise,
+ * so the sixteen shooters with nothing to declare declare nothing.
+ */
+export type DamageKind = "bullet" | "blast" | "shell";
+
 /** Anything a hitscan shot can damage. */
 export interface Hittable {
   center: Vector3;
@@ -55,8 +73,13 @@ export interface Hittable {
    */
   eyePos: Vector3;
   invulnerable?: boolean;
-  /** `from` is where the shot started, for whoever wants to face the shooter. */
-  takeDamage(amount: number, from?: Vector3): boolean;
+  /**
+   * `from` is where the shot started, for whoever wants to face the shooter;
+   * `kind` is what delivered it, for whoever answers differently to each. A
+   * target that ignores either may simply not declare it — a method with fewer
+   * parameters satisfies this one.
+   */
+  takeDamage(amount: number, from?: Vector3, kind?: DamageKind): boolean;
 }
 
 /** Outcome of one shot: who it hit, whether that killed them, and if it stopped on geometry. */
@@ -77,6 +100,18 @@ export interface ShotResult {
    * one — but it is a fact about the shot either way.
    */
   dir: Vector3;
+  /**
+   * Where the round stopped — a body, a wall, or the end of its own range.
+   *
+   * A fresh `Vector3` per shot, and that is affordable for the reason the plain
+   * `forward` getter on `CameraSystem` is: this is per EVENT and not per frame,
+   * and the alternative — scratch handed out of a method whose result a caller
+   * naturally keeps — is the bug that reads as correct. `fire` already computes
+   * this point to place the tracer's far end, so nothing extra is measured for
+   * it; what needed it was a round that does something AT the impact rather
+   * than only to whatever it stopped on, which today is the tank's shell.
+   */
+  hitPoint: Vector3;
 }
 
 /**
@@ -100,6 +135,13 @@ export interface ShotOptions {
    * that do not have the feature never pay a sphere test for it.
    */
   headMult?: number;
+  /**
+   * What this shooter's round counts AS when it lands on something that cares.
+   * Absent means `bullet`, which is every weapon in `CONFIG.weapons` and every
+   * bot; a tank's main gun is the one shooter that says `shell`. See
+   * `DamageKind`.
+   */
+  damageKind?: DamageKind;
 }
 
 /**
@@ -391,7 +433,7 @@ export class CombatSystem {
           dealt *= headMult;
         }
       }
-      killed = hitTarget.takeDamage(dealt, origin);
+      killed = hitTarget.takeDamage(dealt, origin, opts.damageKind ?? "bullet");
     }
 
     // The DAMAGE is instant — everyone is hitscan and nothing below may gate
@@ -423,7 +465,7 @@ export class CombatSystem {
     // whatever is behind it. Raised after the tracer so a break's own effects
     // are ordered behind the round that caused them.
     this.onShotPath(origin, dir, hitDist);
-    return { target: hitTarget, killed, hitWall, headshot, dir };
+    return { target: hitTarget, killed, hitWall, headshot, dir, hitPoint };
   }
 
   update(dt: number): void {

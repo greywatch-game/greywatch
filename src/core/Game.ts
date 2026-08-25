@@ -53,11 +53,13 @@ import {
   DefaultRenderingPipeline,
   Engine,
   GlowLayer,
+  Matrix,
   Mesh,
   Scene,
   StandardMaterial,
   type SubMesh,
   Vector3,
+  Viewport,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import {
@@ -71,16 +73,22 @@ import { MotionBlur } from "../shaders/MotionBlur";
 import { Bot } from "../entities/Bot";
 import { difficultyNames } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
-import type { Combatant, Team } from "../entities/Combatant";
-import { NetSession } from "../net/NetSession";
+import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
+import { NetSession, type LocalHull } from "../net/NetSession";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { RegionBook } from "../net/RegionBook";
 import { SNAPSHOT_HZ, TICK_HZ, type ServerEvent } from "../net/protocol";
 import { type FinishId } from "../entities/finishes";
 import { Player } from "../entities/Player";
+import { SHELL_SHOT, type DriveInput, type Tank } from "../entities/Tank";
+import {
+  ordnanceEffect,
+  type EquipmentId,
+} from "../entities/equipment";
 import { type SightId } from "../entities/sights";
 import { VIEWMODEL_GROUP } from "../entities/ViewModel";
 import {
+  carriedSetup,
   isWeaponId,
   PRIMARY_WEAPON_IDS,
   type PrimaryWeaponId,
@@ -90,13 +98,25 @@ import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
 import { BattleSystem } from "../systems/BattleSystem";
 import { CaptureZoneSystem } from "../systems/CaptureZoneSystem";
-import { CombatSystem, type Hittable } from "../systems/CombatSystem";
+import {
+  CombatSystem,
+  type DamageKind,
+  type Hittable,
+} from "../systems/CombatSystem";
 import { ConquestSystem, type ControlPoint } from "../systems/ConquestSystem";
 import { DeathCam } from "../systems/DeathCam";
+import { VehicleCamera } from "../systems/VehicleCamera";
+import { TankCrew } from "../systems/TankCrew";
+import {
+  VehicleSystem,
+  type VehicleOrders,
+} from "../systems/VehicleSystem";
 import { GrassSystem } from "../systems/GrassSystem";
+import { BlastDebrisSystem } from "../systems/BlastDebrisSystem";
 import { DebrisSystem } from "../systems/DebrisSystem";
 import { GlassSystem } from "../systems/GlassSystem";
-import { GrenadeSystem } from "../systems/GrenadeSystem";
+import { AntiTankSystem, type OrdnanceHit } from "../systems/AntiTankSystem";
+import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
@@ -123,12 +143,14 @@ import { CameraSystem } from "./CameraSystem";
 import { InputManager } from "./InputManager";
 import {
   readDifficulty,
+  readEquipment,
   readFinish,
   readMap,
   readRegion,
   readSight,
   readWeapon,
   writeDifficulty,
+  writeEquipment,
   writeFinish,
   writeMap,
   writeRegion,
@@ -146,6 +168,35 @@ import { Sfx } from "./Sfx";
 
 /** Grass bends around combatants; in the editor there are none. */
 const EMPTY_PUSHERS: readonly Combatant[] = [];
+
+/**
+ * The camera's own local forward, for `getDirection`. A module constant because
+ * the one caller runs per frame and `Axis.Z` would be the same object read
+ * through another import.
+ */
+const FORWARD_Z = new Vector3(0, 0, 1);
+
+/**
+ * A hull the player is being offered, and which of the two offers it is: an
+ * empty one, or one they may turn a bot crew out of. See `Game.offeredSeat`.
+ */
+interface Seat {
+  tank: Tank;
+  /** True when taking it evicts somebody. The prompt says so. */
+  crewed: boolean;
+  label: string;
+}
+
+/**
+ * How far a laid mine's centre sits above the surface it is laid on.
+ *
+ * Half the plate's own height, so the thing rests ON the road rather than
+ * half-buried in it — an art constant and therefore here rather than in
+ * `CONFIG.equipment`, which is where the numbers a designer tunes live. It has
+ * to agree with `buildMineBody`'s cylinder, which is the one other place the
+ * plate's size is written.
+ */
+const MINE_LIFT = 0.04;
 
 /**
  * Squared eye distance to a submesh's bounding-sphere centre, for the
@@ -209,17 +260,59 @@ export class Game {
   private combat: CombatSystem;
   /** Thrown grenades — the one thing on the map that is not hitscan. */
   private grenades: GrenadeSystem;
+  /**
+   * The anti-tank kit in the world: rockets in the air, mines on the ground.
+   *
+   * Offline only, and on a map with armour only — the same gate the hulls
+   * themselves take in `installMap`, for the same reason. Built unconditionally
+   * all the same: its two pools are eight bodies and sixteen plates, and a
+   * system that exists and is never asked anything costs one `update` call a
+   * frame over two empty loops.
+   */
+  private antiTank: AntiTankSystem;
   /** The only physics engine in the game, and the two things that use it. */
   private physics: PhysicsWorld;
   /** Corpses under physics. */
   private ragdolls: RagdollSystem;
   /** Glass shards. The second physics client. */
   private debris: DebrisSystem;
+  /**
+   * The two blast layers that are under Havok: the rubble a detonation throws
+   * and the mark it leaves. The third `PhysicsClient`, and the one that has to
+   * be told what the map is made of — see `installMap`.
+   */
+  private blastDebris: BlastDebrisSystem;
   /** Breakable glazing — the one part of the world that is not static. */
   private glass: GlassSystem;
   /** The player's own death: a stand-in body, and the camera that watches it. */
   private deathCam: DeathCam;
   private aimAssist: AimAssistSystem;
+  /**
+   * The armour on the field. Empty on every map that states no hardstandings,
+   * which is two of the four shipped.
+   *
+   * In a NETPLAY round it is built exactly the same way and OWNED differently:
+   * the fleet is `predicted`, so no hull here takes local damage and neither
+   * hardstanding clock runs — the authority decides all of it, and everything
+   * but the hull this player is sitting in is posed from the wire. See
+   * `docs/vehicles.md`.
+   */
+  private vehicles: VehicleSystem;
+  /** The view from outside the hull you are driving. `DeathCam`'s shape. */
+  private vehicleCam: VehicleCamera;
+  /**
+   * The bots that drive. Empty on a map with no hardstandings, because the
+   * boarding sweep walks a fleet that has nothing in it — and empty in a
+   * NETPLAY round for a different reason: the hulls are there, but this client
+   * runs no AI at all, so the crews inside them are the authority's and a
+   * local one would be a second brain steering a hull posed from the wire.
+   *
+   * It is a system of its own rather than a branch inside `BattleSystem`
+   * because a bot in a hull is not a bot doing something unusual: it is out of
+   * `Bot`'s FSM entirely, and everything about how it moves, what it can see
+   * and what it shoots with belongs to the vehicle. See `TankCrew`'s header.
+   */
+  private crew: TankCrew;
   private battle: BattleSystem;
   private conquest: ConquestSystem;
   /** The flags' in-world markers — rings, skirts and beacons. */
@@ -347,6 +440,18 @@ export class Game {
   private sight: SightId = readSight();
   private weapon: PrimaryWeaponId = readWeapon();
   /**
+   * Which anti-tank item the third slot holds — remembered on every map, and
+   * carried only on the ones with armour.
+   *
+   * **`armourOffered` is what decides whether the slot exists at all**, and it
+   * is a question about the MAP rather than about this pick: a launcher is
+   * two-thirds of a hull's health and a mine catches nothing but a hull, so on
+   * a map with none they would be a heavy anti-infantry weapon and a paperweight
+   * respectively. The pick survives the maps that do not offer it, because it
+   * is the player's and not the map's.
+   */
+  private equipment: EquipmentId = readEquipment();
+  /**
    * What each weapon is PAINTED in — one entry per primary, because a finish
    * belongs to a gun rather than to the loadout (see `finishes.ts`). The whole
    * record is held rather than just the carried weapon's so that stepping
@@ -458,6 +563,85 @@ export class Game {
    * ping. See `world/leash.ts`.
    */
   private readonly leash = new Leash();
+
+  /**
+   * The hull the player is inside, or null on foot. **The single fact the whole
+   * feature turns on**, and it is here rather than on `Player` or on
+   * `VehicleSystem` for the reason every other cross-system fact is: `Player`
+   * is a body and knows nothing about vehicles, `VehicleSystem` owns hulls and
+   * knows nothing about players, and the pairing of the two is exactly what
+   * this file is for.
+   *
+   * Everything that changes while it is non-null is listed in `mount` and undone
+   * in `clearVehicle`; nothing else in this file may write it.
+   */
+  private driving: Tank | null = null;
+
+  /**
+   * This frame's orders to that hull. A held object rather than one built per
+   * frame, the same arrangement `Player.shotOptions` uses and for the same
+   * reason — it is passed on the one path that runs on every frame of every
+   * round.
+   */
+  private readonly drive: DriveInput = {
+    throttle: 0,
+    steer: 0,
+    aimYaw: 0,
+    aimPitch: 0,
+  };
+  /**
+   * Who is telling which hull what to do, asked once per hull per frame by
+   * `VehicleSystem.update`.
+   *
+   * **This file is the only place that can answer**, because it is the only
+   * place that knows both about the player's seat and about the bot crews —
+   * which is the same reason `driving` lives here. Built once and held, so the
+   * lookup on the one path that runs every frame of every round allocates
+   * nothing.
+   *
+   * The player is asked FIRST, and that ordering is not arbitrary: `evict`
+   * takes a crew out of a hull on the frame the player mounts it, but a crew
+   * disbanded and a seat taken are two writes and this is read between them on
+   * exactly nothing. Asking the player's hull first means the answer is right
+   * whichever order they land in.
+   */
+  private readonly vehicleOrders: VehicleOrders = {
+    driveFor: (tank) =>
+      tank === this.driving ? this.drive : this.crew.driveFor(tank),
+    /**
+     * In a netplay round every hull but the one under this player is posed
+     * from the wire — the mirror of the authority's own answer, where only the
+     * hulls with a PERSON in them are.
+     *
+     * Asked before `driveFor` by `VehicleSystem.update`, so the player's own
+     * hull needs no term here: `stateFor` answers null for it, because
+     * `NetVehicles` skips the samples for a hull carrying the local slot.
+     */
+    remoteFor: (tank) =>
+      this.net && tank !== this.driving
+        ? this.net.vehicles.stateFor(this.vehicles.tanks.indexOf(tank))
+        : null,
+  };
+
+  /**
+   * The offer `updateOnFoot` makes when the player is stood beside their own
+   * armour, rewritten in place. Held for `drive`'s reason: it is answered on
+   * every frame of every round a body spends on foot.
+   */
+  private readonly seat: Seat = { tank: null!, crewed: false, label: "" };
+
+  /** Scratch for putting a hull the wire has just named back on the field. */
+  private readonly hullPlace = new Vector3();
+  /** Scratch for the shell: the muzzle, the gun's axis, and the marker's point. */
+  private readonly shellFrom = new Vector3();
+  private readonly shellDir = new Vector3();
+  /** …and for where a rocket leaves the tube, or a mine goes down. */
+  private readonly ordnanceAt = new Vector3();
+  /** …and the line a launcher bot's rocket goes down. */
+  private readonly rocketAim = new Vector3();
+  private readonly markerAt = new Vector3();
+  private readonly markerOut = new Vector3();
+  private readonly markerViewport = new Viewport(0, 0, 1, 1);
   /**
    * What this life owes before the next one, latched by `enterDying` and spent
    * by `updateDeathCam` when the shot is over. Offline it is the config
@@ -675,7 +859,7 @@ export class Game {
     this.mapBuilder = new MapBuilder(this.scene, this.mats, this.lighting);
     this.combat = new CombatSystem(this.scene, this.mats);
     this.grenades = new GrenadeSystem(this.scene, this.mats);
-    // The one physics engine, and its two clients. `PhysicsWorld` is INJECTED
+    // The one physics engine, and its three clients. `PhysicsWorld` is INJECTED
     // into both rather than imported by either — see its header, and the
     // `BattleSystem`←`CombatSystem` precedent in CLAUDE.md. It is stood up
     // synchronously on the module `main.ts` already awaited, so both clients
@@ -684,8 +868,43 @@ export class Game {
     this.physics = new PhysicsWorld(this.scene, havok);
     this.ragdolls = new RagdollSystem(this.scene, this.physics);
     this.debris = new DebrisSystem(this.scene, this.mats, this.physics);
+    this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);
     this.glass = new GlassSystem();
     this.deathCam = new DeathCam(this.scene, this.mats);
+    this.vehicles = new VehicleSystem(this.scene, this.mats);
+    this.vehicleCam = new VehicleCamera(this.scene);
+    // The crew's context, built once exactly as `BattleSystem`'s `BattleCtx`
+    // is: everything a driver may ask about the rest of the game, and nothing
+    // else. The two lists are asked for rather than captured, because what
+    // `vehicles` and `battle` hand out is replaced every round.
+    this.crew = new TankCrew({
+      hulls: () => this.vehicles.tanks,
+      roster: () => this.battle.bots,
+      aside: (bot) => this.battle.aside(bot),
+      setOccupied: (tank, on) => this.vehicles.setOccupied(tank, on),
+      exitSpot: (tank) => this.vehicles.exitSpot(tank),
+      targetsFor: (team) => this.battle.hittablesAgainst(team),
+      // The hull is taken out of its own pick for the length of the ray, which
+      // is `VehicleCamera`'s trick and `VehicleSystem.groundAt`'s: a crew's
+      // eye sits five centimetres above the top of its own collider, so every
+      // sightline to anything shorter than the cupola dives straight back into
+      // it. Two property writes and no allocation — `world/solid.ts` forbids
+      // minting a predicate that closes over the hull, and this is a per-think
+      // call.
+      visibleFrom: (tank, to) => {
+        const was = tank.body.isPickable;
+        tank.body.isPickable = false;
+        const seen = this.battle.losBetween(tank.eyePos, to);
+        tank.body.isPickable = was;
+        return seen;
+      },
+      fireShell: (tank, by) => this.resolveShell(tank, by),
+    });
+    // The anti-tank kit in the world. It owns the flight and the trigger and
+    // nothing else: what a detonation is WORTH is `ordnanceEffect`'s and
+    // spending it is `wireAntiTank`'s, through the same `blastAt` the tank
+    // shell already goes through.
+    this.antiTank = new AntiTankSystem(this.scene, this.mats);
     this.aimAssist = new AimAssistSystem(this.scene);
     this.battle = new BattleSystem(this.scene, this.mats, this.combat);
     this.conquest = new ConquestSystem();
@@ -736,8 +955,8 @@ export class Game {
   private wireSystems(): void {
     // Systems never import each other; every cross-system behaviour is a
     // callback installed here.
-    this.player.onDamaged = (amount, died, from) =>
-      this.onPlayerDamaged(amount, died, from);
+    this.player.onDamaged = (amount, died, from, kind) =>
+      this.onPlayerDamaged(amount, died, from, kind);
     this.battle.setPlayer(this.player);
     // A bot's round killed somebody. The two halves are taken separately
     // because they are known in different places: the shooter is credited
@@ -760,6 +979,159 @@ export class Game {
     this.wireGrenades();
     this.wireBattle();
     this.wireConquest();
+    this.wireVehicles();
+    this.wireAntiTank();
+  }
+
+  /**
+   * The anti-tank kit: what a rocket or a mine may find, and what happens when
+   * it finds it.
+   *
+   * **Two halves, and the split is the whole design.** `AntiTankSystem` knows
+   * where a rocket is and how long a mine has been armed; it does not know
+   * what a tank is, what a team means beyond passing one back out, or what an
+   * explosion looks like. So it asks one question — is there a hostile hull
+   * within this many metres — and raises one event, and both of them land
+   * here.
+   *
+   * **The damage is TWO resolutions and they cannot double-count a kill**, the
+   * same arrangement `fireShell` makes and for the same reason: `hittablesFor`
+   * is fetched INSIDE `blastAt`, after the direct hit has been dealt, so a
+   * hull finished by the strike is no longer `alive` and no longer in the
+   * list. What it does mean is that a hull takes both — a direct hit and the
+   * splash it is standing in the middle of — which is exactly what being hit
+   * by a rocket is.
+   */
+  private wireAntiTank(): void {
+    // Hostile by construction: the team passed is the ordnance's own, and
+    // `hostileNear` answers with the OTHER side's hulls only. That is where
+    // friendly fire is excluded on this path — the same bargain the target
+    // lists make everywhere else in this game.
+    this.antiTank.hullNear = (at, radius, team) =>
+      this.vehicles.hostileNear(at, radius, team);
+    this.antiTank.onDetonated = (hit) => this.resolveOrdnance(hit);
+  }
+
+  /**
+   * One rocket or one mine going off: the hull it struck, then the blast.
+   *
+   * `hit.at` is the system's own live vector and is valid for the length of
+   * this call — `blastAt` clones what it keeps, and nothing here holds it.
+   */
+  private resolveOrdnance(hit: OrdnanceHit): void {
+    // **In a match none of this is ours.** The rocket that reached here is the
+    // local PREDICTION of one the authority is also flying — see
+    // `launchRocket` — and it decides nothing: the hull refuses local damage
+    // (`Tank.predicted`), the splash has an empty list to resolve against, and
+    // the fireball arrives on the server's `explode` event with the right
+    // power on it. Drawing one here as well would be two blasts a round trip
+    // apart, at two points that agree only to within the flight — which for a
+    // rocket that detonated on a hull this client has drawn a tenth of a
+    // second behind is metres, not centimetres. `resolveShell` skips its own
+    // splash for the same reason and in the same words.
+    if (this.net) return;
+    const e = ordnanceEffect(hit.kind);
+    // The direct hit, which is the thing a falloff cannot express: a rocket
+    // that stopped ON a hull, or a mine a hull drove over. `shell` is what
+    // gets through `CONFIG.vehicles.tank.resist`, and it is the whole reason
+    // this kit exists.
+    if (hit.hull) hit.hull.takeDamage(e.damage, hit.at, "shell");
+    // …and the splash, through the one implementation of a blast in the game.
+    // `by` is whoever fired it, so a kill lands on their row exactly as a
+    // grenade's does — `wireGrenades` is already wired for this and needed no
+    // arm.
+    this.grenades.blastAt(hit.at, hit.team, hit.by, {
+      radius: e.blast.radius,
+      inner: e.blast.inner,
+      damage: e.blast.damage,
+      kind: "shell",
+      power: e.blast.power,
+    });
+  }
+
+  /**
+   * The armour: what a destroyed hull owes the body inside it, and what a fresh
+   * one owes the screen.
+   *
+   * Both are one-way announcements out of a system that has never heard of a
+   * player — the same shape `wireGrenades` uses for a blast, and for the same
+   * reason.
+   */
+  private wireVehicles(): void {
+    this.vehicles.onDestroyed = (tank) => {
+      if (tank.team === this.player.team) {
+        this.hud.toast(
+          `ARMOUR DESTROYED - ${Math.round(CONFIG.vehicles.respawnDelay)}s`,
+        );
+      }
+      // The hull burning is not the same event as the crew dying, and only one
+      // of the two is conditional: everybody hears the toast, and the body is
+      // only killed if it was the one inside THIS hull.
+      // A bot crew burns with the hull exactly as the player does, and the
+      // two are mutually exclusive by construction: `Tank.occupied` is written
+      // on both transitions, so nobody can be in a hull somebody else is in.
+      this.crew.hullDestroyed(tank);
+      if (tank !== this.driving) return;
+      // **In a match none of the rest is this client's.** The authority put
+      // this body down beside the wreck and killed it before this frame ever
+      // ran: the `seat` event is what takes the camera off the hull and the
+      // `damage`/`died` pair is what raises the death cam, exactly as they do
+      // for a round through the chest. Running the three lines below as well
+      // would place the body a second time, charge a local ticket and start a
+      // respawn clock the server already owns.
+      if (this.net) return;
+      // Beside the wreck, not inside it — the death cam stands a corpse at the
+      // player's last position, and a body falling through a hull that is still
+      // solid is the one thing this ordering exists to avoid. Then the kill
+      // goes through `takeDamage`, which is the one door a death offline takes:
+      // it is what charges the ticket, files the row and raises the cam.
+      //
+      // **The hull BREWING UP is the blow, and saying so is what fixes three
+      // things at once** — this is the same event `onCrewLost` spends on a bot
+      // crew below and the two must say the same thing about it. `tank.center`
+      // is where it came from, so the corpse is thrown clear of its own wreck
+      // rather than lying down beside it and the damage arc points at the
+      // thing that killed them; `"shell"` is what it was, so a driver burned
+      // out of a hull leaves the ground exactly as anyone else caught by an
+      // explosion does; and the bearing is also what `onPlayerDamaged` derives
+      // the KILLFEED from, which without one read `OUT OF BOUNDS killed YOU` —
+      // the leash's line, on a death the leash had nothing to do with. Nobody
+      // can destroy their own side's hull (every list a shell, a rocket and a
+      // mine resolve against is the other team's by construction), so the
+      // enemy team that line names is right by the same derivation every other
+      // death uses.
+      this.player.placeAt(this.vehicles.exitSpot(tank));
+      this.clearVehicle();
+      this.player.takeDamage(this.player.health, tank.center, "shell");
+    };
+    this.vehicles.onRespawned = (tank) => {
+      if (tank.team === this.player.team) this.hud.toast("ARMOUR READY");
+    };
+    // What being in a hull COSTS a bot, applied here rather than inside
+    // `TankCrew` for the reason every cross-system consequence is applied
+    // here: that system owns the pairing and `BattleSystem` owns the roster,
+    // and neither may reach for the other. It is the same pair of lines
+    // `mount`/`clearVehicle` spend on the player, one layer along.
+    this.crew.onBoarded = (bot) => this.battle.setCrewed(bot, true);
+    this.crew.onLeft = (bot) => this.battle.setCrewed(bot, false);
+    // …and what it costs him when it burns. The body has already been put down
+    // beside the wreck and handed back to the fight by the time this runs, so
+    // there is nothing to do but kill it through the door every other bot
+    // death offline takes — which is what charges the ticket, files the row
+    // and offers the corpse to the ragdoll pool.
+    //
+    // `tank.center` as the bearing the blow came from and `"shell"` as what it
+    // was: a crewman is thrown clear of his own hull, which is the only reading
+    // of a burning tank that is not a man lying down beside one, and it takes
+    // BOTH to get it — the bearing alone would have him fold at the wreck's
+    // edge, because a round drops a body where an explosion throws it. The
+    // player's half of this event is in `onDestroyed` above and passes the same
+    // pair; they are one thing happening to whoever was inside.
+    this.crew.onCrewLost = (bot, tank) => {
+      if (bot.takeDamage(bot.hp, tank.center, "shell")) {
+        this.registerBotKill(bot, OTHER_TEAM[bot.team], false);
+      }
+    };
   }
 
   /**
@@ -813,8 +1185,8 @@ export class Game {
     // the ARC — the thing the thrower watched leave their hand — and firing
     // this as well would flash, bang and shake twice, a fraction of a second
     // apart, at two points that agree only to within the round trip.
-    this.grenades.onExploded = (at) => {
-      if (!this.net) this.onExplosion(at);
+    this.grenades.onExploded = (at, power, ground) => {
+      if (!this.net) this.onExplosion(at, power, ground);
     };
     this.grenades.onBlastHit = (victim, thrower, by, killed) => {
       // "Was that ours" is a comparison against our own `Player`, which is why
@@ -835,6 +1207,22 @@ export class Game {
     // solve it cannot make returns false and the bot spends nothing.
     this.battle.throwGrenadeFor = (bot, from, at) =>
       this.grenades.throwAt(from, at, bot.team, bot);
+    // A launcher bot's rocket. Flat: the ask is a POINT and a rocket flies
+    // more or less straight, so unlike the grenade there is no solve to
+    // refuse — the direction is the line to the hull and the pool has the only
+    // word. `considerRocket` has already decided the target is armour.
+    this.battle.fireRocketFor = (bot, from, at) => {
+      this.rocketAim.copyFrom(at).subtractInPlace(from);
+      if (this.rocketAim.lengthSquared() < 1e-4) return false;
+      this.rocketAim.normalize();
+      if (!this.antiTank.launch(from, this.rocketAim, bot.team, bot)) return false;
+      // Heard exactly as the player's launcher is, and by the same door: a
+      // rocket leaving is the loudest thing on the map after a tank gun, and
+      // the side that fired it has just told everybody where it is.
+      this.battle.hearGunshot(from, bot.team);
+      this.sfx.launcher(from);
+      return true;
+    };
   }
 
   /**
@@ -1087,6 +1475,7 @@ export class Game {
     this.loadoutScreen.onWeapon = (id) => this.setWeapon(id);
     this.loadoutScreen.onSight = (id) => this.setSight(id);
     this.loadoutScreen.onFinish = (id) => this.setFinish(id);
+    this.loadoutScreen.onEquipment = (id) => this.setEquipment(id);
     this.loadoutScreen.onClose = () => this.closeLoadout();
     this.player.onCarryChanged = () => this.applyCarry();
     // A reload beginning, however it began — the key, or the last round leaving
@@ -1307,7 +1696,13 @@ export class Game {
    */
   private openLoadout(): void {
     if (!this.raiseLid("loadout")) return;
-    this.loadoutScreen.setFit(this.weapon, this.sight, this.finishes[this.weapon]);
+    this.loadoutScreen.setFit(
+      this.weapon,
+      this.sight,
+      this.finishes[this.weapon],
+      this.equipment,
+      this.armourOffered,
+    );
     this.loadoutScreen.show();
     // The weapon comes out to be looked at. It is the real viewmodel on the
     // real camera — the kit screen shows what will be in the player's hands,
@@ -1483,6 +1878,15 @@ export class Game {
       this.settings.stickSensitivity,
       this.settings.touchSensitivity,
     );
+    // And to the chase camera, which is a second camera rather than a mode on
+    // that one and therefore does not inherit anything from it. A player who
+    // has halved their look speed has halved it in a tank too, or the setting
+    // is a lie about one of the two views.
+    this.vehicleCam.setLookScale(
+      this.settings.mouseSensitivity,
+      this.settings.stickSensitivity,
+      this.settings.touchSensitivity,
+    );
   }
 
   /**
@@ -1644,6 +2048,36 @@ export class Game {
     this.applyLoadout();
   }
 
+  /**
+   * Picks the anti-tank item. Same reachability and same immediacy as the
+   * weapon, and remembered on every map — see the field.
+   */
+  private setEquipment(id: EquipmentId): void {
+    if (id === this.equipment) return;
+    this.equipment = id;
+    writeEquipment(id);
+    this.applyLoadout();
+  }
+
+  /**
+   * Whether this round has armour in it, and therefore whether the kit has a
+   * third slot at all.
+   *
+   * ONE term, and it is the map's: a hardstanding is stated or it is not.
+   * There is deliberately no second term asking whether this is a netplay
+   * round — the authority fields the same hulls off the same layout and
+   * resolves the third slot off the join (see `Match.admit`), so the slot is
+   * offered online and off or the same kit would mean two different things on
+   * the two sides of the wire.
+   *
+   * It used to be two terms, and the second was "the round has to be offline".
+   * That is what this comment said until armour crossed the wire; the term was
+   * removed with it.
+   */
+  private get armourOffered(): boolean {
+    return (this.mapDef.layout.vehicles?.length ?? 0) > 0;
+  }
+
   /** Fits an optic. Same reachability, same immediacy. */
   private setSight(id: SightId): void {
     if (id === this.sight) return;
@@ -1679,6 +2113,10 @@ export class Game {
   private applyLoadout(): void {
     this.player.setWeapon(this.weapon);
     this.player.setSight(this.sight);
+    // The third slot, or no third slot. `setWeapon` above has already put the
+    // primary in the hands, so a slot going away here can never be the one
+    // being carried — which is the ordering, not a coincidence.
+    this.player.setEquipment(this.armourOffered ? this.equipment : null);
     // The paint, which is the one slot of the three that reaches nothing but
     // the model: no camera, no caption, and nothing below. Only the carried
     // weapon's is pushed — it is the only rig that can be looked at, and the
@@ -1687,7 +2125,13 @@ export class Game {
     this.applyCarry();
     const label = kitLabel(this.weapon, this.sight);
     this.deployScreen.setKit(label);
-    this.loadoutScreen.setFit(this.weapon, this.sight, this.finishes[this.weapon]);
+    this.loadoutScreen.setFit(
+      this.weapon,
+      this.sight,
+      this.finishes[this.weapon],
+      this.equipment,
+      this.armourOffered,
+    );
     // The menu draws the kit into its own markup, so it has to be rebuilt;
     // the other two were just patched above.
     if (this.state === "menu") this.showMenu();
@@ -1719,7 +2163,7 @@ export class Game {
     // one does. The short name rather than the full one — it is a caption on a
     // row that has to stay quieter than the readout above it.
     this.hud.setStowedKit(
-      CONFIG.weapons[this.player.slungWeapon].short,
+      carriedSetup(this.player.slungWeapon).short,
       this.player.slungSlot + 1,
     );
     // Its magazine as well, even though `updateHud` pushes that every frame:
@@ -2531,12 +2975,19 @@ export class Game {
    */
   private installMap(opts?: BuildOptions): GameMap {
     const { layout, environment } = this.mapDef;
+    // Before a single thing is disposed: the seat, because the hull it belongs
+    // to is about to stop existing. See the vehicle build at the bottom.
+    this.clearVehicle();
     this.map?.dispose();
     this.combat.clearTransient();
     // A grenade whose fuse outlived the map it was thrown across would go off
     // over terrain that no longer exists — and, in the editor, in the middle
     // of a rebuild.
     this.grenades.reset();
+    // …and everything the AT kit has left lying about. A mine that outlived
+    // its map would be waiting under a street that no longer exists, which is
+    // the same failure a live fuse would be.
+    this.antiTank.reset();
     // The flag markers are geometry hung off the old map's terrain. The editor
     // draws proxies of its own and would double every ring; a round rebuilds
     // them below. Either way they cannot survive the map they were placed on.
@@ -2604,6 +3055,15 @@ export class Game {
     // the map's own mist and moon, which are what colour the blast dust.
     this.grenades.setTerrain(map.terrain);
     this.grenades.setEnvironment(environment);
+    // The same backstop under a rocket's flight, and for the same reason. The
+    // AT kit has no environment of its own to be given: everything it draws
+    // that is weather-dependent is drawn by the blast, which is the grenades'.
+    this.antiTank.setTerrain(map.terrain);
+    // What THIS map's blast throws: the rubble is the map's own `floorColor`
+    // mixed toward subsoil, so a crater in a jungle and one in a business
+    // district turn up different ground. (The scorch needs no telling — it
+    // multiplies the floor rather than painting a colour on it.)
+    this.blastDebris.setEnvironment(environment);
     // The static world corpses and shards land on. Same reason the grenades are
     // cleared above: a physics world still holding shapes built from the map
     // that was just disposed is geometry that no longer exists, and in the
@@ -2615,6 +3075,40 @@ export class Game {
     // holding meshes that are already disposed, and glass is the one that would
     // then write vertices into them.
     this.glass.setMap(map);
+    // The armour, last, and it is the one line in this method with two reasons
+    // to build NOTHING.
+    //
+    // A hull the player is inside cannot survive the map it is standing on, so
+    // the seat is given up first — this is the same class of failure the funnel
+    // exists to prevent, and it is the sharp version of it: `driving` would be
+    // a live pointer into a disposed `Tank`, which is not a stale picture but a
+    // crash the next time the camera framed it.
+    //
+    // **A netplay round builds the same fleet and owns none of it.** The
+    // authority runs its own `VehicleSystem` off the same `vehicleSpawns`, so
+    // a hull exists on both sides with the same collider in the same place —
+    // and `predicted` is what says which side decides: every hull in a match
+    // refuses local damage, runs neither hardstanding clock, and is posed from
+    // the wire by `NetVehicles`, except the one this player is sitting in.
+    // See `docs/vehicles.md` and `docs/multiplayer.md`.
+    //
+    // Nothing is built for the EDITOR: a vehicle is not level data to be
+    // authored — the hardstanding is, and that is a layout entry — and a
+    // solid, pickable mesh with no `SelectionRef` behind it is something the
+    // centre-screen pick can land on and fail to resolve.
+    // Everybody out BEFORE the fleet is torn down, and before `battle.reset()`
+    // kills the roster: a crew left holding a disposed hull is the same stale
+    // pointer `clearVehicle` is called from here to prevent, and one holding a
+    // bot the reset has just killed would steer a tank with a corpse in it.
+    this.crew.clear();
+    if (opts?.editor === true) this.vehicles.dispose();
+    else this.vehicles.build(map, this.net !== null);
+    // The bearing half of a driver's steering. Null in the editor, and null in
+    // a NETPLAY round for a different reason worth stating: the hulls are
+    // there, but the crews inside them are the authority's — this client runs
+    // no AI at all, and a local `TankCrew` would be a second brain steering a
+    // hull that is being posed from the wire.
+    this.crew.setMap(!this.net && !this.vehicles.empty ? map : null);
     return map;
   }
 
@@ -2731,15 +3225,36 @@ export class Game {
 
     this.battle.setMap(map);
     this.battle.reset();
+    // Who is in the fight but is not a bot: the player, and every hull on the
+    // field. `setPlayer` resets that list to the player alone, which is exactly
+    // what makes this safe to run every round — last round's tanks were
+    // disposed by `installMap` and a bare `addHuman` would leave them in it.
+    //
+    // A tank is in the list for two reasons and neither is optional: bots must
+    // be able to ACQUIRE one (nothing else would make them fire at it) and
+    // `hittablesAgainst` must return one (nothing else would let a round land
+    // on it). It is deliberately NOT in `this.combatants`, which is the list
+    // `ConquestSystem` counts occupancy from — armour does not capture flags,
+    // and the crew inside it already counts for itself.
+    this.battle.setPlayer(this.player);
+    for (const tank of this.vehicles.tanks) this.battle.addHuman(tank);
     // Every rig goes back to the pool restored; a corpse cannot outlive the
     // round it fell in.
     this.ragdolls.reset();
     this.debris.reset();
+    this.blastDebris.reset();
     this.conquest.start(map);
     // The flags' markers read the same radius ConquestSystem tests against,
     // and follow the same terrain the ring is drawn across.
     this.zones.build(map.controlPoints, map.terrain, map.nav, env);
     this.player.fullReset();
+    // The AT slot is the MAP's and the ROUND's, not the kit screen's, so it is
+    // re-decided here as well as in `applyLoadout` — a player who chose a
+    // launcher on Coldharbour and then joined a match would otherwise still be
+    // carrying one into a round with no armour in it and no authority that has
+    // heard of a rocket. `fullReset` runs first, so the slot is installed with
+    // a full pouch either way.
+    this.player.setEquipment(this.armourOffered ? this.equipment : null);
     // Offline the player is team 0 for the life of the process. In a netplay
     // round the side is the authority's, and the session has it whenever the
     // welcome beat this build; when it did not, the welcome applies it itself.
@@ -2883,6 +3398,45 @@ export class Game {
   }
 
   private updateGameplay(dt: number): void {
+    // The hull the frame belongs to, read ONCE and up front.
+    //
+    // It has to be a local rather than `this.driving` re-read below, because a
+    // hull can be destroyed inside `updateWorld` — a bot's round, a shell, a
+    // grenade — and `clearVehicle` nulls the field on that same frame. Read
+    // again after the world step, the camera branch would fall through to the
+    // on-foot path and snap the eye from twelve metres behind a burning tank
+    // into a head that is about to be a corpse, for exactly one frame. Held
+    // here, the view stays on the wreck and the death cam takes it next frame,
+    // which is what the cut should look like.
+    const driven = this.driving;
+    if (driven) this.updateDriver(dt, driven);
+    else this.updateOnFoot(dt);
+
+    if (!this.updateWorld(dt)) return;
+
+    if (driven) this.frameVehicleCamera(dt, driven);
+    else this.updateCameraAndLighting(dt);
+    // Reads the camera (it fades the markers into the fog wall) but never
+    // moves it, so it belongs after the tail above rather than inside it.
+    this.zones.update(
+      dt,
+      this.conquest.points,
+      this.player.team,
+      this.cameraSys.camera.position,
+    );
+    this.updateHud(dt);
+  }
+
+  /**
+   * The half of a gameplay frame that is about a body ON FOOT: the movement,
+   * the leash, the trigger, and the one key that gets into a vehicle.
+   *
+   * Split out of `updateGameplay` when armour arrived, and the split is the
+   * same one `updateWorld` already is: what is about the FIGHT is shared by
+   * every way of being in it, and what is about a body standing up is not.
+   * Nothing moved when it was extracted.
+   */
+  private updateOnFoot(dt: number): void {
     // --- player ---
     const ev = this.player.update(dt, this.input, this.cameraSys);
     if (ev.jumped) this.sfx.jump();
@@ -2968,7 +3522,19 @@ export class Game {
       this.input.pointerLocked ||
       this.input.gamepadConnected ||
       this.input.touchActive;
-    if (this.player.tryShot(this.input.fire && canFire)) {
+    // **The third slot takes the trigger down a path of its own**, because
+    // none of the round handling below applies to it: there is no hitscan to
+    // resolve, no spread to roll, no hitmarker to guess at and no tracer to
+    // draw. What it DOES share is everything inside `tryShot` — the rate
+    // limit, the magazine, the semi-automatic latch, the recoil vector — which
+    // is the whole reason an AT item is carried as a weapon rather than bolted
+    // on beside one. Two calls, one of which runs.
+    const carriedAt = this.player.carriedEquipment;
+    if (carriedAt) {
+      if (this.player.tryShot(this.input.fire && canFire)) {
+        this.fireOrdnance(carriedAt);
+      }
+    } else if (this.player.tryShot(this.input.fire && canFire)) {
       const blend = this.cameraSys.adsBlend;
       const spread = this.player.spread(blend);
       // Tracers, the flash light and the noise all start at the viewmodel's
@@ -3063,18 +3629,569 @@ export class Game {
       // it — sound and announcement together, from the one door.
     }
 
-    if (!this.updateWorld(dt)) return;
+    // The one verb that is not on the mouse or a stance key. Last in this
+    // method on purpose: it is tested against where `player.update` has just
+    // put the body, so walking up to a hull offers it on the frame you arrive
+    // rather than the frame after.
+    const seat = this.vehicles.empty ? null : this.offeredSeat();
+    this.hud.setUsePrompt(seat ? "E" : null, seat?.label ?? "ENTER TANK");
+    if (!seat || !this.input.usePressed) return;
+    // **In a match, getting in is an ASK.** Nothing local changes here: the
+    // authority re-derives the whole offer against its own copy of the hull,
+    // the team, the distance and the crew, and answers with a `seat` event —
+    // which is where `mount` is finally called. Mounting locally and letting
+    // the server catch up would be a client deciding it is inside a tank
+    // somebody else may already be sitting in.
+    if (this.net) {
+      this.net.sendMount(this.vehicles.tanks.indexOf(seat.tank));
+      return;
+    }
+    // The eviction and the mount are one gesture and must land on the same
+    // frame: `mount` writes `Tank.occupied` through `setOccupied`, and a
+    // crew taken out without somebody taking its place would leave the hull
+    // open for the boarding sweep to re-crew before the player's key is even
+    // read again.
+    if (seat.crewed) this.crew.evict(seat.tank);
+    this.mount(seat.tank);
+  }
 
-    this.updateCameraAndLighting(dt);
-    // Reads the camera (it fades the markers into the fog wall) but never
-    // moves it, so it belongs after the tail above rather than inside it.
-    this.zones.update(
-      dt,
-      this.conquest.points,
-      this.player.team,
-      this.cameraSys.camera.position,
+  /**
+   * The hull this player could get into right now, and what the prompt should
+   * call it: an empty one of their own side, or — failing that — their own
+   * side's hull with a bot crew in it, which they may turn out of it.
+   *
+   * **Empty first**, which matters on nothing shipped today (a map states one
+   * hardstanding per side) and matters immediately on the day one states two:
+   * given the choice, take the tank nobody is using.
+   *
+   * The whole of "a bot crew never denies the player their own armour" is
+   * these six lines and `TankCrew.evict`. Without them a single hull a side
+   * makes whether the player ever drives a race to the yard, which is a worse
+   * feature than bots not driving at all.
+   */
+  /**
+   * The hull this client is driving, as the upload needs it, or null on foot.
+   *
+   * Rebuilt in place rather than allocated, because it is read at `INPUT_HZ`
+   * for as long as somebody is driving. Every field is the `Tank`'s own — this
+   * is a view of it and never a copy that could drift.
+   */
+  private localHull(): LocalHull | null {
+    const tank = this.driving;
+    if (!tank) return null;
+    const hull = this.hullReport;
+    hull.tank = this.vehicles.tanks.indexOf(tank);
+    hull.position = tank.position;
+    hull.yaw = tank.yaw;
+    hull.turretYaw = tank.turretYaw;
+    hull.gunPitch = tank.gunPitch;
+    return hull;
+  }
+
+  /** See `localHull`. Held so the upload path allocates nothing. */
+  private readonly hullReport: LocalHull = {
+    tank: -1,
+    position: Vector3.Zero(),
+    yaw: 0,
+    turretYaw: 0,
+    gunPitch: 0,
+  };
+
+  private offeredSeat(): Seat | null {
+    const at = this.player.position;
+    const team = this.player.team;
+    const seat = this.seat;
+    const free = this.vehicles.enterable(at, team);
+    if (free) {
+      seat.tank = free;
+      seat.crewed = false;
+      seat.label = "ENTER TANK";
+      return seat;
+    }
+    const held = this.vehicles.occupiedNear(at, team);
+    if (held && this.crewedByBot(held)) {
+      seat.tank = held;
+      seat.crewed = true;
+      seat.label = "TAKE OVER TANK";
+      return seat;
+    }
+    return null;
+  }
+
+  /**
+   * Is this hull being driven by a BOT — somebody who may be turned out of it?
+   *
+   * Offline it is `TankCrew`'s own pairing. In a match nothing local runs the
+   * crews, so it is the roster: `VehicleState.by` says which slot is inside,
+   * and the roster message says whether that slot is a person. **This is the
+   * one place the client is allowed to care which**, and it is the same
+   * exception the scoreboard already is — a slot changing hands is invisible
+   * everywhere that draws a body, and this is drawing a PROMPT. A person's
+   * hull is simply not offered: you cannot evict a human, and a prompt that
+   * said you could would be a key that does nothing.
+   */
+  private crewedByBot(tank: Tank): boolean {
+    if (!this.net) return this.crew.crewOf(tank) !== null;
+    const by = this.net.vehicles.occupant(this.vehicles.tanks.indexOf(tank));
+    if (by < 0) return false;
+    // Found by `index` rather than subscripted. The roster is laid out in slot
+    // order and the two agree today, but a slot's INDEX is what identifies it
+    // everywhere else on the wire, and a lookup that only works because of an
+    // ordering nothing states is one that breaks silently.
+    return (
+      this.net.slots.find((s) => s.index === by)?.occupant.kind === "bot"
     );
-    this.updateHud(dt);
+  }
+
+  /**
+   * The half of a gameplay frame that is about a body IN A HULL: the look, the
+   * throttle, the trigger, and the one key that gets back out.
+   *
+   * **`Player.update` is deliberately not called here, and that is a budget
+   * decision as much as a correctness one.** A driver is not walking, not
+   * jumping, not crouching and not probing the ground — the tank is doing all
+   * four — so running it would step a body through a world it is not in. What
+   * the body still owes is its VITALS, which is why `Player.updateVitals`
+   * exists: a driver who mounted at forty health has to heal like anybody else.
+   * The tank's own ground probe then REPLACES the player's rather than adding
+   * to it, so the most expensive call in the frame is still paid exactly once.
+   *
+   * The order inside is the one thing here that is load-bearing. The camera's
+   * AIM is integrated first, because the turret is walking toward it and this
+   * frame's look should be this frame's order; the hull itself is moved later,
+   * inside `updateWorld`, and the camera is PLACED after that in
+   * `frameVehicleCamera`. Splitting the camera's two halves across the world
+   * step is the whole reason `VehicleCamera` has `aim` and `place` rather than
+   * one `update`.
+   */
+  private updateDriver(dt: number, tank: Tank): void {
+    this.player.updateVitals(dt);
+    // The body rides the hull. Slaved rather than simulated: every downstream
+    // reader — the conquest occupancy count, the minimap arrow, the audio
+    // listener's fallback, the leash — asks where the player IS, and the honest
+    // answer is "in that tank". `nudgeTo` rather than `placeAt` because this is
+    // a body being carried, not one arriving: `placeAt` would zero a fall and
+    // claim the ground every frame.
+    this.player.nudgeTo(tank.position);
+
+    // The look, into the ORDERS the turret walks toward. Never into the gun.
+    this.vehicleCam.aim(dt, this.input);
+    this.drive.throttle = this.input.moveY;
+    this.drive.steer = this.input.moveX;
+    this.drive.aimYaw = this.vehicleCam.yaw;
+    this.drive.aimPitch = this.vehicleCam.pitch;
+
+    // The same three-way gate the rifle's trigger takes, and for the same
+    // reason: a UI click must never discharge anything. A tank gun has no
+    // semi-automatic question to ask, so the trigger is simply held or not —
+    // `Tank.fireGun` is what refuses a round that is not loaded yet.
+    const canFire =
+      this.input.pointerLocked ||
+      this.input.gamepadConnected ||
+      this.input.touchActive;
+    if (this.input.fire && canFire) this.fireShell(tank);
+
+    // …and getting out is an ask too, for the reason getting in is: WHERE the
+    // body lands is the authority's, exactly as a spawn is, and a client that
+    // put its own feet down beside the hull would be choosing a position
+    // fifteen other clients are about to be told about.
+    if (this.input.usePressed) {
+      if (this.net) this.net.sendDismount();
+      else this.dismount();
+    }
+  }
+
+  /**
+   * The third slot's trigger: a rocket out of the tube, or a mine on the
+   * ground.
+   *
+   * `Player.tryShot` has already spent the charge and built the recoil by the
+   * time this runs — an AT item is carried as a weapon and that is the point —
+   * so the two things this owes are the object appearing in the world and the
+   * kick reaching the camera. It is the second half of `updateOnFoot`'s
+   * shooting block for the launcher and the mine, standing where
+   * `combat.fire` stands for everything else.
+   *
+   * The switch is exhaustive by construction: a third AT item fails to
+   * compile here rather than silently doing nothing, which is the same
+   * guarantee `WEAPON_BUILDERS`' `Record` gives the models.
+   */
+  private fireOrdnance(id: EquipmentId): void {
+    switch (id) {
+      case "rpg":
+        this.launchRocket();
+        break;
+      case "mine":
+        this.layMine();
+        break;
+      default: {
+        const unreachable: never = id;
+        void unreachable;
+      }
+    }
+    // The kick, wired exactly as the rifle's is: the vector is `Player`'s and
+    // this call site's whole job is handing it to the camera. The launcher's
+    // `recoilMult` is the heaviest in the game and the mine's is zero, so one
+    // pair of lines serves both.
+    const kick = this.player.recoilKick(this.cameraSys.adsBlend);
+    this.cameraSys.addRecoil(kick.pitch, kick.yaw);
+    this.cameraSys.addPunch(this.player.kickDrift);
+  }
+
+  /**
+   * One rocket, from the tube on screen and down the reticle.
+   *
+   * **From the MUZZLE and along the camera's forward**, which are two
+   * different things and deliberately not reconciled: a rocket that appeared
+   * on the camera axis would read as coming out of the middle of the screen —
+   * the exact failure `releaseGrenade` documents from the other side — and one
+   * aimed from the muzzle at a converging angle would put the reticle a hair
+   * off the flight at every range but one. Launched from the muzzle ALONG the
+   * aim it flies parallel to the line the reticle draws, a hand's breadth
+   * under it, which is what a launcher held under the eye actually does.
+   *
+   * `launchAhead` is a floor on that point rather than the point itself, for
+   * `releaseGrenade`'s reason: a shot taken with a wall at your shoulder must
+   * not spawn the warhead inside it.
+   */
+  private launchRocket(): void {
+    const cfg = CONFIG.equipment.rpg.rocket;
+    const eye = this.cameraSys.camera.position;
+    const forward = this.cameraSys.forward;
+    this.ordnanceAt.copyFrom(this.player.muzzleWorld());
+    const ahead =
+      (this.ordnanceAt.x - eye.x) * forward.x +
+      (this.ordnanceAt.y - eye.y) * forward.y +
+      (this.ordnanceAt.z - eye.z) * forward.z;
+    if (ahead < cfg.launchAhead) {
+      this.ordnanceAt
+        .copyFrom(eye)
+        .addInPlaceFromFloats(
+          forward.x * cfg.launchAhead,
+          forward.y * cfg.launchAhead,
+          forward.z * cfg.launchAhead,
+        );
+    }
+    // The pool has the last word, and a refusal gives the rocket back — the
+    // same contract the grenade pool has with `spendGrenade`, arrived at from
+    // the other direction because the trigger and the round are one call here.
+    // It cannot happen with eight slots and five possible shooters; what
+    // matters is that it costs a cooldown rather than a rocket if it ever does.
+    if (
+      !this.antiTank.launch(
+        this.ordnanceAt,
+        forward,
+        this.player.team,
+        this.player,
+      )
+    ) {
+      this.player.returnRound();
+      return;
+    }
+    // **Networked: the authority fires its own rocket and owns everything it
+    // does.** The local one above still flies — it is what the shooter
+    // watches leave the tube, and a warhead that appeared six metres downrange
+    // a round trip later would read as a misfire — but it hurts nobody:
+    // `hullNear` answers with hulls that refuse local damage and the splash
+    // goes through `hittablesFor`, which is `battle`'s empty list in a match.
+    // The authority's copy comes back with our slot on it and `NetOrdnance`
+    // filters it out, exactly as it does for a thrown grenade.
+    this.net?.sendOrdnance(this.ordnanceAt, forward);
+    // Bots hear a launcher the way they hear a rifle. This is the only place
+    // the player's own launcher enters the world as a noise, so it is the only
+    // place that can say so.
+    this.battle.hearGunshot(this.ordnanceAt, this.player.team);
+    this.sfx.launcher(this.ordnanceAt);
+    const lc = CONFIG.lighting;
+    this.lighting.pulse(
+      this.ordnanceAt,
+      lc.muzzleColor,
+      lc.muzzleRange * 1.8,
+      lc.muzzleIntensity,
+      lc.muzzleLife * 2,
+    );
+    const haptic = CONFIG.rumble;
+    this.input.rumble(1, 1, haptic.shotMs * 2.5);
+  }
+
+  /**
+   * One mine, on the ground in front of the player.
+   *
+   * **It is never refused for want of somewhere to put it.** The spot ahead is
+   * tried first and the player's own feet are the fallback, because the
+   * alternative — a trigger pull that spends a mine and produces nothing, or
+   * one that silently does nothing at all — is the worst thing this could hand
+   * somebody backing away from a tank. `dropMax` is what rules the spot ahead
+   * out: a mine laid over the edge of a terrace has to land on the terrace.
+   */
+  private layMine(): void {
+    const cfg = CONFIG.equipment.mine.mine;
+    const feet = this.player.position;
+    const forward = this.cameraSys.forward;
+    // Flattened: a mine goes on the ground, so where the player is LOOKING
+    // matters only as a bearing.
+    const flat = Math.hypot(forward.x, forward.z);
+    const fx = flat > 1e-4 ? forward.x / flat : 0;
+    const fz = flat > 1e-4 ? forward.z / flat : 1;
+    const x = feet.x + fx * cfg.placeAhead;
+    const z = feet.z + fz * cfg.placeAhead;
+    const y = this.standableAt(x, z, feet.y);
+    const reachable = Math.abs(y - feet.y) <= cfg.dropMax;
+    this.ordnanceAt.set(
+      reachable ? x : feet.x,
+      (reachable ? y : this.standableAt(feet.x, feet.z, feet.y)) + MINE_LIFT,
+      reachable ? z : feet.z,
+    );
+    // **Networked: the mine is the authority's and there is no local copy.**
+    // This is where it differs from the rocket beside it, and the difference is
+    // what the two objects ARE: a mine is laid at the feet and never moves, so
+    // the round trip before it appears is invisible, while a second plate on
+    // the ground would be one to reconcile against the `mines` table for the
+    // rest of the round. The pouch is spent either way — the count in the hand
+    // is the client's picture of a number the server is also keeping, exactly
+    // as the grenade pouch is.
+    if (this.net) {
+      this.net.sendOrdnance(this.ordnanceAt, this.cameraSys.forward);
+      this.sfx.mineSet();
+      return;
+    }
+    if (!this.antiTank.place(this.ordnanceAt, this.player.team, this.player)) {
+      this.player.returnRound();
+      return;
+    }
+    this.sfx.mineSet();
+  }
+
+  /**
+   * One round out of the main gun: hitscan down the GUN's own axis, a blast
+   * where it lands, and the noise.
+   *
+   * **Down the gun, not down the camera**, which is the whole of why the HUD
+   * draws a marker instead of a crosshair. The player's look is a request the
+   * turret is still walking toward; firing along it would put the shell
+   * somewhere the barrel is visibly not pointing, and `docs/weapons.md`'s rule
+   * that the picture and the axis are one fact would be broken by the frame.
+   *
+   * The direct hit and the splash are two separate resolutions on purpose, and
+   * they cannot double-count a kill: `hittablesFor` is fetched INSIDE
+   * `blastAt`, after the direct hit has already been dealt, and a body killed
+   * by it is no longer `alive` and no longer in the list.
+   */
+  private fireShell(tank: Tank): void {
+    if (!this.resolveShell(tank, this.player)) return;
+    // Everything below this line is about the person holding the trigger, and
+    // that is the whole of the split: a bot crew's round goes through the same
+    // call above and gets none of it.
+    this.vehicleCam.addKick(CONFIG.vehicles.tank.gun.cameraKick);
+    const haptic = CONFIG.rumble;
+    this.input.rumble(1, 1, haptic.shotMs * 3);
+  }
+
+  /**
+   * One round out of a tank gun, whoever pulled the trigger. Returns false
+   * when the gun was not loaded, and a caller that gets a false has fired
+   * nothing.
+   *
+   * **The one implementation of a shell**, and it is one for the reason the
+   * blast is one: the player's tank and a bot's are the same vehicle, and two
+   * copies of a damage figure, a splash and a noise are two things that drift.
+   * `by` is who the kill belongs to — the player, or the crewman inside the
+   * hull — and it is the ONLY thing that differs between the two callers below
+   * the trigger.
+   *
+   * The direct hit and the splash are two separate resolutions and they cannot
+   * double-count a kill: `hittablesFor` is fetched INSIDE `blastAt`, after the
+   * direct hit has already been dealt, and a body killed by it is no longer
+   * `alive` and no longer in the list.
+   */
+  private resolveShell(tank: Tank, by: Combatant): boolean {
+    if (!tank.fireGun()) return false;
+    const g = CONFIG.vehicles.tank.gun;
+    const muzzle = tank.muzzleToRef(this.shellFrom);
+    const dir = tank.gunDirToRef(this.shellDir);
+    const byPlayer = by === this.player;
+    // **In a match this is a PREDICTION**, and everything below behaves
+    // accordingly without a second path: the targets refuse damage
+    // (`NetSoldier.takeDamage`, `Tank.predicted`), so `shot.killed` is false
+    // and neither the credit nor the killfeed line below can be reached. What
+    // it still buys is what the shooter is owed on their own screen the frame
+    // the trigger goes — the tracer, the impact, the report and the light —
+    // and the report goes up for the authority to re-fire down its own gun.
+    if (byPlayer) this.net?.sendShell(muzzle, dir);
+    // No spread: a tank gun is a rifled barrel with a fire-control system, and
+    // the thing that makes it hard to hit with is the traverse rate, not a
+    // cone. (A bot crew's error is on the AIM POINT instead — see
+    // `CONFIG.vehicles.crew.scatter` — which is a ranging mistake rather than
+    // a loose barrel, and unlike a cone it is something the driver being shot
+    // at can watch the gun make.) No `headMult` either — the head zone is the
+    // player's alone and an upgrade to a body hit, and a shell that landed on
+    // a body has already spent more than a headshot's worth on it.
+    const shot = this.combat.fire(
+      muzzle,
+      dir,
+      0,
+      g.damage,
+      muzzle,
+      // The tank's own side's enemies. In a match `battle`'s list is empty for
+      // the reason `enemyTargets` gives at length, and the driver's team is
+      // the hull's — a bot crew reaches this line only offline.
+      this.net ? this.enemyTargets() : this.battle.hittablesAgainst(tank.team),
+      g.range,
+      SHELL_SHOT,
+    );
+    // The splash, through the one implementation of a blast in the game. `by`
+    // is whoever fired, so a kill lands on their row exactly as a grenade's
+    // does — see `wireGrenades`, which is already wired for this and needed no
+    // arm.
+    //
+    // **Skipped outright in a match**, which is where this differs from the
+    // grenade next door: a thrown grenade's local copy is the ARC the thrower
+    // watched and its blast goes off where that copy came to rest, a few
+    // centimetres from the authority's. A shell's local blast would go off at
+    // whatever this client's own ray happened to find — a body the server
+    // rewound somewhere else, a pane it has already broken — which can be a
+    // street away. The authority's `explode` event draws the only fireball,
+    // and the round trip is what it costs.
+    if (!this.net) {
+      this.grenades.blastAt(shot.hitPoint, tank.team, by, {
+        radius: g.blastRadius,
+        inner: g.blastInner,
+        damage: g.blastDamage,
+        kind: "shell",
+        // How big it LOOKS, with the grenade as 1. Deliberately not derived
+        // from `blastRadius`, which is SMALLER than a frag's — see
+        // `blastPower`.
+        power: g.blastPower,
+      });
+    }
+    // A direct hit is the shooter's own to mark. The blast's victims are marked
+    // by `onBlastHit` like any other blast's, so this covers only the body the
+    // ray itself found.
+    if (shot.target) {
+      const killed = shot.killed && shot.target instanceof Bot;
+      if (byPlayer) {
+        this.hud.flashHitmarker(killed, false);
+        this.sfx.hit();
+      }
+      if (killed && shot.target instanceof Bot) {
+        this.creditKill(by, shot.target, false);
+        this.registerBotKill(shot.target, tank.team, byPlayer);
+      }
+    }
+    // Bots hear a tank gun the way they hear a rifle — this is the only place
+    // armour enters the world as a noise, so it is the only place that can say
+    // so. The TANK's side, not the player's: a hull the AI is driving is heard
+    // by the other team exactly as one the player is driving is.
+    this.battle.hearGunshot(muzzle, tank.team);
+    const lc = CONFIG.lighting;
+    this.lighting.pulse(
+      muzzle,
+      lc.muzzleColor,
+      lc.muzzleRange * 2.2,
+      lc.muzzleIntensity,
+      lc.muzzleLife * 2.5,
+    );
+    this.sfx.cannon(muzzle);
+    return true;
+  }
+
+  /**
+   * The camera half of a driver's frame, after the hull has moved.
+   *
+   * Everything `updateCameraAndLighting` does for a body on foot, minus the two
+   * things a driver has neither of: the aim assist (the turret is the assist —
+   * a rotation added on top of an angle the gun is still walking toward would
+   * be an assist the gun cannot follow) and the blob shadow and carried lamp,
+   * which `updateSceneForCamera` gates on a `player` and is therefore passed
+   * null for.
+   */
+  private frameVehicleCamera(dt: number, tank: Tank): void {
+    this.vehicleCam.place(tank);
+    this.cameraSys.place(this.vehicleCam.eye, this.vehicleCam.look);
+    // Around the HULL rather than the eye, and with no forward bias: the tank
+    // is the thing the frame is about and it is already twelve metres inside
+    // the window, so pushing the window further along the view would walk the
+    // vehicle's own shadow out of it.
+    this.shadowFocus.copyFrom(tank.center);
+    this.updateSceneForCamera(dt, this.shadowFocus, null, this.combatants);
+    this.sfx.engineDrive(
+      Math.min(1, Math.abs(this.input.moveY)),
+      Math.min(1, tank.travel / CONFIG.vehicles.tank.drive.maxSpeed),
+    );
+  }
+
+  /**
+   * Getting in. Everything that changes for as long as `driving` is non-null is
+   * here, and `clearVehicle` is the exact inverse — the two are meant to be
+   * read side by side, because a state that is set in one and not cleared in
+   * the other is a player who never really got out.
+   */
+  private mount(tank: Tank): void {
+    this.driving = tank;
+    this.vehicles.setOccupied(tank, true);
+    // The viewmodel goes away: there is no rifle in a driver's hands, and it is
+    // parented to the camera that is now twelve metres behind a tank.
+    this.player.setBodyHidden(true);
+    // Nothing may hurt the body — the HULL is what is being shot at. Both of
+    // the next two lines are needed and they do different jobs: this one stops
+    // rounds landing, and the one below stops bots AIMING. A bot that could
+    // still acquire an unkillable target would stand there firing at it for the
+    // rest of the round.
+    this.player.invulnerable = true;
+    this.battle.removeHuman(this.player);
+    this.vehicleCam.take(tank);
+    this.sfx.engineOn();
+    // The mount key is not the trigger, but a player who mounts with the mouse
+    // held down should not fire the main gun on the frame they arrive.
+    this.input.consumeFire();
+    this.hud.setUsePrompt(null);
+  }
+
+  /**
+   * Getting out because the player asked. The body is put down beside the hull
+   * and the camera is handed back to the head.
+   *
+   * `cameraSys.reset` rather than leaving the aim where it was: the first-person
+   * camera has not been updated for as long as the drive lasted, so its yaw is
+   * wherever the player was looking when they walked up to the tank — a snap of
+   * up to half a turn on the frame they step out. Resetting to the CHASE
+   * camera's own yaw is the only answer that keeps facing what you were facing,
+   * and it clears the recoil, punch and landing springs that have been sitting
+   * frozen the whole time as a side effect worth having.
+   */
+  private dismount(): void {
+    const tank = this.driving;
+    if (!tank) return;
+    this.player.placeAt(this.vehicles.exitSpot(tank));
+    const yaw = this.vehicleCam.yaw;
+    this.clearVehicle();
+    this.cameraSys.reset(yaw);
+    // The aim just jumped. Reprojecting through it would greet the player with
+    // one frame smeared across the whole screen — the same reason `spawnPlayer`
+    // does this.
+    this.motionBlur.reset();
+    this.input.consumeFire();
+  }
+
+  /**
+   * Giving up the seat, for any reason at all: the player asked, the hull
+   * burned, the round ended, the map is being rebuilt.
+   *
+   * Idempotent, and it deliberately does NOT move the body — the two callers
+   * that need it somewhere else put it there first. That split is what lets
+   * this be safe to call from `installMap`, where moving a player to a spot
+   * beside a hull that is about to be disposed would be nonsense.
+   */
+  private clearVehicle(): void {
+    if (!this.driving) return;
+    this.vehicles.setOccupied(this.driving, false);
+    this.driving = null;
+    this.player.invulnerable = false;
+    this.player.setBodyHidden(false);
+    this.battle.addHuman(this.player);
+    this.sfx.engineOff();
+    this.hud.setVehicle(null);
+    this.hud.setGunMarker(null);
   }
 
   /**
@@ -3349,6 +4466,11 @@ export class Game {
       name: this.playerName,
       url: region?.socketUrl,
       weapon: this.weapon,
+      // The third slot, sent on every join for `map`'s reason: the map a join
+      // lands on decides whether there is a third slot at all, and the client
+      // does not know which map that will be. The server resolves it once and
+      // spends it whenever a round with armour in it comes round.
+      equipment: this.equipment,
       matchId: opts.matchId,
       create: opts.create,
       // Sent on every join rather than only on a create, because "there is room
@@ -3391,6 +4513,7 @@ export class Game {
         if (victimSlot) {
           victimSlot.deathFrom.set(event.from[0], event.from[1], event.from[2]);
           victimSlot.deathDamage = event.amount;
+          victimSlot.deathKind = event.kind ?? "bullet";
         }
         // The flat "a body went down" cue, which offline every bot death gets
         // through `registerBotKill` — this event is the authority's version of
@@ -3466,7 +4589,13 @@ export class Game {
           this.player.applyServerHealth(event.health);
           this.netDamageFrom.set(event.from[0], event.from[1], event.from[2]);
           this.netDamageAmount = event.amount;
-          this.onPlayerDamaged(event.amount, false, this.netDamageFrom);
+          this.netDamageKind = event.kind ?? "bullet";
+          this.onPlayerDamaged(
+            event.amount,
+            false,
+            this.netDamageFrom,
+            this.netDamageKind,
+          );
         }
         break;
 
@@ -3490,6 +4619,7 @@ export class Game {
             this.enterDying(
               this.netDamageFrom,
               this.netDamageAmount,
+              this.netDamageKind,
               event.respawnIn,
             );
           } else {
@@ -3584,10 +4714,75 @@ export class Game {
       // A blast the authority resolved. The light, the noise and the
       // concussion are `onExplosion`'s, exactly as they are offline — the
       // difference is only who decided it happened.
-      case "explode":
+      // The blast itself, and the one case where the PICTURE is raised from
+      // outside `GrenadeSystem`. `drawBlast` puts the six drawn layers up and
+      // hands back what the blast went off on; `onExplosion` does the rest with
+      // it. Before this the event was a light and a bang with nothing burning
+      // in the middle of it — somebody else's grenade had no fireball at all.
+      case "explode": {
         this.netDamageFrom.set(event.at[0], event.at[1], event.at[2]);
-        this.onExplosion(this.netDamageFrom);
+        // How big it LOOKS. A grenade is 1 by definition and says nothing;
+        // a tank shell, a rocket and a mine each carry their own, which is
+        // the only way this client can tell them apart — no other field on
+        // this event says what went off.
+        const power = event.power ?? 1;
+        const ground = this.grenades.drawBlast(this.netDamageFrom, power);
+        this.onExplosion(this.netDamageFrom, power, ground);
         break;
+      }
+
+      // The authority's answer to a mount or a dismount, and the ONLY thing
+      // that puts this player in a hull or takes them out of one in a match.
+      // It reaches `mount`/`clearVehicle` — the same pair an offline round
+      // uses, so everything either of them owns is owned identically here.
+      //
+      // A refusal arrives as `tank: -1` on a player who is already on foot,
+      // which `clearVehicle` reads as the no-op it documents itself to be.
+      case "seat": {
+        if (event.slot !== this.net?.slot) break;
+        if (event.tank >= 0) {
+          const tank = this.vehicles.tanks[event.tank];
+          if (tank && tank !== this.driving) this.mount(tank);
+          break;
+        }
+        if (!this.driving) break;
+        // Where the body goes is the authority's, exactly as a spawn's is —
+        // and it is placed BEFORE the seat is given up for `dismount`'s
+        // reason: `clearVehicle` deliberately does not move anybody, and the
+        // camera hand-off below reads the chase yaw that is about to be gone.
+        if (event.pos) {
+          this.netDamageFrom.set(event.pos[0], event.pos[1], event.pos[2]);
+          this.player.placeAt(this.netDamageFrom);
+        }
+        const yaw = event.yaw ?? this.vehicleCam.yaw;
+        this.clearVehicle();
+        // The aim just jumped a long way — see `dismount`, which spends the
+        // same two lines for the same reason on the offline path.
+        this.cameraSys.reset(yaw);
+        this.motionBlur.reset();
+        this.input.consumeFire();
+        break;
+      }
+
+      // A tank gun went off somewhere. The report and nothing else: the flash,
+      // the light and the round itself are all the authority's, and the hull
+      // it came out of is already being drawn where the snapshot put it — so
+      // the noise is placed on the MUZZLE of that hull, which is the same rule
+      // `fire` follows one scale down.
+      case "cannon": {
+        const tank = this.vehicles.tanks[event.tank];
+        if (!tank || tank === this.driving) break;
+        this.sfx.cannon(tank.muzzleToRef(this.shellFrom));
+        const lc = CONFIG.lighting;
+        this.lighting.pulse(
+          this.shellFrom,
+          lc.muzzleColor,
+          lc.muzzleRange * 2.2,
+          lc.muzzleIntensity,
+          lc.muzzleLife * 2.5,
+        );
+        break;
+      }
 
       // The authority's word on the glass. It arrives for our OWN shots too,
       // and that is what completes them: `onShotPath` predicted the pane away
@@ -3646,10 +4841,30 @@ export class Game {
    * requires — both callers do.
    */
   private enemyTargets(): Hittable[] {
-    return this.net
-      ? this.net.roster.hittablesAgainst(this.player.team)
-      : this.battle.hittablesAgainst(this.player.team);
+    if (!this.net) return this.battle.hittablesAgainst(this.player.team);
+    // The bodies, plus the armour. A hull is a `Hittable` on this side too and
+    // has to be in the list for the local cue a hit is owed — without it a
+    // round fired at a tank sparks off the collider with no hitmarker, and the
+    // aim assist has nothing to hold. What it CANNOT do is damage the thing:
+    // `Tank.predicted` refuses every blow in a match, exactly as
+    // `NetSoldier.takeDamage` does, so this list is a prediction and nothing
+    // more.
+    //
+    // Copied into this file's own scratch rather than pushed onto the roster's:
+    // that array is `NetRoster`'s and is handed out again on the next call, and
+    // a class that has deliberately never heard of a vehicle should not come
+    // back holding two.
+    const out = this.netTargets;
+    out.length = 0;
+    out.push(...this.net.roster.hittablesAgainst(this.player.team));
+    for (const tank of this.vehicles.tanks) {
+      if (tank.alive && tank.team !== this.player.team) out.push(tank);
+    }
+    return out;
   }
+
+  /** See `enemyTargets`. Reused, so a shot in a netplay round allocates nothing. */
+  private readonly netTargets: Hittable[] = [];
 
   /**
    * Every body but the local player's, as the minimap draws them.
@@ -3760,6 +4975,12 @@ export class Game {
    * `died` event that follows it has something to throw the corpse with.
    */
   private netDamageAmount = 0;
+  /**
+   * …and what delivered it, the third of the same triple and kept for the same
+   * window. A server too old to name one says `bullet` by omission, which is
+   * what every death on the wire was before a blast could throw a body.
+   */
+  private netDamageKind: DamageKind = "bullet";
 
   /**
    * The networked half of a frame.
@@ -3777,10 +4998,17 @@ export class Game {
       dt,
       {
         position: this.player.position,
-        yaw: this.cameraSys.aimYaw,
-        pitch: this.cameraSys.aimPitch,
+        // The chase camera's aim while driving, the body's otherwise. It is
+        // one field either way because it answers one question — where is this
+        // person LOOKING — and the authority measures a claimed round against
+        // it whichever weapon fired.
+        yaw: this.driving ? this.vehicleCam.yaw : this.cameraSys.aimYaw,
+        pitch: this.driving ? this.vehicleCam.pitch : this.cameraSys.aimPitch,
         crouching: this.player.crouching,
         sprinting: this.player.sprinting,
+        // The hull, or null on foot. Non-null is what switches the upload from
+        // a body's step to a tank's — see `LocalState.hull`.
+        hull: this.localHull(),
       },
       this.conquest.points,
       this.cameraSys.camera.position,
@@ -3829,7 +5057,25 @@ export class Game {
     this.updateNet(dt);
     this.combat.update(dt);
     this.grenades.update(dt);
-    // The engine BEFORE its two clients, always. A corpse tested for stillness
+    // The armour. It is here rather than in the simulation below for the
+    // reason everything else in this method is: none of it decides anything.
+    // The hulls are posed from the wire (`NetVehicles`), the one under this
+    // player is simulated by them, and what the fleet still owes on both
+    // counts is the ground it stands on, the lean, the belts and the masts —
+    // which is `Tank.updateRemote`'s and `Tank.update`'s, and is dressing.
+    //
+    // Stepped under the DEPLOY screen too, like the bodies beside it: a tank
+    // frozen in the street behind the card and then snapping across it on the
+    // frame the player spawns is the same failure sixteen frozen bodies were.
+    if (!this.vehicles.empty) {
+      this.syncNetVehicles();
+      this.vehicles.update(dt, this.vehicleOrders);
+    }
+    // The local player's own rocket, still flying — the one AT object this
+    // client owns a copy of. Everything else about the kit is drawn by
+    // `NetOrdnance` off the wire, and neither can hurt anybody.
+    this.antiTank.update(dt);
+    // The engine BEFORE its three clients, always. A corpse tested for stillness
     // or a shard aged before its own step would be reading last frame's
     // velocities — and this is the only place the world is stepped:
     // `scene.physicsEnabled` is false precisely so that a pause, the deploy map
@@ -3837,11 +5083,63 @@ export class Game {
     this.physics.update(dt);
     this.ragdolls.update(dt);
     this.debris.update(dt);
+    this.blastDebris.update(dt);
     // A pane can break while the local player is on the deploy screen — the
     // authority is running the round without them — and the rebuild it owes has
     // to drain here too, or a whole deployment's worth of breaks lands as one
     // hitch on the frame they spawn.
     this.glass.update();
+  }
+
+  /**
+   * The three transitions a hull makes in a match, applied from the wire.
+   *
+   * A hull is LIVE, a WRECK or GONE, and in a netplay round the authority owns
+   * every step between them — `VehicleSystem`'s own two clocks stand down for
+   * a `predicted` fleet. So this is the whole of what a client does about
+   * them, and each arm is an edge rather than a state so a snapshot restating
+   * the same thing twenty times a second costs three comparisons:
+   *
+   *   - **gone** — dropped from the snapshot, so it is taken off the field.
+   *   - **arrived** — named again after being gone, so a fresh hull is put on
+   *     its hardstanding. `placeAt` is what puts the collider, the paint and
+   *     the gun's clock back, exactly as a respawn does offline.
+   *   - **burned** — still there and no longer alive. `Tank.wreck` is the same
+   *     door `destroy` takes, which is what keeps the toast, the crew and the
+   *     charred repaint identical on both sides of the wire.
+   *
+   * `occupied` is written here as well, and it has to be: it is the flag
+   * `enterable` and `occupiedNear` read, nothing local ever writes it in a
+   * match, and without it this client would offer a seat in a tank somebody
+   * else is already sitting in.
+   */
+  private syncNetVehicles(): void {
+    const net = this.net;
+    if (!net) return;
+    for (const [i, tank] of this.vehicles.tanks.entries()) {
+      const present = net.vehicles.present(i);
+      if (!present) {
+        if (tank.body.isEnabled()) tank.hide();
+        continue;
+      }
+      const state = net.vehicles.stateFor(i);
+      if (!tank.body.isEnabled()) {
+        // A fresh hull, and it is placed at the position that arrived rather
+        // than at the hardstanding: the two are the same on a respawn, and
+        // they are NOT the same for a hull this client has only just been told
+        // about — a joiner mid-round would otherwise put every tank back on
+        // its pad for one frame before the wire dragged it to where it is.
+        if (!state) continue;
+        tank.placeAt(this.hullPlace.set(state.x, state.y, state.z), state.yaw);
+      }
+      // What is left of it, written straight in rather than through
+      // `takeDamage` — which a `predicted` hull refuses by design. This is the
+      // number the driver's own armour gauge draws, and it is the authority's
+      // in a match exactly as the player's own health is.
+      tank.health = net.vehicles.health(i);
+      if (!net.vehicles.alive(i)) tank.wreck();
+      this.vehicles.setOccupied(tank, net.vehicles.occupant(i) >= 0);
+    }
   }
 
   /**
@@ -3962,6 +5260,26 @@ export class Game {
       return false;
     }
 
+    // --- the armour ---
+    // Before the bots, for the reason `ConquestSystem` runs before them: a
+    // bot's think tick tests line of sight against the solid world, and a hull
+    // is part of that world. Stepped after the flags and before the AI, a tank
+    // that has just pulled across a street breaks the sightline on the same
+    // frame it visibly blocked it rather than one frame late.
+    //
+    // It is also what MOVES the hull the camera is about to be framed against —
+    // see `VehicleCamera`'s note on why its two halves straddle this call.
+    //
+    // The bot crews go first, for the reason `updateDriver` runs before this
+    // for the player: what they write is the drive input this step consumes,
+    // so a crew stepped afterwards would be steering a hull on last frame's
+    // orders. It is also where a crew's shell is fired, which is why it lands
+    // before the bots think — a hull destroyed by one is not a target on the
+    // same frame's acquisition, exactly as a flag taken by `conquest.update`
+    // is not still contested.
+    this.crew.update(dt);
+    this.vehicles.update(dt, this.vehicleOrders);
+
     // --- bots ---
     this.battle.update(dt, this.cameraSys.camera.position);
     this.spendMuzzleLightBudget();
@@ -3969,6 +5287,10 @@ export class Game {
     // After the bots, so a grenade thrown on this frame's think tick flies on
     // this frame rather than sitting in the thrower's hand until the next one.
     this.grenades.update(dt);
+    // Beside them, and after `vehicles.update` for a second reason of its own:
+    // a mine's trigger is a distance test against where a hull IS, and running
+    // it before the hull moved would arm the road a frame behind the tank.
+    this.antiTank.update(dt);
     // After the grenades, because a blast kill resolves in there — so a body
     // taken this frame gets its first step this frame rather than hanging in
     // the air for one. Together with the one in `updateNetWorld` this is the
@@ -3976,12 +5298,13 @@ export class Game {
     // precisely so that a pause, the deploy map and the menu — all of which
     // render — cannot advance it.
     //
-    // The ENGINE first and its two clients after, always: a corpse tested for
+    // The ENGINE first and its three clients after, always: a corpse tested for
     // stillness or a shard aged before its own step would be reading last
     // frame's velocities.
     this.physics.update(dt);
     this.ragdolls.update(dt);
     this.debris.update(dt);
+    this.blastDebris.update(dt);
     // Last, and it is not an effect: this drains the flow-field rebuild a
     // broken pane owes, one field per frame. After the bots on purpose — a
     // field swapped in mid-frame would be read by half this frame's think ticks
@@ -4249,6 +5572,21 @@ export class Game {
     this.hud.setAmmo(this.player.ammo, this.player.magSize, this.player.reloading);
     this.hud.setStowedAmmo(this.player.slungAmmo, this.player.slungMagSize);
     this.hud.setGrenades(this.player.grenades, CONFIG.grenade.carried);
+    this.pushAntiTankHud();
+    // The armour half of the bottom band, and the marker that replaces the
+    // crosshair with it. Pushed unconditionally like every other gauge — null
+    // is what takes both away, and `HUD.setVehicle` is what knows that means
+    // putting the magazine back.
+    this.hud.setVehicle(
+      this.driving
+        ? {
+            health: this.driving.health,
+            maxHealth: CONFIG.vehicles.tank.maxHealth,
+            load: this.driving.loadProgress,
+          }
+        : null,
+    );
+    this.pushGunMarker(dying);
     if (!dying) {
       // The crosshair ring IS the live spread: radians at the aim plane,
       // projected through the current FOV into screen pixels. Skipped rather
@@ -4302,6 +5640,68 @@ export class Game {
    * `ConquestSystem.pointAt`, the same one that decides occupancy, so the
    * panel appears exactly when the player starts counting toward the meter.
    */
+  /**
+   * Puts the gun marker where the BARREL is pointing, projected onto the glass.
+   *
+   * **This is the honest half of a third-person tank**, and the whole reason
+   * `#gun-marker` exists rather than the crosshair simply staying up. The eye
+   * is twelve metres behind the hull and the turret is walking toward the
+   * player's look at 40 deg/s, so the middle of the screen is the ORDER and
+   * this is the gun. `docs/weapons.md`'s rule — the reticle may not lie — is
+   * kept by drawing the second one.
+   *
+   * Two things it has to get right and neither is the projection:
+   *
+   * - **Where along the axis to draw it.** Anywhere: a point on a ray projects
+   *   to the same pixel wherever it is taken from, so long as it is in FRONT of
+   *   the eye. It is taken at the gun's own range rather than at the muzzle
+   *   because the muzzle is close enough to the camera to sit off the edge of
+   *   the frame at full traverse, and a marker that leaves the screen while the
+   *   gun is still on it reads as broken.
+   * - **Behind the camera.** `Vector3.Project` happily returns a point for one,
+   *   mirrored — a gun swung round over the back deck would put its marker on
+   *   the opposite side of the screen from the barrel. The dot product against
+   *   the view axis is what refuses it, and a hidden marker is the right answer
+   *   there: the gun is genuinely not pointing at anything you can see.
+   */
+  private pushGunMarker(dying: boolean): void {
+    const tank = this.driving;
+    if (!tank || dying) {
+      this.hud.setGunMarker(null);
+      return;
+    }
+    tank.muzzleToRef(this.markerAt);
+    tank.gunDirToRef(this.shellDir);
+    this.markerAt.addInPlace(
+      this.shellDir.scaleInPlace(CONFIG.vehicles.tank.gun.range),
+    );
+    const cam = this.cameraSys.camera;
+    // In front of the eye? `getDirection` is the camera's own forward, which
+    // during a drive is whatever `place` last pointed it at.
+    const fwd = cam.getDirection(FORWARD_Z);
+    if (
+      (this.markerAt.x - cam.position.x) * fwd.x +
+        (this.markerAt.y - cam.position.y) * fwd.y +
+        (this.markerAt.z - cam.position.z) * fwd.z <=
+      0
+    ) {
+      this.hud.setGunMarker(null);
+      return;
+    }
+    const w = this.engine.getRenderWidth();
+    const h = this.engine.getRenderHeight();
+    this.markerViewport.width = w;
+    this.markerViewport.height = h;
+    Vector3.ProjectToRef(
+      this.markerAt,
+      Matrix.IdentityReadOnly,
+      this.scene.getTransformMatrix(),
+      this.markerViewport,
+      this.markerOut,
+    );
+    this.hud.setGunMarker(this.markerOut.x / w, this.markerOut.y / h);
+  }
+
   private captureStatus(): CaptureStatus | null {
     const p = this.conquest.pointAt(this.player.position);
     if (!p) return null;
@@ -4332,6 +5732,12 @@ export class Game {
    */
   private enterDeploy(delay: number): void {
     this.respawnT = delay;
+    // Whatever the player was in, they are out of it — this is the funnel every
+    // way of leaving a life goes through, and a seat kept across one would mean
+    // a fresh body wired to a hull the last one died in. First, because it puts
+    // the viewmodel back and the line below is what puts it away again.
+    this.clearVehicle();
+    this.hud.setUsePrompt(null);
     // The single funnel for "the death cam's job is over", so every path out
     // of it — the clock running down, the round ending, F2 — retires the body
     // and hands the rig back without any of them remembering to. Idempotent,
@@ -4370,10 +5776,15 @@ export class Game {
     this.deathCam.stop();
     this.hud.setDeathCam(false);
     this.deployScreen.hide();
+    // Same reason as `enterDeploy`, and it has to come BEFORE the line under it
+    // for the same reason: giving up the seat puts the viewmodel back, and a
+    // round-over card is not something to watch from behind a tank.
+    this.clearVehicle();
     this.player.setBodyHidden(true); // same reason as enterDeploy
     this.hud.clearDamageDirections();
     this.hud.setCapture(null);
     this.hud.setLeash(null);
+    this.hud.setUsePrompt(null);
     // `updateGameplay` stops running here, so push the final state once more —
     // otherwise the ticket bar sits frozen a frame behind the result text.
     this.hud.setTickets(
@@ -4397,7 +5808,12 @@ export class Game {
   }
 
   /** Called from `Player.takeDamage`, whoever pulled the trigger. */
-  private onPlayerDamaged(amount: number, died: boolean, from?: Vector3): void {
+  private onPlayerDamaged(
+    amount: number,
+    died: boolean,
+    from?: Vector3,
+    kind: DamageKind = "bullet",
+  ): void {
     if (this.state !== "playing") return;
     this.hud.flashDamage();
     // The vignette says "hit"; the arc says "from there". Bearing is taken
@@ -4441,12 +5857,20 @@ export class Game {
       // leash, which kills with nothing behind it and passes no origin. `from`
       // is already what says "nobody shot you" two blocks up, where it decides
       // whether there is a damage arc to draw at all.
+      //
+      // **The leash is the ONLY death without one, and that is a thing to keep
+      // true rather than a thing that is.** Burning inside a hull passed no
+      // origin once and so announced itself here as `OUT OF BOUNDS` — a death
+      // the enemy had earned, credited to the map. `wireVehicles` hands one
+      // over now (the wreck's own centre), which is the same vector the corpse
+      // is thrown by. A new way to die owes this line an origin unless nobody
+      // caused it.
       this.hud.addKill(
         from ? CONFIG.teams[1 - this.player.team].name : LEASH_KILLER,
         "YOU",
         true,
       );
-      this.enterDying(from, amount);
+      this.enterDying(from, amount, kind);
     }
   }
 
@@ -4473,6 +5897,7 @@ export class Game {
   private enterDying(
     from: Vector3 | undefined,
     amount: number,
+    kind: DamageKind,
     // Annotated, because `CONFIG` is `as const` and the bare default would give
     // this parameter the literal type `8` — see the convention in CLAUDE.md.
     respawnIn: number = CONFIG.conquest.respawnDelay,
@@ -4490,6 +5915,7 @@ export class Game {
       this.cameraSys.forward,
       from,
       amount,
+      kind,
       this.player.stance,
     );
     if (!this.deathCam.active) {
@@ -4780,22 +6206,32 @@ export class Game {
    * direction: `addPunch` takes one, so the shove is thrown away from where
    * the blast actually was rather than being the same nudge every time.
    */
-  private onExplosion(at: Vector3): void {
+  private onExplosion(at: Vector3, power: number, ground: BlastGround): void {
     const lc = CONFIG.lighting;
+    // The light, scaled by the same `power` the picture is. RANGE goes with it
+    // linearly because that is what a bigger fireball actually lights; the
+    // INTENSITY and the LIFE are pulled toward 1 instead, because a transient
+    // that is twice as bright and half again as long stops reading as a flash
+    // and starts reading as somebody switching a lamp on.
     this.lighting.pulse(
       at,
       lc.explosionColor,
-      lc.explosionRange,
-      lc.explosionIntensity,
-      lc.explosionLife,
+      lc.explosionRange * power,
+      lc.explosionIntensity * (0.6 + 0.4 * power),
+      lc.explosionLife * (0.75 + 0.25 * power),
     );
-    this.sfx.explosion(at);
+    // The two layers under Havok — the rubble and the mark. They are drawn from
+    // here rather than from `GrenadeSystem` because that system runs on the
+    // authority, which has neither a physics world nor a canvas, and because a
+    // system may not reach into another one.
+    this.blastDebris.burst(at, power, ground, this.cameraSys.camera.position);
+    this.sfx.explosion(at, power);
     if (this.state !== "playing") return;
     const g = CONFIG.grenade;
-    const reach = g.blastRadius * 2;
+    const reach = g.blastRadius * 2 * power;
     const d = Vector3.Distance(at, this.cameraSys.camera.position);
     if (d >= reach) return;
-    this.cameraSys.land(g.shakeSpeed * (1 - d / reach));
+    this.cameraSys.land(g.shakeSpeed * power * (1 - d / reach));
     // Which side it went off, as the punch's drift: the sign of the blast's
     // bearing across the view. A grenade behind a shoulder throws the view the
     // other way, which is free here because the punch already takes a
@@ -4806,6 +6242,47 @@ export class Game {
     this.cameraSys.addPunch(d > 0.001 ? -bearing / d : 0);
     const haptic = CONFIG.rumble;
     this.input.rumble(haptic.hurtStrong, haptic.hurtWeak, haptic.hurtMs);
+  }
+
+  /**
+   * The anti-tank row: what is left in the pouch, and — for mines — how many
+   * of yours are already on the field.
+   *
+   * The caption is composed here rather than in the HUD because what it has to
+   * say differs per item and only one side knows each half: the name is the
+   * kit's and the laid count is `AntiTankSystem`'s. It matters because the cap
+   * means laying a third mine LIFTS the first, so "two set" is the difference
+   * between a mine going down and a mine moving.
+   *
+   * A kit with no third slot pushes null and the row is not drawn at all —
+   * see `HUD.setAntiTank`, and `armourOffered` for who decides.
+   */
+  private pushAntiTankHud(): void {
+    const id = this.armourOffered ? this.equipment : null;
+    if (!id) {
+      this.hud.setAntiTank(null, 0, 0);
+      return;
+    }
+    const cfg = CONFIG.equipment[id];
+    // Offline the local system knows; in a match the authority does, and the
+    // count arrives on the mine table. It is the one gauge here that is not
+    // simply the slot's own magazine, and it is worth the branch: the cap
+    // retires your oldest when you lay a third, so this is what a player is
+    // deciding against.
+    const laid =
+      id !== "mine"
+        ? 0
+        : this.net
+          ? this.net.ordnance.minesFor(this.net.slot)
+          : this.antiTank.minesFor(this.player);
+    this.hud.setAntiTank(
+      laid > 0 ? `${cfg.short} · ${laid} SET` : cfg.short,
+      // What is in the HANDS, which is not always what is carried: the slot
+      // holds its own magazine like any other, so this is read off the slot
+      // rather than off a count of its own.
+      this.player.equipmentLeft,
+      cfg.carried,
+    );
   }
 
   /**

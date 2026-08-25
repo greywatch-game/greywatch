@@ -102,7 +102,14 @@ export class InputManager {
   swapPressed = false;
   /**
    * Edge-triggered "draw THIS weapon": 0 for the primary (`1`), 1 for the
-   * sidearm (`2`), and -1 for no request this frame.
+   * sidearm (`2`), 2 for the anti-tank item (`3`), and -1 for no request this
+   * frame.
+   *
+   * The third is asked for on maps that do not have one, and that is fine
+   * rather than guarded here: `Player.drawSlot` bounds-checks against the
+   * slots that actually exist, so `3` on a map with no armour is a key press
+   * that does nothing. Putting the knowledge here instead would mean the input
+   * layer learning what a kit is.
    *
    * A slot index rather than a swap, because that is the whole difference: the
    * wheel asks for the other weapon and these ask for a particular one, so a
@@ -112,6 +119,25 @@ export class InputManager {
    * exchange for no change.
    */
   slotPressed = -1;
+  /**
+   * Edge-triggered "use the thing in front of me" — today, get into or out of
+   * a vehicle, and nothing else.
+   *
+   * `E` because that is where every shooter puts this verb and a player will
+   * try it before they try anything else. On the pad it is d-pad UP, which is
+   * the one control in this game with two lives that genuinely never overlap:
+   * the four d-pad directions are the menus' navigation (see
+   * `menuUpPressed`), and there is no state in which a menu is taking the
+   * d-pad and a body is standing next to a tank. Every face button was already
+   * spoken for twice over — A jumps and confirms, B crouches and backs out, X
+   * reloads, Y swaps and opens the kit — so a fifth meaning on one of those
+   * would be the first pad binding in the file that could be ambiguous.
+   *
+   * Edge rather than held for the obvious reason: mounting and dismounting are
+   * the same key, so a held one would put the player in and out of a hull once
+   * a frame.
+   */
+  usePressed = false;
   /**
    * Keyboard: held Shift. Gamepad: L3 toggles — holding a stick click for a
    * 240 m crossing is miserable, so the pad latches instead.
@@ -326,6 +352,7 @@ export class InputManager {
   private navY: NavAxis = { dir: 0, next: 0 };
   private prevMenuBack = false;
   private prevPause = false;
+  private prevUse = false;
   private prevLoadout = false;
   private prevSettings = false;
   private prevMultiplayer = false;
@@ -643,7 +670,13 @@ export class InputManager {
 
     // …and naming a slot outright. Nothing on the pad: there is no button left
     // for it, and Y already reaches both weapons in the two presses this saves.
-    const slotNow = this.keys.has("Digit1") ? 0 : this.keys.has("Digit2") ? 1 : -1;
+    const slotNow = this.keys.has("Digit1")
+      ? 0
+      : this.keys.has("Digit2")
+        ? 1
+        : this.keys.has("Digit3")
+          ? 2
+          : -1;
     this.slotPressed = slotNow !== this.prevSlot ? slotNow : -1;
     this.prevSlot = slotNow;
 
@@ -701,6 +734,13 @@ export class InputManager {
     const backNow = this.keys.has("Backspace") || padCrouch;
     this.menuBackPressed = backNow && !this.prevMenuBack;
     this.prevMenuBack = backNow;
+
+    // The vehicle verb. `padUp` is the d-pad's north, which the menus also read
+    // — see `usePressed` on why that is safe rather than merely convenient.
+    const useNow =
+      this.keys.has("KeyE") || (pad ? buttonHeld(pad, 12, trig) : false);
+    this.usePressed = useNow && !this.prevUse;
+    this.prevUse = useNow;
 
     const pauseNow = this.keys.has("Escape") || padStart;
     this.pausePressed = pauseNow && !this.prevPause;
@@ -887,10 +927,12 @@ const BOUND_CODES = new Set([
   "KeyD",
   "KeyR",
   "KeyC",
+  "KeyE",
   "KeyG",
   "KeyL",
   "Digit1",
   "Digit2",
+  "Digit3",
   // Ctrl+O is the file-open dialog, and crouch is Ctrl — exactly the accident
   // the note above describes, so the settings key has to be suppressed too.
   "KeyO",

@@ -22,6 +22,7 @@ import { sights } from "./sights";
 import { viewmodel } from "./viewmodel";
 import { glass } from "./glass";
 import { grenade } from "./grenade";
+import { equipment, antiTankBots } from "./equipment";
 import { camera } from "./camera";
 import { aimAssist } from "./aimAssist";
 import { input, rumble } from "./input";
@@ -35,6 +36,7 @@ import { ao, map, water, grass } from "./world";
 import { sky, godRays } from "./sky";
 import { wind } from "./wind";
 import { teams } from "./teams";
+import { vehicles } from "./vehicles";
 
 export { FOG_WALL } from "./fogWall";
 
@@ -52,6 +54,8 @@ export const CONFIG = {
   gunfeel,
   glass,
   grenade,
+  equipment,
+  antiTankBots,
   camera,
   sights,
   viewmodel,
@@ -72,4 +76,5 @@ export const CONFIG = {
   sky,
   godRays,
   teams,
+  vehicles,
 } as const;

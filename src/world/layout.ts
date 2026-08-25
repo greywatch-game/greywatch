@@ -18,10 +18,17 @@ import type {
   ControlPointDef,
   GrassRect,
   SpawnPointDef,
+  VehicleSpawnDef,
   WaterRect,
 } from "./MapBuilder";
 
-export type { ControlPointDef, GrassRect, SpawnPointDef, WaterRect };
+export type {
+  ControlPointDef,
+  GrassRect,
+  SpawnPointDef,
+  VehicleSpawnDef,
+  WaterRect,
+};
 
 /** One placed structure. Built at the origin, then rotated and moved here. */
 export interface Placement {
@@ -289,6 +296,18 @@ export interface MapLayout {
   spawns: SpawnPointDef[];
   water?: WaterRect[];
   grass?: GrassRect[];
+  /**
+   * Where each side's armour stands. Absent — which is two of the four
+   * shipped maps — and the round is fought on foot exactly as it always was:
+   * `VehicleSystem` builds nothing, costs nothing and is never asked anything.
+   *
+   * **A map that states one owes each side exactly one**, and it owes them
+   * ground a seven-metre hull can get off: a hardstanding boxed in by its own
+   * buildings is a tank that spends the round shooting down one street. What it
+   * does NOT owe is anything about the nav graph — a vehicle is invisible to it
+   * either way, for the reason a corpse is (see `docs/vehicles.md`).
+   */
+  vehicles?: VehicleSpawnDef[];
   /**
    * The playable square's side, in metres, centred on the origin. Absent means
    * `CONFIG.map.size` — the 240 m both shipped valleys are authored in.

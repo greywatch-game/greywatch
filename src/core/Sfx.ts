@@ -10,6 +10,11 @@
  * setPosition/setOrientation path — keep both. Nothing here schedules a
  * repeating sound: footsteps are one-shots fired by the caller's own gait
  * phase (the camera's bob, a bot's walk cycle), never by a timer in here.
+ * There is ONE sustained voice and it is not a counter-example: the driven
+ * vehicle's engine (`engineOn`/`engineDrive`/`engineOff`) is a single source
+ * held open between a mount and a dismount, not a timer firing one-shots. It
+ * is unpanned and uncapped for the reason the player's own report is, and it
+ * stops with the audio clock like everything else.
  */
 import type { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -68,6 +73,14 @@ const FLAT_REPORT: ReportVoice = CONFIG.weapons.rifle.report;
 export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /**
+   * The driven vehicle's engine — the one held-open voice in this file. Null
+   * whenever the player is on foot. See `engineOn`.
+   */
+  private engineSrc: AudioBufferSourceNode | null = null;
+  private engineOsc: OscillatorNode | null = null;
+  private engineGain: GainNode | null = null;
+  private engineFilter: BiquadFilterNode | null = null;
   private listener: AudioListener | null = null;
   /** Reused by every `burst()` call; built once on unlock. */
   private noiseBuffer: AudioBuffer | null = null;
@@ -395,6 +408,89 @@ export class Sfx {
     });
   }
 
+
+  /**
+   * A rocket leaving a launcher: the motor lighting, the tube's own crack, and
+   * the whoosh trailing away behind it.
+   *
+   * `cannon` reasoned about from the other end. A tank gun is a slam with a
+   * long roll under it because a shell is pushed by a charge that is over
+   * before the round leaves; a launcher is the opposite shape — a soft leading
+   * edge, then a hiss that keeps going, because the motor is still burning
+   * after the thing has gone. What the two share is the low body, which is why
+   * this is here beside it rather than shaped out of `CONFIG.weapons`'
+   * `ReportVoice`: an eight-scalar deviation from a rifle cannot describe a
+   * sound whose loudest part arrives after the shot.
+   *
+   * Spatialised like every other weapon, and audible as far as a cannon is:
+   * the point of a launcher on the map is that the crew knows there is one.
+   */
+  launcher(at: Vector3): void {
+    const a = CONFIG.audio;
+    const dist = this.distanceToListener(at);
+    if (dist > a.maxDistance * 2.2) return;
+    const panner = this.panner(at);
+    if (!panner) return;
+    const far = Math.min(1, dist / (a.maxDistance * 1.4));
+    const delay = dist / a.speedOfSound;
+    const v = 0.94 + Math.random() * 0.12;
+    // The ignition: broadband, and softer at the front than a gun's, because
+    // nothing here is a sealed breech letting go.
+    this.burst({
+      dur: 0.09, vol: 0.7 * (1 - far * 0.6), type: "highpass",
+      freq: (900 - 600 * far) * v, q: 0.5, delay, out: panner, send: 0.6,
+    });
+    // The body: the backblast off the venturi, sweeping down as it spreads.
+    this.burst({
+      dur: 0.5 + far * 0.3, vol: 0.9, type: "lowpass",
+      freq: 620 - 400 * far, freqEnd: 70, delay, out: panner, send: 1.4,
+    });
+    // The chest of it. Higher and shorter than a cannon's — a shoulder tube,
+    // not a hundred and twenty millimetres.
+    this.tone(38 * v, 0.36, "sine", 0.4 * (1 - far * 0.45), 0.55, panner, {
+      delay, send: 0.7,
+    });
+    // The motor going away, which is the layer that says ROCKET. It starts
+    // under the launch and outlives it, and it climbs rather than falling:
+    // everything else here is a pressure wave spreading, and this is a thing
+    // receding, so it is the one layer whose filter sweeps UP.
+    this.burst({
+      dur: 0.62, vol: 0.3 * (1 - far * 0.5), type: "bandpass",
+      freq: 700 * v, freqEnd: 2600, q: 0.8, delay: delay + 0.05, out: panner,
+      send: 0.5,
+    });
+  }
+
+  /**
+   * A mine going down on the road: the plate settling, then the fuze arming a
+   * beat later.
+   *
+   * Two events rather than one, because the mine IS two events — a thing put
+   * down and a thing switched on — and the gap between them is
+   * `CONFIG.equipment.mine.mine.armTime`, which is the one number about this
+   * weapon a player has to feel. The arming beep is the audible half of the
+   * lamp coming on, so both halves of the tell say the same thing at the same
+   * moment.
+   *
+   * Player-local and unspatialised, like the grenade's throw: it is a thing
+   * happening in your own hands. What somebody ELSE's mine is heard as is the
+   * blast, and nothing before it.
+   */
+  mineSet(): void {
+    // Metal on stone, twice: the plate down, then the rim rocking flat.
+    this.clack(420, 0.9, 0);
+    this.clack(300, 0.5, 0.07);
+    this.burst({
+      dur: 0.16, vol: 0.09, type: "lowpass", freq: 260, freqEnd: 90,
+      delay: 0.01, send: 0.25,
+    });
+    // The fuze, on the arming clock. A single clean tone against a mix that
+    // has nothing else like it in it.
+    this.tone(1650, 0.07, "square", 0.05, 1, null, {
+      delay: CONFIG.equipment.mine.mine.armTime,
+    });
+  }
+
   pickup(): void {
     this.tone(700, 0.08, "sine", 0.07, 1.6);
   }
@@ -648,37 +744,192 @@ export class Sfx {
    * grenade at 90 m is still a thing you want to know happened, and there are
    * seconds between them rather than eighty a second, so it can afford the
    * voices.
+   *
+   * **`power` is the same grenade-relative size the picture is drawn at** (see
+   * `GrenadeSystem`), and a bigger blast is voiced by going DOWN rather than by
+   * going up: every pitched layer divides by it and the roll runs longer, while
+   * the levels barely move. That is what a bigger charge actually sounds like,
+   * and it is also the only version that stays inside the mix — a shell voiced
+   * as a grenade at twice the gain is a clip, not a bang.
    */
-  explosion(at: Vector3): void {
+  explosion(at: Vector3, power = 1): void {
     const a = CONFIG.audio;
     const dist = this.distanceToListener(at);
-    if (dist > a.maxDistance * 1.6) return;
+    // A bigger blast carries further, on the same 1.6x exemption.
+    if (dist > a.maxDistance * 1.6 * power) return;
     const panner = this.panner(at);
     if (!panner) return;
-    const far = Math.min(1, dist / a.maxDistance);
+    const far = Math.min(1, dist / (a.maxDistance * power));
     const delay = dist / a.speedOfSound;
     const v = 0.92 + Math.random() * 0.16;
+    // A blast twice the size is not twice as loud; it is lower and longer. The
+    // pitch divisor is square-rooted so 1.85x power is a fifth down rather than
+    // an octave, which is where a tank gun sits against a frag.
+    const drop = Math.sqrt(power);
+    const gain = Math.min(1.35, 0.75 + 0.25 * power);
     // The crack. Broadband, over in 40 ms, and the thing that says "sharp".
     this.burst({
-      dur: 0.04, vol: 0.7 * v * (1 - far * 0.7), type: "highpass",
-      freq: (1800 - 1300 * far) * v, q: 0.5, delay, out: panner, send: 0.4,
+      dur: 0.04 * drop, vol: 0.7 * v * gain * (1 - far * 0.7), type: "highpass",
+      freq: ((1800 - 1300 * far) * v) / drop, q: 0.5, delay, out: panner, send: 0.4,
     });
     // The body: a long lowpassed roll sweeping down as the pressure wave
     // spreads. This is most of what a distant blast is.
     this.burst({
-      dur: 0.5 + far * 0.35, vol: 1, type: "lowpass",
-      freq: 900 - 600 * far, freqEnd: 70, delay, out: panner, send: 1.4,
+      dur: (0.5 + far * 0.35) * power, vol: gain, type: "lowpass",
+      freq: (900 - 600 * far) / drop, freqEnd: 70 / drop, delay, out: panner,
+      send: 1.4,
     });
     // The chest thump, a fifth of the rifle's pitch and five times its length.
-    this.tone(42 * v, 0.42, "sine", 0.5 * (1 - far * 0.5), 0.4, panner, {
+    this.tone((42 * v) / drop, 0.42 * power, "sine", 0.5 * gain * (1 - far * 0.5), 0.4, panner, {
       delay, send: 0.8,
     });
     // Debris coming back down, well behind the blast — the tail that stops it
-    // sounding like a single event.
+    // sounding like a single event, and the one layer this game now DRAWS as
+    // well (see `BlastDebrisSystem`), so it runs as long as the rubble does.
     this.burst({
-      dur: 0.7, vol: 0.16 * (1 - far * 0.6), type: "bandpass", freq: 2200 * v,
-      freqEnd: 700, q: 0.7, delay: delay + 0.14, out: panner, send: 0.6,
+      dur: 0.7 * power, vol: 0.16 * gain * (1 - far * 0.6), type: "bandpass",
+      freq: 2200 * v, freqEnd: 700, q: 0.7, delay: delay + 0.14, out: panner,
+      send: 0.6,
     });
+  }
+
+  /**
+   * A tank's main gun. The one report in the game that is not built from
+   * `CONFIG.weapons` — it is not a weapon in that table, it has no magazine
+   * and no `ReportVoice`, and shaping it as an eight-scalar deviation from a
+   * rifle would be describing a howitzer as a loud carbine.
+   *
+   * It is `explosion` reasoned about from the other end: the same four layers,
+   * because a gun that size and a blast that size are the same physics, with
+   * the crack pushed forward and much harder and the debris tail dropped. What
+   * is left is a slam with a long roll under it.
+   *
+   * Spatialised like every other gun, and audible half again as far as one:
+   * the whole point of a tank on the map is that everybody knows there is a
+   * tank on the map.
+   */
+  cannon(at: Vector3): void {
+    const a = CONFIG.audio;
+    const dist = this.distanceToListener(at);
+    if (dist > a.maxDistance * 2.2) return;
+    const panner = this.panner(at);
+    if (!panner) return;
+    const far = Math.min(1, dist / (a.maxDistance * 1.4));
+    const delay = dist / a.speedOfSound;
+    const v = 0.94 + Math.random() * 0.12;
+    // The muzzle blast: broadband and over in 60 ms. Twice a rifle's and half
+    // the length of the roll behind it.
+    this.burst({
+      dur: 0.06, vol: 1.15 * (1 - far * 0.6), type: "highpass",
+      freq: (1500 - 1100 * far) * v, q: 0.6, delay, out: panner, send: 0.7,
+    });
+    // The body, sweeping down as the pressure wave spreads. Longer than a
+    // grenade's, because the barrel keeps pointing it somewhere.
+    this.burst({
+      dur: 0.62 + far * 0.4, vol: 1, type: "lowpass",
+      freq: 700 - 460 * far, freqEnd: 55, delay, out: panner, send: 1.7,
+    });
+    // The chest thump, an octave under the grenade's.
+    this.tone(24 * v, 0.55, "sine", 0.62 * (1 - far * 0.45), 0.5, panner, {
+      delay, send: 0.9,
+    });
+  }
+
+  /**
+   * The engine of the tank the PLAYER is driving: one sustained voice, started
+   * on the way in and stopped on the way out.
+   *
+   * **This is the only thing in this file that does not end on its own**, and
+   * the header's rule — nothing here schedules a repeating sound — is intact
+   * rather than bent: a repeating sound is a timer firing one-shots, and this
+   * is a single source that is simply held open. It still stops with the audio
+   * clock, so a pause holds it exactly as it holds the tail of the last shot.
+   *
+   * Deliberately NOT spatialised and deliberately NOT counted against the voice
+   * cap. It is not a sound in the world you are listening to; it is the vehicle
+   * you are sitting in, the same reason the player's own report is exempt.
+   * Somebody else's tank is heard through `cannon` and through nothing else,
+   * which is a real gap and is written down in `docs/vehicles.md`.
+   *
+   * The noise runs at a third speed so the shared one-second buffer loops every
+   * three, and it is lowpassed hard enough that the seam is not a thing an ear
+   * can find.
+   */
+  engineOn(): void {
+    if (!this.ctx || !this.master || !this.noiseBuffer || this.engineGain) return;
+    try {
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 300;
+      filter.Q.value = 0.7;
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      src.loop = true;
+      src.playbackRate.value = 0.33;
+      // The pitched half: an engine has a firing order, and a sawtooth under
+      // filtered noise is what makes the two read as one machine rather than
+      // as wind.
+      const osc = this.ctx.createOscillator();
+      osc.type = "sawtooth";
+      osc.frequency.value = 40;
+      const oscGain = this.ctx.createGain();
+      oscGain.gain.value = 0.35;
+      src.connect(filter).connect(gain);
+      osc.connect(oscGain).connect(filter);
+      gain.connect(this.master);
+      src.start();
+      osc.start();
+      this.engineSrc = src;
+      this.engineOsc = osc;
+      this.engineGain = gain;
+      this.engineFilter = filter;
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * How hard the engine is working: `load` is the throttle 0..1 and `speed` is
+   * how much of the vehicle's top speed it is doing.
+   *
+   * Both, not one. Pitch tracks SPEED, so the note rises as the tank gets
+   * going; volume and the filter track LOAD, so standing on the throttle
+   * against a wall still sounds like work. A single term would make a stalled
+   * tank silent, which is the opposite of what a stalled tank sounds like.
+   */
+  engineDrive(load: number, speed: number): void {
+    if (!this.ctx || !this.engineGain || !this.engineOsc || !this.engineFilter) {
+      return;
+    }
+    const t = this.ctx.currentTime;
+    // Levels here are art and sit beside the rest of this file's, which are
+    // all literals for the same reason: what a layer is worth is decided by ear
+    // against the others, not by a number anybody would tune from outside.
+    const level = 0.1 + 0.16 * load;
+    // Ramped rather than assigned, or every frame is a click. 80 ms is short
+    // enough that the engine still answers the throttle inside a tenth of a
+    // second and long enough that no step in it is audible.
+    this.engineGain.gain.setTargetAtTime(level, t, 0.08);
+    this.engineOsc.frequency.setTargetAtTime(34 + 52 * speed, t, 0.12);
+    this.engineFilter.frequency.setTargetAtTime(220 + 620 * load, t, 0.1);
+  }
+
+  /** Out of the vehicle: the engine stops, and its nodes are let go. */
+  engineOff(): void {
+    if (!this.engineGain) return;
+    try {
+      this.engineSrc?.stop();
+      this.engineOsc?.stop();
+      this.engineGain.disconnect();
+    } catch {
+      // ignore
+    }
+    this.engineSrc = null;
+    this.engineOsc = null;
+    this.engineGain = null;
+    this.engineFilter = null;
   }
 
   /**

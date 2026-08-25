@@ -65,9 +65,12 @@ import {
   FINISHES_BY_WEAPON,
   type FinishId,
 } from "../entities/finishes";
+import { EQUIPMENT_IDS, type EquipmentId } from "../entities/equipment";
 import { SIGHT_IDS, type SightId } from "../entities/sights";
 import {
+  carriedSetup,
   PRIMARY_WEAPON_IDS,
+  type CarriedId,
   type PrimaryWeaponId,
   type WeaponId,
 } from "../entities/weapons";
@@ -79,8 +82,25 @@ import {
  * optics and what finishes the other two rows are even allowed to offer, so it
  * is the one the cursor opens on and the one above the other two.
  */
-type Slot = "weapon" | "sight" | "finish";
+type Slot = "weapon" | "sight" | "equipment" | "finish";
+
+/**
+ * The rows, in that order, with and without the anti-tank slot.
+ *
+ * **Two lists rather than one filtered at the point of use**, because the row
+ * is genuinely absent rather than disabled: on a map with no armour there is
+ * nothing the launcher could be used on, and a greyed row saying so would be
+ * the kit screen explaining a rule instead of the map simply not having it.
+ * `Game` decides which of these is in force — see `MapLayout.vehicles`.
+ *
+ * It sits between the OPTIC and the FINISH, which is the dependency order the
+ * first three were already in: the weapon decides what the two rows under it
+ * may offer, the AT slot decides nothing and is decided by nothing, and the
+ * finish is the row that is not a trade at all and stays at the bottom next to
+ * the stage it is about.
+ */
 const SLOTS: readonly Slot[] = ["weapon", "sight", "finish"];
+const ARMED_SLOTS: readonly Slot[] = ["weapon", "sight", "equipment", "finish"];
 
 /**
  * What each weapon is for, in the player's terms. Copy, not configuration —
@@ -95,6 +115,16 @@ export const WEAPON_BLURBS: Record<PrimaryWeaponId, string> = {
   smg: "Pistol-calibre, and it empties a long magazine in under three seconds. Quickest to the shoulder, cheapest to miss with, and past the width of a street it will not group whatever optic is on top of it.",
   dmr: "Semi-automatic: one round per trigger pull, and two rounds anywhere on a man will do it. The tightest group and the longest reach in the kit, paid for with a kick that has to be ridden back down before the second shot means anything.",
   lmg: "Belt-fed, and the only weapon here that does not have to stop: seventy-five rounds is fifteen kills without a pause, and the group barely opens across the whole belt. Slowest into the shoulder, useless from the hip, and a reload long enough that being caught empty is a decision about the sidearm.",
+};
+
+/**
+ * What each anti-tank item is for. Copy, not configuration — every number
+ * these describe lives in `CONFIG.equipment` and is read from there for the
+ * buttons rather than written twice.
+ */
+const EQUIPMENT_BLURBS: Record<EquipmentId, string> = {
+  rpg: "Two rockets and no way to get a third. The rocket FLIES — a second and a half across an avenue — so a moving hull has to be led and a driver who sees the smoke has that long to decide something. Both of them into the same tank is a dead tank; either of them into a doorway is most of a squad.",
+  mine: "Two plates, laid on the ground and armed a beat later, and only a vehicle is heavy enough to set one off — your own infantry walk over them, and so does everybody else's. They outlive you, but you may only have two out: lay a third and the first one is lifted. It is the only weapon here that works while you are somewhere else.",
 };
 
 /**
@@ -239,8 +269,8 @@ function weaponStats(id: PrimaryWeaponId): StatRow[] {
 }
 
 /** The kit as one line, for the menu button and the HUD's magazine caption. */
-export function kitLabel(weapon: WeaponId, sight: SightId): string {
-  return `${CONFIG.weapons[weapon].name} · ${CONFIG.sights[sight].name}`;
+export function kitLabel(weapon: CarriedId, sight: SightId): string {
+  return `${carriedSetup(weapon).name} · ${CONFIG.sights[sight].name}`;
 }
 
 export class LoadoutScreen {
@@ -275,11 +305,16 @@ export class LoadoutScreen {
   private finish: FinishId = FINISHES_BY_WEAPON[PRIMARY_WEAPON_IDS[0]][0];
   /** Which row the d-pad is on. Left/right steps inside it; up/down swaps it. */
   private slot: Slot = "weapon";
+  /** The AT item the kit has, whether or not this map offers the row. */
+  private equipment: EquipmentId = EQUIPMENT_IDS[0];
+  /** Whether this map has armour on it, and therefore whether the row exists. */
+  private armour = false;
 
   /** Wired by Game. Each reports a choice; none of them redraws. */
   onWeapon: (id: PrimaryWeaponId) => void = () => {};
   onSight: (id: SightId) => void = () => {};
   onFinish: (id: FinishId) => void = () => {};
+  onEquipment: (id: EquipmentId) => void = () => {};
   onClose: () => void = () => {};
 
   constructor() {
@@ -383,14 +418,44 @@ export class LoadoutScreen {
     return drag;
   }
 
-  /** Shows the kit that is actually fitted. Called by Game, never by a click. */
-  setFit(weapon: PrimaryWeaponId, sight: SightId, finish: FinishId): void {
-    if (weapon === this.weapon && sight === this.sight && finish === this.finish)
+  /**
+   * Shows the kit that is actually fitted. Called by Game, never by a click.
+   *
+   * `armour` is the MAP's answer rather than the kit's — whether there is
+   * anything on the field an anti-tank item could be used on — and it is
+   * pushed through the same call as the four picks because it moves the same
+   * markup: a row appearing or going away is a redraw exactly as a pick is.
+   */
+  setFit(
+    weapon: PrimaryWeaponId,
+    sight: SightId,
+    finish: FinishId,
+    equipment: EquipmentId,
+    armour: boolean,
+  ): void {
+    if (
+      weapon === this.weapon &&
+      sight === this.sight &&
+      finish === this.finish &&
+      equipment === this.equipment &&
+      armour === this.armour
+    )
       return;
     this.weapon = weapon;
     this.sight = sight;
     this.finish = finish;
+    this.equipment = equipment;
+    this.armour = armour;
+    // A row that has just gone away cannot keep the cursor. Sent back to the
+    // top rather than to a neighbour: the weapon row is where `show` opens
+    // anyway, so this is the one answer that is never a surprise.
+    if (!armour && this.slot === "equipment") this.slot = "weapon";
     this.draw();
+  }
+
+  /** The rows this map actually has. */
+  private get rows(): readonly Slot[] {
+    return this.armour ? ARMED_SLOTS : SLOTS;
   }
 
   show(): void {
@@ -421,8 +486,9 @@ export class LoadoutScreen {
 
   /** Steps the active slot — the menu's up/down. */
   moveSlot(delta: number): void {
-    const i = SLOTS.indexOf(this.slot);
-    this.slot = SLOTS[(i + delta + SLOTS.length) % SLOTS.length];
+    const rows = this.rows;
+    const i = rows.indexOf(this.slot);
+    this.slot = rows[(i + delta + rows.length) % rows.length];
     this.draw();
   }
 
@@ -438,6 +504,10 @@ export class LoadoutScreen {
     } else if (this.slot === "sight") {
       const i = SIGHT_IDS.indexOf(this.sight);
       this.onSight(SIGHT_IDS[(i + delta + SIGHT_IDS.length) % SIGHT_IDS.length]);
+    } else if (this.slot === "equipment") {
+      const n = EQUIPMENT_IDS.length;
+      const i = EQUIPMENT_IDS.indexOf(this.equipment);
+      this.onEquipment(EQUIPMENT_IDS[(i + delta + n) % n]);
     } else {
       // This weapon's own list, not every finish there is — the row wraps
       // through four, and the other twelve belong to guns that are not in the
@@ -484,6 +554,17 @@ export class LoadoutScreen {
         </button>`;
       })
       .join("");
+    // The AT row's two, and what each button says under the name is the whole
+    // of what separates them: how many you get and what sets one off. Both
+    // figures are read off `CONFIG.equipment` rather than written here, the
+    // rule every other row on this screen follows.
+    const kit = EQUIPMENT_IDS.map((id) => {
+      const e = CONFIG.equipment[id];
+      return `
+        <button class="lo-opt${id === this.equipment ? " on" : ""}" data-equip="${id}">
+          <b>${e.name}</b><i>${e.carried} carried · ${e.damage} vs armour</i>
+        </button>`;
+    }).join("");
     const bars = weaponStats(this.weapon)
       .map(
         (s) => `
@@ -519,6 +600,14 @@ export class LoadoutScreen {
           <span class="lo-slot-name">Optic</span>
           <div class="lo-opts">${sights}</div>
         </div>
+        ${
+          this.armour
+            ? `<div class="lo-slot${this.slot === "equipment" ? " active" : ""}" data-slot="equipment">
+          <span class="lo-slot-name">Anti-Tank</span>
+          <div class="lo-opts">${kit}</div>
+        </div>`
+            : ""
+        }
         <div class="lo-slot${this.slot === "finish" ? " active" : ""}" data-slot="finish">
           <span class="lo-slot-name">Finish</span>
           <div class="lo-opts">${finishes}</div>
@@ -529,6 +618,11 @@ export class LoadoutScreen {
         <div class="lo-blurbs">
           <p class="lo-blurb">${WEAPON_BLURBS[this.weapon]}</p>
           <p class="lo-blurb dim">${SIGHT_BLURBS[this.sight]}</p>
+          ${
+            this.armour
+              ? `<p class="lo-blurb dim">${EQUIPMENT_BLURBS[this.equipment]}</p>`
+              : ""
+          }
         </div>
       </div>
     `;
@@ -537,8 +631,10 @@ export class LoadoutScreen {
       btn.onclick = () => {
         const w = btn.dataset.weapon;
         const f = btn.dataset.finish;
+        const e = btn.dataset.equip;
         if (w) this.onWeapon(w as PrimaryWeaponId);
         else if (f) this.onFinish(f as FinishId);
+        else if (e) this.onEquipment(e as EquipmentId);
         else this.onSight(btn.dataset.sight as SightId);
       };
     });

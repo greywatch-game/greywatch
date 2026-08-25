@@ -32,4 +32,19 @@ export interface Combatant extends Hittable {
   alive: boolean;
   /** Feet. */
   position: Vector3;
+  /**
+   * This combatant is a VEHICLE. Absent on everything that is not one.
+   *
+   * A flag rather than an `instanceof`, for the reason `DamageKind` is a
+   * parameter rather than a check inside `takeDamage`: the one thing that
+   * needs to ask is a bot deciding whether to reach for its launcher, and
+   * `Bot` importing `Tank` to find out would be an entity reaching across the
+   * game to answer a question about the target in front of it. Everything
+   * that ignores it simply does not declare it.
+   *
+   * It is what keeps a rocket off infantry: a launcher bot fires at armour
+   * and at nothing else, at any range, for any reason — see
+   * `CONFIG.antiTankBots`.
+   */
+  readonly armoured?: boolean;
 }

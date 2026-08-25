@@ -100,12 +100,14 @@ import { buildSmg } from "./SmgModel";
 import { applyFinish, type FinishId } from "./finishes";
 import { DEFAULT_SIGHT, sightSetup, type SightId, type SightSetup } from "./sights";
 import { wornSight, type GripSpec, type WeaponBuilder, type WeaponParts } from "./weaponKit";
+import { buildMine } from "./MineModel";
+import { buildRpg } from "./RpgModel";
 import {
+  CARRIED_IDS,
   DEFAULT_WEAPON,
-  WEAPON_IDS,
-  weaponSetup,
+  carriedSetup,
+  type CarriedId,
   type PrimaryWeaponId,
-  type WeaponId,
   type WeaponSetup,
 } from "./weapons";
 
@@ -122,13 +124,19 @@ export const VIEWMODEL_GROUP = 1;
  * `CONFIG.weapons` meet the geometry, and a `Record` rather than a lookup so
  * adding a weapon without a model fails to compile.
  */
-const WEAPON_BUILDERS: Record<WeaponId, WeaponBuilder> = {
+const WEAPON_BUILDERS: Record<CarriedId, WeaponBuilder> = {
   rifle: buildRifle,
   carbine: buildCarbine,
   smg: buildSmg,
   dmr: buildDmr,
   lmg: buildLmg,
   pistol: buildPistol,
+  // The anti-tank slot's two. They are in this table for the same reason they
+  // resolve to a `WeaponSetup`: the viewmodel is the one part of the game that
+  // has no business knowing which table an id came out of — it builds a rig,
+  // enables one and poses what is enabled.
+  rpg: buildRpg,
+  mine: buildMine,
 };
 
 /**
@@ -402,7 +410,7 @@ export class ViewModel {
    * about the screen that raised it.
    */
   private readonly backdrop: Mesh;
-  private readonly rigs = {} as Record<WeaponId, WeaponRig>;
+  private readonly rigs = {} as Record<CarriedId, WeaponRig>;
   /**
    * The material factory, kept for the one thing here that mints materials
    * after construction: a FINISH. Everything else about a weapon is decided
@@ -434,7 +442,7 @@ export class ViewModel {
   /** Aimed position, derived from the fit (see the header). */
   private readonly adsPos = new Vector3();
   /** The carried weapon. Written only by `applyFit`. */
-  private weaponFit: WeaponSetup = weaponSetup(DEFAULT_WEAPON);
+  private weaponFit: WeaponSetup = carriedSetup(DEFAULT_WEAPON);
   /**
    * The optic the KIT has fitted — a request, not the answer. A weapon with a
    * rail wears it; the sidearm wears the sights on its own slide whatever this
@@ -526,7 +534,7 @@ export class ViewModel {
     // groups per weapon sitting disabled — against a rebuild in the middle of
     // a deploy screen, which would drop Player's muzzle flash on the floor and
     // stall the frame it happened on.
-    for (const id of WEAPON_IDS) {
+    for (const id of CARRIED_IDS) {
       const root = new TransformNode(`viewmodel_${id}`, scene);
       root.parent = this.weapon;
       const parts = WEAPON_BUILDERS[id](scene, mats, `view_${id}`);
@@ -636,9 +644,16 @@ export class ViewModel {
     this.weapon.rotation.copyFrom(this.hipRot);
   }
 
-  /** Picks up a weapon: shows that rig, hides the rest, re-derives the pose. */
-  setWeapon(id: WeaponId): void {
-    this.weaponFit = weaponSetup(id);
+  /**
+   * Picks up a weapon: shows that rig, hides the rest, re-derives the pose.
+   *
+   * It takes a `CarriedId` and resolves through `carriedSetup`, which is the
+   * one line in this file that knows the two tables exist. Everything past it
+   * — the fit, the aimed pose, the arms, the magazine — reads the resolved
+   * `WeaponSetup` and cannot tell a launcher from a rifle.
+   */
+  setWeapon(id: CarriedId): void {
+    this.weaponFit = carriedSetup(id);
     // The rig being put down keeps whatever mid-reload offset its support arm
     // had, whatever the magazine was doing when the reload was cancelled —
     // and, if the swap caught a throw in flight, an arm switched off for it.
@@ -702,7 +717,7 @@ export class ViewModel {
   private applyFit(): void {
     const v = CONFIG.viewmodel;
     const fitted = this.weaponFit.id;
-    for (const id of WEAPON_IDS) {
+    for (const id of CARRIED_IDS) {
       const rig = this.rigs[id];
       rig.root.setEnabled(id === fitted);
       // A rail switches one of three on; a fixed sight is part of the weapon
@@ -734,6 +749,16 @@ export class ViewModel {
       v.hipPos.x,
       v.hipPos.y + this.weaponFit.hipY,
       v.hipPos.z + this.weaponFit.hipZ,
+    );
+    // …and how far it is TURNED, which is the same offset arrangement one axis
+    // further round: the shared pose frames a receiver, and a weapon that is
+    // not one says how far it has to come off that. Only the hip pose takes
+    // it — the aimed one is DERIVED, and a yaw baked into it would swing the
+    // sight off the axis the rounds fly down.
+    this.hipRot.set(
+      v.hipRot.x,
+      v.hipRot.y + this.weaponFit.hipYaw,
+      v.hipRot.z,
     );
 
     // Where the turntable spins: along this weapon's own axis, so a swap on
@@ -789,7 +814,7 @@ export class ViewModel {
    * any of them is a weapon that comes back without one.
    */
   private stow(): void {
-    for (const id of WEAPON_IDS) {
+    for (const id of CARRIED_IDS) {
       const rig = this.rigs[id];
       rig.supportArm.position.setAll(0);
       rig.supportArm.setEnabled(true);

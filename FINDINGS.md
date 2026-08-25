@@ -358,6 +358,25 @@ real extent rather than its projected one.** Everything else is done: the query
 exists, the buckets are there, and switching `probeGround` over is one line
 against ~2.4 ms a frame.
 
+### It IS switched on for a vehicle, and that half is closed
+
+`Tank.supportAt` takes it ten times a frame — once per track contact — and the
+hull's `pickWithRay` is gone. **The blocker above does not block a HULL**: a
+phantom surface half a metre up is one of ten contacts under a seven-metre
+plank, and the rise it asks for is rate-limited by `drive.climbSlope` before it
+reaches the drawn tank; the same half metre under a pair of feet stands a player
+in the air. That is the asymmetry that let the vehicle go first.
+
+Measured in one headless session on Coldharbour, so only the ratio is
+trustworthy: **ten contacts cost 0.0009 ms against 0.567 ms for the one
+whole-scene ray they replaced** — about a six-hundredth. It also closes what
+used to be a finding of its own: a DRIVER paid two of the frame's most expensive
+pick (the hull's ground and the chase camera's pull-in) where a body on foot
+paid one. A driver now pays one, the camera's, and it is the only one left in a
+vehicle frame. See `docs/vehicles.md`.
+
+What remains open here is the body's, and it is unchanged.
+
 Two things checked and found *not* to be problems, recorded so nobody
 re-derives them: the point-light arrays are **not** re-uploaded per draw
 (Babylon rebinds a material's uniforms once per frame — measured 99
@@ -837,3 +856,39 @@ Greyfen's own `glint` note, where the reflection turned out to LOWER the frame
 maximum below the horizon rather than raise it.
 
 ---
+
+## 15. The blast got eight times bigger and nobody has costed it on hardware
+
+**Status: derived from the code and from the counts, not measured. Recorded on
+the frame it landed, so the next person does not have to work out what moved.**
+
+The explosion was one emissive sphere, fourteen embers and one GPU dust cloud.
+It is now eight layers (`CONFIG.grenade`, "The blast, as a picture"), and the
+budget moved in four places at once:
+
+| what | before | after | when it is paid |
+| --- | --- | --- | --- |
+| pooled meshes | 6 spheres | 28 (4 slots x flash + 5 lobes + ring) | idle: invisible, culled early. Live: up to 7 draws per concurrent blast |
+| GPU particle systems | 4 (dust) | 8 (dust + smoke) | idle: `emitRate` 0, `_render` returns before any work |
+| Havok bodies | 128 (80 corpses + 48 shards) | 158 (+30 chunks) | only while a burst is falling; `physicsActive` gates the step |
+| transparent fill | 34 puffs to 2.9 m | + 14 puffs to 6 m, + a shock ring, + up to 8 scorch discs | the seconds after a detonation |
+
+**The fill is the one to watch, and finding 5 is why.** Coldharbour is already
+fill-bound and the ash field is already 18.6k alpha-blended particles; a smoke
+column of fourteen six-metre billboards standing over a blast is a large number
+of overdrawn pixels in exactly the part of the screen the player is looking at.
+The scorch discs are the cheap half — eight small quads, `disableDepthWrite`,
+and they are the only layer that persists.
+
+**What is bounded by construction, and therefore is not the question:** the
+mesh pools are fixed and built once, no burst allocates or builds a WASM shape
+(a chunk's size is decided at construction), the chunk burst is refused past
+`debris.distance` scaled by power, and a blast is seconds apart from the next
+one by the economy — two grenades a life, a 3.6 s tank reload.
+
+**What would settle it** is a frame capture on real hardware with two blasts
+overlapping at close range on Coldharbour, against the same scene with
+`grenade.smoke.puffs` at 0 — the smoke is the single largest new fill term and
+the one designed to be turned off first if a graphics-quality preset ever
+exists. Ranked against finding 5's list, it belongs after the ash field and
+before the render scale.

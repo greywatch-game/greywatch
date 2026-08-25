@@ -41,6 +41,11 @@ export interface JoinOptions {
   /** Where to reach the server. Same-origin `/ws` when absent. */
   url?: string;
   weapon?: string;
+  /**
+   * The anti-tank item in the third slot. Resolved by the SERVER against its
+   * own table, exactly as `weapon` is — see `Join.equipment`.
+   */
+  equipment?: string;
   /** A specific match from the lobby. Absent means "wherever there is room". */
   matchId?: string;
   /** Ask for a fresh match instead of filling one. Ignored with `matchId`. */
@@ -135,6 +140,7 @@ export class Connection {
         create: this.join.create,
         map: this.join.map,
         weapon: this.join.weapon,
+        equipment: this.join.equipment,
       });
     });
 

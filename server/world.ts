@@ -290,6 +290,17 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     margin,
     controlPoints: def.layout.controlPoints,
     spawns: def.layout.spawns,
+    // Straight off the layout, exactly as `MapBuilder.build` passes it through
+    // — a hardstanding is data and there is nothing to build for one. This is
+    // what `HeadlessGame`'s own `VehicleSystem` fleets from, and it must be the
+    // same list the clients read or the two would disagree about how many
+    // hulls the round has and which side owns which.
+    //
+    // It was empty on every map until armour reached netplay, with a comment
+    // saying the authority had never heard of a vehicle. It has now: see
+    // `docs/multiplayer.md` on hulls and `docs/vehicles.md` on the driver's
+    // report.
+    vehicleSpawns: def.layout.vehicles ?? [],
     colliders,
     colliderBoxes: boxes,
     rayGroups,

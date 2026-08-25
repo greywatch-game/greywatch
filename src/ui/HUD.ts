@@ -294,6 +294,20 @@ export interface ScoreRow {
 }
 
 /**
+ * The vehicle the player is driving, as the bottom-right band draws it.
+ *
+ * Derived by `Game` from the live `Tank` each frame, exactly as `CaptureStatus`
+ * is derived from a `ControlPoint`: the HUD reads no game system, and the words
+ * ("LOADED", "LOADING") are its own.
+ */
+export interface VehicleStatus {
+  health: number;
+  maxHealth: number;
+  /** 0 just fired, 1 loaded. The gun's whole magazine, as one number. */
+  load: number;
+}
+
+/**
  * The flag the player is standing in, relative to the player's own team. Game
  * derives this from the live ControlPoint each frame; the HUD picks the words.
  */
@@ -333,6 +347,22 @@ export class HUD {
   private nadePips: HTMLElement;
   /** One pip per grenade carried; rebuilt only when the pouch size changes. */
   private nadeMarks: HTMLElement[] = [];
+  /**
+   * The anti-tank row: the same instrument as the frag pouch, one row down,
+   * and up only on a kit that has the slot.
+   *
+   * Pips rather than a number for the reason the pouch is pips: two a life
+   * with no resupply is a decision, and a decision has to be readable without
+   * being counted. It is a row of its own rather than a third state on the
+   * frag row because they are two independent pouches and a player spending
+   * one is not spending the other.
+   */
+  private atRow!: HTMLElement;
+  private atCap!: HTMLElement;
+  private atPips!: HTMLElement;
+  private atMarks: HTMLElement[] = [];
+  private atBuilt = -1;
+  private lastAt = -1;
   private nadeBuilt = -1;
   private hudRight: HTMLElement;
   private weaponLabel: HTMLElement;
@@ -380,6 +410,27 @@ export class HUD {
   private outboundsCount: HTMLElement;
   private toasts: HTMLElement;
   private lockHint: HTMLElement;
+  /**
+   * The driver's chrome. `#hud-kit` is the infantry half of the bottom-right
+   * band and `#vehicle` is the armour half; `.mounted` on `#hud` swaps which
+   * one is up, so nothing here has to hide four elements by name and then
+   * remember all four the day a fifth arrives.
+   */
+  private hudKit: HTMLElement;
+  private vehicle: HTMLElement;
+  private vehicleParts: {
+    hp: HTMLElement;
+    hull: HTMLElement;
+    gun: HTMLElement;
+    load: HTMLElement;
+  };
+  /**
+   * Where the tank's gun actually points, projected to the glass — NOT the
+   * middle of the screen. See `setGunMarker`.
+   */
+  private gunMarker: HTMLElement;
+  private usePrompt: HTMLElement;
+  private usePromptParts: { key: HTMLElement; text: HTMLElement };
   private killfeed: HTMLElement;
   private scorefeed: HTMLElement;
   private scoreboard: HTMLElement;
@@ -462,6 +513,15 @@ export class HUD {
    * owes the same line next to the rebuild, or the new node inherits a previous
    * one's "already correct" and the first write it needs is the write it skips.
    */
+  private lastUsePrompt = false;
+  private lastUseText = "";
+  private lastMounted = false;
+  private lastHullText = "";
+  private lastHullWidth = "";
+  private lastLoadWidth = "";
+  private lastLoaded = true;
+  /** The marker's last position, as the string that was written. "" is hidden. */
+  private lastMarker = "";
   private lastHealthWidth = "";
   private lastHealthLow = false;
   private lastHealthText = "";
@@ -542,6 +602,10 @@ export class HUD {
       <div id="scorefeed"></div>
       <div id="scoreboard" class="frame hidden"></div>
       <div id="lock-hint" class="hidden"><b>CLICK</b> TO CAPTURE THE MOUSE</div>
+      <div id="gun-marker" class="hidden">
+        <i class="t"></i><i class="r"></i><i class="b"></i><i class="l"></i>
+      </div>
+      <div id="use-prompt" class="hidden"><b></b><span></span></div>
       <div id="hud-fps" class="hidden">
         <span class="fps-main"><b>--</b><em>FPS</em></span>
         <span class="fps-sub"><b>--</b><em>ms</em></span>
@@ -563,24 +627,36 @@ export class HUD {
           <div class="hp-num"><span id="health-text">100</span><em>HP</em></div>
         </div>
         <div id="hud-right">
-          <div class="cap-row nades">
-            <span class="cap">FRAG</span>
-            <span id="nade-pips"></span>
-          </div>
-          <div class="ammo-row">
-            <div id="stowed">
-              <span class="key"></span>
-              <span class="cap"></span>
-              <span class="n"><b></b><em></em></span>
+          <div id="hud-kit">
+            <div class="cap-row nades">
+              <span class="cap">FRAG</span>
+              <span id="nade-pips"></span>
             </div>
-            <div class="ammo">
-              <span id="ammo-mag">0</span><span id="ammo-cap"></span>
+            <div class="cap-row nades hidden" id="at-row">
+              <span class="cap" id="at-cap">RPG</span>
+              <span id="at-pips"></span>
+            </div>
+            <div class="ammo-row">
+              <div id="stowed">
+                <span class="key"></span>
+                <span class="cap"></span>
+                <span class="n"><b></b><em></em></span>
+              </div>
+              <div class="ammo">
+                <span id="ammo-mag">0</span><span id="ammo-cap"></span>
+              </div>
+            </div>
+            <div id="mag-strip"></div>
+            <div class="cap-row">
+              <span class="cap" id="weapon-label">RIFLE &middot; AUTO</span>
+              <span class="reload-note">RELOADING</span>
             </div>
           </div>
-          <div id="mag-strip"></div>
-          <div class="cap-row">
-            <span class="cap" id="weapon-label">RIFLE &middot; AUTO</span>
-            <span class="reload-note">RELOADING</span>
+          <div id="vehicle" class="hidden">
+            <div class="cap-row"><span class="cap">HULL</span><span class="veh-hp">0</span></div>
+            <div class="veh-bar hull"><i></i></div>
+            <div class="cap-row"><span class="cap">MAIN GUN</span><span class="veh-gun">LOADED</span></div>
+            <div class="veh-bar load"><i></i></div>
           </div>
         </div>
       </div>
@@ -597,6 +673,9 @@ export class HUD {
     this.ammoCap = document.getElementById("ammo-cap")!;
     this.magStrip = document.getElementById("mag-strip")!;
     this.nadePips = document.getElementById("nade-pips")!;
+    this.atRow = document.getElementById("at-row")!;
+    this.atCap = document.getElementById("at-cap")!;
+    this.atPips = document.getElementById("at-pips")!;
     this.hudRight = document.getElementById("hud-right")!;
     this.weaponLabel = document.getElementById("weapon-label")!;
     this.stowed = document.getElementById("stowed")!;
@@ -617,6 +696,20 @@ export class HUD {
     this.outboundsCount = this.outbounds.querySelector(".ob-count b") as HTMLElement;
     this.toasts = document.getElementById("toasts")!;
     this.lockHint = document.getElementById("lock-hint")!;
+    this.hudKit = document.getElementById("hud-kit")!;
+    this.vehicle = document.getElementById("vehicle")!;
+    this.vehicleParts = {
+      hp: this.vehicle.querySelector(".veh-hp") as HTMLElement,
+      hull: this.vehicle.querySelector(".veh-bar.hull i") as HTMLElement,
+      gun: this.vehicle.querySelector(".veh-gun") as HTMLElement,
+      load: this.vehicle.querySelector(".veh-bar.load i") as HTMLElement,
+    };
+    this.gunMarker = document.getElementById("gun-marker")!;
+    this.usePrompt = document.getElementById("use-prompt")!;
+    this.usePromptParts = {
+      key: this.usePrompt.querySelector("b") as HTMLElement,
+      text: this.usePrompt.querySelector("span") as HTMLElement,
+    };
     this.killfeed = document.getElementById("killfeed")!;
     this.scorefeed = document.getElementById("scorefeed")!;
     this.scoreboard = document.getElementById("scoreboard")!;
@@ -1069,6 +1162,51 @@ export class HUD {
     if (none !== this.lastNoNades) {
       this.lastNoNades = none;
       this.hudRight.classList.toggle("no-nades", none);
+    }
+  }
+
+  /**
+   * The anti-tank pouch, or nothing at all.
+   *
+   * A null `label` takes the row away outright, which is what every map with
+   * no armour on it and every netplay round hand it — the same rule the kit
+   * screen's row follows, and for the same reason: a slot that is not there
+   * is not a slot that is empty, and drawing it would be the HUD explaining a
+   * rule instead of reporting a state.
+   *
+   * The caption is composed by `Game` rather than derived here, because what
+   * it has to say differs per item: a launcher's row is the name, and a mine's
+   * carries how many of yours are lying on the field — which is a number only
+   * the system that owns them can answer, and one that matters because laying
+   * a third lifts the first.
+   */
+  setAntiTank(label: string | null, count: number, carried: number): void {
+    if (label === null) {
+      this.atRow.classList.add("hidden");
+      // Forgotten rather than kept: the next kit with a slot may be a
+      // different item with a different pouch size, and a stale build count
+      // would leave it drawing the last one's pips.
+      this.atBuilt = -1;
+      return;
+    }
+    this.atRow.classList.remove("hidden");
+    if (this.atCap.textContent !== label) this.atCap.textContent = label;
+    if (this.atBuilt !== carried) {
+      this.atPips.innerHTML = "";
+      this.atMarks = [];
+      for (let i = 0; i < carried; i++) {
+        const pip = document.createElement("i");
+        this.atPips.appendChild(pip);
+        this.atMarks.push(pip);
+      }
+      this.atBuilt = carried;
+      this.lastAt = -1;
+    }
+    if (count !== this.lastAt) {
+      for (let i = 0; i < this.atMarks.length; i++) {
+        this.atMarks[i].classList.toggle("spent", i >= count);
+      }
+      this.lastAt = count;
     }
   }
 
@@ -1748,6 +1886,107 @@ export class HUD {
     if (visible === this.lastLockHint) return;
     this.lastLockHint = visible;
     this.lockHint.classList.toggle("hidden", !visible);
+  }
+
+  /**
+   * What the player is standing next to that they could act on, or null.
+   *
+   * A prompt rather than a hint: it names the KEY as well as the thing, because
+   * this is the only verb in the game that is not on the mouse or on a stance
+   * key, and a player who has never been told about it will not find it.
+   */
+  setUsePrompt(key: string | null, text = ""): void {
+    const show = key !== null;
+    if (show !== this.lastUsePrompt || (show && text !== this.lastUseText)) {
+      this.lastUsePrompt = show;
+      this.lastUseText = text;
+      if (show) {
+        this.usePromptParts.key.textContent = key!;
+        this.usePromptParts.text.textContent = text;
+      }
+      this.usePrompt.classList.toggle("hidden", !show);
+    }
+  }
+
+  /**
+   * The driver's readout, or null when the player is on foot.
+   *
+   * Passing null does not merely blank it: `.mounted` comes off `#hud`, which
+   * is what puts the magazine, the frag pips and the crosshair back. The two
+   * halves of the bottom-right band are never up together, because a tank has
+   * no magazine and the rifle in the player's hands is not what is firing.
+   */
+  setVehicle(status: VehicleStatus | null): void {
+    const on = status !== null;
+    if (on !== this.lastMounted) {
+      this.lastMounted = on;
+      this.root.classList.toggle("mounted", on);
+      this.vehicle.classList.toggle("hidden", !on);
+      this.hudKit.classList.toggle("hidden", on);
+    }
+    if (!status) return;
+    const hp = Math.max(0, Math.round(status.health));
+    const hpText = String(hp);
+    if (hpText !== this.lastHullText) {
+      this.lastHullText = hpText;
+      this.vehicleParts.hp.textContent = hpText;
+    }
+    const frac = status.maxHealth > 0 ? hp / status.maxHealth : 0;
+    // Quantised to whole percent before the guard, so a hull losing a fifth of
+    // a point a frame under sustained rifle fire does not repaint the bar
+    // sixty times a second for a width nobody can see change.
+    const width = `${Math.round(frac * 100)}%`;
+    if (width !== this.lastHullWidth) {
+      this.lastHullWidth = width;
+      this.vehicleParts.hull.style.width = width;
+      this.vehicle.classList.toggle("hurt", frac <= 0.3);
+    }
+    const loaded = status.load >= 1;
+    const loadWidth = `${Math.round(Math.min(1, status.load) * 100)}%`;
+    if (loadWidth !== this.lastLoadWidth) {
+      this.lastLoadWidth = loadWidth;
+      this.vehicleParts.load.style.width = loadWidth;
+    }
+    if (loaded !== this.lastLoaded) {
+      this.lastLoaded = loaded;
+      this.vehicleParts.gun.textContent = loaded ? "LOADED" : "LOADING";
+      this.vehicle.classList.toggle("loading", !loaded);
+    }
+  }
+
+  /**
+   * Where the tank's gun is pointing, as a fraction of the viewport, or null
+   * when it is behind the camera or there is no gun.
+   *
+   * **This is the marker, and the crosshair is deliberately not.** In a
+   * third-person view the eye and the muzzle are twelve metres apart and the
+   * turret traverses at its own rate, so the middle of the screen is where the
+   * driver is ASKING to shoot and this is where the shell will actually go. The
+   * project's rule is that the reticle may not lie (`docs/weapons.md`); with a
+   * turret in the way the only way to keep that is to draw the gun rather than
+   * the request.
+   *
+   * `left`/`top` percentages rather than a transform, because the element is
+   * already centred on its own point by a static transform and stacking a
+   * second one would mean rebuilding the whole string every frame.
+   */
+  setGunMarker(x: number | null, y = 0): void {
+    const show = x !== null;
+    if (!show) {
+      if (this.lastMarker !== "") {
+        this.lastMarker = "";
+        this.gunMarker.classList.add("hidden");
+      }
+      return;
+    }
+    // A tenth of a percent is well under a pixel at any viewport this runs on,
+    // and it is what keeps a gun tracking a still target from repainting.
+    const key = `${(x! * 100).toFixed(1)},${(y * 100).toFixed(1)}`;
+    if (key === this.lastMarker) return;
+    if (this.lastMarker === "") this.gunMarker.classList.remove("hidden");
+    this.lastMarker = key;
+    this.gunMarker.style.left = `${(x! * 100).toFixed(2)}%`;
+    this.gunMarker.style.top = `${(y * 100).toFixed(2)}%`;
   }
 
   /**

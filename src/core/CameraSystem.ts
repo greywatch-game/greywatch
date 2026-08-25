@@ -51,7 +51,12 @@ import {
   type SightId,
   type SightSetup,
 } from "../entities/sights";
-import { DEFAULT_WEAPON, weaponSetup, type WeaponId } from "../entities/weapons";
+import {
+  carriedSetup,
+  DEFAULT_WEAPON,
+  weaponSetup,
+  type CarriedId,
+} from "../entities/weapons";
 import type { InputManager } from "./InputManager";
 
 /**
@@ -192,9 +197,9 @@ export class CameraSystem {
   }
 
   /** Takes the whole loadout. Cheap enough to call on every change. */
-  setLoadout(weapon: WeaponId, sight: SightId): void {
+  setLoadout(weapon: CarriedId, sight: SightId): void {
     this.sight = sightSetup(sight);
-    const w = weaponSetup(weapon);
+    const w = carriedSetup(weapon);
     this.weaponAdsMult = w.adsSpeedMult;
     this.weaponSwayMult = w.swayMult;
   }

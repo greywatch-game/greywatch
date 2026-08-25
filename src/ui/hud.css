@@ -727,8 +727,10 @@
 /* The grenade pouch. Diamonds rather than the magazine's ticks: two of
    anything in a row of five-pixel bars would read as a nearly-empty
    magazine, and the two counts sit one above the other. */
-#nade-pips { display: flex; gap: 6px; align-items: center; }
-#nade-pips i {
+#nade-pips,
+#at-pips { display: flex; gap: 6px; align-items: center; }
+#nade-pips i,
+#at-pips i {
   display: block;
   width: 9px;
   height: 9px;
@@ -736,7 +738,8 @@
   box-shadow: 0 0 5px rgba(255, 230, 128, 0.4);
   transform: rotate(45deg);
 }
-#nade-pips i.spent {
+#nade-pips i.spent,
+#at-pips i.spent {
   background: none;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
@@ -1206,6 +1209,128 @@
   color: rgba(255, 255, 255, 0.65);
 }
 #lock-hint b { color: var(--hot); }
+
+/* --- the driver's chrome ---
+   Two blocks and a marker. `#hud-kit` and `#vehicle` are the infantry and
+   armour halves of the bottom-right band and are never up together: HUD
+   .setVehicle() puts `.mounted` on #hud, which is also what takes the
+   crosshair away, because in a tank the middle of the screen is where the
+   driver is ASKING to shoot and #gun-marker is where the shell goes. */
+#hud-kit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+#vehicle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  min-width: 190px;
+}
+#vehicle .veh-hp,
+#vehicle .veh-gun {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+#vehicle .veh-gun { font-size: 13px; letter-spacing: 0.2em; }
+/* The same 20-degree lean the vitals bar and the magazine ticks carry — it is
+   the signature of the set, and a vehicle readout that sat square would be the
+   one flat thing on the screen. */
+.veh-bar {
+  position: relative;
+  width: 190px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.12);
+  transform: skewX(-20deg);
+  overflow: hidden;
+}
+.veh-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(to bottom, #b6ffc4, var(--good));
+  transition: width 0.12s linear;
+}
+.veh-bar.load i { background: rgba(255, 255, 255, 0.72); }
+/* Under a third of the hull left, and the bar goes the same hot colour the
+   player's own vitals do at the same fraction. One read for "this is about to
+   stop existing", whichever body it is about. */
+#vehicle.hurt .veh-bar.hull i { background: var(--theirs); }
+#vehicle.hurt .veh-hp { color: var(--theirs); }
+#vehicle.loading .veh-gun { color: rgba(255, 255, 255, 0.45); }
+
+/* The gun's own reticle, drawn where the barrel points rather than at the
+   centre of the screen. Four ticks with a hole in the middle, so it reads as
+   an aim rather than as a target lock, and deliberately larger and thinner
+   than the infantry crosshair — a tank gun is not a precision instrument and
+   the marker should not claim to be one. */
+#gun-marker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+}
+#gun-marker i {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+}
+#gun-marker i.t,
+#gun-marker i.b { width: 2px; height: 12px; margin: -6px 0 0 -1px; }
+#gun-marker i.l,
+#gun-marker i.r { width: 12px; height: 2px; margin: -1px 0 0 -6px; }
+#gun-marker i.t { transform: translateY(-19px); }
+#gun-marker i.b { transform: translateY(19px); }
+#gun-marker i.l { transform: translateX(-19px); }
+#gun-marker i.r { transform: translateX(19px); }
+
+/* The one verb in the game that is not on the mouse or a stance key, so it
+   names its own key. Sits above the lock hint's line rather than on it — both
+   can be up at once, and a pad player who has never taken the pointer lock is
+   exactly the player who most needs to be told about E. */
+#use-prompt {
+  position: absolute;
+  bottom: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+#use-prompt b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 3px 5px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--hot);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(6, 8, 13, 0.55);
+}
+
+/* --- in a vehicle ---
+   The crosshair goes because #gun-marker has replaced it and two reticles is
+   one reticle too many; the magazine block goes because the rifle in the
+   player's hands is not what is firing. Everything else — tickets, flags,
+   vitals, the killfeed — is still true and still wanted. */
+#hud.mounted #crosshair { display: none; }
+#hud.overlaid #gun-marker,
+#hud.overlaid #use-prompt,
+#hud.paused #gun-marker,
+#hud.paused #use-prompt,
+#hud.dying #gun-marker,
+#hud.dying #use-prompt { display: none; }
 
 /* --- behind a full-screen overlay ---
    The menu and the round-over card sit over a live scene, so last

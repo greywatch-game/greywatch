@@ -1,0 +1,404 @@
+/**
+ * VehicleSystem.ts — The armour on the field: one hull per hardstanding, the
+ * clock that puts a fresh one there after the last burned, and the geometry
+ * questions a driver getting in and out asks.
+ * Owns: the `Tank` pool (built once per map install, never disposed inside a
+ * round), the per-hardstanding respawn timers, and the wreck clock.
+ * Owns NO player: nothing in here knows what a player is. `Game` decides who is
+ * driving and hands the drive in, exactly as it hands `BattleSystem` a
+ * `BattleCtx` rather than letting it reach for one.
+ *
+ * ## A hull is not in the nav graph, and that is the ragdoll's rule not a bug
+ *
+ * `NavGrid`, `CoverMap`, `ObstacleField`, the AO bake and the collision bake are
+ * all built ONCE from the finished collider set at map load. A tank moves, so it
+ * cannot be in any of them, and the consequence is stated rather than hidden:
+ * **bots walk through a parked tank**, exactly as they walk through a corpse and
+ * for the identical reason. What a tank IS to a bot is a target — `Game` puts
+ * every live hull in `BattleSystem`'s non-bot combatant list — and a wall its
+ * rounds and its sightlines stop on, because the hull's collider is `solid`.
+ *
+ * ## Three states and two clocks
+ *
+ * A hardstanding's hull is LIVE, a WRECK, or GONE, and the two clocks are
+ * deliberately not one:
+ *
+ * - `Tank.wreckT` — how long the burnt-out hull stands where it died. It keeps
+ *   its collider for all of it, so a wreck is cover. That is the whole reason
+ *   destruction does not simply hide the mesh.
+ * - `respawnIn` — how long until a fresh hull is on the hardstanding. It starts
+ *   at the same instant and runs longer, which is what guarantees a side never
+ *   fields two.
+ *
+ * ## What is refused, and what is not
+ *
+ * A respawn is never refused. A hardstanding is in `MapBuilder.keepClear`, so
+ * nothing is ever built on one, and the only thing that could be standing there
+ * is a body — which is a case that resolves itself: the hull arrives, the body
+ * is inside its collider, and `moveWithCollisions` pushes them out on their next
+ * frame. Refusing instead would mean a side losing its armour for the rest of
+ * the round because a bot was loitering, which is a far worse failure than a
+ * shove.
+ */
+import { Ray, type Scene, Vector3 } from "@babylonjs/core";
+import { CONFIG } from "../config";
+import type { Team } from "../entities/Combatant";
+import { Tank, type DriveInput } from "../entities/Tank";
+import type { CelMaterialFactory } from "../shaders/CelShader";
+import type { GameMap, VehicleSpawnDef } from "../world/MapBuilder";
+import { SOLID_ONLY } from "../world/solid";
+
+/**
+ * Who is telling which hull what to do, asked once per hull per frame.
+ *
+ * `Game` is the only implementer and holds one across the whole round: it is
+ * the only place that knows both about the player's seat and about the bot
+ * crews, and neither of those belongs in here — nothing in this file has heard
+ * of a player or of an AI.
+ */
+export interface VehicleOrders {
+  /** What is in this hull asking for, or null when it is empty. */
+  driveFor(tank: Tank): DriveInput | null;
+  /**
+   * The state that arrived for this hull from somewhere else this frame, or
+   * null for one this process is simulating.
+   *
+   * The netplay half, and it is a second question rather than a mode on the
+   * first because the two answers are different KINDS: a `DriveInput` is what
+   * a hull is being asked to do and this is where it ended up. On a client
+   * every hull but the one the player is sitting in answers here; on the
+   * authority, only the hulls with a person driving them do — a bot crew's is
+   * simulated on the server exactly as it is offline.
+   *
+   * Optional so the offline round, which is every round that has no wire,
+   * states nothing at all.
+   */
+  remoteFor?(tank: Tank): RemoteHull | null;
+}
+
+/**
+ * Where a hull somebody else is driving has got to. `Tank.updateRemote`'s
+ * arguments, as one object so the lookup above allocates nothing.
+ */
+export interface RemoteHull {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  turretYaw: number;
+  gunPitch: number;
+}
+
+/** One team's parking space, and whatever is standing on it. */
+interface Hardstanding {
+  def: VehicleSpawnDef;
+  tank: Tank;
+  /** Seconds until a fresh hull arrives; <= 0 while one is already here. */
+  respawnIn: number;
+}
+
+export class VehicleSystem {
+  private stands: Hardstanding[] = [];
+  /**
+   * The same hulls as a flat list, held rather than derived. `Game` folds this
+   * into the combatant list every frame, and a getter that built an array would
+   * be an allocation per frame on the one path that runs on every frame of
+   * every round.
+   */
+  private readonly fleet: Tank[] = [];
+
+  /**
+   * Wired by `Game`: this hull is gone. Raised on the frame it is destroyed,
+   * before anything else happens to it, because the one thing that cannot wait
+   * is getting whoever is inside out of it.
+   */
+  onDestroyed: (tank: Tank) => void = () => {};
+
+  /**
+   * Wired by `Game`: a fresh hull has arrived on a hardstanding. The minimap
+   * and the toast are `Game`'s to draw; this system knows only that the clock
+   * ran out.
+   */
+  onRespawned: (tank: Tank) => void = () => {};
+
+  private readonly probe = new Ray(new Vector3(), new Vector3(0, -1, 0), 1);
+  private readonly spot = new Vector3();
+
+  constructor(
+    private scene: Scene,
+    private mats: CelMaterialFactory,
+  ) {}
+
+  /** Every hull on the field, live or wrecked. Empty on a map with no armour. */
+  get tanks(): readonly Tank[] {
+    return this.fleet;
+  }
+
+  /** True on the three shipped maps that state no hardstandings. */
+  get empty(): boolean {
+    return this.stands.length === 0;
+  }
+
+  /**
+   * Builds the fleet for a freshly installed map.
+   *
+   * Disposes the last one outright rather than pooling across maps: the rigs
+   * are painted per TEAM and a map states which team owns which hardstanding,
+   * so a pool carried over would have to be re-painted anyway — and this runs
+   * once per round, next to a map build that takes the better part of a second.
+   * Inside a round nothing here is ever disposed; see `Tank.placeAt`.
+   *
+   * There is deliberately no `reset()` beside `BattleSystem`'s and
+   * `RagdollSystem`'s. A round always starts with a fresh `installMap`, and
+   * this runs from inside it — so a second entry point that put the same hulls
+   * back would be a method nothing called, kept alive by the symmetry of the
+   * list it sat in.
+   */
+  build(map: GameMap, predicted = false): void {
+    this.dispose();
+    this.predicted = predicted;
+    for (const def of map.vehicleSpawns) {
+      const tank = new Tank(this.scene, this.mats, def.team);
+      tank.setGround(map.terrain, map.obstacles);
+      tank.onDestroyed = () => this.onDestroyed(tank);
+      tank.placeAt(def.pos, def.yaw);
+      // A hull in a match refuses local damage and answers to the wire for
+      // when it burns and when a fresh one arrives — see `Tank.predicted` and
+      // the clocks in `update`. Set here rather than by the caller so a fleet
+      // is all one thing: a mixture would be a round in which some armour was
+      // authoritative and some was not.
+      tank.predicted = predicted;
+      this.stands.push({ def, tank, respawnIn: 0 });
+      this.fleet.push(tank);
+    }
+  }
+
+  /**
+   * True when this fleet is drawn from the wire rather than simulated here.
+   *
+   * Read by `update` to leave both hardstanding clocks alone: in a match the
+   * authority decides when a wreck is taken away and when a fresh hull stands
+   * on the pad, and a client running its own copy of either would take a hull
+   * off the street the server still holds there — with its collider, which is
+   * the difference between a picture disagreeing and a round disagreeing.
+   */
+  private predicted = false;
+
+  /**
+   * One frame of every hull on the field.
+   *
+   * `orders` is asked once per hull: what is the thing inside this one telling
+   * it to do, or null when nobody is. Null is not the same as a centred stick
+   * — see `Tank.update`.
+   *
+   * It is a lookup rather than "the one driven hull and its input" because
+   * there is no longer one driver. A map with two hardstandings can have the
+   * player in one and a bot crew in the other, or a crew in both, and a
+   * signature that named a single hull made that unrepresentable. `Game` owns
+   * the object and holds it across frames, so asking costs no allocation.
+   */
+  update(dt: number, orders: VehicleOrders): void {
+    for (const stand of this.stands) {
+      const tank = stand.tank;
+      // Asked FIRST, for the reason `Game.vehicleOrders` asks the player's own
+      // hull before the crews: a hull whose state arrived from elsewhere is
+      // not one this process may simulate, whatever else might have an opinion
+      // about what it should be doing.
+      const remote = orders.remoteFor?.(tank) ?? null;
+      if (remote) {
+        tank.updateRemote(
+          dt,
+          remote.x,
+          remote.y,
+          remote.z,
+          remote.yaw,
+          remote.turretYaw,
+          remote.gunPitch,
+        );
+      } else {
+        tank.update(dt, orders.driveFor(tank));
+      }
+      if (tank.alive) continue;
+      // Both clocks below are the AUTHORITY's in a match — see `predicted`.
+      if (this.predicted) continue;
+      // The wreck's own clock has run out: take the hull away. Its collider
+      // goes with it, which is the moment the street opens up again.
+      if (tank.wreckT <= 0 && tank.body.isEnabled()) tank.hide();
+      // The hardstanding's clock is separate and starts on the same frame the
+      // hull died. Armed here rather than in `Tank.destroy` so that the tank
+      // never has to know what a hardstanding is.
+      if (stand.respawnIn <= 0) {
+        stand.respawnIn = CONFIG.vehicles.respawnDelay;
+        continue;
+      }
+      stand.respawnIn -= dt;
+      if (stand.respawnIn > 0) continue;
+      stand.respawnIn = 0;
+      tank.placeAt(stand.def.pos, stand.def.yaw);
+      this.onRespawned(tank);
+    }
+  }
+
+  /**
+   * How long until `team`'s armour is back, or null when it is already on the
+   * field. What the HUD counts down.
+   */
+  respawnFor(team: Team): number | null {
+    for (const stand of this.stands) {
+      if (stand.def.team !== team) continue;
+      if (stand.tank.alive) return null;
+      return Math.max(0, stand.respawnIn);
+    }
+    return null;
+  }
+
+  /**
+   * The nearest hull of `team` a body standing at `at` could get into: live,
+   * empty, and inside `enterRadius` of its centre.
+   *
+   * Team-locked on purpose. Stealing the other side's armour is a real design
+   * choice and a good one in some shooters, but it is a choice — and made by
+   * accident here it would mean a hardstanding's respawn timer feeding the
+   * wrong team for the rest of the round.
+   */
+  /**
+   * Takes or gives up a seat. The ONE writer of `Tank.occupied`, and it is here
+   * rather than derived inside `update` for a reason that has already been a
+   * bug: derived, the flag is only true from the next frame's world step, so
+   * `enterable` would offer a hull somebody is already sitting in for the rest
+   * of the frame they got into it. Written on the transition, it is never
+   * wrong for an instant.
+   */
+  setOccupied(tank: Tank, on: boolean): void {
+    tank.occupied = on;
+  }
+
+  enterable(at: Vector3, team: Team): Tank | null {
+    return this.nearestOwn(at, team, false);
+  }
+
+  /**
+   * The nearest hull of `team` within reach of `at` that somebody is ALREADY
+   * sitting in. `enterable`'s mirror, and it exists for exactly one caller:
+   * the player walking up to their own side's armour with a bot crew in it.
+   *
+   * **A hull the AI is using must never be a hull the player cannot have.** A
+   * map states one hardstanding per side, so a crew that held its seat for the
+   * life of the tank would make whether the player ever drives a coin toss on
+   * who reached the yard first. `Game` answers this with an eviction rather
+   * than by keeping the bots out of the tank, which is the version that costs
+   * the feature nothing: armour is something the AI uses while nobody else
+   * wants it.
+   *
+   * Still team-locked, for `enterable`'s reason: this offers a seat, and the
+   * side's own hull is the only seat it may offer.
+   */
+  occupiedNear(at: Vector3, team: Team): Tank | null {
+    return this.nearestOwn(at, team, true);
+  }
+
+  /** The pair above, which differ by one term. */
+  private nearestOwn(at: Vector3, team: Team, occupied: boolean): Tank | null {
+    const r = CONFIG.vehicles.enterRadius;
+    let best: Tank | null = null;
+    let bestDist = r * r;
+    for (const stand of this.stands) {
+      const tank = stand.tank;
+      if (!tank.alive || tank.occupied !== occupied || tank.team !== team) continue;
+      const d = Vector3.DistanceSquared(at, tank.center);
+      if (d < bestDist) {
+        bestDist = d;
+        best = tank;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The nearest LIVE hull of the OTHER side whose centre is within `radius` of
+   * `at`, or null. What `AntiTankSystem` asks, for both of the questions it
+   * has: a mine's trigger and a rocket's direct hit.
+   *
+   * **Hostile by construction rather than by a check at the call site**, the
+   * same bargain `CombatSystem.fire` makes with its target list: `team` is the
+   * team the ordnance BELONGS to, so a mine cannot catch its own side's armour
+   * and a rocket cannot claim a direct hit on it. That is the only place
+   * friendly fire is excluded on this path, and it has to be here, because
+   * `AntiTankSystem` has never heard of a team beyond passing one back out.
+   *
+   * A WRECK is not a hull. `alive` is what the AT kit is for, and a mine that
+   * kept going off under a burnt-out chassis would spend a player's whole
+   * pouch on a thing that is already dead.
+   */
+  hostileNear(at: Vector3, radius: number, team: Team): Tank | null {
+    let best: Tank | null = null;
+    let bestDist = radius * radius;
+    for (const stand of this.stands) {
+      const tank = stand.tank;
+      if (!tank.alive || tank.team === team) continue;
+      const d = Vector3.DistanceSquared(at, tank.center);
+      if (d < bestDist) {
+        bestDist = d;
+        best = tank;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Where to put a body stepping out of `tank`: beside the hull, on whatever
+   * the ground there is.
+   *
+   * Both flanks are tried and the one whose floor is nearest the tank's own is
+   * taken, which is what stops a dismount onto the roof of the building the
+   * tank is parked against — or into the stairwell it is parked over. Neither
+   * being sensible is not a failure worth refusing over: the fallback is the
+   * hull's own position, and `moveWithCollisions` pushes the body clear on its
+   * next frame exactly as it does for a respawned hull.
+   *
+   * The result is scratch and must be consumed inside the call, which the one
+   * caller does.
+   */
+  exitSpot(tank: Tank): Vector3 {
+    const off = CONFIG.vehicles.exitOffset;
+    // The hull's own right, which is `(cos(yaw), 0, -sin(yaw))` — the same
+    // basis `CameraSystem.flatRightToRef` builds.
+    const rx = Math.cos(tank.yaw);
+    const rz = -Math.sin(tank.yaw);
+    let bestY: number | null = null;
+    for (const side of [1, -1]) {
+      const x = tank.center.x + rx * off * side;
+      const z = tank.center.z + rz * off * side;
+      const y = this.groundAt(x, z, tank);
+      if (y === null) continue;
+      if (bestY === null || Math.abs(y - tank.position.y) < Math.abs(bestY - tank.position.y)) {
+        bestY = y;
+        this.spot.set(x, y, z);
+      }
+    }
+    if (bestY === null) this.spot.copyFrom(tank.position);
+    return this.spot;
+  }
+
+  /**
+   * The floor at a point, for the dismount alone. A pick per candidate, twice,
+   * on a one-off event — which is why this may cast the game's most expensive
+   * ray at all: nothing here runs per frame.
+   */
+  private groundAt(x: number, z: number, tank: Tank): number | null {
+    const t = CONFIG.vehicles.tank;
+    const pickable = tank.body.isPickable;
+    tank.body.isPickable = false;
+    this.probe.origin.set(x, tank.center.y + t.hull.height, z);
+    this.probe.length = t.hull.height * 2 + t.drive.probeLength;
+    const hit = this.scene.pickWithRay(this.probe, SOLID_ONLY);
+    tank.body.isPickable = pickable;
+    return hit?.hit && hit.pickedPoint ? hit.pickedPoint.y : null;
+  }
+
+  dispose(): void {
+    for (const stand of this.stands) stand.tank.dispose();
+    this.stands = [];
+    this.fleet.length = 0;
+  }
+}
