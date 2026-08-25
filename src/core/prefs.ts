@@ -37,12 +37,12 @@ import {
 import { DEFAULT_MAP, MAPS, type MapDef } from "../world/maps";
 
 /** Where the chosen enemy-skill tier is remembered between sessions. */
-const DIFFICULTY_KEY = "hollowmere.difficulty";
+const DIFFICULTY_KEY = "greywatch.difficulty";
 /** …and the chosen map, by `MapDef.id`. */
-const MAP_KEY = "hollowmere.map";
+const MAP_KEY = "greywatch.map";
 /** …and the loadout. Same store, same tolerance for it not working. */
-const SIGHT_KEY = "hollowmere.sight";
-const WEAPON_KEY = "hollowmere.weapon";
+const SIGHT_KEY = "greywatch.sight";
+const WEAPON_KEY = "greywatch.weapon";
 /**
  * …and which anti-tank item the kit's third slot holds.
  *
@@ -51,7 +51,7 @@ const WEAPON_KEY = "hollowmere.weapon";
  * onto it must not have quietly swapped their launcher for a stack of mines.
  * `Game` is where "is there a slot at all" is decided.
  */
-const EQUIPMENT_KEY = "hollowmere.equipment";
+const EQUIPMENT_KEY = "greywatch.equipment";
 /**
  * …and the finish, which is the one preference here that is remembered PER
  * WEAPON rather than once.
@@ -61,9 +61,9 @@ const EQUIPMENT_KEY = "hollowmere.equipment";
  * was painted in. One key each is what makes "your rifle is Coyote and your
  * SMG is Voltage" a thing the game can remember.
  */
-const FINISH_KEY_PREFIX = "hollowmere.finish.";
+const FINISH_KEY_PREFIX = "greywatch.finish.";
 /** …and which region the player chose to play in, by `Region.id`. */
-const REGION_KEY = "hollowmere.region";
+const REGION_KEY = "greywatch.region";
 
 export function readDifficulty(): number {
   try {

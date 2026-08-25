@@ -57,7 +57,7 @@ and what it must never do. Read it before editing that file.
 
 ## Project overview
 
-**HOLLOWMERE — Cel-Shaded Conquest**: a browser-based, single-player
+**GREYWATCH — Cel-Shaded Conquest**: a browser-based, single-player
 **first-person** Conquest shooter (8v8 vs bots, five control points, ticket
 bleed). **Babylon.js** + **TypeScript** + **Vite**; ES modules, Node 18+, WebGL2.
 

@@ -19,7 +19,7 @@ import { chromium } from "playwright";
 import { MAPS, root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
 
-const MAP_KEY = "hollowmere.map";
+const MAP_KEY = "greywatch.map";
 
 /** The server's fingerprints, via the built `parity` entry. */
 function serverFingerprints() {

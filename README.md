@@ -1,4 +1,4 @@
-# HOLLOWMERE — Cel-Shaded Conquest
+# GREYWATCH — Cel-Shaded Conquest
 
 A browser-based, single-player **Conquest** shooter built with **Babylon.js** and
 **TypeScript**. Eight-a-side against bots over five control points in a

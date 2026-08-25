@@ -578,6 +578,6 @@ wss.on("connection", (socket: WebSocket, req: IncomingMessage) => {
 
 http.listen(PORT, () => {
   console.log(
-    `hollowmere server on :${PORT} (protocol ${PROTOCOL_VERSION}, up to ${MAX_MATCHES} matches)`,
+    `greywatch server on :${PORT} (protocol ${PROTOCOL_VERSION}, up to ${MAX_MATCHES} matches)`,
   );
 });

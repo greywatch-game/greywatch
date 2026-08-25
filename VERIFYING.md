@@ -138,7 +138,7 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
     that shows.
 - **A NETPLAY tank is driven the same way, and three things about the harness
   bite before the feature does.** Point the page at `?mp=ws://host:port/ws`, set
-  `localStorage["hollowmere.map"]` in an `addInitScript` (the map a match is
+  `localStorage["greywatch.map"]` in an `addInitScript` (the map a match is
   created on is the one the JOINING client asks for, and there is no URL
   parameter for it), and deploy with `g.net.sendDeploy(i)` where `i` indexes
   `g.map.spawns` — the deploy screen's own list is derived and is not that
@@ -829,7 +829,7 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
   vantage on that map to take several minutes end to end — most of it in the
   map build, not the capture.
 - **Water needs a vantage computed, not guessed, and the map picker is
-  `localStorage["hollowmere.map"]` set in an `addInitScript` before the load.** A
+  `localStorage["greywatch.map"]` set in an `addInitScript` before the load.** A
   `WaterRect` is not where the water is (see [`docs/world.md`](docs/world.md)): on
   Greyfen one rect covers the map and only 11% of it is wet, so scan for cells where
   `surfaceAt(x, z) < surfaceY` and aim along the longest wet run from one. Three
@@ -877,7 +877,7 @@ to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock
   cover the whole screen: the merged list, a ping per region, the note row a
   dead one leaves, and the picker. `?server=`/`?mp=<url>` REPLACE that list with
   one synthetic region, which is also how the single-region form of the screen
-  is checked. Two readings that mean something: `localStorage["hollowmere.region"]`
+  is checked. Two readings that mean something: `localStorage["greywatch.region"]`
   is written only by a real pick (a preselection by ping deliberately is not),
   and `g.net.conn.socket.url` after a join is the proof that the row's region
   and not the standing one is what opened the socket.

@@ -57,7 +57,7 @@
 /** Replaced at build time with `{ version, immutable, mutable }`. */
 const PRECACHE = __PRECACHE__;
 
-const CACHE = `hollowmere-${PRECACHE.version}`;
+const CACHE = `greywatch-${PRECACHE.version}`;
 
 /**
  * How long a launch waits for a fresh shell before drawing the one it already

@@ -37,7 +37,7 @@ import { MAPS, root, sourceHash } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
 
 /** The localStorage key `prefs.ts` remembers the chosen map under. */
-const MAP_KEY = "hollowmere.map";
+const MAP_KEY = "greywatch.map";
 
 /**
  * Builds one map in the browser and hands back its collider boxes.

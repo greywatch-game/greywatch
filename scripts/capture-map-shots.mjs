@@ -46,7 +46,7 @@ import { root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
 
 /** The localStorage key `prefs.ts` remembers the chosen map under. */
-const MAP_KEY = "hollowmere.map";
+const MAP_KEY = "greywatch.map";
 /** What a backdrop is shot at. 16:9, and every viewport scales it to fill. */
 const WIDTH = 1920;
 const HEIGHT = 1080;

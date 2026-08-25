@@ -106,7 +106,7 @@ function layoutWriter(): Plugin {
   const selfWritten = new Set();
 
   return {
-    name: "hollowmere-layout-writer",
+    name: "greywatch-layout-writer",
     apply: "serve",
 
     configureServer(server) {
@@ -210,7 +210,7 @@ function serviceWorker(): Plugin {
     });
 
   return {
-    name: "hollowmere-service-worker",
+    name: "greywatch-service-worker",
     apply: "build",
 
     writeBundle(options) {

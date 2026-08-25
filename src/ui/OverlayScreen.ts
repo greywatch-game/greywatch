@@ -344,7 +344,7 @@ export class OverlayScreen {
       <div class="ui-head">
         <div class="ui-titles">
           <span class="ui-eyebrow">Cel-shaded conquest</span>
-          <h1>HOLLOWMERE</h1>
+          <h1>GREYWATCH</h1>
           <p class="tagline">Take and hold ${spellCount(flags)} points against ${CONFIG.teams[1].name}</p>
         </div>
         <div class="ui-meta">

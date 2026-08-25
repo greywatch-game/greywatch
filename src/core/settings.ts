@@ -160,7 +160,7 @@ export const SETTING_DEFAULTS: Settings = {
 };
 
 /** One key per field, so the fields are independent in the store as well. */
-const KEY_PREFIX = "hollowmere.setting.";
+const KEY_PREFIX = "greywatch.setting.";
 
 /**
  * Reads every field on its own, falling back per field.
