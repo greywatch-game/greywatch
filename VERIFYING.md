@@ -26,28 +26,57 @@ bite before any of the quirks below do.**
   WebGPU here". `http://localhost` and `http://127.0.0.1` both count as secure;
   serve a blank page off a `node:http` server rather than testing on
   `about:blank`.
-- **On a machine with no GPU, a WebGPU CANVAS cannot be rendered to, and that is
-  a hard limit rather than a tuning problem.** `getContext("webgpu")` +
-  `configure()` succeeds, and then the FIRST `getCurrentTexture()` destroys the
-  device — `device.lost` resolves `reason: "destroyed"`, and Babylon reports
-  "WebGPU context lost" a beat later, tries to restore, and fails with "Could
-  not retrieve a WebGPU adapter". Measured across seven flag sets, both
-  browser binaries, headless and headed, and all three canvas kinds (DOM,
-  detached `OffscreenCanvas`, `transferControlToOffscreen`): **one frame, every
-  time.** OFFSCREEN rendering into a `device.createTexture()` colour attachment
-  is unaffected — 480 frames in 8 s, no loss — so the broken piece is the swap
-  chain specifically, not WebGPU and not SwiftShader. Check `ls /dev/dri`: if
-  it is missing, this is the machine you are on.
-  - **What that leaves testable is the whole of the DOM and the whole of the
+- **Anything with a PICTURE in it must run `headless: false`, and on this
+  Chromebook that is not a preference — headless cannot present a WebGPU canvas
+  at all.** In headless, `getContext("webgpu")` and `configure()` both succeed
+  and then the FIRST `getCurrentTexture()` destroys the device: `device.lost`
+  resolves `reason: "destroyed"`, Babylon reports "WebGPU context lost", tries
+  to restore, and dies with "Could not retrieve a WebGPU adapter". Measured
+  across seven flag sets, both browser binaries and all three canvas kinds
+  (DOM, detached `OffscreenCanvas`, `transferControlToOffscreen`): **one frame,
+  every time.** Headed on `:0` runs indefinitely — 1275 frames of the real game
+  at 59 fps — and `page.screenshot()` captures the canvas correctly. Offscreen
+  rendering into a `device.createTexture()` colour attachment survives in both,
+  so the broken piece is the swap chain in headless specifically.
+  - **This is a Crostini box and the GPU is a SETTING.** With Linux GPU support
+    off there is no `/dev/dri` at all and even headed dies at frame 2. With it
+    on, `/dev/dri/card0` and `renderD128` appear and headed works.
+    **`ls /dev/dri` is the one-second check**, and it is the first thing to run
+    when a visual script that used to work stops working — the toggle does not
+    survive every ChromeOS event.
+  - **WebGL2 gets the real GPU and WebGPU does not, and that is not fixable
+    here — do not spend the hour again.** WebGL2 reports
+    `ANGLE (Mesa/X.org, virgl (Mesa Intel(R) Graphics (MTL)))`; WebGPU's
+    adapter reports `google/swiftshader`. Crostini passes through GL (virgl);
+    Dawn wants Vulkan, and the Vulkan side needs Venus —
+    `libvulkan_virtio.so` + `virtio_icd.x86_64.json` — which Debian 12's mesa
+    22.3.6 does not build, no backports is configured, and the ChromeOS feed
+    (`cros-packages`) ships no mesa at all. `vulkaninfo --summary` confirms it:
+    **one device, `llvmpipe`, `PHYSICAL_DEVICE_TYPE_CPU`.** Two traps in that
+    investigation: `vkcube` renders a flawless cube ON THE CPU and reads as a
+    pass, and `usermod -aG render` is a no-op because `/dev/dri/renderD128` is
+    already mode 666. So **every WebGPU frame here is CPU-rendered — correct,
+    and slow.** A round runs at ~16 fps, not 59. Never quote a frame time
+    measured here; `FINDINGS.md` numbers need real hardware. Correctness, which
+    is what parity diffs are, is unaffected.
+  - **Headless still runs the whole of the DOM and the whole of the
     simulation** — the boot path, `__celshock`, state transitions, the screens,
-    rules, damage arithmetic, nav — all of which run on the main thread and
-    none of which needs a presented frame. It gets two frames in before the
-    device goes, so `scene.getFrameId()` stops at 2 and `engine.getFps()` reads
-    ~3 forever; do not read either as a stall.
-  - **What it rules out is every PICTURE.** `page.screenshot()` of the canvas,
-    the frozen-frame diff methodology below, and **`npm run shots`** (which
-    times out waiting for the map to build) all need a real GPU. Photograph
-    from a machine that has one.
+    rules, damage arithmetic, nav — none of which needs a presented frame, and
+    it is much faster to start. Use it for those. It gets two frames in before
+    the device goes, so `scene.getFrameId()` stops at 2 and `engine.getFps()`
+    reads ~3 forever; do not read either as a stall.
+
+- **The engine fetches glslang and twgsl from `cdn.babylonjs.com`, so match
+  `**/*.babylonjs.com/**` and never a hostname from memory.** Four files —
+  `v9.19.1/glslang/glslang.{js,wasm}` and `v9.19.1/twgsl/twgsl.{js,wasm}` —
+  pulled the first time a GLSL shader reaches the backend, which is what every
+  shader still is until the WGSL port finishes. **This has already produced a
+  false PASS**: a gate asserting "no CDN fetch during boot" against
+  `preview.babylonjs.com` passed while watching a host that is never contacted.
+  Two further traps in the same check — booting only to the menu compiles no
+  shader and therefore fetches nothing, and a route filter proves only what was
+  *requested*, so the real invariant is `engine._glslang === undefined &&
+  engine._tintWASM === undefined` after a sweep that actually drew every map.
 
 Headless quirks that have already cost time:
 
