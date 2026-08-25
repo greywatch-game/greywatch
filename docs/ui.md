@@ -876,11 +876,23 @@ What belongs *here*, with the other screens:
   three neighbours) are the one-frame belt to that brace — the push lands on the
   next tick, and a trigger drawn over the pause card for a frame is a trigger
   somebody tries to press.
-- **The two things it draws that it cannot know are pushed in**, exactly as every
-  gauge in `HUD` is and with the same write guards: whether the body is crouched
-  (it owns no crouch latch — `InputManager` has one already, shared with `C` and
-  the pad's B) and whether the magazine wants attention. Nothing else about the
-  round reaches it.
+- **The three things it draws that it cannot know are pushed in**, exactly as
+  every gauge in `HUD` is and with the same write guards: whether the body is
+  crouched (it owns no crouch latch — `InputManager` has one already, shared with
+  `C` and the pad's B), whether the magazine wants attention, and what the
+  vehicle verb would do right now. Nothing else about the round reaches it.
+- **One button is CONTEXTUAL, and it is the whole reason a phone can drive.**
+  Every other control on the layer is a key that has always been there, because
+  a key is something a player presses to find out what it does — and glass has
+  nothing to press until something is drawn under it. So `setUse` gives the
+  vehicle verb a label and puts it on screen, and null takes it away again;
+  `Game` decides, from the same `offerUse` that writes the HUD's prompt, so the
+  sentence on the button and the sentence over the crosshair cannot disagree.
+  Two rules come with it: taking the offer away also LETS GO of the button (a
+  finger resting on `EXIT TANK` when the hull brews up must not be reported held
+  when the next offer puts it back), and `releaseAll` hides it as well as
+  clearing it, because here the class is not a look but the control's whole
+  existence.
 - **The buttons are `.frame`s**, the same chamfered hull the panels use, cut on
   the same two corners. Not decoration: `base.css` bans `border-radius` on
   gameplay chrome, and a set of round translucent buttons is precisely the "web

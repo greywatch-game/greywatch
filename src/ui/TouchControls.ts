@@ -5,9 +5,10 @@
  * Owns: `#touch` and every finger that lands on it — the pointer-id bookkeeping,
  * the stick's origin, the ADS and scoreboard latches, and the look delta it
  * hands over consume-on-read. Owns NO game state: it is polled by
- * `InputManager` exactly as a gamepad is, and the two things it draws that it
- * cannot know (whether the body is crouched, whether the magazine is out) are
- * PUSHED by `Game` like every other HUD gauge.
+ * `InputManager` exactly as a gamepad is, and the three things it draws that it
+ * cannot know (whether the body is crouched, whether the magazine is out, and
+ * whether there is a hull in reach to get into or out of) are PUSHED by `Game`
+ * like every other HUD gauge.
  *
  * Invariants: `consume()` must be called exactly once per frame — it zeroes the
  * look accumulator and spends the one-frame floor under a tap. Every listener
@@ -75,6 +76,12 @@ export interface TouchFrame {
   grenade: boolean;
   swap: boolean;
   scoreboard: boolean;
+  /**
+   * Momentary: get into or out of the hull in front of you. Folded into
+   * `InputManager.usePressed` beside `E` and the pad's d-pad up, so nothing
+   * downstream knows a finger asked.
+   */
+  use: boolean;
 }
 
 /** What a finger currently on the glass is doing. */
@@ -92,6 +99,7 @@ type ButtonId =
   | "reload"
   | "grenade"
   | "swap"
+  | "use"
   | "score"
   | "menu";
 
@@ -112,6 +120,12 @@ interface ButtonSpec {
   group: "main" | "left" | "top";
   /** Whether a finger on it also drags the view. The fire buttons do. */
   look?: boolean;
+  /**
+   * Whether it is only on screen when the game says so — hidden until
+   * `setUse` gives it a label, and hidden again the moment the offer goes.
+   * Today the vehicle verb, and only that.
+   */
+  contextual?: boolean;
 }
 
 /**
@@ -127,6 +141,14 @@ const BUTTONS: readonly ButtonSpec[] = [
   { id: "reload", label: "RELOAD", kind: "tap", group: "main" },
   { id: "grenade", label: "GRENADE", kind: "tap", group: "main" },
   { id: "swap", label: "SWAP", kind: "tap", group: "main" },
+  // The only button here that is not always there. It is `contextual`, which
+  // is one line of bookkeeping and the whole reason a phone can drive: `E` and
+  // the pad's d-pad north are keys a player finds by pressing them, and glass
+  // has neither — so the verb has to APPEAR when there is something to use and
+  // say what it would do. `Game` pushes both facts (`setUse`), exactly as it
+  // pushes the crouch lamp and the empty magazine, because this layer cannot
+  // know it is standing next to a tank.
+  { id: "use", label: "", kind: "tap", group: "main", contextual: true },
   { id: "fire2", label: "FIRE", kind: "hold", group: "left", look: true },
   { id: "score", label: "SCORE", kind: "latch", group: "top" },
   { id: "menu", label: "MENU", kind: "tap", group: "top" },
@@ -137,7 +159,7 @@ function groupMarkup(group: ButtonSpec["group"]): string {
   return BUTTONS.filter((b) => b.group === group)
     .map(
       (b) =>
-        `<div class="tb tb-${b.id} frame" data-act="${b.id}"><span>${b.label}</span></div>`,
+        `<div class="tb tb-${b.id} frame${b.contextual ? " hidden" : ""}" data-act="${b.id}"><span>${b.label}</span></div>`,
     )
     .join("");
 }
@@ -181,6 +203,9 @@ export class TouchControls {
   /** Pushed in by `Game`; see the header on why these are not known here. */
   private crouched = false;
   private reloadDue = false;
+  /** What the vehicle verb would do right now, or null when it would do
+   * nothing. Also the button's label — see `setUse`. */
+  private useOffer: string | null = null;
 
   /** Reused, because `consume()` runs every frame of every touch round. */
   private readonly frame: TouchFrame = {
@@ -197,6 +222,7 @@ export class TouchControls {
     grenade: false,
     swap: false,
     scoreboard: false,
+    use: false,
   };
 
   constructor() {
@@ -279,6 +305,33 @@ export class TouchControls {
   }
 
   /**
+   * What the vehicle verb is being offered right now — the same sentence the
+   * HUD's prompt carries on a keyboard (`ENTER TANK`, `TAKE OVER TANK`, `EXIT
+   * TANK`) — or null when there is nothing in reach. Guarded.
+   *
+   * ONE label rather than a short one of its own, because two vocabularies for
+   * one verb is how a player ends up believing the button on the glass and the
+   * prompt on the HUD are different controls. The button is sized and its type
+   * scaled in `touch.css` to take the longest of them on two lines.
+   *
+   * Taking the offer away also LETS GO of the button: a finger resting on
+   * `EXIT TANK` when the hull brews up is a finger that would otherwise still
+   * be reported held once the next offer put the button back.
+   */
+  setUse(label: string | null): void {
+    if (label === this.useOffer) return;
+    this.useOffer = label;
+    const state = this.buttons.get("use")!;
+    if (label !== null) state.el.firstElementChild!.textContent = label;
+    else {
+      state.down = false;
+      state.pending = false;
+      state.el.classList.remove("held");
+    }
+    state.el.classList.toggle("hidden", label === null);
+  }
+
+  /**
    * The frame's input, spent by reading it: the look delta is zeroed and the
    * one-frame floor under every tap is cleared, so a frame that never ran
    * cannot fire a shot twice and a tap between two frames cannot be lost.
@@ -300,6 +353,7 @@ export class TouchControls {
     f.reload = this.held("reload");
     f.grenade = this.held("grenade");
     f.swap = this.held("swap");
+    f.use = this.held("use");
     for (const state of this.buttons.values()) state.pending = false;
     return f;
   }
@@ -320,6 +374,11 @@ export class TouchControls {
     // for the rest of a round the player spent crouched.
     this.crouched = false;
     this.reloadDue = false;
+    // Same rule, and the contextual button has a second half to it: the class
+    // that hides it is not a look but the button's whole existence, so it goes
+    // back on here or a round resumed on foot comes back offering a seat.
+    this.useOffer = null;
+    this.buttons.get("use")!.el.classList.add("hidden");
     this.moveX = 0;
     this.moveY = 0;
     this.sprinting = false;

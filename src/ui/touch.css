@@ -215,6 +215,39 @@
 .tb-grenade { right: 190px; bottom: 170px; width: 62px; height: 62px; font-size: 9px; }
 .tb-swap { right: 190px; bottom: 244px; width: 62px; height: 62px; }
 
+/* The vehicle verb, and the only control here that comes and goes. Low and
+   INBOARD of the trigger — the corner under ADS is the one place in this
+   cluster a thumb can reach without crossing the fire button, which matters
+   more here than anywhere else on the layer: the press that gets you out of a
+   burning hull must not be one tap away from firing the gun.
+
+   Wider and shorter than its neighbours because it is the only button that
+   carries a sentence rather than a word (`TAKE OVER TANK` is the longest), and
+   framed in amber rather than in the cluster's white because it is never merely
+   available — it is on screen ONLY when it would do something, which is the
+   same thing `.on` says about a state the game pushed back in. */
+.tb-use {
+  right: 108px;
+  bottom: 18px;
+  width: 90px;
+  height: 58px;
+  font-size: 9px;
+  line-height: 1.35;
+  letter-spacing: 0.1em;
+  /* Amber in the FRAME and white in the words, which is this sheet's own
+     `.frame` note read the other way round: the edge is painted across the
+     whole shape and the fill's alpha decides how much of it shows through
+     EVERYWHERE, so an amber edge under a low-alpha amber fill is not a tinted
+     button but a solid amber slab — and `base.css` is explicit that legibility
+     here comes from the scrim and the text shadow rather than from an opaque
+     panel over a moving scene. A dark fill keeps the street visible through it
+     and leaves the amber as a wash, which is enough: nothing else on this layer
+     is amber unless the game switched it on, and this button is only on screen
+     at all when it would do something. */
+  --frame-edge: rgba(255, 196, 107, 0.5);
+  --frame-fill: rgba(10, 13, 20, 0.32);
+}
+
 /* The claw grip's trigger: a left index finger on the edge, clear of the
    corner the left THUMB works the stick in. Quieter than the main one because
    most players never use it. */

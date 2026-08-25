@@ -47,6 +47,7 @@ export interface TouchSource {
     grenade: boolean;
     swap: boolean;
     scoreboard: boolean;
+    use: boolean;
   };
 }
 
@@ -136,6 +137,13 @@ export class InputManager {
    * Edge rather than held for the obvious reason: mounting and dismounting are
    * the same key, so a held one would put the player in and out of a hull once
    * a frame.
+   *
+   * On glass it is a button that is not always there, which is the one place
+   * this verb differs by device: a key and a d-pad direction are things a
+   * player presses to find out what they do, and a thumb has nothing to press
+   * until something is drawn under it. `TouchControls` draws it when `Game`
+   * says there is a seat — the fold here is the same OR every other action
+   * gets, and nothing below this line knows which device asked.
    */
   usePressed = false;
   /**
@@ -321,6 +329,18 @@ export class InputManager {
    * lie.
    */
   touchActive = false;
+  /**
+   * Whether the PAD is the device in the player's hands, on the same terms and
+   * by the same arithmetic as `touchActive` — the most recent of the three
+   * stamps wins, so a pad resting on the desk beside a mouse in use is not it.
+   *
+   * `gamepadConnected` answers "may a pad do this", which is what the trigger
+   * gates ask; this answers "should the screen speak the pad's language", which
+   * is what a key prompt asks. A machine with a pad plugged in and a hand on
+   * the mouse gives those two questions different answers, which is the whole
+   * reason both exist.
+   */
+  padInHand = false;
 
   // --- internals ---
   private keys = new Set<string>();
@@ -567,6 +587,10 @@ export class InputManager {
       this.lastTouchAt > 0 &&
       this.lastTouchAt >= this.lastKbmAt &&
       this.lastTouchAt >= this.lastPadAt;
+    this.padInHand =
+      this.lastPadAt > 0 &&
+      this.lastPadAt >= this.lastKbmAt &&
+      this.lastPadAt >= this.lastTouchAt;
 
     const buttons = this.pointerMask | this.mouseMask;
     // The touch ADS arrives already LATCHED. A hold is not available on glass:
@@ -738,7 +762,9 @@ export class InputManager {
     // The vehicle verb. `padUp` is the d-pad's north, which the menus also read
     // — see `usePressed` on why that is safe rather than merely convenient.
     const useNow =
-      this.keys.has("KeyE") || (pad ? buttonHeld(pad, 12, trig) : false);
+      this.keys.has("KeyE") ||
+      (pad ? buttonHeld(pad, 12, trig) : false) ||
+      (t ? t.use : false);
     this.usePressed = useNow && !this.prevUse;
     this.prevUse = useNow;
 

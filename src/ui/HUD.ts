@@ -515,6 +515,7 @@ export class HUD {
    */
   private lastUsePrompt = false;
   private lastUseText = "";
+  private lastUseKey = "";
   private lastMounted = false;
   private lastHullText = "";
   private lastHullWidth = "";
@@ -1894,12 +1895,22 @@ export class HUD {
    * A prompt rather than a hint: it names the KEY as well as the thing, because
    * this is the only verb in the game that is not on the mouse or on a stance
    * key, and a player who has never been told about it will not find it.
+   *
+   * **The key is part of the guard, not just of the payload**, because it
+   * changes on its own: `Game.offerUse` picks it from the device in the
+   * player's hands, so somebody who puts the mouse down and picks a pad up is a
+   * repaint with the same sentence in it. Guarding on the text alone left them
+   * being told to press `E`.
    */
   setUsePrompt(key: string | null, text = ""): void {
     const show = key !== null;
-    if (show !== this.lastUsePrompt || (show && text !== this.lastUseText)) {
+    if (
+      show !== this.lastUsePrompt ||
+      (show && (text !== this.lastUseText || key !== this.lastUseKey))
+    ) {
       this.lastUsePrompt = show;
       this.lastUseText = text;
+      this.lastUseKey = key ?? "";
       if (show) {
         this.usePromptParts.key.textContent = key!;
         this.usePromptParts.text.textContent = text;

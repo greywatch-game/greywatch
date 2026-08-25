@@ -3634,7 +3634,7 @@ export class Game {
     // put the body, so walking up to a hull offers it on the frame you arrive
     // rather than the frame after.
     const seat = this.vehicles.empty ? null : this.offeredSeat();
-    this.hud.setUsePrompt(seat ? "E" : null, seat?.label ?? "ENTER TANK");
+    this.offerUse(seat ? seat.label : null);
     if (!seat || !this.input.usePressed) return;
     // **In a match, getting in is an ASK.** Nothing local changes here: the
     // authority re-derives the whole offer against its own copy of the hull,
@@ -3696,6 +3696,38 @@ export class Game {
     turretYaw: 0,
     gunPitch: 0,
   };
+
+  /**
+   * The vehicle verb, offered or withdrawn — the ONE door, because the same
+   * fact has to reach two places that draw it differently and a second caller
+   * is how they come to disagree.
+   *
+   * The HUD says it with a KEY, and which key depends on what is in the
+   * player's hands: a pad player who is told to press `E` has been told to go
+   * and find a keyboard. On glass the prompt is left off entirely — the button
+   * `TouchControls` puts on screen carries the same sentence and is the thing
+   * being pressed, and a caption over a labelled button is one instruction
+   * twice.
+   */
+  private offerUse(label: string | null): void {
+    this.useOffer = label;
+    this.hud.setUsePrompt(
+      label === null || this.input.touchActive
+        ? null
+        : this.input.padInHand
+          ? "D-PAD ↑"
+          : "E",
+      label ?? "",
+    );
+  }
+
+  /**
+   * What `offerUse` last offered, for the touch layer alone: it is pushed from
+   * `pushTouchControls` with the crouch lamp and the empty magazine rather than
+   * written straight through above, because the controls belong to `playing`
+   * and to a finger, and that is the one place that already knows both.
+   */
+  private useOffer: string | null = null;
 
   private offeredSeat(): Seat | null {
     const at = this.player.position;
@@ -3790,6 +3822,12 @@ export class Game {
       this.input.gamepadConnected ||
       this.input.touchActive;
     if (this.input.fire && canFire) this.fireShell(tank);
+
+    // The way out, said out loud. A driver used to be told nothing at all,
+    // which is survivable on a keyboard (the same key got you in a moment ago)
+    // and is not on a pad or on glass — on glass it is the whole difference
+    // between a hull you can leave and one you are stuck in until it burns.
+    this.offerUse("EXIT TANK");
 
     // …and getting out is an ask too, for the reason getting in is: WHERE the
     // body lands is the authority's, exactly as a spawn is, and a client that
@@ -4144,7 +4182,7 @@ export class Game {
     // The mount key is not the trigger, but a player who mounts with the mouse
     // held down should not fire the main gun on the frame they arrive.
     this.input.consumeFire();
-    this.hud.setUsePrompt(null);
+    this.offerUse(null);
   }
 
   /**
@@ -5737,7 +5775,7 @@ export class Game {
     // a fresh body wired to a hull the last one died in. First, because it puts
     // the viewmodel back and the line below is what puts it away again.
     this.clearVehicle();
-    this.hud.setUsePrompt(null);
+    this.offerUse(null);
     // The single funnel for "the death cam's job is over", so every path out
     // of it — the clock running down, the round ending, F2 — retires the body
     // and hands the rig back without any of them remembering to. Idempotent,
@@ -5784,7 +5822,7 @@ export class Game {
     this.hud.clearDamageDirections();
     this.hud.setCapture(null);
     this.hud.setLeash(null);
-    this.hud.setUsePrompt(null);
+    this.offerUse(null);
     // `updateGameplay` stops running here, so push the final state once more —
     // otherwise the ticket bar sits frozen a frame behind the result text.
     this.hud.setTickets(
@@ -6031,6 +6069,12 @@ export class Game {
     // of the screen, and the weapon reloads itself on the last round anyway —
     // so the button is where that news can be seen without looking for it.
     this.touch.setReloadDue(this.player.reloading || this.player.ammo === 0);
+    // The vehicle verb: a button that is only there when it would do
+    // something, carrying the same sentence the HUD's prompt carries on a
+    // keyboard. `E` and the d-pad's north are keys a player finds by pressing
+    // them; glass has nothing to press until this puts it there, which is why
+    // a phone could not get into a tank at all.
+    this.touch.setUse(this.useOffer);
   }
 
   private pushScoreboard(): void {

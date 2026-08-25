@@ -575,7 +575,10 @@ death cam's camera hand-off.
 hardstanding per team — absent on two of the four maps — and `Game.driving` is
 the single fact the feature turns on. **`mount` and `clearVehicle` are exact
 inverses and must be read as a pair.** **A driver's frame is not a body's**:
-`Player.update` is not called, so the hull's ground REPLACES the probe.
+`Player.update` is not called, so the hull's ground REPLACES the probe. **The
+verb is `E`, the pad's d-pad north and a button that APPEARS on glass** — one
+`usePressed`, and `Game.offerUse` is the one door that names it, because a phone
+has nothing to press until something is drawn under it.
 
 **In a NETPLAY round a driver simulates their own hull and REPORTS it, exactly
 as they do their own legs; every other hull is posed from the wire** by

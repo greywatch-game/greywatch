@@ -700,6 +700,30 @@ really got out:
 | `sfx.engineOn()` | the one sustained voice in `Sfx` |
 | `vehicles.setOccupied(tank, true)` | written on the TRANSITION, never derived in `update` — derived, `enterable` would offer a hull somebody is already sitting in for the rest of the frame they got into it |
 
+**The verb is one input field and THREE devices, and the third one had to be
+built.** `InputManager.usePressed` is `E`, the pad's d-pad north, and — since a
+phone could otherwise walk up to its own armour and stand there — a button
+`TouchControls` puts on the glass. That last one is the only control on the layer
+that comes and goes, and it has to: a key and a d-pad direction are things a
+player presses to find out what they do, while a thumb has nothing to press until
+something is drawn under it. `Game.offerUse` is the one door — it writes the
+HUD's prompt and the field the touch layer is pushed from a frame later, so the
+sentence on the button and the sentence over the crosshair are the same sentence
+by construction. Two things follow from that door existing:
+
+- **The prompt speaks the device's own language.** `E` on a keyboard, `D-PAD ↑`
+  when `input.padInHand` says a pad is what is in the player's hands, and NOTHING
+  on glass — the button already carries the words and is the thing being pressed,
+  so a caption over it is one instruction twice. `padInHand` is `touchActive`'s
+  arithmetic exactly (the most recent of the three device stamps wins) and is a
+  different question from `gamepadConnected`, which is what the trigger gates
+  ask: a machine with a pad plugged in and a hand on the mouse answers the two
+  differently, which is the whole reason both exist.
+- **A driver is told the way out.** `updateDriver` offers `EXIT TANK` every frame.
+  A driver used to be told nothing at all, which is survivable on a keyboard —
+  the same key got you in a moment ago — and on glass is the difference between a
+  hull you can leave and one you are stuck in until it burns.
+
 **Four ways out, and only one of them moves the body.** `dismount` (the player
 asked) puts them down beside the hull and hands the camera back with
 `cameraSys.reset(vehicleCam.yaw)` — the first-person camera has not been updated
