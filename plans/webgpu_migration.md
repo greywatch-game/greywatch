@@ -286,6 +286,50 @@ what you meant. `docs/rendering.md` gains a section on the dialect carrying
 this, the `#define`-is-a-regex trap, the strided scalar array, the mat3x3
 repack and the two halves of asking for WGSL at all.
 
+## M4 landed
+
+**The shared includes are WGSL, the grass is WGSL, and the tree has TWO fewer
+deep imports than it started with.** `src/shaders/wgsl/includes.ts` registers
+`celBand`, `celShadow`, `celProbe`, `celProbeBox`, `celDither` and our own
+`celInstancesDeclaration` / `celInstancesVertex` into
+`ShaderStore.IncludesShadersStoreWGSL`; `GrassShader` states
+`shaderLanguage: ShaderLanguage.WGSL` and includes four of them. All sixteen
+banked frames come back at 0.000/255, the four-map gate is clean, and both
+branches a frozen frame cannot reach are diffed byte-identical against the
+grass's own GLSL original.
+
+**Four things M4 found:**
+
+15. **A uniform ARRAY's size must be a literal or a `#define`, and a WGSL
+    `const` will not do** — Babylon resolves the bound out of the preprocessor
+    table when it lays out the leftover UBO, and a `const` is not in that
+    table. That collides with item 4's own lesson, which is to prefer a `const`
+    to a define because the processor implements a define as an un-anchored
+    regex over the whole source. Both counts are already TypeScript constants,
+    so the answer is to interpolate the NUMBER into the declaration and keep a
+    real `const` for the loop bound — no define anywhere, and the trap cannot
+    fire.
+16. **The uniform read-back assertion the plan schedules here passes on both
+    array shapes, exactly.** `array<vec3f, 16>` + `setArray3` and the strided
+    `array<f32, 16>` both land the values written, at two indices each, painted
+    out of a debug WGSL pass and read back off the canvas. Light plumbing is
+    therefore ruled out before the cel fragment lands, which is what risk 2's
+    mitigation asks for.
+17. **Two WGSL rules the cel vertex stage will hit and the post passes never
+    did**: a SWIZZLE cannot be assigned to (`worldPos.xz += …` becomes two
+    component writes), and there is no `mat3(m4)` conversion (the upper-left
+    block is spelled `mat3x3f(m[0].xyz, m[1].xyz, m[2].xyz)`). Both are in
+    `docs/rendering.md` now.
+18. **A forced branch that changes nothing is the TEST's fault twice as often
+    as it is the shader's, and a byte-identical diff of two shaders both
+    drawing the unforced picture is worth nothing.** Item 14's technique needs
+    a control — the forced frame against the UNFORCED one — and without it this
+    milestone would have banked two false passes: a pusher taken at an
+    arbitrary index in an 11,313-blade instance buffer stands somewhere else on
+    the map, and at the range a FIELD is seen from the mist and the fog are
+    nine tenths of every grass pixel, so a point light lands under one LSB and
+    rounds away. Written up in `VERIFYING.md` beside the technique it guards.
+
 ---
 
 ## Verified groundwork
@@ -401,7 +445,7 @@ So the engine swap lands first with all nine shaders still in GLSL. This is
 | **M1** ✅ | **First lit scene** — Hollowmere end to end on GLSL sources. `OutlineRenderer` scaffolded back to GLSL; item 11 stays at M6 | RTTs, R8 depth field, 14 `DynamicTexture`s, `setRenderingOrder`, `GlowLayer`, pipeline, compute particles, `setHardwareScalingLevel`, blend/depth state — all confirmed. **The 40 cube probes did NOT come with it**: Hollowmere has no glazed block, and Coldharbour's bake kills the device here (finding 7), so they move to M2 on hardware |
 | **M2** ✅ | All four maps up. **The GLSL-under-WebGPU reference set is banked** — sixteen frames, the four menu vantages plus twelve chosen for the shader path each puts in frame (`plans/webgpu-ref/vantages.mjs`). Coldharbour's 40 cube probes bake in one 130–150 ms frame | The most valuable artefact of the migration — later diffs isolate *shader* errors by construction. **Four frames could not have done it**: the backdrops hold no glazing at range, no lamp-lit street, no gust and almost no water |
 | **M3** ✅ | **First WGSL** — the three post fragments (`HorrorPost`, `GodRays`, `MotionBlur`) | Dialect, `PostProcess` wiring, `onApply` binding. Standalone, no attributes, no defines. **The single-exit rewrite was not needed** — `return fragmentOutputs;` is legal and the early-outs stay. Sixteen banked frames at 0.000/255, and the three forced branches a frozen frame cannot reach diffed byte-identical against their own GLSL originals |
-| **M4** | **First WGSL surface** — shared includes, then `GrassShader` | Include strategy, `instances*` twin, `MAX_PUSHERS`, `array<vec3f,N>` + `setArray3`. Run the uniform read-back assertion here |
+| **M4** ✅ | **First WGSL surface** — the five shared includes, our own `celInstances` pair, then `GrassShader` | Include strategy, `instances*` twin, `MAX_PUSHERS`, `array<vec3f,N>` + `setArray3`. Sixteen banked frames at 0.000, the read-back assertion exact on both array shapes, and the pushers and the point lights — neither of which is in any banked frame — byte-identical against the GLSL original. **A uniform array's size must be a literal or a `#define`**, which cuts against item 4 |
 | **M5** | **`CelShader`** — author variant by variant, land once | The long pole: ~620 shader lines, 29 uniforms, 8 materials, 6 defines |
 | **M6** | `WaterShader` → `OutlineFog` → `EmissiveFog`. **Delete the scaffold**: assert `engine._glslang === undefined && engine._tintWASM === undefined` after a four-map sweep | Complete |
 | **M7** | Re-tune `GLASS_DEPTH_UNITS`, outline z-offsets, MSAA/memory. Re-measure everything `FINDINGS.md` claims | Re-derives what the depth-format change invalidated |
@@ -429,9 +473,9 @@ different milestone's work arriving unannounced.
 | 3 ✅ | `src/shaders/HorrorPost.ts` | First WGSL in the tree; budget dialect learning here. **Also moved the three passes to `PostProcess`'s options form**, which is where `shaderLanguage` can be stated at all | 1 |
 | 4 ✅ | `src/shaders/GodRays.ts` | `#define SAMPLES` survives — but a WGSL `const SAMPLES: i32` is better and is what landed, because the processor implements a define as an UN-ANCHORED regex over the whole source | 0.5 |
 | 5 ✅ | `src/shaders/MotionBlur.ts` | **`setMatrix3x3("reproject")` was the risk and is closed** — `mat3x3f` is three vec4-aligned columns, Babylon repacks correctly, and it was measured by painting the columns out of a debug pass rather than reasoned about | 1 |
-| 6 | `src/shaders/wgsl/includes.ts` *(new)* | BAND / SHADOW / PROBE / PROBE_BOX / DITHER as WGSL includes | 1.5 |
-| 7 | `src/shaders/Dither.ts` | Body moves to (6); **keep the 60-line header verbatim** — it is the argument | 0.25 |
-| 8 | `src/shaders/GrassShader.ts` | Both stages; `instances*` twins; drop `#extension` at `:120` | 1.5 |
+| 6 ✅ | `src/shaders/wgsl/includes.ts` *(new)* | BAND / SHADOW / PROBE / PROBE_BOX / DITHER as WGSL includes, plus the `celInstances` pair item 8 needed. The five carry the ARGUMENT now and the GLSL originals carry a pointer, so there is one copy of each rather than two for three milestones | 1.5 |
+| 7 ✅ | `src/shaders/Dither.ts` | Body cannot move until the cel and the water go, so the WGSL twin is in (6) and this keeps the argument — the 60-line header, plus the three shaping decisions that were on the constant and are now above it | 0.25 |
+| 8 ✅ | `src/shaders/GrassShader.ts` | Both stages; our own `celInstances` twins rather than two new deep imports; `#extension` and `precision` both gone. The counts are interpolated rather than `#define`d — see finding 15 | 1.5 |
 | 9 | `src/shaders/CelShader.ts` | **The long pole.** Fragment `:462-966`, 6 defines, 3 albedo paths, glass composite, `facetNormal()`. Factory needs `shaderLanguage` on 7 `new ShaderMaterial` sites and nothing else | 5 |
 | 10 | `src/shaders/WaterShader.ts` | Wave field, `domeAt`, Schlick, foam. Long but mostly arithmetic | 2.5 |
 | 11 | `src/shaders/OutlineFog.ts` | `patch()` keeps structure; retarget to `ShadersStoreWGSL` (`:97, 111, 266`); rewrite `VERTEX_BODY`; declare the varying in **both** stages. `dropCompiled` needs **re-verification, not rewriting** | 2 |

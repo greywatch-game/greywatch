@@ -120,37 +120,13 @@ export const MAX_POINT_LIGHTS = 16;
 /**
  * The hard-band quantizer, shared verbatim by every surface shader in the game.
  *
- * It was three identical copies — cel, grass and water — which was harmless
- * only because nobody had ever changed it. `SHADOW_GLSL` below is the one that
- * made sharing necessary rather than tidy, and the two travel together: a band
- * function that disagreed between the three would put a different terminator on
- * a wall, the grass in front of it and the water beside it.
+ * **The argument is on the WGSL twin**, `celBand` in `wgsl/includes.ts` — why
+ * the smoothstep is at least a pixel wide, what a bump map did to it, and why
+ * three copies became one. This is the same function in the language two of
+ * its three consumers have not been ported out of yet, and it goes when they
+ * are.
  */
 export const BAND_GLSL = `
-// Quantizes a 0..1 diffuse term into hard bands, smoothstepping across each
-// edge so the terminator reads as a hard line without aliasing.
-//
-// **The transition is at least one PIXEL wide, and the fixed 0.15 it used to be
-// is only the floor.** A band edge is a hard edge with no geometry behind it,
-// so nothing in the pipe antialiases it: FXAA works on luminance contrast and
-// these are low-contrast interior edges, and there is no MSAA (the only thing
-// drawn to the default framebuffer is FXAA's own quad). That was harmless while
-// the normal driving \`ndl\` was a facet normal — a wall's band index moves a
-// thousandth of a band per pixel and one edge crosses the whole face. It stops
-// being harmless the moment a BUMP map drives it: the relief puts a terminator
-// around every grain, thousands of them per screen, each one aliasing on its
-// own. Measured against a 4x supersampled reference of the same frame, the
-// valley floor's near ground went from 1.8% of pixels off-reference to 10.3%
-// when it gained a height map — and the whole of that difference was here.
-//
-// \`fwidth(x)\` is how fast the band index moves per pixel, so widening the
-// smoothstep to it makes the edge exactly resolvable and no wider. Where the
-// index moves slowly — every wall, roof and flat face in the game — it is below
-// the authored 0.15 and nothing changes at all. Clamped at 0.5 because half a
-// cell either side already spans the whole band: past that the quantization
-// would invert rather than soften, and what it degrades to instead is smooth
-// shading, which is the correct answer for a surface whose bands can no longer
-// be drawn.
 float band(float ndl, float steps) {
   float x = ndl * steps;
   float w = clamp(fwidth(x), 0.15, 0.5);
@@ -159,38 +135,12 @@ float band(float ndl, float steps) {
 `;
 
 /**
- * The stepped shadow lookup, and the uniforms it reads. Included by the cel,
- * grass and water fragment shaders so all three sample the SAME depth map with
- * the SAME kernel.
+ * The reflection probe a mirror samples, and the Y flip every sampler of one
+ * of these cubes owes.
  *
- * Grass and water went without this for as long as they existed, and the
- * artefact is the loudest continuity break the frame had: the key light is the
- * moon, so a cottage lays a hard shadow across the ground — and that shadow
- * stopped dead at the edge of a grass rect and at the waterline, because the
- * two surfaces standing in the same shadow were the two that could not see it.
- *
- * A consumer owes three uniforms (`lightMatrix`, `shadowParams`) and one
- * sampler (`shadowMap`), and owes REGISTERING with
- * `CelMaterialFactory.registerShadowConsumer` — the factory pushes all three,
- * and a material that is never registered samples an unbound texture.
- */
-/**
- * The reflection probe a mirror samples, and the parallax correction that
- * stops it reading as a decal.
- *
- * **Shared verbatim by the two surfaces in the game that hold up a mirror**
- * — the glazing (`CEL_GLASS`, below) and the water (`WaterShader.ts`) —
- * because both sample cubes `ReflectionSystem` bakes the same way, and both
- * subtleties in the function are exactly the kind that get fixed in one copy
- * and left standing in the other. A material that interpolates this owes
- * `PROBE_UNIFORM_NAMES` and `PROBE_SAMPLER_NAMES` in its own lists.
+ * **The argument is on the WGSL twin**, `celProbe` in `wgsl/includes.ts`.
  */
 export const PROBE_GLSL = `
-// The world as a mirror sees it: one cube baked per map install from the
-// map's own geometry (systems/ReflectionSystem.ts). Alpha 1 where the bake
-// drew something and 0 where it saw nothing at all, which is what lets the
-// sky above stay the analytic gradient and the world below be a picture of
-// the world. Colour is NOT premultiplied — see each sampler's own mix.
 uniform samplerCube reflectionCube;
 // Where the cube was baked from, and how much of it this surface returns
 // against the sky it would otherwise show: reflectProbe.xyz is the bake point
@@ -198,15 +148,6 @@ uniform samplerCube reflectionCube;
 // build and every map with nothing to bake for.
 uniform vec4 reflectProbe;
 
-// The Y flip, which every sampler of one of these cubes owes.
-//
-// A cube face is stored top-down while a framebuffer is bottom-up, so a cube
-// RENDERED into comes out mirrored about the horizon. Babylon says as much by
-// giving a cube render target INVCUBIC_MODE, and its own reflection path
-// spends that define on this one line. Without it a mirror returns the
-// pavement where the sky should be, which reads as glass that is simply too
-// dark rather than as anything upside down — the mistake is invisible until
-// it is looked for.
 vec3 probeCubeDir(vec3 dir) {
   return vec3(dir.x, -dir.y, dir.z);
 }
@@ -217,39 +158,15 @@ vec3 probeCubeDir(vec3 dir) {
  * through, and the re-aim that turns an infinite-distance cube into one with
  * a place in it.
  *
- * **Separate from `PROBE_GLSL` because the two mirrors want opposite things.**
- * A pane is vertical and a player walks ALONG it, so a decal that sits still
- * as you pass is exactly what the correction exists to stop. Water is
- * horizontal and its probe stands ON it, so what its rays can reach is the far
- * surround — far enough that an infinite cube is nearly right, and correcting
- * it against a map-sized box collapses every pixel onto the same far exit
- * point. So the glazing interpolates this and the water does not, and neither
- * carries the other's uniforms.
+ * **The argument is on the WGSL twin**, `celProbeBox` in `wgsl/includes.ts` —
+ * including why it is separate from `celProbe`, which is the half a reader is
+ * most likely to undo.
  */
 export const PROBE_BOX_GLSL = `
 // The box the mirrored ray is parallax-corrected against — the map's own
 // extent, floor to roofline.
 uniform vec3 reflectBoxMin;
 uniform vec3 reflectBoxMax;
-
-// Parallax correction for the reflection cube: where the mirrored ray leaves
-// the map, expressed as a direction from the point the cube was baked at.
-//
-// A cube map is a picture taken from ONE place, and sampled with the raw
-// mirrored ray it behaves as if everything in it were infinitely far away —
-// so the city in a pane would sit still while the player walks past it, which
-// reads as a decal rather than as a reflection. Intersecting the ray with a
-// box that stands in for the world and re-aiming from the bake point at the
-// hit is the standard correction, and here the box is not an approximation of
-// anything: it is the map's own extent, which is a square with a hard boundary
-// on all four sides and a roofline over it.
-//
-// The reciprocal is taken against a floor rather than the component itself. A
-// ray exactly parallel to a face divides by zero, which is a well-behaved
-// infinity that never wins the min below — but a ray parallel to a face it is
-// also exactly ON divides zero by zero, and one NaN takes the whole sample
-// with it. sign() cannot supply the missing direction (sign(0) is 0), so the
-// magnitude is clamped and the sign restored by hand.
 
 vec3 reflectBoxDir(vec3 dir, vec3 pos) {
   vec3 sgn = sign(dir);
@@ -279,6 +196,14 @@ export const PROBE_UNIFORM_NAMES = [
 /** The cube itself. */
 export const PROBE_SAMPLER_NAMES = ["reflectionCube"];
 
+/**
+ * The stepped shadow lookup, and the uniforms it reads.
+ *
+ * **The argument is on the WGSL twin**, `celShadow` in `wgsl/includes.ts` —
+ * the four taps, the per-pixel rotation, which normal is passed in and what a
+ * consumer owes. Same function, still in GLSL for the two consumers that have
+ * not been ported yet.
+ */
 export const SHADOW_GLSL = `
 // Stepped directional shadows. lightMatrix is the ShadowGenerator's
 // view*projection (no [0,1] bias baked in — the UV/depth remap below mirrors
@@ -287,37 +212,6 @@ uniform mat4 lightMatrix;
 uniform sampler2D shadowMap;
 // x = depth bias, y = darkness, z = normal offset, w = tap radius in UV
 uniform vec4 shadowParams;
-
-// Hard two-level shadow: lit or not, nothing in between — a soft penumbra
-// would fight the flat bands. The sample point is pushed off the facet along
-// its normal so a flat face never tests against its own depth (acne).
-//
-// The normal passed in is the one to OFFSET along, which is not always the one
-// being lit: it must be the real geometry's. The cel shader hands it the facet
-// normal rather than the bumped one, and water hands it the flat up-vector
-// rather than the wave normal, for the same reason in both cases — the relief
-// is a fiction, and offsetting along a fiction moves the shadow with it.
-//
-// **FOUR taps, and the count is the whole design.** One tap put the shadow map's
-// own texel grid on screen: at 110 m over 2048 texels an edge climbs in 5.4 cm
-// steps, and up close that reads as a staircase rather than as a line. The
-// staircase has a spatial period of exactly one texel, so a kernel whose support
-// covers one period cancels it — and anything WIDER starts producing a real
-// penumbra, which is the thing this shader's flat bands cannot have. The
-// softening is confined to the width of the artefact: a 5.4 cm edge is
-// sub-pixel past about 2 m, so what is left still reads as the hard line the
-// look wants. The cel terminator is band(dot(n, -lightDir), 4.0) and is not
-// touched by any of this.
-//
-// The 2x2 is ROTATED per pixel, which matters as much as the count. Four taps
-// averaged give five possible values, and five values along an edge are five
-// visible contours — a staircase with more steps. Rotating by a hash of the
-// pixel turns that residue into noise, which composes with dither() rather
-// than fighting it.
-//
-// Hardware PCF is not available: this samples a plain depth texture and
-// compares by hand rather than through a comparison sampler, so every tap is a
-// full fetch. That is the other half of why the count stops at four.
 float shadowVisibility(vec3 n, vec3 posW) {
   vec4 sc4 = lightMatrix * vec4(posW + n * shadowParams.z, 1.0);
   vec3 sc = sc4.xyz / sc4.w;

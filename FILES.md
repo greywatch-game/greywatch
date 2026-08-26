@@ -564,10 +564,18 @@ src/
                         #   ink fades per PIXEL instead of per merged mesh
     EmissiveFog.ts      # The same fog as a material plugin on every unlit
                         #   emissive material — windows, flames, tracers
-    Dither.ts           # One LSB of triangular noise, pasted into the three
-                        #   surface shaders. Fixes 8-bit banding in the fog
+    Dither.ts           # One LSB of triangular noise, in the three surface
+                        #   shaders. Fixes 8-bit banding in the fog. Owns the
+                        #   ARGUMENT; the WGSL is wgsl/includes.ts's celDither
+    wgsl/
+      includes.ts       # The shader text every surface shares, as Babylon WGSL
+                        #   includes: celBand, celShadow, celProbe, celProbeBox,
+                        #   celDither and our own celInstances pair. Registered
+                        #   at import, so a consumer imports it for the side
+                        #   effect
     WaterShader.ts      # Water ShaderMaterial: analytic wave trains, Fresnel mirror
-    GrassShader.ts      # The blade bend: wind, and combatants pushing through
+    GrassShader.ts      # The blade bend: wind, and combatants pushing through.
+                        #   WGSL
     GodRays.ts          # Moon shafts: screen-space radial blur. WGSL
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
                         #   angles. WGSL

@@ -510,6 +510,31 @@ is one machine's:
   back byte-identical this way, on a forced 6-degree yaw and a forced
   `presence = 1`. **The technique expires with the scaffold**, so use it while
   it is there.
+- **A ShaderMaterial's twin is built the same way and needs one more step:
+  carry the UNIFORMS across.** A second material compiled from the old source
+  is born empty, and everything the factory, the environment and the frame have
+  pushed into the live one lives in its private stores — so
+  `Object.assign(twin._floats, live._floats)` and the same for `_colors3`,
+  `_vectors2/3/4`, `_matrices`, `_floatsArrays`, `_vectors3Arrays` and
+  `_textures` is what makes the difference between the two pictures the SHADER
+  and nothing else. Then swap `mesh.material` between them and diff. The grass
+  came back byte-identical this way with eight pushers and four point lights
+  forced on, neither of which is in any banked frame.
+- **When a forced branch changes nothing, suspect the FORCING before the
+  shader.** Both controls above read a clean 0% at first and both were the
+  test's fault, in two different ways, and a byte-identical diff between two
+  shaders that are each drawing the unforced picture is worth exactly nothing.
+  First: a pusher or a lamp placed by taking an arbitrary index out of an
+  11,313-blade thin-instance buffer is somewhere else on the map — sort the
+  instances by distance to the camera's aim point and take from the near end,
+  and then a 14 m push radius moves 1.0% of the frame. Second: at the ranges a
+  FIELD is seen from, `mistParams.y` and the fog account for about nine tenths
+  of every grass pixel, so a point light contributing 0.4 to `light` lands
+  under one LSB and rounds away — set `mistParams` to zero and push `fogParams`
+  past the map on BOTH materials, which keeps the comparison shader-against-
+  shader and lets the lamps be seen (1.4% of the frame, 121/255). **Always
+  diff the forced frame against the UNFORCED one as well**: that number is what
+  says the branch was in the picture at all.
 - **To check that a uniform ARRIVES, paint it.** A debug pass whose whole body
   is `fragmentOutputs.color = vec4f(uniforms.x / k, 1.0)`, screenshotted and
   read back through `diff.mjs`'s decoder, turns "the lighting looks subtly
@@ -518,7 +543,13 @@ is one machine's:
   three vec4-aligned slots that has no diagnostic if it goes wrong. Build it
   in-page off constructors you already have (`somePass.constructor`,
   `somePass.getEffect().constructor`) rather than reaching for a Babylon
-  global that is not exposed.
+  global that is not exposed. **Run at M4 for the packed light arrays and both
+  shapes came back exact**: `pointPos[3]` and `pointColor[7]` out of an
+  `array<vec3f, 16>` filled by `setArray3`, and `pointRange[3]` and `[9]` out
+  of the SCALAR array Babylon rewrites into a `@size(16)` struct with `.el`
+  patched onto every access — which is the one with no diagnostic if it goes
+  wrong, and the reason the check exists. Write the known values as 0..255 and
+  divide by 255 in the shader so an 8-bit write round-trips exactly.
 - Assigning `input.ads` or `cameraSys.adsBlend` does not stick;
   `InputManager.update()` rewrites the flag every tick. Redefine instead —
   `Object.defineProperty(g.input, "ads", { get: () => true, set: () => {} })` —

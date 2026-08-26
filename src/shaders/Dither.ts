@@ -1,8 +1,11 @@
 /**
  * Dither.ts — One LSB of triangular noise, added to a colour immediately
  * before it is written out.
- * Owns: `DITHER_GLSL`, the snippet the three surface shaders paste in. Owns no
- * state, no uniforms and no plugin — there is nothing here to configure.
+ * Owns: the ARGUMENT for the whole of it, in both languages. The WGSL the
+ * surface shaders include is `celDither` in `wgsl/includes.ts`, and
+ * `DITHER_GLSL` below is the same three lines for the two shaders that have
+ * not been ported yet. Owns no state, no uniforms and no plugin — there is
+ * nothing here to configure.
  * Invariant: it must run on the value being QUANTISED, which means last, and it
  * must not be animated. Contract: `docs/rendering.md`.
  *
@@ -51,10 +54,9 @@
  * nothing. `Sky.apply` carries the same note beside the material that does not
  * get one. Anything that ever flattens that dome — a starless overcast, a map
  * with no halo — puts the question back.
- */
-
-/**
- * Triangular-PDF dither at one LSB, keyed on the pixel and NOT on time.
+ *
+ * HOW THE NOISE IS SHAPED, which is three decisions and each has a wrong
+ * answer that looks the same in a screenshot.
  *
  * Two independent uniform hashes subtracted give a triangular distribution over
  * [-1, 1] — the textbook 8-bit TPDF, ~0.41 LSB RMS. It is what breaks a
@@ -68,11 +70,19 @@
  * **Static, not animated.** Hashing on time as well would make it grain, and
  * grain is the grade's job and the player's choice; this is a correctness fix to
  * the quantiser and has to be there whatever the player turned off. It also
- * composes with anything else keyed on `gl_FragCoord` rather than beating
+ * composes with anything else keyed on the pixel coordinate rather than beating
  * against it.
- *
- * Paste into a fragment shader and call `dither(col)` on the last value before
+ */
+
+/**
+ * The GLSL body, for the two surface shaders that are still GLSL. Paste into
+ * a fragment shader and call `dither(col)` on the last value before
  * `gl_FragColor`. Requires `gl_FragCoord`, which is always available.
+ *
+ * The WGSL twin is `celDither` in `wgsl/includes.ts`, and the argument for all
+ * of it — triangular rather than rectangular, one LSB rather than half, static
+ * rather than animated — is the header above, which is where a reader looks
+ * for it and where it stays when this constant goes.
  */
 export const DITHER_GLSL = `
 float ditherHash(vec2 p) {

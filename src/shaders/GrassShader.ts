@@ -8,22 +8,30 @@
  * by GrassSystem each frame from the same LightingSystem slots as the cel
  * shader. Pusher array is pre-allocated to CONFIG.grass.maxPushers. Opaque
  * output; no Babylon lights; no texture (root->tip colour gradient instead).
+ * Both stages are hand-written WGSL, and `shaderLanguage` on the material is
+ * load-bearing rather than declarative: a `ShaderMaterial` defaults to GLSL
+ * and would look these up in a store nothing writes any more. See
+ * `docs/rendering.md` for what the dialect and Babylon's WGSL processor decide.
  */
-import { Effect, Scene, ShaderMaterial, Vector2, Vector3 } from "@babylonjs/core";
-import { CONFIG } from "../config";
-import { DITHER_GLSL } from "./Dither";
 import {
-  BAND_GLSL,
+  Scene,
+  ShaderLanguage,
+  ShaderMaterial,
+  ShaderStore,
+  Vector2,
+  Vector3,
+} from "@babylonjs/core";
+import { CONFIG } from "../config";
+import {
   MAX_POINT_LIGHTS,
-  SHADOW_GLSL,
   SHADOW_SAMPLER_NAMES,
   SHADOW_UNIFORM_NAMES,
 } from "./CelShader";
-// The instance includes self-register in the IncludesShadersStore; import
-// them explicitly so the grass vertex shader's #include<instances...> can
-// never be tree-shaken away (same trick the cel shader uses for bones).
-import "@babylonjs/core/Shaders/ShadersInclude/instancesDeclaration";
-import "@babylonjs/core/Shaders/ShadersInclude/instancesVertex";
+// The shared includes self-register in the IncludesShadersStoreWGSL; import
+// them explicitly so the #include<cel...> lines below can never be tree-shaken
+// away, and so registration is provably before the first effect COMPILE rather
+// than merely before the first material.
+import "./wgsl/includes";
 
 /**
  * Grass — the one mesh in the game that moves without an animation system.
@@ -47,57 +55,69 @@ import "@babylonjs/core/Shaders/ShadersInclude/instancesVertex";
  * hash, so a field of identical instances doesn't read as one stamp.
  */
 
+/**
+ * The pusher count, and — with `MAX_POINT_LIGHTS` — one of the two numbers that
+ * reach the shader by INTERPOLATION and never as a `#define`.
+ *
+ * An array's size has to be a literal or a define, because Babylon resolves the
+ * bound out of the preprocessor table when it lays out the leftover UBO and a
+ * WGSL `const` is not in that table. A define is the worse of the two: the WGSL
+ * processor implements one by searching the whole source for its NAME with an
+ * un-anchored regex and pasting the value over every hit, so a name that is a
+ * substring of any other identifier corrupts the shader with no diagnostic.
+ * Both counts are TypeScript constants already, so interpolating the number
+ * costs nothing and leaves the loop bounds as real WGSL `const` declarations.
+ */
 const MAX_PUSHERS = CONFIG.grass.maxPushers;
 
-Effect.ShadersStore["grassVertexShader"] = `
-precision highp float;
-
-#define MAX_PUSHERS ${MAX_PUSHERS}
-
-attribute vec3 position;
-attribute vec3 normal;
+ShaderStore.ShadersStoreWGSL["grassVertexShader"] = `
+attribute position: vec3f;
+attribute normal: vec3f;
 
 // Declares world (and world0..3 when INSTANCES): the mesh transform. Do NOT
-// redeclare "uniform mat4 world" here or the shader compiles twice over.
-#include<instancesDeclaration>
+// redeclare "uniform world" here or the shader declares it twice over.
+#include<celInstancesDeclaration>
 
-uniform mat4 viewProjection;
-uniform float time;
-uniform vec2 windDir;
-uniform vec2 windParams;   // x = tip travel (m), y = speed
-uniform vec2 pushParams;   // x = radius (m), y = tip travel (m)
-uniform vec3 pushers[MAX_PUSHERS];
-uniform float pusherCount;
+uniform viewProjection: mat4x4f;
+uniform time: f32;
+uniform windDir: vec2f;
+uniform windParams: vec2f;   // x = tip travel (m), y = speed
+uniform pushParams: vec2f;   // x = radius (m), y = tip travel (m)
+uniform pushers: array<vec3f, ${MAX_PUSHERS}>;
+uniform pusherCount: f32;
 
-varying vec3 vNormalW;
-varying vec3 vPosW;
-varying float vTip;        // 0 at the root, 1 at the tip — drives the gradient
+varying vNormalW: vec3f;
+varying vPosW: vec3f;
+varying vTip: f32;        // 0 at the root, 1 at the tip — drives the gradient
 
-void main() {
+const MAX_PUSHERS: i32 = ${MAX_PUSHERS};
+
+@vertex
+fn main(input: VertexInputs) -> FragmentInputs {
   // Declares finalWorld (mesh world * instance matrix under THIN_INSTANCES).
-  #include<instancesVertex>
+  #include<celInstancesVertex>
 
-  vec4 worldPos = finalWorld * vec4(position, 1.0);
+  var worldPos = finalWorld * vec4f(vertexInputs.position, 1.0);
 
   // Blades are 1.0 tall in local space, so position.y is already the 0..1
   // height along the stalk. The exponent keeps the lower half stiff.
-  float hw = pow(clamp(position.y, 0.0, 1.0), 1.6);
-  vTip = clamp(position.y, 0.0, 1.0);
+  let hw = pow(clamp(vertexInputs.position.y, 0.0, 1.0), 1.6);
+  vertexOutputs.vTip = clamp(vertexInputs.position.y, 0.0, 1.0);
 
   // --- wind: two crossing sines phased on position = travelling gusts ---
-  float phase = worldPos.x * 0.35 + worldPos.z * 0.41;
-  float gust = sin(time * windParams.y + phase)
-    + 0.5 * sin(time * windParams.y * 2.33 + phase * 1.71);
-  vec2 sway = windDir * gust * windParams.x;
+  let phase = worldPos.x * 0.35 + worldPos.z * 0.41;
+  let gust = sin(uniforms.time * uniforms.windParams.y + phase)
+    + 0.5 * sin(uniforms.time * uniforms.windParams.y * 2.33 + phase * 1.71);
+  let sway = uniforms.windDir * gust * uniforms.windParams.x;
 
   // --- pushers: radial part + flatten around each nearby body ---
-  vec2 push = vec2(0.0);
-  float flatten = 0.0;
-  for (int i = 0; i < MAX_PUSHERS; i++) {
-    if (float(i) < pusherCount) {
-      vec2 delta = worldPos.xz - pushers[i].xz;
-      float d = length(delta);
-      float infl = 1.0 - smoothstep(0.0, pushParams.x, d);
+  var push = vec2f(0.0);
+  var flatten = 0.0;
+  for (var i = 0; i < MAX_PUSHERS; i++) {
+    if (f32(i) < uniforms.pusherCount) {
+      let delta = worldPos.xz - uniforms.pushers[i].xz;
+      let d = length(delta);
+      var infl = 1.0 - smoothstep(0.0, uniforms.pushParams.x, d);
       infl *= infl;
       // max() guards the divide when a blade sits exactly on a pusher.
       push += (delta / max(d, 0.05)) * infl;
@@ -105,64 +125,77 @@ void main() {
     }
   }
 
-  worldPos.xz += (sway + push * pushParams.y) * hw;
-  worldPos.y -= flatten * pushParams.y * 0.7 * hw;
+  // Two component writes rather than one swizzle write: WGSL allows an
+  // assignment to a single component and forbids one to a multi-component
+  // swizzle, so the GLSL "worldPos.xz +=" has to be spelled out.
+  let shift = (sway + push * uniforms.pushParams.y) * hw;
+  worldPos.x += shift.x;
+  worldPos.z += shift.y;
+  worldPos.y -= flatten * uniforms.pushParams.y * 0.7 * hw;
 
-  vPosW = worldPos.xyz;
+  vertexOutputs.vPosW = worldPos.xyz;
   // Approximate under non-uniform instance scale; the fragment stage only
-  // uses this to orient the facet normal, so the error never reads.
-  vNormalW = normalize(mat3(finalWorld) * normal);
-  gl_Position = viewProjection * worldPos;
+  // uses this to orient the facet normal, so the error never reads. WGSL has
+  // no mat4->mat3 conversion, so the upper-left block is taken by hand.
+  vertexOutputs.vNormalW = normalize(
+    mat3x3f(finalWorld[0].xyz, finalWorld[1].xyz, finalWorld[2].xyz)
+      * vertexInputs.normal);
+  vertexOutputs.position = uniforms.viewProjection * worldPos;
 }
 `;
 
-Effect.ShadersStore["grassFragmentShader"] = `
-#extension GL_OES_standard_derivatives : enable
-precision highp float;
+// The derivatives below are what was MEANT — a facet normal is a screen-space
+// difference and band()'s width is how fast its index moves per pixel — so
+// there is no explicit-LOD form to reach for the way a texture fetch has one,
+// and WGSL's uniformity analysis has to be told. Every fetch in celShadow is
+// already a textureSampleLevel, so this covers the derivatives and nothing else.
+ShaderStore.ShadersStoreWGSL["grassFragmentShader"] = `
+#define DISABLE_UNIFORMITY_ANALYSIS
 
-#define MAX_POINT_LIGHTS ${MAX_POINT_LIGHTS}
+varying vNormalW: vec3f;
+varying vPosW: vec3f;
+varying vTip: f32;
 
-varying vec3 vNormalW;
-varying vec3 vPosW;
-varying float vTip;
+uniform lightDir: vec3f;
+uniform lightColor: vec3f;
+uniform ambientColor: vec3f;
+uniform rimColor: vec3f;
+uniform fogColor: vec3f;
+uniform fogParams: vec2f;  // x = start, y = end
+uniform mistColor: vec3f;
+uniform mistParams: vec2f; // x = height falloff, y = strength
+uniform camPos: vec3f;
+uniform rootColor: vec3f;
+uniform tipColor: vec3f;
 
-uniform vec3 lightDir;
-uniform vec3 lightColor;
-uniform vec3 ambientColor;
-uniform vec3 rimColor;
-uniform vec3 fogColor;
-uniform vec2 fogParams;  // x = start, y = end
-uniform vec3 mistColor;
-uniform vec2 mistParams; // x = height falloff, y = strength
-uniform vec3 camPos;
-uniform vec3 rootColor;
-uniform vec3 tipColor;
+uniform pointPos: array<vec3f, ${MAX_POINT_LIGHTS}>;
+uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by intensity
+uniform pointRange: array<f32, ${MAX_POINT_LIGHTS}>;
+uniform pointCount: f32;
 
-uniform vec3 pointPos[MAX_POINT_LIGHTS];
-uniform vec3 pointColor[MAX_POINT_LIGHTS]; // rgb premultiplied by intensity
-uniform float pointRange[MAX_POINT_LIGHTS];
-uniform float pointCount;
+const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
 
 // Same geometric-normal trick as the cel shader: hard facets from
 // screen-space derivatives, flipped to agree with the interpolated normal so
 // backfaces (two-sided blades) light from the viewer's side.
-vec3 facetNormal() {
-  vec3 n = normalize(cross(dFdx(vPosW), dFdy(vPosW)));
-  return dot(n, vNormalW) < 0.0 ? -n : n;
+fn facetNormal() -> vec3f {
+  let n = normalize(cross(dpdx(fragmentInputs.vPosW), dpdy(fragmentInputs.vPosW)));
+  return select(n, -n, dot(n, fragmentInputs.vNormalW) < 0.0);
 }
 
-${BAND_GLSL}
-${SHADOW_GLSL}
-${DITHER_GLSL}
+#include<celBand>
+#include<celShadow>
+#include<celDither>
 
-void main() {
-  vec3 n = facetNormal();
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  let n = facetNormal();
 
   // --- albedo: root->tip gradient with a per-tuft value hash ---
   // The hash cells (0.25 m) are roughly tuft-sized, so each instance lands
   // mostly in one cell and reads as its own plant.
-  vec3 base = mix(rootColor, tipColor, vTip);
-  float h = fract(sin(dot(floor(vPosW.xz * 4.0), vec2(12.9898, 78.233))) * 43758.5453);
+  var base = mix(uniforms.rootColor, uniforms.tipColor, fragmentInputs.vTip);
+  let h = fract(sin(dot(floor(fragmentInputs.vPosW.xz * 4.0), vec2f(12.9898, 78.233))) * 43758.5453);
   base *= 0.85 + 0.3 * h;
 
   // --- directional key light (4 bands, matching the cel shader) ---
@@ -170,27 +203,27 @@ void main() {
   // is two-sided and facetNormal() flips toward the viewer, so the offset can
   // point either way — 0.06 m either side of a blade is nothing, and the
   // alternative (the un-flipped normal) is not available here.
-  vec3 light = ambientColor;
-  light += lightColor * band(max(dot(n, -lightDir), 0.0), 4.0)
-    * shadowVisibility(n, vPosW);
+  var light = uniforms.ambientColor;
+  light += uniforms.lightColor * band(max(dot(n, -uniforms.lightDir), 0.0), 4.0)
+    * shadowVisibility(n, fragmentInputs.vPosW);
 
   // --- point lights (3 bands, smooth falloff) ---
-  for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
-    if (float(i) < pointCount) {
-      vec3 toLight = pointPos[i] - vPosW;
-      float dist = length(toLight);
-      float atten = clamp(1.0 - dist / max(pointRange[i], 0.001), 0.0, 1.0);
+  for (var i = 0; i < MAX_POINT_LIGHTS; i++) {
+    if (f32(i) < uniforms.pointCount) {
+      let toLight = uniforms.pointPos[i] - fragmentInputs.vPosW;
+      let dist = length(toLight);
+      var atten = clamp(1.0 - dist / max(uniforms.pointRange[i], 0.001), 0.0, 1.0);
       atten *= atten;
-      float ndl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
-      light += pointColor[i] * atten * (0.25 + 0.75 * band(ndl, 3.0));
+      let ndl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
+      light += uniforms.pointColor[i] * atten * (0.25 + 0.75 * band(ndl, 3.0));
     }
   }
 
-  vec3 col = base * light;
+  var col = base * light;
 
   // Same soft shoulder as the cel shader, so stacked lights stay tinted.
-  vec3 over = max(col - 0.75, 0.0);
-  col = min(col, vec3(0.75)) + 0.25 * over / (1.0 + over);
+  let over = max(col - 0.75, vec3f(0.0));
+  col = min(col, vec3f(0.75)) + 0.25 * over / (1.0 + over);
 
   // Hard rim, matching the cel look — INCLUDING the cel shader's gate on tilt,
   // which this went without and should not have. On a near-level surface the
@@ -204,22 +237,22 @@ void main() {
   // tuft tops and the blades a combatant has flattened, which are the only
   // parts of a field that are near-horizontal and the only ones that were
   // drawing the disc.
-  vec3 viewDir = normalize(camPos - vPosW);
-  float rim = 1.0 - max(dot(viewDir, n), 0.0);
-  float level = abs(n.y);
-  col += base * rimColor * step(0.72, rim) * (1.0 - smoothstep(0.90, 0.99, level));
+  let viewDir = normalize(uniforms.camPos - fragmentInputs.vPosW);
+  let rim = 1.0 - max(dot(viewDir, n), 0.0);
+  let level = abs(n.y);
+  col += base * uniforms.rimColor * step(0.72, rim) * (1.0 - smoothstep(0.90, 0.99, level));
 
   // --- atmosphere: identical to the cel shader ---
-  float dist = length(vPosW - camPos);
-  float mist = mistParams.y
-    * exp(-max(vPosW.y, 0.0) / max(mistParams.x, 0.001))
+  let dist = length(fragmentInputs.vPosW - uniforms.camPos);
+  let mist = uniforms.mistParams.y
+    * exp(-max(fragmentInputs.vPosW.y, 0.0) / max(uniforms.mistParams.x, 0.001))
     * clamp((dist - 6.0) / 45.0, 0.0, 1.0);
-  col = mix(col, mistColor, clamp(mist, 0.0, 0.9));
-  float fog = clamp((dist - fogParams.x) / (fogParams.y - fogParams.x), 0.0, 1.0);
-  col = mix(col, fogColor, fog * fog);
+  col = mix(col, uniforms.mistColor, clamp(mist, 0.0, 0.9));
+  let fog = clamp((dist - uniforms.fogParams.x) / (uniforms.fogParams.y - uniforms.fogParams.x), 0.0, 1.0);
+  col = mix(col, uniforms.fogColor, fog * fog);
 
   // Last thing before the write, because the write is the quantiser.
-  gl_FragColor = vec4(dither(col), 1.0);
+  fragmentOutputs.color = vec4f(dither(col), 1.0);
 }
 `;
 
@@ -265,6 +298,7 @@ export function createGrassMaterial(scene: Scene, name: string): ShaderMaterial 
       attributes: ["position", "normal"],
       uniforms: [...GRASS_UNIFORMS, ...SHADOW_UNIFORM_NAMES],
       samplers: [...SHADOW_SAMPLER_NAMES],
+      shaderLanguage: ShaderLanguage.WGSL,
     },
   );
   mat.backFaceCulling = false;

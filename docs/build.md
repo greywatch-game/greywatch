@@ -130,6 +130,16 @@ it** (`OutlineFog.applyWanted` is the worked example) rather than reach for it
 directly. The two `ShadersInclude/bones*` imports in `CelShader.ts` predate this
 and are load-bearing; do not take them as licence for more.
 
+**The WebGPU port ends with FEWER of them rather than more, and the grass is the
+worked example of how.** It used to deep-import `ShadersInclude/instances*` for
+the GLSL includes its vertex stage pastes in; the WGSL twins would have been two
+NEW subpaths, so `src/shaders/wgsl/includes.ts` registers our own
+`celInstancesDeclaration` / `celInstancesVertex` instead. They are fifteen lines
+mirroring `ShadersWGSL/ShadersInclude/instances{Declaration,Vertex}.js` minus
+the branches this game never compiles, and the header names the file and the
+version so an upgrade has something to diff. That is the shape any future need
+for a Babylon include should take.
+
 The reason this one is stated as an absolute rather than as a caution: the
 symptom appears in a subsystem that has nothing to do with the import, on a
 machine that is not the one where the import was written, and it goes away on

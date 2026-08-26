@@ -719,9 +719,11 @@ confined to boundaries rather than spread over a penumbra.
 **Grass and water sample that same depth map, and they are not cel materials.**
 They reproduce the cel lighting model in their own shaders and went without a
 shadow term entirely, which showed as a cottage's shadow stopping dead at the
-edge of a grass rect and at the waterline. `CelShader` exports the lookup and
-the band function as GLSL strings (`SHADOW_GLSL`, `BAND_GLSL`) so all three
-share one kernel, and `CelMaterialFactory.registerShadowConsumer` /
+edge of a grass rect and at the waterline. The lookup and the band function are
+shared so all three sample one depth map with one kernel — as the WGSL includes
+`celShadow` and `celBand` for a shader that has been ported, and as the GLSL
+strings `SHADOW_GLSL` / `BAND_GLSL` that `CelShader` still exports for the two
+that have not. `CelMaterialFactory.registerShadowConsumer` /
 `unregisterShadowConsumer` is how a non-cel material joins the three per-frame
 uploads. **Registering is half the contract and unregistering is the other
 half**: grass and water are rebuilt every round, and a material left registered
@@ -963,6 +965,36 @@ a store nothing wrote. **The one thing in the engine that does the opposite is
 say otherwise; that is what `src/shaders/glslScaffold.ts` puts back, and it
 comes out when `OutlineFog` is ported.
 
+**What several shaders share is a registered INCLUDE and not an interpolated
+string**, and the reason is specific to WGSL rather than tidiness.
+`src/shaders/wgsl/includes.ts` writes `celBand`, `celShadow`, `celProbe`,
+`celProbeBox` and `celDither` into `ShaderStore.IncludesShadersStoreWGSL`, and a
+consumer reaches them with `#include<celShadow>`. The GLSL they replace were
+template literals pasted into three shaders, which was survivable because a copy
+that had drifted was a COMPILE ERROR in one of them: the uniform declarations
+and the code reading them travelled together and a mismatch did not link. Two of
+these includes declare uniforms and samplers, and under WebGPU those feed the
+auto-generated `LeftOver` UBO struct — so three copies that disagree are no
+longer a diagnostic anywhere. They are a **different UBO layout per shader**,
+which fails as plausible values read from the wrong offsets, on one surface,
+with nothing in the console.
+
+**Every entry is prefixed `cel`, and the prefix is a collision guard rather than
+a style.** Babylon registers an include first-writer-wins and its own library
+ships some two hundred of them under bare names, `instancesDeclaration` and
+`dither` among them — so an unprefixed entry would either silently shadow one of
+those or be silently shadowed BY one, depending on which module the bundler
+evaluated first, and the failure is a shader that compiles and draws the wrong
+thing.
+
+**Registering the source is still only half the contract.** A `ShaderMaterial`
+builds its bind group from the lists it is CONSTRUCTED with, so an include that
+declares a sampler nobody listed is a binding with nothing behind it — see the
+sampler rule in the constraints below. `SHADOW_UNIFORM_NAMES`,
+`SHADOW_SAMPLER_NAMES`, `PROBE_UNIFORM_NAMES` and `PROBE_SAMPLER_NAMES` stay in
+TypeScript in `CelShader.ts` for exactly that reason, and the two halves have to
+be edited together.
+
 **Sample with `textureSampleLevel` and never `textureSample`.** WGSL's
 uniformity analysis rejects an implicit-LOD sample reached through non-uniform
 control flow, which is what every early-out in a post pass and every `#ifdef`'d
@@ -982,6 +1014,25 @@ Babylon prefixes `diagnostic(off, chromium.unreachable_code)` for exactly this.
 So an early-out stays an early-out, and does not have to be rewritten into a
 single exit — which matters, because two of the three post passes document
 theirs as load-bearing.
+
+**A SWIZZLE cannot be assigned to, and a single component can.** GLSL's
+`worldPos.xz += shift;` has no WGSL spelling — the two component writes it
+becomes are the same arithmetic and the same result, and there is no way to keep
+the one-liner. Reading a swizzle is unrestricted, so only the left-hand side
+moves.
+
+**There is no `mat3(m4)` conversion.** The upper-left block of a world matrix —
+what a vertex stage multiplies a normal by — is
+`mat3x3f(m[0].xyz, m[1].xyz, m[2].xyz)`, spelled out. WGSL indexes a matrix by
+column, which is what makes that read correctly.
+
+**A uniform ARRAY's size must be a literal or a `#define`, and a `const` will
+not do**: Babylon resolves the bound out of the preprocessor table when it lays
+out the leftover UBO, and a WGSL `const` is not in that table. Where the count is
+already a TypeScript constant, interpolate the NUMBER into the declaration and
+keep a real `const` for the loop bound — that is what `GrassShader` does with
+`MAX_PUSHERS` and `MAX_POINT_LIGHTS`, and it avoids the define trap below
+entirely.
 
 **Prefer a WGSL `const` to a `#define` for a compile-time number.** The
 processor implements a define by searching the whole shader for its NAME with
