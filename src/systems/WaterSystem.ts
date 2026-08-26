@@ -208,7 +208,7 @@ export class WaterSystem {
       mat.setFloat("specStrength", w.specStrength * (colors.glint ?? 1));
 
       // The mirror. No parallax box: the water reads its cube the way a
-      // skybox is read, and `PROBE_BOX_GLSL` is where that is argued.
+      // skybox is read, and `celProbeBox` is where that is argued.
       const refl = mirrors[i];
       mat.setTexture("reflectionCube", refl.cube);
       mat.setVector4(

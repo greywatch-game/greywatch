@@ -864,7 +864,7 @@ export class Game {
     this.atmosphere = new Atmosphere(this.scene);
     // `mats` is not for building materials here — both systems own their own
     // shader. It is the publisher of the shadow map, its matrix and its params,
-    // which both now sample (see `SHADOW_GLSL`).
+    // which both now sample (see `celShadow`).
     this.water = new WaterSystem(this.scene, glow, this.mats);
     this.grass = new GrassSystem(this.scene, glow, this.mats);
     // Same relationship to `mats` as the two above, in the other direction:

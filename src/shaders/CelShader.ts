@@ -9,7 +9,7 @@
  * recovered in the fragment shader from screen-space derivatives — NEVER call
  * convertToFlatShadedMesh(). Output is display-ready color, which is why
  * pipeline.imageProcessingEnabled must stay false. Output is also opaque —
- * gl_FragColor's alpha is 1 for every variant but getGlass(), the world's one
+ * fragmentOutputs.color's alpha is 1 for every variant but getGlass(), the world's one
  * alpha-blended material, which writes a Fresnel alpha, needs no depth write
  * (see there, and MapBuilder's pane rules), carries the one depth bias in
  * the renderer — GLASS_DEPTH_UNITS, without which a pane past ~100 m is not
@@ -33,35 +33,46 @@
  * EmissiveFog uploads it to the unlit emissive materials, and fogAmountAt()
  * hands the same curve to the GlowLayer. Anything else drawn unshaded owes that
  * fade, or it hangs in front of the fog wall at full strength.
+ *
+ * Both stages are hand-written WGSL, and `shaderLanguage` on all six materials
+ * is load-bearing rather than declarative: a `ShaderMaterial` defaults to GLSL
+ * and would look these up in a store nothing writes any more. Two things about
+ * the port are worth knowing before editing either stage. **A sampler a
+ * variant DECLARES has to be BOUND, used or not** — which is why the sampler
+ * declarations below sit under exactly the defines each material's own
+ * `samplers` list is built from, and why CEL_INK still binds a shadow map it
+ * never reads. And **the six defines make six UBO LAYOUTS**, so a uniform
+ * moved into or out of an `#ifdef` moves offsets for that variant alone. See
+ * `docs/rendering.md` for the rest of what the dialect and Babylon's WGSL
+ * processor decide.
  */
 import {
   type BaseTexture,
   Color3,
-  Effect,
   Matrix,
   Mesh,
   Scene,
+  ShaderLanguage,
   ShaderMaterial,
+  ShaderStore,
   StandardMaterial,
   Vector2,
   Vector3,
   Vector4,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { DITHER_GLSL } from "./Dither";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { refreshOutlineFog, setOutlineFog } from "./OutlineFog";
-// The bone includes self-register in the IncludesShadersStore; import them
-// explicitly so the cel vertex shader's #include<bones...> can never be
-// tree-shaken away. Their contents are guarded internally by
-// NUM_BONE_INFLUENCERS, so non-skinned materials compile to identical code.
-import "@babylonjs/core/Shaders/ShadersInclude/bonesDeclaration";
-import "@babylonjs/core/Shaders/ShadersInclude/bonesVertex";
+// The shared includes self-register in the IncludesShadersStoreWGSL; import
+// them explicitly so the #include<cel...> lines below can never be tree-shaken
+// away, and so registration is provably before the first effect COMPILE rather
+// than merely before the first material.
+import "./wgsl/includes";
 
 /**
  * Custom cel-shading: quantized diffuse bands, a hard stylized rim highlight,
- * flat colors (or a texture albedo — uv-mapped for the skinned player body,
- * world-XZ-mapped for ground surfaces like cobblestone roads), and per-theme
+ * flat colors (or a world-XZ-mapped texture albedo, for ground surfaces like
+ * cobblestone roads), and per-theme
  * atmosphere blended in the fragment shader. Ground-textured materials may
  * also carry a matching height map (CEL_BUMP): the facet normal is perturbed
  * by the height slope, measured from world-space taps a texel apart — never
@@ -154,37 +165,14 @@ vec3 probeCubeDir(vec3 dir) {
 `;
 
 /**
- * The parallax half of a probe: the box a mirrored ray leaves the world
- * through, and the re-aim that turns an infinite-distance cube into one with
- * a place in it.
+ * The parallax box's uniform names, for a material that includes `celProbeBox`.
  *
- * **The argument is on the WGSL twin**, `celProbeBox` in `wgsl/includes.ts` —
+ * The include itself is in `wgsl/includes.ts` and so is the argument for it —
  * including why it is separate from `celProbe`, which is the half a reader is
- * most likely to undo.
+ * most likely to undo. These two names stay here because registering the
+ * source is only half the contract: a `ShaderMaterial` builds its bind group
+ * from the lists it is CONSTRUCTED with.
  */
-export const PROBE_BOX_GLSL = `
-// The box the mirrored ray is parallax-corrected against — the map's own
-// extent, floor to roofline.
-uniform vec3 reflectBoxMin;
-uniform vec3 reflectBoxMax;
-
-vec3 reflectBoxDir(vec3 dir, vec3 pos) {
-  vec3 sgn = sign(dir);
-  sgn += 1.0 - abs(sgn);
-  vec3 inv = 1.0 / (sgn * max(abs(dir), vec3(1e-5)));
-  vec3 tHi = (reflectBoxMax - pos) * inv;
-  vec3 tLo = (reflectBoxMin - pos) * inv;
-  // The far intersection on each axis; the nearest of the three is the face
-  // the ray actually leaves through. max() picks the far one per axis because
-  // one of the pair is behind the ray whenever pos is inside the box.
-  vec3 t = max(tHi, tLo);
-  float hit = min(min(t.x, t.y), t.z);
-  vec3 aimed = (pos + dir * max(hit, 0.0)) - reflectProbe.xyz;
-  return probeCubeDir(aimed);
-}
-`;
-
-/** The parallax box, for a material that interpolates `PROBE_BOX_GLSL`. */
 export const PROBE_BOX_UNIFORM_NAMES = ["reflectBoxMin", "reflectBoxMax"];
 /** The probe uniforms a sampling material owes, beside `PROBE_SAMPLER_NAMES`. */
 export const PROBE_UNIFORM_NAMES = [
@@ -236,44 +224,41 @@ float shadowVisibility(vec3 n, vec3 posW) {
 }
 `;
 
-/** The uniform names `SHADOW_GLSL` declares, for a consumer's uniform list. */
+/** The uniform names `celShadow` declares, for a consumer's uniform list. */
 export const SHADOW_UNIFORM_NAMES = ["lightMatrix", "shadowParams"] as const;
-/** The sampler `SHADOW_GLSL` declares, for a consumer's sampler list. */
+/** The sampler `celShadow` declares, for a consumer's sampler list. */
 export const SHADOW_SAMPLER_NAMES = ["shadowMap"] as const;
 
-Effect.ShadersStore["celVertexShader"] = `
-precision highp float;
-
-attribute vec3 position;
-attribute vec3 normal;
+ShaderStore.ShadersStoreWGSL["celVertexShader"] = `
+attribute position: vec3f;
+attribute normal: vec3f;
 // Baked world shading, written by world/vertexShading.ts: alpha is ambient
 // occlusion, green marks a vertex as WORLD geometry and RED is how much of the
 // wind's travel this vertex is entitled to. Declared unconditionally and on
 // purpose — a mesh with no colour buffer leaves this attrib array disabled,
-// which reads back as the GL generic default (0, 0, 0, 1): occlusion 1 (none),
+// which reads back as the generic default (0, 0, 0, 1): occlusion 1 (none),
 // mask 0 (not world) and sway 0 (planted). Every rig, the viewmodel and every
 // effect mesh is therefore correct without carrying one.
-attribute vec4 color;
-#ifdef CEL_TEXTURED
-attribute vec2 uv;
-#endif
+attribute color: vec4f;
 
-// Self-guarded by NUM_BONE_INFLUENCERS (0 for rigid meshes, set automatically
-// by ShaderMaterial for skinned ones): declares matricesIndices/Weights and
-// the mBones/boneSampler uniforms.
-#include<bonesDeclaration>
-
-uniform mat4 world;
-uniform mat4 viewProjection;
+// No instances declaration and no bones, and both absences are facts about the
+// game rather than omissions. Nothing here is drawn instanced — the one
+// thin-instanced surface is the grass, which has a shader of its own — and
+// there is no rigged asset in the tree at all, so the skinned+textured variant
+// this shader used to carry had no caller left. Deleting it took the two bone
+// includes with it, and with them two of the four grandfathered deep imports
+// into \`@babylonjs/core\` that CLAUDE.md forbids adding to.
+uniform world: mat4x4f;
+uniform viewProjection: mat4x4f;
 
 // The wind, shared with the grass field (CONFIG.wind). windDir is the bearing,
 // normalised; windParams is (travel in metres at full weight, speed, gust
 // wavenumber). windTime is the same clock the grass runs on, pushed by
 // CelMaterialFactory.updateWind — it advances with the world rather than with
 // the frame, so a pause holds the canopy exactly as it holds the field.
-uniform float windTime;
-uniform vec2 windDir;
-uniform vec3 windParams;
+uniform windTime: f32;
+uniform windDir: vec2f;
+uniform windParams: vec3f;
 
 #ifdef CEL_INK
 // The ink hull's own expansion, and the eye it thins against. Declared here
@@ -281,23 +266,17 @@ uniform vec3 windParams;
 // x = full width (m), y = the distance it holds it to, z = the distance it has
 // reached its floor (w) by. Same four numbers as CONFIG.graphics.outlines,
 // spent per VERTEX rather than per mesh — see getInk in this file.
-uniform vec3 camPos;
-uniform vec4 inkParams;
+uniform camPos: vec3f;
+uniform inkParams: vec4f;
 #endif
 
-varying vec3 vNormalW;
-varying vec3 vPosW;
-varying vec4 vBaked;
-#ifdef CEL_TEXTURED
-varying vec2 vUv;
-#endif
+varying vNormalW: vec3f;
+varying vPosW: vec3f;
+varying vBaked: vec4f;
 
-void main() {
-  mat4 finalWorld = world;
-  // No-op when NUM_BONE_INFLUENCERS == 0; otherwise blends finalWorld
-  // through the bone matrices.
-  #include<bonesVertex>
-  vec4 worldPos = finalWorld * vec4(position, 1.0);
+@vertex
+fn main(input: VertexInputs) -> FragmentInputs {
+  var worldPos = uniforms.world * vec4f(vertexInputs.position, 1.0);
 
   // --- foliage sway, in world space, weighted by the baked red channel ---
   //
@@ -312,18 +291,29 @@ void main() {
   // sines, the second at 2.33x so the field never repeats on a clean beat,
   // phased along the wind's own bearing so a gust TRAVELS rather than every
   // crown leaning at once.
-  if (color.r > 0.0) {
+  if (vertexInputs.color.r > 0.0) {
     // Subtracted, not added: a gust has to travel WITH the wind, and a wave
     // whose phase runs the other way rolls up the valley against the lean of
     // everything in it. The grass shader adds instead, and gets away with it
     // because its phase is not along the bearing at all — here it is.
-    float phase = dot(worldPos.xz, windDir) * windParams.z;
-    float gust = sin(windTime * windParams.y - phase)
-      + 0.5 * sin(windTime * windParams.y * 2.33 - phase * 1.71);
-    worldPos.xz += windDir * (gust * windParams.x * color.r);
+    let phase = dot(worldPos.xz, uniforms.windDir) * uniforms.windParams.z;
+    let gust = sin(uniforms.windTime * uniforms.windParams.y - phase)
+      + 0.5 * sin(uniforms.windTime * uniforms.windParams.y * 2.33 - phase * 1.71);
+    // Two component writes rather than one swizzle write: WGSL allows an
+    // assignment to a single component and forbids one to a multi-component
+    // swizzle, so the GLSL "worldPos.xz +=" has to be spelled out.
+    let lean =
+      uniforms.windDir * (gust * uniforms.windParams.x * vertexInputs.color.r);
+    worldPos.x += lean.x;
+    worldPos.z += lean.y;
   }
 
-  vNormalW = normalize(mat3(finalWorld) * normal);
+  // WGSL has no mat4 -> mat3 conversion, so the upper-left block is taken by
+  // hand; a matrix indexes by COLUMN, which is what makes that read correctly.
+  let nW = normalize(
+    mat3x3f(uniforms.world[0].xyz, uniforms.world[1].xyz, uniforms.world[2].xyz)
+      * vertexInputs.normal);
+  vertexOutputs.vNormalW = nW;
 
   #ifdef CEL_INK
   // The inverted hull, expanded along the world normal AFTER the sway — which
@@ -338,146 +328,160 @@ void main() {
   // distance per mesh, and BlockMerge hands it meshes that span the whole fog
   // band (measured: 50 of 687). The colour fade was moved per pixel for exactly
   // that reason; this is the width catching up.
-  float inkDist = distance(worldPos.xyz, camPos);
-  float inkT = clamp(
-    (inkDist - inkParams.y) / max(inkParams.z - inkParams.y, 0.001), 0.0, 1.0);
-  worldPos.xyz += vNormalW * (inkParams.x * mix(1.0, inkParams.w, inkT));
+  let inkDist = distance(worldPos.xyz, uniforms.camPos);
+  let inkT = clamp(
+    (inkDist - uniforms.inkParams.y)
+      / max(uniforms.inkParams.z - uniforms.inkParams.y, 0.001),
+    0.0, 1.0);
+  let grow = nW * (uniforms.inkParams.x * mix(1.0, uniforms.inkParams.w, inkT));
+  worldPos.x += grow.x;
+  worldPos.y += grow.y;
+  worldPos.z += grow.z;
   #endif
 
-  vPosW = worldPos.xyz;
-  vBaked = color;
-  #ifdef CEL_TEXTURED
-  vUv = uv;
-  #endif
-  gl_Position = viewProjection * worldPos;
+  vertexOutputs.vPosW = worldPos.xyz;
+  vertexOutputs.vBaked = vertexInputs.color;
+  vertexOutputs.position = uniforms.viewProjection * worldPos;
 }
 `;
 
-Effect.ShadersStore["celFragmentShader"] = `
-#extension GL_OES_standard_derivatives : enable
-precision highp float;
+// The derivative users below are what was MEANT — a facet normal is a
+// screen-space difference, band()'s width is how fast its index moves per
+// pixel, and the ground albedo, its height map and the reflection cube are the
+// three fetches in this shader whose textures carry a MIP CHAIN, so an implicit
+// LOD is the filtering rather than an oversight. None of them has an
+// explicit-LOD form to reach for, and every one of them sits behind an #ifdef
+// or a loop WGSL's uniformity analysis cannot prove uniform — hence the define.
+// Every fetch in celShadow is a textureSampleLevel already, because the depth
+// map has no mip chain and an explicit level 0 is what was meant there.
+ShaderStore.ShadersStoreWGSL["celFragmentShader"] = `
+#define DISABLE_UNIFORMITY_ANALYSIS
 
-#define MAX_POINT_LIGHTS ${MAX_POINT_LIGHTS}
-
-varying vec3 vNormalW;
-varying vec3 vPosW;
+varying vNormalW: vec3f;
+varying vPosW: vec3f;
 // Baked per-vertex world shading. w is ambient occlusion, 1 = unoccluded;
 // y is 1 on map geometry and 0 on everything else; x is the wind weight the
 // vertex stage has already spent. All three defaults come from the disabled
 // attrib rather than from a uniform — see the vertex stage.
-varying vec4 vBaked;
+varying vBaked: vec4f;
 
-uniform vec3 lightDir;
-uniform vec3 lightColor;
-uniform vec3 ambientColor;
+uniform lightDir: vec3f;
+uniform lightColor: vec3f;
+uniform ambientColor: vec3f;
 // Hemispheric fill from the sky dome: full strength on up-facing surfaces,
 // nothing underneath. Banded like everything else so the toon look survives.
-uniform vec3 skyLightColor;
-uniform vec3 rimColor;
-#ifdef CEL_TEXTURED
-uniform sampler2D baseColorTex;
-varying vec2 vUv;
-#else
+uniform skyLightColor: vec3f;
+uniform rimColor: vec3f;
 #ifdef CEL_GROUND_TEX
 // World-mapped ground albedo: sampled at vPosW.xz * texScale, so no UVs are
 // needed and the pattern keeps a constant real-world size across placements.
-uniform sampler2D baseColorTex;
-uniform float texScale;
+var baseColorTexSampler: sampler;
+var baseColorTex: texture_2d<f32>;
+uniform texScale: f32;
 // The tile's own weathering — see graphics.groundVariation in the config for
 // why a ground texture gets a wider cell and a wider swing than a flat colour.
-uniform float groundVariationScale;
-uniform float groundVariationAmount;
+uniform groundVariationScale: f32;
+uniform groundVariationAmount: f32;
 #ifdef CEL_BUMP
 // Height map matching the albedo texel-for-texel (domed setts, dark mortar).
-uniform sampler2D bumpTex;
-uniform float bumpScale; // metres of fake relief at height value 1.0
+var bumpTexSampler: sampler;
+var bumpTex: texture_2d<f32>;
+uniform bumpScale: f32; // metres of fake relief at height value 1.0
 #endif
 #else
-uniform vec3 baseColor;
+uniform baseColor: vec3f;
 #endif
-#endif
-uniform vec3 fogColor;
-uniform vec2 fogParams;  // x = start, y = end
+uniform fogColor: vec3f;
+uniform fogParams: vec2f;  // x = start, y = end
 #ifdef CEL_INK
-uniform vec3 inkColor;
+uniform inkColor: vec3f;
 #endif
-uniform vec3 mistColor;
-uniform vec2 mistParams; // x = height falloff, y = strength
-uniform vec3 camPos;
+uniform mistColor: vec3f;
+uniform mistParams: vec2f; // x = height falloff, y = strength
+uniform camPos: vec3f;
 
 // Albedo weathering: cell size (as 1/metres) and peak-to-peak swing. Uniforms
 // rather than literals so the pair can be judged live against a wall.
-uniform float variationScale;
-uniform float variationAmount;
+uniform variationScale: f32;
+uniform variationAmount: f32;
 
-uniform vec3 pointPos[MAX_POINT_LIGHTS];
-uniform vec3 pointColor[MAX_POINT_LIGHTS]; // rgb premultiplied by intensity
-uniform float pointRange[MAX_POINT_LIGHTS];
-uniform float pointCount;
+uniform pointPos: array<vec3f, ${MAX_POINT_LIGHTS}>;
+uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by intensity
+uniform pointRange: array<f32, ${MAX_POINT_LIGHTS}>;
+uniform pointCount: f32;
 
-${SHADOW_GLSL}
+// The count reaches the declarations above by INTERPOLATION and the loop bound
+// below as a real const, and the split is forced rather than stylistic: a
+// uniform array's size must be a literal or a #define, because Babylon resolves
+// the bound out of the preprocessor table when it lays out the leftover UBO and
+// a WGSL const is not in that table — while a #define is the worse of the two,
+// since the processor implements one as an un-anchored regex over the whole
+// source. GrassShader settled this; see docs/rendering.md.
+const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
+
+#include<celShadow>
 
 // Toon specular: one hard two-band Blinn highlight from the key light.
 // specColor is premultiplied by intensity — black (the default) is matte.
-uniform vec3 specColor;
-uniform float specShininess;
+uniform specColor: vec3f;
+uniform specShininess: f32;
 
 // Translucency: the key light coming THROUGH a thin surface rather than off
 // it — a canvas awning or a pine crown with the moon behind it. Premultiplied
 // by intensity — black (the default) is opaque.
-uniform vec3 transColor;
+uniform transColor: vec3f;
 
 #ifdef CEL_GLASS
 // Glazing. x = reflectance face-on, y = the Fresnel falloff's exponent,
 // z = cosine half-width of the sun's halo in the reflection, w = how much of
 // the tint a face-on pane keeps. See CelMaterialFactory.getGlass.
-uniform vec4 glassParams;
+uniform glassParams: vec4f;
 // The top of the sky dome. The HORIZON end of the same gradient is fogColor,
 // which is already here and which SkySpec.horizonColor is required to sit
 // close to — the one place that requirement is load-bearing rather than
 // cosmetic.
-uniform vec3 skyZenithColor;
+uniform skyZenithColor: vec3f;
 #ifdef CEL_GLASS_BACKED
 // The ALBEDO of the mass this sheet hangs on, named by the builder that hung
 // it (the backed argument of Build.pane). Unlit, because it is shaded here by
 // the same light the pane is: they are parallel faces a hand apart, so one
 // light term is right for both. See the composite below for why this is exact rather
 // than an approximation of the blend it replaces.
-uniform vec3 glassBackdrop;
+uniform glassBackdrop: vec3f;
 #endif
 #endif
 
 // Geometric (per-triangle) normal from the world position's screen-space
 // derivatives. The cross product's sign depends on triangle winding and
 // viewing direction, so it is flipped to agree with the interpolated normal.
-vec3 facetNormal() {
-  vec3 n = normalize(cross(dFdx(vPosW), dFdy(vPosW)));
-  return dot(n, vNormalW) < 0.0 ? -n : n;
+fn facetNormal() -> vec3f {
+  let n = normalize(cross(dpdx(fragmentInputs.vPosW), dpdy(fragmentInputs.vPosW)));
+  return select(n, -n, dot(n, fragmentInputs.vNormalW) < 0.0);
 }
 
-${BAND_GLSL}
-${DITHER_GLSL}
+#include<celBand>
+#include<celDither>
 
 // Trilinear value noise over world space, 0..1. Deliberately one octave: this
 // is weathering, not detail — a second octave adds frequencies the palette
 // cannot express and starts reading as texture on a surface that has none.
-float variationHash(vec3 cell) {
-  return fract(sin(dot(cell, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+fn variationHash(cell: vec3f) -> f32 {
+  return fract(sin(dot(cell, vec3f(127.1, 311.7, 74.7))) * 43758.5453123);
 }
 
-float valueNoise(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
+fn valueNoise(p: vec3f) -> f32 {
+  let i = floor(p);
+  var f = fract(p);
   // Smoothstep the interpolant, or the cell boundaries show as creases.
   f = f * f * (3.0 - 2.0 * f);
-  float n000 = variationHash(i + vec3(0.0, 0.0, 0.0));
-  float n100 = variationHash(i + vec3(1.0, 0.0, 0.0));
-  float n010 = variationHash(i + vec3(0.0, 1.0, 0.0));
-  float n110 = variationHash(i + vec3(1.0, 1.0, 0.0));
-  float n001 = variationHash(i + vec3(0.0, 0.0, 1.0));
-  float n101 = variationHash(i + vec3(1.0, 0.0, 1.0));
-  float n011 = variationHash(i + vec3(0.0, 1.0, 1.0));
-  float n111 = variationHash(i + vec3(1.0, 1.0, 1.0));
+  let n000 = variationHash(i + vec3f(0.0, 0.0, 0.0));
+  let n100 = variationHash(i + vec3f(1.0, 0.0, 0.0));
+  let n010 = variationHash(i + vec3f(0.0, 1.0, 0.0));
+  let n110 = variationHash(i + vec3f(1.0, 1.0, 0.0));
+  let n001 = variationHash(i + vec3f(0.0, 0.0, 1.0));
+  let n101 = variationHash(i + vec3f(1.0, 0.0, 1.0));
+  let n011 = variationHash(i + vec3f(0.0, 1.0, 1.0));
+  let n111 = variationHash(i + vec3f(1.0, 1.0, 1.0));
   return mix(
     mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
     mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y),
@@ -491,7 +495,7 @@ float valueNoise(vec3 p) {
 //
 // **The slope is measured in WORLD space, from taps a texel apart, and it must
 // not be measured in screen space.** The first cut used the surface-gradient
-// formulation (Mikkelsen 2010) off dFdx(h)/dFdy(h), which is the right tool
+// formulation (Mikkelsen 2010) off dpdx(h)/dpdy(h), which is the right tool
 // for a UV-mapped normal map on a mesh and the wrong one here, for a reason
 // that only bites once the ground is the whole frame:
 //
@@ -514,22 +518,25 @@ float valueNoise(vec3 p) {
 // tap is a filtered fetch rather than a difference of one, so the anisotropic
 // sampler does its job; and the relief fades out on its own at distance,
 // because two taps a texel apart converge as the mip chain smooths them. That
-// last part is the whole reason no explicit distance fade is needed here.
+// last part is the whole reason no explicit distance fade is needed here — and
+// it is why these three fetches are textureSample rather than
+// textureSampleLevel: the mip chain IS the fade, and an explicit level 0 would
+// delete it.
 //
 // Three taps rather than four: forward differences off a shared centre. The
 // asymmetry is half a texel of bias in where a grain's slope is reported, which
 // is nothing beside a fetch per ground pixel.
-vec3 perturbNormal(vec3 n) {
-  vec2 uv = vPosW.xz * texScale;
+fn perturbNormal(n: vec3f) -> vec3f {
+  let uv = fragmentInputs.vPosW.xz * uniforms.texScale;
   // One texel of the height map. Albedo and height are painted at the same
   // size (SIZE in world/textures.ts), which is what lets this be a constant.
-  float e = 1.0 / 512.0;
-  float h0 = texture2D(bumpTex, uv).r;
-  float hx = texture2D(bumpTex, uv + vec2(e, 0.0)).r;
-  float hz = texture2D(bumpTex, uv + vec2(0.0, e)).r;
+  let e = 1.0 / 512.0;
+  let h0 = textureSample(bumpTex, bumpTexSampler, uv).r;
+  let hx = textureSample(bumpTex, bumpTexSampler, uv + vec2f(e, 0.0)).r;
+  let hz = textureSample(bumpTex, bumpTexSampler, uv + vec2f(0.0, e)).r;
   // Metres of rise per metre travelled: the tap is e / texScale metres away.
-  float perMetre = bumpScale * texScale / e;
-  vec3 grad = vec3((hx - h0) * perMetre, 0.0, (hz - h0) * perMetre);
+  let perMetre = uniforms.bumpScale * uniforms.texScale / e;
+  var grad = vec3f((hx - h0) * perMetre, 0.0, (hz - h0) * perMetre);
   // Only the part of the gradient lying in the surface tilts it. On the
   // near-level ground this material is for that is almost all of it, and the
   // projection is what keeps a sloped road or a pitched deck honest.
@@ -539,10 +546,12 @@ vec3 perturbNormal(vec3 n) {
 #endif
 
 #ifdef CEL_GLASS
-${PROBE_GLSL}${PROBE_BOX_GLSL}
+#include<celProbe>
+#include<celProbeBox>
 #endif
 
-void main() {
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
   #ifdef CEL_INK
   // The ink is a flat colour and nothing else — no lighting, no shadow, no rim,
   // no occlusion. It falls through to the shared atmosphere block at the bottom
@@ -550,20 +559,20 @@ void main() {
   // is what OutlineFog has to bake literals into Babylon's shader to achieve
   // and what this variant gets for free. It picks up the ground MIST as well,
   // which that one cannot do at all.
-  vec3 col = inkColor;
-  float alpha = 1.0;
+  var col = uniforms.inkColor;
+  var alpha = 1.0;
   #else
-  vec3 n = facetNormal();
+  var n = facetNormal();
 
   // How level this facet is, read off the TRUE geometry before any bump map
   // touches it — the rim gate below keys on it, and reading it from the
   // perturbed normal would let individual setts flick the gate on and off.
-  float level = abs(n.y);
+  let level = abs(n.y);
 
   // --- directional key light (4 bands), gated by the stepped shadow ---
   // The shadow's normal-offset uses the true facet normal — the bump relief
   // is fake, and offsetting along it would leak light at stone edges.
-  float shadow = shadowVisibility(n, vPosW);
+  let shadow = shadowVisibility(n, fragmentInputs.vPosW);
 
   #ifdef CEL_BUMP
   // From here on the bumped normal drives every lighting term: key bands,
@@ -583,42 +592,41 @@ void main() {
   //
   // Defaults to 1 on anything with no baked buffer (rigs, viewmodel, effects),
   // so this line is a no-op for them rather than a special case.
-  float ao = vBaked.w;
+  let ao = fragmentInputs.vBaked.w;
 
-  vec3 light = ambientColor * ao;
-  light += lightColor * band(max(dot(n, -lightDir), 0.0), 4.0) * shadow;
+  var light = uniforms.ambientColor * ao;
+  light += uniforms.lightColor
+    * band(max(dot(n, -uniforms.lightDir), 0.0), 4.0) * shadow;
 
   // Sky fill: the whole dome is a dim source, so anything looking up at it
   // picks up moonlight even where the key light is blocked. Deliberately NOT
   // gated by the shadow map — a roof in the moon's shadow still faces the sky.
   // This is what keeps roads, roofs and open ground reading as moonlit while
   // walls and undersides stay black.
-  light += skyLightColor * band(0.5 + 0.5 * n.y, 3.0) * ao;
+  light += uniforms.skyLightColor * band(0.5 + 0.5 * n.y, 3.0) * ao;
 
   // --- point lights (3 bands, smooth inverse-square-ish falloff) ---
-  for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
-    if (float(i) < pointCount) {
-      vec3 toLight = pointPos[i] - vPosW;
-      float dist = length(toLight);
-      float range = max(pointRange[i], 0.001);
+  for (var i = 0; i < MAX_POINT_LIGHTS; i++) {
+    if (f32(i) < uniforms.pointCount) {
+      let toLight = uniforms.pointPos[i] - fragmentInputs.vPosW;
+      let dist = length(toLight);
+      let range = max(uniforms.pointRange[i], 0.001);
       // Smooth window falloff: 1 at the source, 0 at the range limit.
-      float atten = clamp(1.0 - dist / range, 0.0, 1.0);
+      var atten = clamp(1.0 - dist / range, 0.0, 1.0);
       atten *= atten;
-      float ndl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
+      let ndl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
       // Lift the floor a little so lit surfaces read as glowing pools of
       // light rather than only the faces pointed at the flame.
-      light += pointColor[i] * atten * (0.25 + 0.75 * band(ndl, 3.0));
+      light += uniforms.pointColor[i] * atten * (0.25 + 0.75 * band(ndl, 3.0));
     }
   }
 
-  // Base albedo: flat palette color, the skinned character's texture, or a
-  // world-mapped ground texture. All are used raw (display-ready), matching
-  // the no-image-processing pipe.
-  #ifdef CEL_TEXTURED
-  vec3 base = texture2D(baseColorTex, vUv).rgb;
-  #else
+  // Base albedo: a flat palette colour, or a world-mapped ground texture. Both
+  // are used raw (display-ready), matching the no-image-processing pipe.
   #ifdef CEL_GROUND_TEX
-  vec3 base = texture2D(baseColorTex, vPosW.xz * texScale).rgb;
+  var base = textureSample(
+    baseColorTex, baseColorTexSampler,
+    fragmentInputs.vPosW.xz * uniforms.texScale).rgb;
   // The same world-space drift the flat colours get below, and here it is
   // load-bearing rather than a nicety: this albedo REPEATS, every 4 m on the
   // valley floor and every 1.5 m on the street, and the eye finds a period in a
@@ -634,9 +642,10 @@ void main() {
   // world-keyed term on a moving mesh shimmers as it walks. Nothing that moves
   // is ever ground: getGroundTextured is reached only from the terrain and from
   // the kit's paved surfaces, both of them baked map geometry.
-  base *= 1.0 + groundVariationAmount * (valueNoise(vPosW * groundVariationScale) - 0.5);
+  base *= 1.0 + uniforms.groundVariationAmount
+    * (valueNoise(fragmentInputs.vPosW * uniforms.groundVariationScale) - 0.5);
   #else
-  vec3 base = baseColor;
+  var base = uniforms.baseColor;
   // Weathering: a slow value drift over world space, so a 48 m merged block
   // stops being one flat tone. Every wall, roof, plank and rock in the game is
   // drawn from a palette of a hundred-odd hexes, and the merge is per colour —
@@ -661,26 +670,26 @@ void main() {
   // tone across the map. vBaked.y is 1 on baked map geometry and 0 on the
   // rigs, the viewmodel and every effect mesh.
   //
-  // A BRANCH, not a mix. GLSL evaluates both arguments of mix(), so the mask
+  // A BRANCH, not a mix. Both of mix()'s arguments are evaluated, so the mask
   // written that way still ran valueNoise — eight variationHash calls, each a
   // sin/dot/fract — on every pixel of the viewmodel that fills the lower third
   // of the screen, on every pixel of sixteen bot rigs and every particle, and
   // then multiplied the result by zero. The branch is uniform across a whole
   // mesh (the mask is a vertex attribute that is 1 or 0 per model, never in
   // between), so it is exactly the shape a GPU predicts well.
-  if (vBaked.y > 0.5) {
-    base *= 1.0 + variationAmount * (valueNoise(vPosW * variationScale) - 0.5);
+  if (fragmentInputs.vBaked.y > 0.5) {
+    base *= 1.0 + uniforms.variationAmount
+      * (valueNoise(fragmentInputs.vPosW * uniforms.variationScale) - 0.5);
   }
   #endif
-  #endif
-  vec3 col = base * light;
+  var col = base * light;
 
   // Soft shoulder: several lights overlapping (or a torch at point-blank
   // range) would otherwise clip to flat white and destroy the palette. This
   // compresses everything above 0.75 into the remaining headroom, so hot
   // spots stay tinted by the light that made them.
-  vec3 over = max(col - 0.75, 0.0);
-  col = min(col, vec3(0.75)) + 0.25 * over / (1.0 + over);
+  let over = max(col - 0.75, vec3f(0.0));
+  col = min(col, vec3f(0.75)) + 0.25 * over / (1.0 + over);
 
   // Hard-edged rim highlight (step, not smooth — keeps colors flat), and
   // deliberately NOT applied to near-level surfaces.
@@ -702,9 +711,10 @@ void main() {
   // the kit, ~24 deg (BuildingKit.gableRoof). Sculpted banks in between keep
   // most of theirs, and on a slope the boundary is broken up rather than being
   // a clean circle. Smooth, so a gentle rise doesn't draw an edge of its own.
-  vec3 viewDir = normalize(camPos - vPosW);
-  float rim = 1.0 - max(dot(viewDir, n), 0.0);
-  col += base * rimColor * step(0.72, rim) * (1.0 - smoothstep(0.90, 0.99, level));
+  let viewDir = normalize(uniforms.camPos - fragmentInputs.vPosW);
+  let rim = 1.0 - max(dot(viewDir, n), 0.0);
+  col += base * uniforms.rimColor
+    * step(0.72, rim) * (1.0 - smoothstep(0.90, 0.99, level));
 
   // Toon specular: Blinn half-vector against the key light, quantized into
   // two hard bands (bright core + faint halo) and gated by the same shadow
@@ -712,9 +722,9 @@ void main() {
   // Added after the soft shoulder on purpose: a highlight is allowed to
   // blow past the 0.75 ceiling, that's what makes it read as a shine.
   // Matte materials carry specColor 0 and this contributes nothing.
-  vec3 h = normalize(viewDir - lightDir);
-  float spec = pow(max(dot(n, h), 0.0), specShininess);
-  col += specColor * band(spec, 2.0) * shadow;
+  let h = normalize(viewDir - uniforms.lightDir);
+  let spec = pow(max(dot(n, h), 0.0), uniforms.specShininess);
+  col += uniforms.specColor * band(spec, 2.0) * shadow;
 
   // Translucency: light that came through the surface instead of off it. Two
   // terms multiply. dot(viewDir, lightDir) is how close the eye is to
@@ -728,11 +738,12 @@ void main() {
   // reach), and added past the soft shoulder for the same reason the specular
   // is — a lit awning is allowed to be the brightest thing in the frame.
   // Opaque materials carry transColor 0 and this contributes nothing.
-  float through = max(dot(viewDir, lightDir), 0.0) * max(dot(n, lightDir), 0.0);
-  col += transColor * band(through, 2.0) * shadow;
+  let through = max(dot(viewDir, uniforms.lightDir), 0.0)
+    * max(dot(n, uniforms.lightDir), 0.0);
+  col += uniforms.transColor * band(through, 2.0) * shadow;
 
   // Opaque unless this is glazing, and the whole of what makes a pane a pane.
-  float alpha = 1.0;
+  var alpha = 1.0;
 
 #ifdef CEL_GLASS
   // A window is two layers over one another and nothing else in the world is:
@@ -746,8 +757,8 @@ void main() {
   // from the map's own geometry. The sky half comes first because it is what
   // the cube does NOT hold — the bake draws no dome, so everything above the
   // roofline comes back with alpha 0 and this gradient is what is left there.
-  vec3 mirrored = reflect(-viewDir, n);
-  vec3 sky = mix(fogColor, skyZenithColor,
+  let mirrored = reflect(-viewDir, n);
+  var sky = mix(uniforms.fogColor, uniforms.skyZenithColor,
     smoothstep(0.0, 0.55, mirrored.y));
   // The sun in that sky, as a HALO rather than a disc, and it is a GLARE rather
   // than a stand-in for one.
@@ -764,8 +775,9 @@ void main() {
   //
   // Gated by the same shadow map as everything else — glass in a tower's shade
   // does not glare.
-  float halo = smoothstep(glassParams.z, 1.0, dot(mirrored, -lightDir));
-  sky += lightColor * halo * shadow;
+  let halo =
+    smoothstep(uniforms.glassParams.z, 1.0, dot(mirrored, -uniforms.lightDir));
+  sky += uniforms.lightColor * halo * shadow;
 
   // And the world, which is the half that makes a curtain wall read as glass
   // rather than as a tinted slab: the tower opposite, the street under it and
@@ -785,8 +797,13 @@ void main() {
   // fraction of the colour AND a fraction of the alpha; mixing toward that
   // colour directly would draw a dark seam around every roofline in the
   // reflection. Same arithmetic, and the same reason, as the composite below.
-  vec4 world = textureCube(reflectionCube, reflectBoxDir(mirrored, vPosW));
-  sky = mix(sky, world.rgb / max(world.a, 0.001), world.a * reflectProbe.w);
+  //
+  // textureSample and not textureSampleLevel: a ReflectionProbe's cube carries
+  // a mip chain (Babylon generates one unless asked not to), so an implicit LOD
+  // is the filtering the GLSL textureCube already had.
+  let city = textureSample(reflectionCube, reflectionCubeSampler,
+    reflectBoxDir(mirrored, fragmentInputs.vPosW));
+  sky = mix(sky, city.rgb / max(city.a, 0.001), city.a * uniforms.reflectProbe.w);
 
   // Schlick, and deliberately NOT banded. Every other term in this shader is
   // quantized and this one must not be: the band edge would be a contour line
@@ -794,8 +811,8 @@ void main() {
   // else — so it would slide over the glazing as the player walks, which is
   // exactly the artefact the rim light is gated off level surfaces to avoid.
   // The water's fresnel is smooth for the same reason and is the precedent.
-  float fres = glassParams.x + (1.0 - glassParams.x)
-    * pow(1.0 - max(dot(viewDir, n), 0.0), glassParams.y);
+  let fres = uniforms.glassParams.x + (1.0 - uniforms.glassParams.x)
+    * pow(1.0 - max(dot(viewDir, n), 0.0), uniforms.glassParams.y);
 
 #ifdef CEL_GLASS_BACKED
   // Glazing hung on a solid mass, and the whole saving is that the layer behind
@@ -819,31 +836,33 @@ void main() {
   // is then rejected before it is ever shaded. See getGlass's backed argument
   // in this file, and Build.pane for who may claim it and what it costs to
   // claim it wrongly.
-  col = mix(mix(glassBackdrop * light, col, glassParams.w), sky, fres);
+  col = mix(
+    mix(uniforms.glassBackdrop * light, col, uniforms.glassParams.w), sky, fres);
 #else
   // Composite the two layers into one colour and one alpha. The reflection
   // covers the tint, the tint covers what is behind the pane, and dividing by
   // the total is what keeps the blend from darkening the result twice — the
   // rasterizer is about to multiply the colour by this alpha, so what goes out
   // has to be the layers' colour rather than their contribution.
-  float tint = glassParams.w;
+  let tint = uniforms.glassParams.w;
   alpha = fres + tint * (1.0 - fres);
   col = (sky * fres + col * tint * (1.0 - fres)) / max(alpha, 0.001);
 #endif
 #endif
 
-  #endif // CEL_INK — everything above is the lit path the ink skips
+  #endif
+  // CEL_INK — everything above is the lit path the ink skips
 
   // --- atmosphere ---
-  float dist = length(vPosW - camPos);
+  let dist = length(fragmentInputs.vPosW - uniforms.camPos);
 
   // Low-lying ground mist: thickest at the floor, builds up with distance.
   // The ramp is deliberately long so lit ground near the player stays
   // readable and only the middle distance turns to soup.
-  float mist = mistParams.y
-    * exp(-max(vPosW.y, 0.0) / max(mistParams.x, 0.001))
+  let mist = uniforms.mistParams.y
+    * exp(-max(fragmentInputs.vPosW.y, 0.0) / max(uniforms.mistParams.x, 0.001))
     * clamp((dist - 6.0) / 45.0, 0.0, 1.0);
-  col = mix(col, mistColor, clamp(mist, 0.0, 0.9));
+  col = mix(col, uniforms.mistColor, clamp(mist, 0.0, 0.9));
 
   // Theme-tinted distance fog — reaches full strength so far walls vanish.
   //
@@ -851,11 +870,12 @@ void main() {
   // and a half-transparent pane in full fog still comes out right: whatever is
   // behind it is at least as far away and has already been mixed to the same
   // fogColor, so blending fog over fog lands on fog whatever the weight is.
-  float fog = clamp((dist - fogParams.x) / (fogParams.y - fogParams.x), 0.0, 1.0);
-  col = mix(col, fogColor, fog * fog);
+  let fog = clamp((dist - uniforms.fogParams.x)
+    / (uniforms.fogParams.y - uniforms.fogParams.x), 0.0, 1.0);
+  col = mix(col, uniforms.fogColor, fog * fog);
 
   // Last thing before the write, because the write is the quantiser.
-  gl_FragColor = vec4(dither(col), alpha);
+  fragmentOutputs.color = vec4f(dither(col), alpha);
 }
 `;
 
@@ -937,7 +957,7 @@ export interface GlassSpec {
 
 /**
  * One reflection probe, as a surface that samples it WITHOUT the parallax
- * correction needs it — which today is the water. See `PROBE_BOX_GLSL` for why
+ * correction needs it — which today is the water. See `celProbeBox` for why
  * that is a considered choice rather than an omission.
  *
  * `ReflectionSystem` hands the three over together because they are one fact:
@@ -970,9 +990,7 @@ export interface ProbeReflection extends CubeReflection {
  * all of them.
  */
 export class CelMaterialFactory {
-  /** Cache key for the one skinned+textured material (never a hex color). */
-  private static readonly SKINNED_KEY = "\0skinned";
-  /** Uniforms every cel material shares, flat or skinned. */
+  /** Uniforms every cel material shares, whatever its albedo path. */
   private static readonly UNIFORMS = [
     "world",
     "viewProjection",
@@ -1163,6 +1181,9 @@ export class CelMaterialFactory {
           attributes: [...CelMaterialFactory.ATTRIBUTES],
           uniforms: [...CelMaterialFactory.UNIFORMS],
           samplers: [...CelMaterialFactory.SAMPLERS],
+          // A ShaderMaterial defaults to GLSL and would look these up in a
+          // store nothing writes any more; see the header.
+          shaderLanguage: ShaderLanguage.WGSL,
         },
       );
       mat.setColor3("baseColor", Color3.FromHexString(hex));
@@ -1206,6 +1227,7 @@ export class CelMaterialFactory {
           attributes: [...CelMaterialFactory.ATTRIBUTES],
           uniforms: [...CelMaterialFactory.UNIFORMS],
           samplers: [...CelMaterialFactory.SAMPLERS],
+          shaderLanguage: ShaderLanguage.WGSL,
         },
       );
       mat.setColor3("baseColor", Color3.FromHexString(hex));
@@ -1271,6 +1293,7 @@ export class CelMaterialFactory {
           uniforms: [...CelMaterialFactory.UNIFORMS],
           samplers: [...CelMaterialFactory.SAMPLERS],
           defines: ["#define CEL_INK"],
+          shaderLanguage: ShaderLanguage.WGSL,
         },
       );
       // Culling is ON and it is the FRONT faces that go: an inverted hull is
@@ -1338,6 +1361,7 @@ export class CelMaterialFactory {
           attributes: [...CelMaterialFactory.ATTRIBUTES],
           uniforms: [...CelMaterialFactory.UNIFORMS],
           samplers: [...CelMaterialFactory.SAMPLERS],
+          shaderLanguage: ShaderLanguage.WGSL,
         },
       );
       mat.setColor3("baseColor", Color3.FromHexString(hex));
@@ -1436,6 +1460,7 @@ export class CelMaterialFactory {
           // header, and `CEL_GLASS_BACKED` in the fragment shader for why its
           // colour needs nothing from the framebuffer to be right.
           needAlphaBlending: !backed,
+          shaderLanguage: ShaderLanguage.WGSL,
         },
       );
       // Biased toward the eye by the depth buffer's own step, which is what
@@ -1456,41 +1481,6 @@ export class CelMaterialFactory {
       this.applyReflection(mat);
       this.glassRecipes.set(mat, { hex, glass, backed });
       this.cache.set(cacheKey, mat);
-    }
-    return mat;
-  }
-
-  /**
-   * The one cel material for skinned, textured meshes (the imported player
-   * body). Same lighting/fog/rim pipeline as the flat colors, but the albedo
-   * comes from a texture and the vertex shader is bone-deformed — ShaderMaterial
-   * auto-adds the bone attributes, defines, and `boneSampler`/`mBones` uniforms
-   * when it binds a mesh with a skeleton. Cached under a sentinel key in the
-   * same map so environment, point-light, and camera updates reach it.
-   */
-  getSkinned(tex: BaseTexture): ShaderMaterial {
-    let mat = this.cache.get(CelMaterialFactory.SKINNED_KEY);
-    if (!mat) {
-      mat = new ShaderMaterial(
-        "cel-skinned",
-        this.scene,
-        { vertex: "cel", fragment: "cel" },
-        {
-          attributes: [...CelMaterialFactory.ATTRIBUTES, "uv"],
-          uniforms: [...CelMaterialFactory.UNIFORMS],
-          samplers: ["baseColorTex", ...CelMaterialFactory.SAMPLERS],
-          defines: ["#define CEL_TEXTURED"],
-        },
-      );
-      mat.setTexture("baseColorTex", tex);
-      this.applyCamera(mat);
-      this.applyWind(mat);
-      this.applyEnvironment(mat);
-      this.applyPointLights(mat);
-      this.applyShadow(mat);
-      this.applySpec(mat, null);
-      this.applyTranslucency(mat, null);
-      this.cache.set(CelMaterialFactory.SKINNED_KEY, mat);
     }
     return mat;
   }
@@ -1545,6 +1535,7 @@ export class CelMaterialFactory {
             "#define CEL_GROUND_TEX",
             ...(bump ? ["#define CEL_BUMP"] : []),
           ],
+          shaderLanguage: ShaderLanguage.WGSL,
         },
       );
       mat.setTexture("baseColorTex", tex);
@@ -1810,7 +1801,7 @@ export class CelMaterialFactory {
   /**
    * Materials that sample the depth map but are not cel materials — the grass
    * and the water, each of which reproduces the cel lighting model in its own
-   * shader (see `SHADOW_GLSL`).
+   * shader (see `celShadow`).
    *
    * They cannot live in `this.cache`: that map is keyed by colour and its
    * entries are shared, permanent and created on demand, while these are one
@@ -2283,7 +2274,8 @@ const outlineEntries: { mesh: Mesh; width: number }[] = [];
  * coloured line work instead of a uniform black cut-out. The factory names
  * flat materials `cel-#rrggbb` (matte), `cel-gloss-#rrggbb` (specular) or
  * `cel-trans-#rrggbb` (translucent), which is how the colour is recovered
- * here; textured/skinned materials get the palette-neutral fallback ink.
+ * here; a ground-textured material has no palette colour to recover and gets
+ * the neutral fallback ink.
  */
 function outlineInkFor(mesh: Mesh): Color3 {
   return inkColorFor(mesh.material?.name ?? "");

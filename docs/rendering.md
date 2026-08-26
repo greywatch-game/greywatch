@@ -562,7 +562,7 @@ GPU.
 **The glazing is no longer the only thing that samples a probe.** The water
 takes one per body from a pool of its own, without the parallax correction and
 at an explicit LOD — see the water section below for why both of those invert
-here, and `CelShader`’s `PROBE_GLSL` for the uniforms and the Y flip the two
+here, and the `celProbe` include for the uniforms and the Y flip the two
 share.
 
 **There is one probe per GLAZED BLOCK, and that count is the whole design.**
@@ -721,9 +721,9 @@ They reproduce the cel lighting model in their own shaders and went without a
 shadow term entirely, which showed as a cottage's shadow stopping dead at the
 edge of a grass rect and at the waterline. The lookup and the band function are
 shared so all three sample one depth map with one kernel — as the WGSL includes
-`celShadow` and `celBand` for a shader that has been ported, and as the GLSL
-strings `SHADOW_GLSL` / `BAND_GLSL` that `CelShader` still exports for the two
-that have not. `CelMaterialFactory.registerShadowConsumer` /
+`celShadow` and `celBand` for the cel shader and the grass, and as the GLSL
+strings `SHADOW_GLSL` / `BAND_GLSL` that `CelShader` still exports for the
+water, which is the one surface not yet ported. `CelMaterialFactory.registerShadowConsumer` /
 `unregisterShadowConsumer` is how a non-cel material joins the three per-frame
 uploads. **Registering is half the contract and unregistering is the other
 half**: grass and water are rebuilt every round, and a material left registered
@@ -995,16 +995,37 @@ sampler rule in the constraints below. `SHADOW_UNIFORM_NAMES`,
 TypeScript in `CelShader.ts` for exactly that reason, and the two halves have to
 be edited together.
 
-**Sample with `textureSampleLevel` and never `textureSample`.** WGSL's
-uniformity analysis rejects an implicit-LOD sample reached through non-uniform
-control flow, which is what every early-out in a post pass and every `#ifdef`'d
-fetch in the cel shader produces — the error reads as a real bug and names a
-shader that has been correct for years. An explicit LOD carries no such
-requirement, none of these textures has a mip chain, and Babylon's own WGSL
-post shaders do exactly this. The alternative is `#define
-DISABLE_UNIFORMITY_ANALYSIS`, which turns the diagnostic off wholesale; prefer
-the explicit LOD where a LOD is what you meant, and keep the define for the
-derivative work (`fwidth`, `facetNormal`) where there is nothing else to say.
+**Sample with `textureSampleLevel` wherever the texture has no MIP CHAIN, and
+that is most of them.** WGSL's uniformity analysis rejects an implicit-LOD
+sample reached through non-uniform control flow, which is what every early-out
+in a post pass and every `#ifdef`'d fetch in the cel shader produces — the error
+reads as a real bug and names a shader that has been correct for years. An
+explicit LOD carries no such requirement, and Babylon's own WGSL post shaders do
+exactly this. The shadow map, the post chain's inputs and the depth field all
+carry a single level, so level 0 is not a compromise there: it is what the GLSL
+meant.
+
+**Three fetches in the game are the exception, and for them the implicit LOD IS
+the filtering.** The ground albedo and its height map are `DynamicTexture`s
+built with mips and `anisotropicFilteringLevel = 8`, and a `ReflectionProbe`'s
+cube generates a chain unless it is asked not to. `textureSampleLevel(…, 0.0)`
+on any of the three would delete that chain — and on the height map it would
+delete an argument as well, because `perturbNormal` relies on two taps a texel
+apart converging with distance and states that as the whole reason it needs no
+explicit fade. So the cel fragment samples those three implicitly and carries
+`#define DISABLE_UNIFORMITY_ANALYSIS`, which it owes anyway for `fwidth` and
+`facetNormal`. **The rule is about what you MEANT**: reach for the explicit LOD
+when a LOD is what you meant, and keep the define for the places where a
+derivative is.
+
+**Every `#ifdef` over a uniform declaration is another UBO LAYOUT.** The cel
+shader has six defines and compiles six leftover UBOs, each laid out from the
+declarations that survived the preprocessor for that variant — so moving a
+uniform into or out of an `#ifdef` moves the offsets for that variant alone, and
+a mistake shows up on one material on one map. It is also what makes the sampler
+rule tractable there: a variant's sampler declarations sit under exactly the
+defines its `samplers` list is built from, so the two halves are edited
+together or not at all.
 
 **An early `return` must return the struct**, `return fragmentOutputs;` and
 never a bare `return;` — the processor appends its own

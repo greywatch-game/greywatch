@@ -78,7 +78,8 @@ whether physics has arrived. Do not reintroduce a fallback.
 `optimizeDeps.exclude` from `vite.config.ts`.** Both break a DEV session only,
 both blame a subsystem that is not at fault, and both hide themselves on a
 restart — the first silently unshaded the glow layer and every `StandardMaterial`
-in the game.
+in the game. `src/` now holds **zero** of them and `npm run build` fails on a
+new one (`scripts/check-deep-imports.mjs`); `server/` is outside that scope.
 
 **There is no rigged character asset in the tree.** `GlbSoldier.ts`,
 `entities/soldier/` and `@babylonjs/loaders` were deleted when first person
@@ -96,7 +97,7 @@ thing twice, and the deep-import trap in full.
 npm install
 npm run dev        # Vite dev server
 npm run typecheck  # tsc --noEmit (strict, noUnusedLocals/Parameters)
-npm run build      # typecheck + production build to dist/
+npm run build      # gates + typecheck + production build to dist/
 npm run preview    # serve the production build
 npm run icons      # regenerate public/icons (committed)
 npm run shots      # re-photograph the maps for the menu backdrop (committed)

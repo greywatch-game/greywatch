@@ -279,7 +279,7 @@ export class ReflectionSystem {
     if (sites.length === 0) return [];
 
     // No box: the water samples the cube at infinite distance and states why
-    // in `PROBE_BOX_GLSL`. Nothing here is per-site except the probe itself.
+    // in `celProbeBox`. Nothing here is per-site except the probe itself.
     const opaque = editor ? [] : opaqueWorld(map);
 
     const started = performance.now();

@@ -3,7 +3,7 @@
  * before it is written out.
  * Owns: the ARGUMENT for the whole of it, in both languages. The WGSL the
  * surface shaders include is `celDither` in `wgsl/includes.ts`, and
- * `DITHER_GLSL` below is the same three lines for the two shaders that have
+ * `DITHER_GLSL` below is the same three lines for the one shader that has
  * not been ported yet. Owns no state, no uniforms and no plugin — there is
  * nothing here to configure.
  * Invariant: it must run on the value being QUANTISED, which means last, and it

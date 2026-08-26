@@ -328,14 +328,15 @@ fn dither(col: vec3f) -> vec3f {
  * The mesh transform, and these two entries are OURS rather than Babylon's for
  * a reason that is a project rule and not a preference.
  *
- * The GLSL path deep-imports `@babylonjs/core/Shaders/ShadersInclude/
- * instances{Declaration,Vertex}`, which are two of the four grandfathered deep
- * imports in the tree. The WGSL twins would be two MORE subpaths, and
+ * The GLSL path deep-imported `@babylonjs/core/Shaders/ShadersInclude/
+ * instances{Declaration,Vertex}`, which were two of the four grandfathered deep
+ * imports in the tree. The WGSL twins would have been two MORE subpaths, and
  * `CLAUDE.md` forbids a new one absolutely — a deep static import into
  * `@babylonjs/core` breaks a DEV session only, blames a subsystem that is not
- * at fault, and hides itself on a restart. So the port ends with FEWER of them
- * rather than more, and what these cost instead is fifteen lines that have to
- * be kept honest.
+ * at fault, and hides itself on a restart. So the port ended with NONE of them
+ * rather than six, and what these cost instead is fifteen lines that have to
+ * be kept honest. `scripts/check-deep-imports.mjs` keeps the count at zero,
+ * which is only an enforceable rule because these exist.
  *
  * **They mirror `ShadersWGSL/ShadersInclude/instances{Declaration,Vertex}.js`
  * of `@babylonjs/core` 9.19.1**, minus the branches nothing in this game

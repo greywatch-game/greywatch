@@ -27,6 +27,7 @@ own dev server.
 ```
 node plans/webgpu-ref/gate.mjs [map...] [--headed] [--uncap]
 node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check]
+node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
 node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
 ```
@@ -38,6 +39,15 @@ node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
 - **`bank.mjs`** takes the reference frames into `ref/<map>-<vantage>.png`, and
   refuses to write one that is not reproducible. `--check` re-takes and grades
   against what is banked instead of replacing it.
+- **`shaders.mjs`** compiles every shader on every map and fails on anything
+  the driver called an error. It asks the FACTORY rather than the frame — walk
+  the cel cache, hand each material a probe mesh, poll `isReady` — so it reaches
+  the variants a still camera cannot see, and it asserts that the six cel
+  define-shapes were all compiled somewhere across the four maps. It also mints
+  the one shape no shipped map does: a ground albedo with no height map beside
+  it, which both call sites happen to pass, and which would otherwise rot
+  uncompiled. Exits non-zero, so it stands in front of a merge beside
+  `gate.mjs`.
 - **`vantages.mjs`** is the table of poses `bank.mjs` shoots, one row per frame
   with what that frame is FOR written beside it. It is data and has no CLI.
 - **`diff.mjs`** says how much and where two PNGs differ. `bank.mjs --check`
@@ -178,6 +188,13 @@ silently replaces the thing that would have caught the shader change.
 
 ## What is NOT in it
 
+- **Nothing here holds a mesh with NO vertex colour buffer.** `bank.mjs`
+  disables every bot rig and disposes the zones before it places a camera, and
+  it never spawns the player — so the rigs, the viewmodel, the grenades and
+  every effect mesh are outside the whole set, and with them the `vBaked.y >
+  0.5` branch not taken. That half of the cel shader is covered by the
+  whole-scene twin swap over a PAUSED live round instead; `VERIFYING.md` has the
+  recipe and the one trap in it.
 - **Nothing here is a frame TIME.** `gate.mjs` reports those and they are real
   on this machine, but they are not what a reference IMAGE is for. Quote the
   gate's `warmFps`, never a number read off a bank run.

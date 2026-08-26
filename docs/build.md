@@ -127,10 +127,9 @@ whoever wrote it.
 
 Anything needing a Babylon shader's source must **wait for Babylon to import
 it** (`OutlineFog.applyWanted` is the worked example) rather than reach for it
-directly. The two `ShadersInclude/bones*` imports in `CelShader.ts` predate this
-and are load-bearing; do not take them as licence for more.
+directly.
 
-**The WebGPU port ends with FEWER of them rather than more, and the grass is the
+**The WebGPU port ended with NONE of them rather than six, and the grass is the
 worked example of how.** It used to deep-import `ShadersInclude/instances*` for
 the GLSL includes its vertex stage pastes in; the WGSL twins would have been two
 NEW subpaths, so `src/shaders/wgsl/includes.ts` registers our own
@@ -138,7 +137,21 @@ NEW subpaths, so `src/shaders/wgsl/includes.ts` registers our own
 mirroring `ShadersWGSL/ShadersInclude/instances{Declaration,Vertex}.js` minus
 the branches this game never compiles, and the header names the file and the
 version so an upgrade has something to diff. That is the shape any future need
-for a Babylon include should take.
+for a Babylon include should take. The other pair, `ShadersInclude/bones*`, left
+with the skinned cel variant — there is no rigged asset in the tree, so nothing
+had called it for a long time.
+
+**`scripts/check-deep-imports.mjs` is what keeps the count at zero**, and it runs
+from `npm run build` beside the collision check. It is the only absolute rule in
+the project that `tsc` cannot see: a subpath import compiles, typechecks and
+reviews clean, and what it breaks is a session on somebody else's machine. The
+gate matches an import STATEMENT rather than the string, so the several places
+that argue about these paths in prose do not fail the build for naming them, and
+it is scoped to `src/` and `main.ts` — `server/` imports `NullEngine` by subpath
+DELIBERATELY, because there is no Vite optimizer in front of a headless process
+and the barrel would cost seconds of boot for a class it does not use. **An
+empty allow-list is the only kind that stays empty**, which is why the gate went
+in on the milestone that emptied it rather than being left for later.
 
 The reason this one is stated as an absolute rather than as a caution: the
 symptom appears in a subsystem that has nothing to do with the import, on a

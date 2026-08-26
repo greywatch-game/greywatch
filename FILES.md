@@ -559,7 +559,8 @@ src/
                         #   Network-first for the navigation, cache-first for
                         #   the content-hashed rest
   shaders/
-    CelShader.ts        # Custom cel ShaderMaterial + outline helper
+    CelShader.ts        # Custom cel ShaderMaterial + outline helper. Both
+                        #   stages WGSL; six defines, six UBO layouts
     OutlineFog.ts       # Bakes the map's fog into Babylon's outline pass, so
                         #   ink fades per PIXEL instead of per merged mesh
     EmissiveFog.ts      # The same fog as a material plugin on every unlit

@@ -126,8 +126,8 @@ probe path, and the thing it stood in for now runs.
 
 **The M2 reference set exists**, taken headless on that box, with the harness
 committed beside it at `plans/webgpu-ref/` — `gate.mjs`, `bank.mjs`,
-`diff.mjs`, `pipelines.mjs` and the `vantages.mjs` table, over a shared
-`harness.mjs`. Three findings came out of building it and each is a way a
+`shaders.mjs` (M5's), `diff.mjs`, `pipelines.mjs` and the `vantages.mjs` table,
+over a shared `harness.mjs`. Three findings came out of building it and each is a way a
 reference set can be confidently wrong:
 
 8. **A frozen frame needs its clocks PINNED, not stopped, and there are seven
@@ -330,6 +330,72 @@ grass's own GLSL original.
     nine tenths of every grass pixel, so a point light lands under one LSB and
     rounds away. Written up in `VERIFYING.md` beside the technique it guards.
 
+## M5 landed
+
+**The cel shader is WGSL, the long pole is paid, and the tree now holds ZERO
+deep imports into `@babylonjs/core`.** Both stages are hand-written WGSL in
+`ShaderStore.ShadersStoreWGSL`, all six materials state
+`shaderLanguage: ShaderLanguage.WGSL`, and the four-map gate, all sixteen banked
+frames and a whole-scene diff against the shader's own GLSL original are clean.
+The five shared includes did their job: the fragment reaches `celShadow`,
+`celBand`, `celDither` and — under `CEL_GLASS` — `celProbe` and `celProbeBox`,
+so nothing was transliterated twice.
+
+**`getSkinned` was dead and deleting it paid for the deep-import gate.** The
+plan asked for this to be confirmed rather than assumed; it has no caller
+anywhere in the tree, which is what `CLAUDE.md`'s "no rigged character asset"
+already implied. Out with it went `CEL_TEXTURED`, the `uv` attribute and the two
+`ShadersInclude/bones*` imports — the last two subpaths in `src/`. So
+`scripts/check-deep-imports.mjs` now runs from `npm run build`, and it went in
+on the milestone that emptied the list because **an empty allow-list is the only
+kind that stays empty**.
+
+**Four things M5 found:**
+
+19. **An implicit LOD is sometimes what was MEANT, and item 13's rule needed the
+    exception written next to it.** "Sample with `textureSampleLevel` and never
+    `textureSample`" is right for the shadow map and the post chain, and wrong
+    for exactly three fetches: the ground albedo and its height map are
+    `DynamicTexture`s built with mips and 8x anisotropy, and a `ReflectionProbe`
+    cube generates a chain unless asked not to. On the height map it would have
+    deleted an ARGUMENT as well — `perturbNormal` rests on two taps a texel
+    apart converging with distance and says so as the reason it needs no
+    explicit fade. So the cel fragment samples those three implicitly and
+    carries `#define DISABLE_UNIFORMITY_ANALYSIS`, which it owed anyway for
+    `fwidth` and `facetNormal`. `docs/rendering.md` now states the rule as being
+    about what you meant.
+20. **A reference bank taken from the deploy lid cannot hold a mesh with no
+    vertex COLOUR buffer, and that is half the cel shader.** `bank.mjs` disables
+    every rig and never spawns the player, so no banked frame contains a rig, a
+    viewmodel, a grenade or an effect mesh — which is `vBaked` reading the
+    disabled attrib's (0,0,0,1), the `vBaked.y > 0.5` branch NOT taken,
+    occlusion at 1 and the sway at 0. Item 14's technique covers it at whole-
+    scene scale: spawn, play, `g.pause()` (offline a pause genuinely holds the
+    world, which `freeze` does not), twin every cel material off the GLSL source
+    at the previous commit with its uniforms carried across, swap and diff. **0%
+    of pixels on all four maps**, with 65-279 bufferless meshes in frame and the
+    gloss, translucent, ink, ground, bump and both glass variants with them.
+21. **A whole-scene material swap re-decides the VIEWMODEL's z-fights, and it
+    reads exactly like a real finding.** `Game` sets its front-to-back
+    comparator on group 0 only, so the viewmodel group keeps Babylon's
+    `PainterSortCompare` — which orders by MATERIAL ID. Handing the weapon 54
+    freshly minted materials moved 0.16% of the frame at worst 151/255, confined
+    to the lower right. The control that settled it is finding 18's, pointed at
+    the swap rather than at a forced branch: twins built from the shader UNDER
+    TEST moved 0.159% at worst 147/255 — the same number to three figures. Skip
+    `renderingGroupId !== 0` and nothing is lost, because the weapon is matte
+    and glossy cel paint on bufferless meshes, which is what the rigs beside it
+    already are.
+22. **A variant nobody draws is a variant nobody compiles, so the plan's
+    shader-compile smoke script is now `plans/webgpu-ref/shaders.mjs`** — it
+    asks the FACTORY rather than the frame, hands every cached material a probe
+    mesh and polls `isReady`, then reads `getCompilationInfo()` off every
+    `GPUShaderModule` the page made. Zero driver errors on all four maps. It
+    also turned up the one cel shape **no shipped map mints**:
+    `CEL_GROUND_TEX` without `CEL_BUMP`, because both call sites happen to pass
+    a height map. The script mints it rather than dropping it from the list,
+    which is the difference between eight variants compiling and five.
+
 ---
 
 ## Verified groundwork
@@ -446,7 +512,7 @@ So the engine swap lands first with all nine shaders still in GLSL. This is
 | **M2** ✅ | All four maps up. **The GLSL-under-WebGPU reference set is banked** — sixteen frames, the four menu vantages plus twelve chosen for the shader path each puts in frame (`plans/webgpu-ref/vantages.mjs`). Coldharbour's 40 cube probes bake in one 130–150 ms frame | The most valuable artefact of the migration — later diffs isolate *shader* errors by construction. **Four frames could not have done it**: the backdrops hold no glazing at range, no lamp-lit street, no gust and almost no water |
 | **M3** ✅ | **First WGSL** — the three post fragments (`HorrorPost`, `GodRays`, `MotionBlur`) | Dialect, `PostProcess` wiring, `onApply` binding. Standalone, no attributes, no defines. **The single-exit rewrite was not needed** — `return fragmentOutputs;` is legal and the early-outs stay. Sixteen banked frames at 0.000/255, and the three forced branches a frozen frame cannot reach diffed byte-identical against their own GLSL originals |
 | **M4** ✅ | **First WGSL surface** — the five shared includes, our own `celInstances` pair, then `GrassShader` | Include strategy, `instances*` twin, `MAX_PUSHERS`, `array<vec3f,N>` + `setArray3`. Sixteen banked frames at 0.000, the read-back assertion exact on both array shapes, and the pushers and the point lights — neither of which is in any banked frame — byte-identical against the GLSL original. **A uniform array's size must be a literal or a `#define`**, which cuts against item 4 |
-| **M5** | **`CelShader`** — author variant by variant, land once | The long pole: ~620 shader lines, 29 uniforms, 8 materials, 6 defines |
+| **M5** ✅ | **`CelShader`** — both stages WGSL, landed once. `getSkinned` deleted (dead), taking `CEL_TEXTURED` and the last two deep imports with it | The long pole: ~620 shader lines, 8 materials, 6 defines. Sixteen banked frames at 0.000, four-map gate clean, and a whole-scene diff against the GLSL original at 0% on all four maps — which is where the branches a banked frame CANNOT hold live: every rig, the viewmodel and every effect mesh carries no colour buffer |
 | **M6** | `WaterShader` → `OutlineFog` → `EmissiveFog`. **Delete the scaffold**: assert `engine._glslang === undefined && engine._tintWASM === undefined` after a four-map sweep | Complete |
 | **M7** | Re-tune `GLASS_DEPTH_UNITS`, outline z-offsets, MSAA/memory. Re-measure everything `FINDINGS.md` claims | Re-derives what the depth-format change invalidated |
 | **M8** | Docs, four-map parity sign-off | — |
@@ -476,7 +542,7 @@ different milestone's work arriving unannounced.
 | 6 ✅ | `src/shaders/wgsl/includes.ts` *(new)* | BAND / SHADOW / PROBE / PROBE_BOX / DITHER as WGSL includes, plus the `celInstances` pair item 8 needed. The five carry the ARGUMENT now and the GLSL originals carry a pointer, so there is one copy of each rather than two for three milestones | 1.5 |
 | 7 ✅ | `src/shaders/Dither.ts` | Body cannot move until the cel and the water go, so the WGSL twin is in (6) and this keeps the argument — the 60-line header, plus the three shaping decisions that were on the constant and are now above it | 0.25 |
 | 8 ✅ | `src/shaders/GrassShader.ts` | Both stages; our own `celInstances` twins rather than two new deep imports; `#extension` and `precision` both gone. The counts are interpolated rather than `#define`d — see finding 15 | 1.5 |
-| 9 | `src/shaders/CelShader.ts` | **The long pole.** Fragment `:462-966`, 6 defines, 3 albedo paths, glass composite, `facetNormal()`. Factory needs `shaderLanguage` on 7 `new ShaderMaterial` sites and nothing else | 5 |
+| 9 ✅ | `src/shaders/CelShader.ts` | **The long pole**, and it came in under its estimate because M3 and M4 had already paid for the dialect. 6 defines, 2 albedo paths (the third went with `getSkinned`), glass composite, `facetNormal()`. `shaderLanguage` on 6 sites, not 7 | 5 |
 | 10 | `src/shaders/WaterShader.ts` | Wave field, `domeAt`, Schlick, foam. Long but mostly arithmetic | 2.5 |
 | 11 | `src/shaders/OutlineFog.ts` | `patch()` keeps structure; retarget to `ShadersStoreWGSL` (`:97, 111, 266`); rewrite `VERTEX_BODY`; declare the varying in **both** stages. `dropCompiled` needs **re-verification, not rewriting** | 2 |
 | 12 | `src/shaders/EmissiveFog.ts` | `getCustomCode(type, lang)` / `getUniforms(lang)` / `isCompatible` all take a language arg (`materialPluginBase.pure.d.ts:52/115/198`) — branch cleanly. **`isCompatible` is what the M0 scaffold stands in for**, so this item and the `ForceGLSL` line land together; `gl_FragColor` becomes `fragmentOutputs.color`, and `vPositionW`/`vEyePosition` become `fragmentInputs.`/`uniforms.` | 1 |
@@ -548,18 +614,20 @@ The four grandfathered imports (`CelShader.ts:58-59`, `GrassShader.ts:25-26`)
 point at `Shaders/ShadersInclude/*`. The WGSL twins are four *new* subpaths,
 which `CLAUDE.md:77-82` and `docs/build.md:100-125` forbid absolutely.
 
-- **Bones: check whether `getSkinned` (`CelShader.ts:1561`) has any caller.** It
-  appears to be dead — `CLAUDE.md:83-87` records that the rigged asset and
-  `@babylonjs/loaders` were deleted. If so, deleting it removes both bone
-  includes, both deep imports and the question. Confirm before relying on it.
+- **Bones: `getSkinned` was dead and is gone (M5).** Confirmed by grep rather
+  than assumed, which is what `CLAUDE.md:83-87` already implied. Deleting it took
+  `CEL_TEXTURED`, the `uv` attribute and both bone includes with it.
 - **Instances genuinely load-bearing** (the grass field is thin-instanced):
   register our own `celInstances` (~short — read `world0..world3`, build
   `finalWorld`). Header names the Babylon file and version it mirrors, so an
   upgrade has something to diff.
-- **Add a grep gate to `npm run build`**, beside `check-collision.mjs`, failing
-  on any `@babylonjs/core/` subpath in `src/` and `main.ts`. This is the only
-  absolute rule in the project that `tsc` cannot see and that reproduces on
-  someone else's machine. Overdue.
+- **A grep gate runs from `npm run build`** beside `check-collision.mjs`
+  (`scripts/check-deep-imports.mjs`, M5), failing on any `@babylonjs/core/`
+  subpath in `src/` and `main.ts`. This is the only absolute rule in the project
+  that `tsc` cannot see and that reproduces on someone else's machine. It went in
+  on the milestone that emptied the list: an empty allow-list is the only kind
+  that stays empty. `server/` is out of scope — it imports `NullEngine` by
+  subpath on purpose.
 - **Leave `optimizeDeps` alone** (`vite.config.ts:257-277`). Do not add an
   `include:` workaround — same optimizer, third side, and `docs/build.md`
   already records both other failure modes.
@@ -713,7 +781,12 @@ most important re-run in the plan.
 logic gate): the deep-import grep, and a **shader-compile smoke script** that
 forces all eight cel variants + grass + water + three post passes + outline to
 compile and asserts zero `getCompilationInfo` errors. That is the only thing
-standing between "typecheck passes" and "the map is invisible".
+standing between "typecheck passes" and "the map is invisible". **Both landed at
+M5** — `scripts/check-deep-imports.mjs` and `plans/webgpu-ref/shaders.mjs`. The
+smoke script asks the FACTORY rather than the frame, because a variant nobody
+draws is a variant nobody compiles; it also mints the one cel shape no shipped
+map does (`CEL_GROUND_TEX` with no `CEL_BUMP`), which is the difference between
+eight variants compiling and five.
 
 **`npm run shots` is a hard dependency and it IS broken on a GPU-less box**,
 confirmed by running it: it times out at `waitForFunction` waiting for a map
@@ -790,7 +863,11 @@ merges until the four-map sweep signs off. What needs planning is the
    `docs/rendering.md:149-176` shows can hide for a whole map. *Mitigation: the
    M2 reference set is the entire defence and is worth the days it costs; diff
    per variant and land only when all eight are clean; run the uniform read-back
-   assertion at M4 so light plumbing is already ruled out.*
+   assertion at M4 so light plumbing is already ruled out.* **Discharged at M5**,
+   and the reference set was not on its own enough: no banked frame holds a mesh
+   with no vertex colour buffer, so the whole-scene twin swap over a paused live
+   round is what covers the rigs, the viewmodel and the effect meshes. 0% on all
+   four maps, with the variants enumerated by `shaders.mjs` rather than assumed.
 3. ~~**Headless verification collapsing**~~ — **this one has already happened,
    so it is no longer a risk to manage but a constraint to plan around.**
    Headless renders nothing on the dev machine (see Verification). The

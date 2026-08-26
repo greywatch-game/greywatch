@@ -520,6 +520,28 @@ is one machine's:
   and nothing else. Then swap `mesh.material` between them and diff. The grass
   came back byte-identical this way with eight pushers and four point lights
   forced on, neither of which is in any banked frame.
+- **A whole-scene material swap is the cel shader's version of the same
+  technique, and it reaches what a banked frame cannot: `bank.mjs` disables
+  every rig and never spawns the player, so no reference frame in the set holds
+  a single mesh WITHOUT a vertex colour buffer.** That is `vBaked` reading the
+  disabled attrib's (0,0,0,1) on every rig, the viewmodel, every grenade and
+  every effect mesh — the `vBaked.y > 0.5` branch not taken, occlusion at 1 and
+  the sway at 0. Spawn, play a few seconds, then `g.pause()`: offline a pause
+  genuinely holds the world, which `freeze` does not — it pins the clocks that
+  run in every state and would leave sixteen bots walking between the two grabs.
+  Then twin every cel material, swap, and diff. All four maps came back at 0% of
+  pixels with 65-279 bufferless meshes in frame.
+- **Skip `renderingGroupId !== 0` in that swap, and the reason is the TEST's.**
+  `Game` sets its front-to-back comparator on group 0 only, so the VIEWMODEL
+  group keeps Babylon's `PainterSortCompare`, which orders by MATERIAL ID —
+  hand the weapon 54 freshly minted materials and it re-decides a handful of
+  z-fights along its own coincident faces. It reads as a real finding: 0.16% of
+  the frame at worst 151/255, confined to the lower right where the gun is.
+  **The control that settles it is a twin built from the shader UNDER TEST**:
+  same source, new material objects, same swap — which moved 0.159% at worst
+  147/255, the same number to three figures. Nothing is lost by skipping the
+  group: the weapon is matte and glossy cel paint on meshes with no colour
+  buffer, which is exactly what the bot rigs standing beside it are.
 - **When a forced branch changes nothing, suspect the FORCING before the
   shader.** Both controls above read a clean 0% at first and both were the
   test's fault, in two different ways, and a byte-identical diff between two

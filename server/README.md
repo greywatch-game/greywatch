@@ -32,13 +32,17 @@ a server with no gate at all.
 `npm run build:server` runs Vite's SSR build rather than `tsc` emitting to disk,
 for three reasons that all bite otherwise:
 
-1. `CelShader.ts` imports `@babylonjs/core/Shaders/ShadersInclude/bonesDeclaration`
-   with no file extension. `@babylonjs/core` declares no `exports` map, so Node
-   resolves that as a literal path and fails. Vite resolves it.
-2. `TerrainField.ts` reads `import.meta.env.DEV`, which is a Vite substitution
+1. `TerrainField.ts` reads `import.meta.env.DEV`, which is a Vite substitution
    and `undefined` under bare Node.
-3. Babylon is 7 MB and the server uses a fraction of it; the SSR build
+2. Babylon is 7 MB and the server uses a fraction of it; the SSR build
    tree-shakes what is actually reachable.
+
+There used to be a third and it was the loudest: `CelShader.ts` imported
+`@babylonjs/core/Shaders/ShadersInclude/bonesDeclaration` with no file
+extension, and since `@babylonjs/core` declares no `exports` map, Node resolved
+that as a literal path and failed. The WGSL port deleted the last of those
+subpath imports and `scripts/check-deep-imports.mjs` now fails the build on a
+new one, so the reason is gone — the other two stand on their own.
 
 `ws` and Node builtins stay external — they are runtime dependencies, not
 things to inline.
