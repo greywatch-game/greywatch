@@ -163,18 +163,19 @@ in the same frame. Against 534 of 642 and 148 respectively for the two bugs.
 back the way a player does; one that calls it from `playing` measures the first
 map twice and reports clean.
 
-**The ink's TINT is the MAP's, and it is derived rather than authored, because an
-unlit line over a lit surface is only a line while it is the darker of the two.**
-`inkColorFor` returns `albedo * tint` and the ink carries no lighting at all —
-that is the whole of the `CEL_INK` branch, and Babylon's
-`fragmentOutputs.color = uniforms.color` from the other side — while the surface under it is `albedo * light`. So a
-constant tint inverts into a bright HALO the moment the light term falls under
-it, and it flips with the SHADOW rather than with distance: on Greyfen a trunk in
-the sun was outlined in ink and the same trunk two steps into the canopy's shade
-was outlined in something twice as bright as itself. Greyfen's own environment
-file records the re-lighting that caused it (ambient 0.7 → 0.24, key 1.12 →
-1.55) with no mention of this end of it, which is exactly why the number is no
-longer one somebody has to keep in step by hand.
+**The ink's TINT is the MAP's, and it is derived rather than authored, because
+an unlit line over a lit surface is only a line while it is the darker of the
+two.** `inkColorFor` returns `albedo * tint` and the ink carries no lighting at
+all — that is the whole of the `CEL_INK` branch, and Babylon's
+`fragmentOutputs.color = uniforms.color` from the other side — while the surface
+under it is `albedo * light`. So a constant tint inverts into a bright HALO the
+moment the light term falls under it, and it flips with the SHADOW rather than
+with distance: on Greyfen a trunk in the sun was outlined in ink and the same
+trunk two steps into the canopy's shade was outlined in something twice as
+bright as itself. Greyfen's own environment file records the re-lighting that
+caused it (ambient 0.7 → 0.24, key 1.12 → 1.55) with no mention of this end of
+it, which is exactly why the number is no longer one somebody has to keep in
+step by hand.
 
 **The first derivation was still too bright on every map, and by 2.2x to 2.9x.**
 It took `outlines.shadeHeadroom` (0.6) of the LUMA of `ambient + skyFill * 0.5`,
@@ -549,19 +550,20 @@ building that glazes in both kinds falls into two merged meshes without either
 merge being told glazing now comes in two. The one thing that had to learn is
 the probe count — see below.
 
-**Both kinds carry a depth BIAS, and it is the only one in the renderer.** A pane hangs a few centimetres off the wall
-behind it — `kit/city.ts`'s `glaze` stands 0.04 m of glass over the shaft, with
-the collars proud of that again — and the depth buffer loses that gap with
-distance. The near plane is 5 cm because the viewmodel's optics sit inside 5 cm
-of the eye, and against a buffer resolving 2^-24 of the range that leaves a step
-of 1 cm at 90 m, 3 cm at 160 m and 27 cm at Coldharbour's fog wall. Measured
-square-on with the pane held at a constant size on screen, with no bias at all:
-full contribution at 40 and 90 m, **nothing at all from 180 m out** — every
-distant tower back to blank concrete, with a correct shader and correct
-geometry. `CelMaterialFactory.GLASS_DEPTH_UNITS` (-16) is a polygon offset in
-the buffer's own units, so the correction is millimetres up close and metres at
-the far end, exactly where the error is; the near plane is spoken for and `maxZ`
-is worth nothing here (measured). What it costs is the fins and collars standing
+**Both kinds carry a depth BIAS, and it is the only one in the renderer.** A
+pane hangs a few centimetres off the wall behind it — `kit/city.ts`'s `glaze`
+stands 0.04 m of glass over the shaft, with the collars proud of that again —
+and the depth buffer loses that gap with distance. The near plane is 5 cm
+because the viewmodel's optics sit inside 5 cm of the eye, and against a buffer
+resolving 2^-24 of the range that leaves a step of 1 cm at 90 m, 3 cm at 160 m
+and 27 cm at Coldharbour's fog wall. Measured square-on with the pane held at a
+constant size on screen, with no bias at all: full contribution at 40 and 90 m,
+**nothing at all from 180 m out** — every distant tower back to blank concrete,
+with a correct shader and correct geometry.
+`CelMaterialFactory.GLASS_DEPTH_UNITS` (-16) is a polygon offset in the buffer's
+own units, so the correction is millimetres up close and metres at the far end,
+exactly where the error is; the near plane is spoken for and `maxZ` is worth
+nothing here (measured). What it costs is the fins and collars standing
 0.1–0.2 m proud of the glass, which the bias overdraws past ~100 m where they
 are a pixel or two of trim.
 

@@ -2096,10 +2096,10 @@ const fogState = { color: new Color3(0.05, 0.06, 0.08), start: 24, end: 78 };
  * **`CONFIG.graphics.outlines.tintFactor` and `fallbackColor` are CEILINGS on
  * these two, not the values.** The ink is unlit — that is the whole of the
  * `CEL_INK` branch, and Babylon's outline fragment shader is
- * `gl_FragColor = color` and nothing else — while the surface under it is
- * `albedo * light`. So an ink is a line only while it sits UNDER that light
- * term, and inverts into a bright halo the moment the surface goes darker than
- * it does.
+ * `fragmentOutputs.color = uniforms.color` and nothing else — while the
+ * surface under it is `albedo * light`. So an ink is a line only while it sits
+ * UNDER that light term, and inverts into a bright halo the moment the surface
+ * goes darker than it does.
  *
  * That is not hypothetical, and it was not fixed by deriving the tint from the
  * shaded FLOOR, which is what this used to do: a scalar 0.6 of the luma of

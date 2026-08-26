@@ -333,10 +333,11 @@ export class GrenadeSystem {
     // renderer: it builds a `DynamicTexture` (which needs a canvas) and a
     // `GPUParticleSystem` (which under WebGPU is a compute shader and needs a
     // device), and under Babylon's NullEngine the first of those throws
-    // `OffscreenCanvas is not defined` before the constructor returns. The multiplayer server runs the BALLISTICS — where a
-    // grenade lands and who it hurts is a rule, not a picture — so it asks for
-    // the system without the dust. Everything else here is spheres and
-    // materials, which are inert without a renderer and cost nothing to keep.
+    // `OffscreenCanvas is not defined` before the constructor returns. The
+    // multiplayer server runs the BALLISTICS — where a grenade lands and who it
+    // hurts is a rule, not a picture — so it asks for the system without the
+    // dust. Everything else here is spheres and materials, which are inert
+    // without a renderer and cost nothing to keep.
     const draws = opts?.dust !== false;
     this.dust = draws ? new BlastDust(scene, "blastDust", g.dust) : null;
     this.smoke = draws ? new BlastDust(scene, "blastSmoke", g.smoke) : null;
