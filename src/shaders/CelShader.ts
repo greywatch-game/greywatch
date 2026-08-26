@@ -981,13 +981,15 @@ export class CelMaterialFactory {
    * `glaze`: 0.04 m of glass over the shaft, the collars proud of that again),
    * and the depth buffer stops being able to tell the two apart with distance.
    * The camera's near plane is 5 cm — it has to be, the viewmodel's optics sit
-   * inside 5 cm of the eye — and against a 24-bit buffer that leaves a step of
-   * 1 cm at 90 m, 3 cm at 160 m and 27 cm at the fog wall, while the standoff
-   * stays what the builder gave it. Measured on Coldharbour's curtain wall,
-   * square on, with the pane held at a constant size on screen: full at 40 and
-   * 90 m, **gone entirely from 130 m out** — the tower goes back to being blank
-   * concrete, with nothing wrong in the shader and nothing wrong in the
-   * geometry.
+   * inside 5 cm of the eye — and against a buffer resolving 2^-24 of the range
+   * that leaves a step of 1 cm at 90 m, 3 cm at 160 m and 27 cm at the fog
+   * wall, while the standoff stays what the builder gave it. Measured on
+   * Coldharbour's curtain wall, square on, with the pane held at a constant
+   * size on screen: full at 40 and 90 m, **gone entirely from 130 m out** — the
+   * tower goes back to being blank concrete, with nothing wrong in the shader
+   * and nothing wrong in the geometry. (That reading was taken on WebGL2's
+   * 24-bit buffer; the cliff is at ~180 m on `depth32float` and the table
+   * below is the current one.)
    *
    * A polygon offset is the fix rather than a workaround because it is stated
    * in exactly the units the problem is: it scales with the buffer's step at
@@ -998,12 +1000,41 @@ export class CelMaterialFactory {
    * standoff would have to be half a metre of glass proud of the wall by the
    * fog wall, and the near plane is spoken for.
    *
-   * Sixteen against a measured knee of eight, because `r` is
-   * implementation-defined and this was measured on one implementation. What it
-   * costs at the far end is that the fins and collars standing 0.1-0.2 m proud
-   * of the glass are overdrawn by it past ~100 m, where they are a pixel or two
-   * of trim — against a whole elevation of glazing, which is the thing the
-   * player can actually see.
+   * **THE BUFFER IS `depth32float` NOW AND THE UNIT IS DEFINED DIFFERENTLY FOR
+   * A FLOAT FORMAT, so this is sixteen by re-measurement rather than by
+   * carrying a number across.** `stencil: false` in `main.ts` is what picks the
+   * format, and for a float one `r` is `2^(exponent(the primitive's own depth)
+   * - 23)` rather than a constant — which happens to land on the same `2^-24`
+   * everywhere a shipped map is drawn, because a depth in [0.5, 1) is every
+   * fragment past a few metres. Re-run on the north tower's 542-sheet curtain
+   * wall with the rest of the map hidden and the glass tinted so a surviving
+   * sheet is countable (`plans/webgpu-ref/depth.mjs`), the pane's own share of
+   * the frame goes:
+   *
+   *     units    40 m    90 m   130 m   180 m   220 m   260 m
+   *        0    83.9    68.1    67.0     0.6     0.6     0.0   goes by 180 m
+   *       -4    83.9    68.1    67.1    65.2    57.3     8.4   thins, then goes
+   *       -8    83.9    68.2    67.1    65.3    64.9    63.9
+   *      -12    83.9    68.2    67.2    72.2    72.5    71.9   far end complete
+   *      -16    83.9    68.3    67.8    72.4    72.8    72.3   SHIPPED
+   *      -24    83.9    68.6    75.0    72.6    73.2    72.4   transoms eaten
+   *      -64    83.9    77.6    75.7    72.8    73.0    72.3
+   *
+   * **It is bracketed on both sides now, which it never was before.** -12 is
+   * the floor — under it the far end thins and then goes, and the unbiased
+   * cliff has moved out from ~130 m to ~180 m with the format. -24 is the
+   * CEILING, and what it costs is legible rather than statistical: at 130 m the
+   * horizontal transoms across the curtain wall stop being drawn, which is the
+   * +7.4 points of "extra" glass in that row. Sixteen sits between the two with
+   * room on each side, and what it costs at the far end is unchanged — the fins
+   * and collars standing 0.1-0.2 m proud of the glass are overdrawn past
+   * ~100 m, where they are a pixel or two of trim against a whole elevation of
+   * glazing.
+   *
+   * Blended glazing is the same shape and far less of it: Coldharbour's biggest
+   * unbacked group is eight sheets of shopfront, and the bias roughly triples
+   * what survives past 90 m. It is 2% of the map's glazing and it is all at
+   * street range, so the reading that decides this number is the backed one.
    *
    * Only the depth TEST is biased: a blended draw writes no depth (see
    * `getGlass`), so nothing downstream inherits the offset.

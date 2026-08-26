@@ -21,7 +21,7 @@ you are on before you believe anything else in this section.
 | WebGPU adapter | `nvidia/lovelace`, 21 features | `google/swiftshader`, CPU |
 | headless presents a canvas | **yes**, via `channel: "chromium"` | **no**, one frame then device loss |
 | `--enable-unsafe-webgpu` | no-op | **required**, and its absence is invisible |
-| Coldharbour's 40-probe bake | 138 ms, one frame | takes the device |
+| Coldharbour's 40-probe bake | ~1.4 s, one frame | takes the device |
 | a round | 46–176 fps | ~0.5–2 fps |
 | the one-second check | — | `ls /dev/dri` |
 
@@ -92,10 +92,15 @@ you are on before you believe anything else in this section.
   maps. Both are correct. A reference bank must be taken and checked in the
   same mode; `plans/webgpu-ref/bank.mjs` records the mode and refuses a
   mismatch.
-- **Coldharbour's shipped forty-probe bake is fine here** — 138 ms in the one
-  frame after install, all forty probes, no device loss — and the probes are
-  refresh-once, so they are a build cost and never a frame cost. The staggered
-  workaround the Chromebook needed has been deleted rather than kept.
+- **Coldharbour's shipped forty-probe bake completes here** — all forty, one
+  frame, no device loss — and the probes are refresh-once, so it is a build cost
+  and never a frame cost. The staggered workaround the Chromebook needed has
+  been deleted rather than kept. **It is not cheap and an earlier reading of
+  138 ms does not reproduce**: measured by forcing a re-bake with everything
+  already compiled, it is ~1.4–2.1 s, and it scales almost linearly with the
+  render list (486 meshes 2124 ms, 243 meshes 813 ms, 49 meshes 109 ms).
+  Hollowmere's four probes cost 76 ms in the same run, which is the same 19 ms a
+  probe. `FINDINGS.md` #10 carries the open thread; do not quote 138 ms.
 
 ### On the Chromebook, which is a Crostini box with no GPU for WebGPU
 
@@ -148,7 +153,8 @@ you are on before you believe anything else in this section.
     What it looks like is a WebGPU port bug and it is not one — the same map on
     the same machine bakes all forty probes in ONE frame on WebGL2 and runs at
     ~32 fps, because WebGL2 gets the real GPU and WebGPU gets SwiftShader. **On
-    the Windows box the same bake is 138 ms and needs nothing done to it**, so
+    the Windows box the same bake completes in one frame and needs nothing done
+    to it** (~1.4 s — see the Windows section above), so
     what follows is a workaround for this machine and not a property of the
     game. **Three ways round it, and which you want depends on the question**:
     `g.reflections.build = () => {}` before `startRound` gives a Coldharbour
@@ -236,6 +242,55 @@ is one machine's:
   separately. To exercise the failure branch, `page.route("**/*.wasm", r
   => r.abort())` before `goto` and assert on `#boot.failed`'s message; the game
   is never constructed, so there is no handle at all on that path.
+- **A frozen vantage holds NO SHADOWED PIXEL until the shadow window is pushed
+  to it, and every shadow reading then comes back 0.000%.** The window follows
+  the player, `updateWorld` does not run under the deploy lid a reference pose is
+  taken from, and outside it `shadowVisibility` returns FULLY LIT — so a camera
+  teleported to a vantage is standing in a world with no shadows in it, and a
+  script that collapses the PCF kernel, changes the bias or darkens the term
+  reports that none of them does anything. `g.shadows.invalidate()` then
+  `g.shadows.update(cam.position, g.mats)` before the grab is the whole fix.
+  **Write the control, because the failure is silent in the direction of
+  "clean"**: set `shadowParams.y` (the darkness) to 0 and diff — that says how
+  much of the frame is in shadow at all, and if it too comes back 0% then
+  nothing is being measured. Measured with the push in, the shadowed share is
+  32.7% / 40.0% / 7.2% / 26.8% on the four maps at their committed vantages.
+- **To measure a shader change without editing the tree, edit the registered
+  INCLUDE and then push a dummy define onto every cached material.** Rewriting
+  `ShaderStore.IncludesShadersStoreWGSL.celBand` alone changes nothing — Babylon
+  keys its effect cache on the shader name and the defines, not on the include's
+  contents, so every material hands back the effect it already has. Pushing
+  `#define M7_WHATEVER` onto `mat.options.defines` changes the key, which mints
+  a fresh effect, which picks up the edited include. Mutate that array in place
+  (`push`/`splice`); reassigning `m.options.defines` is not guaranteed to reach
+  the material. The same handle removes a define — dropping `CEL_BUMP` from the
+  ground material is how the relief is turned off for an A/B. **Prove the remint
+  before trusting an A/B that reports no difference**: make `band` return 0 and
+  check that most of the frame goes black.
+- **A tinted mesh is a better instrument than a frame diff when the question is
+  whether something is DRAWN AT ALL.** Both depth measurements in
+  `plans/webgpu-ref/depth.mjs` work this way: a curtain wall whose glass is
+  painted red is either ~72% of the frame or ~0.6% of it, where the same wall in
+  its own colour differs from the concrete behind it by tens of LSB and a diff
+  cannot tell "not drawn" from "subtle". Two traps came with it. **Hide the map
+  down to the target's own building and never by a radius** — a radius left
+  another wing of the same tower standing at exactly one distance in the sweep,
+  and a blocked shot reads precisely like a pane that is not drawn. And **select
+  a curtain wall by SHEET COUNT, not by a thin bounding box**: a tower's glazing
+  wraps all four elevations, so it is not a slab, and a slab filter silently
+  picked a 3.3 m² shopfront as the biggest thing on Coldharbour.
+- **A geometry rule whose fault will not reproduce is not the same as a rule
+  that is wrong, and the way to tell is to reproduce it IN SITU.** Both of
+  `docs/rendering.md`'s outline z-offset rules were re-derived at M7 and they
+  came apart: the road-marking one still bites at the shipped ink width, and the
+  thin-deck one does not bite at any thickness. What settled the second was not
+  a test rig — a lone box in the air with an ink shell on it fails to reproduce
+  the fault at 0.06 m and an 0.8 m shell, which proves nothing about the manor —
+  but thinning `boardDeck` in the tree, rebuilding Greyfen and photographing the
+  hall. **Check the mesh is inked before believing a null result**: the deck is
+  in a merged block group, and `renderOutline`/`outlineWidth`/`outlineColor` on
+  that group is a one-line assertion that turns "no fault" into "no fault, and
+  the pass was running".
 - **`page.screenshot()` waits for the load event, so it cannot photograph the
   boot screen.** Hold the entry chunk back with `page.route` and the shot comes
   back showing the menu, taken seconds later once the hold expired — the DOM
@@ -958,12 +1013,26 @@ is one machine's:
   - **Hide the rest of the map rather than hunting for a clear sightline** —
     `map.visuals`, `setEnabled` on a radius around the target. Above ~100 m
     every line across Coldharbour crosses something, and a blocked shot reads
-    exactly like a pane that is not drawn.
+    exactly like a pane that is not drawn. **A radius is not enough and was
+    measured not to be**: it leaves another wing of the target's own tower
+    standing, which blocked exactly one distance in a six-distance sweep and
+    produced a clean zero in the middle of a row of healthy readings. Keep the
+    pane's own BUILDING — the visuals whose boxes overlap the group's, padded a
+    few metres — and hide everything else at every range.
   - **`markVisual` freezes the world matrices**, so moving a pane group to test
     a standoff silently does nothing: `unfreezeWorldMatrix()` and
     `computeWorldMatrix(true)` first. Measured that way, a pane at 220 m needs
     ~0.2 m of clear air in front of the wall before the depth buffer can
     separate the two, against the 0.04 m the builder gives it.
+
+  **This whole sweep is now a committed script** —
+  `node plans/webgpu-ref/depth.mjs glass` — because the number it takes is
+  decided by the DEPTH FORMAT, which is decided by one boot flag, and nothing
+  else in the repository re-derives it. It differs from the recipe above in one
+  further way worth knowing: the reading is a COUNT of tinted pixels rather than
+  a difference of two grabs, which is what makes the far end legible. Its
+  `zoffset` mode is the same instrument pointed at the outline pass's own
+  offsets, and answers what they are worth in metres at a given range.
 - **Placing a camera on Coldharbour by hand lands it inside a building far more
   often than it looks like it should.** The towers sit on a 30 m grid and are 26 m
   across, so the gaps are metres; the four avenues (`x` and `z` at ±40 and ±120)

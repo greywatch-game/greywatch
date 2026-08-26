@@ -238,6 +238,18 @@ follow:
   ink luma falls Hollowmere 0.036 → 0.025, Greyfen 0.059 → 0.045, Coldharbour
   0.142 → 0.125, Harrowmead 0.071 → 0.039, and no outlined mesh on any map now
   carries an ink over luma 0.054 (that one is the road, at the clamped fallback).
+  **Re-taken on WebGPU at each map's committed vantage**, post chain off, the
+  ink pass covers 2.4% / 4.1% / 3.5% / 1.9% of the frame at a mean luma of
+  0.050 / 0.060 / 0.052 / 0.057 (Hollowmere, Greyfen, Coldharbour, Harrowmead),
+  over 844 / 668 / 953 / 824 inked meshes and 2 / 81 / 8 / 100 ink twins. **The
+  brightest TINT is 0.082 and it is on Coldharbour's `cel-#e8e4dc`**, against
+  the 0.054 above — which is not a regression and cannot be one: `outlineInkFor`
+  is CPU arithmetic over the palette and the ambient, untouched by the backend,
+  and a near-white façade is by construction the brightest ink a per-albedo tint
+  can mint. The 0.054 was the darkest of the four maps' worst cases at the time
+  and two of those maps have been re-cut since. What the bound actually says is
+  relative — `ink < surface` per channel — and that is the sentence to re-derive,
+  not the absolute.
   **Take the whole post chain off before believing any of it**: bloom spreads a
   lit window over a wide radius, FXAA smears every edge, the god rays build their
   shafts from an occlusion mask of the scene and the film grain is fresh noise
@@ -541,16 +553,50 @@ the probe count — see below.
 behind it — `kit/city.ts`'s `glaze` stands 0.04 m of glass over the shaft, with
 the collars proud of that again — and the depth buffer loses that gap with
 distance. The near plane is 5 cm because the viewmodel's optics sit inside 5 cm
-of the eye, and against a 24-bit buffer that leaves a step of 1 cm at 90 m, 3 cm
-at 160 m and 27 cm at Coldharbour's fog wall. Measured square-on with the pane
-held at a constant size on screen: full contribution at 40 and 90 m, **nothing
-at all from 130 m out** — every distant tower back to blank concrete, with a
-correct shader and correct geometry. `CelMaterialFactory.GLASS_DEPTH_UNITS`
-(-16) is a polygon offset in the buffer's own units, so the correction is
-millimetres up close and metres at the far end, exactly where the error is; the
-near plane is spoken for and `maxZ` is worth nothing here (measured). What it
-costs is the fins and collars standing 0.1–0.2 m proud of the glass, which the
-bias overdraws past ~100 m where they are a pixel or two of trim.
+of the eye, and against a buffer resolving 2^-24 of the range that leaves a step
+of 1 cm at 90 m, 3 cm at 160 m and 27 cm at Coldharbour's fog wall. Measured
+square-on with the pane held at a constant size on screen, with no bias at all:
+full contribution at 40 and 90 m, **nothing at all from 180 m out** — every
+distant tower back to blank concrete, with a correct shader and correct
+geometry. `CelMaterialFactory.GLASS_DEPTH_UNITS` (-16) is a polygon offset in
+the buffer's own units, so the correction is millimetres up close and metres at
+the far end, exactly where the error is; the near plane is spoken for and `maxZ`
+is worth nothing here (measured). What it costs is the fins and collars standing
+0.1–0.2 m proud of the glass, which the bias overdraws past ~100 m where they
+are a pixel or two of trim.
+
+**The buffer is `depth32float` and the unit is DEFINED differently for a float
+format, so sixteen is a re-measurement rather than a number carried across.**
+`stencil: false` picks the format (see the no-stencil note below), and WebGPU's
+constant term for a float one is `depthBias * 2^(exponent(the primitive's own
+depth) - 23)` rather than `depthBias * r` for a constant `r`. That lands on the
+same `2^-24` everywhere a shipped map is drawn — a depth in [0.5, 1) is every
+fragment past a few metres — which is why the answer did not move much, and it
+is not something to assume the next time the flag does. Re-run on the north
+tower's 542-sheet curtain wall with the rest of the map hidden and the glass
+tinted so a surviving sheet is countable (`plans/webgpu-ref/depth.mjs glass`),
+the pane's own share of the frame is:
+
+| units | 40 m | 90 m | 130 m | 180 m | 220 m | 260 m | |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | 84.0 | 68.1 | 67.1 | **0.7** | **0.6** | **0.6** | goes between 130 and 180 m |
+| -4 | 84.0 | 68.1 | 67.1 | 65.2 | 57.3 | **8.4** | thins, then goes |
+| -8 | 84.0 | 68.2 | 67.2 | 65.3 | 64.9 | 64.0 | |
+| -12 | 84.0 | 68.2 | 67.2 | 72.2 | 72.5 | 72.0 | the far end complete |
+| **-16** | 84.0 | 68.3 | 67.8 | 72.5 | 72.8 | 72.3 | **shipped** |
+| -24 | 84.0 | 68.6 | **75.0** | 72.6 | 73.2 | 72.4 | the transoms eaten |
+| -64 | 84.0 | **77.6** | 75.7 | 72.8 | 73.0 | 72.4 | |
+
+**It is bracketed on both sides now, which it never was.** -12 is the floor:
+under it the far end thins and then goes, and -4 collapses outright by 260 m.
+-24 is the CEILING, and what it costs is legible rather than statistical — at
+130 m the horizontal transoms across the curtain wall stop being drawn, which is
+the +7 points of "extra" glass in that row and reads as a wall that has lost its
+banding. Sixteen sits between the two with room on each side. The blended kind
+is the same shape and far less of it: the map's biggest unbacked group is eight
+sheets of shopfront, the bias roughly triples what survives past 90 m, and at 2%
+of the glazing all of it at street range, the backed reading is the one that
+decides the number.
 
 On a `backed` sheet the same bias earns a second job it was not written for:
 now that the pane writes depth, it has to WIN against the mass it hangs on
@@ -713,8 +759,16 @@ precedent; the dither is what keeps the ramp from banding on its own.
 merged pane meshes. The shadow half is obvious once the pane is see-through. The
 ink half is mechanical: Babylon draws an outline as an inverted hull BEFORE the
 mesh and keeps it out of a transparent mesh's own area with a stencil pass, and
-this engine is built with no stencil buffer at all (see `Game`'s constructor), so
-the shell is not a ring around a pane but a dark plate behind the whole of it.
+this engine is built with no stencil buffer at all (`main.ts`, beside the
+`initAsync` call), so the shell is not a ring around a pane but a dark plate
+behind the whole of it. **That flag does one thing more under WebGPU than it
+used to and it is not about stencilling at all: it picks the DEPTH FORMAT.**
+False gives `depth32float`, true would give `depth24plus-stencil8`, and
+`depthBias` is defined in a different unit for a float format — so turning
+stencil on to get a ring around a pane would silently re-tune
+`GLASS_DEPTH_UNITS` and both of the outline geometry rules below with it. It is
+one flag and three measurements; `plans/webgpu-ref/depth.mjs` re-takes two of
+them.
 A window's frame is drawn by the mullion, the collar and the reveal, all of which
 are geometry with ink of their own. Because nothing ever outlines a pane, glass
 is also the one variant that owes `outlineInkFor`'s regex nothing.
@@ -727,9 +781,31 @@ and a penumbra is the one thing the flat bands cannot have. The 2x2 is rotated
 per pixel: four taps averaged give five values, five values along an edge are
 five contours, and the rotation turns that residue into noise instead. Measured
 as a containment check by collapsing the radius to zero (which makes all four
-taps the same fetch, i.e. the old lookup): **0.33% of the frame differs, peaking
-at 55/255** — a large change on very few pixels, which is the shape of something
-confined to boundaries rather than spread over a penumbra.
+taps the same fetch, i.e. the old lookup), at each map's committed vantage with
+the whole post chain off:
+
+| | Hollowmere | Greyfen | Coldharbour | Harrowmead |
+| --- | --- | --- | --- | --- |
+| the kernel moves | 0.12% | 0.60% | 0.39% | 0.42% |
+| peaking at | 31/255 | 105/255 | 119/255 | 69/255 |
+| of a frame in shadow at all | 32.7% | 40.0% | 7.2% | 26.8% |
+| so, of the shadowed area | 0.4% | 1.5% | 5.4% | 1.6% |
+
+A large change on very few pixels, which is the shape of something confined to
+boundaries rather than spread over a penumbra — the third row is what makes that
+readable, because Coldharbour's frame is a tenth in shadow and the other three
+are a third. (The earlier single figure was 0.33% peaking at 55/255, taken on
+WebGL2 at one unrecorded vantage.)
+
+**A frozen vantage holds NO shadowed pixel until the window is pushed to it, and
+the reading that comes back is 0.000% on every map.** The shadow window follows
+the player, `updateWorld` does not run under the deploy lid the reference poses
+are taken from, and outside the window `shadowVisibility` returns FULLY LIT — so
+a camera teleported to a vantage is looking at a lit world and every shadow
+measurement reads as a kernel that does nothing. `g.shadows.invalidate()` then
+`g.shadows.update(cam.position, g.mats)` before the grab is the fix, and the
+control that proves it landed is setting the darkness term to zero: that is the
+third row above, and if it comes back 0% too then nothing is being measured.
 
 **Grass and water sample that same depth map, and they are not cel materials.**
 They reproduce the cel lighting model in their own shaders and went without a
@@ -1179,6 +1255,20 @@ is the preprocessor eating code, this one is JavaScript eating the shader.
   correctly, which is why the podium under it never showed the fault. Depth is what
   buys the margin, so a walked surface gets a box as deep as whatever it stands on
   and is placed by its TOP face.
+  **THE FAULT DOES NOT REPRODUCE UNDER `depth32float`, and the rule is kept
+  anyway.** Re-derived in situ rather than argued about: `boardDeck` thinned back
+  to the 0.14 m slab, Greyfen rebuilt, the camera stood in the great hall looking
+  the long way across the boards — **byte-identical to the shipped 0.54 m box, 0%
+  of pixels.** The offset that used to win is now worth about a millimetre per
+  metre of range (`plans/webgpu-ref/depth.mjs zoffset`: 20 mm of separation is
+  beaten from 20.6 m, 50 mm from 61.7 m, 150 mm never inside 200 m), and a shell
+  185 mm under its own top face would need ~185 m of hall to lose to. So the rule
+  is currently unfalsifiable rather than disproved: it costs nothing, it is the
+  same geometry a walked surface wants anyway, and the offset's UNIT is decided
+  by a boot flag — `stencil: true` would put the format back to
+  `depth24plus-stencil8` and this with it. Do not thin a deck on the strength of
+  the null result, and do not read it as the mechanism being gone: the sibling
+  rule below still bites, hard, and on the same offset.
 - **Nothing may be laid ON an inked surface, and no clearance buys its way
   out.** The third face of that same shell, and the one that costs a mesh of its
   own: `OutlineRenderer` draws the hull twice, and the second pass
@@ -1191,7 +1281,17 @@ is the preprocessor eating code, this one is JavaScript eating the shader.
   screen at all. Thinning the road's ink does not fix it, because the offset
   that pulls the shell toward the eye is slope-scaled and a road is seen at a
   grazing angle — measured down an avenue at eye height, ink at 3 cm left one
-  dash standing and ink at 1 cm still swallowed everything past ~35 m. So the
+  dash standing and ink at 1 cm still swallowed everything past ~35 m.
+  **Re-derived on WebGPU by putting the ink back at runtime and tinting the paint
+  so a surviving dash is countable**, down the x = +40 avenue from the south end:
+  at the shipped 45 mm ink **none of the paint survives at any range** (0.1% of
+  its pixels, no dash anywhere), at 3 cm 57% survives and the furthest dash is at
+  71 m, and at 1 cm 89% survives out to 187 m. The conclusion is unchanged and
+  the thin end of the argument has moved a long way — the offset is weaker than
+  it was, 1 cm of ink no longer swallows the street, and 1 cm of ink is not on
+  offer anyway. **It is the same offset the deck rule above no longer reaches**,
+  and what separates them is the SEPARATION: 20 mm between a marking and its
+  slab's shell, against 185 mm between a deck's top face and its own. So the
   surface underneath gives up its ink (`buildRoad` sets `noOutline` on a slab
   that carries paint), which a flat ground sheet can afford: it has no
   silhouette, which is the same thing its `noShadowCaster` says.
@@ -1284,6 +1384,20 @@ is the preprocessor eating code, this one is JavaScript eating the shader.
   3–9 m: **1.8% of pixels off-reference before the floor had relief, 10.3%
   with it, 1.7% with both fixes** — the relief kept, and the whole frame now
   5.2% against the 5.8% it was before any of this.
+  **Re-taken on WebGPU, and the map it has to be taken on has changed.** Greyfen
+  was re-cut as a closed canopy, so its valley floor now sits in deep shade
+  where the whole effect is under 0.2% of pixels and says nothing; Coldharbour's
+  lit streets are the case that reads. There, standing on a spawn and looking
+  down at the ground, off-reference at more than 8/255 in any channel: **0.00%
+  with the relief off, 2.91% with the relief and the widening back at the fixed
+  0.15, 0.85% as shipped** — so the widening takes about seventy per cent of the
+  relief's aliasing back, against the eighty-six the original run recorded. The
+  ordering is what matters and it is unchanged; the absolute numbers are not
+  comparable, because the frame they were taken in no longer exists. Both
+  counterfactuals are reached by editing the registered `celBand` include (or
+  dropping `CEL_BUMP`) and then pushing a dummy define onto every cached cel
+  material — see `VERIFYING.md`, because a re-registered include alone hands
+  back the effect that is already cached.
 - **Two up-facing surfaces must never share a plane.** The merge is per colour, so a
   floor slab and the plinth under it land in *different* meshes and their draw order is
   arbitrary — a shared top face is a depth-test tie broken per pixel, which strobes as

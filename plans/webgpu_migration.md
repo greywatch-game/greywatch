@@ -102,7 +102,8 @@ than hunting three unrelated lines.
    SwiftShader. Written up in `VERIFYING.md` with the two ways round it. **M2's
    Coldharbour work is now hard-gated on real hardware**, which sharpens rather
    than changes what *Verification* already says. **RESOLVED — see below: on
-   real hardware the shipped bake is 138 ms in one frame and needs nothing.**
+   real hardware the shipped bake is one frame and needs nothing — though see
+   M7's finding 33, because the 138 ms recorded for it does not reproduce.**
 
 ---
 
@@ -119,8 +120,11 @@ flag causes on the Chromebook and arrives by a different route.
 its rules invert between the two.
 
 **Item 7 is closed and its workaround is deleted.** Coldharbour's forty probes
-bake in the one frame after install in 138 ms, all forty, no device loss, and
-the probes are refresh-once so they are a build cost and never a frame cost.
+bake in the one frame after install, all forty, no device loss, and the probes
+are refresh-once so they are a build cost and never a frame cost. **The 138 ms
+recorded here does not reproduce and M7 could not repeat it** — forcing a
+re-bake with everything compiled costs ~1.4–2.1 s on the same machine. See
+finding 33.
 `cold-stagger.mjs` has been removed rather than kept: it only ever proved the
 probe path, and the thing it stood in for now runs.
 
@@ -174,8 +178,9 @@ is a player-facing question this plan has not costed.
 **All four maps are up on GLSL-under-WebGPU, and the reference set is SIXTEEN
 frames rather than four.** `gate.mjs` plays a real round on each of the four
 with no page and no console errors, `probesRenderOnce` true everywhere, and
-Coldharbour's forty cube probes baking in one 130–150 ms frame — the thing M1 could
-not reach and the last of what M2 owed. Every banked frame is reproducible to a
+Coldharbour's forty cube probes baking in one frame — the thing M1 could
+not reach and the last of what M2 owed. (Recorded here at 130–150 ms; that
+figure does not reproduce — see M7's finding 33.) Every banked frame is reproducible to a
 0.000% floor inside its own process, which `bank.mjs` refuses to write without.
 
 **Two things M2 found, and the first is why four frames was never a reference
@@ -477,6 +482,96 @@ batching them is what makes them checkable: item 16's copy (`index.html`,
 `README.md`'s browser requirement, `CLAUDE.md:62`'s "WebGL2") and M8's Tier 2/3
 doc sweep. What is edited here is only what M6's own change made false.
 
+## M7 landed
+
+**Everything the depth-format change invalidated is re-derived, and the headline
+is that `GLASS_DEPTH_UNITS` does not move.** -16 is now bracketed on both sides
+by measurement, which it never was: -12 is the floor and -4 collapses the far
+end outright, while -24 is a CEILING that costs the curtain wall's horizontal
+transoms at 130 m. `plans/webgpu-ref/depth.mjs` is committed so the number can
+be re-taken, because one boot flag decides it and nothing else in the repository
+re-derives it.
+
+**Six things M7 found, and the first two are the milestone:**
+
+28. **The two outline z-offset geometry rules came APART, and only measuring
+    both would have shown it.** They are the same offset and the plan treats
+    them as one item. Re-derived: the ROAD-MARKING rule still bites and bites
+    hard — with the carriageway's ink put back at the shipped 45 mm, not one
+    lane marking survives at any range, against 57% surviving out to 71 m at
+    3 cm and 89% out to 187 m at 1 cm. The THIN-DECK rule's fault does not
+    reproduce at all: `boardDeck` thinned back to the 0.14 m slab that produced
+    it, Greyfen rebuilt, the great hall photographed — **byte-identical to the
+    shipped 0.54 m box**. What separates them is the SEPARATION, and the ruler
+    that says so is `depth.mjs zoffset`: the offset is worth about a millimetre
+    per metre of range, so 20 mm between a marking and its slab's shell is
+    beaten from 20 m out and 185 mm between a deck's top face and its own would
+    need 185 m of hall. The rule is KEPT — it costs nothing, it is the geometry
+    a walked surface wants anyway, and `stencil: true` would put the format back
+    and the fault with it.
+29. **A rig that fails to reproduce a fault proves nothing about the fault, and
+    it cost most of a milestone to stop believing one.** A lone box in the air
+    with an ink shell on it does not go flat at 0.06 m thick or under an 0.8 m
+    shell — which reads exactly like "the rule is dead" and is worth nothing,
+    because the manor's deck is in a merged block group standing on a podium.
+    The in-situ reproduction is what settled it, and the assertion that makes a
+    null result mean anything is checking the mesh is INKED first
+    (`renderOutline`, `outlineWidth`, `outlineColor` on the block group).
+30. **A frozen vantage holds no shadowed pixel until the shadow window is pushed
+    to it, and every shadow reading comes back 0.000%.** The window follows the
+    player, `updateWorld` does not run under the deploy lid the reference poses
+    are taken from, and outside it `shadowVisibility` returns FULLY LIT. With
+    the push in, the four-tap kernel's containment is 0.12/0.60/0.39/0.42% of
+    the frame across the four maps, peaking 31–119/255, over frames that are
+    32.7/40.0/7.2/26.8% in shadow. The control that catches the trap is the
+    darkness term: set it to zero and if THAT comes back 0% too, nothing is
+    being measured.
+31. **The band's `fwidth` widening had to change maps to be measurable.**
+    Greyfen was re-cut as a closed canopy since the number was taken, so its
+    valley floor sits in deep shade where the whole effect is under 0.2% of
+    pixels; Coldharbour's lit streets are where it reads now — 0.00% off a 4x
+    reference with the relief off, 2.91% with the relief and the widening back
+    at the fixed 0.15, 0.85% as shipped. The ordering holds and the absolutes
+    are not comparable, because the frame the originals were taken in no longer
+    exists. The technique is worth keeping: edit the registered include, then
+    push a dummy define onto every cached material — a re-registered include
+    alone hands back the effect that is already cached.
+32. **The ink luma's absolute bound is not a WebGPU question and could not have
+    been one.** `outlineInkFor` is CPU arithmetic over the palette and the
+    ambient, so the tint cannot have moved with the backend; re-read, the
+    brightest is 0.082 on a near-white Coldharbour façade against the 0.054 the
+    contract records, and two of the four maps have been re-cut since that
+    figure was taken. What the bound actually claims is RELATIVE — `ink <
+    surface` per channel — and that is the sentence worth re-deriving.
+33. **`FINDINGS.md` #10 answers to the SECOND arm of its own test, and this
+    plan's own 138 ms does not reproduce.** The entry asks for the reflection
+    bake on real hardware, says a cull is not worth its failure mode under
+    ~150 ms and that over ~500 ms the shape to reach for is fewer PROBES.
+    Measured by forcing a re-bake with every pipeline already compiled, the
+    shipped forty-probe bake is **~1.4–2.1 s**, and it scales almost linearly
+    with the render list (486 meshes 2124 ms, 243 meshes 813 ms, 49 meshes
+    109 ms) — so it is draw-call bound on hardware as well as under SwiftShader,
+    it is still a build cost and never a frame cost, and the answer is fewer
+    probes. **The 138 ms this plan and `VERIFYING.md` both record is not
+    repeatable**: in the same gate run that puts Coldharbour's forty at 1151 ms,
+    Hollowmere's four cost 76 ms — the same 19 ms a probe — and the box is only
+    ~20% off the frame rates recorded beside that figure, which is nowhere near
+    10x. The likeliest reading is that the 138 ms frame was not the frame the
+    bake happened on, but that is not demonstrated and it is now the open thread
+    in #10. Every quote of the number is corrected to say so rather than
+    deleted. #3, #4, #5, #12 and #13 have a status line each rather than a
+    deletion, as `FINDINGS.md:6-12` requires: #4's MSAA reading is re-taken as a
+    WebGPU sample count (1 as shipped, measured 4 with `antialias: true`, and
+    the "66 MB at 1080p" is exactly right for `bgra8unorm` + `depth32float`),
+    and #13's title question is answered as "nothing measurable" while its
+    before/after stays headless.
+
+**What M7 did NOT do**, deliberately: the Tier 2/3 doc sweep and item 16's copy
+are still M8's, and the five source headers still naming WebGL2 or transform
+feedback (`Atmosphere.ts`, `GrenadeSystem.ts`, `OutlineFog.ts`, `CelShader.ts`)
+are in that sweep rather than here. What is edited here is only what M7's own
+measurements made false.
+
 ---
 
 ## Verified groundwork
@@ -590,12 +685,12 @@ So the engine swap lands first with all nine shaders still in GLSL. This is
 | --- | --- | --- |
 | **M0** ✅ | `WebGPUEngine` + boot gate on `navigator.gpu`. Menu reached. | Boot path, `main.ts`, `__celshock` timing. **Menu RENDERS was not provable** — see Verification |
 | **M1** ✅ | **First lit scene** — Hollowmere end to end on GLSL sources. `OutlineRenderer` scaffolded back to GLSL; item 11 stays at M6 | RTTs, R8 depth field, 14 `DynamicTexture`s, `setRenderingOrder`, `GlowLayer`, pipeline, compute particles, `setHardwareScalingLevel`, blend/depth state — all confirmed. **The 40 cube probes did NOT come with it**: Hollowmere has no glazed block, and Coldharbour's bake kills the device here (finding 7), so they move to M2 on hardware |
-| **M2** ✅ | All four maps up. **The GLSL-under-WebGPU reference set is banked** — sixteen frames, the four menu vantages plus twelve chosen for the shader path each puts in frame (`plans/webgpu-ref/vantages.mjs`). Coldharbour's 40 cube probes bake in one 130–150 ms frame | The most valuable artefact of the migration — later diffs isolate *shader* errors by construction. **Four frames could not have done it**: the backdrops hold no glazing at range, no lamp-lit street, no gust and almost no water |
+| **M2** ✅ | All four maps up. **The GLSL-under-WebGPU reference set is banked** — sixteen frames, the four menu vantages plus twelve chosen for the shader path each puts in frame (`plans/webgpu-ref/vantages.mjs`). Coldharbour's 40 cube probes bake in one frame | The most valuable artefact of the migration — later diffs isolate *shader* errors by construction. **Four frames could not have done it**: the backdrops hold no glazing at range, no lamp-lit street, no gust and almost no water |
 | **M3** ✅ | **First WGSL** — the three post fragments (`HorrorPost`, `GodRays`, `MotionBlur`) | Dialect, `PostProcess` wiring, `onApply` binding. Standalone, no attributes, no defines. **The single-exit rewrite was not needed** — `return fragmentOutputs;` is legal and the early-outs stay. Sixteen banked frames at 0.000/255, and the three forced branches a frozen frame cannot reach diffed byte-identical against their own GLSL originals |
 | **M4** ✅ | **First WGSL surface** — the five shared includes, our own `celInstances` pair, then `GrassShader` | Include strategy, `instances*` twin, `MAX_PUSHERS`, `array<vec3f,N>` + `setArray3`. Sixteen banked frames at 0.000, the read-back assertion exact on both array shapes, and the pushers and the point lights — neither of which is in any banked frame — byte-identical against the GLSL original. **A uniform array's size must be a literal or a `#define`**, which cuts against item 4 |
 | **M5** ✅ | **`CelShader`** — both stages WGSL, landed once. `getSkinned` deleted (dead), taking `CEL_TEXTURED` and the last two deep imports with it | The long pole: ~620 shader lines, 8 materials, 6 defines. Sixteen banked frames at 0.000, four-map gate clean, and a whole-scene diff against the GLSL original at 0% on all four maps — which is where the branches a banked frame CANNOT hold live: every rig, the viewmodel and every effect mesh carries no colour buffer |
 | **M6** ✅ | `WaterShader` → `OutlineFog` → `EmissiveFog`. **Scaffold deleted**; the tripwire is TWO halves, because the aborted route silences the engine-state one and the fields are `null` rather than `undefined` | Complete. Sixteen banked frames at 0.000, four-map gate clean, `shaders.mjs` clean, the water byte-identical against its own GLSL original with 4 and 8 lamps forced, and the outline's two prose regression tests re-measured at 1 cached effect / 0 of 438 freed / 0 stale |
-| **M7** | Re-tune `GLASS_DEPTH_UNITS`, outline z-offsets, MSAA/memory. Re-measure everything `FINDINGS.md` claims | Re-derives what the depth-format change invalidated |
+| **M7** ✅ | Re-tune `GLASS_DEPTH_UNITS`, outline z-offsets, MSAA/memory. Re-measure everything `FINDINGS.md` claims | Complete. -16 is CONFIRMED and now bracketed on both sides; the two outline geometry rules came APART, one still biting and one whose fault will not reproduce; MSAA re-read as a sample count; the shadow kernel, the ink luma and the band's `fwidth` all re-taken; six `FINDINGS.md` entries given a status line, and the reflection bake measured at ~1.4 s rather than the 138 ms this plan recorded |
 | **M8** | Docs, four-map parity sign-off | — |
 
 M1 is the real first-light gate. M5 is the long pole. M7+M8 are about a third of
@@ -629,9 +724,9 @@ measured, it is a boot failure rather than a rendering one, because
 | 10 ✅ | `src/shaders/WaterShader.ts` | Wave field, `domeAt`, Schlick, foam. The `out` params became a returned struct (WGSL has none), and the ONE judgement call in it — an explicit LOD on the bed-depth map — was the port's only real bug; see finding 23 | 2.5 |
 | 11 ✅ | `src/shaders/OutlineFog.ts` | `patch()` kept its structure exactly; retargeted to `ShadersStoreWGSL`, `VERTEX_BODY` rewritten, the varying declared in **both** stages — whose ORDER is what keeps the two `@location`s in step. `dropCompiled` needed no change and was re-verified rather than rewritten | 2 |
 | 12 ✅ | `src/shaders/EmissiveFog.ts` | `isCompatible` answers WGSL and only WGSL — there is no GLSL path left in this game to be compatible with — and it landed with the `ForceGLSL` line it stood in for. `gl_FragColor` became `fragmentOutputs.color`; `vPositionW` is `fragmentInputs.` but `vEyePosition` is **`scene.`** and not `uniforms.`, because it lives in the SCENE block. The non-UBO `fragment:` declaration string went with them: WebGPU has no such path, and the marker it replaces is not in Babylon's WGSL `default.fragment` at all, so the text was being dropped on the floor. | 1 |
-| 13 | `Atmosphere.ts`, `GrenadeSystem.ts` | No code change expected. Verify compute particles, `emitRateControl`, `randomTextureSize: 4096`. Headers naming transform feedback are now wrong | 0.5 |
-| 14 | `WaterSystem`, `ShadowSystem`, `ReflectionSystem`, `Sky` | No code change expected. Verify R8 texture, shadow depth format + `bias = 0`, 40 cube RTTs + face Y-flip, `DynamicTexture.update(false)` | 1 |
-| 15 | `src/entities/ViewModel.ts:203-204` | Verify `ALWAYS` + `forceDepthWrite` + `alphaIndex: Infinity`; WebGPU bakes depth state into the pipeline rather than setting it | 0.5 |
+| 13 ✅ | `Atmosphere.ts`, `GrenadeSystem.ts` | No code change was needed. Confirmed on the real backend: every particle system's platform is `ComputeShaderParticleSystem`, `randomTextureSize` is 4096 (8192 for the motes), and the ash field is 14,934 at steady state. The headers naming transform feedback are M8's. Verify compute particles, `emitRateControl`, `randomTextureSize: 4096`. Headers naming transform feedback are now wrong | 0.5 |
+| 14 ✅ | `WaterSystem`, `ShadowSystem`, `ReflectionSystem`, `Sky` | No code change was needed. Confirmed: 2048² shadow map, `bias`/`normalBias` both 0, 408 casters, `refreshRate` 0; 40 cube probes at 128², all refresh-once; the R8 depth field at M1. Verify R8 texture, shadow depth format + `bias = 0`, 40 cube RTTs + face Y-flip, `DynamicTexture.update(false)` | 1 |
+| 15 ✅ | `src/entities/ViewModel.ts:203-204` | Confirmed at M1 and re-read here — `depthFunction` 519 (`ALWAYS`) and `forceDepthWrite` on the kit backdrop in group 0. Verify `ALWAYS` + `forceDepthWrite` + `alphaIndex: Infinity`; WebGPU bakes depth state into the pipeline rather than setting it | 0.5 |
 | 16 | `index.html`, `README.md`, `FILES.md` | Boot copy, requirements, two rows | 0.5 |
 
 **~20 engineer-days of porting**, before measurement or docs.
@@ -856,13 +951,17 @@ pane at 40/90/130/220 m (**the `GLASS_DEPTH_UNITS` sweep — `VERIFYING.md:618-6
 is the recipe and must be re-run**), an avenue (front-to-back sort).
 Harrowmead: the millpond, the borderland edge.
 
-**Measurements that must be re-taken, not re-read**: `GLASS_DEPTH_UNITS` and
-both z-offset geometry rules (`docs/rendering.md:511-529, 941-981`); the MSAA
-memory figure (`FINDINGS.md` #4); the shadow kernel's 0.33% containment
-(`:693-703`); per-map ink luma (`:206-211`); the band `fwidth` widening
-(`:1038-1057`); and **the two outline invalidation counts** (534/642 freed
-wrappers, 148 stale-fog wrappers) — these are prose regression tests and are the
-most important re-run in the plan.
+**Measurements that must be re-taken, not re-read** — all of them now have been,
+the last six at M7: `GLASS_DEPTH_UNITS` and both z-offset geometry rules
+(`docs/rendering.md`; the two rules came apart — see finding 28); the MSAA memory
+figure (`FINDINGS.md` #4, re-read as a WebGPU sample count); the shadow kernel's
+containment (four maps, and the window has to be pushed to the vantage first);
+per-map ink luma (and the absolute tint bound, which could not have moved with
+the backend); the band `fwidth` widening (on Coldharbour now, because Greyfen's
+floor is in shade); and **the two outline invalidation counts** (534/642 freed
+wrappers, 148 stale-fog wrappers) — these are prose regression tests, they were
+the most important re-run in the plan, and M6 discharged them at 1 cached effect
+/ 0 of 438 freed / 0 stale.
 
 **Two mechanical gates worth committing** (`npm run typecheck` stays the only
 logic gate): the deep-import grep, and a **shader-compile smoke script** that

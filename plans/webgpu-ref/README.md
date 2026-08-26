@@ -33,6 +33,7 @@ own dev server.
 node plans/webgpu-ref/gate.mjs [map...] [--headed] [--uncap]
 node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check]
 node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
+node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
 node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
 ```
@@ -59,6 +60,16 @@ node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
 - **`diff.mjs`** says how much and where two PNGs differ. `bank.mjs --check`
   grades itself with the same function; the CLI is for looking at a specific
   pair by hand, and `--tiles` names the region rather than the number.
+- **`depth.mjs`** re-derives the two numbers the DEPTH FORMAT decides, and it is
+  the one script here that is not about the picture being the same — it is about
+  a number staying right. `stencil: false` picks `depth32float` over
+  `depth24plus-stencil8`, and WebGPU defines `depthBias` in a different unit for
+  a float format, so `CelMaterialFactory.GLASS_DEPTH_UNITS` and
+  `OutlineRenderer`'s own offsets are both stated in a unit that moves when that
+  flag moves. `glass` sweeps the bias against range on a tinted curtain wall;
+  `zoffset` is a ruler that says what the outline pass's offsets are worth in
+  metres. **Nothing else re-derives these, the bank least of all** — a pane that
+  has quietly stopped being drawn at 180 m is in no banked frame.
 - **`pipelines.mjs`** counts shader modules and render pipelines against the
   frame clock. This is the replacement for the WebGL2 `shaderSource` hook —
   `GPUDevice.prototype.createShaderModule` in an `addInitScript`, whose
@@ -67,8 +78,8 @@ node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
 killed a CPU rasteriser's device; on real hardware the shipped one-frame bake
-takes 138 ms and the workaround only ever proved the probe path rather than the
-thing that ships.
+completes in one frame and the workaround only ever proved the probe path
+rather than the thing that ships.
 
 ## Two vantage tables, because they answer different questions
 
@@ -205,11 +216,13 @@ silently replaces the thing that would have caught the shader change.
   on this machine, but they are not what a reference IMAGE is for. Quote the
   gate's `warmFps`, never a number read off a bank run.
 - **Nothing here proves the shipped bake on a machine that cannot finish it.**
-  Coldharbour's forty probes are one frame and 138 ms here. On the Chromebook
+  Coldharbour's forty probes are one frame here — see `FINDINGS.md` #10 for
+  what that frame actually costs, which is not what this plan first recorded.
+  On the Chromebook
   that frame takes the device, and no reference set taken there covers it.
 - **The `GLASS_DEPTH_UNITS` SWEEP is not in it, and the three curtain-wall
-  frames are not a substitute for it.** The sweep is a measurement and it is
-  M7's: it hides the rest of the map, holds the incidence angle and the
+  frames are not a substitute for it.** It is `depth.mjs glass` now. The sweep
+  is a measurement: it hides the rest of the map, holds the incidence angle and the
   on-screen size still by moving `fov` with the distance, and reads the pane's
   own contribution by toggling the group and differencing — see
   `VERIFYING.md`. What is banked instead is the same wall photographed at 2, 40

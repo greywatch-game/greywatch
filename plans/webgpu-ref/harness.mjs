@@ -144,8 +144,11 @@ export async function bootMap(browser, url, id, { hideUI = true } = {}) {
  * `startRound()` only BOOKS the build — `buildRound` runs two animation frames
  * later — so this waits on the STATE and never on the call. `bakeFrameMs` is
  * the single frame after the install, which is where the reflection bake
- * lands: forty cube probes on Coldharbour, measured at 138 ms on a real GPU
- * and fatal to the device on a CPU rasteriser.
+ * lands: forty cube probes on Coldharbour, which complete in one frame on a
+ * real GPU and are fatal to the device on a CPU rasteriser. **This figure is
+ * not a reliable reading of what the bake costs** — the bake is not
+ * contractually on the frame after the state flips, and `FINDINGS.md` #10 has
+ * both the ~1.4 s a forced re-bake measures and why the two disagree.
  */
 export function installRound(page) {
   return page.evaluate(async () => {

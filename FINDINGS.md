@@ -196,6 +196,15 @@ put a number on.
 **Status:** measured. The mechanism is confirmed against Babylon's source; the
 one open question is what excluding the geometry costs visually.
 
+**The draw counts below were taken on WebGL2 and are now unattributed.** The
+mechanism is source-level and did not move with the backend — the exclusion scan
+still runs before any map exists, and `_shouldRenderMesh` is still `hasMesh` —
+so the entry stands. What is no longer a current measurement is the ~150 draws
+and ~30k triangles, and finding 12 already says on real hardware that removing
+them is worth nothing: excluding the world from the glow layer took 26.4% of the
+draw calls off and did not move the frame. **So the reason to reach for this is
+the visual question in it, not the count.**
+
 ### What was measured
 
 **~150 draws and ~30k triangles a frame**, spent rendering cel-shaded world
@@ -245,8 +254,18 @@ that matter and drops the 90% of the village that is nowhere near a light.
 
 ## 4. ~~A 4× MSAA backbuffer is allocated and resolved for nothing~~ — FIXED
 
-The engine is now `new Engine(canvas, false, {})` and
-`gl.getParameter(gl.SAMPLES)` reads **0** on the default framebuffer, against
+**Re-taken on WebGPU, where the reading is a sample count rather than a GL
+parameter, and it still holds.** The engine is
+`new WebGPUEngine(canvas, { antialias: false, stencil: false })`,
+`engine.currentSampleCount` is **1**, and there is not one multisampled texture
+in the engine's cache. The counterfactual was measured rather than assumed: a
+second engine on a throwaway 1920x1080 canvas with `antialias: true` comes back
+at sample count **4**, `bgra8unorm` colour and `depth32float` depth — which is
+33.2 MB of colour and 33.2 MB of depth, so the "66 MB at 1080p" below is exactly
+right for the new formats as well. The original WebGL2 reading follows.
+
+The engine was `new Engine(canvas, false, {})` and
+`gl.getParameter(gl.SAMPLES)` read **0** on the default framebuffer, against
 the 4 it used to. The reasoning was never in doubt — FXAA sends every pass of
 the scene into post-process render targets, so the only thing ever drawn to the
 default framebuffer is one full-screen quad, and multisampling it antialiases
@@ -263,6 +282,15 @@ finding 5's render scale, and the two want reading together.
 
 **Status:** counted, not costed, and now partly *steerable* — the lever this
 entry asked for exists.
+
+**Re-counted on WebGPU and the shape is unchanged**: the four chained passes are
+all still there, and the ash field is a `ComputeShaderParticleSystem` (WebGPU
+routes `GPUParticleSystem` to compute rather than transform feedback — no import
+and no code changed) at a capacity of 14,934 on Hollowmere with
+`randomTextureSize` 8192, against the 18,667 recorded here. The particle count
+is a MAP number and moved with the maps, not with the backend. **What is now
+costed is the post chain, and it is small**: finding 12's run puts the whole of
+it at ~1% of Coldharbour's frame. `renderScale` is still the unmeasured lever.
 
 - **Four chained passes at the render resolution** — fxaa, godRays, motionBlur,
   horror — plus the glow layer's blur. Finding 2's detach takes that to three
@@ -537,7 +565,8 @@ original stands, the lever is fewer substeps while several corpses are live —
 
 ## 10. The reflection bake is draw-call bound, and a distance cull halves the list
 
-**Measured, headless (SwiftShader, Coldharbour).** `ReflectionSystem` bakes 37
+**Measured, headless (SwiftShader, Coldharbour); superseded on real hardware —
+see the end of this entry.** `ReflectionSystem` bakes 37
 probes at install — one per glazed map block — which is 222 cube faces over
 ~328 merged meshes each. Forced synchronously in one `evaluate`:
 
@@ -569,6 +598,35 @@ mode at any radius. If it lands over ~500 ms, the shape to reach for is not a
 hard radius but fewer PROBES — merging the probes of adjacent blocks whose
 glazing is within a few metres of a shared centre, which drops the count
 without putting a hole in anything.
+
+**Measured on real hardware at last, and it lands in the SECOND arm of this
+entry's own test, not the first.** On the Windows box (RTX 4070 Ti SUPER,
+WebGPU) the shipped bake — 40 probes, 128² faces, no cull, a mean render list of
+**486** meshes — costs **~1.4–2.1 s in one frame warm, and 1.0–3.1 s on the
+frame it first happens**, against a 6.8 ms frame beside it. It is still a build
+cost and never a frame cost (the probes are refresh-once and re-render zero
+times per frame, confirmed), but it is a second of the map build rather than the
+rounding error the sub-150 ms arm assumed. **So the shape to reach for is fewer
+PROBES and not a distance cull**, exactly as this entry says of anything over
+~500 ms — merging the probes of adjacent blocks whose glazing shares a centre,
+which drops the count without putting a hole in anything.
+
+It is draw-call bound, and that half of the title is now confirmed on hardware
+rather than under SwiftShader: keeping every probe and truncating each render
+list scales almost linearly — 486 meshes 2124 ms, 243 meshes 813 ms, 49 meshes
+109 ms. Note the list has grown from the 328 above; that is the map, not the
+backend.
+
+**One number in `plans/webgpu_migration.md` and `VERIFYING.md` does not
+reproduce and is the open thread here.** Both record this bake at 138 ms on this
+machine, and nothing since has been able to repeat it: in the same gate run that
+puts Coldharbour's forty probes at 1151 ms, Hollowmere's FOUR cost 76 ms, which
+is 19 ms a probe against the 3.5 ms a probe the old figure implies. The box is
+running about 20% below the frame rates recorded beside that figure, which is
+nowhere near enough to explain 10x. The likeliest reading is that the 138 ms
+frame was not the frame the bake happened on — `installRound` times the frame
+after the state flips, and the bake is not contractually on it — but that has
+not been demonstrated. **Do not quote 138 ms; re-take it.**
 
 ---
 
@@ -742,12 +800,33 @@ Two candidates are ruled out by the same run: the forty cube probes are
 refresh-once and re-render zero times per frame, so they are a build cost and
 not a frame cost; and the post chain is worth ~1% (47.3 against 46.4).
 
+**M7 adds nothing to the ranking and one thing to the caveat.** The
+frozen-camera sweep this entry asks for has still not been run on this machine,
+so the "~3.5x Hollowmere" figure is still not like-for-like with the "~25%"
+above it. What M7 did establish is that the two levers it might have moved are
+not levers: the glass depth bias is at its measured optimum in both directions
+(`docs/rendering.md`), and the reflection bake is a build cost rather than
+anything per frame — a large one, but paid once at install (finding 10). **The glass FRAGMENT is still the
+next lever in line and is still untouched.**
+
 ---
 
 ## 13. Greyfen's jungle costs 67% more geometry per frame, and nobody has costed it on real hardware
 
 **Status:** measured headless, both sides of the change. The ranking is
 trustworthy and the milliseconds do not exist.
+
+**Half of the title is now answered and the half that matters is not.** Greyfen
+on real hardware under WebGPU runs at 133–176 fps warm, a 5.6 ms median and a
+6.7 ms p95 — indistinguishable from Hollowmere and a third of what Coldharbour
+and Harrowmead cost (finding 12's table). So the forest is not expensive in any
+sense a player would notice, and the question this entry was opened for — what
+the 67% costs — has been answered as "nothing measurable". What was NOT measured
+is the other side of the change, because that Greyfen no longer exists to boot;
+the before/after ranking below stays headless and stays unattributed. **A second
+thing the re-cut cost, found by M7:** the closed canopy puts the valley floor in
+deep enough shade that `docs/rendering.md`'s ground-relief aliasing measurement
+can no longer be taken there at all, and moved to Coldharbour.
 
 ### What changed
 
