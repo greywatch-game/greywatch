@@ -188,9 +188,10 @@ you are on before you believe anything else in this section.
 - **The engine fetches glslang and twgsl from `cdn.babylonjs.com`, so match
   `**/*.babylonjs.com/**` and never a hostname from memory.** Four files —
   `v9.19.1/glslang/glslang.{js,wasm}` and `v9.19.1/twgsl/twgsl.{js,wasm}` —
-  pulled the first time a GLSL shader reaches the backend, which is what every
-  shader still is until the WGSL port finishes. **This has already produced a
-  false PASS**: a gate asserting "no CDN fetch during boot" against
+  pulled the first time a GLSL shader reaches the backend, which is what
+  every shader not yet ported still is — after M3 that is the grass, cel and
+  water stages, plus the outline pass and the emissive plugin. **This has
+  already produced a false PASS**: a gate asserting "no CDN fetch during boot" against
   `preview.babylonjs.com` passed while watching a host that is never contacted.
   Two further traps in the same check — booting only to the menu compiles no
   shader and therefore fetches nothing, and a route filter proves only what was
@@ -473,9 +474,11 @@ is one machine's:
   get is `FRAGMENT SHADER ERROR: 0:56: 'water' : syntax error` — a word from the
   middle of your prose, at a line number offset from the file by Babylon's own
   prologue. A comment on a line of its OWN is fine; it is only the trailing kind
-  that gets split. **Whether this still bites on the WGSL path is not yet
-  settled** — the shaders it was measured on were GLSL, and Babylon's WGSL
-  processor is a different one; re-derive it rather than assuming either way.
+  that gets split. **It does NOT bite on the WGSL path**, which was read out
+  of the processor rather than guessed: `preProcessShaderCode` runs
+  `RemoveComments` over the whole source before the cursor splits a single
+  line, so the comment is gone before anything can find a `;` in it. Comment
+  a WGSL shader freely. The rule stands for the GLSL strings that are left.
 - **To read what the driver actually saw, hook
   `GPUDevice.prototype.createShaderModule` in an `addInitScript` and keep
   `descriptor.code`** — a failed effect is not in `engine._compiledEffects`, so
@@ -492,6 +495,30 @@ is one machine's:
   is, and `glslScaffold` turns the diagnostic off for exactly that reason. A
   run in which those messages arrive as `type === "error"` instead means the
   scaffold did not install — that is the thing to check, not the shader.
+- **While the scaffold lives, the strongest check on a ported shader is its
+  own GLSL original standing beside it.** The engine still compiles GLSL at
+  M3–M5 — that is what `src/shaders/glslScaffold.ts` is for — so the old
+  source can be registered as a second effect and rendered over the SAME frozen
+  frame with the SAME forced uniforms, and the difference is the
+  transliteration and nothing else. Detach every pass on the camera first so
+  the one under test IS the frame; `git show <before>:src/shaders/<f>.ts` is
+  where the old source comes from, and `Effect.RegisterShader(name, src,
+  undefined, 0)` is how it goes in without a deep import. This is what the
+  reference bank cannot do: a frozen frame is a still camera, so the motion
+  blur is at `strength = 0` and the god rays are wherever the moon happened to
+  be, and neither loop is in any banked picture. All three post fragments came
+  back byte-identical this way, on a forced 6-degree yaw and a forced
+  `presence = 1`. **The technique expires with the scaffold**, so use it while
+  it is there.
+- **To check that a uniform ARRIVES, paint it.** A debug pass whose whole body
+  is `fragmentOutputs.color = vec4f(uniforms.x / k, 1.0)`, screenshotted and
+  read back through `diff.mjs`'s decoder, turns "the lighting looks subtly
+  wrong" into a boolean. It is how `setMatrix3x3` was shown to land `[1..9]`
+  in a WGSL `mat3x3f` as the columns `(1,2,3) (4,5,6) (7,8,9)` — a repack into
+  three vec4-aligned slots that has no diagnostic if it goes wrong. Build it
+  in-page off constructors you already have (`somePass.constructor`,
+  `somePass.getEffect().constructor`) rather than reaching for a Babylon
+  global that is not exposed.
 - Assigning `input.ads` or `cameraSys.adsBlend` does not stick;
   `InputManager.update()` rewrites the flag every tick. Redefine instead —
   `Object.defineProperty(g.input, "ads", { get: () => true, set: () => {} })` —

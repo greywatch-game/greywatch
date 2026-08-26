@@ -8,13 +8,18 @@
  * shader's `presence <= 0` early-out is the second line of defence for the
  * transition frame, not the saving: it skips the sample loop and still reads
  * and writes the whole frame. Fed by Game each frame from Sky.moonDirection.
+ * Its shader is hand-written WGSL, and `shaderLanguage` on the PostProcess is
+ * load-bearing rather than declarative: the constructor defaults to GLSL and
+ * would look this pass up in a store nothing writes any more. See
+ * `docs/rendering.md` for what the dialect and Babylon's WGSL processor decide.
  */
 import {
   Camera,
-  Effect,
   Matrix,
   PostProcess,
   Scene,
+  ShaderLanguage,
+  ShaderStore,
   Vector3,
   Viewport,
 } from "@babylonjs/core";
@@ -39,54 +44,59 @@ import { CONFIG } from "../config";
  * it being off the side of the screen, and the fade between. At zero the
  * shader early-outs to a copy — a uniform branch, so it costs nothing.
  */
-Effect.ShadersStore["godRaysFragmentShader"] = `
-precision highp float;
+ShaderStore.ShadersStoreWGSL["godRaysFragmentShader"] = `
+varying vUV: vec2f;
+var textureSamplerSampler: sampler;
+var textureSampler: texture_2d<f32>;
 
-varying vec2 vUV;
-uniform sampler2D textureSampler;
+uniform lightPos: vec2f;    // moon, in screen uv
+uniform tint: vec3f;
+uniform presence: f32;      // 0 = off screen / behind, 1 = dead ahead
+uniform density: f32;
+uniform decay: f32;
+uniform weight: f32;
+uniform intensity: f32;
+uniform threshold: f32;
 
-uniform vec2 lightPos;    // moon, in screen uv
-uniform vec3 tint;
-uniform float presence;   // 0 = off screen / behind, 1 = dead ahead
-uniform float density;
-uniform float decay;
-uniform float weight;
-uniform float intensity;
-uniform float threshold;
+// A WGSL const rather than the #define this was. Babylon's WGSL processor
+// implements a define by searching the whole shader for its NAME with an
+// un-anchored regex and pasting the value over every hit, which is a
+// substring collision waiting to happen; the count is interpolated from
+// CONFIG here either way, so nothing is lost by declaring it in the language.
+const SAMPLES: i32 = ${CONFIG.godRays.samples};
 
-#define SAMPLES ${CONFIG.godRays.samples}
-
-void main() {
-  vec3 scene = texture2D(textureSampler, vUV).rgb;
-  if (presence <= 0.0) {
-    gl_FragColor = vec4(scene, 1.0);
-    return;
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  let scene = textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV, 0.0).rgb;
+  if (uniforms.presence <= 0.0) {
+    fragmentOutputs.color = vec4f(scene, 1.0);
+    return fragmentOutputs;
   }
 
   // Step back toward the moon, accumulating only what is bright enough to be
   // sky. The step is the whole distance to the light, split evenly, so pixels
   // far from it take longer strides and the beams stay straight.
-  vec2 delta = (vUV - lightPos) * (density / float(SAMPLES));
-  vec2 uv = vUV;
-  float illum = 1.0;
-  vec3 accum = vec3(0.0);
+  let delta = (input.vUV - uniforms.lightPos) * (uniforms.density / f32(SAMPLES));
+  var uv = input.vUV;
+  var illum = 1.0;
+  var accum = vec3f(0.0);
 
-  for (int i = 0; i < SAMPLES; i++) {
+  for (var i: i32 = 0; i < SAMPLES; i++) {
     uv -= delta;
     // Sampling past the edge would fetch the clamped border and smear it
     // along the ray, so a tap that walks off screen contributes nothing.
-    float inside = step(0.0, uv.x) * step(uv.x, 1.0)
-                 * step(0.0, uv.y) * step(uv.y, 1.0);
-    vec3 s = texture2D(textureSampler, clamp(uv, 0.0, 1.0)).rgb;
-    float lum = dot(s, vec3(0.299, 0.587, 0.114));
+    let inside = step(0.0, uv.x) * step(uv.x, 1.0)
+               * step(0.0, uv.y) * step(uv.y, 1.0);
+    let s = textureSampleLevel(textureSampler, textureSamplerSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0).rgb;
+    let lum = dot(s, vec3f(0.299, 0.587, 0.114));
     // Only the sky radiates: below the threshold a pixel is world geometry,
     // and world geometry is what has to cut the beams out.
-    accum += s * smoothstep(threshold, threshold + 0.25, lum) * illum * weight * inside;
-    illum *= decay;
+    accum += s * smoothstep(uniforms.threshold, uniforms.threshold + 0.25, lum) * illum * uniforms.weight * inside;
+    illum *= uniforms.decay;
   }
-  accum /= float(SAMPLES);
+  accum /= f32(SAMPLES);
 
-  gl_FragColor = vec4(scene + accum * tint * intensity * presence, 1.0);
+  fragmentOutputs.color = vec4f(scene + accum * uniforms.tint * uniforms.intensity * uniforms.presence, 1.0);
 }
 `;
 
@@ -141,10 +151,8 @@ export class GodRays {
    */
   constructor(scene: Scene) {
     const g = CONFIG.godRays;
-    this.post = new PostProcess(
-      "godRays",
-      "godRays",
-      [
+    this.post = new PostProcess("godRays", "godRays", {
+      uniforms: [
         "lightPos",
         "tint",
         "presence",
@@ -154,12 +162,11 @@ export class GodRays {
         "intensity",
         "threshold",
       ],
-      null,
-      1.0,
-      null,
-      undefined,
-      scene.getEngine(),
-    );
+      size: 1.0,
+      camera: null,
+      engine: scene.getEngine(),
+      shaderLanguage: ShaderLanguage.WGSL,
+    });
     this.post.onApply = (effect) => {
       effect.setFloat2("lightPos", this.lightX, this.lightY);
       effect.setFloat3("tint", this.tint.x, this.tint.y, this.tint.z);

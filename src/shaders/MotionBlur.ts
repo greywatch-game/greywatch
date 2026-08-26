@@ -10,8 +10,19 @@
  * is teleported, or the jump reads as one blurred frame. Turning it off is a
  * DETACH (`pass` + `setEnabled`, sequenced by Game.setMotionBlurEnabled), not a
  * zeroed strength: the shader's early-out is still a full-screen copy.
+ * Its shader is hand-written WGSL, and `shaderLanguage` on the PostProcess is
+ * load-bearing rather than declarative: the constructor defaults to GLSL and
+ * would look this pass up in a store nothing writes any more. See
+ * `docs/rendering.md` for what the dialect and Babylon's WGSL processor decide.
  */
-import { Camera, Effect, PostProcess, Scene, Vector3 } from "@babylonjs/core";
+import {
+  Camera,
+  PostProcess,
+  Scene,
+  ShaderLanguage,
+  ShaderStore,
+  Vector3,
+} from "@babylonjs/core";
 import { CONFIG } from "../config";
 
 /**
@@ -33,74 +44,75 @@ import { CONFIG } from "../config";
  * copy, and because it is a uniform the branch costs nothing. It is zero
  * whenever the view is near enough to still, which is most of a round.
  */
-Effect.ShadersStore["motionBlurFragmentShader"] = `
-precision highp float;
+ShaderStore.ShadersStoreWGSL["motionBlurFragmentShader"] = `
+varying vUV: vec2f;
+var textureSamplerSampler: sampler;
+var textureSampler: texture_2d<f32>;
 
-varying vec2 vUV;
-uniform sampler2D textureSampler;
+uniform reproject: mat3x3f;   // current camera space -> previous camera space
+uniform tanHalfFov: vec2f;    // half-extents of the near plane, at z = 1
+uniform strength: f32;        // 0 = pass through
+uniform maxShift: f32;
+uniform mask: vec2f;          // radial falloff: x = inner (sharp), y = outer (full)
 
-uniform mat3 reproject;   // current camera space -> previous camera space
-uniform vec2 tanHalfFov;  // half-extents of the near plane, at z = 1
-uniform float strength;   // 0 = pass through
-uniform float maxShift;
-uniform vec2 mask;        // radial falloff: x = inner (sharp), y = outer (full)
+// See GodRays for why this is a const and not the #define it was.
+const SAMPLES: i32 = ${CONFIG.graphics.motionBlur.samples};
 
-#define SAMPLES ${CONFIG.graphics.motionBlur.samples}
-
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+fn hash(p: vec2f) -> f32 {
+  return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453123);
 }
 
-void main() {
-  vec3 scene = texture2D(textureSampler, vUV).rgb;
-  if (strength <= 0.0) {
-    gl_FragColor = vec4(scene, 1.0);
-    return;
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  let scene = textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV, 0.0).rgb;
+  if (uniforms.strength <= 0.0) {
+    fragmentOutputs.color = vec4f(scene, 1.0);
+    return fragmentOutputs;
   }
 
   // The ray through this pixel, in camera space. Babylon is left-handed, so
   // the camera looks down +Z and the ray needs no sign flip.
-  vec2 ndc = vUV * 2.0 - 1.0;
-  vec3 ray = vec3(ndc * tanHalfFov, 1.0);
-  vec3 prev = reproject * ray;
+  let ndc = input.vUV * 2.0 - 1.0;
+  let ray = vec3f(ndc * uniforms.tanHalfFov, 1.0);
+  let prev = uniforms.reproject * ray;
 
   // Behind the previous camera. Only reachable past a quarter-turn in one
   // frame, and the divide below would fold it back into frame mirrored rather
   // than off the edge — so leave the pixel sharp instead.
   if (prev.z <= 0.0001) {
-    gl_FragColor = vec4(scene, 1.0);
-    return;
+    fragmentOutputs.color = vec4f(scene, 1.0);
+    return fragmentOutputs;
   }
 
-  vec2 prevUV = (prev.xy / (prev.z * tanHalfFov)) * 0.5 + 0.5;
-  vec2 shift = (prevUV - vUV) * strength;
+  let prevUV = (prev.xy / (prev.z * uniforms.tanHalfFov)) * 0.5 + 0.5;
+  var shift = (prevUV - input.vUV) * uniforms.strength;
 
   // A dropped frame arrives as one enormous rotation, and without this cap it
   // smears the whole screen into paste. Clamping is the honest failure: the
   // blur saturates instead of exploding.
-  float len = length(shift);
-  if (len > maxShift) shift *= maxShift / len;
+  let len = length(shift);
+  if (len > uniforms.maxShift) { shift *= uniforms.maxShift / len; }
 
   // The weapon is parented to the camera, so it is motionless in screen space
   // while the world behind it sweeps — blurring it reads as a dirty lens, not
   // as motion. There is no depth here to separate the two, so the smear fades
   // out toward the crosshair, which is where the eye tracks and where blur is
   // least wanted anyway. Same radial language as HorrorPost's aberration.
-  float r = length(vUV - 0.5) * 2.0;
-  shift *= smoothstep(mask.x, mask.y, r);
+  let r = length(input.vUV - 0.5) * 2.0;
+  shift *= smoothstep(uniforms.mask.x, uniforms.mask.y, r);
 
   // Taps walk back toward where the pixel came from — a trailing smear, which
   // is what a shutter integrates, rather than a centred one that would lead
   // the motion. The jitter breaks the even spacing into noise: at these
   // sample counts a long smear otherwise arrives as distinct ghosts.
-  float jitter = hash(vUV) - 0.5;
-  vec3 accum = scene;
-  for (int i = 1; i < SAMPLES; i++) {
-    vec2 uv = vUV + shift * ((float(i) + jitter) / float(SAMPLES - 1));
-    accum += texture2D(textureSampler, clamp(uv, 0.0, 1.0)).rgb;
+  let jitter = hash(input.vUV) - 0.5;
+  var accum = scene;
+  for (var i: i32 = 1; i < SAMPLES; i++) {
+    let uv = input.vUV + shift * ((f32(i) + jitter) / f32(SAMPLES - 1));
+    accum += textureSampleLevel(textureSampler, textureSamplerSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0).rgb;
   }
 
-  gl_FragColor = vec4(accum / float(SAMPLES), 1.0);
+  fragmentOutputs.color = vec4f(accum / f32(SAMPLES), 1.0);
 }
 `;
 
@@ -117,7 +129,22 @@ export class MotionBlur {
   private readonly up = new Vector3(0, 1, 0);
   private readonly fwd = new Vector3(0, 0, 1);
 
-  /** Column-major, as GLSL wants a mat3. Identity until the first update. */
+  /**
+   * Column-major, which is what both shader languages want and what
+   * `setMatrix3x3` promises: `[1..9]` arrives as the columns `(1,2,3)`,
+   * `(4,5,6)`, `(7,8,9)`. Identity until the first update.
+   *
+   * **A WGSL `mat3x3f` is three vec4-ALIGNED columns and these nine floats are
+   * not**, so the upload is a repack into 16-byte slots rather than a copy —
+   * Babylon's `UniformBuffer` does it, and getting it wrong would be a
+   * scrambled matrix with no diagnostic anywhere. It is also the one thing
+   * about this pass the reference bank cannot check, because a frozen frame is
+   * a STILL camera, a still camera is `strength = 0`, and that is the early-out
+   * two lines into the shader. Measured instead, twice: a debug WGSL pass
+   * handed `[1..9]` and asked to paint its three columns read them back in that
+   * order, and this shader run beside its GLSL original over one frozen frame
+   * with a forced six-degree yaw came back byte-identical.
+   */
   private readonly reproject = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
   /** Vertical half-extent of the near plane at z = 1; the pair is built at
    * apply time, when the pass knows the size it is actually running at. */
@@ -140,16 +167,13 @@ export class MotionBlur {
   constructor(scene: Scene, camera: Camera) {
     const c = CONFIG.graphics.motionBlur;
     this.camera = camera;
-    this.post = new PostProcess(
-      "motionBlur",
-      "motionBlur",
-      ["reproject", "tanHalfFov", "strength", "maxShift", "mask"],
-      null,
-      1.0,
+    this.post = new PostProcess("motionBlur", "motionBlur", {
+      uniforms: ["reproject", "tanHalfFov", "strength", "maxShift", "mask"],
+      size: 1.0,
       camera,
-      undefined,
-      scene.getEngine(),
-    );
+      engine: scene.getEngine(),
+      shaderLanguage: ShaderLanguage.WGSL,
+    });
     this.post.onApply = (effect) => {
       effect.setMatrix3x3("reproject", this.reproject);
       // The aspect comes from the pass's own target rather than a cached

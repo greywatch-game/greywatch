@@ -707,8 +707,8 @@ export class Game {
     this.scene = new Scene(this.engine);
     this.scene.collisionsEnabled = true;
     // **SCAFFOLDING, and the whole argument is in `glslScaffold.ts`.** The
-    // engine is WebGPU and every shader in this tree is still GLSL, and this
-    // is the scene half of what that arrangement costs: Babylon's outline pass
+    // engine is WebGPU and a shader in this tree is still GLSL, and this is
+    // the scene half of what that arrangement costs: Babylon's outline pass
     // picks WGSL for itself under WebGPU, which leaves `OutlineFog` patching a
     // source nothing reads. The engine half is `main.ts`'s, and both go when
     // the last shader is ported. Nothing may be built that depends on either.

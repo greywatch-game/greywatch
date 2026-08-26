@@ -8,8 +8,18 @@
  * the motion blur ahead of it can be removed and put back without ending up
  * behind it (see Game.setMotionBlurEnabled), and both honour `setEnabled`, so
  * that dance can never re-attach a grade the player turned off.
+ * Its shader is hand-written WGSL, and `shaderLanguage` on the PostProcess is
+ * load-bearing rather than declarative: the constructor defaults to GLSL and
+ * would look this pass up in a store nothing writes any more. See
+ * `docs/rendering.md` for what the dialect and Babylon's WGSL processor decide.
  */
-import { Camera, Effect, PostProcess, Scene } from "@babylonjs/core";
+import {
+  Camera,
+  PostProcess,
+  Scene,
+  ShaderLanguage,
+  ShaderStore,
+} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { EnvironmentSpec } from "../world/environment";
 
@@ -22,49 +32,50 @@ import type { EnvironmentSpec } from "../world/environment";
  * because that block re-applies gamma to the cel shader's already
  * display-ready colors and washes the palette out.
  */
-Effect.ShadersStore["horrorFragmentShader"] = `
-precision highp float;
+ShaderStore.ShadersStoreWGSL["horrorFragmentShader"] = `
+varying vUV: vec2f;
+var textureSamplerSampler: sampler;
+var textureSampler: texture_2d<f32>;
 
-varying vec2 vUV;
-uniform sampler2D textureSampler;
+uniform time: f32;
+uniform vignette: f32;
+uniform grain: f32;
+uniform aberration: f32;
+uniform damage: f32;
 
-uniform float time;
-uniform float vignette;
-uniform float grain;
-uniform float aberration;
-uniform float damage;
-
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+fn hash(p: vec2f) -> f32 {
+  return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453123);
 }
 
-void main() {
-  vec2 centered = vUV - 0.5;
-  float r2 = dot(centered, centered);
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  let centered = input.vUV - 0.5;
+  let r2 = dot(centered, centered);
 
   // Radial chromatic aberration — none at the crosshair, smeared at the edge.
-  vec2 offset = centered * aberration * r2 * 0.09;
-  vec3 col;
-  col.r = texture2D(textureSampler, vUV + offset).r;
-  col.g = texture2D(textureSampler, vUV).g;
-  col.b = texture2D(textureSampler, vUV - offset).b;
+  let offset = centered * uniforms.aberration * r2 * 0.09;
+  var col = vec3f(
+    textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV + offset, 0.0).r,
+    textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV, 0.0).g,
+    textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV - offset, 0.0).b,
+  );
 
   // Vignette: the corners fall away into the dark.
-  col *= 1.0 - vignette * smoothstep(0.05, 0.62, r2);
+  col *= 1.0 - uniforms.vignette * smoothstep(0.05, 0.62, r2);
 
   // Color drains toward the edges of vision.
-  float lum = dot(col, vec3(0.299, 0.587, 0.114));
-  col = mix(col, vec3(lum), clamp(r2 * 1.1, 0.0, 0.4));
+  let lum = dot(col, vec3f(0.299, 0.587, 0.114));
+  col = mix(col, vec3f(lum), clamp(r2 * 1.1, 0.0, 0.4));
 
   // Damage: blood pushes in from the border, but never closes over the
   // crosshair — the player still has to be able to fight while hurt.
-  col = mix(col, vec3(0.42, 0.02, 0.03), damage * 0.8 * smoothstep(0.04, 0.42, r2));
+  col = mix(col, vec3f(0.42, 0.02, 0.03), uniforms.damage * 0.8 * smoothstep(0.04, 0.42, r2));
 
   // Animated film grain, slightly stronger in the shadows.
-  float n = hash(vUV * vec2(1024.0, 683.0) + fract(time) * 91.7);
-  col += (n - 0.5) * grain * (1.3 - lum * 0.6);
+  let n = hash(input.vUV * vec2f(1024.0, 683.0) + fract(uniforms.time) * 91.7);
+  col += (n - 0.5) * uniforms.grain * (1.3 - lum * 0.6);
 
-  gl_FragColor = vec4(col, 1.0);
+  fragmentOutputs.color = vec4f(col, 1.0);
 }
 `;
 
@@ -90,16 +101,13 @@ export class HorrorPost {
 
   constructor(scene: Scene, camera: Camera) {
     this.camera = camera;
-    this.post = new PostProcess(
-      "horror",
-      "horror",
-      ["time", "vignette", "grain", "aberration", "damage"],
-      null,
-      1.0,
+    this.post = new PostProcess("horror", "horror", {
+      uniforms: ["time", "vignette", "grain", "aberration", "damage"],
+      size: 1.0,
       camera,
-      undefined,
-      scene.getEngine(),
-    );
+      engine: scene.getEngine(),
+      shaderLanguage: ShaderLanguage.WGSL,
+    });
     this.post.onApply = (effect) => {
       effect.setFloat("time", this.time);
       effect.setFloat("vignette", this.vignette);

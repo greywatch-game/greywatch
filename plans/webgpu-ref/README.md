@@ -8,8 +8,10 @@ therefore means a **shader** difference, which is the only thing M3–M6 can
 break.
 
 Taken with `src/shaders/glslScaffold.ts` in place — the engine is
-`WebGPUEngine`, every shader is still GLSL, and the backend runs them through
-glslang → SPIR-V → twgsl → WGSL.
+`WebGPUEngine`, every shader was still GLSL, and the backend ran them through
+glslang → SPIR-V → twgsl → WGSL. **The bank does not move as shaders are
+ported**, which is the whole technique: it is the picture the GLSL sources drew
+on this engine, and every WGSL landing is asked to reproduce it exactly.
 
 ## The scripts
 

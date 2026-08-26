@@ -931,10 +931,89 @@ remainder to its own line, so the tail of the comment lands as code. The error
 names a word from the middle of your prose and a line number that does not
 match the file, which is as unhelpful as it sounds.
 
+**It does NOT bite on the WGSL path, and that was checked rather than
+assumed.** The WGSL processor's `preProcessShaderCode` runs `RemoveComments`
+over the whole source before the cursor ever sees a line, so a comment is gone
+by the time anything splits on a `;`. Comment WGSL freely; the rule above
+stays because it is still true of every GLSL string in the tree, and there are
+five of them left.
+
 **Water needs the sky fill the ground already gets.** `skyLightColor` by `n.y`
 is what makes the cel shader's floors and roofs read as lit; water is the most
 up-facing surface on any map, and leaving it out is what made a pond read as a
 hole in a lit field.
+
+## Hand-written WGSL: what the dialect and the processor decide
+
+**Babylon's WGSL is preprocessed and is not raw WGSL**, which is what makes a
+shader in this tree readable at all: declarations are `varying vUV: vec2f;`,
+`attribute position: vec3f;` and `uniform time: f32;`, and the bodies reach
+them as `fragmentInputs.vUV`, `vertexInputs.position` and `uniforms.time`.
+A fragment is `@fragment fn main(input: FragmentInputs) -> FragmentOutputs`
+and writes `fragmentOutputs.color`. `#include<>`, `#ifdef` and `#define` all
+survive the trip.
+
+**Nothing is handed WGSL unless it is ASKED for**, and the two halves of asking
+are in different places. A shader is registered into
+`ShaderStore.ShadersStoreWGSL` rather than `Effect.ShadersStore`, and its
+consumer states `shaderLanguage: ShaderLanguage.WGSL` — a `PostProcess` and a
+`ShaderMaterial` both default to GLSL and will otherwise look the shader up in
+a store nothing wrote. **The one thing in the engine that does the opposite is
+`OutlineRenderer`**, which picks WGSL for itself under WebGPU with no flag to
+say otherwise; that is what `src/shaders/glslScaffold.ts` puts back, and it
+comes out when `OutlineFog` is ported.
+
+**Sample with `textureSampleLevel` and never `textureSample`.** WGSL's
+uniformity analysis rejects an implicit-LOD sample reached through non-uniform
+control flow, which is what every early-out in a post pass and every `#ifdef`'d
+fetch in the cel shader produces — the error reads as a real bug and names a
+shader that has been correct for years. An explicit LOD carries no such
+requirement, none of these textures has a mip chain, and Babylon's own WGSL
+post shaders do exactly this. The alternative is `#define
+DISABLE_UNIFORMITY_ANALYSIS`, which turns the diagnostic off wholesale; prefer
+the explicit LOD where a LOD is what you meant, and keep the define for the
+derivative work (`fwidth`, `facetNormal`) where there is nothing else to say.
+
+**An early `return` must return the struct**, `return fragmentOutputs;` and
+never a bare `return;` — the processor appends its own
+`return fragmentOutputs;` to a function it has typed `-> FragmentOutputs`, and
+a bare one is a compile error. **The trailing unreachable one is fine**:
+Babylon prefixes `diagnostic(off, chromium.unreachable_code)` for exactly this.
+So an early-out stays an early-out, and does not have to be rewritten into a
+single exit — which matters, because two of the three post passes document
+theirs as load-bearing.
+
+**Prefer a WGSL `const` to a `#define` for a compile-time number.** The
+processor implements a define by searching the whole shader for its NAME with
+an un-anchored regex and pasting the value over every hit, so a name that is a
+substring of any other identifier corrupts it silently. `const SAMPLES: i32 =
+32;` is a real declaration, is legal as a loop bound, and costs nothing.
+
+**A scalar uniform ARRAY is not laid out the way it is written.** The processor
+rewrites `array<f32, N>` into an array of a `@size(16)` struct and patches
+accesses with the non-greedy regex `names*[(.*?)]` → `name[$1].el`, so
+`pointRange[i]` is safe and `pointRange[idx[j]]` is silently corrupt. Index a
+strided array with a plain name or a literal, never with an expression
+containing a `]`. A `vec3f` array needs no such care — its natural uniform
+stride is already 16 — which is why `setArray3` is correct as it stands.
+
+**A `mat3x3f` is three vec4-ALIGNED columns**, so `setMatrix3x3`'s nine floats
+are repacked into 48 bytes on the way into the leftover UBO rather than copied.
+Babylon does that correctly — measured, by painting the three columns out of a
+debug pass — and the reason it is written down is that nothing about the
+failure would be visible: a mis-packed matrix is a scrambled matrix with no
+diagnostic anywhere.
+
+**A uniform that is never written reads as ZEROS, and a sampler that is never
+bound takes the draw down with it.** That asymmetry is stated in full in the
+constraints below; it is repeated here because it is the rule most likely to be
+tripped by a hand-written shader that declares more than the variant it is
+compiling actually uses.
+
+**WGSL has `transpose()` and has no `inverse()`.** The eye position that
+`OutlineFog` recovers from the rows of `viewProjection` is therefore still
+recovered that way when that file is ported — for a new reason, because the old
+one was that GLSL ES 1.00 had neither.
 
 ## Rendering constraints that look like bugs if you undo them
 

@@ -239,6 +239,53 @@ chosen by taking them and looking at them, and the numbers are the record of
 that.
 
 
+## M3 landed
+
+**The three post fragments are hand-written WGSL, and all sixteen banked
+frames come back byte-identical.** `HorrorPost`, `GodRays` and `MotionBlur`
+are registered into `ShaderStore.ShadersStoreWGSL` and their passes state
+`shaderLanguage: ShaderLanguage.WGSL`; the four-map gate is clean, every one
+of the three effects reports WGSL, ready and no compilation error, and
+`bank.mjs --check` is 0.000/255 on every frame of every map. The reference set
+did the job it was built for on the first milestone that could use it.
+
+**Two things M3 found, and both make later milestones cheaper:**
+
+13. **The plan's single-exit rewrite was unnecessary and would have deleted
+    something load-bearing.** A bare `return;` is indeed a compile error — the
+    processor types `main` as `-> FragmentOutputs` — but `return
+    fragmentOutputs;` is not, and Babylon prefixes `diagnostic(off,
+    chromium.unreachable_code)` precisely so its own appended return can sit
+    behind one. So all four early-outs survive as early-outs, which matters
+    because `GodRays` and `MotionBlur` both document theirs as the second line
+    of defence rather than decoration. **Item 5's `setMatrix3x3` risk is
+    closed** as well: a debug WGSL pass handed `[1..9]` painted its columns
+    back as `(1,2,3) (4,5,6) (7,8,9)`, so Babylon's repack into three
+    vec4-aligned slots is right.
+14. **A frozen reference frame cannot reach every branch, and the scaffold is
+    the instrument for the rest — while it lasts.** A still camera is
+    `strength = 0`, so no banked frame contains a single blurred pixel, and
+    the god rays are wherever the moon happened to be. The check that covers
+    them is the old GLSL source registered as a second effect and rendered over
+    the same frozen frame with the same forced uniforms, every other pass off
+    the camera: byte-identical on all three, on a forced six-degree yaw and a
+    forced `presence = 1`. **This is the technique for M4 and M5** — it is
+    strictly better than a bank diff because it holds the input fixed as well
+    as the frame, and it dies with `glslScaffold.ts` at M6, which is an
+    argument for using it hard now. Written up in `VERIFYING.md`.
+
+**Two prose questions the plan flagged are answered rather than deferred.** The
+trailing-`//`-with-a-`;` trap does NOT bite on the WGSL path — the processor
+runs `RemoveComments` over the whole source before anything splits a line — and
+`docs/rendering.md` and `VERIFYING.md` both say so where the trap is stated.
+And the sampling rule the cel shader will need is settled early: **sample with
+`textureSampleLevel`, not `textureSample`**, because an explicit LOD carries no
+uniformity requirement at all and none of these textures has a mip chain — the
+`DISABLE_UNIFORMITY_ANALYSIS` define is then only needed where a DERIVATIVE is
+what you meant. `docs/rendering.md` gains a section on the dialect carrying
+this, the `#define`-is-a-regex trap, the strided scalar array, the mat3x3
+repack and the two halves of asking for WGSL at all.
+
 ---
 
 ## Verified groundwork
@@ -353,7 +400,7 @@ So the engine swap lands first with all nine shaders still in GLSL. This is
 | **M0** ✅ | `WebGPUEngine` + boot gate on `navigator.gpu`. Menu reached. | Boot path, `main.ts`, `__celshock` timing. **Menu RENDERS was not provable** — see Verification |
 | **M1** ✅ | **First lit scene** — Hollowmere end to end on GLSL sources. `OutlineRenderer` scaffolded back to GLSL; item 11 stays at M6 | RTTs, R8 depth field, 14 `DynamicTexture`s, `setRenderingOrder`, `GlowLayer`, pipeline, compute particles, `setHardwareScalingLevel`, blend/depth state — all confirmed. **The 40 cube probes did NOT come with it**: Hollowmere has no glazed block, and Coldharbour's bake kills the device here (finding 7), so they move to M2 on hardware |
 | **M2** ✅ | All four maps up. **The GLSL-under-WebGPU reference set is banked** — sixteen frames, the four menu vantages plus twelve chosen for the shader path each puts in frame (`plans/webgpu-ref/vantages.mjs`). Coldharbour's 40 cube probes bake in one 130–150 ms frame | The most valuable artefact of the migration — later diffs isolate *shader* errors by construction. **Four frames could not have done it**: the backdrops hold no glazing at range, no lamp-lit street, no gust and almost no water |
-| **M3** | **First WGSL** — the three post fragments (`HorrorPost`, `GodRays`, `MotionBlur`) | Dialect, `PostProcess` wiring, `onApply` binding, single-exit rewrite. Standalone, no attributes, no defines |
+| **M3** ✅ | **First WGSL** — the three post fragments (`HorrorPost`, `GodRays`, `MotionBlur`) | Dialect, `PostProcess` wiring, `onApply` binding. Standalone, no attributes, no defines. **The single-exit rewrite was not needed** — `return fragmentOutputs;` is legal and the early-outs stay. Sixteen banked frames at 0.000/255, and the three forced branches a frozen frame cannot reach diffed byte-identical against their own GLSL originals |
 | **M4** | **First WGSL surface** — shared includes, then `GrassShader` | Include strategy, `instances*` twin, `MAX_PUSHERS`, `array<vec3f,N>` + `setArray3`. Run the uniform read-back assertion here |
 | **M5** | **`CelShader`** — author variant by variant, land once | The long pole: ~620 shader lines, 29 uniforms, 8 materials, 6 defines |
 | **M6** | `WaterShader` → `OutlineFog` → `EmissiveFog`. **Delete the scaffold**: assert `engine._glslang === undefined && engine._tintWASM === undefined` after a four-map sweep | Complete |
@@ -379,9 +426,9 @@ different milestone's work arriving unannounced.
 | --- | --- | --- | --- |
 | 1 ✅ | `main.ts` | `hasWebGL2` → async `hasWebGPU`; new copy; third boot branch; header rewrite (4 paragraphs name WebGL2). **Also added `@webgpu/types`** — `navigator.gpu` is not in TypeScript's DOM lib, and tsconfig's `types` went `[]` → one entry so the list stays CLOSED | 0.5 |
 | 2 ✅ | `src/core/Game.ts:698` | Engine becomes a **constructor argument** like `havok` — see below | 1 |
-| 3 | `src/shaders/HorrorPost.ts` | First WGSL in the tree; budget dialect learning here | 1 |
-| 4 | `src/shaders/GodRays.ts` | `#define SAMPLES` survives; loop bound must be `i32` | 0.5 |
-| 5 | `src/shaders/MotionBlur.ts` | **`setMatrix3x3("reproject")` (`:154`) is the risk** — `mat3x3f` is three vec4-aligned columns; verify the upload | 1 |
+| 3 ✅ | `src/shaders/HorrorPost.ts` | First WGSL in the tree; budget dialect learning here. **Also moved the three passes to `PostProcess`'s options form**, which is where `shaderLanguage` can be stated at all | 1 |
+| 4 ✅ | `src/shaders/GodRays.ts` | `#define SAMPLES` survives — but a WGSL `const SAMPLES: i32` is better and is what landed, because the processor implements a define as an UN-ANCHORED regex over the whole source | 0.5 |
+| 5 ✅ | `src/shaders/MotionBlur.ts` | **`setMatrix3x3("reproject")` was the risk and is closed** — `mat3x3f` is three vec4-aligned columns, Babylon repacks correctly, and it was measured by painting the columns out of a debug pass rather than reasoned about | 1 |
 | 6 | `src/shaders/wgsl/includes.ts` *(new)* | BAND / SHADOW / PROBE / PROBE_BOX / DITHER as WGSL includes | 1.5 |
 | 7 | `src/shaders/Dither.ts` | Body moves to (6); **keep the 60-line header verbatim** — it is the argument | 0.25 |
 | 8 | `src/shaders/GrassShader.ts` | Both stages; `instances*` twins; drop `#extension` at `:120` | 1.5 |

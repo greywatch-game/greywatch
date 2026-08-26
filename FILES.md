@@ -568,11 +568,12 @@ src/
                         #   surface shaders. Fixes 8-bit banding in the fog
     WaterShader.ts      # Water ShaderMaterial: analytic wave trains, Fresnel mirror
     GrassShader.ts      # The blade bend: wind, and combatants pushing through
-    GodRays.ts          # Moon shafts: screen-space radial blur
-    MotionBlur.ts       # Camera-rotation smear, reprojected from the aim angles
-    HorrorPost.ts       # Vignette / grain / aberration / damage flash
+    GodRays.ts          # Moon shafts: screen-space radial blur. WGSL
+    MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
+                        #   angles. WGSL
+    HorrorPost.ts       # Vignette / grain / aberration / damage flash. WGSL
     glslScaffold.ts     # SCAFFOLDING for the WebGPU port, and all of it: the
                         #   three things that are only true while the engine is
-                        #   WebGPU and every shader here is still GLSL. Deleted
+                        #   WebGPU and a shader here is still GLSL. Deleted
                         #   whole when the last one is ported
 ```

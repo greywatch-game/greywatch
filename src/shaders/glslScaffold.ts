@@ -1,7 +1,7 @@
 /**
  * glslScaffold.ts — SCAFFOLDING, and the whole of it. Owns the three things
- * that are true only while the engine is WebGPU and every shader in the tree
- * is still GLSL, and it exists as one file so that finishing the port is
+ * that are true only while the engine is WebGPU and a shader in the tree is
+ * still GLSL, and it exists as one file so that finishing the port is
  * deleting a file and two calls rather than hunting three unrelated lines.
  * Invariants: nothing in the game may DEPEND on any of this. Each function
  * makes a GLSL source behave as it did under WebGL2 and buys nothing else.
