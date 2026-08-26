@@ -260,8 +260,8 @@ export interface GrenadeOptions {
   /**
    * Build the blast's two GPU clouds — the dust and the smoke. Default true;
    * the multiplayer server passes false because a NullEngine has neither a
-   * canvas nor WebGL2, and both need both. Nothing about where a grenade goes
-   * or what it hurts depends on either.
+   * canvas nor a GPU device, and both need both. Nothing about where a grenade
+   * goes or what it hurts depends on either.
    */
   dust?: boolean;
 }
@@ -329,11 +329,11 @@ export class GrenadeSystem {
     opts?: GrenadeOptions,
   ) {
     const g = CONFIG.grenade;
-    // The dust is the one part of this system that cannot exist without GL:
-    // it builds a `DynamicTexture` (which needs a canvas) and a
-    // `GPUParticleSystem` (which needs WebGL2), and under Babylon's NullEngine
-    // the first of those throws `OffscreenCanvas is not defined` before the
-    // constructor returns. The multiplayer server runs the BALLISTICS — where a
+    // The dust is the one part of this system that cannot exist without a
+    // renderer: it builds a `DynamicTexture` (which needs a canvas) and a
+    // `GPUParticleSystem` (which under WebGPU is a compute shader and needs a
+    // device), and under Babylon's NullEngine the first of those throws
+    // `OffscreenCanvas is not defined` before the constructor returns. The multiplayer server runs the BALLISTICS — where a
     // grenade lands and who it hurts is a rule, not a picture — so it asks for
     // the system without the dust. Everything else here is spheres and
     // materials, which are inert without a renderer and cost nothing to keep.

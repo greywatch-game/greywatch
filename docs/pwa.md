@@ -111,8 +111,10 @@ under the player, and it does not need to be — the navigation handler makes th
 *launch* current whether an update check fired or not.
 
 Registration happens in `main.ts` **before** the `Game` is constructed and is
-`import.meta.env.PROD`-gated: it must survive a Game that throws on a machine
-without WebGL2, and a worker caching a dev server's module graph would be actively
+`import.meta.env.PROD`-gated: it must survive a Game that is never constructed at
+all on a machine without WebGPU — which since the port is a larger set of
+machines than it used to be, Firefox on Linux and macOS and older phones
+included — and a worker caching a dev server's module graph would be actively
 harmful. It registers with `updateViaCache: "none"`, which is the app's half of the
 `no-cache` header the deployment owes `/sw.js` — the same failure guarded twice,
 because one of the two costs nothing to state. The update check it then makes by

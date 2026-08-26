@@ -10,7 +10,8 @@ and `DeathCam`.
 
 `main.ts` awaits `loadHavok()` and hands the instantiated module to `Game`,
 which hands it to `PhysicsWorld`'s constructor. A rejection is a boot-screen
-failure message of its own, beside the WebGL2 probe's — the game does not start.
+failure message of its own, beside the WebGPU adapter probe's — the game does
+not start.
 So there is no state anywhere below in which physics has not arrived, and
 nothing has to ask.
 
@@ -22,7 +23,7 @@ first, `death.collapseTime` to time it, a `ragdolls` setting to choose between
 them, and a `PhysicsWorld` that could stand up, tear down and stand back up
 mid-round. What it bought was a case that does not happen: the binary is
 precached with the rest of the build, and a machine that cannot get 2 MB of
-WASM is not going to run a WebGL2 shooter either. What it cost was two code
+WASM is not going to run a WebGPU shooter either. What it cost was two code
 paths for every death, one of them exercised only where nobody was looking.
 
 **Do not reintroduce a fallback.** If the engine is a problem the answer is that

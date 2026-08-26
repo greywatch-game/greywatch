@@ -572,6 +572,87 @@ feedback (`Atmosphere.ts`, `GrenadeSystem.ts`, `OutlineFog.ts`, `CelShader.ts`)
 are in that sweep rather than here. What is edited here is only what M7's own
 measurements made false.
 
+## M8 landed
+
+**The doc sweep is done and the four-map sign-off is clean on every instrument
+this plan built.** Nothing in the tree still tells a reader the game runs on
+WebGL2, the two Tier 2 documents that owed a paragraph have one, and the
+migration is complete.
+
+**The sign-off, run in this order against the final tree:**
+
+| gate | result |
+| --- | --- |
+| `npm run typecheck` | clean, client and server |
+| `npm run parity` | 4/4 maps, all 17 fields |
+| `gate.mjs` | 4/4 clean — warm 142.7 / 143.8 / 47.9 / 56.3 fps, median 6.9 / 6.9 / 20.7 / 17.6 ms, probes 4 / 2 / 40 / 2 |
+| `shaders.mjs` | every shader compiled clean on all four; 6 cel variants reached, zero driver errors |
+| `bank.mjs --check` | **16/16 frames at 0% of pixels, mean 0/255, worst 0/255** |
+| `npm run build` | clean; `HavokPhysics-*.wasm` is the only binary in `dist/` |
+
+**Both halves of the transpiler tripwire fired clean in both scripts**, which is
+the offline promise discharged: no request to `**/*.babylonjs.com/**` on any of
+the four maps, and the engine's two fields still null after a sweep that forced
+337 cel materials to compile. The bundle contains the STRING
+`cdn.babylonjs.com` — that is Babylon's own lazy-fetch code, which ships whether
+or not anything calls it — and `docs/build.md` already says the assertion is a
+runtime one for exactly that reason.
+
+**Coldharbour's bake came back at 1926 ms in the gate run**, which is M7's
+finding 33 confirming itself a third time. The 138 ms is dead; do not restore it.
+
+**Five things M8 found, and the last one is the only thing this milestone
+leaves owed:**
+
+34. **`index.html` had nothing to change, and item 16 named the wrong file for
+    half of its own row.** The boot SCREEN is markup in `index.html`; the boot
+    COPY is three string literals in `main.ts`, and they were rewritten at M1
+    with the third failure branch. So the row is `README.md` and `FILES.md`
+    only. Worth recording because the next person auditing this plan against
+    the tree will otherwise go looking for a WebGL2 string in the HTML and
+    conclude the sweep missed one.
+35. **Two of the Tier 2 entries were ADDITIONS, not edits, which is why a
+    grep-driven sweep would have reported the tree clean.** `docs/states.md`
+    and `docs/game.md` contained no `WebGL2`, no `GLSL` and no `engine` — the
+    thing that changed there is that a fact became true, not that a sentence
+    became false. `states.md` now opens on the two awaits before any state
+    exists; `game.md` now has the constructor's two injected arguments and why
+    it is not a `static async create()`. **A doc sweep driven by `grep` finds
+    the premises that moved and none of the ones that arrived.**
+36. **Seven of the nine Tier 3 headers were already right**, each done by the
+    milestone that made it wrong — `main.ts`, `Game.ts`, `CelShader.ts`,
+    `OutlineFog.ts`, `EmissiveFog.ts`, `Dither.ts` and `PhysicsWorld.ts`. Only
+    `Atmosphere.ts` and `GrenadeSystem.ts` were left, exactly the two M7 named.
+    The rule that produced that ("what is edited here is only what this
+    milestone's own change made false") is worth keeping for the next migration:
+    it front-loads the sweep into the milestones that can still check their own
+    claims.
+37. **What `docs/editor.md` actually owed was a TIME beside a draw count.** The
+    plan's Tier 2 row named the file and not the reason. The editor refuses the
+    reflection bake, and the argument for that refusal was stated in draw calls
+    (~300,000) with no clock on it — which is M7's finding 33 arriving in a
+    second document. The shipped 40-probe bake is ~1.4–2.1 s and scales with
+    the render list; the editor's is 82 probes over 610 unmerged meshes, larger
+    by both terms. That is stated there as DERIVED from `FINDINGS.md` #10 and
+    explicitly not as a new measurement of the editor, which is the honest
+    shape when the ratio is known and the number is not.
+38. **`CLAUDE.md` cannot be brought under ~850 lines by cutting argument,
+    because there is no argument left in it to cut** — and this is the one
+    thing M8 does not discharge. The file was **877 before this milestone
+    touched it** and is **901 after**; M8's own additions are 24 lines (the
+    engine and its reach cost, the two WASMs, the WGSL/`shaderLanguage` and
+    sampler-bind rules, `npm run shots` needing a GPU, and `VERIFYING.md` being
+    per-machine now). The remedy the file prescribes for its own overflow is to
+    cut the ARGUMENT in a companion-backed summary and never a rule — but read
+    end to end, the summaries are rules already: every paragraph in the
+    vehicles, anti-tank, bots, deaths, weapons and multiplayer sections is a
+    load-bearing sentence with its argument already moved out to the companion.
+    The overflow came in with the armour work (~790 → 877), not with the port.
+    **So the compression is a real editorial pass on those sections, by whoever
+    owns them, and not something a docs sweep should do by guessing which
+    sentence is safe to delete.** Recorded here rather than done quietly the
+    wrong way.
+
 ---
 
 ## Verified groundwork
@@ -691,10 +772,10 @@ So the engine swap lands first with all nine shaders still in GLSL. This is
 | **M5** ✅ | **`CelShader`** — both stages WGSL, landed once. `getSkinned` deleted (dead), taking `CEL_TEXTURED` and the last two deep imports with it | The long pole: ~620 shader lines, 8 materials, 6 defines. Sixteen banked frames at 0.000, four-map gate clean, and a whole-scene diff against the GLSL original at 0% on all four maps — which is where the branches a banked frame CANNOT hold live: every rig, the viewmodel and every effect mesh carries no colour buffer |
 | **M6** ✅ | `WaterShader` → `OutlineFog` → `EmissiveFog`. **Scaffold deleted**; the tripwire is TWO halves, because the aborted route silences the engine-state one and the fields are `null` rather than `undefined` | Complete. Sixteen banked frames at 0.000, four-map gate clean, `shaders.mjs` clean, the water byte-identical against its own GLSL original with 4 and 8 lamps forced, and the outline's two prose regression tests re-measured at 1 cached effect / 0 of 438 freed / 0 stale |
 | **M7** ✅ | Re-tune `GLASS_DEPTH_UNITS`, outline z-offsets, MSAA/memory. Re-measure everything `FINDINGS.md` claims | Complete. -16 is CONFIRMED and now bracketed on both sides; the two outline geometry rules came APART, one still biting and one whose fault will not reproduce; MSAA re-read as a sample count; the shadow kernel, the ink luma and the band's `fwidth` all re-taken; six `FINDINGS.md` entries given a status line, and the reflection bake measured at ~1.4 s rather than the 138 ms this plan recorded |
-| **M8** | Docs, four-map parity sign-off | — |
+| **M8** ✅ | Docs, four-map parity sign-off | Complete. Every Tier 1/2/3 document swept; two of them needed a paragraph ADDED rather than edited, which a grep would have missed. `typecheck`, `parity`, `gate.mjs`, `shaders.mjs`, `bank.mjs --check` (16/16 at 0.000) and `npm run build` all clean, and both halves of the transpiler tripwire fired on all four maps. **One thing is owed and is not the port's**: `CLAUDE.md` is 901 lines against a ~850 bar it was already over before M8 — see finding 38 |
 
 M1 is the real first-light gate. M5 is the long pole. M7+M8 are about a third of
-the calendar.
+the calendar. **All nine are landed.**
 
 **The scaffold was one FILE from M1 and is now deleted** —
 `src/shaders/glslScaffold.ts` held `StandardMaterial.ForceGLSL`, the outline
@@ -724,10 +805,10 @@ measured, it is a boot failure rather than a rendering one, because
 | 10 ✅ | `src/shaders/WaterShader.ts` | Wave field, `domeAt`, Schlick, foam. The `out` params became a returned struct (WGSL has none), and the ONE judgement call in it — an explicit LOD on the bed-depth map — was the port's only real bug; see finding 23 | 2.5 |
 | 11 ✅ | `src/shaders/OutlineFog.ts` | `patch()` kept its structure exactly; retargeted to `ShadersStoreWGSL`, `VERTEX_BODY` rewritten, the varying declared in **both** stages — whose ORDER is what keeps the two `@location`s in step. `dropCompiled` needed no change and was re-verified rather than rewritten | 2 |
 | 12 ✅ | `src/shaders/EmissiveFog.ts` | `isCompatible` answers WGSL and only WGSL — there is no GLSL path left in this game to be compatible with — and it landed with the `ForceGLSL` line it stood in for. `gl_FragColor` became `fragmentOutputs.color`; `vPositionW` is `fragmentInputs.` but `vEyePosition` is **`scene.`** and not `uniforms.`, because it lives in the SCENE block. The non-UBO `fragment:` declaration string went with them: WebGPU has no such path, and the marker it replaces is not in Babylon's WGSL `default.fragment` at all, so the text was being dropped on the floor. | 1 |
-| 13 ✅ | `Atmosphere.ts`, `GrenadeSystem.ts` | No code change was needed. Confirmed on the real backend: every particle system's platform is `ComputeShaderParticleSystem`, `randomTextureSize` is 4096 (8192 for the motes), and the ash field is 14,934 at steady state. The headers naming transform feedback are M8's. Verify compute particles, `emitRateControl`, `randomTextureSize: 4096`. Headers naming transform feedback are now wrong | 0.5 |
+| 13 ✅ | `Atmosphere.ts`, `GrenadeSystem.ts` | No code change was needed. Confirmed on the real backend: every particle system's platform is `ComputeShaderParticleSystem`, `randomTextureSize` is 4096 (8192 for the motes), and the ash field is 14,934 at steady state. **Both headers are rewritten at M8**: the class name is the only thing that did not change, since `GPUParticleSystem` routes itself to `ComputeShaderParticleSystem` on a WebGPU engine | 0.5 |
 | 14 ✅ | `WaterSystem`, `ShadowSystem`, `ReflectionSystem`, `Sky` | No code change was needed. Confirmed: 2048² shadow map, `bias`/`normalBias` both 0, 408 casters, `refreshRate` 0; 40 cube probes at 128², all refresh-once; the R8 depth field at M1. Verify R8 texture, shadow depth format + `bias = 0`, 40 cube RTTs + face Y-flip, `DynamicTexture.update(false)` | 1 |
 | 15 ✅ | `src/entities/ViewModel.ts:203-204` | Confirmed at M1 and re-read here — `depthFunction` 519 (`ALWAYS`) and `forceDepthWrite` on the kit backdrop in group 0. Verify `ALWAYS` + `forceDepthWrite` + `alphaIndex: Infinity`; WebGPU bakes depth state into the pipeline rather than setting it | 0.5 |
-| 16 | `index.html`, `README.md`, `FILES.md` | Boot copy, requirements, two rows | 0.5 |
+| 16 ✅ | `README.md`, `FILES.md` | Requirements and the no-fallback sentence; two rows. **`index.html` was not in it**: the boot SCREEN is its markup but the boot COPY is three literals in `main.ts`, rewritten at M1 with the third failure branch — see finding 34 | 0.5 |
 
 **~20 engineer-days of porting**, before measurement or docs.
 
@@ -991,6 +1072,13 @@ the script photographs the PAGE, not the canvas.
 ---
 
 ## Docs
+
+**Landed at M8 — the list below is the record of what was swept, not a queue.**
+Three corrections to it came out of doing it, and they are findings 34, 35 and
+37: `index.html` had nothing to change, `docs/states.md` and `docs/game.md`
+needed a paragraph ADDED rather than a premise edited, and what `docs/editor.md`
+owed was a TIME beside a draw count. Tier 1 had already been paid milestone by
+milestone, which is why only `CLAUDE.md` was left in it.
 
 Not a tail — roughly a fifth of the work. **Move prose verbatim, never
 paraphrase** (`CLAUDE.md:39-53`): most of what needs editing is an *argument*

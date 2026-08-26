@@ -12,6 +12,33 @@ The rule this file exists under is in the spine and is not repeated here:
 below is a consequence of that, including the reasons a refactor keeps wanting
 to undo it.
 
+## The constructor takes what it cannot build, and stays SYNCHRONOUS
+
+**There are two arguments beside the canvas and they are arguments for the same
+reason**: `havok` is the instantiated physics WASM and `engine` is a
+`WebGPUEngine` whose `initAsync` has already resolved. Both are awaited by
+`main.ts`, both are REQUIRED, and a failure of either is the boot screen's
+business — so nothing in this file is written twice for a machine that never got
+one, and there is no init state, no `ready` flag and no "has it arrived yet"
+question anywhere below.
+
+**The engine used to be built here**, back when it was a `WebGLEngine` with a
+synchronous constructor. WebGPU's is not — an adapter and a device are both
+promises — and the shape that fell out is the one `havok` had already taken
+rather than a second, differently-shaped one. What did **not** happen is the
+obvious alternative: `Game` is not a `static async create()`. That would have
+moved the awaits inside and cost the property this file's own testability rests
+on — `window.__celshock` non-null with every pool built the moment the
+constructor returns, which ~40 smoke scripts assume (`VERIFYING.md`). Awaiting
+in `main.ts` and injecting the result keeps both true at once.
+
+**Nothing about the engine's OPTIONS lives here either.** `antialias: false` and
+`stencil: false` are stated beside the `initAsync` call in `main.ts`, with the
+argument for each — and the second of them picks the depth FORMAT under WebGPU,
+which is what `GLASS_DEPTH_UNITS` and the outline z-offsets are measured in (see
+[`rendering.md`](rendering.md)). A change to either is a change to numbers three
+files away, so it is made where it is explained.
+
 ## What may leave `Game.ts`, and what may not
 
 **`Game.ts` is long on purpose, and what may leave it is mechanical so nobody

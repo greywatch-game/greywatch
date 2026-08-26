@@ -7,6 +7,24 @@ and in a netplay round, where it holds nothing at all. Split out of
 for `src/core/ScreenStack.ts` and for `Game`'s `tick`, `pause`/`resume` and every
 `open*`/`close*` next to them.
 
+## The machine does not exist until TWO awaits have resolved
+
+**`menu` is not the first thing that happens on the page, and the boot screen is
+what covers the stretch before it.** `main.ts` awaits two things before it
+constructs `Game` at all — the WebGPU device (an adapter, then `initAsync`) and
+the Havok WASM — and both are REQUIRED, so a failure of either is a sentence on
+the boot screen rather than a state anything below has to be written for. There
+is no `booting` state and there must not be one: the states in this file are
+states of a `Game` that exists, and everything before the constructor returns is
+`index.html`'s markup and `main.ts`'s three failure branches.
+
+**What that buys is the property ~40 smoke scripts rest on**: because both
+awaits are `main.ts`'s, the constructor stays SYNCHRONOUS, so `window.__celshock`
+is non-null with every pool built the moment it returns and the machine is in
+`menu` on the same tick. A `static async create()` would have moved the awaits
+inside and taken that away. `VERIFYING.md` says how to wait for it from a script
+— two awaits, not one, and neither of them is a frame count.
+
 ## The cycle
 
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->

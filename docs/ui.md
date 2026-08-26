@@ -91,8 +91,9 @@ and the exception is what defines it: it covers the stretch before any module
 has evaluated, so `src/ui/` could not draw it — the bundle it would be drawn by
 is what the player is waiting for. It is markup in `index.html` with its styles
 in that file's `<style>` block, and `main.ts` is the only code that touches it:
-taken down two frames after the `Game` constructor returns, or turned into the
-"needs WebGL2" message when the game cannot start at all. It is self-contained
+taken down two frames after the `Game` constructor returns, or turned into one
+of the three failure messages when the game cannot start at all — "needs
+WebGPU", "no graphics device" or "no physics engine". It is self-contained
 by necessity — in DEV `base.css` is injected from JS and has not arrived either,
 so it may not use `--font`, `.frame`, or anything else the interface shares.
 Nothing that reacts to game state may be added to it; that is an interface, and

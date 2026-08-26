@@ -29,6 +29,16 @@ Things it deliberately does not do:
   tier-3 rebuild on Coldharbour — see [`rendering.md`](rendering.md). The glass
   still draws; it shows the analytic sky and no city.
 
+  **What that frame costs is now a measured time and not just a draw count, and
+  it is bigger than the figure this rule was written against.** The SHIPPED bake
+  — 40 probes over a render list of ~486 — is **~1.4–2.1 s in one frame** on the
+  RTX box, and it scales almost linearly with the list
+  ([`FINDINGS.md`](../FINDINGS.md) #10). The editor's is 82 probes over 610
+  unmerged meshes, so it is the larger of the two by both terms. That is not a
+  new measurement of the editor and is not quoted as one; it is the reason the
+  refusal is a rule rather than a tuning knob, restated in a unit a person
+  waiting for a brush stroke can feel.
+
 **There are two pointer modes.** `T` toggles terrain mode and the panel turns
 violet, because a mode you forget you are in makes every click feel broken. The
 ground is *under* everything, so a terrain annotation is a flat sheet competing for

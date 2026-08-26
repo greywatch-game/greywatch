@@ -23,7 +23,14 @@ npm run icons    # regenerate the install icons under public/icons (committed)
 npm run shots    # re-photograph each map for the menu backdrop (committed)
 ```
 
-Requires Node 18+ and a WebGL2-capable browser (Chrome/Edge/Firefox/Safari).
+Requires Node 18+ and a **WebGPU-capable browser**: Chrome or Edge on any
+platform, Safari 18 or later, and Firefox on Windows. Firefox on Linux and
+macOS cannot run it, and neither can an older Android or iOS. There is no
+WebGL fallback — the boot screen checks for a GPU adapter and says so rather
+than showing a black page.
+
+`npm run shots` is the one script here that needs a machine with a real GPU;
+everything else, the build included, runs anywhere.
 
 ## Multiplayer
 
@@ -257,7 +264,9 @@ the cel look is a custom `ShaderMaterial` with 16 dynamic point-light slots,
 and the 16 bots steer on a precomputed nav grid with one flow field per
 objective — no pathfinding at all. The one engine in the tree is Havok, which
 does nothing but drop the dead and scatter broken glass. It is required — the
-boot screen waits for it, like WebGL2 — and nothing falls any other way.
+boot screen waits for it, beside the GPU adapter — and nothing falls any other
+way. Every shader in the tree is hand-written WGSL; there is no GLSL left and
+no transpiler in the bundle.
 
 **Contributor/agent documentation lives in [`CLAUDE.md`](CLAUDE.md)** —
 architecture, load-bearing invariants, and conventions, with one contract per

@@ -132,8 +132,8 @@ export class HeadlessGame {
     this.combat = new CombatSystem(this.scene, this.mats);
     this.battle = new BattleSystem(this.scene, this.mats, this.combat);
     // Ballistics without the picture. Where a grenade lands and who it hurts
-    // is a rule and belongs here; the dust needs a canvas and WebGL2 and does
-    // not exist on this side — see `GrenadeOptions`.
+    // is a rule and belongs here; the dust needs a canvas and a GPU device and
+    // does not exist on this side — see `GrenadeOptions`.
     this.grenades = new GrenadeSystem(this.scene, this.mats, { dust: false });
     this.vehicles = new VehicleSystem(this.scene, this.mats);
     this.antiTank = new AntiTankSystem(this.scene, this.mats);

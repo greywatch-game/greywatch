@@ -59,7 +59,12 @@ and what it must never do. Read it before editing that file.
 
 **GREYWATCH — Cel-Shaded Conquest**: a browser-based, single-player
 **first-person** Conquest shooter (8v8 vs bots, five control points, ticket
-bleed). **Babylon.js** + **TypeScript** + **Vite**; ES modules, Node 18+, WebGL2.
+bleed). **Babylon.js** + **TypeScript** + **Vite**; ES modules, Node 18+,
+**WebGPU** — there is no WebGL fallback engine in the tree and there must not be
+one. `main.ts` gates the boot on `navigator.gpu` AND an adapter, so a browser
+without one gets a sentence instead of a black page; what that costs is reach,
+and Firefox on Linux/macOS plus older Android and iOS no longer boot at all.
+Both phones are PWA install targets, so this is a product fact, not a detail.
 
 **Zero audio files and zero model files** — every mesh is built from Babylon
 primitives at runtime, all sound is synthesized WebAudio (`src/core/Sfx.ts`). Do
@@ -81,6 +86,13 @@ restart — the first silently unshaded the glow layer and every `StandardMateri
 in the game. `src/` now holds **zero** of them and `npm run build` fails on a
 new one (`scripts/check-deep-imports.mjs`); `server/` is outside that scope.
 
+**Two more WASMs exist and the rule is that neither ever ships.**
+`WebGPUEngine` lazily fetches glslang and twgsl off `cdn.babylonjs.com` — four
+files, on first draw — the moment a shader reaching the backend is GLSL rather
+than WGSL, which would break `docs/pwa.md`'s offline promise silently. Nothing
+in `src/` is GLSL, and the tripwire holding that is TWO halves because an
+aborted route silences the other one.
+
 **There is no rigged character asset in the tree.** `GlbSoldier.ts`,
 `entities/soldier/` and `@babylonjs/loaders` were deleted when first person
 retired them, and the death cam stands up a bot rig rather than bringing them
@@ -88,8 +100,9 @@ back. Do not reintroduce a GLB body, and do not extend that approach to bots or
 weapons.
 
 → **[`docs/build.md`](docs/build.md)** — the four generated assets and the test a
-fifth would have to pass, the wasm's path, the dev-only 404 that names the wrong
-thing twice, and the deep-import trap in full.
+fifth would have to pass (one of them now needs a GPU to regenerate), Havok's
+path, the dev-only 404 that names the wrong thing twice, the two WASMs that must
+never ship, and the deep-import trap in full.
 
 ## Commands
 
@@ -100,7 +113,8 @@ npm run typecheck  # tsc --noEmit (strict, noUnusedLocals/Parameters)
 npm run build      # gates + typecheck + production build to dist/
 npm run preview    # serve the production build
 npm run icons      # regenerate public/icons (committed)
-npm run shots      # re-photograph the maps for the menu backdrop (committed)
+npm run shots      # re-photograph the maps for the menu backdrop (committed).
+                   #   The ONE script here that needs a real GPU — docs/build.md
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -108,7 +122,10 @@ after any change. Playwright + Chromium are devDeps for ad-hoc browser smoke
 tests; write throwaway scripts to the scratchpad, not the repo, drive them
 through the `window.__celshock` handle `Game`'s constructor exposes, and read
 **[`VERIFYING.md`](VERIFYING.md)** before writing one rather than after it has
-misled you.
+misled you — **it is written PER MACHINE now**, because a headless Chromium
+needs the right binary and the right flag before `navigator.gpu` will hand back
+an adapter at all, and several of its rules invert between a box with a GPU and
+one without. Anything with a PICTURE in it needs the first kind.
 
 ## Architecture
 
@@ -273,6 +290,13 @@ controls as a screen — with [`docs/pwa.md`](docs/pwa.md) for them as a phone.
 
 ### The scene has (almost) no Babylon lights
 
+**Every shader in the tree is hand-written WGSL**, and `shaderLanguage` on a
+`ShaderMaterial` or a `PostProcess` is load-bearing rather than declarative: the
+default is GLSL and a defaulted one looks its source up in a store nothing
+writes any more. **A sampler a material DECLARES must be BOUND, used or not** —
+the bind group fails to build and the draw is silently lost — and uniforms are
+the exact opposite, where unwritten reads as zeros.
+
 Cel materials carry their own light as uniforms — key, ambient, sky fill and a
 packed array of up to `MAX_POINT_LIGHTS` (16) point lights — and `LightingSystem`
 is the sole owner of dynamic light. **Adding a `PointLight` or `HemisphericLight`
@@ -314,7 +338,7 @@ outlined or a shadow caster.**
 and the three ways a cube probe goes flat, the four light terms and the colour
 buffer's three further rules, the ink's tint, the wind's two bounds, the
 muzzle-flash budget, the fog split, the shadow window, the reflection bake's
-seven load-bearing details, and the painted sky.
+seven load-bearing details, the painted sky, and the WGSL dialect's own traps.
 
 ### The map is data, not code
 

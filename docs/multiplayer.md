@@ -10,6 +10,16 @@ The shape in one sentence: **a dedicated Node server runs the real simulation
 under Babylon's NullEngine, clients render it, and a roster slot is a slot
 whether a person or a bot is in it.**
 
+**The WebGPU port did not touch any of it, and that is the first thing the next
+reader wants to know.** `NullEngine` has no backend to swap: it draws nothing,
+compiles nothing and never asked which shading language the tree is written in,
+so `server/HeadlessGame.ts`, `server/parity.ts`, `npm run parity` and
+`npm run simulate` all came through the migration unedited. What the client is
+gated on — an adapter, a device, the two WASMs it must never fetch — is the
+client's alone. The one place the two sides still have to agree is the world
+they pick against, and that is `collision.ts` and `src/world/solid.ts` below,
+neither of which is a rendering question.
+
 ## The three decisions everything else follows from
 
 **The server is the authority.** Bots, flags, tickets and damage are decided in

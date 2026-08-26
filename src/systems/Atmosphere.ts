@@ -10,15 +10,23 @@
  * running every map against one standing pool, is what made an overflowing
  * map pop its motes out instead of fading them.
  *
- * The simulation is transform feedback (`GPUParticleSystem`), which is what
- * makes a field of tens of thousands cost what a thousand cost on the CPU.
- * There is no CPU fallback and there is deliberately no capability check:
- * Babylon reports transform feedback for any WebGL2 context
- * (`supportTransformFeedbacks = _webGLVersion > 1`), and WebGL2 is a hard
- * requirement of the game — `main.ts` says as much, and registers the service
- * worker before the `Game` precisely so the install survives a machine where
- * the scene throws. A branch that cannot execute on any browser that can run
- * this game is a branch nothing will ever exercise, so it would rot.
+ * The simulation runs ON THE GPU (`GPUParticleSystem`), which is what makes a
+ * field of tens of thousands cost what a thousand cost on the CPU. **What runs
+ * it is a COMPUTE SHADER, and the class name is the only thing that did not
+ * change in the WebGPU port**: this used to be transform feedback, and
+ * `GPUParticleSystem` routes itself to `ComputeShaderParticleSystem` on a
+ * WebGPU engine (`Particles/gpuParticleSystem.pure.js`) — no import moved and
+ * no call here did either, which is why this file came through the port
+ * untouched. Confirmed on the real backend rather than read: every particle
+ * system in the game reports that platform, and `randomTextureSize` is 4096
+ * (8192 for the motes).
+ *
+ * There is no CPU fallback and there is deliberately no capability check: the
+ * game is WebGPU or nothing — `main.ts` gates the boot on `navigator.gpu` AND
+ * an adapter, and registers the service worker before the `Game` precisely so
+ * the install survives a machine where the scene throws. A branch that cannot
+ * execute on any browser that can run this game is a branch nothing will ever
+ * exercise, so it would rot.
  */
 import {
   Color4,

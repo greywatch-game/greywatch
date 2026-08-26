@@ -41,10 +41,10 @@ index.html          # The head, and NO interface CSS beyond the two things shown
                     #   while there IS no interface: a black background (so a
                     #   dev reload does not flash white) and the boot screen.
 main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
-                    #   things the game cannot start without — WebGL2 and the
-                    #   Havok WASM — then builds the Game. Owns the boot
-                    #   screen: down on the first drawn frame, or one of the
-                    #   three failure messages.
+                    #   things the game cannot start without — the WebGPU device
+                    #   and the Havok WASM — then builds the Game, which takes
+                    #   both as arguments. Owns the boot screen: down on the
+                    #   first drawn frame, or one of the three failure messages.
 public/             # Copied to dist/ VERBATIM — unhashed URLs named by hand
                     #   (manifest.webmanifest, icons/ from `npm run icons`).
   regions.json      # Which match servers this deployment offers, by host. The
@@ -288,8 +288,9 @@ src/
                         #   and the box the shader parallax-corrects the
                         #   mirrored ray against. The only render target here
                         #   besides the shadow map
-    Atmosphere.ts       # Ash field on the GPU. No CPU fallback — WebGL2 is a
-                        #   hard requirement and guarantees it
+    Atmosphere.ts       # Ash field on the GPU, simulated by a compute shader.
+                        #   No CPU fallback — WebGPU is a hard requirement and
+                        #   guarantees it
     Sky.ts              # Generated dome, textured moon, fBm cloud decks
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
     GrassSystem.ts      # Grass fields as one thin-instanced draw; tufts inside a
