@@ -38,6 +38,7 @@
  * disables every rig before it places a camera). Playing is how they get built.
  */
 import {
+  assertNoTranspiler,
   bootMap,
   installRound,
   launchClient,
@@ -92,7 +93,7 @@ const seen = new Set();
 const failures = [];
 
 for (const id of MAPS) {
-  const { page, pageErrors, consoleErrors } = await bootMap(browser, vite.url, id);
+  const { page, pageErrors, consoleErrors, cdnRequests } = await bootMap(browser, vite.url, id);
   await page.addInitScript(HOOK);
   // The hook has to be in place before the device exists, and `bootMap` has
   // already navigated — so reload once with the script installed rather than
@@ -221,6 +222,12 @@ for (const id of MAPS) {
       );
     }
   }
+  // The transpiler tripwire, both halves. This is the strongest place in the
+  // tree to ask it: the sweep above forces every CACHED material to compile, so
+  // a shader no camera is pointed at is still one this page tried to build.
+  // See `assertNoTranspiler` for why neither half is enough alone.
+  for (const u of cdnRequests) failures.push(`${id}: requested ${u}`);
+  for (const bad of await assertNoTranspiler(page)) failures.push(`${id}: ${bad}`);
   for (const e of pageErrors) failures.push(`${id}: page error: ${e}`);
   for (const e of consoleErrors) failures.push(`${id}: console error: ${e}`);
   await page.close();

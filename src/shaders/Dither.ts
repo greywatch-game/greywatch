@@ -1,11 +1,12 @@
 /**
  * Dither.ts — One LSB of triangular noise, added to a colour immediately
  * before it is written out.
- * Owns: the ARGUMENT for the whole of it, in both languages. The WGSL the
- * surface shaders include is `celDither` in `wgsl/includes.ts`, and
- * `DITHER_GLSL` below is the same three lines for the one shader that has
- * not been ported yet. Owns no state, no uniforms and no plugin — there is
- * nothing here to configure.
+ * Owns: the ARGUMENT for the whole of it, and the source it argues about.
+ * `wgsl/includes.ts` registers what is exported below as `celDither`; the
+ * registration lives there because that is the one table, and the text lives
+ * here because the argument is sixty lines and the function is six, and a
+ * reader arriving at either wants the other. Owns no state, no uniforms and
+ * no plugin — there is nothing here to configure.
  * Invariant: it must run on the value being QUANTISED, which means last, and it
  * must not be animated. Contract: `docs/rendering.md`.
  *
@@ -75,24 +76,23 @@
  */
 
 /**
- * The GLSL body, for the two surface shaders that are still GLSL. Paste into
- * a fragment shader and call `dither(col)` on the last value before
- * `gl_FragColor`. Requires `gl_FragCoord`, which is always available.
+ * The body, registered as the `celDither` include by `wgsl/includes.ts`. A
+ * surface shader writes `#include<celDither>` and calls `dither(col)` on the
+ * last value before `fragmentOutputs.color`.
  *
- * The WGSL twin is `celDither` in `wgsl/includes.ts`, and the argument for all
- * of it — triangular rather than rectangular, one LSB rather than half, static
- * rather than animated — is the header above, which is where a reader looks
- * for it and where it stays when this constant goes.
+ * `gl_FragCoord` is `fragmentInputs.position`, which Babylon flips for a pass
+ * rendering into a texture — so the noise stays keyed on the same pixel the
+ * GLSL was keyed on, and not on one mirrored about the horizon.
  */
-export const DITHER_GLSL = `
-float ditherHash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+export const DITHER_WGSL = `
+fn ditherHash(p: vec2f) -> f32 {
+  return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453123);
 }
 
 // Triangular-PDF dither, +/- 1 LSB of an 8-bit channel. See Dither.ts.
-vec3 dither(vec3 col) {
-  float d1 = ditherHash(gl_FragCoord.xy);
-  float d2 = ditherHash(gl_FragCoord.xy + 17.31);
+fn dither(col: vec3f) -> vec3f {
+  let d1 = ditherHash(fragmentInputs.position.xy);
+  let d2 = ditherHash(fragmentInputs.position.xy + 17.31);
   return col + (d1 - d2) * (1.0 / 255.0);
 }
 `;

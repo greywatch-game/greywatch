@@ -49,6 +49,18 @@
  * a frame that is black, and the failure is silent in the worst direction: a
  * diff of two black images passes.
  *
+ * **Nothing here may fetch a shader compiler off a CDN, and every page this
+ * file opens is wired so that trying is a page error rather than a round
+ * trip.** Babylon lazily pulls glslang and twgsl off `cdn.babylonjs.com` the
+ * first time a GLSL shader reaches the backend — four files, two of them WASM
+ * — which is how the port compiled GLSL under `WebGPUEngine` for five
+ * milestones. Every shader in the tree is WGSL now, so a fetch means one of
+ * them quietly went back to GLSL, and the cost is `docs/pwa.md`'s offline
+ * promise: a game that needs the network on its first draw. `bootMap` aborts
+ * the route AND records every request to it as `cdnRequests`, and
+ * `assertNoTranspiler` is the other half — see it for why a caller has to fail
+ * on both and why one silences the other.
+ *
  * **Headed and headless frames are NOT byte-identical**, on three of the four
  * maps. Both are correct and either may be banked; what may not happen is
  * banking in one mode and diffing in the other, which reports a shader
@@ -98,7 +110,17 @@ export async function bootMap(browser, url, id, { hideUI = true } = {}) {
   const pageErrors = [];
   const consoleErrors = [];
   const consoleLines = [];
+  const cdnRequests = [];
   page.on("pageerror", (e) => pageErrors.push(e.message));
+  // The transpiler tripwire's first half — see the header, and
+  // `assertNoTranspiler` for why neither half is enough alone. Matched on the
+  // DOMAIN and not on a hostname anyone typed from memory: the plan asserted
+  // "no CDN fetch during boot" against `preview.babylonjs.com` at M0 and
+  // passed while watching a host that is never contacted.
+  page.on("request", (r) => {
+    if (/\/\/([^/]*\.)?babylonjs\.com\//.test(r.url())) cdnRequests.push(r.url());
+  });
+  await page.route("**/*.babylonjs.com/**", (r) => r.abort());
   page.on("console", (m) => {
     consoleLines.push(m.text());
     if (m.type() === "error") consoleErrors.push(m.text());
@@ -113,7 +135,7 @@ export async function bootMap(browser, url, id, { hideUI = true } = {}) {
       content: "#hud{display:none!important}#boot{display:none!important}",
     });
   }
-  return { page, bootMs, pageErrors, consoleErrors, consoleLines };
+  return { page, bootMs, pageErrors, consoleErrors, consoleLines, cdnRequests };
 }
 
 /**
@@ -413,4 +435,43 @@ export function fps(page, ms) {
     await new Promise((res) => setTimeout(res, windowMs));
     return +((g.scene.getFrameId() - f0) / ((performance.now() - t0) / 1000)).toFixed(1);
   }, ms);
+}
+
+/**
+ * The transpiler tripwire's second half: the ENGINE's own state, asked after a
+ * sweep that really did reach every shader.
+ *
+ * `WebGPUEngine` builds `_glslang` and `_tintWASM` lazily inside
+ * `prepareGlslangAndTintAsync`, which `_preparePipelineContextAsync` awaits
+ * only when the source it is about to convert is GLSL. So either being set is
+ * the stronger statement than "something was downloaded": it says a GLSL
+ * shader reached the backend of this process.
+ *
+ * **NEITHER HALF IS ENOUGH ALONE, and they fail in opposite directions.** A
+ * route filter only proves what was REQUESTED, and a shader nobody compiled
+ * requests nothing — which is what this exists for. But `bootMap` ABORTS that
+ * route, and an aborted fetch leaves both fields null forever, so on a page
+ * with the abort in place this assertion cannot fire at all. Measured, with a
+ * one-line GLSL `ShaderMaterial` compiled by hand: without the abort, all four
+ * CDN files are fetched and both fields are set; with it, one request is made,
+ * both fields stay null and the material simply never becomes ready. So a
+ * caller must fail on `cdnRequests` as well, and `bootMap` collects them.
+ *
+ * **They are `null` and not `undefined`** — `WebGPUEngine`'s constructor sets
+ * both — so the plan's literal `=== undefined` would have passed forever. Both
+ * are tested here.
+ *
+ * Returns a list of failures so a caller can push them onto its own.
+ */
+export function assertNoTranspiler(page) {
+  return page.evaluate(() => {
+    const e = window.__celshock.engine;
+    const bad = [];
+    for (const k of ["_glslang", "_tintWASM"]) {
+      if (e[k] !== undefined && e[k] !== null) {
+        bad.push(`engine.${k} exists — a GLSL shader reached the backend`);
+      }
+    }
+    return bad;
+  });
 }

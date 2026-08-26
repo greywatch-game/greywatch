@@ -562,27 +562,28 @@ src/
     CelShader.ts        # Custom cel ShaderMaterial + outline helper. Both
                         #   stages WGSL; six defines, six UBO layouts
     OutlineFog.ts       # Bakes the map's fog into Babylon's outline pass, so
-                        #   ink fades per PIXEL instead of per merged mesh
+                        #   ink fades per PIXEL instead of per merged mesh.
+                        #   Patches ShadersStoreWGSL — the renderer picks WGSL
+                        #   for itself and has no flag to say otherwise
     EmissiveFog.ts      # The same fog as a material plugin on every unlit
-                        #   emissive material — windows, flames, tracers
+                        #   emissive material — windows, flames, tracers. WGSL
+                        #   only, which is what isCompatible states
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the
-                        #   ARGUMENT; the WGSL is wgsl/includes.ts's celDither
+                        #   ARGUMENT and the WGSL; wgsl/includes.ts registers
+                        #   it as celDither
     wgsl/
       includes.ts       # The shader text every surface shares, as Babylon WGSL
                         #   includes: celBand, celShadow, celProbe, celProbeBox,
                         #   celDither and our own celInstances pair. Registered
                         #   at import, so a consumer imports it for the side
                         #   effect
-    WaterShader.ts      # Water ShaderMaterial: analytic wave trains, Fresnel mirror
+    WaterShader.ts      # Water ShaderMaterial: analytic wave trains, Fresnel
+                        #   mirror. WGSL
     GrassShader.ts      # The blade bend: wind, and combatants pushing through.
                         #   WGSL
     GodRays.ts          # Moon shafts: screen-space radial blur. WGSL
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
                         #   angles. WGSL
     HorrorPost.ts       # Vignette / grain / aberration / damage flash. WGSL
-    glslScaffold.ts     # SCAFFOLDING for the WebGPU port, and all of it: the
-                        #   three things that are only true while the engine is
-                        #   WebGPU and a shader here is still GLSL. Deleted
-                        #   whole when the last one is ported
 ```

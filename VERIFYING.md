@@ -188,15 +188,27 @@ you are on before you believe anything else in this section.
 - **The engine fetches glslang and twgsl from `cdn.babylonjs.com`, so match
   `**/*.babylonjs.com/**` and never a hostname from memory.** Four files —
   `v9.19.1/glslang/glslang.{js,wasm}` and `v9.19.1/twgsl/twgsl.{js,wasm}` —
-  pulled the first time a GLSL shader reaches the backend, which is what
-  every shader not yet ported still is — after M3 that is the grass, cel and
-  water stages, plus the outline pass and the emissive plugin. **This has
-  already produced a false PASS**: a gate asserting "no CDN fetch during boot" against
-  `preview.babylonjs.com` passed while watching a host that is never contacted.
-  Two further traps in the same check — booting only to the menu compiles no
-  shader and therefore fetches nothing, and a route filter proves only what was
-  *requested*, so the real invariant is `engine._glslang === undefined &&
-  engine._tintWASM === undefined` after a sweep that actually drew every map.
+  pulled the first time a GLSL shader reaches the backend. **Nothing in the tree
+  is GLSL any more**, so a fetch means one of the nine quietly went back, and
+  what it costs is `docs/pwa.md`'s offline promise: a game that needs the
+  network on its first draw. `harness.mjs` owns the check and every script it
+  boots gets it — `bootMap` records every request to the domain AND aborts the
+  route, and `assertNoTranspiler` reads the engine.
+
+  **Four traps in that one check, and the last two are the reason it is two
+  halves rather than one.** It has already produced a false PASS by watching
+  `preview.babylonjs.com`, a host that is never contacted. Booting only to the
+  menu compiles no shader and therefore fetches nothing, so the sweep has to
+  draw. A route filter proves only what was *requested*, and a shader nobody
+  compiled requests nothing — which is what the engine-state assertion is for.
+  And **the abort SILENCES the engine-state assertion**, which is the one that
+  is easy to miss: measured with a one-line GLSL `ShaderMaterial` compiled by
+  hand, without the abort all four files are fetched and `_glslang`/`_tintWASM`
+  are both set, and with it exactly one request is made, both stay null forever
+  and the material simply never becomes ready. So a caller has to fail on the
+  recorded requests as well. They are `null` rather than `undefined` — the
+  constructor sets both — so an assertion written as `=== undefined` passes for
+  ever; test both.
 
 Quirks that have already cost time. **Most of them are the SLOW machine's**,
 because a script that is wrong about time is only wrong where time is scarce.
@@ -492,24 +504,33 @@ is one machine's:
   `type === "error"` or every run reads as broken. **Most of that wall is OURS
   and it is not a symptom of anything**: `shadowVisibility` samples the depth
   map inside a branch and `band` takes an `fwidth`, which is what a cel shader
-  is, and `glslScaffold` turns the diagnostic off for exactly that reason. A
-  run in which those messages arrive as `type === "error"` instead means the
-  scaffold did not install — that is the thing to check, not the shader.
-- **While the scaffold lives, the strongest check on a ported shader is its
-  own GLSL original standing beside it.** The engine still compiles GLSL at
-  M3–M5 — that is what `src/shaders/glslScaffold.ts` is for — so the old
-  source can be registered as a second effect and rendered over the SAME frozen
-  frame with the SAME forced uniforms, and the difference is the
-  transliteration and nothing else. Detach every pass on the camera first so
-  the one under test IS the frame; `git show <before>:src/shaders/<f>.ts` is
-  where the old source comes from, and `Effect.RegisterShader(name, src,
-  undefined, 0)` is how it goes in without a deep import. This is what the
-  reference bank cannot do: a frozen frame is a still camera, so the motion
-  blur is at `strength = 0` and the god rays are wherever the moon happened to
-  be, and neither loop is in any banked picture. All three post fragments came
-  back byte-identical this way, on a forced 6-degree yaw and a forced
-  `presence = 1`. **The technique expires with the scaffold**, so use it while
-  it is there.
+  is, and every hand-written fragment in the tree carries
+  `#define DISABLE_UNIFORMITY_ANALYSIS` for exactly that reason. A run in which
+  those messages arrive as `type === "error"` instead means a shader lost its
+  define — that is the thing to check, not the fetch it names.
+- **The strongest check on a ported shader was its own GLSL original standing
+  beside it, and that technique is GONE — `src/shaders/glslScaffold.ts` was
+  deleted with the last GLSL shader.** It is written up here because it is
+  worth rebuilding for an afternoon if a shader is ever suspect and because its
+  shape is reusable against any second implementation, not only a GLSL one. The
+  old source is registered as a second effect and rendered over the SAME frozen
+  frame with the SAME forced uniforms, so the difference is the transliteration
+  and nothing else. Detach every pass on the camera first so the one under test
+  IS the frame; `git show <before>:src/shaders/<f>.ts` is where the old source
+  comes from, and `Effect.RegisterShader(name, src, undefined, 0)` is how it
+  goes in without a deep import. This is what the reference bank cannot do: a
+  frozen frame is a still camera, so the motion blur is at `strength = 0` and
+  the god rays are wherever the moon happened to be, and neither loop is in any
+  banked picture. All three post fragments, the grass, the whole cel shader and
+  the water came back byte-identical this way.
+  **To stand it up again after the scaffold**: restore `glslScaffold.ts` from
+  git, and install ONLY `repairTranspiledWGSL` — `forceStandardMaterialGLSL`
+  now throws on boot, because `EmissiveFog.isCompatible` answers WGSL and only
+  WGSL and `MaterialPluginManager._addPlugin` refuses the mismatch. The GLSL
+  original also has to be interpolated by hand: the shared `*_GLSL` constants
+  it pastes in are deleted too, so generate the expanded source from
+  `git show HEAD~:` and register it as a throwaway module rather than trying to
+  import what is no longer there.
 - **A ShaderMaterial's twin is built the same way and needs one more step:
   carry the UNIFORMS across.** A second material compiled from the old source
   is born empty, and everything the factory, the environment and the frame have
@@ -557,6 +578,20 @@ is one machine's:
   shader and lets the lamps be seen (1.4% of the frame, 121/255). **Always
   diff the forced frame against the UNFORCED one as well**: that number is what
   says the branch was in the picture at all.
+- **When a twin diff comes back SMALL but not zero, flatten the thresholds
+  before you read a single line of the shader.** A handful of pixels moving by
+  tens of LSB is not a rounding difference — a rounding difference is one LSB
+  everywhere — it is a HARD EDGE being crossed from opposite sides, and the
+  cheapest way to find which one is to force the terms that make edges out of
+  the picture, on BOTH materials, one at a time. The water's port came back at
+  911 pixels along one shoreline at up to 28/255; zeroing the waves, the mirror
+  blur, the caustics, the whitecaps, the flecks and the foam mask's own scale
+  changed nothing, and the two uniforms that flatten `foamBand` took it to six
+  pixels at 1/255 in one go. That named the threshold, and the threshold named
+  the term feeding it — a bed-depth fetch that had been given an explicit LOD
+  and therefore lost its anisotropy. Total: seven runs of one script, against
+  reading 400 lines of translated arithmetic and finding nothing wrong with any
+  of it, because nothing was.
 - **To check that a uniform ARRIVES, paint it.** A debug pass whose whole body
   is `fragmentOutputs.color = vec4f(uniforms.x / k, 1.0)`, screenshotted and
   read back through `diff.mjs`'s decoder, turns "the lighting looks subtly

@@ -396,6 +396,87 @@ kind that stays empty**.
     a height map. The script mints it rather than dropping it from the list,
     which is the difference between eight variants compiling and five.
 
+## M6 landed
+
+**The last three files are ported, the scaffold is DELETED, and there is no
+GLSL left in `src/`.** `WaterShader` is hand-written WGSL in both stages;
+`OutlineFog` patches `ShaderStore.ShadersStoreWGSL`; `EmissiveFog` answers
+`isCompatible` for WGSL and only WGSL and injects `fragmentOutputs.color` and
+`scene.vEyePosition`; `src/shaders/glslScaffold.ts` and its two call sites are
+gone. All sixteen banked frames come back at 0.000/255, the four-map gate is
+clean, `shaders.mjs` reports zero driver errors, and the water diffs
+byte-identical against its own GLSL original on both water maps — with four and
+eight point lights forced on, which no banked frame holds.
+
+**With the water went the four GLSL constants** — `BAND_GLSL`, `SHADOW_GLSL`,
+`PROBE_GLSL` and `DITHER_GLSL` — so `wgsl/includes.ts` holds the only copy of
+each and `Dither.ts` holds its own source again beside its argument.
+
+**Five things M6 found, and the first is the only real bug the whole port
+produced:**
+
+23. **An explicit LOD turns ANISOTROPY off, so "the texture has no mip chain"
+    is NOT enough to make `textureSampleLevel(..., 0.0)` equal to
+    `textureSample`.** The water's bed-depth map is a `RawTexture` built with
+    `generateMipMaps: false` — one level, so an explicit level 0 looks free —
+    and Babylon's WebGPU sampler cache still enables anisotropy for it, because
+    `BILINEAR_SAMPLINGMODE` qualifies whether or not the texture carries mips
+    (`useMipMaps || samplingMode === 2`) against the texture's default
+    `anisotropicFilteringLevel` of 4. The explicit fetch is therefore a single
+    bilinear tap where the GLSL got an anisotropic one, and `depth` changes in
+    the last bits. **That is invisible everywhere except at the shoreline**,
+    where `foamBand` is a 1.2 m smoothstep seen edge-on and about one pixel
+    wide, so a last-bit difference flips whole pixels: 911 of them along
+    Harrowmead's far shore, at up to 28/255 — small enough to pass the bank's
+    tolerance and loud enough to be a real difference. Item 19's rule needed
+    this written beside it: check the SAMPLER, not just the mip chain.
+24. **A twin diff that is small but not zero is a THRESHOLD, and flattening
+    thresholds finds it faster than reading the shader.** A few pixels moving by
+    tens of LSB cannot be rounding — rounding is one LSB everywhere — so the
+    move is to force the terms that make edges out of the picture, on both
+    materials, one at a time. Zeroing the waves, the mirror blur, the caustics,
+    the whitecaps, the flecks and the foam mask's scale changed nothing; the two
+    uniforms that flatten `foamBand` took 911 pixels to six at 1/255 in one go,
+    and the threshold named the term feeding it. Seven runs of one script,
+    against reading four hundred lines of correct arithmetic.
+25. **The plan's tripwire assertion would have passed for ever, and the route
+    filter SILENCES the half that works.** `_glslang` and `_tintWASM` are
+    initialised to `null` by `WebGPUEngine`'s constructor rather than left
+    `undefined`, so `=== undefined` is never true of a broken build either.
+    Worse, they are only ever SET when the CDN fetch succeeds — so on a page
+    that aborts `**/*.babylonjs.com/**`, a stray GLSL shader leaves both null
+    and the assertion cannot fire at all. Measured both ways with a one-line
+    GLSL `ShaderMaterial` compiled by hand: without the abort, four files
+    fetched and both fields set; with it, one request made, both fields null,
+    and the material simply never becomes ready. **So the tripwire is two halves
+    and a caller must fail on both** — `bootMap` records every request to the
+    domain as well as aborting it, and `assertNoTranspiler` reads the engine.
+    Both are asked by `gate.mjs` and by `shaders.mjs`.
+26. **`OutlineFog`'s three invalidation rules survived the language change, and
+    they were re-measured rather than re-read** — risk 1, discharged. Hollowmere
+    with the player spawned and the pooled rigs built, back to the menu, into
+    Greyfen: **1** outline effect in the cache, **0 of 438** outline draw
+    wrappers holding a freed effect, and **one** distinct fog literal in the
+    compiled fragment source — Greyfen's `0.7098, 0.7686, 0.6431`, equal to the
+    `fogColor` the cel materials carry in the same frame. Against 534 of 642 and
+    148 for the two bugs. The second cache layer the risk named has not bitten.
+    One trap in writing that test: `setMap` refuses outside `menu`/`lobby`, so
+    a test that calls it from `playing` measures the first map twice and reports
+    clean.
+27. **A backtick in a shader COMMENT is a backtick in a template literal.**
+    Every shader here is a JS template literal, so prose that quotes an
+    identifier the way this plan does ends the string — which arrives as a
+    dev-server 500 on the module and a map that never boots, on one map before
+    the others because that is the order they were run in. Same class of trap as
+    the trailing-`//`-with-a-`;` one and it bites from the opposite side: that
+    one is the preprocessor eating code, this one is JavaScript eating the
+    shader.
+
+**What M6 did NOT do**, deliberately, because both are listed elsewhere and
+batching them is what makes them checkable: item 16's copy (`index.html`,
+`README.md`'s browser requirement, `CLAUDE.md:62`'s "WebGL2") and M8's Tier 2/3
+doc sweep. What is edited here is only what M6's own change made false.
+
 ---
 
 ## Verified groundwork
@@ -513,20 +594,22 @@ So the engine swap lands first with all nine shaders still in GLSL. This is
 | **M3** ✅ | **First WGSL** — the three post fragments (`HorrorPost`, `GodRays`, `MotionBlur`) | Dialect, `PostProcess` wiring, `onApply` binding. Standalone, no attributes, no defines. **The single-exit rewrite was not needed** — `return fragmentOutputs;` is legal and the early-outs stay. Sixteen banked frames at 0.000/255, and the three forced branches a frozen frame cannot reach diffed byte-identical against their own GLSL originals |
 | **M4** ✅ | **First WGSL surface** — the five shared includes, our own `celInstances` pair, then `GrassShader` | Include strategy, `instances*` twin, `MAX_PUSHERS`, `array<vec3f,N>` + `setArray3`. Sixteen banked frames at 0.000, the read-back assertion exact on both array shapes, and the pushers and the point lights — neither of which is in any banked frame — byte-identical against the GLSL original. **A uniform array's size must be a literal or a `#define`**, which cuts against item 4 |
 | **M5** ✅ | **`CelShader`** — both stages WGSL, landed once. `getSkinned` deleted (dead), taking `CEL_TEXTURED` and the last two deep imports with it | The long pole: ~620 shader lines, 8 materials, 6 defines. Sixteen banked frames at 0.000, four-map gate clean, and a whole-scene diff against the GLSL original at 0% on all four maps — which is where the branches a banked frame CANNOT hold live: every rig, the viewmodel and every effect mesh carries no colour buffer |
-| **M6** | `WaterShader` → `OutlineFog` → `EmissiveFog`. **Delete the scaffold**: assert `engine._glslang === undefined && engine._tintWASM === undefined` after a four-map sweep | Complete |
+| **M6** ✅ | `WaterShader` → `OutlineFog` → `EmissiveFog`. **Scaffold deleted**; the tripwire is TWO halves, because the aborted route silences the engine-state one and the fields are `null` rather than `undefined` | Complete. Sixteen banked frames at 0.000, four-map gate clean, `shaders.mjs` clean, the water byte-identical against its own GLSL original with 4 and 8 lamps forced, and the outline's two prose regression tests re-measured at 1 cached effect / 0 of 438 freed / 0 stale |
 | **M7** | Re-tune `GLASS_DEPTH_UNITS`, outline z-offsets, MSAA/memory. Re-measure everything `FINDINGS.md` claims | Re-derives what the depth-format change invalidated |
 | **M8** | Docs, four-map parity sign-off | — |
 
 M1 is the real first-light gate. M5 is the long pole. M7+M8 are about a third of
 the calendar.
 
-**The scaffold is one FILE as of M1** — `src/shaders/glslScaffold.ts`, holding
-`StandardMaterial.ForceGLSL`, the outline renderer's language, and the twgsl
-output repair (findings 4 and 5), with two call sites. M6's demolition is
-therefore three steps, not one: port `EmissiveFog` (item 12), delete the file
-and its two calls, and only then assert the transpiler tripwire — deleting it
-first turns every `StandardMaterial` in the game WGSL at once, which is a
-different milestone's work arriving unannounced.
+**The scaffold was one FILE from M1 and is now deleted** —
+`src/shaders/glslScaffold.ts` held `StandardMaterial.ForceGLSL`, the outline
+renderer's language, and the twgsl output repair (findings 4 and 5), with two
+call sites. The demolition was three steps and the ORDER was load-bearing:
+`EmissiveFog` first (item 12), then the file and its two calls, and only then
+the tripwire. Deleting it first turns every `StandardMaterial` in the game WGSL
+at once, which is a different milestone's work arriving unannounced — and
+measured, it is a boot failure rather than a rendering one, because
+`_addPlugin` throws on the mismatch inside `Game`'s constructor.
 
 ---
 
@@ -543,9 +626,9 @@ different milestone's work arriving unannounced.
 | 7 ✅ | `src/shaders/Dither.ts` | Body cannot move until the cel and the water go, so the WGSL twin is in (6) and this keeps the argument — the 60-line header, plus the three shaping decisions that were on the constant and are now above it | 0.25 |
 | 8 ✅ | `src/shaders/GrassShader.ts` | Both stages; our own `celInstances` twins rather than two new deep imports; `#extension` and `precision` both gone. The counts are interpolated rather than `#define`d — see finding 15 | 1.5 |
 | 9 ✅ | `src/shaders/CelShader.ts` | **The long pole**, and it came in under its estimate because M3 and M4 had already paid for the dialect. 6 defines, 2 albedo paths (the third went with `getSkinned`), glass composite, `facetNormal()`. `shaderLanguage` on 6 sites, not 7 | 5 |
-| 10 | `src/shaders/WaterShader.ts` | Wave field, `domeAt`, Schlick, foam. Long but mostly arithmetic | 2.5 |
-| 11 | `src/shaders/OutlineFog.ts` | `patch()` keeps structure; retarget to `ShadersStoreWGSL` (`:97, 111, 266`); rewrite `VERTEX_BODY`; declare the varying in **both** stages. `dropCompiled` needs **re-verification, not rewriting** | 2 |
-| 12 | `src/shaders/EmissiveFog.ts` | `getCustomCode(type, lang)` / `getUniforms(lang)` / `isCompatible` all take a language arg (`materialPluginBase.pure.d.ts:52/115/198`) — branch cleanly. **`isCompatible` is what the M0 scaffold stands in for**, so this item and the `ForceGLSL` line land together; `gl_FragColor` becomes `fragmentOutputs.color`, and `vPositionW`/`vEyePosition` become `fragmentInputs.`/`uniforms.` | 1 |
+| 10 ✅ | `src/shaders/WaterShader.ts` | Wave field, `domeAt`, Schlick, foam. The `out` params became a returned struct (WGSL has none), and the ONE judgement call in it — an explicit LOD on the bed-depth map — was the port's only real bug; see finding 23 | 2.5 |
+| 11 ✅ | `src/shaders/OutlineFog.ts` | `patch()` kept its structure exactly; retargeted to `ShadersStoreWGSL`, `VERTEX_BODY` rewritten, the varying declared in **both** stages — whose ORDER is what keeps the two `@location`s in step. `dropCompiled` needed no change and was re-verified rather than rewritten | 2 |
+| 12 ✅ | `src/shaders/EmissiveFog.ts` | `isCompatible` answers WGSL and only WGSL — there is no GLSL path left in this game to be compatible with — and it landed with the `ForceGLSL` line it stood in for. `gl_FragColor` became `fragmentOutputs.color`; `vPositionW` is `fragmentInputs.` but `vEyePosition` is **`scene.`** and not `uniforms.`, because it lives in the SCENE block. The non-UBO `fragment:` declaration string went with them: WebGPU has no such path, and the marker it replaces is not in Babylon's WGSL `default.fragment` at all, so the text was being dropped on the floor. | 1 |
 | 13 | `Atmosphere.ts`, `GrenadeSystem.ts` | No code change expected. Verify compute particles, `emitRateControl`, `randomTextureSize: 4096`. Headers naming transform feedback are now wrong | 0.5 |
 | 14 | `WaterSystem`, `ShadowSystem`, `ReflectionSystem`, `Sky` | No code change expected. Verify R8 texture, shadow depth format + `bias = 0`, 40 cube RTTs + face Y-flip, `DynamicTexture.update(false)` | 1 |
 | 15 | `src/entities/ViewModel.ts:203-204` | Verify `ALWAYS` + `forceDepthWrite` + `alphaIndex: Infinity`; WebGPU bakes depth state into the pipeline rather than setting it | 0.5 |
@@ -745,10 +828,14 @@ hooks `WebGL2RenderingContext.prototype.shaderSource`. Replace with
 `{lineNum, linePos, message}` against the source you're holding. Say so in
 `VERIFYING.md`; the next person should not reimplement the old one.
 
-**The transpiler tripwire**: assert `engine._glslang === undefined &&
-engine._tintWASM === undefined` after a four-map sweep, and add
-`page.route("**/*.babylonjs.com/**", r => r.abort())` to every smoke
-script, so a regression fails loudly instead of quietly costing a CDN round trip.
+**The transpiler tripwire, as it actually landed and NOT as written here
+first** (finding 25): it is two halves and both are in `harness.mjs`, so every
+script that boots a page gets them. `bootMap` records every request matching
+`**/*.babylonjs.com/**` AND aborts the route; `assertNoTranspiler` reads
+`engine._glslang` / `engine._tintWASM` after a sweep that compiled something.
+The fields are `null` and not `undefined`, and the ABORT silences them — an
+aborted fetch leaves both null forever — so a caller fails on the recorded
+requests as well. `gate.mjs` and `shaders.mjs` do.
 
 **Visual parity — the M2 reference set is the whole technique.** Every WGSL
 landing diffs against the GLSL-under-WebGPU shots, not against WebGL2, so engine
@@ -848,7 +935,14 @@ merges until the four-map sweep signs off. What needs planning is the
 
 **Top three risks:**
 
-1. **The outline effect-cache invalidation.** The only place in the tree
+1. ~~**The outline effect-cache invalidation.**~~ **Discharged at M6, by
+   measurement rather than by inspection — see finding 26.** The three rules
+   survived the language change untouched, the second cache layer named below
+   has not bitten, and both prose regression tests were re-run on the map
+   change this entry says to run them on. The original entry follows, because
+   the reasoning is still the reason those rules may not be simplified.
+
+   **The outline effect-cache invalidation.** The only place in the tree
    reaching into Babylon's private state, with three rules each paid for in a
    measured bug — and WebGPU adds a second cache layer (`_deletePipelineContext`
    now calls `resetCachedPipeline`, not `_deleteProgram`) that the hand

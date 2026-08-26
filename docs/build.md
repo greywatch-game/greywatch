@@ -91,6 +91,33 @@ content-hashed for exactly this reason.
 **It is REQUIRED and there is no fallback.** The boot gate, and the full account
 of what the optional version cost, are in [`deaths.md`](deaths.md).
 
+## The two WASMs that must never ship, and are not in the bundle at all
+
+Havok's is the one binary that ships. There are two more the ENGINE will fetch
+at runtime if anything lets it, and they are the reason a shader language is a
+build contract rather than a rendering detail: **glslang and twgsl, four files
+off `cdn.babylonjs.com/v9.19.1/`** — `glslang/glslang.{js,wasm}` and
+`twgsl/twgsl.{js,wasm}`. `WebGPUEngine` builds them lazily, inside
+`prepareGlslangAndTintAsync`, the first time a shader reaching the backend is
+GLSL rather than WGSL; it is how the WebGPU port compiled the tree's GLSL under
+the new engine for five milestones before the sources were rewritten.
+
+**Every shader in the tree is WGSL now, so a fetch is a regression and what it
+costs is the offline promise.** They are not in the bundle, they are not
+precached, and nothing in `sw.js` knows their names — so a build that quietly
+made one shader GLSL again would go to the network on its first DRAW, on a
+device that installed the app to a home screen precisely so it would not have
+to. Nothing about it is visible on a developer's machine.
+
+**Two gates watch for it and both are needed, because each is blind where the
+other sees.** `plans/webgpu-ref/harness.mjs` aborts `**/*.babylonjs.com/**` on
+every page it boots and records every request to it, and `assertNoTranspiler`
+reads `engine._glslang` / `engine._tintWASM` after a sweep that really compiled
+something. A route filter proves only what was REQUESTED and a shader nobody
+compiled requests nothing; the engine state proves the stronger thing and is
+silenced by the abort, since an aborted fetch leaves both fields null. `gate.mjs`
+and `shaders.mjs` fail on both. `VERIFYING.md` has the measurements.
+
 ## `optimizeDeps.exclude` in `vite.config.ts` is load-bearing for DEV
 
 The dep optimizer copies the glue into `node_modules/.vite/deps/` and leaves the

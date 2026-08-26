@@ -39,9 +39,11 @@
  *
  * The distance is `vPositionW` against `vEyePosition`. Both are unconditional in
  * `default.fragment` — `vPositionW` is declared outside every `#ifdef` and
- * `vEyePosition` sits in the scene uniform block, present on the UBO and non-UBO
- * paths alike — so nothing here depends on which defines a given emissive mesh
- * happens to compile with.
+ * `vEyePosition` sits in the scene uniform block — so nothing here depends on
+ * which defines a given emissive mesh happens to compile with. Under WGSL they
+ * are `fragmentInputs.vPositionW` and `scene.vEyePosition`, and the second is
+ * the one worth knowing: a value in the SCENE block is behind `scene.` and not
+ * behind the `uniforms.` this plugin's own two uniforms use.
  *
  * WHAT DELIBERATELY IS NOT EXEMPTED. Every caller of `getEmissive()` gets this,
  * including the viewmodel's reticle and the muzzle flash. They need no opt-out:
@@ -52,6 +54,7 @@
 import {
   Color3,
   MaterialPluginBase,
+  ShaderLanguage,
   type AbstractEngine,
   type Nullable,
   type Scene,
@@ -76,31 +79,61 @@ class EmissiveFogPlugin extends MaterialPluginBase {
     return "EmissiveFogPlugin";
   }
 
+  /**
+   * **The default answer is GLSL-only and would throw**, which is what made
+   * this file part of the WebGPU port rather than a bystander in it.
+   * `MaterialPluginBase.isCompatible` returns true for GLSL and false for
+   * everything else, `Material._createUniformBuffer` picks WGSL for a
+   * `StandardMaterial` on its own whenever `engine.isWebGPU`, and
+   * `MaterialPluginManager._addPlugin` THROWS on the mismatch — inside
+   * `CelMaterialFactory.getEmissive`, inside `Game`'s constructor, with a boot
+   * screen saying "something went wrong" about a shader language.
+   *
+   * WGSL and only WGSL, deliberately. There is no GLSL path left in this game
+   * to be compatible with: the engine is `WebGPUEngine`, every shader in the
+   * tree is WGSL and nothing sets `StandardMaterial.ForceGLSL`. A GLSL arm here
+   * would be a second copy of the injected code that nothing compiles and
+   * nobody could tell had rotted.
+   */
+  override isCompatible(shaderLanguage: ShaderLanguage): boolean {
+    return shaderLanguage === ShaderLanguage.WGSL;
+  }
+
+  /**
+   * `size` and `type` are the language-independent half — the manager spells
+   * the declaration itself, mapping `vec3` to `vec3f` for WGSL — so there is
+   * nothing to branch on here and the pair reaches the shader as
+   * `uniforms.celFogColor` and `uniforms.celFogRange`.
+   *
+   * No `fragment` string beside it. That is the non-UBO fallback's
+   * declarations, and it is dead twice over: WebGPU has no non-UBO path, and
+   * the marker it replaces (`ADDITIONAL_FRAGMENT_DECLARATION`) does not exist
+   * in Babylon's WGSL `default.fragment` at all, so the text would be dropped
+   * on the floor rather than compiled.
+   */
   override getUniforms(): {
     ubo: { name: string; size: number; type: string }[];
-    fragment: string;
   } {
     return {
       ubo: [
         { name: "celFogColor", size: 3, type: "vec3" },
         { name: "celFogRange", size: 2, type: "vec2" },
       ],
-      // The non-UBO path still needs the declarations spelled out; WebGL2 does
-      // not take it, but it costs two lines to not depend on that.
-      fragment: `uniform vec3 celFogColor;
-uniform vec2 celFogRange;`,
     };
   }
 
   override getCustomCode(shaderType: string): Nullable<{ [point: string]: string }> {
     if (shaderType !== "fragment") return null;
-    // `gl_FragColor` has just been written from `color`; this fades the ink
-    // Babylon produced rather than taking over the shader's job. Same curve and
-    // same radial distance as `CelShader`'s fragment — see the header.
+    // `fragmentOutputs.color` has just been written from `color`; this fades the
+    // ink Babylon produced rather than taking over the shader's job. Same curve
+    // and same radial distance as `CelShader`'s fragment — see the header.
+    //
+    // The eye is `scene.vEyePosition` and not `uniforms.`: it lives in the
+    // SCENE uniform block, which Babylon's WGSL puts behind its own name.
     return {
       CUSTOM_FRAGMENT_MAIN_END: `
-        float celFogT = clamp((distance(vPositionW, vEyePosition.xyz) - celFogRange.x) * celFogRange.y, 0.0, 1.0);
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, celFogColor, celFogT * celFogT);
+        let celFogT = clamp((distance(fragmentInputs.vPositionW, scene.vEyePosition.xyz) - uniforms.celFogRange.x) * uniforms.celFogRange.y, 0.0, 1.0);
+        fragmentOutputs.color = vec4f(mix(fragmentOutputs.color.rgb, uniforms.celFogColor, celFogT * celFogT), fragmentOutputs.color.a);
       `,
     };
   }

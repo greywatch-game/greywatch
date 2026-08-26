@@ -34,7 +34,7 @@ states for scatter, kept for a different reason.
 draws outside it owes the same fade.** The fog is a uniform on the cel materials
 and a per-pixel `mix` in their fragment shader; **three** passes never run it.
 Babylon's outline renderer writes `outlineColor` flat (its whole fragment shader
-is `gl_FragColor = color`), the `GlowLayer` builds its bloom from a material's
+is `fragmentOutputs.color = uniforms.color`), the `GlowLayer` builds its bloom from a material's
 emissive colour, which says nothing about where the mesh stands, and
 `getEmissive()`'s unlit `StandardMaterial` — every lit window, flame, ember,
 tracer, spark and team-colour bar — draws a flat colour with lighting disabled.
@@ -148,11 +148,26 @@ Three rules about that invalidation, all learned the hard way:
   `setOutlineFog` owns its own invalidation for exactly this reason — the first
   cut split it across the caller and got that list wrong.
 
+**All three survived the port to WGSL, and they were RE-MEASURED rather than
+re-read.** The plan called them the most important re-run in the migration,
+because WebGPU adds a second cache layer that the hand `delete cache[key]`
+backstop does not reach (`_deletePipelineContext` calls `resetCachedPipeline`
+rather than `_deleteProgram`) and because both failure modes are silent on
+Hollowmere. Played on Hollowmere with the player spawned and the pooled rigs
+built, then back to the menu and into Greyfen: **exactly 1 outline effect in the
+cache**, **0 of 438 outline draw wrappers holding a freed effect**, and **one
+distinct fog literal** in the compiled fragment source — Greyfen's
+`0.7098, 0.7686, 0.6431`, equal to the `fogColor` the cel materials are carrying
+in the same frame. Against 534 of 642 and 148 respectively for the two bugs.
+`setMap` refuses outside `menu`/`lobby`, so a test that changes map has to go
+back the way a player does; one that calls it from `playing` measures the first
+map twice and reports clean.
+
 **The ink's TINT is the MAP's, and it is derived rather than authored, because an
 unlit line over a lit surface is only a line while it is the darker of the two.**
 `inkColorFor` returns `albedo * tint` and the ink carries no lighting at all —
-that is the whole of the `CEL_INK` branch, and Babylon's `gl_FragColor = color`
-from the other side — while the surface under it is `albedo * light`. So a
+that is the whole of the `CEL_INK` branch, and Babylon's
+`fragmentOutputs.color = uniforms.color` from the other side — while the surface under it is `albedo * light`. So a
 constant tint inverts into a bright HALO the moment the light term falls under
 it, and it flips with the SHADOW rather than with distance: on Greyfen a trunk in
 the sun was outlined in ink and the same trunk two steps into the canopy's shade
@@ -720,10 +735,9 @@ confined to boundaries rather than spread over a penumbra.
 They reproduce the cel lighting model in their own shaders and went without a
 shadow term entirely, which showed as a cottage's shadow stopping dead at the
 edge of a grass rect and at the waterline. The lookup and the band function are
-shared so all three sample one depth map with one kernel — as the WGSL includes
-`celShadow` and `celBand` for the cel shader and the grass, and as the GLSL
-strings `SHADOW_GLSL` / `BAND_GLSL` that `CelShader` still exports for the
-water, which is the one surface not yet ported. `CelMaterialFactory.registerShadowConsumer` /
+shared so all three sample one depth map with one kernel — the WGSL includes
+`celShadow` and `celBand`, taken by all three.
+`CelMaterialFactory.registerShadowConsumer` /
 `unregisterShadowConsumer` is how a non-cel material joins the three per-frame
 uploads. **Registering is half the contract and unregistering is the other
 half**: grass and water are rebuilt every round, and a material left registered
@@ -737,8 +751,9 @@ for it.** The chain is `hdr = false`, so the scene is quantised the instant it
 lands in FXAA's input target, and the fog and mist ramps are shallow enough to
 cross a quantisation step every few degrees of screen — measured at contours
 nearly **seven pixels wide** on a plain village wall. `shaders/Dither.ts` adds
-one LSB of triangular noise immediately before `gl_FragColor` in the cel, grass
-and water shaders, which takes those contours to ~2 px. It is deliberately *not*
+one LSB of triangular noise immediately before `fragmentOutputs.color` in the
+cel, grass and water shaders — registered as the `celDither` include — which
+takes those contours to ~2 px. It is deliberately *not*
 in `HorrorPost`: that pass is detachable by a player setting, and its grain is
 already a ~10 LSB dither whenever it is attached — so the banding is a
 **grade-off** artefact, and the grade-off frame is the one a pass inside the
@@ -936,9 +951,11 @@ match the file, which is as unhelpful as it sounds.
 **It does NOT bite on the WGSL path, and that was checked rather than
 assumed.** The WGSL processor's `preProcessShaderCode` runs `RemoveComments`
 over the whole source before the cursor ever sees a line, so a comment is gone
-by the time anything splits on a `;`. Comment WGSL freely; the rule above
-stays because it is still true of every GLSL string in the tree, and there are
-five of them left.
+by the time anything splits on a `;`. Comment WGSL freely. **There is no GLSL
+string left in the tree for the rule above to be true of** — the trap is kept
+because it is a fact about Babylon's GLSL processor that would come back with
+any GLSL that came back, and because the WGSL section below states the one that
+DOES bite a comment here, which is JavaScript's rather than the processor's.
 
 **Water needs the sky fill the ground already gets.** `skyLightColor` by `n.y`
 is what makes the cel shader's floors and roofs read as lit; water is the most
@@ -962,14 +979,20 @@ consumer states `shaderLanguage: ShaderLanguage.WGSL` — a `PostProcess` and a
 `ShaderMaterial` both default to GLSL and will otherwise look the shader up in
 a store nothing wrote. **The one thing in the engine that does the opposite is
 `OutlineRenderer`**, which picks WGSL for itself under WebGPU with no flag to
-say otherwise; that is what `src/shaders/glslScaffold.ts` puts back, and it
-comes out when `OutlineFog` is ported.
+say otherwise — its constructor sets GLSL and then overwrites it, and unlike
+`StandardMaterial` there is no `ForceGLSL` between. So `OutlineFog` writes
+`ShaderStore.ShadersStoreWGSL`, and writing the other store is not a compile
+error but a patch that silently does nothing: unfogged ink, invisible on
+Hollowmere and loud on Greyfen.
 
 **What several shaders share is a registered INCLUDE and not an interpolated
 string**, and the reason is specific to WGSL rather than tidiness.
 `src/shaders/wgsl/includes.ts` writes `celBand`, `celShadow`, `celProbe`,
 `celProbeBox` and `celDither` into `ShaderStore.IncludesShadersStoreWGSL`, and a
-consumer reaches them with `#include<celShadow>`. The GLSL they replace were
+consumer reaches them with `#include<celShadow>`. Four of the five state their
+own source; `celDither` reaches for `Dither.ts`'s, because there the argument is
+sixty lines against a six-line function and a reader arriving at either wants
+the other. The GLSL they replace were
 template literals pasted into three shaders, which was survivable because a copy
 that had drifted was a COMPILE ERROR in one of them: the uniform declarations
 and the code reading them travelled together and a mismatch did not link. Two of
@@ -1005,18 +1028,35 @@ exactly this. The shadow map, the post chain's inputs and the depth field all
 carry a single level, so level 0 is not a compromise there: it is what the GLSL
 meant.
 
-**Three fetches in the game are the exception, and for them the implicit LOD IS
+**Five fetches in the game are the exception, and for them the implicit LOD IS
 the filtering.** The ground albedo and its height map are `DynamicTexture`s
 built with mips and `anisotropicFilteringLevel = 8`, and a `ReflectionProbe`'s
 cube generates a chain unless it is asked not to. `textureSampleLevel(…, 0.0)`
 on any of the three would delete that chain — and on the height map it would
 delete an argument as well, because `perturbNormal` relies on two taps a texel
 apart converging with distance and states that as the whole reason it needs no
-explicit fade. So the cel fragment samples those three implicitly and carries
-`#define DISABLE_UNIFORMITY_ANALYSIS`, which it owes anyway for `fwidth` and
-`facetNormal`. **The rule is about what you MEANT**: reach for the explicit LOD
-when a LOD is what you meant, and keep the define for the places where a
-derivative is.
+explicit fade. The other two are the water's: the foam mask is a plain `Texture`
+and carries a chain like any other, and the BED DEPTH map is the one that turns
+the rule into a trap.
+
+**An explicit LOD also turns ANISOTROPY off, and "no mip chain" is therefore
+not enough to make level 0 equivalent.** The water's bed-depth map is a
+`RawTexture` built with `generateMipMaps: false` — one level, so the LOD cannot
+matter — and Babylon's WebGPU sampler cache still enables anisotropy for it,
+because `BILINEAR_SAMPLINGMODE` qualifies whether or not the texture carries
+mips (`useMipMaps || samplingMode === 2`) and the texture's default
+`anisotropicFilteringLevel` is 4. So `textureSampleLevel(…, 0.0)` there is a
+single bilinear tap where the GLSL got an anisotropic one, and `depth` changes
+in the last bits. That is invisible everywhere except at the SHORELINE, where
+`foamBand` is a 1.2 m smoothstep seen edge-on and about one pixel wide, so a
+last-bit difference flips whole pixels between foamed and not. Measured against
+the shader's own GLSL original on Harrowmead's millpond: **911 pixels along the
+far shore, by up to 28/255** — small enough to pass the bank's tolerance and
+loud enough to be a real difference, and flattening that one threshold took it
+to zero. **The rule is about what you MEANT**: reach for the explicit LOD when a
+LOD is what you meant, keep the define for the places where a derivative is, and
+check the SAMPLER before assuming a mip-less texture cannot tell the
+difference.
 
 **Every `#ifdef` over a uniform declaration is another UBO LAYOUT.** The cel
 shader has six defines and compiles six leftover UBOs, each laid out from the
@@ -1082,10 +1122,21 @@ constraints below; it is repeated here because it is the rule most likely to be
 tripped by a hand-written shader that declares more than the variant it is
 compiling actually uses.
 
-**WGSL has `transpose()` and has no `inverse()`.** The eye position that
+**WGSL has `transpose()` and has no `inverse()`.** The eye position
 `OutlineFog` recovers from the rows of `viewProjection` is therefore still
-recovered that way when that file is ported — for a new reason, because the old
-one was that GLSL ES 1.00 had neither.
+recovered that way — for a NEW reason, and the difference matters to whoever
+next reads it as a workaround. It used to be that a WebGL2 context runs these
+shaders in GLSL ES 1.00 mode, where `inverse` does not exist; it is now that
+WGSL has no `inverse()` in any version, so there is no newer dialect to
+simplify it against.
+
+**A backtick inside a shader source is a backtick inside a TEMPLATE LITERAL.**
+Every shader in this tree is a JS template literal, so prose in a shader comment
+that quotes an identifier the way this documentation does ends the string —
+silently, as a dev-server 500 on the module, which reads as anything but a
+comment. Escape the backtick or write the name bare. It is the same class of trap
+as the `//`-with-a-`;` one below and it bites in the opposite direction: that one
+is the preprocessor eating code, this one is JavaScript eating the shader.
 
 ## Rendering constraints that look like bugs if you undo them
 

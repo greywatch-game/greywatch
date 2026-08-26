@@ -7,11 +7,16 @@ here has the engine difference already absorbed in it. A diff against these
 therefore means a **shader** difference, which is the only thing M3–M6 can
 break.
 
-Taken with `src/shaders/glslScaffold.ts` in place — the engine is
+Taken with `src/shaders/glslScaffold.ts` in place — the engine was
 `WebGPUEngine`, every shader was still GLSL, and the backend ran them through
 glslang → SPIR-V → twgsl → WGSL. **The bank does not move as shaders are
 ported**, which is the whole technique: it is the picture the GLSL sources drew
-on this engine, and every WGSL landing is asked to reproduce it exactly.
+on this engine, and every WGSL landing was asked to reproduce it exactly. All
+nine have, so **the set is now a REGRESSION bank rather than a port bank** —
+that file is deleted and there is no longer a way to re-take these frames from
+the GLSL. Do not re-take them for a rendering change either: a frame re-taken
+from the shader under test is a test of nothing. Re-take only when the ENGINE or
+the VANTAGES move, and say so in the commit.
 
 ## The scripts
 
@@ -47,7 +52,8 @@ node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
   the one shape no shipped map does: a ground albedo with no height map beside
   it, which both call sites happen to pass, and which would otherwise rot
   uncompiled. Exits non-zero, so it stands in front of a merge beside
-  `gate.mjs`.
+  `gate.mjs`. It is also the strongest place the transpiler tripwire is asked,
+  because it forces the CACHED materials to compile rather than the drawn ones.
 - **`vantages.mjs`** is the table of poses `bank.mjs` shoots, one row per frame
   with what that frame is FOR written beside it. It is data and has no CLI.
 - **`diff.mjs`** says how much and where two PNGs differ. `bank.mjs --check`

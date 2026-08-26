@@ -129,42 +129,6 @@ import "./wgsl/includes";
 export const MAX_POINT_LIGHTS = 16;
 
 /**
- * The hard-band quantizer, shared verbatim by every surface shader in the game.
- *
- * **The argument is on the WGSL twin**, `celBand` in `wgsl/includes.ts` — why
- * the smoothstep is at least a pixel wide, what a bump map did to it, and why
- * three copies became one. This is the same function in the language two of
- * its three consumers have not been ported out of yet, and it goes when they
- * are.
- */
-export const BAND_GLSL = `
-float band(float ndl, float steps) {
-  float x = ndl * steps;
-  float w = clamp(fwidth(x), 0.15, 0.5);
-  return min((floor(x) + smoothstep(0.5 - w, 0.5 + w, fract(x))) / steps, 1.0);
-}
-`;
-
-/**
- * The reflection probe a mirror samples, and the Y flip every sampler of one
- * of these cubes owes.
- *
- * **The argument is on the WGSL twin**, `celProbe` in `wgsl/includes.ts`.
- */
-export const PROBE_GLSL = `
-uniform samplerCube reflectionCube;
-// Where the cube was baked from, and how much of it this surface returns
-// against the sky it would otherwise show: reflectProbe.xyz is the bake point
-// and .w is the strength — 0 where nothing was baked, which is every editor
-// build and every map with nothing to bake for.
-uniform vec4 reflectProbe;
-
-vec3 probeCubeDir(vec3 dir) {
-  return vec3(dir.x, -dir.y, dir.z);
-}
-`;
-
-/**
  * The parallax box's uniform names, for a material that includes `celProbeBox`.
  *
  * The include itself is in `wgsl/includes.ts` and so is the argument for it —
@@ -174,55 +138,21 @@ vec3 probeCubeDir(vec3 dir) {
  * from the lists it is CONSTRUCTED with.
  */
 export const PROBE_BOX_UNIFORM_NAMES = ["reflectBoxMin", "reflectBoxMax"];
-/** The probe uniforms a sampling material owes, beside `PROBE_SAMPLER_NAMES`. */
-export const PROBE_UNIFORM_NAMES = [
-  "reflectBoxMin",
-  "reflectBoxMax",
-  "reflectProbe",
-];
+/**
+ * The probe uniform a sampling material owes, beside `PROBE_SAMPLER_NAMES`.
+ *
+ * **One list per INCLUDE, and that is what makes "registering is half the
+ * contract" mechanical rather than a thing to remember.** This is `celProbe`'s
+ * one uniform; `PROBE_BOX_UNIFORM_NAMES` above is `celProbeBox`'s two, and a
+ * material lists exactly the includes it takes. This list used to carry all
+ * three, which was harmless under GLSL and read as though the water — which
+ * includes `celProbe` and deliberately not `celProbeBox` — wanted a parallax
+ * box it has never set and must never have.
+ */
+export const PROBE_UNIFORM_NAMES = ["reflectProbe"];
 
 /** The cube itself. */
 export const PROBE_SAMPLER_NAMES = ["reflectionCube"];
-
-/**
- * The stepped shadow lookup, and the uniforms it reads.
- *
- * **The argument is on the WGSL twin**, `celShadow` in `wgsl/includes.ts` —
- * the four taps, the per-pixel rotation, which normal is passed in and what a
- * consumer owes. Same function, still in GLSL for the two consumers that have
- * not been ported yet.
- */
-export const SHADOW_GLSL = `
-// Stepped directional shadows. lightMatrix is the ShadowGenerator's
-// view*projection (no [0,1] bias baked in — the UV/depth remap below mirrors
-// Babylon's own computeShadow: uv = clip.xy*0.5+0.5, depth = (clip.z+1)*0.5).
-uniform mat4 lightMatrix;
-uniform sampler2D shadowMap;
-// x = depth bias, y = darkness, z = normal offset, w = tap radius in UV
-uniform vec4 shadowParams;
-float shadowVisibility(vec3 n, vec3 posW) {
-  vec4 sc4 = lightMatrix * vec4(posW + n * shadowParams.z, 1.0);
-  vec3 sc = sc4.xyz / sc4.w;
-  vec2 uv = sc.xy * 0.5 + 0.5;
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
-  if (sc.z < -1.0 || sc.z > 1.0) return 1.0;
-  float depth = (sc.z + 1.0) * 0.5 - shadowParams.x;
-
-  float a = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453)
-    * 6.2831853;
-  vec2 rot = vec2(cos(a), sin(a)) * shadowParams.w;
-  vec2 perp = vec2(-rot.y, rot.x);
-
-  float lit = step(depth, texture2D(shadowMap, uv + rot).x)
-    + step(depth, texture2D(shadowMap, uv - rot).x)
-    + step(depth, texture2D(shadowMap, uv + perp).x)
-    + step(depth, texture2D(shadowMap, uv - perp).x);
-  // Narrow smoothstep rather than a plain average: the four taps give a 0,
-  // 0.25, 0.5, 0.75, 1 ladder, and this pulls the middle of it back toward a
-  // decision so the edge stays an edge and only its jaggies are dissolved.
-  return mix(shadowParams.y, 1.0, smoothstep(0.25, 0.75, lit * 0.25));
-}
-`;
 
 /** The uniform names `celShadow` declares, for a consumer's uniform list. */
 export const SHADOW_UNIFORM_NAMES = ["lightMatrix", "shadowParams"] as const;

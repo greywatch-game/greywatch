@@ -10,9 +10,10 @@
  *
  * WHY THIS IS NOT DONE THE OBVIOUS WAY. An outline is a back-face shell drawn
  * by Babylon's `OutlineRenderer`, whose entire fragment shader is
- * `gl_FragColor = color` — a flat per-MESH colour, no fog, no depth. Fading
- * that colour on the CPU (which `updateOutlineScales` did first, and still does
- * for width) can only ever be per mesh, and per mesh is not enough here:
+ * `fragmentOutputs.color = uniforms.color` — a flat per-MESH colour, no fog and
+ * no depth. Fading that colour on the CPU (which `updateOutlineScales` did
+ * first, and still does for width) can only ever be per mesh, and per mesh is
+ * not enough here:
  * `BlockMerge` collapses the map into one mesh per 48 m block per material, so
  * a single mesh routinely spans the whole fog band. Measured on Greyfen: of 687
  * outlined meshes, 50 had fog 0.0 at their near edge and 1.0 at their far edge.
@@ -28,9 +29,14 @@
  *   view-projection are `P00 * right`, `P11 * up` and `forward`; the view
  *   rotation is orthonormal, so `forward` is unit length and the other two
  *   normalise by their own length. The eye is the one point whose clip x, y and
- *   w all vanish, which those three rows give directly — no matrix inverse, so
- *   it compiles under GLSL ES 1.00 (a WebGL2 context still runs these shaders
- *   in 1.00 mode, where `inverse`/`transpose` do not exist). The result is
+ *   w all vanish, which those three rows give directly — **no matrix inverse,
+ *   and the reason that matters has changed rather than gone away**. It used to
+ *   be that a WebGL2 context runs these shaders in GLSL ES 1.00 mode, where
+ *   `inverse` does not exist. It is now that **WGSL has `transpose()` and no
+ *   `inverse()` at all**, in any version — so the rows trick is not a
+ *   workaround for an old dialect that a newer one would let us drop, it is the
+ *   only way to recover an eye here, and undoing it has nothing to fall back
+ *   on. The result is
  *   `length(worldPos - eye)`, the SAME radial distance the cel shader fogs by.
  *   Using `gl_Position.w` instead would have been free, but planar depth
  *   disagrees with radial by up to 1.4x at the corners of a 54 deg FOV, and an
@@ -46,6 +52,17 @@
  * `dropCompiled` is what forces the recompile, and every one of its rules was
  * paid for in a bug — see it.
  *
+ * WHICH STORE, AND WHY THERE IS NO CHOICE ABOUT IT. `OutlineRenderer` sets
+ * `_shaderLanguage = GLSL` in its constructor and then overwrites it with WGSL
+ * whenever `engine.isWebGPU`, with no flag between and no override anywhere —
+ * unlike `StandardMaterial`, which has `ForceGLSL`. So the pass reads
+ * `ShadersStoreWGSL` and this file writes it, and the two halves of that
+ * sentence have to move together: writing the other store is not a compile
+ * error, it is a patch that silently does nothing, which is the ORIGINAL bug
+ * arriving by a different route. It is SILENT on Hollowmere and loud on
+ * Greyfen for the reason it was the first time — near-black ink on a near-black
+ * fog is invisible — so a sweep starting on the night village reports clean.
+ *
  * THE ONE THING THIS FILE MUST NEVER DO is statically import a Babylon shader
  * module to get at its source. See `applyWanted`. It cost a whole debugging
  * session: the symptom is not in the renderer at all.
@@ -59,6 +76,9 @@ const FRAGMENT = "outlinePixelShader";
 let pristineVertex = "";
 let pristineFragment = "";
 
+/** The varying, declared in BOTH stages — see `patch`. */
+const VARYING = "varying vCelFogDist: f32;";
+
 /**
  * Recovers the eye from `viewProjection` and hands the fragment shader the same
  * radial distance the cel shader measures. `worldPos` is the EXTRUDED shell
@@ -66,18 +86,29 @@ let pristineFragment = "";
  *
  * Degenerates under an orthographic projection, which has no eye point. Nothing
  * here draws outlines through one: the shadow pass renders depth only.
+ *
+ * A WGSL matrix indexes as `m[column][row]`, which is GLSL's convention too, so
+ * the six reads below name the same six numbers they always did. What changed
+ * is spelling: the uniform is reached through `uniforms.`, `worldPos` is still
+ * a local of Babylon's own `main` and the varying is written through
+ * `vertexOutputs.`.
  */
 const VERTEX_BODY = `
-vec3 celFogRight = vec3(viewProjection[0][0], viewProjection[1][0], viewProjection[2][0]);
-vec3 celFogUp = vec3(viewProjection[0][1], viewProjection[1][1], viewProjection[2][1]);
-vec3 celFogFwd = vec3(viewProjection[0][3], viewProjection[1][3], viewProjection[2][3]);
-vec3 celFogEye = -celFogRight * (viewProjection[3][0] / dot(celFogRight, celFogRight))
-  - celFogUp * (viewProjection[3][1] / dot(celFogUp, celFogUp))
-  - celFogFwd * (viewProjection[3][3] / dot(celFogFwd, celFogFwd));
-vCelFogDist = distance(worldPos.xyz, celFogEye);
+let celFogRight = vec3f(uniforms.viewProjection[0][0], uniforms.viewProjection[1][0], uniforms.viewProjection[2][0]);
+let celFogUp = vec3f(uniforms.viewProjection[0][1], uniforms.viewProjection[1][1], uniforms.viewProjection[2][1]);
+let celFogFwd = vec3f(uniforms.viewProjection[0][3], uniforms.viewProjection[1][3], uniforms.viewProjection[2][3]);
+let celFogEye = -celFogRight * (uniforms.viewProjection[3][0] / dot(celFogRight, celFogRight))
+  - celFogUp * (uniforms.viewProjection[3][1] / dot(celFogUp, celFogUp))
+  - celFogFwd * (uniforms.viewProjection[3][3] / dot(celFogFwd, celFogFwd));
+vertexOutputs.vCelFogDist = distance(worldPos.xyz, celFogEye);
 `;
 
-function glsl(n: number): string {
+/**
+ * A float as WGSL will take it. An integer-valued literal has to carry its
+ * point: WGSL infers an integer type for `78` and rejects the subtraction it
+ * lands in, where GLSL ES would have promoted it.
+ */
+function wgsl(n: number): string {
   return Number.isInteger(n) ? `${n}.0` : `${n}`;
 }
 
@@ -85,6 +116,15 @@ function glsl(n: number): string {
  * Rewrites both shader sources with this fog baked in. Anchors are Babylon's
  * `#define CUSTOM_*` markers, which are its documented injection points and the
  * only thing here that is not a plain uniform contract.
+ *
+ * **The varying is declared in BOTH stages and the anchors are what keep its
+ * location in step.** Babylon numbers a stage's varyings in declaration order,
+ * so the two lists have to agree; `CUSTOM_VERTEX_DEFINITIONS` and
+ * `CUSTOM_FRAGMENT_DEFINITIONS` both sit after everything either stage
+ * declares — the clip plane, the log depth and `ALPHATEST`'s `vUV` — so ours
+ * is last in both whatever defines a given mesh compiles with. That was true
+ * under GLSL as well and cost nothing to notice; under WGSL a mismatch is a
+ * `@location` mismatch and the pipeline does not build at all.
  */
 function patch(color: Color3, start: number, end: number): void {
   const anchor = (src: string, marker: string, add: string, what: string) => {
@@ -94,32 +134,35 @@ function patch(color: Color3, start: number, end: number): void {
     return src.replace(marker, `${marker}\n${add}`);
   };
 
-  ShaderStore.ShadersStore[VERTEX] = anchor(
+  ShaderStore.ShadersStoreWGSL[VERTEX] = anchor(
     anchor(
       pristineVertex,
       "#define CUSTOM_VERTEX_DEFINITIONS",
-      "varying float vCelFogDist;",
+      VARYING,
       "outline vertex",
     ),
-    // Sits after `worldPos` and `gl_Position` are assigned, so both are live.
+    // Sits after `worldPos` and `vertexOutputs.position` are assigned, so both
+    // are live.
     "#include<clipPlaneVertex>",
     VERTEX_BODY,
     "outline vertex",
   );
 
   const span = Math.max(0.001, end - start);
-  ShaderStore.ShadersStore[FRAGMENT] = anchor(
+  ShaderStore.ShadersStoreWGSL[FRAGMENT] = anchor(
     anchor(
       pristineFragment,
       "#define CUSTOM_FRAGMENT_DEFINITIONS",
-      "varying float vCelFogDist;",
+      VARYING,
       "outline fragment",
     ),
-    // Immediately after `gl_FragColor = color;`, so this fogs the ink Babylon
-    // just wrote rather than replacing the whole shader's job.
+    // Immediately after `fragmentOutputs.color = uniforms.color;`, so this fogs
+    // the ink Babylon just wrote rather than replacing the whole shader's job.
+    // Reading `fragmentOutputs` back is legal: the processor declares it as a
+    // `var` in `main` and appends the `return` itself.
     "#define CUSTOM_FRAGMENT_MAIN_END",
-    `float celFogT = clamp((vCelFogDist - ${glsl(start)}) / ${glsl(span)}, 0.0, 1.0);
-gl_FragColor = vec4(mix(gl_FragColor.rgb, vec3(${glsl(color.r)}, ${glsl(color.g)}, ${glsl(color.b)}), celFogT * celFogT), gl_FragColor.a);`,
+    `let celFogT = clamp((fragmentInputs.vCelFogDist - ${wgsl(start)}) / ${wgsl(span)}, 0.0, 1.0);
+fragmentOutputs.color = vec4f(mix(fragmentOutputs.color.rgb, vec3f(${wgsl(color.r)}, ${wgsl(color.g)}, ${wgsl(color.b)}), celFogT * celFogT), fragmentOutputs.color.a);`,
     "outline fragment",
   );
 }
@@ -247,11 +290,14 @@ let wanted: { color: Color3; start: number; end: number } | null = null;
 /**
  * Bakes the wanted fog if Babylon has registered the outline shaders yet.
  *
- * **The wait is why there is no `import "@babylonjs/core/Shaders/outline.vertex"`
- * here, and there must never be one.** `OutlineRenderer` pulls both shaders in
+ * **The wait is why there is no
+ * `import "@babylonjs/core/ShadersWGSL/outline.vertex"` here, and there must
+ * never be one.** `OutlineRenderer` pulls both shaders in
  * through a dynamic `import()`, so the store is empty until something is first
  * outlined — but importing them statically to fix that adds a deep entry to
- * `@babylonjs/core` and makes Vite re-optimize the dependency mid-session. The
+ * `@babylonjs/core`, which the tree now has NONE of and which
+ * `scripts/check-deep-imports.mjs` fails the build over. It also makes Vite
+ * re-optimize the dependency mid-session. The
  * chunks Babylon's OWN dynamic imports resolve against are rewritten by that
  * pass, and the ones already loaded 404: `glowMapGeneration.vertex` and
  * `default.vertex` were the casualties, which is the glow layer and every
@@ -263,8 +309,8 @@ let wanted: { color: Color3; start: number; end: number } | null = null;
  */
 function applyWanted(scene: Scene): void {
   if (!wanted) return;
-  const vertex = ShaderStore.ShadersStore[VERTEX];
-  const fragment = ShaderStore.ShadersStore[FRAGMENT];
+  const vertex = ShaderStore.ShadersStoreWGSL[VERTEX];
+  const fragment = ShaderStore.ShadersStoreWGSL[FRAGMENT];
   if (!vertex || !fragment) return;
   if (!pristineVertex) {
     pristineVertex = vertex;

@@ -33,6 +33,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   MAP_IDS,
+  assertNoTranspiler,
   bootMap,
   installRound,
   launchClient,
@@ -81,7 +82,7 @@ console.log(
 const rows = [];
 const failures = [];
 for (const id of targets) {
-  const { page, bootMs, pageErrors, consoleErrors } = await bootMap(
+  const { page, bootMs, pageErrors, consoleErrors, cdnRequests } = await bootMap(
     browser,
     vite.url,
     id,
@@ -131,6 +132,15 @@ for (const id of targets) {
   // typecheck passes and the map still looks like it loaded.
   const fails = [];
   if (!perf.isWebGPU) fails.push("engine is not WebGPU");
+  // The transpiler tripwire, BOTH halves, asked here because this is the script
+  // that plays a real ROUND on every map. One of the two is always the one that
+  // fires and which it is depends on whether the CDN was reachable, so a
+  // caller that asks only one of them is watching a wire that may be dead —
+  // see `assertNoTranspiler`.
+  if (cdnRequests.length) {
+    fails.push(`${cdnRequests.length} requests to babylonjs.com: ${cdnRequests[0]}`);
+  }
+  fails.push(...(await assertNoTranspiler(page)));
   if (perf.state !== "playing") fails.push(`state is ${perf.state}, not playing`);
   if (!build.probesRenderOnce) fails.push("a reflection probe is re-rendering every frame");
   if (pageErrors.length) fails.push(`${pageErrors.length} page errors`);

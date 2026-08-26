@@ -47,7 +47,6 @@
 import "./src/ui/base.css";
 import { WebGPUEngine } from "@babylonjs/core";
 import { Game } from "./src/core/Game";
-import { scaffoldEngineGLSL } from "./src/shaders/glslScaffold";
 import { loadHavok } from "./src/systems/PhysicsWorld";
 import { registerServiceWorker } from "./src/pwa/register";
 
@@ -185,13 +184,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     );
     throw err;
   }
-  // **SCAFFOLDING, and it is here rather than in the Game because the first
-  // thing it makes true has to be true before the first material exists** —
-  // and the first material is built inside that constructor. The engine is
-  // WebGPU and every shader in the tree is still GLSL; `glslScaffold.ts` owns
-  // the whole argument for what that arrangement costs, and it and its two
-  // calls go together when the last shader is ported.
-  scaffoldEngineGLSL(engine);
   try {
     new Game(canvas, havok, engine);
   } catch (err) {

@@ -41,6 +41,7 @@
  * together, which is easier to remember when they are visibly two halves.
  */
 import { ShaderStore } from "@babylonjs/core";
+import { DITHER_WGSL } from "../Dither";
 
 /**
  * Registers one include, refusing to overwrite a DIFFERENT source under a name
@@ -299,30 +300,15 @@ fn reflectBoxDir(dir: vec3f, pos: vec3f) -> vec3f {
 /**
  * Triangular-PDF dither at one LSB, keyed on the pixel and NOT on time.
  *
- * **The argument is in `Dither.ts`** — why it exists at all, why it is not in
- * the grade, why one LSB rather than half, and the run-length measurement that
- * settled it. That file keeps it because the question a reader arrives with is
- * about the dither and not about the include table.
- *
- * `gl_FragCoord` is `fragmentInputs.position`, which Babylon flips for a pass
- * rendering into a texture — so the noise stays keyed on the same pixel the
- * GLSL was keyed on, and not on one mirrored about the horizon.
+ * **The source and the argument are both in `Dither.ts`**, and this is the one
+ * entry in the table that reaches for its text instead of stating it. Why it
+ * exists at all, why it is not in the grade, why one LSB rather than half and
+ * the run-length measurement that settled it are sixty lines against a
+ * six-line function, and a reader arriving at either wants the other. The four
+ * entries above are the opposite shape — a paragraph over a paragraph — so
+ * they state their own.
  */
-register(
-  "celDither",
-  `
-fn ditherHash(p: vec2f) -> f32 {
-  return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453123);
-}
-
-// Triangular-PDF dither, +/- 1 LSB of an 8-bit channel. See Dither.ts.
-fn dither(col: vec3f) -> vec3f {
-  let d1 = ditherHash(fragmentInputs.position.xy);
-  let d2 = ditherHash(fragmentInputs.position.xy + 17.31);
-  return col + (d1 - d2) * (1.0 / 255.0);
-}
-`,
-);
+register("celDither", DITHER_WGSL);
 
 /**
  * The mesh transform, and these two entries are OURS rather than Babylon's for

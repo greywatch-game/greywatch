@@ -6,20 +6,36 @@
  * the cel shader. No vertex displacement; opaque output. No Babylon lights.
  * The wave field is SAMPLED FROM NOTHING — there is no normal map and there
  * must not be one again; see the header below for what a lattice cost here.
+ * Both stages are hand-written WGSL, and `shaderLanguage` on the material is
+ * load-bearing rather than declarative: a `ShaderMaterial` defaults to GLSL
+ * and would look these up in a store nothing writes any more. This was the
+ * LAST shader in the tree to be ported, so with it went the four GLSL
+ * constants three shaders used to interpolate — see `wgsl/includes.ts`, which
+ * now holds the only copy of each. See `docs/rendering.md` for what the
+ * dialect and Babylon's WGSL processor decide.
  */
-import { Effect, Scene, ShaderMaterial, Texture, Vector3, Vector4 } from "@babylonjs/core";
-import { CONFIG } from "../config";
-import { DITHER_GLSL } from "./Dither";
 import {
-  BAND_GLSL,
+  Scene,
+  ShaderLanguage,
+  ShaderMaterial,
+  ShaderStore,
+  Texture,
+  Vector3,
+  Vector4,
+} from "@babylonjs/core";
+import { CONFIG } from "../config";
+import {
   MAX_POINT_LIGHTS,
-  PROBE_GLSL,
   PROBE_SAMPLER_NAMES,
   PROBE_UNIFORM_NAMES,
-  SHADOW_GLSL,
   SHADOW_SAMPLER_NAMES,
   SHADOW_UNIFORM_NAMES,
 } from "./CelShader";
+// The shared includes self-register in the IncludesShadersStoreWGSL; import
+// them explicitly so the #include<cel...> lines below can never be tree-shaken
+// away, and so registration is provably before the first effect COMPILE rather
+// than merely before the first material.
+import "./wgsl/includes";
 
 /**
  * Water — the one smooth-shaded material in a faceted world, and the only
@@ -45,8 +61,9 @@ import {
  * - the **mirror**, which is the analytic sky gradient with the light's glare
  *   in it, and then a picture of the world composited over that out of a cube
  *   `ReflectionSystem` bakes per body per map install — the same two-layer
- *   build, the same parallax correction and the same un-premultiply as the
- *   glazing, shared as `PROBE_GLSL` rather than copied;
+ *   build and the same un-premultiply as the glazing, shared as the `celProbe`
+ *   include rather than copied — but NOT its parallax correction, which is
+ *   `celProbeBox` and which this surface must not have; see the fetch itself;
  * - **Schlick** between them, unbanded, at water's own `reflectance` — which
  *   is ~2% face-on and ~100% at the bank, and is therefore also what makes the
  *   near water dark and the far water bright without a single distance term;
@@ -115,165 +132,193 @@ import {
  * Output is opaque and display-ready (`imageProcessingEnabled` stays false).
  */
 
-Effect.ShadersStore["waterVertexShader"] = `
-precision highp float;
+ShaderStore.ShadersStoreWGSL["waterVertexShader"] = `
+attribute position: vec3f;
 
-attribute vec3 position;
+uniform world: mat4x4f;
+uniform viewProjection: mat4x4f;
 
-uniform mat4 world;
-uniform mat4 viewProjection;
+varying vPosW: vec3f;
 
-varying vec3 vPosW;
-
-void main() {
-  vec4 worldPos = world * vec4(position, 1.0);
-  vPosW = worldPos.xyz;
-  gl_Position = viewProjection * worldPos;
+@vertex
+fn main(input: VertexInputs) -> FragmentInputs {
+  let worldPos = uniforms.world * vec4f(vertexInputs.position, 1.0);
+  vertexOutputs.vPosW = worldPos.xyz;
+  vertexOutputs.position = uniforms.viewProjection * worldPos;
 }
 `;
 
-Effect.ShadersStore["waterFragmentShader"] = `
-precision highp float;
+// The derivatives are what was MEANT — `fwidth(vPosW.xz)` IS the sampling
+// criterion the whole wave field rests on, and band()'s width is how fast its
+// index moves per pixel — so there is no explicit-LOD form to reach for the way
+// a texture fetch has one, and WGSL's uniformity analysis has to be told. Of
+// the fetches below only the cube's LOD is explicit — its level IS the
+// unresolved chop — so the define covers the derivatives, the bed depth and the
+// foam mask, which all wanted the hardware's own LOD. (celShadow's four taps
+// are explicit and need nothing.)
+ShaderStore.ShadersStoreWGSL["waterFragmentShader"] = `
+#define DISABLE_UNIFORMITY_ANALYSIS
 
-#define MAX_POINT_LIGHTS ${MAX_POINT_LIGHTS}
-#define WAVE_TRAINS ${CONFIG.water.waveTrains}
-#define TAU 6.2831853
+varying vPosW: vec3f;
 
-varying vec3 vPosW;
+var foamTexSampler: sampler;
+var foamTex: texture_2d<f32>;
+var depthTexSampler: sampler;
+var depthTex: texture_2d<f32>; // r = bed depth / depthMax, over "bounds"
+uniform time: f32;
+uniform camPos: vec3f;
 
-uniform sampler2D foamTex;
-uniform sampler2D depthTex; // r = bed depth / depthMax, over "bounds"
-uniform float time;
-uniform vec3 camPos;
-
-uniform vec3 lightDir;
-uniform vec3 lightColor;
-uniform vec3 ambientColor;
+uniform lightDir: vec3f;
+uniform lightColor: vec3f;
+uniform ambientColor: vec3f;
 // The hemispheric fill from the sky itself, the same term the cel shader gives
 // the ground by n.y. Water is the most up-facing surface on any map, so it
 // takes essentially all of it — and leaving it out was what made a pond read
 // as a hole in a lit field: every bank around it had a sky on it and the water
 // did not.
-uniform vec3 skyLightColor;
-uniform vec3 fogColor;
-uniform vec2 fogParams;  // x = start, y = end
-uniform vec3 mistColor;
-uniform vec2 mistParams; // x = height falloff, y = strength
+uniform skyLightColor: vec3f;
+uniform fogColor: vec3f;
+uniform fogParams: vec2f;  // x = start, y = end
+uniform mistColor: vec3f;
+uniform mistParams: vec2f; // x = height falloff, y = strength
 // The top of the sky dome, as the mirror returns it. The HORIZON end of the
 // same gradient is fogColor, which is already here — the identical pairing the
 // glazing makes, and the same reason SkySpec.horizonColor is asked to sit
 // close to the fog.
-uniform vec3 skyZenithColor;
+uniform skyZenithColor: vec3f;
 // The bright band about twelve degrees up, which on a day map is most of what
 // a horizontal mirror returns. Same value SkySpec.horizonColor gives the dome.
-uniform vec3 skyHorizonColor;
+uniform skyHorizonColor: vec3f;
 
-uniform vec3 deepColor;
-uniform vec3 shallowColor;
-uniform vec3 bedColor;
-uniform vec3 foamColor;
-uniform vec4 bounds;     // minX, minZ, maxX, maxZ — the rect, for the seam band
+uniform deepColor: vec3f;
+uniform shallowColor: vec3f;
+uniform bedColor: vec3f;
+uniform foamColor: vec3f;
+uniform bounds: vec4f;   // minX, minZ, maxX, maxZ — the rect, for the seam band
 
 // --- the wave field (see waveField below) ---
-uniform float waveHeight;     // metres, crest to trough of the whole sum
-uniform float waveLength;     // metres, the longest train
-uniform float waveSpeed;      // metres per second, the longest train
-uniform float waveGain;       // amplitude ratio between successive trains
-uniform float waveLacunarity; // frequency ratio between successive trains
-uniform float waveBearing;    // radians — where the swell runs
-uniform float waveDrag;       // how far a train is dragged by the one above it
-uniform float waveDetail;     // pixels per wavelength a train needs to survive
+uniform waveHeight: f32;     // metres, crest to trough of the whole sum
+uniform waveLength: f32;     // metres, the longest train
+uniform waveSpeed: f32;      // metres per second, the longest train
+uniform waveGain: f32;       // amplitude ratio between successive trains
+uniform waveLacunarity: f32; // frequency ratio between successive trains
+uniform waveBearing: f32;    // radians — where the swell runs
+uniform waveDrag: f32;       // how far a train is dragged by the one above it
+uniform waveDetail: f32;     // pixels per wavelength a train needs to survive
 
 // --- the mirror ---
-uniform float reflectance;    // Fresnel face-on. Water is about 0.02
-uniform float fresnelPower;   // Schlick is 5. Lower brings the sheen on sooner
-uniform float sunHalo;        // cosine half-width of the light's glare in it
-uniform float specPower;      // Blinn exponent of the crest glint
-uniform float specStrength;
-uniform float mirrorBlur;     // mip levels the unresolved chop blurs it by
+uniform reflectance: f32;    // Fresnel face-on. Water is about 0.02
+uniform fresnelPower: f32;   // Schlick is 5. Lower brings the sheen on sooner
+uniform sunHalo: f32;        // cosine half-width of the light's glare in it
+uniform specPower: f32;      // Blinn exponent of the crest glint
+uniform specStrength: f32;
+uniform mirrorBlur: f32;     // mip levels the unresolved chop blurs it by
 
 // --- the bed ---
-uniform float depthMax;   // metres the depth byte saturates at
-uniform float depthFade;  // metres over which the body reaches deepColor
-uniform float bedDepth;   // metres over which the bed stops showing through
-uniform float bedShow;    // how much of the bed shows at zero depth
-uniform float caustics;   // crest-focused light on a shoal
+uniform depthMax: f32;   // metres the depth byte saturates at
+uniform depthFade: f32;  // metres over which the body reaches deepColor
+uniform bedDepth: f32;   // metres over which the bed stops showing through
+uniform bedShow: f32;    // how much of the bed shows at zero depth
+uniform caustics: f32;   // crest-focused light on a shoal
 
 // --- the shore ---
-uniform float foamWidth;
-uniform float foamScale;
-uniform float foamSpeed;
-uniform float foamDepth;  // depth (m) at which the shoreline foam has gone
-uniform float foamLap;    // metres the waterline breathes with the swell
-uniform float crestFoam;  // whitecaps over a shoal
-uniform float fleckStrength; // scum drifting out on the open water
+uniform foamWidth: f32;
+uniform foamScale: f32;
+uniform foamSpeed: f32;
+uniform foamDepth: f32;  // depth (m) at which the shoreline foam has gone
+uniform foamLap: f32;    // metres the waterline breathes with the swell
+uniform crestFoam: f32;  // whitecaps over a shoal
+uniform fleckStrength: f32; // scum drifting out on the open water
 
-uniform vec3 pointPos[MAX_POINT_LIGHTS];
-uniform vec3 pointColor[MAX_POINT_LIGHTS]; // rgb premultiplied by intensity
-uniform float pointRange[MAX_POINT_LIGHTS];
-uniform float pointCount;
+uniform pointPos: array<vec3f, ${MAX_POINT_LIGHTS}>;
+uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by intensity
+uniform pointRange: array<f32, ${MAX_POINT_LIGHTS}>;
+uniform pointCount: f32;
 
-${BAND_GLSL}
-${SHADOW_GLSL}
-${PROBE_GLSL}
-${DITHER_GLSL}
+// Both counts reach the declarations above by INTERPOLATION and the loop bounds
+// below as real consts, and the split is forced rather than stylistic: a
+// uniform array's size must be a literal or a #define, because Babylon resolves
+// the bound out of the preprocessor table when it lays out the leftover UBO and
+// a WGSL const is not in that table — while a #define is the worse of the two,
+// since the processor implements one as an un-anchored regex over the whole
+// source. GrassShader settled this; see docs/rendering.md.
+const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
+const WAVE_TRAINS: i32 = ${CONFIG.water.waveTrains};
+const TAU: f32 = 6.2831853;
+
+#include<celBand>
+#include<celShadow>
+#include<celProbe>
+#include<celDither>
 
 // Rotates a uv about the origin. The foam mask is the one tiled image left in
 // this shader, and it goes through this for the reason every layer used to: a
 // lattice sampled straight off world X/Z is parallel to the plane's own edges,
 // and that is what reads as "the pattern".
-vec2 swirl(vec2 p, float c, float s) {
-  return vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+fn swirl(p: vec2f, c: f32, s: f32) -> vec2f {
+  return vec2f(p.x * c - p.y * s, p.x * s + p.y * c);
+}
+
+// What waveField returns, and it is a struct for a dialect reason rather than a
+// design one: the GLSL wrote its second and third answers through \`out\`
+// parameters, and WGSL has no \`out\` — the nearest thing is a pointer argument,
+// which is a worse read here than naming the three things the surface IS.
+struct Surface {
+  height: f32,   // 0..1, the crest term
+  slope: vec2f,  // d(height)/d(world metre), per axis, at unit height
+  resolved: f32, // how much of the full amplitude survived the pixel test
 }
 
 /**
  * The surface, summed from WAVE_TRAINS directional wave trains.
  *
- * Returns the height in 0..1 and writes the slope (d(height)/d(world metre),
- * per axis, at unit height) into \'slope\'. Both are normalised against the
- * FULL amplitude rather than the visible one, so a train dropped for being
- * finer than a pixel takes its share of the relief with it and the far field
- * goes calm — see the header on why that is right here and was wrong before.
+ * The height is 0..1 and the slope is per world metre at unit height. Both are
+ * normalised against the FULL amplitude rather than the visible one, so a train
+ * dropped for being finer than a pixel takes its share of the relief with it
+ * and the far field goes calm — see the header on why that is right here and
+ * was wrong before.
  *
  * \'footprint\' is how many metres of world this pixel covers.
  */
-float waveField(vec2 p, float footprint, out vec2 slope, out float resolved) {
-  slope = vec2(0.0);
-  float height = 0.0;
-  float amp = 1.0;
-  float total = 0.0;
-  float freq = TAU / max(waveLength, 0.05);
-  float omega = waveSpeed * freq;
-  float ang = waveBearing;
-  float carry = 0.0;
-  float drawn = 0.0;
-  for (int i = 0; i < WAVE_TRAINS; i++) {
-    vec2 dir = vec2(cos(ang), sin(ang));
+fn waveField(p: vec2f, footprint: f32) -> Surface {
+  var field: Surface;
+  field.slope = vec2f(0.0);
+  var height = 0.0;
+  var amp = 1.0;
+  var total = 0.0;
+  var freq = TAU / max(uniforms.waveLength, 0.05);
+  var omega = uniforms.waveSpeed * freq;
+  var ang = uniforms.waveBearing;
+  var carry = 0.0;
+  var drawn = 0.0;
+  for (var i = 0; i < WAVE_TRAINS; i++) {
+    let dir = vec2f(cos(ang), sin(ang));
     // Detail 2: dragged by the train above, which is what has no period.
-    float x = dot(dir, p) * freq + time * omega + carry * waveDrag;
-    float s = sin(x);
+    let x = dot(dir, p) * freq + uniforms.time * omega + carry * uniforms.waveDrag;
+    let s = sin(x);
     // Detail 1: sharp crests, flat troughs, and its own derivative.
-    float h = exp(s - 1.0);
+    let h = exp(s - 1.0);
     // A train narrower than the pixel it is drawn in is not detail, it is
     // aliasing. fwidth() is what makes this a sampling test rather than a
     // tuning: it holds at any resolution and any field of view.
-    float vis = smoothstep(1.0, waveDetail, (TAU / freq) / max(footprint, 1e-4));
+    let vis = smoothstep(1.0, uniforms.waveDetail, (TAU / freq) / max(footprint, 1e-4));
     height += h * amp * vis;
     drawn += amp * vis;
-    slope += dir * (h * cos(x) * freq) * amp * vis;
+    field.slope += dir * (h * cos(x) * freq) * amp * vis;
     carry = h;
     total += amp;
-    amp *= waveGain;
-    freq *= waveLacunarity;
+    amp *= uniforms.waveGain;
+    freq *= uniforms.waveLacunarity;
     // Detail 3: deep-water dispersion. Short waves are slow waves.
-    omega *= sqrt(waveLacunarity);
+    omega *= sqrt(uniforms.waveLacunarity);
     // The golden angle. Evenly spaced bearings are a lattice again.
     ang += 2.3999632;
   }
-  float inv = 1.0 / max(total, 1e-4);
-  slope *= inv;
-  resolved = drawn * inv;
-  return height * inv;
+  let inv = 1.0 / max(total, 1e-4);
+  field.slope *= inv;
+  field.resolved = drawn * inv;
+  field.height = height * inv;
+  return field;
 }
 
 /**
@@ -296,44 +341,61 @@ float waveField(vec2 p, float footprint, out vec2 slope, out float resolved) {
  * for, because the mirrored ray is clamped above the horizon before it gets
  * here.
  */
-vec3 domeAt(float y) {
-  float v = acos(clamp(y, -1.0, 1.0)) * 0.3183099; // /PI: 0 zenith, 0.5 horizon
-  vec3 mid = mix(skyZenithColor, skyHorizonColor, 0.5);
-  if (v < 0.28) return mix(skyZenithColor, mid, v / 0.28);
-  if (v < 0.43) return mix(mid, skyHorizonColor, (v - 0.28) / 0.15);
-  return mix(skyHorizonColor, mix(skyHorizonColor, fogColor, 0.6),
+fn domeAt(y: f32) -> vec3f {
+  let v = acos(clamp(y, -1.0, 1.0)) * 0.3183099; // /PI: 0 zenith, 0.5 horizon
+  let mid = mix(uniforms.skyZenithColor, uniforms.skyHorizonColor, 0.5);
+  if (v < 0.28) { return mix(uniforms.skyZenithColor, mid, v / 0.28); }
+  if (v < 0.43) { return mix(mid, uniforms.skyHorizonColor, (v - 0.28) / 0.15); }
+  return mix(uniforms.skyHorizonColor,
+    mix(uniforms.skyHorizonColor, uniforms.fogColor, 0.6),
     (v - 0.43) / 0.07);
 }
 
-void main() {
-  float viewDist = length(vPosW - camPos);
-  vec3 viewDir = normalize(camPos - vPosW);
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  let posW = fragmentInputs.vPosW;
+  let viewDist = length(posW - uniforms.camPos);
+  let viewDir = normalize(uniforms.camPos - posW);
   // How much world one pixel covers. The whole distance story is told here.
-  vec2 fw = fwidth(vPosW.xz);
-  float footprint = max(max(fw.x, fw.y), 1e-4);
+  let fw = fwidth(posW.xz);
+  let footprint = max(max(fw.x, fw.y), 1e-4);
 
   // --- bed depth, off the baked map (metres) ---
-  vec2 duv = (vPosW.xz - bounds.xy) / max(bounds.zw - bounds.xy, vec2(0.001));
-  float depth = texture2D(depthTex, duv).r * depthMax;
+  let duv = (posW.xz - uniforms.bounds.xy)
+    / max(uniforms.bounds.zw - uniforms.bounds.xy, vec2f(0.001));
+  // **textureSample and NOT textureSampleLevel, and the reason is not the mip
+  // chain — there is not one.** An explicit LOD turns ANISOTROPY off, and this
+  // sampler has it on: WaterSystem.bakeDepth builds the bed map
+  // BILINEAR_SAMPLINGMODE, and Babylon's WebGPU sampler cache enables
+  // anisotropy for that mode whether or not the texture carries mips
+  // (useMipMaps || samplingMode === 2, then maxAnisotropy from the texture's
+  // default 4). So an explicit level 0 is a SINGLE bilinear tap where the GLSL
+  // got an anisotropic one, which changes 'depth' in the last bits —
+  // invisible everywhere except at the shoreline, where 'foamBand' is a
+  // 1.2 m smoothstep seen edge-on and therefore about one pixel wide. Measured
+  // against this shader's own GLSL original on Harrowmead's millpond: an
+  // explicit level 0 moved 911 pixels along the far shore by up to 28/255, and
+  // flattening that one threshold took the whole difference to zero. See
+  // docs/rendering.md for the rule this sharpened.
+  let depth = textureSample(depthTex, depthTexSampler, duv).r * uniforms.depthMax;
   // Beer-Lambert rather than a ramp, and the difference is not subtle on a
   // lumpy bed: a linear fade that CLAMPS draws the depth map own contour line
   // across the water wherever the bed crosses it, and a flood meadow is
   // nothing but scattered pockets a few centimetres either side of one. An
   // exponential is what absorption actually is, it has no knee anywhere, and
   // it never quite reaches the deep colour — which is also true of water.
-  float shoal = exp(-depth / max(depthFade, 0.001));
+  let shoal = exp(-depth / max(uniforms.depthFade, 0.001));
 
   // --- the surface ---
-  vec2 slope;
-  float resolved;
-  float crest = waveField(vPosW.xz, footprint, slope, resolved);
+  let surf = waveField(posW.xz, footprint);
+  let crest = surf.height;
   // A shoal is a little calmer than a channel, and only a little: the reason
   // is no longer that a flat patch glints as a sheet (it returns the sky now)
   // but that a hard edge in the relief would draw the depth map's own contour
   // across open water.
-  float relief = waveHeight * mix(0.8, 1.0, 1.0 - shoal);
+  let relief = uniforms.waveHeight * mix(0.8, 1.0, 1.0 - shoal);
   // y = h(x, z) has normal (-dh/dx, 1, -dh/dz).
-  vec3 n = normalize(vec3(-slope.x * relief, 1.0, -slope.y * relief));
+  let n = normalize(vec3f(-surf.slope.x * relief, 1.0, -surf.slope.y * relief));
 
   // --- the key light over the body colour ---
   // Gated by the same shadow map as the bank it laps against — a mill standing
@@ -344,37 +406,39 @@ void main() {
   // along the swell would slide the shadow's edge back and forth with the
   // chop — the water's version of the bump-map problem the cel shader solves
   // by offsetting along the facet rather than the perturbed normal.
-  float shade = shadowVisibility(vec3(0.0, 1.0, 0.0), vPosW);
-  vec3 light = ambientColor
-    + skyLightColor * band(0.5 + 0.5 * n.y, 3.0)
-    + lightColor * band(max(dot(n, -lightDir), 0.0), 3.0) * shade;
+  let shade = shadowVisibility(vec3f(0.0, 1.0, 0.0), posW);
+  let light = uniforms.ambientColor
+    + uniforms.skyLightColor * band(0.5 + 0.5 * n.y, 3.0)
+    + uniforms.lightColor * band(max(dot(n, -uniforms.lightDir), 0.0), 3.0) * shade;
 
   // The body: deep water, paling over a shoal, and then the bed itself in the
   // last few centimetres. \'bedColor\' is the MAP's own floor colour, so a
   // waterline grades into the bank it is cut in rather than stopping dead on
   // a colour this file chose.
-  vec3 body = mix(deepColor, shallowColor, shoal);
-  float through = exp(-depth / max(bedDepth, 0.001)) * bedShow;
-  body = mix(body, bedColor, through);
-  vec3 col = body * light;
+  var body = mix(uniforms.deepColor, uniforms.shallowColor, shoal);
+  let through = exp(-depth / max(uniforms.bedDepth, 0.001)) * uniforms.bedShow;
+  body = mix(body, uniforms.bedColor, through);
+  var col = body * light;
 
   // Light focused by the crests onto a shallow bed. Not a caustic simulation —
   // that wants the height field's curvature — but the crests are where the
   // focusing happens and this is the term that makes a shoal move.
-  col += lightColor * caustics * smoothstep(0.35, 0.8, crest) * shoal * shade;
+  col += uniforms.lightColor * uniforms.caustics
+    * smoothstep(0.35, 0.8, crest) * shoal * shade;
 
   // --- the mirror ---
-  vec3 mirrored = reflect(-viewDir, n);
+  let bounced = reflect(-viewDir, n);
   // A ripple steep enough to aim the ray under the horizon is a ripple this
   // surface does not have: the relief is centimetres and the plane is flat, so
   // a downward ray is the interpolated normal at a grazing pixel rather than
   // anything real, and what it samples is the underside of the map.
-  mirrored = normalize(vec3(mirrored.x, max(mirrored.y, 0.02), mirrored.z));
-  vec3 sky = domeAt(mirrored.y);
+  let mirrored = normalize(vec3f(bounced.x, max(bounced.y, 0.02), bounced.z));
+  var sky = domeAt(mirrored.y);
   // The light's own glare, broad rather than a disc — what a low sun puts on
   // water is a smeared reach of light between you and it, not a second sun.
   // The hard sparkle is the glint below, which is a picture of the CRESTS.
-  sky += lightColor * smoothstep(sunHalo, 1.0, dot(mirrored, -lightDir)) * shade;
+  sky += uniforms.lightColor
+    * smoothstep(uniforms.sunHalo, 1.0, dot(mirrored, -uniforms.lightDir)) * shade;
   // And the world: the far bank, the tree line, the roofs behind it.
   //
   // **Sampled along the raw mirrored ray, with NO parallax correction, and
@@ -389,7 +453,9 @@ void main() {
   // degrees crosses two hundred metres before it clears the roofline, so every
   // pixel gets re-aimed at the same far exit point and the whole reflection
   // collapses to one colour. That was measured, on Harrowmead, and it is why
-  // the water reads the cube the way a skybox is read.
+  // the water reads the cube the way a skybox is read. It is also why this
+  // shader includes celProbe and NOT celProbeBox, and carries neither of that
+  // include's two uniforms.
   //
   // What a cube from a point genuinely cannot give is the reflection of
   // something CLOSE and tall — the mill on the far bank lands at the elevation
@@ -408,17 +474,20 @@ void main() {
   // the mip chain and every sample comes back as the cube's average colour —
   // a flat wash, on every map, at every angle. Driving it from 'resolved'
   // instead says the physical thing: ripples too fine to draw are roughness,
-  // and roughness blurs a reflection.
-  vec4 world = textureCubeLodEXT(reflectionCube, probeCubeDir(mirrored),
-    (1.0 - resolved) * mirrorBlur);
-  vec3 mirror = mix(sky, world.rgb / max(world.a, 0.001),
-    world.a * reflectProbe.w);
+  // and roughness blurs a reflection. This is the fetch the cel shader's
+  // glazing does NOT make explicit, and the two are right for the same reason:
+  // an implicit LOD is correct exactly when the hardware's own derivative is
+  // the filtering you wanted.
+  let cube = textureSampleLevel(reflectionCube, reflectionCubeSampler,
+    probeCubeDir(mirrored), (1.0 - surf.resolved) * uniforms.mirrorBlur);
+  let mirror = mix(sky, cube.rgb / max(cube.a, 0.001),
+    cube.a * uniforms.reflectProbe.w);
 
   // Schlick, and deliberately NOT banded — the same call the glazing makes.
   // A band edge here would be a contour drawn across the pond where the view
   // angle crosses a step, sliding over the surface as the player walks.
-  float fres = reflectance + (1.0 - reflectance)
-    * pow(1.0 - max(dot(viewDir, n), 0.0), fresnelPower);
+  let fres = uniforms.reflectance + (1.0 - uniforms.reflectance)
+    * pow(1.0 - max(dot(viewDir, n), 0.0), uniforms.fresnelPower);
   col = mix(col, mirror, fres);
 
   // --- the glint: a hard-edged banded sparkle on the crests ---
@@ -429,78 +498,84 @@ void main() {
   // still water where the mirror returns almost nothing. Both land before the
   // soft shoulder below, which is what keeps a lit sheet of water under the
   // luminance a map's light shafts occlude against.
-  vec3 halfway = normalize(-lightDir + viewDir);
-  float spec = pow(max(dot(n, halfway), 0.0), specPower);
-  col += lightColor * specStrength * smoothstep(0.25, 0.6, spec) * shade;
+  let halfway = normalize(-uniforms.lightDir + viewDir);
+  let spec = pow(max(dot(n, halfway), 0.0), uniforms.specPower);
+  col += uniforms.lightColor * uniforms.specStrength
+    * smoothstep(0.25, 0.6, spec) * shade;
 
   // --- point lights: a little diffuse lift, mostly glints ---
-  for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
-    if (float(i) < pointCount) {
-      vec3 toLight = pointPos[i] - vPosW;
-      float dist = length(toLight);
-      float atten = clamp(1.0 - dist / max(pointRange[i], 0.001), 0.0, 1.0);
+  for (var i = 0; i < MAX_POINT_LIGHTS; i++) {
+    if (f32(i) < uniforms.pointCount) {
+      let toLight = uniforms.pointPos[i] - posW;
+      let dist = length(toLight);
+      var atten = clamp(1.0 - dist / max(uniforms.pointRange[i], 0.001), 0.0, 1.0);
       atten *= atten;
-      vec3 ldir = toLight / max(dist, 0.001);
-      float lndl = max(dot(n, ldir), 0.0);
-      vec3 lh = normalize(ldir + viewDir);
-      float lspec = pow(max(dot(n, lh), 0.0), specPower * 0.6);
-      col += pointColor[i] * atten
+      let ldir = toLight / max(dist, 0.001);
+      let lndl = max(dot(n, ldir), 0.0);
+      let lh = normalize(ldir + viewDir);
+      let lspec = pow(max(dot(n, lh), 0.0), uniforms.specPower * 0.6);
+      col += uniforms.pointColor[i] * atten
         * (body * lndl * 0.5 + smoothstep(0.2, 0.55, lspec) * 0.9);
     }
   }
 
   // Same soft shoulder as the cel shader, so stacked lights stay tinted.
-  vec3 over = max(col - 0.75, 0.0);
-  col = min(col, vec3(0.75)) + 0.25 * over / (1.0 + over);
+  let over = max(col - 0.75, vec3f(0.0));
+  col = min(col, vec3f(0.75)) + 0.25 * over / (1.0 + over);
 
   // --- shoreline foam: the nearer of the rect's edge and the real waterline ---
-  vec2 edge = min(vPosW.xz - bounds.xy, bounds.zw - vPosW.xz);
+  let edge = min(posW.xz - uniforms.bounds.xy, uniforms.bounds.zw - posW.xz);
   // The bed's depth expressed in the same metres the band is measured in, so
   // one width tunable covers both. A rect that ends in open water still foams.
-  float shore = min(
+  let shore = min(
     min(edge.x, edge.y),
-    depth * (foamWidth / max(foamDepth, 0.001)));
+    depth * (uniforms.foamWidth / max(uniforms.foamDepth, 0.001)));
   // The waterline breathes with the swell rather than on a clock of its own:
   // the foam then runs up the bank where a crest arrives and drains where one
   // has just left, which is what makes a still band read as lapping.
-  float waterline = shore - (crest - 0.3) * foamLap;
-  float foamBand = 1.0 - smoothstep(0.0, foamWidth, waterline);
+  let waterline = shore - (crest - 0.3) * uniforms.foamLap;
+  let foamBand = 1.0 - smoothstep(0.0, uniforms.foamWidth, waterline);
   // Two takes of the mask at different scales and angles, because one is a
   // 3 m tile and a shoreline is longer than that.
-  vec2 drift = vec2(time * foamSpeed);
-  float mask = texture2D(foamTex,
-    swirl(vPosW.xz, 0.8020, -0.5972) * foamScale + drift).r * 0.65
-    + texture2D(foamTex,
-      swirl(vPosW.xz, -0.1455, 0.9894) * foamScale * 2.3 - drift * 0.6).r * 0.45;
+  //
+  // textureSample and not textureSampleLevel, on all three fetches: the mask is
+  // a plain Texture and carries a mip chain, so the implicit LOD is the
+  // trilinear filtering the tiled lattice needs at range and IS what was meant.
+  let drift = vec2f(uniforms.time * uniforms.foamSpeed);
+  let mask = textureSample(foamTex, foamTexSampler,
+    swirl(posW.xz, 0.8020, -0.5972) * uniforms.foamScale + drift).r * 0.65
+    + textureSample(foamTex, foamTexSampler,
+      swirl(posW.xz, -0.1455, 0.9894) * uniforms.foamScale * 2.3 - drift * 0.6).r * 0.45;
   // The mask has to survive being inside the band, not just be biased over the
   // line by it: a mudflat is metres of near-zero depth, and a band that goes
   // solid the moment it is full paints the whole flat white.
-  float foam = smoothstep(0.30, 0.85, mask + foamBand * 0.35) * foamBand;
+  let foam = smoothstep(0.30, 0.85, mask + foamBand * 0.35) * foamBand;
   // Whitecaps: the crests breaking where the bed comes up under them.
-  float caps = smoothstep(0.62, 0.95, crest) * shoal * crestFoam;
+  let caps = smoothstep(0.62, 0.95, crest) * shoal * uniforms.crestFoam;
   // Sparse flecks drifting out in the open water, on their own angle again.
   // Kept OUT of the band rather than added to it: at the shore the mask is
   // already deciding the foam, and a second copy of the same texture at a
   // different scale over the top of it is what turns a lip into a scum.
-  float flecks = smoothstep(0.82, 0.97, texture2D(foamTex,
-    swirl(vPosW.xz, -0.9284, -0.3717) * foamScale * 0.6 - drift * 0.7).r)
-    * fleckStrength * (1.0 - foamBand);
+  let flecks = smoothstep(0.82, 0.97, textureSample(foamTex, foamTexSampler,
+    swirl(posW.xz, -0.9284, -0.3717) * uniforms.foamScale * 0.6 - drift * 0.7).r)
+    * uniforms.fleckStrength * (1.0 - foamBand);
   // Never all the way to the foam colour: a shoal broad enough to foam across
   // its whole width goes solid white at 1.0 and reads as snow, not froth.
-  col = mix(col, foamColor * light,
+  col = mix(col, uniforms.foamColor * light,
     clamp(foam * 0.85 + caps + flecks, 0.0, 1.0));
 
   // --- atmosphere: identical to the cel shader ---
-  float mist = mistParams.y
-    * exp(-max(vPosW.y, 0.0) / max(mistParams.x, 0.001))
+  let mist = uniforms.mistParams.y
+    * exp(-max(posW.y, 0.0) / max(uniforms.mistParams.x, 0.001))
     * clamp((viewDist - 6.0) / 45.0, 0.0, 1.0);
-  col = mix(col, mistColor, clamp(mist, 0.0, 0.9));
-  float fog = clamp(
-    (viewDist - fogParams.x) / (fogParams.y - fogParams.x), 0.0, 1.0);
-  col = mix(col, fogColor, fog * fog);
+  col = mix(col, uniforms.mistColor, clamp(mist, 0.0, 0.9));
+  let fog = clamp(
+    (viewDist - uniforms.fogParams.x)
+      / (uniforms.fogParams.y - uniforms.fogParams.x), 0.0, 1.0);
+  col = mix(col, uniforms.fogColor, fog * fog);
 
   // Last thing before the write, because the write is the quantiser.
-  gl_FragColor = vec4(dither(col), 1.0);
+  fragmentOutputs.color = vec4f(dither(col), 1.0);
 }
 `;
 
@@ -571,7 +646,10 @@ const WATER_UNIFORMS = [
  *
  * `reflectionCube` is the one exception and it is deliberate: it is bound by
  * `WaterSystem.build` from the probe the reflection callback hands back inside
- * the same call, so a material never exists for a frame without one.
+ * the same call, so a material never exists for a frame without one — and
+ * under WebGPU that stops being a tidiness argument and becomes the binding
+ * rule: **a sampler a material DECLARES has to be BOUND, used or not**, or the
+ * bind group fails to build and every draw with it is lost.
  */
 export function createWaterMaterial(
   scene: Scene,
@@ -596,6 +674,7 @@ export function createWaterMaterial(
         ...SHADOW_SAMPLER_NAMES,
         ...PROBE_SAMPLER_NAMES,
       ],
+      shaderLanguage: ShaderLanguage.WGSL,
     },
   );
   const w = CONFIG.water;
