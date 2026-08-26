@@ -66,6 +66,16 @@ without one gets a sentence instead of a black page; what that costs is reach,
 and Firefox on Linux/macOS plus older Android and iOS no longer boot at all.
 Both phones are PWA install targets, so this is a product fact, not a detail.
 
+**The engine is built with `compatibilityMode = false`, and that is load-bearing
+rather than a tuning flag.** This frame is DRAW-CALL bound — Coldharbour renders
+at a sixteenth of the pixels for the same milliseconds — and Babylon's WebGPU
+backend charges CPU on every draw, so the render-bundle submission path is worth
+~26% on the two big maps and ~15% on the two small ones. **Do not delete it to
+tidy the boot.** The argument is on the line in `main.ts`, the measurement is
+`FINDINGS.md` #17, and the one thing to know without reading either is that its
+risk is state changing between draws: if a rendering bug ever appears that shows
+only while something is MOVING, flip this first.
+
 **Zero audio files and zero model files** — every mesh is built from Babylon
 primitives at runtime, all sound is synthesized WebAudio (`src/core/Sfx.ts`). Do
 not add asset files unless explicitly asked. There are four exceptions, none

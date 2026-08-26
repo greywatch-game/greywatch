@@ -200,10 +200,25 @@ one open question is what excluding the geometry costs visually.
 mechanism is source-level and did not move with the backend — the exclusion scan
 still runs before any map exists, and `_shouldRenderMesh` is still `hasMesh` —
 so the entry stands. What is no longer a current measurement is the ~150 draws
-and ~30k triangles, and finding 12 already says on real hardware that removing
-them is worth nothing: excluding the world from the glow layer took 26.4% of the
-draw calls off and did not move the frame. **So the reason to reach for this is
-the visual question in it, not the count.**
+and ~30k triangles.
+
+**The sentence that used to close this paragraph said the count was not worth
+reaching for, and finding 17 has inverted it.** It read: finding 12 measured
+excluding the world from the glow layer at -26.4% of the draw calls and no
+movement in the frame, so only the visual question here mattered. That was true
+on a backend where a draw call was cheap. On WebGPU **disabling the layer
+outright is worth +22.5% on Coldharbour**, the layer is 883 of that map's 2,647
+draws a frame, and this frame is draw-call bound rather than fill bound — see
+finding 17 for the measurement and for why the backend changed the answer.
+**So the count is now the reason to reach for this, and the visual question in
+it is the thing standing in the way.** Nothing about that question has moved:
+what has to be established is still whether the village's opaque black is
+load-bearing as a depth occluder for the glow buffer, and "how to settle it"
+below is unchanged.
+
+Note the size of the prize is not the whole 22.5%: that A/B disables the layer
+and the fix here only excludes the WORLD from it, leaving the braziers and lit
+windows the layer exists for. The braziers are a small fraction of the 883.
 
 ### What was measured
 
@@ -700,10 +715,14 @@ way the reflections and the physics world already are, and measure what is left.
 
 ---
 
-## 12. Coldharbour is FILL-bound, and most of the glass has been taken out of the blend
+## 12. Coldharbour was FILL-bound on WebGL2, and most of the glass has been taken out of the blend
 
-**Status:** cause measured and located, half of it acted on. The remaining gap
-is real and unattributed.
+**Status:** cause measured and located, half of it acted on. **The title is
+past tense as of finding 17, which disproves the present-tense version of it**:
+on WebGPU this frame is draw-call bound, and rendering it at a sixteenth of the
+pixels costs the same milliseconds. Everything below stands as a WebGL2
+measurement and as the history of a change that shipped; what does not stand is
+the ranking it hands the next person. Read finding 17 first.
 
 ### What was measured
 
@@ -740,6 +759,18 @@ excluding the world from the glow layer (-26.4%, FINDINGS #3) were both
 worth reaching for on that argument alone. Headless had ranked them the other
 way round, which is the sharpest reminder in this file that SwiftShader ranks
 draw calls and a real GPU ranks pixels.
+
+**That paragraph is a WebGL2 reading and finding 17 reverses both halves of
+it.** On WebGPU excluding the glow layer is worth +22.5% and hiding every
+`paneGroups` mesh is worth +1.5% — inside the drift of the run that measured
+it. Two conclusions and they are different sizes. The small one is that this
+entry's own 12% glass figure (52.2 against 46.4, recorded below) did not
+reproduce; the two disablings are not identical, so that is a discrepancy and
+not yet a refutation. The large one is that it no longer matters which of them
+is right, because **the pixel-scaling test is a better instrument than either**
+— it varies the fill and nothing else, where hiding the glass varies fill, draw
+calls and active meshes together and cannot separate them. It says there is no
+fill term here to find.
 
 ### What was done
 
@@ -808,6 +839,15 @@ not levers: the glass depth bias is at its measured optimum in both directions
 (`docs/rendering.md`), and the reflection bake is a build cost rather than
 anything per frame — a large one, but paid once at install (finding 10). **The glass FRAGMENT is still the
 next lever in line and is still untouched.**
+
+**The glass fragment is no longer the next lever in line.** It is a fill
+optimisation — fading the parallax-corrected `textureCube` out with distance
+and branching the fetch away below a threshold — and finding 17 says there is
+no fill to reclaim on this backend. It stays written down because it is a real
+saving on a machine whose balance is different from this one, and the phone
+this game installs onto is exactly that machine. But on the box this gap was
+measured on, the three levers in finding 17 come first and there is no reason
+to spend the picture on this one until they are in.
 
 ---
 
@@ -1040,5 +1080,198 @@ with the variant matrix has not been looked at. **Do not reach for it before
 the frozen-camera sweep in finding 12**: if Coldharbour's steady-state gap is
 also a shader-count problem, the two share a cause and one change may move
 both.
+
+---
+
+## 17. The frame is DRAW-CALL bound on WebGPU, and that is what the backend changed
+
+**Status:** measured on the Windows box, cause located, three levers costed.
+**One of the three has LANDED** — `compatibilityMode = false`, see below — and
+the other two have not. **This entry corrects findings 3 and 12**, which were
+both written against a backend where a draw call was cheap.
+
+It was opened by a symptom rather than by a sweep: the big maps that used to
+run over 100 fps now struggle to hold 60, and the GPU sits at 25-30%
+utilisation while they do it.
+
+### The measurement that settles it
+
+Coldharbour, a live round with sixteen bots, warm, uncapped, headless Chromium
+on the RTX 4070 Ti SUPER. **The same frame at a sixteenth of the pixels costs
+the same milliseconds:**
+
+| render size | fps | frame |
+| --- | --- | --- |
+| 1920x1080 | 45.9 | 21.8 ms |
+| 960x540 | 45.7 | 21.9 ms |
+| 480x270 | 46.0 | 21.7 ms |
+
+`setHardwareScalingLevel` is the right instrument here and hiding geometry is
+not, which is the methodological half of this entry: it varies the pixel count
+and **nothing else**, where hiding the glass varies fill, draw calls and active
+meshes together and can never say which of the three it just bought. Hollowmere
+answers the same way — 157, 145, 164 fps down the same three rungs, which is
+noise around a flat line.
+
+### Where the time goes instead
+
+The rAF callback wrapped, `scene.render` wrapped inside it, medians over 246
+frames on Coldharbour:
+
+```
+interval 21.5 ms | in the rAF callback 21.3 ms
+                 |   scene.render()     19.6 ms
+                 |   the game's own JS    1.7 ms
+```
+
+The callback fills the interval, so **the main thread is the wall and the GPU
+is starved rather than busy** — which is what the utilisation reading that
+opened this entry means, and it is worth knowing that it means that, because a
+GPU at 25% looks like headroom and is the exact opposite. Note also that the
+game's own JS is 1.7 ms of a 21.5 ms frame: **finding 6's ranking is still
+right about what is expensive inside `updateGameplay`, and that whole budget is
+now under 8% of the frame.** Inside `scene.render`, by Babylon's own phase
+observables:
+
+| median ms | Hollowmere | Coldharbour |
+| --- | --- | --- |
+| whole frame | 6.1 | 19.4 |
+| `_evaluateActiveMeshes` | 1.8 | 3.4 |
+| render targets | 0.8 | 4.5 |
+| main draw phase | 3.0 | 11.0 |
+
+All three of those are JS.
+
+### The draw count predicts the frame, and nothing else does
+
+Draws counted by wrapping `drawElementsType` and `drawArraysType`, attributed
+by phase, live round:
+
+| per frame | Hollowmere | Coldharbour | Harrowmead |
+| --- | --- | --- | --- |
+| draw calls | 857 | **2,647** | 2,238 |
+| — render targets | — | 883 | 820 |
+| — main pass | — | 1,760 | 1,414 |
+| active meshes | 240 | 903 | 879 |
+| — carrying an outline shell | — | 429 | 287 |
+| frame | 6.1 ms | 19.4 ms | 18.7 ms |
+
+Hollowmere to Coldharbour is **3.09x the draws against 3.18x the frame** — a
+fit to within 3%. Triangles are 1.96x and do not fit. Pixels are identical and
+do not fit at all. **A cel mesh that is outlined draws twice**, which is what
+puts 903 active meshes into a 1,760-draw main pass.
+
+### Why the backend changed the answer
+
+Babylon's WebGPU backend pays substantially more CPU per draw than its WebGL2
+one: a pipeline-state hash and lookup in `WebGPUCacheRenderPipeline`, a
+bind-group cache lookup or rebuild, and dynamic uniform-buffer offset
+management, on every draw. WebGL2 was closer to a `glDrawElements` beside a few
+cached uniform binds. **So the swap raised the SLOPE and not the intercept, and
+the crossover is the draw count.** That is why the two small maps came out of
+the migration faster and the two big ones came out much slower, and why the
+migration's own gates never caught it: they were green, and they were green
+because the game still ran.
+
+**That paragraph is derived and not measured, and it cannot be measured here**
+— there is no WebGL engine left in the tree to A/B against, by design
+(`CLAUDE.md`), and re-introducing one to settle a ranking would cost more than
+the ranking is worth. What backs it is the one lever that isolates the
+submission path and changes nothing else, which is the first below.
+
+### The three levers, costed
+
+Single-lever A/Bs in the page on Coldharbour. The baseline itself drifted -4 to
+-6% across the run, so **read nothing under about 8% as real**:
+
+| lever | Coldharbour |
+| --- | --- |
+| `engine.compatibilityMode = false` | **+25.8%** |
+| the GlowLayer disabled | **+22.5%** |
+| `scene.freezeActiveMeshes()` | **+14.8%** |
+| every `paneGroups` mesh hidden | +1.5% |
+| the shadow generator's `renderList` emptied | -9.7% |
+
+The last two are the null results and both are useful: the glass is finding
+12's lever and no longer moves anything, and the shadow pass reads *negative*,
+which is drift plus whatever emptying an explicit render list does to Babylon's
+own path — either way finding 2 is not where the frame is. Stacked, which is
+the number worth having:
+
+| Coldharbour | fps | frame |
+| --- | --- | --- |
+| baseline | 47.8 | 20.9 ms |
+| bundles | 61.3 | 16.3 ms |
+| + no glow | 75.7 | 13.2 ms |
+| + frozen active meshes | **102.1** | 9.8 ms |
+
+Harrowmead tracks it the whole way: 53.5 -> 66.3 -> 79.3 -> 108.8.
+
+**1. `compatibilityMode = false` is real, and it is the only one verified.** It
+is Babylon's WebGPU render-bundle submission path; it changes how draws are
+submitted and nothing about what is drawn, which is why it doubles as the
+evidence for the section above. Costed end to end through the real boot path
+with `gate.mjs --uncap`, both runs in one session on this machine:
+
+| warm fps | baseline | bundles | p95 |
+| --- | --- | --- | --- |
+| Hollowmere | 165.8 | 192.6 | 7.3 -> 6.6 ms |
+| Greyfen | 183.9 | 211.1 | 6.2 -> 5.6 ms |
+| Coldharbour | 47.2 | 59.4 | 22.7 -> 18.6 ms |
+| Harrowmead | 54.2 | 68.6 | 20.2 -> 17.2 ms |
+
+**The picture does not move.** `bank.mjs --check` comes back 0/255 on all
+sixteen reference frames with the flag on, against a 0/255 control taken in the
+same session with it off; `gate.mjs`, `shaders.mjs` and `npm run build` all pass
+with no page error, no console error and no WebGPU validation complaint.
+
+**What the bank does NOT prove is the case the flag is actually about**, and
+this is the part worth keeping: the bank is a FROZEN frame, and
+non-compatibility mode's documented risk is state CHANGING between draws. So
+the evidence that landed it is a different script — a live round on
+Coldharbour, Harrowmead and Hollowmere with the bots fighting, six bots killed
+into ragdolls, every one of Coldharbour's 24 panes broken in a single frame,
+six overlapping blasts and a turret tracking for 180 frames, run with the flag
+and without it and reporting the same thing both times. **This has LANDED**
+(`main.ts`, with the argument on the line) and it is the reason this entry is
+no longer a lever but a fact.
+
+**What is still not proven is a human playing.** The script drives the
+simulation and reads state back; it does not move a mouse. The failure it could
+not see is a rendering artefact that a person would notice and an assertion
+would not, and the cheapest way to close that is to play a round on Coldharbour
+and look at it.
+
+**2. The GlowLayer is finding 3 and it has inverted.** The layer is 883 of
+Coldharbour's 2,647 draws. The fix that entry names is unchanged and is small —
+the exclusion scan runs in `Game`'s constructor, before any map exists, so
+every `MapBuilder` mesh is eligible forever and is drawn as opaque black into a
+buffer it cannot light. What it is still waiting on is the visual question in
+that entry, which none of this changes: the opaque black is what makes the glow
+buffer depth-occlude. Expect materially less than the 22.5% above, which is the
+whole layer rather than the world in it.
+
+**3. `scene.freezeActiveMeshes()` is a diagnostic and must not ship.** It
+freezes the active list, so a bot that walks into view, a pooled effect, a
+grenade, a shard and a spawned ragdoll all stop appearing — in a game whose
+every mesh is pooled that is not a trade, it is a bug. What the +14.8% measures
+is `_evaluateActiveMeshes` walking **2,488 meshes to find 903**, and the real
+version of that saving is having fewer meshes to walk or a cheaper walk, not a
+frozen list.
+
+### What is open
+
+- **A round played by a human under `compatibilityMode = false`.** It has
+  landed on the strength of a scripted dynamic round, which is the strongest
+  automatic check available and is still not a pair of eyes.
+- **Whether the draw count itself can come down**, which is the lever none of
+  the three above is. The outline shells are the obvious place — 429 of
+  Coldharbour's active meshes draw twice for them — and finding 12 measured
+  dropping distant ones at -35.5% of draw calls back when that bought nothing.
+  On this backend it would buy something, and it is a picture change, so it
+  wants looking at rather than only measuring.
+- **The phone.** Every number here is one desktop GPU, and the balance that
+  makes fill irrelevant here will not hold on a device this game installs onto.
+  Finding 12's glass fragment is still the right lever there.
 
 ---

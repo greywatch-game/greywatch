@@ -176,6 +176,36 @@ window.addEventListener("DOMContentLoaded", async () => {
   try {
     engine = new WebGPUEngine(canvas, { antialias: false, stencil: false });
     await engine.initAsync();
+    // **This frame is DRAW-CALL bound, and this line is worth ~26% of it on
+    // the two big maps. Do not delete it as a stray flag.** `FINDINGS.md` #17
+    // has the measurement in full; the short version is that Coldharbour
+    // renders at a sixteenth of the pixels for the same milliseconds, spends
+    // 19.6 ms of a 21.5 ms frame inside `scene.render`, and costs almost
+    // exactly what its draw count says it should against Hollowmere's — 3.09x
+    // the draws for 3.18x the frame, where triangles are 1.96x and do not fit.
+    // Babylon's WebGPU backend pays a pipeline-state hash, a bind-group cache
+    // lookup and a dynamic-UBO offset on EVERY draw, which is why the engine
+    // swap made the small maps faster and the big ones much slower: it raised
+    // the slope, and the crossover is the draw count.
+    //
+    // `compatibilityMode = false` is the render-bundle submission path. It
+    // changes HOW draws are submitted and nothing about WHAT is drawn, which
+    // is both why it is safe and why it is the evidence for the paragraph
+    // above. Measured through this boot path with `gate.mjs --uncap`, paired
+    // in one session: Hollowmere 165.8 -> 192.6, Greyfen 183.9 -> 211.1,
+    // Coldharbour 47.2 -> 59.4, Harrowmead 54.2 -> 68.6, with p95 on the two
+    // big maps coming down 22.7 -> 18.6 ms and 20.2 -> 17.2 ms.
+    //
+    // **What it is NOT is free, and the risk has a shape**: Babylon documents
+    // non-compatibility mode as needing care when state changes between draws,
+    // which is exactly what a frozen reference frame cannot exercise. So the
+    // bank is not the evidence here even though it is clean on all sixteen
+    // frames — the evidence is a live round with the bots fighting, six
+    // ragdolls falling, every pane on Coldharbour broken in one frame, six
+    // blasts overlapping and a turret tracking, run with the flag and without
+    // it and reporting the same thing. If a rendering bug ever appears that
+    // only shows while something is MOVING, this is the first line to flip.
+    engine.compatibilityMode = false;
   } catch (err) {
     bootFailed(
       "This browser has WebGPU but could not start a graphics device, so the " +
