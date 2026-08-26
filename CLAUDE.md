@@ -508,11 +508,19 @@ misbehaves silently:
   unlit and the surface under it is not, so a tint above that light term inverts
   into a bright halo, and deriving it from anything but the true floor leaves the
   creases, the undersides and the weakest channel still inverted.
-- `noGlow: true` — excluded from the `GlowLayer` in the `Game` constructor. Only
-  meshes existing at construction time are scanned. A mesh that stays in bloom
-  is faded with distance instead (`customEmissiveColorSelector`), and
-  `infiniteDistance` is that fade's one exemption — it is what every sky mesh
-  sets, and the moon is not in the valley to be fogged out of.
+- `noGlow: true` — excluded from the `GlowLayer`. **Two passes honour it and
+  neither sees what the other does**: `Game`'s constructor loop over
+  `scene.meshes`, which runs before any map exists, and
+  `Game.excludeDistantFromGlow`, which runs at the end of `installMap` and is
+  the only one a MAP's meshes are ever seen by. That second pass also drops map
+  geometry standing too far from any emissive to occlude one, because the
+  village is drawn into that buffer as opaque black and black is worth a draw
+  only where it stops a fitting blooming through a wall. **How far is the
+  MAP's** (`EnvironmentSpec.glowOccluderRange`) — it is a consequence of how a
+  map is lit, exactly as `shadowWindow` is of its key's elevation. A mesh that
+  stays in bloom is faded with distance instead (`customEmissiveColorSelector`),
+  and `infiniteDistance` is that fade's one exemption — it is what every sky
+  mesh sets, and the moon is not in the valley to be fogged out of.
 - `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers
   (ground, roads) need it: casting from them is pure shadow acne.
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:

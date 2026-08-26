@@ -29,6 +29,28 @@ export const graphics = {
   /** Emissive glow (neon, reticle, tracers) — GlowLayer settings. */
   glowIntensity: 1.15,
   glowKernel: 56,
+  /**
+   * How far a map visual may stand from the nearest emissive fitting and still
+   * be drawn into the glow buffer, in metres.
+   *
+   * The village is drawn into that buffer as opaque BLACK — it lights nothing
+   * — and the only reason to spend a draw on it is that black is what makes
+   * the buffer depth-occlude, so a brazier behind a cottage does not bloom
+   * through the wall. Past this range there is no emissive left to occlude and
+   * the draw buys nothing: it was 883 of Coldharbour's 2,647 draws a frame,
+   * on a backend that charges CPU per draw (`FINDINGS.md` #17).
+   *
+   * **It is a range and not a switch because the two ends are both wrong.**
+   * Excluding the world wholesale is worth ~21% and lets Hollowmere's lanterns
+   * bloom through the buildings in front of them; excluding none of it is what
+   * the game shipped with. The number wants to cover the blur kernel above as
+   * seen from a plausible camera, which is what makes it a WORLD distance
+   * tuned by measurement rather than a screen one — see `docs/rendering.md`.
+   *
+   * A negative value turns the pass off and puts the whole village back in the
+   * buffer.
+   */
+  glowOccluderRange: 30,
   /** Horror grade post-process (vignette / grain / chromatic aberration). */
   vignette: 0.62,
   grain: 0.055,

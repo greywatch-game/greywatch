@@ -273,6 +273,18 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
     lampIntensity: 0,
   },
   /**
+   * Nothing to protect: this district's fittings are a handful of signs and
+   * lit windows against 559 merged visuals, so the black the rest of it draws
+   * into the glow buffer occludes nothing at all. Measured at its four
+   * committed vantages, keeping none of it costs 0.51/255 at the worst
+   * (curtain90) and 0.09 or less at the other three, against a byte-identical
+   * floor — see `EnvironmentSpec.glowOccluderRange` and `docs/rendering.md`.
+   *
+   * Zero rather than negative: what actually glows is still drawn, which is
+   * the whole point of the layer.
+   */
+  glowOccluderRange: 0,
+  /**
    * Warm dust, drifting slightly up.
    *
    * This file refused a particle field for its whole life, on the grounds that

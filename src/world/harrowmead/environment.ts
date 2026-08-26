@@ -216,6 +216,13 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
     lampIntensity: 0,
   },
   /**
+   * The same reading as Coldharbour's and for the same reason: a daylit vale
+   * has almost no fittings, so the mass of it is drawing black into a buffer
+   * with nothing behind it to occlude. Worst committed vantage is the millpond
+   * at 0.57/255 and the borderland is byte-identical.
+   */
+  glowOccluderRange: 0,
+  /**
    * Hay seed and thistledown, the air of a mowing valley — now BACKLIT.
    * `emissive: false` was correct at midday (it is chaff, not embers) and
    * inverts with the sun, which is Coldharbour's dust argument an hour
