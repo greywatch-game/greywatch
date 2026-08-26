@@ -193,8 +193,10 @@ put a number on.
 
 ## 3. The GlowLayer draws the whole village into a buffer it cannot light
 
-**Status:** measured. The mechanism is confirmed against Babylon's source; the
-one open question is what excluding the geometry costs visually.
+**Status:** measured, ATTEMPTED, and reverted. The mechanism is confirmed
+against Babylon's source. The open question below — what excluding the geometry
+costs visually — now has half an answer: enough that it cannot be excluded, by
+distance or otherwise. Read the last section of this entry first.
 
 **The draw counts below were taken on WebGL2 and are now unattributed.** The
 mechanism is source-level and did not move with the backend — the exclusion scan
@@ -264,6 +266,55 @@ lit window with a building between it and the camera — and diff with and
 without the exclusion. If it bleeds, the fallback is to exclude by distance
 from the nearest emissive rather than wholesale, which keeps the occluders
 that matter and drops the 90% of the village that is nowhere near a light.
+
+---
+
+### Tried, shipped, and REVERTED — and the predicate was wrong, not the number
+
+`Game.excludeDistantFromGlow` landed this as a per-map range
+(`EnvironmentSpec.glowOccluderRange`, 08d1020) and was reverted the same day
+(beacd3d) on sight: **lights read through terrain and through buildings at
+distance.** Coldharbour and Harrowmead were set to range 0, which excludes every
+non-emissive map visual — and the terrain patches are in `map.visuals`
+(`terrain-<key>`, `MapBuilder`), so the ground stopped occluding along with the
+walls.
+
+**The mistake worth keeping is not the range, it is the PREDICATE.** "Too far
+from any emissive to occlude one" sounds obviously right and is geometrically
+false: occlusion is a property of the LINE OF SIGHT, not of proximity to the
+light. A wall two hundred metres from a lamp occludes it perfectly well when it
+stands between the lamp and the eye, and every mesh on the map is between some
+camera position and some emissive. Distance-from-emissive cannot express the
+question, so no value of the range is the right one — the safe end of it is "the
+whole map", which is what the game already did.
+
+That also disposes of the tuning that was done on the way, and none of it should
+be re-run: centre-to-centre against surface-to-centre (34 of Coldharbour's 559
+visuals excluded at 30 m one way, 140 the other, 508 at zero) was a real
+measurement of the wrong quantity.
+
+**How the verification missed it, which is the more expensive lesson.** It was
+checked by diffing the committed vantages with the pass on and off, and they
+came back 0.04–0.51/255 on Coldharbour against a floor proven byte-identical.
+That number was real and meant nothing: `plans/webgpu-ref/vantages.mjs` is a
+table of poses chosen to catch a SHADER going wrong — glazing at range, a
+lamp-lit street, a gust, water — and a pose with no emissive standing behind
+geometry cannot show an occlusion failure at all. **A diff of ~0 there says the
+vantage does not test the thing, and it was read as "the change is invisible".**
+
+This entry had already said so, in "How to settle it" below, before any of it
+happened: stand an emissive *directly behind a wall* and diff. That is still the
+test, it was not run, and a future attempt owes it plus a sweep over many camera
+positions rather than the committed four or five — the failure is visible while
+WALKING, which is the one thing a bank of still frames cannot do.
+
+**What is still true**: the layer really is drawing the whole village as opaque
+black, it really is 883 of Coldharbour's 2,647 draws a frame, and disabling it
+outright really is worth ~21%. What is now known is that mesh exclusion is not
+how to collect it, because the black is load-bearing everywhere. If this is
+worth another attempt the shape to look at is making the occluders CHEAPER
+rather than fewer — the glow layer redraws geometry it could in principle share
+a depth buffer with — and that is a Babylon question rather than a content one.
 
 ---
 
