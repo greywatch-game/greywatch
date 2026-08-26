@@ -4,7 +4,25 @@
  *
  * Run with `node plans/webgpu-ref/bank.mjs [map...]`, `--headed` to take the
  * bank in headed mode, `--check` to compare against what is already banked
- * rather than replacing it. Frames land in `plans/webgpu-ref/ref/<map>.png`.
+ * rather than replacing it. Frames land in
+ * `plans/webgpu-ref/ref/<map>-<vantage>.png`.
+ *
+ * **A map is several frames and not one, because a reference set is a defence
+ * against a SHADER being wrong in one place.** The menu backdrop's vantage is
+ * a picture of the map; it is not a picture of a backed pane at 2 m, a
+ * lamp-lit crossroads, a gust crossing a canopy or a wall far enough off to
+ * band, and a set that holds none of those cannot tell M5 landing correctly
+ * from M5 landing wrong in one variant. The menu pose is read out of
+ * `src/ui/mapShots.ts` and the rest are stated in `vantages.mjs`, each with
+ * what it is FOR written beside it.
+ *
+ * **One boot per map, and every vantage is shot out of it.**
+ * `VERIFYING.md`'s one-vantage-per-process rule is about cycling back through
+ * `playing` between vantages, which lets a frame of gameplay run and moves the
+ * player; the lid never comes off here and placing the camera by hand moves
+ * nothing at all. What that costs is one rule inside the loop — the freeze has
+ * to be thawed before the next camera is placed, or the pass that pins itself
+ * against a STANDING camera photographs the previous vantage.
  *
  * **The refusal is the feature.** A reference frame is only worth having if
  * the same machine, asked twice, produces the same bytes — otherwise a later
@@ -61,10 +79,12 @@ import {
   placeVantage,
   settle,
   startDevServer,
+  thaw,
   vantages,
   waitUntilDrawn,
   root,
 } from "./harness.mjs";
+import { shotList } from "./vantages.mjs";
 
 const args = process.argv.slice(2);
 const HEADED = args.includes("--headed");
@@ -107,70 +127,85 @@ const VANTAGES = await vantages(browser, vite.url);
 console.log(`bank: ${mode} @ ${vite.url}${CHECK ? "  (check only)" : ""}\n`);
 const problems = [];
 for (const id of targets) {
-  const vantage = VANTAGES[id];
-  if (!vantage) {
-    console.log(`${id.padEnd(12)} no vantage in mapShots.ts — skipped, which is not an error`);
+  const shots = shotList(id, VANTAGES[id]);
+  if (!shots.length) {
+    console.log(`${id.padEnd(12)} no vantage anywhere for this map — skipped, which is not an error`);
     continue;
   }
+  // ONE boot per map and every vantage shot out of it. `VERIFYING.md`'s
+  // one-vantage-per-process rule is about cycling back through `playing`
+  // between vantages, which lets a frame of gameplay run and moves the player;
+  // holding the lid up and placing the camera by hand moves nothing at all.
   const { page, pageErrors } = await bootMap(browser, vite.url, id);
   await installRound(page);
-  await placeVantage(page, vantage);
-  const { drawnOnFrame } = await waitUntilDrawn(page);
-  // Settle BEFORE the freeze, not after it: the god rays and the motion blur
-  // are pinned by a camera that has been standing still rather than by a
-  // constant, so they have to be given the frames to converge while their
-  // updates still run. The clocks that the freeze pins are unaffected by how
-  // long this takes, which is the point of pinning them. See `freeze`.
-  await settle(page, CONVERGE_FRAMES);
-  await freeze(page);
-  await settle(page, SETTLE_FRAMES);
+  console.log(`${id}`);
+  for (const v of shots) {
+    const label = `  ${v.id}`.padEnd(14);
+    // Put the real updaters back before placing the next camera: the god rays
+    // and the motion blur are pinned by a camera that has been standing still
+    // rather than by a constant, so a teleport into a frozen chain photographs
+    // the PREVIOUS vantage's convergence smeared across this one.
+    await thaw(page);
+    await placeVantage(page, v);
+    // Re-asked per vantage rather than once per boot, because readiness is a
+    // property of what is in FRAME: WebGPU compiles lazily, so a pose that
+    // brings a material nobody has drawn yet into view is not ready on the
+    // frame the camera moved.
+    const { drawnOnFrame } = await waitUntilDrawn(page);
+    // Settle BEFORE the freeze, not after it — see the thaw above. The clocks
+    // the freeze pins are unaffected by how long this takes, which is the
+    // point of pinning them. See `freeze`.
+    await settle(page, CONVERGE_FRAMES);
+    await freeze(page, undefined, { windTime: v.wind ?? 0 });
+    await settle(page, SETTLE_FRAMES);
 
-  const a = await page.screenshot({ type: "png", timeout: 120_000 });
-  const b = await page.screenshot({ type: "png", timeout: 120_000 });
-  const reproducible = sha(a) === sha(b);
-  const out = join(refDir, `${id}.png`);
+    const a = await page.screenshot({ type: "png", timeout: 120_000 });
+    const b = await page.screenshot({ type: "png", timeout: 120_000 });
+    const reproducible = sha(a) === sha(b);
+    const out = join(refDir, `${id}-${v.id}.png`);
 
-  if (!reproducible) {
-    problems.push(`${id}: frame is not reproducible — two consecutive grabs differ`);
-    console.log(`${id.padEnd(12)} NOT REPRODUCIBLE — nothing written (drawn on frame ${drawnOnFrame})`);
-  } else if (CHECK) {
-    if (!existsSync(out)) {
-      problems.push(`${id}: nothing banked to compare against`);
-      console.log(`${id.padEnd(12)} no reference on disk`);
-    } else {
-      // Graded by MAGNITUDE and not by byte equality, for the reason
-      // `CHECK_TOLERANCE` gives: the same frozen frame does not come back
-      // byte-identical across processes, and a check that demanded it would
-      // fail on every run and teach everyone to ignore it.
-      const grab = join(refDir, `${id}.check.png`);
-      writeFileSync(grab, a);
-      const d = await comparePngs(out, grab, { tiles: true, browser: decoder });
-      rmSync(grab, { force: true });
-      const bad = d.sizeMismatch || d.meanAbs > CHECK_TOLERANCE;
-      if (bad) {
-        problems.push(
-          d.sizeMismatch
-            ? `${id}: size mismatch against the bank`
-            : `${id}: mean ${d.meanAbs}/255 over tolerance ${CHECK_TOLERANCE}`,
+    if (!reproducible) {
+      problems.push(`${id}/${v.id}: frame is not reproducible — two consecutive grabs differ`);
+      console.log(`${label} NOT REPRODUCIBLE — nothing written (drawn on frame ${drawnOnFrame})`);
+    } else if (CHECK) {
+      if (!existsSync(out)) {
+        problems.push(`${id}/${v.id}: nothing banked to compare against`);
+        console.log(`${label} no reference on disk`);
+      } else {
+        // Graded by MAGNITUDE and not by byte equality, for the reason
+        // `CHECK_TOLERANCE` gives: the same frozen frame does not come back
+        // byte-identical across processes, and a check that demanded it would
+        // fail on every run and teach everyone to ignore it.
+        const grab = join(refDir, `${id}-${v.id}.check.png`);
+        writeFileSync(grab, a);
+        const d = await comparePngs(out, grab, { tiles: true, browser: decoder });
+        rmSync(grab, { force: true });
+        const bad = d.sizeMismatch || d.meanAbs > CHECK_TOLERANCE;
+        if (bad) {
+          problems.push(
+            d.sizeMismatch
+              ? `${id}/${v.id}: size mismatch against the bank`
+              : `${id}/${v.id}: mean ${d.meanAbs}/255 over tolerance ${CHECK_TOLERANCE}`,
+          );
+        }
+        console.log(
+          `${label} ${bad ? "REGRESSION  " : "within floor"}  ` +
+            `${d.pctPixels}% of pixels, mean ${d.meanAbs}/255, worst ${d.max}/255  ` +
+            `(drawn on frame ${drawnOnFrame})`,
         );
-      }
-      console.log(
-        `${id.padEnd(12)} ${bad ? "REGRESSION" : "within floor"}  ` +
-          `${d.pctPixels}% of pixels, mean ${d.meanAbs}/255, worst ${d.max}/255  ` +
-          `(drawn on frame ${drawnOnFrame})`,
-      );
-      if (bad && d.tiles) {
-        for (const t of d.tiles.slice(0, 4)) {
-          console.log(`   col ${String(t.col).padStart(2)} row ${t.row}  mean ${t.mean}/255`);
+        if (bad && d.tiles) {
+          for (const t of d.tiles.slice(0, 4)) {
+            console.log(`     col ${String(t.col).padStart(2)} row ${t.row}  mean ${t.mean}/255`);
+          }
         }
       }
+    } else {
+      writeFileSync(out, a);
+      console.log(
+        `${label} ${(a.length / 1024).toFixed(0)} KB -> ${id}-${v.id}.png  ` +
+          `(drawn on frame ${drawnOnFrame}, floor 0.000%)`,
+      );
     }
-  } else {
-    writeFileSync(out, a);
-    console.log(
-      `${id.padEnd(12)} ${(a.length / 1024).toFixed(0)} KB -> ${out}  ` +
-        `(drawn on frame ${drawnOnFrame}, floor 0.000%)`,
-    );
   }
   if (pageErrors.length) problems.push(`${id}: ${pageErrors.length} page errors`);
   await page.close();

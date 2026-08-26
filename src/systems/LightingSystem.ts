@@ -16,6 +16,7 @@ import {
   MAX_POINT_LIGHTS,
   type PointLightData,
 } from "../shaders/CelShader";
+import { mulberry32 } from "../world/rng";
 
 interface RoomLight extends PointLightData {
   /** 0 = steady, 1 = wild flicker. */
@@ -32,6 +33,29 @@ interface TransientLight extends PointLightData {
 }
 
 /**
+ * The flicker's own stream, re-seeded whenever the room is cleared.
+ *
+ * **A phase is the one thing about a fixture that nothing else states**, so it
+ * has to be drawn — and drawing it from `Math.random()` is what this used to
+ * do. That is fine in play, where nobody can tell one lantern's flame from the
+ * same lantern's flame a boot earlier, and it is not fine for anything that
+ * has to reproduce a PICTURE: it is the one term in a frozen frame that no
+ * amount of pinning the clock can reach, so two boots of the same village
+ * light the same lamp to two different intensities. Measured across two
+ * processes with every clock, uniform and camera provably identical, it moved
+ * a lamp-lit street by up to 1.0/255 mean channel error — over any tolerance
+ * a reference set is worth checking against (`plans/webgpu-ref/`).
+ *
+ * Seeding it costs nothing and buys the same rule the world layer already
+ * keeps for scatter (`world/rng.ts`): the room builds the same way every time.
+ * **Re-seeded in `clear`** rather than only at construction, so a fixture's
+ * phase is a function of the MAP and its position in the layout — otherwise
+ * the second map of a session flickers differently from the same map booted
+ * into directly, which is the same bug with a longer fuse.
+ */
+const FLICKER_SEED = 0x1a3f;
+
+/**
  * Owns every dynamic light in the room and feeds the cel shader.
  *
  * The shader has a fixed number of light slots, but a large arena holds far
@@ -46,6 +70,8 @@ export class LightingSystem {
   private carried = new Map<string, RoomLight>();
   private active: PointLightData[] = [];
   private t = 0;
+  /** The flicker phases. See `FLICKER_SEED`. */
+  private rand: () => number = mulberry32(FLICKER_SEED);
 
   /** Registers a static fixture light for the current room. */
   add(
@@ -62,7 +88,7 @@ export class LightingSystem {
       intensity,
       baseIntensity: intensity,
       flicker,
-      phase: Math.random() * 100,
+      phase: this.rand() * 100,
     });
   }
 
@@ -107,7 +133,7 @@ export class LightingSystem {
         intensity,
         baseIntensity: intensity,
         flicker,
-        phase: Math.random() * 100,
+        phase: this.rand() * 100,
       };
       this.carried.set(id, light);
       return;
@@ -121,10 +147,17 @@ export class LightingSystem {
     this.carried.delete(id);
   }
 
-  /** Drops every room light; carried lights survive between rooms. */
+  /**
+   * Drops every room light; carried lights survive between rooms.
+   *
+   * Re-seeds the flicker with it, for the reason `FLICKER_SEED` gives: a
+   * fixture's phase is then a function of the map and its place in the layout,
+   * rather than of how many rooms this process has already built.
+   */
   clear(): void {
     this.lights.length = 0;
     this.transient.length = 0;
+    this.rand = mulberry32(FLICKER_SEED);
   }
 
   /**

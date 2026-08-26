@@ -126,8 +126,9 @@ probe path, and the thing it stood in for now runs.
 
 **The M2 reference set exists**, taken headless on that box, with the harness
 committed beside it at `plans/webgpu-ref/` — `gate.mjs`, `bank.mjs`,
-`diff.mjs`, `pipelines.mjs` over a shared `harness.mjs`. Three findings came
-out of building it and each is a way a reference set can be confidently wrong:
+`diff.mjs`, `pipelines.mjs` and the `vantages.mjs` table, over a shared
+`harness.mjs`. Three findings came out of building it and each is a way a
+reference set can be confidently wrong:
 
 8. **A frozen frame needs its clocks PINNED, not stopped, and there are seven
    of them.** `Game.tick` runs `post.update`, `sky.update`, `godRays.update`
@@ -167,6 +168,76 @@ the round, `createRenderPipeline` accounts for 0.6 ms, so the cost is Dawn
 compiling behind the call rather than the call. Anything quoting a frame rate
 must warm up first — and a stutter through the opening seconds of a live round
 is a player-facing question this plan has not costed.
+
+## M2 landed
+
+**All four maps are up on GLSL-under-WebGPU, and the reference set is SIXTEEN
+frames rather than four.** `gate.mjs` plays a real round on each of the four
+with no page and no console errors, `probesRenderOnce` true everywhere, and
+Coldharbour's forty cube probes baking in one 130–150 ms frame — the thing M1 could
+not reach and the last of what M2 owed. Every banked frame is reproducible to a
+0.000% floor inside its own process, which `bank.mjs` refuses to write without.
+
+**Two things M2 found, and the first is why four frames was never a reference
+set:**
+
+11. **A backdrop is not a test, and the gap was not one of degree.** Between
+    them the four menu photographs hold no backed pane at any range, no
+    lamp-lit street, no gust crossing a canopy, no wall far enough off to band
+    and — measurably — almost no water. A clean four-frame diff would therefore
+    have said nothing at all about the variant that moved, which is risk 2's
+    failure wearing a passing test. So a map is banked as several frames, and
+    every row in the new `plans/webgpu-ref/vantages.mjs` carries a `proves`
+    line naming the path it puts in frame; a row nobody can write that line for
+    does not belong in the set. **Three of the vantages this plan named did not
+    survive contact with the maps.** Greyfen has no dead trees any more — it
+    was re-cut as a closed canopy, so the bright-fog outline case is the trunks
+    receding down the valley instead. Hollowmere's ash MOTES cannot be in a
+    frozen frame at all, because the freeze turns particles off and a frame
+    that keeps them is not reproducible. And the 130 m and 220 m glass readings
+    are a MEASUREMENT rather than a photograph: the sweep hides the rest of the
+    map and moves `fov` with the distance, and 220 m of clear line does not
+    exist on a 320 m map with buildings on it. The bank holds the same curtain
+    wall at 2, 40 and 90 m as the game actually draws it; the sweep stays M7's,
+    against `VERIFYING.md`'s recipe.
+12. **The frozen frame was not frozen, and NONE of the three things in the way
+    was a clock.** The water clock had been pinned onto `body.material` where
+    the field is `body.mat` — an optional chain onto `undefined`, throwing
+    nothing, reporting nothing and pinning nothing, so the water was left
+    HALTED at whatever clock the run booted with. **A lantern's flicker PHASE
+    is `Math.random() * 100` per fixture at map build**, so a lamp-lit frame
+    cannot agree with itself across two processes however carefully time is
+    pinned. And **a cube probe is refresh-ONCE and was baked in the frame after
+    install, before any of this was held** — so the water and the glazing went
+    on reflecting a world that had never been frozen, which is why two runs
+    could differ by 0.72/255 across a marsh with every clock, phase and uniform
+    already provably identical. All three are invisible in the four backdrops
+    and obvious in a frame chosen to hold water, a lamp or a reflection, which
+    is finding 11 arriving as a measurement rather than an argument. **The
+    phase is fixed in the GAME and not in the harness** — `LightingSystem` now
+    seeds it (`FLICKER_SEED`, re-seeded in `clear`), which is the rule the
+    world layer already keeps for scatter and which makes a bank taken over the
+    game's own phases fail loudly if anyone unseeds them again. The other two
+    are fixed in `harness.mjs`, the probes by re-baking after the pinning.
+
+**The cross-process floor is now ZERO — all sixteen frames byte-identical
+between two processes, on all four maps.** That is what finding 8's residue
+turns out to have been, so `CHECK_TOLERANCE` drops from 0.35 to 0.02 and is now
+slack for a driver rather than a measured floor. **A tolerance is what a floor
+is not**: 0.35 was measuring two bugs and calling them noise, and it passed a
+bank that was genuinely different every run. Finding 8's "0.00 to 0.14" and the
+0.30 it quotes are superseded by this.
+
+**The bank is NOT committed, and `ref/` is in `.gitignore` beside
+`gate.json`.** It is ~45 MB of PNG, it is only meaningful on this machine in
+this browser mode, and it has a generator that rebuilds the whole set in about
+four minutes. That is the bar `docs/build.md` holds a committed generated asset
+to, and a bank fails the other half of it: those four are the SAME on every
+machine and this is not. What is committed is the harness and the vantage
+table, which is the part that would be expensive to lose — the poses were
+chosen by taking them and looking at them, and the numbers are the record of
+that.
+
 
 ---
 
@@ -281,7 +352,7 @@ So the engine swap lands first with all nine shaders still in GLSL. This is
 | --- | --- | --- |
 | **M0** ✅ | `WebGPUEngine` + boot gate on `navigator.gpu`. Menu reached. | Boot path, `main.ts`, `__celshock` timing. **Menu RENDERS was not provable** — see Verification |
 | **M1** ✅ | **First lit scene** — Hollowmere end to end on GLSL sources. `OutlineRenderer` scaffolded back to GLSL; item 11 stays at M6 | RTTs, R8 depth field, 14 `DynamicTexture`s, `setRenderingOrder`, `GlowLayer`, pipeline, compute particles, `setHardwareScalingLevel`, blend/depth state — all confirmed. **The 40 cube probes did NOT come with it**: Hollowmere has no glazed block, and Coldharbour's bake kills the device here (finding 7), so they move to M2 on hardware |
-| **M2** | All four maps up. **Bank the GLSL-under-WebGPU screenshot reference.** **Owes the 40 cube probes M1 could not reach**, and is therefore hard-gated on a GPU machine | The most valuable artefact of the migration — later diffs isolate *shader* errors by construction |
+| **M2** ✅ | All four maps up. **The GLSL-under-WebGPU reference set is banked** — sixteen frames, the four menu vantages plus twelve chosen for the shader path each puts in frame (`plans/webgpu-ref/vantages.mjs`). Coldharbour's 40 cube probes bake in one 130–150 ms frame | The most valuable artefact of the migration — later diffs isolate *shader* errors by construction. **Four frames could not have done it**: the backdrops hold no glazing at range, no lamp-lit street, no gust and almost no water |
 | **M3** | **First WGSL** — the three post fragments (`HorrorPost`, `GodRays`, `MotionBlur`) | Dialect, `PostProcess` wiring, `onApply` binding, single-exit rewrite. Standalone, no attributes, no defines |
 | **M4** | **First WGSL surface** — shared includes, then `GrassShader` | Include strategy, `instances*` twin, `MAX_PUSHERS`, `array<vec3f,N>` + `setArray3`. Run the uniform read-back assertion here |
 | **M5** | **`CelShader`** — author variant by variant, land once | The long pole: ~620 shader lines, 29 uniforms, 8 materials, 6 defines |

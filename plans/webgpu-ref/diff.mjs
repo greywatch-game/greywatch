@@ -36,26 +36,29 @@ import { chromium } from "playwright";
  * before `bank.mjs --check` calls it a regression, in mean absolute 8-bit
  * channel error over the whole frame.
  *
- * **It is not zero, and pretending otherwise would make the bank cry wolf on
- * every run.** Two consecutive grabs inside one process are byte-identical on
- * all four maps — that floor is real and `bank.mjs` still enforces it before
- * writing anything. Across processes the same frozen frame does not come back:
- * measured over several runs, 0.00 on Greyfen, ~0.001 on Coldharbour,
- * 0.07–0.14 on Harrowmead and **0.12–0.25 on Hollowmere**, concentrated in the
- * sky and the tower rather than spread over the frame.
+ * **The floor is ZERO, and it took two goes to get there.** All sixteen banked
+ * frames come back byte-identical across processes, on all four maps — the
+ * same property the write path already demanded of two grabs inside ONE
+ * process. It was not always so, and neither of the two things in the way was
+ * a clock: a lantern's flicker PHASE was `Math.random() * 100` per fixture at
+ * map build (seeded in `LightingSystem` now), and a cube probe is refresh-ONCE
+ * and had already been baked before anything was pinned, so the water and the
+ * glazing went on reflecting a world that was never frozen. Measured before those were fixed, the residue
+ * was 0.00 on the two maps with no lamps, up to 1.0/255 on a lamp-lit street
+ * and 0.72/255 on a marsh that is half water — and the number this constant
+ * used to hold, 0.35, was set from the largest of those that had happened to
+ * be seen. **A tolerance is what a floor is not**: the earlier one was
+ * measuring two bugs and calling them noise, and it passed a bank that was
+ * genuinely different every run.
  *
- * **Set from the WORST of those and not the typical one**, because a threshold
- * that a good run clears and a normal run trips is worse than no threshold.
- * Hollowmere's 0.25 is the number that matters; 0.35 clears it with a little
- * room and still sits below the 0.63/255 that FINDINGS #12 treats as a real
- * picture change. That margin is thin — under 2x — and it is thin because the
- * residue is genuinely larger than the 0.02/255 the WebGL2 method reached.
- * **So this check catches a change that alters the picture and will NOT catch
- * a subtle one.** If a landing needs to resolve something finer, take the
- * before and after in ONE process, where the floor is zero, rather than
- * tightening this number.
+ * **So this is slack and not a floor**, kept small deliberately. It allows
+ * about 2% of pixels to move by one LSB, which is where a driver update or a
+ * texture-upload race would land, and it sits a full order below the 0.63/255
+ * FINDINGS #12 treats as a real picture change. **If it ever starts crying
+ * wolf, the answer is to find the unpinned thing and not to raise the number**
+ * — that has now been the answer twice.
  */
-export const CHECK_TOLERANCE = 0.35;
+export const CHECK_TOLERANCE = 0.02;
 
 const asDataUrl = (p) => `data:image/png;base64,${readFileSync(p).toString("base64")}`;
 

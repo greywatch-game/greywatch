@@ -1004,6 +1004,23 @@ is one machine's:
   - The 42–47% figure above is the WebGL2 floor. **It was re-derived under
     WebGPU rather than assumed to have followed** — same three movers, same
     zero.
+  - **Three movers reach zero inside ONE process and NOT across two, and the
+    two that stand between is neither of them a clock.** A lantern's flicker
+    PHASE is `Math.random() * 100` per fixture at map build, so a lamp-lit
+    frame cannot agree with itself between two boots however carefully time is
+    pinned; and a cube probe is refresh-ONCE, baked in the frame after
+    `installMap`, so the water and the glazing go on reflecting a world with
+    the wind and the cloud decks wherever that particular boot had left them.
+    Measured before both were held: 0.00/255 on the two maps with no lamps, up
+    to 1.0 on a lamp-lit street and 0.72 across a marsh that is half water —
+    with every clock, phase and uniform already provably identical, which is
+    what said the difference could not be in the uniforms. **The phase is
+    seeded in `LightingSystem` now** (`FLICKER_SEED`, re-seeded in `clear`), so
+    a script inherits that one and does not have to reach for it; what a script
+    still owes is `resetRefreshCounter()` on both probe pools AFTER pinning the
+    clocks, then a few frames. That reaches byte-identity across processes.
+    `plans/webgpu-ref/harness.mjs`'s `freeze` is the worked version and carries
+    the whole argument.
 - **The pause lid is a free camera**, and it is raised with `g.raiseLid("paused")`
   — **`g.state` is a getter and assigning it throws**, since nothing in the
   codebase assigns a state (see `Game`'s three moves). The lid stops

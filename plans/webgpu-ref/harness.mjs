@@ -1,7 +1,7 @@
 /**
  * What every script beside this file needs to stand a real client in front of
- * a real map, and the four facts about doing that on WebGPU which each of them
- * would otherwise get wrong on its own.
+ * a real map, and the facts about doing that on WebGPU which each of them would
+ * otherwise get wrong on its own.
  *
  * It owns no measurement. `gate.mjs` reports what a round costs, `bank.mjs`
  * takes the reference frames and `pipelines.mjs` counts shader compilation;
@@ -22,16 +22,25 @@
  * clothes — it was right on a 2 fps box because six frames was three seconds
  * there, and it silently photographs a blank canvas here.
  *
- * **A frozen frame needs SIX things held, not the two the plan assumed.**
- * `Game.tick` runs `post.update`, `sky.update`, `godRays.update` and
- * `motionBlur.update` in EVERY state, the deploy lid included, and the wind
- * and the GPU particles run off their own clocks beside them. Holding all six
- * makes two consecutive `page.screenshot()`s byte-identical on all four maps,
- * headed and headless — a true 0.000% floor, which is the only thing that
- * makes a later diff mean a shader difference. Holding fewer does not: with
- * the post chain alone Greyfen still moves 0.35% of its pixels between
- * consecutive grabs, and with everything but the wind it moves 99.8% of them
- * across a second, because a gust crossed the canopy.
+ * **A frozen frame needs EIGHT things held, not the two the plan assumed, and
+ * the last two are not clocks at all.** `Game.tick` runs `post.update`,
+ * `sky.update`, `godRays.update` and `motionBlur.update` in EVERY state, the
+ * deploy lid included, and the wind and the GPU particles run off their own
+ * clocks beside them. Holding those six makes two consecutive
+ * `page.screenshot()`s byte-identical on all four maps, headed and headless.
+ * Holding fewer does not: with the post chain alone Greyfen still moves 0.35%
+ * of its pixels between consecutive grabs, and with everything but the wind it
+ * moves 99.8% of them across a second, because a gust crossed the canopy.
+ *
+ * **Six reach zero inside ONE process and not across two**, which is the floor
+ * that actually matters — a bank is compared against by a later run. The two
+ * in the way were a lantern's flicker PHASE, drawn from `Math.random()` per
+ * fixture at map build, and a cube probe, which is refresh-ONCE and was baked
+ * before any of this was held. Neither is reachable by pinning time and both
+ * are invisible on a map with no lamps and no water. The phase is fixed in the
+ * GAME (`LightingSystem`'s `FLICKER_SEED`) rather than papered over here, so
+ * this file only has to re-bake the probes; with both, all sixteen banked
+ * frames come back byte-identical between two processes. See `freeze`.
  *
  * **The picture is taken with `page.screenshot()` and never read back off the
  * canvas.** A `drawImage` readback of the WebGPU canvas comes back fully
@@ -63,7 +72,16 @@ export const HEIGHT = 1080;
  * Everything that moves in a state that simulates nothing. See the header —
  * this list is the freeze, and shortening it does not reach a zero floor.
  */
-export const FREEZE_SET = ["post", "sky", "godrays", "blur", "wind", "particles"];
+export const FREEZE_SET = [
+  "post",
+  "sky",
+  "godrays",
+  "blur",
+  "wind",
+  "particles",
+  "lights",
+  "reflections",
+];
 
 /** Map ids in the order the shipped registry states them. */
 export const MAP_IDS = MAPS.map((m) => m.id);
@@ -221,10 +239,32 @@ export function placeVantage(page, vantage) {
  * where it was, so with a camera that has been standing still they have
  * already converged to the same state in any run — provided they were allowed
  * to converge. That is why a caller settles BEFORE freezing and not after.
+ *
+ * **The wind's constant is an ARGUMENT because a frame at t = 0 cannot see the
+ * sway at all.** At zero every blade and every branch stands where the mesh
+ * was authored, so a reference set taken only there diffs clean against a sway
+ * term that has been deleted outright. A vantage may therefore ask to be
+ * photographed mid-gust; what may not vary is that all three clocks take the
+ * SAME constant, because there is one wind.
+ *
+ * **Each replaced updater is stashed first, so `thaw` can put it back**, which
+ * is what lets one boot shoot a map's whole table. Re-freezing after a thaw is
+ * safe and re-stashes nothing: the first stash is the one kept, so a second
+ * freeze cannot record its own no-ops as the real methods.
  */
-export function freeze(page, set = FREEZE_SET) {
-  return page.evaluate((f) => {
+export function freeze(page, set = FREEZE_SET, { windTime = 0 } = {}) {
+  return page.evaluate(([f, wind]) => {
     const g = window.__celshock;
+    // The real updaters, recorded ONCE. See `thaw`.
+    window.__refThaw ??= {
+      post: g.post.update,
+      sky: g.sky.update,
+      godRays: g.godRays.update,
+      blur: g.motionBlur.update,
+      wind: g.mats.updateWind,
+      grass: g.grass?.update,
+      water: g.water?.update,
+    };
     if (f.includes("post")) {
       g.post.time = 0;
       g.post.update = () => {};
@@ -241,7 +281,7 @@ export function freeze(page, set = FREEZE_SET) {
       // Assigned and then pushed through the real updater, because the clock
       // lives on the factory and the value lives on every material in its
       // cache — writing one without the other freezes half the world.
-      g.mats.windTime = 0;
+      g.mats.windTime = wind;
       g.mats.updateWind(0);
       g.mats.updateWind = () => {};
       // **There is one wind and THREE clocks reading it**, which is the trap
@@ -253,18 +293,83 @@ export function freeze(page, set = FREEZE_SET) {
       // graveyard grass on Hollowmere and the market green on Harrowmead, which
       // is exactly where the two maps disagreed.
       if (g.grass) {
-        g.grass.time = 0;
-        g.grass.mat?.setFloat("time", 0);
+        g.grass.time = wind;
+        g.grass.mat?.setFloat("time", wind);
         g.grass.update = () => {};
       }
       if (g.water) {
-        g.water.time = 0;
-        for (const body of g.water.bodies ?? []) body.material?.setFloat?.("time", 0);
+        // **A `WaterBody` is `{ mesh, mat, depth }` and the field is `mat`.**
+        // Written as `body.material` this whole line is an optional chain onto
+        // `undefined` — it throws nothing, reports nothing and pins nothing,
+        // leaving the water HALTED at whatever clock the run booted with,
+        // which is the exact trap the paragraph above exists to name. It
+        // survived because the four menu vantages barely have water in them;
+        // the millpond and the marsh are in the set so that it cannot again.
+        g.water.time = wind;
+        for (const body of g.water.bodies ?? []) body.mat?.setFloat?.("time", wind);
         g.water.update = () => {};
       }
     }
     if (f.includes("particles")) g.scene.particlesEnabled = false;
-  }, set);
+    if (f.includes("lights")) {
+      // A lantern's flame is a clock like any other and is pinned like one.
+      // **What is deliberately NOT touched here is the flicker PHASE.** It
+      // used to be `Math.random() * 100` per fixture at map build — not a
+      // clock, so no amount of pinning time reached it, and two boots of the
+      // same village lit the same lamp to two different intensities. It is
+      // seeded in `LightingSystem` now (`FLICKER_SEED`), which is why this
+      // block is three lines rather than a reassignment: **a bank taken over
+      // the game's own phases fails loudly if anyone unseeds them again**,
+      // where a harness that overwrote them would go on passing.
+      g.lighting.t = 0;
+      // A muzzle flash or a blast is a light with its own life on it, and a
+      // frozen frame has no business holding one.
+      g.lighting.transient.length = 0;
+      // Pushed at dt = 0 so the clock stays where it was just put.
+      g.lighting.update(0, g.cameraSys.camera.position, g.mats);
+    }
+    if (f.includes("reflections")) {
+      // **A cube probe is refresh-ONCE, and it was baked before any of this
+      // was pinned** — in the frame after `installMap`, with the grass and the
+      // canopy at whatever the wind clock had reached by then and the cloud
+      // decks wherever they had scrolled to. The water and the glazing then
+      // sample that cube for the rest of the process, so a frozen frame whose
+      // subject is a REFLECTION is a picture of an unfrozen world however
+      // completely the world in front of it has been held. It is the loudest
+      // on Greyfen's marsh, where the water is half the frame: 0.72/255 mean
+      // across two runs with every clock and every phase already identical,
+      // which is what said the difference could not be in the uniforms.
+      // Resetting the counter re-bakes on the next frame, so the caller's
+      // settle after the freeze is what makes it land. **This must come last**
+      // — a re-bake before the clocks are pinned re-bakes the same problem.
+      for (const p of g.reflections.probes ?? []) p.cubeTexture.resetRefreshCounter();
+      for (const p of g.reflections.waterProbes ?? []) p.cubeTexture.resetRefreshCounter();
+    }
+  }, [set, windTime]);
+}
+
+/**
+ * Puts every updater the freeze replaced back, so the next vantage in the same
+ * boot can converge before it is frozen again.
+ *
+ * The clocks are NOT restored to where they were, and that is correct: each is
+ * re-pinned to its constant by the next freeze, and a frame is a function of
+ * the constant rather than of how it got there.
+ */
+export function thaw(page) {
+  return page.evaluate(() => {
+    const s = window.__refThaw;
+    if (!s) return;
+    const g = window.__celshock;
+    g.post.update = s.post;
+    g.sky.update = s.sky;
+    g.godRays.update = s.godRays;
+    g.motionBlur.update = s.blur;
+    g.mats.updateWind = s.wind;
+    if (g.grass && s.grass) g.grass.update = s.grass;
+    if (g.water && s.water) g.water.update = s.water;
+    g.scene.particlesEnabled = true;
+  });
 }
 
 /** Lets `n` rendered frames pass. The settle AFTER readiness, never instead of it. */

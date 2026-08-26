@@ -16,6 +16,20 @@ winning slots via `CelMaterialFactory.setPointLights()` once per frame. Adding a
 Effect meshes (tracers, sparks, neon, reticles) use unlit emissive
 `StandardMaterial`s from `mats.getEmissive()` and are unaffected by lighting.
 
+**A fixture's flicker PHASE is SEEDED, and the reason is a picture rather than
+a simulation.** `LightingSystem` draws each phase from `FLICKER_SEED`'s stream
+— re-seeded in `clear`, so a phase is a function of the map and the fixture's
+place in the layout rather than of how many rooms the process has already
+built. Nobody can tell one lantern's flame from the same lantern's flame a boot
+earlier, so this buys nothing in play; what it buys is that a FROZEN frame can
+be reproduced. The phase is the one term in a lit frame that pinning the clock
+cannot reach, and while it was `Math.random()` two boots of the same village
+lit the same lamp to two different intensities — measured across two processes
+with every clock, uniform and camera provably identical, up to 1.0/255 mean
+channel error over a lamp-lit street, which is over any tolerance a reference
+set is worth checking against. It is the same rule `world/rng.ts` already
+states for scatter, kept for a different reason.
+
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade.** The fog is a uniform on the cel materials
 and a per-pixel `mix` in their fragment shader; **three** passes never run it.

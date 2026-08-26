@@ -3,3 +3,4 @@ dist/
 dist-server/
 tmp_shots/
 plans/webgpu-ref/gate.json
+plans/webgpu-ref/ref/
