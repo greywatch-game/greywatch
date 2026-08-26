@@ -31,7 +31,12 @@ you are on before you believe anything else in this section.
   On `about:blank` it is `undefined` and every check downstream reads as "no
   WebGPU here". `http://localhost` and `http://127.0.0.1` both count as secure;
   serve a blank page off a `node:http` server rather than testing on
-  `about:blank`.
+  `about:blank`. **The boot gate now says WHICH**: `checkWebGPU` tests
+  `window.isSecureContext` before it asks for an adapter, so an insecure origin
+  gets its own message naming HTTPS and `localhost` rather than the "this
+  browser does not have WebGPU" one. A script asserting on `#boot.failed`'s
+  text has two messages to tell apart, and the origin one is the one a LAN
+  address or a Crostini VM hostname produces on a perfectly capable machine.
 - **A machine that cannot hand out an adapter is indistinguishable from a
   browser that has never heard of WebGPU**, and that is the shape of nearly
   every failure here. `main.ts`'s boot gate refuses, `Game` is never
@@ -231,7 +236,7 @@ is one machine's:
   skirmish by overriding `battle.spawnPointFor`, or drive rules directly with
   `conquest.update(1/60, fakeCombatants)` in a loop.
 - **`window.__celshock` now appears TWO awaits later than it used to.**
-  `main.ts` awaits an adapter and a device (`hasWebGPU`, then
+  `main.ts` awaits an adapter and a device (`checkWebGPU`, then
   `new WebGPUEngine(...)` + `initAsync()`) and then `loadHavok()` before
   constructing `Game`, so a script that polls for the handle is waiting on a GPU
   device and a ~2 MB physics binary as well as on the bundle — give

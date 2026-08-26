@@ -53,6 +53,13 @@ import { registerServiceWorker } from "./src/pwa/register";
 registerServiceWorker();
 
 /**
+ * Why the game is not coming, when it is not coming. **The gate answers with a
+ * REASON and not a boolean, because two machines that could not be less alike
+ * fail it in the same place** — see `checkWebGPU` for which two.
+ */
+type GpuVerdict = "ok" | "insecure" | "unavailable";
+
+/**
  * WebGPU or nothing — every cel material, the shadow map and the GPU particle
  * systems assume it, and there is no WebGL fallback engine in the tree.
  *
@@ -63,18 +70,30 @@ registerServiceWorker();
  * not for a drawing surface. If you come here looking for the probe canvas, it
  * has no counterpart.
  *
- * Both halves are load-bearing. `navigator.gpu` is a SECURE-CONTEXT-only
- * property — it is absent over plain `http://` to anything but localhost, so
- * its absence means "not offered here" as often as "not supported". And it can
- * be present with no adapter behind it: a headless Chrome without
- * `--enable-unsafe-webgpu` is exactly that machine, which is why the gate is
- * the adapter rather than the namespace.
+ * **The ORIGIN is checked first and on its own, and it is not a weaker version
+ * of the adapter check below — it is a different question wearing the same
+ * symptom.** `navigator.gpu` is a SECURE-CONTEXT-only property: it is
+ * `undefined` over plain `http://` to anything but localhost, on a machine
+ * whose GPU is perfectly capable, so a dev server reached at a LAN address or
+ * at a VM hostname reads as "this browser has never heard of WebGPU". That is
+ * the worst shape a failure can take here, because the player's next move is
+ * to open one of the WebGPU test pages — every one of which is `https://`, and
+ * all of which say yes. Two causes, two sentences.
+ *
+ * The second half stays the ADAPTER and not the namespace: `navigator.gpu` can
+ * be present with nothing behind it, and a headless Chrome without
+ * `--enable-unsafe-webgpu` is exactly that machine (`VERIFYING.md`). It and a
+ * browser with no WebGPU at all share `"unavailable"` and one message, because
+ * they share their advice; the insecure origin does not, which is the whole
+ * reason it is split out.
  */
-async function hasWebGPU(): Promise<boolean> {
+async function checkWebGPU(): Promise<GpuVerdict> {
+  if (!window.isSecureContext) return "insecure";
   try {
-    return !!navigator.gpu && !!(await navigator.gpu.requestAdapter());
+    const adapter = navigator.gpu && (await navigator.gpu.requestAdapter());
+    return adapter ? "ok" : "unavailable";
   } catch {
-    return false;
+    return "unavailable";
   }
 }
 
@@ -108,12 +127,19 @@ window.addEventListener("DOMContentLoaded", async () => {
   // FIRST, and before the physics download: a machine with no WebGPU should
   // not spend 2 MB to be told no. It is also the cheapest of the three checks
   // — no canvas, no file, one round trip to the browser's own GPU service.
-  if (!(await hasWebGPU())) {
+  const verdict = await checkWebGPU();
+  if (verdict !== "ok") {
     bootFailed(
-      "This game needs WebGPU, and this browser does not have it. " +
-        "Try a current Chrome or Edge, Safari 18 or later, or Firefox on " +
-        "Windows — and if you are on a desktop, check that hardware " +
-        "acceleration is switched on.",
+      verdict === "insecure"
+        ? "This page is not on a secure origin, so the browser will not offer " +
+            "WebGPU to it — and the game needs WebGPU. The machine is probably " +
+            "fine. Load the page over HTTPS, or as http://localhost; a LAN " +
+            "address or any other hostname over plain http will not do, " +
+            "however capable the graphics are."
+        : "This game needs WebGPU, and this browser does not have it. " +
+            "Try a current Chrome or Edge, Safari 18 or later, or Firefox on " +
+            "Windows — and if you are on a desktop, check that hardware " +
+            "acceleration is switched on.",
     );
     return;
   }
