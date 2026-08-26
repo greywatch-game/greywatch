@@ -17,16 +17,22 @@
  * collision bake does: the point is a picture of what the CLIENT actually
  * builds, and the only way to be sure of that is to let the client build it.
  *
- * **It needs a machine with a GPU and a display, and that is a REQUIREMENT of
- * this generator rather than an inconvenience of testing it.** The game runs on
- * WebGPU, and a headless Chromium cannot present a WebGPU canvas at all — the
- * first `getCurrentTexture()` destroys the device, so the round never draws and
- * the script fails as `waitForFunction` timing out on a map that cannot be
- * photographed. So it launches HEADED (`launchClient({ headed: true })`), which
- * the other two browser-driven scripts do not need because neither of them
- * wants a picture. `docs/build.md` carries this as part of the four generated
+ * **It needs a machine with a GPU, and that is a REQUIREMENT of this generator
+ * rather than an inconvenience of testing it.** The game runs on WebGPU, so a
+ * box that cannot hand out an adapter never constructs `Game` at all and the
+ * script fails as `waitForFunction` timing out on a map that cannot be
+ * photographed. `docs/build.md` carries this as part of the four generated
  * assets' contract: a shot exists because it has a generator, and this is what
  * that generator now costs to run.
+ *
+ * **It launches HEADED, and on one of the two dev machines that is the
+ * difference between a picture and nothing.** A headless Chromium on the
+ * Chromebook cannot present a WebGPU canvas at all — the first
+ * `getCurrentTexture()` destroys the device. On the Windows box headless
+ * presents perfectly well and this would run either way, but headed is the
+ * form that works on both and this script runs rarely enough that the seconds
+ * do not buy anything. The other two browser-driven scripts stay headless
+ * because neither of them wants a picture.
  *
  * Four things have to be true of the frame before it is worth keeping, and all
  * four are arranged below rather than assumed:
@@ -42,8 +48,19 @@
  *   `Game.updateGameplay`, which does not run in `deploy` — so a village that
  *   has never been played in has its windows dark. The script pushes one
  *   update itself, from the camera it just moved.
- * - **Several frames, not one.** The shadow map is stepped and the post chain
- *   has state; the first frame after a teleport is not the picture.
+ * - **The scene is READY, and then several frames, not one.** The shadow map is
+ *   stepped and the post chain has state, so the first frame after a teleport
+ *   is not the picture — that is what `SETTLE_FRAMES` is for. But a settle
+ *   count is not what makes a map DRAW, and on fast hardware the two came
+ *   apart: WebGPU compiles its pipelines lazily, and until they exist the
+ *   canvas presents nothing. Measured on the Windows box, the frame each map
+ *   FIRST draws anything on is 67 (Hollowmere), 11 (Greyfen), 14 (Coldharbour)
+ *   and 69 (Harrowmead) — so six frames is two blank backdrops, silently
+ *   written over two good committed ones. `scene.isReady()` flips on exactly
+ *   the frame the map first draws, on all four, so the wait is that and never
+ *   a number. Six frames was never wrong on the Chromebook, where six frames
+ *   is three wall-clock seconds; it was a duration wearing a frame count's
+ *   clothes.
  *
  * A re-run is a NEW picture rather than the same bytes: the sky drifts with
  * real time and the frame is whatever the machine had rendered when the
@@ -63,8 +80,10 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 /** JPEG quality. 82 puts these at ~200-270 KB each; the veil hides the rest. */
 const QUALITY = 82;
-/** Rendered frames to let settle before the shutter. See the header. */
+/** Rendered frames to let settle AFTER the scene is ready. See the header. */
 const SETTLE_FRAMES = 6;
+/** How long to wait for a map to compile its pipelines and draw. See the header. */
+const READY_TIMEOUT_MS = 120_000;
 
 const outDir = join(root, "shots");
 const shotPath = (id) => join(outDir, `${id}.jpg`);
@@ -128,7 +147,7 @@ async function captureMap(browser, url, id, vantage) {
   });
 
   await page.evaluate(
-    async ([vantage, frames]) => {
+    async ([vantage, frames, readyTimeout]) => {
       const g = window.__celshock;
       // `startRound()` only BOOKS the build — `buildRound` runs two animation
       // frames later, so this waits on the state rather than on the call (see
@@ -159,6 +178,22 @@ async function captureMap(browser, url, id, vantage) {
       g.mats.updateCamera(cam.position);
       g.lighting.update(0.05, cam.position, g.mats);
 
+      // Readiness first and the settle after it, for the reason in the header:
+      // a frame count cannot stand in for a map having compiled its shaders,
+      // and the frame that answers that question is `scene.isReady()`.
+      const readyBy = performance.now() + readyTimeout;
+      await new Promise((resolve, reject) => {
+        const seen = g.scene.onAfterRenderObservable.add(() => {
+          if (!g.scene.isReady()) {
+            if (performance.now() < readyBy) return;
+            g.scene.onAfterRenderObservable.remove(seen);
+            reject(new Error("scene never became ready"));
+            return;
+          }
+          g.scene.onAfterRenderObservable.remove(seen);
+          resolve();
+        });
+      });
       await new Promise((resolve) => {
         let n = 0;
         const seen = g.scene.onAfterRenderObservable.add(() => {
@@ -168,7 +203,7 @@ async function captureMap(browser, url, id, vantage) {
         });
       });
     },
-    [vantage, SETTLE_FRAMES],
+    [vantage, SETTLE_FRAMES, READY_TIMEOUT_MS],
   );
 
   // The PAGE rather than the canvas element: an element screenshot waits for

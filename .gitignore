@@ -2,3 +2,4 @@ node_modules/
 dist/
 dist-server/
 tmp_shots/
+plans/webgpu-ref/gate.json

@@ -101,7 +101,72 @@ than hunting three unrelated lines.
    fps on WebGL2 here, because WebGL2 gets the real GPU and WebGPU gets
    SwiftShader. Written up in `VERIFYING.md` with the two ways round it. **M2's
    Coldharbour work is now hard-gated on real hardware**, which sharpens rather
-   than changes what *Verification* already says.
+   than changes what *Verification* already says. **RESOLVED — see below: on
+   real hardware the shipped bake is 138 ms in one frame and needs nothing.**
+
+---
+
+## The hardware gate is lifted
+
+**There is a second dev machine now — a Windows box with an RTX 4070 Ti SUPER —
+and it settles every question this plan deferred to "real hardware".** WebGPU
+gets `nvidia/lovelace` rather than SwiftShader, and headless presents a canvas
+perfectly well provided the browser is asked for by `channel: "chromium"`;
+Playwright's default `chromium_headless_shell` carries no GPU stack on Windows
+and returns no adapter at all, which is the same boot-gate failure the missing
+flag causes on the Chromebook and arrives by a different route.
+`VERIFYING.md`'s WebGPU section is now written per-machine, because several of
+its rules invert between the two.
+
+**Item 7 is closed and its workaround is deleted.** Coldharbour's forty probes
+bake in the one frame after install in 138 ms, all forty, no device loss, and
+the probes are refresh-once so they are a build cost and never a frame cost.
+`cold-stagger.mjs` has been removed rather than kept: it only ever proved the
+probe path, and the thing it stood in for now runs.
+
+**The M2 reference set exists**, taken headless on that box, with the harness
+committed beside it at `plans/webgpu-ref/` — `gate.mjs`, `bank.mjs`,
+`diff.mjs`, `pipelines.mjs` over a shared `harness.mjs`. Three findings came
+out of building it and each is a way a reference set can be confidently wrong:
+
+8. **A frozen frame needs its clocks PINNED, not stopped, and there are seven
+   of them.** `Game.tick` runs `post.update`, `sky.update`, `godRays.update`
+   and `motionBlur.update` in EVERY state including the deploy lid, and **there
+   is one wind and THREE clocks reading it** — the cel factory's `windTime`,
+   the grass field's `time` and the water body's. Halting an accumulator leaves
+   it holding however much wall clock that run spent booting, which looks
+   perfect inside one process and differs across two. Consecutive grabs are
+   byte-identical on all four maps; cross-process the residue is 0.00 to 0.14
+   mean channel error, so the bank writes on byte-identity and CHECKS against a
+   0.30 tolerance.
+9. **A frame count cannot stand in for readiness, and this had already damaged
+   committed output.** WebGPU compiles pipelines lazily and presents nothing
+   until they exist; `scene.isReady()` flips on exactly the frame each map
+   first draws, and that frame is not a constant (67–137 on Hollowmere across
+   runs). `capture-map-shots.mjs` settled six frames — three seconds on the
+   Chromebook, 45 ms here — so `npm run shots` would have overwritten two
+   committed backdrops with blank frames. Fixed there.
+10. **Do not read pixels back off the canvas.** A `drawImage` readback comes
+    back fully transparent on Hollowmere while `page.screenshot()` of the same
+    frame is 3.3 MB of chapel, and a diff of two black images passes.
+
+**What real hardware also says about the frame**, uncapped, warm, 1920x1080,
+sixteen bots, a live round — the milliseconds FINDINGS #12 says nobody has ever
+taken:
+
+| | Hollowmere | Greyfen | Coldharbour | Harrowmead |
+| --- | --- | --- | --- | --- |
+| warm fps | 132–176 | 133–176 | 46–48 | 52–56 |
+| median frame | 5.7 ms | 5.6 ms | 20.8 ms | 17.8 ms |
+| p95 frame | 7.4 ms | 6.7 ms | 22.7 ms | 19.5 ms |
+
+**The first seconds of a round are the COMPILER**: 42 shader modules and 25
+render pipelines are created in the first second after spawn, which runs at
+9 fps on Coldharbour against the ~48 it settles at by the third. Summed over
+the round, `createRenderPipeline` accounts for 0.6 ms, so the cost is Dawn
+compiling behind the call rather than the call. Anything quoting a frame rate
+must warm up first — and a stutter through the opening seconds of a live round
+is a player-facing question this plan has not costed.
 
 ---
 
@@ -428,6 +493,14 @@ hardware, and that is now a certainty rather than a risk.** Schedule M2 against
 a GPU machine or the reference set does not exist — and without the reference
 set, M5's failure mode is exactly the one risk 2 describes.
 
+**That gate has since been lifted and the paragraph above is kept only because
+its reasoning still holds on the slow machine** — see *The hardware gate is
+lifted*. The reference set exists, `npm run shots` runs, and the harness that
+takes both is committed at `plans/webgpu-ref/`. What has NOT changed is the
+consequence for anyone working on the Chromebook: none of the visual half can
+be done there, and the numbers in this section are still the right description
+of that box.
+
 Two headless notes worth keeping for whoever writes the next script: the game
 gets two frames in before the device goes, so `scene.getFrameId()` stops at 2
 and `engine.getFps()` reads ~3 forever — neither is a stall. And Dawn logs a
@@ -480,11 +553,14 @@ forces all eight cel variants + grass + water + three post passes + outline to
 compile and asserts zero `getCompilationInfo` errors. That is the only thing
 standing between "typecheck passes" and "the map is invisible".
 
-**`npm run shots` is a hard dependency and it IS broken**, confirmed by running
-it: it times out at `waitForFunction` waiting for a map that cannot draw. The
-committed shots survive (the script only writes a placeholder when the file is
-absent), so `main` is not at risk — but the generator no longer runs on a
-GPU-less box. That is a *build-contract* consequence (one of the four assets
+**`npm run shots` is a hard dependency and it IS broken on a GPU-less box**,
+confirmed by running it: it times out at `waitForFunction` waiting for a map
+that cannot draw. The committed shots survive (the script only writes a
+placeholder when the file is absent), so `main` is not at risk — but the
+generator no longer runs on a GPU-less box. **On the Windows box it now runs
+end to end** and produces all four backdrops, though only after the readiness
+bug in finding 9 was fixed: before that it produced two blank ones, which is a
+worse failure than the timeout because it succeeds. That is a *build-contract* consequence (one of the four assets
 `docs/build.md` permits exists because it has a generator), not a testing
 inconvenience. **The answer is that the generator's contract gains a
 requirement** — it needs a machine with a GPU, the same one M2 needs — and

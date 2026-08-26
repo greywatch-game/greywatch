@@ -39,11 +39,24 @@ const SOURCES = ["layout.ts", "heights.ts"];
  * moves, with the layout untouched. Hashing only the layout would leave exactly
  * that edit undetected, which is the silent half of the failure this guard
  * exists to prevent.
+ *
+ * **The line endings are normalised first, and without that this guard fails
+ * on a clean checkout rather than on a stale bake.** Git hands a Windows
+ * working tree CRLF and a Linux one LF for the same committed bytes, so a hash
+ * taken over what `readFileSync` returns is a hash of the CHECKOUT and not of
+ * the layout: measured on a pristine tree, all four maps reported "out of
+ * date" with collider geometry that was byte-for-byte identical. The remedy it
+ * prints — bake and commit — is the trap, because the freshly committed hash
+ * is then wrong on the OTHER machine and the two of them hand the failure back
+ * and forth forever. Normalising here rather than with a `.gitattributes`
+ * `eol=lf` keeps the fix inside the thing that is actually asking the question,
+ * and makes the hash mean the layout's CONTENT on any platform.
  */
 export function sourceHash(id) {
   const h = createHash("sha256");
   for (const file of SOURCES) {
-    h.update(readFileSync(join(root, "src", "world", id, file)));
+    const text = readFileSync(join(root, "src", "world", id, file), "utf8");
+    h.update(text.replace(/\r\n/g, "\n"));
   }
   return h.digest("hex").slice(0, 16);
 }

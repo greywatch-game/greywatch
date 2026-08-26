@@ -715,6 +715,33 @@ to zero over a band and branching the fetch out below a threshold is the shape.
 camera, alternate the config every frame, take the median ratio — is what
 settled the equivalent questions headless and would settle these properly.
 
+**The milliseconds now exist, and the gap is far larger than this entry
+assumed.** Measured on the Windows box (RTX 4070 Ti SUPER, WebGPU, 1920x1080,
+uncapped, sixteen bots, a live round, warm — see `plans/webgpu-ref/gate.mjs`):
+
+| | Hollowmere | Greyfen | Coldharbour | Harrowmead |
+| --- | --- | --- | --- | --- |
+| warm fps | 132–176 | 133–176 | 46–48 | 52–56 |
+| median frame | 5.7 ms | 5.6 ms | 20.8 ms | 17.8 ms |
+| p95 frame | 7.4 ms | 6.7 ms | 22.7 ms | 19.5 ms |
+| active meshes | ~229 | ~240 | ~902 | ~836 |
+
+**Read the ratio and not the absolute**, and read the active-mesh row before
+concluding anything: this sweep spawns the player at a spawn point with the
+bots live, where the sweep above froze them at five control points, so the
+active set is four times larger and the two are not the same measurement. What
+survives the difference is the SHAPE — Coldharbour and Harrowmead cost ~3.5x
+Hollowmere per frame, against the ~25% this entry recorded. Hiding the glass
+still moves Coldharbour and nothing else does (52.2 fps against 46.4 with panes
+disabled, ~12%), so the lever named below is still the right lever; what is not
+established is why the gap is now so much wider, and the honest answer is that
+nobody has yet run the frozen-camera sweep on this machine to compare like with
+like. **That is the first thing to do here, and it is now cheap.**
+
+Two candidates are ruled out by the same run: the forty cube probes are
+refresh-once and re-render zero times per frame, so they are a build cost and
+not a frame cost; and the post chain is worth ~1% (47.3 against 46.4).
+
 ---
 
 ## 13. Greyfen's jungle costs 67% more geometry per frame, and nobody has costed it on real hardware
@@ -892,3 +919,47 @@ overlapping at close range on Coldharbour, against the same scene with
 the one designed to be turned off first if a graphics-quality preset ever
 exists. Ranked against finding 5's list, it belongs after the ash field and
 before the render scale.
+
+---
+
+## 16. The first seconds of a round are WebGPU compiling pipelines, and on Coldharbour that is 9 fps
+
+**Status:** measured on real hardware, cause located, not acted on.
+
+WebGPU compiles pipelines lazily, and the game does nothing to warm them. On
+Coldharbour, measured second by second from the frame the player spawns:
+
+| second | 1 | 2 | 3 | 4 | 5 |
+| --- | --- | --- | --- | --- | --- |
+| fps | 9 | 34 | 48 | 47 | 48 |
+| shader modules created | 42 | 2 | 0 | 0 | 0 |
+| render pipelines created | 25 | 3 | 0 | 0 | 0 |
+
+Sixty-two modules and thirty-three pipelines exist by the end; four and two of
+them predate the round. **The cost does not appear in the call it comes from**
+— summed over the whole round `createRenderPipeline` accounts for 0.6 ms —
+because Dawn compiles behind the call and the stall lands on first use, which
+is why timing the creation functions proves nothing and the frame clock beside
+them proves it immediately.
+
+**Two consequences and they are different sizes.** The measurement one is
+settled and written down: any frame rate read in the first ~3 s of a round is
+the compiler, which is what made a healthy Coldharbour read as 16 fps against
+Hollowmere's 103 and sent an hour after a port bug that was not there
+(`VERIFYING.md`, `plans/webgpu-ref/gate.mjs`). The PLAYER-facing one is open:
+a round genuinely opens with a second at 9 fps on the heaviest map, on a
+4070 Ti, and the deploy screen sits over a live view for several seconds before
+that with most of these pipelines uncreated.
+
+**What would settle it** is whether the stall can be moved under the deploy
+screen, where there is already a lid and the player is already waiting. The
+shape is a warm-up pass after `installMap` that draws each material variant
+once off-screen, which is what `scene.isReady()` already tracks per material —
+the same signal `plans/webgpu-ref/harness.mjs` waits on, and it flips on
+exactly the frame a map first draws. Whether that is a few lines or a fight
+with the variant matrix has not been looked at. **Do not reach for it before
+the frozen-camera sweep in finding 12**: if Coldharbour's steady-state gap is
+also a shader-count problem, the two share a cause and one change may move
+both.
+
+---

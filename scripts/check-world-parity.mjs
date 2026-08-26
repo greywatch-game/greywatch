@@ -15,6 +15,7 @@
  * matched. See `src/world/fingerprint.ts`.
  */
 import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { launchClient } from "./browser.mjs";
 import { MAPS, root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
@@ -23,13 +24,19 @@ const MAP_KEY = "greywatch.map";
 
 /** The server's fingerprints, via the built `parity` entry. */
 function serverFingerprints() {
-  const build = spawnSync("npx", ["vite", "build", "-c", "vite.server.config.ts"], {
-    cwd: root,
-    encoding: "utf8",
-  });
+  // `node` on vite's own entry rather than `npx`, for the Windows half of the
+  // reason `dev-server.mjs` spawns it that way: `npx` is `npx.cmd` there and
+  // `spawnSync` cannot exec it, so the build fails with a null status and this
+  // reports "server build failed:" followed by nothing at all.
+  const vite = join(root, "node_modules", "vite", "bin", "vite.js");
+  const build = spawnSync(
+    process.execPath,
+    [vite, "build", "-c", "vite.server.config.ts"],
+    { cwd: root, encoding: "utf8" },
+  );
   if (build.status !== 0) throw new Error(`server build failed:\n${build.stderr}`);
 
-  const run = spawnSync("node", ["dist-server/parity.js"], {
+  const run = spawnSync(process.execPath, ["dist-server/parity.js"], {
     cwd: root,
     encoding: "utf8",
   });

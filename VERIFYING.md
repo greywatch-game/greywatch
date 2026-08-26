@@ -10,8 +10,94 @@ Playwright + Chromium are devDeps for ad-hoc smoke tests; write throwaway script
 to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock`
 (`g` below).
 
-**READ THIS FIRST, because the game runs on WebGPU and three things about it
-bite before any of the quirks below do.**
+**READ THIS FIRST, because the game runs on WebGPU and WHICH MACHINE you are
+on decides more than any flag does.** There are two dev machines, they fail in
+opposite directions, and a rule measured on one of them is wrong on the other
+often enough that they are written down separately below. Establish which one
+you are on before you believe anything else in this section.
+
+| | Windows box | Chromebook (Crostini) |
+| --- | --- | --- |
+| WebGPU adapter | `nvidia/lovelace`, 21 features | `google/swiftshader`, CPU |
+| headless presents a canvas | **yes**, via `channel: "chromium"` | **no**, one frame then device loss |
+| `--enable-unsafe-webgpu` | no-op | **required**, and its absence is invisible |
+| Coldharbour's 40-probe bake | 138 ms, one frame | takes the device |
+| a round | 46–176 fps | ~0.5–2 fps |
+| the one-second check | — | `ls /dev/dri` |
+
+**What is true on both machines**, and is the part worth learning once:
+
+- **`navigator.gpu` is a SECURE-CONTEXT property, so probe on a real origin.**
+  On `about:blank` it is `undefined` and every check downstream reads as "no
+  WebGPU here". `http://localhost` and `http://127.0.0.1` both count as secure;
+  serve a blank page off a `node:http` server rather than testing on
+  `about:blank`.
+- **A machine that cannot hand out an adapter is indistinguishable from a
+  browser that has never heard of WebGPU**, and that is the shape of nearly
+  every failure here. `main.ts`'s boot gate refuses, `Game` is never
+  constructed, and the script fails as `waitForFunction` timing out on
+  `window.__celshock` — which says nothing about why. `scripts/browser.mjs`
+  exists to get this right once; go there before you suspect the game.
+- **`scripts/browser.mjs` and `scripts/dev-server.mjs` are the only places a
+  launch flag or a server spawn is written**, and the harness under
+  `plans/webgpu-ref/` imports both rather than copying either.
+
+### On the Windows box, which is the one with a GPU
+
+- **The BINARY decides whether headless works, and the flag does not.**
+  Measured across all four combinations of headless/headed and flag/no-flag: an
+  adapter comes back in every one of them that runs the full browser binary,
+  and in none that runs Playwright's default `chromium_headless_shell`. That
+  shell carries no GPU stack here at all — `requestAdapter()` returns null with
+  `--enable-unsafe-webgpu`, without it, and under every ANGLE override tried.
+  `channel: "chromium"` is what asks for the full binary, and with it headless
+  presents perfectly well: 240 swap-chain frames, no device loss. So the flag
+  is dead weight on this machine and the channel is the whole game, which is
+  the exact inverse of the Chromebook below.
+- **`--use-angle=d3d11` is a trap.** It gets an adapter and then fails
+  `requestDevice` with `DynamicLib.Open: dxil.dll Windows Error: 87`. No ANGLE
+  override is needed or wanted here.
+- **The first seconds of a round are the COMPILER, not the game.** WebGPU
+  compiles pipelines lazily. Measured on Coldharbour: 42 shader modules and 25
+  render pipelines are created in the first second after the player spawns,
+  that second runs at 9 fps, the second at 34, and by the third the round is
+  flat at ~48 and creates nothing more. A single figure taken over the first
+  five seconds is neither number and is what made a healthy Coldharbour read as
+  16 fps against Hollowmere's 103 — a gap FINDINGS #12 puts at about 25%.
+  **Warm up for ten seconds before quoting a frame rate**, or use
+  `plans/webgpu-ref/gate.mjs`, which reports cold and warm as a pair. The cost
+  does not show up in the call it comes from: summed over a whole round,
+  `createRenderPipeline` accounts for 0.6 ms, because Dawn compiles behind the
+  call and the stall lands on first use.
+- **Chromium caps the render loop unless you take the limiter off.** Without
+  `--disable-frame-rate-limit --disable-gpu-vsync` Hollowmere reads 103 fps
+  because that is the ceiling rather than the cost; with them, 132–176. Say
+  which you measured.
+- **A map DRAWS when `scene.isReady()` says so, and a frame count is not a
+  substitute.** Until the pipelines exist the canvas presents nothing, and the
+  frame that first changes is not a constant — across runs it moved between 67
+  and 137 on Hollowmere and between 3 and 35 on Greyfen. `scene.isReady()`
+  flipped on exactly the frame each map first drew, on all four maps, every
+  time. This is not academic: `capture-map-shots.mjs` settled six frames, which
+  was three wall-clock seconds on the Chromebook and 45 ms here, and running
+  `npm run shots` would have overwritten Hollowmere's and Harrowmead's
+  committed backdrops with blank frames.
+- **Do NOT read pixels back off the canvas; screenshot the page.** A
+  `drawImage` readback of the WebGPU canvas comes back fully transparent on
+  Hollowmere — alpha 0, every channel 0 — while `page.screenshot()` of the same
+  frame is 3.3 MB of chapel. A readback that returns black is not a frame that
+  is black, and it fails in the worst direction: a diff of two black images
+  passes.
+- **Headed and headless frames are not byte-identical**, on three of the four
+  maps. Both are correct. A reference bank must be taken and checked in the
+  same mode; `plans/webgpu-ref/bank.mjs` records the mode and refuses a
+  mismatch.
+- **Coldharbour's shipped forty-probe bake is fine here** — 138 ms in the one
+  frame after install, all forty probes, no device loss — and the probes are
+  refresh-once, so they are a build cost and never a frame cost. The staggered
+  workaround the Chromebook needed has been deleted rather than kept.
+
+### On the Chromebook, which is a Crostini box with no GPU for WebGPU
 
 - **Launch with `--enable-unsafe-webgpu`.** Without it `navigator.gpu` is there
   and `requestAdapter()` returns null — which is the shape of "this browser has
@@ -21,11 +107,6 @@ bite before any of the quirks below do.**
   `--use-angle=swiftshader`, `--use-webgpu-adapter=swiftshader`,
   `--enable-features=Vulkan` and `--enable-unsafe-swiftshader` were each tried
   and changed nothing either way.
-- **`navigator.gpu` is a SECURE-CONTEXT property, so probe on a real origin.**
-  On `about:blank` it is `undefined` and every check downstream reads as "no
-  WebGPU here". `http://localhost` and `http://127.0.0.1` both count as secure;
-  serve a blank page off a `node:http` server rather than testing on
-  `about:blank`.
 - **Anything with a PICTURE in it must run `headless: false`, and on this
   Chromebook that is not a preference — headless cannot present a WebGPU canvas
   at all.** In headless, `getContext("webgpu")` and `configure()` both succeed
@@ -66,8 +147,10 @@ bite before any of the quirks below do.**
     fails, "WebGPU context lost" follows, and the round never draws a pixel.
     What it looks like is a WebGPU port bug and it is not one — the same map on
     the same machine bakes all forty probes in ONE frame on WebGL2 and runs at
-    ~32 fps, because WebGL2 gets the real GPU and WebGPU gets SwiftShader.
-    **Three ways round it, and which you want depends on the question**:
+    ~32 fps, because WebGL2 gets the real GPU and WebGPU gets SwiftShader. **On
+    the Windows box the same bake is 138 ms and needs nothing done to it**, so
+    what follows is a workaround for this machine and not a property of the
+    game. **Three ways round it, and which you want depends on the question**:
     `g.reflections.build = () => {}` before `startRound` gives a Coldharbour
     that renders (99% of pixels lit, everything but the glazing correct), and
     truncating `map.paneGroups` inside a wrapper round `build` keeps a few
@@ -114,10 +197,17 @@ bite before any of the quirks below do.**
   *requested*, so the real invariant is `engine._glslang === undefined &&
   engine._tintWASM === undefined` after a sweep that actually drew every map.
 
-Headless quirks that have already cost time:
+Quirks that have already cost time. **Most of them are the SLOW machine's**,
+because a script that is wrong about time is only wrong where time is scarce.
+Everything below phrased as "at 2 fps", "at 0.1 fps" or "a couple of frames a
+second" is the CHROMEBOOK and is not a claim about the Windows box, where the
+frame rate usually makes the problem disappear rather than change shape. The
+advice is still the right advice on both — stepping a system directly is a
+better test than waiting for it wherever you are — it is only the urgency that
+is one machine's:
 
-- Headless SwiftShader runs at ~2 fps and `dt` is clamped to 0.05, so **game time
-  runs at ~25% of wall clock**. Don't wait for bots to cross a map (240 m, or
+- **On the Chromebook**, headless SwiftShader runs at ~2 fps and `dt` is clamped
+  to 0.05, so **game time runs at ~25% of wall clock**. Don't wait for bots to cross a map (240 m, or
   Coldharbour's 320) — force a
   skirmish by overriding `battle.spawnPointFor`, or drive rules directly with
   `conquest.update(1/60, fakeCombatants)` in a loop.
