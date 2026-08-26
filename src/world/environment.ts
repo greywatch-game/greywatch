@@ -303,32 +303,6 @@ export interface EnvironmentSpec {
      */
     lampIntensity?: number;
   };
-  /**
-   * How far one of this map's visuals may stand from the nearest emissive
-   * fitting and still be drawn into the glow buffer, overriding
-   * `CONFIG.graphics.glowOccluderRange`. Metres.
-   *
-   * **It is the MAP's for the same reason `shadowWindow` is**: it is a
-   * consequence of how the map is lit rather than a global preference. The
-   * village is drawn into that buffer as opaque black, which lights nothing
-   * and is worth paying for only where it stops a fitting blooming through the
-   * wall in front of it — so what the right range is depends entirely on how
-   * many fittings a map has and how far apart they stand.
-   *
-   * A night village is the expensive end: Hollowmere's lanterns are the case
-   * the layer exists for, and excluding the buildings around them is visible
-   * (1.29/255 mean over 9.3% of the frame at the lantern vantage). A business
-   * district is the cheap end: Coldharbour has almost nothing to protect, and
-   * excluding all of it costs 0.51/255 at its worst committed vantage against
-   * a byte-identical floor. So the default is the protective one and the two
-   * big maps opt down from it, which is the way round that cannot make a map
-   * that says nothing look worse.
-   *
-   * **Zero does not switch the pass off — it keeps only what actually glows.**
-   * A negative value is the off switch and puts the whole map back in the
-   * buffer. See `Game.excludeDistantFromGlow` and `docs/rendering.md`.
-   */
-  glowOccluderRange?: number;
   particles?: ParticleSpec;
   water?: WaterEnvSpec;
   grass?: GrassEnvSpec;

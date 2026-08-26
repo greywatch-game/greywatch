@@ -1224,77 +1224,6 @@ is the preprocessor eating code, this one is JavaScript eating the shader.
   hand-written (`src/shaders/HorrorPost.ts`).
 - Glow is a `GlowLayer` keyed off emissive color, deliberately not threshold bloom —
   bright-but-not-emissive surfaces must stay crisp.
-
-### What the glow buffer is actually for, and why most of the village is not in it
-
-**The layer holds everything not explicitly excluded, and a mesh with no
-`emissiveColor` is drawn into it as opaque BLACK.** Every cel `ShaderMaterial`
-in the game reaches `customEmissiveColorSelector` and comes back as
-`neutralColor` — so for most of its life this layer was rendering the whole
-village into a texture the village contributes no light to. On Coldharbour that
-was **883 of 2,647 draws a frame**, on a backend that charges CPU per draw
-(`FINDINGS.md` #17).
-
-**Black is not nothing, which is the entire difficulty.** It is what makes the
-buffer depth-occlude, so a brazier behind a cottage does not bloom through the
-wall. Excluding the world wholesale is worth ~21% and is measurably wrong on a
-map with fittings: at Hollowmere's lantern vantage it moves **1.29/255 over 9.3%
-of the frame**, against a noise floor that is byte-identical. So the village is
-not excluded — what is excluded is the part of it too far from any emissive to
-occlude one.
-
-`Game.excludeDistantFromGlow` runs at the end of `installMap`, over
-`map.visuals` only, and it is the ONLY pass a map's own meshes are ever seen by:
-the constructor's `noGlow` scan is one loop over `scene.meshes` that runs before
-any map exists, which is why `WaterSystem`, `GrassSystem`, `CaptureZoneSystem`
-and `Sky` all call `addExcludedMesh` by hand and the map had nobody to do it for
-it.
-
-**Four rules hold it together.**
-
-1. **The range is the MAP's**, `EnvironmentSpec.glowOccluderRange`, defaulting
-   to `CONFIG.graphics.glowOccluderRange` (30 m). It is a consequence of how a
-   map is lit, exactly as `shadowWindow` is of its key's elevation — a night
-   village has fittings to protect and a business district has almost none. The
-   default is the PROTECTIVE end and maps opt down from it, which is the way
-   round that cannot make a map saying nothing look worse. Hollowmere and
-   Greyfen take the default and are **byte-identical at all eight of their
-   committed vantages**; Coldharbour and Harrowmead set `0` and cost 0.51/255
-   and 0.57/255 at their worst one.
-2. **Zero is not off.** At `0` only what actually glows stays in the buffer; a
-   NEGATIVE range is the off switch and puts the whole map back. That
-   distinction is what lets a map say "nothing here to occlude" without saying
-   "do not bloom".
-3. **Distance is centre-to-centre, and that is a decision rather than an
-   oversight.** Measuring surface-to-centre reads far more naturally, and it was
-   what this shipped with for an afternoon — but a merge group is one mesh over
-   a whole block, so its bounding sphere swallows every lamp on the street and
-   almost nothing is ever out of range. Measured on Coldharbour: 34 of 559
-   visuals excluded at 30 m surface-to-centre, against 140 centre-to-centre and
-   508 at zero. The coarse granularity of the merge is the real constraint here
-   and no distance metric escapes it.
-4. **The reset is load-bearing.** `ThinGlowLayer` keeps exclusions as a
-   `number[]` of unique ids and `hasMesh` is a LINEAR SCAN of it, so the list is
-   walked for every mesh the layer tests every frame. A round rebuilds the map
-   and disposes the last one, but an id already in that array stays forever and
-   is never reused — so the pass removes what its previous run added before
-   adding anything, and `Game.glowExcluded` is the list that makes that
-   possible. `Mesh.uniqueId` survives disposal, which is why removing a dead
-   mesh works at all.
-
-**What this does not cover is a MOVING emissive.** The ranges are computed once,
-off the static fittings, so a blast's flash going off beside a wall that no lamp
-stands near will bloom through it for the frames it lasts. It is a real gap and
-it is not sized; a frame capture with a grenade detonating behind a Coldharbour
-facade is what would size it.
-
-**And it is not the whole of the layer's cost.** The 883 draws are 550 map
-visuals, **250 bot-rig meshes** and 79 tank parts and blob shadows. Only the
-first group can be range-tested at all — a rig walks — so this pass buys ~10%
-on the two big maps where excluding everything non-emissive bought ~21%. The
-rest is a separate question about whether a soldier should occlude a lamp, and
-it is open.
-
 - Flat shading is recovered in the fragment shader from screen-space derivatives of
   the world position. Do not call `convertToFlatShadedMesh()`; it would unweld vertices
   on every prop and clone for no visual gain.
@@ -1509,11 +1438,8 @@ Three constraints hold it together, and undoing any of them is silent:
   and the sparks, so a flag flipped here flips for every effect in the game.
 - **The `noGlow` flag only works because `Game` builds `CombatSystem` before
   its construction-time GlowLayer scan.** Move the construction later and every
-  dust disc blooms like a lamp. That scan is a one-shot loop over
-  `scene.meshes`; anything built after it is eligible forever *unless it is the
-  map's*, which is what `excludeDistantFromGlow` is for — see "What the glow
-  buffer is actually for" below. The effect pools are not the map's and still
-  depend on this ordering.
+  dust disc blooms like a lamp. The scan is a one-shot loop over
+  `scene.meshes`; anything built after it is eligible forever.
 - **The disc gets its fog fade for free from `mats.getEmissive()`**
   (`EmissiveFog`), which is the whole reason it is an emissive mesh rather than
   a hand-rolled material. A dedicated unlit dust shader would owe the fade

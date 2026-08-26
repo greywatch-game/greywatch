@@ -225,22 +225,6 @@ function eyeDistanceSq(sub: SubMesh, eye: Vector3): number {
 const kitLampId = (n: number) => `kit-lamp-${n}`;
 
 /**
- * Does this mesh put anything INTO the glow buffer, as opposed to occluding
- * what is already there?
- *
- * The same test `customEmissiveColorSelector` makes, so the two cannot come to
- * disagree about what glows: a non-black `emissiveColor` on the material. No
- * cel `ShaderMaterial` has the field at all, which is why the whole village
- * reaches that selector and comes back as `neutralColor` black. The epsilon is
- * against a material that carries an emissive it has faded to nothing rather
- * than one that never had one.
- */
-function isEmissive(mesh: Mesh): boolean {
-  const e = (mesh.material as StandardMaterial | null)?.emissiveColor;
-  return !!e && (e.r > 0.01 || e.g > 0.01 || e.b > 0.01);
-}
-
-/**
  * Top-level orchestrator: owns the scene, all systems, the game state machine,
  * and the per-frame update loop. The ENGINE is the one thing here it does not
  * own — `main.ts` builds it (WebGPU's is async) and hands it in, exactly as it
@@ -442,13 +426,6 @@ export class Game {
   private lockPendingT = 0;
   private lockRetryT = 0;
   private map: GameMap | null = null;
-  /**
-   * What the last `excludeDistantFromGlow` added to the glow layer's exclusion
-   * list, so the next install can take it back out. The layer stores unique
-   * IDs and never forgets one, so this is what stops a round's worth of dead
-   * meshes accumulating in a list that is linearly scanned every frame.
-   */
-  private glowExcluded: Mesh[] = [];
   /** Small delay so overlay confirms aren't triggered by held buttons. */
   private overlayT = 0;
   /**
@@ -3138,97 +3115,7 @@ export class Game {
     // no AI at all, and a local `TankCrew` would be a second brain steering a
     // hull that is being posed from the wire.
     this.crew.setMap(!this.net && !this.vehicles.empty ? map : null);
-    // Last, because it reads the finished visual set: which of this map's
-    // meshes are worth drawing into the glow buffer at all.
-    this.excludeDistantFromGlow(map, environment);
     return map;
-  }
-
-  /**
-   * Keeps the glow buffer's OCCLUDERS and drops the rest of the village.
-   *
-   * **The constructor's `noGlow` scan cannot do this and never could.** It runs
-   * one loop over `scene.meshes` before any map exists — the map is built per
-   * round, long afterwards — so every mesh `MapBuilder` produces has always
-   * been eligible for the layer forever, and is drawn into it as opaque black
-   * by `customEmissiveColorSelector`'s no-emissive branch. `WaterSystem`,
-   * `GrassSystem`, `CaptureZoneSystem` and `Sky` each call `addExcludedMesh`
-   * by hand for exactly this reason; the map had nobody to do it for it. That
-   * was 883 of Coldharbour's 2,647 draws a frame.
-   *
-   * **Black is not nothing, which is why this is a RANGE and not a purge.**
-   * The village's black is what makes the buffer depth-occlude, so a brazier
-   * behind a cottage does not bloom through the wall. Excluding all of it is
-   * worth ~21% on the two big maps and measurably wrong on Hollowmere, whose
-   * lanterns are the case the layer exists for: 1.29/255 mean over 9.3% of the
-   * frame at the lantern vantage, against a byte-identical noise floor. So
-   * what is dropped is what is too far from any emissive to occlude one, and
-   * `CONFIG.graphics.glowOccluderRange` is where that distance is written down.
-   *
-   * **Only `map.visuals` is considered, and that is deliberate rather than
-   * convenient.** The exclusion list is the layer's own `number[]` of unique
-   * ids and `hasMesh` is a LINEAR SCAN of it, so anything added here is paid
-   * for on every mesh the layer tests every frame; and every other exclusion in
-   * the process belongs to a system that made it for its own reasons. Touching
-   * only the map's meshes keeps both facts true — nothing else's exclusion can
-   * be undone by the reset below, and a mesh that is not the map's is not this
-   * method's business.
-   *
-   * **The reset is load-bearing.** A round rebuilds the map and disposes the
-   * last one, but a unique id already in that array stays there forever and is
-   * never reused — so without removing what the previous install added, the
-   * array grows by a map's worth of dead ids per round and the linear scan
-   * above gets slower for the rest of the process. `Mesh.uniqueId` survives
-   * disposal, which is what makes removing them afterwards work at all.
-   *
-   * **What this does NOT cover is a MOVING emissive**, and it is worth knowing
-   * before something looks wrong: the ranges are computed once, off the static
-   * fittings, so a blast's flash going off beside a wall that no lamp stands
-   * near will bloom through it for the frames it lasts. That is a real gap
-   * rather than a theoretical one; it is written up in `FINDINGS.md` #17 with
-   * the test that would size it, and it is not a reason to keep paying for the
-   * whole village on the maps that have almost no fittings at all.
-   */
-  private excludeDistantFromGlow(map: GameMap, env: EnvironmentSpec): void {
-    // Undo the previous install's exclusions before anything else — see above.
-    for (const m of this.glowExcluded) this.glow.removeExcludedMesh(m);
-    this.glowExcluded.length = 0;
-    const range = env.glowOccluderRange ?? CONFIG.graphics.glowOccluderRange;
-    if (range < 0) return;
-    // What the layer is FOR: the fittings whose bloom the rest of this method
-    // is protecting. The test is the same one `customEmissiveColorSelector`
-    // makes — a material with a non-black `emissiveColor`, which no cel
-    // `ShaderMaterial` has — so the two cannot come to disagree about what
-    // glows.
-    const lit: Vector3[] = [];
-    for (const m of map.visuals) {
-      if (isEmissive(m) && m.metadata?.noGlow !== true) {
-        lit.push(m.getBoundingInfo().boundingSphere.centerWorld);
-      }
-    }
-    for (const m of map.visuals) {
-      // The documented flag, honoured here because this is the first place in
-      // the process that can see a map's meshes at all. It wins over distance:
-      // a mesh that says it does not belong in the layer does not belong in it
-      // at any range.
-      if (m.metadata?.noGlow === true) {
-        this.glow.addExcludedMesh(m);
-        this.glowExcluded.push(m);
-        continue;
-      }
-      if (isEmissive(m)) continue;
-      const sphere = m.getBoundingInfo().boundingSphere;
-      let occludes = false;
-      for (const p of lit) {
-        if (Vector3.Distance(p, sphere.centerWorld) <= range) {
-          occludes = true;
-          break;
-        }
-      }
-      if (occludes) continue;
-      this.glow.addExcludedMesh(m);
-      this.glowExcluded.push(m);
-    }
   }
 
   /**

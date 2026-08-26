@@ -191,6 +191,82 @@ put a number on.
 
 ---
 
+## 3. The GlowLayer draws the whole village into a buffer it cannot light
+
+**Status:** measured. The mechanism is confirmed against Babylon's source; the
+one open question is what excluding the geometry costs visually.
+
+**The draw counts below were taken on WebGL2 and are now unattributed.** The
+mechanism is source-level and did not move with the backend — the exclusion scan
+still runs before any map exists, and `_shouldRenderMesh` is still `hasMesh` —
+so the entry stands. What is no longer a current measurement is the ~150 draws
+and ~30k triangles.
+
+**The sentence that used to close this paragraph said the count was not worth
+reaching for, and finding 17 has inverted it.** It read: finding 12 measured
+excluding the world from the glow layer at -26.4% of the draw calls and no
+movement in the frame, so only the visual question here mattered. That was true
+on a backend where a draw call was cheap. On WebGPU **disabling the layer
+outright is worth +22.5% on Coldharbour**, the layer is 883 of that map's 2,647
+draws a frame, and this frame is draw-call bound rather than fill bound — see
+finding 17 for the measurement and for why the backend changed the answer.
+**So the count is now the reason to reach for this, and the visual question in
+it is the thing standing in the way.** Nothing about that question has moved:
+what has to be established is still whether the village's opaque black is
+load-bearing as a depth occluder for the glow buffer, and "how to settle it"
+below is unchanged.
+
+Note the size of the prize is not the whole 22.5%: that A/B disables the layer
+and the fix here only excludes the WORLD from it, leaving the braziers and lit
+windows the layer exists for. The braziers are a small fraction of the 883.
+
+### What was measured
+
+**~150 draws and ~30k triangles a frame**, spent rendering cel-shaded world
+geometry into the glow layer's texture. Restricting the layer to meshes with a
+non-black emissive `StandardMaterial` removed them; a frozen-scene pixel diff
+at three lamp-facing vantage points came out **below the frame-to-frame noise
+floor**.
+
+### Why it happens
+
+`Game`'s exclusion scan is one loop in the constructor:
+
+```ts
+for (const m of this.scene.meshes) {
+  if (m.metadata && m.metadata.noGlow === true) glow.addExcludedMesh(m as Mesh);
+}
+```
+
+That runs **before any map exists** — the map is built per round, long after —
+so every mesh `MapBuilder` produces is eligible forever. `WaterSystem`,
+`GrassSystem`, `CaptureZoneSystem` and `Sky` each call `addExcludedMesh` by
+hand for exactly this reason; the map does not.
+
+What those meshes contribute is nothing. `ThinGlowLayer._shouldRenderMesh` is
+just `hasMesh`, and `_setEmissiveTextureAndColor` falls back to `neutralColor`
+— `(0, 0, 0, 1)` — for any material without an `emissiveColor`, which is every
+cel `ShaderMaterial`. They are drawn as opaque black.
+
+### The catch, and it is the whole question
+
+Opaque black is not *quite* nothing: it is what makes the glow buffer
+depth-occlude, so a brazier behind a cottage does not bloom through the wall.
+Excluding the world would let it. The blur kernel is 56 px on a half-resolution
+texture, so the bleed would be local rather than map-wide, and it did not show
+at the three vantage points sampled — but those were chosen for lamps in the
+open, which is the case least likely to show it.
+
+### How to settle it
+
+Stand an emissive fixture directly behind a wall — the smithy's forge or a
+lit window with a building between it and the camera — and diff with and
+without the exclusion. If it bleeds, the fallback is to exclude by distance
+from the nearest emissive rather than wholesale, which keeps the occluders
+that matter and drops the 90% of the village that is nowhere near a light.
+
+---
+
 ## 4. ~~A 4× MSAA backbuffer is allocated and resolved for nothing~~ — FIXED
 
 **Re-taken on WebGPU, where the reading is a sample count rather than a GL
@@ -678,7 +754,7 @@ shader plus the glass block.
 
 Three changes were A/B'd in the console on a real GPU. **Only hiding the glass
 moved the needle.** Dropping distant outline shells (-35.5% of draw calls) and
-excluding the world from the glow layer (-26.4%, the deleted finding 3) were both
+excluding the world from the glow layer (-26.4%, FINDINGS #3) were both
 *negligible* — so this frame is not draw-call bound, and #3's saving is not
 worth reaching for on that argument alone. Headless had ranked them the other
 way round, which is the sharpest reminder in this file that SwiftShader ranks
@@ -1116,19 +1192,6 @@ Single-lever A/Bs in the page on Coldharbour. The baseline itself drifted -4 to
 | every `paneGroups` mesh hidden | +1.5% |
 | the shadow generator's `renderList` emptied | -9.7% |
 
-**Two of these have since LANDED and the second one did not land at its measured
-size — read the glow row as a ceiling rather than a saving.** What that A/B
-disabled was the whole layer; what shipped is
-`Game.excludeDistantFromGlow`, which can only exclude the map's own meshes,
-because the rest of that 22.5% is 250 bot-rig meshes and 79 tank parts and blob
-shadows whose positions a build-time distance test cannot know. Paired against
-the pass switched off, on the shipped per-map ranges: **Coldharbour +9.8%
-(17.0 -> 15.6 ms), Harrowmead +11.1% (14.8 -> 13.6 ms), Greyfen +12.8% free**,
-Hollowmere inside the noise because its lanterns are what the range protects.
-The picture is byte-identical at all eight Hollowmere and Greyfen vantages and
-costs 0.51/255 and 0.57/255 at Coldharbour's and Harrowmead's worst. See
-`docs/rendering.md`.
-
 The last two are the null results and both are useful: the glass is finding
 12's lever and no longer moves anything, and the shadow pass reads *negative*,
 which is drift plus whatever emptying an explicit render list does to Babylon's
@@ -1179,7 +1242,7 @@ not see is a rendering artefact that a person would notice and an assertion
 would not, and the cheapest way to close that is to play a round on Coldharbour
 and look at it.
 
-**2. The GlowLayer was finding 3, which has since been fixed and deleted.** The layer is 883 of
+**2. The GlowLayer is finding 3 and it has inverted.** The layer is 883 of
 Coldharbour's 2,647 draws. The fix that entry names is unchanged and is small —
 the exclusion scan runs in `Game`'s constructor, before any map exists, so
 every `MapBuilder` mesh is eligible forever and is drawn as opaque black into a
@@ -1198,17 +1261,9 @@ frozen list.
 
 ### What is open
 
-- **~~A round played by a human under `compatibilityMode = false`.~~** Closed:
-  played on Coldharbour and nothing looked wrong.
-- **The 329 non-map meshes still drawn into the glow buffer** — 250 of them bot
-  rigs — which is most of what separates the glow row above from what shipped.
-  A rig cannot be range-tested at build time because it walks, so the question
-  is not how to measure it but whether a soldier should occlude a lamp at all.
-  Excluding them is worth roughly the difference between +10% and +21%.
-- **A moving emissive has no occluders reserved for it.** The ranges are
-  computed once off the static fittings, so a blast going off beside a wall no
-  lamp stands near blooms through it. Not sized; a frame capture with a grenade
-  detonating behind a Coldharbour facade would size it.
+- **A round played by a human under `compatibilityMode = false`.** It has
+  landed on the strength of a scripted dynamic round, which is the strongest
+  automatic check available and is still not a pair of eyes.
 - **Whether the draw count itself can come down**, which is the lever none of
   the three above is. The outline shells are the obvious place — 429 of
   Coldharbour's active meshes draw twice for them — and finding 12 measured
