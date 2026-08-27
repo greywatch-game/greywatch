@@ -373,6 +373,11 @@ export class ShadowSystem {
    * predicate walks all 1,775 meshes and ray-tests all 758 solid colliders.
    * Two whole-scene picks a frame where the game only ever needed one.
    *
+   * **The probe is analytic now and this still passes the number rather than
+   * asking again.** What made it wrong was never the price: two answers to
+   * "where is the floor under this body" is two answers, and a blob under the
+   * feet is exactly where the shadow has to be.
+   *
    * Blobs fade out toward the fog wall.
    */
   updateBlobs(

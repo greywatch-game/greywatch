@@ -370,8 +370,8 @@ src/
                         #   ObstacleField / CoverMap
     ObstacleField.ts    # Sub-cell collision push-out for thin props, and two
                         #   bucketed queries over the same boxes: `groundAt`,
-                        #   what a track contact stands on (the player's probe
-                        #   is still a ray — see FINDINGS.md 6), and `wallAt`,
+                        #   what a track contact — and now a body's feet —
+                        #   stands on, and `wallAt`,
                         #   its mirror — what is IN THE WAY, which is what an
                         #   AI driver's whiskers ask
     boxIndex.ts         # The build-time uniform grid over collider boxes, so

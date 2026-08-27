@@ -21,9 +21,11 @@
  *
  * So the panes are geometry this system holds, and the question is arithmetic:
  * a segment against an oriented box, bucketed by map block so a shot tests the
- * panes near it and no others. That puts nothing at all on `Player.probeGround`
- * — the game's most expensive per-frame call — nothing on the bots' line of
- * sight, and a bounded handful of slab tests on a shot. It also runs unchanged
+ * panes near it and no others. That puts nothing at all on the ground probe or
+ * on the bots' line of sight, and a bounded handful of slab tests on a shot.
+ * (The probe has since stopped being a ray at all, which does not change the
+ * argument: a pane added to `OPAQUE_ONLY` would still stop the first round to
+ * meet a window.) It also runs unchanged
  * on the authority, which has the same panes off the collision bake and no
  * scene worth picking against.
  *

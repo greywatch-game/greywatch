@@ -32,9 +32,10 @@
  * - **The camera's pull-in lives here**, and it is the only occlusion pick in
  *   the game outside combat. `CameraSystem` has none because the camera is
  *   normally inside the head and has nothing to be occluded by; a camera three
- *   metres behind a body that died against a wall has plenty. It is affordable
- *   because `Player.probeGround` — the frame's most expensive pick, ~2.5 ms —
- *   is not running while the player is dead.
+ *   metres behind a body that died against a wall has plenty. It was affordable
+ *   because `Player.probeGround` — then the frame's most expensive pick — is not
+ *   running while the player is dead; the probe is analytic now, so this is just
+ *   the only whole-scene pick a death costs.
  * - **Nothing here simulates.** The ragdoll is stepped by `RagdollSystem` from
  *   `Game.updateGameplay` like every other body; this file only says which body
  *   to throw and where to stand to watch it.

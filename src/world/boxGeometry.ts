@@ -19,6 +19,16 @@
  * every ramp unwalkable. Every footprint here is `halfDepth`, never `d / 2`:
  * a pitched slab covers more ground than its depth, and the two only agree at
  * zero pitch.
+ *
+ * THERE ARE TWO FOOTPRINTS AND THEY ARE NOT THE SAME ONE. `halfDepth` is the
+ * SOLID's ground projection — where the box IS — and it is what a barrier test
+ * and a push-out want. `topFaceHalfDepth`/`topFaceCentreZ` are the TOP FACE's
+ * own ground projection — where the box has a surface you could stand on — and
+ * it is what every height query wants, because the top-face PLANE is only a
+ * plane and the face is a finite rectangle sitting on part of it. Asking the
+ * plane about ground the face does not cover is the bug this pair exists to
+ * close: it extrapolates, and at the far edge of the uncovered strip it
+ * overshoots by exactly one `slabThickness`. See `topFaceHalfDepth`.
  */
 import type { WorldBox } from "./MapBuilder";
 
@@ -38,6 +48,62 @@ export function halfDepth(box: WorldBox): number {
     (box.d / 2) * Math.abs(Math.cos(box.rotX)) +
     (box.h / 2) * Math.abs(Math.sin(box.rotX))
   );
+}
+
+/**
+ * Local-Z centre of the TOP FACE's own ground projection — signed, because a
+ * pitch leans the face off the box's own centre line and which way it leans is
+ * the whole point.
+ *
+ * The top face is `y = h/2` swept over `z` in `[-d/2, d/2]`, and the pitch
+ * carries a point `(y, z)` to `Z = y sin + z cos`. So the face's shadow is an
+ * interval of half-width `(d/2)|cos|` centred on `(h/2) sin`, while the SOLID's
+ * shadow is `halfDepth` about zero. The two share one end and the face is inset
+ * from the other by `h |sin|` — which is the strip where a box has ground under
+ * it and no top face over it, and where every query here used to answer with an
+ * extrapolation of a plane that had run out of face.
+ */
+export function topFaceCentreZ(box: WorldBox): number {
+  return (box.h / 2) * Math.sin(box.rotX);
+}
+
+/**
+ * Half-depth of the TOP FACE's own ground projection. `halfDepth`'s mirror, and
+ * read the pair together: this one is always the smaller, they are equal at
+ * zero pitch, and their difference is the `h |sin|` strip above.
+ *
+ * WHY THE DIFFERENCE MATTERS AT ALL, since the strip is narrow. Inside it the
+ * top-face plane keeps climbing at `tan(rotX)` over ground the face does not
+ * reach, and at the far edge it stands exactly `slabThickness` — a whole box
+ * height — above the highest point the box actually has there. On the shipped
+ * maps that is a stair parapet claiming a surface a metre up, a third of a metre
+ * past the foot of its own flight, in the open air beside it. `NavGrid` could
+ * live with that (a phantom node is a routing nuisance) and a GROUND PROBE
+ * could not, because it stands a player on air — which is the whole of why
+ * `Player.probeGround` stayed a whole-scene ray pick for as long as it did.
+ * FINDINGS 6 carries the measurement.
+ */
+export function topFaceHalfDepth(box: WorldBox): number {
+  return (box.d / 2) * Math.abs(Math.cos(box.rotX));
+}
+
+/**
+ * Clamps a local Z into the span the top face actually covers.
+ *
+ * For the two callers that deliberately ask about a point OUTSIDE the face and
+ * want a height anyway — `NavGrid.severLinks` sampling where a link crosses a
+ * box, `ObstacleField.push` sampling where a body contacts one. Both want "how
+ * tall is this box near here", not "what is under my feet", and both took
+ * `halfDepth` before, which handed them the extrapolation rather than a height
+ * the box has. Clamping into the face returns its nearest EDGE instead, which
+ * is the tallest thing genuinely there and keeps both of them conservative in
+ * the direction they need — `severLinks` cuts a link it is unsure of, `push`
+ * holds a body out.
+ */
+export function clampToTopFace(box: WorldBox, lz: number): number {
+  const centre = topFaceCentreZ(box);
+  const half = topFaceHalfDepth(box);
+  return lz < centre - half ? centre - half : lz > centre + half ? centre + half : lz;
 }
 
 /** Vertical thickness of the slab: a slab tilted by theta is h/cos(theta) thick. */
@@ -124,6 +190,24 @@ function intoFootprint(box: WorldBox, x: number, z: number): boolean {
 }
 
 /**
+ * The same, against the TOP FACE's own footprint rather than the solid's — the
+ * gate on every height query here. See the header: outside it the box still has
+ * ground under it, but what stands over that ground is an END face, and the
+ * top-face plane asked about it answers with an extrapolation that runs up to a
+ * whole `slabThickness` above anything really there. Refusing is right and is
+ * also the safe direction: a height query that declines falls through to
+ * whatever the caller has underneath — the terrain, for the ground probe — and
+ * one that invents a surface stands a body on air.
+ */
+function intoTopFace(box: WorldBox, x: number, z: number): boolean {
+  rotateToLocalXZ(box, x, z, LOCAL);
+  return (
+    Math.abs(LOCAL.lx) <= box.w / 2 &&
+    Math.abs(LOCAL.lz - topFaceCentreZ(box)) <= topFaceHalfDepth(box)
+  );
+}
+
+/**
  * Transforms a world XZ point into the box's local frame, returning null when
  * it falls outside the footprint. Allocates its result only once that has
  * passed.
@@ -134,18 +218,35 @@ export function toLocalXZ(box: WorldBox, x: number, z: number): LocalXZ | null {
 }
 
 /**
- * Height of the box's top face above `(x, z)` in world space, or null when that
- * is outside the box's footprint. Allocates on neither path — it wants one
+ * Height of the box's top face above `(x, z)` in world space, or null when the
+ * box has no top face over that spot. Allocates on neither path — it wants one
  * number out of the local point, so it reads the scratch rather than going
  * through `toLocalXZ` for a result it would drop. This is the query the nav
  * bake runs per cell per box.
+ *
+ * **The gate is `intoTopFace`, not `intoFootprint`**, and the difference is the
+ * whole of what made this query untrustworthy for a ground probe. Validated
+ * against a brute-force downward ray at the real rotated box over 640k samples
+ * on 400 random boxes pitched to +-60 deg: it now answers on exactly the spots
+ * where that ray lands on the top face, with the same height to 4e-12 m, and
+ * declines on exactly the spots where it does not. The footprint gate answered
+ * on 1.5% of samples with no standable surface under them at all, by as much as
+ * 6 m.
  */
 export function topFaceHeight(box: WorldBox, x: number, z: number): number | null {
-  if (!intoFootprint(box, x, z)) return null;
+  if (!intoTopFace(box, x, z)) return null;
   return topFaceAtLocalZ(box, LOCAL.lz);
 }
 
-/** The vertical slab a box occupies above `(x, z)`, or null outside it. */
+/**
+ * The vertical slab a box occupies above `(x, z)`, or null where it has no top
+ * face there — `topFaceHeight`'s gate, so the span is `[top - slabThickness,
+ * top]` exactly where that is the box's true extent and null where it is not.
+ * `NavGrid.clearBlocked` is the caller, and what it gives up is headroom
+ * blocking over the `h |sin|` strip beside a pitched box: the widest such strip
+ * on any shipped map is 0.34 m, and `severLinks` and `ObstacleField.push` both
+ * still work off the SOLID footprint there.
+ */
 export function verticalSpan(
   box: WorldBox,
   x: number,

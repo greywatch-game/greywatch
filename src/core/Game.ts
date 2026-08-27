@@ -3055,7 +3055,15 @@ export class Game {
     // wall. `margin` is 0 on every map closed by the rim, which turns the leash
     // off outright — see `world/leash.ts`.
     this.leash.setMap(map.size, map.margin);
-    this.player.setTerrain(map.terrain);
+    // The three places the ground under a body's feet is kept: the heightfield,
+    // the collider boxes bucketed over it, and the hulls, which are in neither
+    // because they move. `probeGround` takes the highest of them and was a
+    // whole-scene ray pick until it could. The deck supplier is bound HERE and
+    // once per install rather than per frame — `VehicleSystem` is a system and
+    // `Player` may not reach for one, which is what this wiring is for.
+    this.player.setGround(map.terrain, map.obstacles, (x, z, ceiling, floor) =>
+      this.vehicles.deckAt(x, z, ceiling, floor),
+    );
     // The floor a grenade comes to rest on, as a backstop under the collider
     // proxies — the same terrain the player's ground probe falls back to, and
     // the map's own mist and moon, which are what colour the blast dust.

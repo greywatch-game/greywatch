@@ -19,7 +19,7 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import {
-  halfDepth,
+  clampToTopFace,
   segmentHitsBox,
   slabThickness,
   topFaceAtLocalZ,
@@ -461,7 +461,6 @@ export class NavGrid {
       if (box.w > 200 || box.d > 200) continue;
       const cosY = Math.cos(-box.rotY);
       const sinY = Math.sin(-box.rotY);
-      const hd = halfDepth(box);
       const thickness = slabThickness(box);
       const span = this.cellsOf(box);
       // Clipped to the caller's window when there is one. `openBox` re-severs
@@ -488,13 +487,20 @@ export class NavGrid {
             const oz = this.toWorld(nz);
             if (!segmentHitsBox(box, wx, wz, ox, oz)) continue;
             // Where the link meets the box, taken at the halfway point and
-            // clamped into the footprint — the same plane `ObstacleField.push`
-            // reads, so a rail and a ramp are told apart by their geometry
-            // rather than by their `rotX`. An upright box has no slope, so
-            // this is its `cy ± h / 2` however the sample lands.
+            // clamped into the TOP FACE — the same plane and the same clamp
+            // `ObstacleField.push` reads, so a rail and a ramp are told apart
+            // by their geometry rather than by their `rotX`. An upright box has
+            // no slope, so this is its `cy ± h / 2` however the sample lands.
+            //
+            // `clampToTopFace` and not `halfDepth`: this asks how TALL the box
+            // is where the link crosses it, and past the face's own edge the
+            // plane keeps climbing over ground the face never reaches. Clamping
+            // to the solid's footprint fed that extrapolation straight into the
+            // step test below — up to a `slabThickness` too high at the edge of
+            // a pitched box, which severs on a height the box does not have.
             const mx = (wx + ox) / 2 - box.cx;
             const mz = (wz + oz) / 2 - box.cz;
-            const lz = Math.max(-hd, Math.min(hd, -mx * sinY + mz * cosY));
+            const lz = clampToTopFace(box, -mx * sinY + mz * cosY);
             const top = topFaceAtLocalZ(box, lz);
             if (top === null) continue;
             const bottom = top - thickness;

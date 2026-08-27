@@ -55,15 +55,17 @@
  *
  * **It is answered analytically, off `ObstacleField.groundAt`, and that is a
  * budget decision as much as a design one.** The old single probe was
- * `scene.pickWithRay` with a `solid` predicate — the same call that makes
- * `Player.probeGround` the most expensive thing the game does per frame, ~2.4
- * ms, because Babylon walks every mesh in the scene to answer it. Six of those
- * is not a thing that can be afforded; six bucket lookups over the collider
- * boxes are free by comparison, and `FINDINGS.md` had already measured the two
- * against each other and named a VEHICLE as the query's better first customer.
- * The one failure it is known to have — a thin box pitched a few degrees
- * claiming ground beside itself — stands a BODY on air, and merely rocks a
- * seven-metre hull that is riding a rate limit anyway.
+ * `scene.pickWithRay` with a `solid` predicate — the same call that used to make
+ * `Player.probeGround` the most expensive thing the game did per frame, because
+ * Babylon walks every mesh in the scene to answer it. Six of those is not a
+ * thing that can be afforded; six bucket lookups over the collider boxes are
+ * free by comparison, and `FINDINGS.md` had already measured the two against
+ * each other and named a VEHICLE as the query's better first customer. The one
+ * failure it was known to have — a thin box pitched a few degrees claiming
+ * ground beside itself — stood a BODY on air and merely rocked a seven-metre
+ * hull that is riding a rate limit anyway. **That failure is fixed and the body
+ * has followed the hull** (`boxGeometry`'s `topFaceHalfDepth`), which changes
+ * nothing here and is why: a tank was always the case this query got right.
  *
  * The terrain is the other half of the answer and not a fallback: the
  * heightfield has no collider box standing in for it (`CLAUDE.md`'s one
@@ -139,6 +141,8 @@ import { Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
+import { topFaceHeight } from "../world/boxGeometry";
+import type { WorldBox } from "../world/MapBuilder";
 import type { ObstacleField } from "../world/ObstacleField";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
@@ -1305,6 +1309,68 @@ export class Tank implements Combatant {
     const allow = c.climbHeight + reach * c.climbSlope;
     return rise <= allow && rise >= -allow;
   }
+
+  /**
+   * The height of this hull's DECK above `(x, z)`, or null when a body standing
+   * there would not be on it. `ObstacleField.groundAt`'s band, term for term,
+   * so a caller can take the higher of the two without reconciling anything.
+   *
+   * **This exists because a hull is in no baked structure and a body can stand
+   * on one.** `NavGrid`, `CoverMap`, `ObstacleField` and the collision bake are
+   * all built once from the finished collider set at map load, and a thing that
+   * MOVES cannot be in any of them — that is the ragdoll's rule, and the hull is
+   * an instance of it rather than an exception to it. For as long as
+   * `Player.probeGround` was a whole-scene ray that gap cost nothing, because
+   * the pick found the hull's own mesh like any other `solid` one. The analytic
+   * probe reads boxes, the boxes are the STATIC world, and so climbing onto a
+   * tank had to be given a door of its own. `VehicleSystem` is what fans this
+   * over the fleet; `Game` wires that to the player.
+   *
+   * Answered through `boxGeometry`'s own primitive off a scratch `WorldBox`
+   * rather than by rolling the transform out here. The yaw convention has been
+   * got wrong once already (see `rotateToLocalXZ`), and a deck resolved in a
+   * mirrored frame would be a strip of standable air beside every hull parked
+   * at an angle. `rotX` is 0 and stays 0: the collider never tilts, only the
+   * PICTURE leans.
+   *
+   * The enabled/pickable gate is `SOLID_ONLY`'s, deliberately — a WRECK keeps
+   * its collider for `wreckTime` because a burnt-out hull in the street is
+   * cover, and a body may stand on it for exactly as long as a round stops on
+   * it. `hide` is what ends both.
+   */
+  deckAt(x: number, z: number, ceiling: number, floor: number): number | null {
+    if (!this.body.isEnabled() || !this.body.isPickable) return null;
+    const hull = CONFIG.vehicles.tank.hull;
+    const b = this.deckBox;
+    b.w = hull.width;
+    b.h = hull.height;
+    b.d = hull.length;
+    b.cx = this.body.position.x;
+    b.cy = this.body.position.y;
+    b.cz = this.body.position.z;
+    b.rotY = this.body.rotation.y;
+    const top = topFaceHeight(b, x, z);
+    return top === null || top > ceiling || top < floor ? null : top;
+  }
+
+  /**
+   * The hull as a `WorldBox`, rewritten per `deckAt` call and never escaping
+   * one. A scratch rather than a field kept in step with the body, because the
+   * body is what moves and a cached copy is a second opinion about where the
+   * tank is; and never a real entry in `colliderBoxes`, because everything that
+   * reads that list was baked before this hull moved. `rotX` is written once
+   * here and never again.
+   */
+  private readonly deckBox: WorldBox = {
+    w: 0,
+    h: 0,
+    d: 0,
+    cx: 0,
+    cy: 0,
+    cz: 0,
+    rotX: 0,
+    rotY: 0,
+  };
 
   /**
    * The surface one track contact is standing on: the highest collider top

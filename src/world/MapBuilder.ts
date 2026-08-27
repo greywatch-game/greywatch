@@ -1615,10 +1615,13 @@ export class MapBuilder {
    *
    * **This is the fence lesson at forest scale, and the numbers are the same
    * ones.** A `pickWithRay` costs per MESH before it costs per triangle: a
-   * predicate call, a world-matrix inverse and a bounding test each, and
-   * `Player.probeGround` fires one such ray every frame against every solid
-   * mesh on the map (see FINDINGS #6, where it is the largest single cost in
-   * the game's own JS). Greyfen's five belts were 354 loose tree boxes out of
+   * predicate call, a world-matrix inverse and a bounding test each, and the
+   * game fires such rays every frame against every solid mesh on the map — the
+   * hitscan on every shot, sixteen bots' LOS, the grenade, the death cam, a
+   * tank's chase camera. (`Player.probeGround` was the largest of them when
+   * FINDINGS #6 measured this and is no longer a ray; the merge is neutral for
+   * it either way, because `colliderBoxes` keeps one entry per prop however the
+   * meshes are grouped.) Greyfen's five belts were 354 loose tree boxes out of
    * 696 solid meshes, so half of every ray in the game was already being spent
    * on trees — and a jungle dense enough to be worth the name needs three
    * times that. Merged per 12 m square the same 950 trees are ~120 meshes, so

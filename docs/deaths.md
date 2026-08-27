@@ -473,8 +473,10 @@ without that subtract turns feedback into a punishment.
   walking the camera further into the stone. Its origin is the body's own chest rather
   than the look point, which during the rise can be inside a wall the player died
   facing. Measured against the valley rim: the camera stops 0.22–0.27 m short of the
-  collider face and never crosses it. It is affordable because `Player.probeGround` is
-  not running while the player is dead.
+  collider face and never crosses it. It was affordable because
+  `Player.probeGround` is not running while the player is dead; now that the
+  probe is analytic it is affordable outright, and it is the only whole-scene
+  pick left in the death cam.
 - **The frame is anchored on the corpse's own chest joint**, smoothed at
   `followRate`, which makes one set of numbers work at both ends of the fall: a
   standing body puts the chest at ~1.1 m and a fallen one at ~0.3 m. The joint is read

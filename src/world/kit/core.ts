@@ -167,8 +167,10 @@ export interface PaneSpec {
    *
    * **That is also what keeps the cost honest.** `MapBuilder.struts`'s header
    * records what loose collider boxes cost: 161 of them put ~17% on every ray
-   * in the game, `probeGround` — the most expensive per-frame call there is —
-   * included. Coldharbour draws some six thousand sheets of glass, and six
+   * in the game — the hitscan, sixteen bots' LOS, the grenade, the death cam.
+   * (The ground probe was the worst of them when that was measured and has since
+   * stopped being a ray; the ~17% stands for everything that still is one.)
+   * Coldharbour draws some six thousand sheets of glass, and six
    * thousand pickable boxes is not a trade, it is a regression. Twenty-four is
    * — and it is twenty-four rather than the forty a terrace of eight
    * shophouses would have cost, because a shophouse cuts its frontage into one

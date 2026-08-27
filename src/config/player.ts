@@ -187,11 +187,13 @@ export const player = {
      * case — a camera that fell back through the stonework would spend the
      * whole cam inside it, looking at the inside of the world.
      *
-     * One ray per frame from the body outward, which is affordable precisely
-     * because `Player.probeGround` (the frame's most expensive pick, at
-     * ~2.5 ms) is NOT running while the player is dead. `wallMargin` keeps
-     * the near plane out of the masonry; `minDistance` is the floor the
-     * pull-in stops at, below which the camera is inside the body instead.
+     * One ray per frame from the body outward, which was affordable precisely
+     * because `Player.probeGround` — then the frame's most expensive pick —
+     * is NOT running while the player is dead. The probe is analytic now, so
+     * this is simply the only whole-scene pick the death cam makes.
+     * `wallMargin` keeps the near plane out of the masonry; `minDistance` is
+     * the floor the pull-in stops at, below which the camera is inside the
+     * body instead.
      */
     wallMargin: 0.3,
     minDistance: 0.9,

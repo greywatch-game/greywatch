@@ -378,10 +378,13 @@ is ever wanted, these are what it should move, in that order.
 
 ---
 
-## 6. Where the per-frame CPU actually goes
+## 6. Where the per-frame CPU actually goes — its one open thread is CLOSED
 
 **Status:** measured headless, so the absolute milliseconds are inflated and
-only the ranking is trustworthy. Recorded because two of these were surprises.
+only the ranking is trustworthy. **The thread this entry carried — the ground
+probe's analytic replacement — is DONE**; the entry is kept rather than deleted
+because four files cite it by number for the measurements below, and because the
+differential that justified the switch is not worth anybody re-running. Recorded because two of these were surprises.
 **The ranking has since been confirmed on real hardware and the figures are
 about five times too big — see finding 18**, which puts `probeGround` at 0.483
 ms and everything below it under 0.12. Read the order here, never the
@@ -408,17 +411,22 @@ work that has not happened yet. Both numbers are software raster under
 SwiftShader, so the ratio is the only part to trust; the extra is one rotated
 resample of a 220 px square out of the prerendered backdrop.
 
-**The ground probe dominates the game's own JS**, and it scales with the map
-rather than with what is on screen: `scene.pickWithRay` with a predicate walks
-all 1,775 meshes and ray-tests all 758 solid colliders. A second identical pick
-has already been removed (see CLAUDE.md on `Player.floorY`).
+**The ground probe dominated the game's own JS**, and it scaled with the map
+rather than with what is on screen: `scene.pickWithRay` with a predicate walked
+all 1,775 meshes and ray-tested all 758 solid colliders. A second identical pick
+had already been removed (see CLAUDE.md on `Player.floorY`). **It is now
+analytic and this row is history** — read the table for the RANKING of what is
+left, and the section below for what closed it.
 
-### The analytic replacement: written, measured, NOT switched on
+### The analytic replacement: SWITCHED ON, and what closed it
 
-`ObstacleField.groundAt` is the bucketed answer this entry asks for — the
-highest collider top face in the band the probe reaches — and `Player.probeGround`
-is still the ray anyway. What settles it is the differential, and it is worth
-recording in full so nobody re-runs it from scratch.
+**Status: done.** `Player.probeGround` no longer casts a ray. It takes the
+highest of three answers in the band the feet reach — `TerrainField.surfaceAt`
+for the floor, `ObstacleField.groundAt` for the static world, and
+`VehicleSystem.deckAt` for the hulls, which are in no baked structure — and the
+whole thing is a bucket lookup, a heightfield sample and a loop over at most two
+tanks. The differential below is kept because it is what the switch rested on
+and nobody should re-run it from scratch.
 
 **Sampling the whole map on a half-metre grid at four standing heights is the
 WRONG test and says so loudly**: 1.2% of 914k samples disagree on Hollowmere,
@@ -428,33 +436,73 @@ ramp, `pickWithRay` starts within the mesh, punches through it, and reports the
 UNDERSIDE — 0.347 for a surface at 0.653. The ray is the one lying there.
 
 **The right domain is the nav graph's walkable surfaces** — every (cell, height)
-pair the game says a body can stand on. Over those:
-
-| map | standable samples | disagreements | worst |
-| --- | --- | --- | --- |
-| Hollowmere | 28,106 | 74 (0.26%) | 3.4 m |
-| Greyfen | 23,037 | 42 (0.18%) | 0.59 m |
-
-**The 116 split into two classes running in opposite directions**, which is why
-this is not simply "nearly right":
+pair the game says a body can stand on. Over those the two agreed on 99.8% and
+disagreed on 116 running in opposite directions, and the second class was the
+blocker:
 
 - At the Hollowmere rim the analytic reports 1.2–3.4 m, the nav graph agrees
   with it, and the RAY finds nothing at all and falls back to the terrain.
 - Along one Greyfen fence line the analytic reports a surface 0.5 m up that the
-  ray passes straight through to the terrain collider below.
+  ray passes straight through.
 
-The second class is the blocker, and it is a property of the shared primitive
-rather than of the call site: `topFaceAtLocalZ` extrapolates a box's top-face
-plane across a footprint that `toLocalXZ` bounds with `halfDepth`, which
-INFLATES for anything pitched — `(d/2)cos + (h/2)sin`. A tall thin box tilted a
-few degrees therefore claims ground beside itself. `NavGrid` tolerates that (a
-phantom node is a routing nuisance); a ground probe cannot, because it stands
-the player on air.
+**What closed it was a footprint, and it was in the shared primitive rather than
+in the query.** `topFaceAtLocalZ` extrapolated a box's top-face PLANE across the
+footprint `halfDepth` describes — which is the SOLID's ground projection, and for
+a pitched box is wider than the face sitting on it. The top face's own projection
+is an interval of half-width `(d/2)|cos|` centred on `(h/2) sin`, so the solid
+reaches `h |sin|` further at one end, and across that strip the plane kept
+climbing at `tan(rotX)` over ground it had run out of face for. At the far edge
+it overshoots by exactly one `slabThickness`. `boxGeometry` now gates every
+height query on `topFaceHalfDepth`/`topFaceCentreZ`; `halfDepth` is untouched and
+still owns every question about where a box IS.
 
-**What it is waiting on is a footprint test that bounds the plane by the box's
-real extent rather than its projected one.** Everything else is done: the query
-exists, the buckets are there, and switching `probeGround` over is one line
-against ~2.4 ms a frame.
+**Validated against a brute-force downward ray at the real rotated box**: 640k
+samples over 400 random boxes pitched to ±60°, and the new gate answers on
+exactly the spots where that ray lands on the top face, to 4e-12 m, and declines
+on exactly the spots where it does not. The old gate answered on 1.5% of samples
+with nothing standable under them at all, by as much as 6 m.
+
+**On the shipped maps it is nearly invisible, and that is the honest headline.**
+Every pitched box in all four maps is a stair flight or its parapet at 8.3–19.3°,
+so the widest strip anywhere is 0.343 m against a 1.5 m nav cell. Re-run over
+every walkable surface on all four maps, the old gate and the new one give
+IDENTICAL answers at every one of them, and the nav graph loses four surfaces on
+Coldharbour and none anywhere else. **The fix is what makes the switch safe, not
+what makes it worth doing** — and it would have been a live bug on the first map
+authored with a steeper pitch.
+
+**What is left disagreeing with the ray is the RAY.** Over every walkable
+surface: 0 on Hollowmere, 0 on Greyfen, 431 on Coldharbour and 8 on Harrowmead.
+Every Coldharbour one is a cell centre at x = ±160.25, inside the rim wall
+(`ridge-e-col`, 160→162): the ray starts inside that box, punches through and
+reports its underside at 0, where the analytic reports the terrain at 1.2. Every
+Harrowmead one is a cell centre at x = 120.25, exactly on the outer face plane of
+a 0.5 m wall — the analytic includes the boundary, Babylon's triangle test misses
+it, and the analytic is the one that agrees with the nav graph the bots walk.
+
+**What it costs, measured on the Windows box in a live warm round**, per probe,
+against the ray it replaces at the same 2,000 walkable positions:
+
+| map | ray | analytic | |
+| --- | --- | --- | --- |
+| Hollowmere (240 m) | 0.106 ms | 0.0002 ms | 634x |
+| Greyfen (240 m) | 0.099 ms | 0.0002 ms | 458x |
+| Coldharbour (320 m) | 0.123 ms | 0.0004 ms | 350x |
+| Harrowmead (400 m) | 0.101 ms | 0.0003 ms | 356x |
+
+The ray reads lower here than the 0.483 ms finding 18 measures in the frame —
+this is a tight loop with warm caches and that is a live frame — so the RATIO is
+the trustworthy half, and either way the analytic is a rounding error. **What
+actually matters is the exponent, not the constant**: the ray was O(meshes in the
+scene) and this is O(boxes in one 4 m bucket), which is the difference between a
+probe that grows with the map and one that does not.
+
+**The one thing it cost is a rule.** The boxes are the STATIC world, so anything
+`solid` that MOVES is invisible to the probe — today a tank's hull, and only
+that, which is why `Tank.deckAt` exists. Verified against the ray over 1,617
+points on and around a parked hull with no disagreement, and a body dropped over
+the turret settles on the deck. Anything else that ever moves and can be stood
+on owes the same door.
 
 ### It IS switched on for a vehicle, and that half is closed
 
@@ -473,7 +521,7 @@ pick (the hull's ground and the chase camera's pull-in) where a body on foot
 paid one. A driver now pays one, the camera's, and it is the only one left in a
 vehicle frame. See `docs/vehicles.md`.
 
-What remains open here is the body's, and it is unchanged.
+Nothing remains open here: the body's went the same way, above.
 
 Two things checked and found *not* to be problems, recorded so nobody
 re-derives them: the point-light arrays are **not** re-uploaded per draw
@@ -1370,9 +1418,9 @@ Inside that tenth, on real hardware rather than finding 6's inflated headless
 run: `player.probeGround` is **0.483 ms** and everything else is under 0.12
 (`updateHud` 0.112, `battle.update` 0.094, `minimap.update` 0.086,
 `lighting.update` 0.063). The ranking finding 6 records is intact and the
-absolute figures were five times too big. The ground probe is still a third of
-the game's own budget and its analytic replacement is still one footprint test
-away.
+absolute figures were five times too big. **The ground probe was a third of the
+game's own budget and is now gone** — the footprint test it waited on landed, and
+finding 6 carries what closed it and what it measures at now.
 
 ### What the draws are made of
 

@@ -134,6 +134,31 @@ export class VehicleSystem {
     return this.fleet;
   }
 
+  /**
+   * The highest deck a body standing at `(x, z)` would be on, or null. The
+   * fleet's answer to `ObstacleField.groundAt`, in the same band and with the
+   * same meaning, and the two are meant to be read together: that one is the
+   * STATIC world and this one is the part of the world that drives away.
+   *
+   * `Game` hands this to `Player.probeGround` — see `Tank.deckAt`, which
+   * carries why a hull needs a door of its own at all. A loop and not an index:
+   * a map states one hardstanding per team, so the fleet is two hulls on the
+   * two maps that have armour and empty on the other two, and a spatial
+   * structure over two boxes would cost more to keep current than to skip.
+   *
+   * Highest rather than first, because hulls can be parked on each other —
+   * a tank drives over things, and one that has ridden up onto another is a
+   * position the plank makes reachable.
+   */
+  deckAt(x: number, z: number, ceiling: number, floor: number): number | null {
+    let best: number | null = null;
+    for (const tank of this.fleet) {
+      const top = tank.deckAt(x, z, ceiling, floor);
+      if (top !== null && (best === null || top > best)) best = top;
+    }
+    return best;
+  }
+
   /** True on the three shipped maps that state no hardstandings. */
   get empty(): boolean {
     return this.stands.length === 0;

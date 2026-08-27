@@ -70,9 +70,14 @@
  *
  * Colliders, and they are paid by every ray in the game. A pick costs per MESH
  * — predicate, matrix inverse, bounding test — so the whole solid set is on the
- * bill for `Player.probeGround` every frame and for `CombatSystem.fire` every
- * shot, wherever on the map the ray is (see `MapBuilder.struts`'s header, which
- * measured 161 loose boxes at ~17% of every ray on Hollowmere).
+ * bill for `CombatSystem.fire` on every shot, for sixteen bots' LOS, and for
+ * every other pick in the game, wherever on the map the ray is (see
+ * `MapBuilder.struts`'s header, which measured 161 loose boxes at ~17% of every
+ * ray on Hollowmere). The measurements below were taken with the GROUND PROBE as
+ * the instrument, because it was the cheapest whole-scene ray to trigger on
+ * demand; it has since stopped being a ray, which retires the instrument and
+ * changes nothing about what it measured — the cost is per mesh per pick, and
+ * the shot path still pays it.
  *
  * A tower is 3 boxes. `office` is ~50, `parkade` ~35, `shophouse` ~42 and
  * `depot` ~35 — an order of magnitude each, and that is the trade an interior
@@ -80,13 +85,13 @@
  * the map went from **425 solid meshes to 783**, and an A/B in one session
  * (flipping `metadata.solid` on the new meshes, which is the only way to take
  * one out of the loop — Babylon skips its own enabled/visible checks whenever a
- * pick predicate is supplied) put the ground probe at **91 to 180 µs** and a
+ * pick predicate is supplied) put a whole-scene ray at **91 to 180 µs** and a
  * 120 m shot at **93 to 180 µs** over the same 196-ray spray. Call it +95% on
  * every ray, exactly linear in the mesh count.
  *
  * **The ceiling that buys is Hollowmere's 863**, which is what ships and what
- * FINDINGS #6's 2.45 ms `probeGround` was measured against. Coldharbour at 783
- * is still under it, so this changed how expensive the cheap map is and not how
+ * FINDINGS #6's per-frame budget was measured against. Coldharbour at 783 is
+ * still under it, so this changed how expensive the cheap map is and not how
  * expensive the game's worst map is. Another two of these would not be, and
  * that is the number to check before adding them rather than the building count.
  *
@@ -235,8 +240,10 @@ const RISER = 0.18;
  * shipped plates an office landing had 4.5 m of open lane in front of it over a
  * 3.4 m drop and a parkade apron 6.1 m, and a shophouse's — where the back wall
  * falls 0.54 m past the landing edge against a body radius of 0.45 — put the
- * player's centre 9 cm out over a slot, which is all `probeGround`'s one ray
- * needs to miss the floor and drop them into the close. So a landing runs from
+ * player's centre 9 cm out over a slot, which is all `probeGround` needs to miss
+ * the floor and drop them into the close. (It is a POINT query at the body's
+ * centre however it is answered — that was true of the ray and is true of the
+ * bucket lookup that replaced it, so the geometry below is what fixes it.) So a landing runs from
  * the top tread to the ENCLOSURE: the way on is still sideways, and the
  * direction you climbed is floor until a wall. What is left of the lane is the
  * atrium and it is all at the FOOT end — 16.6 m of it on an office plate, over

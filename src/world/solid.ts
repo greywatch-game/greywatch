@@ -70,17 +70,22 @@ import type { AbstractMesh } from "@babylonjs/core";
  * never the visual geometry they stand in for. See `MapBuilder`'s header on the
  * visual/collider split for why the two roles are separate meshes.
  *
- * Every ray about WHERE A BODY MAY BE runs through here: `Player.probeGround`,
- * the death cam's pull-in, and the editor's centre-screen pick. Porous boxes
- * are included, and that is the point — a fence is still something you stand on
- * when you jump onto it, and a ground probe that could not see one would drop
- * the player inside a box `moveWithCollisions` is still holding them out of.
+ * Every ray about WHERE A BODY MAY BE runs through here: the death cam's
+ * pull-in, a tank's chase camera, and the editor's centre-screen pick. **The
+ * ground probe is no longer one of them** — `Player.probeGround` reads
+ * `ObstacleField` instead — but the SET this describes is still the set it
+ * reads, box for box, and the two must not drift: `groundAt` walks the
+ * `WorldBox` list, and the two rules below are what say which boxes are in it.
  *
- * `rayOnly` geometry is excluded for the mirror reason: a fence's posts and
- * rails stop rounds, but standing on a 0.1 m rail is not a thing a body does,
- * and the coarse box beside them is what the probe is meant to find. It also
- * keeps the game's most expensive per-frame call from paying for triangles it
- * would only throw away.
+ * Porous boxes are included, and that is the point — a fence is still something
+ * you stand on when you jump onto it, and a ground answer that could not see one
+ * would drop the player inside a box `moveWithCollisions` is still holding them
+ * out of. `rayOnly` geometry is excluded for the mirror reason: a fence's posts
+ * and rails stop rounds, but standing on a 0.1 m rail is not a thing a body
+ * does, and the coarse box beside them is what the probe is meant to find.
+ * `MapBuilder` keeps that agreement mechanically — a `rayOnly` collider emits no
+ * `WorldBox` at all, so what this predicate subtracts is exactly what the
+ * bucketed query never had.
  *
  * It is written as a `!!metadata &&` guard rather than `metadata?.solid` so the
  * hot path does one truthiness test on a field that is `null` for most meshes

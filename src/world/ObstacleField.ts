@@ -12,6 +12,7 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import {
+  clampToTopFace,
   halfDepth,
   type LocalXZ,
   rotateToLocalXZ,
@@ -163,22 +164,24 @@ export class ObstacleField {
    * The highest collider top face directly above `floor` and at or below
    * `ceiling` at `(x, z)`, or null when no box spans that band here.
    *
-   * **ONE THING CALLS THIS, AND IT IS A VEHICLE.** `Tank.supportAt` asks it ten
+   * **TWO THINGS CALL THIS AND BOTH STAND ON IT.** `Tank.supportAt` asks it ten
    * times a frame, once per track contact, which is what lets a hull stand on a
    * PLANK rather than on a single point and therefore what lets a tank drive
-   * over a parked car. `Player.probeGround` is still the ray, and turning THAT
-   * over waits on what is below — FINDINGS 6 carries the numbers.
+   * over a parked car. `Player.probeGround` asks it once, and that call is the
+   * whole reason this exists — see below.
    *
-   * THIS IS THE GROUND PROBE'S ANSWER, and it exists to retire a whole-scene
-   * ray pick. `Player.probeGround` runs `scene.pickWithRay` with a `solid`
-   * predicate on every frame: Babylon walks all ~1,800 meshes and ray-tests all
-   * ~820 colliders to answer "what is under my feet", which measures as the
-   * single largest piece of the game's own per-frame JS — five times the next
-   * item, and scaling with how big the map is rather than with what is on
-   * screen. The boxes were already bucketed here, and `NavGrid.rasterize` was
-   * already computing exactly this at bake time from the same primitive.
-   * Measured against it in one headless session on Coldharbour: ten of these
-   * cost 0.0009 ms against 0.567 ms for one ray.
+   * THIS IS THE GROUND PROBE'S ANSWER, and it exists to have retired a
+   * whole-scene ray pick. `Player.probeGround` used to run `scene.pickWithRay`
+   * with a `solid` predicate every frame: Babylon walked all ~1,800 meshes and
+   * ray-tested all ~820 colliders to answer "what is under my feet", which
+   * measured as the single largest piece of the game's own per-frame JS — five
+   * times the next item, and scaling with how big the MAP is rather than with
+   * what is on screen. The boxes were already bucketed here, and
+   * `NavGrid.rasterize` was already computing exactly this at bake time from the
+   * same primitive. Measured per probe on real hardware, against the ray at the
+   * same 2,000 walkable positions: **350x to 634x**, and the exponent matters
+   * more than the ratio — the ray was O(meshes in the scene) and this is
+   * O(boxes in one 4 m bucket).
    *
    * The band is closed at both ends because a floor is not the only thing above
    * a foot: `ceiling` is how high a rise still reads as something to step (or
@@ -195,27 +198,32 @@ export class ObstacleField {
    * the floor is cut from: what the ray used to hit was a clone of the visual's
    * own vertices.
    *
-   * ## What it is waiting on
+   * ## What it was waiting on, and what closed it
    *
    * Over the nav graph's own walkable surfaces — the only honest domain, since
    * sweeping the map on a grid asks about positions a body cannot occupy and the
-   * RAY is the one that lies there — this and `pickWithRay` agree on 99.8% of
-   * 51k standable positions. The 116 that differ run both ways, and one class is
-   * a blocker: along a fence line the analytic claims a surface half a metre up
-   * that the ray passes straight through. That is the shared primitive rather
-   * than this query. `topFaceAtLocalZ` extrapolates a box's top-face plane
-   * across a footprint `halfDepth` INFLATES for anything pitched, so a tall thin
-   * box tilted a few degrees claims ground beside itself. `NavGrid` lives with
-   * that — a phantom node is a routing nuisance — and a ground probe cannot,
-   * because it stands the player on air. **The fix is a footprint test bounded
-   * by the box's real extent rather than its projected one**, and it belongs in
-   * `boxGeometry`, where `NavGrid` gets it too.
+   * RAY is the one that lies there — this and `pickWithRay` agreed on 99.8% of
+   * 51k standable positions, and one of the two classes that differed was a
+   * blocker: along a fence line the analytic claimed a surface half a metre up
+   * that the ray passed straight through. That was never this query. It was the
+   * shared primitive: `topFaceAtLocalZ` extrapolated the top-face plane across
+   * the whole SOLID footprint, which for a pitched box is wider than the face,
+   * so a stair parapet claimed ground beside itself by up to a `slabThickness`.
    *
-   * **A HULL can live with it and a body cannot**, which is why the vehicle is
-   * this query's first customer: a spurious surface half a metre up is one of
-   * ten contacts under a seven-metre plank, and the rise it asks for is rate-
-   * limited before it reaches the drawn tank. The same half metre under a pair
-   * of feet is a player standing in the air.
+   * **`boxGeometry` now gates every height query on the TOP FACE's own
+   * footprint** (`topFaceHalfDepth`/`topFaceCentreZ`), so this and the ray agree
+   * by construction rather than by measurement, and `NavGrid` got the same fix
+   * for free. What is left over is `WorldBox`-shaped and stated rather than
+   * hidden: **the boxes are the STATIC world**, so a caller that can stand on
+   * something that MOVES owes that thing its own query — `Player.probeGround`
+   * takes a tank's deck from `VehicleSystem`, for the same reason a hull is in
+   * no baked structure in the first place.
+   *
+   * **A HULL could live with the old behaviour and a body could not**, which is
+   * why the vehicle was this query's first customer: a spurious surface half a
+   * metre up is one of ten contacts under a seven-metre plank, and the rise it
+   * asks for is rate-limited before it reaches the drawn tank. The same half
+   * metre under a pair of feet is a player standing in the air.
    */
   /**
    * Is there something at `(x, z)` that a hull whose tracks are on the ground
@@ -297,8 +305,17 @@ export class ObstacleField {
 
     // Height of the top face at the contact point, from the plane rather than
     // the bounding box — a ramp's peak must not be reported across its whole
-    // footprint. `boxGeometry` owns that math; NavGrid reads the same plane.
-    const top = topFaceAtLocalZ(box, qz);
+    // footprint. `boxGeometry` owns that math; NavGrid reads the same plane and
+    // the same clamp.
+    //
+    // Clamped through the TOP FACE and not through `hd`, which is why this is a
+    // second clamp beside `qz` rather than a reuse of it. The two want different
+    // footprints out of the same box: the push-out below is geometry and belongs
+    // to the SOLID, while this is a height and belongs to the FACE, and past the
+    // face's own edge the plane extrapolates by up to a `slabThickness`. Feeding
+    // that to the step test would hold a body off a pitched box a third of a
+    // metre beyond the end of it.
+    const top = topFaceAtLocalZ(box, clampToTopFace(box, lz));
     if (top === null) return false;
     // Low enough to step onto, so it is floor rather than obstruction.
     if (top <= y + CONFIG.nav.stepHeight) return false;

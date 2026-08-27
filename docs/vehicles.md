@@ -410,8 +410,14 @@ What the hull's collider box is:
 - `metadata.solid`, and neither `porous` nor `rayOnly`. Those two describe a
   fence — a thing that is a wall to a body and mostly air to a bullet, or the
   reverse. A tank is both to both, which is the plain case. So it is in
-  `SOLID_ONLY` and in `OPAQUE_ONLY`: a round stops on it, a sightline breaks on
-  it, `Player.probeGround` finds it and a player can climb onto the deck.
+  `SOLID_ONLY` and in `OPAQUE_ONLY`: a round stops on it and a sightline breaks
+  on it. **A player can climb onto the deck, and that no longer follows from the
+  metadata** — the ground probe is analytic and reads baked boxes, which a hull
+  is deliberately not in, so the deck is a query of its own (`Tank.deckAt`,
+  fanned over the fleet by `VehicleSystem.deckAt` and wired to the player by
+  `Game`). Verified against the ray it replaced over 1,617 points on and around
+  a parked hull: no disagreement anywhere, and a body dropped over the turret
+  settles on the deck.
 - `checkCollisions`, so `moveWithCollisions` — the player's, and the other
   tank's — is held out of it. It is also the mesh that *moves*, which is what
   makes that safe: Babylon excludes the mover from its own collision test.
@@ -620,12 +626,12 @@ Three things about that offset, all of them load-bearing:
 
 ### The ground costs a six-hundredth of what it did
 
-`Player.probeGround` is the most expensive thing the game does per frame
-(~2.4 ms; see its header) because `scene.pickWithRay` with a predicate walks
-every mesh in the scene. `Tank.applyGround` used to cast the same shape of ray
-and cost the same, and a driver therefore paid TWO of the frame's most expensive
-pick where a body on foot paid one — the hull's ground and the chase camera's
-pull-in.
+`Player.probeGround` used to be the most expensive thing the game does per frame
+(0.483 ms on real hardware, a third of the game's own JS) because
+`scene.pickWithRay` with a predicate walks every mesh in the scene.
+`Tank.applyGround` used to cast the same shape of ray and cost the same, and a
+driver therefore paid TWO of the frame's most expensive pick where a body on
+foot paid one — the hull's ground and the chase camera's pull-in.
 
 The hull's is now analytic: `ObstacleField.groundAt` is a bucket lookup over the
 collider boxes, and the terrain is `TerrainField.surfaceAt`, which is
@@ -635,12 +641,15 @@ about a six-hundredth, which is what makes the number of contacts a design
 decision instead of a budget one. **A driver now pays one pick, the camera's,
 and a body on foot still pays one.**
 
-`FINDINGS.md` had already measured the analytic query against the ray and
-named a VEHICLE as its better first customer: the one failure it is known to
-have — a thin box pitched a few degrees claiming ground beside itself — stands a
-BODY on air, and merely rocks a seven-metre hull that is riding a rate limit
-anyway. `Player.probeGround` is still the ray, and switching it over still wants
-the footprint fix that entry describes.
+`FINDINGS.md` had already measured the analytic query against the ray and named
+a VEHICLE as its better first customer: the one failure it was known to have — a
+thin box pitched a few degrees claiming ground beside itself — stands a BODY on
+air, and merely rocks a seven-metre hull that is riding a rate limit anyway.
+**That failure is fixed** (`boxGeometry`'s `topFaceHalfDepth` — the top-face
+plane is now bounded by the top FACE) **and the body followed the hull**, so the
+frame's most expensive pick is gone and a driver pays only the camera's. The
+hull's own two queries are unchanged by it: `groundAt` and `wallAt` answered
+correctly for a tank before and answer correctly now.
 
 The terrain is the other half of the answer rather than a fallback: the
 heightfield has no collider box standing in for it (`CLAUDE.md`'s one documented

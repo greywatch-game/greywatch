@@ -413,9 +413,16 @@ agree on a field key, the source-scan properties a save rests on, and
 
 The single most load-bearing rule in the world layer. Every ray test filters on
 `metadata.solid === true` — `CombatSystem`'s hitscan (every shot),
-`BattleSystem`'s LOS, `Player.probeGround`, the grenade's step ray, the death cam's
-pull-in — and `moveWithCollisions` walks every mesh with `checkCollisions`. At
-village scale, visual geometry must stay out of both.
+`BattleSystem`'s LOS, the grenade's step ray, the death cam's pull-in — and
+`moveWithCollisions` walks every mesh with `checkCollisions`. At village scale,
+visual geometry must stay out of both.
+
+**The ground under a body's feet is the one question no longer asked with a
+ray**: `Player.probeGround` reads the `WorldBox` list through
+`ObstacleField.groundAt`. So a collider that skips `collider()` is invisible to
+the FLOOR as well as to navigation, and anything SOLID that MOVES owes the probe
+a query of its own, because the boxes are baked once at map load —
+`Tank.deckAt`, and only that.
 
 | Kind         | visible | pickable | collides | `solid` | merged | frozen |
 | ------------ | ------- | -------- | -------- | ------- | ------ | ------ |
@@ -429,7 +436,8 @@ other path is invisible to navigation.
 
 **A collider answers two questions and they can disagree, which is why there are
 two pick predicates and not one.** *Where may a body be?* is `SOLID_ONLY` —
-`Player.probeGround`, the death cam's pull-in, the editor's centre-screen pick.
+the death cam's pull-in, the editor's centre-screen pick, and a tank's chase
+camera.
 *What stops a round or a look?* is `OPAQUE_ONLY` — the hitscan and its wall cap,
 the bots' and the aim assist's LOS, the grenade's step ray and its blast check.
 Both live in [`src/world/solid.ts`](src/world/solid.ts) and both are module

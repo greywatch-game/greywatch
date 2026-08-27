@@ -559,9 +559,13 @@ is a count that stops short.
 **Blocking scatter colliders are MERGED BY LOCALITY, not one mesh per prop**
 (`MapBuilder.clusterColliders`), and it is the fence lesson at forest scale. A
 `pickWithRay` costs per mesh before it costs per triangle — a predicate call, a
-world-matrix inverse and a bounding test each — and `Player.probeGround` fires
-one such ray every frame against every solid mesh on the map, which is the
-largest single cost in the game's own JS (FINDINGS #6). So every blocking prop
+world-matrix inverse and a bounding test each — and the game fires such rays
+every frame against every solid mesh on the map: the hitscan on every shot, LOS
+for sixteen bots, the aim assist, the grenade's step ray, the death cam's
+pull-in and a tank's chase camera. (`Player.probeGround` was the largest of them
+and is no longer a ray at all — it reads the `WorldBox` list instead, which the
+merge deliberately leaves one entry per prop, so nothing here changed for it.)
+So every blocking prop
 on the map, across all regions, is gathered into one mesh per 12 m square after
 the scatter pass. Greyfen's 1,412 blocking props come to ~180 meshes; unmerged
 they would be more collider meshes than the rest of the map put together. The
@@ -729,9 +733,11 @@ because it has to.** A pane with a room behind it is the only thing in the way
 while it stands, so it needs a collider that stops a body — which is why
 `PaneSpec.breakable` spawns one rather than leaving it as a second decision. The
 reason the flag has to stay rare is `MapBuilder.struts`'s header: 161 loose
-collider boxes put ~17% on every ray in the game, `Player.probeGround` — already
-the most expensive per-frame call at 2.45 ms (FINDINGS #6) — included. Six
-thousand pickable boxes is not a trade, it is a regression. Twelve is nothing,
+collider boxes put ~17% on every ray in the game — the hitscan, sixteen bots'
+LOS, the grenade, the death cam. (The ground probe was the worst of them when
+that was measured and has since stopped being a ray; the ~17% is unchanged for
+everything that still is one.) Six thousand pickable boxes is not a trade, it is
+a regression. Twelve is nothing,
 and the sweep that goes with them costs **~1 µs a shot** (twenty-four panes in
 a handful of buckets; it was ~15 µs when every sheet on the map was a pane).
 

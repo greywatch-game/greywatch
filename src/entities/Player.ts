@@ -13,7 +13,10 @@
  * reload costs one and a half. `swapWeapon` starts the gesture and
  * `completeSwap` is the one place the hands change, partway through it and
  * behind the bottom of the frame. Nothing fires while it is in flight.
- * Invariants: probeGround and step-up ray tests filter metadata.solid === true.
+ * Invariants: probeGround is ANALYTIC — the collider boxes bucketed at map
+ * load, the heightfield, and the fleet's decks — and no longer a scene pick, so
+ * it costs the same on a 400 m map as on a 240 m one. It filters nothing on
+ * `metadata.solid`, because the structures it reads only ever held solids.
  * `position` is the FEET, as `Combatant` requires, and is NOT `root.position`
  * — the capsule's centre, half a body higher. Anything wanting the middle of
  * the body wants `center`. The three exported points (`position`, `center`,
@@ -57,13 +60,11 @@ import {
   Mesh,
   MeshBuilder,
   type Node,
-  Ray,
   Scene,
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { SOLID_ONLY } from "../world/solid";
 import { CelMaterialFactory } from "../shaders/CelShader";
 import type { CameraSystem } from "../core/CameraSystem";
 import type { InputManager } from "../core/InputManager";
@@ -85,9 +86,28 @@ import {
   type WeaponSetup,
 } from "./weapons";
 import { ViewModel, VIEWMODEL_GROUP, type ViewModelParams } from "./ViewModel";
+import type { ObstacleField } from "../world/ObstacleField";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
+
+/**
+ * The height of the highest MOVING solid surface a body standing at `(x, z)`
+ * would be on, in the band `[floor, ceiling]`, or null for nothing there.
+ *
+ * `ObstacleField.groundAt`'s signature, deliberately term for term, because it
+ * is the same question asked of the half of the world that the baked structures
+ * cannot hold. It is a bare function type and not a system, so nothing here has
+ * heard of a vehicle: `Game` wires it to `VehicleSystem.deckAt`, which is where
+ * a tank's deck actually is, and the day something else in this game moves and
+ * can be stood on it goes through the same door.
+ */
+export type MovingGround = (
+  x: number,
+  z: number,
+  ceiling: number,
+  floor: number,
+) => number | null;
 
 /**
  * One weapon the player is carrying: what it is, and the magazine that stays
@@ -521,14 +541,28 @@ export class Player implements Combatant {
    */
   floorY = 0;
   /** Reused so the per-frame ground probe allocates nothing. */
-  private readonly probeRay = new Ray(new Vector3(), new Vector3(0, -1, 0), 1);
-  private scene: Scene;
-  /** The map's floor, for the probe's miss case. Flat until a map is built. */
+  /**
+   * The static world's collider boxes, bucketed. Null until a map hands them
+   * over, and a player with none stands on the heightfield alone — which is
+   * what a body on an empty field is standing on anyway, and is also what the
+   * very first frame of a round is, before `installMap` has run.
+   */
+  private obstacles: ObstacleField | null = null;
+  /**
+   * The moving half of the same question, wired by `Game` to the tank fleet.
+   * Separate from `obstacles` because it IS separate: the boxes are baked once
+   * at map load and a hull is not in them. See `Tank.deckAt`.
+   */
+  private movingGround: MovingGround | null = null;
+  /**
+   * The map's floor, and the probe's floor of last resort. Flat until a map is
+   * built. Held rather than reached for through the scene because it is the one
+   * surface with no collider proxy — see `probeGround`.
+   */
   private terrain: TerrainField = new TerrainField();
 
   constructor(scene: Scene, mats: CelMaterialFactory, camera: Node) {
     const p = CONFIG.player;
-    this.scene = scene;
 
     // Invisible collider capsule — physics only, never rendered.
     this.root = MeshBuilder.CreateCapsule(
@@ -1179,71 +1213,89 @@ export class Player implements Combatant {
   }
 
   /**
-   * Height of the surface underfoot: the first `solid` thing the downward ray
-   * finds, or the terrain field where it finds nothing at all.
+   * Height of the surface underfoot: the highest thing standing in the band the
+   * feet can reach, taken from the three places the world keeps one.
    *
-   * The ray starts a step-height above the feet so a rise reads as a step to
-   * walk up rather than a wall to stop against, and runs `groundProbeLength`
-   * from there — a roof over your head is behind the origin and never tested.
-   * A miss means it outran the floor (off the map, or a drop deeper than it
-   * reaches), and `TerrainField` is the floor's own answer for that case.
+   * The band is a step-height above the feet down to `groundProbeLength` below
+   * that, so a rise reads as a step to walk up rather than a wall to stop
+   * against and a roof overhead is above the ceiling and never considered. Its
+   * three sources, and none of them is optional:
    *
-   * **THIS IS THE MOST EXPENSIVE THING THE GAME DOES PER FRAME, AND IT IS
-   * DELIBERATELY STILL HERE.** `scene.pickWithRay` with a `solid` predicate
-   * walks all ~1,800 meshes in the scene and ray-tests all ~820 colliders to
-   * find the floor. Measured, it is the largest single piece of the game's own
-   * per-frame JS by a factor of five — about 2.4 ms — and it scales with how
-   * big the map is rather than with anything on screen. `Player.floorY` exists
-   * because of that: a second caller casting an identical ray would double it.
+   * - **The terrain**, unbanded, through `TerrainField.surfaceAt`. The
+   *   heightfield is the one floor with no box standing in for it — the
+   *   documented exception to the visual/collider rule — and it is always under
+   *   the player somewhere, so it is the floor of last resort rather than a
+   *   candidate. `surfaceAt` and not `heightAt`: what a body stands on is the
+   *   floor as DRAWN, which the smooth field disagrees with by centimetres on
+   *   every twisted quad.
+   * - **The static world**, through `ObstacleField.groundAt` — the same query,
+   *   in the same band, that `Tank.supportAt` takes ten times a frame.
+   * - **The fleet**, through `Game`'s wiring to `VehicleSystem.deckAt`, because
+   *   a hull is in no baked structure and you can climb onto one.
    *
-   * The replacement is WRITTEN, RUNNING ELSEWHERE, and still not switched on
-   * HERE. `ObstacleField.groundAt` is the bucketed analytic answer and
-   * `Tank.supportAt` already takes it ten times a frame — a hull stands on it
-   * entirely. Turning it on for a body is one line — this call `max`'d against
-   * `terrain.surfaceAt`, since the heightfield is the one floor with no box
-   * standing in for it, and `surfaceAt` rather than the `heightAt` used below
-   * because what the ray hits is a clone of the floor's own VISUAL vertices,
-   * which the smooth field disagrees with by centimetres on every twisted
-   * quad.
+   * Highest wins, which is exactly what a ray cast down from the ceiling would
+   * have reported, and the whole thing is a bucket lookup, a heightfield sample
+   * and a loop over at most two hulls.
    *
-   * What stops it is measured too. Over the 51,000 positions the nav graph says
-   * a body can stand on, the two agree on 99.8% and disagree on 116 running
-   * BOTH ways: at the valley rim the analytic matches the nav graph and the ray
-   * is the one that finds nothing, while along one Greyfen fence line the
-   * analytic reports a surface half a metre up that the ray passes straight
-   * through. That second class is the blocker, and it is a property of the
-   * primitive rather than of this call site — `topFaceAtLocalZ` extrapolates a
-   * box's top-face PLANE across a footprint that `halfDepth` inflates for
-   * anything pitched, so a tall thin box tilted a few degrees claims ground
-   * beside itself. `NavGrid` can live with that (a phantom node is a routing
-   * nuisance); a ground probe cannot, because it puts the player standing on
-   * air — which is exactly why a VEHICLE could take the query and a body could
-   * not: half a metre of phantom under one of ten track contacts is rocked out
-   * by a plank and a rate limit, and half a metre under a pair of feet is not.
-   * It waits on a footprint test bounded by the box's REAL extent.
-   * `FINDINGS.md` 6 carries the numbers; `groundAt`'s own header carries the
-   * fix.
+   * ## THIS USED TO BE THE MOST EXPENSIVE THING THE GAME DID PER FRAME
+   *
+   * It was `scene.pickWithRay` with a `solid` predicate: Babylon walked all
+   * ~1,800 meshes in the scene and ray-tested all ~820 colliders to find the
+   * floor. Measured on real hardware it was **0.483 ms — a third of the game's
+   * own per-frame JS and five times the next item on the list** — and it scaled
+   * with how big the MAP was rather than with anything on screen, which is what
+   * made it the first wall a larger map would hit. `Player.floorY` exists
+   * because of it: a second caller casting an identical ray would have doubled
+   * it. Keep `floorY` — the reason it was introduced is gone, but a second
+   * caller re-deriving the same number is still a second opinion about where
+   * the floor is.
+   *
+   * **What kept it a ray was one geometry bug, and the bug was in the shared
+   * primitive rather than here.** Over the 51,000 positions the nav graph says
+   * a body can stand on, the two agreed on 99.8%, and of the 116 that differed
+   * one class was fatal: along a fence line the analytic reported a surface
+   * half a metre up that the ray passed straight through. `topFaceAtLocalZ`
+   * extrapolated a box's top-face PLANE across the whole solid footprint, which
+   * for a pitched box is wider than the face, so a stair parapet claimed ground
+   * beside itself by up to a slab thickness — a routing nuisance to `NavGrid`
+   * and a player standing on air here. `boxGeometry` now gates every height
+   * query on the top face's own footprint, which closes it by construction:
+   * see `topFaceHalfDepth`. `FINDINGS.md` 6 carries the measurement.
    */
   private probeGround(): number {
     const p = CONFIG.player;
     const pos = this.root.position;
-    this.probeRay.origin.set(
-      pos.x,
-      pos.y - this.groundY + p.stepHeight + 0.05,
-      pos.z,
-    );
-    this.probeRay.length = p.groundProbeLength;
-    const hit = this.scene.pickWithRay(this.probeRay, SOLID_ONLY);
-    if (hit?.hit && hit.pickedPoint) return hit.pickedPoint.y;
-    // A miss means the probe outran the floor — off the map, or falling into
-    // something deeper than it reaches. The terrain field is the floor's own
-    // answer, and on a flat map it is the 0 this used to return outright.
-    return this.terrain.heightAt(pos.x, pos.z);
+    const ceiling = pos.y - this.groundY + p.stepHeight + 0.05;
+    const floor = ceiling - p.groundProbeLength;
+    // The floor of last resort, and never banded — see above.
+    let best = this.terrain.surfaceAt(pos.x, pos.z);
+    const box = this.obstacles?.groundAt(pos.x, pos.z, ceiling, floor) ?? null;
+    if (box !== null && box > best) best = box;
+    const deck = this.movingGround?.(pos.x, pos.z, ceiling, floor) ?? null;
+    if (deck !== null && deck > best) best = deck;
+    return best;
   }
 
-  /** Points the ground probe's miss case at the current map's floor. */
-  setTerrain(terrain: TerrainField): void {
+  /**
+   * Hands the player the world it stands on: the heightfield, the collider
+   * boxes bucketed over it, and whatever moves.
+   *
+   * All three in one call, for the reason `Tank.setGround` takes two — the
+   * probe takes the highest of them and a player holding one without the others
+   * answers a fraction of the question. Called from `installMap` and nowhere
+   * else, which is the same contract `VehicleSystem.build` has with the fleet:
+   * the editor rebuilds `map.obstacles` without going back through
+   * `installMap`, so both go stale there, and neither matters because the
+   * editor frame is the gameplay one MINUS the player.
+   */
+  setGround(
+    terrain: TerrainField,
+    obstacles: ObstacleField | null,
+    moving: MovingGround | null,
+  ): void {
     this.terrain = terrain;
+    this.obstacles = obstacles;
+    this.movingGround = moving;
   }
 
 

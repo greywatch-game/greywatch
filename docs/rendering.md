@@ -881,10 +881,12 @@ The count above is Hollowmere's; note both numbers move with the window, since a
 200 m square straddles roughly twice the 48 m blocks a 110 m one does.
 
 **The blob shadows do not probe for the player's ground; they are handed
-`Player.floorY`.** `Player.probeGround` is a whole-scene ray pick (1,775 meshes
-walked, 758 solid colliders tested, ~2.5 ms) and `ShadowSystem` used to cast the
-identical ray for the identical body on the same frame. Anything else wanting the
-floor under the player reads that field rather than probing again.
+`Player.floorY`.** `Player.probeGround` was a whole-scene ray pick — 1,775 meshes
+walked and 758 solid colliders tested for one number — and `ShadowSystem` used to
+cast the identical ray for the identical body on the same frame. The probe is
+analytic now and the field survives it: two callers re-deriving the floor are two
+opinions about where it is, however cheap each one is. Anything wanting the floor
+under the player reads that field rather than probing again.
 
 Lights come in three flavors: static fixtures (`lighting.add()`, registered by
 `MapBuilder` from a builder's `LocalLight` list or a scatter prop's entry in
