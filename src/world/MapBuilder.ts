@@ -28,6 +28,7 @@
  * roughly 10x the draw calls. Authoring only; never measure frame cost there.
  */
 import {
+  Color3,
   Material,
   Mesh,
   MeshBuilder,
@@ -36,7 +37,11 @@ import {
   VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
+import {
+  addOutline,
+  MAX_PALETTE,
+  type CelMaterialFactory,
+} from "../shaders/CelShader";
 import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
 import { bakeVertexShading } from "./vertexShading";
 import type { LightingSystem } from "../systems/LightingSystem";
@@ -725,6 +730,36 @@ export class MapBuilder {
   private propSeed = 0;
 
   /**
+   * This map's albedo palette: the colours the block merge collapsed, in the
+   * order the shader indexes them. Reset at the top of every `build` and handed
+   * to `CelMaterialFactory.setPalette` at the bottom of it.
+   */
+  private paletteColors: Color3[] = [];
+  /** The same, as a lookup, so a colour asked for twice gets one slot. */
+  private paletteSlots = new Map<string, number>();
+
+  /**
+   * The 1-based palette slot for a hex, or **0 meaning "keep your own
+   * material"**.
+   *
+   * The zero is the whole overflow story and it is a graceful one by
+   * construction rather than by a check downstream: 0 is what an unwritten
+   * `uv2` gives, the shader already reads it as "use `baseColor`", and a caller
+   * that gets it simply merges the way everything did before the palette
+   * existed. So a map past `MAX_PALETTE` is a map with a few more meshes in it,
+   * not a map that fails to build or draws in the wrong colours — see the
+   * constant, where the headroom is argued.
+   */
+  private paletteIndex(hex: string): number {
+    const known = this.paletteSlots.get(hex);
+    if (known !== undefined) return known;
+    if (this.paletteSlots.size >= MAX_PALETTE) return 0;
+    const slot = this.paletteColors.push(Color3.FromHexString(hex));
+    this.paletteSlots.set(hex, slot);
+    return slot;
+  }
+
+  /**
    * Builds a map. The layout and environment are arguments, not imports: a
    * second map is a second layout file and nothing here changes.
    */
@@ -742,6 +777,8 @@ export class MapBuilder {
     this.rayGroups = [];
     this.boxGroups = [];
     this.pendingCluster = [];
+    this.paletteColors = [];
+    this.paletteSlots.clear();
     // A body's standing room plus a trunk's own half-width, which is all this
     // has to guarantee: the SHAPE of a flag's surroundings is the layout's to
     // decide (Bravo is a bare bank and Echo is a thicket), and what cannot be
@@ -930,11 +967,21 @@ export class MapBuilder {
     colliders.push(...this.clusterColliders("scatter", this.pendingCluster));
     this.pendingCluster = [];
 
-    // One more merge across neighbouring structures — see BlockMerge.
-    for (const merged of blocks.finish()) {
+    // One more merge across neighbouring structures — see BlockMerge. This is
+    // the ONE merge that paletteises, which is also what exempts the editor for
+    // free: an editor build files its meshes on the item instead and never
+    // reaches this pass at all (see the `item` branch in the placement loop).
+    for (const merged of blocks.finish({
+      slot: (hex) => this.paletteIndex(hex),
+      material: this.mats.getWorldCel(),
+    })) {
       if (!merged.metadata?.noOutline) addOutline(merged, 0.05);
       visuals.push(merged);
     }
+    // Published before anything draws and after the merge that discovers it —
+    // see `CelMaterialFactory.setPalette`. Unconditional, so a rebuild that
+    // paletteises nothing still clears the last map's colours out.
+    this.mats.setPalette(this.paletteColors);
     // And the same pass over the glazing, which keeps its ranges — see
     // `PaneBlocks`. Its meshes join `visuals` for the AO bake and to be
     // disposed with the map, and they are the one entry in that list that is
@@ -1986,11 +2033,27 @@ class BlockMerge {
     else this.blocks.set(key, [mesh]);
   }
 
-  /** Merges each block and returns the meshes the caller should draw. */
-  finish(): Mesh[] {
+  /**
+   * Merges each block and returns the meshes the caller should draw.
+   *
+   * `palette` is what turns this from a merge per COLOUR into a merge per
+   * block: hand it a hex and it hands back the slot to write into `uv2`, or 0
+   * for a colour it has no room for. It is a callback rather than a map because
+   * the slots are allocated in the order the merge meets them, and the merge is
+   * the only thing that knows that order.
+   */
+  finish(palette: Palette): Mesh[] {
     const out: Mesh[] = [];
     for (const [key, group] of this.blocks) {
-      out.push(...mergeByMaterial(group, `block${key}`));
+      for (const merged of mergeByMaterial(group, `block${key}`, palette)) {
+        // The key travels ON the mesh, because `ReflectionSystem` has to ask
+        // which building a merged mesh IS and the palette took the answer out
+        // of the geometry — see `encloses` there. `PaneBlocks` files glazing
+        // under this same key, which is what lets the two agree on "the same
+        // building" without measuring a distance between two centres.
+        merged.metadata = { ...(merged.metadata ?? {}), block: key };
+        out.push(merged);
+      }
     }
     return out;
   }
@@ -2210,15 +2273,31 @@ function exemptionsOf(mesh: Mesh): Exemption[] {
  * world matrices and hands back an identity-transform mesh, which the caller
  * then positions.
  */
-function mergeByMaterial(meshes: Mesh[], tag: string): Mesh[] {
+function mergeByMaterial(
+  meshes: Mesh[],
+  tag: string,
+  palette?: Palette,
+): Mesh[] {
   // Material first, then sway layer and exemption set — see `EXEMPTIONS`.
   // Nested rather than keyed on a composed string, because two distinct
   // materials are free to share a name and a merge across them would draw one
   // of them wrong.
   const groups = new Map<Material, Map<string, Group>>();
   for (const m of meshes) {
-    const mat = m.material;
-    if (!mat) continue;
+    const mat0 = m.material;
+    if (!mat0) continue;
+    // **The palette is what takes the COLOUR out of this key.** A matte cel
+    // material differs from another only in a uniform, so every one of them can
+    // be answered by one material reading the albedo per vertex instead — which
+    // is what collapses a block of a city from ten meshes to two. Only the
+    // plain matte variant qualifies: gloss, translucency, glazing and emissive
+    // are shader BEHAVIOUR and merging across them would draw one of them
+    // wrong, which is the rule this function already states about two materials
+    // sharing a name.
+    const hex = palette ? plainCelHex(mat0.name) : null;
+    const slot = hex ? palette!.slot(hex) : 0;
+    if (slot > 0) writePaletteIndex(m, slot);
+    const mat = slot > 0 ? palette!.material : mat0;
     let byExemption = groups.get(mat);
     if (!byExemption) groups.set(mat, (byExemption = new Map()));
     const flags = exemptionsOf(m);
@@ -2283,6 +2362,28 @@ function mergeByMaterial(meshes: Mesh[], tag: string): Mesh[] {
       if (sway) {
         markSwayMerged(merged as Mesh, sway);
       }
+      // **A paletteised group comes out of Babylon's outline pass for the same
+      // KIND of reason a swaying one does, and it is worth saying which.** The
+      // sway group leaves because the hull cannot see the wind; this one leaves
+      // because the hull is one flat colour per MESH and this mesh is now every
+      // colour in the block. `OutlineRenderer` offers no hook to extend either
+      // its attributes or its uniforms — `OutlineFog` had to bake literals into
+      // its source for want of one — so there is nowhere to put an index or a
+      // palette, and an ink resolved per mesh here would hand a dark plaster's
+      // line to the pale stone beside it. Above the light term that is not a
+      // wrong colour, it is a bright halo, which is the failure `inkState`
+      // exists to make impossible.
+      //
+      // A group that was ALREADY exempt keeps its exemption and gets no twin:
+      // an emissive fitting or a painted road asked not to be inked, and the
+      // palette is not a reason to overrule it.
+      if (mat === palette?.material && !flags.includes("noOutline")) {
+        merged.metadata = {
+          ...(merged.metadata ?? {}),
+          noOutline: true,
+          inkTwin: true,
+        };
+      }
       out.push(merged as Mesh);
     }
   }
@@ -2291,6 +2392,65 @@ function mergeByMaterial(meshes: Mesh[], tag: string): Mesh[] {
 
 /** One merge group: the meshes, and the exemptions and sway they all agree on. */
 type Group = { flags: Exemption[]; sway: SwayLayer | null; meshes: Mesh[] };
+
+/**
+ * What a merge needs in order to take the colour out of its key: somewhere to
+ * put a hex, and the one material that answers for all of them.
+ *
+ * Passed in rather than reached for, because the SLOTS are allocated in the
+ * order the merge meets a colour and only the merge knows that order, while the
+ * material belongs to a factory this file's free functions cannot see.
+ */
+type Palette = {
+  /** The 1-based slot for a hex, or 0 for "keep your own material". */
+  slot(hex: string): number;
+  /** The material every slotted mesh ends up wearing. */
+  material: Material;
+};
+
+/**
+ * The hex of a PLAIN matte cel material, or null for anything else.
+ *
+ * Deliberately stricter than `inkColorFor`'s regex, which also accepts the
+ * gloss and translucent variants: those differ from this one in shader
+ * BEHAVIOUR and not merely in a uniform, so they cannot share a material
+ * however alike their colours are. The two regexes are not duplicates of each
+ * other and must not be made into one — they are asking different questions of
+ * the same name.
+ */
+function plainCelHex(materialName: string): string | null {
+  const m = /^cel-(#[0-9a-fA-F]{6})$/.exec(materialName);
+  return m ? m[1] : null;
+}
+
+/**
+ * Stamps one source mesh's palette slot into `uv2.x`, before it is merged.
+ *
+ * **Before, because after is too late**: `MergeMeshes` concatenates vertex
+ * buffers, so the index has to already be per vertex for the merge to carry it.
+ * That is also what makes the whole scheme safe against interpolation — a merge
+ * never re-triangulates, so every corner of a triangle keeps the index of the
+ * mesh it came from.
+ *
+ * `uv2` and not the colour buffer, which has the room: the colour buffer is
+ * written by `vertexShading.ts` AFTER every merge and from scratch, so a value
+ * put there now would be overwritten by the bake, and teaching the bake to
+ * preserve a channel would couple it to this. `uv2` is untouched by all of it.
+ *
+ * The all-or-nothing rule `CLAUDE.md` records for `colors` applies here too —
+ * `VertexData.merge` throws when one mesh in a group has an attribute and
+ * another does not — and it is kept by construction rather than by a check:
+ * a mesh gets a slot exactly when it is going into the paletteised group, and
+ * every mesh in that group got one.
+ */
+function writePaletteIndex(mesh: Mesh, slot: number): void {
+  const count = mesh.getTotalVertices();
+  const uv2 = new Float32Array(count * 2);
+  // Only x is read. y is left at 0 rather than given a second meaning: the
+  // slot's whole value is that it is the ONE thing this attribute says.
+  for (let i = 0; i < count; i++) uv2[i * 2] = slot;
+  mesh.setVerticesData(VertexBuffer.UV2Kind, uv2, false);
+}
 
 /**
  * Carries a merged group's sway mark onto the mesh, and takes Babylon's ink off
@@ -2323,18 +2483,33 @@ function markSwayMerged(mesh: Mesh, layer: SwayLayer): void {
  * mesh's hull TWICE, once before it with depth-write off and once after with
  * colour-write off to repair the depth buffer.
  *
- * The three exemptions are not a precaution. A hull that cast a shadow would
+ * The four exemptions are not a precaution. A hull that cast a shadow would
  * lay a fattened copy of the canopy on the floor; one in the glow layer would
- * bloom the line; and one carrying an outline of its own is the start of an
- * infinite regress.
+ * bloom the line; one carrying an outline of its own is the start of an
+ * infinite regress; and one in a REFLECTION list is a room a cube probe is
+ * parked inside, which comes back as six faces of flat ink — see
+ * `ReflectionSystem`'s `opaqueWorld`, where the measurement is. That fourth one
+ * was latent for as long as the foliage was the only thing twinned, because a
+ * canopy is small and Greyfen glazes almost nothing; giving the whole village
+ * twins is what made it the loudest thing in the frame.
  */
 function inkTwin(mesh: Mesh, mats: CelMaterialFactory): Mesh | null {
-  if (!swayLayerOf(mesh)) return null;
+  // Two callers now and one twin either way. A swaying mesh needs this because
+  // Babylon's hull cannot see the wind; a paletteised one because that hull is
+  // one colour per mesh and a merged block is many — see `mergeByMaterial`,
+  // which sets the mark. A mesh that is both still gets exactly one twin, and
+  // the twin's material is the same `getInk` answer in both cases.
+  if (!swayLayerOf(mesh) && mesh.metadata?.inkTwin !== true) return null;
   const source = mesh.material;
   if (!source) return null;
   const twin = mesh.clone(`${mesh.name}-ink`, mesh.parent, true);
   if (!twin) return null;
   twin.material = mats.getInk(source.name);
-  twin.metadata = { noOutline: true, noGlow: true, noShadowCaster: true };
+  twin.metadata = {
+    noOutline: true,
+    noGlow: true,
+    noShadowCaster: true,
+    noReflect: true,
+  };
   return twin;
 }

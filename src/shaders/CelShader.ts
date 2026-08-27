@@ -129,6 +129,26 @@ import "./wgsl/includes";
 export const MAX_POINT_LIGHTS = 16;
 
 /**
+ * How many albedos one map's world geometry may carry before the merge stops
+ * collapsing it.
+ *
+ * **Overflow is not an error and must never become one.** A colour past this
+ * cap simply keeps its own material and merges the way everything did before
+ * the palette existed — one more mesh per block, which is the cost this whole
+ * mechanism exists to avoid and not a broken map. That is what lets the number
+ * be a judgement rather than a contract: the four shipped maps' world geometry
+ * uses 43 to 79 colours, so 128 is roughly a doubling of headroom, and a map
+ * that wanted 300 would get the first 128 collapsed and the rest as they were.
+ *
+ * The cost of raising it is a uniform buffer on two materials — WGSL pads a
+ * `vec3f` in an array to 16 bytes, so this is 2 KB apiece — plus nothing else.
+ * The cost of lowering it is silent, which is why it is stated here beside the
+ * measurement rather than left in `config/`: it is a property of the SHADER,
+ * and it has to be a compile-time literal to size the array at all.
+ */
+export const MAX_PALETTE = 128;
+
+/**
  * The parallax box's uniform names, for a material that includes `celProbeBox`.
  *
  * The include itself is in `wgsl/includes.ts` and so is the argument for it —
@@ -171,6 +191,18 @@ attribute normal: vec3f;
 // effect mesh is therefore correct without carrying one.
 attribute color: vec4f;
 
+#ifdef CEL_PALETTE
+// The albedo's 1-based slot in \`celPalette\`, written per source mesh by
+// \`MapBuilder\` before the merge concatenates it. Behind the define — unlike
+// \`color\` above, which every cel material declares — because a material
+// without the define binds no such buffer, and **an attribute this struct does
+// not declare is a WGSL compile error rather than a disabled attrib reading a
+// default**: \`vertexInputs.uv2\` comes back "struct member uv2 not found" and
+// the module fails, which under \`compatibilityMode = false\` poisons the whole
+// render bundle and takes the entire frame black rather than one mesh.
+attribute uv2: vec2f;
+#endif
+
 // No instances declaration and no bones, and both absences are facts about the
 // game rather than omissions. Nothing here is drawn instanced — the one
 // thin-instanced surface is the grass, which has a shader of its own — and
@@ -203,6 +235,21 @@ uniform inkParams: vec4f;
 varying vNormalW: vec3f;
 varying vPosW: vec3f;
 varying vBaked: vec4f;
+
+#ifdef CEL_PALETTE
+// The 1-based index of this vertex's albedo in \`celPalette\`, carried in uv2's
+// x. **It is 1-based so that 0 can mean "not paletted"**, which is what the
+// disabled attrib's default gives any mesh that never had the buffer written —
+// the same trick \`vBaked\` leans on, and what lets one material serve a
+// merge group that a builder did not paletteise.
+//
+// A vertex attribute is INTERPOLATED and an index cannot be, which is safe here
+// for a structural reason rather than by luck: a merge concatenates whole
+// meshes and never re-triangulates, so all three corners of any triangle come
+// from the same source mesh and carry the same index. The fragment stage still
+// rounds, because "safe" and "guaranteed by the hardware" are different things.
+varying vPalette: f32;
+#endif
 
 @vertex
 fn main(input: VertexInputs) -> FragmentInputs {
@@ -271,6 +318,9 @@ fn main(input: VertexInputs) -> FragmentInputs {
 
   vertexOutputs.vPosW = worldPos.xyz;
   vertexOutputs.vBaked = vertexInputs.color;
+  #ifdef CEL_PALETTE
+  vertexOutputs.vPalette = vertexInputs.uv2.x;
+  #endif
   vertexOutputs.position = uniforms.viewProjection * worldPos;
 }
 `;
@@ -325,6 +375,15 @@ uniform fogColor: vec3f;
 uniform fogParams: vec2f;  // x = start, y = end
 #ifdef CEL_INK
 uniform inkColor: vec3f;
+#endif
+#ifdef CEL_PALETTE
+// The map's own albedo palette, indexed by \`vPalette - 1\`. This is what lets
+// one material stand for every paint colour in the village, which is what lets
+// \`BlockMerge\` collapse a 48 m block to one mesh instead of ten — see
+// \`getWorldCel\`. Behind a define rather than in the shared uniform list
+// because only two materials in the scene ever read it and it is 2 KB.
+varying vPalette: f32;
+uniform celPalette: array<vec3f, ${MAX_PALETTE}>;
 #endif
 uniform mistColor: vec3f;
 uniform mistParams: vec2f; // x = height falloff, y = strength
@@ -489,7 +548,20 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // is what OutlineFog has to bake literals into Babylon's shader to achieve
   // and what this variant gets for free. It picks up the ground MIST as well,
   // which that one cannot do at all.
+  // \`inkColor\` means two different things across this variant's two callers
+  // and the palette index is what says which. On a foliage twin it is the
+  // RESOLVED ink — \`inkColorFor\` has already multiplied the source's albedo
+  // by the map's tint, and there is no index. On the world's twin there is no
+  // single albedo to have resolved, so it carries the TINT alone and the albedo
+  // arrives per vertex; the product is the same \`albedo * tint\` per channel
+  // either way, which is the arithmetic \`inkState\` requires to keep an ink
+  // under the light term.
   var col = uniforms.inkColor;
+  #ifdef CEL_PALETTE
+  if (fragmentInputs.vPalette >= 0.5) {
+    col *= uniforms.celPalette[u32(fragmentInputs.vPalette + 0.5) - 1u];
+  }
+  #endif
   var alpha = 1.0;
   #else
   var n = facetNormal();
@@ -576,6 +648,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     * (valueNoise(fragmentInputs.vPosW * uniforms.groundVariationScale) - 0.5);
   #else
   var base = uniforms.baseColor;
+  #ifdef CEL_PALETTE
+  // The albedo is the VERTEX's on anything a builder paletteised, and the
+  // uniform's otherwise — index 0 is "not paletted" and is what an unwritten
+  // attrib gives. Both paths are the same flat colour from here on: everything
+  // below, the weathering drift included, applies to whichever one won.
+  if (fragmentInputs.vPalette >= 0.5) {
+    base = uniforms.celPalette[u32(fragmentInputs.vPalette + 0.5) - 1u];
+  }
+  #endif
   // Weathering: a slow value drift over world space, so a 48 m merged block
   // stops being one flat tone. Every wall, roof, plank and rock in the game is
   // drawn from a palette of a hundred-odd hexes, and the merge is per colour —
@@ -968,6 +1049,22 @@ export class CelMaterialFactory {
    * `(0, 0, 0, 1)` the whole design leans on.
    */
   private static readonly ATTRIBUTES = ["position", "normal", "color"];
+  /**
+   * The same, plus the palette index, for the two materials that read one.
+   *
+   * `uv2` is a SECOND list rather than a member of the one above, which is the
+   * opposite of the call `color` got and for the opposite reason. `color` is
+   * declared unconditionally in the shader, so every material owes it the
+   * location; `uv2` is behind `#define CEL_PALETTE`, so a material without the
+   * define has no such attribute to bind and naming it here would be declaring
+   * a location the effect does not have.
+   */
+  private static readonly PALETTE_ATTRIBUTES = [
+    "position",
+    "normal",
+    "color",
+    "uv2",
+  ];
   /** Every cel material samples the shadow map, whatever its albedo path. */
   private static readonly SAMPLERS = ["shadowMap"];
   /**
@@ -1128,7 +1225,105 @@ export class CelMaterialFactory {
    */
   private defaultCube: BaseTexture | null = null;
 
+  /**
+   * The current map's albedo palette, flattened, as the shader indexes it.
+   *
+   * Held here for the reason `camPos` and `windTime` are: `installMap` mints
+   * materials mid-round, so a material created after `setPalette` has to be
+   * born holding it rather than waiting for the next environment change that
+   * may never come.
+   */
+  private palette = new Float32Array(MAX_PALETTE * 3);
+
   constructor(private scene: Scene) {}
+
+  /**
+   * Publishes the palette `MapBuilder` assembled while it merged, and pushes it
+   * onto every material that reads one.
+   *
+   * **Called once per map build, after the merge and before anything draws**,
+   * because the palette is DISCOVERED by the merge rather than declared by the
+   * layout — a builder's colours are not knowable until its meshes exist. That
+   * ordering is safe for the same reason the bake's is: nothing renders between
+   * `installMap` building the world and the round starting.
+   *
+   * Entries past `MAX_PALETTE` are the caller's problem and it has already
+   * solved it — see `MapBuilder.paletteIndex`, which stops handing out indices
+   * and lets the overflow colours keep their own materials.
+   */
+  setPalette(colors: readonly Color3[]): void {
+    this.palette.fill(0);
+    const n = Math.min(colors.length, MAX_PALETTE);
+    for (let i = 0; i < n; i++) {
+      this.palette[i * 3] = colors[i].r;
+      this.palette[i * 3 + 1] = colors[i].g;
+      this.palette[i * 3 + 2] = colors[i].b;
+    }
+    for (const mat of this.cache.values()) this.applyPalette(mat);
+  }
+
+  /**
+   * Pushes the palette onto one material.
+   *
+   * Unconditional, and that is deliberate rather than lazy: a `setArray3` for a
+   * uniform the effect does not declare is dropped when the material binds —
+   * the same no-op `skyZenithColor` already rides on — so this needs no test
+   * for which variant it is looking at, and gaining one would be a second list
+   * to keep in step with `getWorldCel`.
+   */
+  private applyPalette(mat: ShaderMaterial): void {
+    mat.setArray3("celPalette", this.palette as unknown as number[]);
+  }
+
+  /**
+   * The ONE matte cel material the whole village wears, whatever colour it is
+   * painted: the albedo comes from `celPalette` indexed per vertex instead of
+   * from this material's `baseColor`, which is never set and never read.
+   *
+   * **This exists to take the colour out of the merge KEY.** `mergeByMaterial`
+   * splits a group once per material instance, so a 48 m block of a city held
+   * ten meshes because it held ten paint colours — and each of those was drawn
+   * four times over, once for itself, once for its ink, once as a glow occluder
+   * and once into the shadow map. Measured on Coldharbour: 416 world meshes and
+   * 1,565 draws, against 90 and ~305 with the colour moved per vertex.
+   * `FINDINGS.md` #18 has the whole measurement.
+   *
+   * It is a define and not a branch on the shared material because the palette
+   * is a 2 KB uniform array and there are 217 materials in a Coldharbour round,
+   * of which exactly two — this and its ink — ever index it.
+   */
+  getWorldCel(): ShaderMaterial {
+    const key = `\0world-cel`;
+    let mat = this.cache.get(key);
+    if (!mat) {
+      mat = new ShaderMaterial(
+        WORLD_CEL_NAME,
+        this.scene,
+        { vertex: "cel", fragment: "cel" },
+        {
+          attributes: [...CelMaterialFactory.PALETTE_ATTRIBUTES],
+          uniforms: [...CelMaterialFactory.UNIFORMS, "celPalette"],
+          samplers: [...CelMaterialFactory.SAMPLERS],
+          defines: ["#define CEL_PALETTE"],
+          shaderLanguage: ShaderLanguage.WGSL,
+        },
+      );
+      // `baseColor` is deliberately NOT set. Every vertex this material ever
+      // draws carries an index, because `MapBuilder` only hands a mesh to this
+      // material when it has one — so the uniform path is unreachable here and
+      // seeding it would only invite somebody to rely on it.
+      this.applyCamera(mat);
+      this.applyWind(mat);
+      this.applyEnvironment(mat);
+      this.applyPointLights(mat);
+      this.applyShadow(mat);
+      this.applySpec(mat, null);
+      this.applyTranslucency(mat, null);
+      this.applyPalette(mat);
+      this.cache.set(key, mat);
+    }
+    return mat;
+  }
 
   /** Returns the shared cel material for a hex color, creating it on demand. */
   get(hex: string): ShaderMaterial {
@@ -1245,18 +1440,30 @@ export class CelMaterialFactory {
     const cacheKey = `\0ink-${sourceName}`;
     let mat = this.cache.get(cacheKey);
     if (!mat) {
+      // The world's ink is the one that has no single albedo to be derived
+      // from, so it takes the palette exactly as its surface does and resolves
+      // per pixel. Everything else is one colour and resolves on the CPU in
+      // `applyEnvironment`.
+      const paletted = sourceName === WORLD_CEL_NAME;
       mat = new ShaderMaterial(
         `${INK_PREFIX}${sourceName}`,
         this.scene,
         { vertex: "cel", fragment: "cel" },
         {
-          attributes: [...CelMaterialFactory.ATTRIBUTES],
-          uniforms: [...CelMaterialFactory.UNIFORMS],
+          attributes: paletted
+            ? [...CelMaterialFactory.PALETTE_ATTRIBUTES]
+            : [...CelMaterialFactory.ATTRIBUTES],
+          uniforms: paletted
+            ? [...CelMaterialFactory.UNIFORMS, "celPalette"]
+            : [...CelMaterialFactory.UNIFORMS],
           samplers: [...CelMaterialFactory.SAMPLERS],
-          defines: ["#define CEL_INK"],
+          defines: paletted
+            ? ["#define CEL_INK", "#define CEL_PALETTE"]
+            : ["#define CEL_INK"],
           shaderLanguage: ShaderLanguage.WGSL,
         },
       );
+      if (paletted) this.applyPalette(mat);
       // Culling is ON and it is the FRONT faces that go: an inverted hull is
       // the back of an expanded copy, which is why this needs no ordering
       // against the surface it wraps. Inside the silhouette the back faces are
@@ -1922,7 +2129,17 @@ export class CelMaterialFactory {
     // on every change exactly as the light terms above are, and this is already
     // the walk that runs on creation and on every change alike.
     if (mat.name.startsWith(INK_PREFIX)) {
-      mat.setColor3("inkColor", inkColorFor(mat.name.slice(INK_PREFIX.length)));
+      const source = mat.name.slice(INK_PREFIX.length);
+      // The world's ink carries the TINT and multiplies the albedo in per
+      // vertex, because one material stands for every colour in the village and
+      // there is no single albedo to fold in here. The product a pixel ends up
+      // with is the same `albedo * tint` per channel `inkColorFor` computes for
+      // everything else — which is the arithmetic, not the aesthetic, that
+      // keeps an ink under the light term (see `inkState`).
+      mat.setColor3(
+        "inkColor",
+        source === WORLD_CEL_NAME ? inkState.tint : inkColorFor(source),
+      );
     }
   }
 
@@ -2198,6 +2415,18 @@ const INK_WIDTH = 0.05;
  * change, the same way `inkColorFor` recovers a palette colour from `cel-`.
  */
 const INK_PREFIX = "cel-ink-";
+
+/**
+ * The name of the one material every matte surface in the village wears.
+ *
+ * It deliberately does NOT match `inkColorFor`'s regex — there is no hex in it,
+ * because there is no single colour to name — and three readers key on that
+ * being true: `getInk` gives it the palette, `applyEnvironment` gives it the
+ * tint rather than a resolved ink, and `MapBuilder` never calls `addOutline` on
+ * a mesh wearing it, because Babylon's outline pass is per MESH and this mesh
+ * is many colours.
+ */
+export const WORLD_CEL_NAME = "cel-world";
 
 const windBearing = new Vector2(
   CONFIG.wind.dir[0],

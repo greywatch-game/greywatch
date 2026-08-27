@@ -194,7 +194,7 @@ export class ReflectionSystem {
       const probe = this.probeAt(slot);
       if (fresh) {
         centreOf(group.mesh, probe.position);
-        const list = opaque.filter((m) => !encloses(m, probe.position));
+        const list = opaque.filter((m) => !encloses(m, group.block));
         enclosing += opaque.length - list.length;
         probe.cubeTexture.renderList = list;
         probe.cubeTexture.resetRefreshCounter();
@@ -300,9 +300,9 @@ export class ReflectionSystem {
       // the chop already does.
       probe.position.copyFrom(site);
       probe.position.y += 0.5;
-      probe.cubeTexture.renderList = opaque.filter(
-        (m) => !encloses(m, probe.position),
-      );
+      // Water has no block and so excludes nothing: the whole map stays in the
+      // cube, which is what a mirror lying in the open is owed.
+      probe.cubeTexture.renderList = opaque.slice();
       probe.cubeTexture.resetRefreshCounter();
       return {
         cube: probe.cubeTexture,
@@ -373,16 +373,32 @@ export class ReflectionSystem {
 }
 
 /**
- * The world a probe draws: `visuals` minus the glazing merged into it.
+ * The world a probe draws: `visuals` minus the glazing merged into it, and
+ * minus every ink twin.
  *
  * A pane in a bake is a blended draw over a transparent clear, and what comes
  * back is a colour already multiplied by an alpha the shader divides out
  * again. It is the same list for both kinds of mirror — a pond has no more
  * business reflecting a window's own reflection than a window does.
+ *
+ * **An ink twin is an INVERTED HULL, and a probe stands INSIDE it.** That is
+ * the fourth way a cube goes flat and it is the loudest of them. The twin is an
+ * expanded copy drawn with its front faces culled, which is a thin line from
+ * outside and a room with no way out from within: a probe parked against a
+ * tower's glass is inside its own block's hull, so all six faces come back one
+ * flat ink colour and the glazing reflects a grey card. Measured on
+ * Coldharbour's curtain wall — 85% of the frame's pixels wrong, mean 36/255 —
+ * and the same test with the twins dropped from the lists is a skyline again.
+ *
+ * `noReflect` and not a material-name test, because what disqualifies a mesh
+ * here is what it IS rather than what it is painted with — see the metadata
+ * contract in `CLAUDE.md`, which this is the seventh flag of.
  */
 function opaqueWorld(map: GameMap): Mesh[] {
   const panes = new Set(map.paneGroups.map((g) => g.mesh));
-  return map.visuals.filter((m) => !panes.has(m));
+  return map.visuals.filter(
+    (m) => !panes.has(m) && m.metadata?.noReflect !== true,
+  );
 }
 
 /** A box's top face. `rotX` is ignored: nothing that carries one is a room. */
@@ -397,38 +413,34 @@ function centreOf(mesh: Mesh, out: Vector3): Vector3 {
 }
 
 /**
- * Whether this mesh is what the probe is standing INSIDE — the geometry that
- * has to come out of the bake, or the cube is a picture of a wall.
+ * Whether this mesh is the STRUCTURE the probe is standing in — the geometry
+ * that has to come out of the bake, or the cube is a picture of a wall.
  *
- * Two halves, and the second is not a refinement of the first.
+ * **It asks the block key, and that is the whole of it.** This used to be a
+ * bounding-box containment test, and it worked because the opaque world was
+ * merged per block per COLOUR: a colour that appeared once appeared in a mesh
+ * of its own, so "inside its box" picked out one to five small meshes of the
+ * probe's own building. The albedo palette took the colour out of that merge
+ * key (`MapBuilder.mergeByMaterial`), which left the smallest thing a box test
+ * could remove at one whole 48 m block — and a box test cannot tell a tower's
+ * probe standing in its own shaft from a water probe floating in open marsh
+ * inside the same block's extent. Greyfen's marsh is what that cost: one
+ * exclusion, but the one was the near treeline, and the water reflected sky
+ * where the jungle should be.
  *
- * **Inside its world bounding box.** Coarse on purpose: the opaque world is
- * merged per map block per colour, so the mesh a tower's probe is inside is
- * that block's own merged mesh, and taking it out takes the tower with it. It
- * is not as coarse as it sounds — measured across Coldharbour's 37 probes, the
- * hits are one to five of the probe's own block's colour meshes, and a parked
- * car's probe hits nothing but the car's own body (4 x 2 m), because a colour
- * that appears once appears in a mesh of its own.
+ * So the question is asked of the thing that actually knows. `PaneBlocks` and
+ * `BlockMerge` file under the SAME key, so a glazing group and the world it is
+ * glazed onto agree on which building they are without measuring anything —
+ * the argument `PaneGroup.block` already makes for baking one cube per block
+ * rather than per group, used a second time. A probe with no block — every
+ * water probe — excludes nothing, which is correct rather than merely
+ * convenient: a probe lifted half a metre off open water is not inside
+ * anything.
  *
- * **But never a flat receiver.** `noShadowCaster` marks the surfaces that are
- * lain on rather than stood in — the terrain patches, the roads, and the
- * valley rim, whose bounding boxes are enormous landform slabs. Two of
- * Coldharbour's corner towers stand inside `ridge-rock`'s box, 44 m from any
- * rock, and without this they would be the two buildings on the map whose
- * glass has no hills in it. The rule reads as a rule about geometry, and it is
- * one: a floor is not an enclosure.
+ * The old rule that a flat receiver is never an enclosure is now kept by
+ * construction and needs no test: the terrain patches, the roads and the valley
+ * rim are not block-merged, so they carry no key and can never match one.
  */
-function encloses(mesh: Mesh, at: Vector3): boolean {
-  if (mesh.metadata?.noShadowCaster === true) return false;
-  const box = mesh.getBoundingInfo().boundingBox;
-  const min = box.minimumWorld;
-  const max = box.maximumWorld;
-  return (
-    at.x >= min.x &&
-    at.x <= max.x &&
-    at.y >= min.y &&
-    at.y <= max.y &&
-    at.z >= min.z &&
-    at.z <= max.z
-  );
+function encloses(mesh: Mesh, block: string): boolean {
+  return block !== "" && mesh.metadata?.block === block;
 }

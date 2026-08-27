@@ -382,6 +382,10 @@ is ever wanted, these are what it should move, in that order.
 
 **Status:** measured headless, so the absolute milliseconds are inflated and
 only the ranking is trustworthy. Recorded because two of these were surprises.
+**The ranking has since been confirmed on real hardware and the figures are
+about five times too big — see finding 18**, which puts `probeGround` at 0.483
+ms and everything below it under 0.12. Read the order here, never the
+milliseconds.
 
 Per frame, in a live round with 16 bots:
 
@@ -1308,21 +1312,293 @@ grenade, a shard and a spawned ragdoll all stop appearing — in a game whose
 every mesh is pooled that is not a trade, it is a bug. What the +14.8% measures
 is `_evaluateActiveMeshes` walking **2,488 meshes to find 903**, and the real
 version of that saving is having fewer meshes to walk or a cheaper walk, not a
-frozen list.
+frozen list. **"Fewer meshes to WALK" is the wrong half and finding 18 measures
+it**: the ~1,580 the walk rejects are worth 0.8 ms of the 3.3, and the ~900 it
+keeps are the other 2.5. Fewer ACTIVE meshes is the only fix.
 
 ### What is open
 
 - **A round played by a human under `compatibilityMode = false`.** It has
   landed on the strength of a scripted dynamic round, which is the strongest
   automatic check available and is still not a pair of eyes.
-- **Whether the draw count itself can come down**, which is the lever none of
-  the three above is. The outline shells are the obvious place — 429 of
-  Coldharbour's active meshes draw twice for them — and finding 12 measured
-  dropping distant ones at -35.5% of draw calls back when that bought nothing.
-  On this backend it would buy something, and it is a picture change, so it
-  wants looking at rather than only measuring.
+- ~~**Whether the draw count itself can come down**~~ — **ANSWERED, see finding
+  18**, and not where this entry expected. The outline shells looked like the
+  obvious place, and they are worth only +8.6% measured on this backend because
+  a shell reuses a bound material. Half the draw count is the block merge
+  splitting the village once per paint COLOUR, and taking the colour out of the
+  merge key is +60% on Coldharbour with no picture change at all.
 - **The phone.** Every number here is one desktop GPU, and the balance that
   makes fill irrelevant here will not hold on a device this game installs onto.
   Finding 12's glass fragment is still the right lever there.
+
+---
+
+## 18. The village is drawn four times over, and the block merge bottoms out on paint colour
+
+**Status:** measured on the Windows box, cause located, **and the fix has
+LANDED** — see "What landed" at the end, which also carries the one thing about
+the picture that is still open. **This answers the first open thread in finding
+17** — whether the draw count itself can come down — and the answer is that it
+can, by about half.
+
+### The frame, re-measured as a matched pair
+
+Coldharbour and Harrowmead, a live round with sixteen bots, warm past the
+compile stall, headless Chromium on the RTX 4070 Ti SUPER, uncapped, 1920x1080,
+medians over 3 x 6 s. The baseline first, because finding 17's budget was taken
+before `compatibilityMode = false` landed and the shape has moved:
+
+| median ms | Coldharbour | Harrowmead |
+| --- | --- | --- |
+| frame (rAF interval) | 20.6 | 18.8 |
+| `scene.render()` | 18.4 | 17.1 |
+| — `_evaluateActiveMeshes` | 4.3 | 4.1 |
+| — render targets | 3.4 | 3.3 |
+| — main draw phase | 9.1 | 8.3 |
+| the game's own JS | 2.2 | 1.7 |
+
+**The game's own JS is a tenth of the frame and the rest is Babylon's**, which
+is the number that closes the "move it to workers" question before it is asked:
+`scene.render` is JS on the thread that owns the device, so an `OffscreenCanvas`
+worker RELOCATES 18 ms rather than removing it, and the worker becomes the wall.
+What is genuinely worker-shaped here is burst work and not the frame —
+`MapBuilder`'s geometry, the AO bake, the `NavGrid`/`CoverMap`/`ObstacleField`
+builds, finding 9's flow-field rebuild, finding 11's editor tier-3 — and moving
+any of them buys load time and nothing else. Do not re-derive this.
+
+Inside that tenth, on real hardware rather than finding 6's inflated headless
+run: `player.probeGround` is **0.483 ms** and everything else is under 0.12
+(`updateHud` 0.112, `battle.update` 0.094, `minimap.update` 0.086,
+`lighting.update` 0.063). The ranking finding 6 records is intact and the
+absolute figures were five times too big. The ground probe is still a third of
+the game's own budget and its analytic replacement is still one footprint test
+away.
+
+### What the draws are made of
+
+Every active mesh attributed to what built it, and counted once for each pass it
+is drawn in. Coldharbour, same session:
+
+| bucket | meshes | materials | outline | glow | shadow | draws |
+| --- | --- | --- | --- | --- | --- | --- |
+| **world (BlockMerge)** | **409** | **55** | 346 | 409 | 401 | **1,565** |
+| soldier rigs | 237 | 11 | 0 | 237 | 0 | 474 |
+| vehicles | 48 | 12 | 48 | 48 | 0 | 144 |
+| glazing | 72 | 72 | 0 | 71 | 0 | 143 |
+| terrain | 49 | 1 | 0 | 49 | 0 | 98 |
+| viewmodel | 28 | 7 | 14 | 28 | 0 | 70 |
+| rim/ridge | 20 | 2 | 20 | 20 | 0 | 60 |
+| everything else | 39 | — | 1 | 19 | 0 | 59 |
+| **total** | **902** | 180 | 429 | 881 | 401 | **2,613** |
+
+**The village is 60% of the frame's draws and it is drawn 3.8 times per mesh** —
+once for itself, once for its outline shell, once as an occluder in the glow
+buffer, once into the shadow map.
+
+### The merge bottoms out on COLOUR, and that is the whole finding
+
+`mergeByMaterial` keys its outer map on the material INSTANCE, so a 48 m block
+splits once per paint colour. Simulated by re-keying on the shader VARIANT
+(`cel`/`gloss`/`trans`/`glass`/`ink`/`emissive`) with the sway layer and the
+exemption set kept, which is what a merge could honestly collapse to:
+
+| map | blocks | world meshes now | colour out of key | per block, now -> then |
+| --- | --- | --- | --- | --- |
+| Coldharbour | 45 | 416 | **90** (4.62x) | median 10 -> 2 |
+| Harrowmead | 44 | 438 | **131** (3.34x) | median 9 -> 3 |
+| Hollowmere | 32 | 332 | **59** (5.63x) | median 11 -> 2 |
+
+Harrowmead collapses least because it carries 104 `trans` and 100 `ink` meshes
+from the swaying groups' twins, which are real shader differences and stay in
+the key. Coldharbour is 349 `cel` against 51 `emissive`, 8 `trans` and 8 `ink`.
+
+### The prototype, and what it bought
+
+Before any of it was built, the outer key was changed to the variant for one
+run — **the picture wrong on purpose, only the cost being read** — and then
+reverted. Same script, same session shape, 3 x 6 s each:
+
+| | Coldharbour | Harrowmead |
+| --- | --- | --- |
+| fps | 48.3 -> **77.2** | 52.6 -> **83.0** |
+| frame | 20.6 -> 12.8 ms | 18.8 -> 11.9 ms |
+| draws | 2,641 -> 1,397 | 2,332 -> 1,361 |
+| main draw phase | 9.1 -> 5.0 ms | 8.3 -> 4.6 ms |
+| render targets | 3.4 -> 2.0 ms | 3.3 -> 1.9 ms |
+| `_evaluateActiveMeshes` | 4.3 -> 3.2 ms | 4.1 -> 3.2 ms |
+| active meshes | 900 -> 577 | 889 -> 574 |
+| world meshes / draws | 409 / 1,565 -> 88 / 305 | — |
+| shadow renderList | 408 -> 86 | — |
+
+**+60% and +58%**, on the two maps that need it. For scale, every other lever
+ever measured on this frame: `compatibilityMode = false` +26% (landed), the
+GlowLayer deleted outright +27%, the glow AND every world outline off together
++19.5%.
+
+**Why it converts better than the shell levers, which is the part worth
+keeping.** Taking the outline shells and the glow occluders away removes draws
+that reuse an already-bound material — measured at about 2.3 us each. This
+removes MESH draws, each carrying a material switch, and those measure about
+6.3 us each: Babylon's WebGPU backend pays a pipeline-state hash, a bind-group
+cache lookup and a dynamic-UBO offset on every draw, and a material change is
+what makes all three miss. That is finding 17's mechanism arriving from the
+other side. **So a draw is not a draw** — say which kind before predicting a
+saving from a count.
+
+### What the real version is
+
+Albedo moves from a material uniform to a per-vertex attribute on world geometry
+only, and the shader picks between the two on the mark it already has.
+`vBaked.y` is 1 on baked map geometry and 0 everywhere else, and the branch is
+already in the cel shader for the albedo variation — so this needs **no new
+define, no second cache variant, and no fourth `cel-<variant>-#rrggbb` name for
+`outlineInkFor`'s regex to learn**, which is precisely the cost
+`vertexShading.ts`'s header says its design refuses to pay.
+
+Four things it costs, in the order they will bite:
+
+- **The ink is the real work and the part that can go wrong.** `inkColorFor`
+  parses the material NAME, so a mesh holding ten colours can only wear one ink.
+  Per-vertex ink means the outline shader reading the same attribute.
+  `OutlineFog` already patches that shader, so there is a precedent and a place
+  — but expect the trouble here rather than in the merge.
+- **It cannot ride in the existing colour buffer.** Red is the sway weight,
+  green the world mark, alpha the AO; blue is written 0 and free, and albedo
+  needs three channels. So it is a second attribute (uv2, or a second colour
+  set), and `VertexData.merge`'s all-or-nothing rule applies to it exactly as
+  `CLAUDE.md` already records for `colors`.
+- **The variants stay in the key.** `gloss`, `trans`, `glass`, `ink` and
+  `emissive` are shader differences, and merging across them draws one of them
+  wrong — the same rule `mergeByMaterial` already states about two materials
+  sharing a name.
+- **The editor is unaffected** and must stay so: it keys per placement, does not
+  block-merge, and takes the draw-call hit deliberately so a placement stays
+  recoverable.
+
+### What this displaces
+
+**An MRT main pass is no longer the first move, and half of it should probably
+never be made.** Writing emissive into a second attachment is the
+architecturally correct answer to finding 3 — a shared depth buffer IS
+occlusion, which distance from a lamp can never express — and Babylon's WebGPU
+pipeline cache keeps `_alphaBlendEnabled` as a per-TARGET array, so blended
+glazing writing a second attachment is configurable rather than the blocker it
+looks like. But the prize shrinks with this entry: the world's glow occluders go
+409 -> 88, leaving the layer mostly the 237 soldier-rig meshes rather than the
+village. **Take that number after this lands, not before.**
+
+Replacing the OUTLINE with a screen-space edge is the half to leave alone. It is
+not a generic edge — it is per-material coloured ink, applied selectively
+through `noOutline`, thinned per mesh by `updateOutlineScales` and fogged per
+pixel by `OutlineFog` — so a screen-space version needs an ink-id attachment,
+which means every draw in the main pass has to participate, the compute ash
+field and the sky included. And `docs/rendering.md` carries a family of rules
+that exist BECAUSE the outline is an inverted hull with a slope-scaled depth
+offset: the thick-box rule for a walked surface, "nothing may be laid ON an
+inked surface", an emissive detail having to protrude past its neighbours'
+shells. Swapping the mechanism does not only change the look, it invalidates the
+reason a good deal of geometry is shaped the way it is.
+
+### Two null results and one correction, so nobody re-runs them
+
+- **A selection octree is -5.4%**, and `scene.createOrUpdateSelectionOctree`
+  also dropped meshes that should have stayed active. Not the lever.
+- **Detaching the whole post chain is -4.6%**, which is free within drift.
+  Finding 5's four chained passes cost nothing on this hardware, and finding
+  12's ~1% holds.
+- **Finding 17's third lever calls the `_evaluateActiveMeshes` saving "fewer
+  meshes to walk", and that half is wrong.** Disabling every mesh the walk
+  REJECTS took it from 2,063 walked to 880 and the cost only moved 3.30 -> 2.51
+  ms: about 2.5 ms of it is the ~900 meshes it KEEPS. `doNotSyncBoundingInfo` on
+  all 1,380 frozen meshes moved nothing, because a frozen matrix already skips
+  it. Fewer ACTIVE meshes is the only fix — which is this entry, and it is what
+  took amEval 4.3 -> 3.2 above.
+
+---
+### What landed
+
+Albedo per vertex, behind `#define CEL_PALETTE`: a 1-based slot in `uv2.x`
+written per source mesh by `MapBuilder` before the merge, indexed into a
+`celPalette` array on the two materials that read one — `getWorldCel` and its
+ink. Slot 0 is "not paletted", which is what an unwritten attrib gives, so a
+colour past `MAX_PALETTE` keeps its own material and merges the way everything
+did before. Only `BlockMerge` paletteises, which exempts the editor for free.
+
+**Costed through the real boot path with `gate.mjs --uncap`, both runs in one
+session on this machine**, which is the instrument finding 17 quoted and so the
+one to compare against:
+
+| warm fps | before | after | p95 |
+| --- | --- | --- | --- |
+| Hollowmere | 148.4 | 185.1 | 9.5 -> 7.3 ms |
+| Greyfen | 167.6 | 203.3 | 8.1 -> 6.4 ms |
+| Coldharbour | 48.9 | **66.9** | 25.5 -> 17.7 ms |
+| Harrowmead | 52.2 | **61.7** | 25.3 -> 20.6 ms |
+
+**The two instruments disagree on the size and the honest range is +18% to
++81%.** An in-page probe over 3 x 6 s of a warm round reads Coldharbour 48.3 ->
+87.5 and Harrowmead 52.6 -> 80.2; `gate.mjs`'s 8 s window right after its
+warm-up reads +37% and +18% for the same change. Both are live rounds, so bots
+dying and ragdolls spawning are in both. **What is not in dispute is the draw
+count**, which is the same number however it is sampled: Coldharbour 2,641 ->
+1,431 and Harrowmead 2,332 -> 1,551. Quote the gate figures and say which.
+
+**Two bugs were found on the way and both are fixed.** They are recorded because
+neither is obvious and both will be met again by anyone adding an attribute or a
+twin:
+
+- **An attribute must be DECLARED in the WGSL source, not merely listed on the
+  material.** `vertexInputs.uv2` without `attribute uv2: vec2f;` is "struct
+  member uv2 not found", the shader module fails, and under
+  `compatibilityMode = false` one bad module invalidates the render bundle and
+  takes **the entire frame black** — sky, glazing and all. Nothing appears in
+  `consoleErrors`; the cascade is a wall of "Invalid RenderPipeline ... is
+  invalid due to a previous error" with the real message above it. This is the
+  first real instance of the moving-state risk `main.ts` warns about, and it
+  arrived from a direction that warning does not describe.
+- **An ink twin may never be in a reflection render list** (`noReflect`, the
+  seventh metadata flag). See the flag in `CLAUDE.md`. This one was PRE-EXISTING
+  and latent: the foliage twins were already in those lists, and it never showed
+  because a canopy twin is small and Greyfen glazes almost nothing. Giving the
+  whole village twins made it 85% of Coldharbour's curtain-wall frame.
+
+**`ReflectionSystem.encloses` had to be rewritten and that is a consequence
+worth generalising.** It was a bounding-box containment test, and it worked
+only because of a property the palette removes — the merge split per colour, so
+"a colour that appears once appears in a mesh of its own" and the test picked
+out small meshes. With one mesh per block the smallest thing it could remove was
+a 48 m block, and it could not tell a tower's probe standing in its own shaft
+from a water probe floating in open marsh inside the same extent. Greyfen's
+marsh cost one exclusion and that one was the near treeline. It now asks the
+BLOCK KEY, which `PaneBlocks` and `BlockMerge` already file under identically.
+**The general lesson: a heuristic that reads merged GEOMETRY is a heuristic with
+a hidden dependency on how the merge is keyed.** A solid-mass test against the
+collider boxes was tried first and is the wrong answer — 17 of Coldharbour's 40
+glazing probes stand in open air rather than in mass, and `curtain2` regressed
+to 30.5/255 under it against 1.9 with the block key.
+
+### What is still open, and it is a LOOK decision rather than a bug
+
+**Sixteen of sixteen reference frames are within 0.19 to 3.26 mean/255**
+(`borderland` is exactly 0), against 43 to 108 when the world first drew. The
+residue is not noise and will not go away by debugging, because it is the trade
+this entry is:
+
+- **The ink no longer traces each colour group.** `mergeByMaterial`'s own header
+  says the merge "means the outline traces each colour group's silhouette rather
+  than every individual plank" — the colour group WAS the ink granularity, and
+  taking colour out of the key coarsens it to the block. Lines between
+  differently-coloured parts of one building are gone.
+- **An ink twin covers a thin surface that Babylon's hull did not.** Confirmed
+  by hiding the twins at runtime: Greyfen's hut roofs go from near-black back to
+  brown. `CEL_INK` expands 5 cm along the normal with no polygon offset, where
+  `OutlineRenderer` pulls its hull toward the eye and then repairs the depth
+  buffer in a second pass. This is the same family as the two rules in
+  `docs/rendering.md` about thin slabs and about laying anything on an inked
+  surface, arriving through the other mechanism. **It is the one thing here that
+  is arguably a defect rather than a trade**, and the cheapest test of that is a
+  round played on Greyfen looking at the stilt huts.
+
+Both want a pair of eyes rather than another measurement.
 
 ---

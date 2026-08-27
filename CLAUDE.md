@@ -483,7 +483,7 @@ placement is the ground probe's job, and bots never touch the collidable list.
 
 ### Mesh metadata is a contract
 
-Six flags and one value, all read elsewhere; new geometry that omits them
+Seven flags and two values, all read elsewhere; new geometry that omits them
 misbehaves silently:
 
 - `solid: true` — collider proxies only. Unmarked geometry is shot through, seen
@@ -515,6 +515,22 @@ misbehaves silently:
   sets, and the moon is not in the valley to be fogged out of.
 - `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers
   (ground, roads) need it: casting from them is pure shadow acne.
+- `noReflect: true` — excluded from every cube probe's render list
+  (`ReflectionSystem.opaqueWorld`). Today it is the ink twins and only them, and
+  it is not a tidiness flag: an ink twin is an INVERTED HULL, which is a thin
+  line seen from outside and a sealed room seen from within, and a probe parked
+  against a tower's glass stands inside its own block's hull. All six faces come
+  back one flat ink colour and the glazing reflects a grey card. Measured on
+  Coldharbour's curtain wall at 85% of the frame's pixels.
+- `block: "3,2"` — which 48 m map block a merged visual came from, written by
+  `BlockMerge.finish`. A **value**, like `surface`, and absent on everything
+  that is not block-merged — the terrain, the roads and the rim, which is what
+  keeps them out of the test that reads it. `ReflectionSystem.encloses` is that
+  reader and the only one: a probe drops its own building from its bake, and
+  since the albedo palette took the colour out of the merge key there is no
+  longer any geometry-shaped way to ask which building a mesh IS.
+  `PaneBlocks` files glazing under the same key, which is what lets the two
+  agree without measuring a distance.
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:
   it is a **value with a default**, not a flag, and **absent means `"hard"`**.
   `MapBuilder` sets it on exactly one thing — the terrain floor's collider clone
