@@ -1,8 +1,18 @@
 /**
  * server/world.ts — Rebuilds a map's SOLID world under a NullEngine, from the
  * baked collider set plus the layout.
- * Owns: the collider meshes the server's rays pick against, the terrain floor's
- * collider clones, and the nav/cover/obstacle structures built from them.
+ * Owns: the collider meshes `moveWithCollisions` walks, the terrain floor's
+ * collider clones, and the nav/cover/obstacle/ray structures built from them.
+ *
+ * **THE MESHES ARE NO LONGER WHAT A SHOT IS RESOLVED AGAINST, and they are
+ * still required.** They existed so this process's `scene.pickWithRay` had
+ * something to pick; every ray on both sides is a box query now (`RayWorld`,
+ * `ENGINE_UPGRADE.md` wall 2), so nothing here is picked at all. What still
+ * needs them is `Tank.update`, which drives a hull with
+ * `body.moveWithCollisions` — and the authority simulates its own hulls. So a
+ * pass that deleted this geometry as dead weight would leave armour driving
+ * through walls on the server and stopping at them on every client, which is
+ * the worst-shaped disagreement this file exists to prevent.
  * Invariants: this is the collider half of `MapBuilder.build` and nothing else
  * — no visuals, no materials, no textures, no AO bake, and the two merges here
  * (`strutMesh`, `clusterMesh`) merge COLLIDERS and draw nothing. It must produce
@@ -43,18 +53,22 @@ import { BLOCK_SIZE } from "../src/world/MapBuilder";
 import type { MapDef } from "../src/world/maps";
 import { NavGrid } from "../src/world/NavGrid";
 import { ObstacleField } from "../src/world/ObstacleField";
+import { RayWorld } from "../src/world/RayWorld";
 import { TerrainField, terrainPatches } from "../src/world/TerrainField";
 
 /**
  * Builds one collider box, matching `MapBuilder.collider()` exactly.
  *
- * The flags are the contract every ray test in the game reads: `solid` is what
- * `SOLID_ONLY` filters on, `porous` is what `OPAQUE_ONLY` subtracts from it,
- * and `MapBuilder` deliberately leaves `surface` absent so the box reads as
- * "hard". All three are copied here rather than shared
- * because the two functions build from different inputs — one from a `BoxSpec`
- * in a structure's local frame, one from a `WorldBox` already in world space —
- * and the only thing they have in common is the result.
+ * The flags are copied even though nothing here reads them any more, and that
+ * is deliberate: `MapBuilder`'s mesh carries them, the editor's predicate
+ * reads them there, and a mesh on this side that describes itself differently
+ * from its twin is a difference a future reader would have to rediscover. The
+ * flags that DECIDE anything travel on the `WorldBox` — that is what
+ * `RayWorld`, `NavGrid`, `CoverMap` and `ObstacleField` all read. They are
+ * copied rather than shared because the two functions build from different
+ * inputs — one from a `BoxSpec` in a structure's local frame, one from a
+ * `WorldBox` already in world space — and the only thing they have in common
+ * is the result.
  */
 function colliderBox(scene: Scene, box: WorldBox, i: number): Mesh {
   const mesh = MeshBuilder.CreateBox(
@@ -66,15 +80,15 @@ function colliderBox(scene: Scene, box: WorldBox, i: number): Mesh {
   mesh.rotation.set(box.rotX, box.rotY, 0);
   mesh.isVisible = false;
   mesh.isPickable = true;
-  // `checkCollisions` is what `moveWithCollisions` walks, and nothing on the
-  // server moves that way — the client does its own movement and the bots never
-  // touched the collidable list. Left on anyway so the mesh is identical to the
-  // client's in every field a future reader might compare.
+  // `checkCollisions` is what `moveWithCollisions` walks, and it is the ONE
+  // thing on this side that still needs these meshes at all: a bot or a human
+  // driving a hull is simulated here, and `Tank.update` moves it that way. The
+  // legs never touched this list — a client does its own movement and
+  // `validateMove` checks the result analytically — and neither did the bots.
   mesh.checkCollisions = true;
-  // `porous` copied through for the reason the whole file exists: the server
-  // resolves every shot, so a fence it thought was solid would eat rounds the
-  // shooter watched go between the rails, and the client would be showing a
-  // hitmarker the authority disagrees with.
+  // `porous` copied through so the mesh describes itself the way the client's
+  // twin does. The flag that DECIDES a shot rides on the `WorldBox` and is read
+  // by `RayWorld`; see the header on why both sides still carry it.
   mesh.metadata = box.porous ? { solid: true, porous: true } : { solid: true };
   mesh.freezeWorldMatrix();
   return mesh;
@@ -84,19 +98,18 @@ function colliderBox(scene: Scene, box: WorldBox, i: number): Mesh {
  * One group of `strut` boxes as the single collider mesh the client merged them
  * into — a fence's posts and rails.
  *
- * **This is the one merge on the server, and it is here because the client's
- * pick has to meet the same geometry the server's does.** The header's "no
- * merges" is about visuals: there is nothing to draw here and this produces no
- * material, no texture and no draw call — it is a triangle soup that exists to
- * be picked, and merging is what keeps the cost of picking it flat. Group by
- * group, exactly as baked: merging all of them into one mesh would wrap one
- * bounding box around every fence in the village, and then every ray this
- * process fires would pay for all of them.
+ * **This is the one merge on the server**, and it is here because the client
+ * merges the same group and the two worlds must be the same shape. The
+ * header's "no merges" is about visuals: there is nothing to draw here and
+ * this produces no material, no texture and no draw call. Group by group,
+ * exactly as baked, because a merge is a decision the CLIENT made and this
+ * side has to reproduce it rather than invent one.
  *
- * `rayOnly` keeps it out of `SOLID_ONLY`, matching the client, so the movement
- * validator and everything else that asks where a body may be never sees a
- * rail. Nothing here is in `colliderBoxes`, so the nav graph, the cover bake
- * and the obstacle field never see one either — which is what keeps this world
+ * **A strut stops a round and is no body at all, so `checkCollisions` is off
+ * and this mesh is now inert on this side** — what a round meets is
+ * `RayWorld`'s copy of `rayGroups`, and what a hull meets is the boxes above.
+ * Nothing here is in `colliderBoxes`, so the nav graph, the cover bake and the
+ * obstacle field never see a rail either, which is what keeps this world
  * identical to the one `npm run parity` compares.
  */
 /**
@@ -104,12 +117,11 @@ function colliderBox(scene: Scene, box: WorldBox, i: number): Mesh {
  * merged them into — a dozen tree trunks in a 12 m square.
  *
  * **The second merge on the server, and it exists for the same reason as the
- * first**: a pick costs per mesh before it costs per triangle, and this process
- * resolves every shot in every match it is running. Greyfen's jungle is ~950
- * one-metre trunks; unmerged they would be more collider meshes than the rest
- * of the map put together, and every rewound shot would pay a bounding test for
- * each. Group by group exactly as baked, never all in one — see `strutMesh`,
- * whose bounding-box warning is the same one.
+ * first**: the client merged these and the two worlds must be the same shape.
+ * It used to be a budget argument as well — a pick costs per mesh before it
+ * costs per triangle, and Greyfen's ~950 one-metre trunks unmerged would be
+ * more collider meshes than the rest of the map put together — and that half
+ * went with the picks. Group by group exactly as baked, never all in one.
  *
  * Unlike a strut, every box in here IS in `colliderBoxes`, so the nav grid, the
  * cover bake and the obstacle field still see individual trunks. The merge is
@@ -269,6 +281,12 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   const nav = new NavGrid(size, boxes, terrain, def.layout.surfaces);
   const cover = new CoverMap(nav, boxes);
   const obstacles = new ObstacleField(size, boxes);
+  // The segment query, off the same two lists the meshes above were built from
+  // plus the same floor. It is what makes those meshes a convenience rather
+  // than the reason this file exists: every ray the shared systems fire — the
+  // rewound hitscan, sixteen bots' line of sight, the grenade, the rocket —
+  // goes through this and never through the scene.
+  const rays = new RayWorld(size, boxes, rayGroups, terrain);
 
   // One flow field per objective, plus a route home per team — the set
   // `BattleSystem.fieldFor`/`homeFieldFor` ask for by name.
@@ -318,6 +336,7 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     nav,
     obstacles,
     cover,
+    rays,
     // Passed through rather than left empty. Nothing on the server reads them —
     // water and grass are visual — but a `GameMap` that disagrees with the
     // client's about what the map contains is a trap for whoever next writes a

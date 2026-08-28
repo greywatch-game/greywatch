@@ -159,7 +159,7 @@ tumble, and a contact detonation instead of a clock. What it DOES share is
 copied deliberately, because both are things that were got wrong first:
 
 - **One ray per rocket per frame**, cast along the step and a radius past it so
-  a fast body cannot tunnel between frames, filtered `OPAQUE_ONLY`.
+  a fast body cannot tunnel between frames, through `RayWorld.castRound`.
 - **`TerrainField` as a backstop under the colliders**, not as the floor test —
   a rocket that slipped past a seam has to go off on the ground rather than fly
   on under the map.

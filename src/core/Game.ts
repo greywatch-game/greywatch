@@ -895,7 +895,7 @@ export class Game {
     this.glass = new GlassSystem();
     this.deathCam = new DeathCam(this.scene, this.mats);
     this.vehicles = new VehicleSystem(this.scene, this.mats);
-    this.vehicleCam = new VehicleCamera(this.scene);
+    this.vehicleCam = new VehicleCamera();
     // The crew's context, built once exactly as `BattleSystem`'s `BattleCtx`
     // is: everything a driver may ask about the rest of the game, and nothing
     // else. The two lists are asked for rather than captured, because what
@@ -928,7 +928,7 @@ export class Game {
     // spending it is `wireAntiTank`'s, through the same `blastAt` the tank
     // shell already goes through.
     this.antiTank = new AntiTankSystem(this.scene, this.mats);
-    this.aimAssist = new AimAssistSystem(this.scene);
+    this.aimAssist = new AimAssistSystem();
     this.battle = new BattleSystem(this.scene, this.mats, this.combat);
     this.conquest = new ConquestSystem();
     this.zones = new CaptureZoneSystem(this.scene, glow);
@@ -3096,6 +3096,25 @@ export class Game {
     this.player.setGround(map.terrain, map.obstacles, (x, z, ceiling, floor) =>
       this.vehicles.deckAt(x, z, ceiling, floor),
     );
+    // **The solid world as a SEGMENT QUERY, to the six systems that used to ask
+    // the scene.** This is the whole of `ENGINE_UPGRADE.md` wall 2 on this
+    // side: `scene.pickWithRay` walked every mesh in the scene to answer where
+    // a round stopped, so the eight sites that asked it were priced on the size
+    // of the MAP rather than on the length of the ray. They read
+    // `colliderBoxes`, the strut groups and the heightfield now, exactly as
+    // `Player.probeGround` was made to. Nothing about what any of them decides
+    // has changed — see `world/RayWorld.ts` for the two questions and which
+    // caller asks which.
+    //
+    // `BattleSystem` and `VehicleSystem` are not in this list and are not
+    // exceptions: both are handed the whole `GameMap` already, and both take it
+    // off `map.rays` where they take `nav`, `cover` and `obstacles`.
+    this.combat.setWorld(map.rays);
+    this.grenades.setWorld(map.rays);
+    this.antiTank.setWorld(map.rays);
+    this.aimAssist.setWorld(map.rays);
+    this.deathCam.setWorld(map.rays);
+    this.vehicleCam.setWorld(map.rays);
     // The floor a grenade comes to rest on, as a backstop under the collider
     // proxies — the same terrain the player's ground probe falls back to, and
     // the map's own mist and moon, which are what colour the blast dust.

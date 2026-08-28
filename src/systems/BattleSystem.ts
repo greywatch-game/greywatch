@@ -12,7 +12,7 @@
  * (SquadRadio: one per team, held here, cleared on reset, and reached by bots
  * only through BattleCtx). A call and a hazard mark are CUES: they seed
  * BotMemory and may never hand anybody a target.
- * LOS rays filter OPAQUE_ONLY, so a bot sees through what it could shoot
+ * LOS runs `RayWorld.blocked`, so a bot sees through what it could shoot
  * through (fence rails) and not through what it could not.
  * Cover is a baked lookup (world/CoverMap), never a probe. Bot muzzle flashes are
  * NOT pulsed from here — this system only records flash positions and Game
@@ -37,7 +37,7 @@
  * benches the local player's, which is what makes a single-player round 8v8
  * rather than 8v9.
  */
-import { Ray, Scene, Vector3 } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
 import { Bot, type BattleCtx, type BotZone } from "../entities/Bot";
 import { assignSkills } from "../entities/BotSkill";
@@ -47,7 +47,7 @@ import type { CoverMap } from "../world/CoverMap";
 import type { FlowField, NavGrid } from "../world/NavGrid";
 import type { GameMap } from "../world/MapBuilder";
 import type { ObstacleField } from "../world/ObstacleField";
-import { OPAQUE_ONLY } from "../world/solid";
+import type { RayWorld } from "../world/RayWorld";
 import type { CombatSystem, Hittable, ShotOptions } from "./CombatSystem";
 import { SquadRadio } from "../entities/SquadRadio";
 import type { SquadOrder } from "./ConquestSystem";
@@ -265,7 +265,11 @@ export class BattleSystem {
   /** Carried across frames so a fractional think budget isn't lost. */
   private thinkDebt = 0;
   private ctx: BattleCtx;
-  private readonly ray = new Ray(new Vector3(), new Vector3(), 1);
+  /**
+   * The solid world as a segment query. Null until a map is installed, and a
+   * bot with no map can see everything — which is what an empty scene answered.
+   */
+  private rays: RayWorld | null = null;
   /**
    * `Combatant` rather than `Hittable`, which is the wider of the two and is
    * everything that ever goes in: bots and humans alike declare a team, a
@@ -277,7 +281,9 @@ export class BattleSystem {
   private readonly candidateScratch: { c: Combatant; d: number }[] = [];
 
   constructor(
-    private scene: Scene,
+    // Not a field: the rig pool is built from it here and the last thing that
+    // wanted one afterwards was the line-of-sight pick.
+    scene: Scene,
     mats: CelMaterialFactory,
     private combat: CombatSystem,
   ) {
@@ -388,6 +394,7 @@ export class BattleSystem {
     this.nav = map.nav;
     this.cover = map.cover;
     this.obstacles = map.obstacles;
+    this.rays = map.rays;
   }
 
   /**
@@ -551,7 +558,7 @@ export class BattleSystem {
   }
 
   /**
-   * Is `to` visible from `from`, against the same `OPAQUE_ONLY` world a bot's
+   * Is `to` visible from `from`, against the same `castRound` world a bot's
    * own line of sight is tested against?
    *
    * The public door onto `visible`, which bots already reach through
@@ -747,8 +754,8 @@ export class BattleSystem {
    * Candidates are gathered by distance first and only then ray-tested, in
    * ascending order, returning the first one that is actually visible. Testing
    * every candidate instead would fire up to thirty rays per think — at 5 Hz
-   * across 16 bots that is thousands of `pickWithRay` calls a second. This way
-   * the common case is one ray.
+   * across 16 bots that is thousands of line-of-sight queries a second. This
+   * way the common case is one.
    */
   private acquire(bot: Bot): Combatant | null {
     const range = CONFIG.bots.engageRange;
@@ -836,16 +843,7 @@ export class BattleSystem {
    * walls, which is invisible in an empty arena and absurd in a village.
    */
   private visible(from: Vector3, to: Vector3): boolean {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const dz = to.z - from.z;
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 0.01) return true;
-    this.ray.origin.copyFrom(from);
-    this.ray.direction.set(dx / len, dy / len, dz / len);
-    this.ray.length = len;
-    const hit = this.scene.pickWithRay(this.ray, OPAQUE_ONLY);
-    return !hit?.hit;
+    return !this.rays?.blocked(from, to);
   }
 
   /**

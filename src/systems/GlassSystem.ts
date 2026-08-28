@@ -13,18 +13,20 @@
  *
  * ## Why the sweep is analytic and not a pick
  *
- * A round has to pass THROUGH glass, so a pane may not be in `OPAQUE_ONLY` —
- * which means `CombatSystem`'s wall pick can never report one, whatever the
- * pane's collider says. A second `scene.pickWithRay` per shot would answer it
- * and would also be the most expensive thing on the shot path, and adding the
- * panes to the existing pick would stop every round on the first window it met.
+ * A round has to pass THROUGH glass, so a pane may not stop a `castRound` —
+ * which means `CombatSystem`'s wall query can never report one, whatever the
+ * pane's collider says. A second query per shot would answer it, and adding
+ * the panes to the existing one would stop every round on the first window it
+ * met. (When this was written the wall query was `scene.pickWithRay` and the
+ * second one would have been the most expensive thing on the shot path; that
+ * half of the argument is gone with the pick, and the other half is not.)
  *
  * So the panes are geometry this system holds, and the question is arithmetic:
  * a segment against an oriented box, bucketed by map block so a shot tests the
  * panes near it and no others. That puts nothing at all on the ground probe or
  * on the bots' line of sight, and a bounded handful of slab tests on a shot.
  * (The probe has since stopped being a ray at all, which does not change the
- * argument: a pane added to `OPAQUE_ONLY` would still stop the first round to
+ * argument: a pane added to the round question would still stop the first round to
  * meet a window.) It also runs unchanged
  * on the authority, which has the same panes off the collision bake and no
  * scene worth picking against.
@@ -47,10 +49,12 @@
  * and takes the outline shell with it (see `MapBuilder.paneGroup`).
  *
  * The COLLIDER is every pane's, because a pane with a room behind it is the
- * only thing in the way while it stands. Clearing `solid` takes it out of both
- * pick predicates in one write; clearing `checkCollisions` takes it out of
- * `moveWithCollisions`; `ObstacleField.remove` takes it out of the sub-cell
- * push-out the bots and the server's move validator both read.
+ * only thing in the way while it stands. `RayWorld.remove` takes it out of both
+ * questions every ray asks in one write; clearing `checkCollisions` takes it
+ * out of `moveWithCollisions`; `ObstacleField.remove` takes it out of the
+ * sub-cell push-out the bots and the server's move validator both read. The
+ * `solid` flag on the MESH is written with them and is the editor's alone now
+ * — `world/solid.ts` is all that still reads it.
  *
  * The NAV GRAPH is `NavGrid.openBox`, which relinks the ground the pane was
  * severing. That is local and cheap.
@@ -339,18 +343,22 @@ export class GlassSystem {
 
     const mesh = this.colliders.get(pane);
     if (mesh) {
-      // `solid` is the one write that matters: it takes the box out of
-      // `SOLID_ONLY` and `OPAQUE_ONLY` together, so the ground probe, the death
-      // cam's pull-in and the editor's pick all stop seeing it in the same
-      // frame. `checkCollisions` is the movement half, which is a separate
-      // list. Disabling the mesh is neither — it is what takes it out of the
-      // scene's pick loop entirely, which is the cost this feature must not add.
+      // The MESH's own three writes, and what each is still for. `solid` is
+      // read by `world/solid.ts` and so by the editor's centre-screen pick;
+      // `checkCollisions` is the movement half, which is a separate list; and
+      // disabling is neither — it is what takes the mesh out of the scene
+      // entirely. The rays stopped reading any of them at
+      // `ENGINE_UPGRADE.md` wall 2 and read the BOX instead, below.
       mesh.metadata.solid = false;
       mesh.checkCollisions = false;
       mesh.setEnabled(false);
     }
 
     map.obstacles.remove(box);
+    // And out of every ray in the game, which is the write that used to be
+    // `mesh.metadata.solid = false` — one flag, clearing both questions at
+    // once, exactly as that one did. See `RayWorld.remove`.
+    map.rays.remove(box);
     // The box is still in `colliderBoxes` — that array is the bake's order and
     // the pane's own `box` index into it, so nothing may be spliced out of it
     // ever. It is filtered here instead, which is the one place a caller needs

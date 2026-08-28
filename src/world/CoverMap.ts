@@ -37,9 +37,8 @@ export type CoverKind = "none" | "crouch" | "hard";
  * The obvious implementation is the one `Bot.pickDetourSide` already gestures
  * at — probe a few candidate spots at runtime and raycast to check. It works,
  * and it is the wrong shape here. Evaluating a handful of candidates per cover
- * decision, at 16 bots and `thinkRate` 5, is hundreds of extra `pickWithRay`
- * calls a second against an LOS budget that currently runs at a couple per
- * frame. And the answer never changes: the map is static, which is the same
+ * decision, at 16 bots and `thinkRate` 5, is hundreds of extra ray queries a
+ * second against an LOS budget that runs at about one per frame. And the answer never changes: the map is static, which is the same
  * reasoning that makes `NavGrid` bake seven flow fields at load and recompute
  * nothing.
  *

@@ -939,12 +939,18 @@ It rebuilds the solid world instead, from `src/world/<map>/collision.ts`
 (generated; see `scripts/bake-collision.mjs`). That is sound because
 `MapBuilder.collider()` is the only place a collider is made and the `WorldBox`
 it records is everything `MeshBuilder.CreateBox` needs. Both sides then pick
-against that geometry with the same predicates from `src/world/solid.ts` — one
-ray implementation, not two.
+against that geometry through the same `RayWorld` the client builds, off the
+same `colliderBoxes` and `rayGroups` — one ray implementation, not two. **The
+collider MESHES this file stands up are no longer what a shot is resolved
+against, and they are still required**: they were there so the server's
+`scene.pickWithRay` had something to pick, and every ray on both sides is a box
+query now — but `Tank.update` drives a hull with `body.moveWithCollisions`, and
+the authority simulates its own hulls. So the geometry stays, for the legs' old
+reason turned on its head.
 
 **A baked box carries its `porous` flag as a ninth tuple entry, and the bake
 carries a second list beside `boxes` for the `rayOnly` geometry.** Both are what
-the shot ray adds up to (`OPAQUE_ONLY`; see the collider section of
+the shot ray adds up to (`RayWorld.castRound`; see the collider section of
 `CLAUDE.md`): a server whose fences are solid eats rounds the shooter watched go
 between the rails, and a server with no fence timber gives up hits the shooter
 watched stop on a post. Either way it disagrees in the direction that is hardest

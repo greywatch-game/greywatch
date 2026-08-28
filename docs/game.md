@@ -89,6 +89,17 @@ disagree about: the round applies the environment and repaints the sky while the
 editor drives `applyEnvironment` itself so it can toggle its work light, and the
 round alone owns what is about a *fight* — battle, conquest, flag markers, minimap.
 
+**Six of those hand-offs are one line each and one object**, and they are worth
+naming because they are new and because they look skippable. `map.rays` is the
+segment query every ray in the game asks (`world/RayWorld.ts`), and `installMap`
+pushes it to `CombatSystem`, `GrenadeSystem`, `AntiTankSystem`,
+`AimAssistSystem`, `DeathCam` and `VehicleCamera`. `BattleSystem` and
+`VehicleSystem` are absent from that list and are not exceptions: both are
+handed the whole `GameMap`, and both take it off `map.rays` where they take
+`nav`, `cover` and `obstacles`. A system that misses this one does not throw
+either — it casts against a null world and reports that nothing is in the way,
+which reads as a bot with a wallhack or a round that never stops.
+
 **Silent is the operative word.** A system that missed the funnel does not throw
 and does not log; it renders, correctly, from a map that no longer exists. The
 editor is where it shows first because the editor is the caller that rebuilds

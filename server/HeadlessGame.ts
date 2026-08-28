@@ -253,6 +253,15 @@ export class HeadlessGame {
     this.grenades.reset();
     this.antiTank.setTerrain(this.map.terrain);
     this.antiTank.reset();
+    // **The solid world as a segment query**, to the three systems here that
+    // used to ask the scene for it — `installMap`'s line and for its reasons.
+    // The authority resolves every shot in the match, so this is the process
+    // the old `O(colliders in the scene)` pick cost most: see
+    // `ENGINE_UPGRADE.md` wall 2. `BattleSystem` and `VehicleSystem` take it
+    // off the `GameMap` they are already handed.
+    this.combat.setWorld(this.map.rays);
+    this.grenades.setWorld(this.map.rays);
+    this.antiTank.setWorld(this.map.rays);
     // Every pane back, on this side too. A round is a fresh build on the
     // client, so anything else here would be an authority holding glass its
     // clients have just put back up.

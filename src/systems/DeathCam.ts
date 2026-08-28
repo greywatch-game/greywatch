@@ -40,7 +40,7 @@
  *   `Game.updateGameplay` like every other body; this file only says which body
  *   to throw and where to stand to watch it.
  */
-import { Ray, Scene, Vector3 } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
 import type { DamageKind } from "./CombatSystem";
@@ -52,7 +52,7 @@ import {
   type SoldierRig,
 } from "../entities/SoldierModel";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { SOLID_ONLY } from "../world/solid";
+import { newRayHit, type RayWorld } from "../world/RayWorld";
 
 /**
  * The player's stand-in, as the ragdoll pool wants it.
@@ -110,12 +110,23 @@ export class DeathCam {
   // Scratch. This runs every frame of the cam; nothing below allocates.
   private readonly want = new Vector3();
   private readonly dir = new Vector3();
-  private readonly ray = new Ray(new Vector3(), new Vector3(0, 0, 1), 1);
+  /**
+   * The solid world as a segment query, and the buffer the pull-in reads. Null
+   * until a map is installed, at which point nothing is in the way — which is
+   * what an empty scene answered.
+   */
+  private rays: RayWorld | null = null;
+  private readonly hit = newRayHit();
 
   constructor(
     private scene: Scene,
     private mats: CelMaterialFactory,
   ) {}
+
+  /** Wired from `Game.installMap`, beside every other system holding a map. */
+  setWorld(rays: RayWorld | null): void {
+    this.rays = rays;
+  }
 
   /** True while the cam is up. `Game`'s `dying` state is exactly this. */
   get active(): boolean {
@@ -343,18 +354,14 @@ export class DeathCam {
     const len = this.dir.length();
     if (len < 1e-4) return;
     this.dir.scaleInPlace(1 / len);
-    this.ray.origin.copyFrom(this.anchor);
-    this.ray.direction.copyFrom(this.dir);
-    this.ray.length = len;
     // Collider proxies only, so the corpse's own meshes — and every other
-    // visual — are transparent to it. `SOLID_ONLY` rather than the shot ray's
-    // `OPAQUE_ONLY`, because this asks where the camera may SIT, not what it
-    // can see through: a porous box is still somewhere a camera should not be
-    // parked, and stopping short of a fence costs four seconds of a view that
-    // was see-through anyway.
-    const hit = this.scene.pickWithRay(this.ray, SOLID_ONLY);
-    if (!hit || !hit.hit) return;
-    const allow = Math.max(c.minDistance, hit.distance - c.wallMargin);
+    // visual — were never in this question at all. `castBody` rather than the
+    // shot's `castRound`, because this asks where the camera may SIT, not what
+    // it can see through: a porous box is still somewhere a camera should not
+    // be parked, and stopping short of a fence costs four seconds of a view
+    // that was see-through anyway.
+    if (!this.rays?.castBody(this.anchor, this.dir, len, this.hit)) return;
+    const allow = Math.max(c.minDistance, this.hit.distance - c.wallMargin);
     if (allow >= len) return;
     this.eye.copyFrom(this.anchor).addInPlace(this.dir.scaleInPlace(allow));
   }

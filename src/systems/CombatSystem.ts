@@ -3,10 +3,12 @@
  * pooled tracer/spark effects.
  * Invariants: fire() takes the shooter's target list — friendly fire is
  * excluded by the caller's list construction, never by a team check inside.
- * Wall ray filters OPAQUE_ONLY — the solid world minus what a round passes
- * through, which today is fence rails — and caps the shot; a target sphere
- * farther than the first opaque hit does not count (a bot embedded in a prop is
- * unshootable — movement bugs become combat bugs).
+ * The wall query is `RayWorld.castRound` — the solid world minus what a round
+ * passes through, which today is fence rails and intact glass — and it caps the
+ * shot; a target sphere farther than the first opaque hit does not count (a bot
+ * embedded in a prop is unshootable — movement bugs become combat bugs). It was
+ * `scene.pickWithRay` until `ENGINE_UPGRADE.md` wall 2, and the only thing that
+ * changed about the shot is what answers it.
  * Damage is `damage` at close range falling to `opts.damageFar` past
  * `opts.falloffFar`, resolved against the distance the impact point already
  * cost — range is a slope now, and `range` is only where the ray stops.
@@ -21,8 +23,9 @@
  * The disc pool is `noGlow`, and that flag only works because `Game` builds
  * this system BEFORE its construction-time GlowLayer scan. Move the
  * construction later and every dust disc blooms like a lamp.
- * `metadata.surface` on the picked mesh chooses the impact; absent means
- * "hard", which is what every collider but the terrain floor's clone leaves.
+ * `RayHit.surface` chooses the impact; "hard" is what everything but the floor
+ * answers, exactly as `metadata.surface` was absent on everything but the
+ * terrain collider's clone.
  * A tracer is a short streak flown from muzzle to impact over several frames,
  * NOT a muzzle-to-impact beam — the hit is resolved instantly regardless, so
  * the flight is presentation only and must never gate damage. The impact spark
@@ -34,13 +37,12 @@ import {
   Mesh,
   MeshBuilder,
   Quaternion,
-  Ray,
   Scene,
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { OPAQUE_ONLY } from "../world/solid";
+import { newRayHit, type RayWorld } from "../world/RayWorld";
 
 /**
  * What DELIVERED a hit, for the one kind of target that answers differently
@@ -267,7 +269,7 @@ export class CombatSystem {
    *
    * This exists for glass and only for glass, and it is a hook rather than a
    * second pick because a pane is the one thing in the world a round goes
-   * through: it cannot be in `OPAQUE_ONLY` without stopping the round, so the
+   * through: it cannot stop a `castRound` without stopping the round, so the
    * wall pick above can never report one however the pane is declared. See
    * `GlassSystem`, which answers this analytically and puts nothing on the
    * per-frame ray budget.
@@ -279,8 +281,29 @@ export class CombatSystem {
    */
   onShotPath: (origin: Vector3, dir: Vector3, dist: number) => void = () => {};
 
+  /**
+   * The solid world as a segment query. Null until a map is installed, and a
+   * round fired before one stops on nothing — which is the same thing an empty
+   * scene used to answer.
+   */
+  private rays: RayWorld | null = null;
+
+  /** The wall query's result. Scratch: read inside `fire`, never held. */
+  private readonly wall = newRayHit();
+
+  /**
+   * The world every round is capped against. Wired from `installMap` on the
+   * client and from `startRound` on the authority, so both resolve a shot
+   * against the same boxes — which is the whole of why the rewind can work.
+   */
+  setWorld(rays: RayWorld | null): void {
+    this.rays = rays;
+  }
+
   constructor(
-    private scene: Scene,
+    // Not a field any more: the last thing this system asked the scene for was
+    // the wall pick, and everything it still builds is built here.
+    scene: Scene,
     private mats: CelMaterialFactory,
   ) {
     const fx = CONFIG.effects;
@@ -369,11 +392,11 @@ export class CombatSystem {
   ): ShotResult {
     const dir = jitterDirection(aimDir, spread);
 
-    // Wall/prop/floor hit distance caps the shot.
-    const ray = new Ray(origin, dir, range);
-    const wallPick = this.scene.pickWithRay(ray, OPAQUE_ONLY);
-    let hitDist = wallPick && wallPick.hit ? wallPick.distance : range;
-    const hitWall = !!(wallPick && wallPick.hit);
+    // Wall/prop/floor hit distance caps the shot. `range` is the whole reach of
+    // the round, so it bounds this as well as the near-miss sweep below.
+    const hitWall =
+      this.rays !== null && this.rays.castRound(origin, dir, range, this.wall);
+    let hitDist = hitWall ? this.wall.distance : range;
 
     // Nearest target sphere along the ray, if closer than the wall. The same
     // pass also notes anyone the round merely went *past*: the sphere test is
@@ -443,20 +466,19 @@ export class CombatSystem {
     // cap, which is exactly how long the tell was. The sound rides the same
     // clock as the visual for the same reason.
     //
-    // The surface comes off the pick this method already paid for. `hard` is
-    // the default and nothing writes it: only the terrain floor's collider
-    // clone says `surface`, so every wall, prop and roof in the village
-    // answers by omission. The NORMAL is fetched only when there is a disc
-    // that will use it — a flesh hit has none, and neither does a round that
-    // stopped on nothing.
+    // The surface comes off the query this method already paid for. `hard` is
+    // what everything but the floor answers, exactly as only the terrain
+    // collider's clone ever carried `metadata.surface`. A flesh hit has no
+    // normal, and neither does a round that stopped on nothing.
     let kind: ImpactKind | null = null;
     let normal: Vector3 | null = null;
     if (hitTarget) {
       kind = "flesh";
     } else if (hitWall) {
-      kind =
-        wallPick!.pickedMesh?.metadata?.surface === "ground" ? "ground" : "hard";
-      normal = wallPick!.getNormal(true);
+      kind = this.wall.surface;
+      // Scratch, and handed straight to `spawnTracer`, which copies it — see
+      // its `normal` parameter. Nothing in flight holds a query result.
+      normal = this.wall.normal;
     }
     this.spawnTracer(muzzle, hitPoint, kind, normal);
     // Glass last, and bounded by `hitDist` rather than by `range`: the segment

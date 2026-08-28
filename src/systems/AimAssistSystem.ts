@@ -13,13 +13,13 @@
  * have, and `CONFIG.touch.cancelDrag` is the committed push. Its rotation is capped
  * at a fraction of the player's OWN full-stick turn rate, is gated on the
  * player actually driving, and is cancelled by opposing stick deflection — so
- * a committed push always wins. LOS ray filters OPAQUE_ONLY (walls block
+ * a committed push always wins. LOS is `RayWorld.blocked` (walls block
  * assist; a fence the round would pass through does not). Called by Game before CameraSystem.update.
  */
-import { Ray, Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { InputManager } from "../core/InputManager";
-import { OPAQUE_ONLY } from "../world/solid";
+import type { RayWorld } from "../world/RayWorld";
 
 /**
  * Structural subset of `Hittable` (CombatSystem), declared here so this
@@ -103,10 +103,19 @@ export class AimAssistSystem {
   private haveHistory = false;
 
   /** Scratch for the line-of-sight cast — no per-frame allocation. */
-  private readonly losRay = new Ray(new Vector3(), new Vector3(0, 0, 1), 1);
-  private readonly losDir = new Vector3();
+  /**
+   * The solid world as a segment query. Null until a map is installed, and
+   * assist with no map behind it is assist with nothing in the way — the same
+   * answer an empty scene gave.
+   */
+  private rays: RayWorld | null = null;
 
-  constructor(private scene: Scene) {}
+  /** Wired from `Game.installMap`, beside every other system holding a map. */
+  setWorld(rays: RayWorld | null): void {
+    this.rays = rays;
+  }
+
+
 
   /**
    * Computes this frame's assist, or null when inactive. Call immediately
@@ -195,20 +204,10 @@ export class AimAssistSystem {
       }
     }
 
-    // --- LOS: the same solid-collider pick hitscan uses, so walls win ---
-    if (best) {
-      // Ray and direction both reused. Every peer that casts per frame —
-      // `DeathCam`, `GrenadeSystem`, `BattleSystem` — keeps a scratch `Ray` for
-      // this; this one was minting a Ray, two Vector3s and a predicate closure
-      // on every frame a pad player held a target.
-      best.center.subtractToRef(origin, this.losDir);
-      this.losDir.scaleInPlace(1 / bestDist);
-      this.losRay.origin.copyFrom(origin);
-      this.losRay.direction.copyFrom(this.losDir);
-      this.losRay.length = bestDist;
-      const wall = this.scene.pickWithRay(this.losRay, OPAQUE_ONLY);
-      if (wall && wall.hit) best = null;
-    }
+    // --- LOS: the same solid-collider question the hitscan asks, so walls win
+    // --- and it is the point-to-point form, which spares this the direction
+    // and the ray it used to mint per frame a pad player held a target.
+    if (best && this.rays?.blocked(origin, best.center)) best = null;
 
     // --- ramps. Losing the target decays the engagement rather than
     // dropping it, so the slowdown eases off and a re-acquire inside the

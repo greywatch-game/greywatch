@@ -46,11 +46,11 @@
  * tank is taken out of the pick anyway (`Tank`'s header says why) — a hull is
  * the nearest solid thing to its own camera by several metres.
  */
-import { Ray, Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Tank } from "../entities/Tank";
 import type { InputManager } from "../core/InputManager";
-import { SOLID_ONLY } from "../world/solid";
+import { newRayHit, type RayWorld } from "../world/RayWorld";
 
 export class VehicleCamera {
   /** Where the driver is asking the gun to point. `Tank` walks to these. */
@@ -80,9 +80,18 @@ export class VehicleCamera {
   // Scratch. Runs every frame while driving; nothing below allocates.
   private readonly anchor = new Vector3();
   private readonly dir = new Vector3();
-  private readonly ray = new Ray(new Vector3(), new Vector3(0, 0, 1), 1);
+  /**
+   * The solid world as a segment query, and the buffer the pull-in reads. Null
+   * until a map is installed, when nothing is in the way.
+   */
+  private rays: RayWorld | null = null;
+  private readonly hit = newRayHit();
 
-  constructor(private scene: Scene) {}
+  /** Wired from `Game.installMap`, beside every other system holding a map. */
+  setWorld(rays: RayWorld | null): void {
+    this.rays = rays;
+  }
+
 
   /**
    * The same three multipliers `CameraSystem.setLookScale` takes, and they have
@@ -187,20 +196,13 @@ export class VehicleCamera {
     const len = this.dir.length();
     if (len < 1e-4) return;
     this.dir.scaleInPlace(1 / len);
-    this.ray.origin.copyFrom(this.anchor);
-    this.ray.direction.copyFrom(this.dir);
-    this.ray.length = len;
-    // Out of its own pick — see `Tank`'s header. The OTHER tank stays in it,
-    // which is what makes one hull block another's camera.
-    const pickable = tank.body.isPickable;
-    tank.body.isPickable = false;
-    // `SOLID_ONLY` rather than the shot ray's `OPAQUE_ONLY`, the same choice
+    // Out of its own query — see `Tank`'s header — which is what `skip` is for.
+    // The OTHER tank stays in it, which is what makes one hull block another's
+    // camera. `castBody` rather than the shot's `castRound`, the same choice
     // the death cam makes: this asks where the eye may SIT, not what it can see
     // through, and a porous box is still somewhere a camera should not park.
-    const hit = this.scene.pickWithRay(this.ray, SOLID_ONLY);
-    tank.body.isPickable = pickable;
-    if (!hit || !hit.hit) return;
-    const allow = Math.max(v.minDistance, hit.distance - v.wallMargin);
+    if (!this.rays?.castBody(this.anchor, this.dir, len, this.hit, tank)) return;
+    const allow = Math.max(v.minDistance, this.hit.distance - v.wallMargin);
     if (allow >= len) return;
     this.eye.copyFrom(this.anchor).addInPlace(this.dir.scaleInPlace(allow));
   }

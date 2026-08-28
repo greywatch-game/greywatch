@@ -14,7 +14,7 @@
  * grenade but the fact of flying: no fuse, no bounce, no rest, no tumble, and
  * a contact detonation instead of a clock. What the two DO share is the step
  * ray — one per rocket per frame, cast along the step and a radius past it so
- * a fast body cannot tunnel between frames, filtered `OPAQUE_ONLY` — and the
+ * a fast body cannot tunnel between frames, through `RayWorld.castRound` — and the
  * terrain backstop under it. Both of those are copied deliberately: they are
  * the two things about flying through this world that were got wrong first.
  *
@@ -28,14 +28,14 @@
  * `VehicleSystem`, a `Tank` or a `Player`. It asks "is there a hostile hull
  * within this many metres of this point" and is answered by whoever knows.
  */
-import { Mesh, Ray, Scene, Vector3 } from "@babylonjs/core";
+import { Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { EquipmentId } from "../entities/equipment";
 import { buildMineBody } from "../entities/MineModel";
 import { buildRocket } from "../entities/RpgModel";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { OPAQUE_ONLY } from "../world/solid";
+import { newRayHit, type RayWorld } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
 import type { Hittable } from "./CombatSystem";
 
@@ -140,12 +140,20 @@ export interface OrdnanceHit {
 // and the pool exists so that a firefight allocates nothing.
 const _step = new Vector3();
 const _back = new Vector3();
+/** The flight step, normalised — the segment query wants a unit direction. */
+const _dir = new Vector3();
 const _launch = new Vector3();
 
 export class AntiTankSystem {
   private readonly rockets: Rocket[] = [];
   private readonly mines: Mine[] = [];
-  private readonly ray = new Ray(Vector3.Zero(), Vector3.Up(), 1);
+  /**
+   * The solid world as a segment query, and the buffer the flight reads. Null
+   * until a map is installed, and a rocket fired before one flies until its
+   * own terrain backstop catches it.
+   */
+  private rays: RayWorld | null = null;
+  private readonly hit = newRayHit();
   private terrain = new TerrainField();
   private nextLaid = 0;
   /** The next flight id. Monotonic for the life of the system — see `Rocket.id`. */
@@ -185,7 +193,9 @@ export class AntiTankSystem {
   onDetonated: (hit: OrdnanceHit) => void = () => {};
 
   constructor(
-    private readonly scene: Scene,
+    // Not a field: the two pools are built here and the last thing that wanted
+    // the scene afterwards was the rocket's step ray.
+    scene: Scene,
     mats: CelMaterialFactory,
   ) {
     for (let i = 0; i < ROCKET_POOL; i++) {
@@ -225,6 +235,15 @@ export class AntiTankSystem {
    */
   setTerrain(terrain: TerrainField): void {
     this.terrain = terrain;
+  }
+
+  /**
+   * And what a rocket goes off ON. Beside `setTerrain` for the reason
+   * `GrenadeSystem` keeps the pair apart: the floor is the backstop UNDER the
+   * colliders and this is the colliders.
+   */
+  setWorld(rays: RayWorld | null): void {
+    this.rays = rays;
   }
 
   /**
@@ -308,18 +327,22 @@ export class AntiTankSystem {
       r.vel.scaleToRef(dt, _step);
       const travel = _step.length();
       if (travel > 1e-5) {
-        this.ray.origin.copyFrom(r.mesh.position);
-        this.ray.direction.copyFrom(_step).scaleInPlace(1 / travel);
-        this.ray.length = travel + cfg.rocket.radius;
-        const hit = this.scene.pickWithRay(this.ray, OPAQUE_ONLY);
-        if (hit?.hit && hit.pickedPoint) {
+        _dir.copyFrom(_step).scaleInPlace(1 / travel);
+        if (
+          this.rays?.castRound(
+            r.mesh.position,
+            _dir,
+            travel + cfg.rocket.radius,
+            this.hit,
+          )
+        ) {
           // Backed off along the flight by a radius, so the detonation is on
           // the face rather than a hair inside it — a blast centre inside a
           // wall has the wall between it and everything it should have hurt,
           // and `blastAt`'s line-of-sight ray would answer for all of them.
           r.mesh.position
-            .copyFrom(hit.pickedPoint)
-            .subtractInPlace(_back.copyFrom(this.ray.direction).scaleInPlace(cfg.rocket.radius));
+            .copyFrom(this.hit.point)
+            .subtractInPlace(_back.copyFrom(_dir).scaleInPlace(cfg.rocket.radius));
           r.flown += travel;
           this.detonateRocket(r);
           continue;

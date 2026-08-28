@@ -341,11 +341,15 @@ src/
                         #   is Game while in a match it is HeadlessGame
     rng.ts              # mulberry32 — the seeded PRNG world-building uses
     MapBuilder.ts       # Builds the map; merges visuals, emits colliders
-    solid.ts            # SOLID_ONLY and OPAQUE_ONLY — the two pick predicates
-                        #   every ray test in the game filters with, and the
-                        #   read side of the flags MapBuilder writes. Where may
-                        #   a body be, vs what stops a round or a look; the
-                        #   three-way table of what a collider answers is here
+    solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
+                        #   editor's alone. The three-way table of what a
+                        #   collider answers a body and a round is still here
+    RayWorld.ts         # The segment query every ray in the game asks, off the
+                        #   collider boxes, the strut groups and the terrain
+                        #   rather than off scene.meshes. castBody / castRound /
+                        #   blocked, the grid behind them, and the hulls, which
+                        #   are the one solid thing that moves. It is what
+                        #   retired scene.pickWithRay at all eight sites
     vertexShading.ts    # The world's baked vertex-colour buffer, written after
                         #   every merge: AO in the ALPHA, the world mark in the
                         #   GREEN, the wind's sway weight in the RED

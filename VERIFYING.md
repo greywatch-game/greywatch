@@ -125,13 +125,20 @@ you are on before you believe anything else in this section.
   four shipped maps drain in one frame (39–42 ms) so nothing about them shows
   it, which is precisely why it is easy to write a script that is wrong only on
   the map you are investigating.
-- **A round left to itself fires NO `pickWithRay` at all**, so a script
-  measuring rays has to force contact. `BattleSystem.acquire` gathers candidates
-  by distance and only ray-tests inside `bots.perception.engageRange` (55 m):
-  measured at **zero calls in eight seconds** with sixteen bots alive, on
-  Coldharbour and on the proving ground both. Standing the bots in a ring around
-  the player (`bot.position.set(...)`) and re-standing them every second is what
-  finding 22 used; overriding `battle.spawnPointFor` is the other way in.
+- **A round left to itself fires NO ray at all**, so a script measuring rays has
+  to force contact. `BattleSystem.acquire` gathers candidates by distance and
+  only ray-tests inside `bots.perception.engageRange` (55 m): measured at **zero
+  calls in eight seconds** with sixteen bots alive, on Coldharbour and on the
+  proving ground both. Standing the bots in a ring around the player
+  (`bot.position.set(...)`) and re-standing them every second is what findings 22
+  and 23 both used; overriding `battle.spawnPointFor` is the other way in.
+- **The ray to wrap is no longer `scene.pickWithRay`** — nothing in gameplay
+  calls it since `ENGINE_UPGRADE.md` wall 2. Wrap `g.map.rays.castRound`,
+  `castBody` and `blocked` instead (finding 23 did), and note that
+  `performance.now()` is clamped to 100 us in a page that is not
+  cross-origin-isolated: a single 3 us cast reads as 0 or as 100, so only the
+  SUM over a few hundred calls means anything. An isolated loop of 400 rays is
+  the honest form.
 
 ### On the Chromebook, which is a Crostini box with no GPU for WebGPU
 
@@ -396,13 +403,16 @@ is one machine's:
   the SAME world-matrix one the fleet has.** `g.antiTank.launch(from, dir, team,
   by)` and `g.antiTank.place(at, team, by)` are the real entry points, and
   `g.antiTank.update(1/60)` in a `while (rockets.some(r => r.live))` loop flies a
-  rocket home inside one synchronous `evaluate`. But a rocket's step ray is a
-  `pickWithRay` against the hull's collider, and that collider's absolute
-  position is `(0,0,0)` until something computes its world matrix — so the FIRST
-  script run after a build reports a rocket flying straight through a tank and
-  every run after it reports a hit. Check `tank.body.getAbsolutePosition()` before
-  believing a miss, or drive a frame first. Measured on Coldharbour once the
-  matrix is current: 1200 → 580 on a clean strike, which is `damage` exactly and
+  rocket home inside one synchronous `evaluate`. **The world-matrix trap this
+  entry used to carry is gone and is worth knowing about anyway**, because the
+  rest of the fleet still has it: a rocket's step ray was a `pickWithRay`
+  against the hull's collider, whose absolute position is `(0,0,0)` until
+  something computes its world matrix, so the FIRST script run after a build
+  reported a rocket flying straight through a tank and every run after it
+  reported a hit. The step ray is `RayWorld.castRound` now and the hull reaches
+  it through `Tank.rayBox`, which reads `body.position` — always current, no
+  matrix involved. Anything still asking `getAbsolutePosition()` needs a frame
+  driven first. Measured on Coldharbour: 1200 → 580 on a clean strike, which is `damage` exactly and
   no splash — `blastAt` needs line of sight to the hull's centre and the hull is
   in the way.
 - **A BOT CREW is stepped with `g.crew.update(dt)` immediately before the

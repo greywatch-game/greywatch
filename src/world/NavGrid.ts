@@ -222,7 +222,8 @@ export class NavGrid {
    * Finds every standable height in every cell by evaluating each collider's
    * top face at the cell centre. Analytic rather than raycast: 25,600 cells
    * against 300 colliders is a handful of milliseconds, where 25,600
-   * `pickWithRay` calls would be seconds.
+   * `pickWithRay` calls would be seconds. `RayWorld` is the same argument made
+   * for the RUNTIME rays, and it was made here first.
    */
   private rasterize(boxes: WorldBox[], terrain: TerrainField): void {
     // The valley floor is standable everywhere by default, at whatever height

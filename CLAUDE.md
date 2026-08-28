@@ -462,14 +462,14 @@ them, and it also records a `WorldBox` for the nav grid — geometry added by an
 other path is invisible to navigation.
 
 **A collider answers two questions and they can disagree, which is why there are
-two pick predicates and not one.** *Where may a body be?* is `SOLID_ONLY` —
-the death cam's pull-in, the editor's centre-screen pick, and a tank's chase
-camera.
-*What stops a round or a look?* is `OPAQUE_ONLY` — the hitscan and its wall cap,
-the bots' and the aim assist's LOS, the grenade's step ray and its blast check.
-Both live in [`src/world/solid.ts`](src/world/solid.ts) and both are module
-constants, never minted at a call site. So a collider is one of three things,
-and a builder picks which by how it declares the box:
+two of everything below and not one.** *Where may a body be?* is
+`RayWorld.castBody` — the death cam's pull-in, a tank's chase camera, the
+dismount's floor test — and `SOLID_ONLY`, the mesh predicate the same question
+still wears for the editor's centre-screen pick.
+*What stops a round or a look?* is `RayWorld.castRound` and its any-hit twin
+`blocked` — the hitscan and its wall cap, the bots' and the aim assist's LOS,
+the grenade's step ray and its blast check, the rocket. So a collider is one of
+three things, and a builder picks which by how it declares the box:
 
 | collider | body | round | in the nav/cover/AO boxes |
 | --- | --- | --- | --- |
@@ -486,15 +486,30 @@ and the struts are the timber a round stops on. A porous box is **not cover**
 strut is invisible to navigation on purpose — a 0.1 m rail is a shape `NavGrid`
 can only get wrong.
 
-**`glass` is the one thing in the world that CHANGES, and it needs no new
-predicate to do it.** A breakable pane is `porous` exactly, so both predicates
-already get intact glass right, and breaking it clears `solid` itself — one
-property write rather than a term every ray in the process evaluates.
+**`glass` is the one thing in the world that CHANGES, and it needs no new term
+to do it.** A breakable pane is `porous` exactly, so both questions already get
+intact glass right, and breaking it is one write on each side —
+`RayWorld.remove` for the queries, `metadata.solid = false` for the editor's
+predicate — rather than a term every ray in the process evaluates.
 `WorldBox.glass` exists only for the readers that must SKIP a pane rather than
 merely pass a round through it: `CoverMap`, the AO bake, and the collision bake.
 
-**Colliders are MERGED, because a pick costs per MESH long before it costs per
-triangle.** `MapBuilder.struts` merges a placement's struts into one mesh (161
+**NO RAY IN THE GAME PICKS A MESH ANY MORE, and that is the load-bearing part
+rather than an optimisation.** `scene.pickWithRay` filters `scene.meshes`, so it
+was priced on how big the MAP is rather than on how far the ray goes — 222 us a
+ray on Coldharbour and **2,438 on a 1500 m proving ground, 30.7% of a frame with
+sixteen bots in contact** (`FINDINGS.md` 22). All eight sites are answered
+analytically now, by [`src/world/RayWorld.ts`](src/world/RayWorld.ts), off
+`colliderBoxes`, the strut groups and `TerrainField` — the same geometry the
+colliders were built from, and exactly the substitution that retired
+`Player.probeGround`. **`map.rays` is where a system gets it**, beside `nav`,
+`cover` and `obstacles`, and the authority builds one off the bake. A NEW RAY
+GOES THERE; nothing may reach for the scene.
+
+**Colliders are still MERGED, and the grouping is now data rather than a
+performance trick**: nothing in gameplay picks a mesh, but the bake carries the
+grouping to the server and `rayGroups` is how the struts reach the queries at
+all. A pick costs per MESH long before it costs per triangle: `MapBuilder.struts` merges a placement's struts into one mesh (161
 loose post-and-rail boxes cost *every* ray in the game ~17%); every BLOCKING
 SCATTER collider is merged by LOCALITY instead (`MapBuilder.clusterColliders`),
 one mesh per 12 m square over the whole scatter pass at once, because a scattered
@@ -524,16 +539,17 @@ misbehaves silently:
 - `solid: true` — collider proxies only. Unmarked geometry is shot through, seen
   through, and walked through.
 - `porous: true` — a `solid` collider that rounds, sightlines and grenades pass
-  through anyway (`OPAQUE_ONLY` subtracts it; `SOLID_ONLY` keeps it). Declared as
-  `BoxSpec.porous` by the builder, carried on the `WorldBox` and into the
-  collision bake, and skipped by `CoverMap`. Today it is the fence's coarse run,
-  and only that.
+  through anyway (`castRound` subtracts it; `castBody` keeps it). Declared as
+  `BoxSpec.porous` by the builder, carried on the `WorldBox` — which is what the
+  queries read — and into the collision bake, and skipped by `CoverMap`. Today
+  it is the fence's coarse run, and only that.
 - `rayOnly: true` — the mirror: a `solid` collider that stops a round and a look
-  but is no body at all (`SOLID_ONLY` subtracts it, `OPAQUE_ONLY` keeps it), and
-  the one collider that emits **no `WorldBox`** — invisible to the nav grid, the
-  cover bake, the obstacle field, the AO bake and scatter placement. Declared by
-  `Build.strut`, merged per placement, baked in groups. Today it is fence posts
-  and rails.
+  but is no body at all (`castBody` subtracts it, `castRound` keeps it), and the
+  one collider that emits **no `WorldBox`** — invisible to the nav grid, the
+  cover bake, the obstacle field, the AO bake and scatter placement. It reaches
+  the queries as `GameMap.rayGroups` instead, which is why that list is on the
+  map rather than only in the bake. Declared by `Build.strut`, merged per
+  placement, baked in groups. Today it is fence posts and rails.
 - `noOutline: true` — skipped by `addOutline()`. Every emissive part (eyes, flames,
   signs, reticle) needs it. Outlines are coloured ink (a darkened take on the mesh's
   own cel colour), thinned with distance per mesh by `updateOutlineScales()` and
@@ -761,14 +777,14 @@ A pane breaks and never mends inside a round, and that monotonicity is what make
 the incremental nav-graph update safe rather than merely cheap: the graph only
 ever GAINS links, so a route that was valid still is.
 
-**A round has to pass THROUGH glass, so a pane can never be in `OPAQUE_ONLY` —
-which means the hitscan's wall pick can never report one.** `CombatSystem.fire`
+**A round has to pass THROUGH glass, so a pane can never stop a `castRound` —
+which means the hitscan's wall query can never report one.** `CombatSystem.fire`
 raises `onShotPath` with the segment the round flew and `GlassSystem` answers it
 analytically; the same code runs on the authority, off the collision bake. **A
 pane's index in `GameMap.panes` is its identity** on both sides and on the wire,
 `npm run parity` proves both build the list in the same order, and breaking is
 the AUTHORITY's. **A pane is see-through, a FAIRNESS rule and not a look**:
-`OPAQUE_ONLY` already lets a bot shoot through a window.
+`castRound` already lets a bot shoot through a window.
 
 → **[`docs/world.md`](docs/world.md)** for the builder's side and
 **[`docs/multiplayer.md`](docs/multiplayer.md)** for the wire's.

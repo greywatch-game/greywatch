@@ -2149,9 +2149,12 @@ rule being wrong.
 
 ---
 
-## 22. Wall 2, measured at last: one ray is 2.4 ms on a 1500 m map, and a fight spends a third of the frame in `pickWithRay`
+## 22. Wall 2, measured at last: one ray is 2.4 ms on a 1500 m map, and a fight spends a third of the frame in `pickWithRay` — **CLOSED by 23**
 
-**Status:** measured on the Windows box, **not fixed**. This is
+**Status:** measured on the Windows box, **and closed by finding 23** — every
+one of the eight sites is a box query now and the per-ray cost is flat in map
+size. What follows is the reading that priced the wall; keep it, because it is
+the before half of 23's pair and because its protocol is the one to reuse. This is
 `ENGINE_UPGRADE.md` wall 2, and it is the first time a ray has been fired down a
 map this size — findings 19 and 21 both name that as the gap and neither closed
 it. It settles the S1/S2/S8 ordering: **wall 2 is now the largest single line in
@@ -2264,16 +2267,146 @@ bake has landed; it now also says what happens if you do not wait for it.
 
 ### What is open
 
-- **Wall 2 itself.** It is `ENGINE_UPGRADE.md` S2 and nothing here fixes it: the
-  eight pick sites still go through `scene.pickWithRay`, and the fix is the
-  analytic segment query over `colliderBoxes` that `Player.probeGround` already
-  set the precedent for.
-- **The 2.4x between the in-situ and the isolated per-pick cost.**
-- **The 1500/0 projection**, which is derived from the collider count alone.
-- **Whether the pick count per frame holds up in a real fight** rather than in a
-  forced ring. 1.5–1.9 per frame is what sixteen bots at `thinkRate` produce
+- ~~**Wall 2 itself.**~~ **CLOSED by finding 23** — `RayWorld`, the analytic
+  segment query over `colliderBoxes` that `Player.probeGround` set the precedent
+  for.
+- ~~**The 2.4x between the in-situ and the isolated per-pick cost.**~~ **Moot**:
+  both are under 5 us now and the gap is inside the clock's own resolution.
+- ~~**The 1500/0 projection**, which is derived from the collider count alone.~~
+  **Moot**: the cost no longer scales with the collider count at all. Finding 23
+  measures 3.5 us in situ on the 5,929-box proving ground against 4.5 on
+  Coldharbour's 768.
+- **Whether the query count per frame holds up in a real fight** rather than in
+  a forced ring. 0.95–1.6 per frame is what sixteen bots at `thinkRate` produce
   here; a fight over a control point with everyone shooting will produce more,
-  because every round fired is another wall pick.
-- **The idle-pool lever**, above. Measured as a count, never as a saving.
+  because every round fired is another wall query. It costs a thousandth of what
+  it did, so this is a curiosity now rather than a budget.
+- **The idle-pool lever**, above. Measured as a count, never as a saving. It is
+  the last unclaimed item in this finding and it is about the mesh WALK rather
+  than about rays.
+
+---
+
+## 23. Wall 2 is down: every ray is a box query, and one costs 3.5 us on the map where a pick cost 2,438
+
+**Status:** measured on the Windows box, **fixed and landed** —
+`ENGINE_UPGRADE.md` S2. This is finding 22's after half; read them as a pair,
+and read 22 first, because its protocol is reused here unchanged.
+
+`scene.pickWithRay` is gone from gameplay. All eight sites — the hitscan's wall
+cap, the bots' LOS, the aim assist, the grenade's step ray and its blast probe,
+the rocket, the death cam's pull-in, and the tank's chase camera and dismount
+probe — go through `src/world/RayWorld.ts`: a uniform grid over `colliderBoxes`
+plus the strut groups, plus a march over the heightfield. `world/solid.ts` keeps
+one predicate for the editor's centre-screen pick and nothing else.
+
+### What it costs now
+
+Headless Chromium via `channel: "chromium"`, `--disable-frame-rate-limit
+--disable-gpu-vsync`, 1920x1080, warmed on `reflections.queue.length === 0`,
+sixteen bots stood in a 12–24 m ring around the player and re-stood every
+second. Finding 22's forced skirmish, reproduced.
+
+| sixteen bots in contact | Coldharbour | Harrowmead | **proving 900/300** |
+| --- | --- | --- | --- |
+| collider boxes | 768 | 748 | **5,929** |
+| frames in 8 s — **before** | 1,115 | 890 | **656** |
+| frames in 8 s — **after** | **1,234** | **1,151** | **898** |
+| queries per frame | 1.36 | 0.95 | 1.59 |
+| **us per query** | **4.5** | **4.0** | **3.5** |
+| — against, per pick (22) | 222 | 199 | **2,438** |
+| **share of the frame** | 0.07% | 0.05% | **0.07%**, from 30.7% |
+
+**The exponent is what changed and the ratio is only the consequence.** A pick
+was `O(colliders in the scene)`; a query is bounded by what the segment crosses,
+so the 1500-m-class map is now the CHEAPEST of the three per ray rather than 11x
+the dearest. The proving ground's forced fight went from 82 to 112 fps and
+Harrowmead's from 111 to 144.
+
+**Isolated, 400 seeded rays per range — finding 22's second table, rebuilt:**
+
+| us per ray | Coldharbour | proving 900/300 |
+| --- | --- | --- |
+| pick, 55 m | 137.5 | 1,025.2 |
+| pick, 180 m | 122.0 | 983.2 |
+| **`castRound`, 55 m** | **3.25** | **5.0** |
+| **`castRound`, 180 m** | **1.5** | **5.0** |
+| **`blocked`, 55 m** | **2.25** | **3.75** |
+
+The pick column reproduces 22's (125.8 / 1,043.8 at 55 m) to within 2%, which is
+what says the instrument did not move. `blocked` is the any-hit form the three
+line-of-sight callers use and is cheaper than the nearest-hit one, as it should
+be. **`performance.now()` is clamped to 100 us in a page that is not
+cross-origin-isolated**, so these are quantised at 0.25 us/ray over 400 and the
+single-digit figures are 2–4 clock ticks: read them as an order of magnitude,
+and take the in-situ table above — which integrates thousands of calls — as the
+measurement.
+
+### The substitution audit, and the two classes of disagreement it found
+
+Under a NullEngine, off `buildServerWorld` (which still stands the collider
+meshes up), **8,000 seeded rays per map per question** — 4,000 eye-height at
+55/120/180 m, 2,000 short from inside geometry, 2,000 straight down — compared
+`scene.pickWithRay` against `RayWorld` on all four shipped maps. **32,000 rays
+each way. Every disagreement is one of two things and neither is a geometry
+bug.**
+
+**Class 1 — Babylon's picking is FUZZY by `Ray.epsilon` and the analytic is
+not.** `Ray.intersectsTriangle` accepts a barycentric outside the triangle by up
+to `Epsilon` (1e-3) — the guards are literally `bv < -this.epsilon` and
+`bv + bw > 1.0 + this.epsilon`. Thirteen rays out of 32,000 stopped on geometry
+the boxes say they miss, and **every one had a minimum barycentric between
+-2.7e-4 and -9.2e-4**: all inside that tolerance, none inside the triangle. On a
+jungle trunk's 13 m face that skin is about a centimetre, and along a grazing
+ray it reads as up to 314 mm of distance (Coldharbour's worst). So the pick was
+reporting hits on a phantom shell around every collider; the analytic does not,
+and **the analytic is the one that agrees with `colliderBoxes` — which is what
+`NavGrid`, `CoverMap`, `ObstacleField`, `server/validate.ts` and the collision
+bake all read.** Greyfen has most of them (a jungle of ~950 tall thin trunks
+maximises the absolute slop); Hollowmere has one.
+
+**How that was established, because three hypotheses were wrong first.** The
+merged clump mesh was suspected — its vertices match the boxes to 5e-7. Then
+`MergeMeshes` — the same boxes as LOOSE meshes miss exactly where the analytic
+does. Then float32 — a centimetre is five orders too big for it at 86 m. What
+settled it was a manual Möller-Trumbore over the picked mesh's own vertex
+buffer, which **found nothing** where `scene.pickWithRay` reported a hit, and
+then `Ray.epsilon` in `node_modules`.
+
+**Class 2 — a coincident surface, which is a tie rather than an error.** A prop
+is planted with its foot on the ground, so the bottom face of its box and the
+terrain under it are the same plane and a ray reaches both at the same distance;
+the measured deltas run from 1e-15 to 3e-7 m. Which one answers decides nothing
+but `RayHit.surface`, i.e. which spark the impact throws. `RayWorld`'s
+`COINCIDENT` (1e-4 m) resolves it the way the pick did — the collider wins,
+because `scene.meshes` is in creation order and every collider is made before
+the floor's clones — and that closed 64 of the 67 on Hollowmere. **About 26 of
+32,000 still tie the other way**, and no rule can satisfy both directions; what
+it costs is a dirt spark where there was a stone one, on a round landing exactly
+where a collider is flush with the ground.
+
+**Agreement after the tie-break: 99.66% to 99.99% per map per question**, with
+100% of the residual accounted for by the two classes above.
+
+### What is open
+
+- **The 1500/0 extent has not been measured**, only 900/300. The cost is no
+  longer collider-bound, so the projection is far weaker than it was — but the
+  terrain march IS bounded by the segment's length in terrain cells, and nothing
+  has priced that at 1500 m.
+- **The heightfield march has no hierarchy.** A cell is rejected by the max of
+  its four corner heights against the segment's own y-band, which is enough that
+  a long ray passing well over the ground costs four array reads a cell. A ray
+  ALONG a valley floor tests two triangles per cell for its whole length. A
+  coarse max-height pyramid would fix it and nothing has needed one.
+- **The terrain normal is the FLAT triangle's**, where a pick interpolated the
+  smoothed vertex normals. The two differ by a degree or so on a hillside, which
+  is an impact disc lying a degree flatter. Not measured; nothing looked wrong.
+- **The ~26 residual surface ties**, above.
+- **`npm run simulate` throws before it starts a round** — `CelEmissiveFog`
+  refusing the tracer material's shader language under a NullEngine. Reproduced
+  on an unmodified tree at `f18bdc9`, so it predates this work and is unrelated
+  to it; it is recorded here because S2's own verify list names that command and
+  it could not be run.
 
 ---

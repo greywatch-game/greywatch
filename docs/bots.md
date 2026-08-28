@@ -227,7 +227,7 @@ answers with a `CoverKind` (`hard` / `crouch` / `none`) rather than a boolean.
   *above* a waist-high wall, so the round comes DOWN over it and can still find
   a ducked body behind it; hard cover escapes this because the wall stands over
   the shooter's eye as well, and no line between two points below it clears it.
-  Ray-tested against real geometry with the game's own `OPAQUE_ONLY` predicate,
+  Ray-tested against real geometry with the game's own round question,
   a 1.15 m bake left the crouched sphere exposed on **20% of Hollowmere's
   crouch-only bearings and 48% of Coldharbour's**; at 1.3 m with the short probe
   below, **182 of 182 sampled bearings on Hollowmere block the crouched sphere
@@ -302,9 +302,10 @@ to match. Bots hold a fight instead of losing it and going looking.
   open ground, and a fence line *is* open ground with a rail across it. The
   timber that DOES stop rounds is `rayOnly` and emits no `WorldBox`, so it never
   reaches this bake either, which is right: a 0.18 m post is a thing a round
-  hits, not a thing a body hides behind. The same split is why a bot's LOS runs
-  across a fence — `BattleSystem` filters `OPAQUE_ONLY`, so a bot sees exactly
-  as far as its rounds reach, timber included.
+  hits, not a thing a body hides behind. (It does reach the ray queries, as
+  `GameMap.rayGroups` — see `RayWorld`.) The same split is why a bot's LOS runs
+  across a fence — `BattleSystem.visible` is `RayWorld.blocked`, so a bot sees
+  exactly as far as its rounds reach, timber included.
 - **It is a preference, not a commitment** — the same rule as `ObstacleField`'s
   push-out. A spot not reached within `cover.abandonTime` is dropped, and a cooldown
   stops the search instantly re-picking it. A bot moving to cover still shoots; only

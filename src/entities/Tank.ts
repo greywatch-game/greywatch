@@ -72,10 +72,11 @@
  * documented exception), so every contact takes the higher of the boxes and
  * `TerrainField.surfaceAt`.
  *
- * **The chase camera still casts, and it still has to turn the hull invisible
- * first** — see `VehicleCamera.pullIn`, which is now the only pick a driver
- * pays. `SOLID_ONLY` reads `isPickable` for exactly that reason and the term
- * must not be taken back out of `world/solid.ts`.
+ * **The chase camera still casts, and it still has to take its own hull out of
+ * the answer first** — see `VehicleCamera.pullIn`, which is the only such query
+ * a driver pays. It passes the hull as `RayWorld`'s `skip` now rather than
+ * clearing `isPickable` around a `scene.pickWithRay`; the flag is still read,
+ * by `rayBox`, and still for that reason.
  *
  * ## What is a rule and what is a picture
  *
@@ -144,6 +145,7 @@ import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
 import { topFaceHeight } from "../world/boxGeometry";
 import type { WorldBox } from "../world/MapBuilder";
 import type { ObstacleField } from "../world/ObstacleField";
+import type { RayHull } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
 import {
@@ -265,9 +267,10 @@ const WIND_Z = CONFIG.wind.dir[1] / WIND_HYP;
  * drives over is narrow enough to fall between two of them.
  *
  * The cost of the sixth pair would be two more bucket lookups. What it is not
- * is two more ray picks — that is the whole reason the ground stopped being a
- * `pickWithRay`, and it is what makes this number a design choice rather than
- * a budget one.
+ * is two more whole-scene picks — that is the whole reason the ground stopped
+ * being a `pickWithRay`, and it is what makes this number a design choice
+ * rather than a budget one. Every other ray in the game has since followed it
+ * off the scene (`RayWorld`), which changes nothing here and is why.
  */
 const CONTACT_ROWS = 5;
 
@@ -380,7 +383,7 @@ function slewRate(
   return rate + Math.max(-step, Math.min(step, want - rate));
 }
 
-export class Tank implements Combatant {
+export class Tank implements Combatant, RayHull {
   /** The collider box, and the thing that MOVES. See the header. */
   readonly body: Mesh;
   readonly rig: TankRig;
@@ -1339,6 +1342,28 @@ export class Tank implements Combatant {
    * it. `hide` is what ends both.
    */
   deckAt(x: number, z: number, ceiling: number, floor: number): number | null {
+    const b = this.rayBox();
+    if (!b) return null;
+    const top = topFaceHeight(b, x, z);
+    return top === null || top > ceiling || top < floor ? null : top;
+  }
+
+  /**
+   * The hull as an oriented box for `RayWorld`, or null when it is out of every
+   * ray — `RayHull`'s one method.
+   *
+   * The gate and the scratch are `deckAt`'s, which is what this was factored
+   * out of, and both are the same statement made twice over: the enabled and
+   * pickable terms are `SOLID_ONLY`'s, deliberately, because a WRECK keeps its
+   * collider for `wreckTime` and a round stops on it for exactly as long as a
+   * body may stand on it. `hide` is what ends both. `rotX` is 0 and stays 0:
+   * the collider never tilts, only the PICTURE leans.
+   *
+   * The two callers that must take their OWN hull out of a query pass `this`
+   * as `RayWorld`'s `skip` rather than writing `isPickable` around the call,
+   * which is what they did to a `scene.pickWithRay`.
+   */
+  rayBox(): WorldBox | null {
     if (!this.body.isEnabled() || !this.body.isPickable) return null;
     const hull = CONFIG.vehicles.tank.hull;
     const b = this.deckBox;
@@ -1349,13 +1374,12 @@ export class Tank implements Combatant {
     b.cy = this.body.position.y;
     b.cz = this.body.position.z;
     b.rotY = this.body.rotation.y;
-    const top = topFaceHeight(b, x, z);
-    return top === null || top > ceiling || top < floor ? null : top;
+    return b;
   }
 
   /**
-   * The hull as a `WorldBox`, rewritten per `deckAt` call and never escaping
-   * one. A scratch rather than a field kept in step with the body, because the
+   * The hull as a `WorldBox`, rewritten per query and never held across one. A
+   * scratch rather than a field kept in step with the body, because the
    * body is what moves and a cached copy is a second opinion about where the
    * tank is; and never a real entry in `colliderBoxes`, because everything that
    * reads that list was baked before this hull moved. `rotX` is written once

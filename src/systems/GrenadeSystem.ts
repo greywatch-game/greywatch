@@ -10,7 +10,7 @@
  * This is the one thing in the game that is not hitscan, and everything here is
  * shaped by that:
  * - A grenade is integrated per frame and collides with ONE ray per grenade per
- *   frame, filtered `OPAQUE_ONLY` — the same collider proxies bullets stop on
+ *   frame, through `RayWorld.castRound` — the same collider set bullets stop on
  *   and the same ones they pass through, never the visuals. There are at most a
  *   handful in the air, so that ray is affordable where a per-bullet one would
  *   not be. A grenade goes between a fence's rails because a body's width is
@@ -61,7 +61,6 @@ import {
   Mesh,
   MeshBuilder,
   Quaternion,
-  Ray,
   Scene,
   StandardMaterial,
   Vector3,
@@ -72,7 +71,7 @@ import { buildGrenade, pipLit } from "../entities/GrenadeModel";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 import { TerrainField } from "../world/TerrainField";
-import { OPAQUE_ONLY } from "../world/solid";
+import { newRayHit, type RayWorld } from "../world/RayWorld";
 import type { DamageKind, Hittable } from "./CombatSystem";
 
 /** One grenade in flight (or resting with its fuse running). */
@@ -252,6 +251,10 @@ const _launch = new Vector3();
  * over the integration step of the grenade it is being raised from.
  */
 const _ground: BlastGround = { surface: "hard", normal: new Vector3(0, 1, 0) };
+/** The flight's step direction, and the blast probe's origin and its straight down. */
+const _dir = new Vector3();
+const _lifted = new Vector3();
+const _down = new Vector3(0, -1, 0);
 const _up = new Vector3(0, 1, 0);
 const _lift = new Vector3();
 
@@ -277,7 +280,14 @@ export class GrenadeSystem {
   /** The fireball's four rungs, resolved once — see `FIRE_LADDER`. */
   private readonly fireMats: StandardMaterial[];
   /** Reused by the flight and the line-of-sight tests alike. */
-  private readonly ray = new Ray(new Vector3(), new Vector3(0, -1, 0), 1);
+  /**
+   * The solid world as a segment query, and the result buffer the flight, the
+   * blast probe and the fragment check all read. Null until a map is
+   * installed: a grenade thrown before one meets nothing but its own terrain
+   * backstop, which is what an empty scene answered.
+   */
+  private rays: RayWorld | null = null;
+  private readonly hit = newRayHit();
   /** Names the next flight. Never reset — see `Grenade.id`. */
   private nextId = 0;
   /** The map's floor, as a backstop under the collider proxies. */
@@ -324,7 +334,9 @@ export class GrenadeSystem {
   ) => void = () => {};
 
   constructor(
-    private scene: Scene,
+    // Not a field: everything this system builds is built here, and the last
+    // thing that wanted the scene afterwards was the flight's step ray.
+    scene: Scene,
     mats: CelMaterialFactory,
     opts?: GrenadeOptions,
   ) {
@@ -458,6 +470,15 @@ export class GrenadeSystem {
   /** Points the flight's floor backstop at the current map. */
   setTerrain(terrain: TerrainField): void {
     this.terrain = terrain;
+  }
+
+  /**
+   * And what it bounces off on the way there. Beside `setTerrain` rather than
+   * folded into it because the two are different facts about a map — the floor
+   * is a backstop UNDER the colliders and this is the colliders.
+   */
+  setWorld(rays: RayWorld | null): void {
+    this.rays = rays;
   }
 
   /**
@@ -603,22 +624,25 @@ export class GrenadeSystem {
         // One ray per grenade per frame, along the step and a body's radius
         // past it, so a fast grenade cannot tunnel through a wall between two
         // frames. Same filter as every other ray that asks what is in the way.
-        this.ray.origin.copyFrom(n.mesh.position);
-        this.ray.direction.copyFrom(_step).scaleInPlace(1 / travel);
-        this.ray.length = travel + g.radius;
-        const hit = this.scene.pickWithRay(this.ray, OPAQUE_ONLY);
-        const normal = hit?.hit && hit.pickedPoint ? hit.getNormal(true) : null;
-        if (hit?.pickedPoint && normal) {
-          _normal.copyFrom(normal);
+        _dir.copyFrom(_step).scaleInPlace(1 / travel);
+        if (
+          this.rays?.castRound(
+            n.mesh.position,
+            _dir,
+            travel + g.radius,
+            this.hit,
+          )
+        ) {
+          _normal.copyFrom(this.hit.normal);
           // The reported normal may point AWAY from the grenade — a collider's
           // back face, which is exactly what a grenade thrown at a wall from
           // inside a doorway finds. Bouncing off one of those drives it
           // straight through the wall it just hit.
-          if (Vector3.Dot(_normal, this.ray.direction) > 0) {
+          if (Vector3.Dot(_normal, _dir) > 0) {
             _normal.scaleInPlace(-1);
           }
           n.mesh.position
-            .copyFrom(hit.pickedPoint)
+            .copyFrom(this.hit.point)
             .addInPlace(_normal.scale(g.radius));
           this.bounce(n, _normal);
         } else {
@@ -779,7 +803,7 @@ export class GrenadeSystem {
    * What the blast went off ON: one downward ray, and the terrain as a backstop
    * under it exactly as the flight has.
    *
-   * `OPAQUE_ONLY` rather than `SOLID_ONLY`, which is the same choice the flight
+   * `castRound` rather than `castBody`, which is the same choice the flight
    * makes and for the same reason: debris comes off things that stop rounds, so
    * a fence's coarse run is not a surface a blast tears anything out of. The
    * kind is read off `metadata.surface` — the field `MapBuilder` sets on
@@ -793,19 +817,14 @@ export class GrenadeSystem {
    * the ring lies flat and the chunks fall, which is what an airburst does.
    */
   private probeGround(at: Vector3): BlastGround {
-    this.ray.origin.copyFrom(at);
-    this.ray.origin.y += PROBE_LIFT;
-    this.ray.direction.set(0, -1, 0);
-    this.ray.length = PROBE_REACH;
-    const hit = this.scene.pickWithRay(this.ray, OPAQUE_ONLY);
-    const normal = hit?.hit && hit.pickedPoint ? hit.getNormal(true) : null;
-    if (hit?.hit && normal) {
-      _ground.normal.copyFrom(normal);
+    _lifted.copyFrom(at);
+    _lifted.y += PROBE_LIFT;
+    if (this.rays?.castRound(_lifted, _down, PROBE_REACH, this.hit)) {
+      _ground.normal.copyFrom(this.hit.normal);
       // A collider's back face points down, and a ring turned onto it is a ring
       // drawn under the floor. The flight flips a normal for the same reason.
       if (_ground.normal.y < 0) _ground.normal.scaleInPlace(-1);
-      _ground.surface =
-        hit.pickedMesh?.metadata?.surface === "ground" ? "ground" : "hard";
+      _ground.surface = this.hit.surface;
       return _ground;
     }
     _ground.normal.set(0, 1, 0);
@@ -815,16 +834,7 @@ export class GrenadeSystem {
 
   /** Fragments stop in walls. One ray per victim already inside the radius. */
   private visible(from: Vector3, to: Vector3): boolean {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const dz = to.z - from.z;
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 0.01) return true;
-    this.ray.origin.copyFrom(from);
-    this.ray.direction.set(dx / len, dy / len, dz / len);
-    this.ray.length = len;
-    const hit = this.scene.pickWithRay(this.ray, OPAQUE_ONLY);
-    return !hit?.hit;
+    return !this.rays?.blocked(from, to);
   }
 
   /**

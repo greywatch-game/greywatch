@@ -83,9 +83,9 @@ wrong first:
   own smoke column was already up, and the ORDER the layers arrive in is what
   the effect is made of.
 - **What the blast went off ON is answered once.** `GrenadeSystem.probeGround`
-  casts a single downward ray, `OPAQUE_ONLY` (debris comes off things that stop
-  rounds, so a fence's coarse run is not one), and reads the same
-  `metadata.surface` a bullet's impact reads. The answer is a `BlastGround` —
+  casts a single downward `RayWorld.castRound` (debris comes off things that
+  stop rounds, so a fence's coarse run is not one), and reads the same
+  `RayHit.surface` a bullet's impact reads. The answer is a `BlastGround` —
   the surface kind and its normal — and it is the SYSTEM's scratch: valid for
   the length of the call and no longer, exactly as `forEachLive`'s position is.
   A blast in open air finds nothing and is told it is over level earth, which is

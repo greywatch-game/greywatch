@@ -26,8 +26,9 @@ on screen, and at this multiplier four of them stop working rather than merely
 getting slower. A fifth — the reflection bake — was not in this document at all
 until S0 measured it, and it is the one that fails hardest.
 
-The reference numbers throughout are `FINDINGS.md` **17**, **18** and — since
-S0 landed — **19**, all measured on the Windows box (RTX 4070 Ti SUPER, headless
+The reference numbers throughout are `FINDINGS.md` **17**, **18**, **19**
+(S0's), **21** (S1's) and **22**/**23** (wall 2's before and after), all
+measured on the Windows box (RTX 4070 Ti SUPER, headless
 Chromium via `channel: "chromium"`, 1920x1080, uncapped, warm past the compile
 stall). **Read all three before starting any step**, because they also record
 what has already been tried and did not work.
@@ -114,10 +115,22 @@ measured **-5.4%** *and* dropped meshes that should have stayed active.
 every effect is pooled, a frozen active list is a bug, not a trade. Both were
 measured at 45 blocks; neither is the lever at 1,000.
 
-### Wall 2 — every ray in the game walks the same list — **MEASURED, and it is now the biggest thing in the frame**
+### Wall 2 — every ray in the game walked the same list — **DOWN**
 
-**Finding 22 prices it, and it changes the order of what is left.** With S1
-landed, `pickWithRay` is **3.75 ms of an 8.6 ms frame — 30.7% of it** — on the
+**S2 has landed and finding 23 is the after half of the pair.** No ray in
+gameplay picks a mesh any more: all eight sites go through
+`src/world/RayWorld.ts`, a grid over `colliderBoxes` plus the strut groups plus
+a march over the heightfield. **3.75 ms of the frame became 0.006 ms**, the
+per-ray cost went from 2,438 us to **3.5**, and — the part that matters more
+than the ratio — **the cost is no longer a function of the map's size**: the
+1500-m-class proving ground is now the cheapest of the three maps per ray rather
+than 11x the dearest. The forced fight there went from 82 fps to 112.
+
+What follows is the reading that priced the wall, kept because it is the before
+half and because the projections in it are what the fix had to beat.
+
+**Finding 22 priced it, and it changed the order of what was left.** With S1
+landed, `pickWithRay` was **3.75 ms of an 8.6 ms frame — 30.7% of it** — on the
 900/300 proving ground with sixteen bots in contact, against 3.0 ms for the mesh
 walk beside it. It was the one wall this document had no measurement for at all.
 
@@ -629,7 +642,49 @@ move at all.
 
 ---
 
-### S2 — Retire the whole-scene picks
+### S2 — Retire the whole-scene picks — **LANDED**
+
+**Done, and finding 23 is the result.** `src/world/RayWorld.ts` is the segment
+query; all eight sites go through it; `world/solid.ts` keeps `SOLID_ONLY` for
+the editor's centre-screen pick and `OPAQUE_ONLY` is deleted. Measured against
+the number this step was set: **2,438 us a ray became 3.5, and 30.7% of the
+frame became 0.07%.** The proving ground's forced fight went 656 → 898 frames in
+eight seconds, Harrowmead's 890 → 1,151, Coldharbour's 1,115 → 1,234.
+
+**What it changed about the rest of this document:**
+
+1. **Wall 2 is down** and the per-ray cost is flat in map size, so the 1500/0
+   projection in it (~6.8 ms in situ) is moot rather than unsettled.
+2. **S3's premise is untouched** — the nav graph's allocation has nothing to do
+   with rays — and S8's stays what it was: 0.6–0.8 ms of dormant block
+   visibility, which is now a bigger share of a smaller frame.
+3. **The authority got it for free**, as this step said it would: the server
+   builds a `RayWorld` off the bake and resolves every rewound shot through it.
+   **But the promise under it — that a query over boxes needs no meshes at all
+   — does not hold on the server, and a later step must not act on it.**
+   `server/world.ts` still has to stand its collider meshes up, because
+   `Tank.update` drives a hull with `body.moveWithCollisions` and the authority
+   simulates its own hulls. That was true before armour reached netplay and is
+   not any more; the file's header said "nothing on the server moves that way"
+   and now says why it does. Deleting that geometry would leave armour driving
+   through walls on the server and stopping at them on every client.
+
+**Two things worth knowing before the next step touches this:**
+
+- **Babylon's picking was FUZZY and the analytic is not.**
+  `Ray.intersectsTriangle` accepts a barycentric outside the triangle by up to
+  `Ray.epsilon` (1e-3), which is a phantom skin about a centimetre thick on a
+  13 m face. Thirteen rays in 32,000 stopped on it. The analytic agrees with
+  `colliderBoxes` instead — the list `NavGrid`, `CoverMap`, `ObstacleField` and
+  `server/validate.ts` all read — so the substitution made the ray agree with
+  the rest of the world layer rather than departing from it. Finding 23 has the
+  audit and how the three wrong hypotheses were eliminated.
+- **A collider flush with the ground is a TIE**, and `RayWorld.COINCIDENT`
+  resolves it the way the pick did. It decides only which spark is thrown.
+
+What follows is the step as it was written.
+
+---
 
 Wall 2, and **since S1 landed it is the biggest thing in the frame.** Finding
 22 measures it: `pickWithRay` is **3.75 ms of an 8.6 ms frame with sixteen bots
@@ -649,8 +704,12 @@ answered analytically against `colliderBoxes` through `boxIndex`, plus
 `Player.probeGround`.
 
 `world/solid.ts`'s two predicates become two filters over box flags: `SOLID_ONLY`
-is `solid && !rayOnly`, `OPAQUE_ONLY` is `solid && !porous`, and both are already
-properties on the `WorldBox`. `boxGeometry.ts` already owns the sign-sensitive
+is `solid && !rayOnly`, `OPAQUE_ONLY` is `solid && !porous`. **Half of that was
+wrong and it is the one place this step under-specified itself**: `porous` is on
+the `WorldBox` and `rayOnly` is NOT — a strut emits no box at all, by design, so
+the round question could not be answered off `colliderBoxes` alone. The struts
+reach the query as `GameMap.rayGroups`, indexed beside the boxes with the round
+bit and not the body one. `boxGeometry.ts` already owns the sign-sensitive
 segment-vs-box math (`segmentHitsBox`) and is already shared by `NavGrid`,
 `ObstacleField` and `CoverMap`.
 
@@ -678,13 +737,19 @@ bug until proven otherwise.
   omission, exactly as now.
 - The tank hull, which is the one MOVING `solid` mesh and emits **no `WorldBox`**
   at all. It is picked out of its own way by two property writes today and will
-  need explicit handling in whatever replaces the pick.
+  need explicit handling in whatever replaces the pick. — *It got a list of its
+  own (`RayWorld.hulls`, filled by `VehicleSystem.build`), `Tank.rayBox` hands
+  the box over through `deckAt`'s existing gate and scratch, and the two writes
+  became a `skip` argument.*
 - `CombatSystem.fire`'s ordering: the wall pick caps the shot and only targets
   CLOSER than the wall count. Keep that exact, including the near-miss sweep that
   rides on the same pass.
 
 **Verify:** the sampling audit above, `npm run parity`, `npm run simulate`, and
-S0's harness for the per-frame saving.
+S0's harness for the per-frame saving. — *All but one done. `npm run simulate`
+throws before it starts a round, and it does so on an unmodified tree at
+`f18bdc9` too: `CelEmissiveFog` refuses the tracer material's shader language
+under a NullEngine. Pre-existing, unrelated, and recorded in finding 23.*
 
 **Two things about measuring it, both of which cost a run in finding 22.** A
 round left to itself fires **no ray at all** — `BattleSystem.acquire` only

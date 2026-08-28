@@ -959,7 +959,7 @@ export interface GlassSpec {
    * through a shopfront.
    *
    * It has a fairness dimension and not only a look: a bot's line of sight
-   * already passes through glass (`OPAQUE_ONLY` subtracts a pane), so a window
+   * already passes through glass (`RayWorld.castRound` subtracts a pane), so a window
    * the player cannot see through is one the AI can shoot them through. Tint
    * it enough to read as glass and no further.
    */

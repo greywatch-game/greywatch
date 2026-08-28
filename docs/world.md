@@ -559,12 +559,16 @@ is a count that stops short.
 **Blocking scatter colliders are MERGED BY LOCALITY, not one mesh per prop**
 (`MapBuilder.clusterColliders`), and it is the fence lesson at forest scale. A
 `pickWithRay` costs per mesh before it costs per triangle — a predicate call, a
-world-matrix inverse and a bounding test each — and the game fires such rays
-every frame against every solid mesh on the map: the hitscan on every shot, LOS
-for sixteen bots, the aim assist, the grenade's step ray, the death cam's
-pull-in and a tank's chase camera. (`Player.probeGround` was the largest of them
-and is no longer a ray at all — it reads the `WorldBox` list instead, which the
-merge deliberately leaves one entry per prop, so nothing here changed for it.)
+world-matrix inverse and a bounding test each — and the game used to fire such
+rays every frame against every solid mesh on the map: the hitscan on every shot,
+LOS for sixteen bots, the aim assist, the grenade's step ray, the death cam's
+pull-in and a tank's chase camera. **None of them is a pick any longer** — they
+are box queries through `RayWorld`, exactly as `Player.probeGround` became one
+first — so what the merge buys the FRAME is gone with them. It stays for three
+reasons that are not performance: the editor still picks meshes, the server
+still stands them up, and the grouping is baked into `MapCollision.boxGroups`,
+so it is data both sides have to agree on. The `WorldBox` list keeps one entry
+per prop either way, which is why nothing derived from geometry can tell.
 So every blocking prop
 on the map, across all regions, is gathered into one mesh per 12 m square after
 the scatter pass. Greyfen's 1,412 blocking props come to ~180 meshes; unmerged
@@ -709,7 +713,7 @@ Three consequences belong here rather than in the rendering contract:
   second outline on the same silhouette and a second shadow in the same place —
   paid on the map's largest surface.
 - **It settles a fairness question that was open while glass was opaque.** A
-  pane is `porous`, so `OPAQUE_ONLY` already lets a bot's line of sight through
+  pane is `porous`, so `RayWorld.castRound` already lets a bot's line of sight through
   one — a shopfront the player could not see through was one the AI could see
   and shoot through. `CONFIG.graphics.glass.tint` is what keeps that honest, and
   it is why the number is judged from a pavement against a lit interior rather
@@ -775,9 +779,9 @@ width — which a pattern cut at about a metre accounts for. The tower's bays ar
 holds a range into them and nothing ever will.
 
 **Breaking a pane is five writes and one deferred rebuild.** The visual
-range collapses; `solid` is cleared, which takes the box out of `SOLID_ONLY` and
-`OPAQUE_ONLY` together; `checkCollisions` is cleared, which is the movement
-half; `ObstacleField.remove` takes it out of the sub-cell push-out the bots and
+range collapses; `RayWorld.remove` takes the box out of both questions every
+ray asks, and `metadata.solid` is cleared beside it for the editor's own
+predicate; `checkCollisions` is cleared, which is the movement half; `ObstacleField.remove` takes it out of the sub-cell push-out the bots and
 the server's move validator both read; and `NavGrid.openBox` relinks the ground
 it was severing and floods walkability into whatever that opened. All of that is
 local and cheap.

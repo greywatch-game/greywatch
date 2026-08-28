@@ -65,6 +65,7 @@ import {
 import { ridgeSegments } from "./Ridge";
 import { TerrainField, terrainPatches } from "./TerrainField";
 import { NavGrid } from "./NavGrid";
+import { RayWorld } from "./RayWorld";
 import { CoverMap } from "./CoverMap";
 import { ObstacleField } from "./ObstacleField";
 import { mulberry32 } from "./rng";
@@ -413,6 +414,18 @@ export interface GameMap {
   nav: NavGrid;
   /** Sub-cell collision the nav grid is too coarse to express. */
   obstacles: ObstacleField;
+  /**
+   * The segment query every ray in the game asks — the same collider set as
+   * `colliderBoxes` and `rayGroups`, plus the floor, indexed for a LINE rather
+   * than for a point.
+   *
+   * Here beside `nav`, `cover` and `obstacles` rather than built by whoever
+   * wants one, for the reason all three are: it is derived from the finished
+   * collider set, it is built once per map, and the authority gets the same
+   * object off `buildServerWorld` without a server-only variant. See
+   * `world/RayWorld.ts`, and `ENGINE_UPGRADE.md` wall 2 for what it replaced.
+   */
+  rays: RayWorld;
   /** Baked directional cover over the nav graph, for the AI. */
   cover: CoverMap;
   /** Shallow-water bodies from the layout; empty when the map is dry. */
@@ -1116,6 +1129,13 @@ export class MapBuilder {
       "obstacleField",
       () => new ObstacleField(size, this.boxes),
     );
+    // And the same collider set indexed for a LINE. It reads `rayGroups` as
+    // well as `boxes`, so it is built after the placements rather than beside
+    // them — a strut group added later would be geometry no round could find.
+    const rays = record(
+      "rayWorld",
+      () => new RayWorld(size, this.boxes, this.rayGroups, terrain),
+    );
     since("build:total", buildStart);
 
     return {
@@ -1124,6 +1144,7 @@ export class MapBuilder {
       nav,
       cover,
       obstacles,
+      rays,
       controlPoints: layout.controlPoints,
       spawns: layout.spawns,
       vehicleSpawns: layout.vehicles ?? [],
@@ -1617,9 +1638,10 @@ export class MapBuilder {
     // `porous` rides in the metadata rather than being answered by leaving
     // `solid` off, because the two questions have different answers and both
     // are asked of this mesh: it IS the solid world to a body (movement, the
-    // ground probe) and is not there at all to a round. `OPAQUE_ONLY` is the
-    // reader; dropping `solid` instead would let the player fall through a
-    // fence top their own capsule is still being held out of.
+    // ground probe) and is not there at all to a round. The flag is carried onto
+    // the `WorldBox`, which is what `RayWorld` reads; dropping `solid` instead
+    // would let the player fall through a fence top their own capsule is still
+    // being held out of.
     //
     // A breakable pane is `porous` and says so twice: once for the predicates,
     // which need nothing new to get glass right, and once as `glass` for the
@@ -1666,12 +1688,19 @@ export class MapBuilder {
    * **This is the fence lesson at forest scale, and the numbers are the same
    * ones.** A `pickWithRay` costs per MESH before it costs per triangle: a
    * predicate call, a world-matrix inverse and a bounding test each, and the
-   * game fires such rays every frame against every solid mesh on the map — the
-   * hitscan on every shot, sixteen bots' LOS, the grenade, the death cam, a
-   * tank's chase camera. (`Player.probeGround` was the largest of them when
-   * FINDINGS #6 measured this and is no longer a ray; the merge is neutral for
-   * it either way, because `colliderBoxes` keeps one entry per prop however the
-   * meshes are grouped.) Greyfen's five belts were 354 loose tree boxes out of
+   * game used to fire such rays every frame against every solid mesh on the map
+   * — the hitscan on every shot, sixteen bots' LOS, the grenade, the death cam,
+   * a tank's chase camera.
+   *
+   * **NONE OF THOSE IS A PICK ANY MORE** (`RayWorld`, `ENGINE_UPGRADE.md` wall
+   * 2), so the frame no longer cares how these are grouped. Three things do,
+   * and they are why this stays: the editor still picks meshes, the server
+   * still stands them up, and the grouping rides to it as
+   * `MapCollision.boxGroups` — a decision this side made that the other side
+   * has to reproduce. `colliderBoxes` keeps one entry per prop however the
+   * meshes are grouped, which is why nothing derived from geometry — the ray
+   * queries now included — can tell either way. Greyfen's five belts were 354
+   * loose tree boxes out of
    * 696 solid meshes, so half of every ray in the game was already being spent
    * on trees — and a jungle dense enough to be worth the name needs three
    * times that. Merged per 12 m square the same 950 trees are ~120 meshes, so

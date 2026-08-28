@@ -409,9 +409,12 @@ What the hull's collider box is:
 
 - `metadata.solid`, and neither `porous` nor `rayOnly`. Those two describe a
   fence — a thing that is a wall to a body and mostly air to a bullet, or the
-  reverse. A tank is both to both, which is the plain case. So it is in
-  `SOLID_ONLY` and in `OPAQUE_ONLY`: a round stops on it and a sightline breaks
-  on it. **A player can climb onto the deck, and that no longer follows from the
+  reverse. A tank is both to both, which is the plain case. So it answers both
+  of `RayWorld`'s questions: a round stops on it and a sightline breaks on it.
+  It reaches those queries as `RayWorld.hulls` — a list `VehicleSystem` keeps
+  and every cast walks — because it is in no baked structure and could not
+  reach them any other way. `Tank.rayBox` is the one method that hands it over,
+  and `deckAt` reads the same scratch box through the same gate. **A player can climb onto the deck, and that no longer follows from the
   metadata** — the ground probe is analytic and reads baked boxes, which a hull
   is deliberately not in, so the deck is a query of its own (`Tank.deckAt`,
   fanned over the fleet by `VehicleSystem.deckAt` and wired to the player by
@@ -438,21 +441,20 @@ gun on it — pass over the collider; the hit sphere still took the damage, so
 what was missing was the SPARK, and a round that hurts a vehicle without marking
 it reads as a miss that happened to work.
 
-### One pick turns the hull invisible first
+### One query leaves the hull out of its own answer
 
-The chase camera's pull-in casts `SOLID_ONLY` and the nearest solid thing to its
-origin is the hull's own. `world/solid.ts` forbids minting a predicate at a call
-site — this is a per-frame call and a closure allocates on every one — so the
-hull is taken out of the pick for the length of it
-(`body.isPickable = false`, restore after). Two property writes, no allocation,
-and **the other tank stays pickable throughout**, which is what makes one hull
-block another's camera.
+The chase camera's pull-in is a `RayWorld.castBody` and the nearest solid thing
+to its origin is the hull's own, so the hull is passed as that call's `skip`. It
+was two writes to `body.isPickable` around a `scene.pickWithRay` until the
+queries stopped picking meshes, and it is an argument now — the rule is kept
+either way: nothing is allocated per call, and **the other tank stays in the
+answer throughout**, which is what makes one hull block another's camera. The
+dismount's floor test does the same thing for the same reason.
 
-**That works only because the predicate ASKS about `isPickable`, and it had to
-be taught to.** `pickWithRay(ray, predicate)` runs the predicate INSTEAD of
-Babylon's own `isEnabled && isVisible && isPickable` filter rather than as well
-as it, so for as long as `solid.ts` did not read the flag, the two writes above
-were writes nothing read. **The bug that found it was the ground probe's**, back
+**`isPickable` is still read, and it is still load-bearing.** `Tank.rayBox`
+gates on `isEnabled() && isPickable` exactly as `SOLID_ONLY` does, so `hide`
+takes a wreck that has been carried away out of every ray in one write.
+**The bug that found that term was the ground probe's**, back
 when the ground was a ray: it started INSIDE the box it was meant to ignore,
 found the hull's own underside, pinned `floorY` to whatever height the tracks
 already had, and a hull lifted by anything — Babylon's own collision response
@@ -624,14 +626,16 @@ Three things about that offset, all of them load-bearing:
   swings it. Verified: a hull parked against a wall pivots 206 degrees on the
   spot and drives away clean.
 
-### The ground costs a six-hundredth of what it did
+### The ground costs a six-hundredth of what it did, and the camera followed
 
 `Player.probeGround` used to be the most expensive thing the game does per frame
 (0.483 ms on real hardware, a third of the game's own JS) because
 `scene.pickWithRay` with a predicate walks every mesh in the scene.
 `Tank.applyGround` used to cast the same shape of ray and cost the same, and a
 driver therefore paid TWO of the frame's most expensive pick where a body on
-foot paid one — the hull's ground and the chase camera's pull-in.
+foot paid one — the hull's ground and the chase camera's pull-in. **Neither is
+a pick any more**, and the second went with every other ray in the game at
+`ENGINE_UPGRADE.md` wall 2.
 
 The hull's is now analytic: `ObstacleField.groundAt` is a bucket lookup over the
 collider boxes, and the terrain is `TerrainField.surfaceAt`, which is
@@ -647,7 +651,9 @@ thin box pitched a few degrees claiming ground beside itself — stands a BODY o
 air, and merely rocks a seven-metre hull that is riding a rate limit anyway.
 **That failure is fixed** (`boxGeometry`'s `topFaceHalfDepth` — the top-face
 plane is now bounded by the top FACE) **and the body followed the hull**, so the
-frame's most expensive pick is gone and a driver pays only the camera's. The
+frame's most expensive pick was gone and a driver paid only the camera's — which
+is itself a box query now (`RayWorld.castBody`), so a driver pays no whole-scene
+pick at all. The
 hull's own two queries are unchanged by it: `groundAt` and `wallAt` answered
 correctly for a tank before and answer correctly now.
 

@@ -40,13 +40,13 @@
  * the round because a bot was loitering, which is a far worse failure than a
  * shove.
  */
-import { Ray, type Scene, Vector3 } from "@babylonjs/core";
+import { type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
 import { Tank, type DriveInput } from "../entities/Tank";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { GameMap, VehicleSpawnDef } from "../world/MapBuilder";
-import { SOLID_ONLY } from "../world/solid";
+import { newRayHit, type RayWorld } from "../world/RayWorld";
 
 /**
  * Who is telling which hull what to do, asked once per hull per frame.
@@ -121,7 +121,22 @@ export class VehicleSystem {
    */
   onRespawned: (tank: Tank) => void = () => {};
 
-  private readonly probe = new Ray(new Vector3(), new Vector3(0, -1, 0), 1);
+  /**
+   * The solid world as a segment query, and the buffer the dismount's floor
+   * test reads. Held from `build` rather than pushed in separately, because
+   * this system is handed the whole map already and the fleet's hulls go INTO
+   * it on the same call.
+   */
+  private rays: RayWorld | null = null;
+  private readonly hit = newRayHit();
+  private readonly down = new Vector3(0, -1, 0);
+  /**
+   * The dismount probe's origin. A scratch of its own and NOT `spot`, which is
+   * the answer `dismountSpot` is building up across two candidates — writing
+   * the probe into it would clobber the better side with the worse one's
+   * origin whenever the second candidate lost.
+   */
+  private readonly probeFrom = new Vector3();
   private readonly spot = new Vector3();
 
   constructor(
@@ -182,6 +197,11 @@ export class VehicleSystem {
   build(map: GameMap, predicted = false): void {
     this.dispose();
     this.predicted = predicted;
+    // **The hulls go into the segment query here and come out in `dispose`.**
+    // A tank is in no baked structure — that is the ragdoll's rule and a hull
+    // is an instance of it — so the one place that knows the fleet is the one
+    // place that can tell every ray in the game there is armour on the field.
+    this.rays = map.rays;
     for (const def of map.vehicleSpawns) {
       const tank = new Tank(this.scene, this.mats, def.team);
       tank.setGround(map.terrain, map.obstacles);
@@ -195,6 +215,7 @@ export class VehicleSystem {
       tank.predicted = predicted;
       this.stands.push({ def, tank, respawnIn: 0 });
       this.fleet.push(tank);
+      map.rays.hulls.push(tank);
     }
   }
 
@@ -412,18 +433,36 @@ export class VehicleSystem {
    */
   private groundAt(x: number, z: number, tank: Tank): number | null {
     const t = CONFIG.vehicles.tank;
-    const pickable = tank.body.isPickable;
-    tank.body.isPickable = false;
-    this.probe.origin.set(x, tank.center.y + t.hull.height, z);
-    this.probe.length = t.hull.height * 2 + t.drive.probeLength;
-    const hit = this.scene.pickWithRay(this.probe, SOLID_ONLY);
-    tank.body.isPickable = pickable;
-    return hit?.hit && hit.pickedPoint ? hit.pickedPoint.y : null;
+    if (!this.rays) return null;
+    this.probeFrom.set(x, tank.center.y + t.hull.height, z);
+    // Out of its own answer — the hull the body is climbing out of is not the
+    // floor it is climbing out ONTO — which is `skip`, and was two writes to
+    // `isPickable` around a `scene.pickWithRay`.
+    const found = this.rays.castBody(
+      this.probeFrom,
+      this.down,
+      t.hull.height * 2 + t.drive.probeLength,
+      this.hit,
+      tank,
+    );
+    return found ? this.hit.point.y : null;
   }
 
   dispose(): void {
     for (const stand of this.stands) stand.tank.dispose();
     this.stands = [];
+    // Out of the segment query as well as off the field. `build` installs a
+    // fresh map's own `RayWorld` a line later, so this only matters for the
+    // editor's teardown — which disposes the fleet and builds none — but a
+    // disposed hull left in a live list is exactly the stale pointer the
+    // vehicle wiring in `installMap` is ordered to prevent.
+    if (this.rays) {
+      for (const tank of this.fleet) {
+        const at = this.rays.hulls.indexOf(tank);
+        if (at >= 0) this.rays.hulls.splice(at, 1);
+      }
+    }
+    this.rays = null;
     this.fleet.length = 0;
   }
 }

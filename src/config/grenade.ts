@@ -26,8 +26,8 @@
  *
  * The blast is `damage` inside `innerRadius`, falling linearly to nothing at
  * `blastRadius`, and it needs line of sight: a wall between the two is a wall
- * the fragments stop in, tested with the same `OPAQUE_ONLY` ray every round in
- * this game is — so a fence between the two is not one. `damage` is deliberately over the 100 HP pool, so
+ * the fragments stop in, tested with the same round question every shot in
+ * this game asks (`RayWorld.blocked`) — so a fence between the two is not one. `damage` is deliberately over the 100 HP pool, so
  * a grenade that lands ON someone kills, and one that lands near them
  * softens them up — the falloff is where all the play is.
  *
