@@ -114,13 +114,44 @@ measured **-5.4%** *and* dropped meshes that should have stayed active.
 every effect is pooled, a frozen active list is a bug, not a trade. Both were
 measured at 45 blocks; neither is the lever at 1,000.
 
-### Wall 2 — every ray in the game walks the same list
+### Wall 2 — every ray in the game walks the same list — **MEASURED, and it is now the biggest thing in the frame**
+
+**Finding 22 prices it, and it changes the order of what is left.** With S1
+landed, `pickWithRay` is **3.75 ms of an 8.6 ms frame — 30.7% of it** — on the
+900/300 proving ground with sixteen bots in contact, against 3.0 ms for the mesh
+walk beside it. It was the one wall this document had no measurement for at all.
+
+| sixteen bots in contact | Coldharbour | Harrowmead | **proving 900/300** |
+| --- | --- | --- | --- |
+| collider boxes | 768 | 748 | **5,929** |
+| median frame | 5.8 ms | 6.9 ms | **8.6 ms** |
+| — the mesh walk | 1.5 | 1.9 | 3.0 |
+| — **`pickWithRay`** | **0.41** | **0.35** | **3.75** |
+| picks per frame | 1.86 | 1.77 | 1.54 |
+| **us per pick** | **222** | **199** | **2,438** |
+| share of the frame | 5.8% | 3.9% | **30.7%** |
+
+**The pick COUNT is the same on all three** — it is sixteen bots at `thinkRate`,
+not a property of the map — so the whole of the difference is what one ray
+costs, and that is 11x for 7.7x the colliders.
 
 `scene.pickWithRay` filters `scene.meshes` by predicate, then bounds-tests, then
 triangle-tests. There are eight sites: the hitscan's wall cap
 (`CombatSystem.fire`), the bots' LOS (`BattleSystem`), the aim assist, the
 grenade's step ray and its blast check, the rocket, the death cam's pull-in, and
 the tank's chase camera and ground probe.
+
+**S1 did nothing for this and that was deliberate.** `WorldCulling` works by
+replacing the ACTIVE-MESH candidate list, and `InternalPick` has never heard of
+it — which is exactly what made S1 safe and is exactly why this wall is
+untouched. The two are independent by construction.
+
+**Ray LENGTH barely touches it, which is the wall's signature.** 400 isolated
+rays per range: 125.8 / 121.3 / 120.8 us on Coldharbour and 1,043.8 / 1,035.5 /
+1,007.3 on the proving ground at 55 m, 120 m and 180 m — the bots' engage range,
+the rifle's and the tank gun's. Tripling the ray is very slightly CHEAPER.
+Nothing about the cost is bounded by how far the ray goes; it is
+`O(colliders in the scene)`.
 
 **The precedent is already in the tree and it is emphatic.** `Player.probeGround`
 was `scene.pickWithRay` with a `solid` predicate, walking ~1,800 meshes and
@@ -375,12 +406,13 @@ in place against it.** What landed:
 
 **What it did NOT measure, and what the next step to touch each owes:**
 
-- **Anything with sixteen bots fighting.** The player spawns and the round runs,
-  but the proving ground's flags are hundreds of metres apart and no engagement
-  was forced. Every frame figure is a quiet frame.
-- **Wall 2.** No ray was fired down a 1500 m scene. `Player.probeGround`'s
-  retirement is still the only measurement this document has for that wall, and
-  it is off a 240 m map.
+- ~~**Anything with sixteen bots fighting.**~~ **CLOSED by finding 22.** A
+  forced skirmish is an 8.6 ms frame against the quiet 4.30, and what a fight
+  adds is almost all wall 2. A round left to itself fires no ray at all, which
+  is why it had to be forced.
+- ~~**Wall 2.** No ray was fired down a 1500 m scene.~~ **CLOSED by finding
+  22**, after S1 — and it is the biggest thing in the frame now. See wall 2
+  above.
 - **`ObstacleField`'s footprint**, which reported no typed arrays and is absent
   from the memory table.
 - **The reflection bake's cost as a curve.** It is a pass/fail at three points,
@@ -563,7 +595,12 @@ rim carry no block, and they are what the SKY is behind.
   above it.
 - **The cull cell is the 48 m merge block**, because that key already exists.
   Whether it is the right cell is S6's question.
-- **Nothing was measured with sixteen bots fighting**, exactly as S0 was not.
+- ~~**Nothing was measured with sixteen bots fighting**~~ — **finding 22 does
+  it**, and the walk holds up (3.0 ms in a fight against 2.50 quiet). It also
+  breaks the remaining candidates down: **57% are `loose`**, which no fog wall
+  can reach, and ~750 of those are IDLE POOLED effect meshes. A pool member not
+  in use is as skippable as a collider is, by this same mechanism, for roughly
+  what S8's wall is worth — and no step in this document names that lever.
 
 **What it must not break, and did not:** everything in the list this section
 used to carry, and the mechanism is why rather than care — pooled anything is
@@ -594,7 +631,19 @@ move at all.
 
 ### S2 — Retire the whole-scene picks
 
-Wall 2. Replace `scene.pickWithRay` at the eight sites with a segment query
+Wall 2, and **since S1 landed it is the biggest thing in the frame.** Finding
+22 measures it: `pickWithRay` is **3.75 ms of an 8.6 ms frame with sixteen bots
+in contact** on the 900/300 proving ground — 30.7% of it, against 3.0 ms for the
+mesh walk S1 left beside it — at **2,438 us a ray**, 11x Coldharbour's 222 for
+7.7x the colliders. The number to beat is that one.
+
+**It is ahead of S8 on the evidence and not on the plan's original order.** S8
+unlocks S1's dormant block half, which is worth 0.6–0.8 ms measured; this is
+worth five times that today and ~2.8x more again at 1500/0. S8 also has no map
+to land on until S11 exists — the three shipped `fogEnd`s are gameplay contracts
+their own files forbid moving, and the proving ground's 2400 is deliberate.
+
+Replace `scene.pickWithRay` at the eight sites with a segment query
 answered analytically against `colliderBoxes` through `boxIndex`, plus
 `TerrainField` for the floor — exactly the shape that retired
 `Player.probeGround`.
@@ -636,6 +685,15 @@ bug until proven otherwise.
 
 **Verify:** the sampling audit above, `npm run parity`, `npm run simulate`, and
 S0's harness for the per-frame saving.
+
+**Two things about measuring it, both of which cost a run in finding 22.** A
+round left to itself fires **no ray at all** — `BattleSystem.acquire` only
+ray-tests a candidate inside `bots.perception.engageRange`, so with nobody in
+contact the count is zero on the proving ground AND on Coldharbour, and a
+skirmish has to be forced. And the proving ground's reflection bake takes **21 s
+and 24 frames** to drain: warm on `reflections.queue.length === 0` and never on
+a wall clock, or the bake is reported as the round (10 frames in 8 s, a 894 ms
+median frame, 1.1 fps — all of it the bake).
 
 ---
 

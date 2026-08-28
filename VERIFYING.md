@@ -114,6 +114,24 @@ you are on before you believe anything else in this section.
   render list (486 meshes 2124 ms, 243 meshes 813 ms, 49 meshes 109 ms).
   Hollowmere's four probes cost 76 ms in the same run, which is the same 19 ms a
   probe. `FINDINGS.md` #10 carries the open thread; do not quote 138 ms.
+- **A WALL-CLOCK warm reports the bake as the round on any map that takes more
+  than one batch, and what that looks like is a catastrophic new wall.** The
+  proving ground at 900/300 queues 265 probes and takes **21 s and 24 frames**
+  to drain; a ten-second warm lands in the middle of it and the next eight
+  seconds are **10 frames, a 894 ms median frame and 1.1 fps** — every one of
+  them a bake frame, and every per-frame figure taken across them meaningless
+  (finding 22 lost two runs to exactly this). **Warm on
+  `g.reflections.queue.length === 0` and then settle, never on a timer.** The
+  four shipped maps drain in one frame (39–42 ms) so nothing about them shows
+  it, which is precisely why it is easy to write a script that is wrong only on
+  the map you are investigating.
+- **A round left to itself fires NO `pickWithRay` at all**, so a script
+  measuring rays has to force contact. `BattleSystem.acquire` gathers candidates
+  by distance and only ray-tests inside `bots.perception.engageRange` (55 m):
+  measured at **zero calls in eight seconds** with sixteen bots alive, on
+  Coldharbour and on the proving ground both. Standing the bots in a ring around
+  the player (`bot.position.set(...)`) and re-standing them every second is what
+  finding 22 used; overriding `battle.spawnPointFor` is the other way in.
 
 ### On the Chromebook, which is a Crostini box with no GPU for WebGPU
 

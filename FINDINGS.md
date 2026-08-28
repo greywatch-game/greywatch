@@ -1938,9 +1938,11 @@ vantage, which is what the split was for.
   9,019 meshes are INVISIBLE collider proxies**. What is left is 0.94 µs over
   2,670 candidates, so the walk is still the largest single line in the frame
   and S8's fog wall is what has the rest of it.
-- **Nothing here was measured with sixteen bots fighting.** The player spawns
-  and the round runs, but the proving ground's flags are hundreds of metres
-  apart and no engagement was forced. Bot cost at this scale is untested.
+- ~~**Nothing here was measured with sixteen bots fighting.**~~ **CLOSED by
+  finding 22**, which forces a skirmish and prices one. A fight is an 8.6 ms
+  frame against the 4.30 ms quiet one, and 3.75 ms of it is `pickWithRay` —
+  wall 2, not this one. Note what had to be worked around to get there: a round
+  left to itself fires **no ray at all**, on this map or on Coldharbour.
 - **`ObstacleField` reported no typed arrays**, so it is absent from the memory
   table. It holds bucketed box references rather than a grid of primitives; its
   footprint is unmeasured.
@@ -2133,13 +2135,145 @@ rule being wrong.
   ridge line is backed by the DOME, whose `horizonColor` is only required to sit
   CLOSE to the fog. Nobody would see thirty pixels; it is recorded because a
   rule that is exact on three maps and approximate on the fourth should say so.
-- **Nothing here was measured with sixteen bots FIGHTING**, exactly as finding
-  19 was not. `spawnPlayer()` runs the round and the rigs are posed and drawn,
-  but the proving ground's flags are hundreds of metres apart.
+- ~~**Nothing here was measured with sixteen bots FIGHTING**~~, **CLOSED by
+  finding 22.** The walk holds up under one — 3.0 ms in a fight against the
+  2.50 ms quiet reading here — and what a fight adds lands on wall 2 instead.
+  That entry also breaks the remaining candidates down: **57% of them are
+  `loose`**, which no fog wall can reach, and ~750 of those are idle pooled
+  effect meshes that the same mechanism could skip.
 - **The cull cell is the 48 m merge block**, because that is the key that
   already exists. Whether a coarser or a finer cell is better is S6's question
   and this has not asked it.
 - **The nav arrays are untouched by this**, correctly — they read `WorldBox`es
   and the terrain field rather than meshes. Wall 3 is entirely open.
+
+---
+
+## 22. Wall 2, measured at last: one ray is 2.4 ms on a 1500 m map, and a fight spends a third of the frame in `pickWithRay`
+
+**Status:** measured on the Windows box, **not fixed**. This is
+`ENGINE_UPGRADE.md` wall 2, and it is the first time a ray has been fired down a
+map this size — findings 19 and 21 both name that as the gap and neither closed
+it. It settles the S1/S2/S8 ordering: **wall 2 is now the largest single line in
+the frame**, larger than what S1 left of wall 1, and S1 did nothing for it on
+purpose.
+
+### The instrument
+
+Windows box (RTX 4070 Ti SUPER), headless Chromium via `channel: "chromium"`,
+`--disable-frame-rate-limit --disable-gpu-vsync`, 1920x1080, medians over 8 s —
+findings 17–21's protocol. Two readings, because one of them alone says nothing:
+what a single `scene.pickWithRay` costs, and how many the LIVE game makes, taken
+by wrapping `scene.pickWithRay` for the whole window.
+
+**A round left to itself fires NO ray at all**, which is why this had to be
+forced. `BattleSystem.acquire` gathers candidates by distance and only
+ray-tests inside `bots.perception.engageRange` (55 m), so with nobody in contact
+there is nothing to test: measured at **zero `pickWithRay` calls in eight
+seconds on Coldharbour AND on the proving ground**, sixteen bots alive on both.
+So the bots are stood in a ring 12–24 m around the player and re-stood every
+second, which puts every one of them inside an enemy's engage range with a clear
+look. That is artificial and it is the only way to price this at all; what it
+buys is the two pick sites that carry the load — the bots' LOS
+(`BattleSystem.visible`) and the hitscan's wall cap (`CombatSystem.fire`).
+
+### What a fight costs
+
+| sixteen bots in contact | Coldharbour | Harrowmead | **proving 900/300** |
+| --- | --- | --- | --- |
+| collider boxes | 768 | 748 | **5,929** |
+| frames in 8 s | 1,115 | 890 | 656 |
+| fps | 139.3 | 111.2 | 81.9 |
+| median frame | 5.8 ms | 6.9 ms | **8.6 ms** |
+| — the mesh walk (what S1 left) | 1.5 ms | 1.9 ms | 3.0 ms |
+| — **`pickWithRay`** | **0.41 ms** | **0.35 ms** | **3.75 ms** |
+| picks per frame | 1.86 | 1.77 | 1.54 |
+| **us per pick** | **222** | **199** | **2,438** |
+| **share of the frame** | 5.8% | 3.9% | **30.7%** |
+| bots alive at the end | 7 | 8 | 9 |
+
+**11x the per-pick cost for 7.7x the colliders**, and the two big maps agree
+with each other to 10%. The pick count per frame is essentially the same on all
+three — it is a property of sixteen bots thinking at `thinkRate`, not of the map
+— so **the whole of the difference is what one ray costs**.
+
+### It is the per-mesh walk, and ray LENGTH barely touches it
+
+400 seeded rays per range, warmed, with nothing else running:
+
+| us per pick, isolated | Coldharbour | proving 900/300 |
+| --- | --- | --- |
+| 55 m — `bots.perception.engageRange` | 125.8 | 1,043.8 |
+| 120 m — the rifle's `range` | 121.3 | 1,035.5 |
+| 180 m — the tank gun's | 120.8 | 1,007.3 |
+
+**Tripling the ray changes nothing and is very slightly cheaper**, which is the
+wall's whole signature: `InternalPick` walks `scene.meshes`, runs the predicate,
+then bounds-tests every mesh that survives it, and none of that is bounded by
+how far the ray goes. It is `O(colliders)` and it is the same shape
+`Player.probeGround` was retired for — that pick was 0.483 ms on a 240 m map,
+and this is 1.0 ms on a 900 m one and 2.4 ms in situ.
+
+**The in-situ figure is 2.4x the isolated one on the same map and the gap is
+NOT accounted for** (2,438 against 1,036). Both say the same thing, and S2 must
+re-derive rather than quote either.
+
+**Derived, not measured:** at 1500/0 there are 16,526 boxes against 5,929, so if
+this stays roughly linear in the collider count a ray is ~2.8x again — ~6.8 ms
+in situ, and a fight would be spending more time picking than rendering. That is
+the projection S2 has to settle rather than a number to quote.
+
+### What S1 left in the walk, and why S8 cannot reach most of it
+
+The same session, `WorldCulling.stats` plus a breakdown of the loose bucket:
+
+| | Coldharbour | proving 900/300 |
+| --- | --- | --- |
+| candidates | 1,425 | 2,670 |
+| — blocked (reachable by a fog wall) | 229 | 1,158 |
+| — **loose** | **1,196** | **1,512** |
+| — — pooled effects and the rest | 804 | 753 |
+| — — bot rigs | 320 | 320 |
+| — — map, unblocked (terrain / roads / rim) | 72 | 439 |
+
+**57% of what is left in the walk is loose**, and block visibility can never
+touch it because loose is what MOVES. Of that, ~750 are pooled effect meshes
+sitting idle — tracers, sparks, impact discs, shards, rubble, grenades — and a
+pool member that is not in use is exactly as skippable as a collider is, by the
+same mechanism, for roughly what S8's fog wall is worth (~0.7 ms). **Nothing in
+`ENGINE_UPGRADE.md` names that lever under any step.** The 320 rig meshes are
+S8's own rider (`bots.lodDisableDistance` is `FOG_WALL`, so a map with no fog
+wall draws and poses every rig on it).
+
+### The measurement trap that cost two runs, and will cost the next person too
+
+**The proving ground's reflection bake takes 21 s and 24 frames to drain, and a
+wall-clock warm lands inside it.** S0b spends the bake `drawsPerFrame` at a time
+and its own open list says it lands after the loading card rather than behind
+it; what that means for anyone measuring is sharper than it sounds:
+
+| warmed until | Coldharbour | proving 900/300 |
+| --- | --- | --- |
+| `reflections.queue.length === 0` | 39 ms, 1 frame | **21,039 ms, 24 frames** |
+
+With a ten-second warm the proving ground reports **10 frames in 8 seconds, a
+894 ms median frame, 1.1 fps** and 5,680 us per pick — which reads as a
+catastrophic new wall and is entirely the bake. **Warm on the QUEUE, never on a
+clock.** `VERIFYING.md` already says `queue.length` reaching 0 is what says the
+bake has landed; it now also says what happens if you do not wait for it.
+
+### What is open
+
+- **Wall 2 itself.** It is `ENGINE_UPGRADE.md` S2 and nothing here fixes it: the
+  eight pick sites still go through `scene.pickWithRay`, and the fix is the
+  analytic segment query over `colliderBoxes` that `Player.probeGround` already
+  set the precedent for.
+- **The 2.4x between the in-situ and the isolated per-pick cost.**
+- **The 1500/0 projection**, which is derived from the collider count alone.
+- **Whether the pick count per frame holds up in a real fight** rather than in a
+  forced ring. 1.5–1.9 per frame is what sixteen bots at `thinkRate` produce
+  here; a fight over a control point with everyone shooting will produce more,
+  because every round fired is another wall pick.
+- **The idle-pool lever**, above. Measured as a count, never as a saving.
 
 ---
