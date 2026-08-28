@@ -1046,7 +1046,7 @@ records.*
 
 ---
 
-### S5 — The load behind the card — **THE FLATTEN LANDED; THE WORKER IS GATED ON S5b**
+### S5 — The load behind the card — **THE FLATTEN LANDED; S5b HAS UNGATED THE WORKER AND IT IS STILL NOT TAKEN**
 
 **This step was called "Move the burst builds off the main thread", and that
 name stopped being true twice.** What landed under it was a GPU-upload fix, and
@@ -1123,6 +1123,13 @@ sum to the method:
 | `ReflectionSystem.build` | 1,075 | **5,272** | **16.3%** — S5c |
 | everything else in the method, together | 11 | 27 | 0.1% |
 
+**Two of those four rows have moved since, and the table is the BEFORE.** S5b
+landed and `PhysicsWorld.setMap` is 268 ms and 682 rather than 1,716 and 13,402;
+`MapBuilder.build` re-times a little higher on the same box (17.4 s at 1500 m)
+and `ReflectionSystem.build` a little lower (4.5–5.0 s), both inside what the
+same instrument scatters by. Quote this table for the ranking that produced
+S5b and S5c, never for what the install costs today.
+
 **That last row is the useful negative result and closes a question.** The six
 `setWorld` calls, the fog pushes, the leash, the ground probe, the shadow
 casters and the culling are 27 ms at 1500 m between them. None of the wiring in
@@ -1162,6 +1169,15 @@ has been re-ordered by measurement three times — S0 inverted wall 4, the flatt
 inverted it again, the install profile inverted it a third time — and writing
 the worker down as a step now would be committing to a design whose cost the
 next step is about to move.
+
+**S5b has landed and it moved the cost exactly as predicted, which settles the
+GATE and not the step.** The 13.4 s the nav lane could have hidden behind is
+682 ms, so the hiding place is gone: a worker now has to overlap the merges,
+which needs `build` split into two lanes, and the two sides of that
+(3,542 ms of nav against 3,715 of merges) are the figures above rather than
+fresh ones. Nothing here promotes it — what a worker is worth is now a question
+about `MapBuilder.build`, which is 42% of the install and is where finding 24's
+open threads are.
 
 The natural cut, when it comes, is that these are **pure functions over plain
 data**: `NavGrid`, `CoverMap` and `ObstacleField` take `WorldBox[]` and a
@@ -1208,7 +1224,7 @@ records.*
 
 ---
 
-### S5b — Stop rebuilding the static world's compound once per box
+### S5b — Stop rebuilding the static world's compound once per box — **LANDED**
 
 **The largest single line in a 1500 m install, and it is a square.**
 `PhysicsWorld.buildWorld` adds one `PhysicsShapeBox` at a time into one
@@ -1288,6 +1304,91 @@ resting transforms — identical before and after. Build that first; a physics
 change with no oracle is the one class of change this tree has no way to check.
 `npm run parity` cannot help: the fingerprint is the nav graph, and physics is
 not in it.
+
+---
+
+**Fix 1 landed, the exponent went with it, and the fallback was not needed.**
+`PhysicsWorld.buildWorld` builds one `PhysicsShapeContainer` and one static
+`PhysicsBody` per 48 m map block — `MapBuilder`'s `BLOCK_SIZE`, keyed exactly as
+`BlockMerge` keys a merged visual — with each block's collider boxes and its own
+terrain patch in it. Every bucket's node stands at the ORIGIN and every child
+carries the world-space transform it always carried, so nothing in the world
+moved; what changed is which container each shape is in.
+
+| `PhysicsWorld.setMap` | boxes | before | after | |
+| --- | --- | --- | --- | --- |
+| 900 / 300 | 5,929 | 1,726 ms | **268 ms** | 6.4x, 420 buckets |
+| 1500 / 0 | 16,526 | 13,433 ms | **682 ms** | 19.7x, 1,023 buckets |
+
+**The shape is what matters and the shape is gone.** 2.79x the boxes cost 7.78x
+the time and now cost 2.54x — an exponent of 1.94 against 0.89, which is a
+straight line with the rounding off, and per box it is 0.29/0.81 ms against
+0.045/0.041. A fix that halved the constant and left the square was the thing
+this step said not to accept; this is the other one. Install-to-`deploy` at
+1500 m is **42.6 s to 22.6**, and `PhysicsWorld.setMap` is 3.0% of `installMap`
+where it was 41.4%.
+
+**The step was measured as the step demanded, and it costs nothing.** With
+sixty-four bodies resting on the 1500 m ground a substep is 36/36 us against one
+static body and 35/31 against 1,023 — inside the scatter of the same reading
+taken twice, which is the answer the plugin's own code predicts: `executeStep`
+walks bodies three times and a STATIC one is a `continue` in each. What does
+show is the falling phase, where the whole 480-substep settle goes from ~52 ms
+to ~60: about 18 us a substep with sixty-four bodies in contact at once, a tenth
+of a percent of a frame, and only while something is tumbling. The
+single-body argument at the top of `buildWorld` was about 783 DYNAMIC bodies and
+it survives untouched; what did not survive is the assumption that its number
+generalises.
+
+**The ORACLE this step owed exists and it is `plans/physics-ref/drop.mjs`.**
+Sixty-four boxes on a seeded lattice over the play square, each dropped 1.2 m
+above whatever `RayWorld.castBody` says is under it, 480 substeps at
+`CONFIG.bots.death.substep`, and the resting transforms hashed. Three things had
+to be learnt to make it an instrument rather than a coin toss, and each is
+written up in its header:
+
+- **A resting transform is the measurement and a velocity is not.** Havok
+  DEACTIVATES a settled body and freezes the velocity it went to sleep holding —
+  measured on Harrowmead, one box reported 0.02267 m/s at 480 substeps and the
+  identical 0.02267 at 1200. The rest test is a DISPLACEMENT over the last tenth
+  of the run.
+- **The floor is not zero and it moved with this change.** Against the
+  single-container world three of the four shipped maps reproduced to every
+  decimal recorded and Harrowmead settled one body 2.8 mm apart between two runs
+  in one process; against the bucketed world the same runs scatter up to a
+  centimetre LATERALLY, because a thousand static bodies is a thousand ways for
+  the solver to take the same contacts in another order.
+- **So height is graded tightly and sideways loosely**, which is also what makes
+  the oracle say something. Across all five maps the worst body came to rest
+  3.8 cm from where it did before — and **under a millimetre of that is
+  vertical**. A collider that left the world, arrived somewhere else or came
+  across at the wrong size is a body resting at a different HEIGHT; sliding two
+  centimetres along the same shelf is the solver. The four shipped maps hash
+  IDENTICALLY under the old code across two processes, which is what says the
+  instrument is reading the change rather than itself.
+
+**The bank was then RE-TAKEN on the far side of the change**, which is the same
+rule `bank.mjs` states about a reference frame: the graded run above is the
+evidence, and a bank left at the old world would make every later check inherit
+S5b's residue instead of starting from `identical`. Re-taken, all four maps come
+back identical across two processes again.
+
+**Verified:** the `installMap` attribution at both extents as a matched pair;
+the step reading above; the oracle on all five maps; three consecutive rebuilds
+holding at 193 bodies and 35 nodes on Hollowmere with an editor build
+registering none and a teardown leaving none; `npm run typecheck`;
+`npm run build`; `gate.mjs` clean on all four shipped maps (137.8–143.9 fps on
+Hollowmere, 69.2–74.8 on Harrowmead, no page or console errors, no probe
+re-rendering). `npm run parity` is untouched by this and says so — physics is
+not in the fingerprint, which is why the oracle had to exist.
+
+**What this leaves for S5c and for the worker.** At 1500 m `installMap` is now
+`MapBuilder.build` 17,370 ms, `ReflectionSystem.build` 4,491–4,972 and
+`PhysicsWorld.setMap` 682, so the largest line is the build again and the second
+is S5c. And the worker's hiding place is gone exactly as this step predicted: a
+`MapBuilder.build` that returned with nav outstanding now has 682 ms of physics
+to hide 3,542 ms of nav behind, so promoting it means splitting `build` into two
+lanes. That decision is S5's and is still not taken.
 
 ---
 

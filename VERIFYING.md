@@ -46,6 +46,29 @@ you are on before you believe anything else in this section.
 - **`scripts/browser.mjs` and `scripts/dev-server.mjs` are the only places a
   launch flag or a server spawn is written**, and the harness under
   `plans/webgpu-ref/` imports both rather than copying either.
+- **A script that needs Babylon's own classes must import the URL the PAGE
+  loaded, and find it off the resource timeline.** Vite pre-bundles
+  `@babylonjs/core` into `/node_modules/.vite/deps/@babylonjs_core.js` under a
+  content hash that moves with the lockfile; importing the package by its own
+  path gives a SECOND copy of the library, whose classes are not the game's —
+  a shape built from it is registered against a plugin the scene has never
+  heard of — and `/@id/@babylonjs/core` throws outright, redefining Babylon's
+  own observables. `performance.getEntriesByType("resource")` is where the real
+  URL is written down; assert the identity (`B.Vector3 ===
+  camera.position.constructor`) rather than trusting the spelling.
+  `plans/physics-ref/drop.mjs` is the worked version.
+- **`plans/physics-ref/drop.mjs` is the physics oracle**, and it is the only
+  thing in the tree that can check a change to `PhysicsWorld`: `npm run parity`
+  fingerprints the nav graph and `bank.mjs` diffs pixels, and Havok is in
+  neither. It drops sixty-four boxes on a seeded lattice, settles them and
+  hashes the resting transforms; `--check` grades a run against
+  `plans/physics-ref/ref/<map>.json`. Two of its lessons generalise to any
+  script that steps the engine: **a settled body's VELOCITY is frozen at
+  whatever it held when Havok deactivated it**, so "has it stopped" is a
+  displacement over the last N substeps and never `getLinearVelocity()`; and
+  **a step is tens of microseconds against a 100 us clock**, so time one
+  bracket around hundreds of steps, never one per step (the same clamping the
+  ray-timing note below is about).
 
 ### On the Windows box, which is the one with a GPU
 

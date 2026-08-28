@@ -33,7 +33,7 @@ second renderer for corpses.
 ## The engine is a system of its own, and owns no bodies
 
 `src/systems/PhysicsWorld.ts` holds the `HavokPlugin`, the map as one static
-body and the fixed-substep clock. It is the only place `@babylonjs/havok` is
+body per 48 m block and the fixed-substep clock. It is the only place `@babylonjs/havok` is
 reached and the only place `_step` is called. It has three clients —
 `RagdollSystem` for corpses, `DebrisSystem` for the shards a broken pane throws,
 and `BlastDebrisSystem` for the rubble a blast tears out of the ground — and all
@@ -211,16 +211,29 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   far more, and never a `parent`, a `rotationQuaternion`, a `scaling` or anything on
   `gun`. `Bot.spawn` calls the former. Verified across three lives on one rig — a leak
   shows on life 2.
-- **The map is registered as ONE static body** — a `PhysicsShapeContainer` of the
-  ~733 collider boxes plus the 25 terrain blocks as mesh shapes (the floor has no
-  `WorldBox`, hence `GameMap.terrainColliders`). Built in `installMap`, skipped on
-  editor builds, and torn down leaf by leaf or the WASM heap grows one map build at a
-  time. Measured 33–50 ms headless, and 25 bodies flat across three rounds. **A
-  pane of glass is in it like any other collider and stays in it after it
-  breaks**: this body is what a corpse and a shard land on, and neither decides
+- **The map is registered as one static body PER 48 m BLOCK** — a
+  `PhysicsShapeContainer` per block holding that block's collider boxes plus its
+  terrain patch as a mesh shape (the floor has no `WorldBox`, hence
+  `GameMap.terrainColliders`), and Hollowmere is 35 of them. Built in
+  `installMap`, skipped on editor builds, and torn down body by body, container
+  by container and leaf by leaf, or the WASM heap grows one map build at a time
+  — measured flat at 193 bodies and 35 nodes across three rebuilds, and back to
+  none on a teardown.
+  **It was ONE body until `ENGINE_UPGRADE.md` S5b**, and what moved it is that a
+  single compound is QUADRATIC in the shapes put into it: `HavokPlugin.addChild`
+  is one `HP_Shape_AddChild` and Havok rebuilds the container's acceleration
+  structure on each, so 16,526 boxes cost 13.4 seconds where 5,929 cost 1.7.
+  Bucketing turns `n^2` into `k(n/k)^2` and took those two builds to 682 ms and
+  268. The shapes are unmoved — every bucket's node stands at the origin and
+  every child carries the world-space transform it always did — and
+  `plans/physics-ref/drop.mjs` is the oracle that says so.
+  **A pane of glass is in it like any other collider and stays in it after it
+  breaks**: this world is what a corpse and a shard land on, and neither decides
   anything, so a shard resting against glass a round took out is a cosmetic
-  wrongness lasting a second — against rebuilding a 33–50 ms compound on the
-  frame somebody shot a window.
+  wrongness lasting a second — against rebuilding the compound on the frame
+  somebody shot a window. **The 33–50 ms that argument used to quote is
+  Coldharbour's 768 boxes and does not generalise**; at a large map the same
+  rebuild is seconds, so the trade is only more lopsided than it was.
 - **The knee and the ankle are bones and the rifle is not**, which is the same
   question answered twice: a bone is worth having where the RIG can already put the
   joint somewhere the one box could not follow. The crouch bends knees and ankles, so

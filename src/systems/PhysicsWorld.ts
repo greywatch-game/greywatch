@@ -1,6 +1,7 @@
 /**
- * PhysicsWorld.ts — The one physics engine: the Havok plugin, the map as a
- * single static body, and the fixed-step clock everything under it advances on.
+ * PhysicsWorld.ts — The one physics engine: the Havok plugin, the map as one
+ * static body per 48 m block, and the fixed-step clock everything under it
+ * advances on.
  * Owns: the plugin, the static world, the substep accumulator, and the register
  * of clients that have bodies in it.
  * Owns NO bodies of its own. `RagdollSystem` has the corpses, `DebrisSystem` the
@@ -78,7 +79,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { GameMap } from "../world/MapBuilder";
+import { BLOCK_SIZE, type GameMap } from "../world/MapBuilder";
 
 /**
  * The instantiated WASM module, as `HavokPlugin` wants it.
@@ -187,10 +188,15 @@ export class PhysicsWorld {
   /** Sim time owed but not yet stepped — see `update`. */
   private accum = 0;
 
-  /** The map as one static body: a container of every collider in the world. */
-  private worldNode: TransformNode | null = null;
-  private worldBody: PhysicsBody | null = null;
-  private worldShape: PhysicsShapeContainer | null = null;
+  /**
+   * The map as one static body per 48 m block — see `buildWorld`, which is
+   * where the grouping is argued. Four parallel lists rather than four fields
+   * on a record, because the only thing anything does with them is build them
+   * and dispose them, and `worldLeaves` was already the shape of the last one.
+   */
+  private worldNodes: TransformNode[] = [];
+  private worldBodies: PhysicsBody[] = [];
+  private worldShapes: PhysicsShapeContainer[] = [];
   private worldLeaves: PhysicsShape[] = [];
 
   /**
@@ -224,7 +230,7 @@ export class PhysicsWorld {
 
   /** True once there is ground to land on. A body without it falls forever. */
   get hasWorld(): boolean {
-    return this.worldBody !== null;
+    return this.worldBodies.length > 0;
   }
 
   /** The concrete plugin, for the one call the engine's union type lacks. */
@@ -295,12 +301,50 @@ export class PhysicsWorld {
   }
 
   /**
-   * The map as ONE static body rather than 758.
+   * The map as ONE static body PER 48 m BLOCK, because a single compound is
+   * quadratic in the colliders put into it.
    *
-   * The plugin's per-step sync walks every body in the engine, and while a
-   * static one bails out immediately, a list of 25 entries is cheaper to walk
-   * than one of 783. It is also one thing to tear down, which is what makes the
-   * leak on a map rebuild avoidable.
+   * **`HavokPlugin.addChild` is one `HP_Shape_AddChild`, and Havok rebuilds the
+   * container's acceleration structure on every one of them.** Profiled on the
+   * proving ground (`FINDINGS.md` 25): 5,929 boxes into one container is
+   * 1,726 ms and 16,526 is 13,433 — 2.79x the boxes for 7.78x the time, an
+   * exponent of 1.94, with 13,244 of those milliseconds inside `addChild`
+   * rather than in shape construction. There is no batch entry point through
+   * the plugin, so the lever is the SIZE of each container: `k` buckets turn
+   * `n^2` into `k(n/k)^2`. Measured on the same two grounds, 420 and 1,023
+   * buckets of ~14 and ~16 boxes take the same builds to 268 ms and 682 —
+   * 6.4x and 19.7x — and the exponent with them, to 0.89, which is a straight
+   * line with the rounding off (`ENGINE_UPGRADE.md` S5b).
+   *
+   * **48 m is `MapBuilder`'s `BLOCK_SIZE` and the key is spelled exactly as
+   * `BlockMerge` spells it**, so the physics world is bucketed the same way the
+   * geometry it stands in for is merged. Nothing reads the key — it is a
+   * grouping and not an identity — but a block is the unit of locality this
+   * whole world layer already thinks in, and a bucket of neighbours is also the
+   * bucket a query wants.
+   *
+   * **Every bucket's node stands at the ORIGIN and every child carries its own
+   * world-space offset**, exactly as the single container's children did. That
+   * is what makes this a regrouping and nothing else: no transform in the world
+   * moves, so a body rests on what it always rested on. The physics oracle
+   * (`plans/physics-ref/drop.mjs`) is what says so rather than an argument, and
+   * the shape of what it says is the useful part: across all five maps the
+   * worst of 64 dropped bodies comes to rest 3.8 cm from where it did, and
+   * under a MILLIMETRE of that is vertical. Sideways is the solver taking the
+   * same contacts in another order; height is what the world is, and it did not
+   * move.
+   *
+   * **What it spends is the per-step body walk, and the answer is that it does
+   * not.** The plugin's `executeStep` walks every body in the engine three
+   * times, and a static one is a `continue` in each — which is why the
+   * single-body version's argument was about DYNAMIC bodies rather than about
+   * a list length. Measured with sixty-four boxes resting on the 1500 m
+   * ground, a step costs 36/36 us with one static body and 35/31 with 1,023,
+   * which is inside the scatter of the same reading taken twice. What does
+   * show is the FALLING phase: the whole 480-substep settle goes from ~52 ms
+   * to ~60, or about 18 us a substep with sixty-four bodies in contact at
+   * once, which is a tenth of a percent of a frame and only while something is
+   * tumbling.
    *
    * A local set of statics around each corpse was the alternative and is worse
    * on both counts that matter: a tumbling body leaves the set and falls
@@ -311,11 +355,25 @@ export class PhysicsWorld {
    * after it breaks. That is deliberate: this world is what a corpse and a
    * shard land on, and neither decides anything — a shard resting against glass
    * that a round took out is a cosmetic wrongness lasting a second, while
-   * rebuilding a 33–50 ms compound every time a window goes in is a hitch on
-   * the frame somebody shot one. Nothing that DECIDES anything reads this body.
+   * rebuilding the compound every time a window goes in is a hitch on the frame
+   * somebody shot one. That argument is untouched by the bucketing and is only
+   * stronger for it: what a rebuild would cost is a whole map's containers.
+   * Nothing that DECIDES anything reads these bodies.
    */
   private buildWorld(map: GameMap): void {
-    const container = new PhysicsShapeContainer(this.scene);
+    // Insertion-ordered, so the containers are built in the order the boxes
+    // first reach them and the world is the same world on every boot. The
+    // colliders are seeded and ordered; nothing here may make them less so.
+    const buckets = new Map<string, PhysicsShapeContainer>();
+    const bucket = (x: number, z: number): PhysicsShapeContainer => {
+      const key = `${Math.floor(x / BLOCK_SIZE)},${Math.floor(z / BLOCK_SIZE)}`;
+      let container = buckets.get(key);
+      if (!container) {
+        container = new PhysicsShapeContainer(this.scene);
+        buckets.set(key, container);
+      }
+      return container;
+    };
 
     for (const b of map.colliderBoxes) {
       const shape = new PhysicsShapeBox(
@@ -327,7 +385,13 @@ export class PhysicsWorld {
       // MapBuilder.collider writes `mesh.rotation.set(rotX, rotY, 0)` and
       // Babylon's Euler order is yaw-pitch-roll, so this is the same
       // orientation — which is what carries the ramps across for free.
-      container.addChild(
+      //
+      // Bucketed by the box's CENTRE, and a box wider than a block is
+      // therefore in one bucket and hanging out of it — which the four rim
+      // boundary boxes always are. That is a locality hint being imprecise,
+      // not a shape being wrong: the child still carries the same world-space
+      // transform it did when there was one container.
+      bucket(b.cx, b.cz).addChild(
         shape,
         new Vector3(b.cx, b.cy, b.cz),
         Quaternion.RotationYawPitchRoll(b.rotY, b.rotX, 0),
@@ -337,37 +401,53 @@ export class PhysicsWorld {
 
     // The floor is the documented collider exception: a heightfield has no box
     // to stand in for it, so its blocks are mesh clones and come across as
-    // mesh shapes. Hollowmere is 25 blocks / ~3,110 triangles in total, and
-    // they are static, so the BVH is built once per map and never again.
+    // mesh shapes. They are static, so each BVH is built once per map and
+    // never again — and they are already cut on `BLOCK_SIZE`, so each one
+    // lands in the bucket of the block it IS. Its centre is read off the
+    // bounding box rather than parsed out of the mesh's name, which is the
+    // string-sniffing `GameMap.terrainColliders` exists to avoid.
     for (const mesh of map.terrainColliders) {
       const shape = new PhysicsShapeMesh(mesh as Mesh, this.scene);
-      container.addChild(shape);
+      const centre = mesh.getBoundingInfo().boundingBox.centerWorld;
+      bucket(centre.x, centre.z).addChild(shape);
       this.worldLeaves.push(shape);
     }
 
-    const node = new TransformNode("physics-world", this.scene);
-    const body = new PhysicsBody(
-      node,
-      PhysicsMotionType.STATIC,
-      false,
-      this.scene,
-    );
-    body.shape = container;
-    this.worldNode = node;
-    this.worldBody = body;
-    this.worldShape = container;
+    for (const [key, container] of buckets) {
+      const node = new TransformNode(`physics-world-${key}`, this.scene);
+      const body = new PhysicsBody(
+        node,
+        PhysicsMotionType.STATIC,
+        false,
+        this.scene,
+      );
+      body.shape = container;
+      this.worldNodes.push(node);
+      this.worldBodies.push(body);
+      this.worldShapes.push(container);
+    }
   }
 
+  /**
+   * Releases the whole static world.
+   *
+   * **Every list, and all of them**: the world used to be one body, one
+   * container and its leaves, and it is now one body and one container PER
+   * BLOCK. A rebuild that dropped a single bucket would leak a live static
+   * body into the next map — the editor's tier-3 rebuild does this on every
+   * save — which is why the bucketing's sharp edge is here rather than in
+   * `buildWorld`.
+   */
   private clearWorld(): void {
-    this.worldBody?.dispose();
-    this.worldShape?.dispose();
+    for (const b of this.worldBodies) b.dispose();
+    for (const c of this.worldShapes) c.dispose();
     // Every leaf, or the WASM heap grows one map build at a time.
     for (const s of this.worldLeaves) s.dispose();
-    this.worldNode?.dispose();
+    for (const n of this.worldNodes) n.dispose();
+    this.worldBodies = [];
+    this.worldShapes = [];
     this.worldLeaves = [];
-    this.worldBody = null;
-    this.worldShape = null;
-    this.worldNode = null;
+    this.worldNodes = [];
   }
 
   dispose(): void {

@@ -2610,7 +2610,7 @@ harrowmead/borderland at 0%) — which is the same evidence S4 used, and finding
 
 ---
 
-## 25. Half the install is not the build, and it is two sites: Havok's compound is quadratic and Babylon walks the whole scene once per render pass id
+## 25. Half the install is not the build, and it is two sites: Havok's compound is quadratic and Babylon walks the whole scene once per render pass id — **THE COMPOUND IS CLOSED**
 
 **Asked because finding 24 left a 17.5 s hole.** `build:total` is 17,422 ms at
 1500/0 and install-to-`deploy` is 34,923, so more than half the load was
@@ -2641,7 +2641,7 @@ the wiring — the six `setWorld` calls, the fog pushes, the leash, the ground
 probe, the shadow casters, the culling — is free, and this closes the question
 of whether any of it needed looking at.
 
-### `PhysicsWorld.setMap` is O(boxes²), and it is the largest line at 1500 m
+### `PhysicsWorld.setMap` is O(boxes²), and it is the largest line at 1500 m — **FIXED, S5b**
 
 | | collider boxes | ms | ms per box |
 | --- | --- | --- | --- |
@@ -2678,6 +2678,22 @@ Two shapes of fix, neither costed:
   inside `installMap`, only a place to spend it. The header's "shapes at the
   moment of a kill is a hitch on the worst frame" still forbids doing it lazily
   at the first death.
+
+**The first one landed and the second was not needed.** `PhysicsWorld` builds
+one container and one static body per 48 m block, and the two builds above are
+**268 ms and 682** — 6.4x and 19.7x, with the exponent going 1.94 → 0.89. The
+bucket count is 420 and 1,023 rather than the 324 guessed here, because the
+terrain patches carry blocks the boxes do not, and it is ~14 and ~16 boxes a
+bucket rather than 51.
+
+**The per-step body walk was the thing to measure and it costs nothing.** With
+sixty-four bodies resting on the 1500 m ground a substep is 36/36 us with one
+static body and 35/31 with 1,023, which is inside the scatter of the same
+reading taken twice; the falling phase is ~18 us a substep dearer with
+sixty-four bodies in contact at once. `ENGINE_UPGRADE.md` S5b has the whole
+reading, and `plans/physics-ref/drop.mjs` is the oracle that came with it — the
+answer to "a physics change has nothing to check it" this file had no entry
+for.
 
 ### `ReflectionSystem.build` is doing nothing at all, 106 million times
 
@@ -2735,7 +2751,9 @@ whether it can be estimated off the layout, or whether it is simpler to hide
 **The worker is now third, and these two are S5b and S5c.** What S5 would move
 to a worker is 5,733 ms; the physics compound is 13,402 and the reflection
 probes 5,272, and both are single sites with no async window to open inside
-`installMap` and no server path to keep in step.
+`installMap` and no server path to keep in step. (S5b has since landed, so the
+compound is 682 ms and the worker is second rather than third — the ranking
+below is the one that produced the order, not the one that holds today.)
 
 **The worker is gated on S5b rather than merely ranked behind it**, which is the
 non-obvious part. `installMap` runs build → physics → probes, so today a
@@ -2748,8 +2766,9 @@ worker has to overlap the MERGES instead (3,542 against 3,715 ms), which needs
 
 ### What is open
 
-- **Both mitigations above are uncosted.** The bucketed compound and the
-  early-grown probe pool are shapes, not measurements.
+- **The probe half's mitigations are still uncosted.** The early-grown probe
+  pool and the scoped `scene.meshes` swap are shapes, not measurements. The
+  compound's are not: bucketing was taken, measured and landed as S5b.
 - **A map with WATER has a fourth line here and this ground has none.**
   `WaterSystem.build` bakes bed depth and calls `bakeWater`, which builds a
   second probe pool — so it is on the wrong side of the reflection finding

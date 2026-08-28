@@ -235,9 +235,11 @@ src/
                         #   the amortised flow-field rebuild it owes. The one
                         #   mutable thing in the world, and monotonically so
     PhysicsWorld.ts     # The ONLY Havok in the game: the plugin, the map as
-                        #   one static body, and the fixed-step clock. Owns no
-                        #   bodies — its two clients do. Exports loadHavok(),
-                        #   which main.ts awaits before there is a Game
+                        #   one static body per 48 m block (a single compound is
+                        #   quadratic in its shapes), and the fixed-step clock.
+                        #   Owns no bodies — its three clients do. Exports
+                        #   loadHavok(), which main.ts awaits before there is a
+                        #   Game
     RagdollSystem.ts    # Corpses under that engine. One refusal left (past the
                         #   fog wall); a full pool evicts its oldest. Cannot
                         #   tell a dead bot from the player's stand-in
