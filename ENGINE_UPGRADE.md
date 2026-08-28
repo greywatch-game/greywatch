@@ -1052,7 +1052,7 @@ records.*
 
 ---
 
-### S5 — The load behind the card — **THE FLATTEN LANDED; THE WORKER IS UNGATED, RE-TIMED, AND STILL NOT PROMOTED**
+### S5 — The load behind the card — **THE FLATTEN LANDED; THE WORKER IS UNGATED, RE-TIMED, AND BEATEN BY WHAT THE RE-TIME FOUND**
 
 **This step was called "Move the burst builds off the main thread", and that
 name stopped being true twice.** What landed under it was a GPU-upload fix, and
@@ -1226,16 +1226,32 @@ it are ~430 ms of collider buffer work and 656 ms of `CreateBoxVertexData`, both
 at 900/300 and neither sized at 1500 m; together they are a tenth of the loop at
 the smaller extent, which means **90% of 10 seconds is unaccounted for**.
 
-**So the next measurement is a CPU profile of the placement loop at 1500/0, and
-the next STEP depends on what it says.** If the loop turns out to be another
-single site the way `PhysicsWorld.setMap` and `ReflectionSystem.build` both
-did, it is worth more than the worker and costs none of the worker's risk — and
-this document has now been re-ordered by measurement FOUR times, every one of
-them by profiling a phase nobody had opened. If it turns out to be a thousand
-ordinary milliseconds spread evenly, the worker is the best thing left and S5d
-is the step. **Do not promote it before that profile**, for the reason this
-section has given three times: writing the worker down now commits to a design
-whose cost the next measurement is about to move.
+**That profile has since been taken and it is `FINDINGS.md` 26.** The loop is
+another single MECHANISM, exactly as `PhysicsWorld.setMap` and
+`ReflectionSystem.build` both were, so the worker loses again and this document
+has now been re-ordered by measurement four times, every one of them by
+profiling a phase nobody had opened.
+
+**A part exists only to be merged, and the loop pays full `Mesh` price twice
+for it.** It is registered in the scene, given a uniform buffer and a GUID, and
+tessellated from a fresh unit box; then it is read back out, unregistered, its
+buffer disposed and its rendering group freed. `partBox` is 3,465 ms over the
+install (18.5%) in two near-equal halves — `CreateBoxVertexData` 1,986 and the
+`Mesh` constructor 1,657 — and `MergeMeshes` is 3,834 (20.5%), the largest
+single name in the profile, of which **46% is disposing the sources**. Roughly
+**76% of the placement loop is that round trip**, around geometry that is a box.
+
+**It is the same shape finding 24 fixed, one layer down**: the flatten stopped
+the GPU half of the round trip and the CPU half was never touched. At 1500 m the
+CPU half is bigger than the GPU half ever was at 900. Worth ~6.3 s against the
+worker's 3,899, synchronous, no async window, no lane split — and
+`src/world/parts.ts` is already the module that knows a part is not a real mesh.
+What it does not yet do is let one avoid BEING one.
+
+**So the worker stays unpromoted and there is still no S5d**, for the reason
+this section has now given four times: writing it down commits to a design whose
+cost the next step is about to move. Finding 26's open list has the three
+sub-threads, the constraint `parts.ts` puts on any of them, and the oracle.
 
 **The collider flatten is NOT that step and is not a candidate yet.** It is
 finding 24's first open thread and it is BLOCKED rather than merely uncosted:

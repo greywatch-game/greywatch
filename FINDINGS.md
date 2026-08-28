@@ -2844,3 +2844,123 @@ worker has to overlap the MERGES instead (3,542 against 3,715 ms), which needs
   1500 m map that ships glazing owes that reading.
 
 ---
+
+## 26. The placement loop is one mechanism, not a thousand milliseconds: a part is built as a full `Mesh`, registered, given a uniform buffer and a GUID, tessellated from scratch, merged, and destroyed
+
+**Asked because finding 25 left 53.5% of the build unattributed.** After S5b and
+S5c, `installMap` at 1500/0 is 19,147 ms of which `MapBuilder.build` is 18,853,
+and the placement loop is 10,092 of that. Finding 24 changed what that loop DOES
+— it is no longer allocating three million GPU buffers — and nobody had looked
+at what it is now made of. `ENGINE_UPGRADE.md` S5 was holding the worker
+unpromoted on exactly this measurement.
+
+### The instrument
+
+A CDP `Profiler` capture at a 200 us sampling interval over the whole install,
+attributed by subtree. Same instrument findings 24 and 25 used, and the same
+caveat: it is a PROFILED run, so `build:total` reads 15,867 ms against the
+unprofiled 18,853 and the placement phase 8,274 against 10,092. **Read the
+shares, not the absolutes** — the split is internally consistent and that is
+what this finding is about.
+
+### What the loop is made of
+
+The direct children of `MapBuilder.build` that are the loop (the rest of the
+build's phases are behind `buildProfile`'s `record`, and the scatter phase is
+its own):
+
+| in the placement loop | ms | share of the loop |
+| --- | --- | --- |
+| `buildTower` | 2,270 | 27% |
+| `mergeByMaterial` | 1,346 | 16% |
+| `paneGroup` | 1,319 | 16% |
+| `buildShophouse` | 626 | 8% |
+| `collider` | 493 | 6% |
+| `buildDepot` | 338 | 4% |
+| `buildOffice` | 230 | 3% |
+| `struts` | 209 | 3% |
+| `buildRoad` | 155 | 2% |
+| **named together** | **6,986** | **84%** |
+
+**The builders are 3,619 ms and they are all one function.** `buildTower` is
+89.7% `glaze`, `glaze` is 85.7% `cut`, and `cut` is two lambdas that do nothing
+but call `Build.pane` — 1,744 ms of the tower is panes. Every builder bottoms
+out in `partBox`, and aggregated over the whole install that is **3,465 ms,
+18.5%**, in two almost equal halves:
+
+| `partBox` splits in two | ms over the whole install | share |
+| --- | --- | --- |
+| `CreateBoxVertexData` — tessellating a fresh unit box | 1,986 | 10.6% |
+| `partSurface` — constructing the `Mesh` | 1,657 | 8.8% |
+
+**Neither half is doing anything a merged mesh needs.** `CreateBoxVertexData`
+is 94% one anonymous loop in Babylon, and it is the same 24 positions, 24
+normals, 24 UVs and 36 indices every time — a unit cube, rebuilt per part,
+differing only by a scale and an offset. That is finding 24's third open thread,
+which was 656 ms at 900/300 and is **three times that at 1500 m**. And
+`partSurface` is Babylon's `Mesh` constructor: **43% of it is
+`_buildUniformLayout`** — a per-mesh uniform buffer, for a mesh that will never
+be drawn — and **16% is `RandomGUID`**.
+
+**And 46% of the merge is DESTROYING what the loop just built.** `MergeMeshes`
+aggregates to **3,834 ms, 20.5%** of the install — the largest single name in
+the profile — and inside `_MergeMeshesCoroutine` the `dispose` of the source
+meshes is 584 of 1,277 ms on the pane merge. What that dispose is made of is the
+tell: `Scene.removeMesh`'s array scan (128 ms), the uniform buffer's own
+`dispose` (120 ms) and `freeRenderingGroups` (72 ms) — the exact three things
+`partSurface` paid to create. The real merge work under it is 355 ms of
+`setVerticesData`, 162 of reading the vertex data back and 151 of
+`_mergeCoroutine`.
+
+### The shape, which is the finding
+
+**A part exists only to be merged, and the loop pays full `Mesh` price twice
+for it — once to construct it and once to tear it down.** Registered in the
+scene, given a uniform buffer, given a GUID, tessellated from scratch, read back
+out, and then unregistered, its buffer disposed and its rendering group freed.
+Roughly **76% of the placement loop is that round trip**, and the geometry it is
+around is a box.
+
+**This is the same shape finding 24 fixed, one layer down.** The flatten stopped
+the GPU half of the round trip — `device.createBuffer` for geometry no frame
+draws. The CPU half was never touched, and at 1500 m it is bigger than the GPU
+half ever was at 900. `src/world/parts.ts` is already the module that knows a
+part is not a real mesh; what it does not yet do is let one avoid BEING one.
+
+**So the answer to `ENGINE_UPGRADE.md` S5's question is that the loop is a
+single mechanism and not spread cost**, and it is worth more than the worker:
+~6.3 s of the loop against the worker's 3,899 ms ceiling, synchronously, with no
+async window opened inside `installMap` and no `build` split into two lanes.
+
+### What is open
+
+- **Nothing here is a fix and none of it is costed.** Three sub-threads fall
+  out, in the order their size suggests: never construct a `Mesh` for a part
+  that is going to be merged (accumulate `VertexData` and merge the arrays);
+  share one unit-box tessellation across every box part; and stop paying
+  `RandomGUID` per part. The first subsumes the other two and is a real design
+  change rather than a local one.
+- **`parts.ts` exists because some parts must stay real meshes**, and that is
+  the constraint any fix has to respect: `uploadPart` puts a part back on the
+  normal path on the three ways out of a merge that KEEP their source, and an
+  editor build keeps every placement unmerged. A merge-only path has to be a
+  second path, not a replacement.
+- **The oracle already exists and this change must not move a vertex.** Finding
+  24's per-mesh hash — name, material, metadata, transform, flags, counts and
+  every vertex buffer, over all five maps — is the instrument, and
+  `plans/physics-ref/drop.mjs` covers anything that changes what a body stands
+  on.
+- **The collider half is BLOCKED and this does not unblock it.** `boxMesh`
+  aggregates to 669 ms at 1500/0 (finding 24 measured ~430 at 900/300), but
+  `moveWithCollisions` walks `mesh.subMeshes` and a part has none — see finding
+  24's first open thread. A collider is not a merge candidate, so the mechanism
+  above does not reach it.
+- **The AO bake is now the second-largest named cost** — `occlusionAt` is
+  1,738 ms subtree and 1,399 self, 9.3% — and it is not in the placement loop at
+  all. It has never been questioned; `segmentHitsBox` under it is another
+  1,021 ms of self time.
+- **The garbage collector is 2,121 ms, 11.3% of the install**, which is the
+  allocation pressure of everything above rather than a site of its own. It
+  should fall with the round trip; if it does not, it is its own finding.
+
+---
