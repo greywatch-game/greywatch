@@ -246,13 +246,21 @@ WASM. This is the wall that is not "slower" — it is an allocation failure, and
 the JS heap is **3,536 MiB against V8's 4,192 MiB cap** and the renderer's
 working set is 5.4 GB. At 900 / 300 the same figures are 1,696 MiB and 2.6 GB.
 
-### Wall 4 — load time, and the burst builds behind the card — **MOSTLY DOWN**
+### Wall 4 — load time, and the burst builds behind the card — **MOSTLY DOWN, TWO SITES LEFT**
 
 **S5's first half has landed and `FINDINGS.md` 24 is what it produced**: the
-1500 m build is 186 s to 17.4 and the placement loop 161.5 s to 9.4. What
-follows is the wall as S0 measured it, kept because the shape of it is why the
-fix is shaped the way it is — and because **the cause named at the bottom of
-this section was the wrong one, which is the part worth reading twice.**
+1500 m build is 186 s to 17.4 and the placement loop 161.5 s to 9.4, and the
+whole install 205 s to 35. What follows is the wall as S0 measured it, kept
+because the shape of it is why the fix is shaped the way it is — and because
+**the cause named at the bottom of this section was the wrong one, which is the
+part worth reading twice.**
+
+**What is left of the wall is 18.7 s and it is NOT the build.** `FINDINGS.md`
+25 profiled the gap between `build:total` and install-to-`deploy`, which this
+section had never attributed: `PhysicsWorld.setMap` is 13,402 ms and quadratic
+in collider boxes, `ReflectionSystem.build` is 5,272 and walks the whole scene
+six times per cube probe to release ids it never allocated, and everything else
+in `installMap` is 27 ms between them. Those are **S5b** and **S5c**.
 
 **This wall is real and this section was wrong about all of it.** Derived:
 30-60 s behind the loading card, dominated by `NavGrid`, `CoverMap`, the flood
@@ -307,9 +315,10 @@ worker-shaped part of this codebase and that moving it "buys load time and
 nothing else"; at 1500 m load time IS the problem, so that sentence still
 inverts. But the burst work S5 names is 3.3% of the build. **Flattening the
 placement loop is worth 50x what moving the nav builds to a worker is**, and it
-is a smaller change. — *It was worth 27x, and it has moved the premise a second
-time: the nav/cover/AO builds are now **33%** of a 17.4 s build rather than
-3.3% of a 183 s one. See S5.*
+is a smaller change. — *It was worth 27x, and it has moved the premise twice
+more: the nav/cover/AO builds are now **33%** of a 17.4 s build rather than 3.3%
+of a 183 s one, and then the install profile put both S5b and S5c ahead of them
+anyway. The worker is third and gated — see S5.*
 
 ### Wall 5 — the reflection bake takes the GPU device, and it was not in this document — **DOWN**
 
@@ -916,8 +925,9 @@ Three moves, in increasing order of how much they change:
    built lazily and evicted — is the shape, and `nav.steer()` being the one
    reader is what makes it changeable at all. — *Not taken. Measured, its case
    has gone; see below.*
-3. **Build them off the main thread**, which is S5. — *Still S5, and now the
-   only thing left in this step's way.*
+3. **Build them off the main thread**, which is S5. — *Still S5, and no longer
+   the only thing left in its way: S5b and S5c are both ahead of it, and the
+   worker is gated on S5b because S5b decides what it can overlap with.*
 
 **Move 1 is done and the graph is bit-identical, which is checked rather than
 argued.** The same canonical dump S3 built is what did it — per surface, the
@@ -1036,7 +1046,16 @@ records.*
 
 ---
 
-### S5 — Move the burst builds off the main thread — **THE FLATTEN LANDED; THE WORKER IS WHAT IS LEFT**
+### S5 — The load behind the card — **THE FLATTEN LANDED; THE WORKER IS GATED ON S5b**
+
+**This step was called "Move the burst builds off the main thread", and that
+name stopped being true twice.** What landed under it was a GPU-upload fix, and
+what the re-time it demanded found underneath was a quadratic physics compound
+and a whole-scene walk per render pass id — none of which is a burst build and
+none of which is about a thread. So the step is the LOAD now, the worker is one
+candidate inside it rather than its subject, and the two things it turned up are
+S5b and S5c below. The original framing is kept under the rule because the ORDER
+it argues for is the order that turned out to be right, three times running.
 
 Wall 4. Finding 18 names the candidates precisely: `MapBuilder`'s geometry, the
 AO bake, the `NavGrid`/`CoverMap`/`ObstacleField` builds, finding 9's flow-field
@@ -1066,7 +1085,9 @@ the paragraph above names:
   and costs **98 ms of a 6,420 ms loop**. `AssetContainer` was never the door;
   `rootNodes` has been O(1) since Babylon 9; and an `indexOf` over a packed
   array is 0.18 ns an element. **This document should stop reaching for a list
-  scan**, which is the general lesson rather than the local one.
+  scan**, which is the general lesson rather than the local one — and note that
+  S5c below is a list scan that DOES cost, because it is a walk of objects
+  rather than of a packed array of pointers.
 - **It is the GPU.** Every part a builder makes is a real `Mesh`, and
   `VertexData.applyToMesh` uploads its positions, normals, UVs and indices the
   instant it exists. `mergeByMaterial` reads them back out of the CPU copies
@@ -1089,10 +1110,28 @@ and the position/normal/uv/colour/index buffers — and **all five maps hash
 identically**, with `gate.mjs` clean, `npm run parity` passing and
 `bank.mjs --check` reproducing S4's control run to four decimals.
 
-**What is left of this step is the worker, and its case has now inverted
-twice.** Where the 1500 m build stands after the flatten:
+**And then the gap under the build was profiled, which is what produced S5b and
+S5c.** `build:total` is 17,422 ms and install-to-`deploy` is 34,923, so more
+than half the load was somewhere this document had never looked. `FINDINGS.md`
+25 is the attribution, taken as the direct children of `installMap` so the lines
+sum to the method:
 
-| | ms | share |
+| installMap, ms | 900 / 300 | 1500 / 0 | |
+| --- | --- | --- | --- |
+| `MapBuilder.build` | 4,837 | 13,656 | 42.2% |
+| `PhysicsWorld.setMap` | 1,716 | **13,402** | **41.4%** — S5b |
+| `ReflectionSystem.build` | 1,075 | **5,272** | **16.3%** — S5c |
+| everything else in the method, together | 11 | 27 | 0.1% |
+
+**That last row is the useful negative result and closes a question.** The six
+`setWorld` calls, the fog pushes, the leash, the ground probe, the shadow
+casters and the culling are 27 ms at 1500 m between them. None of the wiring in
+`installMap` needs looking at, and nobody should look again.
+
+**The worker is what is LEFT of this step, and it is deliberately not S5d yet.**
+Where the build stands after the flatten:
+
+| | ms | share of the build |
 | --- | --- | --- |
 | the placement loop | 9,443 | 54% |
 | the AO bake | 2,191 | 13% |
@@ -1100,52 +1139,41 @@ twice.** Where the 1500 m build stands after the flatten:
 | `CoverMap` | 736 | 4% |
 | seven flow fields | 227 | 1% |
 | `ObstacleField` | 7 | 0% |
-| **what S5 would move** | **5,733** | **33%** |
+| **what a worker would move** | **5,733** | **33%** |
 | **`build:total`** | **17,422** | |
-| **install to `deploy`** | **34,923** | |
 
-At S0 it was 3.3% of 183 s and the answer was obviously "flatten first". It is
-now **a third of the build**, and ~5.7 s behind a card that is up for 35 —
-which is a real win rather than a rounding error, and is the measurement this
-step was told to take before spending a session on it. **The counter-argument
-is the one in "must not break" below and it has not weakened**: `loading` is a
-STEP and not a lid, and an async build has to reach `deploy` without ever
-opening a frame where something simulates under the card.
+At S0 that was 3.3% of 183 s and the answer was obviously "flatten first". It is
+now a third of the build — a real win rather than a rounding error. **What holds
+it back is not its size, it is that S5b moves its design.** Today the order in
+`installMap` is build → physics → probes, so a `MapBuilder.build` that returned
+with nav OUTSTANDING would hide the whole 3.5 s nav lane behind the 13.4 s
+compound for nothing: no restructuring, no second lane. Take S5b first and that
+hiding place is gone, and the worker has to overlap the MERGES instead —
+`NavGrid` + `CoverMap` + `ObstacleField` + the fields (3,542 ms) against block
+merge + pane merge + AO bake + ink twins (3,715 ms), which are near enough
+balanced to hide one behind the other but need `build` split into two lanes to
+do it. **So the worker is cheaper before S5b and dearer after**, and which of
+those is true is not a thing to guess. It is also the only candidate in this
+step that opens an async window inside `installMap`, which is what the
+must-not-break list below is most emphatic about.
 
-**And then the gap under the build was profiled, which puts the worker THIRD.**
-`build:total` is 17,422 ms and install-to-`deploy` is 34,923, so more than half
-the load was somewhere this document had never looked. `FINDINGS.md` 25 is the
-attribution and it is two calls in `installMap`, neither of them burst work:
+**Re-time after S5b lands, and promote it to S5d then or not at all.** This plan
+has been re-ordered by measurement three times — S0 inverted wall 4, the flatten
+inverted it again, the install profile inverted it a third time — and writing
+the worker down as a step now would be committing to a design whose cost the
+next step is about to move.
 
-| installMap at 1500/0, ms | | |
-| --- | --- | --- |
-| `MapBuilder.build` | 13,656 | 42.2% |
-| `PhysicsWorld.setMap` | **13,402** | **41.4%** |
-| `ReflectionSystem.build` | **5,272** | **16.3%** |
-| everything else in the method, together | 27 | 0.1% |
+The natural cut, when it comes, is that these are **pure functions over plain
+data**: `NavGrid`, `CoverMap` and `ObstacleField` take `WorldBox[]` and a
+`TerrainField` and produce typed arrays. Neither end needs Babylon. Transfer the
+boxes and the heightfield in, transfer the arrays back, reconstruct on the main
+thread. `vertexShading` is the same shape over vertex buffers.
 
-The physics compound is **O(boxes²)** — 5,929 boxes for 1,716 ms and 16,526 for
-13,402, an exponent of 1.94 — because `buildWorld` inserts one box at a time
-into one `PhysicsShapeContainer` and Havok rebuilds the compound on every
-insert. The probes are **O(probes x scene meshes) doing literally nothing**:
-`ObjectRenderer._createRenderPassId` releases its ids before creating them, on
-a probe that has none, and `AbstractEngine.releaseRenderPassId` walks every
-mesh in every scene — six passes a cube probe, 106 million mesh visits at
-1500/0 to release `undefined`.
-
-So the order to consider is physics (13.4 s), probes (5.3 s), then this
-worker (5.7 s) — and the first two are single sites with no async window to
-open and no server path to keep in step. Whoever takes any of them should also
-read the three things finding 24 leaves open, one of which is cheaper again:
-**colliders are still built the ordinary way** and are 6,349 of the 900/300
-ground's meshes, held back only because a part has no submeshes and
-`moveWithCollisions` walks them.
-
-The natural cut is that these are **pure functions over plain data**: `NavGrid`,
-`CoverMap` and `ObstacleField` take `WorldBox[]` and a `TerrainField` and produce
-typed arrays. Neither end needs Babylon. Transfer the boxes and the heightfield
-in, transfer the arrays back, reconstruct on the main thread. `vertexShading` is
-the same shape over vertex buffers.
+There is a **cheaper candidate than any of the three** and it is finding 24's
+first open thread: **colliders are still built the ordinary way** — 16,526 boxes
+at 1500/0, invisible, never drawn and never picked since wall 2 came down — held
+back only because a part has no submeshes and `moveWithCollisions` walks them.
+It is the same mechanism that just landed, so it is the thing to try first.
 
 **Must not break:**
 
@@ -1156,7 +1184,7 @@ the same shape over vertex buffers.
 - `loading` stays a STEP and not a lid: nothing may simulate under the building
   card, and asynchrony must not open a window where something does. — *The
   flatten is synchronous end to end, so this is still owed in full by the
-  worker half.*
+  worker, and is the whole of why it is gated.*
 - The server, which is Node and has no browser `Worker`. Keep the synchronous
   path working and make the worker the client's optimisation, or use
   `node:worker_threads` behind the same interface — but do not fork the logic, or
@@ -1171,11 +1199,171 @@ the same shape over vertex buffers.
 
 **Verify:** the per-mesh hash on all five maps; `npm run typecheck`;
 `npm run build`; `npm run parity`; `gate.mjs`; and `bank.mjs --check`. — *All
-done and all clean. **The bank is still red on an unmodified tree and it is
-still pre-existing** (finding 20): the sixteen vantages reproduce S4's control
-run to four decimals with this change in the tree, which is what says it moves
-no pixel, and re-banking would destroy that evidence. `npm run simulate` is
-still the pre-existing NullEngine failure finding 23 records.*
+done and all clean for the flatten. **The bank is still red on an unmodified
+tree and it is still pre-existing** (finding 20): the sixteen vantages reproduce
+S4's control run to four decimals with this change in the tree, which is what
+says it moves no pixel, and re-banking would destroy that evidence.
+`npm run simulate` is still the pre-existing NullEngine failure finding 23
+records.*
+
+---
+
+### S5b — Stop rebuilding the static world's compound once per box
+
+**The largest single line in a 1500 m install, and it is a square.**
+`PhysicsWorld.buildWorld` adds one `PhysicsShapeBox` at a time into one
+`PhysicsShapeContainer`, and the profile puts 13,244 of its 13,398 ms inside
+`addChild` rather than in shape construction — so it is Havok rebuilding the
+compound's acceleration structure on every insert. `HavokPlugin.addChild` is one
+`HP_Shape_AddChild` per call and there is no batch entry point through the
+plugin.
+
+| | collider boxes | ms | ms per box |
+| --- | --- | --- | --- |
+| 900 / 300 | 5,929 | 1,716 | 0.29 |
+| 1500 / 0 | 16,526 | **13,402** | **0.81** |
+
+2.79x the boxes for **7.81x** the time — an exponent of 1.94, which is a square
+with the rounding off. **The number to beat is 13,402 ms**, and the shape to
+beat is the exponent: a fix that halves the constant and leaves the square is
+not a fix at this size.
+
+**`PhysicsWorld`'s own header already measured this and read it as flat.** It
+says "rebuilding a 33-50 ms compound every time a window goes in is a hitch",
+which is Coldharbour's 768 boxes. At 16,526 the same compound is 13.4 seconds —
+21.5x the boxes for ~300x the cost. The header's ARGUMENT is untouched (a
+rebuild per broken pane is still the wrong trade, and by a wider margin than it
+knew); its NUMBER does not generalise and must not be quoted at a large map.
+
+**Two fixes, and they are a first choice and a fallback rather than
+alternatives.** Bucket first, because it is contained and it is measurable;
+reach for the second only if the exponent survives.
+
+1. **Bucket the compound.** One container per 48 m map block turns `n^2` into
+   `k(n/k)^2`: 324 blocks at 1500/0 is ~51 boxes each, so 842k insert-units
+   against 273M. What it spends is the argument at the top of `buildWorld` —
+   one static body rather than 758 — and that argument is about the plugin's
+   per-step sync walking BODIES, so **measure the STEP as well as the build**:
+   324 statics that bail out immediately is not 783 dynamic ones, but it is not
+   1 either, and this step is the only place that can find out.
+2. **Move it off the load.** Nothing needs the static world until something
+   falls on it, and the first ragdoll is many seconds after `deploy`. Building
+   it on the far side of the loading card takes the whole 13.4 s off the wait
+   without touching the shape — and unlike the worker it needs no async window
+   inside `installMap`, only somewhere to spend it. **It may not be lazy at the
+   first death**: `PhysicsWorld`'s header is explicit that building shapes at
+   the moment of a kill is a hitch on the worst frame available, and that is
+   still true.
+
+**Must not break:**
+
+- **Nothing under Havok feeds navigation, cover or hit detection.** A corpse is
+  not in `NavGrid`, not in `ObstacleField`, not in `hittablesAgainst`, and
+  neither a shard nor a chunk is either. Bucketing changes which container a
+  shape is in and must change nothing else.
+- **`scene.physicsEnabled` stays false**, and the engine is stepped by
+  `PhysicsWorld` only while a client says it has something moving.
+- **The world is ONE thing to tear down.** The header's second reason for a
+  single body is that a map rebuild has one thing to release; `k` buckets is `k`
+  bodies and `k` containers, and every one of them has to go in
+  `worldCleared`/dispose or the editor leaks a whole static world per rebuild.
+  This is the sharp edge of fix 1.
+- **A pane of glass stays in the world after it breaks**, and the compound is
+  not rebuilt when one does.
+- **Editor builds register nothing at all** (`setMap(map, editor)`).
+- The floor stays a `PhysicsShapeMesh` per terrain block — it is the documented
+  collider exception and has no box to bucket.
+
+**Verify:** the `installMap` attribution again, through the same instrument
+(`FINDINGS.md` 25's profile), at BOTH extents so the exponent is a pair and not
+a point; a step-cost reading with a corpse pile alive, because fix 1 spends the
+per-step body walk; `npm run typecheck`; `npm run build`; `gate.mjs`.
+
+**And this step owes an ORACLE that does not exist yet, which is part of its
+cost.** The flatten could hash vertex buffers; a bucketed compound changes what
+corpses and shards rest ON, and "it looks the same" is not a test. Havok is
+deterministic given identical input, so the instrument is a fixed set of bodies
+dropped from fixed transforms, a fixed number of substeps, and a hash of the
+resting transforms — identical before and after. Build that first; a physics
+change with no oracle is the one class of change this tree has no way to check.
+`npm run parity` cannot help: the fingerprint is the nav graph, and physics is
+not in it.
+
+---
+
+### S5c — Stop walking the whole scene once per render pass id
+
+**5,272 ms at 1500/0, and every microsecond of it does nothing.** 96% of
+`ReflectionSystem.build` is probe CONSTRUCTION — `newProbe` → `ReflectionProbe`
+→ `RenderTargetTexture` → `ObjectRenderer` — and 5,058 ms of that is
+`_releaseRenderPassId` on a probe that has never had a render pass id:
+
+```js
+// Rendering/objectRenderer.js
+_createRenderPassId() {
+    this._releaseRenderPassId();              // <- _renderPassIds is EMPTY here
+    for (let i = 0; i < this.options.numPasses; ++i) { ... }
+}
+// Engines/AbstractEngine/abstractEngine.renderPass.pure.js
+releaseRenderPassId = function (id) {         // <- id is undefined
+    this._renderPassNames[id] = undefined;
+    for (const scene of this.scenes)
+        for (const mesh of scene.meshes) {    // <- EVERY MESH, EVERY SUBMESH
+            mesh._releaseRenderPassId(id);
+            for (const subMesh of mesh.subMeshes) subMesh._removeDrawWrapper(id);
+        }
+};
+```
+
+A cube probe is six passes, so **every probe constructed walks the entire scene
+six times to release six `undefined` ids**. 265 probes x 6 x 9,002 meshes =
+**14.3 million mesh visits** at 900/300, confirmed against the `[reflection]`
+line, for 1,075 ms; ~106 million at 1500/0 for 5,272. **It is priced on map AREA
+twice over** — more glazed blocks and more meshes to walk for each — which makes
+it a wall-1-shaped cost hiding in the load rather than in the frame.
+
+**The loop is Babylon's, so the lever is the MULTIPLIER.** The probes are pooled
+and survive a rebuild, so this is a first-install cost — and it is paid at the
+worst possible moment, immediately after `MapBuilder.build` has put 23,014
+meshes in the scene. Two shapes, neither costed:
+
+1. **Grow the pool while the scene is SHORT.** `installMap` disposes the old map
+   on its first line, and between there and the build the scene is ~1,020
+   meshes rather than 23,014 — a 22x cut, which would take 5,272 ms to roughly
+   240. What stands in the way is that the probe count is not known until the
+   map is built, so this needs an estimate off the layout, or a pool grown to a
+   ceiling rather than to a count.
+2. **Hide `scene.meshes` from the walk** for the length of the construction
+   loop. `WorldCulling` already replaces `getActiveMeshCandidates` on the scene,
+   so a scoped swap is not without precedent here — but it is a Babylon array
+   rather than a Babylon hook, and it is only safe because no frame renders
+   inside `installMap` and probe construction creates no meshes. Say both of
+   those out loud in the code if this is the one that lands.
+
+**Must not break:**
+
+- **A probe is refresh-ONCE and one per glazed BLOCK** — not one per map, not
+  one per material — and `CONFIG.graphics.reflection.drawsPerFrame` with
+  `releaseBatch` is what keeps a bake off one enormous frame. S0b is the step
+  that bought that and nothing here may spend it.
+- **The ink twins stay out of every probe's render list** (`noReflect`). An ink
+  twin is an inverted hull, so a probe inside one bakes six flat faces — the
+  measurement is on Coldharbour's curtain wall at 85% of the frame's pixels.
+- **The WATER pool is separate and is built at a different moment of the same
+  install**, from inside `WaterSystem.build`. Anything scoped around the glazing
+  loop either has to cover `bakeWater` too or has to be explicit that it does
+  not — and this proving ground has no water, so the profile above cannot see
+  that half at all.
+- `ReflectionSystem.build` parks every probe it owns on the way in, and a
+  rebuild with fewer glazed blocks leaves the spares parked with an empty list.
+
+**Verify:** the `[reflection]` DEV line unchanged in every field it prints —
+probes, glazing groups, blocks each, meshes, listed, dropped, draws, frames —
+which is a full description of the bake that costs nothing to compare;
+`bank.mjs --check`, because glazing is on screen and Coldharbour has four
+vantages of it; `gate.mjs`, which asserts no probe re-renders per frame; and the
+`installMap` attribution again. A map WITH water wants its own reading here
+whatever the proving ground says.
 
 ---
 

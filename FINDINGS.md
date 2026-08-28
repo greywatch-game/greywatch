@@ -2732,10 +2732,19 @@ whether it can be estimated off the layout, or whether it is simpler to hide
 
 ### What this says about S5
 
-**The worker is now third.** What S5 would move to a worker is 5,733 ms; the
-physics compound is 13,402 and the reflection probes 5,272, and both are single
-sites with no async window to open and no server path to keep in step. Either
-one is a smaller change than a worker and at least as large a win.
+**The worker is now third, and these two are S5b and S5c.** What S5 would move
+to a worker is 5,733 ms; the physics compound is 13,402 and the reflection
+probes 5,272, and both are single sites with no async window to open inside
+`installMap` and no server path to keep in step.
+
+**The worker is gated on S5b rather than merely ranked behind it**, which is the
+non-obvious part. `installMap` runs build → physics → probes, so today a
+`MapBuilder.build` that returned with the nav work OUTSTANDING would hide the
+whole 3,542 ms nav lane behind the 13,402 ms compound for nothing — no second
+lane, no restructuring. Take S5b first and that hiding place is gone, and the
+worker has to overlap the MERGES instead (3,542 against 3,715 ms), which needs
+`build` split in two. So the worker is cheaper before S5b and dearer after, and
+`ENGINE_UPGRADE.md` S5 holds it unpromoted until S5b says which.
 
 ### What is open
 
