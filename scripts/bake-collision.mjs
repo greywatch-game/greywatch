@@ -32,11 +32,24 @@
  * The build runs in a real Chromium against the dev server, not in Node: the
  * point is to capture what the CLIENT actually builds, and the only way to be
  * sure of that is to let the client build it.
+ *
+ * **It bakes the DEV-only maps as well** (`DEV_MAPS` in `collision-hash.mjs` —
+ * today the proving ground, and it is baked because `ENGINE_UPGRADE.md` S9
+ * measures the AUTHORITY on it, which cannot be done without one). Their
+ * generated module carries a `mark` string that `check-proving.mjs` greps the
+ * emitted bundles for, because a 473 kB bake of a map that is not a level must
+ * never ship and a doc comment saying so does not survive a build.
+ *
+ * **A trailing argument bakes one map instead of all of them**
+ * (`node scripts/bake-collision.mjs proving`). The four levels are re-baked
+ * together by default because they are the set the guard checks; a single-map
+ * run is for the case where re-emitting the other four would be four files of
+ * churn in a diff about one.
  */
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { launchClient } from "./browser.mjs";
-import { MAPS, root, sourceHash } from "./collision-hash.mjs";
+import { DEV_MAPS, MAPS, root, sourceHash } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
 
 /** The localStorage key `prefs.ts` remembers the chosen map under. */
@@ -135,7 +148,7 @@ async function bakeMap(browser, url, id) {
 }
 
 /** The generated module, as text. */
-function emit(id, constant, baked, hash) {
+function emit(id, constant, baked, hash, mark) {
   const { boxes, rayGroups, boxGroups, panes } = baked;
   const rows = boxes.map((b) => `  [${b.join(",")}],`).join("\n");
   const paneRows = panes.map((p) => `  [${p.join(",")}],`).join("\n");
@@ -207,8 +220,21 @@ ${paneRows}
 // Default too, because \`MapDef.collision\` is a lazy \`import()\` and a default
 // is the one export name a generic signature can be written against.
 export default ${constant};
-`;
+${mark ? markLine(mark) : ""}`;
 }
+
+/**
+ * The sentinel a DEV-only map's bake carries, as source.
+ *
+ * A string literal and an export, for the two reasons `check-proving.mjs`
+ * gives: identifiers do not survive minification and comments do not survive a
+ * build at all, and an export is what keeps a bundler from deciding the
+ * constant is unreachable and dropping the only evidence the file was reached.
+ */
+const markLine = (mark) => `
+/** Sentinel for scripts/check-proving.mjs. See src/world/maps.ts. */
+export const PROVING_COLLISION_MARK = "${mark}";
+`;
 
 /** Path of a map's generated module. */
 const outPath = (id) => join(root, "src", "world", id, "collision.ts");
@@ -223,19 +249,30 @@ const outPath = (id) => join(root, "src", "world", id, "collision.ts");
  * an empty string, disagrees with the real hash, and fails the build, so a stub
  * left behind by an interrupted run cannot be mistaken for a bake.
  */
-function ensureStub(id, constant) {
+function ensureStub(id, constant, mark) {
   if (existsSync(outPath(id))) return false;
   writeFileSync(
     outPath(id),
-    emit(id, constant, { boxes: [], rayGroups: [], boxGroups: [], panes: [] }, ""),
+    emit(id, constant, { boxes: [], rayGroups: [], boxGroups: [], panes: [] }, "", mark),
   );
   return true;
 }
 
 // ---------------------------------------------------------------------------
 
-for (const { id, constant } of MAPS) {
-  if (ensureStub(id, constant)) console.log(`${id}: wrote empty stub to bootstrap`);
+// The four levels and the dev-only loads together, filtered to one map when a
+// name is given. An unknown name is refused rather than baking nothing: a typo
+// that silently succeeds leaves the bake it was meant to refresh stale.
+const only = process.argv[2];
+const all = [...MAPS, ...DEV_MAPS];
+const wanted = only ? all.filter((m) => m.id === only) : all;
+if (wanted.length === 0) {
+  console.error(`no map "${only}" (have ${all.map((m) => m.id).join(", ")})`);
+  process.exit(1);
+}
+
+for (const { id, constant, mark } of wanted) {
+  if (ensureStub(id, constant, mark)) console.log(`${id}: wrote empty stub to bootstrap`);
 }
 
 const vite = await startDevServer(root);
@@ -245,10 +282,10 @@ let browser;
 try {
   browser = await launchClient();
 
-  for (const { id, constant } of MAPS) {
+  for (const { id, constant, mark } of wanted) {
     const baked = await bakeMap(browser, vite.url, id);
     const hash = sourceHash(id);
-    writeFileSync(outPath(id), emit(id, constant, baked, hash));
+    writeFileSync(outPath(id), emit(id, constant, baked, hash, mark));
     const rayBoxes = baked.rayGroups.reduce((n, group) => n + group.length, 0);
     console.log(
       `${id}: ${baked.boxes.length} boxes, ${rayBoxes} strut boxes in ` +

@@ -1038,6 +1038,52 @@ do not "tidy" it.
 from. A stale bake is a server whose walls stand somewhere else from its
 clients', and it is invisible until somebody is shot through a house.
 
+## What a tick costs, and how to ask
+
+**A client's budget is a frame and this process's is a TICK**, `1000 / TICK_HZ`
+= 16.67 ms, and nothing a browser can be made to report says whether the
+authority holds it. `npm run simulate` is the instrument: a whole round, sixteen
+bots, no clients, no rendering, and every `step` timed on `performance.now()`.
+It prints the distribution and the count over budget, and the mean is printed
+LAST on purpose — the think stagger (`CONFIG.bots.thinkRate`) is a mechanism for
+producing a tail that a mean cannot see, and a server that fits on average and
+misses once a second has stuttered for everybody on it.
+
+**It also files every tick by how many bots held a target during it**, which is
+the half that stops a quiet round being read as an answer. A big map's round is
+mostly walking — 73-95% of the proving ground's ticks have nobody in contact at
+all — so the honest quote is what the CONTESTED ticks cost, not what the round
+averaged. `FINDINGS.md` 22 and 30 are the client's two versions of the same
+lesson, both of which had to force a fight before the measurement meant
+anything.
+
+**What it says today** (`FINDINGS.md` 31, and the numbers to beat): not one tick
+of 347,000 crossed the budget on any map in the tree, the 1500 m proving ground
+runs a p99 of 0.055 ms — 0.33% of the step — and the two most expensive ticks
+belong to the two maps with ARMOUR on them rather than to the two biggest. A
+driven hull is `moveWithCollisions` against every collidable mesh in the map,
+which is the last O(map) thing this process does per tick and the only term in
+it that grows with area: 0.039 ms a call on Coldharbour, 0.402 at 1500 m.
+
+**Nothing that instrument reports includes a person.** No rewind runs, no
+snapshot is encoded, and `Match`'s own per-tick work — the sockets,
+`validateMove`, the interest sets — is outside `HeadlessGame.step` and therefore
+outside every number it prints. It measures the SIMULATION, which is the half
+that scales with the map; the other half scales with the roster, and the roster
+is fixed at sixteen.
+
+**And the DEV-only proving ground can be run here at all**, which took three
+things it is worth knowing about before reaching for them. It has a collision
+bake (`DEV_MAPS` in `scripts/collision-hash.mjs`, `npm run collision --
+proving`, and a fourth `check-proving.mjs` sentinel over 473 kB of numbers that
+carry no other string). It is reached through `npm run simulate:dev`, a
+dev-mode server build into gitignored `dist-server-dev/` — and `--mode
+development` on its own does NOT do it, because Vite pins `NODE_ENV` to
+production for every build and `import.meta.env.DEV` is resolved from that, so
+the flag folds the map away and the script answers "no map". And `npm run
+parity` now covers it, at the cost of a second server build, because a 1500 m
+world nobody checked is a measurement of the wrong thing.
+
 ## Glass
 
 **A pane going in is the only thing a client may DECIDE about the world, and it

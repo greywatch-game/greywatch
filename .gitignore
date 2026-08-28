@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-server/
+dist-server-dev/
 tmp_shots/
 plans/webgpu-ref/gate.json
 plans/webgpu-ref/ref/

@@ -3423,3 +3423,177 @@ silent on all five with a round installed, and verified to FIRE at 400 m.
   cost. Still nobody's step.
 
 ---
+
+## 31. The authority's tick is priced on ARMOUR and not on the map — 1500 m is the CHEAPEST tick in the tree, and the instrument that says so had been dead since the WebGPU port
+
+**Status:** measured on the Windows box, landed. **This is `ENGINE_UPGRADE.md`
+S9** — the authority at 1500 m — and it is the first step in that document whose
+budget is a TICK rather than a frame.
+
+Three things came out of it, in the order they had to: the instrument was broken
+and every match server with it, the tick holds at 1500 m by three orders of
+magnitude, and the one term that does grow with map area is the one nobody was
+looking at.
+
+### The instrument was dead, and so was every match server
+
+`npm run simulate` crashed on every map before it printed a line:
+
+```
+The plugin "CelEmissiveFog" can't be added to the material "emissive-#ffe680"
+because the plugin is not compatible with the shader language of the material.
+```
+
+`EmissiveFogPlugin.isCompatible` answers WGSL and only WGSL — deliberately, and
+correctly: there is no GLSL path left in the tree. But
+`Material._createUniformBuffer` picks WGSL for a `StandardMaterial` only when
+`engine.isWebGPU`, and the authority runs under `NullEngine`, which is not. So
+the pair threw inside `CombatSystem`'s constructor — which builds its tracer pool
+out of `getEmissive("#ffe680")` — which is to say inside `new HeadlessGame()`.
+
+**That is not a tooling bug. `Match.game` is `new HeadlessGame()` and a `Match`
+is built when the first person joins**, so a match server booted, printed
+`greywatch server on :8080`, and died on the first join. Every build since the
+WebGPU migration. Nothing noticed, because the process starts perfectly and
+`npm run simulate` was the only thing that would ever have said otherwise.
+
+The fix is one line in `attachEmissiveFog`: skip the plugin when the engine is
+not WebGPU. It is a per-pixel fade over an unlit colour, the authority draws no
+pixels, and it builds these materials only because it runs the same pooled
+systems a client does.
+
+### The tick, on every map in the tree
+
+`npm run simulate` now times every `step` and prints the distribution, the count
+over the `1000 / TICK_HZ` = **16.67 ms** budget, and the ticks filed by how many
+bots held a target during them. One whole round per map, sixteen bots, no humans,
+difficulty 1; the proving ground through `npm run simulate:dev`, the dev-mode
+server build that is the only one which has heard of it.
+
+| map | extent | boxes | build | p50 | p95 | p99 | worst | over budget |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Hollowmere | 240 | 824 | 138 ms | 0.016 | 0.034 | 0.070 | 3.04 | **0 / 62,281** |
+| Greyfen | 240 | 1,717 | 210 ms | 0.022 | 0.039 | 0.073 | 3.21 | **0 / 62,821** |
+| Coldharbour | 320 | 768 | 235 ms | **0.062** | **0.192** | **0.275** | 9.80 | **0 / 48,519** |
+| Harrowmead | 400 | 748 | 170 ms | 0.015 | 0.127 | 0.178 | 4.30 | **0 / 64,801** |
+| **proving 900/300** | **1500** | **5,929** | **1.25 s** | **0.012** | **0.029** | **0.055** | 7.45 | **0 / 108,181** |
+
+Milliseconds per tick. **Not one tick of 347,000 crossed the budget on any map,
+and the 1500 m map has the CHEAPEST tick of the five** — its p99 is 0.33% of the
+step. Four proving rounds reproduce it: p50 0.007-0.012, p99 0.030-0.055.
+
+**The worst ticks are not the simulation.** Every spike over 1 ms is reported
+with where it fell and whether a GC pause overlapped it: they cluster in the
+first ~6,000 ticks (the JIT), one or two a round land inside one of that round's
+10-25 GC pauses, and a whole round's collection is 8-16 ms. The largest tick seen
+anywhere here is 10.3 ms — still inside the budget, and a collector pause with a
+tick around it.
+
+### The map is not what prices it — armour is
+
+Read the table by what is ON each map rather than by how big it is: the two
+expensive ticks are **Coldharbour and Harrowmead**, which are the two maps with
+`vehicles`, and the three cheap ones are the three without. Coldharbour's median
+is 4x Hollowmere's on a map with FEWER collider boxes.
+
+A CPU profile of a Coldharbour round says it outright — `_checkCollision` 23.1%,
+`_collideWithWorld` 13.9%, `_testTriangle` 3.3% of all samples, about 2.7 s of a
+round whose ticks total ~3.4 s. That is Babylon's `moveWithCollisions`, and on
+the authority it has exactly one caller: `Tank.update`. The legs never touch it —
+a client does its own movement and `validateMove` checks the result analytically
+— and `ENGINE_UPGRADE.md` wall 2 took every ray in the game off the scene. **The
+hull sweep is what was left, and it is the last O(meshes in the map) thing this
+process does per tick.**
+
+It is gated on `Math.abs(this.speed) > 1e-3`, which is why Harrowmead's median is
+cheap and its p95 is eight times that median: its hardstandings are in the home
+yards and its hulls spend the round parked, while Coldharbour's are on the
+avenues and its crews drive.
+
+**Priced directly rather than derived**, with one hull-shaped body carrying the
+tank's own ellipsoid, stepped 2,000 times through a built server world:
+
+| world | collidable meshes | `moveWithCollisions` |
+| --- | --- | --- |
+| Coldharbour | 754 | **0.0394 ms/call** |
+| proving 900/300 | 5,904 | **0.4020 ms/call** |
+
+**10.2x the cost for 7.8x the meshes.** So a 1500 m map with armour pays 0.40 ms
+per DRIVEN hull per tick — 2.4% of the budget for one, 4.8% for the two a map
+states today, against 0.05% for everything else the tick does out there. That is
+not a problem at sixteen slots and two hardstandings. It is the only term in the
+authority that grows with map AREA, and S11 says the desert city probably wants
+armour.
+
+### The install at 1500 m is the COVER bake, not the parse
+
+S9 costed the server's inheritance as a parse — 400 kB of generated
+`collision.ts` against Coldharbour's 53. The bake came out at **5,929 boxes and
+473 kB**, which is that projection to within a rounding, and **it parses and
+evaluates in 7.5 ms**. It is not the cost.
+
+`buildServerWorld` is **1.25 s** at 1500 m against 235 ms on Coldharbour, and a
+profile of the build alone attributes it to `segmentHitsBox` (19.3%) under
+`CoverMap.bake` (3.8%), `severLinks` (10.2%) and `linkCells` (1.4%) under
+`NavGrid`, and `buildField` (2.8%) for the seven flow fields. **The cover bake is
+the largest single thing in the authority's install**, which is S3/S4/S5's
+inheritance arriving exactly where they said it would — and a 1.25 s build is a
+rotation cost nobody is watching, not a tick cost.
+
+It is also not stable across a process: rebuilding in the same NullEngine read
+1.25, 1.36, 1.62 and 2.78 s over four consecutive rounds. Heap growth is the
+obvious suspect and nothing has isolated it.
+
+### The world S9 measured is the world the client builds
+
+`npm run parity` now covers the DEV-only maps too, which costs it a second server
+build in dev mode. The proving ground passes on all 17 fingerprint fields:
+**5,929 boxes, 528,287 surfaces, 305,193 walkable.** Without that, every number
+above would rest on the assumption that a 1500 m bake reconstructs correctly —
+which is the one assumption the entire server design is built on.
+
+### The density problem is measurable on the authority, and it is S10's
+
+**Five of eleven proving rounds never ended.** They ran the full 45-minute cap
+with tickets left on both sides (367/239, 183/81); the six that resolved took
+19-30 minutes against 13-18 on every shipped map. Difficulty does not fix it —
+both rounds run at difficulty 3 hit the cap.
+
+The contact block says why: **peak 5-7 of 16 bots ever held a target at once** on
+the proving ground, against 10-14 on the four shipped maps, and 73-95% of its
+ticks have nobody in contact at all. Sixteen bodies over 0.81 km² of play is one
+per 51,000 m²; Harrowmead is one per 10,000.
+
+That is `ENGINE_UPGRADE.md` S10 stated as a measurement rather than as an
+arithmetic worry, and it arrives with a warning for anyone measuring this map
+again: **a quiet round is most of what a 900 m round IS**, so a mean tick taken
+on one is a measurement of walking. Findings 22 and 30 hit the same wall on the
+client and had to force a fight; the contact buckets are this side's answer to
+it.
+
+### What is open
+
+- **`Tank.update`'s hull sweep is the last whole-scene walk on the authority.**
+  `RayWorld` retired every pick; `moveWithCollisions` was left behind because it
+  MOVES a body rather than answering a question about one. An analytic sweep
+  against `colliderBoxes` is the same substitution wall 2 already made, and at
+  1500 m it is worth 0.40 ms per driven hull per tick. Nobody's step, and not
+  worth taking until a big map states `vehicles`.
+- **The same sweep is on the CLIENT, per frame, for the hull you are driving.**
+  Nothing here measured it in a real frame — the figure above is a NullEngine
+  scene with the same collider count — but it is the same mesh list, and a 9.3 ms
+  frame at 1500 m has no 0.4 ms to spare that nobody has costed.
+- **Why a rebuild in the same process gets slower**: 1.25 s to 2.78 s over four
+  rounds, with `map.dispose()` between them. A match server rotates maps for
+  hours.
+- **Nothing here had a human in it.** No `LagComp` rewind ran, no snapshot was
+  encoded, and `Match`'s own per-tick work — sixteen sockets, `validateMove`, the
+  interest sets — is in none of the numbers above. What was measured is the
+  SIMULATION's tick, which is what S9 asked for and is not the whole of what a
+  server does.
+- **The 45-minute cap is now a thing that fires.** `MAX_SIM_MINUTES` was a
+  backstop against a round that could not end; on a 900 m map it is the normal
+  outcome, and a reader who does not check `winner: NONE` will average a
+  contested round together with one that never started.
+
+---

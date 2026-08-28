@@ -9,11 +9,21 @@
  * The check is against the SOURCES a bake is derived from, not against the
  * clock: touching `layout.ts` without changing it does not fail, and changing
  * it always does.
+ *
+ * **The DEV-only maps are checked beside the four levels and for a reason one
+ * step further out.** A stale bake on a level is a server whose walls are
+ * somewhere else; a stale bake on the proving ground is `ENGINE_UPGRADE.md`
+ * S9 measuring the authority against a world nobody regenerated it for, which
+ * nothing but this line would ever notice. They are a separate list because
+ * a production build has never heard of them — see `DEV_MAPS` in
+ * `collision-hash.mjs`, which is also what `npm run parity` reads to know it
+ * owes them a second, dev-mode server build.
  */
-import { bakedHash, MAPS, sourceHash } from "./collision-hash.mjs";
+import { bakedHash, DEV_MAPS, MAPS, sourceHash } from "./collision-hash.mjs";
 
+const all = [...MAPS, ...DEV_MAPS];
 const stale = [];
-for (const { id } of MAPS) {
+for (const { id } of all) {
   const want = sourceHash(id);
   const have = bakedHash(id);
   if (have !== want) stale.push({ id, want, have });
@@ -31,4 +41,4 @@ if (stale.length > 0) {
   process.exit(1);
 }
 
-console.log(`collision bake current for ${MAPS.map((m) => m.id).join(", ")}`);
+console.log(`collision bake current for ${all.map((m) => m.id).join(", ")}`);

@@ -425,10 +425,18 @@ are the two with armour on them**, and they are the two biggest.
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
 against — a city block grid several times Harrowmead's size, written by
 `npm run proving`. **`MAPS` is an `import.meta.env.DEV` ternary and must stay
-one**: that fold is the only thing keeping 400 kB of it out of both bundles, and
+one**: that fold is the only thing keeping 900 kB of it out of both bundles, and
 a `push`, a `filter` or a `const dev = import.meta.env.DEV` one line up would
 silently stop working. `scripts/check-proving.mjs` is what enforces that, on the
-end of `npm run build`, over `dist/` and `dist-server/` both.
+end of `npm run build`, over `dist/` and `dist-server/` both — one grepped
+sentinel per generated module, since a comment naming the directory does not
+survive a build and a string literal does.
+
+**It has a collision bake, so the AUTHORITY runs on it too** (S9). That is
+`DEV_MAPS` in `scripts/collision-hash.mjs` — baked and staleness-checked like
+the four levels, kept out of the `MAPS` beside it because `npm run parity`'s
+server half is a production build — reached through `npm run simulate:dev`,
+where `--mode development` alone does not turn the flag over.
 
 → **[`docs/world.md`](docs/world.md)** — the six overrides in full, the
 heightfield and the road slabs cut against it, the winding trap that makes a

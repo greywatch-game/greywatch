@@ -13,6 +13,7 @@
     "build:server": "vite build -c vite.server.config.ts",
     "server": "node dist-server/index.js",
     "simulate": "vite build -c vite.server.config.ts && node dist-server/simulate.js",
+    "simulate:dev": "vite build -c vite.server.config.ts --mode development && node dist-server-dev/simulate.js",
     "parity": "node scripts/check-world-parity.mjs",
     "shots": "node scripts/capture-map-shots.mjs",
     "textures": "node scripts/generate-water-textures.mjs",

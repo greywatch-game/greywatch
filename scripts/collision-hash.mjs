@@ -28,6 +28,36 @@ export const MAPS = [
   { id: "harrowmead", constant: "HarrowmeadCollision" },
 ];
 
+/**
+ * The maps that are baked and hash-checked exactly like the four above but are
+ * NOT levels — today, the DEV-only proving ground.
+ *
+ * **It is a second list rather than a fifth row, and the reason is `npm run
+ * parity`.** That script builds the server in PRODUCTION mode and asks it for
+ * a fingerprint per map; `MAPS` in `src/world/maps.ts` folds the proving
+ * ground away in that build, so a fifth row here would ask the authority for
+ * the fingerprint of a map it has never heard of and report a failure that is
+ * the gate misreading itself. So parity reads this list SEPARATELY and pays
+ * for a second server build in dev mode to answer for it; the bake and the
+ * staleness check simply read both lists at once.
+ *
+ * **They are hash-checked all the same, and that is the point of naming them
+ * at all.** `ENGINE_UPGRADE.md` S9 measures the AUTHORITY on the proving
+ * ground, which it can only do off a bake — and a bake that has gone stale
+ * against a regenerated layout is a measurement of a world nothing else in the
+ * tree is standing in. That is the same failure the four maps are guarded
+ * against, one step further from anybody noticing.
+ *
+ * `mark` is the string `scripts/check-proving.mjs` greps the emitted bundles
+ * for. A dev-only map's generated modules each carry one, because a comment
+ * saying which directory a file came from does not survive a build and a
+ * string literal does. See `PROVING_HEIGHTS_MARK` for the same device on the
+ * heightfield.
+ */
+export const DEV_MAPS = [
+  { id: "proving", constant: "ProvingCollision", mark: "PG-Boxes" },
+];
+
 /** The files a map's collider boxes are derived from. */
 const SOURCES = ["layout.ts", "heights.ts"];
 

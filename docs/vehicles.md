@@ -428,6 +428,19 @@ What the hull's collider box is:
   collision bake are all built once from the finished collider set at map load,
   and a thing that moves cannot be in any of them.
 
+**And the drive is the last thing in the game that walks the whole scene.**
+`moveWithCollisions` costs per collidable MESH in the map, which is what every
+ray in this tree stopped doing when `RayWorld` replaced the picks
+(`ENGINE_UPGRADE.md` wall 2) — a hull was left behind because it MOVES a body
+rather than asking a question about one. Measured on the authority, one hull
+stepped 2,000 times: **0.039 ms a call against Coldharbour’s 754 collider
+meshes and 0.402 against a 1500 m map’s 5,904** (`FINDINGS.md` 31). It runs
+only while `|speed| > 1e-3`, so a parked fleet costs nothing — but it is why
+the two maps with armour are the two most expensive server ticks in the tree,
+and it is the one term in that tick which grows with map AREA. At sixteen slots
+and two hardstandings it is 4.8% of a 60 Hz step at 1500 m, which is affordable
+and is not free.
+
 The consequence is stated rather than hidden: **bots walk through a parked
 tank.** They walk through corpses too, for the identical reason, and both are in
 the README's known limitations. What a tank IS to a bot is a target and a wall

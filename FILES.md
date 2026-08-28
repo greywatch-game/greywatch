@@ -35,6 +35,9 @@ server/               # The authoritative match server. Node, NullEngine, no
                       #   the same question for a HULL: the tank's speed bound,
                       #   and neither of the other two (see its header)
   simulate.ts         #   `npm run simulate`: a whole round, headless, no clients
+                      #   — and the instrument for the TICK, which is the only
+                      #   budget this process has. Times every step, files them
+                      #   by bots in contact, and names the spikes
   parity.ts           #   Fingerprint dump for `npm run parity`
 ```
 index.html          # The head, and NO interface CSS beyond the two things shown
@@ -475,6 +478,10 @@ src/
                               #   every bundle by `scripts/check-proving.mjs`
     proving/heights.ts        # GENERATED with it — level under the streets, and
                               #   the third string check-proving.mjs greps for
+    proving/collision.ts      # GENERATED with them, by `npm run collision --
+                              #   proving`, and the only reason the AUTHORITY can
+                              #   be run on this map (ENGINE_UPGRADE.md S9). The
+                              #   fourth string check-proving.mjs greps for
     proving/environment.ts    # The one hand-written file there. A dry noon
                               #   with `fogEnd` past the map's own diagonal, so
                               #   nothing measured on it is hidden by weather

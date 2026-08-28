@@ -1518,6 +1518,19 @@ is one machine's:
 - **`npm run simulate` is the fastest way to see the rules work at all** — a
   whole round with no clients and no rendering, in seconds of wall clock. It is
   not a balance oracle: sixteen bots is not eight bots and eight people.
+- **It is also where a server TIMING question is answered, and no browser can
+  answer one.** The same run prints the per-tick distribution against the
+  16.67 ms step, the ticks filed by how many bots were in contact, and where
+  the spikes fell — see `FINDINGS.md` 31 for the numbers to beat. Two traps
+  come with it. A big map is QUIET: most of its ticks have nobody in contact,
+  so read the contact buckets rather than the mean, exactly as findings 22 and
+  30 had to force a fight on the client side. And a round on a 900 m map often
+  hits the 45-minute cap, so check `winner: NONE` before averaging it with one
+  that finished.
+- **The DEV-only proving ground needs `npm run simulate:dev`**, which is the
+  dev-mode server build; the production one folds that map away and answers
+  "no map". Its collision bake is `npm run collision -- proving`, and it takes
+  a real browser exactly as the four levels do.
 - **Assertions about hits are worthless until one lands.** A "shot fired
   backwards is refused" check passes trivially when nothing is hitting anything,
   and so does a rate limit. Order them after a passing hit, or they are

@@ -202,14 +202,30 @@ export const HARROWMEAD: MapDef = {
  * `vite.server.config.ts` named the directory as side-effect-free. See the
  * comment there.
  *
- * It is also absent from `scripts/collision-hash.mjs`'s `MAPS`, so it has no
- * collision bake, cannot be played in a match, and is not one of the sixteen
- * banked frames `plans/webgpu-ref` gates on.
+ * It is not one of the sixteen banked frames `plans/webgpu-ref` gates on, and
+ * it is not in `scripts/collision-hash.mjs`'s `MAPS` — but it IS in the
+ * `DEV_MAPS` beside it, which is new with `ENGINE_UPGRADE.md` S9 and is what
+ * gives it the fourth thing a map has: a collision bake.
  *
- * `collision` therefore REJECTS rather than importing anything. A map with no
- * bake cannot be a match's map, and the honest way to say so is to fail when
- * asked instead of shipping a stub the server would build a silent, empty world
- * from.
+ * **It has one because the AUTHORITY is a thing that has to be measured too.**
+ * Everything S0 through S8 priced was a client frame; a match server steps the
+ * same simulation for sixteen slots at a fixed 60 Hz under NullEngine, has no
+ * canvas and so cannot run `MapBuilder`, and rebuilds the solid world from this
+ * bake and nothing else (`server/world.ts`). Without one, the one process whose
+ * budget is a TICK could be run on every map in the tree except the only one
+ * the size of the map this document exists for. `npm run simulate:dev proving`
+ * is what that bought.
+ *
+ * **The bake is the biggest of the three generated modules and the strictest
+ * about not shipping**, so it carries a sentinel of its own — `PG-Boxes`, the
+ * fourth string `scripts/check-proving.mjs` greps `dist/` and `dist-server/`
+ * for. `PROVING_HEIGHTS_MARK`'s reason exactly, one file over: six thousand
+ * rows of numbers carry no other string that could give them away.
+ *
+ * It still cannot be a MATCH's map, and nothing about this changes that: it is
+ * absent from the production `MAPS` above, so `Match` can never be handed it
+ * and no rotation can reach it. What it can be is the authority's proving
+ * ground, which is the same thing it already was for the client.
  */
 const PROVING: MapDef = {
   id: "proving",
@@ -220,10 +236,7 @@ const PROVING: MapDef = {
   layout: ProvingLayout,
   environment: ProvingEnvironment,
   heights: () => import("./proving/heights"),
-  collision: () =>
-    Promise.reject(
-      new Error("the proving ground has no collision bake and cannot be hosted"),
-    ),
+  collision: () => import("./proving/collision"),
 };
 
 /**

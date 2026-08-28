@@ -19,14 +19,39 @@
  * in a browser and nothing is optimized, so the server may import
  * `Engines/nullEngine` — which it must, since the engine is not in the barrel.
  *
+ * **There are TWO builds out of this file and the second one is a measuring
+ * instrument.** `--mode development` emits to `dist-server-dev/` with
+ * `import.meta.env.DEV` true, which is the only way the AUTHORITY can be run
+ * on the DEV-only proving ground — `ENGINE_UPGRADE.md` S9, and
+ * `npm run simulate:dev`. That directory is gitignored, is never deployed, and
+ * is the one artefact directory `scripts/check-proving.mjs` does not scan.
+ *
+ * **`--mode development` alone does not do it, and the way it fails is silent.**
+ * Vite pins `NODE_ENV` to `production` for every `build`, and it is NODE_ENV
+ * rather than the mode that `isProduction` — and so `import.meta.env.DEV` — is
+ * resolved from. The flag on its own gives a bundle that announces itself as a
+ * development build, folds the DEV ternary in `src/world/maps.ts` to false all
+ * the same, and answers a script that has just been told to run the proving
+ * ground with "no map". The `define` below is what actually turns the flag
+ * over, and the outDir moves with it so the two artefacts cannot be mistaken
+ * for one another.
+ *
  * Like `vite.config.ts`, this file is kept out of tsconfig's `include`.
  */
 import { defineConfig } from "vite";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // Written as a replacement rather than left to the mode, for the reason in
+  // the header: `vite build` pins NODE_ENV to production and `isProduction`
+  // reads that and not `mode`. `PROD` moves with it, so nothing downstream can
+  // read the two and get opposite answers.
+  define:
+    mode === "development"
+      ? { "import.meta.env.DEV": "true", "import.meta.env.PROD": "false" }
+      : {},
   build: {
     ssr: true,
-    outDir: "dist-server",
+    outDir: mode === "development" ? "dist-server-dev" : "dist-server",
     emptyOutDir: true,
     target: "node20",
     minify: false,
@@ -83,4 +108,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

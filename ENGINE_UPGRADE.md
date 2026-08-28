@@ -2132,31 +2132,90 @@ measured true at 65% of the active meshes. See the top of this step.*
 
 ---
 
-### S9 — The authority at 1500 m
+### S9 — The authority at 1500 m — **LANDED**
 
-Everything above is the client. The server runs the same simulation on a fixed
-step for sixteen slots under NullEngine, and it inherits:
+**`FINDINGS.md` 31 is the result, and the headline is that the tick is not where
+the problem is either.** One process holds a 60 Hz step for sixteen bots across
+900 m with three orders of magnitude to spare: **0 ticks of 108,181 over the
+16.67 ms budget, p50 0.012 ms, p99 0.055** — and the 1500 m map has the CHEAPEST
+tick of the five, because the four levels put bots in contact and it does not.
 
-- **S2, which it needs most.** `server/world.ts` builds real meshes purely so
-  rays have something to pick against, and the rewind (`server/lagComp.ts`)
-  re-runs `CombatSystem.fire` per shot per rewound target.
-- **S3, S4 and S5**, since it builds the same `NavGrid`, `CoverMap` and
-  `ObstacleField`.
-- A generated `collision.ts` at **7.7x Coldharbour's box count** — 5,929 boxes
-  against 768, measured on the 900 / 300 proving ground — so roughly 400 kB
-  against Coldharbour's 53. (At the 1500 m square it would have been 16,526
-  boxes and ~1.1 MB, which is what this line used to derive.) It is a lazy chunk
-  on the client and never downloaded, so this is the server's parse cost and the
-  repo's diff size, not the player's.
+**The instrument had to be fixed before it could measure anything, and what was
+broken was the SERVER.** `npm run simulate` threw on every map:
+`EmissiveFogPlugin` is WGSL-only by design, `Material._createUniformBuffer`
+picks WGSL only when `engine.isWebGPU`, and the authority runs under NullEngine
+— so `getEmissive("#ffe680")` threw inside `CombatSystem`'s constructor, inside
+`new HeadlessGame()`. `Match.game` is that constructor and a `Match` is built on
+the first join, so **every match server since the WebGPU migration booted
+cleanly and died on the first player**. One line in `attachEmissiveFog` fixes
+it; the plugin is a picture and the authority draws none.
 
-**Measure the tick, not the frame.** `npm run simulate` runs a whole round
-headless with no clients and is the right instrument. The question is whether one
-process still holds its fixed step with sixteen bots pathing across 900 m, and it
-is a question the client's numbers cannot answer.
+**What landed beside the fix**, all of it in service of being able to ask the
+question at all:
+
+- **The tick block in `npm run simulate`.** Every `step` timed on
+  `performance.now()`, reported as p50/p95/p99/max with the count over
+  `1000 / TICK_HZ`, and every spike over 1 ms located and checked against the
+  round's GC pauses. The mean is printed last on purpose — a stagger
+  (`CONFIG.bots.thinkRate`) is a mechanism for producing a tail a mean cannot
+  see.
+- **Contact buckets beside it**, because a 900 m round is quiet by default and a
+  quiet round measures walking: ticks are filed by how many bots held a target
+  during them, so the CONTESTED ticks can be quoted rather than the average.
+  This is findings 22 and 30's lesson applied to this side before it cost a day
+  rather than after.
+- **The proving ground has a collision bake**, which is what let the authority
+  run on it at all: `DEV_MAPS` in `scripts/collision-hash.mjs`,
+  `npm run collision -- proving`, a fourth `check-proving.mjs` sentinel
+  (`PG-Boxes`) over 473 kB of numbers that carry no other string, and
+  `MapDef.collision` on `PROVING` stops refusing.
+- **`npm run simulate:dev`**, the dev-mode server build (`dist-server-dev/`,
+  gitignored, never deployed). `--mode development` alone does NOT do it — Vite
+  pins `NODE_ENV` to production for every build and `import.meta.env.DEV` is
+  resolved from that, so the flag folds the proving ground away and the script
+  reports "no map". The `define` in `vite.server.config.ts` is what turns it
+  over.
+- **`npm run parity` covers the DEV-only maps**, at the cost of a second server
+  build. The proving ground passes all 17 fingerprint fields — 5,929 boxes,
+  528,287 surfaces, 305,193 walkable — which is what makes every number above a
+  measurement of the world the client builds rather than of a bake nobody
+  checked.
+
+**What the three inherited items were actually worth:**
+
+- **S2, "which it needs most", is already spent.** No ray in the process touches
+  the scene; `RayWorld` answers all of them off the same boxes. What is left of
+  the old shape is **one** caller — `Tank.update`'s `moveWithCollisions`, which
+  is still O(collidable meshes in the map) and is now the biggest single term in
+  the authority's tick. Measured at **0.0394 ms/call on Coldharbour's 754 meshes
+  and 0.4020 on the proving ground's 5,904**, and it runs only while a hull is
+  MOVING — which is why the two maps with armour are the two expensive ticks and
+  the three without are the three cheap ones. At 1500 m with two hulls driving
+  that is 4.8% of the step. Not a problem; the only term that grows with area.
+- **S3, S4 and S5 arrive as a 1.25 s BUILD**, against 235 ms on Coldharbour, and
+  the profile puts it in `CoverMap.bake` (`segmentHitsBox` 19.3%) and `NavGrid`
+  (`severLinks` 10.2%) rather than anywhere else. That is a rotation cost, not a
+  tick cost, and it is the number to watch if a map rotation ever has to be
+  seamless.
+- **The 400 kB parse is a non-event**: 473 kB, 5,929 boxes, **7.5 ms** to parse
+  and evaluate. The projection in the old text was right about the size and
+  wrong to worry about it.
+
+**And the round did not resolve.** Five of eleven proving rounds ran the full
+45-minute cap with tickets on both sides, the rest took 19-30 minutes against
+13-18 on every shipped map, and the peak contact was 5-7 of 16 bots against
+10-14 on the levels. **S10 is no longer an arithmetic worry; it is the measured
+outcome of a 900 m play square with sixteen bodies on it.**
+
+**What is still owed** (finding 31 carries all of it): the hull sweep, on this
+side and on the client's own frame while driving; why a rebuild in the same
+process slows from 1.25 s to 2.78 s across four rounds; and the fact that
+nothing measured here had a HUMAN in it — no rewind ran, no snapshot was
+encoded, and `Match`'s own per-tick work is in none of these numbers.
 
 **Must not break:** `npm run parity` after anything in the world layer, and the
 rule that the bake guard hashes the LAYOUT — a flag changed in a builder needs
-`npm run collision` by hand.
+`npm run collision` by hand. The proving ground is now inside both of those.
 
 ---
 
@@ -2165,6 +2224,14 @@ rule that the bake guard hashes the LAYOUT — a flag changed in a builder needs
 **The engine work above does not make a 1500 m map fun, and it is worth saying so
 before S11 rather than after.** Sixteen combatants over 2.25 km^2 is one body per
 140,000 m^2. Harrowmead is one per 10,000.
+
+**S9 MEASURED this and it is worse than the arithmetic suggests** (`FINDINGS.md`
+31). Even at 900 / 300 — one body per 51,000 m^2 of PLAY, the concentrated
+variant lever 1 below argues for — five of eleven headless rounds ran the full
+45-minute cap with tickets left on both sides, the rest took 19-30 minutes
+against 13-18 on every shipped map, and the peak contact was 5-7 of 16 bots
+against 10-14 on the levels. Difficulty does not move it. So this step is not a
+polish pass on a working round; at this extent there is no round without it.
 
 Three levers, and only the first is cheap:
 
@@ -2209,7 +2276,12 @@ What this particular map will want, from the contracts rather than from taste:
   cover next, roofs last.
 - **`vehicles`**, if the map has armour, which at this scale it probably wants:
   one hardstanding a side, on ground a seven-metre hull can get off. That also
-  turns on the third kit slot (`Game.armourOffered`), online and off.
+  turns on the third kit slot (`Game.armourOffered`), online and off. **It is
+  also the only thing on this list that costs the AUTHORITY anything**: a
+  DRIVEN hull is a `moveWithCollisions` against every collidable mesh in the
+  map, measured at 0.40 ms a tick at this extent against 0.039 on Coldharbour
+  (`FINDINGS.md` 31). Two hulls is 4.8% of the server step — affordable, and
+  the one term out there that grows with map area.
 - **A `fogEnd` well inside the map, and a `bodyDrawDistance` inside THAT if the
   bodies want it.** The first is S8's first half and it is what unlocks the rest
   of S1 — 0.6 ms of walk and 0.8 ms of frame at 550 m, still dormant because no
