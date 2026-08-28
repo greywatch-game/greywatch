@@ -43,7 +43,15 @@
 import { type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
-import { Tank, type DriveInput } from "../entities/Tank";
+import {
+  DRIVER,
+  GUNNER,
+  Tank,
+  type CrewSeat,
+  type DriveInput,
+  type GunAngles,
+  type GunInput,
+} from "../entities/Tank";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { GameMap, VehicleSpawnDef } from "../world/MapBuilder";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
@@ -60,6 +68,17 @@ export interface VehicleOrders {
   /** What is in this hull asking for, or null when it is empty. */
   driveFor(tank: Tank): DriveInput | null;
   /**
+   * What the SECOND crewman is asking the cupola gun for, or null when nobody
+   * is on it.
+   *
+   * A question of its own rather than a field on the answer above, because the
+   * two seats can be filled by two different kinds of thing at once: the
+   * player driving with a bot on the gun, a bot driving with the player on the
+   * gun, or either seat empty while the other is not. Every one of those is
+   * ordinary and none of them is representable through one lookup.
+   */
+  gunFor(tank: Tank): GunInput | null;
+  /**
    * The state that arrived for this hull from somewhere else this frame, or
    * null for one this process is simulating.
    *
@@ -74,6 +93,18 @@ export interface VehicleOrders {
    * states nothing at all.
    */
   remoteFor?(tank: Tank): RemoteHull | null;
+  /**
+   * Where a machine gun somebody ELSE is laying has got to, or null for one
+   * this process is laying itself.
+   *
+   * `remoteFor`'s counterpart for the second seat, and it is a SECOND question
+   * because the two seats' answers are independent: a client whose player is
+   * driving simulates its own hull off `driveFor` and still has to be told
+   * where the bot gunner beside it has pointed the cupola gun, and a client
+   * whose player is the GUNNER poses the hull from the wire while laying that
+   * one gun itself.
+   */
+  remoteGunFor?(tank: Tank): GunAngles | null;
 }
 
 /**
@@ -264,6 +295,13 @@ export class VehicleSystem {
       } else {
         tank.update(dt, orders.driveFor(tank));
       }
+      // The cupola gun, AFTER the hull, and asked as its own question of its
+      // own owner — see `Tank.aimMg`. After, because the ring it turns on is
+      // bolted to a turret this frame may just have traversed, and a gun laid
+      // against last frame's turret is a gun drawn at the wrong local angle.
+      const mgAt = orders.remoteGunFor?.(tank) ?? null;
+      if (mgAt) tank.setMg(dt, mgAt.yaw, mgAt.pitch);
+      else tank.aimMg(dt, orders.gunFor(tank));
       if (tank.alive) continue;
       // Both clocks below are the AUTHORITY's in a match — see `predicted`.
       if (this.predicted) continue;
@@ -300,7 +338,10 @@ export class VehicleSystem {
 
   /**
    * The nearest hull of `team` a body standing at `at` could get into: live,
-   * empty, and inside `enterRadius` of its centre.
+   * with a SEAT still free, and inside `enterRadius` of its centre.
+   *
+   * "Free" is either seat — `seatOn` is what decides which one a boarder
+   * takes, and the driver's is taken first.
    *
    * Team-locked on purpose. Stealing the other side's armour is a real design
    * choice and a good one in some shooters, but it is a choice — and made by
@@ -315,8 +356,28 @@ export class VehicleSystem {
    * of the frame they got into it. Written on the transition, it is never
    * wrong for an instant.
    */
-  setOccupied(tank: Tank, on: boolean): void {
-    tank.occupied = on;
+  setOccupied(tank: Tank, seat: CrewSeat, on: boolean): void {
+    tank.seats[seat] = on;
+  }
+
+  /**
+   * The nearest hull of `team` this body could get INTO, and which seat it
+   * would take — the driver's if it is free, the gunner's otherwise.
+   *
+   * **The seat is decided here rather than by the caller**, which is what makes
+   * "first in drives" a fact about the fleet rather than a convention two
+   * callers have to agree on: `Game` asks this offline and `HeadlessGame` asks
+   * it on the authority, and a rule stated in both is a rule that can drift.
+   * Returns -1 for a hull that is full or out of reach, so a caller reads one
+   * number and needs no second question.
+   */
+  seatOn(tank: Tank, at: Vector3, team: Team): CrewSeat | -1 {
+    const r = CONFIG.vehicles.enterRadius;
+    if (!tank.alive || tank.team !== team) return -1;
+    if (Vector3.DistanceSquared(at, tank.center) > r * r) return -1;
+    if (!tank.seats[DRIVER]) return DRIVER;
+    if (!tank.seats[GUNNER]) return GUNNER;
+    return -1;
   }
 
   enterable(at: Vector3, team: Team): Tank | null {
@@ -324,9 +385,13 @@ export class VehicleSystem {
   }
 
   /**
-   * The nearest hull of `team` within reach of `at` that somebody is ALREADY
-   * sitting in. `enterable`'s mirror, and it exists for exactly one caller:
-   * the player walking up to their own side's armour with a bot crew in it.
+   * The nearest hull of `team` within reach of `at` whose BOTH seats are
+   * taken. `enterable`'s mirror, and it exists for exactly one caller: the
+   * player walking up to their own side's armour with a full bot crew in it.
+   *
+   * A hull with one bot in it is `enterable`, not this — the player gets in
+   * beside him and nobody is turned out. Eviction is the last resort rather
+   * than the greeting, which is the version that costs the AI the least.
    *
    * **A hull the AI is using must never be a hull the player cannot have.** A
    * map states one hardstanding per side, so a crew that held its seat for the
@@ -343,14 +408,23 @@ export class VehicleSystem {
     return this.nearestOwn(at, team, true);
   }
 
-  /** The pair above, which differ by one term. */
-  private nearestOwn(at: Vector3, team: Team, occupied: boolean): Tank | null {
+  /**
+   * The pair above, which differ by one term.
+   *
+   * **`full` and not `occupied`, and the difference is the second seat.** A
+   * hull with one crewman in it is still a hull somebody may get into, so
+   * `enterable` asks for one with a seat left rather than one with nobody
+   * aboard; only a hull with BOTH seats taken is a hull that has to be evicted
+   * to be joined.
+   */
+  private nearestOwn(at: Vector3, team: Team, full: boolean): Tank | null {
     const r = CONFIG.vehicles.enterRadius;
     let best: Tank | null = null;
     let bestDist = r * r;
     for (const stand of this.stands) {
       const tank = stand.tank;
-      if (!tank.alive || tank.occupied !== occupied || tank.team !== team) continue;
+      const taken = tank.seats[DRIVER] && tank.seats[GUNNER];
+      if (!tank.alive || taken !== full || tank.team !== team) continue;
       const d = Vector3.DistanceSquared(at, tank.center);
       if (d < bestDist) {
         bestDist = d;

@@ -50,13 +50,21 @@ export interface LocalState {
   crouching: boolean;
   sprinting: boolean;
   /**
-   * The hull this player is driving, or null on foot.
+   * The hull this player is DRIVING, or null on foot and null on the gun.
    *
-   * Non-null for exactly as long as `Game.driving` is, which is what makes the
-   * upload's two branches one fact rather than two flags that can disagree: a
-   * driver has no body of their own to report, because the tank carries them.
+   * Non-null for exactly as long as `Game.driving` is AND the player is in the
+   * driver's seat, which is what makes the upload's three branches one fact
+   * rather than flags that can disagree: a driver has no body of their own to
+   * report because the tank carries them, and a GUNNER has neither a body nor
+   * a hull — see `gun` below.
    */
   hull: LocalHull | null;
+  /**
+   * …and the cupola gun this player is LAYING, or null when they are not on
+   * one. Mutually exclusive with `hull` by construction: `Game.localHull` and
+   * `Game.localGun` read the same seat and exactly one of them can answer.
+   */
+  gun: LocalGun | null;
 }
 
 /** One driven hull, as the upload needs it. `Tank`'s own fields, by reference. */
@@ -67,6 +75,18 @@ export interface LocalHull {
   yaw: number;
   turretYaw: number;
   gunPitch: number;
+}
+
+/**
+ * One laid cupola gun, as the upload needs it. `LocalHull`'s twin, and it
+ * carries an ANGLE where that carries a position — see `GunnerMessage`: a
+ * gunner moves nothing, so the only thing about the world he decides is where
+ * one gun points.
+ */
+export interface LocalGun {
+  tank: number;
+  yaw: number;
+  pitch: number;
 }
 
 export class NetSession {
@@ -278,6 +298,22 @@ export class NetSession {
       });
       return;
     }
+    // **A gunner reports one BEARING and nothing else**, and it replaces the
+    // `move` below for the driver's own reason: the hull carries him, so a
+    // body sample would be one person in two places. Which of the three
+    // branches is taken is the SEAT and never a mode — see `LocalState.gun`.
+    if (local.gun) {
+      const g = local.gun;
+      this.conn.send({
+        t: "gunner",
+        seq: ++this.seq,
+        time: Date.now(),
+        tank: g.tank,
+        myaw: g.yaw,
+        mpitch: g.pitch,
+      });
+      return;
+    }
     this.conn.send({
       t: "move",
       seq: ++this.seq,
@@ -402,15 +438,21 @@ export class NetSession {
    * hull's team, its life, the distance to it, and whether the crew inside may
    * be turned out.
    *
+   * `seat` is a PREFERENCE — see `MountMessage.seat`. Omitted it means
+   * "whichever chair is free", which is what walking up to a tank asks; named
+   * it is either the chair the offer promised or, from a player already
+   * aboard, the request to CROSS to the other one. Both are the same sentence
+   * and therefore the same message.
+   *
    * Fire-and-forget rather than standing, unlike a deploy: a mount that was
    * dropped by a socket is a key press, and the player is standing next to the
    * tank and can press it again. A request that outlived its own frame would
    * be worse — it would put somebody in a tank a second after they walked away
    * from it.
    */
-  sendMount(tank: number): void {
+  sendMount(tank: number, seat?: number): void {
     if (!this.seated) return;
-    this.conn.send({ t: "mount", tank });
+    this.conn.send({ t: "mount", tank, seat });
   }
 
   /** …and asks to get out. It names no hull — the authority knows which. */
@@ -432,6 +474,26 @@ export class NetSession {
     if (!this.seated) return;
     this.conn.send({
       t: "shell",
+      seq: ++this.seq,
+      time: this.conn.renderTime(),
+      origin: [origin.x, origin.y, origin.z],
+      dir: [dir.x, dir.y, dir.z],
+    });
+  }
+
+  /**
+   * Reports a round out of the CUPOLA gun. `sendShell`'s twin, and a separate
+   * verb for the reason `MgMessage` is: the two guns are fired by two people
+   * in two seats, and the authority's gate for each is the chair rather than
+   * the weapon.
+   *
+   * `dir` is the machine gun's own axis and not the camera's, which is the
+   * same half of the reticle rule the shell's is.
+   */
+  sendMg(origin: Vector3, dir: Vector3): void {
+    if (!this.seated) return;
+    this.conn.send({
+      t: "mg",
       seq: ++this.seq,
       time: this.conn.renderTime(),
       origin: [origin.x, origin.y, origin.z],
@@ -551,7 +613,7 @@ export class NetSession {
         // The hulls FIRST, because the roster reads them: a body inside a tank
         // is not drawn standing in the street, and which bodies those are is
         // what the hulls have just said. See `NetRoster.setRiding`.
-        this.vehicles.applySnapshot(msg, this.slot);
+        this.vehicles.applySnapshot(msg);
         for (const soldier of this.roster.soldiers) {
           this.roster.setRiding(soldier.slot, this.vehicles.riding(soldier.slot));
         }

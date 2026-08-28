@@ -61,8 +61,10 @@ export class NetRoster {
    * hull's own position, at the hull's own SPEED — which reads as a man being
    * dragged along under the tracks.
    *
-   * Written by `NetSession` off `VehicleState.by`, which is the one place
-   * occupancy is stated. It is a fact about the ROUND rather than about a
+   * Written by `NetSession` off `VehicleState.by` and `by2` together — a
+   * hull holds two people and the man on the cupola gun is inside it exactly
+   * as the driver is (`NetVehicles.riding` folds the pair), which is the one
+   * place occupancy is stated. It is a fact about the ROUND rather than about a
    * body, exactly as the bench is in `BattleSystem`, which is why it lives
    * here as an array rather than as a flag on `NetSoldier`.
    */

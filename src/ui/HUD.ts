@@ -305,6 +305,26 @@ export interface VehicleStatus {
   maxHealth: number;
   /** 0 just fired, 1 loaded. The gun's whole magazine, as one number. */
   load: number;
+  /**
+   * Which job this player has aboard — the one thing on this band that is
+   * about the person rather than about the vehicle, and the reason it is here
+   * at all: the two seats have different controls and a different weapon under
+   * the trigger, and a player who cannot tell which one they took is a player
+   * pressing the throttle in a gunner's seat.
+   */
+  seat: "DRIVER" | "GUNNER";
+  /**
+   * How to change seats, already worded — `"F SWAP SEAT"`, `"Y SWAP SEAT"`,
+   * `"SWAP SEAT"` on glass — or null when the other chair is taken.
+   *
+   * Null rather than a permanently-drawn caption because a swap into a seat
+   * somebody is already in is a key that does nothing, and a key that does
+   * nothing is worse than no key at all. The WORDS are `Game`'s for
+   * `setUsePrompt`'s reason: which device is in the player's hands is a fact
+   * this class has never had, and a prompt that told a pad player to press `F`
+   * has told them to go and find a keyboard.
+   */
+  swap: string | null;
 }
 
 /**
@@ -423,6 +443,8 @@ export class HUD {
     hull: HTMLElement;
     gun: HTMLElement;
     load: HTMLElement;
+    post: HTMLElement;
+    swap: HTMLElement;
   };
   /**
    * Where the tank's gun actually points, projected to the glass — NOT the
@@ -521,6 +543,8 @@ export class HUD {
   private lastHullWidth = "";
   private lastLoadWidth = "";
   private lastLoaded = true;
+  private lastSeat = "";
+  private lastSwap: string | null = null;
   /** The marker's last position, as the string that was written. "" is hidden. */
   private lastMarker = "";
   private lastHealthWidth = "";
@@ -658,6 +682,7 @@ export class HUD {
             <div class="veh-bar hull"><i></i></div>
             <div class="cap-row"><span class="cap">MAIN GUN</span><span class="veh-gun">LOADED</span></div>
             <div class="veh-bar load"><i></i></div>
+            <div class="veh-seat"><b class="veh-post">DRIVER</b><span class="veh-swap hidden"></span></div>
           </div>
         </div>
       </div>
@@ -704,6 +729,8 @@ export class HUD {
       hull: this.vehicle.querySelector(".veh-bar.hull i") as HTMLElement,
       gun: this.vehicle.querySelector(".veh-gun") as HTMLElement,
       load: this.vehicle.querySelector(".veh-bar.load i") as HTMLElement,
+      post: this.vehicle.querySelector(".veh-post") as HTMLElement,
+      swap: this.vehicle.querySelector(".veh-swap") as HTMLElement,
     };
     this.gunMarker = document.getElementById("gun-marker")!;
     this.usePrompt = document.getElementById("use-prompt")!;
@@ -1962,6 +1989,22 @@ export class HUD {
       this.lastLoaded = loaded;
       this.vehicleParts.gun.textContent = loaded ? "LOADED" : "LOADING";
       this.vehicle.classList.toggle("loading", !loaded);
+    }
+    // Which seat, and whether the other one can be had. Guarded like every
+    // other line in here — both change on a key press and neither on a frame.
+    if (status.seat !== this.lastSeat) {
+      this.lastSeat = status.seat;
+      this.vehicleParts.post.textContent = status.seat;
+      // The main gun's loader is the DRIVER's gauge and nothing to a gunner,
+      // whose weapon has no magazine at all — so the row is dimmed rather than
+      // removed: the hull still has a gun, and how long until it can fire
+      // again is exactly the sort of thing a commander tells his gunner.
+      this.vehicle.classList.toggle("gunner", status.seat === "GUNNER");
+    }
+    if (status.swap !== this.lastSwap) {
+      this.lastSwap = status.swap;
+      this.vehicleParts.swap.textContent = status.swap ?? "";
+      this.vehicleParts.swap.classList.toggle("hidden", status.swap === null);
     }
   }
 

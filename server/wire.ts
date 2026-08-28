@@ -137,6 +137,7 @@ export function readClientMessage(raw: string): ClientMessage | null {
     // both a claim about a thing leaving a barrel at an instant, checked the
     // same way and re-resolved by the authority the same way.
     case "shell":
+    case "mg":
     case "ordnance":
       return isNum(m.seq) && isNum(m.time) && isVec3(m.origin) && isVec3(m.dir)
         ? msg
@@ -159,8 +160,28 @@ export function readClientMessage(raw: string): ClientMessage | null {
         ? msg
         : null;
 
+    // A gunner's own report: an index and two angles, and no position at all —
+    // a man on the cupola moves nothing, so there is nothing here for
+    // `validate.ts` to have an opinion about. See `GunnerMessage`.
+    case "gunner":
+      return isNum(m.seq) &&
+        isNum(m.time) &&
+        Number.isInteger(m.tank) &&
+        isNum(m.myaw) &&
+        isNum(m.mpitch)
+        ? msg
+        : null;
+
+    // `seat` is OPTIONAL — absent is "whichever chair is free", which is what
+    // every client before the second seat meant and what a player walking up
+    // to a tank still means. Present it must be an integer for `tank`'s
+    // reason: `onMount` uses it to index a pair, and it asks again about what
+    // it MEANS.
     case "mount":
-      return Number.isInteger(m.tank) ? msg : null;
+      return Number.isInteger(m.tank) &&
+        (m.seat === undefined || Number.isInteger(m.seat))
+        ? msg
+        : null;
 
     // Nothing on them to check, and they still owe this arm: the `default`
     // below refuses what it does not recognise, so a message type with no

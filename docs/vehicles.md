@@ -16,16 +16,17 @@ A vehicle is four things and one line of map data:
 | the thing | what it owns |
 | --- | --- |
 | `MapLayout.vehicles` | where each side's armour stands. One `VehicleSpawnDef` per team; absent on two of the five shipped maps |
-| `entities/Tank.ts` | one hull: its collider, its drive, its turret, its gun's clock, its health, and the springs behind its lean and its antennae |
-| `entities/TankModel.ts` | the boxes it is drawn from, the tracks and the two whips as JOINTS over them, and the charred repaint a wreck takes |
-| `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, and where a dismount lands |
+| `entities/Tank.ts` | one hull: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, and the springs behind its lean and its antennae |
+| `entities/TankModel.ts` | the boxes it is drawn from, the tracks, the two whips and the cupola gun as JOINTS over them, and the charred repaint a wreck takes |
+| `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, which seat a boarder gets, and where a dismount lands |
 | `systems/VehicleCamera.ts` | the view from twelve metres behind a hull, and its pull-in |
-| `systems/TankCrew.ts` | the bots that drive: which body is in which hull, where it is taking it, and what its gun is laid on |
+| `systems/TankCrew.ts` | the bots that crew: which body is in which SEAT of which hull, where it is taking it, and what each of its guns is laid on |
 
 `Game` is the only place they meet, exactly as with every other system: it holds
-the one fact the feature turns on (`Game.driving`), decides who is in what, and
-wires `VehicleSystem`'s two announcements. Nothing in `VehicleSystem` has heard
-of a player, and nothing in `Tank` has heard of a hardstanding.
+the two facts the feature turns on (`Game.driving` and `Game.drivingSeat`),
+decides who is in what, and wires `VehicleSystem`'s two announcements. Nothing
+in `VehicleSystem` has heard of a player, and nothing in `Tank` has heard of a
+hardstanding.
 
 **Today there is one vehicle and two maps with any.** Nothing in the code is
 special-cased to a tank — `VehicleSpawnDef` carries a team, a point and a
@@ -37,22 +38,23 @@ data and a re-bake, which is the test the first one was built to pass.
 
 ## What it is drawn as, and the tracks that RUN
 
-`entities/TankModel.ts` is ~180 boxes and cylinders and **twenty-four meshes**, and
+`entities/TankModel.ts` is ~180 boxes and cylinders and **twenty-six meshes**, and
 the number that matters is the second one: the outline pass draws every mesh
 twice, so a tank's cost is COLOURS PER SEGMENT and not parts. A greeble in a
 colour its segment already carries is free; a sixth colour on the hull is two
 more draw calls on every hull on the field. That is the whole budget rule, and
 it is why the barrel is round, the road wheels are round and the hub caps are
 their own little discs — geometry is not what a mesh costs. Measured on
-Coldharbour: 24 meshes a hull, all 24 inked, 96 for both hulls against the
-2,262 the map draws.
+Coldharbour: 26 meshes a hull, all of them inked, 104 for both hulls against
+the 2,262 the map draws.
 
 **A mesh is bought here for exactly one reason and it is never a colour:
 something that MOVES differently from everything around it cannot merge with any
-of it.** Ten of the twenty-four are that — six for the tracks and four for the
-two antennae — and nothing else in the model has earned one.
+of it.** Twelve of the twenty-six are that — six for the tracks, four for the
+two antennae and two for the commander's gun on its own ring — and nothing else
+in the model has earned one.
 
-**Six of the twenty-four move, and between them they are the tracks.** A belt cannot
+**Six of the twenty-six move, and between them they are the tracks.** A belt cannot
 be one mesh: the links go round a loop and a rigid mesh only slides. So the band
 is static and a strip of raised LINKS is laid along each run and slid by how far
 that track has run, modulo the link pitch — which is exactly a scroll, because
@@ -834,6 +836,52 @@ which hull a cast stopped on, `fire` takes armour out of the sphere sweep
 entirely, and the shape a round is tested against is the shape that is drawn.
 `Tank.hitRadius` remains only because `Hittable` requires one; nothing reads it.
 
+## Two seats, and what each of them is
+
+**A hull holds two people and they do two different jobs.** `Tank.seats` is a
+pair of booleans indexed by `DRIVER` (0) and `GUNNER` (1), and the split is:
+
+| seat | sticks | weapon | camera |
+| --- | --- | --- | --- |
+| `DRIVER` | yes — throttle, steer | the main gun, laid by walking the turret to the chase camera's order | the chase camera |
+| `GUNNER` | **no** | the CUPOLA machine gun, laid by walking its ring to the same camera's order | the same chase camera |
+
+**The first person aboard drives**, and that rule is stated in exactly one
+place — `VehicleSystem.seatOn`, which both `Game.offeredSeat` and
+`HeadlessGame.seat` ask. A tank with a man on the cupola gun and nobody at the
+sticks is a pillbox; a tank with a driver and an empty cupola is a tank, so the
+driver's chair is always filled first, by a player boarding and by the bot
+crews' own sweep alike.
+
+**A hull with ONE seat left is `enterable`, and only a FULL one is an
+eviction.** That is the difference the second seat makes to the "a bot crew
+never denies the player their own armour" rule: the ordinary case on a map with
+one hardstanding a side is a hull a bot is already driving, and the right answer
+is for the player to climb onto the gun beside him rather than to throw him out
+of it. `occupiedNear` now means "both chairs taken", and only that reaches
+`TankCrew.evict`.
+
+**Crossing between them is a THIRD verb and it is not an eviction.**
+`InputManager.seatPressed` is `F`, the pad's Y and the touch layer's swap
+button — the last two shared outright with `swapPressed`, which is safe for
+`usePressed`'s reason: those two change WEAPONS, a driver has none, and there
+is no state in which a body is both holding a rifle and sitting in a tank.
+`Game.canSwapSeat` is the one place that decides whether it may happen (the
+other chair has to be EMPTY), and both the key and the prompt under the seat
+name read it, so they cannot disagree. Offline it is `Game.swapSeat`, which is
+deliberately not `clearVehicle` + `mount`: that pair would put the player back
+into the fight and take them out again inside one frame, hand the camera back
+to a head that is inside a tank, and stop and restart the engine. Two seat
+writes and a field is the whole of it.
+
+**The HUD says which chair you are in**, because the two have different
+controls and a different weapon under the trigger and a player who cannot tell
+which one they took is a player pressing a throttle that steers nothing. It is
+one line under the two bars — the seat name in the hot colour, and the swap key
+beside it when the other chair is free — and the main gun's loader row is
+DIMMED rather than removed for a gunner: he cannot fire it, and how long until
+the hull can is exactly what a man on the cupola wants to know.
+
 ## The seat
 
 `Game.driving` is the single fact, and it is on `Game` because `Player` is a body
@@ -849,7 +897,7 @@ really got out:
 | `battle.removeHuman(player)` | …and this stops bots AIMING. Both are needed: a bot that could still acquire an unkillable target would stand there firing at it for the rest of the round |
 | `vehicleCam.take(tank)` | the view opens down the hull's own heading |
 | `sfx.engineOn()` | the one sustained voice in `Sfx` |
-| `vehicles.setOccupied(tank, true)` | written on the TRANSITION, never derived in `update` — derived, `enterable` would offer a hull somebody is already sitting in for the rest of the frame they got into it |
+| `vehicles.setOccupied(tank, seat, true)` | written on the TRANSITION, never derived in `update` — derived, `enterable` would offer a chair somebody is already sitting in for the rest of the frame they got into it |
 
 **The verb is one input field and THREE devices, and the third one had to be
 built.** `InputManager.usePressed` is `E`, the pad's d-pad north, and — since a
@@ -979,6 +1027,52 @@ it still leaves a quarter of the barrel jitter the bare limit passed through.
 Measured on Coldharbour, at 60 Hz: a steady drag puts 0.54 rad/s^2 of jerk rms on
 the gun where it used to put 2.31; a half-degree correction lands in 0.12 s and a
 five-degree one in 0.35; nothing anywhere exceeds 2.4 rad/s^2.
+
+## The CUPOLA gun, and why it is a second world angle
+
+The commander's machine gun on its ring is the whole of what the second seat
+is for, and everything about it is the turret's argument made once more, one
+node further out.
+
+**Its bearing is a WORLD angle, and that is the single decision the feature
+rests on.** `Tank.mgYaw`/`mgPitch` are held in the world exactly as
+`turretYaw`/`gunPitch` are, and `Tank.aimMg` writes the DIFFERENCE onto
+`rig.mgMount`. The mount is parented to the turret, so a bearing held
+*relative* to it would be dragged round by every traverse the driver asked
+for — a gunner laid on a doorway would be swept off it the moment the main gun
+moved, which is the same failure a hull turning under a held turret would be
+if `turretYaw` were the hull's.
+
+**With nobody on it the rule INVERTS, and that is right rather than an
+exception.** An unmanned gun holds its LOCAL bearing and goes round with the
+ring it is bolted to, because that is what a lump of steel bolted to a turret
+does. `Tank.mgRideYaw` is the previous frame's turret bearing, and the delta
+between it and this frame's is what the stowed gun is given.
+
+**It is stepped from `VehicleSystem` rather than from `Tank.update`**, through
+`aimMg` (walk toward an order) or `setMg` (a remote gunner's report), and that
+separation is not tidiness. The two guns on one hull can have two owners of
+different KINDS: a person can drive a hull posed off the wire while a bot lays
+its cupola gun on the authority, or the reverse. Folded into `update` the
+machine gun would only be laid on hulls somebody was DRIVING; folded into
+`updateRemote` it would only ever be posed. Asked as its own question it is
+answered the same way on every machine for every hull — which is why
+`VehicleOrders` has four methods and not two.
+
+The slew is `slewRate` unchanged, at `CONFIG.vehicles.tank.mg`'s own numbers:
+about five times the turret's rates, because what is being swung is a gun on a
+ring rather than sixty tonnes of casting, and a gunner tracking a running man
+has to be able to keep up with one. The reticle rule is kept from the same end
+the turret's is — `#gun-marker` is drawn from whichever gun THIS player holds,
+at that gun's own range, because a gunner shown where the cannon points would
+be shown a reticle for somebody else's weapon.
+
+**What it cannot do is hurt armour, and that is the trade rather than a
+limitation.** The round is a `bullet`, so `resist.bullet` (0.05) applies and a
+whole belt into a hull is worth about a rifle magazine. A second gun that could
+kill tanks would make the first one decoration; what this one answers is the
+thing armour could not touch before, which is infantry inside the main gun's
+3.6-second reload.
 
 ## The camera, and why the reticle can still not lie
 
@@ -1164,6 +1258,33 @@ Three things a driver keeps that a benched bot does not:
   needs no objective planner of its own and cannot disagree with the one the
   round already has.
 
+### Two bots, two jobs
+
+A hull's boarding sweep fills BOTH chairs, driver first, and the two crewmen
+are two different bodies with two different brains — `TankCrew.Crew` carries a
+`seat`, and `stepCrew` branches on it after the think clock and the held target,
+which are one crewman's whichever job he is doing.
+
+**The gunner is looking for something else entirely**, and that one line is
+what makes him worth a roster slot: a machine gun cannot hurt armour, so a
+gunner who acquired the enemy hull the way the driver does would spend the fight
+rattling rounds off it while the squad that arrived with it walked past. So he
+sees INFANTRY only (`crew.mgRange`, 70 m), lays his gun off the muzzle exactly
+as the driver lays his, and fires in BURSTS (`mgLayTime`, `mgBurst`, `mgPause`)
+— because a gun with no magazine and no reload, held down, is a hosepipe that
+never stops, which is both unfair and unreadable. The gap is a gap a man can
+cross the street in.
+
+He also has no ranging error of his own: `drawLay` zeroes his aim point,
+because his inaccuracy lives in the CONE (`mg.spread`) and giving him both
+would be counting the same miss twice.
+
+**A gunner with no target holds his lay** rather than returning to the hull's
+heading, which is the opposite of what the driver's gun does and is right both
+ways round: a tank that arrives in a street with its main armament already
+pointing down it is worth a lot, and a machine gun that swings off the last
+thing it saw is worth nothing.
+
 ### Who gets in, and who gets it back
 
 **A tank is never a DESTINATION.** No flow field leads to one, no squad is
@@ -1269,8 +1390,23 @@ are mirror images of each other:
 
 | | `driveFor` answers for | `remoteFor` answers for |
 | --- | --- | --- |
-| **client** | the one hull this player is sitting in | every other hull |
-| **authority** | every bot-crewed hull | the hulls with a PERSON in them |
+| **client** | the one hull this player is DRIVING | every other hull |
+| **authority** | every bot-driven hull | the hulls with a person at the sticks |
+
+**The second seat is a second pair of questions and NOT a mode on the first**,
+because the two chairs in one hull can be filled by two different kinds of
+thing at once. `gunFor` and `remoteGunFor` split exactly as the pair above
+does, and a client whose player is DRIVING still asks `remoteGunFor` (somebody
+else is on that gun) while a client whose player is GUNNING asks `remoteFor`
+(somebody else has the sticks). All four combinations are ordinary and none of
+them is representable through one lookup.
+
+The consequence lands in `NetVehicles`: it used to DROP the whole sample for
+the hull carrying the local slot, which was right while a hull held one person
+— whatever was in that frame was that person's own work. It is wrong now, so
+**every sample is kept and the refusal moved to the READ**: `stateFor` and
+`mgFor` are declined independently by `Game.vehicleOrders`, which is the only
+layer that knows which chair this player is in.
 
 **What travels is six numbers and two flags**, and what does not is the whole
 picture: no pitch, no roll, no heave, no track run, no antenna bend. Every one
@@ -1303,18 +1439,54 @@ hardstanding clocks down: when a wreck is taken away and when a fresh hull
 arrives are the authority's, and `Game.syncNetVehicles` applies all three
 transitions as edges off the snapshot.
 
-**Getting in and getting out are ASKS.** `MountMessage` names a hardstanding
-and the authority re-derives every term of the offer against its own copy — the
-hull's team, its life, the distance to the body it holds, and whether the crew
-inside may be turned out — then answers with a `seat` event addressed to the
-asker. `DismountMessage` names nothing, because the server knows which seat a
-peer is in, and the position the body lands at comes back on the same event:
-where a dismount goes is geometry a client could compute, but it is a POSITION,
-and a position is the authority's for the reason a spawn's is.
+**A GUNNER reports one bearing and nothing else.** `GunnerMessage` is
+`DriveMessage` for the other chair and it carries an angle where that carries a
+position, for the one reason that matters: a gunner moves nothing. He has no
+body of his own (the hull carries him, exactly as it carries the driver) and no
+hull of his own (somebody else may be driving it, or nobody), so the only thing
+about the world he decides is where one gun points — and he sends this INSTEAD
+of `move`, exactly as a driver sends `drive` instead of it.
 
-**Occupancy is stated once, on the hull.** `VehicleState.by` is the roster slot
-inside it, and both questions a client asks are answered from there: may I get
-into that one, and is the man in that slot drawn standing up. Carried on
+There is nothing to validate, and that is the whole difference from the hull
+next door. A position is a claim about the world and goes through
+`validateDrive`; a bearing claims nothing at all, and the worst a lying client
+can do is point a machine gun somewhere a ring could not have swung it — which
+buys nothing, because the ROUND is re-resolved on the authority against the
+same cone check every other shot takes. `MgMessage` is that round, and it is a
+separate verb from `ShellMessage` because the server's gate for each is the
+CHAIR rather than the weapon: a `shell` from the gunner's seat and an `mg` from
+the driver's are both refused.
+
+**Getting in and getting out are ASKS.** `MountMessage` names a hardstanding
+and — optionally — a seat, and the authority re-derives every term of the offer
+against its own copy: the hull's team, its life, the distance to the body it
+holds, which chairs are actually free, and whether a bot in one of them may be
+turned out. It answers with a `seat` event addressed to the asker, carrying
+WHICH chair was granted. The seat field is a PREFERENCE and never a claim —
+asked for one that is taken, the other is granted if it is free — which is what
+makes "the first man aboard drives" a fact about the server's own copy of the
+fleet at the instant the ask arrives rather than something a client decided.
+
+**A SEAT SWAP is the same message**, from a peer already in that hull naming
+the other chair, and it goes through the same `HeadlessGame.seat`: the chair
+under them is released and the new one taken on the same frame, while
+everything a body owes while it is aboard — the invulnerability, the absence
+from every bot's target list — is left standing, because none of it was ever
+about which chair. It is granted only when the chair asked for is EMPTY: a swap
+is not an eviction, and turning a PERSON out is a thing no key in this game
+does.
+
+`DismountMessage` names nothing, because the server knows which seat a peer is
+in, and the position the body lands at comes back on the same event: where a
+dismount goes is geometry a client could compute, but it is a POSITION, and a
+position is the authority's for the reason a spawn's is.
+
+**Occupancy is stated once, on the hull — twice over.** `VehicleState.by` and
+`by2` are the roster slots in the two chairs, and every question a client asks
+is answered from that pair: may I get into that one, may I cross to the other
+chair, and is the man in that slot drawn standing up. Two fields rather than an
+array for the reason `CrewSeat` is two constants: the chairs are not
+interchangeable, and every question names one of them. Carried on
 `EntityState` as well it would be two copies of one fact, and the copy that
 went stale would be the one deciding whether a body is on screen — a crewman
 drawn in the road at his own tank's position, moving at his own tank's speed,
@@ -1367,6 +1539,19 @@ ray happened to find, which can be a street away.
 
 - **~~Netplay.~~ Built** — see "Armour in a match" above, which is where this
   entry used to say a hull could not cross the wire.
+- **~~One seat.~~ Two** — see "Two seats, and what each of them is" above. The
+  entry that used to stand here argued that a commander/gunner split bought
+  only "a turret that searches while the hull drives somewhere else", which the
+  turret already gave for free by not being tied to the heading. That was true
+  of a split over ONE gun; what the second seat actually buys is a SECOND gun,
+  aimed somewhere the first is not, against the targets the first cannot spend
+  a shell on.
+- **There is no third seat and no loader.** Two chairs are two jobs; a third
+  would be a body with nothing to do, which is why `CrewSeat` is a pair of
+  constants rather than an enum that can grow.
+- **A passenger cannot ride on the hull.** Infantry can stand on the deck —
+  `Tank.deckAt` says so — but standing on a moving tank is standing on a
+  teleporting collider, and nothing carries them.
 - **Bots do not drive the hull they cannot use.** They still walk through a
   parked one, for the ragdoll's reason above, and one per squad still shoots
   ROCKETS at it. What they DO do now is crew it — see the section above, which

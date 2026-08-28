@@ -54,12 +54,16 @@ export const vehicles = {
    * What the AI does with a hull, and the whole of what it is allowed to do
    * with one.
    *
-   * **A bot crew is one bot doing both jobs**, exactly as the player is: it
-   * drives, it lays the gun and it pulls the trigger. A separate gunner would
-   * be a second roster slot spent on a body nobody can see, and the thing a
-   * commander/gunner split actually buys — a turret that searches while the
-   * hull drives somewhere else — is bought here instead by the turret simply
-   * not being tied to the heading.
+   * **A hull holds TWO bodies and they are two different bots**, exactly as it
+   * holds two people: the DRIVER drives, lays the main gun and pulls its
+   * trigger, and the GUNNER lays the cupola machine gun and nothing else. They
+   * share every number in this block except the three the gun in the second
+   * man's hands makes different — see `mgRange`, and see `docs/vehicles.md`
+   * for why a second seat is not a second brain.
+   *
+   * The seats are filled in order and neither waits for the other: a hull with
+   * one bot in it drives and shoots its cannon exactly as it always did, and a
+   * hull with only a gunner sits still and rakes the street.
    *
    * The numbers below are all about being BEATABLE. A tank AI with the
    * player's reflexes and a 340 m gun is not a vehicle, it is a turret that
@@ -211,6 +215,38 @@ export const vehicles = {
      * the same way out of the same street.
      */
     reverseSteer: 0.7,
+    /**
+     * The SECOND crewman's numbers, and there are only three of them because
+     * everything else about him is the driver's already: the same think clock,
+     * the same one ray per acquisition, the same held target.
+     *
+     * **He is a different bot with a different weapon and therefore a
+     * different set of targets**, which is the whole reason this block is not
+     * empty. A machine gun cannot hurt a hull (`resist.bullet` is 0.05), so a
+     * gunner who acquired armour the way the driver does would spend the
+     * fight rattling rounds off a tank while the squad that came with it
+     * walked past — so his acquisition is infantry-only, by construction, and
+     * `mgRange` is what he can see rather than what the belt can reach.
+     */
+    mgRange: 70,
+    /**
+     * How close the gun must be to the aim order before he fires, in radians.
+     * Far looser than `fireCone`: the shell is a single hitscan round against
+     * a point and this is a stream against a man, so the volume is what
+     * carries it and a cone tight enough for a cannon would be a gun that
+     * never opened up on anything moving.
+     */
+    mgCone: 0.06,
+    /**
+     * Seconds the gun must be settled inside `mgCone` before the belt runs,
+     * and how long it runs for once it does. **A machine gun fires in BURSTS
+     * and this pair is the whole of what says so** — held down it is a
+     * hosepipe that never stops, which is both unfair and unreadable, and the
+     * gap is what lets a man cross the street between two of them.
+     */
+    mgLayTime: 0.3,
+    mgBurst: 0.9,
+    mgPause: 0.7,
   },
   tank: {
     maxHealth: 1200,
@@ -951,6 +987,99 @@ export const vehicles = {
       recoilSpeed: 2.4,
       /** How far the chase camera is kicked by the report, in radians. */
       cameraKick: 0.055,
+    },
+    /**
+     * The COMMANDER's gun: the cupola machine gun the second crewman lays.
+     *
+     * **It is the whole of what the second seat is for**, and every number
+     * below is chosen against the main gun rather than against a rifle,
+     * because what this weapon has to be is the answer to the thing armour
+     * could not touch before: infantry inside the reload. A shell every 3.6
+     * seconds against a squad crossing a street is one dead man and a crater;
+     * the same seat with a belt-fed gun on it is a tank that can be a tank
+     * while it is loading.
+     *
+     * The mount is a RING on the cupola, so it traverses independently of the
+     * turret under it and of the hull under that — see `Tank.aimMg`. What it
+     * cannot do is hurt the thing the main gun exists for: the round is a
+     * `bullet`, so `resist.bullet` (0.05) applies and a full belt into another
+     * hull is worth about as much as a rifle magazine. That is the point
+     * rather than a limitation — a second gun that could kill armour would
+     * make the first one decoration.
+     */
+    mg: {
+      /**
+       * Per round, close in. Above the rifle's 26 because this is a heavier
+       * calibre on a mount rather than a shoulder, and below anything that
+       * would make it a one-round kill: three hits at the near band, four
+       * across the falloff.
+       */
+      damage: 42,
+      /** …and at `falloffFar`. A belt-fed gun loses more than a rifle does. */
+      damageFar: 20,
+      falloffNear: 60,
+      falloffFar: 170,
+      /** Where the round stops, and what bounds the near-miss sweep with it. */
+      range: 190,
+      /**
+       * Rounds a second. Fast enough to read as automatic and slow enough that
+       * the eight-round burst a gunner actually squeezes is countable — and
+       * deliberately under the rifle's rate, because this is the gun that
+       * never has to reload.
+       */
+      fireRate: 9,
+      /**
+       * The cone, in radians at the muzzle. **Wider than any carried weapon's
+       * hip spread on purpose**: the gunner is laying a gun on a ring from
+       * twelve metres behind it and has no ADS to tighten it with, so the
+       * accuracy has to come from the volume rather than from the shot. About
+       * 1.4 deg — a metre and a half at 60 m.
+       */
+      spread: 0.024,
+      /**
+       * rad/s of traverse and elevation, and the acceleration behind each.
+       * Roughly five times the turret's, because what is being swung is a gun
+       * on a ring rather than sixty tonnes of casting — a gunner tracking a
+       * running man has to be able to keep up with one.
+       */
+      traverseRate: 3.4,
+      elevationRate: 2.8,
+      traverseAccel: 16,
+      elevationAccel: 14,
+      /**
+       * The same time constant the turret closes its last degree on, and it is
+       * here rather than shared for the reason the rates are: this axis is an
+       * order of magnitude lighter, and a lag sized for a turret would be a
+       * gun that visibly trails the reticle. See `turret.settleTime` for what
+       * the number IS.
+       */
+      settleTime: 0.03,
+      /**
+       * How far the gun depresses and elevates. -11 deg to +42 deg — far more
+       * elevation than the main gun, which is what a cupola mount is for: the
+       * upper floors and the rooflines the turret cannot reach.
+       */
+      pitchMin: -0.19,
+      pitchMax: 0.73,
+      /** How far the chase camera is kicked per round. A twentieth of the shell's. */
+      cameraKick: 0.0028,
+      /**
+       * What it SOUNDS like, as `ReportVoice` states it — a field per way this
+       * differs from the rifle, which is the reference with every number 1.
+       * Deeper and heavier than a rifle and much shorter than the cannon: a
+       * heavy machine gun is a series of flat cracks with a lot of chest in
+       * them and almost no ring, because the next one is 110 ms away.
+       */
+      report: {
+        pitch: 0.78,
+        level: 1.15,
+        snap: 1.25,
+        weight: 1.5,
+        length: 0.72,
+        tail: 0.9,
+        actionPitch: 0.8,
+        actionVol: 1.2,
+      },
     },
     /**
      * What a tank actually FEELS of each kind of damage, as a multiplier on the

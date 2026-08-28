@@ -21,6 +21,7 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../src/config";
 import type { Combatant, Team } from "../src/entities/Combatant";
+import { DRIVER, type CrewSeat } from "../src/entities/Tank";
 import type { DamageKind } from "../src/systems/CombatSystem";
 import { Leash } from "../src/world/leash";
 
@@ -141,6 +142,21 @@ export class NetPlayer implements Combatant {
    * them.
    */
   seat = -1;
+
+  /**
+   * …and WHICH of that hull's two jobs — `DRIVER` or `GUNNER`. Meaningless
+   * while `seat` is -1, and written only through `HeadlessGame.seat` beside
+   * it.
+   *
+   * It is what decides whether a reported hull (`drive`) is believed or
+   * dropped, which of the hull's two guns a claimed round may have come out
+   * of, and which slot this player fills in the snapshot's `by`/`by2` pair.
+   * A second field rather than a richer `seat` because every existing reader
+   * of `seat` asks "is this player in that hull" and none of them cares which
+   * chair — see `Game.drivingSeat`, which makes the same split for the same
+   * reason.
+   */
+  crewSeat: CrewSeat = DRIVER;
 
   /**
    * True while this body is riding in a hull: nothing may hurt it, because the
@@ -312,6 +328,7 @@ export class NetPlayer implements Combatant {
     // would send every one of this player's reported walks through the hull
     // validator.
     this.seat = -1;
+    this.crewSeat = DRIVER;
     this.invulnerable = false;
     this.alive = true;
     this.crouching = false;
@@ -334,6 +351,7 @@ export class NetPlayer implements Combatant {
     // fastens: a retired player holding a seat index is one whose hull can
     // never be offered to anybody again.
     this.seat = -1;
+    this.crewSeat = DRIVER;
     this.invulnerable = false;
     // A rotation retires everybody and then builds a different map. The request
     // is an index into the OLD map's spawn table, so carrying it across would

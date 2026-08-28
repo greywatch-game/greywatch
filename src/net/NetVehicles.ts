@@ -12,12 +12,23 @@
  * burning, a wreck being taken away — arrived from the authority, and this
  * class only reports what it was told.
  *
- * **The local player's own hull is not in here**, and that is the same filter
- * `NetGrenades` applies to the thrower's own grenade rather than an omission:
- * a driver simulates their own tank exactly as they simulate their own body
- * (see `DriveMessage`), and drawing the authority's copy of it as well would
- * be two tanks a tenth of a second apart with one set of tracks between them.
- * `VehicleState.by` is what says which one that is.
+ * **Everything the authority sends is kept, and what the local player OWNS is
+ * refused at the READ.** A driver simulates their own tank exactly as they
+ * simulate their own body (see `DriveMessage`), and drawing the authority's
+ * copy of it as well would be two tanks a tenth of a second apart with one set
+ * of tracks between them — so `Game.vehicleOrders` declines `stateFor` for the
+ * hull under its own driver, and declines `mgFor` for the gun under its own
+ * gunner.
+ *
+ * **The two refusals are separate because a hull holds two people**, which is
+ * why they are not made here. This class used to drop the whole sample for the
+ * hull carrying the local slot, which was right while a hull held one person:
+ * whatever was in that frame was that person's own work. It is wrong now — a
+ * driver who skipped it would never be told where the gunner sitting beside
+ * him had pointed the cupola gun, and a gunner who skipped it would never be
+ * told where the tank under him had got to. `VehicleState.by`/`by2` are what
+ * say who owns which half; the decision is one layer up, where the seat is
+ * known.
  *
  * A hull that stops appearing in snapshots has been taken off the field, and
  * it is reported gone on the snapshot that drops it rather than played out to
@@ -25,6 +36,7 @@
  * gives. The cost is the last `interpDelay` of a wreck standing still, which
  * is nothing at all.
  */
+import type { GunAngles } from "../entities/Tank";
 import type { RemoteHull } from "../systems/VehicleSystem";
 import type { Snapshot } from "./protocol";
 
@@ -37,6 +49,9 @@ interface Sample {
   yaw: number;
   tyaw: number;
   gun: number;
+  /** The CUPOLA gun's own two angles — see `VehicleState.mgy`. */
+  mgy: number;
+  mgp: number;
 }
 
 /** How many samples to keep. Two is the minimum to interpolate; more absorbs jitter. */
@@ -49,8 +64,10 @@ interface Ghost {
   alive: boolean;
   /** What is left of it. See `VehicleState.hp`. */
   hp: number;
-  /** The roster slot inside it, or -1. See `VehicleState.by`. */
+  /** The roster slot in its DRIVER seat, or -1. See `VehicleState.by`. */
   by: number;
+  /** …and in its GUNNER seat. See `VehicleState.by2`. */
+  by2: number;
   /**
    * True once at least one sample has been resolved, which is what `Game`
    * keys a hull's first PLACEMENT off.
@@ -64,6 +81,13 @@ interface Ghost {
   readonly samples: Sample[];
   /** Where the interpolation put it this frame. Reused; never allocated. */
   readonly state: RemoteHull;
+  /**
+   * …and where it put the cupola gun. A second object rather than two more
+   * fields on `state` because the two are handed to two different callers:
+   * `remoteFor` poses a hull and `remoteGunFor` lays one gun, and a client
+   * whose player is on that gun takes the first and refuses the second.
+   */
+  readonly mg: GunAngles;
 }
 
 export class NetVehicles {
@@ -84,10 +108,11 @@ export class NetVehicles {
    * Takes a snapshot's hulls: a sample for every one still on the field, and
    * the end of every one that is not.
    *
-   * `localSlot` is this client's own roster slot, and the hull it is sitting
-   * in is skipped — see the header.
+   * Nothing is skipped and no slot is needed to decide what to keep — see the
+   * header: what this client owns is refused by `Game` at the read, because
+   * that is the only place that knows which SEAT it is in.
    */
-  applySnapshot(snap: Snapshot, localSlot: number): void {
+  applySnapshot(snap: Snapshot): void {
     this.seen.clear();
     for (const v of snap.vehicles ?? []) {
       const ghost = this.ghost(v.i);
@@ -100,7 +125,15 @@ export class NetVehicles {
       ghost.alive = v.alive;
       ghost.hp = v.hp;
       ghost.by = v.by;
-      if (v.by === localSlot) continue;
+      ghost.by2 = v.by2 ?? -1;
+      // **Every sample is kept, and what this client OWNS is refused at the
+      // read instead** — see `stateFor` and `mgFor`. It used to be dropped
+      // here, on the one hull carrying the local slot, which was right while a
+      // hull held one person: whatever else was in the frame was that person's
+      // own. With two seats the frame carries two people's work, and a driver
+      // who skipped it would never be told where the gunner beside him had
+      // pointed the cupola gun. The cost of keeping it is a lerp per snapshot
+      // on one hull.
       push(ghost.samples, {
         t: snap.now,
         x: v.p[0],
@@ -109,6 +142,8 @@ export class NetVehicles {
         yaw: v.yaw,
         tyaw: v.tyaw,
         gun: v.gun,
+        mgy: v.mgy ?? 0,
+        mgp: v.mgp ?? 0,
       });
     }
     for (const [i, ghost] of this.ghosts.entries()) {
@@ -140,6 +175,10 @@ export class NetVehicles {
       s.yaw = a.yaw + wrap(b.yaw - a.yaw) * blend;
       s.turretYaw = a.tyaw + wrap(b.tyaw - a.tyaw) * blend;
       s.gunPitch = a.gun + (b.gun - a.gun) * blend;
+      // The cupola gun's bearing goes the short way round for the turret's
+      // reason — it is a world angle and crosses north like any other.
+      ghost.mg.yaw = a.mgy + wrap(b.mgy - a.mgy) * blend;
+      ghost.mg.pitch = a.mgp + (b.mgp - a.mgp) * blend;
       ghost.posed = true;
     }
   }
@@ -160,6 +199,23 @@ export class NetVehicles {
       : null;
   }
 
+  /**
+   * Where hull `i`'s CUPOLA gun should be laid this frame, or null for one
+   * this client is not being told about.
+   *
+   * `stateFor`'s twin, and the two are asked separately because the two seats
+   * are two people: a client driving a hull still needs this (somebody else is
+   * on that gun), and a client ON that gun refuses it and lays it locally.
+   * `Game.vehicleOrders` is where each of those carve-outs is made — this is
+   * only the buffer.
+   */
+  mgFor(i: number): GunAngles | null {
+    const ghost = this.ghosts[i];
+    return ghost && ghost.present && ghost.posed && ghost.samples.length > 0
+      ? ghost.mg
+      : null;
+  }
+
   /** Is hull `i` on the field at all? False before the first snapshot names it. */
   present(i: number): boolean {
     return this.ghosts[i]?.present ?? false;
@@ -175,9 +231,17 @@ export class NetVehicles {
     return this.ghosts[i]?.hp ?? 0;
   }
 
-  /** The roster slot inside hull `i`, or -1. The one source for occupancy. */
+  /**
+   * The roster slot DRIVING hull `i`, or -1. The one source for that half of
+   * occupancy.
+   */
   occupant(i: number): number {
     return this.ghosts[i]?.by ?? -1;
+  }
+
+  /** …and the slot on its cupola gun, or -1. See `VehicleState.by2`. */
+  gunner(i: number): number {
+    return this.ghosts[i]?.by2 ?? -1;
   }
 
   /**
@@ -190,7 +254,7 @@ export class NetVehicles {
    */
   riding(slot: number): boolean {
     for (const ghost of this.ghosts) {
-      if (ghost.present && ghost.by === slot) return true;
+      if (ghost.present && (ghost.by === slot || ghost.by2 === slot)) return true;
     }
     return false;
   }
@@ -217,9 +281,11 @@ export class NetVehicles {
         alive: false,
         hp: 0,
         by: -1,
+        by2: -1,
         posed: false,
         samples: [],
         state: { x: 0, y: 0, z: 0, yaw: 0, turretYaw: 0, gunPitch: 0 },
+        mg: { yaw: 0, pitch: 0 },
       };
     }
     ghost = this.ghosts[i];
@@ -231,6 +297,7 @@ export class NetVehicles {
     ghost.alive = false;
     ghost.hp = 0;
     ghost.by = -1;
+    ghost.by2 = -1;
     ghost.posed = false;
     ghost.samples.length = 0;
   }

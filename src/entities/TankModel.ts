@@ -1,7 +1,8 @@
 /**
  * TankModel.ts — The one vehicle's mesh: ~180 boxes and cylinders merged down
- * to twenty-four, with a turret and a gun that turn, tracks that RUN, two
- * antennae that BEND, and the charred repaint a wreck takes.
+ * to twenty-six, with a turret and a gun that turn, a cupola gun that turns
+ * independently of both, tracks that RUN, two antennae that BEND, and the
+ * charred repaint a wreck takes.
  * Owns: the ART. Every extent in here is a drawing decision and belongs to this
  * file; the extents that are RULES — the collider box, the hit sphere, the
  * cupola a bot aims at — are `CONFIG.vehicles.tank` and are read, not restated.
@@ -16,10 +17,10 @@
  *   so this model's cost is COLOURS PER SEGMENT and not boxes. A hundred and
  *   eighty parts come out as twenty-four meshes, and a wheel that costs sixty
  *   triangles instead of twelve costs nothing at all — see `Cyl`. **Four of the
- *   twenty-four are there because a mesh that MOVES differently cannot merge
+ *   twenty-six are there because a mesh that MOVES differently cannot merge
  *   with anything**, which is the one thing that buys a mesh here: six for the
- *   tracks, four for the two antennae, and nothing else in the model has earned
- *   one.
+ *   tracks, four for the two antennae, two for the commander's gun on its own
+ *   ring, and nothing else in the model has earned one.
  * - **The joints are `TransformNode`s above the merged meshes**, so the turret
  *   traversing, the gun elevating and the tracks running are transforms and
  *   never a re-merge.
@@ -343,6 +344,20 @@ export interface TankRig {
   gun: TransformNode;
   /** The barrel's tip: where a shell leaves and where its flash is lit. */
   muzzle: TransformNode;
+  /**
+   * The commander's gun on its cupola ring: the mount TRAVERSES (local yaw,
+   * relative to the turret it is bolted to) and the gun ELEVATES on it.
+   *
+   * **The turret is the parent and the angle held is a WORLD one anyway**,
+   * which is the whole of what makes the second seat a second seat: `Tank`
+   * holds `mgYaw` in the world exactly as it holds `turretYaw`, and writes the
+   * DIFFERENCE here — so a turret traversing under a gunner who is not
+   * touching anything leaves his gun laid where he laid it.
+   */
+  mgMount: TransformNode;
+  mgGun: TransformNode;
+  /** Where a machine-gun round leaves, and where its flash is lit. */
+  mgMuzzle: TransformNode;
   /** `[left, right]` — the side at -x first, the order `Tank` runs them in. */
   tracks: readonly [TrackSide, TrackSide];
   /** The two masts, long one first — the order `ANTENNA_LENGTHS` is in. */
@@ -700,16 +715,14 @@ export function buildTank(
 
   segment("tank-turret-stow", turret, [
     // The bin along the bustle roof, the smoke dischargers' brackets and the
-    // two antenna mounts, plus the commander's gun. Two colours and therefore
-    // two meshes: the gun is the one thing up here that must not read as
-    // stowage. The MASTS themselves are not in here and cannot be — see the
-    // antennae below.
+    // two antenna mounts. The MASTS themselves are not in here and cannot be —
+    // see the antennae below — and neither is the commander's GUN, for the
+    // identical reason one scale down: it traverses on its own ring.
     [1.9, 0.42, 0.62, 0, 0.72, -1.92, kit.stow],
     [0.52, 0.3, 0.22, 1.12, 0.62, 0.32, kit.stow, 0, -0.34],
     [0.52, 0.3, 0.22, -1.12, 0.62, 0.32, kit.stow, 0, 0.34],
-    // The commander's machine gun, on a mount at his hatch.
-    [0.16, 0.16, 0.24, -0.62, cupolaY + 0.34, 0.42, kit.track],
-    [0.11, 0.11, 0.86, -0.62, cupolaY + 0.42, 0.72, kit.track],
+    // The commander's gun is NOT in here any more and cannot be: it is laid by
+    // a second crewman on a ring of its own, which is a joint. See `mgMount`.
   ], [
     // Three smoke dischargers a side, all in the colour the brackets above
     // already carry, so the lot is free.
@@ -732,6 +745,52 @@ export function buildTank(
     [1.1, 0.12, 0.14, 0, 0.5, -2.33, kit.accent],
     [0.44, 0.06, 0.44, 0.55, 0.9, -1.1, kit.accent],
   ]);
+
+  // --- the commander's gun: a ring on the cupola, laid by the SECOND man ----
+  //
+  // Three more nodes and two more meshes, and they buy the only thing on this
+  // vehicle that can be pointed somewhere the main gun is not. The mount YAWS
+  // on the cupola ring and the gun ELEVATES in its trunnion, exactly as the
+  // turret and the barrel do one scale up — and for the same reason they are
+  // nodes rather than boxes in the stow merge: a part that moves differently
+  // from the thing it is bolted to cannot share a mesh with it.
+  //
+  // **The pivot is the CUPOLA's own axis and not where the gun is drawn.** A
+  // ring turns about the hatch it rings; hung off the gun's own station it
+  // would swing the whole weapon round the commander's head on a half-metre
+  // arm, which reads as a gun on a boom rather than one on a mount.
+  const mgMount = new TransformNode("tank-mg", scene);
+  mgMount.parent = turret;
+  mgMount.position.set(-0.62, cupolaY + 0.3, 0.15);
+  segment("tank-mg-ring", mgMount, [
+    // The ring itself and the pintle standing out of its front. Both turn with
+    // the mount, which is what makes the traverse legible from outside: the
+    // post is off-centre, so a gun laid abeam is visibly a gun that has been
+    // laid rather than one that happens to point that way.
+    [0.34, 0.08, 0.34, 0, -0.06, 0, kit.track],
+    [0.1, 0.18, 0.1, 0, 0.04, 0.16, kit.track],
+  ]);
+  const mgGun = new TransformNode("tank-mg-gun", scene);
+  mgGun.parent = mgMount;
+  mgGun.position.set(0, 0.12, 0.16);
+  segment("tank-mg-m", mgGun, [
+    // The receiver, its box magazine and the spade grips behind it — the three
+    // shapes that make a heavy machine gun read as one at ten metres.
+    [0.16, 0.16, 0.5, 0, 0, 0.02, kit.track],
+    [0.13, 0.2, 0.2, 0.14, -0.02, -0.02, kit.track],
+    [0.26, 0.05, 0.14, 0, 0.02, -0.26, kit.track],
+  ], [
+    // A ROUND barrel with a jacket at its root, for the reason the main gun's
+    // is round: a square pipe is a girder. It reaches 0.86 forward of the
+    // trunnion, which is where `mgMuzzle` sits.
+    [0.13, 0.26, 0, 0.02, 0.38, kit.track, "z"],
+    [0.08, 0.62, 0, 0.02, 0.72, kit.track, "z", 0.07],
+  ]);
+  const mgMuzzle = new TransformNode("tank-mg-muzzle", scene);
+  mgMuzzle.parent = mgGun;
+  // Just past the barrel, so a flash lit here is outside it and a round fired
+  // from here starts outside the turret's own geometry.
+  mgMuzzle.position.set(0, 0.02, 1.1);
 
   // --- the antennae: the only parts of this vehicle that BEND ---------------
   //
@@ -803,7 +862,11 @@ export function buildTank(
 
   for (const m of meshes) addOutline(m, 0.02);
 
-  return { root, hull, sprung, turret, gun, muzzle, tracks, antennae, meshes, livery };
+  return {
+    root, hull, sprung, turret, gun, muzzle,
+    mgMount, mgGun, mgMuzzle,
+    tracks, antennae, meshes, livery,
+  };
 }
 
 /**
@@ -882,6 +945,8 @@ export function resetTankPose(rig: TankRig, mats: CelMaterialFactory): void {
   rig.sprung.rotation.set(0, 0, 0);
   rig.turret.rotation.set(0, 0, 0);
   rig.gun.rotation.set(0, 0, 0);
+  rig.mgMount.rotation.set(0, 0, 0);
+  rig.mgGun.rotation.set(0, 0, 0);
   setTrackRun(rig, 0, 0);
   setAntennaBend(rig, 0, 0, 0, 0, 0);
   setAntennaBend(rig, 1, 0, 0, 0, 0);

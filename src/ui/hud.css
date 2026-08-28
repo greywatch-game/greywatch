@@ -1262,6 +1262,33 @@
 #vehicle.hurt .veh-bar.hull i { background: var(--theirs); }
 #vehicle.hurt .veh-hp { color: var(--theirs); }
 #vehicle.loading .veh-gun { color: rgba(255, 255, 255, 0.45); }
+/* Which seat this player is in, and the key out of it. It sits UNDER the two
+   bars rather than above them because it is the one line here that is about
+   the person and not the vehicle: the hull and the gun are what a commander
+   watches, and this is what he already knows and only needs confirming. */
+#vehicle .veh-seat {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+#vehicle .veh-post {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: var(--hot);
+}
+#vehicle .veh-swap {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.45);
+}
+/* A gunner's own gun has no magazine, so the loader row is the HULL's news
+   rather than his: dimmed to the weight of a caption, still legible, because
+   how long until the main gun can fire again is exactly what the man on the
+   cupola wants to know. */
+#vehicle.gunner .veh-gun,
+#vehicle.gunner .veh-bar.load i { opacity: 0.5; }
 
 /* The gun's own reticle, drawn where the barrel points rather than at the
    centre of the screen. Four ticks with a hole in the middle, so it reads as

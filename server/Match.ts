@@ -47,6 +47,7 @@ import {
   isEquipmentId,
   type EquipmentId,
 } from "../src/entities/equipment";
+import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/Tank";
 import { MAPS } from "../src/world/maps";
 import { HeadlessGame } from "./HeadlessGame";
 import { Roster } from "./Roster";
@@ -410,6 +411,13 @@ export class Match {
    */
   private readonly lastOrdnance: number[] = [];
   private readonly lastShell: number[] = [];
+  /**
+   * The same clock for the CUPOLA gun, and a second array rather than a second
+   * meaning on the one above: a hull has two guns with two triggers and two
+   * people, and one timestamp shared between them would let either seat's fire
+   * rate-limit the other's.
+   */
+  private readonly lastMg: number[] = [];
 
   /**
    * The `AntiTankSystem.version` the clients have been told about, or -1 for
@@ -597,7 +605,7 @@ export class Match {
       this.queueTo(
         player.slot,
         tank >= 0
-          ? { e: "seat", slot: player.slot, tank }
+          ? { e: "seat", slot: player.slot, tank, seat: player.crewSeat }
           : { e: "seat", slot: player.slot, tank, pos: [at.x, at.y, at.z], yaw },
       );
     // Glass. One event for however many panes the round crossed, carrying the
@@ -820,6 +828,7 @@ export class Match {
     delete this.lastShot[peer.slot];
     delete this.lastOrdnance[peer.slot];
     delete this.lastShell[peer.slot];
+    delete this.lastMg[peer.slot];
     delete this.lastReload[peer.slot];
     delete this.lastSeen[peer.slot];
     const slot = this.roster.release(peer.id);
@@ -1150,10 +1159,12 @@ export class Match {
     // above: a client hides whatever this snapshot did not mention, and the
     // hardstanding's index brings the fresh one back under the same name.
     //
-    // `by` is the roster slot inside it, and it is the one place occupancy is
-    // stated — see `VehicleState.by`. A bot crew puts a slot here exactly as a
-    // person does, which is what stops a client drawing a crewman standing in
-    // the street beside the tank he is driving.
+    // `by`/`by2` are the roster slots in its two seats, and they are the one
+    // place occupancy is stated — see `VehicleState.by`. A bot crew puts a
+    // slot there exactly as a person does, which is what stops a client
+    // drawing a crewman standing in the street beside the tank he is riding.
+    // The two angles beside the turret's are the CUPOLA gun's, which is laid
+    // by the second of them and by nothing else.
     this.vehicleScratch.length = 0;
     for (const [i, tank] of this.game.vehicles.tanks.entries()) {
       if (!tank.body.isEnabled()) continue;
@@ -1163,9 +1174,12 @@ export class Match {
         yaw: tank.yaw,
         tyaw: tank.turretYaw,
         gun: tank.gunPitch,
+        mgy: tank.mgYaw,
+        mgp: tank.mgPitch,
         alive: tank.alive,
         hp: tank.health,
-        by: this.occupantOf(i),
+        by: this.occupantOf(i, DRIVER),
+        by2: this.occupantOf(i, GUNNER),
       });
     }
 
@@ -1378,9 +1392,11 @@ export class Match {
       case "grenade":
       case "reload":
       case "drive":
+      case "gunner":
       case "mount":
       case "dismount":
       case "shell":
+      case "mg":
       case "ordnance":
         // The four that belong to a round in progress, gated on the same fact
         // `step` is: between a round ending and the next one being built there
@@ -1400,9 +1416,11 @@ export class Match {
         else if (msg.t === "shot") this.onShot(peer, msg);
         else if (msg.t === "grenade") this.onGrenade(peer, msg);
         else if (msg.t === "drive") this.onDrive(peer, msg);
+        else if (msg.t === "gunner") this.onGunner(peer, msg);
         else if (msg.t === "mount") this.onMount(peer, msg);
         else if (msg.t === "dismount") this.onDismount(peer);
         else if (msg.t === "shell") this.onShell(peer, msg);
+        else if (msg.t === "mg") this.onMg(peer, msg);
         else if (msg.t === "ordnance") this.onOrdnance(peer, msg);
         else this.onReload(peer);
         break;
@@ -1480,11 +1498,13 @@ export class Match {
     // A dead player reports nothing worth keeping. Their body is wherever they
     // fell and the server owns it until they redeploy.
     if (!player.alive) return;
-    // …and neither does a driver: their body is the HULL's, written by the
-    // step loop off the tank every frame, and a `move` accepted here would put
-    // one person in two places for as long as the packets kept arriving. A
-    // client in a seat sends `drive` instead — see `DriveMessage` on why it
-    // replaces this message rather than riding beside it.
+    // …and neither does anybody in a hull: their body is the HULL's, written
+    // by the step loop off the tank every frame, and a `move` accepted here
+    // would put one person in two places for as long as the packets kept
+    // arriving. A client in a seat sends `drive` or `gunner` instead — see
+    // `DriveMessage` and `GunnerMessage` on why they replace this message
+    // rather than riding beside it. Gated on `seat` rather than on which
+    // chair, deliberately: a gunner has no body of their own either.
     if (player.seat >= 0) return;
 
     const [x, y, z] = msg.pos;
@@ -1765,6 +1785,25 @@ export class Match {
   private onMount(peer: Peer, msg: Extract<ClientMessage, { t: "mount" }>): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
+    // The chair asked for, as a PREFERENCE — see `MountMessage.seat`. Anything
+    // that is not the gunner's is the driver's, so a nonsense index is a
+    // request for the ordinary thing rather than a refusal.
+    const want: CrewSeat = msg.seat === GUNNER ? GUNNER : DRIVER;
+    // **A peer already in this hull asking for its other chair is a SWAP**,
+    // and it is granted here rather than through the offer below because
+    // `seatOffered` refuses a player who is already seated — which is right
+    // for the question it answers (may this body climb aboard) and wrong for
+    // this one. `HeadlessGame.seat` is still the one door: it releases the old
+    // chair, refuses if the new one is taken, and leaves everything about the
+    // BODY standing, because none of that was ever about which seat.
+    if (player.seat === msg.tank && player.seat >= 0) {
+      const hull = this.game.hullOf(player);
+      if (hull && want !== player.crewSeat && !hull.seats[want]) {
+        this.game.seat(player, hull, want);
+      }
+      this.game.onSeatChanged(player, player.seat, player.position, player.yaw);
+      return;
+    }
     const offered = this.game.seatOffered(player);
     // Named hull and offered hull must be the SAME hull. The client picked one
     // and this is the authority's own answer to the same question; granting
@@ -1774,7 +1813,7 @@ export class Match {
       offered && this.game.vehicles.tanks.indexOf(offered) === msg.tank
         ? offered
         : null;
-    const taken = tank ? this.game.seat(player, tank) : null;
+    const taken = tank ? this.game.seat(player, tank, want) : null;
     this.game.onSeatChanged(
       player,
       taken ? msg.tank : -1,
@@ -1803,6 +1842,36 @@ export class Match {
   }
 
   /**
+   * A gunner's reported cupola-gun bearing. `onDrive` for the second seat.
+   *
+   * **There is nothing to validate and that is the whole difference.** A hull
+   * is a position, so a reported one is a claim about the world and goes
+   * through `validateDrive`; a bearing claims nothing at all — the worst a
+   * lying client can do is point a machine gun somewhere a ring could not have
+   * swung it, which buys nothing, because the ROUND is re-resolved on this
+   * side against the same cone check every other shot takes.
+   *
+   * The seat is checked rather than assumed for `onDrive`'s reason: a `gunner`
+   * naming a hull this player is not on the gun of is dropped, not obeyed.
+   * Getting onto that gun is `onMount`'s, and it is one door for the reason
+   * spawning is one door.
+   */
+  private onGunner(peer: Peer, msg: Extract<ClientMessage, { t: "gunner" }>): void {
+    const player = this.game.players.get(peer.slot);
+    if (!player || !player.alive) return;
+    if (msg.seq <= player.seq) return;
+    if (player.seat !== msg.tank || player.crewSeat !== GUNNER) return;
+    player.seq = msg.seq;
+    peer.seq = msg.seq;
+    // The LOOK, kept on the body it belongs to — the chase camera's aim, and
+    // what the machine gun's own cone is measured against, exactly as
+    // `onDrive` keeps a driver's for the shell's.
+    player.yaw = msg.myaw;
+    player.pitch = msg.mpitch;
+    this.game.applyGun(player, msg.myaw, msg.mpitch);
+  }
+
+  /**
    * A shell a client says it fired. The authority decides what it hit.
    *
    * `onShot`'s three gates, minus the one that does not apply: there is no
@@ -1815,6 +1884,11 @@ export class Match {
   private onShell(peer: Peer, msg: Extract<ClientMessage, { t: "shell" }>): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
+    // The main gun is the DRIVER's, and a gunner claiming one is a confused
+    // client at best — the trigger in that seat fires the cupola gun and
+    // reaches `onMg` instead. The two guns are two arms rather than a branch
+    // for exactly this: each is gated on the chair that holds it.
+    if (player.crewSeat !== DRIVER) return;
     const tank = this.game.hullOf(player);
     if (!tank) return;
 
@@ -1850,6 +1924,49 @@ export class Match {
     // own reload — which is the whole security property, and the reason the
     // checks above bound a LIE rather than measure an aim.
     if (this.game.resolveShell(tank, player)) this.lastShell[peer.slot] = now;
+  }
+
+  /**
+   * A round out of the cupola gun a client says it fired. `onShell`'s twin,
+   * with the three gates sized for the other weapon.
+   *
+   * The RATE gate is the same cheap refusal in front of `Tank.fireMg`, which
+   * owns the real one, and it is per-ROUND rather than per-reload: nine a
+   * second, so the slack is the same tenth. The CONE is measured against the
+   * gunner's reported look, which for this seat is the gun's own order — the
+   * ring is light and settles in a fraction of a second, so the two differ by
+   * far less than the turret's do and `SHELL_CONE_COS` is generous for both.
+   * The ORIGIN is bounded to the hull for `onShell`'s reason.
+   */
+  private onMg(peer: Peer, msg: Extract<ClientMessage, { t: "mg" }>): void {
+    const player = this.game.players.get(peer.slot);
+    if (!player || !player.alive) return;
+    if (player.crewSeat !== GUNNER) return;
+    const tank = this.game.hullOf(player);
+    if (!tank) return;
+
+    const now = Date.now();
+    const gap = (1000 / CONFIG.vehicles.tank.mg.fireRate) * 0.9;
+    if (now - (this.lastMg[peer.slot] ?? 0) < gap) return;
+    const [dx, dy, dz] = msg.dir;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-3) return;
+    const cp = Math.cos(player.pitch);
+    const aimX = cp * Math.sin(player.yaw);
+    const aimY = Math.sin(player.pitch);
+    const aimZ = cp * Math.cos(player.yaw);
+    if ((dx * aimX + dy * aimY + dz * aimZ) / len < SHELL_CONE_COS) return;
+    const [ox, oy, oz] = msg.origin;
+    if (
+      Math.hypot(ox - tank.center.x, oy - tank.center.y, oz - tank.center.z) >
+      SHELL_ORIGIN_SLACK
+    ) {
+      return;
+    }
+    // …and then nothing of the claim is used, which is `onShell`'s whole
+    // security property one calibre down: the round goes down the authority's
+    // own gun, from its own muzzle, at its own rate.
+    if (this.game.resolveMg(tank, player)) this.lastMg[peer.slot] = now;
   }
 
   /**
@@ -1946,14 +2063,15 @@ export class Match {
    * two things that can be in a tank keep the fact in two different places
    * (`NetPlayer.seat` for a person, `TankCrew`'s pairing for a bot), and a
    * third copy kept in step with both is the copy that would be wrong. It is
-   * sixteen comparisons twenty times a second on a map with armour.
+   * sixteen comparisons twenty times a second on a map with armour, twice
+   * over now that a hull holds two.
    */
-  private occupantOf(i: number): number {
+  private occupantOf(i: number, seat: CrewSeat): number {
     for (const player of this.game.players.values()) {
-      if (player.seat === i) return player.slot;
+      if (player.seat === i && player.crewSeat === seat) return player.slot;
     }
     const tank = this.game.vehicles.tanks[i];
-    const crew = tank ? this.game.crew.crewOf(tank) : null;
+    const crew = tank ? this.game.crew.crewOf(tank, seat) : null;
     return crew ? this.game.battle.bots.indexOf(crew) : -1;
   }
 

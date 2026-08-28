@@ -147,6 +147,25 @@ export class InputManager {
    */
   usePressed = false;
   /**
+   * The OTHER vehicle verb: change seats inside the hull you are already in.
+   *
+   * Keyboard `F`, the pad's Y and the touch layer's swap button — the last two
+   * shared outright with `swapPressed` rather than given bindings of their
+   * own, and that sharing is safe for `usePressed`'s reason one level along:
+   * Y and the swap button change WEAPONS, a driver has no weapons, and there
+   * is no state in which a body is both holding a rifle and sitting in a tank.
+   * `Game` reads exactly one of the two per frame.
+   *
+   * `F` is the keyboard's own because the wheel is not a key and the request
+   * was for one — and because a mounted player's wheel is otherwise the only
+   * way in, which is a control a keyboard player would have to discover by
+   * accident.
+   *
+   * Edge rather than held, for `usePressed`'s reason: the two seats are one
+   * key, so a held one would swap a player back and forth once a frame.
+   */
+  seatPressed = false;
+  /**
    * Keyboard: held Shift. Gamepad: L3 toggles — holding a stick click for a
    * 240 m crossing is miserable, so the pad latches instead.
    *
@@ -358,6 +377,7 @@ export class InputManager {
   private prevReload = false;
   private prevGrenade = false;
   private prevSwap = false;
+  private prevSeat = false;
   private prevSlot = -1;
   /**
    * Wheel travel since the last `update()`, normalised to pixels and consumed
@@ -691,6 +711,13 @@ export class InputManager {
     const swapNow = padLoadout || (t ? t.swap : false);
     this.swapPressed = wheeled || (swapNow && !this.prevSwap);
     this.prevSwap = swapNow;
+    // The seat verb rides the same two devices and adds the one key — see
+    // `seatPressed`. It is a separate edge rather than the same one because
+    // `swapPressed` folds the WHEEL in unlatched, and a wheel spun while
+    // mounted would otherwise change seats once per notch.
+    const seatNow = this.keys.has("KeyF") || swapNow;
+    this.seatPressed = seatNow && !this.prevSeat;
+    this.prevSeat = seatNow;
 
     // …and naming a slot outright. Nothing on the pad: there is no button left
     // for it, and Y already reaches both weapons in the two presses this saves.
@@ -954,6 +981,7 @@ const BOUND_CODES = new Set([
   "KeyR",
   "KeyC",
   "KeyE",
+  "KeyF",
   "KeyG",
   "KeyL",
   "Digit1",

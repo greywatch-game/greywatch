@@ -2,10 +2,29 @@
  * Tank.ts — One vehicle: what it is made of physically, how it drives, where
  * its gun points, and what it feels of a round.
  * Owns: the hull's collider mesh, the `TankRig` hanging off it, the drive
- * state, the turret and gun angles, the magazine clock, and the health.
+ * state, the turret and gun angles, the CUPOLA gun's own two angles, both
+ * weapons' clocks, which of its two seats are filled, and the health.
  * Owns NO rules about who is in it, when it respawns or what its shell does
  * when it lands — those are `VehicleSystem`'s and `Game`'s respectively, the
  * same split `Bot` has against `BattleSystem`.
+ *
+ * ## TWO guns, two owners, and one world frame between them
+ *
+ * A hull holds two crewmen (`Tank.seats`, `DRIVER` and `GUNNER`) and each lays
+ * a weapon of his own: the driver traverses the turret and fires the shell,
+ * the gunner turns the commander's machine gun on its cupola ring. **The two
+ * are independent and the independence is bought by one decision** — every
+ * angle on this vehicle is held in the WORLD, and only the drawing is
+ * relative. `turretYaw` is world, so turning the hull under a laid gun does
+ * not drag it; `mgYaw` is world for exactly the same reason one node further
+ * out, so traversing the TURRET under a laid machine gun does not drag that
+ * either. `aimMg` writes both differences onto the rig and nothing else in the
+ * game ever sees a local angle.
+ *
+ * The machine gun is stepped by `VehicleSystem` through `aimMg`/`setMg` rather
+ * than inside `update`, because its owner and the hull's need not be the same
+ * kind of thing — a person can drive a hull off the wire while a bot lays its
+ * cupola gun on the authority. See `aimMg`.
  *
  * ## The one solid mesh in the game that MapBuilder did not make
  *
@@ -203,6 +222,30 @@ export interface DriveInput {
 }
 
 /**
+ * What the SECOND crewman is asking the cupola gun for.
+ *
+ * A type of its own rather than two more fields on `DriveInput`, because the
+ * two are written by two different people: a hull can be driven by one player
+ * with a bot on the gun, or sat still by a gunner with nobody at the sticks,
+ * and a single struct would make either of those a lie about who asked for
+ * what. `VehicleSystem` fetches them separately for exactly that reason.
+ *
+ * Both are WORLD angles and both are ORDERS — `Tank.aimMg` walks the gun to
+ * them at the ring's own rate, which is the same bargain the turret makes and
+ * the same reason the marker drawn from this gun cannot lie either.
+ */
+export interface GunInput {
+  aimYaw: number;
+  aimPitch: number;
+}
+
+/** Where a machine gun somebody ELSE is laying has got to. See `Tank.setMg`. */
+export interface GunAngles {
+  yaw: number;
+  pitch: number;
+}
+
+/**
  * What a tank's main gun's round IS, as `CombatSystem` needs it told.
  *
  * A module constant for the reason `Player.shotOptions` is a held object: the
@@ -232,6 +275,45 @@ export const SHELL_SHOT: ShotOptions = {
   falloffFar: CONFIG.vehicles.tank.gun.range,
   damageKind: "shell",
 };
+
+/**
+ * What a round out of the COMMANDER's gun is, as `CombatSystem` needs it told.
+ *
+ * A module constant beside `SHELL_SHOT` and for its reasons — it is spent from
+ * a per-frame path, and there are two processes firing it. Every field is the
+ * opposite of the shell's, which is the whole point of the second seat:
+ *
+ * - **Fall-off, and a lot of it.** A machine gun is a bullet weapon and loses
+ *   with distance exactly as the rifle does; `CONFIG.vehicles.tank.mg` states
+ *   the band.
+ * - **No `headMult`.** The head zone is the player's alone and this gun is
+ *   fired at bots as often as by the player — see `ShotOptions.headMult`.
+ * - **`bullet`.** Not stated, because absent IS `bullet` and a field saying so
+ *   would be a second place to change it. It is what makes this gun useless
+ *   against armour by construction: `resist.bullet` is 0.05, so a whole belt
+ *   into a hull is worth about a rifle magazine — which is the trade that
+ *   stops a second gun making the first one decoration.
+ */
+export const MG_SHOT: ShotOptions = {
+  damageFar: CONFIG.vehicles.tank.mg.damageFar,
+  falloffNear: CONFIG.vehicles.tank.mg.falloffNear,
+  falloffFar: CONFIG.vehicles.tank.mg.falloffFar,
+};
+
+/**
+ * The two jobs inside a hull, as an index into `Tank.seats`.
+ *
+ * **They are a PAIR and not a list**, which is why this is two constants and a
+ * union rather than an enum that could grow: the driver's seat carries the
+ * sticks and the main gun and the gunner's carries the cupola gun, and a third
+ * would be a body with nothing to do. Everything that crosses the wire, the
+ * roster or the HUD names a seat with one of these two numbers.
+ */
+export type CrewSeat = 0 | 1;
+/** The sticks, the main gun, and the only seat that can move the hull. */
+export const DRIVER: CrewSeat = 0;
+/** The cupola gun, and nothing else at all. */
+export const GUNNER: CrewSeat = 1;
 
 /** A tank standing still, for the frames nobody is driving one. */
 const IDLE: DriveInput = { throttle: 0, steer: 0, aimYaw: 0, aimPitch: 0 };
@@ -453,6 +535,37 @@ export class Tank implements Combatant, RayHull {
   private turretRate = 0;
   private gunRate = 0;
 
+  /**
+   * Which way the COMMANDER's gun points, in world radians, and its elevation.
+   *
+   * **World, exactly as `turretYaw` is, and that is the whole of what makes
+   * the second seat a seat rather than a decoration.** The mount is bolted to
+   * the turret, so a drawn angle relative to it would be dragged round by
+   * every traverse the driver asked for — a gunner laid on a doorway would be
+   * swept off it the moment the main gun moved. Held in the world, the ring
+   * simply turns under the gun and the lay stays where the gunner put it;
+   * `aimMg` writes the DIFFERENCE onto `rig.mgMount` for the drawing, and that
+   * difference is the only thing about this gun that is relative to anything.
+   */
+  mgYaw = 0;
+  mgPitch = 0;
+  private mgYawRate = 0;
+  private mgPitchRate = 0;
+  /**
+   * The turret's world bearing as it was when the machine gun was last
+   * stepped, so an UNMANNED gun can ride the ring it is standing on.
+   *
+   * A gun nobody is laying holds its LOCAL bearing rather than its world one,
+   * which is the opposite of the rule above and is right for the same reason
+   * the rule is: a stowed gun is a lump of steel bolted to a turret, and steel
+   * bolted to a turret goes round with it. Held as the previous angle rather
+   * than derived, because `aimMg` is the only thing that may write `mgYaw` and
+   * a hull can be stepped by either of two methods.
+   */
+  private mgRideYaw = 0;
+  /** Seconds until the machine gun will fire again. */
+  private mgNextT = 0;
+
   /** Along the hull's own forward. Negative is reverse. */
   speed = 0;
   /**
@@ -616,10 +729,25 @@ export class Tank implements Combatant, RayHull {
   wreckT = 0;
 
   /**
-   * Somebody is driving. Written by `VehicleSystem` alone — a tank does not
-   * know what a player is, only whether it is being told what to do.
+   * Who is in this hull, by seat: index `DRIVER` is the sticks and the main
+   * gun, index `GUNNER` is the cupola gun and nothing else.
+   *
+   * Written by `VehicleSystem.setOccupied` alone — a tank does not know what a
+   * player is, only whether each of its two jobs is being done. It is a pair
+   * of booleans rather than a count because the two seats are not
+   * interchangeable: the question every caller asks is "is the DRIVER's seat
+   * free", never "how many are aboard".
    */
-  occupied = false;
+  readonly seats: [boolean, boolean] = [false, false];
+
+  /**
+   * Is anybody at all in here? What the boarding sweep and the wreck clock
+   * ask, and it is a getter over `seats` rather than a field beside it because
+   * two facts about one thing are two facts that can disagree.
+   */
+  get occupied(): boolean {
+    return this.seats[DRIVER] || this.seats[GUNNER];
+  }
 
   /**
    * True for a hull in a NETPLAY round: it refuses local damage, exactly as
@@ -756,6 +884,12 @@ export class Tank implements Combatant, RayHull {
     this.gunPitch = 0;
     this.turretRate = 0;
     this.gunRate = 0;
+    this.mgYaw = yaw;
+    this.mgPitch = 0;
+    this.mgYawRate = 0;
+    this.mgPitchRate = 0;
+    this.mgRideYaw = yaw;
+    this.mgNextT = 0;
     this.speed = 0;
     this.trackRun[0] = 0;
     this.trackRun[1] = 0;
@@ -791,7 +925,8 @@ export class Tank implements Combatant, RayHull {
     this.leadSign = 1;
     this.reloadT = 0;
     this.wreckT = 0;
-    this.occupied = false;
+    this.seats[DRIVER] = false;
+    this.seats[GUNNER] = false;
     this.floorY = pos.y;
     this.needsGround = true;
     this.body.position.set(pos.x, pos.y + t.hull.height / 2, pos.z);
@@ -867,6 +1002,141 @@ export class Tank implements Combatant, RayHull {
   /** The barrel's tip in world space: where a shell starts and its flash is lit. */
   muzzleToRef(out: Vector3): Vector3 {
     return out.copyFrom(this.rig.muzzle.getAbsolutePosition());
+  }
+
+  /** Where the COMMANDER's gun points, in the world. Never where the turret does. */
+  mgDirToRef(out: Vector3): Vector3 {
+    const cp = Math.cos(this.mgPitch);
+    return out.set(
+      cp * Math.sin(this.mgYaw),
+      Math.sin(this.mgPitch),
+      cp * Math.cos(this.mgYaw),
+    );
+  }
+
+  /** The cupola gun's muzzle in world space: where a round starts and its flash is lit. */
+  mgMuzzleToRef(out: Vector3): Vector3 {
+    return out.copyFrom(this.rig.mgMuzzle.getAbsolutePosition());
+  }
+
+  /** Is the belt-fed gun's own rate limit spent? `fireMg`'s gate, asked outside. */
+  get mgReady(): boolean {
+    return this.alive && this.mgNextT <= 0;
+  }
+
+  /**
+   * Spends one round of the belt. Returns false when the rate limit has not
+   * come round yet, and a caller that gets a false has fired nothing — the
+   * same contract `fireGun` has one calibre up.
+   *
+   * **Nothing is kicked here, and that is the difference from `fireGun`
+   * rather than an omission.** A shell's recoil is a fact about the hull: it
+   * shoves the drive, rocks the springs and cracks both masts. A machine gun
+   * on a ring is a few hundred newtons against sixty tonnes — what it moves is
+   * the CAMERA of whoever is holding it, which is the gunner's own business
+   * and is spent by `Game` exactly as the shell's camera kick is.
+   */
+  fireMg(): boolean {
+    if (!this.mgReady) return false;
+    this.mgNextT = 1 / CONFIG.vehicles.tank.mg.fireRate;
+    return true;
+  }
+
+  /**
+   * One frame of the cupola gun, walked toward the order the second crewman is
+   * giving it — or, with no order, riding the ring it is bolted to.
+   *
+   * **It is stepped from `VehicleSystem` rather than from `update`, and that
+   * separation is the feature.** The two guns on this hull have two owners who
+   * need not be the same kind of thing: the driver can be a person reporting a
+   * simulated hull off the wire while the gunner is a bot on the authority, or
+   * the other way round. Folded into `update` the machine gun would only be
+   * laid on the hulls somebody was DRIVING, and folded into `updateRemote` it
+   * would only ever be posed. Asked as its own question it is answered the
+   * same way on every machine for every hull.
+   *
+   * `slewRate` is the turret's, unchanged: a ring is the same problem as a
+   * traverse with different numbers in it, and the reasons a bare rate limit
+   * could not say "mass" are the reasons it could not say "light" either.
+   *
+   * **With no gunner the gun holds its LOCAL bearing**, which is the opposite
+   * of what it does with one and is right: an unmanned gun is steel bolted to
+   * a turret and goes round with the turret. The rates are zeroed rather than
+   * run down, for the reason `update` zeroes the turret's — a gun that carried
+   * a stale rate across an empty seat would start moving again on the frame
+   * somebody sat back down at it.
+   */
+  aimMg(dt: number, order: GunInput | null): void {
+    const ride = angleDelta(this.mgRideYaw, this.turretYaw);
+    this.mgRideYaw = this.turretYaw;
+    if (!this.alive) return;
+    this.mgNextT = Math.max(0, this.mgNextT - dt);
+    const m = CONFIG.vehicles.tank.mg;
+    if (!order) {
+      this.mgYaw += ride;
+      this.mgYawRate = 0;
+      this.mgPitchRate = 0;
+    } else {
+      this.mgYawRate = slewRate(
+        dt,
+        angleDelta(this.mgYaw, order.aimYaw),
+        this.mgYawRate,
+        m.traverseRate,
+        m.traverseAccel,
+        m.settleTime,
+      );
+      this.mgYaw += this.mgYawRate * dt;
+      const want = Math.max(m.pitchMin, Math.min(m.pitchMax, order.aimPitch));
+      this.mgPitchRate = slewRate(
+        dt,
+        want - this.mgPitch,
+        this.mgPitchRate,
+        m.elevationRate,
+        m.elevationAccel,
+        m.settleTime,
+      );
+      this.mgPitch += this.mgPitchRate * dt;
+    }
+    this.drawMg();
+  }
+
+  /**
+   * The same axis, told where it IS rather than where it is wanted: a gunner
+   * somewhere else laid this gun and the authority relayed the answer.
+   *
+   * `aimMg`'s twin, and the split between them is `update`/`updateRemote`'s
+   * exactly — what a crewman DECIDES arrives from outside, and nothing else
+   * about this gun is a fact about the world worth re-deriving. The rate is
+   * dropped rather than estimated: nothing reads it but the slew, and the slew
+   * is not running on this machine for this gun.
+   *
+   * The belt's clock still runs, because a remote gun's rounds arrive as
+   * events and the local hull is what draws their flashes.
+   */
+  setMg(dt: number, yaw: number, pitch: number): void {
+    this.mgRideYaw = this.turretYaw;
+    if (!this.alive) return;
+    this.mgNextT = Math.max(0, this.mgNextT - dt);
+    this.mgYaw = yaw;
+    this.mgPitch = pitch;
+    this.mgYawRate = 0;
+    this.mgPitchRate = 0;
+    this.drawMg();
+  }
+
+  /**
+   * The cupola gun's two nodes, from the world angles above.
+   *
+   * Drawn relative to the TURRET and held in the world, exactly as the main
+   * gun is drawn relative to the hull and held in the world — traversing the
+   * turret under a laid machine gun must not drag it round, which is the
+   * whole of what `mgYaw` being a world angle buys.
+   */
+  private drawMg(): void {
+    this.rig.mgMount.rotation.y = angleDelta(this.turretYaw, this.mgYaw);
+    // A positive X rotation tips a box's +Z face DOWN, so the elevation is the
+    // negative of it — the main gun's own convention one node along.
+    this.rig.mgGun.rotation.x = -this.mgPitch;
   }
 
   /**

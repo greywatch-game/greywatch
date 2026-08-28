@@ -1211,6 +1211,16 @@ be killed by a shell out of an empty street and watch its own bullets stop in
 mid-air. That is not a degraded picture, it is a different game, so the
 handshake refuses it.
 
+**It went to 5 for the SECOND SEAT, and the reason is 4's rather than 3's.** A
+hull now holds a driver and a gunner, and the fields that carries are additive
+to read — `VehicleState.by2`, the cupola gun's two angles, the optional `seat`
+on a mount. What a version-4 client would do with them is the problem: it would
+send `move` while sitting on a cupola gun, believe it had the sticks after
+being granted the gun, fire the wrong weapon down the wrong axis, and be shot
+at by a machine gun no hull on its screen is carrying. Every one of those is
+the authority and the client disagreeing about what a PERSON IS DOING rather
+than about what they can see, which is the line a bump is for.
+
 **What travels, and on which channel, is decided by how often it CHANGES**, and
 armour needed all three answers this protocol already has:
 
@@ -1226,12 +1236,25 @@ is corrected by the next one, and a client joining mid-round is right on
 arrival rather than blind to every mine laid before it connected — which on
 that particular object is not a cosmetic difference.
 
-**A driver reports a HULL instead of a body.** `DriveMessage` replaces
-`MoveMessage` for as long as the seat is held, because a driver has no body of
-their own to report: the tank carries them, and both sides slave
-`Player.position` / `NetPlayer.position` to it. `Match.onMove` refuses a seated
-player for exactly that reason, and `onShot` and `onGrenade` refuse one for a
-plainer one — there is no rifle in a driver's hands.
+**A driver reports a HULL instead of a body, and a GUNNER reports one
+BEARING.** `DriveMessage` and `GunnerMessage` each replace `MoveMessage` for as
+long as the seat is held, because neither person has a body of their own to
+report: the tank carries them, and both sides slave `Player.position` /
+`NetPlayer.position` to it. `Match.onMove` refuses ANY seated player for
+exactly that reason — the gate is `seat >= 0` and not which chair — and
+`onShot` and `onGrenade` refuse one for a plainer reason: there is no rifle in
+either crewman's hands.
+
+**The gunner's message carries an angle where the driver's carries a position,
+and that is the whole difference.** A man on the cupola gun moves nothing: no
+hull (somebody else may be driving it, or nobody) and no body, so the only
+thing about the world he decides is where one gun points. There is
+correspondingly nothing to validate — a bearing claims nothing, and the worst a
+lying client can do with one is point a machine gun somewhere a ring could not
+have swung it, which buys nothing because the ROUND is re-resolved on the
+authority against the same cone check every other shot takes. `MgMessage` is
+that round, and it is a separate verb from `ShellMessage` because the server's
+gate for each is the CHAIR rather than the weapon.
 
 **`validateDrive` is the speed bound that knows what a player is sitting in.**
 Running a tank through `validateMove` would reject every honest driver at a
@@ -1245,19 +1268,29 @@ local BODY, and a client told to put its feet somewhere while nothing is said
 about its tank is worse off than one whose report was simply not applied.
 
 **Getting in and getting out are asks the authority answers.** `mount` names a
-hardstanding and `HeadlessGame.seatOffered` re-derives the whole offer against
-its own copy of the hull, the team, the distance and the crew; `dismount` names
-nothing, because the server knows which seat a peer is in. Both are answered
+hardstanding and — optionally — a SEAT, and `HeadlessGame.seatOffered` and
+`seat` re-derive the whole offer against the server's own copy of the hull, the
+team, the distance, which chairs are free and which crew may be turned out. The
+seat field is a PREFERENCE and never a claim: asked for one that is taken, the
+other is granted if it is free, which is what makes "the first man aboard
+drives" a fact about the authority's own fleet at the instant the ask arrives
+rather than something a client decided. **A SEAT SWAP is the same message**,
+from a peer already in that hull naming the other chair, and it is granted only
+when that chair is EMPTY — a swap is not an eviction. `dismount` names nothing,
+because the server knows which seat a peer is in. Both are answered
 with a `seat` event addressed to the asker — including a refusal, which answers
 "you are on foot", and including the seat change nobody asked for, which is the
 hull burning underneath them. Where a dismount lands rides on that event: a
 client could compute it, but it is a POSITION, and a position is the
 authority's for the reason a spawn's is.
 
-**Occupancy is stated once, on the hull.** `VehicleState.by` answers both
-questions a client has — may I get into that one, and is the man in that slot
-drawn standing up — and carrying it on `EntityState` as well would be two
-copies of one fact with the stale one deciding whether a body is on screen.
+**Occupancy is stated once, on the hull — twice over.** `VehicleState.by` and
+`by2` are the roster slots in the two chairs and answer every question a client
+has — may I get into that one, may I cross to the other chair, and is the man
+in that slot drawn standing up — and carrying any of it on `EntityState` as
+well would be two copies of one fact with the stale one deciding whether a body
+is on screen. Two fields rather than an array because the chairs are not
+interchangeable and every question names one of them.
 `NetRoster.setRiding` also takes a riding body out of `hittablesAgainst`, for
 the reason a mounted player is invulnerable: the tank is what is being shot at,
 and a soldier left in the list would stop every predicted round on an invisible

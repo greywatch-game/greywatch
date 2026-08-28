@@ -53,7 +53,15 @@ import {
   type RemoteHull,
   type VehicleOrders,
 } from "../src/systems/VehicleSystem";
-import { SHELL_SHOT, Tank } from "../src/entities/Tank";
+import {
+  DRIVER,
+  GUNNER,
+  MG_SHOT,
+  SHELL_SHOT,
+  Tank,
+  type CrewSeat,
+  type GunAngles,
+} from "../src/entities/Tank";
 import { ordnanceEffect } from "../src/entities/equipment";
 import { CelMaterialFactory } from "../src/shaders/CelShader";
 import type { GameMap } from "../src/world/MapBuilder";
@@ -147,7 +155,7 @@ export class HeadlessGame {
       hulls: () => this.vehicles.tanks,
       roster: () => this.battle.bots,
       aside: (bot) => this.battle.aside(bot),
-      setOccupied: (tank, on) => this.vehicles.setOccupied(tank, on),
+      setOccupied: (tank, seat, on) => this.vehicles.setOccupied(tank, seat, on),
       exitSpot: (tank) => this.vehicles.exitSpot(tank),
       targetsFor: (team) => this.battle.hittablesAgainst(team),
       // The hull is taken out of its own pick for the length of the ray, the
@@ -161,6 +169,7 @@ export class HeadlessGame {
         return seen;
       },
       fireShell: (tank, by) => this.resolveShell(tank, by),
+      fireMg: (tank, by) => this.resolveMg(tank, by),
     });
     this.wire();
   }
@@ -181,8 +190,26 @@ export class HeadlessGame {
    */
   private readonly vehicleOrders: VehicleOrders = {
     driveFor: (tank) => this.crew.driveFor(tank),
+    gunFor: (tank) => this.crew.gunFor(tank),
     remoteFor: (tank) => this.driven.get(this.vehicles.tanks.indexOf(tank)) ?? null,
+    /**
+     * A PERSON's cupola gun, where he last said it was pointing.
+     *
+     * The seats are asked independently for the reason they are two fields on
+     * the wire: one hull can hold a person driving and a bot on the gun, or a
+     * bot driving and a person on the gun, and neither of those is unusual —
+     * so `laid` is its own map rather than a pair of angles on `driven`, which
+     * only exists while a person has the sticks.
+     */
+    remoteGunFor: (tank) => this.laid.get(this.vehicles.tanks.indexOf(tank)) ?? null,
   };
+
+  /**
+   * The last cupola-gun bearing each GUNNING player reported, by hardstanding
+   * index. `driven`'s twin for the second seat — see `GunnerMessage` on why the
+   * angle is what travels and `seat` for the one place both are written.
+   */
+  private readonly laid = new Map<number, GunAngles>();
 
   /**
    * The last hull state each DRIVING player reported, by hardstanding index.
@@ -227,6 +254,7 @@ export class HeadlessGame {
     // about to stop existing.
     this.crew.clear();
     this.driven.clear();
+    this.laid.clear();
     // **Last round's hulls come OUT of the fight before they are disposed.**
     // `BattleSystem.reset` deliberately does not touch the human list — the
     // people in it are still connected and still in their slots across a
@@ -713,32 +741,61 @@ export class HeadlessGame {
    * are either way, and a player who pressed the key a metre too far from
    * their own tank has lost nothing but the press.
    */
-  seat(player: NetPlayer, tank: Tank | null): Tank | null {
+  seat(player: NetPlayer, tank: Tank | null, want: CrewSeat = DRIVER): Tank | null {
     const held = player.seat >= 0 ? this.vehicles.tanks[player.seat] : null;
-    if (held && held !== tank) {
-      this.driven.delete(player.seat);
-      this.vehicles.setOccupied(held, false);
-      player.seat = -1;
-      player.invulnerable = false;
-      // Back into the fight as a body. Both lines are `clearVehicle`'s and
-      // both are needed: the first makes rounds land again, the second makes
-      // bots aim.
-      this.battle.addHuman(player);
+    // **The old chair is given up whenever it is not the one being asked for,
+    // and that is what makes a SWAP the same call as a mount.** A peer already
+    // in this hull naming the other seat lands here with `held === tank`: the
+    // chair under it is released, the new one is taken on the same frame, and
+    // everything a body owes while it is aboard — the invulnerability, the
+    // absence from every bot's target list — is left standing, because none of
+    // it was ever about which chair.
+    const crossing = held === tank && player.crewSeat !== want;
+    // Asked for the chair they are already in: nothing to do, and saying so
+    // here rather than letting it fall through matters — below, a seat that is
+    // taken is answered with the OTHER one, and this player is what is making
+    // it taken.
+    if (held === tank && !crossing) return tank;
+    if (held && (held !== tank || crossing)) {
+      this.release(player, held);
+      if (held !== tank) {
+        // Back into the fight as a body. Both lines are `clearVehicle`'s and
+        // both are needed: the first makes rounds land again, the second makes
+        // bots aim. Not spent on a swap — the body never left the hull.
+        player.invulnerable = false;
+        this.battle.addHuman(player);
+      }
     }
     if (!tank) return null;
 
     const index = this.vehicles.tanks.indexOf(tank);
     if (index < 0 || !tank.alive || tank.team !== player.team) return null;
-    // A crew is turned out rather than keeping the seat — the whole of "a bot
-    // crew never denies the player their own armour", and it lands on the same
-    // frame as the mount for `Game`'s reason: a hull given up and not taken is
-    // one the boarding sweep can re-crew before anybody else gets a word in.
-    if (tank.occupied) this.crew.evict(tank);
-    if (tank.occupied) return null;
+    // Which chair, decided against the authority's own copy of the fleet — the
+    // client's `seat` field is a preference and never a claim. Asked for one
+    // that is taken, the other is granted if it is free; asked for nothing,
+    // the driver's comes first, which is `VehicleSystem.seatOn`'s rule stated
+    // once for both processes.
+    let use: CrewSeat = want;
+    if (tank.seats[use]) use = use === DRIVER ? GUNNER : DRIVER;
+    if (tank.seats[use]) {
+      // Both taken. A BOT is turned out rather than keeping the seat — the
+      // whole of "a bot crew never denies the player their own armour" — and
+      // it lands on the same frame as the mount for `Game`'s reason: a hull
+      // given up and not taken is one the boarding sweep can re-crew before
+      // anybody else gets a word in. A PERSON is never evicted, which is why
+      // the chair asked for is tried first and then the other one.
+      use = want;
+      if (!this.crew.evict(tank, use)) {
+        use = use === DRIVER ? GUNNER : DRIVER;
+        if (!this.crew.evict(tank, use)) return null;
+      }
+      if (tank.seats[use]) return null;
+    }
 
     player.seat = index;
+    player.crewSeat = use;
     player.invulnerable = true;
-    this.vehicles.setOccupied(tank, true);
+    this.vehicles.setOccupied(tank, use, true);
     // Nothing may hurt the body and nothing may aim at it: the hull is what is
     // being shot at. `invulnerable` above stops the rounds, and this stops a
     // bot standing in the street firing at an unkillable target for the rest
@@ -746,16 +803,38 @@ export class HeadlessGame {
     this.battle.removeHuman(player);
     // The hull starts where it stands, so the first frame before this player's
     // first report is one the tank spends exactly where it already is rather
-    // than at the origin.
-    this.driven.set(index, {
-      x: tank.position.x,
-      y: tank.position.y,
-      z: tank.position.z,
-      yaw: tank.yaw,
-      turretYaw: tank.turretYaw,
-      gunPitch: tank.gunPitch,
-    });
+    // than at the origin. **Only a DRIVER puts a hull in `driven`**, which is
+    // read as "this one is not mine to simulate": a gunner who set it would
+    // freeze a tank a bot was still driving.
+    if (use === DRIVER) {
+      this.driven.set(index, {
+        x: tank.position.x,
+        y: tank.position.y,
+        z: tank.position.z,
+        yaw: tank.yaw,
+        turretYaw: tank.turretYaw,
+        gunPitch: tank.gunPitch,
+      });
+    } else {
+      this.laid.set(index, { yaw: tank.mgYaw, pitch: tank.mgPitch });
+    }
     return tank;
+  }
+
+  /**
+   * Gives up one chair: the seat flag, and whichever of the two "somebody else
+   * is deciding this" maps that chair owns.
+   *
+   * Split out of `seat` because it is spent twice by it — once when a player
+   * leaves a hull and once when they cross inside one — and the pair of maps
+   * is exactly the thing a second copy would get wrong.
+   */
+  private release(player: NetPlayer, held: Tank): void {
+    if (player.crewSeat === DRIVER) this.driven.delete(player.seat);
+    else this.laid.delete(player.seat);
+    this.vehicles.setOccupied(held, player.crewSeat, false);
+    player.seat = -1;
+    player.crewSeat = DRIVER;
   }
 
   /**
@@ -774,6 +853,7 @@ export class HeadlessGame {
     turretYaw: number,
     gunPitch: number,
   ): void {
+    if (player.crewSeat !== DRIVER) return;
     const state = this.driven.get(player.seat);
     if (!state) return;
     state.x = x;
@@ -782,6 +862,21 @@ export class HeadlessGame {
     state.yaw = yaw;
     state.turretYaw = turretYaw;
     state.gunPitch = gunPitch;
+  }
+
+  /**
+   * A gunning player's reported cupola-gun bearing, accepted.
+   *
+   * `applyDrive`'s twin, written into the same object `remoteGunFor` hands out
+   * and for the same reason. There is nothing to validate: a bearing claims
+   * nothing about the world — see `GunnerMessage`.
+   */
+  applyGun(player: NetPlayer, yaw: number, pitch: number): void {
+    if (player.crewSeat !== GUNNER) return;
+    const laid = this.laid.get(player.seat);
+    if (!laid) return;
+    laid.yaw = yaw;
+    laid.pitch = pitch;
   }
 
   /** The hull this player is in, or null on foot. */
@@ -801,10 +896,13 @@ export class HeadlessGame {
    */
   seatOffered(player: NetPlayer): Tank | null {
     if (this.vehicles.empty || !player.alive || player.seat >= 0) return null;
+    // A hull with a CHAIR left, which with two seats is the ordinary case: the
+    // player climbs on beside whoever is already aboard and nobody is turned
+    // out. Only a FULL hull reaches the eviction below.
     const free = this.vehicles.enterable(player.position, player.team);
     if (free) return free;
     const held = this.vehicles.occupiedNear(player.position, player.team);
-    return held && this.crew.crewOf(held) ? held : null;
+    return held && this.crew.anyCrewIn(held) ? held : null;
   }
 
   /**
@@ -865,6 +963,47 @@ export class HeadlessGame {
     // the other team exactly as one a person is driving is.
     this.battle.hearGunshot(muzzle, tank.team);
     this.onCannon(tank);
+    return true;
+  }
+
+  /**
+   * One round out of a hull's CUPOLA gun, whoever pulled the trigger.
+   *
+   * `Game.resolveMg` with the presentation taken out, and it is the same one
+   * implementation for `resolveShell`'s reason: the person on that seat and a
+   * bot on it fire the same weapon.
+   *
+   * There is no rewind here and none is owed, for a different reason than the
+   * shell's. A machine gun round is small and fast, but it is one of nine a
+   * second down a cone `mg.spread` wide — the metre a rewind would recover is
+   * inside the cone the same burst is already spraying, and the shooter is
+   * holding the trigger down rather than taking one shot at a head.
+   *
+   * **A HULL is not a row on the scoreboard**, and a machine gun could not
+   * kill one anyway (`resist.bullet` is 0.05) — the guard is `resolveShell`'s
+   * and is kept for the same reason its is: `shot.target` can be a tank now
+   * that armour is answered by its collider.
+   */
+  resolveMg(tank: Tank, by: Combatant): boolean {
+    if (!tank.fireMg()) return false;
+    const m = CONFIG.vehicles.tank.mg;
+    const muzzle = tank.mgMuzzleToRef(this.shellFrom);
+    const dir = tank.mgDirToRef(this.shellDir);
+    const shot = this.combat.fire(
+      muzzle,
+      dir,
+      m.spread,
+      m.damage,
+      muzzle,
+      this.battle.hittablesAgainst(tank.team),
+      m.range,
+      MG_SHOT,
+    );
+    if (shot.killed && !shot.target?.armoured) {
+      this.creditKill(by, shot.target);
+      if (shot.target instanceof Bot) this.onKill(shot.target, tank.team);
+    }
+    this.battle.hearGunshot(muzzle, tank.team);
     return true;
   }
 

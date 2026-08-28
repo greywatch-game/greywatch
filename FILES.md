@@ -178,18 +178,24 @@ src/
                         #   graph for the reason a corpse is), the drive, the
                         #   ten TRACK CONTACTS it stands on and the rate-limited
                         #   climb that rides it over a car, the leading-end
-                        #   collision sphere, the turret's slew, the gun's
-                        #   clock, the springs behind its lean, its SPRUNG
+                        #   collision sphere, the turret's slew, BOTH guns'
+                        #   clocks and angles (the cupola gun's bearing is a
+                        #   WORLD angle exactly as the turret's is, which is
+                        #   what lets the two seats aim independently), which
+                        #   of its two SEATS are filled, the springs behind
+                        #   its lean, its SPRUNG
                         #   body and its two whips, `rideableAt` (the climb band
                         #   spent on where the hull is ABOUT to be, which is the
                         #   whole of an AI driver's road graph), and what a
                         #   hull feels of each DamageKind. Knows nothing about
                         #   a player
-    TankModel.ts        # ~180 boxes and cylinders merged to twenty-four, with a
+    TankModel.ts        # ~180 boxes and cylinders merged to twenty-six, with a
                         #   SPRUNG body over running gear that is not, a
-                        #   turret and a gun that turn, two link strips and a
-                        #   toothed sprocket a side that RUN, two whip antennae
-                        #   that BOW, and the charred repaint a wreck takes.
+                        #   turret and a gun that turn, a CUPOLA gun on a ring
+                        #   that turns independently of both, two link strips
+                        #   and a toothed sprocket a side that RUN, two whip
+                        #   antennae that BOW, and the charred repaint a wreck
+                        #   takes.
                         #   Art only — the extents that are RULES are CONFIG's
     callsigns.ts        # What to call an AI on the scoreboard: roster index ->
                         #   phonetic name, derived on both sides, never sent
@@ -266,10 +272,13 @@ src/
                         #   outside combat
     VehicleSystem.ts    # The armour on the field: one hull per hardstanding, the
                         #   wreck clock and the respawn clock (two, so a side can
-                        #   never field both), and where a dismount lands. Owns
+                        #   never field both), which SEAT a boarder gets
+                        #   (`seatOn` — the driver's first, stated once for both
+                        #   processes), and where a dismount lands. Owns
                         #   no player and no AI — `update` asks a `VehicleOrders`
-                        #   what is inside each hull and where the ones somebody
-                        #   ELSE is driving got to, and `Game`/`HeadlessGame` are
+                        #   four questions per hull: who is at the sticks, who
+                        #   is on the cupola gun, and which of the two somebody
+                        #   ELSE is deciding. `Game`/`HeadlessGame` are
                         #   the only things that can answer. A `predicted` fleet
                         #   is a netplay client's: both clocks stand down
     VehicleCamera.ts    # The view from twelve metres behind a hull: its own yaw
@@ -277,8 +286,12 @@ src/
                         #   `DeathCam`'s shape — it produces an eye and a look
                         #   and `Game` hands both to CameraSystem.place. `aim`
                         #   and `place` straddle the world step on purpose
-    TankCrew.ts         # The bots that drive: which body is in which hull, and
-                        #   what it asks the hull to do. A crewed bot leaves
+    TankCrew.ts         # The bots that crew: which body is in which SEAT of
+                        #   which hull, and what it asks of the thing in its
+                        #   hands. TWO per hull — a driver and a gunner, two
+                        #   brains with two target sets, the gunner seeing
+                        #   INFANTRY only and firing in bursts because a
+                        #   machine gun cannot hurt armour. A crewed bot leaves
                         #   `Bot`'s FSM entirely (`BattleSystem.aside`) and
                         #   keeps its life, its position and its squad's order.
                         #   Steers on the body flow field for a BEARING and on

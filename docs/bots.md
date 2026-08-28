@@ -338,8 +338,9 @@ to match. Bots hold a fight instead of losing it and going looking.
 
 ## A bot in a tank is not a bot
 
-On a map with armour a bot can climb into a hull, and when it does it leaves
-this file entirely. Every part of the FSM above — cover, the peek cycle, the
+On a map with armour a bot can climb into a hull — **into either of its two
+seats, and two bots can be in one tank** — and when it does it leaves this file
+entirely. Every part of the FSM above — cover, the peek cycle, the
 crouch, the separation pass, the flow field walked a cell at a time — is about a
 body standing up, and none of it survives contact with a seven-metre vehicle. So
 a crewed bot is taken OUT of the fight exactly as a mounted player is, and
@@ -359,10 +360,13 @@ What this file owes it is two things:
   The armour goes where its crewman's squad was going, which is why there is no
   second objective planner and no way for the two to disagree.
 
-Unlike a benched bot a driver is still ALIVE: it holds its ticket, its scoreboard
-row and its position, which the crew slaves to the hull with `Bot.nudgeTo`. See
-[`vehicles.md`](vehicles.md) for the rest — how a crew is picked, why a tank is
-never a destination, and why the player can always turn one out of the seat.
+Unlike a benched bot a crewman is still ALIVE: it holds its ticket, its
+scoreboard row and its position, which the crew slaves to the hull with
+`Bot.nudgeTo`. The GUNNER's `objective` is refreshed the same way and steers
+nothing — he lays the cupola gun and has no route at all, which is why only the
+driver reads it. See [`vehicles.md`](vehicles.md) for the rest — the two seats,
+how each crew is picked, why a tank is never a destination, why the gunner sees
+infantry only, and why the player can always turn a bot out of a seat.
 
 ## Squads and objectives
 

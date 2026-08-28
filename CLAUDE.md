@@ -722,14 +722,35 @@ death cam's camera hand-off.
 
 ### Vehicles: one hull, and the exceptions it is
 
-**A tank is a `Combatant` you get INSIDE.** `MapLayout.vehicles` is one
-hardstanding per team — absent on two of the five maps — and `Game.driving` is
-the single fact the feature turns on. **`mount` and `clearVehicle` are exact
-inverses and must be read as a pair.** **A driver's frame is not a body's**:
-`Player.update` is not called, so the hull's ground REPLACES the probe. **The
-verb is `E`, the pad's d-pad north and a button that APPEARS on glass** — one
-`usePressed`, and `Game.offerUse` is the one door that names it, because a phone
-has nothing to press until something is drawn under it.
+**A tank is a `Combatant` you get INSIDE, and TWO people fit.**
+`MapLayout.vehicles` is one hardstanding per team — absent on two of the five
+maps — and `Game.driving` plus `Game.drivingSeat` are the two facts the feature
+turns on. **`mount` and `clearVehicle` are exact inverses and must be read as a
+pair.** **A driver's frame is not a body's**: `Player.update` is not called, so
+the hull's ground REPLACES the probe. **The verb is `E`, the pad's d-pad north
+and a button that APPEARS on glass** — one `usePressed`, and `Game.offerUse` is
+the one door that names it, because a phone has nothing to press until
+something is drawn under it.
+
+**The two seats are `DRIVER` (sticks + main gun) and `GUNNER` (the cupola
+machine gun and nothing else), and the first man aboard DRIVES** —
+`VehicleSystem.seatOn` states that once for both processes. A hull with one
+chair left is `enterable`; only a FULL one is an eviction, so the player climbs
+on beside a bot crew rather than turning it out. **Crossing is a third verb
+(`InputManager.seatPressed` — `F`, the pad's Y, the touch swap button) and is
+never an eviction**: `Game.canSwapSeat` is the one place that decides, so the
+key and the HUD's prompt cannot disagree.
+
+**The CUPOLA gun's bearing is a WORLD angle exactly as the turret's is, and
+that one decision is the whole of the independence**: the mount is parented to
+the turret, so a relative angle would be dragged round by every traverse the
+driver asked for. `Tank.aimMg` writes the difference onto the rig; a gun nobody
+is on inverts the rule and rides its ring. It is stepped from `VehicleSystem`
+rather than from `update`, because a hull's two guns can have two owners of
+different kinds — a person driving off the wire while a bot lays the cupola
+gun. **It is a `bullet` against `resist.bullet` of 0.05, so it cannot touch
+armour**, which is the trade rather than a limitation: what it answers is
+infantry inside the main gun's reload.
 
 **In a NETPLAY round a driver simulates their own hull and REPORTS it, exactly
 as they do their own legs; every other hull is posed from the wire** by
@@ -767,8 +788,10 @@ down the GUN's axis, and `#gun-marker` draws where the barrel points.
 **Everything else on the hull that moves is a PICTURE** — the collider never
 tilts, nothing is pickable, and the gun is aimed in WORLD angles.
 
-**BOTS DRIVE, and a driver is not a bot with a vehicle attached.** A crewed bot
-leaves `Bot`'s FSM entirely — `BattleSystem.crewed` is the BENCH's twin and
+**BOTS CREW BOTH CHAIRS, and a crewman is not a bot with a vehicle attached.**
+The gunner is a second body with a second brain and a different set of targets
+— infantry only, in BURSTS, because a machine gun cannot hurt a hull. A crewed
+bot leaves `Bot`'s FSM entirely — `BattleSystem.crewed` is the BENCH's twin and
 **`BattleSystem.aside` is the one skip test every loop over `bots` owes**, never
 `benched.has` — while keeping its LIFE, its POSITION slaved to the hull and its
 SQUAD'S ORDER, which is what it steers on. **A tank is never a DESTINATION**, and
@@ -777,11 +800,13 @@ mounts on one frame. `resolveShell` is the ONE round out of a tank gun (`Game`'s
 offline, `HeadlessGame`'s in a match), and a driver needs no route graph — a
 BEARING and `Tank.rideableAt` are all of it.
 
-→ **[`docs/vehicles.md`](docs/vehicles.md)** — the crew, the whisker fan and the
-two geometry bugs it found; the collider's three answers; the model's twenty-four
-meshes, its tracks and its whips; the plank, the rate limit and the leading-end
-sphere; the damage kinds, the four ways out of a seat, the shell, the two clocks
-a hardstanding runs, what a map owes, and what is not built.
+→ **[`docs/vehicles.md`](docs/vehicles.md)** — the two seats and the swap, the
+cupola gun's world angle and its stowed inversion, the crew of two, the whisker
+fan and the two geometry bugs it found; the collider's three answers; the
+model's twenty-six meshes, its tracks and its whips; the plank, the rate limit
+and the leading-end sphere; the damage kinds, the four ways out of a seat, the
+shell, the two clocks a hardstanding runs, what a map owes, and what is not
+built.
 
 ### Anti-tank: the third slot, and the only thing a hull is afraid of
 
@@ -935,7 +960,9 @@ broadcast, because a broadcast is the read a wallhack wants.
 **What armour puts on the wire is decided by how often it CHANGES**: hulls every
 snapshot, rockets when one is flying, mines as a versioned table re-sent only
 when the SET moves. **A driver reports a HULL instead of a body** —
-`DriveMessage` replaces `MoveMessage`, which is what `validateDrive` is for.
+`DriveMessage` replaces `MoveMessage`, which is what `validateDrive` is for —
+and **a GUNNER reports one BEARING**, because a man on the cupola gun moves
+nothing at all and there is therefore nothing to validate.
 
 **`decode` proves only that a frame is JSON with a `t` on it, so a
 `ClientMessage` is a CLAIM and never a fact**: `server/wire.ts` is the one door

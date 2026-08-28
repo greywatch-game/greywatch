@@ -43,8 +43,18 @@ import type { ScoreKind } from "../systems/ScoreBook";
  * client in a version-4 match would be killed by a shell out of an empty
  * street and would watch its own bullets stop in mid-air. That is not a
  * degraded picture, it is a different game, so the handshake refuses it.
+ *
+ * 5 is the SECOND SEAT, and it is a bump for 4-s reason rather than 3-s. A
+ * hull now holds a driver and a gunner, so the fields it adds are additive to
+ * read (`by2`, `mgy`/`mgp`, the optional `seat` on a mount) — but a
+ * version-4 client would send `move` while sitting on a cupola gun, believe
+ * it had the sticks after being granted the gun, fire the wrong weapon down
+ * the wrong axis, and be shot at by a machine gun no hull on its screen is
+ * carrying. Every one of those is the authority and the client disagreeing
+ * about what a person is doing rather than about what they can see, which is
+ * the line a version bump is for.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /**
  * The longest display name a client may claim, in characters.
@@ -311,6 +321,22 @@ export interface VehicleState {
   /** The gun's elevation, radians. */
   gun: number;
   /**
+   * Where the CUPOLA gun points, in WORLD radians, and its own elevation.
+   *
+   * Two more angles rather than a delta off `tyaw`, because that is what they
+   * ARE: `Tank` holds this gun's bearing in the world exactly as it holds the
+   * turret's, so that traversing one does not drag the other — which is the
+   * whole of what makes the second seat a second seat. Sending a difference
+   * would be re-deriving on both sides a number neither side holds.
+   *
+   * They are on every snapshot beside the turret's rather than sent only when
+   * somebody is on the gun, for `hp`'s reason: a client that had to remember
+   * the last stated angle across the frames nobody mentioned it would draw a
+   * gun that snapped whenever a gunner sat down.
+   */
+  mgy: number;
+  mgp: number;
+  /**
    * False for a wreck. A hull that has been taken away entirely is simply
    * ABSENT from the array, which is `GrenadeState`'s rule and reads the same
    * way: a client hides whatever it was not told about this snapshot.
@@ -334,7 +360,19 @@ export interface VehicleState {
    */
   hp: number;
   /**
-   * The roster slot sitting in this hull, or -1 for an empty one.
+   * The roster slot sitting in this hull's GUNNER seat, or -1.
+   *
+   * `by`'s twin, and a second field rather than an array for the reason the
+   * seats are two constants rather than a list: the two are not
+   * interchangeable, and every question a client asks names one of them. It is
+   * what the eviction prompt and the seat-swap prompt are both derived from,
+   * and what stops a body being drawn standing in the street while it is
+   * sitting on a cupola.
+   */
+  by2: number;
+  /**
+   * The roster slot sitting in this hull's DRIVER seat, or -1 for an empty
+   * one.
    *
    * **The single source for occupancy, and it is on the HULL rather than on
    * the body**, because both questions a client asks are the hull's: may I get
@@ -674,8 +712,17 @@ export type ServerEvent =
    * a client could compute it — but it is a position, and a position is the
    * authority's for the same reason `spawn` carries one rather than letting
    * sixteen clients each pick a spot beside the same tank.
+   *
+   * `seat` is WHICH of the hull's two jobs was granted — 0 the driver, 1 the
+   * gunner — and is present only on the way IN. It is the authority's for the
+   * same reason the hull is: "the first man aboard drives" is a rule about
+   * what the server's own copy of the fleet looks like at the instant the ask
+   * arrives, and a client that decided it for itself would be a player who
+   * believes they have the sticks while the server has them on the gun.
+   * Absent reads as the driver's, which is what every server before the second
+   * seat granted and the only thing a hull then had.
    */
-  | { e: "seat"; slot: number; tank: number; pos?: Vec3; yaw?: number }
+  | { e: "seat"; slot: number; tank: number; seat?: number; pos?: Vec3; yaw?: number }
   /**
    * A tank gun went off in this hull. Public, and `fire`'s counterpart for the
    * one weapon that is not carried by a body.
@@ -1161,6 +1208,46 @@ export interface DriveMessage {
 }
 
 /**
+ * One reported CUPOLA gun bearing, from the person actually laying it.
+ *
+ * **`DriveMessage` for the other seat, and it carries an angle instead of a
+ * hull for the one reason that matters**: a gunner moves nothing. He has no
+ * body of his own (the hull carries him, exactly as it carries the driver) and
+ * no hull of his own (somebody else may be driving it, or nobody), so the only
+ * thing about the world he decides is where one gun points — and that is what
+ * travels.
+ *
+ * It is the same bargain the driver's is, made for the same reason: the person
+ * holding the ring simulates their own gun through `Tank.aimMg`, reports where
+ * it ended up, and the authority keeps it and relays it. So the gunner has no
+ * latency on their own weapon — which `docs/weapons.md`'s reticle rule
+ * requires, since a marker is drawn from this axis — and everybody else is a
+ * tenth of a second behind it.
+ *
+ * There is nothing to validate beyond the angles being finite. Unlike a hull
+ * there is no position to claim, no ground to stand on and no wall to be
+ * through; the worst a lying client can do is point a machine gun somewhere a
+ * ring could not have swung it that fast, and what that buys is nothing at all
+ * — the SHOT is re-resolved on the authority against the same cone check every
+ * other round takes.
+ *
+ * A gunner sends this INSTEAD of `move`, exactly as a driver sends `drive`
+ * instead of it: both are people whose bodies are somewhere the hull decides.
+ */
+export interface GunnerMessage {
+  t: "gunner";
+  /** Monotonic per client, shared with `move`'s counter — see `MoveMessage`. */
+  seq: number;
+  /** Client clock in ms when this was sampled. */
+  time: number;
+  /** The hardstanding index of the hull whose gun is being laid. */
+  tank: number;
+  /** Where the cupola gun points, world radians, and its elevation. */
+  myaw: number;
+  mpitch: number;
+}
+
+/**
  * "Put me in that hull."
  *
  * An ASK, and the authority answers with a `seat` event or with silence.
@@ -1174,6 +1261,26 @@ export interface DriveMessage {
 export interface MountMessage {
   t: "mount";
   tank: number;
+  /**
+   * Which of the hull's two seats is being asked for — 0 the driver, 1 the
+   * gunner. Absent means "whichever is free", which is what a player walking
+   * up to a tank asks and what every message before the second seat meant.
+   *
+   * **It is a PREFERENCE and never a claim.** The authority re-derives what is
+   * actually free against its own copy of the fleet and may grant the other
+   * chair or neither, and the `seat` event is what says which — so a client
+   * naming a seat somebody sat down in a hundred milliseconds ago is answered
+   * rather than believed.
+   *
+   * Naming one is also how a SEAT SWAP is asked for: a peer already in this
+   * hull that names the other chair is asking to cross to it, which the
+   * authority grants only when that chair is empty. One message rather than a
+   * second verb, because "put me in that seat of that hull" is the same
+   * sentence whether or not you are already aboard — and a swap that went
+   * through a different door would be a second place the seat rules are
+   * written down.
+   */
+  seat?: number;
 }
 
 /**
@@ -1203,6 +1310,30 @@ export interface DismountMessage {
  */
 export interface ShellMessage {
   t: "shell";
+  seq: number;
+  /** Client render time in ms — what the shooter was looking at. */
+  time: number;
+  origin: Vec3;
+  dir: Vec3;
+}
+
+/**
+ * A round out of a hull's CUPOLA gun the client believes it fired.
+ *
+ * `ShellMessage`'s twin, and it is a separate verb rather than a flag on that
+ * one because the two are fired by two different PEOPLE: the server's arm for
+ * this has to check that the peer is on the gunner's seat, and the shell's
+ * that they are on the driver's, which is not a branch inside one handler but
+ * two handlers. It is also two different weapons — a rate limit against a
+ * loader, a cone against a spread — and `ShellMessage`'s own note that "a hull
+ * has one gun" is the thing that stopped being true.
+ *
+ * The DIRECTION is the machine gun's own axis for `ShellMessage`'s reason: the
+ * look is an order the ring is still walking toward, and a round fired down
+ * the look would leave a barrel that is visibly pointing somewhere else.
+ */
+export interface MgMessage {
+  t: "mg";
   seq: number;
   /** Client render time in ms — what the shooter was looking at. */
   time: number;
@@ -1271,6 +1402,8 @@ export type ClientMessage =
   | ReloadMessage
   | DeployMessage
   | DriveMessage
+  | GunnerMessage
+  | MgMessage
   | MountMessage
   | DismountMessage
   | ShellMessage
