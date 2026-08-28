@@ -63,10 +63,16 @@ those are the hypotheses the step that touches them has to settle.
 
 ## The five walls
 
-### Wall 1 — the frame walks the whole scene, and the scene is the map — **MOSTLY DOWN**
+### Wall 1 — the frame walks the whole scene, and the scene is the map — **DOWN, AND MEASURED DOWN AT 1500 m**
 
 **S1 has landed and finding 21 is what it produced**; the walk is 7.6 ms to 2.5
-at 900/300 and the frame 9.8 to 4.3. What follows is the wall as S0 measured it,
+at 900/300 and the frame 9.8 to 4.3. **And the extent this wall was really about
+has now been measured too** (`FINDINGS.md` 27): a 1500 / 0 round is
+**9.3 ms warm, 107 fps, with 146 active meshes out of 23,031** — against the
+30.3 ms below, of which 23.0 was this wall. It is not mostly down at the size
+that mattered, it is down, and the frame is no longer where the 1500 m problem
+is. What is unmeasured is a FIGHT: finding 22 records that a round left to
+itself fires no ray at all, and that reading was taken on a quiet one. What follows is the wall as S0 measured it,
 kept because the shape of it is why the fix is shaped the way it is — and
 because **one term of it was still wrong after S0 corrected two**: the walk is
 not mostly buildings, it is **70% invisible COLLIDER proxies**, which is a class
@@ -325,7 +331,7 @@ more: the nav/cover/AO builds are now **33%** of a 17.4 s build rather than 3.3%
 of a 183 s one, and then the install profile put both S5b and S5c ahead of them
 anyway. The worker is third and gated — see S5.*
 
-### Wall 5 — the reflection bake takes the GPU device, and it was not in this document — **DOWN**
+### Wall 5 — the reflection bake takes the GPU device, and it was not in this document — **DOWN, BUT IT LEFT 37 SECONDS IN THE ROUND**
 
 **The one wall S0 found rather than confirmed, and the first thing between this
 tree and a map of either size. S0b has landed and it is no longer standing**;
@@ -368,6 +374,14 @@ indeed unchanged — but a descriptor heap is recycled per SUBMISSION, so what
 matters is the largest single frame and not the sum. Spending the bake over
 frames is what actually took the wall down; the render list and the probe count
 came down as well and neither had to come down far.
+
+**And "the total is indeed unchanged" is the half of that correction nobody
+followed up, which is what S0c is.** Measured at 1500 / 0 at last
+(`FINDINGS.md` 27): the queue drains over **40 frames and 36.9 seconds**, a
+928 ms median frame, and it drains in `deploy` and then in the ROUND rather than
+behind the loading card. The device survives, which is what this wall was about
+and it is genuinely down; what is left is 37 s of one frame a second in the
+player's hands, and it is larger than anything left in the load.
 
 ---
 
@@ -615,6 +629,89 @@ check, run either side of this change against the same fixed reference, reports
 the SAME mean on every one of the fifteen vantages to four decimal places. A
 pass would have said the frames are within tolerance; this says the four
 shipped maps are byte-for-byte what they were.
+
+---
+
+### S0c — The bake drains in the ROUND, and at 1500 m that is 37 seconds of one frame a second
+
+**S0b's second owed item, measured at last, and it is the largest number left
+anywhere in a 1500 m round.** `installMap` returns in ~19 s, the state goes to
+`deploy` with **211 probes still queued and 1,782,504 face draws outstanding**,
+and the next **40 frames take 36.9 seconds** — a 928 ms median frame, a 1,505 ms
+worst. The player is looking at the deploy screen and then at the round while it
+happens. `FINDINGS.md` 27 is the measurement.
+
+**Read this against the two load steps rather than beside them.** The mesh round
+trip (finding 26) is ~6.3 s and the worker's whole ceiling is 3,899 — both
+behind the loading card. This is 37 s in the player's hands, and it is six times
+the larger of them.
+
+**It is the PRICE of S0b and not a regression, which is why this step is
+lettered rather than numbered.** `drawsPerFrame` turns one fatal submission
+into a queue, and that trade is correct — what it bought is a device that
+survives, measured against a lost D3D12 device and a replaced renderer process.
+What S0b explicitly did NOT decide is WHERE those frames are spent, and it said
+so: "the bake still lands AFTER the loading card, not behind it… holding
+`loading` until the queue is empty is a state-machine change and was out of
+scope here", and "1500 / 0 has not been re-tested". Both are now answered.
+
+**Three levers, and only one of them reduces the WORK.** In the order their
+size suggests:
+
+1. **Spend the frames behind the CARD.** `loading` is a STEP where nothing
+   simulates and the scene still renders (`docs/states.md`), and `releaseBatch`
+   rides a render observable — so holding `loading` until the queue and
+   `inFlight` are both empty drains the bake under the card with no new
+   machinery at all. It moves 37 s rather than removing it, and what it buys is
+   that the round is a round when it starts. It also hands the card the progress
+   figure it does not have: `queue.length` against what was queued.
+2. **Cut the DRAWS, which is the only lever that removes work.** A probe's
+   render list is `neighbourhood()` — a pure radius test over the opaque world,
+   1,348 of 2,434 meshes each at 1500 m. The FRAME asks a different question and
+   gets 146 active meshes out of 23,031, because `WorldCulling` files every
+   block-keyed mesh per 48 m block and gates on `fogEnd`. **The bake and the
+   frame have never been asked the same question**, and nothing has tried giving
+   a probe the frame's answer. This is the shape of a real fix rather than a
+   relocation.
+3. **Cut the PROBES, and know what it costs before reaching for it.**
+   `perCell` is already 2 at this extent. Grouping harder is fewer probes and a
+   worse picture, not merely a smaller number: a probe drops every block it
+   SERVES out of its own bake (`encloses`), so a cell of four blocks is a probe
+   with 96 m of city missing from the middle of its cube.
+
+**Must not break — and this list is mostly S0b's, because this step is spending
+what S0b bought:**
+
+- **The device survives.** `drawsPerFrame` is what stands between this bake and
+  a lost D3D12 device inside one submission, and a descriptor heap is recycled
+  per SUBMISSION — so the largest single frame is what matters and the sum is
+  not. **Raising the budget is not one of the three levers above** and must not
+  become one by accident while chasing the frame count down.
+- **Coldharbour stays ONE frame and the four shipped maps' pixels do not move.**
+  All four drain on the first frame, so lever 1 must cost them at most that one
+  frame of `loading` — a map whose queue empties immediately may not sit at the
+  card waiting for a second one. `bank.mjs --check` either side is what says
+  the picture is unmoved.
+- **`loading` stays a STEP and nothing may simulate under it.** Lever 1 makes
+  the card stay up LONGER, which is more exposure to that rule rather than less.
+- **A queue that cannot drain must not hang the card.** A probe re-bakes in full
+  until every mesh in its list has a compiled material (`inFlight`), so "wait
+  for empty" needs a frame or time cap and a way out — the state machine has no
+  concept of a step that fails.
+- **The water pool is queued from inside `WaterSystem.build`**, later in the
+  same install than the glazing, so anything that waits on the queue has to wait
+  after BOTH — and the proving ground has no water, so this profile cannot see
+  that half.
+- **An EDITOR build bakes nothing**, and a tier-3 rebuild must not start
+  waiting on an empty queue.
+
+**Verify:** the drain measurement at both extents as a matched pair, taken
+UNPROFILED — finding 27 records that the sampling profiler stretches a 37 s
+drain past twenty minutes and cannot be used here; the four shipped maps still
+draining in one frame with `gate.mjs` clean; `bank.mjs --check` byte-identical
+either side, because lever 2 changes what is IN a probe's cube and that is the
+one thing the bank can see; and the 1500 m frame unchanged at ~9.3 ms, which
+lever 2 must not buy its saving from.
 
 ---
 

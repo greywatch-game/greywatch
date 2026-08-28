@@ -2964,3 +2964,118 @@ async window opened inside `installMap` and no `build` split into two lanes.
   should fall with the round trip; if it does not, it is its own finding.
 
 ---
+
+## 27. The 1500 m FRAME is 9.3 ms and the wall it was supposed to hit is gone — but the bake now drains in the ROUND, and that is 37 seconds at one frame a second
+
+**Asked because nobody had quoted a 1500 m frame since S0**, which measured
+30.3 ms with `ReflectionSystem.build` stubbed to a no-op and before S1, S2, S3,
+S0b, S5b and S5c had any of them landed. Every ordering decision since has been
+about the LOAD, on the unexamined assumption that the frame was in hand. It is —
+and asking the question turned up something larger than anything left in the
+load.
+
+### The frame, which is fine
+
+Uncapped (`--disable-frame-rate-limit --disable-gpu-vsync`), 1920x1080,
+headless via `channel: "chromium"`, warmed **on the reflection queue draining
+and not on a timer** — see the drain below, and `VERIFYING.md`, which is
+explicit that a wall-clock warm on this map reports the bake as the round:
+
+| proving 1500 / 0 | |
+| --- | --- |
+| scene meshes | 23,031 |
+| active meshes | **146** |
+| cold (5 s) | 102.5 fps, 9.8 ms |
+| warm (8 s) | **107.4 fps, 9.3 ms** |
+
+**S0's 30.3 ms frame is 9.3, and 23.0 ms of it was wall 1.** 146 active meshes
+out of 23,031 is `WorldCulling` doing exactly what S1 built it to do at an
+extent S1 never measured. **Wall 1 is down at 1500 m**, not merely mostly down,
+and this retires the projection that S8 would be needed to finish it — S8 is
+about what a map you cannot fog LOOKS like, which is a different question from
+what it costs.
+
+Read this as a QUIET round: the player is spawned and nothing is in contact.
+Finding 22 measured zero rays fired in eight seconds with sixteen bots alive, so
+a fight has to be forced and this reading does not include one. Wall 2 is down,
+so the expectation is that it changes little, but it has not been measured.
+
+### The drain, which is not fine
+
+`installMap` returns in ~19 s and the state goes to `deploy` with **211 probes
+still queued and 1,782,504 face draws outstanding**. What happens next:
+
+| the bake draining at 1500 / 0 | |
+| --- | --- |
+| frames | **40** |
+| wall clock | **36.9 s** |
+| median frame | **928 ms** |
+| worst frame | 1,505 ms |
+| first ten frames, ms | 931, 975, 932, 871, 909, 931, 822, 809, 1271, 906 |
+
+**So a 1500 m map runs at about one frame a second for its first thirty-seven
+seconds, and it does it in the ROUND rather than behind the loading card.**
+That is six times the mesh round trip (finding 26, ~6.3 s) and nine times the
+worker's whole ceiling (3,899 ms), and unlike either it is not hidden — the
+deploy screen and then the round are what the player is looking at while it
+happens.
+
+**This is not a new mechanism and it is not a regression.** It is the price of
+S0b, which is the step that took wall 5 down: `drawsPerFrame` converts one
+fatal submission into a queue, and the trade is correct — the alternative
+measured is a lost D3D12 device and a replaced renderer process.
+`ENGINE_UPGRADE.md` S0b's own owed list says both halves of this out loud —
+"**1500 / 0 has not been re-tested**" and "**the bake still lands AFTER the
+loading card, not behind it**" — and estimates ~26 s at 900/300.
+`VERIFYING.md` records the 900/300 version (21 s, 24 frames, 894 ms median)
+but only as a trap for measurement scripts. **What nobody had written down is
+that it means the map is unplayable for half a minute.**
+
+**A bake draw is 18.6 us and nobody knows why.** 50,000 draws at ~928 ms is
+three times the ~6.3 us `VERIFYING.md` measures for a mesh draw carrying a
+material switch, and eight times the ~2.3 us for an outline shell reusing a
+bound material. A first bake creates a draw wrapper per (mesh, render pass id)
+and six of those per probe, so bind-group creation is the obvious suspect — but
+it is a suspect and not a measurement.
+
+### The measurement note that cost this finding its profile
+
+**The drain cannot be CPU-profiled with the sampling profiler.** A CDP
+`Profiler` capture at a 500 us interval over the drain ran past **twenty
+minutes** against an unprofiled 37 seconds — a frame issuing 50,000 draws is a
+deep stack sampled two thousand times a second — and was killed rather than
+waited out. The figures above are all from unprofiled runs. Anything that wants
+the 18.6 us broken down needs a different instrument: a GPU capture, or
+`drawsPerFrame` turned down far enough that a frame is samplable and the
+per-draw cost read off the slope.
+
+### What is open
+
+- **Where the 37 s should be spent is a state-machine question and S0b named
+  it.** `loading` is a STEP where nothing simulates and the scene still renders
+  (`docs/states.md`), so holding it until the queue is empty drains the bake
+  under the card with no new machinery — and `queue.length` is a progress
+  figure the card does not currently have. It moves the cost rather than
+  removing it. Opened as `ENGINE_UPGRADE.md` S0c.
+- **The bake and the FRAME have never been asked the same question, and that is
+  the disproportion.** A probe's render list is `neighbourhood()`, a pure
+  radius test over the opaque world — 1,348 of 2,434 meshes each at 1500 m —
+  while `WorldCulling` gets the frame to 146 active meshes by filing them per
+  48 m block and gating on `fogEnd`. Nothing has tried giving a probe the same
+  treatment, and it is the only lever that reduces the WORK rather than moving
+  it.
+- **`perCell` is 2 here and grouping harder makes the picture worse, not just
+  the count.** A probe drops every block it SERVES out of its own bake
+  (`encloses`), so a cell of four blocks is a probe with 96 m of city missing
+  from the middle of its cube. The probe count is not a free lever.
+- **What a bake draw costs is unexplained**, and it is the term that multiplies
+  everything above.
+- **A fight has not been measured at 1500 m.** The frame reading is a quiet
+  round.
+- **The proving ground's glazing is a generated worst case.** 1,153 glazing
+  groups over a city-block grid; a real 1500 m map may glaze far less, and S11
+  is deliberately last so that the engine is not tuned against content that does
+  not exist. The SHAPE is not a worst case — the bake is priced on glazing and
+  `docs/rendering.md` says glazing has no natural bound.
+
+---

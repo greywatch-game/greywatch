@@ -147,7 +147,21 @@ you are on before you believe anything else in this section.
   `g.reflections.queue.length === 0` and then settle, never on a timer.** The
   four shipped maps drain in one frame (39–42 ms) so nothing about them shows
   it, which is precisely why it is easy to write a script that is wrong only on
-  the map you are investigating.
+  the map you are investigating. **At 1500 / 0 it is 40 frames and 36.9 s**, a
+  928 ms median and a 1,505 ms worst, with the state already at `deploy` when it
+  starts — so on that extent the first thirty-seven seconds of the ROUND are
+  bake frames (`FINDINGS.md` 27, and `ENGINE_UPGRADE.md` S0c for what is being
+  done about it).
+- **The reflection drain cannot be CPU-PROFILED, and finding out costs twenty
+  minutes.** A CDP `Profiler` capture at a 500 us interval over the 1500 m drain
+  ran past **twenty minutes** against an unprofiled 37 seconds and had to be
+  killed: a frame issuing 50,000 draws is a deep stack being sampled two
+  thousand times a second, and the overhead is multiplicative rather than
+  additive. The same profiler over the map INSTALL is fine — findings 24, 25 and
+  26 are all taken that way — so it is the bake specifically. Anything wanting
+  the per-draw cost broken down needs a GPU capture, or
+  `CONFIG.graphics.reflection.drawsPerFrame` turned down until a frame is
+  samplable and the cost read off the slope.
 - **A round left to itself fires NO ray at all**, so a script measuring rays has
   to force contact. `BattleSystem.acquire` gathers candidates by distance and
   only ray-tests inside `bots.perception.engageRange` (55 m): measured at **zero
