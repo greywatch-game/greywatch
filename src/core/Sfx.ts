@@ -11,10 +11,14 @@
  * repeating sound: footsteps are one-shots fired by the caller's own gait
  * phase (the camera's bob, a bot's walk cycle), never by a timer in here.
  * There is ONE sustained voice and it is not a counter-example: the driven
- * vehicle's engine (`engineOn`/`engineDrive`/`engineOff`) is a single source
- * held open between a mount and a dismount, not a timer firing one-shots. It
- * is unpanned and uncapped for the reason the player's own report is, and it
- * stops with the audio clock like everything else.
+ * vehicle's engine (`engineOn`/`engineDrive`/`engineOff`) is a graph of six
+ * sources held open between a mount and a dismount, not a timer firing
+ * one-shots — the only thing in it that repeats is an oscillator, which is the
+ * audio clock's business rather than the frame's. It is unpanned and uncapped
+ * for the reason the player's own report is, and it stops with the audio clock
+ * like everything else. Its teardown is a loop over `EngineVoice.sources`, and
+ * a source added to that graph without a place on that list is a voice running
+ * unheard for the rest of the session.
  */
 import type { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -39,6 +43,46 @@ const SOFT_CLIP_DRIVE = 3;
  * can drift apart.
  */
 const FLAT_REPORT: ReportVoice = CONFIG.weapons.rifle.report;
+
+/**
+ * The nodes of the tank engine — the one sustained voice in this file, held
+ * open between a mount and a dismount.
+ *
+ * Grouped rather than kept as a dozen fields on the class, because the
+ * teardown has to reach every single one of them: a node added here without a
+ * line in `engineOff` is a source that runs, unheard, for the rest of the
+ * session. `sources` exists for exactly that — everything that was started is
+ * on it, so stopping is a loop rather than a list somebody has to keep in
+ * step.
+ *
+ * Everything named below is something `engineDrive` MOVES. Anything the
+ * throttle does not touch is wired up in `engineOn` and never referred to
+ * again.
+ */
+interface EngineVoice {
+  /** Everything started, for the one loop that stops it all. */
+  sources: AudioScheduledSourceNode[];
+  /** The output tap: the engine's level, and what takes it off the bus. */
+  out: GainNode;
+  /** The firing rate. Every pitched layer below is a multiple of it. */
+  fire: OscillatorNode;
+  /** The combustion tone, at twice the firing rate, before its shaper. */
+  growl: OscillatorNode;
+  /** A pure tone at the same pitch: the part of it you feel. */
+  chest: OscillatorNode;
+  /** The turbo's two blades, a few cents apart so they beat. */
+  turbo: [OscillatorNode, OscillatorNode];
+  /** How much of the rumble gets out — opens with load. */
+  chugTone: BiquadFilterNode;
+  /** The same question asked of the combustion tone. */
+  growlTone: BiquadFilterNode;
+  /** The turbo's resonant peak, swept with the spool. */
+  turboTone: BiquadFilterNode;
+  /** The turbo's level. Lagged, and that lag is the whole of the spool. */
+  turboLevel: GainNode;
+  /** Track clatter, gated by how fast the hull is actually moving. */
+  trackLevel: GainNode;
+}
 
 /**
  * Procedural sound effects via WebAudio — no audio assets.
@@ -77,10 +121,12 @@ export class Sfx {
    * The driven vehicle's engine — the one held-open voice in this file. Null
    * whenever the player is on foot. See `engineOn`.
    */
-  private engineSrc: AudioBufferSourceNode | null = null;
-  private engineOsc: OscillatorNode | null = null;
-  private engineGain: GainNode | null = null;
-  private engineFilter: BiquadFilterNode | null = null;
+  private engine: EngineVoice | null = null;
+  /**
+   * The combustion shaper's curve: built on the first mount and shared by
+   * every one after it, for the reason the noise buffer is.
+   */
+  private growlCurve: Float32Array<ArrayBuffer> | null = null;
   private listener: AudioListener | null = null;
   /** Reused by every `burst()` call; built once on unlock. */
   private noiseBuffer: AudioBuffer | null = null;
@@ -888,8 +934,10 @@ export class Sfx {
    * **This is the only thing in this file that does not end on its own**, and
    * the header's rule — nothing here schedules a repeating sound — is intact
    * rather than bent: a repeating sound is a timer firing one-shots, and this
-   * is a single source that is simply held open. It still stops with the audio
-   * clock, so a pause holds it exactly as it holds the tail of the last shot.
+   * is a graph of sources that is simply held open. The one thing in it that
+   * repeats is an OSCILLATOR (the firing rate below), which is the audio
+   * clock's business and not the frame's. It still stops with that clock, so a
+   * pause holds it exactly as it holds the tail of the last shot.
    *
    * Deliberately NOT spatialised and deliberately NOT counted against the voice
    * cap. It is not a sound in the world you are listening to; it is the vehicle
@@ -897,40 +945,208 @@ export class Sfx {
    * Somebody else's tank is heard through `cannon` and through nothing else,
    * which is a real gap and is written down in `docs/vehicles.md`.
    *
+   * **A diesel is a string of separate explosions, and that — not the spectrum
+   * of any one layer — is what this voice is built around.** Filtered noise and
+   * a sawtooth make a drone; the same two multiplied by a gain swinging at the
+   * FIRING RATE make an engine, because the ear reads the lump as combustion
+   * and everything without it as wind. Five layers hang off that idea:
+   *
+   * | layer | what it is for |
+   * | --- | --- |
+   * | chug — lowpassed noise, lumped | the mass of air a big diesel shifts |
+   * | growl — a sawtooth through an asymmetric clip, lumped | the iron in it |
+   * | chest — a sine well over it, lumped | the part you feel rather than hear |
+   * | turbo — two beating sines through a resonance | the only layer that says TURBO, and the only one that is late |
+   * | track — a resonant noise band, gated on speed | link on link, which a tank at speed has and an idling one does not |
+   *
+   * Everything but the turbo goes through the lump, and the turbo does not
+   * because a wheel spinning at forty thousand rpm does not care what the
+   * crank is doing — chopping it at the firing rate would make it a further
+   * cylinder rather than a compressor.
+   *
    * The noise runs at a third speed so the shared one-second buffer loops every
    * three, and it is lowpassed hard enough that the seam is not a thing an ear
    * can find.
    */
   engineOn(): void {
-    if (!this.ctx || !this.master || !this.noiseBuffer || this.engineGain) return;
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !this.noiseBuffer || this.engine) return;
     try {
-      const gain = this.ctx.createGain();
-      gain.gain.value = 0;
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.value = 300;
-      filter.Q.value = 0.7;
-      const src = this.ctx.createBufferSource();
-      src.buffer = this.noiseBuffer;
-      src.loop = true;
-      src.playbackRate.value = 0.33;
-      // The pitched half: an engine has a firing order, and a sawtooth under
-      // filtered noise is what makes the two read as one machine rather than
-      // as wind.
-      const osc = this.ctx.createOscillator();
-      osc.type = "sawtooth";
-      osc.frequency.value = 40;
-      const oscGain = this.ctx.createGain();
-      oscGain.gain.value = 0.35;
-      src.connect(filter).connect(gain);
-      osc.connect(oscGain).connect(filter);
-      gain.connect(this.master);
-      src.start();
-      osc.start();
-      this.engineSrc = src;
-      this.engineOsc = osc;
-      this.engineGain = gain;
-      this.engineFilter = filter;
+      const out = ctx.createGain();
+      out.gain.value = 0;
+      out.connect(this.master);
+
+      // What comes off the bottom, and it is NOT a DC blocker — the shaper
+      // below is asymmetric and the lump multiplies signals by a gain they are
+      // phase-locked to, either of which could leave an offset behind, but
+      // with the curve normalised the way `growlShape` argues the measured DC
+      // is 0.0003 against a 0.36 peak and there is nothing there to remove.
+      // What this is for is the band UNDER the engine: the growl's own
+      // fundamental at idle is 26 Hz, which no speaker a player owns can make
+      // a sound in, and the soft clip on the master is charged for every bit
+      // of it.
+      const lowCut = ctx.createBiquadFilter();
+      lowCut.type = "highpass";
+      lowCut.frequency.value = 32;
+      lowCut.connect(out);
+
+      // The hull. One resonance the whole engine is heard through, because a
+      // diesel in a steel box is not a spectrum, it is a room. A peak here
+      // buys more weight than any amount of level on the layers does: it
+      // lifts one band rather than everything, so what comes up is the bottom
+      // and not the hiss with it.
+      const body = ctx.createBiquadFilter();
+      body.type = "peaking";
+      body.frequency.value = 92;
+      body.Q.value = 1.1;
+      body.gain.value = 4.5;
+      body.connect(lowCut);
+
+      // THE LUMP, and it is the whole voice. Every layer but the turbo is
+      // multiplied by this one gain, so the engine breathes at the firing rate
+      // instead of droning at it.
+      //
+      // Two details carry it. A SAWTOOTH rather than a sine, because the
+      // discontinuity once a cycle is the edge of a power stroke and a sine is
+      // a wobble. And the depth is NEGATIVE, which flips that saw over: a
+      // positive one swells slowly and then drops, which is a firing order
+      // running backwards. What is wanted is the bang first and the decay
+      // after it.
+      const lump = ctx.createGain();
+      lump.gain.value = 0.68;
+      lump.connect(body);
+      const fire = ctx.createOscillator();
+      fire.type = "sawtooth";
+      // Cranking speed. `engineDrive` pulls this up to idle over its own
+      // couple of hundred milliseconds, so the engine CATCHES rather than
+      // fading in at the note it will settle on.
+      fire.frequency.value = 6;
+      // The saw's own edge is one SAMPLE wide, and a gain that steps in one
+      // sample is a click by definition — thirteen to thirty-two of them a
+      // second, which is a buzz and not a diesel. Rounding it to a couple of
+      // milliseconds is what turns each firing into a thump: the attack is
+      // still far faster than anything else in the mix, which is what makes it
+      // read as an impact, and it is no longer a discontinuity. Measured as
+      // the worst sample-to-sample jump over a whole mount-to-dismount render:
+      // 0.130 without this filter against a 0.36 peak, and about 0.05 with it.
+      const fireEdge = ctx.createBiquadFilter();
+      fireEdge.type = "lowpass";
+      fireEdge.frequency.value = 190;
+      fireEdge.Q.value = 0.9;
+      const fireDepth = ctx.createGain();
+      fireDepth.gain.value = -0.4;
+      fire.connect(fireEdge).connect(fireDepth).connect(lump.gain);
+
+      // The chug: the shared noise buffer at a third speed, lowpassed to a
+      // rumble. It is the meat of the thing, and it is noise rather than a
+      // tone because most of what a big diesel makes is air being moved.
+      const noise = ctx.createBufferSource();
+      noise.buffer = this.noiseBuffer;
+      noise.loop = true;
+      noise.playbackRate.value = 0.33;
+      const chugTone = ctx.createBiquadFilter();
+      chugTone.type = "lowpass";
+      chugTone.frequency.value = 420;
+      chugTone.Q.value = 0.8;
+      const chugLevel = ctx.createGain();
+      chugLevel.gain.value = 0.88;
+      noise.connect(chugTone).connect(chugLevel).connect(lump);
+
+      // The growl: the combustion tone at twice the firing rate, bent through
+      // an asymmetric soft clip. A sawtooth on its own is a buzz; what makes
+      // it iron is the distortion, and what makes the distortion big rather
+      // than merely dirty is that it is LOPSIDED — see `growlShape`. The
+      // highpass after it takes the fundamental back OUT again: what is wanted
+      // off this layer is the harmonics the shaper made, and the bottom octave
+      // is the chest note's job below rather than two layers stacked on one
+      // frequency.
+      const growl = ctx.createOscillator();
+      growl.type = "sawtooth";
+      growl.frequency.value = 12;
+      const growlDrive = ctx.createGain();
+      growlDrive.gain.value = 1.7;
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = this.growlShape();
+      shaper.oversample = "2x";
+      const growlTone = ctx.createBiquadFilter();
+      growlTone.type = "lowpass";
+      growlTone.frequency.value = 500;
+      growlTone.Q.value = 0.8;
+      const growlEdge = ctx.createBiquadFilter();
+      growlEdge.type = "highpass";
+      growlEdge.frequency.value = 90;
+      const growlLevel = ctx.createGain();
+      growlLevel.gain.value = 0.32;
+      growl.connect(growlDrive).connect(shaper).connect(growlTone);
+      growlTone.connect(growlEdge).connect(growlLevel).connect(lump);
+
+      // The chest: a pure sine well above the growl, sitting on the hull
+      // resonance above. NOT at the growl's own pitch, which is where it
+      // started: at idle that is 26 Hz, a band most speakers cannot make a
+      // sound in at all, so it was heard as nothing and charged for as the
+      // loudest thing in the mix.
+      const chest = ctx.createOscillator();
+      chest.type = "sine";
+      chest.frequency.value = 30;
+      const chestLevel = ctx.createGain();
+      chestLevel.gain.value = 0.2;
+      chest.connect(chestLevel).connect(lump);
+
+      // The turbo. Two sines a few cents apart through a resonant peak: one
+      // sine is a test tone, and two beating against each other is a wheel.
+      // It bypasses the lump for the reason above, and its level starts at
+      // nothing because a cold turbo is not spinning.
+      const turboA = ctx.createOscillator();
+      turboA.type = "sine";
+      turboA.frequency.value = 700;
+      const turboB = ctx.createOscillator();
+      turboB.type = "sine";
+      turboB.frequency.value = 700;
+      turboB.detune.value = 11;
+      const turboTone = ctx.createBiquadFilter();
+      turboTone.type = "bandpass";
+      turboTone.frequency.value = 700;
+      turboTone.Q.value = 3.2;
+      const turboLevel = ctx.createGain();
+      turboLevel.gain.value = 0;
+      turboA.connect(turboTone);
+      turboB.connect(turboTone);
+      turboTone.connect(turboLevel).connect(out);
+
+      // Track clatter: the same noise through a resonant band up where link
+      // meets link, gated on how fast the hull is actually going. It rides
+      // the lump too, so the rattle arrives in the same pulses the engine
+      // does — that is a tracked vehicle lurching, rather than a hiss laid
+      // over one.
+      const clatter = ctx.createBiquadFilter();
+      clatter.type = "bandpass";
+      clatter.frequency.value = 1700;
+      clatter.Q.value = 1.3;
+      const trackLevel = ctx.createGain();
+      trackLevel.gain.value = 0;
+      noise.connect(clatter).connect(trackLevel).connect(lump);
+
+      const sources: AudioScheduledSourceNode[] = [
+        noise, fire, growl, chest, turboA, turboB,
+      ];
+      for (const s of sources) s.start();
+      this.engine = {
+        sources, out, fire, growl, chest, turbo: [turboA, turboB],
+        chugTone, growlTone, turboTone, turboLevel, trackLevel,
+      };
+
+      // The CATCH. The graph above comes up from silence over a couple of
+      // hundred milliseconds, which on its own is a fade and not a start:
+      // three one-shots make it the starter turning the engine over and the
+      // first cylinders finding compression. Ordinary one-shots, scheduled on
+      // the audio clock and voice-capped like any other — the sustained voice
+      // is the exception in this file, and this is not part of it.
+      this.burst({ dur: 0.32, vol: 0.15, type: "bandpass", freq: 400, freqEnd: 250, q: 2.4 });
+      this.burst({
+        dur: 0.5, vol: 0.4, type: "lowpass", freq: 430, freqEnd: 70, q: 0.8,
+        delay: 0.24,
+      });
+      this.tone(58, 0.44, "sine", 0.36, 0.55, null, { delay: 0.26 });
     } catch {
       // ignore
     }
@@ -940,42 +1156,129 @@ export class Sfx {
    * How hard the engine is working: `load` is the throttle 0..1 and `speed` is
    * how much of the vehicle's top speed it is doing.
    *
-   * Both, not one. Pitch tracks SPEED, so the note rises as the tank gets
-   * going; volume and the filter track LOAD, so standing on the throttle
-   * against a wall still sounds like work. A single term would make a stalled
-   * tank silent, which is the opposite of what a stalled tank sounds like.
+   * Both, not one, and they are asked different questions. SPEED is what the
+   * crank is doing, so it carries the pitch and it alone gates the track
+   * clatter — an engine revved on a stationary tank rattles no links. LOAD is
+   * how hard it is being worked, so it carries the level and both filters:
+   * standing on the throttle against a wall still sounds like work. A single
+   * term would make a stalled tank silent, which is the opposite of what a
+   * stalled tank sounds like.
+   *
+   * The pitch is not speed ALONE, though. A quarter of it is the throttle,
+   * because an engine lugging against a wall pulls down toward idle rather
+   * than holding the note it had rolling.
    */
   engineDrive(load: number, speed: number): void {
-    if (!this.ctx || !this.engineGain || !this.engineOsc || !this.engineFilter) {
-      return;
-    }
+    const e = this.engine;
+    if (!this.ctx || !e) return;
     const t = this.ctx.currentTime;
+    const rev = Math.min(1, 0.75 * speed + 0.25 * load);
+    // The firing rate, and every pitched layer is a multiple of it so the
+    // engine changes note as one machine. 13 Hz is a lope you can count and 32
+    // is a diesel working; a real V12's firing rate is far above both, and
+    // taking it there trades the lump this voice is built on for a buzz.
+    const fire = 13 + 19 * rev;
+    e.fire.frequency.setTargetAtTime(fire, t, 0.14);
+    e.growl.frequency.setTargetAtTime(fire * 2, t, 0.12);
+    e.chest.frequency.setTargetAtTime(fire * 5, t, 0.12);
     // Levels here are art and sit beside the rest of this file's, which are
     // all literals for the same reason: what a layer is worth is decided by ear
     // against the others, not by a number anybody would tune from outside.
-    const level = 0.1 + 0.16 * load;
+    //
     // Ramped rather than assigned, or every frame is a click. 80 ms is short
     // enough that the engine still answers the throttle inside a tenth of a
     // second and long enough that no step in it is audible.
-    this.engineGain.gain.setTargetAtTime(level, t, 0.08);
-    this.engineOsc.frequency.setTargetAtTime(34 + 52 * speed, t, 0.12);
-    this.engineFilter.frequency.setTargetAtTime(220 + 620 * load, t, 0.1);
+    e.out.gain.setTargetAtTime(0.12 + 0.18 * load, t, 0.08);
+    e.chugTone.frequency.setTargetAtTime(420 + 900 * load, t, 0.1);
+    e.growlTone.frequency.setTargetAtTime(500 + 1600 * load, t, 0.1);
+    // The turbo, whose whole character is that it is LATE. A tenth of a second
+    // is the rest of the engine answering the stick; six tenths is the wheel
+    // getting there. So a stab of throttle is heard as the engine first and
+    // the whistle arriving behind it, and letting go leaves the whistle
+    // running on for a moment after the growl has dropped — which is the one
+    // cue in the mix that says turbo rather than merely big.
+    const spool = Math.min(1, 0.45 * speed + 0.65 * load);
+    const hz = 700 + 1500 * spool;
+    e.turbo[0].frequency.setTargetAtTime(hz, t, 0.6);
+    e.turbo[1].frequency.setTargetAtTime(hz, t, 0.6);
+    e.turboTone.frequency.setTargetAtTime(hz, t, 0.6);
+    e.turboLevel.gain.setTargetAtTime(0.007 + 0.055 * spool, t, 0.55);
+    e.trackLevel.gain.setTargetAtTime(0.006 + 0.045 * speed, t, 0.12);
   }
 
-  /** Out of the vehicle: the engine stops, and its nodes are let go. */
+  /**
+   * Out of the vehicle: the engine stops, and its nodes are let go.
+   *
+   * It is NOT cut on the frame the player steps down. A diesel that is
+   * switched off falls through its own idle and stops turning over about half
+   * a second later, and a graph this sustained disappearing in one sample is
+   * the single moment the whole thing would sound synthesized. The wind-down
+   * is scheduled on the audio clock and the sources are stopped at the end of
+   * it, so a pause holds the shutdown exactly as it holds everything else.
+   */
   engineOff(): void {
-    if (!this.engineGain) return;
+    const e = this.engine;
+    if (!this.ctx || !e) return;
+    // Dropped before the ramps rather than after them, so `engineOn` can build
+    // a fresh voice while this one is still winding down — getting straight
+    // back into the same hull is an ordinary thing for a player to do, and the
+    // two graphs are independent.
+    this.engine = null;
     try {
-      this.engineSrc?.stop();
-      this.engineOsc?.stop();
-      this.engineGain.disconnect();
+      const t = this.ctx.currentTime;
+      // The level is held where it actually is first: the last frame's own
+      // `setTargetAtTime` is still approaching a target, and ramping from a
+      // stale value would step.
+      e.out.gain.cancelScheduledValues(t);
+      e.out.gain.setValueAtTime(e.out.gain.value, t);
+      // A beat of it still running, then away. The pitch falls through the
+      // whole of it and the turbo dies first, because a wheel with no exhaust
+      // behind it stops long before the crank does.
+      e.out.gain.setTargetAtTime(0.0001, t + 0.16, 0.15);
+      e.turboLevel.gain.setTargetAtTime(0.0001, t, 0.1);
+      e.fire.frequency.setTargetAtTime(4, t, 0.28);
+      e.growl.frequency.setTargetAtTime(9, t, 0.28);
+      e.chest.frequency.setTargetAtTime(18, t, 0.28);
+      const stop = t + 0.6;
+      for (const s of e.sources) s.stop(stop);
+      e.sources[0].onended = () => e.out.disconnect();
     } catch {
       // ignore
     }
-    this.engineSrc = null;
-    this.engineOsc = null;
-    this.engineGain = null;
-    this.engineFilter = null;
+  }
+
+  /**
+   * The combustion tone's distortion curve, built on the first mount and then
+   * shared — the noise buffer's rule, for the noise buffer's reason.
+   *
+   * **Asymmetric on purpose.** A symmetric clip folds a sawtooth into odd
+   * harmonics only, which is a rasp; offsetting the curve puts EVEN ones in
+   * beside them, and the even harmonics are the difference between an engine
+   * that sounds big and one that just sounds dirty. The offset is subtracted
+   * back out at zero, so the curve passes zero through and adds no DC of its
+   * own at rest.
+   */
+  private growlShape(): Float32Array<ArrayBuffer> {
+    if (this.growlCurve) return this.growlCurve;
+    const curve = new Float32Array(1024);
+    const k = 2.4;
+    const bias = 0.14;
+    const zero = Math.tanh(k * bias);
+    // Normalised by the curve's own PEAK and not by the span of one half of
+    // it, which is worth stating because getting that wrong does not look like
+    // a bug: dividing by the positive half's span left the negative half with
+    // a gain of TEN, and what that sounds like is an engine — a very loud one,
+    // drowning every other layer by 26 dB, with the whole mix under 90 Hz.
+    let peak = 0;
+    for (let i = 0; i < curve.length; i++) {
+      const u = (i / (curve.length - 1)) * 2 - 1;
+      const y = Math.tanh(k * (u + bias)) - zero;
+      curve[i] = y;
+      peak = Math.max(peak, Math.abs(y));
+    }
+    for (let i = 0; i < curve.length; i++) curve[i] /= peak;
+    this.growlCurve = curve;
+    return curve;
   }
 
   /**
