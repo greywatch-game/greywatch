@@ -2609,3 +2609,146 @@ harrowmead/borderland at 0%) — which is the same evidence S4 used, and finding
   that inversion is the decision this measurement was owed.
 
 ---
+
+## 25. Half the install is not the build, and it is two sites: Havok's compound is quadratic and Babylon walks the whole scene once per render pass id
+
+**Asked because finding 24 left a 17.5 s hole.** `build:total` is 17,422 ms at
+1500/0 and install-to-`deploy` is 34,923, so more than half the load was
+somewhere nobody had profiled. It is in two calls, both inside `installMap`,
+and **neither is the burst work `ENGINE_UPGRADE.md` S5 is about**.
+
+A CPU profile over `buildRound`, attributed to the direct children of
+`installMap` — so every line is one call in that method, and they sum to it:
+
+| installMap, ms | 900 / 300 | share | 1500 / 0 | share |
+| --- | --- | --- | --- | --- |
+| `MapBuilder.build` | 4,837 | 63.3% | 13,656 | 42.2% |
+| **`PhysicsWorld.setMap`** | **1,716** | **22.4%** | **13,402** | **41.4%** |
+| **`ReflectionSystem.build`** | **1,075** | **14.1%** | **5,272** | **16.3%** |
+| `WorldCulling.setMap` | 5 | 0.1% | 10 | 0.0% |
+| `ShadowSystem.setCasters` | 4 | 0.1% | 7 | 0.0% |
+| `Atmosphere.apply` | 2 | 0.0% | 3 | 0.0% |
+| `GlassSystem.setMap` | 0 | 0.0% | 3 | 0.0% |
+| **total** | **7,643** | | **32,360** | |
+
+(Profiled runs, so the totals sit a little under the unprofiled 8,807 and
+34,923; the split is what matters and it is internally consistent.
+`WaterSystem.build` and `GrassSystem.build` do not appear because the proving
+ground has neither — a map with water owes its own reading.)
+
+**Everything in `installMap` that is not those three is 27 ms at 1500 m.** All
+the wiring — the six `setWorld` calls, the fog pushes, the leash, the ground
+probe, the shadow casters, the culling — is free, and this closes the question
+of whether any of it needed looking at.
+
+### `PhysicsWorld.setMap` is O(boxes²), and it is the largest line at 1500 m
+
+| | collider boxes | ms | ms per box |
+| --- | --- | --- | --- |
+| 900 / 300 | 5,929 | 1,716 | 0.29 |
+| 1500 / 0 | 16,526 | **13,402** | **0.81** |
+
+2.79x the boxes costs **7.81x** the time — an exponent of 1.94, which is a
+square with the rounding off. `buildWorld` adds one `PhysicsShapeBox` per box
+into a single `PhysicsShapeContainer`, and the profile puts 13,244 of the
+13,398 ms inside `addChild` rather than in the shape construction. Babylon's
+`HavokPlugin.addChild` is one `HP_Shape_AddChild` per call, so the quadratic is
+Havok rebuilding the compound's acceleration structure on every insert, and
+there is no batch entry point through the plugin.
+
+**`PhysicsWorld`'s own header already measured this and read it as flat.** It
+says "rebuilding a 33-50 ms compound every time a window goes in is a hitch",
+which is Coldharbour's 768 boxes. At 16,526 the same compound is 13.4 seconds
+— 21.5x the boxes for ~300x the cost. The header's ARGUMENT is untouched (a
+rebuild per broken pane is still the wrong trade); its NUMBER does not
+generalise and should not be quoted at a large map.
+
+Two shapes of fix, neither costed:
+
+- **Bucket the compound.** One container per 48 m map block turns `n²` into
+  `k(n/k)²`: 324 blocks at 1500/0 is ~51 boxes each, so 842k insert-units
+  against 273M. It spends the argument at the top of `buildWorld` — one static
+  body rather than 758 — but that argument is about the plugin's per-step sync
+  walking BODIES, and 324 statics that bail out immediately is not 783 dynamic
+  ones. It wants measuring, not assuming.
+- **Move it off the load.** Nothing needs the static world until something
+  falls on it, and the first ragdoll is many seconds after `deploy`. Building
+  it on the far side of the loading card would take 13.4 s off the wait without
+  touching the shape at all — and unlike a worker it needs no async window
+  inside `installMap`, only a place to spend it. The header's "shapes at the
+  moment of a kill is a hitch on the worst frame" still forbids doing it lazily
+  at the first death.
+
+### `ReflectionSystem.build` is doing nothing at all, 106 million times
+
+96% of it is probe CONSTRUCTION — `newProbe` → `ReflectionProbe` →
+`RenderTargetTexture` → `ObjectRenderer` — and inside that, 5,058 of 5,272 ms
+is `_releaseRenderPassId`. On a probe that has never had a render pass id.
+
+```js
+// Rendering/objectRenderer.js
+_createRenderPassId() {
+    this._releaseRenderPassId();              // <- _renderPassIds is EMPTY here
+    for (let i = 0; i < this.options.numPasses; ++i) { ... }
+}
+_releaseRenderPassId() {
+    for (let i = 0; i < this.options.numPasses; ++i) {
+        this._engine.releaseRenderPassId(this._renderPassIds[i]);   // undefined
+    }
+}
+// Engines/AbstractEngine/abstractEngine.renderPass.pure.js
+releaseRenderPassId = function (id) {
+    this._renderPassNames[id] = undefined;
+    for (const scene of this.scenes)
+        for (const mesh of scene.meshes) {          // <- EVERY MESH
+            mesh._releaseRenderPassId(id);
+            for (const subMesh of mesh.subMeshes) subMesh._removeDrawWrapper(id);
+        }
+};
+```
+
+A cube probe is six passes, so **every probe constructed walks the entire scene
+six times to release six `undefined` ids**. At 900/300 that is a confirmed 265
+probes x 6 x 9,002 meshes = **14.3 million mesh visits** for 1,075 ms; at
+1500/0, on wall 5's count of 770 probes (carried forward, not re-measured this
+session) x 6 x 23,014 = **106 million** for 5,272 ms. The ratio of the work is
+7.4x and of the time 4.9x, which is as close as a per-submesh inner loop gets.
+
+**It is priced on map AREA twice over** — more glazed blocks and more meshes to
+walk per block — which makes it a wall-1-shaped cost hiding in the load rather
+than in the frame, and it is entirely waste: nothing is released because nothing
+was ever allocated.
+
+The lever is the multiplier, since the loop is Babylon's. The probes are POOLED
+and survive a rebuild, so this is a first-install cost, and it is paid when
+`scene.meshes` is at its longest — right after `MapBuilder.build`. Growing the
+pool while the scene is SHORT is what removes it: `installMap` disposes the old
+map on its first line, and between there and the build the scene is ~1,020
+meshes rather than 23,014, which is a 22x cut. What stands in the way is that
+the probe count is not known until the map is built. Nobody has looked at
+whether it can be estimated off the layout, or whether it is simpler to hide
+`scene.meshes` from the walk for the length of the construction loop the way
+`WorldCulling` already replaces `getActiveMeshCandidates`.
+
+### What this says about S5
+
+**The worker is now third.** What S5 would move to a worker is 5,733 ms; the
+physics compound is 13,402 and the reflection probes 5,272, and both are single
+sites with no async window to open and no server path to keep in step. Either
+one is a smaller change than a worker and at least as large a win.
+
+### What is open
+
+- **Both mitigations above are uncosted.** The bucketed compound and the
+  early-grown probe pool are shapes, not measurements.
+- **A map with WATER has a fourth line here and this ground has none.**
+  `WaterSystem.build` bakes bed depth and calls `bakeWater`, which builds a
+  second probe pool — so it is on the wrong side of the reflection finding
+  above and did not appear in either column.
+- **The probe count at 1500/0 was not re-measured.** 265 at 900/300 is
+  confirmed from the `[reflection]` line; 770 is wall 5's figure from before
+  S0b landed, and S0b changed how many blocks share a probe.
+- **`MapBuilder.build` is still 42%** of the install, and finding 24's open
+  threads are where the rest of that is.
+
+---

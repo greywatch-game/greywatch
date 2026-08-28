@@ -1112,10 +1112,34 @@ is the one in "must not break" below and it has not weakened**: `loading` is a
 STEP and not a lid, and an async build has to reach `deploy` without ever
 opening a frame where something simulates under the card.
 
-Whoever takes it should also read the three things finding 24 leaves open, one
-of which is cheaper than a worker: **colliders are still built the ordinary
-way** and are 6,349 of the 900/300 ground's meshes, held back only because a
-part has no submeshes and `moveWithCollisions` walks them.
+**And then the gap under the build was profiled, which puts the worker THIRD.**
+`build:total` is 17,422 ms and install-to-`deploy` is 34,923, so more than half
+the load was somewhere this document had never looked. `FINDINGS.md` 25 is the
+attribution and it is two calls in `installMap`, neither of them burst work:
+
+| installMap at 1500/0, ms | | |
+| --- | --- | --- |
+| `MapBuilder.build` | 13,656 | 42.2% |
+| `PhysicsWorld.setMap` | **13,402** | **41.4%** |
+| `ReflectionSystem.build` | **5,272** | **16.3%** |
+| everything else in the method, together | 27 | 0.1% |
+
+The physics compound is **O(boxes²)** — 5,929 boxes for 1,716 ms and 16,526 for
+13,402, an exponent of 1.94 — because `buildWorld` inserts one box at a time
+into one `PhysicsShapeContainer` and Havok rebuilds the compound on every
+insert. The probes are **O(probes x scene meshes) doing literally nothing**:
+`ObjectRenderer._createRenderPassId` releases its ids before creating them, on
+a probe that has none, and `AbstractEngine.releaseRenderPassId` walks every
+mesh in every scene — six passes a cube probe, 106 million mesh visits at
+1500/0 to release `undefined`.
+
+So the order to consider is physics (13.4 s), probes (5.3 s), then this
+worker (5.7 s) — and the first two are single sites with no async window to
+open and no server path to keep in step. Whoever takes any of them should also
+read the three things finding 24 leaves open, one of which is cheaper again:
+**colliders are still built the ordinary way** and are 6,349 of the 900/300
+ground's meshes, held back only because a part has no submeshes and
+`moveWithCollisions` walks them.
 
 The natural cut is that these are **pure functions over plain data**: `NavGrid`,
 `CoverMap` and `ObstacleField` take `WorldBox[]` and a `TerrainField` and produce
