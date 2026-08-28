@@ -235,6 +235,38 @@ const BLAST_SLOT_LIFE =
  * blast in open air is meant to find nothing and be told it is over earth.
  */
 const PROBE_LIFT = 0.4;
+
+/**
+ * How far short of the blast the fragment ray stops, in metres.
+ *
+ * **A blast very often goes off exactly ON a surface, and a ray that starts on
+ * one hits it.** A grenade rests a radius proud of the floor and never had
+ * this problem, but a shell's blast point is `ShotResult.hitPoint` — which is
+ * `origin + dir * distance` for the very query that found the face, so it lies
+ * on that face to within float noise, on whichever side the noise lands. Cast
+ * from there the box test's `tMin >= 0` and the triangle's `t >= 0` both count
+ * a hit at zero distance, and the victim standing in the crater is reported as
+ * being behind a wall. Measured on Coldharbour: **85% of ground impacts and
+ * 47% of wall impacts blocked their own splash**, and of forty-four shells put
+ * into the dirt a metre from a bot's boots, forty-four. That is a tank shell
+ * that draws a fireball at a man's feet and does not scratch him.
+ *
+ * **So the ray is cast from the VICTIM toward the blast and stops short of
+ * it, rather than from the blast outward**, and the direction is the whole of
+ * the fix rather than a preference. A body's chest is in open air; a blast
+ * point is on a face, and `boxCast` reports a hit for ANY ray whose origin is
+ * inside a box however far in it is — so the suspect point must be the END of
+ * the segment, where a graze only has to clear the noise, and never its
+ * origin, where no distance clears it. Cast outward instead, five centimetres
+ * along a ray leaving a step's top face at three degrees is still inside the
+ * step.
+ *
+ * Five centimetres is three orders above the noise and two below anything a
+ * round can hide behind, and giving it up can only ever lose the surface the
+ * blast is already touching: a wall BETWEEN the two is still crossed, because
+ * the ray is aimed through it and only its last 5 cm are given up.
+ */
+const LOS_SKIP = 0.05;
 const PROBE_REACH = 3.2;
 
 /** Scratch — the flight integrates every frame and must not allocate. */
@@ -254,6 +286,8 @@ const _ground: BlastGround = { surface: "hard", normal: new Vector3(0, 1, 0) };
 /** The flight's step direction, and the blast probe's origin and its straight down. */
 const _dir = new Vector3();
 const _lifted = new Vector3();
+/** `visible`'s own start point, so a fragment ray allocates nothing. */
+const _los = new Vector3();
 const _down = new Vector3(0, -1, 0);
 const _up = new Vector3(0, 1, 0);
 const _lift = new Vector3();
@@ -832,9 +866,20 @@ export class GrenadeSystem {
     return _ground;
   }
 
-  /** Fragments stop in walls. One ray per victim already inside the radius. */
+  /**
+   * Fragments stop in walls. One ray per victim already inside the radius.
+   *
+   * Cast from the VICTIM toward the blast and stopped `LOS_SKIP` short of it,
+   * which is backwards from how it reads and is the whole of why this is not
+   * one line — see `LOS_SKIP`.
+   */
   private visible(from: Vector3, to: Vector3): boolean {
-    return !this.rays?.blocked(from, to);
+    if (!this.rays) return true;
+    from.subtractToRef(to, _los);
+    const len = _los.length();
+    if (len <= LOS_SKIP) return true;
+    _los.scaleInPlace((len - LOS_SKIP) / len).addInPlace(to);
+    return !this.rays.blocked(to, _los);
   }
 
   /**

@@ -215,14 +215,20 @@ export const vehicles = {
   tank: {
     maxHealth: 1200,
     /**
-     * The sphere every round is tested against, about the hull's centre.
+     * `Hittable.hitRadius`, which a hull has to declare and which **nothing
+     * reads any more**.
      *
-     * **Deliberately shorter than the hull's own half-length (3.6).** A sphere
-     * that enclosed the whole hull would also enclose three and a half metres
-     * of air off each end, and every one of those metres is somewhere a round
-     * aimed at the infantry standing beside the tank would be eaten instead.
-     * At 3.2 the nose and the tail spark without registering, which reads as
-     * hitting the tracks, and that is the better of the two errors.
+     * A round is tested against the hull's COLLIDER — see `CombatSystem.fire`
+     * — because a sphere and a box in front of it cannot both answer and the
+     * sphere always lost: at 3.2 against a half-length of 3.6, anything
+     * arriving within ~32 deg of the nose or the tail met the box first and
+     * was thrown away as a target standing behind a wall. Widening it to
+     * swallow the box is the trap it was written to avoid, and is why the
+     * answer was the box instead: three and a half metres of live air off each
+     * end is where the infantry beside the tank are standing.
+     *
+     * Left at its old value rather than deleted, because the interface wants a
+     * number and this is the honest one for a seven-metre hull.
      */
     hitRadius: 3.2,
     /**

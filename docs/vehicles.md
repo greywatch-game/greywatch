@@ -705,11 +705,21 @@ the respawn something a player can watch rather than reason about.
 every round in the game unless the shooter's `ShotOptions.damageKind` says
 otherwise, so the sixteen shooters with nothing to declare declare nothing.
 
-**The hit sphere is shorter than the hull.** `hitRadius` is 3.2 against a
-half-length of 3.6, so the nose and the tail spark without registering. A sphere
-that enclosed the whole hull would also enclose three metres of air off each end,
-and every one of those metres is somewhere a round aimed at the infantry
-standing beside the tank would be eaten instead.
+**A hull is the one target answered by its COLLIDER and not by a sphere**, and
+that is a correctness rule rather than a refinement. `hitRadius` is 3.2 about the
+centre against a half-length of 3.6, so a round arriving within ~32 deg of the
+nose or the tail met the collider FIRST — and `CombatSystem.fire` rejects any
+target sphere farther than the first opaque hit, because a body behind a wall is
+not shootable. The sphere lost to its own tank. A shell laid dead on another
+tank's front plate sparked off the glacis and did nothing, over 36% of all
+approach bearings, and so did every rifle round `resist.bullet` is written for.
+
+Widening the sphere to swallow the box was the other way out and is the worse
+one: it would put three and a half metres of live air off each end, which is
+exactly where the infantry beside the tank are standing. So `RayHit.hull` says
+which hull a cast stopped on, `fire` takes armour out of the sphere sweep
+entirely, and the shape a round is tested against is the shape that is drawn.
+`Tank.hitRadius` remains only because `Hittable` requires one; nothing reads it.
 
 ## The seat
 

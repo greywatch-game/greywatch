@@ -745,6 +745,16 @@ of it, and **bots walk through a parked tank as they walk through a corpse**. It
 box covers the TURRET, and **anything picking a hull out of its own way owes two
 property writes rather than a predicate** — `world/solid.ts` forbids minting one.
 
+**A hull is also the one TARGET answered by its collider rather than by a hit
+sphere**, and that is a rule the two subsystems share rather than a vehicle
+detail. `CombatSystem.fire` rejects a target sphere farther than the first
+opaque hit — a body behind a wall is not shootable — so a sphere smaller than
+the collider in front of it always loses: at `hitRadius` 3.2 against a
+half-length of 3.6 a hull swallowed every round arriving within ~32 deg of its
+own nose or tail, its own gun's included. `RayHit.hull` says which hull a cast
+stopped on, armour is out of the sphere sweep, and **nothing reads
+`Tank.hitRadius` any more.**
+
 **A tank DRIVES OVER things, and `climbHeight` is the one number deciding what is
 ground and what is a wall** — the collision ellipsoid's floor AND the ceiling of
 the band a track contact accepts a surface from, two uses that must never drift.

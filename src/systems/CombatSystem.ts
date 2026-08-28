@@ -67,6 +67,16 @@ export interface Hittable {
   center: Vector3;
   hitRadius: number;
   /**
+   * This target is a HULL, and so is answered by its collider box rather than
+   * by `center`/`hitRadius`.
+   *
+   * `Combatant.armoured`, restated on the interface that resolves a shot for
+   * the reason `eyePos` is: every list `fire` is given is built out of
+   * `Combatant`s, and this is the one property of a target that changes what
+   * SHAPE the round is tested against. See `fire`.
+   */
+  readonly armoured?: boolean;
+  /**
    * The eye, which is also the head — `CONFIG.combat.headRadius` about this
    * point is the head zone. It lives here rather than only on `Combatant`
    * because the head test is part of resolving a shot, and everything that
@@ -398,15 +408,38 @@ export class CombatSystem {
       this.rays !== null && this.rays.castRound(origin, dir, range, this.wall);
     let hitDist = hitWall ? this.wall.distance : range;
 
+    // **A HULL is answered by the box the wall query already found it with**,
+    // and is taken out of the sphere sweep below entirely.
+    //
+    // The two shapes disagree, and a sphere that disagrees with a collider in
+    // front of it always loses: `hitRadius` is 3.2 about the hull's centre and
+    // the collider reaches 3.6 to the nose, so a round arriving within ~32 deg
+    // of either end met the box FIRST and the sphere behind it was rejected by
+    // the `d < hitDist` test as a target standing behind a wall. A tank shell
+    // laid dead on another tank's front plate sparked and did nothing, and so
+    // did every rifle round `resist.bullet` is written for. Widening the
+    // sphere to swallow the box would put three and a half metres of live air
+    // off each end, which is where the infantry beside the tank are standing —
+    // so the answer is the box, which is the shape that is drawn.
+    //
+    // It costs nothing: `castRound` walks the hulls before anything else on
+    // every shot already, and now says which one it stopped on.
+    let hitTarget: Hittable | null = null;
+    if (hitWall && this.wall.hull !== null) {
+      const hull = this.wall.hull as unknown as Hittable;
+      // Membership, not a team check — the caller's list is where friendly
+      // fire is excluded, exactly as it is for every body below.
+      if (targets.includes(hull) && !hull.invulnerable) hitTarget = hull;
+    }
+
     // Nearest target sphere along the ray, if closer than the wall. The same
     // pass also notes anyone the round merely went *past*: the sphere test is
     // already being paid for, so widening it by `suppressRadius` costs one
     // extra compare per target and gives the AI a suppression signal that would
     // otherwise need a system of its own.
-    let hitTarget: Hittable | null = null;
     const graze = CONFIG.bots.perception.suppressRadius;
     for (const target of targets) {
-      if (target.invulnerable) continue;
+      if (target.invulnerable || target.armoured) continue;
       const d = raySphere(origin, dir, target.center, target.hitRadius);
       if (d !== null && d < hitDist) {
         hitDist = d;
@@ -443,7 +476,11 @@ export class CombatSystem {
       // entered the nearest-hit search only to lose it — and testing it here
       // instead costs one sphere per round that LANDED rather than one per
       // target per shot. The gate is what keeps it off the bot path entirely.
-      const headMult = opts.headMult ?? 1;
+      // Never on ARMOUR: the zone is a body's head, and a hull's `eyePos` is
+      // its cupola — a sphere there would turn a lucky rifle round into a
+      // multiplied one against the one target in the game whose whole point is
+      // that small arms do not matter to it.
+      const headMult = hitTarget.armoured ? 1 : (opts.headMult ?? 1);
       if (headMult > 1) {
         const head = raySphere(
           origin,
@@ -472,7 +509,7 @@ export class CombatSystem {
     // normal, and neither does a round that stopped on nothing.
     let kind: ImpactKind | null = null;
     let normal: Vector3 | null = null;
-    if (hitTarget) {
+    if (hitTarget && !hitTarget.armoured) {
       kind = "flesh";
     } else if (hitWall) {
       kind = this.wall.surface;

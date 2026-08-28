@@ -848,7 +848,15 @@ export class HeadlessGame {
     });
     // The direct hit's own bookkeeping. The splash's victims come through
     // `onBlastHit`, which `wire` already handles.
-    if (shot.killed) {
+    //
+    // **A HULL is not a row on the scoreboard**, and it can be `shot.target`
+    // now that armour is answered by its collider rather than by a sphere it
+    // lost to — see `CombatSystem.fire`. What a burning tank pays is its
+    // CREW, through `onCrewLost` and the driver's own death, exactly as it
+    // does when a rocket takes it; paying the gunner again for the chassis
+    // would price one shell at two kills on this side of the wire and one on
+    // `Game`'s, which guards the same case with its `instanceof Bot`.
+    if (shot.killed && !shot.target?.armoured) {
       this.creditKill(by, shot.target);
       if (shot.target instanceof Bot) this.onKill(shot.target, tank.team);
     }

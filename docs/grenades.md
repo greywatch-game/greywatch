@@ -40,6 +40,21 @@ being a thrown thing with a clock in it:
 - **Damage needs line of sight from the blast centre** — one ray per victim already
   inside the radius. Measured: 130 at the epicentre, flat inside 2.6 m, falling
   linearly to 0 at 8.5 m, blocked outright by a wall.
+- **That ray is cast from the VICTIM toward the blast and stops `LOS_SKIP`
+  (5 cm) short of it**, which reads backwards and is load-bearing. A grenade
+  rests a radius proud of the floor, but the other caller is a tank shell, whose
+  blast point is `ShotResult.hitPoint` — `origin + dir * distance` for the very
+  query that found the face, so it lies exactly ON that face, on whichever side
+  float noise puts it. `boxCast` counts `tMin >= 0` and `triCast` counts
+  `t >= 0`, so a ray leaving that point hits the surface it is standing on at
+  zero distance and every victim reads as being behind a wall. Measured on
+  Coldharbour before the fix: **85% of ground impacts and 47% of wall impacts
+  blocked their own splash**, and of forty-four shells put into the dirt a metre
+  from a bot's boots, forty-four. The DIRECTION is the fix rather than the
+  epsilon: a body's chest is in open air, and `boxCast` reports a hit for any
+  ray whose origin is inside a box however far in, so the suspect point must be
+  the END of the segment — cast outward instead, 5 cm along a ray leaving a
+  step's top face at three degrees is still inside the step.
 - **The pool REFUSES rather than stealing a live slot**, and both callers spend
   their grenade only after it has accepted — hence `Player`'s split of
   `canThrowGrenade` from `spendGrenade`, and `Bot` decrementing after

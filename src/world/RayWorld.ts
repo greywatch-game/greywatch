@@ -132,6 +132,17 @@ export interface RayHit {
   /** The OUTWARD normal of the face that stopped it — see the header. */
   normal: Vector3;
   surface: "ground" | "hard";
+  /**
+   * The moving hull the cast stopped ON, or null for the static world.
+   *
+   * **The one thing a cast can hit that is also a TARGET**, which is why it is
+   * reported rather than merely stopping the ray. Everything else in here is
+   * geometry a round dies against; a hull is a `Combatant` whose shape is this
+   * box and not the sphere every body is tested as, and `CombatSystem.fire`
+   * reads this to resolve a hit ON it instead of the sphere that used to lose
+   * to its own collider — see that file's note on armour.
+   */
+  hull: RayHull | null;
 }
 
 /** A `RayHit` a caller can keep. Allocated once, never per cast. */
@@ -141,6 +152,7 @@ export function newRayHit(): RayHit {
     point: new Vector3(),
     normal: new Vector3(0, 1, 0),
     surface: "hard",
+    hull: null,
   };
 }
 
@@ -392,16 +404,23 @@ export class RayWorld {
     let ny = 1;
     let nz = 0;
     let surface: "ground" | "hard" = "hard";
+    // Which hull is holding `best`, and therefore null the moment any of the
+    // three static stages below beats it. Kept beside the normal rather than
+    // written straight onto `out` for that reason: a hull that lost is not
+    // what the ray stopped on, and a stale one would be a shell registering on
+    // a tank it flew past.
+    let hull: RayHull | null = null;
 
-    for (const hull of this.hulls) {
-      if (hull === skip) continue;
-      const box = hull.rayBox();
+    for (const h of this.hulls) {
+      if (h === skip) continue;
+      const box = h.rayBox();
       if (!box) continue;
       const t = boxCast(box, ox, oy, oz, dx, dy, dz, best);
       if (t < 0) continue;
       if (!out) return true;
       best = t;
       found = true;
+      hull = h;
       nx = _nx;
       ny = _ny;
       nz = _nz;
@@ -414,6 +433,7 @@ export class RayWorld {
       if (!out) return true;
       best = t;
       found = true;
+      hull = null;
       nx = _nx;
       ny = _ny;
       nz = _nz;
@@ -434,6 +454,7 @@ export class RayWorld {
         if (!out) return true;
         best = t;
         found = true;
+        hull = null;
         nx = _nx;
         ny = _ny;
         nz = _nz;
@@ -477,6 +498,7 @@ export class RayWorld {
           if (!out) return true;
           best = t;
           found = true;
+          hull = null;
           nx = _nx;
           ny = _ny;
           nz = _nz;
@@ -506,6 +528,7 @@ export class RayWorld {
       if (!out) return true;
       best = t;
       found = true;
+      hull = null;
       nx = _nx;
       ny = _ny;
       nz = _nz;
@@ -518,6 +541,7 @@ export class RayWorld {
       out.point.set(ox + dx * best, oy + dy * best, oz + dz * best);
       out.normal.set(nx, ny, nz);
       out.surface = surface;
+      out.hull = hull;
     }
     return true;
   }
