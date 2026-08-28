@@ -378,6 +378,21 @@ second to do it.
   away from the fight that decided the game.
 - **`ControlPoint.present[]` is finally read** — an owned flag with enemies on it
   scores a defence bonus scaled by how far the meter has slipped.
+- **Distance is a fraction of the MAP, not a rate per metre.** The penalty is
+  `distance / diagonal * squad.distancePenalty` (85), which is exactly what the
+  retired flat 0.25/m was worth across a 240 m map and therefore leaves the two
+  valleys where they were. Written the old way it was a statement about a map
+  size that the four scores it is weighed against — a neutral flag's +40, an
+  enemy's +70, a contest's +50, `switchMargin`'s +30 — do not make: on Sarab's
+  900 m square it was worth 300 points across the map, so no tactical term could
+  outvote it. Every squad took the flag nearest its own centroid, `defend`
+  follows from owning what you picked, and `hold` is a covered vantage — so a
+  squad that captured its home flag stood on it for the rest of the round.
+  Measured headlessly over 400 s: **36.5% of live-bot samples stationary with
+  33.0 points of that defending nothing, and 23.6% of bot-time in `capture`
+  against Hollowmere's 1.5%**; normalised, 9.2% stationary, none of it
+  defending, 3.1% in `capture`, and the round's flag captures went 8 to 16.
+  Anything above ~110 puts distance back in sole charge at every scale.
 - **Defending is a posture, not a destination.** `Bot.think` takes a `BotZone` (`none`
   / `contest` / `hold`): `contest` keeps the old drift, since bodies in the circle are
   what move the meter, while `hold` takes a covered vantage and watches. **`hold` is

@@ -373,6 +373,23 @@ export const bots = {
      */
     defendUnderAttack: 110,
     /**
+     * What crossing the whole map costs a flag's score — measured over the play
+     * square's DIAGONAL, not per metre.
+     *
+     * 85 is what the retired flat 0.25/m was worth across a 240 m map's 340 m
+     * diagonal, so the two maps it was tuned on are unchanged. Written this way
+     * because a rate per metre is a statement about a map size, and the four
+     * scores it is weighed against (a neutral flag's +40, an enemy's +70, a
+     * contest's +50, `switchMargin`'s +30) are not: at 900 m the flat rate was
+     * worth 300 across the map and no tactical term could outvote it, so every
+     * squad took the nearest flag and — since `defend` follows from owning what
+     * you picked — stood on it for the rest of the round.
+     *
+     * Keep it under the ~110 the ownership terms span. Above that, distance is
+     * the only term again, at every scale rather than just the big ones.
+     */
+    distancePenalty: 85,
+    /**
      * How far outside the capture radius a defender will look for a covered
      * vantage. Holding a flag from the geometric centre of an open circle is
      * how you lose it; holding it from the doorway across the street is not.

@@ -81,6 +81,23 @@ export class ConquestSystem {
   onNeutralised: (point: ControlPoint, by: Team) => void = () => {};
 
   private spawns: SpawnPointDef[] = [];
+  /**
+   * The play square's diagonal, which is what the squad planner's distance
+   * penalty is measured in FRACTIONS of.
+   *
+   * The penalty used to be a flat rate per metre, tuned on a 240 m map where
+   * the longest walk anywhere is 340 m. On a 900 m one that rate is worth 300
+   * points across the map against the ~120 the whole ownership/contest scale
+   * spans, so it stopped being the mild tiebreak `pointValue` documents and
+   * became the only term: every squad picked whatever flag was nearest and, if
+   * it already held it, dug in there for the rest of the round. Measured on
+   * Sarab at 23.6% of live-bot time in `capture` against 1.5% on Hollowmere.
+   *
+   * Normalising by the map's own diagonal is what keeps "mild" meaning the
+   * same thing at every scale. Set from the built map rather than CONFIG
+   * because `MapLayout.size` is the MAP's (see CLAUDE.md's table).
+   */
+  private span = CONFIG.map.size * Math.SQRT2;
   private bleedT = 0;
 
   start(map: GameMap): void {
@@ -95,6 +112,7 @@ export class ConquestSystem {
       });
     }
     this.spawns = map.spawns;
+    this.span = map.size * Math.SQRT2;
     this.tickets[0] = CONFIG.conquest.tickets;
     this.tickets[1] = CONFIG.conquest.tickets;
     this.winner = null;
@@ -349,8 +367,10 @@ export class ConquestSystem {
       }
     }
     // Distance is a mild penalty, not a dominant one — otherwise every squad
-    // just defends whatever is closest to the home spawn.
-    score -= Vector3.Distance(from, p.def.pos) * 0.25;
+    // just defends whatever is closest to the home spawn. It is a fraction of
+    // the MAP rather than a rate per metre, because "mild" is relative to how
+    // far there is to walk: see `span`, and `squad.distancePenalty`.
+    score -= (Vector3.Distance(from, p.def.pos) / this.span) * s.distancePenalty;
     return score;
   }
 
