@@ -106,6 +106,7 @@ import {
   angleDelta,
   DRIVER,
   GUNNER,
+  SEATS,
   type CrewSeat,
   type DriveInput,
   type GunInput,
@@ -276,19 +277,6 @@ const WHISKER_LATERAL = [0, 0.34, -0.34, 0.67, -0.67, 1, -1] as const;
  * gap in the middle, which is a parked car's worth of room to hide in.
  */
 const WHISKER_DEPTHS = [0, 0.28, 0.6, 1] as const;
-
-/**
- * The two jobs, in the order they are filled: a hull gets a driver before it
- * gets a gunner.
- *
- * **That order is the rule, not a convenience.** A tank with a man on the
- * cupola gun and nobody at the sticks is a pillbox; a tank with a driver and
- * an empty cupola is a tank. So every sweep that fills a seat walks this list
- * and takes the first free one, which is also exactly what a player boarding
- * gets — see `VehicleSystem.seatOn`, where the same rule is stated once for
- * both processes.
- */
-const SEATS: readonly CrewSeat[] = [DRIVER, GUNNER];
 
 export class TankCrew {
   private readonly crews: Crew[] = [];

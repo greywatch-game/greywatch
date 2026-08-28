@@ -314,17 +314,63 @@ export interface VehicleStatus {
    */
   seat: "DRIVER" | "GUNNER";
   /**
-   * How to change seats, already worded — `"F SWAP SEAT"`, `"Y SWAP SEAT"`,
-   * `"SWAP SEAT"` on glass — or null when the other chair is taken.
+   * Every chair this vehicle HAS and who is in each, in seat order — the crew
+   * line.
+   *
+   * **It is here because the swap prompt below cannot say what is not there.**
+   * A prompt that is null when the other chair is held said nothing at all
+   * about the chair, so a hull whose gun a bot had taken was indistinguishable
+   * on screen from a vehicle with one seat: the key appeared to do nothing and
+   * nothing explained why. This is the statement, and drawing it as a LIST is
+   * what makes it a statement about this vehicle rather than about a tank —
+   * one entry is a single-seat vehicle and draws as one.
+   */
+  crew: readonly VehicleChair[];
+  /**
+   * How to change seats, already worded — `"F SWAP SEAT"`, `"Y TAKE OVER GUN"`,
+   * `"TAKE OVER TANK"` on glass — or null when a PERSON is in the other chair.
    *
    * Null rather than a permanently-drawn caption because a swap into a seat
    * somebody is already in is a key that does nothing, and a key that does
-   * nothing is worse than no key at all. The WORDS are `Game`'s for
-   * `setUsePrompt`'s reason: which device is in the player's hands is a fact
-   * this class has never had, and a prompt that told a pad player to press `F`
-   * has told them to go and find a keyboard.
+   * nothing is worse than no key at all — and the crew line above is what says
+   * why it is missing. The WORDS are `Game`'s for `setUsePrompt`'s reason:
+   * which device is in the player's hands is a fact this class has never had,
+   * and a prompt that told a pad player to press `F` has told them to go and
+   * find a keyboard. That includes the difference between a plain swap and one
+   * that turns a bot out, which is `Game.swapPrompt`'s to word.
    */
   swap: string | null;
+}
+
+/**
+ * What the crew line writes under each chair's job.
+ *
+ * `"BOT"` says out loud that the chair can be had — it is the same fact the
+ * `TAKE OVER` prompt beside it is built on, and saying it twice is deliberate:
+ * the prompt is about the key and this is about the vehicle, and a player
+ * looking at a full hull needs to know which of the two other men is the one
+ * they may turn out.
+ */
+const CHAIR_WORDS: Record<VehicleChair["who"], string> = {
+  you: "YOU",
+  bot: "BOT",
+  player: "PLAYER",
+  open: "EMPTY",
+};
+
+/** One chair of a vehicle, as the crew line draws it. */
+export interface VehicleChair {
+  /** The job, as the player reads it: `"DRIVER"`, `"GUNNER"`. */
+  name: string;
+  /**
+   * Who is in it, from the point of view of the person reading the HUD.
+   *
+   * `"bot"` and `"player"` are told apart rather than both being "taken",
+   * because they answer different questions: a bot may be turned out of that
+   * chair and a person may not, and which it is decides whether the swap
+   * prompt is there at all.
+   */
+  who: "you" | "bot" | "player" | "open";
 }
 
 /**
@@ -443,7 +489,7 @@ export class HUD {
     hull: HTMLElement;
     gun: HTMLElement;
     load: HTMLElement;
-    post: HTMLElement;
+    crew: HTMLElement;
     swap: HTMLElement;
   };
   /**
@@ -544,6 +590,16 @@ export class HUD {
   private lastLoadWidth = "";
   private lastLoaded = true;
   private lastSeat = "";
+  /**
+   * The crew line's whole content as one string — `"DRIVER:you|GUNNER:bot"`.
+   *
+   * One guard over the LIST rather than one per chair, because the chairs are
+   * rebuilt rather than written: a hull with a different number of seats has a
+   * different number of nodes, and there is nothing to cache per chair that
+   * survives that. See the note on `lastUsePrompt` — this is one of the guards
+   * whose branch replaces its own elements, so there is nothing stale to clear.
+   */
+  private lastCrew = "";
   private lastSwap: string | null = null;
   /** The marker's last position, as the string that was written. "" is hidden. */
   private lastMarker = "";
@@ -682,7 +738,8 @@ export class HUD {
             <div class="veh-bar hull"><i></i></div>
             <div class="cap-row"><span class="cap">MAIN GUN</span><span class="veh-gun">LOADED</span></div>
             <div class="veh-bar load"><i></i></div>
-            <div class="veh-seat"><b class="veh-post">DRIVER</b><span class="veh-swap hidden"></span></div>
+            <div class="veh-crew"></div>
+            <div class="veh-seat"><span class="veh-swap hidden"></span></div>
           </div>
         </div>
       </div>
@@ -729,7 +786,7 @@ export class HUD {
       hull: this.vehicle.querySelector(".veh-bar.hull i") as HTMLElement,
       gun: this.vehicle.querySelector(".veh-gun") as HTMLElement,
       load: this.vehicle.querySelector(".veh-bar.load i") as HTMLElement,
-      post: this.vehicle.querySelector(".veh-post") as HTMLElement,
+      crew: this.vehicle.querySelector(".veh-crew") as HTMLElement,
       swap: this.vehicle.querySelector(".veh-swap") as HTMLElement,
     };
     this.gunMarker = document.getElementById("gun-marker")!;
@@ -1994,12 +2051,30 @@ export class HUD {
     // other line in here — both change on a key press and neither on a frame.
     if (status.seat !== this.lastSeat) {
       this.lastSeat = status.seat;
-      this.vehicleParts.post.textContent = status.seat;
       // The main gun's loader is the DRIVER's gauge and nothing to a gunner,
       // whose weapon has no magazine at all — so the row is dimmed rather than
       // removed: the hull still has a gun, and how long until it can fire
       // again is exactly the sort of thing a commander tells his gunner.
       this.vehicle.classList.toggle("gunner", status.seat === "GUNNER");
+    }
+    // The crew: one chip per chair the vehicle has, whoever is in it. Rebuilt
+    // rather than written, because the number of chairs is the vehicle's and a
+    // second vehicle would not have two — see `VehicleStatus.crew`.
+    const crewKey = status.crew.map((c) => `${c.name}:${c.who}`).join("|");
+    if (crewKey !== this.lastCrew) {
+      this.lastCrew = crewKey;
+      this.vehicleParts.crew.replaceChildren(
+        ...status.crew.map((chair) => {
+          const el = document.createElement("span");
+          el.className = `veh-chair ${chair.who}`;
+          const job = document.createElement("b");
+          job.textContent = chair.name;
+          const who = document.createElement("i");
+          who.textContent = CHAIR_WORDS[chair.who];
+          el.append(job, who);
+          return el;
+        }),
+      );
     }
     if (status.swap !== this.lastSwap) {
       this.lastSwap = status.swap;

@@ -861,26 +861,64 @@ is for the player to climb onto the gun beside him rather than to throw him out
 of it. `occupiedNear` now means "both chairs taken", and only that reaches
 `TankCrew.evict`.
 
-**Crossing between them is a THIRD verb and it is not an eviction.**
+**Crossing between them is a THIRD verb.**
 `InputManager.seatPressed` is `F`, the pad's Y and the touch layer's swap
 button — the last two shared outright with `swapPressed`, which is safe for
 `usePressed`'s reason: those two change WEAPONS, a driver has none, and there
 is no state in which a body is both holding a rifle and sitting in a tank.
-`Game.canSwapSeat` is the one place that decides whether it may happen (the
-other chair has to be EMPTY), and both the key and the prompt under the seat
-name read it, so they cannot disagree. Offline it is `Game.swapSeat`, which is
+`Game.canSwapSeat` is the one place that decides whether it may happen, and
+both the key and the prompt beside the crew line read it, so they cannot
+disagree. Offline it is `Game.swapSeat`, which is
 deliberately not `clearVehicle` + `mount`: that pair would put the player back
 into the fight and take them out again inside one frame, hand the camera back
 to a head that is inside a tank, and stop and restart the engine. Two seat
 writes and a field is the whole of it.
 
-**The HUD says which chair you are in**, because the two have different
-controls and a different weapon under the trigger and a player who cannot tell
-which one they took is a player pressing a throttle that steers nothing. It is
-one line under the two bars — the seat name in the hot colour, and the swap key
-beside it when the other chair is free — and the main gun's loader row is
-DIMMED rather than removed for a gunner: he cannot fire it, and how long until
-the hull can is exactly what a man on the cupola wants to know.
+**A crossing turns a BOT out of the chair it crosses into, and this rule was
+the other way round until it was measured against the game.** The chair had to
+be EMPTY, on the argument that a swap is not an eviction and that turning a
+crewman out from inside the hull would be a second eviction path with no prompt
+in front of it. What that bought was a seat the player could not sit in: the
+boarding sweep fills a free chair within seconds of a mount — a hardstanding is
+beside a spawn, and the crew is whoever walks past — so a player who took an
+empty hull was a driver with a bot gunner before he left the yard, `F` did
+nothing from then on, and there was no way round it. **Getting out and back in
+does not work either**, which is the part that makes it a hole rather than a
+preference: `VehicleSystem.seatOn` hands a boarder the FIRST free chair, and
+the first free chair is the one just vacated.
+
+So the crossing takes the boarding rule rather than an exception to it — **a
+bot crew never denies the player their own armour** — and the objection is
+answered rather than dropped: the eviction has a PROMPT in front of it now, in
+the words the ground offer already uses (`TAKE OVER TANK`, `TAKE OVER GUN`
+against a bot; `SWAP SEAT` into an empty chair). A PERSON is never moved, on
+either side: `Game.seatHeldBy` is what tells the three kinds apart — offline
+through `TankCrew.crewOf`, in a match through `VehicleState.by`/`by2` against
+the roster, which is `crewedByBot`'s exception to "a client never learns which
+slots are bots", made for the same reason (this draws a PROMPT).
+
+**The authority makes the same move and needed a line of its own for it.**
+`HeadlessGame.seat` is one method for mounting and crossing, and its fall-back
+when the chair asked for is taken is *the other chair* — which on a crossing is
+the chair the player just left, so a swap against a bot gunner silently put
+them back where they started. The eviction below it was unreachable from that
+path, because after the release a crossing never sees both chairs taken. One
+`if (crossing && tank.seats[want])` is the whole of the fix.
+
+**The HUD draws the CREW, not only your own chair.** The two seats have
+different controls and a different weapon under the trigger, so a player who
+cannot tell which one they took is a player pressing a throttle that steers
+nothing — but the older line said only that, and the swap prompt beside it went
+away when the other chair was held. **Absence is not a statement**: a hull whose
+gun a bot had taken looked exactly like a vehicle with one seat, so the key that
+appeared to do nothing had nothing on screen explaining it. It is now one chip
+per chair under the two bars — the job, and `YOU` / `BOT` / `PLAYER` / `EMPTY`
+under it, your own in the hot colour — **built from `SEATS`** (which moved to
+`entities/Tank.ts` for this, since it is what a vehicle HAS rather than what
+the AI does with one) so a vehicle with a different number of chairs draws the
+chairs it has. The main gun's loader row is still DIMMED rather than removed
+for a gunner: he cannot fire it, and how long until the hull can is exactly
+what a man on the cupola wants to know.
 
 ## The seat
 

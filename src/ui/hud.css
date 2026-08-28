@@ -1262,20 +1262,60 @@
 #vehicle.hurt .veh-bar.hull i { background: var(--theirs); }
 #vehicle.hurt .veh-hp { color: var(--theirs); }
 #vehicle.loading .veh-gun { color: rgba(255, 255, 255, 0.45); }
-/* Which seat this player is in, and the key out of it. It sits UNDER the two
-   bars rather than above them because it is the one line here that is about
-   the person and not the vehicle: the hull and the gun are what a commander
-   watches, and this is what he already knows and only needs confirming. */
+/* The CREW, and the key across it. It sits UNDER the two bars rather than
+   above them because it is the one part of this block that is about the people
+   and not the vehicle: the hull and the gun are what a commander watches, and
+   this is the crew he already has and only needs confirming.
+
+   One chip per chair, drawn whether or not anybody is in it, because an EMPTY
+   chair is the thing this line exists to say — the swap prompt below can only
+   ever describe a seat you may have, so a chair held by somebody else used to
+   be drawn as nothing at all and read as a vehicle with one seat. */
+#vehicle .veh-crew {
+  display: flex;
+  gap: 8px;
+}
+#vehicle .veh-chair {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 2px 6px;
+  border-right: 2px solid rgba(255, 255, 255, 0.14);
+  /* Skewed with the bars above it, for the reason they are: this band leans
+     20 degrees and a square chip in the middle of it is the one flat thing. */
+  transform: skewX(-20deg);
+}
+#vehicle .veh-chair > * { transform: skewX(20deg); }
+#vehicle .veh-chair b {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.45);
+}
+#vehicle .veh-chair i {
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.32);
+}
+/* The chair this player is in: the one lit chip, in the same hot colour the
+   seat name has always been. The other three states are told apart by weight
+   rather than by three more colours — a chair you may take is legible, a chair
+   held by a person is dim, and the difference the player acts on is the TAKE
+   OVER prompt below rather than a hue. */
+#vehicle .veh-chair.you {
+  border-right-color: var(--hot);
+}
+#vehicle .veh-chair.you b,
+#vehicle .veh-chair.you i { color: var(--hot); }
+#vehicle .veh-chair.open b { color: rgba(255, 255, 255, 0.62); }
+#vehicle .veh-chair.player { opacity: 0.55; }
 #vehicle .veh-seat {
   display: flex;
   align-items: baseline;
   gap: 10px;
-}
-#vehicle .veh-post {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  color: var(--hot);
+  min-height: 12px;
 }
 #vehicle .veh-swap {
   font-size: 10px;

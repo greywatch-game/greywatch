@@ -737,9 +737,14 @@ machine gun and nothing else), and the first man aboard DRIVES** —
 `VehicleSystem.seatOn` states that once for both processes. A hull with one
 chair left is `enterable`; only a FULL one is an eviction, so the player climbs
 on beside a bot crew rather than turning it out. **Crossing is a third verb
-(`InputManager.seatPressed` — `F`, the pad's Y, the touch swap button) and is
-never an eviction**: `Game.canSwapSeat` is the one place that decides, so the
-key and the HUD's prompt cannot disagree.
+(`InputManager.seatPressed` — `F`, the pad's Y, the touch swap button), and it
+turns a BOT out of the chair it crosses into exactly as boarding does** —
+without that the sweep fills the free chair seconds after a mount and the
+second seat is unreachable by every route the game has. A PERSON is never
+moved. `Game.canSwapSeat` is the one place that decides, so the key and the
+HUD's prompt cannot disagree, and **the HUD draws the CREW rather than only
+your own chair**: a chair held by somebody else used to be drawn as nothing at
+all, which reads as a vehicle with one seat.
 
 **The CUPOLA gun's bearing is a WORLD angle exactly as the turret's is, and
 that one decision is the whole of the independence**: the mount is parented to

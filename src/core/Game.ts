@@ -87,6 +87,7 @@ import {
   DRIVER,
   GUNNER,
   MG_SHOT,
+  SEATS,
   SHELL_SHOT,
   type CrewSeat,
   type DriveInput,
@@ -149,7 +150,12 @@ import type { EditorSession } from "../editor";
 import { MAPS, loadHeights, type MapDef } from "../world/maps";
 import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
 import { DeployScreen } from "../ui/DeployScreen";
-import { HUD, type CaptureStatus, type ScoreRow } from "../ui/HUD";
+import {
+  HUD,
+  type CaptureStatus,
+  type ScoreRow,
+  type VehicleChair,
+} from "../ui/HUD";
 import { OverlayScreen } from "../ui/OverlayScreen";
 import { kitLabel, LoadoutScreen } from "../ui/LoadoutScreen";
 import { SettingsScreen } from "../ui/SettingsScreen";
@@ -4196,32 +4202,18 @@ export class Game {
   }
 
   /**
-   * Is this hull being driven by a BOT — somebody who may be turned out of it?
+   * Is anybody in this hull a BOT — somebody who may be turned out of it?
    *
-   * Offline it is `TankCrew`'s own pairing. In a match nothing local runs the
-   * crews, so it is the roster: `VehicleState.by` says which slot is inside,
-   * and the roster message says whether that slot is a person. **This is the
-   * one place the client is allowed to care which**, and it is the same
-   * exception the scoreboard already is — a slot changing hands is invisible
-   * everywhere that draws a body, and this is drawing a PROMPT. A person's
-   * hull is simply not offered: you cannot evict a human, and a prompt that
-   * said you could would be a key that does nothing.
+   * The whole-vehicle form of `seatHeldBy`, which is where the offline/netplay
+   * split is written down and which carries the argument for why a client is
+   * allowed to know: **what this decides is a PROMPT**, and a prompt offering
+   * to evict a person would be a key that does nothing.
    */
   private crewedByBot(tank: Tank): boolean {
-    if (!this.net) return this.crew.anyCrewIn(tank);
-    // In a match, EITHER seat's occupant being a bot makes this hull one the
-    // player may take over — and the driver's is asked first, because that is
-    // the seat `offeredSeat` will ask for.
-    const i = this.vehicles.tanks.indexOf(tank);
-    const by = this.botSlotIn(this.net.vehicles.occupant(i))
-      ? this.net.vehicles.occupant(i)
-      : this.net.vehicles.gunner(i);
-    if (by < 0) return false;
-    // Found by `index` rather than subscripted. The roster is laid out in slot
-    // order and the two agree today, but a slot's INDEX is what identifies it
-    // everywhere else on the wire, and a lookup that only works because of an
-    // ordering nothing states is one that breaks silently.
-    return this.botSlotIn(by);
+    // EITHER chair holding a bot makes this hull one the player may take over,
+    // and `seatHeldBy` is where the offline/netplay split lives — this is the
+    // same question asked of the whole vehicle rather than of one chair.
+    return SEATS.some((seat) => this.seatHeldBy(tank, seat) === "bot");
   }
 
   /**
@@ -4822,44 +4814,112 @@ export class Game {
   }
 
   /**
+   * Who is in one chair of one hull, in the only three kinds the rest of this
+   * file cares about: nobody, a bot who may be turned out of it, or a person
+   * who may not.
+   *
+   * **The one question `crewedByBot` asks about a HULL, asked about a SEAT** —
+   * and it is a seat's question because everything reading it names a chair:
+   * whether this player may cross into that one, and what the crew line on the
+   * HUD says about it. Offline it is `TankCrew`'s own pairing; in a match it
+   * is `VehicleState.by`/`by2` against the roster, which is the same exception
+   * `crewedByBot` documents at length — the client is allowed to care which,
+   * because what it is drawing is a PROMPT.
+   *
+   * Note that the player's OWN chair comes back `"player"`, which is correct
+   * for both readers: it is the one chair `canSwapSeat` is never asked about,
+   * and the crew line marks it from `drivingSeat` rather than from here.
+   */
+  private seatHeldBy(tank: Tank, seat: CrewSeat): "open" | "bot" | "player" {
+    if (this.net) {
+      const i = this.vehicles.tanks.indexOf(tank);
+      const by =
+        seat === DRIVER
+          ? this.net.vehicles.occupant(i)
+          : this.net.vehicles.gunner(i);
+      if (by < 0) return "open";
+      return this.botSlotIn(by) ? "bot" : "player";
+    }
+    if (!tank.seats[seat]) return "open";
+    return this.crew.crewOf(tank, seat) ? "bot" : "player";
+  }
+
+  /**
    * May this player move to the other chair right now?
    *
    * **One question, asked by two things that must agree**: the key in
-   * `updateDriver` and the prompt the HUD draws under the seat name. A key
+   * `updateDriver` and the prompt the HUD draws beside the crew line. A key
    * that does nothing is worse than no key at all, and the only way to be sure
    * they never disagree is for there to be one answer.
    *
-   * It is the OTHER seat being empty and nothing else — a swap is not an
-   * eviction. Turning a bot out of the driver's chair from inside the hull
-   * would be a second eviction path with no prompt in front of it, and turning
-   * a PERSON out would be a thing no key in this game does.
+   * It is the other chair not being held by a PERSON, which is the boarding
+   * rule stated once more rather than a second rule: **a bot crew never denies
+   * the player their own armour**, and a hull whose gun a bot took while the
+   * player drove past his own infantry is exactly that denial — the sweep
+   * fills the free chair within seconds of a mount, and the chair it fills is
+   * then unreachable by every route the game has, including getting out and
+   * back in (`VehicleSystem.seatOn` hands a boarder the FIRST free chair,
+   * which is the one just vacated). The earlier rule here was that a swap is
+   * never an eviction, and what it bought was a second seat the player could
+   * not sit in.
+   *
+   * The objection it was written against still stands and is answered rather
+   * than dropped: an eviction with no prompt in front of it is what is
+   * forbidden, and `swapPrompt` now says TAKE OVER in the words the boarding
+   * offer already uses. Turning a PERSON out remains a thing no key in this
+   * game does.
    */
   private canSwapSeat(tank: Tank): boolean {
     const other: CrewSeat = this.drivingSeat === DRIVER ? GUNNER : DRIVER;
-    if (this.net) {
-      const i = this.vehicles.tanks.indexOf(tank);
-      const by = other === DRIVER
-        ? this.net.vehicles.occupant(i)
-        : this.net.vehicles.gunner(i);
-      return by < 0;
-    }
-    return !tank.seats[other];
+    return this.seatHeldBy(tank, other) !== "player";
   }
 
   /**
    * How this player would change seats, in the language of whatever is in
-   * their hands — or null when the other chair is taken.
+   * their hands — or null when a person is in the other chair.
    *
    * `offerUse`'s rule applied to the second vehicle verb, and it is the same
    * rule for the same reason: a pad player told to press `F` has been told to
    * go and find a keyboard, and on glass the button already carries the words.
    * `canSwapSeat` is still the one place that decides WHETHER, so the key and
    * the caption cannot disagree about that.
+   *
+   * **The words are the boarding offer's**, deliberately: a crossing that
+   * turns a bot out is the same gesture `TAKE OVER TANK` is from the ground,
+   * and a player who has read one of those captions has read the other. An
+   * empty chair is a plain swap, because nothing is being taken from anybody.
    */
   private swapPrompt(tank: Tank): string | null {
-    if (!this.canSwapSeat(tank)) return null;
-    if (this.input.touchActive) return "SWAP SEAT";
-    return this.input.padInHand ? "Y  SWAP SEAT" : "F  SWAP SEAT";
+    const other: CrewSeat = this.drivingSeat === DRIVER ? GUNNER : DRIVER;
+    const held = this.seatHeldBy(tank, other);
+    if (held === "player") return null;
+    const verb =
+      held === "bot"
+        ? other === DRIVER
+          ? "TAKE OVER TANK"
+          : "TAKE OVER GUN"
+        : "SWAP SEAT";
+    if (this.input.touchActive) return verb;
+    return this.input.padInHand ? `Y  ${verb}` : `F  ${verb}`;
+  }
+
+  /**
+   * The crew line on the HUD: one entry per chair this vehicle HAS, in seat
+   * order, saying who is in it.
+   *
+   * **It exists because the absence of a swap prompt used to be the only thing
+   * said about the other chair, and absence is not a statement** — a hull
+   * whose gunner's seat a bot had taken looked exactly like a vehicle with one
+   * seat, so the key that appeared to do nothing had nothing on screen
+   * explaining it. It is built from `SEATS` rather than from a pair of fields
+   * for the same reason: a vehicle with one chair, or three, draws what it has
+   * rather than what a tank has.
+   */
+  private crewLine(tank: Tank): VehicleChair[] {
+    return SEATS.map((seat) => ({
+      name: seat === DRIVER ? "DRIVER" : "GUNNER",
+      who: seat === this.drivingSeat ? "you" : this.seatHeldBy(tank, seat),
+    }));
   }
 
   /**
@@ -4877,9 +4937,17 @@ export class Game {
    * left to rot: `driveFor` stops answering with `this.drive` on the next
    * frame, and a throttle left at full in it would be what the next person to
    * sit down inherited.
+   *
+   * **A bot in the chair being crossed into is turned out on this frame**,
+   * which is `updateOnFoot`'s eviction moved inside the hull and lands the
+   * same way for the same reason: a seat given up and not immediately taken is
+   * one the boarding sweep can re-crew before the player's key is read again.
+   * `canSwapSeat` is what proved it is a bot and not a person — this only
+   * carries the decision out.
    */
   private swapSeat(tank: Tank, to: CrewSeat): void {
     if (to === this.drivingSeat) return;
+    if (this.crew.crewOf(tank, to)) this.crew.evict(tank, to);
     this.vehicles.setOccupied(tank, this.drivingSeat, false);
     this.vehicles.setOccupied(tank, to, true);
     this.drivingSeat = to;
@@ -6311,6 +6379,7 @@ export class Game {
             maxHealth: CONFIG.vehicles.tank.maxHealth,
             load: this.driving.loadProgress,
             seat: this.drivingSeat === DRIVER ? "DRIVER" : "GUNNER",
+            crew: this.crewLine(this.driving),
             swap: this.swapPrompt(this.driving),
           }
         : null,

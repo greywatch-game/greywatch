@@ -315,6 +315,24 @@ export const DRIVER: CrewSeat = 0;
 /** The cupola gun, and nothing else at all. */
 export const GUNNER: CrewSeat = 1;
 
+/**
+ * The two jobs, in the order they are filled: a hull gets a driver before it
+ * gets a gunner.
+ *
+ * **That order is the rule, not a convenience.** A tank with a man on the
+ * cupola gun and nobody at the sticks is a pillbox; a tank with a driver and
+ * an empty cupola is a tank. So every sweep that fills a seat walks this list
+ * and takes the first free one, which is also exactly what a player boarding
+ * gets — see `VehicleSystem.seatOn`, where the same rule is stated once for
+ * both processes.
+ *
+ * **Here rather than in `TankCrew`, where it was, because it is what a
+ * VEHICLE has and not what the AI does with one**: `Game.crewLine` walks it to
+ * draw one entry per chair, which is how a hull with a seat count other than
+ * two would draw the seats it actually has rather than the two a tank has.
+ */
+export const SEATS: readonly CrewSeat[] = [DRIVER, GUNNER];
+
 /** A tank standing still, for the frames nobody is driving one. */
 const IDLE: DriveInput = { throttle: 0, steer: 0, aimYaw: 0, aimPitch: 0 };
 

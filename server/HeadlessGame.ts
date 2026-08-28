@@ -770,6 +770,16 @@ export class HeadlessGame {
 
     const index = this.vehicles.tanks.indexOf(tank);
     if (index < 0 || !tank.alive || tank.team !== player.team) return null;
+    // **A CROSSING names one chair and the fall-back below is the chair it
+    // just left**, so a bot in the one being asked for has to be turned out
+    // here or the swap silently puts this player back where they started.
+    // That is not a new eviction rule: it is the one three lines down —
+    // a bot crew never denies a player their own armour — reaching the one
+    // path that could not use it, because after the release above there is
+    // never a moment when BOTH chairs read as taken. A person in it is still
+    // never moved: `evict` only knows bots, and the fall-back is what a
+    // refusal comes out as.
+    if (crossing && tank.seats[want]) this.crew.evict(tank, want);
     // Which chair, decided against the authority's own copy of the fleet — the
     // client's `seat` field is a preference and never a claim. Asked for one
     // that is taken, the other is granted if it is free; asked for nothing,
