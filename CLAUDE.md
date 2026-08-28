@@ -384,7 +384,7 @@ touches, and **nothing outside `maps.ts` may import a map's own modules**. A
 `menu`, and **scatter placement is seeded — never call `Math.random()` in
 world-building code**, or the nav graph differs between page loads.
 
-**Four things that read like global constants are the MAP's**, each defaulting so
+**Six things that read like global constants are the MAP's**, each defaulting so
 that a map saying nothing is unaffected:
 
 | the map's | default | what a map that raises it owes |
@@ -392,6 +392,8 @@ that a map saying nothing is unaffected:
 | `MapLayout.size` — how big it is | `CONFIG.map.size`, 240 | `terrain.size * terrain.cell` must equal it, and the rim's boundary boxes must stay over 200 m so the seven sites keying on `w > 200 \|\| d > 200` still can |
 | `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is pushed into `BattleSystem`, `NetRoster` and `RagdollSystem`; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
+| `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** — those want more buckets on a big map, not fewer |
+| `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in all three callers of `terrainPatches` — `buildValley`, the server's `terrainColliders` and the editor's brush — or the two sides tessellate different floors |
 | `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` returns FULLY LIT outside the window rather than fading — an undersized one draws a line across the ground rather than softening |
 
 **A map is CLOSED one of two ways, and the second has no wall at all.** The rim
@@ -417,7 +419,7 @@ a `push`, a `filter` or a `const dev = import.meta.env.DEV` one line up would
 silently stop working. `scripts/check-proving.mjs` is what enforces that, on the
 end of `npm run build`, over `dist/` and `dist-server/` both.
 
-→ **[`docs/world.md`](docs/world.md)** — the four overrides in full, the
+→ **[`docs/world.md`](docs/world.md)** — the six overrides in full, the
 heightfield and the road slabs cut against it, the winding trap that makes a
 floor vanish, the builder and two-pass merge rules, the layout gotchas that have
 already cost time, the valley rim's contract with the sky, and the borderland,
@@ -575,7 +577,8 @@ misbehaves silently:
   against a tower's glass stands inside its own block's hull. All six faces come
   back one flat ink colour and the glazing reflects a grey card. Measured on
   Coldharbour's curtain wall at 85% of the frame's pixels.
-- `block: "3,2"` — which 48 m map block a merged visual came from. A **value**,
+- `block: "3,2"` — which map block a merged visual came from (the block's side
+  is `MapLayout.blockSize`, 48 m by default). A **value**,
   like `surface`, and **absent on everything that is not block-merged — the
   terrain, the roads and the rim**, which is what keeps the landform out of
   both tests that read it. Written in three places and they must agree:

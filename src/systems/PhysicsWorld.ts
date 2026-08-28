@@ -316,12 +316,19 @@ export class PhysicsWorld {
    * 6.4x and 19.7x — and the exponent with them, to 0.89, which is a straight
    * line with the rounding off (`ENGINE_UPGRADE.md` S5b).
    *
-   * **48 m is `MapBuilder`'s `BLOCK_SIZE` and the key is spelled exactly as
-   * `BlockMerge` spells it**, so the physics world is bucketed the same way the
-   * geometry it stands in for is merged. Nothing reads the key — it is a
-   * grouping and not an identity — but a block is the unit of locality this
-   * whole world layer already thinks in, and a bucket of neighbours is also the
-   * bucket a query wants.
+   * **48 m is `BLOCK_SIZE`, the world layer's fixed unit of LOCALITY, and the
+   * key is spelled exactly as `BlockMerge` spells its own**, so the physics
+   * world is bucketed the way the geometry it stands in for is grouped.
+   * Nothing reads the key — it is a grouping and not an identity — but a block
+   * is the unit of locality this whole world layer already thinks in, and a
+   * bucket of neighbours is also the bucket a query wants.
+   *
+   * **It is deliberately NOT `GameMap.blockSize`, and the quadratic above is
+   * the reason.** A map states its own merge block to cut draw calls, and at
+   * 1500 m that means widening it — 128 m over the same ground is a seventh of
+   * the buckets and therefore seven times the boxes in each, which is most of
+   * what the bucketing just bought handed straight back. What this wants from a
+   * big map is more buckets, not fewer, so it stays on the constant.
    *
    * **Every bucket's node stands at the ORIGIN and every child carries its own
    * world-space offset**, exactly as the single container's children did. That
@@ -402,8 +409,10 @@ export class PhysicsWorld {
     // The floor is the documented collider exception: a heightfield has no box
     // to stand in for it, so its blocks are mesh clones and come across as
     // mesh shapes. They are static, so each BVH is built once per map and
-    // never again — and they are already cut on `BLOCK_SIZE`, so each one
-    // lands in the bucket of the block it IS. Its centre is read off the
+    // never again — and they are bucketed by their CENTRE exactly as a box is,
+    // so a patch cut on a lattice of its own (`GameMap.terrainBlock`) is in one
+    // bucket and hanging out of it, which is a locality hint being imprecise
+    // rather than a shape being wrong. Its centre is read off the
     // bounding box rather than parsed out of the mesh's name, which is the
     // string-sniffing `GameMap.terrainColliders` exists to avoid.
     for (const mesh of map.terrainColliders) {

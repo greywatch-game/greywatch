@@ -288,6 +288,13 @@ function clamp(v: number, lo: number, hi: number): number {
 export function terrainPatches(
   terrain: TerrainField,
   size: number,
+  /**
+   * The patch's side, in metres — `MapLayout.terrainBlock`, or `BLOCK_SIZE`.
+   * **A whole number of terrain cells**, or the round below cuts somewhere
+   * other than where the caller said. All three callers — `buildValley`, the
+   * server's `terrainColliders` and the editor's brush — must pass the same
+   * map's value or they tessellate different floors.
+   */
   blockSize: number,
 ): TerrainPatch[] {
   const f = terrain.field;
@@ -321,9 +328,13 @@ export function terrainPatches(
       }
 
       // Terrain blocks are cut on grid lines, so they do not line up with
-      // BlockMerge's `floor(x / BLOCK_SIZE)` seams. That is fine — the key is
-      // only a mesh name here, and the point of splitting is a tight bounding
-      // box per mesh, not agreement with the structure blocks.
+      // BlockMerge's `floor(x / blockSize)` seams — and since `blockSize` is
+      // the map's and this is called with `MapLayout.terrainBlock`, the two
+      // lattices need not even be the same size. That is fine and always was:
+      // the key is only a mesh name here, and the point of splitting is a tight
+      // bounding box per mesh, not agreement with the structure blocks. A floor
+      // mesh carries no `metadata.block`, which is what keeps it out of both
+      // readers of one.
       out.push({ key: `${bi},${bj}`, data: acc.finish() });
     }
   }

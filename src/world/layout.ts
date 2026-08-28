@@ -342,6 +342,54 @@ export interface MapLayout {
    * floats, so a 320 m map at 5 is ~7 MB of links against ~4 MB at 3.
    */
   surfaces?: number;
+  /**
+   * The side of the square the second merge pass collapses structures over, in
+   * metres. Absent means `BLOCK_SIZE` (48) — the value every shipped map is
+   * built at, so a map that says nothing is bit-identical.
+   *
+   * It is a statement about DRAW CALLS and CULL GRANULARITY and nothing else.
+   * 48 m was chosen for a 240 m map with a 78 m fog wall: coarse enough that a
+   * village collapses into a few dozen draws, fine enough that a block is
+   * never half-visible for long. At 1500 m that same 48 m is a 32 x 32 grid —
+   * 1,024 blocks, each of them a mesh `_evaluateActiveMeshes` walks every
+   * frame and `WorldCulling` files a cell for. 96 m is 256 of them and 128 m
+   * is 144, bought with coarser culling and larger merged buffers.
+   *
+   * **Raising it does not move the terrain**, which is the whole point of
+   * there being two fields — see `terrainBlock`.
+   *
+   * Two things key off the block and both follow this for free, because they
+   * read the KEY the merge wrote rather than a size: `ReflectionSystem.encloses`
+   * (one cube probe per glazed block, and the pane groups that agree with it)
+   * and `WorldCulling` (one cull cell per block, bounded by its meshes rather
+   * than by the nominal square). What does NOT follow it is the world layer's
+   * unit of LOCALITY — the physics buckets and the pane index — which is a
+   * separate decision argued at `BLOCK_SIZE` itself.
+   */
+  blockSize?: number;
+  /**
+   * The side of the square the FLOOR is tessellated over, in metres. Absent
+   * means `BLOCK_SIZE` (48), independently of `blockSize`.
+   *
+   * The two used to be one number because `terrainPatches` was called with
+   * `BLOCK_SIZE`, and they answer different questions: this one is a function
+   * of the heightfield's cell and the triangles per patch, `blockSize` is a
+   * function of draw calls. A map that widens its merge to cut draws has said
+   * nothing about how many triangles belong in one floor mesh, so this stays
+   * where it is until the map moves it.
+   *
+   * It owes one thing nothing checks: **a whole number of terrain cells**.
+   * `terrainPatches` takes `Math.round(terrainBlock / cell)` and cuts on grid
+   * lines, so a value that is not a multiple simply cuts somewhere other than
+   * where it says. The borderland is cut at four times this, for the reason
+   * given there.
+   *
+   * The patch key is the floor mesh's NAME and nothing else — it has never
+   * lined up with `blockSize`'s seams and never had to (see `terrainPatches`).
+   * A floor mesh carries no `metadata.block` at all, which is what keeps the
+   * landform out of both readers of one.
+   */
+  terrainBlock?: number;
   /** The floor's shape. Absent means a level valley floor. */
   terrain?: Heightfield;
   /** The rim's shape. Absent means the default escarpment. */

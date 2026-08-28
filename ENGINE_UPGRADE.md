@@ -1821,7 +1821,7 @@ and finding 24's open threads are the whole of what is left of wall 4.
 
 ---
 
-### S6 — Make the block and terrain resolution the map's
+### S6 — Make the block and terrain resolution the map's — **LANDED**
 
 `BLOCK_SIZE` is a module constant at 48 m, chosen for a 240 m map: *coarse enough
 that the whole village collapses into a few dozen draws, fine enough that frustum
@@ -1842,6 +1842,68 @@ Follow the precedent the existing per-map overrides set: default to today's valu
 so a map that says nothing is bit-identical, and let a map state its own.
 `docs/world.md`'s "Four things that look global and are the map's" is the
 template, and this makes it five or six.
+
+**Done, and it is six.** `MapLayout.blockSize` is the merge's and
+`MapLayout.terrainBlock` is the floor's, each defaulting to `BLOCK_SIZE`
+**independently of the other**, both carried on `GameMap` for the readers that
+meet a built map rather than a layout. `BlockMerge` and `PaneBlocks` are handed
+one value by `build` so they cannot be given two. All three callers of
+`terrainPatches` take the map's — `buildValley`, `server/world.ts`'s
+`terrainColliders` and the editor's brush, which was the one site that would
+have gone wrong quietly. No shipped map states either field, so all four are
+bit-identical: `npm run parity` passes on all four, `npm run build` is clean,
+and a default build still comes out at this document's own figures — 45
+populated merge blocks on Coldharbour, 44 on Harrowmead.
+
+**What follows a map's `blockSize` and what deliberately does not.**
+`ReflectionSystem.encloses` and `WorldCulling` follow it for free and needed no
+argument, because both read the block KEY the merge wrote rather than a size —
+which is the property `encloses` was built on and `WorldCulling`'s
+bounds-from-the-meshes rule already made explicit. What does **not** follow it
+is the world layer's unit of LOCALITY: `PhysicsWorld`'s static buckets and
+`GlassSystem`'s pane index stay on the constant. Neither is an identity —
+nothing reads either key — and what they want from a big map is the opposite of
+what the merge wants, because `addChild` is quadratic in a container's children
+(finding 25). A 128 m bucket is a seventh of the buckets and seven times the
+boxes in each, which is most of what S5b bought handed straight back.
+
+**Measured, and the lever is larger than this step claimed.** Uncapped,
+1920x1080, headless via `channel: "chromium"`, a quiet warm round on the
+committed 900/300 proving ground:
+
+| merge / terrain | install | warm | frame | scene meshes | active | drawn map meshes | blocks |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **48 / 48** | 10,973 ms | 74.3 fps | **13.5 ms** | 9,002 | 442 | 1,597 | 280 |
+| **96 / 96** | 6,719 ms | 103.0 fps | **9.7 ms** | 7,757 | 222 | 653 | 94 |
+| **128 / 96** | 6,404 ms | 110.9 fps | **9.0 ms** | 7,610 | 184 | 506 | 62 |
+
+**33% of the frame and 42% of the install, at 1500 m of ground, for two numbers
+in a layout file.** The frame is the draw phase rather than the walk — S1 has
+already taken the walk down and `WorldCulling` offers 442 of 9,002 meshes at 48
+— so what this buys is 1,597 drawn map meshes becoming 506, each of them a draw
+and an outline shell. The install is mostly the reflection bake, and this is a
+lever on it that wall 5 did not have: the bake is one cube per GLAZED BLOCK, and
+265 glazed blocks become 61. It is the HONEST version of `blocksPerCell`, which
+is the dishonest one — a cell of four blocks is a probe with 96 m of city
+missing from the middle of its cube, while a wider block is a probe whose
+`encloses` still drops exactly what it serves and nothing more.
+
+**The two axes are independent, checked and not argued** — on Coldharbour,
+Harrowmead and the proving ground, `blockSize: 96` alone leaves the floor's mesh
+count untouched (49 / 97 / 417) and `terrainBlock: 96` alone leaves the block
+count untouched (45 / 44 / 280). And `PaneBlocks` never disagreed with
+`BlockMerge` at any size: **zero** glazing groups filed under a key the merge
+did not also write, at 48, 96 and 128, on both maps that have any glazing —
+Coldharbour and the proving ground. `colliderBoxes` and
+the nav graph are identical in every row — nothing about the solid world or the
+graph is a function of either field.
+
+**What was not done.** No map states either value, including the proving ground:
+the table above says what the lever is worth on generated geometry, and what it
+costs is cull granularity — a coarser block draws more that is off screen, which
+is a trade only a real layout can settle. That is S8's and S11's to spend. Nor
+was the PICTURE looked at: `bank.mjs` can only say the four shipped maps are
+unmoved, which they are by construction here. See `FINDINGS.md` 29.
 
 **Must not break:**
 

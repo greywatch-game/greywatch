@@ -313,7 +313,7 @@ it overlaps.
 
 **Glazing takes the same exemption by a different route, because it has its own
 second merge.** `PaneBlocks` keys per PLACEMENT in editor mode rather than per
-48 m block, so a building's panes never merge with a neighbour's, and the
+map block, so a building's panes never merge with a neighbour's, and the
 resulting mesh is handed back to that item's `visuals` and tagged like any other
 — a dragged building takes its windows with it. Two things there are easy to get
 wrong and neither says so:

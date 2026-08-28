@@ -43,7 +43,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import type { Heightfield } from "../world/layout";
-import { BLOCK_SIZE, type GameMap } from "../world/MapBuilder";
+import type { GameMap } from "../world/MapBuilder";
 import { MAX_WALKABLE_GRADE, terrainPatches } from "../world/TerrainField";
 import { EDITOR } from "./tuning";
 
@@ -367,7 +367,8 @@ export class TerrainBrush {
       const idx = j * row + i;
       if (!s.before.has(idx)) {
         s.before.set(idx, f.heights[idx]);
-        for (const key of blocksTouching(f, i, j)) s.blocks.add(key);
+        for (const key of blocksTouching(f, i, j, this.map.terrainBlock))
+          s.blocks.add(key);
       }
       if (w > (s.weight.get(idx) ?? 0)) s.weight.set(idx, w);
     }
@@ -421,7 +422,15 @@ export class TerrainBrush {
    * nobody edits from is the wrong trade.
    */
   private reapply(blocks: Set<string>): void {
-    const patches = terrainPatches(this.map.terrain, this.map.size, BLOCK_SIZE);
+    // The map's own cut, never the constant: `terrainPatches` is being asked to
+    // reproduce the SAME patches the build made, and a brush that assumed 48 on
+    // a map that states otherwise would name meshes that do not exist and leave
+    // the ones under the cursor stale. See `GameMap.terrainBlock`.
+    const patches = terrainPatches(
+      this.map.terrain,
+      this.map.size,
+      this.map.terrainBlock,
+    );
     for (const patch of patches) {
       if (!blocks.has(patch.key)) continue;
       const mesh = this.scene.getMeshByName(`terrain-${patch.key}`);
@@ -478,9 +487,20 @@ export class TerrainBrush {
   }
 }
 
-/** Which block meshes hold a given grid vertex. Edges belong to both. */
-function blocksTouching(f: Heightfield, i: number, j: number): string[] {
-  const per = Math.round(BLOCK_SIZE / f.cell);
+/**
+ * Which block meshes hold a given grid vertex. Edges belong to both.
+ *
+ * `terrainBlock` is the MAP's — the same arithmetic `terrainPatches` cut the
+ * floor with, and the keys have to match it exactly or `reapply` re-tessellates
+ * a mesh the stroke never touched.
+ */
+function blocksTouching(
+  f: Heightfield,
+  i: number,
+  j: number,
+  terrainBlock: number,
+): string[] {
+  const per = Math.round(terrainBlock / f.cell);
   const out = new Set<string>();
   for (const vi of [i - 1, i]) {
     for (const vj of [j - 1, j]) {

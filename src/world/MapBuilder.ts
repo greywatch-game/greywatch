@@ -344,6 +344,28 @@ export interface GameMap {
    * this kind of map it is the edge of where they may legitimately STAY.
    */
   margin: number;
+  /**
+   * The side of the square the structures were merged over — the map's
+   * `MapLayout.blockSize`, or `BLOCK_SIZE`.
+   *
+   * Carried for the reason `size` is: it is the map's, and the readers that
+   * meet a built map rather than a layout would otherwise take the default and
+   * cut a different lattice from the one the merge actually used. Nothing that
+   * reads `metadata.block` needs it — a block key is a name, and both readers
+   * take it as one — so this is for whoever has to ask the question the merge
+   * asked, in the units it asked it in.
+   */
+  blockSize: number;
+  /**
+   * The side of the square the FLOOR was tessellated over — the map's
+   * `MapLayout.terrainBlock`, or `BLOCK_SIZE`, and independent of `blockSize`.
+   *
+   * The editor's terrain brush is the reader: a stroke names the patches it
+   * moved by the same arithmetic `terrainPatches` cut them with, and a brush
+   * that assumed 48 on a map that states otherwise re-tessellates the wrong
+   * meshes and silently leaves the ones under the cursor stale.
+   */
+  terrainBlock: number;
   controlPoints: ControlPointDef[];
   spawns: SpawnPointDef[];
   /**
@@ -799,6 +821,15 @@ export class MapBuilder {
     // reaches them from here and is carried on `GameMap.size` for the readers
     // (the minimap, the deploy map, the editor) that meet a built map instead.
     const size = layout.size ?? CONFIG.map.size;
+    // How the map is CUT, and it is two numbers rather than one. `blockSize`
+    // is what the second merge groups structures over — draw calls and cull
+    // granularity — and `terrainBlock` is what the floor is tessellated over,
+    // which is a question about the heightfield's cell and the triangles in a
+    // patch. They were the same constant until a 1500 m map made 48 m mean
+    // 1,024 blocks; they default to it independently now, so a map that states
+    // neither builds exactly what it always did. See `MapLayout.blockSize`.
+    const blockSize = layout.blockSize ?? BLOCK_SIZE;
+    const terrainBlock = layout.terrainBlock ?? BLOCK_SIZE;
     const visuals: Mesh[] = [];
     const colliders: Mesh[] = [];
     // A view onto the floor's own blocks within `colliders` — see GameMap.
@@ -860,6 +891,7 @@ export class MapBuilder {
       this.buildValley(
         size,
         margin,
+        terrainBlock,
         env,
         terrain,
         visuals,
@@ -873,8 +905,11 @@ export class MapBuilder {
     // Roads are merged into one draw call per material so overlapping junctions
     // (the central cross, etc.) don't z-fight between separate meshes.
     const roadParts: Mesh[] = [];
-    const blocks = new BlockMerge();
-    const paneBlocks = new PaneBlocks();
+    // One size, handed to both, because `ReflectionSystem.encloses` asks a
+    // glazing group and the wall behind it whether they are the same building
+    // by comparing the two keys. See `PaneBlocks`.
+    const blocks = new BlockMerge(blockSize);
+    const paneBlocks = new PaneBlocks(blockSize);
     const placementsStart = performance.now();
     for (const [i, p] of layout.placements.entries()) {
       const item = index ? newItem(index.placements) : null;
@@ -1150,6 +1185,8 @@ export class MapBuilder {
     return {
       size,
       margin,
+      blockSize,
+      terrainBlock,
       nav,
       cover,
       obstacles,
@@ -1182,6 +1219,8 @@ export class MapBuilder {
     size: number,
     /** `Borderland.margin`, or 0 on a map closed by the rim. */
     margin: number,
+    /** `MapLayout.terrainBlock`, or `BLOCK_SIZE` — the floor's own cut. */
+    terrainBlock: number,
     env: EnvironmentSpec,
     terrain: TerrainField,
     visuals: Mesh[],
@@ -1197,7 +1236,7 @@ export class MapBuilder {
       env.floorSurface,
     );
     for (const patch of record("terrainPatches", () =>
-      terrainPatches(terrain, size, BLOCK_SIZE),
+      terrainPatches(terrain, size, terrainBlock),
     )) {
       const ground = new Mesh(`terrain-${patch.key}`, this.scene);
       patch.data.applyToMesh(ground);
@@ -2096,10 +2135,30 @@ function tag(mesh: Mesh, ref: EditorRef): void {
 }
 
 /**
- * Side of a merge block, in metres. 48 m over a 240 m map gives a 5x5 grid of
- * blocks — coarse enough that the whole village collapses into a few dozen
- * draws, fine enough that frustum culling still throws away most of the map.
- * Well under the 78 m fog wall, so a block is never half-visible for long.
+ * Side of a merge block, in metres, **for a map that states none** — and the
+ * world layer's fixed unit of LOCALITY, which is a second job and the reason
+ * this is still a constant at all.
+ *
+ * 48 m over a 240 m map gives a 5x5 grid of blocks — coarse enough that the
+ * whole village collapses into a few dozen draws, fine enough that frustum
+ * culling still throws away most of the map. Well under the 78 m fog wall, so
+ * a block is never half-visible for long. **Every clause of that is about a
+ * 240 m map with a 78 m fog wall**, which is why `MapLayout.blockSize` exists
+ * and why this is the default rather than the answer.
+ *
+ * **The two jobs came apart the moment a map could state its own, and they
+ * must stay apart.** What a map states is how the MERGE groups: fewer, larger
+ * meshes to walk and to draw, at coarser cull granularity. What stays here is
+ * the size of a locality BUCKET — `PhysicsWorld`'s static containers and
+ * `GlassSystem`'s pane index — and those two want the opposite thing from a
+ * large map. `HavokPlugin.addChild` is quadratic in a container's children
+ * (`FINDINGS.md` 25), so a bucket that grew with a map's merge block would
+ * hand back most of what S5b bought; a pane bucket is a slab rejection whose
+ * only cost is the panes inside it. Neither is an identity — nothing reads
+ * either key — so neither has anything to agree with.
+ *
+ * `terrainPatches` is called with `MapLayout.terrainBlock`, which defaults to
+ * this too and moves independently of the merge's.
  */
 export const BLOCK_SIZE = 48;
 
@@ -2121,9 +2180,17 @@ export const BLOCK_SIZE = 48;
 class BlockMerge {
   private blocks = new Map<string, Mesh[]>();
 
+  /**
+   * The block's side, in metres — the MAP's (`MapLayout.blockSize`), taken in
+   * rather than read off the constant so that this pass and the glazing's know
+   * they are cutting on the same lattice by construction. Both are given the
+   * one value `build` resolved.
+   */
+  constructor(private readonly blockSize: number) {}
+
   /** Files a positioned, per-material merged mesh under its map block. */
   add(x: number, z: number, mesh: Mesh): void {
-    const key = `${Math.floor(x / BLOCK_SIZE)},${Math.floor(z / BLOCK_SIZE)}`;
+    const key = `${Math.floor(x / this.blockSize)},${Math.floor(z / this.blockSize)}`;
     const group = this.blocks.get(key);
     if (group) group.push(mesh);
     else this.blocks.set(key, [mesh]);
@@ -2178,6 +2245,16 @@ class PaneBlocks {
   private owners = new Map<string, { item: EditorItem; placement: number }>();
 
   /**
+   * The block's side, in metres. **It must be `BlockMerge`'s**, and it is the
+   * same value from `build` rather than a second reading of the layout: the
+   * whole of `ReflectionSystem.encloses` rests on a glazing group and the wall
+   * it is glazed onto landing under the same key, and two sizes would break
+   * that silently — a probe reflecting its own building, with nothing in the
+   * numbers to point at.
+   */
+  constructor(private readonly blockSize: number) {}
+
+  /**
    * Files one placement's merged glazing under its map block.
    *
    * **On an editor build the key is the PLACEMENT**, so nothing merges across
@@ -2196,7 +2273,7 @@ class PaneBlocks {
   ): void {
     const key = item
       ? `item${placement}`
-      : `${Math.floor(x / BLOCK_SIZE)},${Math.floor(z / BLOCK_SIZE)}`;
+      : `${Math.floor(x / this.blockSize)},${Math.floor(z / this.blockSize)}`;
     if (item) this.owners.set(key, { item, placement });
     const existing = this.blocks.get(key);
     if (existing) existing.push(group);

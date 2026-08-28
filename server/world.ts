@@ -187,9 +187,15 @@ function strutMesh(scene: Scene, group: WorldBox[], i: number): Mesh {
  * `terrainPatches` is pure arithmetic over the heightfield, so it costs the
  * server nothing that the bake would have saved.
  */
-function terrainColliders(scene: Scene, terrain: TerrainField, size: number): Mesh[] {
+function terrainColliders(
+  scene: Scene,
+  terrain: TerrainField,
+  size: number,
+  /** `MapLayout.terrainBlock`, or `BLOCK_SIZE`. See `buildServerWorld`. */
+  terrainBlock: number,
+): Mesh[] {
   const out: Mesh[] = [];
-  for (const patch of terrainPatches(terrain, size, BLOCK_SIZE)) {
+  for (const patch of terrainPatches(terrain, size, terrainBlock)) {
     const col = new Mesh(`terrain-${patch.key}-col`, scene);
     patch.data.applyToMesh(col);
     col.isVisible = false;
@@ -226,6 +232,15 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   // borderland its clients are drawing. `terrainColliders` needs no telling —
   // the extent is the FIELD's, and `terrainPatches` reads it off this object.
   const margin = def.layout.borderland?.margin ?? 0;
+  // How the map is CUT, read off the layout for the third time the same reason
+  // `size` and `margin` are: a server that took the defaults would tessellate a
+  // floor on a different lattice from the one its clients are standing on, and
+  // line of sight over a rise is measured against these meshes. `blockSize`
+  // decides nothing here — there is no merge and nothing to draw — but it is
+  // carried on the map so that a `GameMap` from this file cannot disagree with
+  // one from `MapBuilder` about what the map IS.
+  const blockSize = def.layout.blockSize ?? BLOCK_SIZE;
+  const terrainBlock = def.layout.terrainBlock ?? BLOCK_SIZE;
   const terrain = new TerrainField(
     def.layout.terrain,
     margin,
@@ -273,7 +288,7 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   }
   const rayGroups = toRayGroups(collision);
   colliders.push(...rayGroups.map((group, i) => strutMesh(scene, group, i)));
-  const floor = terrainColliders(scene, terrain, size);
+  const floor = terrainColliders(scene, terrain, size, terrainBlock);
   colliders.push(...floor);
 
   // Same order and same inputs as `MapBuilder.build`: the graph is derived from
@@ -306,6 +321,8 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   return {
     size,
     margin,
+    blockSize,
+    terrainBlock,
     controlPoints: def.layout.controlPoints,
     spawns: def.layout.spawns,
     // Straight off the layout, exactly as `MapBuilder.build` passes it through

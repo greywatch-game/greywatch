@@ -878,8 +878,9 @@ function blocksPerCell(groups: readonly PaneGroup[], cap: number): number {
  * the identity every map in the tree takes, and is why nothing about a shipped
  * bake moves.
  *
- * `PaneGroup.block` is `"bx,bz"` off `BlockMerge`'s own grid (see
- * `MapBuilder`'s `BLOCK_SIZE`), and it is parsed rather than recomputed from a
+ * `PaneGroup.block` is `"bx,bz"` off `BlockMerge`'s own grid (whose side is the
+ * map's — see `MapLayout.blockSize`, and `BLOCK_SIZE` for the default), and it
+ * is parsed rather than recomputed from a
  * position for the reason `ReflectionSystem` asks for the key at all: two
  * groups are the same building because the merge said so, not because their
  * centres are close. A key that is not a pair of integers is its own cell.
@@ -916,7 +917,8 @@ function centreOf(mesh: Mesh, out: Vector3): Vector3 {
  * of its own, so "inside its box" picked out one to five small meshes of the
  * probe's own building. The albedo palette took the colour out of that merge
  * key (`MapBuilder.mergeByMaterial`), which left the smallest thing a box test
- * could remove at one whole 48 m block — and a box test cannot tell a tower's
+ * could remove at one whole merge block — 48 m on every shipped map, and wider
+ * on a map that states its own `blockSize` — and a box test cannot tell a tower's
  * probe standing in its own shaft from a water probe floating in open marsh
  * inside the same block's extent. Greyfen's marsh is what that cost: one
  * exclusion, but the one was the near treeline, and the water reflected sky

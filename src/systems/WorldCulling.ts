@@ -40,7 +40,8 @@
  *   boxes the walk pays full price for and rejects on `isVisible` after it has
  *   already done everything expensive.
  * - **Blocked** — drawn map geometry carrying `metadata.block`, filed one cull
- *   cell per 48 m map block and offered only while the camera is inside `reach`
+ *   cell per map block — 48 m on every shipped map, `MapLayout.blockSize` where
+ *   one states otherwise — and offered only while the camera is inside `reach`
  *   of that cell's own bounds. That is `BlockMerge`'s output, the ink twins of
  *   it and the merged glazing, which between them are every STRUCTURE on the
  *   map.
@@ -75,8 +76,9 @@ import type { GameMap } from "../world/MapBuilder";
  * mesh to its cell, because the list is rebuilt by walking the scene in ORDER
  * rather than by concatenating cells (see `rebuildList`).
  *
- * The bounds are the MESHES' rather than the block's nominal 48 m square,
- * because the key is a name and not an alignment claim — a merged block's
+ * The bounds are the MESHES' rather than the block's nominal square, which is
+ * also why nothing here has to be told how big a block IS on this map: the key
+ * is a name and not an alignment claim — a merged block's
  * geometry can hang over its own seam, and a mesh filed by its key can be much
  * bigger than the square it was filed under. Measuring what is there cannot be
  * wrong in the direction that matters.

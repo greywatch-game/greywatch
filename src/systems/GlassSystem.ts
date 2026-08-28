@@ -371,7 +371,17 @@ export class GlassSystem {
   }
 }
 
-/** Files panes by map block and measures each bucket's world AABB. */
+/**
+ * Files panes by map block and measures each bucket's world AABB.
+ *
+ * **`BLOCK_SIZE` here is the world layer's fixed unit of LOCALITY and not the
+ * map's `blockSize`**, which a large map widens to cut draw calls. This is a
+ * spatial index and nothing else — the key is never read, never compared with
+ * a merged mesh's and never on the wire — so it has nothing to agree with, and
+ * what it wants from a big map is the opposite of what the merge wants: a
+ * bucket is a slab rejection whose only cost is the panes left inside it. See
+ * `BLOCK_SIZE` in `MapBuilder`, where the split is argued.
+ */
 function bucketPanes(panes: readonly WorldPane[]): PaneBucket[] {
   const byBlock = new Map<string, PaneBucket>();
   for (const [i, p] of panes.entries()) {

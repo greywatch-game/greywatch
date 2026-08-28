@@ -3221,3 +3221,85 @@ state. `gate.mjs` is clean on all four maps.
   maps are unmoved.
 
 ---
+
+## 29. The 48 m merge block is worth a third of the 1500 m frame and two fifths of its install — **the lever is LANDED (S6), the value is nobody's yet**
+
+**Asked because S6 said to make the block size the map's, and a mechanism with
+no number beside it is a lever nobody knows whether to pull.** The step's own
+argument was about mesh COUNTS at 1500 m — 1,024 blocks at 48 m against 256 at
+96 and 144 at 128 — and counts are the thing wall 1 was measured in before S1
+took the walk down. What is left is the DRAW phase, which nothing had priced
+against this axis.
+
+### What was measured
+
+The committed 900/300 proving ground, uncapped
+(`--disable-frame-rate-limit --disable-gpu-vsync`), 1920x1080, headless via
+`channel: "chromium"`, one page per row, 10 s warm and an 8 s window. A quiet
+round: the player is spawned and nothing is in contact. The two fields are set
+on the layout in the page before `startRound`.
+
+| merge / terrain | install | warm | frame | scene meshes | active | drawn map meshes | glazed blocks |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **48 / 48** | 10,973 ms | 74.3 fps | **13.5 ms** | 9,002 | 442 | 1,597 | 265 |
+| **96 / 96** | 6,719 ms | 103.0 fps | **9.7 ms** | 7,757 | 222 | 653 | 93 |
+| **128 / 96** | 6,404 ms | 110.9 fps | **9.0 ms** | 7,610 | 184 | 506 | 61 |
+
+**33% of the frame and 42% of the install**, both far past the 8% the
+measurement protocol says to read as real, and both monotonic across three
+points rather than a single pair.
+
+The same three cuts on the two big shipped maps, for the independence check
+rather than for a frame:
+
+| | Coldharbour 48/48 | 96/48 | 48/96 | Harrowmead 48/48 | 96/48 | 48/96 |
+| --- | --- | --- | --- | --- | --- | --- |
+| populated blocks | 45 | **16** | 45 | 44 | **16** | 44 |
+| floor meshes | 49 | 49 | **16** | 97 | 97 | **37** |
+| drawn map meshes | 301 | 201 | 268 | 432 | 306 | 372 |
+| glazing groups orphaned by the merge | 0 | 0 | 0 | — | — | — |
+| collider boxes / nav surfaces | 768 / 72,230 | same | same | 748 / 72,876 | same | same |
+
+### What it means
+
+**The frame is the draw phase and not the walk.** `WorldCulling` offers 442 of
+9,002 meshes at 48 m, so wall 1 is not what moves here; what moves is 1,597
+drawn map meshes becoming 506, each of which is a draw and an outline shell.
+Finding 18's own note applies — an outline shell reusing a bound material is
+~2.3 us and a mesh draw carrying a material switch ~6.3 — so a count is not a
+prediction, which is why this was measured rather than derived.
+
+**The install is a lever on wall 5 that wall 5 did not have.** The reflection
+bake is one cube per GLAZED BLOCK, and a wider block is fewer of them by
+construction: 265 becomes 61. This is the honest form of what `blocksPerCell`
+does under duress — that one groups four blocks onto one probe and the probe
+then has 96 m of city missing from the middle of its own cube, while a wider
+block is a probe whose `encloses` still drops exactly the block it serves and
+nothing else.
+
+**The two axes really are independent**, which is the part the step insisted on
+and the middle table is the proof: `blockSize` alone never moves a floor mesh
+and `terrainBlock` alone never moves a block. Neither moves a collider box or a
+nav surface on any map, at any size.
+
+### What is open
+
+- **Nobody has looked at the PICTURE.** The whole cost of a wider block is cull
+  granularity — a block is offered while the camera is inside `reach` of its
+  bounds, so a 128 m block draws more that is off screen — and on this map the
+  draw-call saving swamped it. On a map with long sightlines and heavy
+  per-pixel work it might not. `bank.mjs` can only say the four shipped maps are
+  unmoved, which they are by construction: none of them states either field.
+- **Nothing here is a fight.** Finding 22 measured a round left to itself firing
+  no ray at all, and this is that kind of round. Wall 2 is down and the merge
+  block is invisible to `RayWorld`, so the expectation is that a fight changes
+  nothing about the SHAPE of this table, but it has not been measured.
+- **The proving ground still builds at 48 / 48** and should probably keep doing
+  so, because it is the load every figure in `ENGINE_UPGRADE.md` was taken
+  against. What wants a value is the desert city (S11), and what should decide
+  it is a real layout rather than a generated grid.
+- **Larger merged buffers were not measured.** 128 m blocks are ~7x the
+  vertices per mesh, which is memory and a coarser bounding box; neither was
+  looked at, and neither showed up as a cost in the frame.
+
+---

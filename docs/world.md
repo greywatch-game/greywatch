@@ -50,7 +50,7 @@ it breaks. It is also **the map with no wall around
 it**: the fields run on past the play square and a leash brings you back, which
 is its own section below. No two share a module in any direction.
 
-## Four things that look global and are the map's
+## Six things that look global and are the map's
 
 Everything below defaults to what the two valleys are, so a map that states
 nothing is bit-identical to before any of them existed. Each was a genuine
@@ -101,9 +101,53 @@ one term along.
 guarantee that a floor survives is the ORDER its builder declares colliders in,
 not the number.
 
+**`MapLayout.blockSize` — how big a merge block is** (`BLOCK_SIZE`, 48). The
+side of the square the second merge pass collapses structures over, and it is a
+statement about DRAW CALLS and CULL GRANULARITY alone. Every clause of the
+argument for 48 is about a 240 m map with a 78 m fog wall: coarse enough that a
+village collapses into a few dozen draws, fine enough that a block is never
+half-visible for long. At 1500 m the same 48 m is a 32 x 32 grid — **1,024
+blocks**, each one a mesh the frame walks and a cell `WorldCulling` files; 96 m
+is 256 of them and 128 m is 144, bought with coarser culling and larger merged
+buffers.
+
+Two things key off a block and both follow a map's value for free, because they
+read the KEY the merge wrote rather than a size: `ReflectionSystem.encloses` —
+a glazing group and the wall it is glazed onto are the same building because
+`PaneBlocks` and `BlockMerge` filed them under the same string — and
+`WorldCulling`, whose cells are bounded by their MESHES rather than by the
+block's nominal square. That is why `GameMap.blockSize` has only one job: to
+let something that has to ask the question the merge asked ask it in the same
+units.
+
+**What does not follow it is the world layer's unit of LOCALITY**, and that is
+deliberate rather than an oversight. `PhysicsWorld`'s static containers and
+`GlassSystem`'s pane index are spelled with the same key and stay on the
+constant: neither is an identity — nothing reads either one — and what they
+want from a big map is the opposite of what the merge wants. `HavokPlugin.addChild`
+is quadratic in a container's children, so a bucket that grew to 128 m would
+hand back most of what S5b bought.
+
+**`MapLayout.terrainBlock` — how big a floor patch is** (`BLOCK_SIZE`, 48,
+**independently of `blockSize`**). The two used to be one number only because
+`terrainPatches` was called with the constant, and they answer different
+questions: this one is the heightfield's cell and the triangles in a patch,
+that one is draw calls. So a map that widens its merge has said nothing about
+its floor, and the floor stays where it is until the map moves it.
+
+It owes a whole number of terrain cells and nothing checks — `terrainPatches`
+takes `Math.round(terrainBlock / cell)` and cuts on grid lines, so a value that
+is not a multiple simply cuts somewhere other than where it says. **Three
+callers must pass the same map's value**: `buildValley`, the server's
+`terrainColliders` (or line of sight runs over a different rise from the one the
+clients are standing on) and the editor's brush (or a stroke re-tessellates
+meshes it never touched and leaves the ones under the cursor stale). The patch
+key is a mesh NAME and has never lined up with the merge's seams, which is fine
+and always was: a floor mesh carries no `metadata.block` at all.
+
 **`EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach**
-(`CONFIG.graphics.shadows.frustumSize`, 110). Coldharbour is 200, and it is the
-newest of the four for the most direct reason: the map moved its sun.
+(`CONFIG.graphics.shadows.frustumSize`, 110). Coldharbour is 200, and it was the
+newest of these for the most direct reason: the map moved its sun.
 
 **Greyfen states 140 for the same reason at a quarter the scale, and what raised
 it was a CANOPY rather than a tower**: its fronds hang 10 m up, so dropping its
@@ -113,9 +157,9 @@ across the forest floor. The pair is the useful comparison — a 320 m city and 
 tiny valley landing 60 m apart — because it says the number tracks the SHADOW's
 length and not the map's size.
 
-It lives on the ENVIRONMENT rather than on the layout, unlike the three above,
+It lives on the ENVIRONMENT rather than on the layout, unlike the five above,
 and that is the tell for what it is. The others are shape — how big, how deep,
-what the floor does. This one is a consequence of `lighting.direction`, sitting
+how it is cut, what the floor does. This one is a consequence of `lighting.direction`, sitting
 two fields above it, and `Game.installMap` pushes the two together. It also
 means the editor's work light inherits it for nothing, since that spreads
 `...env.lighting`.
@@ -297,7 +341,8 @@ per line so a diff shows which strips of the map moved.
   that is a 1.2 m single-cell step. Nothing else enforces it: the brush reports the
   gradient under the cursor live, and `validate.ts` scans every grid edge.
 
-The terrain mesh is one quad per cell, emitted per 48 m block, with two fast paths
+The terrain mesh is one quad per cell, emitted per terrain block —
+`MapLayout.terrainBlock`, 48 m unless the map says otherwise — with two fast paths
 that keep a mostly-level map cheap: no heightfield at all is a single quad, and a
 block whose vertices are all one height collapses to a quad too. Hollowmere is 25
 blocks and **3,110 triangles**.
@@ -352,7 +397,8 @@ so the floor is back-face culled and lit from below. The world looks like it has
 ground at all and every number you can check still reads correct. `assertFacesUp`
 throws on it in dev builds; trust that over your own derivation.
 
-The terrain is emitted **per 48 m block**, each with an invisible clone marked
+The terrain is emitted **per terrain block** (`MapLayout.terrainBlock`, 48 m by
+default and independent of the merge's), each with an invisible clone marked
 `solid` — the one place a collider shares a visual's vertices, since a heightfield
 has no box to stand in for it, so `MapBuilder.collider()` is bypassed and `NavGrid`
 reads the field directly. The block split is not just for culling: `CameraSystem`
@@ -615,7 +661,8 @@ parts. And **every path out of a merge that KEEPS its source owes
 the scene without it draws nothing and throws nothing.
 
 A **second merge pass** (`BlockMerge`) collapses neighbouring structures and scatter
-fields into one mesh per (48 m map block, material). The village is ~230 structures
+fields into one mesh per (map block, material) — the block's side is
+`MapLayout.blockSize`, 48 m on every shipped map. The village is ~230 structures
 and the outline pass draws every mesh twice, so without it the map alone costs ~670
 draws; with it, ~150, and frustum culling still throws away most of the map because
 a block is well inside the 78 m fog wall. Outlines still trace each building,
@@ -673,7 +720,8 @@ glazing is merged and a pane is a vertex range rather than a mesh.** A mesh each
 would be 6,139 meshes against ~150 for the whole map — and worse than the count
 says, because glazing is alpha-blended and a transparent mesh is sorted and
 drawn on its own rather than batched. Instead it merges per placement
-(`MapBuilder.paneGroup`) and then again per 48 m block (`PaneBlocks`), which on
+(`MapBuilder.paneGroup`) and then again per map block (`PaneBlocks`, on the SAME
+side as `BlockMerge` — see `MapLayout.blockSize`), which on
 Coldharbour is **82 glazed placements into 71 meshes across 40 blocks** — both
 passes group by MATERIAL, so a block glazed in more than one kind is more than
 one mesh, and since `backed` glazing (below) is a material of its own that is
