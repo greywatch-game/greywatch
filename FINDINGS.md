@@ -561,8 +561,11 @@ floor rather than an estimate.
 
 ## 9. A broken pane costs a flow-field rebuild, and the rebuild is not measured on real hardware
 
-**Status:** measured headless, amortised, and worth re-measuring before anyone
-raises the breakable-pane count.
+**Status:** measured headless, amortised, re-measured on real hardware, and
+worth re-measuring before anyone raises the breakable-pane count. **A field is
+half the bytes it was** — `Uint16Array`, one BFS step count per surface, see
+`NavGrid.FLOW_UNREACHED` — which changes what a rebuild ALLOCATES and not what
+it costs.
 
 Breaking a pane relinks the nav graph locally — cheap, bounded by the
 box — and then owes every flow field a rebuild, because a route computed before
@@ -588,7 +591,14 @@ ENGINE_UPGRADE.md S3 compacted the id space and the same graph now reports
 
 **One field is 1.9 ms on the Windows box** (Coldharbour, real adapter, warm,
 median of five), against the 4.7 ms headless above — inside the 1–2 ms this
-entry guessed. It is still a SYNCHRONOUS call rather than one taken from the
+entry guessed. **Re-measured after `ENGINE_UPGRADE.md` S4 it is 0.90 ms**, same
+box, same map, same median-of-five, and S4 is not the reason: it moved
+`FlowField.dist` from a `Float32Array` to a `Uint16Array` and the BFS queue from
+a `number[]` to an `Int32Array`, and on the proving ground — where a field is
+long enough to measure honestly — the same pair of runs is 11.60 ms before and
+11.80 after. The rebuild is a MEMORY change and not a speed one; read the 1.9
+against the 0.90 as two readings of a sub-millisecond call rather than as a
+2.1x. It is still a SYNCHRONOUS call rather than one taken from the
 page's own frame loop, so what is settled is the machine, not the placement. 15.9 ms in one frame is a dropped frame on a 60 Hz budget that
 FINDINGS #1 already says drops one every 1.7 s; spread over seven it is
 invisible, and the staleness in between costs nothing because breaking is
@@ -597,11 +607,21 @@ and is never wrong.
 
 ### What is not known
 
-**The real-hardware figure.** 4.7 ms headless is probably 1–2 ms on a real
-machine, but that is a guess, and it is the number that decides whether one
-field per frame is comfortable or whether it wants spreading further. The
-cheapest way to settle it is the same harness as the table above with the page's
-own frame loop rather than a synchronous call.
+**The real-hardware figure.** ~~4.7 ms headless is probably 1–2 ms on a real
+machine, but that is a guess~~ — settled above at 1.9 and then 0.90 ms on
+Coldharbour. What is still a synchronous call rather than one taken from the
+page's own frame loop is the PLACEMENT, and that is what the number was wanted
+for.
+
+**How it scales with the MAP, which is the open half now.** The same call on the
+committed 900/300 proving ground is **11.7 ms**, against Coldharbour's 0.90 —
+and a field is linear in walkable surfaces, of which that map has 305,193 to
+Coldharbour's 34,142. Scaled to `ENGINE_UPGRADE.md`'s 1500 m target that is
+**~32 ms a field**, which is a dropped frame on its own and seven of them in a
+row while the queue drains. `ENGINE_UPGRADE.md` S4 measured this, declined to
+re-model the fields for it, and handed it to S5 — the work is unchanged and
+wants to be off the frame rather than smaller. Nothing is chargeable to it yet:
+no map that big exists, and the proving ground has no breakable glass.
 
 **How it scales with the breakable count.** Coldharbour has twenty-four breakable
 panes — the two offices' and the eight shophouses' shopfront bays, the only

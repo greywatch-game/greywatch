@@ -27,6 +27,7 @@ import {
   type GlowLayer,
 } from "@babylonjs/core";
 import type { GameMap } from "../world/MapBuilder";
+import { FLOW_UNREACHED } from "../world/NavGrid";
 import { EDITOR } from "./tuning";
 import { makeIslandTest } from "./validate";
 
@@ -90,7 +91,10 @@ export class NavOverlay {
         if (!walkable[s]) {
           if (!isIsland(s)) continue; // a roof; not drawn
           bucket = "island";
-        } else if (dist && !Number.isFinite(dist[s])) {
+        } else if (dist && dist[s] === FLOW_UNREACHED) {
+          // The sentinel, not `!Number.isFinite`: a field is a `Uint16Array` of
+          // step counts now and every value in one is finite, so the old test
+          // would have emptied this bucket and drawn a perfectly routed map.
           bucket = "unrouted";
         } else {
           bucket = "walkable";

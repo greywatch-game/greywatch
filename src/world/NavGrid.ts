@@ -6,7 +6,10 @@
  * creek floor + bridge deck (maxSurfaces, 3 unless the map raises it), and its
  * id is the COMPACTED `cellBase[cell] + slot` rather than the stride form, so
  * every array here is allocated over the surfaces that exist — see `cellBase`,
- * and `CoverMap`, which indexes its masks with the same ids. Surface
+ * and `CoverMap`, which indexes its masks with the same ids. A flow field is
+ * one `Uint16Array` over those same ids holding a BFS STEP COUNT, with
+ * `FLOW_UNREACHED` for ground the goal cannot reach — never a float and never
+ * a world distance. Surface
  * heights come from the
  * collider's top-face PLANE at the cell centre, not its AABB — see
  * boxGeometry.ts, which owns that (sign-sensitive) math for every caller.
@@ -92,12 +95,45 @@ interface CellRect {
   maxZ: number;
 }
 
+/**
+ * The step count standing for "this field cannot reach here".
+ *
+ * `dist` held `Infinity` in a `Float32Array` for as long as it was a float
+ * array, which read well and cost four bytes a surface to store a counter that
+ * never exceeds a few hundred. It is a `Uint16Array` now (see `FlowField.dist`)
+ * and a `Uint16Array` has no infinity, so the unreachable marker is the type's
+ * own top value — chosen rather than 0 because every comparison in `steer`,
+ * `steerAhead` and `buildField` is a `<` against a distance that must lose to
+ * every real one, which is exactly what the largest representable value does.
+ * So the arithmetic is unchanged and only the literal moved.
+ *
+ * **It is a value a real route could in principle reach and therefore a
+ * CEILING**: `buildField` stops expanding at 65,534 steps rather than writing
+ * a step count that would read as unreachable. Against the 400 m maps' measured
+ * maximum of 254 and a 1500 m map's ~1,400-cell diagonal that is three orders
+ * of headroom, and the guard costs one comparison per surface.
+ */
+export const FLOW_UNREACHED = 0xffff;
+
 /** A precomputed route to one goal: per-surface step count, lower is closer. */
 export class FlowField {
   constructor(
     readonly name: string,
-    /** Indexed by surface id; `Infinity` where the goal is unreachable. */
-    readonly dist: Float32Array,
+    /**
+     * Indexed by surface id; `FLOW_UNREACHED` where the goal cannot be reached.
+     *
+     * **`Uint16Array`, not `Float32Array`, and that is a size decision rather
+     * than a style one.** These are BFS STEP COUNTS — integers bounded by the
+     * graph's diameter, 254 on the largest shipped map — held one per surface
+     * per objective, and there are seven objectives. At 1500 m that is the
+     * largest single line left in the nav layer (ENGINE_UPGRADE.md wall 3), so
+     * the two bytes a counter actually needs are worth taking: the arrays halve
+     * and nothing downstream can tell, because every reader compares them and
+     * none of them does arithmetic on one. Do not widen it back to store
+     * anything but a step count — a field carrying a real distance, a cost or a
+     * float belongs beside this array rather than in it.
+     */
+    readonly dist: Uint16Array,
   ) {}
 }
 
@@ -757,10 +793,22 @@ export class NavGrid {
   /**
    * Precomputes a flow field: a breadth-first sweep out from every surface
    * inside `radius` of the goal. Called once per objective at load.
+   *
+   * **The queue is a typed array rather than a `number[]`, and its length is
+   * the bound rather than a guess.** Every surface is enqueued at most once:
+   * the seeds are all distance 0 and the sweep is FIFO, so `dist` is discovered
+   * in non-decreasing order and `dist[t] <= next` refuses every second visit —
+   * which makes `surfaceCount` an exact capacity, not a high-water mark. At
+   * 1500 m the array a growing `number[]` would have arrived at is several
+   * megabytes of it, reached through a dozen reallocations, for a list of small
+   * integers. Nothing about the sweep's ORDER changes, and measured it is not
+   * FASTER either — see ENGINE_UPGRADE.md S4, which took the reading. It is
+   * here for what it does not allocate.
    */
   buildField(name: string, goal: Vector3, radius: number): FlowField {
-    const dist = new Float32Array(this.surfaceCount).fill(Infinity);
-    const queue: number[] = [];
+    const dist = new Uint16Array(this.surfaceCount).fill(FLOW_UNREACHED);
+    const queue = new Int32Array(this.surfaceCount);
+    let tail = 0;
     const linkStride = NEIGHBOURS.length;
 
     const r = Math.ceil(radius / this.cellSize);
@@ -772,17 +820,22 @@ export class NavGrid {
         const s = this.surfaceAt(this.toWorld(cx), goal.y, this.toWorld(cz));
         if (s < 0 || dist[s] === 0) continue;
         dist[s] = 0;
-        queue.push(s);
+        queue[tail++] = s;
       }
     }
-    for (let head = 0; head < queue.length; head++) {
+    for (let head = 0; head < tail; head++) {
       const s = queue[head];
       const next = dist[s] + 1;
+      // A step count that would collide with the unreachable marker is not
+      // written at all: past this depth the field simply stops, which reads
+      // downstream as ground the goal cannot be routed to — the honest answer,
+      // and unreachable on any map that could exist (see FLOW_UNREACHED).
+      if (next >= FLOW_UNREACHED) continue;
       for (let n = 0; n < linkStride; n++) {
         const t = this.links[s * linkStride + n];
         if (t < 0 || !this.walkable[t] || dist[t] <= next) continue;
         dist[t] = next;
-        queue.push(t);
+        queue[tail++] = t;
       }
     }
 
@@ -806,11 +859,11 @@ export class NavGrid {
    *
    * **A field is REPLACED rather than written through**, because a bot may be
    * steering on it in the same frame: `buildField` allocates a fresh
-   * `Float32Array`, fills it and only then swaps the map entry, so a reader
+   * `Uint16Array`, fills it and only then swaps the map entry, so a reader
    * holding the old `FlowField` sees a complete route that is merely one break
-   * out of date. Filling in place would hand it a half-swept field with
-   * `Infinity` in the half not reached yet, and a bot on one of those surfaces
-   * would read itself as stranded and stop.
+   * out of date. Filling in place would hand it a half-swept field reading
+   * `FLOW_UNREACHED` across the half not reached yet, and a bot on one of those
+   * surfaces would read itself as stranded and stop.
    *
    * Returns false for a name that was never built, which is the only way this
    * can be asked about a field that does not exist.
@@ -914,6 +967,6 @@ export class NavGrid {
   /** True when a field can reach the surface under `pos` at all. */
   reachable(field: FlowField, pos: Vector3): boolean {
     const s = this.surfaceAt(pos.x, pos.y, pos.z);
-    return s >= 0 && field.dist[s] !== Infinity;
+    return s >= 0 && field.dist[s] !== FLOW_UNREACHED;
   }
 }

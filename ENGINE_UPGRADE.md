@@ -185,8 +185,9 @@ below is now allocated over the surfaces that exist rather than the slots that
 could: measured on the committed 900/300 proving ground the nav layer went
 **99.2 MiB to 40.0 MiB**, a 2.48x cut, and the graph it produces is
 bit-identical (see S3). What is left is a wall about SIZE rather than about
-padding, and S4 owns the biggest line still in it. The table below is the wall
-as S0 measured it, kept because it is what the derivation must be read against.
+padding, and **S4 has since halved the flow fields inside it**, leaving `links`
+as the biggest line. The table below is the wall as S0 measured it, kept because
+it is what the derivation must be read against.
 
 `NavGrid` sized every array `cells * maxSurfaces`, whether or not a cell had
 that many standable heights, and `FlowField.dist` was a `Float32Array` over the
@@ -228,8 +229,16 @@ which is the accounting the table above wanted rather than the one it did):
 Derived forward to 1500/0 at the same occupancy: **~276 MiB becomes ~111 MiB**.
 That is the wall's own table cut by 60%, and it is not on its own the difference
 between a round opening and a tab dying — the 1500/0 heap was 3,536 MiB of which
-this was under 300. **S4 is the next line, and it is the largest one left**:
-seven `Float32Array`s are 28 of the 40 MiB above.
+this was under 300. **S4 was the next line and it is down too**: the seven
+fields are a `Uint16Array` each now, 14.11 MiB of the proving ground's nav layer
+becoming 7.05 and ~39.2 MiB at 1500/0 becoming ~19.6. (The 28-of-40 MiB this
+paragraph used to quote was arithmetic rather than a reading — seven arrays over
+528,287 surfaces at four bytes is 14.1 MiB, not 28. The 40 was S3's accounting
+and the instrument S4 used reports 44.24 for the same graph, counted to a wider
+edge; which of the two is quoted matters less than that S4's before-and-after
+are the same instrument as each other.) **What is left in this wall is `links` at 16.1 MiB and `CoverMap`'s
+masks at 7.3, and S4 measured and declined the one encoding change that would
+move `links`** — see it for why.
 
 In a browser tab, alongside Havok, the Babylon scene, sixteen rigs and a 2 MB
 WASM. This is the wall that is not "slower" — it is an allocation failure, and
@@ -827,7 +836,11 @@ per-read penalty (Coldharbour: 1.3 → 2.9 ms, 2.23x). That lands on
 `GlassSystem` already drains those one per frame. **S4 is about to rewrite that
 array anyway**, so the number is recorded here rather than spent now: if S4
 leaves a BFS shaped like this one, the trade is 12 MiB against roughly doubling
-a field build, and it was not obviously worth it at 900/300.
+a field build, and it was not obviously worth it at 900/300. — *S4 did leave it
+shaped like this one, so the penalty applies unmeasured-again and the trade is
+the one above. **Declined**, and the reason is in S4: the memory this would buy
+is a fifth of a percent of the heap wall 3 is about, and what it would cost is
+the rebuild spike S4 measured at ~32 ms a field at 1500/0 and handed to S5.*
 
 **What it did not change, checked rather than assumed:** `maxSurfaces` is still
 the map's own answer and still a CEILING whose overflow drops the arriving
@@ -864,7 +877,7 @@ space has no padding to skip and the test is gone.
 
 ---
 
-### S4 — Flow fields at 1500 m
+### S4 — Flow fields at 1500 m — **MOVE 1 LANDED, MOVE 2 MEASURED AND NOT TAKEN**
 
 Seven `Float32Array`s over the whole graph, rebuilt on a broken pane (finding 9).
 At this size that is the second-largest line in wall 3's table and the
@@ -874,24 +887,132 @@ Three moves, in increasing order of how much they change:
 
 1. **`dist` holds BFS step counts, so it does not need 32 bits.** A
    `Uint16Array` with `0xFFFF` as the unreachable sentinel covers 65,535 steps
-   against a 1,000-cell diagonal. A free 4x with no behaviour change.
+   against a 1,000-cell diagonal. A free 4x with no behaviour change. —
+   *Done, and it is a free **2x**, not 4x: `Float32Array` is four bytes and
+   `Uint16Array` is two.*
 2. **Seven whole-map fields may not be the right model any more.** A bot 800 m
    from a flag does not need a per-cell route to it, it needs a bearing. A coarse
    field over blocks with the fine field computed only near the goal — or fields
    built lazily and evicted — is the shape, and `nav.steer()` being the one
-   reader is what makes it changeable at all.
-3. **Build them off the main thread**, which is S5.
+   reader is what makes it changeable at all. — *Not taken. Measured, its case
+   has gone; see below.*
+3. **Build them off the main thread**, which is S5. — *Still S5, and now the
+   only thing left in this step's way.*
+
+**Move 1 is done and the graph is bit-identical, which is checked rather than
+argued.** The same canonical dump S3 built is what did it — per surface, the
+step count with the unreachable marker written as `-1` whatever the sentinel
+happens to be, so the hash cannot notice a representation change — taken through
+`server/parity.ts`'s own path on all four shipped maps. **All 28 fields hash
+identically**, along with `reached`, `max` and the array length. **The mutation
+half is checked separately and is the half that matters**, because a field's
+REBUILD path is the one a break exercises: opening all twenty-four of
+Coldharbour's breakable panes through `NavGrid.openBox` and rebuilding all seven
+fields gives seven more identical hashes, and `walkableCount` is unchanged at
+34,142 either way. 35 hashes, no differences.
+
+**What it bought, measured on the committed 900/300 proving ground** (the nav
+layer here is every per-surface array plus `CoverMap`'s masks, which is a wider
+accounting than S3's):
+
+| | before | after |
+| --- | --- | --- |
+| seven flow fields | 14.11 MiB | **7.05 MiB** |
+| the graph's own arrays | 22.88 MiB | 22.88 MiB |
+| `CoverMap`'s masks | 7.26 MiB | 7.26 MiB |
+| **nav layer** | **44.24 MiB** | **37.19 MiB** |
+| `rebuildField`, median of five | 11.60 ms | 11.80 ms |
+
+Coldharbour's seven are 1.93 MiB → 0.96, and one rebuild there is 0.90 ms.
+Derived forward to 1500/0 at the measured 1.47 occupancy: the seven go 39.2 MiB
+→ **19.6**, and the nav layer ~122 → **~103 MiB**.
+
+**The BFS queue became an `Int32Array` in the same change and it is a memory
+move rather than a time one.** Every surface is enqueued at most once — the
+seeds are all zero and the sweep is FIFO, so `dist` is discovered in
+non-decreasing order and `dist[t] <= next` refuses every second visit — which
+makes `surfaceCount` an exact capacity rather than a high-water mark. What that
+replaces at 1500 m is a `number[]` growing to ~1.5 million elements through a
+dozen reallocations, once per field. **It did not measurably change the build**:
+11.60 → 11.80 ms is inside a spread that ran 11.1–13.4 across both runs. Do not
+quote it as a speed-up.
+
+**The headroom on the sentinel is not close.** Measured maximum BFS depth across
+all 28 shipped fields is **254** — Harrowmead's two home fields, on the largest
+shipped map — against 65,534. `buildField` still guards it: a step count that
+would collide with the marker is not written, so the field stops rather than
+inverting into "unreachable".
+
+**Move 2's case has gone, and this is the step that was supposed to find that
+out.** It rests on two claims and S3 plus move 1 have taken both:
+
+- **Memory.** The wall's table put seven fields at 106.8 MiB and derived the
+  redesign from that. S3 compacted the id space and move 1 halved the element,
+  and what is left at 1500/0 is **~19.6 MiB against a 3,536 MiB heap** — 0.6% of
+  the allocation failure that is wall 3. A coarse-plus-fine or lazy-and-evicted
+  scheme would be chasing a fifth of one percent of the tab, and paying for it
+  in the one place this codebase is least able to afford a mistake.
+- **Load time.** Wall 4 measured the seven at **368 ms of 182,889**. They are
+  the smallest line in that table, not "the longest-running item in wall 4" —
+  that sentence was written before S0 measured anything, and the placement loop
+  is 87%.
+
+What is genuinely left is the **rebuild spike**: 11.7 ms a field at 900/300
+scales to ~32 ms at 1500/0, and `GlassSystem` drains one per frame, so a break
+burst on a map with breakable glass costs seven consecutive ~32 ms frames. That
+is a real cost and it is **S5's shape rather than move 2's** — the work is
+unchanged and wants to be somewhere other than the frame. It is also not
+chargeable to any map that exists: the proving ground has no breakable glass and
+the desert city is S11.
+
+**So move 2 is recorded as measured-and-declined rather than deferred.** Anyone
+reopening it needs a NEW measurement, not this one — and the thing that would
+reopen it is a 1500 m map with glass in it, where the number to beat is the
+32 ms, not the 19.6 MiB.
+
+**S3's open question about `links` is answered by the same logic and the answer
+is no.** S3 measured the Int8 slot encoding at 16.1 MiB → 4.0 on the proving
+ground and left the decision here, because "S4 is about to rewrite that array
+anyway". S4 did not: the BFS is the same sweep over the same absolute ids, so
+S3's measured 2.33x per-read penalty applies unchanged, and it would land on a
+`buildField` that is already 11.7 ms and on `GlassSystem` draining those one per
+frame. **12 MiB against roughly doubling the spike this step just declined to
+redesign for is the wrong side of the trade.** `links` stays an `Int32Array` of
+absolute surface ids.
 
 **Must not break:**
 
 - **Bots read `nav.steer()`, never run their own pathfinding, and never use
   `moveWithCollisions`.** Whatever replaces a field must keep that true; per-bot
-  A* is exactly what this design replaced.
+  A* is exactly what this design replaced. — *Untouched: `steer` and
+  `steerAhead` are the same comparisons, and `FLOW_UNREACHED` loses to every
+  real step count exactly as `Infinity` did.*
 - `GlassSystem`'s amortised rebuild, and `fieldGoals` — the arguments a field was
-  built from are held precisely so one can be built again after a break.
+  built from are held precisely so one can be built again after a break. —
+  *Checked, and it is the mutation half of the oracle above.*
 - The staleness guarantee: a route computed before a wall opened is stale (it
   walks the long way) and never wrong. Any lazier scheme must preserve that, or
-  it is a correctness change wearing a performance change's clothes.
+  it is a correctness change wearing a performance change's clothes. — *Nothing
+  got lazier, so nothing had to preserve it.*
+- **The one reader outside `NavGrid` that tested the sentinel by its TYPE.**
+  `editor/navOverlay.ts` painted "reached, but no route to this objective" with
+  `!Number.isFinite(dist[s])`, and every value in a `Uint16Array` is finite — so
+  the amber pass would have gone silently empty and the overlay would have
+  reported a perfectly routed map. It tests `FLOW_UNREACHED` now, and a later
+  change to this array's width wants that grep before anything else.
+
+**Verify:** the canonical dump above on all four shipped maps, build and
+post-break rebuild; `npm run typecheck`; `npm run build`; `npm run parity`; and
+`bank.mjs --check`. — *All done. **The bank is stale on this machine and it is
+pre-existing**: fifteen of the sixteen vantages report a regression on an
+UNMODIFIED tree, and the control run reproduces every mean to four decimals
+(hollowmere/menu 0.627, coldharbour/avenue 3.2563, harrowmead/millpond 1.3526,
+and so on down the list), with harrowmead/borderland at 0% in both. Identical to
+the digit with and without this change is what says the change moves no pixel;
+re-banking would have destroyed that evidence, so the bank was left alone. It
+predates the last two commits and wants re-taking as its own piece of work.
+`npm run simulate` is still the pre-existing NullEngine failure finding 23
+records.*
 
 ---
 
