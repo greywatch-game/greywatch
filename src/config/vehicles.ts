@@ -1099,6 +1099,32 @@ export const vehicles = {
       blast: 0.3,
       shell: 1,
     },
+    /**
+     * What the TRACKS are worth to a man standing in front of them.
+     *
+     * A hull is thirty-odd tonnes and there is no amount of it a body absorbs,
+     * so `damage` is a figure large enough to be lethal through anything the
+     * game can put on a person rather than a number balanced against health —
+     * the same statement `onCrewLost` makes by passing a victim's whole
+     * remaining health, made here as a constant because the sweep is handed
+     * `Combatant`s and a `Combatant` does not publish how much life is left in
+     * it. The only other thing reading it is the throw: `deathDamage` scales
+     * the corpse's departure and is clamped at `bots.death.impulse.blast.max`
+     * long before this figure, so raising it further changes nothing at all.
+     *
+     * `minSpeed` is what makes it RUNNING somebody over rather than standing
+     * on them. A hull that is stopped, or crawling into a wall with the stick
+     * held, kills nobody: bots are in no baked structure a tank appears in
+     * (see `VehicleSystem`), so they walk into parked armour all round and a
+     * hardstanding with no speed gate would be a mincer that filled its own
+     * team's ticket count. 1.5 m/s is a seventh of road speed and about a
+     * walking pace — under it the collision ellipsoid is shoving the body
+     * clear at a speed a person can walk out of, and over it they cannot.
+     */
+    crush: {
+      damage: 400,
+      minSpeed: 1.5,
+    },
     camera: {
       /**
        * How far behind the hull's centre the eye sits. Half the hull is 3.6, so

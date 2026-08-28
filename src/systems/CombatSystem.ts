@@ -59,8 +59,18 @@ import { newRayHit, type RayWorld } from "../world/RayWorld";
  * `bullet` is the default rather than a value anything writes: `fire` says it
  * for every round in the game unless the shooter's `ShotOptions` say otherwise,
  * so the sixteen shooters with nothing to declare declare nothing.
+ *
+ * `crush` is the one member no ROUND ever carries — nothing here delivers it,
+ * because it is a hull's tracks rather than anything that was fired. It is in
+ * this vocabulary anyway for the two readers that already key off it and would
+ * otherwise each need a term of their own: `Tank.takeDamage`, where it falls
+ * to `resist.bullet` and is a dead branch by construction (a tank is never in
+ * the list a tank's tracks are swept against — see `Game.crushSweep`), and
+ * `RagdollSystem.applyImpulse`, whose test is "not a bullet" and which
+ * therefore THROWS a crushed body clear of the hull without being taught what
+ * one is.
  */
-export type DamageKind = "bullet" | "blast" | "shell";
+export type DamageKind = "bullet" | "blast" | "shell" | "crush";
 
 /** Anything a hitscan shot can damage. */
 export interface Hittable {

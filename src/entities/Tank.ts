@@ -191,7 +191,7 @@ import { AbstractEngine, Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/co
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
-import { topFaceHeight } from "../world/boxGeometry";
+import { rotateToLocalXZ, topFaceHeight, type LocalXZ } from "../world/boxGeometry";
 import type { WorldBox } from "../world/MapBuilder";
 import type { ObstacleField } from "../world/ObstacleField";
 import type { RayHull } from "../world/RayWorld";
@@ -1829,6 +1829,58 @@ export class Tank implements Combatant, RayHull {
     const top = topFaceHeight(b, x, z);
     return top === null || top > ceiling || top < floor ? null : top;
   }
+
+  /**
+   * True when a body standing at `feet` with its hit sphere at `center` is
+   * UNDER this hull — which, on a hull that is moving, is a body being run
+   * over. The geometry half of a crush; `Game.crushSweep` and its authority
+   * twin own the rule, exactly as `resolveShell` owns the rule over `fireGun`.
+   *
+   * **Horizontally it is the sphere and vertically it is the feet**, and the
+   * split is what gets the one case that matters right. A footprint padded by
+   * `hitRadius` is the same shape a round is tested against, so a tank kills
+   * whom it visibly hits and the man half a stride outside the tracks lives.
+   * But the sphere cannot answer the vertical question: a body's is 1.5 m tall
+   * against a 2.9 m box, so a man CROUCHING on the deck still has his chest
+   * inside it and would be run over by the hull he is standing on. The feet
+   * cannot be anywhere but on top of it or under it, so they are what is
+   * asked: below the deck is under the tracks, on it is riding, and riding on
+   * a hull is the one thing a crush must not take away.
+   *
+   * The other end of the band is the sphere again, and it is what spares a man
+   * in the street under a bridge a tank is crossing: his whole body is below
+   * the hull's floor, and nothing at all of him is inside it.
+   *
+   * Nearest-point-on-footprint against the sphere's radius, in the box's own
+   * frame through the one place the yaw convention lives. Both height terms
+   * are unrotated because `rotX` is 0 on this box and stays 0 — `rayBox`
+   * writes it once and the collider never tilts, only the picture leans.
+   *
+   * The enabled/pickable gate is `rayBox`'s, so a hull that has been taken
+   * away crushes nothing. A WRECK still can, and never does: nothing moves one.
+   */
+  crushes(center: Vector3, feet: number, radius: number): boolean {
+    const b = this.rayBox();
+    if (!b) return false;
+    // The cheap half first: two comparisons that reject a body on the deck
+    // above and a body under the floor below, before anything is rotated.
+    if (feet >= b.cy + b.h / 2 || center.y + radius <= b.cy - b.h / 2) {
+      return false;
+    }
+    rotateToLocalXZ(b, center.x, center.z, this.crushLocal);
+    const dx = Math.abs(this.crushLocal.lx) - b.w / 2;
+    const dz = Math.abs(this.crushLocal.lz) - b.d / 2;
+    const ox = dx > 0 ? dx : 0;
+    const oz = dz > 0 ? dz : 0;
+    return ox * ox + oz * oz <= radius * radius;
+  }
+
+  /**
+   * The scratch `crushes` rotates into. Its own rather than shared with the
+   * `deckBox` next door: that one is the BOX being asked about and this is the
+   * POINT asking, and neither is held across a call.
+   */
+  private readonly crushLocal: LocalXZ = { lx: 0, lz: 0 };
 
   /**
    * The hull as an oriented box for `RayWorld`, or null when it is out of every

@@ -785,6 +785,21 @@ stopped on, armour is out of the sphere sweep, and **nothing reads
 ground and what is a wall** — the collision ellipsoid's floor AND the ceiling of
 the band a track contact accepts a surface from, two uses that must never drift.
 
+**…and it drives over PEOPLE, which is the one thing armour does that is not a
+weapon.** `Game.crushSweep` (the authority's twin is `HeadlessGame`'s) runs
+right after `VehicleSystem.update` and puts down every enemy body a MOVING
+hull's collider is standing in. It is owed to the rule above it: a tank is in no
+baked structure, so bots walk through one as they walk through a corpse, and
+`moveWithCollisions` sweeps the HULL out of the world rather than a body out of
+the hull's way. **`Tank.crushes` asks the two heights different questions** —
+horizontally the body's hit SPHERE, vertically the FEET, because a man
+crouching on the deck has his chest inside a 2.9 m box and **riding on a hull is
+the one thing a crush must not take away**. Three gates (a live hull,
+`crush.minSpeed`, a DRIVER to credit it to) and a list that is the hull's own
+side's enemies with armour and anyone riding inside one skipped, for the reason
+`blastAt` skips them. `"crush"` is a `DamageKind` no round carries: it decides
+only that the body is THROWN clear rather than dropped.
+
 **What a hit is worth is a `DamageKind`** — the third parameter on
 `Hittable.takeDamage`, which only a tank reads, and `CONFIG.vehicles.tank.resist`
 is where what each kind is worth against armour is written down. **The reticle
@@ -808,6 +823,7 @@ BEARING and `Tank.rideableAt` are all of it.
 → **[`docs/vehicles.md`](docs/vehicles.md)** — the two seats and the swap, the
 cupola gun's world angle and its stowed inversion, the crew of two, the whisker
 fan and the two geometry bugs it found; the collider's three answers; the
+tracks' sweep, its three gates and its two skips; the
 model's twenty-six meshes, its tracks and its whips; the plank, the rate limit
 and the leading-end sphere; the damage kinds, the four ways out of a seat, the
 shell, the two clocks a hardstanding runs, what a map owes, and what is not

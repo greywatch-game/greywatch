@@ -408,6 +408,12 @@ export class HeadlessGame {
     // drive input the step below consumes.
     this.crew.update(dt);
     this.vehicles.update(dt, this.vehicleOrders);
+    // What the tracks killed, in `Game.updateWorld`'s place and for its
+    // reason: immediately after the hulls have moved and before the bots
+    // think, so a body taken by a tank is not a target on the same frame's
+    // acquisition. Before the loop below as well, which only rides bodies that
+    // are still in a seat.
+    this.crushSweep();
     // A driver rides their hull, exactly as `Game.updateDriver` slaves the
     // player to it: the conquest count above, the rewind, the snapshot and
     // every bot's idea of where that person is all ask this object where it
@@ -639,6 +645,61 @@ export class HeadlessGame {
         this.onKill(bot, OTHER_TEAM[bot.team]);
       }
     };
+  }
+
+  /**
+   * What the TRACKS killed this frame. `Game.crushSweep` with the presentation
+   * taken out, and it is the same one rule for the reason the shell is: a
+   * player's hull and a bot's are the same vehicle, and a second copy of
+   * "how fast is fast enough to kill a man" is a second thing to keep in step.
+   *
+   * **Every hull on the field is swept here, including the ones a PERSON is
+   * driving**, which is the one way this differs from its twin. A driven hull
+   * is posed on this side from the wire through `updateRemote` — but that
+   * method measures `speed` out of the ground it covered, precisely so that
+   * everything downstream reads a remote hull the way it reads a local one, so
+   * a person running a squad over is resolved here exactly as a bot crew's
+   * hull is. Nothing about it is predicted on the client: the driver sees the
+   * kill when the authority's killfeed says so, which is the same round trip
+   * a shell's blast takes.
+   *
+   * The three gates, the enemy-only list, the hull skip and the seat skip are
+   * all `Game.crushSweep`'s and are argued there.
+   */
+  private crushSweep(): void {
+    const c = CONFIG.vehicles.tank.crush;
+    for (const tank of this.vehicles.tanks) {
+      if (!tank.alive || Math.abs(tank.speed) < c.minSpeed) continue;
+      const by = this.driverOf(tank);
+      if (!by) continue;
+      for (const target of this.battle.hittablesAgainst(tank.team)) {
+        if (target.armoured || target.invulnerable) continue;
+        // `position` is the feet and `center` the chest — see `Tank.crushes`,
+        // which asks the two heights different questions.
+        if (!tank.crushes(target.center, target.position.y, target.hitRadius)) {
+          continue;
+        }
+        if (!target.takeDamage(c.damage, tank.center, "crush")) continue;
+        // A HULL is not a row on the scoreboard and cannot be one here — the
+        // list is filtered above — so this is the credit half of
+        // `resolveShell`'s pair with the guard already spent.
+        this.creditKill(by, target);
+        if (target instanceof Bot) this.onKill(target, tank.team);
+      }
+    }
+  }
+
+  /**
+   * Whose kill a hull's tracks make, or null for a hull nobody is driving.
+   * `Game.driverOf`, asked the same two ways this side's `vehicleOrders` are:
+   * a PERSON on the sticks first, and the bot crew after.
+   */
+  private driverOf(tank: Tank): Combatant | null {
+    const index = this.vehicles.tanks.indexOf(tank);
+    for (const player of this.players.values()) {
+      if (player.seat === index && player.crewSeat === DRIVER) return player;
+    }
+    return this.crew.crewOf(tank, DRIVER);
   }
 
   /** Scratch for the line a launcher bot's rocket goes down. */

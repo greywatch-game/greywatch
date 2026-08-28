@@ -799,6 +799,13 @@ hull's ground takes the place of the body's.
 the only thing in the game that reads it. `CONFIG.vehicles.tank.resist` scales
 what arrives by what delivered it: `bullet` 0.05, `blast` 0.3, `shell` 1.
 
+There is a fourth kind, `crush`, and it is the one no ROUND carries: nothing
+fires it, and a tank is never in the list it is swept against, so its arm in
+`Tank.takeDamage` is a dead branch that falls to `bullet`. It is in the
+vocabulary for the reader on the other side — `RagdollSystem.applyImpulse` asks
+"is this a bullet", and naming the blow is the whole of what tells it to throw
+a crushed body clear of the hull. See the section below.
+
 **This is where what each kind of damage is worth against armour is written
 down**, rather than it being an emergent property of numbers scattered across
 the weapon table. The alternative was giving a hull an armour figure large
@@ -835,6 +842,106 @@ exactly where the infantry beside the tank are standing. So `RayHit.hull` says
 which hull a cast stopped on, `fire` takes armour out of the sphere sweep
 entirely, and the shape a round is tested against is the shape that is drawn.
 `Tank.hitRadius` remains only because `Hittable` requires one; nothing reads it.
+
+## The TRACKS, and the one thing armour does that is not a weapon
+
+**A hull kills what it drives through.** `Game.crushSweep` runs immediately
+after `VehicleSystem.update`, once per frame per moving hull, and puts down
+every enemy body the collider is standing in.
+
+**It exists because of a rule this game states twice and cannot bend.** A tank
+is in no baked structure — `NavGrid`, `CoverMap`, `ObstacleField`, the AO bake
+and the collision bake are all built once from the finished collider set, and a
+thing that MOVES cannot be in any of them. That is the ragdoll's rule and the
+hull is an instance of it rather than an exception to it, and the consequence
+is stated everywhere it lands: **bots walk through a parked tank exactly as
+they walk through a corpse.** `moveWithCollisions` is no answer either — it
+sweeps the HULL out of the world's boxes, and a body is not one of them. So
+before this, a driver could put eleven metres a second through a squad standing
+in the road and the squad stood there unmoved. Everything else on this vehicle
+treats a body as something to shoot; this is the one that treats it as
+something in the way.
+
+### The geometry is `Tank.crushes`, and it asks the two heights different questions
+
+Horizontally it is the body's hit SPHERE against the hull's footprint, in the
+box's own frame through `boxGeometry.rotateToLocalXZ` — the same shape a round
+is tested against, so a tank kills whom it visibly hits and the man half a
+stride outside the tracks lives.
+
+Vertically it is the FEET, and the split is not tidiness. A body's sphere is
+about 1.5 m tall against a 2.9 m box, so a man CROUCHING on the deck still has
+his chest inside the hull and a sphere-only test runs him over with the tank he
+is standing on. His feet cannot be anywhere but on top of it or under it, so
+they are what is asked: **below the deck is under the tracks, on it is riding,
+and riding on a hull is the one thing a crush must not take away.** The far end
+of the band is the sphere again, and it is what spares a man in the street
+under a bridge a tank is crossing — nothing at all of him is inside the box.
+
+`rotX` is 0 on this box and stays 0 (`rayBox` writes it once; the collider never
+tilts, only the picture leans), which is what lets both height terms be
+unrotated. The enabled/pickable gate is `rayBox`'s, so a hull that has been
+taken away crushes nothing; a WRECK still could, and never does, because
+nothing moves one.
+
+### The three gates, and what each is holding back
+
+| gate | what it stops |
+| --- | --- |
+| `tank.alive` | a wreck mowing down whatever it was rolling toward when it died — nothing moves one, but dying does not zero `speed` |
+| `speed >= crush.minSpeed` (1.5 m/s) | a hardstanding becoming a mincer. Bots walk into parked armour all round, for the reason at the top of this section, and a hull with no speed gate would fill its own side's ticket count while sitting still |
+| a DRIVER | crediting a kill to nobody. It is barely a rule — an empty hull is also one that is not moving — but `by` is what a kill is filed against, and `Game.driverOf` is where the player's seat and the bot crew are asked in `VehicleSystem`'s own order |
+
+The gunner is never the killer: the man on the cupola gun moves nothing.
+
+**Friendly fire is excluded by construction rather than by a team check**, as
+everywhere else in this game — the list is `BattleSystem.hittablesAgainst(tank.team)`,
+which is the hull's own side's enemies. Two more are skipped inside it. **A
+HULL**, because armour does not run armour over: two hulls have colliders and
+stop each other, and `takeDamage` on one would spend `resist.bullet` on a
+body-shaped blow. **And a body riding in one**, which is `GrenadeSystem.blastAt`'s
+guard for its reason: while a person is inside armour the ARMOUR is what is
+being hit, and this is a path that reaches `takeDamage` directly rather than
+through the one door — `CombatSystem.fire` — that already asks. Without it, two
+hulls shoving each other (which their colliders permit, the ellipsoid being
+narrower than the box) would kill the driver inside the one that got shoved.
+
+### What a crushed body is worth, and where it goes
+
+`CONFIG.vehicles.tank.crush.damage` (400) is a figure large enough to be lethal
+through anything the game can put on a person rather than one balanced against
+health — the same statement `onCrewLost` makes by passing a victim's whole
+remaining health, made as a constant because the sweep is handed `Combatant`s
+and a `Combatant` does not publish how much life is left in it. Nothing else
+reads it: the corpse's departure is `deathDamage`-scaled and clamped at
+`bots.death.impulse.blast.max` long before 400, so raising it changes nothing.
+
+`tank.center` is passed as where the blow came from, and it is doing three jobs
+at once — the same three `Game.wireVehicles` argues for a hull brewing up. The
+corpse is thrown CLEAR of the tracks instead of folding under them, the damage
+arc points at the thing that killed you, and the killfeed's enemy team is
+derived from the bearing, which is right by the same derivation every other
+death uses.
+
+The kill itself takes the ordinary doors: `creditKill` files the row (keyed on
+the flag the VICTIM fell in, like every other kill), `registerBotKill` charges
+the ticket and offers the corpse to the pool, and a player victim needs neither
+because `takeDamage` is the one door a death offline takes. A player DRIVER
+gets the hitmarker and its note, on the same terms a shell's direct hit gets
+them; a bot crew gets none of it.
+
+### In a match it is the authority's, and a driven hull is swept like any other
+
+`Game.crushSweep` is offline by construction and is never guarded for:
+`updateWorld` returns at its first line in a match. The twin is
+`HeadlessGame.crushSweep`, and the one way it differs is that it sweeps **every**
+hull on the field, the ones a PERSON is driving included. Those are posed on
+that side from the wire — but `Tank.updateRemote` measures `speed` out of the
+ground the hull covered, precisely so everything downstream reads a remote hull
+the way it reads a local one, so a person running a squad over resolves there
+exactly as a bot crew's hull does. Nothing about it is predicted on the client:
+the driver learns of the kill when the killfeed says so, which is the same round
+trip a shell's blast already takes.
 
 ## Two seats, and what each of them is
 

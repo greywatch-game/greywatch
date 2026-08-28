@@ -4701,6 +4701,101 @@ export class Game {
   }
 
   /**
+   * What the TRACKS killed this frame: every enemy body a moving hull is
+   * standing in, put down and credited to whoever is driving.
+   *
+   * **This is the one thing armour does that is not a weapon**, and it exists
+   * because of a rule this game states twice and cannot bend: a tank is in no
+   * baked structure, so `NavGrid`, `CoverMap` and `ObstacleField` have never
+   * heard of one and bots walk through a hull exactly as they walk through a
+   * corpse. `moveWithCollisions` is no answer either — it sweeps the HULL out
+   * of the world's boxes, and a body is not one of them, so a driver could
+   * put eleven metres a second through a squad and the squad would stand in
+   * the street unmoved. Everything else on this vehicle already treats a body
+   * as something to be shot; this is the one that treats it as something in
+   * the way.
+   *
+   * Offline by construction and never guarded for: `updateWorld` returns at
+   * its first line in a match, so nothing below can run on a client. In a
+   * match this is the authority's, twin for twin, in `HeadlessGame`.
+   *
+   * The three gates are each doing a job. `alive` keeps a WRECK from mowing
+   * down whatever it was rolling toward when it died — nothing moves one, but
+   * `speed` is not zeroed by dying. `minSpeed` is what makes this running
+   * somebody over rather than standing on them, and the reason it is not
+   * optional is in `CONFIG…crush`: bots walk into parked armour all round.
+   * And a hull with nobody driving it crushes nobody, which is not a rule so
+   * much as an arithmetic fact given `by` is what a kill is credited to — an
+   * empty hull is also one that is not moving.
+   *
+   * Friendly fire is excluded by construction rather than by a team check, as
+   * everywhere else in this game: the list is the hull's own side's ENEMIES.
+   * A hull is skipped inside it because armour does not run armour over — two
+   * hulls have colliders and stop each other — and because `takeDamage` on
+   * one would spend `resist.bullet` on a body-shaped blow.
+   *
+   * The list is `BattleSystem`'s per-team scratch and must be read inside the
+   * call. Nothing on the kill path below asks for one, which is what makes
+   * iterating it safe: `takeDamage`, `creditKill` and `registerBotKill` do not
+   * build target lists.
+   */
+  private crushSweep(): void {
+    const c = CONFIG.vehicles.tank.crush;
+    for (const tank of this.vehicles.tanks) {
+      if (!tank.alive || Math.abs(tank.speed) < c.minSpeed) continue;
+      const by = this.driverOf(tank);
+      if (!by) continue;
+      const byPlayer = by === this.player;
+      for (const target of this.battle.hittablesAgainst(tank.team)) {
+        // A hull is skipped for the reason above, and a body riding in one is
+        // skipped for `GrenadeSystem.blastAt`'s: while a person is inside
+        // armour the ARMOUR is what is being hit, and this is a path that
+        // reaches `takeDamage` directly rather than through the one door
+        // (`CombatSystem.fire`) that already asks. Without it, two hulls
+        // shoving each other — which their colliders permit, the ellipsoid
+        // being narrower than the box — would kill the driver inside the one
+        // that got shoved.
+        if (target.armoured || target.invulnerable) continue;
+        // `position` is the feet and `center` the chest — see `Tank.crushes`,
+        // which asks the two heights different questions.
+        if (!tank.crushes(target.center, target.position.y, target.hitRadius)) {
+          continue;
+        }
+        // `tank.center` is the bearing the blow came from, which is what
+        // throws the corpse clear of the hull instead of leaving it folded
+        // under the tracks, and what the killfeed derives an enemy team from
+        // when the victim is the player. `"crush"` is what it was, and all it
+        // decides is that the body LEAVES — see `RagdollSystem.applyImpulse`,
+        // whose test is "not a bullet".
+        if (!target.takeDamage(c.damage, tank.center, "crush")) continue;
+        // The driver's own screen, on the same terms a shell's direct hit gets
+        // it: a kill flash and the note under it. A bot crew's gets none of it.
+        if (byPlayer) {
+          this.hud.flashHitmarker(true, false);
+          this.sfx.hit();
+        }
+        if (target instanceof Bot) {
+          this.creditKill(by, target);
+          this.registerBotKill(target, tank.team, byPlayer);
+        }
+      }
+    }
+  }
+
+  /**
+   * Whose kill a hull's tracks make, or null for a hull nobody is driving.
+   *
+   * The DRIVER's and never the gunner's: the man on the cupola gun moves
+   * nothing, and a hull's two seats can be held by two different kinds of
+   * thing at once — which is why this is asked the same two ways
+   * `VehicleSystem`'s orders are, the player's seat first and the crew after.
+   */
+  private driverOf(tank: Tank): Combatant | null {
+    if (tank === this.driving && this.drivingSeat === DRIVER) return this.player;
+    return this.crew.crewOf(tank, DRIVER);
+  }
+
+  /**
    * The camera half of a driver's frame, after the hull has moved.
    *
    * Everything `updateCameraAndLighting` does for a body on foot, minus the two
@@ -6074,6 +6169,12 @@ export class Game {
     // is not still contested.
     this.crew.update(dt);
     this.vehicles.update(dt, this.vehicleOrders);
+    // Immediately after the hulls have moved, and before the bots think: a
+    // body taken by the tracks is not a target on the same frame's
+    // acquisition, exactly as a hull destroyed by a crew's shell is not. It
+    // sees where the armour ENDED this frame rather than where it started,
+    // which is the whole of what running somebody over is.
+    this.crushSweep();
 
     // --- bots ---
     this.battle.update(dt, this.cameraSys.camera.position);
