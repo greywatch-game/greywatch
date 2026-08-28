@@ -6362,6 +6362,40 @@ export class Game {
    * has to switch off, and each is off for its own reason rather than because
    * the state changed — see below.
    */
+  /**
+   * Which way the picture on screen is facing — the question the minimap's cone
+   * asks to turn the map under it, answered in ONE place because there is more
+   * than one camera that can be holding the view and only the one being STEPPED
+   * has a live bearing on it.
+   *
+   * `cameraSys.yaw` is the BODY's, and it is frozen for as long as anything else
+   * owns the eyes: `updateDriver` never calls `CameraSystem.update` — it steps
+   * `vehicleCam` and `place`s the result — so a driver's cone sat at whatever
+   * heading the mount happened on while the hull turned underneath it. The death
+   * cam is the same shape and was already handled; the hull was not.
+   * `VehicleCamera.yaw` is the chase camera's own, which is also the turret's
+   * order, which is why the netplay upload reports that same field.
+   */
+  private viewYaw(dying: boolean): number {
+    if (dying) return this.deathCam.yaw;
+    return this.driving ? this.vehicleCam.yaw : this.cameraSys.yaw;
+  }
+
+  /**
+   * The same bearing with the body's recoil and sway on it — what a
+   * WORLD-ANCHORED screen marker (the damage arcs) must be re-projected
+   * through, since it has to agree with the picture pixel for pixel rather than
+   * merely point the right way. The minimap deliberately takes the steady one
+   * above: a magazine held down would otherwise twitch the whole map.
+   *
+   * The split only exists on foot. A chase camera has no recoil term at all —
+   * `VehicleCamera.addKick` is on the rendered eye and never on `yaw` — so both
+   * halves of a driver's frame come off the one field.
+   */
+  private aimViewYaw(dying: boolean): number {
+    return dying || this.driving ? this.viewYaw(dying) : this.cameraSys.aimYaw;
+  }
+
   private updateHud(dt: number, dying = false): void {
     this.hud.setHealth(this.player.health, this.player.maxHealth);
     this.hud.setAmmo(this.player.ammo, this.player.magSize, this.player.reloading);
@@ -6398,7 +6432,7 @@ export class Game {
     }
     // Damage arcs are world-anchored, so they need this frame's aim yaw to be
     // re-projected onto the screen — pushed here like every other HUD input.
-    this.hud.setViewYaw(dying ? this.deathCam.yaw : this.cameraSys.aimYaw);
+    this.hud.setViewYaw(this.aimViewYaw(dying));
     this.hud.setTickets(
       [CONFIG.teams[0].name, CONFIG.teams[1].name],
       this.conquest.tickets,
@@ -6425,7 +6459,7 @@ export class Game {
       this.player.position,
       // The cam's own bearing, so the map keeps agreeing with the picture
       // above it while the camera orbits away from the player's last heading.
-      dying ? this.deathCam.yaw : this.cameraSys.yaw,
+      this.viewYaw(dying),
       this.conquest.points,
       this.mapBodies(),
       this.player.team,
