@@ -112,9 +112,9 @@ function worldOf(c: number, origin: number, cellSize: number): number {
  * the missing links are the symptom being diagnosed.
  */
 export function makeIslandTest(snap: NavSnapshot): (s: number) => boolean {
-  const { dim, maxSurfaces, counts, walkable, heights, neighbours } = snap;
+  const { dim, cellBase, surfaceCell, counts, walkable, heights, neighbours } = snap;
   return (s: number): boolean => {
-    const cell = Math.floor(s / maxSurfaces);
+    const cell = surfaceCell[s];
     const cx = cellX(cell, dim);
     const cz = cellZ(cell, dim);
     for (const [dx, dz] of neighbours) {
@@ -122,8 +122,8 @@ export function makeIslandTest(snap: NavSnapshot): (s: number) => boolean {
       const nz = cz + dz;
       if (nx < 0 || nz < 0 || nx >= dim || nz >= dim) continue;
       const ncell = cellOf(nx, nz, dim);
-      for (let si = 0; si < counts[ncell] && si < maxSurfaces; si++) {
-        const ns = ncell * maxSurfaces + si;
+      for (let si = 0; si < counts[ncell]; si++) {
+        const ns = cellBase[ncell] + si;
         if (!walkable[ns]) continue;
         if (Math.abs(heights[ns] - heights[s]) <= ROOF_HEIGHT) return true;
       }
@@ -212,7 +212,9 @@ function islands(snap: ReturnType<GameMap["nav"]["debugSnapshot"]>): Finding[] {
     dim,
     cellSize,
     origin,
-    maxSurfaces,
+    surfaceCount,
+    cellBase,
+    surfaceCell,
     stepHeight,
     counts,
     walkable,
@@ -221,16 +223,19 @@ function islands(snap: ReturnType<GameMap["nav"]["debugSnapshot"]>): Finding[] {
     links,
     neighbours,
   } = snap;
-  const total = dim * dim * maxSurfaces;
+  const total = surfaceCount;
   const seen = new Uint8Array(total);
   const found: Finding[] = [];
 
-  const standable = (s: number): boolean => {
-    const cell = Math.floor(s / maxSurfaces);
-    return (
-      s % maxSurfaces < counts[cell] && !blocked[s] && !walkable[s] && heights[s] >= 0
-    );
-  };
+  /**
+   * Standable, but the flood fill never got there.
+   *
+   * Every id in a compacted graph is a real surface, so this no longer has to
+   * ask whether the slot is one — which also retires a `heights[s] >= 0`
+   * that was reading the old padding's -1 and, incidentally, hiding any
+   * island that genuinely stood below sea level.
+   */
+  const standable = (s: number): boolean => !blocked[s] && !walkable[s];
 
   /**
    * Smallest height difference from this surface to walkable ground in an
@@ -238,7 +243,7 @@ function islands(snap: ReturnType<GameMap["nav"]["debugSnapshot"]>): Finding[] {
    * exactly what is missing when something is sealed off.
    */
   const gapToGround = (s: number): number => {
-    const cell = Math.floor(s / maxSurfaces);
+    const cell = surfaceCell[s];
     const cx = cellX(cell, dim);
     const cz = cellZ(cell, dim);
     let best = Infinity;
@@ -247,8 +252,8 @@ function islands(snap: ReturnType<GameMap["nav"]["debugSnapshot"]>): Finding[] {
       const nz = cz + dz;
       if (nx < 0 || nz < 0 || nx >= dim || nz >= dim) continue;
       const ncell = cellOf(nx, nz, dim);
-      for (let si = 0; si < counts[ncell] && si < maxSurfaces; si++) {
-        const ns = ncell * maxSurfaces + si;
+      for (let si = 0; si < counts[ncell]; si++) {
+        const ns = cellBase[ncell] + si;
         if (!walkable[ns]) continue;
         best = Math.min(best, Math.abs(heights[ns] - heights[s]));
       }
@@ -275,7 +280,7 @@ function islands(snap: ReturnType<GameMap["nav"]["debugSnapshot"]>): Finding[] {
     while (stack.length) {
       const cur = stack.pop()!;
       size++;
-      const cell = Math.floor(cur / maxSurfaces);
+      const cell = surfaceCell[cur];
       const x = worldOf(cellX(cell, dim), origin, cellSize);
       const z = worldOf(cellZ(cell, dim), origin, cellSize);
       sx += x;
@@ -513,7 +518,7 @@ export function validateLights(
 export function validateClearance(map: GameMap): Finding[] {
   const nav = map.nav;
   const snap = nav.debugSnapshot();
-  const { dim, cellSize, origin, maxSurfaces, walkable, heights } = snap;
+  const { dim, cellSize, origin, cellBase, counts, walkable, heights } = snap;
   const out = new Vector3();
   const radius = CONFIG.nav.bodyRadius;
   let traps = 0;
@@ -522,8 +527,8 @@ export function validateClearance(map: GameMap): Finding[] {
   for (let cell = 0; cell < dim * dim; cell++) {
     const x = worldOf(cellX(cell, dim), origin, cellSize);
     const z = worldOf(cellZ(cell, dim), origin, cellSize);
-    for (let si = 0; si < maxSurfaces; si++) {
-      const s = cell * maxSurfaces + si;
+    for (let si = 0; si < counts[cell]; si++) {
+      const s = cellBase[cell] + si;
       if (!walkable[s]) continue;
       const y = heights[s];
       if (!map.obstacles.resolve(x, y, z, radius, out)) continue;

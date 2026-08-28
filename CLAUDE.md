@@ -601,7 +601,10 @@ misbehaves silently:
 `CONFIG.nav.maxSurfaces` (3) unless the map raises it, and overflow **fails
 silently: the candidate that does not fit is DROPPED, in arrival order**, which
 makes a BUILDER's collider order part of the design — walked surfaces first,
-cover next, roofs last. One flow field per objective is precomputed and nothing
+cover next, roofs last. **A surface ID is `cellBase[cell]` plus the slot, never
+`cell * maxSurfaces + slot`** — `CoverMap` and the editor index the graph's own
+arrays with it, and re-deriving the retired stride form addresses the wrong spot
+in silence. One flow field per objective is precomputed and nothing
 is recomputed: **bots read `nav.steer()`, never run their own pathfinding, and
 never use `moveWithCollisions`**. `ObstacleField` is the sub-cell half, and its
 push-out is a preference, never a veto.

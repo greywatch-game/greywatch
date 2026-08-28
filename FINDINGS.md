@@ -578,10 +578,18 @@ part):
 | all seven | 15.9 |
 | the local relink + flood (`NavGrid.openBox`) | under the timer's resolution |
 
-183,184 surfaces, 34,101 walkable, seven fields (five control points and both
-home spawns). The walkable count grew by ~5% when the mixed-use blocks went in
-and the timings above were not re-taken; a field is linear in it, so read them
-as a floor rather than as current. 15.9 ms in one frame is a dropped frame on a 60 Hz budget that
+34,142 walkable surfaces, seven fields (five control points and both home
+spawns). The walkable count grew by ~5% when the mixed-use blocks went in and
+the timings above were not re-taken; a field is linear in it, so read them as a
+floor rather than as current. (The surface count that used to head this
+paragraph was 183,184, which was `cells * maxSurfaces` rather than surfaces:
+ENGINE_UPGRADE.md S3 compacted the id space and the same graph now reports
+**72,230**. The walkable figure is unaffected — it always counted real ground.)
+
+**One field is 1.9 ms on the Windows box** (Coldharbour, real adapter, warm,
+median of five), against the 4.7 ms headless above — inside the 1–2 ms this
+entry guessed. It is still a SYNCHRONOUS call rather than one taken from the
+page's own frame loop, so what is settled is the machine, not the placement. 15.9 ms in one frame is a dropped frame on a 60 Hz budget that
 FINDINGS #1 already says drops one every 1.7 s; spread over seven it is
 invisible, and the staleness in between costs nothing because breaking is
 monotonic — the graph only ever gains links, so a stale field walks the long way

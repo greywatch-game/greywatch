@@ -104,7 +104,13 @@ export class CoverMap {
   private readonly dim: number;
   private readonly cellSize: number;
   private readonly origin: number;
-  private readonly maxSurfaces: number;
+  /**
+   * The graph's own surface indexing, borrowed rather than re-derived — a
+   * surface id is `cellBase[cell] + slot` and the three masks below are
+   * indexed by it, so a copy of that arithmetic here is a copy that can drift
+   * and address the wrong spots in silence. See `NavGrid.cellBase`.
+   */
+  private readonly cellBase: Int32Array;
   private readonly heights: Float32Array;
   private readonly counts: Uint8Array;
   private readonly walkable: Uint8Array;
@@ -121,12 +127,12 @@ export class CoverMap {
     this.dim = snap.dim;
     this.cellSize = snap.cellSize;
     this.origin = snap.origin;
-    this.maxSurfaces = snap.maxSurfaces;
+    this.cellBase = snap.cellBase;
     this.heights = snap.heights;
     this.counts = snap.counts;
     this.walkable = snap.walkable;
 
-    const surfaces = this.dim * this.dim * this.maxSurfaces;
+    const surfaces = snap.surfaceCount;
     this.hard = new Uint16Array(surfaces);
     this.crouch = new Uint16Array(surfaces);
     this.soft = new Uint16Array(surfaces);
@@ -193,7 +199,7 @@ export class CoverMap {
           const wz = this.toWorld(cz);
           const n = this.counts[cell];
           for (let s = 0; s < n; s++) {
-            const surface = cell * this.maxSurfaces + s;
+            const surface = this.cellBase[cell] + s;
             if (!this.walkable[surface]) continue;
             const standing = this.heights[surface];
             // A box only covers a body if it brackets the relevant height:
@@ -380,7 +386,7 @@ export class CoverMap {
 
       const n = this.counts[cell];
       for (let s = 0; s < n; s++) {
-        const surface = cell * this.maxSurfaces + s;
+        const surface = this.cellBase[cell] + s;
         if (!this.walkable[surface]) continue;
         // Only spots the bot could actually walk onto from where it stands.
         if (Math.abs(this.heights[surface] - from.y) > CONFIG.nav.stepHeight) {

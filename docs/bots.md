@@ -52,10 +52,28 @@ note the half-thickness is `h/2/cos(rotX)` and the slope is `tan(rotX)` — writ
 as `h/2*cos` and `-tan` is the easy sign error, and it silently makes every ramp
 unwalkable.
 
-`heights` is `.fill(-1)` to pad unused slots, but that is **not** a "below ground"
-sentinel — every read walks `counts[cell]`, which is what lets sunken terrain hold
-ordinary negative heights. Any new consumer must bound on `counts` rather than
-testing `y < 0`.
+**A surface id is a COMPACTED index, and every array is allocated over the
+surfaces that actually EXIST.** `cellBase[cell]` is a cell's first id and its
+surfaces run to `cellBase[cell] + counts[cell] - 1`; `surfaceCell` is the way
+back, and both are on `debugSnapshot`. It used to be `cell * maxSurfaces +
+slot`, which reserved every slot in every cell whether anything stood there or
+not — measured occupancy is **1.58 surfaces per cell on Coldharbour, 1.02 on
+Harrowmead and 1.47 on the proving ground** — so the graph, the seven flow
+fields and the cover bake were all paying 2.3x to 2.6x over for padding that
+every read already walked `counts` to skip. Nothing outside `NavGrid`,
+`CoverMap` and the editor has ever held a surface id, and all three must index
+through `cellBase`: `CoverMap` borrows the graph's own array rather than
+re-deriving the arithmetic, because a second copy of it can drift and address
+the wrong spots with nothing to see.
+
+The rasteriser still fills a `cells * maxSurfaces` **scratch** — a sorted insert
+cannot know its own length before it has run — and that scratch is `.fill(-1)`
+to pad the slots no surface takes. It is thrown away in the constructor, and the
+-1 is **not** a "below ground" sentinel: every read walks `counts[cell]`, which
+is what lets sunken terrain hold ordinary negative heights. Any new consumer must
+bound on `counts` rather than testing `y < 0` — and the one place that was
+testing it, the editor's island finder, was reading the padding rather than the
+ground and is now bounded properly.
 
 Reachability is a flood fill from the map's outer ring. That is what keeps bots off
 rooftops: a roof is a perfectly good standable surface, but nothing beside it is

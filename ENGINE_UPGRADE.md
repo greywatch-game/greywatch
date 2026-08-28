@@ -178,11 +178,19 @@ on the list.** Its header says exactly what this document is about:
 It was retired by answering the question analytically off `ObstacleField` and
 `TerrainField`. The other eight have not been.
 
-### Wall 3 — the nav graph is allocated per CELL SLOT, not per surface
+### Wall 3 — the nav graph is allocated per CELL SLOT, not per surface — **THE SLOTS ARE GONE**
 
-`NavGrid` sizes every array `cells * maxSurfaces`, whether or not a cell has that
-many standable heights, and `FlowField.dist` is a `Float32Array` over the same
-count. At `CONFIG.nav.cellSize` 1.5 a 1500 m map is `1000 x 1000 = 1,000,000`
+**S3 has landed and the per-slot half of this wall is down.** Every array
+below is now allocated over the surfaces that exist rather than the slots that
+could: measured on the committed 900/300 proving ground the nav layer went
+**99.2 MiB to 40.0 MiB**, a 2.48x cut, and the graph it produces is
+bit-identical (see S3). What is left is a wall about SIZE rather than about
+padding, and S4 owns the biggest line still in it. The table below is the wall
+as S0 measured it, kept because it is what the derivation must be read against.
+
+`NavGrid` sized every array `cells * maxSurfaces`, whether or not a cell had
+that many standable heights, and `FlowField.dist` was a `Float32Array` over the
+same count. At `CONFIG.nav.cellSize` 1.5 a 1500 m map is `1000 x 1000 = 1,000,000`
 cells. **`cellSize` is not a per-map override** — unlike `size`, `surfaces`,
 `fogEnd` and `shadowWindow`, it is read straight from `CONFIG` in the
 constructor.
@@ -202,8 +210,26 @@ Coldharbour needs, and a ruined city needs at least as much:
 
 **The one line the derivation got wrong is `CoverMap`**, at 43 MiB rather than
 24: the table counted its three `Uint16Array` masks and missed that it also
-holds its own copies of the graph's `heights`, `counts` and `walkable`. That is
-another 20 MiB, and it compacts with the same S3 change as the rest.
+holds the graph's `heights`, `counts` and `walkable`. **S3 found that those
+three are REFERENCES rather than copies** — `debugSnapshot` hands back live
+arrays and always has — so the extra 20 MiB is the same 20 MiB counted twice,
+and a byteLength sum that walks both structures double-counts it. It compacted
+with the same S3 change as the rest either way.
+
+**What S3 took off this table, measured per map** (every per-surface array once,
+which is the accounting the table above wanted rather than the one it did):
+
+| | slots | real surfaces | occupancy | was | now |
+| --- | --- | --- | --- | --- | --- |
+| Coldharbour | 183,184 | 72,230 | 1.58 | 12.6 MiB | **5.5 MiB** |
+| Harrowmead | 213,867 | 72,876 | 1.02 | 14.8 MiB | **5.6 MiB** |
+| proving 900/300 | 1,440,000 | 528,287 | 1.47 | 99.2 MiB | **40.0 MiB** |
+
+Derived forward to 1500/0 at the same occupancy: **~276 MiB becomes ~111 MiB**.
+That is the wall's own table cut by 60%, and it is not on its own the difference
+between a round opening and a tab dying — the 1500/0 heap was 3,536 MiB of which
+this was under 300. **S4 is the next line, and it is the largest one left**:
+seven `Float32Array`s are 28 of the 40 MiB above.
 
 In a browser tab, alongside Havok, the Babylon scene, sixteen rigs and a 2 MB
 WASM. This is the wall that is not "slower" — it is an allocation failure, and
@@ -762,33 +788,69 @@ median frame, 1.1 fps — all of it the bake).
 
 ---
 
-### S3 — Compact the nav graph's surface ids
+### S3 — Compact the nav graph's surface ids — **LANDED**
 
 Wall 3, and the structural half of it.
 
-A surface id is `cell * maxSurfaces + slot` today, so every array reserves
-`maxSurfaces` slots for every cell whether or not they exist. On mostly-open
-ground the true occupancy is close to 1. **Make the surface id a compacted
-index**: rasterize first, then allocate `heights`, `walkable`, `blocked`, `links`
-and every `FlowField.dist` over the surfaces that ACTUALLY exist, with a
-`cellBase: Int32Array` giving each cell's first id and a reverse surface -> cell
-array for `positionOf`.
+**Done.** A surface id is `cellBase[cell] + slot`, the rasteriser fills a
+scratch that is thrown away in the constructor, and `heights`, `walkable`,
+`blocked`, `links`, `surfaceCell` and every `FlowField.dist` are allocated over
+the surfaces that exist. `CoverMap`'s three masks are compacted in the same
+pass, addressed through the graph's own `cellBase` rather than a second copy of
+the arithmetic. **Measured 99.2 → 40.0 MiB on the committed 900/300 proving
+ground** (2.48x), 12.6 → 5.5 on Coldharbour, 14.8 → 5.6 on Harrowmead. Real
+occupancy is 1.58 / 1.02 / 1.47 surfaces per cell, against the ~1.3 this step
+derived from.
 
-Derived saving at `surfaces: 4` with ~1.3 real surfaces per cell: **~3x across
-every array in wall 3's table**, and it compounds with S4.
+**The graph is bit-identical, and that is checked rather than argued.** The
+fingerprint could not be the oracle it was billed as — every hash in it is over
+arrays whose LENGTH and whose stored ids both change with the compaction, so it
+must differ and a difference proves nothing. What replaced it is a canonical
+dump, id-encoding-independent by construction: per cell, its count, and per
+surface its height, walkable, blocked and its eight links written as
+`(target cell, target slot)` rather than as an id. Taken through
+`server/parity.ts`'s own path on all four shipped maps, before and after, plus
+the seven flow fields hashed the same way. **Every hash is identical.** The
+mutation half was checked separately in a real browser: break all twenty-four of
+Coldharbour's panes through `GlassSystem.catchUp`, rebuild all seven fields,
+canon-hash again — identical before and after the change, walkable unchanged at
+34,142, and `openBox` never wanted an id the build had not already made.
 
-**Stack the link encoding on top if the measurement wants it.** `links` stores an
-absolute surface id, but the neighbour CELL is already implied by the direction —
-the only unknown is which slot within it. That fits in an `Int8Array`, a further
-**4x** on the largest array in the table. It costs a cell -> id lookup per link
-read in the two hot loops (the flood fill and `buildField`), so **measure it
-rather than assuming it**: it may cost more in the BFS than it saves in bytes.
+**The link encoding was measured and NOT taken.** `links` is still an absolute
+surface id in an `Int32Array`. The Int8 slot form does save what it promised —
+16.1 MiB to 4.0 on the proving ground, 40% of everything left in the nav layer
+after this step — but the decode is not free: measured on the real table, on
+real data, an 8-way sweep reading `links` directly is **7.8 ms** and the same
+sweep decoding `surfaceCell` → cell → `cellBase` is **18.2 ms**, a **2.33x**
+per-read penalty (Coldharbour: 1.3 → 2.9 ms, 2.23x). That lands on
+`buildField`, which is 14.4 ms a field at 900/300 and 1.9 on Coldharbour, and
+`GlassSystem` already drains those one per frame. **S4 is about to rewrite that
+array anyway**, so the number is recorded here rather than spent now: if S4
+leaves a BFS shaped like this one, the trade is 12 MiB against roughly doubling
+a field build, and it was not obviously worth it at 900/300.
+
+**What it did not change, checked rather than assumed:** `maxSurfaces` is still
+the map's own answer and still a CEILING whose overflow drops the arriving
+candidate silently, in arrival order — the builders' collider ordering contract
+is untouched. `debugSnapshot` still returns live references, read-never-write,
+and now carries `cellBase`, `surfaceCell` and `surfaceCount` beside them.
+`worldFingerprint.surfaces` changed VALUE — it reports real surfaces now, not
+`cells * maxSurfaces` — which is a narrower and more honest number; nothing
+compares it across versions, only client against server. One editor bug fell out
+on the way: `validate.ts`'s island finder tested `heights[s] >= 0` to skip the
+old padding, which also hid any island standing below sea level; a compacted id
+space has no padding to skip and the test is gone.
 
 **Must not break:**
 
-- `src/world/fingerprint.ts` and `npm run parity`. The fingerprint is over the
-  DERIVED graph, so a correct compaction leaves it unchanged and any diff is a
-  bug in this step. That makes it the best available oracle — lean on it.
+- `src/world/fingerprint.ts` and `npm run parity`. **This step was written
+  expecting the fingerprint to be the oracle, and it cannot be** — its
+  `heights`, `walkable` and `links` hashes are over arrays whose length and
+  whose stored ids both move with the compaction, so it MUST differ and a
+  difference proves nothing either way. It is still the client-against-server
+  check it was built to be, and `npm run parity` still passes; what it is not
+  is a before-and-after. The canonical dump above is what replaced it, and a
+  later step touching this indexing wants the same instrument.
 - `NavGrid.openBox`'s monotonicity. Glass is the one mutation the graph admits
   and it only ever GAINS links, so a compacted id space must never need to grow
   when a pane breaks. It does not — `openBox` relinks and floods over surfaces

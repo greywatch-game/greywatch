@@ -61,7 +61,7 @@ export class NavOverlay {
   build(map: GameMap, field: string | null): void {
     this.dispose();
     const snap = map.nav.debugSnapshot();
-    const { dim, cellSize, origin, maxSurfaces, counts, walkable, blocked, heights } = snap;
+    const { dim, cellSize, origin, cellBase, counts, walkable, blocked, heights } = snap;
     const dist = field ? map.nav.field(field)?.dist : undefined;
     // Rooftops are unreached on purpose — painting them red would bury the
     // handful of cells that are unreached by mistake.
@@ -78,11 +78,12 @@ export class NavOverlay {
       // quotient. Taking them the other way round transposes the whole overlay.
       const x = origin + ((cell % dim) + 0.5) * cellSize;
       const z = origin + (Math.floor(cell / dim) + 0.5) * cellSize;
-      for (let si = 0; si < counts[cell] && si < maxSurfaces; si++) {
-        const s = cell * maxSurfaces + si;
+      for (let si = 0; si < counts[cell]; si++) {
+        const s = cellBase[cell] + si;
         const y = heights[s];
-        // No `y < 0` test: -1 pads unused slots, but the loop already bounds on
-        // `counts`, and sunken terrain makes negative heights ordinary.
+        // No `y < 0` test: the graph's ids are compacted, so there is no
+        // padding left to skip, and sunken terrain makes negative heights
+        // ordinary.
         if (blocked[s]) continue;
 
         let bucket: Bucket;
