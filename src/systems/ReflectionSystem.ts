@@ -9,17 +9,32 @@
  * build step that happens to run on the GPU.
  *
  * Invariants:
- * - One probe per `GameMap.paneGroups` entry, standing at the CENTRE of that
- *   group's own glazing, and the group's mesh gets a material of its own
- *   carrying that probe's cube. Costs no draw call: the glazing is already one
- *   merged mesh per map block.
+ * - One probe per glazed BLOCK, standing at the CENTRE of the first glazing
+ *   group filed under it, and every group on that block gets a material of its
+ *   own carrying that probe's cube. Costs no draw call: the glazing is already
+ *   one merged mesh per map block.
  * - A probe's render list is the map's opaque visuals MINUS whatever encloses
  *   it — see `encloses`, and read it before touching this, because a probe
  *   standing inside a tower with the tower still in the bake reflects the
- *   inside of that tower onto every window in it.
+ *   inside of that tower onto every window in it — and MINUS whatever is
+ *   further off than `CONFIG.graphics.reflection.radius`, which is the only
+ *   term in the bake priced on the map's SIZE rather than on its glazing.
+ * - **The bake is SPENT over frames rather than issued in one.** Every probe
+ *   is refresh-once and they used to be released together, which is one frame
+ *   of `probes x 6 x renderList` draws — 1.37 million on the 900 m proving
+ *   ground against Coldharbour's 41,934, and 11.2 million at a true 1500 m —
+ *   and the D3D12 device is lost inside it. `queue` and `releaseBatch` are
+ *   what turn that into `drawsPerFrame` at a time. It is still a BUILD step;
+ *   it is no longer a build step that happens in one command submission.
+ * - **The probe count has a ceiling and it is stated in MEMORY**, because the
+ *   count is the map's glazing and glazing has no natural bound: past
+ *   `poolBudgetMiB` glazed blocks are grouped in twos, then fours, until the
+ *   pool fits. Nothing in the tree groups anything today.
  * - The renderList must be replaced on every install, before the next frame:
  *   last build's meshes are disposed by then, exactly as for
- *   `ShadowSystem.setCasters`.
+ *   `ShadowSystem.setCasters`. The QUEUE is emptied on the same line and for
+ *   the same reason — a probe waiting its turn is a probe holding a render
+ *   list.
  * - The bake renders the world from the probe, so the cel materials' eye is
  *   moved for it and put back around the whole render-target block — never
  *   per probe, or 37 bakes are 37 chances to put it back wrong.
@@ -47,7 +62,7 @@ import type {
   CubeReflection,
   ProbeReflection,
 } from "../shaders/CelShader";
-import type { GameMap, WorldBox } from "../world/MapBuilder";
+import type { GameMap, PaneGroup, WorldBox } from "../world/MapBuilder";
 
 /**
  * A cube per glazed block, and why the count is what it is.
@@ -87,6 +102,32 @@ export class ReflectionSystem {
    * install, and `build` parks everything it owns on the way in.
    */
   private readonly waterProbes: ReflectionProbe[] = [];
+  /**
+   * The probes that have been given a render list and are waiting for a frame
+   * to bake on, oldest first, each with what it will cost when it does.
+   *
+   * **This is the whole of the spread**, and it is a queue rather than a rate
+   * because what a frame can afford is DRAWS and a probe's render list is not
+   * a constant: a map whose lists are short releases more probes per frame
+   * than one whose lists are long, without either of them being told how big
+   * it is.
+   */
+  private readonly queue: { probe: ReflectionProbe; draws: number }[] = [];
+  /**
+   * The probes released and not yet seen to bake, with what each will cost if
+   * it renders again.
+   *
+   * **A released probe is not a baked one, and the gap is what makes this
+   * list necessary.** Babylon's own render-list pass resets a target's refresh
+   * counter and skips a mesh whose material has not compiled yet, so a probe
+   * whose list contains anything unready re-bakes IN FULL on the next frame
+   * and the one after, until the whole list is ready. Those re-renders are
+   * draws the frame is about to issue, and if the queue does not know about
+   * them it releases a fresh batch on top of a batch already thrashing — which
+   * arrives at the one enormous frame this file exists to prevent, by the long
+   * way round. `releaseBatch` spends them against the same budget.
+   */
+  private readonly inFlight: { probe: ReflectionProbe; draws: number }[] = [];
   /** Scratch for the box handed to the factory, which copies it. */
   private readonly boxMin = Vector3.Zero();
   private readonly boxMax = Vector3.Zero();
@@ -109,19 +150,38 @@ export class ReflectionSystem {
     // comparison.
     scene.onBeforeRenderTargetsRenderObservable.add(() => {
       this.mats.readEye(this.savedEye);
+      // And this frame's share of whatever bake is outstanding. It rides the
+      // same hook rather than a `Game.tick` call, for a reason that is not
+      // tidiness: Babylon asks each custom target whether it `_shouldRender()`
+      // immediately AFTER this observable fires, so a probe released here
+      // bakes on this frame and one released from `tick` a line later would
+      // wait for the next. Nothing outside this file knows the bake is spread.
+      this.releaseBatch();
     });
     scene.onAfterRenderTargetsRenderObservable.add(() => {
       this.mats.updateCamera(this.savedEye);
     });
     // Probe 0 exists before any map does, because `MapBuilder` asks for a
     // glazing material during the build and that material has to be born with
-    // a cube bound to it — see `CelMaterialFactory.setDefaultReflection`.
-    this.mats.setDefaultReflection(this.probeAt(0).cubeTexture);
+    // a cube bound to it — see `CelMaterialFactory.setDefaultReflection`. It
+    // is released here holding the empty render list `newProbe` gave it, so
+    // the default cube is a CLEARED cube rather than a texture nothing has
+    // ever written: six empty face renders, once, before any map exists.
+    const first = this.probeAt(0);
+    this.release(first);
+    this.mats.setDefaultReflection(first.cubeTexture);
   }
 
   /**
-   * Bakes the installed map's glazing, one cube per glazed block, and hands
+   * Queues the installed map's glazing, one cube per glazed block, and hands
    * each block's mesh the material that samples its own.
+   *
+   * **It queues rather than bakes**, and the frames after it spend the queue —
+   * see `releaseBatch`. Nothing waits on that: a pane whose probe has not
+   * baked yet samples a cube that is empty, which is alpha 0 everywhere, which
+   * is the analytic sky a pane shows before any probe has claimed it. That is
+   * the state an editor build leaves every pane in permanently, so it is a
+   * state the feature already ships rather than a new one.
    *
    * Called from `Game.installMap` for the reason every line around it is: the
    * meshes this holds are the ones the next build disposes.
@@ -157,6 +217,14 @@ export class ReflectionSystem {
     // above the return, so a probe left over from the round the editor was
     // opened from is emptied rather than left holding a disposed map.
     for (const probe of this.probes) probe.cubeTexture.renderList = [];
+    // And the queue with them. `build` is the top of an install, so this
+    // empties the WHOLE of it, water included: a queued probe is one holding a
+    // render list of meshes this line's caller has just disposed. The water
+    // pool is queued later in the same install (`bakeWater`, called from
+    // inside `WaterSystem.build`), which is what makes emptying everything
+    // here safe rather than merely convenient.
+    this.queue.length = 0;
+    this.inFlight.length = 0;
     if (editor || map.paneGroups.length === 0) return;
 
     const opaque = opaqueWorld(map);
@@ -169,7 +237,6 @@ export class ReflectionSystem {
     const half = map.size / 2;
 
     const started = performance.now();
-    let enclosing = 0;
     // **One probe per BLOCK, not per group.** A block's glazing arrives here as
     // one merged mesh per MATERIAL — two of them for any building that glazes
     // in more than one, which `backed` glazing (see `Build.pane`) made ordinary
@@ -183,23 +250,63 @@ export class ReflectionSystem {
     // "the same building" is a thing `PaneBlocks` already decided, and asking
     // it is exact where measuring between two centres — a tower's is the middle
     // of its shaft, a shopfront's is on the pavement — has to guess.
+    //
+    // **`perCell` is 1 on every map in the tree and the grouping below is a
+    // ceiling rather than a lever** — see `blocksPerCell`, and
+    // `CONFIG.graphics.reflection.poolBudgetMiB` for what it protects.
+    const perCell = blocksPerCell(
+      map.paneGroups,
+      probeCap(cfg.size, cfg.poolBudgetMiB),
+    );
+
+    // Slots are assigned in one pass and FILLED in the next, because a probe's
+    // render list has to leave out every block that probe serves and only the
+    // last group on a cell says which those are. At `perCell` 1 that set is
+    // the one block it has always been.
     const slots = new Map<string, number>();
+    const served: Set<string>[] = [];
+    const anchor: Mesh[] = [];
+    const slotOf: number[] = [];
     for (const group of map.paneGroups) {
-      let slot = slots.get(group.block);
-      const fresh = slot === undefined;
+      const key = cellKey(group.block, perCell);
+      let slot = slots.get(key);
       if (slot === undefined) {
         slot = slots.size;
-        slots.set(group.block, slot);
+        slots.set(key, slot);
+        served.push(new Set());
+        anchor.push(group.mesh);
       }
-      const probe = this.probeAt(slot);
-      if (fresh) {
-        centreOf(group.mesh, probe.position);
-        const list = opaque.filter((m) => !encloses(m, group.block));
-        enclosing += opaque.length - list.length;
-        probe.cubeTexture.renderList = list;
-        probe.cubeTexture.resetRefreshCounter();
-      }
+      served[slot].add(group.block);
+      slotOf.push(slot);
+    }
 
+    let listed = 0;
+    let dropped = 0;
+    for (let slot = 0; slot < slots.size; slot++) {
+      const probe = this.probeAt(slot);
+      centreOf(anchor[slot], probe.position);
+      const blocks = served[slot];
+      // Two subtractions answering different questions: `encloses` takes out
+      // the building the probe is STANDING IN, and the radius takes out the
+      // city it could not see the far side of. Neither is a distance test
+      // standing in for the other — see `encloses` on why the enclosure
+      // stopped being one.
+      const list = neighbourhood(
+        opaque,
+        probe.position,
+        cfg.radius,
+        (m) => !encloses(m, blocks),
+      );
+      dropped += opaque.length - list.length;
+      listed += list.length;
+      probe.cubeTexture.renderList = list;
+      this.queue.push({ probe, draws: list.length * 6 });
+    }
+
+    for (let i = 0; i < map.paneGroups.length; i++) {
+      const group = map.paneGroups[i];
+      const slot = slotOf[i];
+      const probe = this.probeAt(slot);
       const floor = map.terrain.surfaceAt(
         probe.position.x,
         probe.position.z,
@@ -221,12 +328,15 @@ export class ReflectionSystem {
     }
 
     if (import.meta.env.DEV) {
-      const n = slots.size;
+      const n = Math.max(slots.size, 1);
+      const draws = listed * 6;
       console.info(
-        `[reflection] ${n} probes for ${map.paneGroups.length} glazing groups ` +
-          `over ${opaque.length} meshes ` +
-          `(${(enclosing / Math.max(n, 1)).toFixed(1)} enclosing each) queued ` +
-          `in ${(performance.now() - started).toFixed(1)} ms`,
+        `[reflection] ${slots.size} probes for ${map.paneGroups.length} ` +
+          `glazing groups (${perCell} block${perCell === 1 ? "" : "s"} each) ` +
+          `over ${opaque.length} meshes — ${(listed / n).toFixed(0)} listed ` +
+          `and ${(dropped / n).toFixed(1)} dropped each, ${draws} draws over ` +
+          `${Math.ceil(draws / cfg.drawsPerFrame)} frame(s), queued in ` +
+          `${(performance.now() - started).toFixed(1)} ms`,
       );
     }
   }
@@ -300,10 +410,15 @@ export class ReflectionSystem {
       // the chop already does.
       probe.position.copyFrom(site);
       probe.position.y += 0.5;
-      // Water has no block and so excludes nothing: the whole map stays in the
-      // cube, which is what a mirror lying in the open is owed.
-      probe.cubeTexture.renderList = opaque.slice();
-      probe.cubeTexture.resetRefreshCounter();
+      // Water has no block and so excludes nothing: not one structure comes
+      // out of this list, which is what a mirror lying in the open is owed.
+      // The RADIUS still applies, for the reason it applies to the glazing and
+      // without touching that one: what a pond is owed is the world around it
+      // rather than the world entire, and on every map that has water the two
+      // are the same list.
+      const list = neighbourhood(opaque, probe.position, cfg.radius, keepAll);
+      probe.cubeTexture.renderList = list;
+      this.queue.push({ probe, draws: list.length * 6 });
       return {
         cube: probe.cubeTexture,
         at: probe.position,
@@ -318,6 +433,88 @@ export class ReflectionSystem {
       );
     }
     return out;
+  }
+
+  /**
+   * Lets this frame's share of the outstanding bake go, oldest probe first.
+   *
+   * **The budget is DRAWS and not probes**, because a probe is expensive only
+   * in proportion to its render list and the list is the map's. It is set just
+   * over what the largest shipped map's whole bake costs
+   * (`CONFIG.graphics.reflection.drawsPerFrame`), so Coldharbour still bakes
+   * on the frame it always did and nothing about a shipped map's glass moves —
+   * which is what keeps the banked reference frames a test of the shaders.
+   *
+   * **On a frame with nothing else to pay for, one probe goes through however
+   * fat it is.** A probe whose own list exceeds a whole frame's allowance is
+   * still cheaper than a probe that never bakes: the alternative is a queue
+   * that cannot drain and glass showing sky for the rest of the round. On a
+   * frame already committed to re-bakes it waits instead, which is the whole
+   * of what `inFlight` is for.
+   *
+   * Releasing is `resetRefreshCounter()` and a push into the scene's custom
+   * targets. A refresh-once target renders on the next frame its counter is -1
+   * and never again, so a probe still in the queue costs a comparison here and
+   * nothing at all in the scene — it is not a target yet. See `release`.
+   */
+  private releaseBatch(): void {
+    if (this.queue.length === 0 && this.inFlight.length === 0) return;
+    const budget = CONFIG.graphics.reflection.drawsPerFrame;
+    // What this frame is going to spend before anything new is let go: every
+    // probe released earlier whose counter is back at -1 is one Babylon is
+    // about to draw again, because something in its list was not ready last
+    // time. See `inFlight`. A probe whose counter has moved on has baked and
+    // is dropped from the list.
+    let spent = 0;
+    for (let i = this.inFlight.length - 1; i >= 0; i--) {
+      const held = this.inFlight[i];
+      if (held.probe.cubeTexture.currentRefreshId !== -1) {
+        this.inFlight.splice(i, 1);
+        continue;
+      }
+      spent += held.draws;
+    }
+    let taken = 0;
+    for (const next of this.queue) {
+      // One probe goes through on an EMPTY frame however fat it is, or a queue
+      // whose head costs more than the whole budget would never drain. On a
+      // frame already committed to re-bakes it waits, which is the point.
+      if (spent > 0 && spent + next.draws > budget) break;
+      this.release(next.probe);
+      this.inFlight.push(next);
+      spent += next.draws;
+      taken++;
+    }
+    this.queue.splice(0, taken);
+  }
+
+  /**
+   * Puts a probe's cube where the scene will draw it, and asks for a bake.
+   *
+   * **Being in `scene.customRenderTargets` is what "released" MEANS**, and
+   * that is not tidiness — it is the only thing that can hold a fresh probe
+   * back. A `ReflectionProbe` is born with its refresh counter at -1, which a
+   * refresh-once target reads as "render on the next frame you are asked", and
+   * `build` fills its render list before any frame happens. So a probe pushed
+   * into the custom targets at CONSTRUCTION bakes in full on the frame after
+   * the install however carefully the queue is spent — which on the first
+   * install of a large map is every probe at once, the exact frame this file
+   * exists to stop happening. Nothing but membership of that array can park
+   * it: the counter has no public way back to "not yet", and a refresh RATE is
+   * a schedule rather than a gate.
+   *
+   * A probe stays in the array once released. It has baked by then, and a
+   * refresh-once target that has baked costs a `_shouldRender` that says no —
+   * the same nothing a parked probe has always cost. `resetRefreshCounter` is
+   * therefore for the SECOND release onward (a later install, or the reference
+   * harness re-baking a frozen world) and is a no-op on the first.
+   */
+  private release(probe: ReflectionProbe): void {
+    const rtt = probe.cubeTexture;
+    if (!this.scene.customRenderTargets.includes(rtt)) {
+      this.scene.customRenderTargets.push(rtt);
+    }
+    rtt.resetRefreshCounter();
   }
 
   /** The water probe in a slot, built on first use and kept for the process. */
@@ -354,15 +551,19 @@ export class ReflectionSystem {
     // shader tells the city from the sky above it. Everything drawn here is a
     // cel material, and every cel variant but the glazing writes alpha 1.
     rtt.clearColor = new Color4(0, 0, 0, 0);
-    // The world is static, so a bake is not a per-frame cost at all. `build` is
-    // the only thing that ever asks for another one.
+    // The world is static, so a bake is not a per-frame cost at all. `build`
+    // and `bakeWater` are the only things that ever ask for another one, and
+    // `releaseBatch` is what decides which frame it lands on.
     rtt.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     rtt.renderList = [];
-    // A ReflectionProbe registers itself with the scene but nothing renders it:
-    // Babylon collects render targets off the materials it finds on active
-    // meshes, and these are bound to ShaderMaterials by hand. So they are
-    // custom targets, which is also what puts them before the main pass.
-    this.scene.customRenderTargets.push(rtt);
+    // **NOT pushed into `scene.customRenderTargets` here**, which is the one
+    // line of this setup that is about the QUEUE rather than about the probe.
+    // A ReflectionProbe registers itself with the scene but nothing renders
+    // it: Babylon collects render targets off the materials it finds on active
+    // meshes, and these are bound to ShaderMaterials by hand, so being a
+    // custom target is what draws them at all — and what puts them before the
+    // main pass. `release` is where that happens; see it for why construction
+    // is too early.
     // Per face, and cheap: `updateCamera` guards on the position, so the six
     // faces of one probe cost one walk of the material cache between them.
     rtt.onBeforeRenderObservable.add(() => {
@@ -401,6 +602,112 @@ function opaqueWorld(map: GameMap): Mesh[] {
   );
 }
 
+/** Every mesh survives this. `bakeWater`'s filter, named so it is not a lambda. */
+function keepAll(): boolean {
+  return true;
+}
+
+/**
+ * The opaque world within `radius` of a point, minus whatever `keep` refuses.
+ *
+ * **Distance is to the NEAR SIDE of the bounding sphere, and that is the whole
+ * of the care in it.** A landform is one mesh with an enormous radius whose
+ * centre is nowhere near anything — the valley rim, the ridge rock, a terrain
+ * patch — so a centre test drops exactly the geometry a reflection at this
+ * range is made of. `distance - radiusWorld` keeps them all, at every radius
+ * `FINDINGS.md` 10 tried.
+ *
+ * What this drops does not fade, it vanishes: the cube's alpha goes to 0 and
+ * that is where the shader puts sky. It is the objection finding 10 refused a
+ * 140 m cull over and it does not go away here — what changes is the radius,
+ * which at 800 m is past the diagonal of every map that ships and past the
+ * longest `fogEnd` any of them declares. On a fogged map of any size,
+ * everything dropped here was already drawing as flat fog colour and the sky
+ * replacing it is `fogColor` at the horizon. On an unfogged one it is a hole
+ * at the edge of a picture of a street, which is what the map being bigger
+ * than the bake can hold costs.
+ */
+function neighbourhood(
+  opaque: readonly Mesh[],
+  at: Vector3,
+  radius: number,
+  keep: (m: Mesh) => boolean,
+): Mesh[] {
+  const out: Mesh[] = [];
+  for (const mesh of opaque) {
+    if (!keep(mesh)) continue;
+    const sphere = mesh.getBoundingInfo().boundingSphere;
+    if (Vector3.Distance(sphere.centerWorld, at) - sphere.radiusWorld > radius) {
+      continue;
+    }
+    out.push(mesh);
+  }
+  return out;
+}
+
+/**
+ * How many probes `CONFIG.graphics.reflection.poolBudgetMiB` pays for at this
+ * face size.
+ *
+ * A probe is six faces of RGBA8 plus a full mip chain — `6 * size^2 * 4 * 4/3`
+ * bytes, which is exactly 512 KiB at the shipped 128 — and the pool is never
+ * disposed, so this bounds a figure held for the PROCESS rather than for a
+ * round.
+ */
+function probeCap(size: number, budgetMiB: number): number {
+  const bytes = 6 * size * size * 4 * (4 / 3);
+  return Math.max(1, Math.floor((budgetMiB * 1024 * 1024) / bytes));
+}
+
+/**
+ * How many map blocks share one probe: 1, then 2, then 4, doubling until the
+ * probe count fits the pool budget.
+ *
+ * **It is 1 on every map in the tree**, and the sentence to read before
+ * changing that is the one `encloses` ends on: a probe drops every block it
+ * serves out of its own bake, so a cell of four blocks is a probe with 96 m of
+ * city missing from the middle of its cube. That is a bad picture, and it is
+ * still a better one than a device loss — which is what a map with 770 glazed
+ * blocks costs instead (`FINDINGS.md` 19).
+ *
+ * The doubling is over the block GRID rather than over metres, so the cells
+ * nest exactly and a group cannot land in two of them. A block key that does
+ * not parse — the editor's, which keys per placement — is its own cell, and
+ * the loop bails rather than spinning: an editor build bakes nothing anyway.
+ */
+function blocksPerCell(groups: readonly PaneGroup[], cap: number): number {
+  const blocks = new Set(groups.map((g) => g.block));
+  let per = 1;
+  while (per < 512) {
+    const cells =
+      per === 1 ? blocks : new Set([...blocks].map((k) => cellKey(k, per)));
+    if (cells.size <= cap) return per;
+    per *= 2;
+  }
+  return per;
+}
+
+/**
+ * The probe cell a block belongs to. `perCell` 1 is the block itself, which is
+ * the identity every map in the tree takes, and is why nothing about a shipped
+ * bake moves.
+ *
+ * `PaneGroup.block` is `"bx,bz"` off `BlockMerge`'s own grid (see
+ * `MapBuilder`'s `BLOCK_SIZE`), and it is parsed rather than recomputed from a
+ * position for the reason `ReflectionSystem` asks for the key at all: two
+ * groups are the same building because the merge said so, not because their
+ * centres are close. A key that is not a pair of integers is its own cell.
+ */
+function cellKey(block: string, perCell: number): string {
+  if (perCell === 1) return block;
+  const comma = block.indexOf(",");
+  if (comma < 0) return block;
+  const bx = Number(block.slice(0, comma));
+  const bz = Number(block.slice(comma + 1));
+  if (!Number.isFinite(bx) || !Number.isFinite(bz)) return block;
+  return `${Math.floor(bx / perCell)},${Math.floor(bz / perCell)}`;
+}
+
 /** A box's top face. `rotX` is ignored: nothing that carries one is a room. */
 function top(b: WorldBox): number {
   return b.cy + b.h / 2;
@@ -413,8 +720,9 @@ function centreOf(mesh: Mesh, out: Vector3): Vector3 {
 }
 
 /**
- * Whether this mesh is the STRUCTURE the probe is standing in — the geometry
- * that has to come out of the bake, or the cube is a picture of a wall.
+ * Whether this mesh is one of the STRUCTURES the probe is standing in — the
+ * geometry that has to come out of the bake, or the cube is a picture of a
+ * wall.
  *
  * **It asks the block key, and that is the whole of it.** This used to be a
  * bounding-box containment test, and it worked because the opaque world was
@@ -440,7 +748,14 @@ function centreOf(mesh: Mesh, out: Vector3): Vector3 {
  * The old rule that a flat receiver is never an enclosure is now kept by
  * construction and needs no test: the terrain patches, the roads and the valley
  * rim are not block-merged, so they carry no key and can never match one.
+ *
+ * **It takes a SET because a probe may serve more than one block**, which is
+ * what `blocksPerCell` does past the pool budget, and every block a probe
+ * serves has to come out: the probe stands at one of them and the set is the
+ * only honest statement of which. On every map in the tree the set holds one
+ * key and this is the test it has always been.
  */
-function encloses(mesh: Mesh, block: string): boolean {
-  return block !== "" && mesh.metadata?.block === block;
+function encloses(mesh: Mesh, blocks: ReadonlySet<string>): boolean {
+  const block = mesh.metadata?.block;
+  return typeof block === "string" && block !== "" && blocks.has(block);
 }

@@ -662,8 +662,78 @@ Faces are 128 rather than 256, because the resolution is now a per-probe cost
 tinted, hazed reflection cannot show — while WHERE a bake is taken from decides
 whether the building opposite is in it at all. Measured headless: all 37 probes
 (222 faces) come to **2.3 s under SwiftShader**, against a map build already
-costing ~570 ms there. See `FINDINGS.md` §10 for the distance cull that halves
-the render list, why it was not taken, and what would settle it.
+costing ~570 ms there; on the Windows box the shipped forty cost ~1.4–2.1 s in
+one frame. `FINDINGS.md` §10 is the entry, and the distance cull it refused at
+140 m is now taken at 800 — see the three ceilings below for why the answer
+moved and what the radius costs.
+
+**The bake is priced `probes x 6 faces x render list`, and all three terms have
+a ceiling now.** None was needed while the biggest map in the tree was 320 m:
+Coldharbour's forty probes over 175 meshes each are 41,934 draws, they all land
+on the frame after the install, and that frame — ~2.3 s — is paid once. At
+1500 m the same rule asks for 770 probes over 2,434 meshes — **11.2 million
+draws in one frame**, and the 900 m proving ground for 1,373,340 — and what
+happens then is not a long frame. The D3D12 device is LOST inside it, on
+`ID3D12Device::CreateDescriptorHeap`, and Babylon's attempt to recreate it
+fails too; at the larger of the two extents `FINDINGS.md` §19 measured, the
+renderer process is replaced outright. **That is a resource ceiling reached
+inside one command submission and not a timeout**, so a slower bake fails
+identically and only a smaller one does not. Three numbers in
+`CONFIG.graphics.reflection` make it smaller, each on a different term, and
+**all three are no-ops on every map that ships**:
+
+- **`drawsPerFrame` (50,000) spends the bake over frames instead of issuing it
+  in one.** A probe is refresh-once, so releasing one is
+  `resetRefreshCounter()` and nothing else; `ReflectionSystem.queue` holds the
+  ones that have a render list and no frame yet, and `releaseBatch` lets a
+  frame's worth go. It rides `onBeforeRenderTargetsRenderObservable` — the hook
+  the eye is already borrowed on — because Babylon asks each custom target
+  whether it `_shouldRender()` immediately after that observable fires, so a
+  probe released there bakes on that frame and one released from `Game.tick`
+  would wait for the next. The budget is just over Coldharbour's whole bake and
+  that is the whole derivation: the largest thing that ships still completes on
+  the frame it always did, so no shipped map's glass moves and the banked
+  reference frames cannot either. The 900 m proving ground spends its 1,373,340
+  draws over **ten frames of ~2.8 s**, settling eight frames after the install.
+  One probe always goes through even when it is over budget on its own, or a
+  queue with a fat probe at its head would never drain — and a frame already
+  committed to re-baking a probe whose meshes were not ready spends that
+  against the budget FIRST. Without that last part a map still compiling its
+  pipelines releases batch after batch on top of the ones already thrashing and
+  arrives at the same enormous frame by the long way round, which is measured:
+  the proving ground re-baked 29 of its first 60 probes and had 116 targets
+  live two frames later, against 88 with the accounting in. **A pane whose probe has not baked yet is not a bug and needs no
+  wait**: an unbaked cube is alpha 0 everywhere, which is the analytic sky a
+  pane shows before any probe has claimed it — the state an editor build leaves
+  every pane in permanently.
+- **`radius` (800 m) is the only term in the bake priced on the map's SIZE.** A
+  probe's render list is the opaque world within 800 m of it, measured to the
+  NEAR SIDE of each mesh's bounding sphere: `distance - radiusWorld`, which is
+  what keeps a landform in, because the rim, the ridge rock and the terrain
+  patches are single meshes with enormous radii whose centres are nowhere near
+  anything. 800 m is past the diagonal of every map in the tree and past the
+  longest `fogEnd` any of them declares (Harrowmead's 520), so nothing that
+  ships is culled by it, and on a fogged map of any size everything it drops
+  was already drawing as flat fog colour against a sky whose horizon is
+  `fogColor`. It is the smallest of the three levers wherever it has been
+  measured: on the 900 m proving ground it takes a probe's list from 928 meshes
+  to 864, which is 7%. What it is really for is a map whose PLAY square is
+  1500 m, where the probes are spread over the whole of it rather than over the
+  middle 900. What it costs is §10's objection, which has not gone away: a
+  culled mesh does not fade, it vanishes, the cube's alpha goes to 0 and the
+  shader fills that with sky. On an unfogged map bigger than 800 m that is a
+  hole at the horizon of a picture of a street, and it is the price of the map
+  being larger than the bake can hold.
+- **`poolBudgetMiB` (160) caps the probe COUNT, and it is stated in memory
+  because memory is what it protects.** The count is the map's glazing rather
+  than its size, so it has no natural bound: past the budget, glazed blocks are
+  grouped in twos, then fours, until the pool fits. A probe is 512 KiB at the
+  shipped face size and the pool is never disposed, so 160 MiB is 320 probes —
+  Coldharbour asks for 40 and the 900 m proving ground for 265 (133 MiB), so
+  **nothing in the tree groups anything today** and this is a bounded worst
+  case rather than a live lever. What to know before raising it is the enclosure rule below: a
+  probe drops every block it SERVES out of its own bake, so a cell of four
+  blocks is a probe with 96 m of city missing from the middle of its cube.
 
 **The probe stands at the centre of the glass it serves.** That puts it inside
 the shaft of a tower's wrap-around curtain wall and exactly ON the plane of a
@@ -675,18 +745,25 @@ enclosure rule below is for.
 
 Seven things about it are load-bearing:
 
-- **A probe's bake leaves out whatever ENCLOSES it, and the floor is not an
-  enclosure.** A mesh is dropped from a probe's render list if the probe is
-  inside its world bounding box *and* it is not a flat receiver
-  (`noShadowCaster`). The first half is coarse on purpose — the opaque world is
-  merged per block per colour, so the mesh a tower's probe is inside is that
-  block's own merged mesh and taking it out takes the tower with it. Measured
-  across the 37 probes: 2.1 meshes dropped each, and cube coverage falls from
-  0.84 to 0.57 for a tower and from **0.99 to 0.68 for a parked car**, whose
-  probe sits inside its own bodywork. The second half is what saves the two
-  corner towers that stand inside `ridge-rock`'s bounding box 44 m from any
-  rock, and would otherwise be the only buildings on the map whose glass has no
-  hills in it.
+- **A probe's bake leaves out whatever ENCLOSES it, and it asks the BLOCK KEY
+  rather than measuring anything.** A mesh is dropped from a probe's render
+  list when its `metadata.block` is one of the blocks that probe serves —
+  `BlockMerge` and `PaneBlocks` file under the same key, so a glazing group and
+  the world it is glazed onto agree on which building they are for free.
+  Measured across the 37 probes: 2.1 meshes dropped each, and cube coverage
+  falls from 0.84 to 0.57 for a tower and from **0.99 to 0.68 for a parked
+  car**, whose probe sits inside its own bodywork. It used to be a bounding-box
+  containment test with a flat-receiver exemption bolted on, and both halves
+  went at once when the albedo palette took the colour out of the merge key:
+  the smallest thing a box test could then remove was a whole 48 m block, and a
+  box test cannot tell a tower's probe standing in its own shaft from a water
+  probe floating in open marsh inside the same block's extent — which is
+  exactly what put sky in Greyfen's flood where the near treeline should be.
+  The exemption is now kept by construction and needs no test: the terrain
+  patches, the roads and the valley rim are not block-merged, so they carry no
+  key and can never match one. **It takes a SET of keys**, because a probe past
+  the pool budget serves more than one block; on every map in the tree the set
+  holds one.
 
 - **The bake draws no sky and no glazing, and the cube's ALPHA is what says
   so.** It clears to a transparent black and every cel variant but the glazing

@@ -735,6 +735,26 @@ list scales almost linearly — 486 meshes 2124 ms, 243 meshes 813 ms, 49 meshes
 109 ms. Note the list has grown from the 328 above; that is the map, not the
 backend.
 
+**Both halves are now settled, and the cull went in at 800 m — but it is not
+what fixed anything.** `ENGINE_UPGRADE.md` S0b took a radius cull, and the
+reason the answer moved from "not worth its failure mode" is that the map got
+five times bigger rather than that the failure mode got better: a culled mesh
+still vanishes rather than fading. What makes 800 m defensible where 140 m was
+not is that it is past the diagonal of every map in the tree and past the
+longest `fogEnd` any of them declares, so **nothing that ships is culled at all**
+and on a fogged map everything it drops was already flat fog colour.
+
+**And it is the smallest of the three levers wherever it has been measured**:
+on the 900 m proving ground it takes a probe's list from 928 meshes to 864 — 7%
+— because the probes all stand inside the middle 900 m of a 1500 m floor. This
+entry's second arm ("the shape to reach for is fewer PROBES") is in as a
+`poolBudgetMiB` ceiling that no map in the tree reaches. **What actually took
+the bake off the device was neither**: spending it over frames at 50,000 draws
+each. A descriptor heap is recycled per SUBMISSION, so the largest single frame
+is what the ceiling is against and the total is not — which is the sentence
+`ENGINE_UPGRADE.md`'s wall 5 had backwards. Coldharbour's forty probes are
+41,934 draws and still land on one frame, unchanged.
+
 **One number in `plans/webgpu_migration.md` and `VERIFYING.md` does not
 reproduce and is the open thread here.** Both record this bake at 138 ms on this
 machine, and nothing since has been able to repeat it: in the same gate run that
@@ -1890,7 +1910,7 @@ narrowly:
 | `_evaluateActiveMeshes` | 23.0 ms | **7.6 ms** |
 | JS heap at deploy | 3,536 MiB of a 4,192 cap | **1,696 MiB** |
 | nav/cover/flow arrays | 295.6 MiB | **106.4 MiB** |
-| reflection bake | fails | fails |
+| reflection bake | fails | fails — **fixed since, see S0b** |
 
 **900/300 is affordable today except for the reflection bake. 1500/0 is not
 affordable at all** — three minutes of loading, three quarters of its frame in a
@@ -1903,8 +1923,12 @@ vantage, which is what the split was for.
 
 ### What is open
 
-- **The reflection bake.** Nothing can be measured past it without a stub, and a
-  game cannot ship with one.
+- ~~**The reflection bake.**~~ **CLOSED by `ENGINE_UPGRADE.md` S0b.** The
+  proving ground at 900 / 300 reaches a steady-state frame with the bake
+  enabled: 265 probes over 28 frames of ~0.9 s, settling 27 frames after the
+  install, no device loss. The stub is gone and every figure in this entry can
+  now be re-taken without one — **and none of them has been**, so the frame
+  table above is still a measurement of a map whose glass reflects nothing.
 - **The placement loop's `n^2.9`**, and whether `AssetContainer` flattens it. It
   is worth more than every worker in S5: 159 s of a 183 s build.
 - **Wall 1 at 1.10 µs per scene mesh**, which is what block visibility has to
@@ -1916,5 +1940,56 @@ vantage, which is what the split was for.
 - **`ObstacleField` reported no typed arrays**, so it is absent from the memory
   table. It holds bucketed box references rather than a grid of primitives; its
   footprint is unmeasured.
+
+---
+
+## 20. The reference bank is RED on an unmodified tree, and nobody knows why
+
+**Status:** measured on the Windows box, cause NOT located. This is the merge
+gate `ENGINE_UPGRADE.md` names for every step in it, so it matters more than
+its size suggests.
+
+`node plans/webgpu-ref/bank.mjs --check` against the bank taken on 2026-08-26
+fails on **all fifteen vantages of all four maps**, on the tree that took it:
+
+| map | worst vantage | mean/255 | pixels moved |
+| --- | --- | --- | --- |
+| hollowmere | lanterns | 1.51 | 7.4% |
+| greyfen | marsh | 2.35 | 6.5% |
+| coldharbour | avenue | **3.26** | 16.9% |
+| harrowmead | millpond | 1.35 | 13.8% |
+
+Every vantage is over, the smallest by 10x (canopy, 0.19 against a 0.02
+tolerance) and the largest by 160x. Worst single pixels are ~200/255, and the
+worst tiles are the marsh, the avenue and the millpond — water and long
+streets.
+
+**What is known.** The bank is gitignored, so it is a local artefact rather
+than a committed reference, and its files are dated the day before this reading
+— it was taken during S0 on this machine, and the tree has not moved since
+except for S0b, which reproduces these figures to four decimal places on all
+fifteen. So **the difference is under the bank rather than in the tree**: a
+Chromium auto-update or a driver update between the two runs are the obvious
+candidates and neither has been checked.
+
+**Why it is not a tolerance problem.** `diff.mjs`'s own header says the answer
+to a bank that cries wolf is to find the unpinned thing and not to raise the
+number, and that this has already been the answer twice — a lantern's flicker
+phase and an unfrozen cube probe. A third unpinned thing is the first
+hypothesis to test, and the tiles point at the water and the mirrors, which is
+where the last one was.
+
+**What it costs right now.** Every step of `ENGINE_UPGRADE.md` is supposed to
+merge behind this check. Until it is re-taken or explained, the only usable
+form is a DIFFERENTIAL one — run `--check` either side of a change and require
+the same means — which is what S0b did. That catches a change but proves
+nothing about the absolute picture.
+
+**How to settle it.** Record the Chromium build and the driver version beside
+the next bank (neither is in `mode.json` today, and both should be). Re-take on
+the current machine state and diff the new bank against the old one tile by
+tile: if the difference is a uniform sub-LSB shift it is the backend, and if it
+is concentrated on the water and the glazing it is a third unpinned clock and
+`freeze` is where it belongs.
 
 ---

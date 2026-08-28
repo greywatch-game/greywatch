@@ -341,6 +341,87 @@ export const graphics = {
      * which is what a reflection at these distances would have anyway.
      */
     strength: 0.9,
+    /**
+     * How far a probe's bake reaches, in metres, measured to the near side of
+     * a mesh's bounding sphere.
+     *
+     * **The bake is `probes x 6 faces x render list`, and this is the only
+     * term that is the MAP's rather than the glazing's.** A probe standing in
+     * a street does not need the far side of a 1500 m map in its cube: what a
+     * pane in a city actually shows is the building opposite, and a merged
+     * block a kilometre away contributes a few pixels of haze at the cost of a
+     * draw call in every one of six faces.
+     *
+     * **800 m is past the diagonal of every map in the tree**, so nothing that
+     * ships is culled by it and the shipped bakes are unchanged — it is a
+     * ceiling on a map bigger than the game has ever had rather than a tuning
+     * knob on the ones it has. It is also comfortably past the longest sight
+     * line any map declares (Harrowmead's `fogEnd` 520, Coldharbour's 480), so
+     * on a FOGGED map of any size everything this drops was already being
+     * drawn as flat fog colour.
+     *
+     * What it costs on a map with no fog is finding 10's objection: a culled
+     * mesh does not fade, it vanishes, and the cube's alpha going to 0 is
+     * where the shader puts sky. At 800 m, on a reflection that is
+     * Fresnel-weighted and mixed at 0.9, that hole is at the horizon of a
+     * picture of a street. The measurement to beat it with is in
+     * `FINDINGS.md` 10: keeping every probe and halving the list scales the
+     * bake almost linearly.
+     *
+     * The test is to the near side of the bounding SPHERE and not to the
+     * centre, which is what keeps a landform in: a rim mesh has an enormous
+     * radius and its centre is nowhere near anything.
+     */
+    radius: 800,
+    /**
+     * What the cube pool is allowed to hold, in MiB, and therefore how many
+     * probes a map may have.
+     *
+     * **The probe count is the map's GLAZING rather than its size**, so it has
+     * no natural ceiling: a generated 1500 m city block grid asks for 770,
+     * which is 400 MB of cube texture held for the process on top of a heap
+     * already 84% full (`FINDINGS.md` 19). Past this budget glazed blocks are
+     * grouped in twos, then fours, then sixteens, until the count fits — a
+     * probe then stands in one of the blocks it serves rather than in the only
+     * one, which is the same approximation the feature already makes one size
+     * up.
+     *
+     * 160 MiB at `size` 128 is 320 probes. Coldharbour asks for 40 and the
+     * 900 m proving ground for 265, so **nothing in the tree today groups
+     * anything** and this is a bounded worst case rather than a live lever.
+     * It is stated as memory because memory is what it protects; the draw cost
+     * of a probe is `drawsPerFrame`'s business.
+     */
+    poolBudgetMiB: 160,
+    /**
+     * How many face draws one FRAME of the bake may issue before the rest of
+     * it waits for the next one.
+     *
+     * **A bake is a build step, and this is what stops it being one frame.**
+     * Every probe is refresh-once, so before this they all landed on the frame
+     * after the install: Coldharbour's 40 probes over 175 meshes each are
+     * 41,934 draws and cost ~2.3 s in that one frame, and the 900 m proving
+     * ground asks for **1,373,340**. At that point the frame does not merely
+     * run long — the D3D12 device is LOST inside it on
+     * `ID3D12Device::CreateDescriptorHeap` and Babylon's attempt to recreate
+     * it fails too, at both extents S0 measured. That is a resource ceiling
+     * reached inside one command submission, so a slower bake fails
+     * identically and only a SMALLER one does not.
+     *
+     * **50,000 is just over Coldharbour's whole bake and that is the whole
+     * derivation**: the largest thing that ships still completes on the frame
+     * it always did, so no shipped map's glass moves and the banked reference
+     * frames cannot either. The proving ground spends the same budget over ten
+     * frames of ~2.8 s. Lower would be smoother and is what the Chromebook
+     * wants (`VERIFYING.md`); it would also take Coldharbour off its one
+     * frame, which is the property this number is chosen to keep.
+     *
+     * A probe costing more than the whole budget still goes, on a frame of its
+     * own rather than never, and a frame already committed to re-baking a
+     * probe whose meshes were not ready spends that against this first — see
+     * `ReflectionSystem.releaseBatch`.
+     */
+    drawsPerFrame: 50_000,
   },
   /**
    * Albedo weathering on flat cel colours — a slow value drift over world space

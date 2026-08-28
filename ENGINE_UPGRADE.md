@@ -204,12 +204,14 @@ inverts. But the burst work S5 names is 3.3% of the build. **Flattening the
 placement loop is worth 50x what moving the nav builds to a worker is**, and it
 is a smaller change.
 
-### Wall 5 — the reflection bake takes the GPU device, and it was not in this document
+### Wall 5 — the reflection bake takes the GPU device, and it was not in this document — **DOWN**
 
 **The one wall S0 found rather than confirmed, and the first thing between this
-tree and a map of either size.** `ReflectionSystem` bakes one refresh-once cube
-probe per glazed BLOCK at `CONFIG.graphics.reflection.size` (128), which is
-priced on map area like everything else here:
+tree and a map of either size. S0b has landed and it is no longer standing**;
+what follows is what it was, kept because the shape of it is why the fix is
+shaped the way it is. `ReflectionSystem` bakes one refresh-once cube probe per
+glazed BLOCK at `CONFIG.graphics.reflection.size` (128), which is priced on map
+area like everything else here:
 
 | | Coldharbour | 900 / 300 | 1500 / 0 |
 | --- | --- | --- | --- |
@@ -235,9 +237,16 @@ stubbed to a no-op, which is the single lever that isolates it (a probe is
 refresh-once, so the steady-state frame is identical either way).
 
 The bake is `probes x 6 faces x render list`: at 1500 m, **11.2 million draws in
-one frame**. Amortising it across frames does not reduce it. The render list has
-to come down, the probe count has to, or both — and the probe count is the map's
-GLAZING rather than its size, so a probe per BUILDING is on the table. See S0b.
+one frame**, and 1,373,340 at 900 / 300. See S0b for what came down and by how
+much.
+
+**One sentence of this section was wrong and it was the one about the fix.**
+"Amortising it across frames does not reduce it" reads the failure as a pure
+resource ceiling that a slower bake meets just the same — and the total is
+indeed unchanged — but a descriptor heap is recycled per SUBMISSION, so what
+matters is the largest single frame and not the sum. Spending the bake over
+frames is what actually took the wall down; the render list and the probe count
+came down as well and neither had to come down far.
 
 ---
 
@@ -371,55 +380,119 @@ in place against it.** What landed:
 
 ---
 
-### S0b — Survive the reflection bake
+### S0b — Survive the reflection bake — **LANDED**
 
-Wall 5. **Nothing after this can be verified without it**, because nothing after
-it can draw a frame on a map this size — S0's own figures had to be taken with
-`ReflectionSystem.build` stubbed to a no-op, and that is not a thing anyone can
-ship.
+Wall 5, and it is down. **The proving ground at 900 / 300 now reaches a
+steady-state frame with the bake ENABLED**, which is what every later step was
+waiting on: S0's figures had to be taken with `ReflectionSystem.build` stubbed
+to a no-op, and there is no longer anything to stub.
 
 It is lettered rather than numbered because it was discovered rather than
 planned, and renumbering S1–S11 would stale every cross-reference in this file
 and in `FINDINGS.md`. Read it as coming first.
 
-The bake is `probes x 6 faces x render list`. At 1500 m that is 770 x 6 x 2,434
-= **11.2 million draws in one frame**, and it dies on
-`ID3D12Device::CreateDescriptorHeap` rather than on time. Three levers, and they
-are not exclusive:
+**All three levers the step named are in, and the ORDER of their importance is
+the opposite of the order they were written in.** Every number is
+`CONFIG.graphics.reflection`'s and every one of them is a no-op on all four
+shipped maps, which is the property the bank check rests on.
 
-1. **Cut the render list.** `ReflectionSystem.opaqueWorld` is every opaque mesh
-   in the map. A probe standing inside one building does not need the far side
-   of the map in its cube — the same neighbourhood test S1 is about, applied to
-   a render list instead of to the frame. This is the one that composes with the
-   rest of the plan.
-2. **Cut the probe count.** It is one per glazed BLOCK today, and the count is
-   the map's GLAZING rather than its size. One per BUILDING, or one per N
-   blocks with the nearest bound to each group, is a smaller number without
-   being a different feature. `PaneBlocks` already files glazing under the block
-   key, so the grouping exists.
-3. **Spread the bake over frames.** `RenderTargetTexture.refreshRate` is
-   render-once and all of them land on the same frame. Baking a few per frame
-   behind the loading card turns one 11-million-draw frame into many small ones
-   — but note that this alone does NOT fix it: the failure is a descriptor-heap
-   ceiling, not a frame budget, and 770 live cubes is 400 MB of texture whether
-   they are filled in one frame or a thousand.
+1. **The bake is SPENT over frames** — `drawsPerFrame`, 50,000 face draws.
+   `ReflectionSystem.queue` holds the probes that have a render list and no
+   frame yet and `releaseBatch` lets a frame's worth go, riding
+   `onBeforeRenderTargetsRenderObservable` because Babylon asks each custom
+   target whether it `_shouldRender()` immediately after that observable fires.
+   **This is the lever that took the wall down**, against this document's own
+   sentence saying it could not: a descriptor heap is recycled per SUBMISSION,
+   so the largest single frame is what matters and the sum is not. The budget
+   is set just over Coldharbour's whole bake, so the largest thing that ships
+   still lands on the frame it always did.
+2. **A probe is not in `scene.customRenderTargets` until it is released.**
+   Without this, lever 1 does nothing at all on the first install of a map: a
+   `ReflectionProbe` is born with its refresh counter at -1, which a
+   refresh-once target reads as "render when next asked", and `build` fills the
+   render list before any frame happens. Membership of that array is the only
+   thing that can hold a fresh probe back.
+3. **A frame's budget counts the RE-BAKES it is already committed to**
+   (`ReflectionSystem.inFlight`). Babylon's render-list pass resets a target's
+   refresh counter and skips any mesh whose material has not compiled, so a
+   probe re-bakes IN FULL until its whole list is ready — and a queue that does
+   not know this releases fresh batches on top of batches already thrashing,
+   arriving at the same enormous frame by the long way round. Measured before
+   the accounting went in: 29 of the first 60 probes re-baked, and 116 targets
+   were live two frames after the install against 88 with it.
+4. **The render list is a NEIGHBOURHOOD** — `radius`, 800 m to the near side of
+   each mesh's bounding sphere, which is what keeps a landform in. 800 m is
+   past the diagonal of every map in the tree and past the longest `fogEnd` any
+   declares, so nothing shipped is culled. **It is the smallest of the levers
+   where it has been measured** — 928 meshes to 864 on the proving ground, 7% —
+   because at 900 / 300 the probes are all inside the middle 900 m of a 1500 m
+   floor. It is there for the extent where they are not.
+5. **The probe count is capped by a TEXTURE budget** — `poolBudgetMiB`, 160,
+   which is 320 probes at the shipped face size. Past it, glazed blocks group
+   in twos, then fours. Coldharbour asks for 40 and the proving ground for 265
+   (133 MiB), so **nothing in the tree groups anything**: it is a bounded worst
+   case rather than a live lever, and the thing to know before raising it is
+   that `encloses` drops every block a probe SERVES.
 
-**Must not break:**
+**Measured on the Windows box, dev build, headless via `channel: "chromium"`:**
 
-- `docs/rendering.md`'s seven load-bearing details of the bake, and the three
-  ways a cube probe goes flat. In particular `noReflect` and
-  `ReflectionSystem.encloses`: a probe drops its own block from its own bake,
-  and an ink twin is an inverted hull that reads as a sealed room from inside.
-- **Probes are pooled and never disposed**, like the bot rigs.
-- **An EDITOR build bakes nothing**, which is what keeps a rebuild affordable.
-- The eye hook: the cel materials' eye is saved and restored around the whole
-  render-target block, never per probe.
-- A map with no glazing must still bake nothing and cost nothing.
+| | Coldharbour | proving 900 / 300 |
+| --- | --- | --- |
+| glazing groups / probes | 71 / 40 | 389 / **265** |
+| opaque meshes / listed per probe | 177 / 175 | 928 / **864** |
+| queued in | 42 ms | 960 ms |
+| total face draws | 41,934 | **1,373,340** |
+| frames the bake takes | **1** | **28** |
+| the bake's own frames | 2.2 s | 3.3 s then ~0.9 s |
+| settled after install | 1 frame | **27 frames** |
+| cube pool held | 20 MiB | **133 MiB** |
+| the first frame | draws | **draws** |
 
-**Verify:** the proving ground at 900 / 300 reaches a steady-state frame with
-the bake ENABLED, and `bank.mjs --check` stays 0/255 on all sixteen banked
-frames — the glazing on Coldharbour is exactly what would change if a probe's
-render list lost something it needed.
+**Coldharbour is unchanged in every respect** — one frame, 2.2 s, no probe
+re-baked — which is the point of the budget being where it is.
+
+**What it did NOT do, and what the next step to touch this owes:**
+
+- **1500 / 0 has not been re-tested.** The chosen extent is 900 / 300 and that
+  is what the committed proving ground is; the ceiling case would want the
+  probe cap to actually engage, and nothing has watched it do so.
+- **The bake still lands AFTER the loading card, not behind it.** `installMap`
+  is one JS turn, so no frame can render inside it — the queue drains over the
+  first ~28 frames of `deploy`, which is ~26 s of second-long hitches on the
+  proving ground and one 2.2 s frame on Coldharbour. Holding `loading` until
+  the queue is empty is a state-machine change (`docs/states.md`) and was out
+  of scope here.
+- **Nothing has looked at the PICTURE on the proving ground.** The bank check
+  proves the four shipped maps are unmoved; it cannot say whether an 800 m
+  radius leaves a visible hole, because no shipped map is big enough to cull.
+
+**What it must not break, and did not:** `docs/rendering.md`'s load-bearing
+details of the bake and the three ways a cube probe goes flat — `noReflect` and
+`ReflectionSystem.encloses` in particular, which now takes a SET of block keys
+and holds exactly one on every shipped map; probes pooled and never disposed;
+an EDITOR build baking nothing; the eye borrowed and restored around the whole
+render-target block rather than per probe; and a map with no glazing baking
+nothing.
+
+**Verified:** the proving ground at 900 / 300 reaches a steady-state frame with
+the bake ENABLED — 265 probes over 28 frames, settling 27 frames after the
+install, no device loss and no page error.
+
+**The bank check could not be the gate, because it is already RED on the commit
+before this one.** Run against `plans/webgpu-ref/ref` as banked on 2026-08-26
+during S0, the UNMODIFIED tree regresses on all fifteen vantages of all four
+maps — 0.19 to 3.26 mean/255 against a 0.02 tolerance, a few per cent of pixels
+each, worst tiles on the marsh and the avenue. The bank is gitignored, so it is
+a local artefact taken on this machine the day before; **this is drift under
+the bank rather than anything in the tree**, and it wants explaining before it
+is re-taken (`diff.mjs`'s own header: if it cries wolf, find the unpinned thing
+rather than raise the number).
+
+**What stands in for it is stronger than a pass would have been.** The same
+check, run either side of this change against the same fixed reference, reports
+the SAME mean on every one of the fifteen vantages to four decimal places. A
+pass would have said the frames are within tolerance; this says the four
+shipped maps are byte-for-byte what they were.
 
 ---
 

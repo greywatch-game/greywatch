@@ -99,8 +99,16 @@ you are on before you believe anything else in this section.
   mismatch.
 - **Coldharbour's shipped forty-probe bake completes here** — all forty, one
   frame, no device loss — and the probes are refresh-once, so it is a build cost
-  and never a frame cost. The staggered workaround the Chromebook needed has
-  been deleted rather than kept. **It is not cheap and an earlier reading of
+  and never a frame cost. **It is one frame BY BUDGET now rather than by
+  default**: `CONFIG.graphics.reflection.drawsPerFrame` (50,000) is set just
+  over Coldharbour's whole bake (41,934 draws, ~2.3 s), and a map asking for
+  more spends the rest on
+  the frames after (`ReflectionSystem.releaseBatch`). So a bake is no longer
+  contractually on the frame after the install on any map — `installRound`'s
+  `bakeFrameMs` is the FIRST batch, and `g.reflections.queue.length` reaching 0
+  is what says the whole of it has landed. Coldharbour, Greyfen, Harrowmead and
+  Hollowmere are all one batch, so nothing about the shipped maps has moved.
+  **It is not cheap and an earlier reading of
   138 ms does not reproduce**: measured by forcing a re-bake with everything
   already compiled, it is ~1.4–2.1 s, and it scales almost linearly with the
   render list (486 meshes 2124 ms, 243 meshes 813 ms, 49 meshes 109 ms).
@@ -161,31 +169,30 @@ you are on before you believe anything else in this section.
     the Windows box the same bake completes in one frame and needs nothing done
     to it** (~1.4 s — see the Windows section above), so
     what follows is a workaround for this machine and not a property of the
-    game. **Three ways round it, and which you want depends on the question**:
-    `g.reflections.build = () => {}` before `startRound` gives a Coldharbour
-    that renders (99% of pixels lit, everything but the glazing correct), and
-    truncating `map.paneGroups` inside a wrapper round `build` keeps a few
-    probes so the mirrors are still testable. **The third keeps all forty, and
-    it is the one to reach for**: the frame is the problem and the bake is not,
-    so PARK the cube targets and release them a few at a time.
-    - `build` sets every probe's render list and calls `resetRefreshCounter`,
-      and `newProbe` has already pushed each `cubeTexture` into
-      `scene.customRenderTargets` — which is the only thing that renders them.
-      Filter them back out of that array inside a wrapper round `build`, then
-      push four back, wait one `onAfterRenderObservable`, and filter those four
-      out again. Measured: **ten frames at ~10 s a batch bakes all forty, no
-      device loss, and the round then draws at 99% lit** with the city in its
-      glass.
-    - **Wait for the round to be UP and every `ShaderMaterial` ready before
-      releasing the first batch.** A render target whose meshes are not ready
-      renders EMPTY and is still marked rendered, so a version of this that
-      pumps from `onBeforeRenderObservable` starting on the install frame hands
-      back its first eight probes blank — and blank probes read as a Y-flip
-      regression that is not there (coverage 0.586, face 2 at 0.800), because
-      every mean is over forty probes of which eight are zero.
-    - **It proves the probe PATH and not the shipped bake.** The game still
-      queues all forty on one frame; only a GPU can finish that. **Anything
-      that needs the one-frame bake itself needs real hardware.**
+    game. **The stagger it used to describe is IN the game now** — the bake is
+    spent `CONFIG.graphics.reflection.drawsPerFrame` at a time
+    (`ReflectionSystem.releaseBatch`) — but the budget is sized so Coldharbour
+    is one batch, which is the frame this machine cannot finish. So the lever
+    here is that number rather than a wrapper: **drop `drawsPerFrame` to a few
+    thousand before `startRound`** and the same forty probes arrive over ten
+    frames or so, no device loss, and the round then draws at 99% lit with the
+    city in its glass. Two other ways round it, if what you want is a frame
+    rather than the mirrors: `g.reflections.build = () => {}` before
+    `startRound` gives a Coldharbour that renders (99% of pixels lit,
+    everything but the glazing correct), and truncating `map.paneGroups` inside
+    a wrapper round `build` keeps a few probes so the mirrors are still
+    testable.
+    - **Wait for the round to be UP and every `ShaderMaterial` ready before the
+      first batch lands.** A render target whose meshes are not ready renders
+      EMPTY and is still marked rendered, so a stagger that starts pumping on
+      the install frame hands back its first eight probes blank — and blank
+      probes read as a Y-flip regression that is not there (coverage 0.586,
+      face 2 at 0.800), because every mean is over forty probes of which eight
+      are zero.
+    - **It proves the probe PATH and not the shipped bake.** At the shipped
+      budget the game still queues all forty on one frame; only a GPU can
+      finish that. **Anything that needs the one-frame bake itself needs real
+      hardware.**
 
     Hollowmere, Greyfen and Harrowmead are unaffected — Hollowmere has no
     glazed block at all.
