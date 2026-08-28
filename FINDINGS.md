@@ -3597,3 +3597,115 @@ it.
   contested round together with one that never started.
 
 ---
+
+## 32. Sarab: what a 1500 m map actually costs once it is a map — 91 fps, 2.4 s to install, and the two cheapest levers doing most of it
+
+**Status:** measured on the shipped map. ENGINE_UPGRADE.md S11.
+
+### What was measured
+
+`node plans/webgpu-ref/gate.mjs --uncap`, headless via `channel: "chromium"`,
+1920x1080, the frame limiter off, warm past the compile stall. All five maps in
+one session on the Windows box:
+
+| map | extent | install | coldFps | warmFps | med ms | p95 ms | probes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| hollowmere | 240 | 809 ms | 141.7 | 262.5 | 3.5 | 5.4 | 4 |
+| greyfen | 240 | 4,749 ms | 109.4 | 204.8 | 4.7 | 5.8 | 2 |
+| coldharbour | 320 | 2,003 ms | 45.0 | 52.6 | 19.3 | 21.4 | 40 |
+| harrowmead | 400 | 1,215 ms | 42.2 | 47.7 | 20.6 | 25.7 | 2 |
+| **sarab** | **900 / 300** | **3,356 ms** | **66.3** | **61.4** | **16.4** | **18.9** | **17** |
+
+**ONE SESSION, and that is not a footnote — it is the reading.** Three runs of
+this command on this tree put Sarab's median between 11.1 and 16.4 ms and
+Harrowmead's between 14.6 and 20.6, and the run taken immediately after a
+production build came back 30% low on every row. The measurement protocol says
+to read nothing under about 8% as real; on this box, across sessions, the floor
+is nearer a third. **What survives every run is the ORDER**: Sarab is faster
+than both maps a quarter of its size, every time, and it is the RATIO between
+rows in one table that is worth quoting rather than any absolute in it.
+
+3,233 collider boxes, 4,734 scene meshes, 148 active, 360,000 nav cells,
+380,598 nav surfaces, 625 placements and 80 scatter regions. `npm run parity`
+passes on all seventeen fields.
+
+And the authority, `npm run simulate sarab 1 3` under NullEngine: the world
+builds in 692 ms, **0 of 64,981 ticks over the 16.67 ms budget**, p50 0.021 ms,
+p95 0.508, worst 6.585. Every round ended with a winner in about 18 minutes of
+game time, peak contact 8 to 12 of 16 bots.
+
+### What it means
+
+**A 900 m map is faster than a 320 m one, and the reason is two numbers in a
+layout file.** Sarab is 5.1 times Harrowmead's playable area and renders in
+three quarters of its frame time. Finding 29 measured `blockSize` and
+`terrainBlock` at 96 as worth a third of the frame and two fifths of the install
+on the proving ground and said the value was "nobody's yet"; it is Sarab's, and
+this is what it looks like spent on a real layout. The other half is finding 30's
+`bodyDrawDistance`, stated here at 300 against a 560 m fog, which is the first
+time either field has been in a shipped map.
+
+**The install is the reflection bake and the bake is the GLAZING**, which this
+map has almost none of: 7 probes against Coldharbour's 40, because the only
+glass in the town is what a handful of reused city builders bring with them and
+the shelled blocks carry none at all. `GameMap.panes` is EMPTY — there is no
+breakable glazing on this map, which is also why `paneGroups` is 21 and the
+sweep, the bake and the wire have nothing to name.
+
+**The roofs are a ROUTE and not scenery, which is what the vernacular was built
+for and is the one claim about it that could have been wrong.** Counted out of
+the built graph: **18,766 nav surfaces stand more than 2.5 m over the ground,
+and 8,439 of them are reachable** from flag C's flow field — 45%, which is
+roughly the share of houses the generator gives a stair (`rampSide`) and is the
+design rather than a shortfall. The other 55% are the roofs of houses without
+one, plus parapet tops: drawn, solid to a round, and not a floor. The ground
+graph is 353,969 reachable of 361,832 (97.8%), so nothing on the map is
+stranded.
+
+**The density problem finding 31 measured is answered by the LAYOUT and not by
+the engine.** On the proving ground five of eleven rounds ran the 45-minute cap
+with tickets left on both sides and peak contact was 5 to 7 of 16. On Sarab
+every round ended, in about the time a round takes on a shipped map, with peak
+contact 8 to 12. What differs is not the extent — both are 900 m of play — but
+that the flags are 200 to 290 m apart in a town rather than hundreds of metres
+apart on a grid, and that the ground between them is transit. That is S10's
+lever 1, and it is the whole of what was needed.
+
+### What is open
+
+- **Nobody has watched a body POP at 300 m.** `bodyDrawDistance` is stated for
+  the first time here and finding 30's third open thread — what the drop LOOKS
+  like on a map that states one — is still open, because the measurement above
+  is a frame rate and not a pair of eyes. The 300 was chosen so that the pop
+  happens in haze rather than in clear air; that is a hypothesis.
+- **The sand's bump reads as scales at a grazing angle.** Visible down the
+  wadi's bank in the shots this map was tuned against — `floorSurface: "sand"`
+  is 0.015 of relief over a 5 m tile, and at a few degrees off the surface the
+  normal perturbation reads as a pattern rather than as grain. Not investigated;
+  it may be the bump, the AO bake or the cel shader's banding.
+- **The picture was checked DIFFERENTIALLY and not absolutely**, which is
+  finding 20's fault and not this step's: `bank.mjs --check` is red on an
+  unmodified tree, so what was run is the usable form — the same check either
+  side of the change against the same fixed reference. All fifteen banked
+  vantages report the SAME mean to four decimal places with these changes
+  applied and with them stashed, which is what says the shared edits (the palm
+  in `Props.ts`, the two table rows in `MapBuilder.ts`, the eight in
+  `BuildingKit.ts`) moved no pixel on any existing map. Sarab now has a bank of
+  its own — menu, `alley`, `shelf` and `wadi` — and the `shelf` row is the first
+  banked frame anywhere with a fog wall INSIDE the play square in it.
+- **The layout is in the MAIN bundle and it is the biggest one there.**
+  `MapDef.heights` and `MapDef.collision` are lazy and `MapDef.layout` is not,
+  by design — it is authorship rather than bulk — but Sarab's is 625 placements
+  and about 90 KB of source against Harrowmead's 45, so the five layouts now
+  come to a quarter of a megabyte every boot parses for the one map a session
+  builds. That is the same argument S7 made about the heightfields and it has
+  not been re-made about this; whether 90 KB is worth a third lazy half is
+  nobody's step yet, and the honest figure to check first is what it costs to
+  PARSE rather than what it costs to fetch.
+- **The frame was measured EMPTY.** The gate's round has bots in it but nothing
+  forces contact, which is the wall findings 22, 30 and 31 all hit. What sixteen
+  bots fighting across the old town's roofs costs on this map is unmeasured, and
+  it is the one place a roofscape could turn out to be expensive: every roof is a
+  walked surface and the nav graph has 380,598 of them.
+
+---

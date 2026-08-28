@@ -2254,7 +2254,82 @@ Three levers, and only the first is cheap:
 
 ---
 
-### S11 — Build the desert city
+### S11 — Build the desert city — **LANDED**
+
+**SARAB is on the map list**: 900 m of play inside 1500 m of ground, five flags,
+two hardstandings, and every lever S0 through S9 bought spent at once. It is by
+a wide margin the biggest map in the tree — 5.1 times Harrowmead's playable area
+and 3.75 times its extent — and it is **faster than both maps a quarter of its
+size**:
+
+| uncapped, headless, warm | install | warm fps | med ms | p95 ms | probes |
+| --- | --- | --- | --- | --- | --- |
+| hollowmere (240 m) | 809 ms | 262.5 | 3.5 | 5.4 | 4 |
+| greyfen (240 m) | 4,749 ms | 204.8 | 4.7 | 5.8 | 2 |
+| coldharbour (320 m) | 2,003 ms | 52.6 | 19.3 | 21.4 | 40 |
+| harrowmead (400 m) | 1,215 ms | 47.7 | 20.6 | 25.7 | 2 |
+| **sarab (900 / 300)** | **3,356 ms** | **61.4** | **16.4** | **18.9** | **17** |
+
+**One session** of `node plans/webgpu-ref/gate.mjs --uncap`, and the rows are
+comparable to each other and to nothing else. Three runs of the same command on
+this tree put Sarab between 11.1 and 16.4 ms and Harrowmead between 14.6 and
+20.6, so the box drifts by about a third between sessions — the measurement
+protocol's own warning, at four times the size it names. **What survives every
+run is the ORDER**: Sarab is faster than both maps a quarter of its size, every
+time.
+
+For comparison, the committed 900/300 proving ground at the same extent is
+10,973 ms of install and 13.5 ms of frame at the default 48 m blocks. What Sarab
+is instead of that is a real layout that states the numbers S6 measured: the
+whole table above is `blockSize: 96` and `terrainBlock: 96` doing what finding
+29 said they would.
+
+**What it states, and which step each one is:**
+
+- `size: 900`, `borderland: { margin: 300 }`, `ridge: { form: "downs" }` — the
+  split this document settled at the top, and the pair `Borderland` requires.
+- `blockSize: 96` and `terrainBlock: 96` — **S6**, and Sarab is the first map in
+  the tree to state either.
+- `fogEnd: 560` inside a 1,273 m diagonal — **S8's first half, and the first
+  time any map in this tree has had a fog wall inside its own square**, which is
+  what finally gives `WorldCulling`'s block half something to cull.
+- `bodyDrawDistance: 300` — **S8's landed field**, and still the only map that
+  states one.
+- `surfaces: 5` — the ground, two floors and a roof inside a shelled block, and
+  a parapet or a rubble heap over one of them.
+- `floorSurface: "sand"`, no lamps, no `groundSpec` default, and no breakable
+  glazing at all: `GameMap.panes` is EMPTY on this map. The shelled blocks have
+  no glass in them, which is both cheaper and truer than a dozen buildings'
+  worth of window entries on the wire.
+
+**The AUTHORITY holds it, measured rather than projected.** `npm run simulate
+sarab` over three rounds: the world builds in 692 ms, **0 of 64,981 ticks go
+over the 16.67 ms budget**, p50 is 0.021 ms and the worst tick is 6.585. Every
+round ENDED — 18 minutes of game time, a winner and a side out of tickets —
+against finding 31's proving-ground result where five of eleven rounds ran the
+45-minute cap with tickets left on both sides. Peak contact was 8 to 12 of 16
+bots against the proving ground's 5 to 7, which is S10's density lever working:
+900 m of play with the flags 200 to 290 m apart and the ground between them
+transit rather than fighting. `npm run parity` passes — 3,231 boxes, 380,598 nav
+surfaces, server matching the client on all seventeen fields.
+
+**What it needed that was not on this list.** A vernacular: `src/world/kit/
+desert.ts`, eight builders and the first in the kit whose ROOF is walked, which
+is what makes a town of flat roofs a second surface over the whole map rather
+than a set of boxes. And one scatter prop, the date palm — the only tree that
+grows on a map with no water on it.
+
+**Two things on the list below were decided the other way, and both by
+looking.** The wadi is **DRY**: it was built with Harrowmead's construction, one
+`WaterRect` floated over a carved bed, and a 1.6 m pool under a shoreline band
+read as pale membrane rather than water — so the map declares no water at all,
+which also spends nothing on the mirror or its probe. And the aberration went
+DOWN rather than up: a fringe that reads as heat haze on a 240 m valley reads as
+rainbow speckle on a hundred metres of scrub.
+
+What follows is the brief as it was written.
+
+---
 
 Only after S0-S8 have landed and S0's harness says the proving ground holds a
 frame. Then it is what `docs/world.md` already says a map is: one new layout

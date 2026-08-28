@@ -15,7 +15,7 @@ A vehicle is four things and one line of map data:
 
 | the thing | what it owns |
 | --- | --- |
-| `MapLayout.vehicles` | where each side's armour stands. One `VehicleSpawnDef` per team; absent on two of the four shipped maps |
+| `MapLayout.vehicles` | where each side's armour stands. One `VehicleSpawnDef` per team; absent on two of the five shipped maps |
 | `entities/Tank.ts` | one hull: its collider, its drive, its turret, its gun's clock, its health, and the springs behind its lean and its antennae |
 | `entities/TankModel.ts` | the boxes it is drawn from, the tracks and the two whips as JOINTS over them, and the charred repaint a wreck takes |
 | `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, and where a dismount lands |

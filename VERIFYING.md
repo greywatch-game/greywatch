@@ -1530,7 +1530,7 @@ is one machine's:
 - **The DEV-only proving ground needs `npm run simulate:dev`**, which is the
   dev-mode server build; the production one folds that map away and answers
   "no map". Its collision bake is `npm run collision -- proving`, and it takes
-  a real browser exactly as the four levels do.
+  a real browser exactly as the five levels do.
 - **Assertions about hits are worthless until one lands.** A "shot fired
   backwards is refused" check passes trivially when nothing is hitting anything,
   and so does a rate limit. Order them after a passing hit, or they are

@@ -40,7 +40,7 @@ authored by hand:
   carrying four separate rules to make it survivable. The FOAM mask stays
   because it is doing what a texture is good at — breaking up a metre-wide band
   through a smoothstep, where a repeat is neither visible nor a problem.
-- `shots/<map>.jpg` (~700 KB, four of them) — what the main menu stands on:
+- `shots/<map>.jpg` (~760 KB, five of them) — what the main menu stands on:
   a photograph of each map, taken by `npm run shots` from the vantage that
   map's row in `src/ui/mapShots.ts` states, and imported the same `?url` way.
   It bends nothing, because a picture of a procedural world is still not

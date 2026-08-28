@@ -74,7 +74,11 @@ interface ScatterBase {
     | "binPair"
     | "palletStack"
     | "trafficCone"
-    | "litter";
+    | "litter"
+    // The desert's own, and the only tree that grows on a map with no water in
+    // it: a bole that screens nothing at head height and a crown that screens
+    // everything at fifteen metres. See `buildPalm`.
+    | "palm";
   x: number;
   z: number;
   count: number;

@@ -26,8 +26,9 @@ the registry
 and `DEFAULT_MAP` is the fallback. `Game` holds one `mapDef` field (`Game.mapDef`) and
 reads both halves off it. Nothing outside `maps.ts` may import a map's own modules.
 The shipped maps are **Hollowmere** (night), **Greyfen** (a jungle morning, sun
-through the canopy), **Coldharbour** (a city before dusk) and **Harrowmead** (a
-farming vale at sunset in high summer). Greyfen
+through the canopy), **Coldharbour** (a city before dusk), **Harrowmead** (a
+farming vale at sunset in high summer) and **Sarab** (a desert town an hour
+before noon). Greyfen
 was forked from Hollowmere's layout, cleared back to a blank valley, and is
 now being rebuilt as a jungle one: what stands is the **manor** on flag C, the
 districts around the other four flags, and the forest itself — ~1,390 canopy
@@ -48,7 +49,32 @@ so the hedgerow ash (`buildAshTree`) stands over its walls and fences, and the
 line of standards is what makes a boundary legible from the far end of the look
 it breaks. It is also **the map with no wall around
 it**: the fields run on past the play square and a leash brings you back, which
-is its own section below. No two share a module in any direction.
+is its own section below.
+
+**Sarab is the fifth and by a wide margin the biggest: 900 m of PLAY inside
+1500 m of ground**, which is 5.1 times Harrowmead's playable area. It is the map
+`ENGINE_UPGRADE.md` was written to make possible and the first that spends most
+of what that document bought: it states `blockSize` and `terrainBlock` (96, S6),
+`surfaces: 5`, a `fogEnd` of 560 INSIDE its own 1,273 m diagonal — the first
+time block visibility has had anything to cull on any map here — and a
+`bodyDrawDistance` of 300 inside that, which nothing else in the tree states.
+Its ground is dunes with each quarter flattened dead level and a wadi cut
+through all of it; its boundary is Harrowmead's open one at nearly four times
+the margin, for a different reason (see that section). It also needed a fourth
+VERNACULAR — `kit/desert.ts`, whose flat WALKED roof is the first in this kit
+and is what makes a town of them a second surface over the whole map — and one
+scatter prop, the date palm.
+
+**Its layout was SEEDED rather than typed** (`npm run sarab`), which is a first
+here and is argued in that script's header: a 900 m town is some hundreds of
+buildings whose only interesting property is that none of them overlaps, and its
+floor is fifty thousand numbers. What the script emits is an ordinary layout
+file — flat arrays of one-line entries, which is what `src/editor/sourceScan.ts`
+requires — so the editor opens, patches and saves it exactly as it does
+Harrowmead's, and re-running the generator discards those edits the way
+re-running any `heights.ts` generator does.
+
+No two maps share a module in any direction.
 
 ## Six things that look global and are the map's
 
@@ -212,10 +238,14 @@ other half. It is arithmetic no author can see: the map raises the window
 because it can see a hard line across the ground, and past the ceiling raising
 it further moves that line not at all while costing texel density on every
 frame. The check is a warning and never a clamp — a map may want the across-sun
-reach knowing the along-sun one cannot follow — and **the four shipped maps are
+reach knowing the along-sun one cannot follow — and **the shipped maps are
 the evidence that the ceiling is the right one**: Harrowmead states 185 against
 a 183.8 m ceiling and Coldharbour 200 against 194.9, both authored by eye to
-within a couple of metres of a number neither file names.
+within a couple of metres of a number neither file names. Sarab is the map that
+answers it from the other direction: its sun is 52 degrees rather than 14 or 24,
+so its tallest thing throws 21 m and 150 is enough on a map four times
+Coldharbour's extent — the window is a function of the ELEVATION and not of how
+big the map is.
 
 What it costs is texel density — `window / mapSize`, so 5.4 cm at 110 and 9.8 cm
 at 200. The four-tap kernel is measured in TEXELS and still cancels the
@@ -537,14 +567,23 @@ would end its shadow in a hard line sliding across open ground as you walk.
 
 ## The other way to close a map: a borderland and a leash
 
-**Harrowmead has no wall around it.** The fields carry on past the play square,
-and what stops a player leaving is a countdown rather than a face of rock. It is
-declared by `MapLayout.borderland` — absent on the other three, which are
-bit-identical to what they were before it existed — and it is three pieces, each
-answering a different part of the same question.
+**Harrowmead has no wall around it, and Sarab has none either.** The ground
+carries on past the play square, and what stops a player leaving is a countdown
+rather than a face of rock. It is declared by `MapLayout.borderland` — absent on
+the other three, which are bit-identical to what they were before it existed —
+and it is three pieces, each answering a different part of the same question.
+
+**The two maps that state one size it for opposite reasons**, and that is worth
+knowing before setting a third. Harrowmead's 80 m is the LEASH: ten seconds at a
+sprint is 69 m, so the boundary boxes sit just past where a player who turns and
+runs dies, and any more would be invisible to anybody alive. Sarab's 300 m is the
+HORIZON: at 560 m of haze on a 900 m square, the play boundary is inside the view
+from every quarter, so without ground past it the town would stand on a plate
+with sky under its edges. The leash number is a floor on the margin; what it is
+FOR past that floor is what the map can see.
 
 **The ground keeps going, and `TerrainField` is what makes that true.** A
-`Borderland` states a `margin` (Harrowmead: 80 m) and the field continues past
+`Borderland` states a `margin` (Harrowmead: 80 m, Sarab: 300) and the field continues past
 the authored grid for that distance: `heightAt` returns the clamped edge plus a
 closed-form roll (`borderRoll`) instead of the clamp alone, eased in over the
 first third of the margin so the boundary has no crease and every reader inside
@@ -725,11 +764,20 @@ the scene without it draws nothing and throws nothing.
 
 A **second merge pass** (`BlockMerge`) collapses neighbouring structures and scatter
 fields into one mesh per (map block, material) — the block's side is
-`MapLayout.blockSize`, 48 m on every shipped map. The village is ~230 structures
+`MapLayout.blockSize`, 48 m on every shipped map but Sarab, which states 96. The village is ~230 structures
 and the outline pass draws every mesh twice, so without it the map alone costs ~670
 draws; with it, ~150, and frustum culling still throws away most of the map because
 a block is well inside the 78 m fog wall. Outlines still trace each building,
 because `renderOutline` expands vertices along their own normals.
+
+**There are FOUR vernaculars in the kit and each is a shape before it is a
+palette**: `kit/buildings.ts` and `kit/structures.ts` are the wet northern
+village, `kit/manor.ts` and the jungle props are Greyfen's, `kit/city.ts` is the
+downtown, and `kit/desert.ts` is Sarab's. The last one exists for one geometric
+reason and its header owns the argument: its ROOF is flat and WALKED, which
+nothing else in the kit has, so a terrace of its houses is a second storey of
+ground with a parapet for cover and a stair to reach it. It re-uses `city.ts`'s
+STAIR LANE unchanged for every building in it that is climbed.
 
 **A building that stacks WALKED FLOORS is a different kind of thing from
 everything else in the kit, and `kit/city.ts`'s header is its contract.** Every

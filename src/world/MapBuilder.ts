@@ -96,6 +96,7 @@ import {
   buildGravestone,
   buildJungleTree,
   buildLitter,
+  buildPalm,
   buildLog,
   buildPalletStack,
   buildPine,
@@ -515,6 +516,7 @@ const SCATTER_BUILDERS: Record<ScatterSpec["prop"], ScatterBuilder> = {
   palletStack: buildPalletStack,
   trafficCone: buildTrafficCone,
   litter: buildLitter,
+  palm: buildPalm,
 };
 
 /**
@@ -575,6 +577,15 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // Trunk only, at roughly its width around chest height (it tapers 0.85 ->
   // 0.32 over 5.2 m). The branches are 4 cm twigs — nothing should stop on one.
   deadTree: { w: 0.7, d: 0.7, h: 5.2, visualTop: 5.4 },
+  // The bole only, at the width it presents around chest height — it tapers
+  // 0.68 -> 0.44 over 7.6 to 9.2 m, and the frond scars stand 0.05 m proud of
+  // that. The crown is five metres of frond starting at eight and is
+  // deliberately outside this, harder than for any other tree in the table: a
+  // grove is meant to screen a roof and not a body, and a box that held the
+  // crown would stop rounds through the open air a palm grove IS. Full bole
+  // height, so it bakes as hard cover (CoverMap's 1.7 m) the way a wall does.
+  // `visualTop` clears a frond arching over the head of the bole.
+  palm: { w: 0.66, d: 0.66, h: 7.6, visualTop: 10.4 },
   // Trunk only, same as the dead tree — the crown is 3.3 m of needles and
   // stopping rounds on it would give the map its one piece of cover you can see
   // daylight through. The builder keeps the lowest tier above the 1.7 m hit

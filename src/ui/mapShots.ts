@@ -32,6 +32,7 @@
  * cache list.
  */
 import coldharbourShot from "../../shots/coldharbour.jpg?url";
+import sarabShot from "../../shots/sarab.jpg?url";
 import harrowmeadShot from "../../shots/harrowmead.jpg?url";
 import greyfenShot from "../../shots/greyfen.jpg?url";
 import hollowmereShot from "../../shots/hollowmere.jpg?url";
@@ -109,6 +110,23 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
   harrowmead: {
     url: harrowmeadShot,
     vantage: { pos: [44, 15, -58], target: [-10, 4, 14] },
+  },
+  // Off the east highway's verge, looking north-west up the length of the town:
+  // the souk's two arcades and their awnings in the near ground, the old town's
+  // roofs behind them, and the minaret and the blue dome on the axis with the
+  // basin rim in haze behind everything.
+  //
+  // It is the only shot in this table whose subject is the EXTENT as well as a
+  // building — four hundred metres of town in one frame from nine metres up,
+  // which is the thing this map is and no other map here can be photographed
+  // doing. **The frame to preserve is the two landmarks on the axis**: the
+  // minaret and the dome are the only saturated things on a 1,500 m map and are
+  // what a player navigates by, so a re-frame that loses them has lost the
+  // picture whatever else is in it. The shelf was the other candidate and it
+  // put a shelled block's roof across the bottom third.
+  sarab: {
+    url: sarabShot,
+    vantage: { pos: [96, 9, 30], target: [-190, 12, 150], fov: 56 },
   },
 };
 

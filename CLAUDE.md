@@ -127,6 +127,9 @@ npm run shots      # re-photograph the maps for the menu backdrop (committed).
                    #   The ONE script here that needs a real GPU — docs/build.md
 npm run proving    # regenerate the DEV-ONLY proving ground (committed source).
                    #   `-- --play 900 --margin 300`. Not a level — ENGINE_UPGRADE.md
+npm run sarab      # RE-SEED the desert town's layout and heights (committed
+                   #   source). One-shot: it discards editor edits to either
+                   #   file. Not part of any build — ENGINE_UPGRADE.md S11
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -418,10 +421,23 @@ never leashed** — the nav graph stops at the play square.
 
 **The shipped maps are Hollowmere** (a night village), **Greyfen** (a jungle
 valley), **Coldharbour** (a business district — what the first three overrides
-exist for) **and Harrowmead** (`size: 400`, no wall around it). **The last two
-are the two with armour on them**, and they are the two biggest.
+exist for), **Harrowmead** (`size: 400`, no wall around it) **and Sarab**
+(`size: 900` inside 1500 m of ground — a desert town, and the map
+`ENGINE_UPGRADE.md` exists for). **The last three are the three with armour on
+them**, and they are the three biggest.
 
-**There is a fifth entry in `MAPS` and it is DEV-ONLY and not a level.**
+**Sarab is the map that SPENDS the levers**, and it is the only one that states
+most of them: `blockSize` and `terrainBlock` at 96 (S6), a `fogEnd` (560) inside
+its own 1,273 m diagonal, which is the first time block visibility has had
+anything to cull (S1 and S8), a `bodyDrawDistance` (300) inside THAT, which no
+other map states, and `surfaces: 5`. Its layout was **SEEDED by
+`npm run sarab`** rather than typed — a 900 m town is some hundreds of buildings
+and its floor is fifty thousand numbers — and the emitted `layout.ts` is an
+ordinary layout file the editor opens, patches and saves like any other.
+Re-running the generator discards editor edits, which is the warning every
+`heights.ts` already carries.
+
+**There is a sixth entry in `MAPS` and it is DEV-ONLY and not a level.**
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
 against — a city block grid several times Harrowmead's size, written by
 `npm run proving`. **`MAPS` is an `import.meta.env.DEV` ternary and must stay
@@ -434,7 +450,7 @@ survive a build and a string literal does.
 
 **It has a collision bake, so the AUTHORITY runs on it too** (S9). That is
 `DEV_MAPS` in `scripts/collision-hash.mjs` — baked and staleness-checked like
-the four levels, kept out of the `MAPS` beside it because `npm run parity`'s
+the five levels, kept out of the `MAPS` beside it because `npm run parity`'s
 server half is a production build — reached through `npm run simulate:dev`,
 where `--mode development` alone does not turn the flag over.
 
@@ -704,7 +720,7 @@ death cam's camera hand-off.
 ### Vehicles: one hull, and the exceptions it is
 
 **A tank is a `Combatant` you get INSIDE.** `MapLayout.vehicles` is one
-hardstanding per team — absent on two of the four maps — and `Game.driving` is
+hardstanding per team — absent on two of the five maps — and `Game.driving` is
 the single fact the feature turns on. **`mount` and `clearVehicle` are exact
 inverses and must be read as a pair.** **A driver's frame is not a body's**:
 `Player.update` is not called, so the hull's ground REPLACES the probe. **The

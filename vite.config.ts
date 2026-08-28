@@ -79,6 +79,18 @@ const WRITABLE = {
     min: 500,
     marker: "export const HarrowmeadHeights",
   },
+  "src/world/sarab/layout.ts": {
+    min: 4000,
+    marker: "export const SarabLayout",
+  },
+  "src/world/sarab/heights.ts": {
+    min: 500,
+    marker: "export const SarabHeights",
+  },
+  "src/world/sarab/environment.ts": {
+    min: 1200,
+    marker: "export const SarabEnvironment",
+  },
   "src/world/harrowmead/environment.ts": {
     min: 1200,
     marker: "export const HarrowmeadEnvironment",

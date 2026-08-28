@@ -33,6 +33,8 @@ import { HollowmereEnvironment } from "./hollowmere/environment";
 import { HollowmereLayout } from "./hollowmere/layout";
 import { ProvingEnvironment } from "./proving/environment";
 import { ProvingLayout } from "./proving/layout";
+import { SarabEnvironment } from "./sarab/environment";
+import { SarabLayout } from "./sarab/layout";
 
 /**
  * A map: the level data, the conditions it is seen under, and what to call it
@@ -168,6 +170,36 @@ export const HARROWMEAD: MapDef = {
 };
 
 /**
+ * Sarab: a town in a desert basin, an hour before noon, some months into being
+ * fought over. **900 m of play inside 1,500 m of ground** — 5.1 times
+ * Harrowmead's playable area, and by a wide margin the biggest map in the tree.
+ *
+ * It is the map `ENGINE_UPGRADE.md` exists for and the one every lever in that
+ * document was bought to make possible, so it is also the first map here to
+ * SPEND several of them: `blockSize` and `terrainBlock` at 96 (S6), a `fogEnd`
+ * well inside its own diagonal so that block visibility finally has something
+ * to cull (S1 and S8), and a `bodyDrawDistance` inside THAT (S8's landed
+ * field, and no other map in the tree states one).
+ *
+ * Its layout was SEEDED by `scripts/generate-sarab.mjs` rather than typed —
+ * `sarab/layout.ts`'s header carries that argument — and it is an ordinary
+ * layout file in every other way: the editor opens it, patches it and saves it
+ * exactly as it does Harrowmead's. It shares no module with the other four and
+ * must not.
+ */
+export const SARAB: MapDef = {
+  id: "sarab",
+  name: "Sarab",
+  blurb:
+    "A desert town an hour before noon, months into being fought over. " +
+    "Alleys you cannot see over, roofs you can, and a kilometre of open sand.",
+  layout: SarabLayout,
+  environment: SarabEnvironment,
+  heights: () => import("./sarab/heights"),
+  collision: () => import("./sarab/collision"),
+};
+
+/**
  * The proving ground: not a level, and DEV ONLY.
  *
  * `ENGINE_UPGRADE.md` S0 is what it exists for — a generated city block grid at
@@ -248,8 +280,8 @@ const PROVING: MapDef = {
  * filtering it at runtime, would keep both in the bundle.
  */
 export const MAPS: readonly MapDef[] = import.meta.env.DEV
-  ? [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, PROVING]
-  : [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD];
+  ? [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, PROVING]
+  : [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB];
 
 /** What a round starts on with nothing chosen. */
 export const DEFAULT_MAP: MapDef = HOLLOWMERE;

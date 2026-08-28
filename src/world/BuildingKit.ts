@@ -48,6 +48,16 @@ import {
   buildStreetLight,
   buildTower,
 } from "./kit/city";
+import {
+  buildAdobeHouse,
+  buildBlastWall,
+  buildCompoundWall,
+  buildMinaret,
+  buildMosque,
+  buildSandbags,
+  buildShellBlock,
+  buildSouk,
+} from "./kit/desert";
 import { buildJungleManor } from "./kit/manor";
 import {
   buildSilo,
@@ -128,6 +138,16 @@ export const BUILDERS = {
   car: buildCar,
   streetLight: buildStreetLight,
   monument: buildMonument,
+  // The desert-town set — see kit/desert.ts, whose header owns the stair lane
+  // every building in it that is climbed is built around.
+  adobeHouse: buildAdobeHouse,
+  compoundWall: buildCompoundWall,
+  shellBlock: buildShellBlock,
+  mosque: buildMosque,
+  minaret: buildMinaret,
+  souk: buildSouk,
+  blastWall: buildBlastWall,
+  sandbags: buildSandbags,
 } as const;
 
 export type BuilderKind = keyof typeof BUILDERS;

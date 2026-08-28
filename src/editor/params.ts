@@ -258,6 +258,85 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     },
   ],
 
+  // --- the desert-town set (world/kit/desert.ts) ---------------------------
+  // The depth floors here are `assertClimbable`, which throws in a DEV build
+  // rather than letting a layout ask for a stair the nav graph will decline to
+  // link: a mud-brick storey is 10.0 m of run plus a 1.8 m landing inside the
+  // walls, and a concrete one is 10.9. `floors` is a COUNT of walked levels for
+  // the downtown set's reason, and every level costs a NavGrid surface slot
+  // across the whole footprint.
+  adobeHouse: [
+    num("width", "width", 10, 6, 30),
+    num("depth", "depth", 13, 13, 30),
+    num("floors", "floors", 1, 1, 2, 1),
+    bool("enterable", "enterable"),
+    bool("ruined", "ruined"),
+    // Which Z end the lowest flight's FOOT is at — and, because the builder
+    // reads its PRESENCE rather than its value, the control that decides
+    // whether the house has roof access at all.
+    {
+      key: "rampSide",
+      type: "choice",
+      label: "stair foot",
+      def: "-1",
+      options: ["-1", "1"],
+      numeric: true,
+    },
+    {
+      key: "tint",
+      type: "choice",
+      label: "render",
+      def: "#8d7757",
+      options: ["#8d7757", "#b6a68f", "#7b6a51", "#6d5b41"],
+    },
+  ],
+  shellBlock: [
+    num("width", "width", 20, 12, 40),
+    num("depth", "depth", 15, 14, 34),
+    num("floors", "floors", 3, 2, 4, 1),
+    {
+      key: "rampSide",
+      type: "choice",
+      label: "stair foot",
+      def: "-1",
+      options: ["-1", "1"],
+      numeric: true,
+    },
+  ],
+  souk: [
+    num("length", "length", 30, 14, 60, 1),
+    num("width", "width", 11, 8, 18),
+    {
+      key: "rampSide",
+      type: "choice",
+      label: "stair foot",
+      def: "-1",
+      options: ["-1", "1"],
+      numeric: true,
+    },
+  ],
+  mosque: [...wdh(26, 20, 7.4)],
+  minaret: [num("height", "height", 26, 12, 40, 1)],
+  compoundWall: [
+    num("length", "length", 14, 4, 48, 1),
+    num("height", "height", 2.6, 1.2, 4, 0.2),
+    {
+      key: "tint",
+      type: "choice",
+      label: "render",
+      def: "#8d7757",
+      options: ["#8d7757", "#b6a68f", "#6d5b41"],
+    },
+  ],
+  blastWall: [
+    num("length", "length", 12, 3, 60, 1),
+    num("height", "height", 3.4, 2, 5, 0.2),
+  ],
+  sandbags: [
+    num("length", "length", 6, 2, 24, 0.5),
+    num("height", "height", 1.15, 0.6, 1.6, 0.05),
+  ],
+
   // Fixed-geometry kinds: placed, rotated, and otherwise not configurable.
   tavern: [],
   smithy: [],
@@ -387,6 +466,14 @@ export const SCATTER_DEFAULTS: Record<ScatterProp, ScatterDefaults> = {
   // cover — see coldharbour/layout.ts.
   trafficCone: { radius: 5, count: 6, scale: [0.9, 1.1], clearance: 1.1 },
   litter: { radius: 9, count: 14, scale: [0.8, 1.3], clearance: 1.2 },
+  // The desert's. Clearance is set from the CROWN and not from the bole, the
+  // ash's rule: fronds reach ~4.0 m from the axis at scale 1, so 2.6 puts two
+  // boles 6.4 m apart, where the crowns just touch. A grove tighter than that
+  // is one green ceiling, which is the one thing a palm grove must not be —
+  // the whole point of it is that you can see through it at head height and
+  // not from above. Count is low for the same reason: a grove is a screen you
+  // walk in among, not a wood.
+  palm: { radius: 14, count: 8, scale: [0.85, 1.2], blocking: true, clearance: 2.6 },
 };
 
 export const SCATTER_PROPS = Object.keys(SCATTER_DEFAULTS).sort() as ScatterProp[];

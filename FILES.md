@@ -387,10 +387,18 @@ src/
     kit/terrain.ts      #   terrace, ramp, road, jetty, boardwalk, stairs
     kit/city.ts         #   tower, office, shophouse, depot, parkade, planter,
                         #   barrier, car, streetLight, monument — the downtown
-                        #   set, and the only builders that stack WALKED floors.
+                        #   set, and the first builders that stack WALKED floors.
                         #   Its header owns the four rules that makes necessary,
                         #   what each of the five buildings is FOR, and the
                         #   collider budget an enterable one is spending
+    kit/desert.ts       #   adobeHouse, compoundWall, shellBlock, mosque,
+                        #   minaret, souk, blastWall, sandbags — the desert-town
+                        #   set. The first vernacular here whose ROOF is walked,
+                        #   which is what it exists for: a flat roof is a second
+                        #   storey of ground and a parapet is the cover on it.
+                        #   Its header owns the STAIR LANE every climbed building
+                        #   in it is built around, and the collider ORDER the
+                        #   nav grid's silent overflow makes load-bearing
     NavGrid.ts          # Walkable-surface graph + precomputed flow fields
     CoverMap.ts         # Baked per-surface directional cover masks
     boxGeometry.ts      # Analytic WorldBox primitives, shared by NavGrid /
@@ -470,6 +478,24 @@ src/
     harrowmead/environment.ts # Palette, sun, sky — high summer, late
                               #   morning, no fog wall (`fogEnd: 520`)
     harrowmead/collision.ts   # GENERATED collider boxes (`npm run collision`)
+    sarab/layout.ts           # The fifth map, and the one ENGINE_UPGRADE.md
+                              #   exists for: a desert town, 900 m of play
+                              #   inside 1500 m of ground. SEEDED by
+                              #   `npm run sarab` and owned by the editor after
+                              #   that — its header carries the argument. The
+                              #   first map to state `blockSize`/`terrainBlock`
+                              #   and the first whose `fogEnd` is inside its own
+                              #   diagonal
+    sarab/heights.ts          # GENERATED with it — dunes, each quarter
+                              #   flattened dead level, and a wadi cut through
+                              #   all of it. 226x226 vertices, the biggest in
+                              #   the tree by an order of magnitude, and LAZY
+    sarab/environment.ts      # Palette, high sun, dust — an hour before noon,
+                              #   and the first spec written for a map that can
+                              #   be FOGGED (`fogEnd: 560` inside a 1273 m
+                              #   diagonal) and the first to state a
+                              #   `bodyDrawDistance`
+    sarab/collision.ts        # GENERATED collider boxes (`npm run collision`)
     proving/layout.ts         # DEV ONLY, and NOT a level: the proving ground
                               #   ENGINE_UPGRADE.md S0 measures against. A city
                               #   block grid at Coldharbour's collider density

@@ -149,6 +149,34 @@ export const DIFF_VANTAGES = {
       target: [10, 12, -260],
     },
   ],
+  sarab: [
+    {
+      id: "alley",
+      of: "an alley in the old town at eye height, mud-brick walls either side and a courtyard house's parapet over them",
+      proves:
+        "the cel fragment on the map's own vernacular at close range — CEL_BUMP on the sand at a grazing angle, the ink on a parapet's coping, and the FOG doing nothing at all, which is the arm of the fog term no other vantage in this bank photographs (every other map's is at or past its own diagonal)",
+      pos: [20, 1.7, 120],
+      target: [92, 3, 130],
+    },
+    {
+      id: "shelf",
+      of: "the whole town from the Martyrs' shelf, seven metres up and four hundred metres of it in frame",
+      proves:
+        "the fog wall INSIDE the play square — the one thing no other banked frame has, since this is the only map whose `fogEnd` is short of its own diagonal — plus `WorldCulling`'s block half, which is inert everywhere else, and the shadow window's far edge on open sand",
+      pos: [228, 20, 132],
+      target: [-120, 2, 96],
+      fov: 58,
+    },
+    {
+      id: "wadi",
+      of: "the west ford looking down the wadi, the palm grove standing in the bed",
+      proves:
+        "the sway term on a crown of long thin fronds — the shape `world/sway.ts` says a vertex ramp draws worst — and the terrain at the steepest gradient on the map, taken mid-gust so the sway is in the picture",
+      pos: [-66, 5, -10],
+      target: [-66, -4, -96],
+      wind: 2.6,
+    },
+  ],
 };
 
 /**
