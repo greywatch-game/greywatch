@@ -17,7 +17,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/grenades.md`](docs/grenades.md) | anything about the one projectile in the game |
 | [`docs/states.md`](docs/states.md) | a new screen, a new game state, anything about what a lid holds or lets run |
 | [`docs/ui.md`](docs/ui.md) | any screen, any stylesheet, anything under `src/ui/` |
-| [`docs/rendering.md`](docs/rendering.md) | lights, shadows, fog, outlines, the post chain, the sky |
+| [`docs/rendering.md`](docs/rendering.md) | lights, shadows, fog, outlines, block visibility, the post chain, the sky |
 | [`docs/world.md`](docs/world.md) | a map, a layout, a builder, the terrain or the rim |
 | [`docs/editor.md`](docs/editor.md) | anything under `src/editor/` or the dev write endpoint |
 | [`docs/bots.md`](docs/bots.md) | navigation, perception, cover, squads, bot cost |
@@ -346,11 +346,27 @@ therefore writes DEPTH; **it pays only if the pane is drawn first**, which is wh
 claim about the WORLD that nothing throws over**. **No pane of either kind is
 outlined or a shadow caster.**
 
+**The frame WALKS the scene, and the scene is the map** — Babylon evaluates
+every mesh in it every frame before it has decided anything, at ~1 us each, so
+the cost is the map's AREA rather than what is on screen. `WorldCulling` is what
+holds that down, and it works by **replacing `scene.getActiveMeshCandidates`
+and writing nothing onto any mesh**: it never disables, never hides, never
+unpickles. That is the load-bearing part rather than an implementation detail —
+a disabled mesh leaves the shadow map's render list, a cube probe's bake and
+Babylon's own default pick filter, and a candidate list leaves all three
+untouched. **A collider is never a candidate at any distance** (invisible by
+construction, so it cannot draw), **a mesh carrying `metadata.block` is one only
+while the camera is inside the map's `fogEnd`**, and **everything else always
+is** — which is why the terrain, the roads and the rim carry no block: they are
+what the SKY is behind, and a hole cut in them is a hole onto a gradient.
+**Nothing pooled may ever be block-keyed.**
+
 → **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and mirror
 and the three ways a cube probe goes flat, the four light terms and the colour
 buffer's three further rules, the ink's tint, the wind's two bounds, the
 muzzle-flash budget, the fog split, the shadow window, the reflection bake's
-seven load-bearing details, the painted sky, and the WGSL dialect's own traps.
+seven load-bearing details, the three classes of mesh block visibility sorts
+the scene into, the painted sky, and the WGSL dialect's own traps.
 
 ### The map is data, not code
 
@@ -541,15 +557,18 @@ misbehaves silently:
   against a tower's glass stands inside its own block's hull. All six faces come
   back one flat ink colour and the glazing reflects a grey card. Measured on
   Coldharbour's curtain wall at 85% of the frame's pixels.
-- `block: "3,2"` — which 48 m map block a merged visual came from, written by
-  `BlockMerge.finish`. A **value**, like `surface`, and absent on everything
-  that is not block-merged — the terrain, the roads and the rim, which is what
-  keeps them out of the test that reads it. `ReflectionSystem.encloses` is that
-  reader and the only one: a probe drops its own building from its bake, and
-  since the albedo palette took the colour out of the merge key there is no
-  longer any geometry-shaped way to ask which building a mesh IS.
-  `PaneBlocks` files glazing under the same key, which is what lets the two
-  agree without measuring a distance.
+- `block: "3,2"` — which 48 m map block a merged visual came from. A **value**,
+  like `surface`, and **absent on everything that is not block-merged — the
+  terrain, the roads and the rim**, which is what keeps the landform out of
+  both tests that read it. Written in three places and they must agree:
+  `BlockMerge.finish`, `PaneBlocks.finish` for the glazing hung on the same
+  building, and `inkTwin`, which carries its source's — a twin is an INVERTED
+  HULL, so one left behind when its source goes is a solid silhouette rather
+  than a line. **Two readers.** `ReflectionSystem.encloses`: a probe drops its
+  own building from its bake, and since the albedo palette took the colour out
+  of the merge key there is no longer any geometry-shaped way to ask which
+  building a mesh IS. And `WorldCulling`, which files every mesh carrying one
+  into a cull cell — see the rendering section.
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:
   it is a **value with a default**, not a flag, and **absent means `"hard"`**.
   `MapBuilder` sets it on exactly one thing — the terrain floor's collider clone

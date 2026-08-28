@@ -292,6 +292,14 @@ src/
                         #   No CPU fallback — WebGPU is a hard requirement and
                         #   guarantees it
     Sky.ts              # Generated dome, textured moon, fBm cloud decks
+    WorldCulling.ts     # How much of the map the frame's own mesh walk is
+                        #   offered. Replaces scene.getActiveMeshCandidates and
+                        #   writes NOTHING onto a mesh, which is what leaves
+                        #   every ray, the shadow map, every cube probe and
+                        #   moveWithCollisions unable to tell it ran. A collider
+                        #   is never a candidate, a mesh carrying metadata.block
+                        #   is one inside the map's fogEnd, everything else
+                        #   always is
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
     GrassSystem.ts      # Grass fields as one thin-instanced draw; tufts inside a
                         #   collider are rejected at scatter time

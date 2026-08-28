@@ -62,7 +62,15 @@ those are the hypotheses the step that touches them has to settle.
 
 ## The five walls
 
-### Wall 1 — the frame walks the whole scene, and the scene is the map
+### Wall 1 — the frame walks the whole scene, and the scene is the map — **MOSTLY DOWN**
+
+**S1 has landed and finding 21 is what it produced**; the walk is 7.6 ms to 2.5
+at 900/300 and the frame 9.8 to 4.3. What follows is the wall as S0 measured it,
+kept because the shape of it is why the fix is shaped the way it is — and
+because **one term of it was still wrong after S0 corrected two**: the walk is
+not mostly buildings, it is **70% invisible COLLIDER proxies**, which is a class
+of mesh that can never draw and is therefore free to remove. What is left of the
+wall is 0.94 us over 2,670 candidates, and S8 is what has the rest of it.
 
 **The largest single number in this document, and S0 confirmed it while
 correcting both of its terms.** The scene's mesh count is proportional to map
@@ -496,56 +504,91 @@ shipped maps are byte-for-byte what they were.
 
 ---
 
-### S1 — Block visibility: stop walking the whole scene
+### S1 — Block visibility: stop walking the whole scene — **LANDED**
 
-Wall 1, and — once S0b has made a frame possible at all — the step that decides
-whether the frame is affordable. **Measured, it is 23.0 of a 30.3 ms frame at
-1500 / 0 and still 7.6 of 10.1 ms at the chosen 900 / 300**, so it does not
-become optional at the smaller square. The number to beat is **1.10 us per mesh
-in the scene per frame**, over 9,002 meshes.
+Wall 1, and most of it is down. **`FINDINGS.md` 21 is the result.** The walk is
+**7.60 ms to 2.50** on the 900/300 proving ground and the frame **9.80 to
+4.30**, measured as one lever in one process against the number this step was
+given to beat.
 
-Add a manager that **enables and disables whole map blocks** around the camera,
-so Babylon's per-frame walk sees a neighbourhood rather than a map.
-`metadata.block` (`"3,2"`) is already written by `BlockMerge.finish`, already
-read by `ReflectionSystem.encloses`, and `PaneBlocks` files glazing under the
-same key — so the grouping exists and does not have to be invented. Terrain
-patches carry the same convention (`TerrainPatch.key`), cut on the heightfield's
-grid lines rather than on `BLOCK_SIZE` seams, which is fine because the key is a
-name and not an alignment claim.
+**The step's own premise was wrong about what the meshes ARE, and that is the
+finding under the finding.** This section read wall 1 as a map's worth of
+buildings and wrote two radii to keep the colliders reachable. Measured, **6,349
+of the proving ground's 9,019 scene meshes are the COLLIDERS** — invisible
+proxies Babylon pays the whole per-mesh cost for and rejects on `isVisible`
+after `isReady`, `getTotalVertices` and the LOD map get. The structures are
+1,158. So the largest thing in wall 1 is a class of mesh that can never draw at
+any distance, and taking it out is exact rather than a trade.
 
-**Two radii, not one, and this is the part that will bite.** A disabled mesh is
-invisible to `pickWithRay` as well as to the draw, so:
+**And the lever is a CANDIDATE LIST rather than `setEnabled`, which is what
+makes the two radii unnecessary rather than merely cheaper.**
+`Scene.getActiveMeshCandidates` is the supported extension point — it is what
+`createOrUpdateSelectionOctree` replaces — it is read in exactly one place, and
+a mesh left out of it is skipped ENTIRELY. `setEnabled(false)` leaves the mesh
+in the walk and only shortens what the walk does with it (which is what made
+finding 18's 0.67 µs and finding 19's 1.10 µs disagree about one number), and it
+costs four indifferences that a candidate list gets for nothing: **every ray,
+the shadow map's render list, every cube probe's bake, and
+`moveWithCollisions`**. `WorldCulling` writes no property onto any mesh at all.
 
-- **Visuals** may cull at the map's `fogEnd`, because past it there is nothing to
-  see and nothing else reads them.
-- **Colliders** must stay enabled out to **the longest ray in the game** — the
-  weapon `range` a hitscan caps against, the tank gun's, the rocket's — or a
-  round fired at a target you can see passes through the wall in front of it, the
-  client and the authority disagree, and nothing says so. Derive that radius from
-  `CONFIG` rather than writing a number.
+The rays were tested adversarially rather than argued: 1,000 seeded rays across
+the 900 m square, fired with the reach at the map's fog wall and again with it
+wound to zero — every structure out of the frame — **agreed on the mesh and the
+distance 1,000 times out of 1,000**.
 
-That split is the design rather than an implementation detail: the two lists have
-different reasons to exist and have never had the same reach.
+**Three classes of mesh**, and `metadata.block` decides two of them:
 
-**Must not break:**
+| class | what | offered |
+| --- | --- | --- |
+| hidden | `map.colliders` | **never**, at any distance |
+| blocked | drawn geometry carrying `metadata.block` | inside the map's `fogEnd` |
+| loose | everything else | **always** |
 
-- Pooled anything — rigs, tracers, shards, ragdolls, grenades, effect meshes.
-  None are block-keyed and none may be touched. This is precisely why
-  `freezeActiveMeshes` is a bug and this is not.
-- `ShadowSystem.setCasters` and `ReflectionSystem`'s render lists, both of which
-  hold explicit mesh lists and both of which the contracts say must be replaced
-  on every install before the next frame.
-- `GlassSystem`'s vertex ranges into `paneGroups` meshes — a disabled pane block
-  must still break correctly when it comes back.
-- `NavGrid`, `CoverMap`, `ObstacleField` and `Player.probeGround`, all of which
-  read `WorldBox`es and the terrain FIELD rather than meshes and are therefore
-  correctly indifferent to this whole step. Keep it that way.
-- The editor, which keys per placement and does not block-merge.
+`inkTwin` and `PaneBlocks.finish` now carry the same key `BlockMerge.finish`
+writes, because a twin is an INVERTED HULL — one left behind when its source
+goes is a solid silhouette — and a tower has to lose its glazing and its shaft
+together. **The landform is deliberately loose**: the terrain, the roads and the
+rim carry no block, and they are what the SKY is behind.
 
-**Verify:** S0's harness, same session, single lever. Then `bank.mjs --check` at
-0/255 — the picture must not move at any banked vantage — and a scripted round on
-the proving ground firing at the furthest wall a weapon can reach, asserting the
-impact lands.
+**What it did NOT do, and what the next step to touch this owes:**
+
+- **The block half is nearly unmeasurable today, and S8 is why.** Coldharbour,
+  Harrowmead and the proving ground all state a `fogEnd` past their own
+  diagonal, so nothing is culled by distance on any of them and every
+  millisecond above is the collider half. Re-filing the proving ground at a
+  550 m wall is another 0.6 ms of walk and 0.8 ms of frame — **so S8 is now
+  what unlocks the rest of S1**, and the two should be read as a pair.
+- **The two big maps' FRAME deltas are under the 8% floor** and must not be
+  quoted as wins; only their `_evaluateActiveMeshes` deltas (−23%, −19%) are
+  above it.
+- **The cull cell is the 48 m merge block**, because that key already exists.
+  Whether it is the right cell is S6's question.
+- **Nothing was measured with sixteen bots fighting**, exactly as S0 was not.
+
+**What it must not break, and did not:** everything in the list this section
+used to carry, and the mechanism is why rather than care — pooled anything is
+never block-keyed and is always offered; `ShadowSystem.setCasters` and
+`ReflectionSystem`'s render lists are explicit lists a candidate has no bearing
+on; `GlassSystem`'s vertex ranges are untouched because no mesh is; `NavGrid`,
+`CoverMap`, `ObstacleField` and `Player.probeGround` read `WorldBox`es and the
+terrain FIELD and are indifferent; and the editor block-merges nothing, so
+nothing there carries a block and nothing there is culled.
+
+**Verified:** `npm run typecheck`, `npm run build`, `npm run parity` (all four
+maps, all 17 fields), the 1,000-ray audit above, and the differential bank
+check.
+
+**The bank check is still RED on an unmodified tree (finding 20), so the
+differential is what stands in for it** — and it is nearly clean.
+**Fourteen of the fifteen banked vantages come back to four decimal places.**
+The exception is `hollowmere/lanterns` at 1.5051 → 1.5050 mean/255 and
+`hollowmere/menu` at 7.8133% → 7.8117% of pixels: **0.0001/255 over 0.0016% of
+the frame, of the order of thirty pixels**, against a 0.02 tolerance and against
+the 0.19–3.26 the bank is already red by. It is the block cull and it is
+located — widen the reach past the map and all four Hollowmere vantages come
+back byte-for-byte. Hollowmere has the tightest fog in the tree (78 against a
+240 m square); Greyfen states the same 78, drops half its cells and does not
+move at all.
 
 ---
 
@@ -791,6 +834,15 @@ not move with it**: `audio.maxDistance` is still 70 and
 `bots.perception.engageRange` still 55. Coldharbour's streets are broken at chest
 height every few tens of metres for exactly this reason, and a ruined city gets
 that for free from rubble and collapsed frontage.
+
+**S1 has made this step worth more than it was written to be worth.** Block
+visibility landed and its distance half is inert on every map in the tree,
+because all three of the big ones state a `fogEnd` past their own diagonal —
+so the whole of finding 21's saving is the collider half, and the block half is
+waiting on this step to have anything to cull. Measured on the proving ground by
+re-filing the built map: a 550 m wall is another 0.6 ms of walk and 0.8 ms of
+frame on a map whose structures are only 1,158 of its 9,019 meshes, and on a
+ruined city that is the column that grows. **Read S1 and S8 as a pair.**
 
 The shadow window is the other half, and it is the environment's
 (`EnvironmentSpec.lighting.shadowWindow`, default 110). Shadow length is

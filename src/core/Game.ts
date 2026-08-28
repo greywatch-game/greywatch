@@ -46,6 +46,9 @@
  * it a glow is the last thing left when the world around it has gone to fog;
  * infiniteDistance exempts the moon),
  * ShadowSystem wiring (casters re-registered per round from map.visuals),
+ * WorldCulling wiring (the map filed per install, the eye pushed from `tick` in
+ * every state beside the shader's own — it decides how much of the map Babylon
+ * walks each frame and writes nothing onto any mesh),
  * pipeline.imageProcessingEnabled === false, window.__celshock debug handle.
  */
 import {
@@ -125,6 +128,7 @@ import { LightingSystem } from "../systems/LightingSystem";
 import { ShadowSystem } from "../systems/ShadowSystem";
 import { Sky } from "../systems/Sky";
 import { WaterSystem } from "../systems/WaterSystem";
+import { WorldCulling } from "../systems/WorldCulling";
 import { applyEnvironment, type EnvironmentSpec } from "../world/environment";
 import { Leash, LEASH_KILLER } from "../world/leash";
 import type { EditorSession } from "../editor";
@@ -326,6 +330,12 @@ export class Game {
    * The only render target here besides the shadow map.
    */
   private reflections: ReflectionSystem;
+  /**
+   * How much of the map the frame's own mesh walk is offered. Owns nothing
+   * that draws and writes nothing onto a mesh — see `WorldCulling`, which is
+   * `ENGINE_UPGRADE.md` S1.
+   */
+  private culling: WorldCulling;
   private atmosphere: Atmosphere;
   private sky: Sky;
   private water: WaterSystem;
@@ -862,6 +872,13 @@ export class Game {
     // this one PUBLISHES to it — the cube the glazing samples, baked from the
     // map itself. Built here so a pane material is born holding the sampler.
     this.reflections = new ReflectionSystem(this.scene, this.mats);
+    // Takes over `scene.getActiveMeshCandidates`, and offers the WHOLE scene
+    // until a map is installed — so where in this constructor it stands
+    // decides nothing: it rebuilds its list off `scene.meshes` wholesale the
+    // first time it is asked, and the scene's own observables only ever set a
+    // flag. Nothing it does is visible to a ray, a collision, a shadow caster
+    // or a cube probe; see `WorldCulling`, which is the whole argument.
+    this.culling = new WorldCulling(this.scene);
     this.mapBuilder = new MapBuilder(this.scene, this.mats, this.lighting);
     this.combat = new CombatSystem(this.scene, this.mats);
     this.grenades = new GrenadeSystem(this.scene, this.mats);
@@ -2398,6 +2415,13 @@ export class Game {
     // it cannot: `updateCamera` guards on the position, so a still camera in
     // any state costs one comparison and no walk.
     this.mats.updateCamera(this.cameraSys.camera.position);
+    // And on the same terms and for the same reason: the map around the eye,
+    // rather than the map. Every state renders and only some of them simulate,
+    // so a menu, a building card or a deploy screen with a live view behind it
+    // would otherwise be offered whatever neighbourhood the last live frame
+    // stood in — which on a map big enough for this to matter is a hole where
+    // the city is. It guards on the position exactly as the line above does.
+    this.culling.update(this.cameraSys.camera.position);
     // In every state too, and AFTER the switch above rather than inside any of
     // its arms: what decides whether the board is up is the state this frame
     // ENDS in, so a frame that deployed the player, killed them or ended the
@@ -3024,6 +3048,14 @@ export class Game {
     this.battle.setViewDistance(environment.fogEnd);
     this.ragdolls.setViewDistance(environment.fogEnd);
     this.net?.roster.setViewDistance(environment.fogEnd);
+    // And a fourth reader of the same number, for the same reason turned
+    // inside out: past the fog wall there is nothing to see, so there is
+    // nothing to WALK either. `WorldCulling` files the fresh map's meshes and
+    // decides which of them Babylon's per-frame active-mesh pass is offered —
+    // it writes nothing onto any of them, so unlike the three lines above it,
+    // and unlike every other line in this method, nothing downstream can tell
+    // it ran. See `ENGINE_UPGRADE.md` wall 1.
+    this.culling.setMap(map, environment.fogEnd);
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.

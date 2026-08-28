@@ -1,9 +1,10 @@
 # Rendering: lights, fog, ink and the sky
 
 The four light terms and the sixteen slots, the three passes that owe their own
-fog, the constraints that look like bugs if you undo them, and the painted sky.
-Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is
-the contract for `LightingSystem`, `ShadowSystem`, `CelMaterialFactory`, the
+fog, the constraints that look like bugs if you undo them, how much of the map the
+frame is allowed to walk, and the painted sky. Split out of
+[`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the contract
+for `LightingSystem`, `ShadowSystem`, `CelMaterialFactory`, `WorldCulling`, the
 shaders and `Sky`.
 
 ## The scene has (almost) no Babylon lights
@@ -1294,6 +1295,94 @@ silently, as a dev-server 500 on the module, which reads as anything but a
 comment. Escape the backtick or write the name bare. It is the same class of trap
 as the `//`-with-a-`;` one below and it bites in the opposite direction: that one
 is the preprocessor eating code, this one is JavaScript eating the shader.
+
+## Block visibility: how much of the map the frame walks
+
+`ENGINE_UPGRADE.md` wall 1, and `src/systems/WorldCulling.ts` is all of it.
+
+**The frame walks the SCENE and not the screen.** Babylon's
+`_evaluateActiveMeshes` iterates every mesh it is offered, every frame, and does
+a Map get, an `isBlocked`, a `getTotalVertices`, an `isReady` and an `isEnabled`
+on each before it has decided anything — so the cost is `O(meshes)` whatever the
+camera can see, and on this game's maps the mesh count is proportional to map
+AREA. Measured (`FINDINGS.md` 19): **1.10 us per mesh per frame**, which is 23.0
+of a 30.3 ms frame at 1500 m and 7.6 of 10.1 ms at 900/300. Frustum culling does
+not help; it is the decision this walk REACHES.
+
+**The lever is `Scene.getActiveMeshCandidates` and it must stay that lever.**
+This is the supported extension point — it is what `createOrUpdateSelectionOctree`
+replaces — it is read in exactly one place, and a mesh left out of it is skipped
+ENTIRELY rather than skipped cheaply.
+
+**`WorldCulling` writes nothing onto any mesh, and that is the whole safety
+argument rather than a stylistic preference.** No `setEnabled`, no `isVisible`,
+no `isPickable`. Four things therefore cannot see it and none of them needed a
+line of code:
+
+- **Every ray.** `InternalPick` walks `scene.meshes` with the caller's
+  predicate and has never heard of the candidate list. Verified adversarially:
+  a thousand rays across the proving ground, fired with the reach at the map's
+  fog wall and again with it wound to zero — every structure out of the frame —
+  agreed on the mesh and the distance **1000 times out of 1000**.
+- **The shadow map**, whose casters are an explicit `renderList`.
+- **Every cube probe**, whose render list is explicit too — which matters
+  because the bake now spends itself over frames and would otherwise bake holes.
+- **`moveWithCollisions`**, which walks the collidable meshes.
+
+Contrast `setEnabled(false)`, which costs all four of those AND buys less: a
+disabled mesh is still in the walk, and merely shortens what the walk does with
+it. That is what made finding 18's 0.67 us and finding 19's 1.10 us disagree
+about the same number.
+
+**Three classes of mesh, and which class a mesh is in is the design.**
+
+| class | what | offered |
+| --- | --- | --- |
+| hidden | `map.colliders` — invisible by construction | **never**, at any distance |
+| blocked | drawn map geometry carrying `metadata.block` | while the camera is within the map's `fogEnd` |
+| loose | everything else in the scene | **always** |
+
+**Most of the win is the hidden class and it is exact rather than a trade.** A
+collider proxy cannot draw — `MapBuilder.boxMesh` sets `isVisible = false` and
+nothing turns one back on — so leaving it out cannot move a pixel, and on the
+900/300 proving ground **6,349 of 9,019 scene meshes are collider boxes** the
+walk was paying full price for and rejecting on `isVisible` after it had already
+done everything expensive.
+
+**The landform is deliberately loose.** A structure past the fog wall draws
+exactly `fogColor` and stands in front of ground that draws exactly `fogColor`,
+so dropping it is invisible. The terrain, the roads and the rim are what the SKY
+is behind, and `SkySpec.horizonColor` is only required to sit CLOSE to the fog —
+a hole cut in the rim is a hole onto a gradient, and the further up the dome the
+less it is fogColor. They carry no `metadata.block`, which is what makes that
+mechanical rather than a rule anyone has to remember.
+
+**Nothing pooled may ever be block-keyed** — rigs, tracers, shards, ragdolls,
+grenades, rubble, the viewmodel, the hulls. They are loose because they move,
+and this is precisely why `scene.freezeActiveMeshes()` is a bug in this game and
+this is not.
+
+**The three numbers in `CONFIG.graphics.culling` are all margins and none of
+them is the reach.** The reach is the map's own `fogEnd`; `pad`, `step` and
+`hysteresis` decide how much slack rides around it so the answer is never late
+and never thrashes. A map whose `fogEnd` is past its own diagonal — Coldharbour,
+Harrowmead, and the proving ground on purpose — culls nothing by distance and
+gets the hidden half alone.
+
+**A cell's bounds are its MESHES' and not the block's nominal square.** The key
+is a name, not an alignment claim: terrain patches are cut on the heightfield's
+grid lines rather than on `BLOCK_SIZE` seams, and a merged block's geometry can
+hang over its own seam. Measuring what is there cannot be wrong in the direction
+that matters.
+
+**The candidate list is `scene.meshes` MINUS things, in scene ORDER, and the
+order was measured rather than assumed.** A list assembled as loose-then-cells
+holds exactly the same meshes and hands them over differently, and the order
+reaches the picture: `_activeMeshes` is what the `GlowLayer` accumulates over
+and what the transparent queue's distance sort breaks ties by, and neither is
+exact in eight bits. Two of Hollowmere's four banked vantages moved by 0.0004
+and 0.0012 mean/255 that way. In scene order fourteen of the fifteen banked
+vantages come back to four decimal places.
 
 ## Rendering constraints that look like bugs if you undo them
 

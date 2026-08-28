@@ -1,7 +1,7 @@
 /**
  * config/graphics.ts — the render pipeline's knobs, and the pooled effects.
- * Owns: glow, outlines, shadows, fog and the post chain, plus tracer/spark
- * pool sizes. Contract: `docs/rendering.md`.
+ * Owns: glow, outlines, shadows, fog, block visibility and the post chain,
+ * plus tracer/spark pool sizes. Contract: `docs/rendering.md`.
  * Gotcha: several values here look like bugs if you 'fix' them — image
  * processing off, rendering group 1, the shadow window. Read the contract.
  */
@@ -307,6 +307,39 @@ export const graphics = {
      * a look.
      */
     tint: 0.4,
+  },
+  /**
+   * How much of the map the frame's own mesh walk is offered — `WorldCulling`,
+   * and `ENGINE_UPGRADE.md` wall 1.
+   *
+   * **Every number here is a MARGIN and none of them is the reach.** The reach
+   * is the map's own `fogEnd`, because that is the distance past which a
+   * surface draws exactly `fogColor` and dropping it cannot move a pixel; these
+   * three only decide how much slack is carried around it so the answer is
+   * never late and never thrashes. A map that states a `fogEnd` past its own
+   * diagonal — which the proving ground does deliberately — culls nothing
+   * whatever these say.
+   */
+  culling: {
+    /**
+     * How far the camera travels between re-evaluations, metres. Carried ON
+     * TOP of the reach, so a block that comes inside the fog wall between two
+     * evaluations was already admitted at the last one.
+     */
+    step: 3,
+    /**
+     * Slack past the fog wall, metres. Half a merge block: a cell's distance is
+     * measured to its own bounds, which are already the tight ones, and this is
+     * for the gap between "draws pure fog" and "is provably behind something
+     * else that does".
+     */
+    pad: 24,
+    /**
+     * How much further than the `on` distance a block must be before it goes
+     * out again, metres. Pure thrash control — without it a camera standing on
+     * a boundary rebuilds the candidate list on every step it takes.
+     */
+    hysteresis: 12,
   },
   /**
    * The cubes behind the glazing: what `ReflectionSystem` bakes per map

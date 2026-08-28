@@ -2232,6 +2232,15 @@ class PaneBlocks {
         }
         const groupIndex = out.length;
         for (const p of indices) panes[p].group = groupIndex;
+        // The same key `BlockMerge.finish` writes onto a merged block, and it
+        // travels for a second reader: `WorldCulling` groups by it, and a
+        // tower's glazing has to leave the frame on the same block as the
+        // shaft it is hung on or the city keeps its windows and loses its
+        // walls. **Only on a play build** — an editor key is a PLACEMENT
+        // (`item12`), which is not a map block and must not be filed as one.
+        if (!this.owners.has(key)) {
+          merged.metadata = { ...(merged.metadata ?? {}), block: key };
+        }
         out.push({ mesh: merged as Mesh, panes: indices, block: key });
         meshes.push(merged as Mesh);
         // Editor builds only, and AFTER the merge rather than before it: a
@@ -2563,6 +2572,13 @@ function inkTwin(mesh: Mesh, mats: CelMaterialFactory): Mesh | null {
     noGlow: true,
     noShadowCaster: true,
     noReflect: true,
+    // The block travels, because a twin came from the same one its source did
+    // and `WorldCulling` files both by it. A twin left behind when its source
+    // goes out of the frame is an INVERTED HULL drawn on its own, which is a
+    // solid silhouette in the fog rather than a line around anything. It
+    // cannot reach `ReflectionSystem.encloses`, the other reader of this key,
+    // because `noReflect` above takes it out of every probe's list first.
+    block: mesh.metadata?.block,
   };
   return twin;
 }

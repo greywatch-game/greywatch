@@ -1931,9 +1931,13 @@ vantage, which is what the split was for.
   table above is still a measurement of a map whose glass reflects nothing.
 - **The placement loop's `n^2.9`**, and whether `AssetContainer` flattens it. It
   is worth more than every worker in S5: 159 s of a 183 s build.
-- **Wall 1 at 1.10 µs per scene mesh**, which is what block visibility has to
-  beat. At 900/300 it is already 7.6 ms of a 10.1 ms frame — the frame is a walk
-  at a size the rest of the engine holds comfortably.
+- ~~**Wall 1 at 1.10 µs per scene mesh**, which is what block visibility has to
+  beat.~~ **MOSTLY CLOSED by `ENGINE_UPGRADE.md` S1 — see finding 21.** The walk
+  is 7.60 ms to 2.50 and the frame 9.80 to 4.30 on the same proving ground, and
+  the reason it was that large is not what this entry assumed: **6,349 of the
+  9,019 meshes are INVISIBLE collider proxies**. What is left is 0.94 µs over
+  2,670 candidates, so the walk is still the largest single line in the frame
+  and S8's fog wall is what has the rest of it.
 - **Nothing here was measured with sixteen bots fighting.** The player spawns
   and the round runs, but the proving ground's flags are hundreds of metres
   apart and no engagement was forced. Bot cost at this scale is untested.
@@ -1991,5 +1995,151 @@ the current machine state and diff the new bank against the old one tile by
 tile: if the difference is a uniform sub-LSB shift it is the backend, and if it
 is concentrated on the water and the glazing it is a third unpinned clock and
 `freeze` is where it belongs.
+
+---
+
+## 21. The frame's mesh walk is two thirds collider boxes, and a candidate list is what takes them out of it
+
+**Status:** measured on the Windows box, landed. **This is `ENGINE_UPGRADE.md`
+S1** and it takes most of wall 1 down. It also corrects that wall's own reading
+of what the meshes ARE: the walk is not mostly buildings, it is mostly
+INVISIBLE COLLIDER PROXIES that Babylon pays full price for and rejects on
+`isVisible` after it has already done everything expensive.
+
+`src/systems/WorldCulling.ts` replaces `Scene.getActiveMeshCandidates` and
+**writes nothing onto any mesh** — no `setEnabled`, no `isVisible`, no
+`isPickable`. `docs/rendering.md` carries the contract; what follows is only
+the measurement.
+
+### The instrument, and the lever
+
+Windows box (RTX 4070 Ti SUPER), headless Chromium via `channel: "chromium"`,
+`--disable-frame-rate-limit --disable-gpu-vsync`, 1920x1080, `spawnPlayer()` so
+the round is LIVE rather than sitting under the deploy lid, warm 10 s past the
+compile stall, medians over 8 s. Findings 17–19's protocol, so the figures are
+comparable to theirs.
+
+**One process, one lever, four arms.** The lever is
+`scene.getActiveMeshCandidates` and nothing else: the OFF arm puts Babylon's own
+`_getDefaultMeshCandidates` back — the whole of `scene.meshes`, which is what
+the tree did before this — and the ON arm hands the pointer back. OFF/ON/OFF/ON
+interleaved in the same boot, so nothing about the map, the camera, the
+pipelines or the thermal state differs between them.
+
+### What the walk is made of
+
+| | scene meshes | hidden | blocked | loose | candidates |
+| --- | --- | --- | --- | --- | --- |
+| hollowmere | 1,935 | 697 | 114 | 1,124 | 1,178 |
+| greyfen | 2,006 | 672 | 213 | 1,121 | 1,230 |
+| coldharbour | 2,230 | 805 | 229 | 1,196 | 1,425 |
+| harrowmead | 2,204 | 647 | 313 | 1,244 | 1,557 |
+| **proving 900/300** | **9,019** | **6,349** | **1,158** | **1,512** | **2,670** |
+
+**On the proving ground 70% of the scene is collider boxes**, and taking them
+out is exact rather than a trade — a collider cannot draw, so no pixel can move.
+The `blocked` column is the distance-culled half and is the smaller one at every
+size.
+
+### What it is worth
+
+| median ms | hollowmere | greyfen | coldharbour | harrowmead | **proving** |
+| --- | --- | --- | --- | --- | --- |
+| `_evaluateActiveMeshes` off | 0.70 | 1.10 | 2.60 | 2.70 | **7.60** |
+| `_evaluateActiveMeshes` on | 0.40 | 0.50 | 2.00 | 2.20 | **2.50** |
+| | **−43%** | **−55%** | **−23%** | **−19%** | **−67%** |
+| frame off | 2.40 | 3.70 | 11.50 | 12.30 | **9.80** |
+| frame on | 1.60 | 2.30 | 11.20 | 12.20 | **4.30** |
+| | **−33%** | **−38%** | −2.6% | −0.8% | **−56%** |
+
+**The proving ground's frame halves.** The two big maps' frame deltas are under
+the 8% floor the measurement protocol says to read as noise and must not be
+quoted as wins; their `_evaluateActiveMeshes` deltas are 3 to 8 times that floor
+and are real. Coldharbour and Harrowmead both state a `fogEnd` past their own
+diagonal, so all 45 and all 44 of their cells stay on and every millisecond
+above is the collider half alone.
+
+The marginal rate on the proving ground is **(7.60 − 2.50) / (9,019 − 2,670) =
+0.80 µs per mesh taken out of the walk**, against finding 19's 1.10 µs per mesh
+in it — the difference being that finding 19's figure came from two map extents
+whose meshes are not the same meshes.
+
+**What is left is still a walk.** 2.50 ms over 2,670 candidates is 0.94 µs each,
+so the same lever has more in it as soon as a map has a fog wall inside its own
+diagonal — which is S8.
+
+### What the block half is worth, which the proving ground cannot show on its own
+
+The proving ground states `fogEnd: 2400` deliberately (see its
+`environment.ts`), so nothing is culled by distance there. Re-filing the same
+built map at the wall S8 will want, in one process:
+
+| reach, m | candidates | cells on | `_evaluateActiveMeshes` | frame |
+| --- | --- | --- | --- | --- |
+| 2400 (as shipped) | 2,670 | 280/280 | 2.80 | 4.80 |
+| 650 | 2,180 | 163/280 | 2.30 | 4.20 |
+| 550 | 2,035 | 127/280 | 2.20 | 4.00 |
+| 450 | 1,908 | 97/280 | 2.00 | 3.70 |
+
+So a 550 m wall is another **0.6 ms of walk and 0.8 ms of frame** on top, on a
+map whose structures are only 1,158 of its meshes. On a denser map — a ruined
+city rather than a generated block grid — that column is the one that grows.
+
+### A ray cannot see any of it, and that was tested adversarially
+
+The whole safety argument is that picking walks `scene.meshes` and has never
+heard of the candidate list. **1,000 seeded rays across the 900 m play square**,
+939 of which hit something, fired twice out of the same process: once with the
+reach at the map's own fog wall and once with it wound down to ZERO, which
+leaves every structure on the map out of the frame (candidates 2,670 → 1,512).
+**The two arms agreed on the mesh and on the distance 1,000 times out of 1,000.**
+
+### The picture, and the one place it moved
+
+`bank.mjs --check` is RED on an unmodified tree (finding 20), so the usable form
+is the DIFFERENTIAL one: run it either side of the change against the same fixed
+reference and require the same means. Two runs of the unmodified tree reproduce
+Hollowmere's four vantages to four decimal places **and to the fourth decimal of
+the pixel SHARE**, which is what made the reading below possible at all — and is
+a fact finding 20 wanted: cross-process residue on this map is zero, not the
+0.14 Harrowmead showed.
+
+**Fourteen of the fifteen banked vantages are unmoved to four decimal places.**
+The exception is Hollowmere:
+
+| vantage | before | after |
+| --- | --- | --- |
+| hollowmere/menu | 7.8133% of pixels, mean 0.627/255 | 7.8117%, mean 0.627 |
+| hollowmere/lanterns | 7.3892%, mean 1.5051/255 | 7.3877%, mean **1.5050** |
+
+That is **0.0001 mean/255 over 0.0016% of the frame** — of the order of thirty
+pixels — against a 0.02 tolerance, and against the 0.19 to 3.26 the bank is
+already red by.
+
+**It is the block cull, and it is located.** With the reach widened past the map
+so nothing is culled by distance, all four Hollowmere vantages come back
+byte-for-byte: 7.8133% / 0.627 and 7.3892% / 1.5051. Hollowmere is the map with
+the tightest fog in the tree — `fogEnd: 78` against a 240 m square — and it is
+one of only two of the four where the cull engages at all. Greyfen states the
+same 78 and drops half its cells with **no** movement at any of its four
+vantages, which is what says this is a Hollowmere geometry fact rather than a
+rule being wrong.
+
+### What is open
+
+- **What those thirty pixels ARE.** The hypothesis the design already names is
+  that they are sky: a structure past the wall draws pure `fogColor` and is
+  backed by ground that draws pure `fogColor`, but a roofline poking above the
+  ridge line is backed by the DOME, whose `horizonColor` is only required to sit
+  CLOSE to the fog. Nobody would see thirty pixels; it is recorded because a
+  rule that is exact on three maps and approximate on the fourth should say so.
+- **Nothing here was measured with sixteen bots FIGHTING**, exactly as finding
+  19 was not. `spawnPlayer()` runs the round and the rigs are posed and drawn,
+  but the proving ground's flags are hundreds of metres apart.
+- **The cull cell is the 48 m merge block**, because that is the key that
+  already exists. Whether a coarser or a finer cell is better is S6's question
+  and this has not asked it.
+- **The nav arrays are untouched by this**, correctly — they read `WorldBox`es
+  and the terrain field rather than meshes. Wall 3 is entirely open.
 
 ---
