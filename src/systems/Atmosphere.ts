@@ -67,6 +67,15 @@ export class Atmosphere {
    * is also what makes "no system yet" and "wrong size" one branch in `fit`.
    */
   private capacity = 0;
+  /**
+   * Half the side of the camera-local emit box, or null when the field is
+   * emitted into the map as a whole.
+   *
+   * Held rather than re-read because `apply` runs once per `installMap` and
+   * `update` runs every frame in every state: the per-frame half has to be a
+   * field test and no spec lookup at all.
+   */
+  private follow: number | null = null;
   private texture: DynamicTexture;
 
   constructor(private scene: Scene) {
@@ -164,10 +173,31 @@ export class Atmosphere {
     const emitRate = spec.count / 3;
     const ps = this.fit(emitRate);
 
-    const hx = width / 2 - 1;
-    const hz = depth / 2 - 1;
+    // The emit box, and which of the two shapes it is.
+    //
+    // **The default is the map, and it is the shape that stopped scaling.**
+    // A field emitted into `map.size` squared holds `count` motes over an area
+    // that grew fourteen times between the first map and the current largest,
+    // so the same number is two different densities and the big one is air
+    // nobody can see. `ParticleSpec.volume` is the other shape: a box centred
+    // on the eye, which spends the whole budget inside the view and makes
+    // `count` mean motes per cubic metre on every map. See that field.
+    //
+    // The height band is world-absolute either way and deliberately does NOT
+    // follow the camera. Dust sits in a layer over the ground; a band that
+    // rode the eye would put motes level with a roof the moment somebody
+    // climbed onto one, and none under them.
+    const span = spec.volume === undefined ? 0 : Math.min(spec.volume, width);
+    this.follow = span > 0 ? span / 2 : null;
+    const hx = this.follow ?? width / 2 - 1;
+    const hz = this.follow ?? depth / 2 - 1;
     ps.minEmitBox = new Vector3(-hx, 0.2, -hz);
     ps.maxEmitBox = new Vector3(hx, 11, hz);
+    // A field that is NOT following goes back to the origin, or a map with no
+    // volume inherits wherever the last map's eye left the emitter — the
+    // system is reused across installs and only rebuilt when the buffer size
+    // moves.
+    if (this.follow === null) (ps.emitter as Vector3).setAll(0);
 
     const c = Color4.FromHexString(spec.color.padEnd(9, "f"));
     ps.color1 = new Color4(c.r, c.g, c.b, spec.emissive ? 0.85 : 0.5);
@@ -217,10 +247,31 @@ export class Atmosphere {
     ps.start();
   }
 
+  /**
+   * Centres a camera-local field on the eye. A no-op for a field emitted into
+   * the map, which is every map that states no `volume`.
+   *
+   * **Called every frame in every state**, beside `mats.updateCamera` and
+   * `culling.update` and for their reason: every state renders and only some
+   * of them simulate, so a menu or a deploy screen with a live view behind it
+   * would otherwise be offered whatever air the last live frame stood in —
+   * which on a map big enough to need this is a hole where the dust is.
+   *
+   * Only X and Z. The height band is the ground's, not the eye's — see
+   * `apply`.
+   */
+  update(eye: Vector3): void {
+    if (this.follow === null || !this.system) return;
+    const at = this.system.emitter as Vector3;
+    at.x = eye.x;
+    at.z = eye.z;
+  }
+
   dispose(): void {
     this.system?.dispose(false);
     this.system = null;
     this.capacity = 0;
+    this.follow = null;
     this.texture.dispose();
   }
 }

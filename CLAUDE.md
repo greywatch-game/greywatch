@@ -430,7 +430,10 @@ them**, and they are the three biggest.
 most of them: `blockSize` and `terrainBlock` at 96 (S6), a `fogEnd` (560) inside
 its own 1,273 m diagonal, which is the first time block visibility has had
 anything to cull (S1 and S8), a `bodyDrawDistance` (300) inside THAT, which no
-other map states, and `surfaces: 5`. Its layout was **SEEDED by
+other map states, and `surfaces: 5`. It is also the first to state a
+`ParticleSpec.volume` — the mote field emitted around the EYE rather than over
+the whole square, without which `count` is a density that scales with a map's
+AREA and a 900 m one is air nobody can see. Its layout was **SEEDED by
 `npm run sarab`** rather than typed — a 900 m town is some hundreds of buildings
 and its floor is fifty thousand numbers — and the emitted `layout.ts` is an
 ordinary layout file the editor opens, patches and saves like any other.

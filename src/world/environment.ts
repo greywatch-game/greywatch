@@ -48,6 +48,37 @@ export interface ParticleSpec {
    * by a factor of four in how fast their air moves.
    */
   drift?: [number, number];
+  /**
+   * The side, in metres, of a box centred on the CAMERA that the field is
+   * emitted into. Absent emits into the whole map, which is what every map
+   * did before this existed and what all but one still does.
+   *
+   * **It exists because `count` was never a headcount and had quietly stopped
+   * being a density either.** `Atmosphere.apply` sizes the emit box to
+   * `map.size` squared by 11 m tall, so the same `count` spread over
+   * Hollowmere's 240 m square and Sarab's 900 m one is two fields nineteen
+   * times apart in motes per cubic metre — and the second one is air you
+   * cannot see. Hollowmere's own spec reasons about its number from a density
+   * it measured; the number was then copied down to a map fourteen times the
+   * area, where it means something else entirely.
+   *
+   * **The honest fix is not a bigger count, because most of a big map's motes
+   * are emitted where nobody is.** Sarab's `fogEnd` is 560 against 900 m of
+   * play, so at any moment more than half the field is behind the haze being
+   * simulated and drawn for nothing. A box that follows the eye spends the
+   * whole budget inside the view and makes `count` mean motes per cubic metre
+   * again, which is the unit every existing map's value was actually judged
+   * in.
+   *
+   * **What it costs is that a mote is emitted at full alpha**, so the box's
+   * edge is a place things appear. That is why this is a metre count rather
+   * than a flag: it wants to be well past `fogStart`, so a spawn happens in
+   * air already thick enough to hide it, and well past what a player crosses
+   * in a mote's ~14 s life (about 70 m on foot, more in a hull) so the
+   * trailing edge never overtakes the field. Clamped to the map, since a box
+   * bigger than the world is the world.
+   */
+  volume?: number;
 }
 
 /**

@@ -54,6 +54,42 @@ const foliageLayers = {
    * that the two do not look like they are standing in different weather.
    */
   understory: { reach: 1, amount: 0.5 },
+  /**
+   * Hung cloth: a drape over a parapet, a rag tied to a compound wall. Two to
+   * eight metres up, and the first layer here that is not a plant.
+   *
+   * **This layer is the ramp being used AGAINST its own grain, and both
+   * numbers are the price of that.** The weight is a function of HEIGHT ABOVE
+   * THE GROUND (`world/vertexShading.ts`), which is exactly right for a thing
+   * planted at the bottom and free at the top — a blade, a bole, a crown — and
+   * exactly inverted for a thing fixed at the TOP and free everywhere else.
+   * A hung sheet gets its LARGEST travel at the one edge that is nailed down
+   * and its smallest at the hem that should be swinging. There is no per-layer
+   * setting that fixes this, because the anchor is not knowable where the
+   * weight is written: the bake runs after `BlockMerge`, by which point a
+   * whole block's washing is one mesh and no drape has a top of its own any
+   * more. `FINDINGS.md` 33 is the open thread.
+   *
+   * **So the layer is tuned so that the inversion cannot be seen, and the SHAPE
+   * carries the effect instead.** `reach` at 5 m spans the heights cloth is
+   * actually hung at, so a drape gets a real gradient down its own length — a
+   * one-storey parapet's head travels 1.5x its hem, which reads as the sheet
+   * shearing rather than sliding — and `amount` at 0.28 puts the largest
+   * travel anywhere in the layer at 0.095 m. That number is not taste: every
+   * drape in `kit/desert.ts` hangs under a coping that oversails its wall by
+   * 0.08, so a head that never travels further than the oversail can never
+   * emerge from under it, whatever the wind's bearing does relative to the
+   * wall. Cloth that BREATHES rather than swinging, in other words, which is
+   * the honest reading of a sheet in a steady wind and is what the amplitude
+   * can be held to honestly.
+   *
+   * **What makes it read as cloth is `drape` and not this**: three strips of
+   * differing length, width, hang and proudness under one rolled head, all
+   * marked, so the assembly has no internal join to shear and a ragged
+   * silhouette to be seen by. A single box on this layer is a slab that
+   * translates, which is what it was before and what it looked like.
+   */
+  cloth: { reach: 5, amount: 0.28 },
 } as const;
 
 export const wind = {

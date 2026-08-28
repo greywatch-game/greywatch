@@ -2486,6 +2486,10 @@ export class Game {
     // stood in — which on a map big enough for this to matter is a hole where
     // the city is. It guards on the position exactly as the line above does.
     this.culling.update(this.cameraSys.camera.position);
+    // And on exactly those terms again, for a map whose dust is emitted around
+    // the eye rather than over the whole square (`ParticleSpec.volume`). A
+    // no-op for every map that states none, which is all of them but one.
+    this.atmosphere.update(this.cameraSys.camera.position);
     // In every state too, and AFTER the switch above rather than inside any of
     // its arms: what decides whether the board is up is the state this frame
     // ENDS in, so a frame that deployed the player, killed them or ended the

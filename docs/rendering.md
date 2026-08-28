@@ -392,6 +392,44 @@ less, so the hem TRAILS the branch instead of swinging rigidly with it, which is
 the one thing a hand-authored version would have had to fake. The collar itself
 is left out, because it is a thickening on the bole and the bole does not move.
 
+**Cloth is the ramp's inverse case, and the ramp LOSES it.** Everything above is
+planted at the bottom and free at the top, which is the shape the ramp draws:
+weight rises with height, so a root is still and a tip travels. A drape over a
+parapet and a rag on a compound wall are fixed at the TOP and free everywhere
+else, so the same ramp hands a hung sheet its largest travel at the one edge
+that is nailed down and its smallest at the hem that should be swinging. There
+is no setting that fixes this. The weight is written by a bake that runs after
+`BlockMerge` — by which point a whole block's washing is one mesh with no drape
+tops in it any more — off the one quantity that bake has, which is height above
+the terrain. `FINDINGS.md` 33 carries what a hanging ramp would take.
+
+**So the layer is tuned so the inversion cannot be SEEN, and the geometry
+carries the effect instead.** `reach` at 5 m spans the heights cloth is hung at,
+so a drape gets a real gradient down its own length (a one-storey parapet's head
+travels 1.5x its hem, which reads as shear rather than as sliding), and `amount`
+at 0.28 caps the largest travel anywhere in the layer at 0.095 m — pinned to the
+0.08 the coping above every drape oversails its wall by, so a head that never
+travels further than the oversail can never emerge from under it whatever the
+wind's bearing does relative to that wall. Cloth that breathes rather than
+swings, which is the honest reading of a sheet in a steady wind and the one an
+amplitude this small can be held to.
+
+**What makes it read as cloth is the four boxes, and the argument is the one mud
+brick already makes.** These surfaces carry no texture, so silhouette is the
+whole of what a material is — and a sheet drawn as a single box is a slab with a
+level hem, one flat face and a constant thickness, which on this layer also
+translates rigidly because every vertex on one box gets very nearly one weight.
+`kit/desert.ts`'s `drape` is a rolled head and three strips under it differing
+in width, drop, proudness and hang, so the hem is ragged, the folds band the
+light differently and the assembly has depth. All four are marked, which is what
+leaves it no internal join to shear: the only step anywhere is where the roll
+meets the wall, and that is what the coping is hiding.
+
+The other half of the rule is unchanged and load-bearing: a drape emits no
+collider and nothing was ever measured against it, so `sway.ts`'s prohibition on
+marking anything a collider stands in for is satisfied by construction rather
+than by care.
+
 Two consequences are worth stating plainly, because both look like bugs:
 
 - **A swaying merge group leaves BABYLON's outline pass and draws its own ink

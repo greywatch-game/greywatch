@@ -104,13 +104,29 @@ export const SarabEnvironment: EnvironmentSpec = {
    */
   bodyDrawDistance: 300,
   /**
-   * Ground haze, kept very thin. A desert has shimmer near the floor rather
-   * than mist, and the honest version of shimmer is a thin warm term over the
-   * first couple of metres — anything stronger reads as a wet morning.
+   * Ground haze: a desert has shimmer near the floor rather than mist, and the
+   * honest version of shimmer is a warm term low down that builds with
+   * distance.
+   *
+   * **It carries more of this map than of any other, and the reason is the gap
+   * between the two atmosphere terms.** The mist ramp is fully in by 51 m
+   * (`CelShader`, `clamp((dist - 6) / 45)`) and `fogStart` is 150, so on this
+   * map the band from fifty metres to a hundred and fifty is the ONLY place
+   * either term can put air — and at 0.05 over 2.4 m there was none, which is
+   * most of why the town seen from a roof read as a diagram. Every other map in
+   * the tree closes that gap with a `fogStart` inside 40 m; this one cannot,
+   * because a haze that reached into a seven-metre alley would be smoke.
+   *
+   * So it is raised and, more importantly, made TALLER: at 4.5 m the falloff
+   * still has two thirds of its strength at head height, which is what makes
+   * the mid-distance streets sit IN heat rather than putting a band across
+   * their feet. It stays well under the wet-morning reading — 0.14 against
+   * Hollowmere's 0.45 — and the ramp's own 6 m dead zone keeps your own boots
+   * out of it.
    */
   mistColor: "#cabb9b",
-  mistHeight: 2.4,
-  mistStrength: 0.05,
+  mistHeight: 4.5,
+  mistStrength: 0.14,
   lighting: {
     color: "#fff2d6",
     intensity: 1.02,
@@ -128,14 +144,53 @@ export const SarabEnvironment: EnvironmentSpec = {
      * Bounce off sand, which is warm and strong — the shadowed side of a wall
      * in a desert is nothing like the shadowed side of a wall in a valley, and
      * an ambient this high would be a mistake on any other map here.
+     *
+     * **It came DOWN from 0.42, and the term below came up to pay for it.**
+     * Ambient is the one light term that lands on every face equally, so it is
+     * also the one that flattens: at 0.42 a wall out of the sun sat at 0.23
+     * against the key's 1.02, and every alley in the old town read as the same
+     * value as the street outside it. At 0.30 a shaded face is 28% deeper and a
+     * LIT face is unmoved, because the key dominates it either way — which is
+     * the whole of the trade.
      */
     ambientColor: "#8b7f68",
-    ambientIntensity: 0.42,
-    /** The sky's own fill: pale, slightly blue, and what keeps roofs reading. */
+    ambientIntensity: 0.3,
+    /**
+     * The sky's own fill: pale, slightly blue, and what keeps roofs reading.
+     *
+     * **Raised by very nearly what the ambient above lost, and the SWAP is the
+     * point rather than a way of holding the exposure.** This term is applied
+     * by `n.y`, so it reaches horizontals and nothing else: paying for an
+     * ambient cut out of it leaves every up-facing surface — the sand, the
+     * roofs, the parapets, the ledges — at the brightness it already had, and
+     * takes the whole difference out of the vertical faces. What the map gains
+     * is a HUE split between the two, which is what a desert at eleven in the
+     * morning actually is: blue sky bounce on everything that looks up, warm
+     * sand bounce on everything that looks sideways. On a palette this
+     * deliberately narrow in hue (see the header) it is the only separation
+     * available that costs nothing.
+     *
+     * **The sand's brightness is load-bearing and was held to it**, because
+     * `rays.threshold` below is a luminance test with no depth pass and the
+     * floor is the brightest thing in the world that is not sky. The `sand`
+     * ramp tops out at 1.22 of `floorColor` (`world/textures.ts`), which under
+     * the old pair put the brightest lit sand at 0.82 luma against a 0.9
+     * threshold. Under this pair it is 0.82. Anything here that raises the SUM
+     * on an up-facing surface spends that margin, and the shafts start coming
+     * off the ground.
+     */
     skyLightColor: "#b2c2d8",
-    skyLightIntensity: 0.26,
+    skyLightIntensity: 0.34,
+    /**
+     * Raised from 0.1, and on this map it is a legibility term rather than a
+     * look. The rim is gated off near-level surfaces (`CelShader`), so it
+     * reaches silhouettes and only silhouettes: a body, a parapet or a wall
+     * corner standing against 560 m of haze very nearly its own colour. That
+     * is the case this map has more of than any other in the tree, and 0.1 was
+     * not enough of an edge to find one by.
+     */
     rimColor: "#fff0cc",
-    rimIntensity: 0.1,
+    rimIntensity: 0.18,
     /**
      * 150 m against the default 110 and Coldharbour's 200. The map is four
      * times Coldharbour's extent and its sun is more than twice as high, so
@@ -160,8 +215,47 @@ export const SarabEnvironment: EnvironmentSpec = {
   particles: {
     color: "#f5dcb4",
     emissive: true,
-    count: 3000,
-    size: 0.12,
+    /**
+     * **A density, and the first one in the tree that is actually stated as
+     * one** — `volume` below is what makes it one. Before that field existed
+     * the emit box was the whole map, so 3,000 over a 900 m square was
+     * Hollowmere's 4,000 over a 240 m one spread nineteen times thinner, which
+     * is dust nobody could see.
+     *
+     * **What it is NOT is Hollowmere's density, and trying that first is what
+     * settled the number.** Matching it exactly — 43 cubic metres a mote
+     * against Hollowmere's 48 — put twenty times more dust in front of the eye
+     * than this map had before and read as weather rather than as air. The two
+     * fields are not comparable per cubic metre and it should have been
+     * obvious from the two specs: Hollowmere's motes are ash, `emissive: false`
+     * and drawn with STANDARD blending against a dark valley, and these are
+     * lit dust, `emissive: true` and drawn ADDITIVE against pale sand under a
+     * high sun. Every mote here is worth several of one of those. 1,600 is
+     * about a third of Hollowmere's density and roughly six times what this map
+     * used to put in the view, which is a hot afternoon with something moving
+     * in it.
+     *
+     * `size` is the lever rather than the count — Hollowmere's file is where
+     * that argument is made in full — so it carries the visibility instead:
+     * 0.13, barely over the 0.12 every other map states, because on this one a
+     * mote is additive and does not need the help.
+     */
+    count: 1600,
+    size: 0.13,
+    /**
+     * 260 m, and the first map to state one.
+     *
+     * Three bounds and they leave very little room. It has to sit well past
+     * `fogStart` (150), so that a mote — which is emitted at full alpha —
+     * appears in air already thick enough to hide the appearing; well past
+     * what a player crosses in the ~14 s a mote lives, which is about 70 m on
+     * foot and roughly double that in a hull, so the trailing edge never
+     * overtakes the field; and well inside `fogEnd` (560), or the budget goes
+     * straight back to being spent on motes drawn as fog. 260 clears the first
+     * by 110 m, the second by better than half, and spends nothing past the
+     * haze.
+     */
+    volume: 260,
     riseSpeed: 0.03,
     drift: [1.05, 0.85],
   },
@@ -184,7 +278,17 @@ export const SarabEnvironment: EnvironmentSpec = {
     moonColor: "#fffbec",
     moonGlowColor: "#ffeec4",
     cloudColor: "#a3abb6",
-    cloudOpacity: 0.28,
+    /**
+     * Raised from 0.28, and it is the cheapest thing on this map: the dome is
+     * baked ONCE, so cloud costs the frame nothing at all and a thin deck was
+     * buying nothing with it. What a deck is FOR here is distance — the rim is
+     * 750 m out and drawn almost entirely in `fogColor`, so the sky above it is
+     * most of what says how far away that is, and an empty sky says nothing. It
+     * also gives the shafts something to be occluded by: at `rays.threshold`
+     * 0.9 the lit tone below is the only thing in the world besides the disc
+     * that crosses it, and there is now more of it.
+     */
+    cloudOpacity: 0.52,
     cloudLitColor: "#fff2d4",
     cloudLitStrength: 0.72,
     discRadius: 10,
@@ -223,7 +327,7 @@ export const SarabEnvironment: EnvironmentSpec = {
    * the same reason and at the same distances.
    */
   grade: {
-    vignette: 0.16,
+    vignette: 0.21,
     grain: 0.011,
     aberration: 0.06,
   },

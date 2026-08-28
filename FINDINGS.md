@@ -3709,3 +3709,71 @@ lever 1, and it is the whole of what was needed.
   walked surface and the nav graph has 380,598 of them.
 
 ---
+
+---
+
+## 33. The sway ramp cannot hang cloth, and the drapes are dressed around it rather than fixed
+
+**Status:** derived from the code and confirmed on screen; worked around, not
+solved.
+
+### What the ramp is
+
+`world/vertexShading.ts` writes one number per vertex into the RED channel and
+it is `swayWeight(y - terrain.heightAt(x, z), layer)` — height above the ground
+under that vertex, run through `(h / reach)^1.6 * amount`. Every reader of it is
+foliage, and for foliage it is exactly right: a blade, a bole and a crown are
+all planted at the bottom and free at the top, so weight rising with height is
+the shape the thing actually has.
+
+**Hung cloth is the same shape upside down**, and the ramp gets it exactly
+backwards. A drape over a parapet is fixed at its head and free at its hem, so
+the ramp gives it the most travel where it is nailed and the least where it
+should swing. Two visible consequences, both seen before the workaround: the
+head shears out from under whatever it hangs on, and — with a `reach` set low
+enough to stop that by putting the whole sheet on the ramp's flat top — the
+sheet stops having any internal gradient at all and translates as one rigid
+slab. Measured that way on Sarab: every cloth vertex in the town baked to
+exactly `amount`, with zero spread.
+
+### Why it cannot be fixed where the weight is written
+
+The weight would have to be a function of distance BELOW the sheet's own
+anchor, and the anchor is not knowable at the point the bake runs. The bake is
+after `BlockMerge` (it has to be — `VertexData.merge` throws when one mesh in a
+group has `colors` and another does not), so by then a whole 96 m block's
+washing is one mesh: no drape, no part, no local frame, and a bounding-box top
+that belongs to the block rather than to any sheet in it. This is the same
+constraint `world/sway.ts`'s header already documents for the per-part anchor a
+leaf would want, arriving at a case where the positional estimate does not
+happen to be right.
+
+### What was done instead
+
+`CONFIG.wind.foliage.layers.cloth` is tuned so the inversion is below notice
+rather than corrected: `reach` 5 spans the heights cloth is hung at so a drape
+shears down its own length, and `amount` 0.28 caps the largest travel in the
+layer at 0.095 m against the 0.08 m every drape's coping oversails its wall by.
+The look is carried by `kit/desert.ts`'s `drape` — a rolled head and three
+strips differing in width, drop, proudness and hang, all marked so there is no
+internal join.
+
+### What would settle it, in rough order of cost
+
+- **An anchor channel.** The BLUE vertex channel is written 0 today
+  (`vertexShading.ts` sets `colors[i * 4 + 2] = 0`) and is the only free one.
+  A builder that marked a mesh could stash its own top there before the merge —
+  the merge concatenates vertex data, so a per-vertex value survives it where a
+  per-mesh one does not — and the bake would read `anchor - y` instead of
+  `y - terrain`. That is one channel, one branch in the bake keyed on a `hang`
+  flag in the layer, and no shader change at all: the red channel still means
+  "how much this vertex moves".
+- **A second sway term in the shader**, pivoting about the anchor rather than
+  translating, which is what would make a hem actually swing rather than shear.
+  Costs a uniform and a branch on a path that is already the hottest vertex
+  shader in the game, and wants the channel above first regardless.
+- **Leave it.** The amplitude is small, the geometry does the reading, and no
+  other map has cloth. This is only worth opening if a second map hangs
+  something bigger — an awning over a souk lane, a tent — where the shear would
+  be across a two-metre span rather than a one-metre one.
+

@@ -56,18 +56,25 @@
  *
  * ## The palette
  *
- * Nine colours, and the count is the point. A map's albedo palette is 128
+ * Ten colours, and the count is the point. A map's albedo palette is 128
  * entries shared with every other builder it uses, and a vernacular that reads
  * needs a small number of tones differing in VALUE rather than a large number
  * differing in hue: mud brick, its own shade, its limewashed variant, a roof, a
  * beam, a window with nothing behind it, poured concrete's two greys borrowed
- * from `kit/core.ts`, sandbag hessian, scorch — and one saturated accent, the
- * dome, which is the only chroma on the map and the thing you navigate by from
- * four hundred metres.
+ * from `kit/core.ts`, sandbag hessian, scorch, bleached cloth — and one
+ * saturated accent, the dome, which is the only chroma on the map and the thing
+ * you navigate by from four hundred metres.
+ *
+ * **The tenth is `CLOTH` and it is the only one that MOVES**, which is why it
+ * is a colour of its own rather than a reuse: it is the whole of what the wind
+ * reaches in this town, it merges into one group per block because every drape
+ * in the file shares it, and it is pale and unsaturated for the two reasons on
+ * the constant itself.
  */
 import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
+import { marksSway } from "../sway";
 import {
   ALLOY,
   Build,
@@ -115,6 +122,27 @@ export const SCORCH = "#3d3730";
  * thing that survives it. Nothing else in this file is allowed any.
  */
 export const TILE_BLUE = "#2f6f83";
+
+/**
+ * Bleached cloth: everything in the town that hangs and moves.
+ *
+ * **A tenth colour in a file whose header makes a point of there being nine,
+ * so it owes an argument.** The town was built and then left static: 194
+ * houses and 298 wall runs of geometry with nothing on any of it that the wind
+ * reaches, on a map whose only other moving thing is eleven palms. What a
+ * hung sheet buys is the one cue a midday desert cannot get from its light —
+ * that the air is going somewhere — and it buys it at one material for the
+ * whole town, because every drape in this file is this colour and merges into
+ * one group per block.
+ *
+ * **It is pale and it is not chroma, and both halves are rules.** Pale,
+ * because it hangs on `MUDBRICK` and has to separate from it in VALUE — the
+ * ladder this palette is — and low chroma because the map's saturation budget
+ * is spent: `TILE_BLUE` above and the two liveries are what a player navigates
+ * and identifies by out to `fogEnd`, and washing that competed with either
+ * would be spending a gameplay signal on dressing.
+ */
+export const CLOTH = "#c9bda3";
 
 // --- the shared geometry -----------------------------------------------------
 
@@ -249,6 +277,129 @@ function laneFlight(
  * rail outboard of the surface for exactly this reason, and here the wall below
  * is already outboard.
  */
+/**
+ * A stable 0..1 from a builder's own parameters.
+ *
+ * **Cloth has to vary and world-building code may not call `Math.random()`** —
+ * the nav graph would differ between page loads (`CLAUDE.md`). A structure
+ * builder is also the one place in the world layer with no seed to hand:
+ * scatter props are given one by `MapBuilder`, and a `BuilderKind` is handed
+ * only its params, because everything else in this file is the same object
+ * wherever it stands.
+ *
+ * So the variation is taken from the params themselves, which is honest rather
+ * than a workaround: two houses with the same footprint, the same storeys and
+ * the same door already ARE the same house, and giving them different washing
+ * would be the only thing about them that was not. What separates them on the
+ * ground is `rotY` and where the wind is coming from.
+ */
+function clothHash(...ns: number[]): number {
+  let h = 0x9e3779b9;
+  for (const n of ns) {
+    h ^= Math.round(n * 64) + 0x9e3779b9 + (h << 6) + (h >>> 2);
+    h = h >>> 0;
+  }
+  return (h >>> 8) / 0x1000000;
+}
+
+/**
+ * Cloth hung on a wall face: a rolled head and three strips under it, all
+ * marked for the wind.
+ *
+ * `face` is the coordinate of the wall's outer surface on Z and `out` its
+ * outward sign; the assembly hangs DOWN from `top`, which wants to be the
+ * underside of whatever coping oversails that wall.
+ *
+ * **It is four boxes and not one, and the count is the whole design.** A sheet
+ * drawn as a single box is a SLAB: a rectangle with a level hem, a constant
+ * thickness, one flat face and nothing to catch the light differently anywhere
+ * along it — and on this layer it also translates rigidly, because
+ * `CONFIG.wind`'s `cloth` gives every vertex on one box very nearly the same
+ * weight. Neither half of that reads as fabric. What does is the same argument
+ * `buildCompoundWall` makes about mud brick one function down: **the shader
+ * gives these surfaces no texture, so the SILHOUETTE is the whole of what a
+ * material is.** So the strips differ in width, in drop, in how far they stand
+ * proud of the wall and in how far they hang askew, and the hem they make
+ * between them is ragged rather than level.
+ *
+ * **Everything including the head is marked, which is what leaves the assembly
+ * no internal join.** The obvious construction — a fixed valance with moving
+ * strips under it — buys a still anchor and pays for it with a shear line
+ * across the top of every drape in the town, at exactly the place cloth is
+ * least able to hide one. Marking the roll as well means the whole assembly
+ * moves together and the only step anywhere is where the roll meets the wall,
+ * which is under the coping's own 0.08 oversail and is why `cloth`'s `amount`
+ * is pinned to that number rather than chosen.
+ *
+ * **Visual only, and it must stay that way.** `world/sway.ts` forbids marking
+ * anything a collider stands in for, and a drape is exactly the safe case: it
+ * emits no box, nothing was ever measured against it, and a body walks through
+ * where it hangs — which is also what it should do, since the alternative on a
+ * town's worth of washing is hundreds of `WorldBox` entries the nav grid, the
+ * cover bake and the collision bake would all have to carry.
+ */
+function drape(
+  b: Build,
+  w: number,
+  drop: number,
+  x: number,
+  top: number,
+  face: number,
+  out: 1 | -1,
+  seed: number,
+): void {
+  const trans = CONFIG.graphics.translucency.awning;
+  // The head: cloth gathered over the coping, and the one part of the assembly
+  // whose job is to be an EDGE. Wider than the strips under it so no strip's
+  // top corner can swing out from behind it, and standing 0.11 proud so the
+  // strips have something to emerge from rather than a plane to lie in.
+  marksSway(
+    b.translucentBox(w + 0.12, 0.17, 0.16, x, top - 0.085, face + out * 0.03, CLOTH, trans),
+    "cloth",
+  );
+  const strips = 3;
+  for (let i = 0; i < strips; i++) {
+    const r = clothHash(seed, i);
+    const r2 = clothHash(seed, i, 7);
+    // Width, and the gap beside it. A strip narrower than its share of `w` is
+    // what puts a vertical slot between one strip and the next, and the slot
+    // is what a fold looks like from across a street.
+    const sw = (w / strips) * (0.5 + r * 0.36);
+    const sx = x - w / 2 + ((i + 0.5) / strips) * w + (r2 - 0.5) * 0.08;
+    // The drop, and it is the ragged hem. The range is nearly THREE to one,
+    // which is what a hem has to be to stop reading as an edge: at the 1.3:1
+    // this started at, three strips of a similar length under one head still
+    // made a rectangle, and a rectangle is the thing that was wrong with the
+    // single box. Capped so the longest cannot reach past the lintel course
+    // below a house's parapet, which it did — the tips came out under the
+    // string course and z-fought it.
+    const sh = Math.min(drop * (0.42 + r * 0.86), 1.05);
+    // How far this strip stands off the wall. The spread is small — under
+    // seven centimetres — and it is doing two things: it separates the strips
+    // in DEPTH so the light bands them differently, and it keeps every one of
+    // them clear of the wall face, which the old single sheet was not (it sat
+    // 0.02 INSIDE, so it read as paint rather than as an object).
+    const proud = 0.035 + r2 * 0.065;
+    marksSway(
+      b.translucentBox(
+        sw,
+        sh,
+        0.045,
+        sx,
+        top - 0.1 - sh / 2,
+        face + out * proud,
+        CLOTH,
+        trans,
+        // Hanging askew, and turned a little out of the wall's plane. Both
+        // stay small: a rag at 0.13 rad is cloth that was hung in a hurry, and
+        // at three times that it is a mesh somebody rotated by mistake.
+        { z: (r - 0.5) * 0.26, y: (r2 - 0.5) * 0.16 },
+      ),
+      "cloth",
+    );
+  }
+}
+
 function parapet(
   b: Build,
   w: number,
@@ -466,6 +617,41 @@ export function buildAdobeHouse(
   // A roof is where a house keeps its water. Visual: the parapet already stops
   // everything at this height, and a cistern is not cover worth a collider.
   b.cyl(0.9, 0.8, 0.8, 8, roofX + roofW * 0.28, roofY + 0.45, d * 0.3, ALLOY);
+
+  // 7 — the washing, and it is the only thing on this house the wind reaches.
+  //
+  // Hung over the ±Z parapet, whose runs are the full width of the roof plate
+  // in both parapet forms — so this needs no branch on `climbs` beyond the
+  // plate it is already given. The top sits at `roofY + PARAPET`, which is the
+  // UNDERSIDE of the coping: the cap oversails its wall by 0.08 on each face,
+  // so the one edge that is fixed is the one edge nothing can see, from the
+  // street below or from the roof next door. See `drape` and `CONFIG.wind`'s
+  // `cloth` layer for why 0.08 is enough.
+  //
+  // A ruin gets none — it returned above, before the roof — which is right on
+  // its own terms: the houses still being lived in are the ones with washing
+  // on them, and on a map months into being fought over that is a thing worth
+  // being able to read off a roofline at two hundred metres.
+  const hung = clothHash(w, d, floors, p.enterable === true ? 1 : 0);
+  if (hung > 0.42) {
+    const sz: 1 | -1 = hung > 0.71 ? 1 : -1;
+    const span = roofW - 2.4;
+    const n = span > 5 && hung > 0.72 ? 2 : 1;
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      const jitter = clothHash(hung, i);
+      drape(
+        b,
+        0.62 + jitter * 0.46,
+        0.8 + jitter * 0.32,
+        roofX - span / 2 + t * span,
+        roofY + PARAPET,
+        (sz * d) / 2,
+        sz,
+        hung + i,
+      );
+    }
+  }
   return b;
 }
 
@@ -500,6 +686,34 @@ export function buildCompoundWall(
   for (let i = 0; i <= piers; i++) {
     const x = -len / 2 + (i / piers) * len;
     b.box(0.62, h + 0.3, 0.62, x, (h + 0.3) / 2, 0, skin);
+  }
+
+  // A rag tied along the head of the wall, on about one run in four.
+  //
+  // **Sparse on purpose, and the fraction is the whole design.** There are 298
+  // of these on Sarab and they are what the town is made of; cloth on all of
+  // them would be a texture rather than an event, and the point of a thing that
+  // moves on a still map is that your eye goes to it. One in four leaves
+  // roughly eighty across nine hundred metres, which is enough that no quarter
+  // is without one and few enough that each is worth a glance.
+  //
+  // It hangs in a BAY rather than anywhere along the run: the piers stand 0.11
+  // proud of the wall face, so a sheet placed across one would be half behind
+  // it. The top is at `h`, the coping's underside — `drape`'s rule, and here
+  // the cap oversails by the same 0.08 the parapet's does.
+  const tied = clothHash(len, h);
+  if (len >= 9 && tied < 0.27) {
+    const bay = Math.floor(tied * 3.7 * piers) % piers;
+    drape(
+      b,
+      0.52 + tied * 0.7,
+      0.72 + tied * 0.5,
+      -len / 2 + ((bay + 0.5) / piers) * len,
+      h,
+      -0.2,
+      -1,
+      tied,
+    );
   }
   return b;
 }
