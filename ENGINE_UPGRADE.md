@@ -1099,7 +1099,8 @@ twice.** Where the 1500 m build stands after the flatten:
 | `NavGrid` | 2,572 | 15% |
 | `CoverMap` | 736 | 4% |
 | seven flow fields | 227 | 1% |
-| **what S5 would move** | **5,726** | **33%** |
+| `ObstacleField` | 7 | 0% |
+| **what S5 would move** | **5,733** | **33%** |
 | **`build:total`** | **17,422** | |
 | **install to `deploy`** | **34,923** | |
 

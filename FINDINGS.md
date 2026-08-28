@@ -2604,7 +2604,7 @@ harrowmead/borderland at 0%) — which is the same evidence S4 used, and finding
   and a merge has to bake the transform in anyway — but the six faces of a unit
   cube are the same six faces every time, and the loop is measurable.
 - **Where the 1500 m build now is**: the placement loop is 54% of it and the
-  nav/cover/AO builds S5 would move to a worker are **33%** (5,768 ms of 17,422)
+  nav/cover/AO builds S5 would move to a worker are **33%** (5,733 ms of 17,422)
   against the 3.3% they were before this landed. See `ENGINE_UPGRADE.md` S5 —
   that inversion is the decision this measurement was owed.
 
