@@ -376,12 +376,13 @@ frames is what actually took the wall down; the render list and the probe count
 came down as well and neither had to come down far.
 
 **And "the total is indeed unchanged" is the half of that correction nobody
-followed up, which is what S0c is.** Measured at 1500 / 0 at last
-(`FINDINGS.md` 27): the queue drains over **40 frames and 36.9 seconds**, a
-928 ms median frame, and it drains in `deploy` and then in the ROUND rather than
-behind the loading card. The device survives, which is what this wall was about
-and it is genuinely down; what is left is 37 s of one frame a second in the
-player's hands, and it is larger than anything left in the load.
+followed up, which is what S0c was.** Measured at 1500 / 0 at last
+(`FINDINGS.md` 27): the queue drained over **40 frames and 36.9 seconds**, a
+928 ms median frame, in `deploy` and then in the ROUND rather than behind the
+loading card. **S0c has landed and both halves of that are answered**
+(`FINDINGS.md` 28): the drain is behind the card, and it is 10.6 s rather than
+44.8 because a probe's six faces now cull like the frame does. The total was
+not unchanged after all — it was six times what the picture needed.
 
 ---
 
@@ -589,10 +590,12 @@ re-baked — which is the point of the budget being where it is.
 
 **What it did NOT do, and what the next step to touch this owes:**
 
-- **1500 / 0 has not been re-tested.** The chosen extent is 900 / 300 and that
+- **1500 / 0 has not been re-tested** — *answered by `FINDINGS.md` 27 and again
+  by 28, at both extents as a matched pair.* The chosen extent is 900 / 300 and that
   is what the committed proving ground is; the ceiling case would want the
   probe cap to actually engage, and nothing has watched it do so.
-- **The bake still lands AFTER the loading card, not behind it.** `installMap`
+- **The bake still lands AFTER the loading card, not behind it** — *answered by
+  S0c, which put it behind the card.* `installMap`
   is one JS turn, so no frame can render inside it — the queue drains over the
   first ~28 frames of `deploy`, which is ~26 s of second-long hitches on the
   proving ground and one 2.2 s frame on Coldharbour. Holding `loading` until
@@ -632,7 +635,103 @@ shipped maps are byte-for-byte what they were.
 
 ---
 
-### S0c — The bake drains in the ROUND, and at 1500 m that is 37 seconds of one frame a second
+### S0c — The bake drains in the ROUND, and at 1500 m that is 37 seconds of one frame a second — **LANDED, LEVERS 1 AND 2**
+
+**It is down, and the two levers are worth more together than either is
+alone.** `FINDINGS.md` 28 is the result. Lever 1 moved the drain off the round
+and under the loading card; lever 2 gave a probe's six faces the frustum test
+the frame has always had, which removed four fifths of the draws without moving
+a pixel. Lever 3 — grouping harder — was **not taken**, and should not be: it
+was the one that makes the picture worse rather than the bake smaller, and after
+lever 2 there is nothing left for it to buy.
+
+| the drain, matched pairs | 900/300 before | 900/300 after | 1500/0 before | 1500/0 after |
+| --- | --- | --- | --- | --- |
+| spent in | `deploy` | **`loading`** | `deploy` | **`loading`** |
+| frames | 31 | 31 | 47 | 47 |
+| wall clock | 24.9 s | **5.7 s** | **44.8 s** | **10.6 s** |
+| median frame | 838 ms | **181 ms** | 931 ms | **197 ms** |
+| worst frame | 1,141 ms | 382 ms | 1,697 ms | 1,217 ms |
+| warm frame after | 4.54 ms | 4.53 ms | 9.08 ms | 9.50 ms |
+
+**In the ROUND, which is the number this step was opened over: 44.8 s to
+zero.** The frame count is identical either side by design — lever 2 was
+deliberately not allowed to make the queue's budget go further, so the same
+number of batches is issued and each one is smaller.
+
+**What each lever did:**
+
+1. **`Game.bakeWait` holds `loading` until `ReflectionSystem.bakePending`
+   reaches 0.** No new machinery: `releaseBatch` already rides a render
+   observable, `loading` already renders and already simulates nothing, and the
+   wait is one call at the END of `tick` — after the render it is asking about,
+   and never an arm of the switch. Coldharbour stays exactly one frame of it
+   (`installMs` 1,097 → 1,865, `bakeFrameMs` 889 → 5), which is the one frame
+   the bake always took, moved.
+2. **`ReflectionSystem.faceOf` on Babylon's `getCustomRenderList`.** A cube
+   target has no frustum culling of its own — `ObjectRenderer` dispatches every
+   mesh in a render list on every face — so a probe drew its whole
+   neighbourhood six times. Measured over a whole install: **1,469,484
+   mesh-draws offered against 284,097 issued at 900/300 (5.2x), and 2,120,976
+   against 394,604 at 1500/0 (5.4x)**. It is `AbstractMesh.isInFrustum` against
+   `scene.frustumPlanes`, which is the frame's own test, so what it drops the
+   rasteriser was going to clip and the picture cannot move — proved rather
+   than argued, below.
+3. **`perCell` was left alone.** It is already 2 at 1500 m and grouping harder
+   costs 96 m of city out of the middle of a cube.
+
+**Three things this step also had to fix, and only one of them was foreseen:**
+
+- **`loading` stopped being the same question as "the build has not run yet".**
+  Three guards read `this.state === "loading"` to mean the second, and with the
+  card up through the drain they would have refused a map rotation or a team
+  correction arriving from the authority for ten seconds and dropped it on the
+  floor — `NetSession.onSeated` defers to a `buildRound` that has already
+  happened. `Game.buildPending` is now `loading && bakeWait === null` and all
+  three ask it.
+- **A wait outliving its own round.** `Game.go` clears `bakeWait`, so a step
+  away from the card — the menu, F2, another `startRound` — ends the wait
+  wherever it had got to rather than letting `finishBakeWait` open a deploy
+  screen over whatever replaced it.
+- **A queue that cannot drain must not hang the card**, which the step named.
+  Two caps, because they catch different failures: `drainStallFrames` (120) for
+  an outstanding count that stops moving, which no wall clock can tell from a
+  slow machine, and `drainCapMs` (90,000) for a bake that inches forward
+  forever, which no stall counter can catch. Either one gives up and lets the
+  remainder land in the round exactly as it used to.
+
+**What it must not break, and did not.** `drawsPerFrame` is untouched and the
+queue is still priced at `list.length * 6`, so the largest single submission is
+strictly smaller than it was. Coldharbour is one frame of `loading` and the
+other three shipped maps are too (`gate.mjs` clean on all four, no page or
+console errors). **The picture is unmoved**: `bank.mjs --check` run either side
+of the change against the same fixed reference reports the SAME mean on all
+sixteen banked vantages of all four maps, to four decimal places — the bank
+itself is still red from the drift S0b recorded, so this is the same
+stronger-than-a-pass standin S0b used, and it is the check that matters here
+because lever 2 changes what is IN a probe's cube. The 1500 m frame is
+unchanged at 9.5 ms against finding 27's 9.3 and this run's own 9.1 before, so
+lever 2 bought nothing out of the round. `loading` is still a STEP with an empty
+arm in `tick`, and an editor build still bakes nothing and never opens a wait.
+
+**What it did NOT do:**
+
+- **The worst frame is still over a second at 1500 m** (1,217 ms). It is the
+  first batch, and it is a queue-shaping question rather than a draw-count one:
+  one probe goes through however fat it is on an empty frame, by design, or a
+  queue with a fat head would never drain.
+- **What a bake draw costs is still unexplained** (finding 27), and it is the
+  term that multiplies everything above.
+- **Nothing has looked at the PICTURE on the proving ground**, which was S0b's
+  owed item and still is. The bank proves the four shipped maps are unmoved; it
+  cannot see an 800 m radius leaving a hole on a map big enough to cull.
+
+What follows is the step as it was written, kept because the argument for the
+shape of the fix is in it.
+
+---
+
+#### The step, as opened
 
 **S0b's second owed item, measured at last, and it is the largest number left
 anywhere in a 1500 m round.** `installMap` returns in ~19 s, the state goes to

@@ -37,14 +37,18 @@
  * `deploy` -> `playing` -> `dying` -> `deploy`, with `roundover` when one side
  * runs out of tickets, and `editor` off to one side of all of it.
  *
- * `loading` is the map being built. It lasts exactly one frame of wall clock and
- * an indeterminate amount of it — the build is ~0.7 s of synchronous work, which
- * is a freeze if nothing says otherwise (see `Game.startRound`, the split that
- * lets the card be drawn first). It exists as a STATE rather than as a flag
- * because the frame in between belongs to nobody otherwise: `tick` would keep
- * dispatching to the menu it just left, and a second confirm in that window
- * would start a second round on top of the first. Nothing may simulate here —
- * there is no map yet.
+ * `loading` is the map being built — and then the reflection bake draining
+ * behind the same card, which is the longer half on any map big enough for it
+ * to matter (`Game.bakeWait`, and `docs/states.md`). The build is ~0.7 s of
+ * synchronous work in ONE frame, which is a freeze if nothing says otherwise
+ * (see `Game.startRound`, the split that lets the card be drawn first); the
+ * bake after it is a budget of draws per frame over as many frames as it
+ * takes, one on every shipped map and 47 on a 1500 m one. It exists as a STATE
+ * rather than as a flag because the frame in between belongs to nobody
+ * otherwise: `tick` would keep dispatching to the menu it just left, and a
+ * second confirm in that window would start a second round on top of the
+ * first. Nothing may simulate here — there is no map yet at the start of it,
+ * and at the end of it there is one nobody is in.
  *
  * `dying` is the death cam: the player is down, a body is falling where they
  * stood, and the camera has left the head to watch it. It is a STEP in the cycle

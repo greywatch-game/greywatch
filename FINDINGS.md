@@ -2965,7 +2965,7 @@ async window opened inside `installMap` and no `build` split into two lanes.
 
 ---
 
-## 27. The 1500 m FRAME is 9.3 ms and the wall it was supposed to hit is gone — but the bake now drains in the ROUND, and that is 37 seconds at one frame a second
+## 27. The 1500 m FRAME is 9.3 ms and the wall it was supposed to hit is gone — but the bake now drains in the ROUND, and that is 37 seconds at one frame a second — **the drain is CLOSED by 28**
 
 **Asked because nobody had quoted a 1500 m frame since S0**, which measured
 30.3 ms with `ReflectionSystem.build` stubbed to a no-op and before S1, S2, S3,
@@ -3051,23 +3051,24 @@ per-draw cost read off the slope.
 
 ### What is open
 
-- **Where the 37 s should be spent is a state-machine question and S0b named
-  it.** `loading` is a STEP where nothing simulates and the scene still renders
-  (`docs/states.md`), so holding it until the queue is empty drains the bake
-  under the card with no new machinery — and `queue.length` is a progress
-  figure the card does not currently have. It moves the cost rather than
-  removing it. Opened as `ENGINE_UPGRADE.md` S0c.
-- **The bake and the FRAME have never been asked the same question, and that is
-  the disproportion.** A probe's render list is `neighbourhood()`, a pure
-  radius test over the opaque world — 1,348 of 2,434 meshes each at 1500 m —
-  while `WorldCulling` gets the frame to 146 active meshes by filing them per
-  48 m block and gating on `fogEnd`. Nothing has tried giving a probe the same
-  treatment, and it is the only lever that reduces the WORK rather than moving
-  it.
+- ~~**Where the 37 s should be spent is a state-machine question and S0b named
+  it.**~~ **CLOSED by 28.** `Game.bakeWait` holds `loading` until the queue and
+  the in-flight re-bakes are both empty, and hands the card a progress figure
+  while it does. Nothing is in the round.
+- ~~**The bake and the FRAME have never been asked the same question, and that
+  is the disproportion.**~~ **CLOSED by 28, and the answer was not the one this
+  entry expected.** The frame's 146 is mostly the FRUSTUM, not the block gate —
+  the proving ground states a `fogEnd` of 2400, past its own diagonal, so
+  `WorldCulling` culls no block on it at all. What a cube probe was missing was
+  the frustum test itself: `ObjectRenderer` dispatches every mesh of a render
+  list on every one of six faces, with no `isInFrustum` anywhere.
+  `ReflectionSystem.faceOf` is that test, and it removed 81% of the draws.
 - **`perCell` is 2 here and grouping harder makes the picture worse, not just
   the count.** A probe drops every block it SERVES out of its own bake
   (`encloses`), so a cell of four blocks is a probe with 96 m of city missing
-  from the middle of its cube. The probe count is not a free lever.
+  from the middle of its cube. The probe count is not a free lever. **Still
+  true and now moot**: after the per-face cull there is nothing left for it to
+  buy.
 - **What a bake draw costs is unexplained**, and it is the term that multiplies
   everything above.
 - **A fight has not been measured at 1500 m.** The frame reading is a quiet
@@ -3077,5 +3078,146 @@ per-draw cost read off the slope.
   is deliberately last so that the engine is not tuned against content that does
   not exist. The SHAPE is not a worst case — the bake is priced on glazing and
   `docs/rendering.md` says glazing has no natural bound.
+
+---
+
+## 28. The bake was drawing the whole neighbourhood six times: a cube probe has no frustum culling, and 81% of every bake was clipped geometry
+
+**Asked because finding 27 put 37 seconds of one-frame-a-second in the
+player's hands** and `ENGINE_UPGRADE.md` S0c named three levers for it. Two
+were taken. The first moves the cost; the second turned out to remove most of
+it, and for a reason the step had guessed at from the wrong end.
+
+### The matched pairs
+
+Windows box, RTX 4070 Ti SUPER, headless via `channel: "chromium"`, 1920x1080,
+uncapped, UNPROFILED — finding 27 records that the sampling profiler stretches
+this past twenty minutes. The drain is counted from the first frame that begins
+with a probe outstanding to the first that begins with none, which includes the
+in-flight re-bakes and is therefore a slightly longer window than finding 27's
+40 frames.
+
+| | 900/300 before | 900/300 after | 1500/0 before | 1500/0 after |
+| --- | --- | --- | --- | --- |
+| spent in | `deploy` | **`loading`** | `deploy` | **`loading`** |
+| frames | 31 | 31 | 47 | 47 |
+| wall clock | 24.9 s | **5.7 s** | **44.8 s** | **10.6 s** |
+| median frame | 838 ms | **181 ms** | 931 ms | **197 ms** |
+| worst frame | 1,141 ms | 382 ms | 1,697 ms | 1,217 ms |
+| probes | 265 | 265 | 250 | 250 |
+| warm frame after | 4.54 ms | 4.53 ms | 9.08 ms | 9.50 ms |
+
+**In the round it is 44.8 s to nothing.** The frame COUNT is identical either
+side and that is by design: the queue is still priced at `list.length * 6`, so
+the same number of batches is released and each one merely issues far fewer
+draws. `drawsPerFrame` is what stands between this bake and a lost D3D12 device
+inside one submission, and letting a saving in draws turn into a bigger
+submission would have spent it on exactly the wrong thing.
+
+### The finding under the finding
+
+**A cube render target does not frustum-cull, and nothing in the tree knew
+it.** `ObjectRenderer._prepareRenderingManager` walks the render list and
+dispatches every mesh in it — readiness, LOD, `_activate`, a draw per submesh —
+with no `isInFrustum` anywhere, because a render list is normally something the
+caller has already chosen. `RenderTargetTexture._render` then calls it once per
+face. So a probe drew its whole 1,348-mesh neighbourhood **six times**, once
+for each 90-degree view, where the main pass draws each mesh at most once.
+
+Measured over a whole install, by wrapping the hook:
+
+| meshes dispatched per install | offered | issued | removed |
+| --- | --- | --- | --- |
+| 900/300 | 1,469,484 | **284,097** | 80.7% |
+| 1500/0 | 2,120,976 | **394,604** | 81.4% |
+
+(`offered` exceeds the queue's own figure because a probe that re-bakes offers
+its list again.) The six faces tile the sphere exactly, so the floor is 1/6 —
+17% — and the measured 19% is that plus the conservatism of a bounding-SPHERE
+test at a face boundary. The world being a thin slab is what makes the two poles
+nearly free.
+
+**S0c guessed at this from the wrong end and the guess is worth recording**,
+because the next person will make it too. It read the frame's 146 active meshes
+out of 23,031 as `WorldCulling` filing per 48 m block and gating on `fogEnd`,
+and proposed giving a probe the same treatment. But the proving ground declares
+a `fogEnd` of 2400, past its own 2121 m diagonal, deliberately — so
+`WorldCulling` culls **no block on it at all**, and the frame's 146 is almost
+entirely the FRUSTUM. The disproportion between the bake and the frame was real
+and the mechanism behind it was the opposite of the one named.
+
+### Why this one cannot move a pixel, and the proof
+
+It is `AbstractMesh.isInFrustum` against `scene.frustumPlanes` — the same call
+`_evaluateActiveMeshes` makes for the main pass, at the default
+`CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY`, which is the conservative one. What it
+drops is what the rasteriser was about to clip. The ordering that makes the
+planes the FACE's rather than the main camera's is Babylon's own:
+`ReflectionProbe` writes the face's view and projection through
+`scene.setTransformMatrix` from `onBeforeRenderObservable`, that setter
+refreshes the planes, and `ObjectRenderer.render` fires the observable
+immediately before it calls `_prepareRenderingManager`. A Babylon version that
+moved either line would cull each face against the previous one's planes, and
+the tell is a seam of missing geometry that rotates with the probe.
+
+**Proved rather than argued.** `bank.mjs --check` run either side of the change
+against the same fixed reference reports the SAME mean on all sixteen banked
+vantages of all four shipped maps, to four decimal places — including
+Coldharbour's three curtain-wall vantages and the avenue, which are the frames
+that exist to catch exactly this. The bank itself is still red from the drift
+S0b recorded, so a pass was never available; identical-either-side is the
+stronger statement and it is the one that was taken.
+
+That property is why this is preferable to every other way of shortening a
+probe's list. A smaller `radius` drops geometry the face WOULD have drawn and
+leaves a hole the shader fills with sky (finding 10's objection). A coarser
+`perCell` drops a whole building out of the middle of a cube. This drops
+nothing that would have been seen.
+
+### What the state-machine half cost
+
+Holding `loading` until the bake drains is `Game.bakeWait`, and it needed no
+new machinery — `releaseBatch` already rides a render observable, `loading`
+already renders and already simulates nothing. What it did need was three
+corrections nobody had to make while the state lasted two frames:
+
+- **`loading` stopped being the same question as "the build has not run
+  yet".** Three guards read the state to mean the second. With the card up
+  through a ten-second drain, `NetSession.onSeated` would have deferred a map
+  rotation or a team correction to a `buildRound` that already happened and
+  dropped it on the floor. `Game.buildPending` is now `loading && bakeWait ===
+  null`.
+- **A wait can outlive its own round.** `Game.go` clears it, so stepping away
+  from the card cannot leave a `finishBakeWait` to open a deploy screen over
+  whatever replaced it.
+- **A queue that cannot drain must not hang the card**, and the state machine
+  has no concept of a step that fails. Two caps: a stalled outstanding count
+  (`drainStallFrames`, 120), which is the only thing that can tell a wedged
+  re-bake from a slow machine, and a backstop clock (`drainCapMs`, 90,000) for
+  a bake that inches forward forever, which no stall counter catches. Either
+  gives up and lets the remainder land in the round as before.
+
+Coldharbour is one frame of `loading` and nothing else moved: `installMs` 1,097
+→ 1,865 with `bakeFrameMs` 889 → 5, which is the same frame in a different
+state. `gate.mjs` is clean on all four maps.
+
+### What is open
+
+- **The worst frame is still 1,217 ms at 1500 m**, against a 197 ms median. It
+  is the first batch and it is a queue-shaping question rather than a
+  draw-count one: `releaseBatch` lets one probe through however fat it is on an
+  otherwise empty frame, by design, or a queue with a fat head could never
+  drain. A budget that could be spent as "one probe's worth of FACES" rather
+  than one probe would smooth it; nothing has tried.
+- **What a bake draw costs is still unexplained.** Finding 27 measured 18.6 us
+  and suspected bind-group creation. This finding does not settle it — it
+  removed draws rather than making one cheaper — and the per-draw figure now
+  implied is of the same order.
+- **The 1500 m install is still ~26 s before the drain starts.** That is
+  findings 24, 25 and 26's territory and this step did not touch it; it is now
+  the largest single number in a 1500 m load.
+- **Nothing has looked at the PICTURE on the proving ground**, which is S0b's
+  owed item and survives all of this. The bank can only say the four shipped
+  maps are unmoved.
 
 ---

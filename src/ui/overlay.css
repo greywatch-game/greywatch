@@ -552,6 +552,20 @@
   from { transform: translateX(0); }
   to { transform: translateX(194%); }
 }
+/* And the same track told what it is actually waiting for. The card covers the
+   build, which has no frames in it to report from, AND the reflection bake,
+   which is spent a budget of draws per frame and therefore has — so the sweep
+   is the honest picture until `OverlayScreen.setBuildProgress` is called and a
+   measured fill is the honest picture after. Both are a WIDTH rather than a
+   transform, so switching between them cannot leave the segment translated off
+   the end of its own track. The transition is short and linear because the
+   frames arriving under it are of the order of one a second: anything easing
+   would still be mid-ease when the next one lands. */
+#overlay .ov-bar.measured i {
+  animation: none;
+  transform: none;
+  transition: width 120ms linear;
+}
 
 /* =====================================================================
    THE PAUSE CARD — the one that does not take the screen.

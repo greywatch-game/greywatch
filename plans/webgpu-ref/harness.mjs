@@ -142,13 +142,21 @@ export async function bootMap(browser, url, id, { hideUI = true } = {}) {
  * Builds the round and waits for `deploy`, handing back what the build cost.
  *
  * `startRound()` only BOOKS the build — `buildRound` runs two animation frames
- * later — so this waits on the STATE and never on the call. `bakeFrameMs` is
- * the single frame after the install, which is where the reflection bake
- * lands: forty cube probes on Coldharbour, which complete in one frame on a
- * real GPU and are fatal to the device on a CPU rasteriser. **This figure is
- * not a reliable reading of what the bake costs** — the bake is not
- * contractually on the frame after the state flips, and `FINDINGS.md` #10 has
- * both the ~1.4 s a forced re-bake measures and why the two disagree.
+ * later — so this waits on the STATE and never on the call.
+ *
+ * **`installMs` covers the reflection bake as well as the build, and that is
+ * the state machine's doing rather than this function's.** Since
+ * `ENGINE_UPGRADE.md` S0c the `loading` state is held until the bake has
+ * drained (`Game.bakeWait`), so the state flipping to `deploy` is the whole of
+ * the install landing — forty cube probes on Coldharbour, 265 on the 900 m
+ * proving ground, which is 5.7 s of frames on top of the build. Budget for it:
+ * there is no timeout here.
+ *
+ * `bakeFrameMs` is therefore the frame AFTER all of that and is now an
+ * ordinary frame on every map. It is kept because a reading that suddenly
+ * grows is the tell that something has escaped the wait; it has never been a
+ * reliable figure for what a bake costs, and `FINDINGS.md` #10 has the ~1.4 s
+ * a forced re-bake measures instead.
  */
 export function installRound(page) {
   return page.evaluate(async () => {

@@ -127,31 +127,38 @@ you are on before you believe anything else in this section.
   over Coldharbour's whole bake (41,934 draws, ~2.3 s), and a map asking for
   more spends the rest on
   the frames after (`ReflectionSystem.releaseBatch`). So a bake is no longer
-  contractually on the frame after the install on any map — `installRound`'s
-  `bakeFrameMs` is the FIRST batch, and `g.reflections.queue.length` reaching 0
-  is what says the whole of it has landed. Coldharbour, Greyfen, Harrowmead and
-  Hollowmere are all one batch, so nothing about the shipped maps has moved.
+  contractually on the frame after the install on any map — and since S0c it is
+  no longer after the install at all: the batches are spent under the LOADING
+  card, so `installRound`'s `installMs` covers the whole bake and its
+  `bakeFrameMs` is an ordinary frame (Coldharbour, 889 ms to 5).
+  `g.reflections.bakePending` reaching 0 is what says the whole of it has
+  landed. Coldharbour, Greyfen, Harrowmead and Hollowmere are all one batch, so
+  what moved for them is which state that one frame is in and nothing else.
   **It is not cheap and an earlier reading of
   138 ms does not reproduce**: measured by forcing a re-bake with everything
   already compiled, it is ~1.4–2.1 s, and it scales almost linearly with the
   render list (486 meshes 2124 ms, 243 meshes 813 ms, 49 meshes 109 ms).
   Hollowmere's four probes cost 76 ms in the same run, which is the same 19 ms a
   probe. `FINDINGS.md` #10 carries the open thread; do not quote 138 ms.
-- **A WALL-CLOCK warm reports the bake as the round on any map that takes more
-  than one batch, and what that looks like is a catastrophic new wall.** The
-  proving ground at 900/300 queues 265 probes and takes **21 s and 24 frames**
-  to drain; a ten-second warm lands in the middle of it and the next eight
-  seconds are **10 frames, a 894 ms median frame and 1.1 fps** — every one of
-  them a bake frame, and every per-frame figure taken across them meaningless
-  (finding 22 lost two runs to exactly this). **Warm on
-  `g.reflections.queue.length === 0` and then settle, never on a timer.** The
-  four shipped maps drain in one frame (39–42 ms) so nothing about them shows
-  it, which is precisely why it is easy to write a script that is wrong only on
-  the map you are investigating. **At 1500 / 0 it is 40 frames and 36.9 s**, a
-  928 ms median and a 1,505 ms worst, with the state already at `deploy` when it
-  starts — so on that extent the first thirty-seven seconds of the ROUND are
-  bake frames (`FINDINGS.md` 27, and `ENGINE_UPGRADE.md` S0c for what is being
-  done about it).
+- **The bake no longer drains in the round, and a script written against the
+  old rule is now merely SLOW to start rather than wrong.** `Game.bakeWait`
+  holds the `loading` state until the reflection queue and its in-flight
+  re-bakes are both empty (`ENGINE_UPGRADE.md` S0c, `FINDINGS.md` 28), so
+  **waiting for `g.state === "deploy"` is already waiting for the whole bake**
+  — which is what `harness.mjs`'s `installRound` does, and why its `installMs`
+  now includes the drain and its `bakeFrameMs` is an ordinary frame. Budget for
+  it: the proving ground is 5.7 s at 900/300 and 10.6 s at 1500/0 on top of the
+  install, and `installRound` has no timeout of its own.
+- **The rule this replaced is still worth knowing, because it is what the code
+  is defending against.** Before S0c a wall-clock warm reported the bake AS the
+  round on any map taking more than one batch: at 900/300 a ten-second warm
+  landed in the middle of a 21 s drain and the next eight seconds were **10
+  frames, a 894 ms median and 1.1 fps**, and finding 22 lost two runs to
+  exactly that. **`g.reflections.bakePending === 0` is still the honest thing
+  to warm on** if a script starts a round by any route other than waiting for
+  `deploy` — and note it is `bakePending` rather than `queue.length`, because a
+  released probe that has not rendered yet is in neither the queue nor the
+  past.
 - **The reflection drain cannot be CPU-PROFILED, and finding out costs twenty
   minutes.** A CDP `Profiler` capture at a 500 us interval over the 1500 m drain
   ran past **twenty minutes** against an unprofiled 37 seconds and had to be

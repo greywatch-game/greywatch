@@ -455,6 +455,42 @@ export const graphics = {
      * `ReflectionSystem.releaseBatch`.
      */
     drawsPerFrame: 50_000,
+    /**
+     * How many frames the building card will wait WITHOUT the outstanding
+     * probe count going down before it gives up and lets the rest of the bake
+     * land in the round.
+     *
+     * **The frames the bake is spent over are the loading card's** — see
+     * `Game.bakeWait`, and `ENGINE_UPGRADE.md` S0c, which is the step that
+     * moved them there. `loading` is a STEP where nothing simulates and the
+     * scene still renders, so it is the one place in the state machine those
+     * frames can be spent without the player in them; what it costs is that
+     * the card is up for as long as the bake takes, which at 1500 m is 47
+     * frames — 44.8 seconds of them before `faceOf` cut the draws and 10.6
+     * after.
+     *
+     * **This cap is a WEDGE detector and not a timeout**, which is why it
+     * counts stalled frames rather than elapsed ones. A probe re-bakes in full
+     * until every mesh in its list has a compiled material, so a material that
+     * never compiles is a queue that never drains — and that is
+     * indistinguishable from a slow machine by any wall clock. 120 frames is
+     * long past the two or three a legitimate re-bake takes and short enough
+     * that a wedge is a pause rather than a hang. The state machine has no
+     * concept of a step that fails, so the way out is simply to stop waiting.
+     */
+    drainStallFrames: 120,
+    /**
+     * The backstop on that wait, in milliseconds, for the failure the stall
+     * counter cannot see: a bake that keeps inching forward and never stops.
+     * Nothing bounds that but the probe count, and at one probe a second a
+     * pool of 320 is five minutes of building card.
+     *
+     * 90 s is twice the worst drain ever measured (44.8 s at 1500 / 0, before
+     * the per-face cull; 10.6 after it), so it cannot fire on a machine
+     * merely slower than the one that number was taken on. The four shipped
+     * maps drain in one frame and are nowhere near it.
+     */
+    drainCapMs: 90_000,
   },
   /**
    * Albedo weathering on flat cel colours — a slow value drift over world space

@@ -289,7 +289,9 @@ src/
                         #   install with whatever encloses the probe left out,
                         #   and the box the shader parallax-corrects the
                         #   mirrored ray against. The only render target here
-                        #   besides the shadow map
+                        #   besides the shadow map. The bake is spent a budget
+                        #   of draws per FRAME, under the loading card, and
+                        #   each face draws only what that face can SEE
     Atmosphere.ts       # Ash field on the GPU, simulated by a compute shader.
                         #   No CPU fallback — WebGPU is a hard requirement and
                         #   guarantees it

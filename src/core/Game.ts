@@ -331,6 +331,34 @@ export class Game {
    */
   private reflections: ReflectionSystem;
   /**
+   * The building card waiting for the reflection bake to drain, or null when
+   * nothing is waiting — which is every state but the tail of `loading`.
+   *
+   * **The bake is spent over FRAMES and this is where those frames are.**
+   * `installMap` is one synchronous turn, so no frame can render inside it and
+   * a probe cannot bake there; `ReflectionSystem.releaseBatch` rides a render
+   * observable and lets a budget's worth go per frame after it. Before this,
+   * those frames were the first frames of `deploy` and then of the ROUND — one
+   * on every shipped map, and **47 frames over 44.8 seconds on a 1500 m map**
+   * (`FINDINGS.md` 27 and 28), with the player looking at them. `loading` is a STEP
+   * where nothing simulates and the scene still renders, which is exactly the
+   * shape of frame this needs, so the card stays up until the queue is empty.
+   *
+   * It moves the cost rather than removing it — `ReflectionSystem.faceOf` is
+   * the half that removes it — and what it buys is that a round is a round
+   * when it starts. `ENGINE_UPGRADE.md` S0c.
+   */
+  private bakeWait: {
+    /** What `bakePending` was when the wait opened, for the card's bar. */
+    total: number;
+    /** The lowest `bakePending` seen, to tell progress from a wedge. */
+    best: number;
+    /** Frames since `best` last moved. The wedge cap counts these. */
+    stalled: number;
+    /** When the wait opened, for the backstop cap. */
+    since: number;
+  } | null = null;
+  /**
    * How much of the map the frame's own mesh walk is offered. Owns nothing
    * that draws and writes nothing onto a mesh — see `WorldCulling`, which is
    * `ENGINE_UPGRADE.md` S1.
@@ -1647,6 +1675,14 @@ export class Game {
    * discharged once, here, for screens that did not exist when it was written.
    */
   private go(step: StepState): void {
+    // The one thing every step change owes that is not a screen: a building
+    // card waiting on the reflection bake belongs to the round that was being
+    // built, and a step away from it — the menu, F2, or `startRound` beginning
+    // another one — ends the wait wherever it had got to. Without this the
+    // wait outlives its own round and `finishBakeWait` opens a deploy screen
+    // over whatever replaced it. Re-entering `loading` re-opens it; see
+    // `openBakeWait`, which runs long after this line.
+    this.bakeWait = null;
     for (const lid of this.screens.go(step)) this.takeDown(lid);
   }
 
@@ -2431,6 +2467,14 @@ export class Game {
     this.pushTouchControls();
     this.pushScoreboard();
     this.scene.render();
+    // AFTER the render, because the render is the thing being waited for: a
+    // frame's share of the reflection bake is released from inside
+    // `scene.render` and has already been issued by the time this line runs,
+    // so asking here is asking about a frame that happened rather than one
+    // that is about to. It is not an arm of the switch above and must not
+    // become one — `loading` simulates nothing and this decides nothing about
+    // a world, it only reads a queue and takes a card down. See `bakeWait`.
+    if (this.bakeWait) this.updateBakeWait();
   }
 
   /**
@@ -2868,9 +2912,21 @@ export class Game {
    * second comparison dead, which is precisely the assumption the second check
    * exists to refuse. Behind a call it cannot narrow, so the question stays
    * askable.
+   *
+   * **It is not "the state is `loading`" any more, and the difference is the
+   * whole of what `bakeWait` changed.** `loading` used to be the two frames
+   * between the confirm and the build; it is now those two frames AND however
+   * many the reflection bake takes to drain behind the card, which on a 1500 m
+   * map is forty-seven of them. What every caller here is guarding against is a
+   * build that has not run yet — a second one queued behind it, an editor
+   * opened into it, a welcome arriving before there is a map to correct — and
+   * once the wait is open the build HAS run. Reading the state alone would
+   * refuse a map change or a team correction for the length of the drain and
+   * drop it on the floor, because the branch that defers to `buildRound`
+   * defers to a `buildRound` that already happened.
    */
   private buildPending(): boolean {
-    return this.state === "loading";
+    return this.state === "loading" && this.bakeWait === null;
   }
 
   /**
@@ -3243,7 +3299,13 @@ export class Game {
     // callers all continuing to be careful. A second build over a queued one
     // leaves the systems holding a map the first one disposed, which is the
     // silent failure `installMap` exists to prevent.
-    if (this.state === "loading") return;
+    //
+    // It is `buildPending` rather than the state, because the tail of
+    // `loading` is now the reflection bake draining behind the card and a
+    // build that has already run is one it is safe to replace — which is what
+    // an authority rotating the map under a client mid-drain asks for. `go`
+    // below ends the standing wait.
+    if (this.buildPending()) return;
     // The menu's own card, which is not a lid and so is not `go`'s to take.
     this.overlayScreen.hide();
     // Reachable from the menu, so any lid may still be up over it — including
@@ -3341,6 +3403,109 @@ export class Game {
     // and after `seatPlayer` above, so the slot the player's own line is kept
     // in is one this book has a row for.
     this.scores.reset(this.battle.bots.length);
+    // The card does NOT come down here, because the build is not the whole of
+    // what it covers. Everything above is one synchronous turn and no frame
+    // has rendered inside it, so the reflection bake `installMap` queued has
+    // not spent a single one of the frames it is spread over. See `bakeWait`.
+    this.openBakeWait();
+  }
+
+  /**
+   * Holds the building card up until the reflection bake has drained, and then
+   * opens the deploy screen.
+   *
+   * **The state does not move here.** `startRound` put it in `loading` and it
+   * stays there: this is the tail of the same step, and what it is waiting for
+   * is the same install. Nothing simulates under it, which is the property
+   * that makes holding it longer safe rather than merely quiet —
+   * `docs/states.md` is the contract and this is more exposure to it, not
+   * less.
+   *
+   * On every map that ships the queue is one batch, so this is the one frame
+   * the bake always took, moved from `deploy` to under the card. On the 1500 m
+   * proving ground it is 47 frames, and measured either side of this change
+   * they went from 44.8 seconds in the ROUND to 10.6 under the card —
+   * `FINDINGS.md` 28, where the second figure is `faceOf`'s doing and the
+   * change of state is this method's.
+   */
+  private openBakeWait(): void {
+    const total = this.reflections.bakePending;
+    // A map with no glazing and no water bakes nothing at all, and a card that
+    // sat for a frame waiting on an empty queue would be a delay this step has
+    // no business adding. It is also the editor's answer, though the editor
+    // does not come through here.
+    if (total === 0) {
+      this.finishBakeWait();
+      return;
+    }
+    // The bar is left SWEEPING here and is only given a figure once a frame
+    // has gone by with the bake still outstanding — see
+    // `OverlayScreen.setBuildProgress`. Every shipped map drains on the first
+    // frame and never reaches that call, so none of them flashes an empty
+    // track on the way past.
+    this.bakeWait = {
+      total,
+      best: total,
+      stalled: 0,
+      since: performance.now(),
+    };
+  }
+
+  /**
+   * One frame of that wait, asked AFTER the render that spent it — see the
+   * call site at the bottom of `tick`, which is the only one.
+   *
+   * **A queue that cannot drain must not hang the card**, and the state
+   * machine has no concept of a step that fails, so the way out is to stop
+   * waiting and let the rest of the bake land in the round exactly as it did
+   * before this method existed. Two caps, because they catch different
+   * failures: a probe re-baking in full forever because a material in its list
+   * never compiles shows up as `bakePending` not MOVING, which no wall clock
+   * can distinguish from a slow machine; and a bake that crawls forward
+   * without ever stopping is bounded by nothing but the probe count, which no
+   * stall counter can catch. Both are `CONFIG.graphics.reflection`'s.
+   */
+  private updateBakeWait(): void {
+    const wait = this.bakeWait;
+    if (!wait) return;
+    const cfg = CONFIG.graphics.reflection;
+    const pending = this.reflections.bakePending;
+    if (pending <= 0) {
+      this.finishBakeWait();
+      return;
+    }
+    if (pending < wait.best) {
+      wait.best = pending;
+      wait.stalled = 0;
+    } else {
+      wait.stalled++;
+    }
+    const wedged = wait.stalled >= cfg.drainStallFrames;
+    const overrun = performance.now() - wait.since >= cfg.drainCapMs;
+    if (wedged || overrun) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          `[reflection] giving up on the bake with ${pending} of ` +
+            `${wait.total} probe(s) outstanding — ` +
+            `${wedged ? `no progress for ${wait.stalled} frames` : "over the drain cap"}; ` +
+            `the rest lands in the round`,
+        );
+      }
+      this.finishBakeWait();
+      return;
+    }
+    // The one progress figure this card has ever had. It is monotonic by
+    // `best` rather than by `pending`, because a probe re-baking pushes the
+    // outstanding count back UP and a bar that retreats reads as a hang.
+    this.overlayScreen.setBuildProgress(1 - wait.best / wait.total);
+  }
+
+  /**
+   * The card down and the deploy screen up, whether the bake finished or the
+   * wait gave up on it. The two lines `buildRound` used to end on.
+   */
+  private finishBakeWait(): void {
+    this.bakeWait = null;
     // The building card comes down on the far side of the work it covered, and
     // with it `.overlaid` — the deploy screen is one of the two that reads the
     // HUD underneath it rather than hiding it.
@@ -4438,13 +4603,15 @@ export class Game {
     //
     // Two cases and one of them is not this callback's: a welcome that beats
     // the build has nothing on screen to correct and is read straight off the
-    // session by `buildRound`, which is what the `loading` test defers to. The
+    // session by `buildRound`, which is what `buildPending` defers to — the
+    // state alone is no longer that question, because `loading` now runs on
+    // past the build while the reflection bake drains under the card. The
     // team not having changed is the ordinary case — every first joiner, and
     // every reconnect that lands back on the same side — and it repaints
     // nothing there, because re-showing the deploy screen would throw away the
     // spawn the player is in the middle of choosing.
     net.onSeated = (team) => {
-      if (this.state === "loading" || !this.map) return;
+      if (this.buildPending() || !this.map) return;
       // The map before the team, because a map that disagrees rebuilds the
       // whole round and `buildRound` deals the team itself on the way through.
       // This is the case the lobby's row could not cover: an unnamed join, or a

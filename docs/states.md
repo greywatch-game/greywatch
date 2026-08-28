@@ -46,8 +46,50 @@ card has ever been on the glass and the freeze happens under the old screen
 exactly as before. One is enough from inside the render loop, which is where
 the real callers are — the second is what stops that being a property of the
 call site. It is a **STEP, not a lid**: nothing may simulate there (`tick` has
-a deliberately empty arm) because there is no map yet, and `startRound` guards
-on it so a second build can never be queued over a pending one.
+a deliberately empty arm) because there is no map yet, and `buildPending`
+guards it so a second build can never be queued over a pending one.
+
+**And it no longer ends when the build does, because the build is no longer the
+whole of what the card covers.** `installMap` queues the reflection bake and
+that bake is spent a budget of draws per FRAME — so when the one synchronous
+turn of `buildRound` returns, none of it has happened yet
+([`docs/rendering.md`](rendering.md) has the argument). Those frames used to be
+the first frames of `deploy` and then of the round: one on every shipped map,
+and **47 of them over 44.8 seconds on a 1500 m map**, at about one frame a
+second, with the player looking at them. `Game.bakeWait` holds `loading` until
+`ReflectionSystem.bakePending` reaches 0 and then opens the deploy screen, and
+`loading` is the only state in the machine where those frames can go: it
+simulates nothing, and it still renders, which is exactly the kind of frame the
+bake needs. Measured either side, the same 47 frames cost 10.6 s instead of
+44.8 and none of them is in the round.
+
+Four things follow, and three of them are constraints rather than
+consequences:
+
+- **The card is up LONGER, which is more exposure to "nothing may simulate
+  here" rather than less.** Nothing was added to `tick`'s `loading` arm and
+  nothing may be: the wait is one call at the very END of `tick`, after the
+  render it is asking about, and all it does is read a queue and take a card
+  down.
+- **A queue that cannot drain must not hang the card**, and the state machine
+  has no concept of a step that fails. A probe re-bakes in full until every
+  mesh in its list has a compiled material, so the wait gives up on two
+  different failures — an outstanding count that stops MOVING, which no wall
+  clock can tell from a slow machine, and a bake that inches forward forever,
+  which no stall counter can catch — and lets the remainder land in the round
+  exactly as it did before. Both caps are `CONFIG.graphics.reflection`'s.
+- **`loading` is no longer the same question as "the build has not run yet"**,
+  and every guard that was asking the second one now asks `Game.buildPending`.
+  Reading the state alone would refuse a map rotation or a team correction
+  arriving from the authority for the whole length of the drain and drop it on
+  the floor, because the branch that defers to `buildRound` would be deferring
+  to a `buildRound` that already happened.
+- **The building card can finally say how far along it is.** The build itself
+  has no frames to report from — it is one task — but the bake has one per
+  batch, so `OverlayScreen.setBuildProgress` swaps the indeterminate sweep for
+  a measured fill the first time a frame goes by with the bake still
+  outstanding. Every shipped map drains on the first frame and never reaches
+  that call.
 
 **`dying` is the death cam and is a STEP, not a lid** — `updateWorld` runs in full
 underneath it. **`loadout`, `settings`, `lobby` and `paused` are lids**: a screen

@@ -195,6 +195,12 @@ export class OverlayScreen {
   /** The panel element, live only while the menu card is up. */
   private detailEl: HTMLElement | null = null;
   /**
+   * The building card's progress bar, live only while that card is up. Held
+   * rather than re-queried because it is written on a frame the main thread is
+   * otherwise spending on the bake — see `setBuildProgress`.
+   */
+  private buildBar: HTMLElement | null = null;
+  /**
    * The menu's BACKDROP: a photograph of the map that is chosen, under the
    * veil, cross-faded when the choice changes.
    *
@@ -790,6 +796,7 @@ export class OverlayScreen {
     this.clearShot();
     this.menuEls.clear();
     this.detailEl = null;
+    this.buildBar = null;
     // The bar is the two counts against each other rather than against the
     // ticket pool they started from: a round that ends 142-0 and one that ends
     // 12-0 are not the same round, and the pool is the same number on both
@@ -862,6 +869,7 @@ export class OverlayScreen {
     this.clearShot();
     this.menuEls.clear();
     this.detailEl = null;
+    this.buildBar = null;
     // Centred and deliberately bare. Everything else in this file grew a
     // second column while this card did not, and the reason is the freeze it
     // covers: whatever is on it has to be PAINTED before the main thread stops,
@@ -875,6 +883,30 @@ export class OverlayScreen {
         <div class="ov-bar"><i></i></div>
       </div>
     `;
+    this.buildBar = this.root.querySelector(".ov-bar i");
+  }
+
+  /**
+   * How much of what the card is covering is done, 0..1 — and until this is
+   * called the bar sweeps, which is the state every card before the bake wait
+   * left it in.
+   *
+   * **The build itself cannot report progress and this is not it.** Everything
+   * `buildRound` does is one synchronous turn with no frame in it, so a bar
+   * measured against the build would be painted once at 0 and once at 1. What
+   * this measures is the tail the card now also covers: the reflection bake,
+   * which is spent a budget of draws per FRAME and therefore has frames to be
+   * painted on. See `Game.bakeWait`.
+   *
+   * The sweep is dropped on the first call rather than at `showBuilding`,
+   * because a map whose bake lands in one frame — all four of the shipped ones
+   * — never gets here at all and should not flash a bar at 0 on its way past.
+   */
+  setBuildProgress(done: number): void {
+    const bar = this.buildBar;
+    if (!bar || this.card !== "building") return;
+    bar.parentElement?.classList.add("measured");
+    bar.style.width = `${Math.round(Math.min(1, Math.max(0, done)) * 100)}%`;
   }
 
   /**
@@ -898,6 +930,7 @@ export class OverlayScreen {
     this.clearShot();
     this.menuEls.clear();
     this.detailEl = null;
+    this.buildBar = null;
     const items = PAUSE_ITEMS.map(
       ([action, label]) =>
         `<button class="pact" data-action="${action}">${label}</button>`,
@@ -972,6 +1005,7 @@ export class OverlayScreen {
     this.setOverlaid(false);
     this.clearShot();
     this.detailEl = null;
+    this.buildBar = null;
     // The buttons live in the card's markup, so they die with it.
     this.pauseButtons = [];
     this.pauseIndex = 0;

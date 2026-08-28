@@ -173,9 +173,11 @@ consumes a `GameMap` or an `EnvironmentSpec` goes in `installMap`.**
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
 deploy`, with `roundover` when a side runs out of tickets. The 3D scene renders
 in **every** state, which is what lets the deploy screen and the menu sit over a
-live view. `loading` (the map being built) and `dying` (the death cam) are
+live view. `loading` (the map being built, and then the reflection bake
+draining behind the same card — `Game.bakeWait`) and `dying` (the death cam) are
 **STEPS, not lids**; `updateWorld` runs in full under the death cam and nothing
-may simulate under the building card.
+may simulate under the building card, which is now up for as long as the bake
+takes rather than for one frame.
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is

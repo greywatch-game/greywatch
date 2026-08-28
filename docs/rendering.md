@@ -679,9 +679,32 @@ happens then is not a long frame. The D3D12 device is LOST inside it, on
 fails too; at the larger of the two extents `FINDINGS.md` §19 measured, the
 renderer process is replaced outright. **That is a resource ceiling reached
 inside one command submission and not a timeout**, so a slower bake fails
-identically and only a smaller one does not. Three numbers in
-`CONFIG.graphics.reflection` make it smaller, each on a different term, and
-**all three are no-ops on every map that ships**:
+identically and only a smaller one does not.
+
+**One term of that product is not paid at all any more, and it is the SIX.** A
+cube target has no frustum culling of its own — `ObjectRenderer` walks a render
+list and dispatches every mesh in it, because a render list is normally
+something the caller has already chosen — so a probe drew its whole
+neighbourhood once per face whatever each face could see.
+`ReflectionSystem.faceOf`, on Babylon's `getCustomRenderList` hook, hands each
+face the subset inside the frustum that face is about to rasterise with. It is
+`AbstractMesh.isInFrustum` against `scene.frustumPlanes`, which is exactly the
+test `_evaluateActiveMeshes` applies to the main pass and is refreshed per face
+by `ReflectionProbe`'s own `setTransformMatrix` — so **it cannot move a pixel**,
+which is what makes it preferable to every other way of shortening the list:
+the radius drops geometry the face would have drawn, `perCell` drops a building
+out of the middle of a cube, and this drops only what the rasteriser was going
+to clip. Measured over a whole install: **1,469,484 mesh-draws offered and
+284,097 issued at 900/300, and 2,120,976 against 394,604 at 1500/0** — 5.2x and
+5.4x — with all sixteen banked vantages of the four shipped maps identical to
+four decimal places either side. **The queue's budget is deliberately NOT told
+about it**: a probe is still priced at `list.length * 6`, so a bake takes the
+same number of frames it always did and each of them merely issues far fewer
+draws. That is the conservative direction on the one number standing between
+this bake and a lost device.
+
+Three numbers in `CONFIG.graphics.reflection` make the rest smaller, each on a
+different term, and **all three are no-ops on every map that ships**:
 
 - **`drawsPerFrame` (50,000) spends the bake over frames instead of issuing it
   in one.** A probe is refresh-once, so releasing one is
@@ -707,6 +730,19 @@ identically and only a smaller one does not. Three numbers in
   wait**: an unbaked cube is alpha 0 everywhere, which is the analytic sky a
   pane shows before any probe has claimed it — the state an editor build leaves
   every pane in permanently.
+  **Those frames are the LOADING card's, and that is a state-machine fact
+  rather than a rendering one.** `installMap` is one synchronous turn, so no
+  frame can render inside it and the whole queue is outstanding when it
+  returns; before this the frames spending it were the first frames of `deploy`
+  and then of the round — one on every shipped map, and 47 of them over 44.8 s
+  at 1500 m, with the player watching. `Game.bakeWait` holds `loading` — a step
+  where nothing simulates and the scene still renders — until
+  `ReflectionSystem.bakePending` reaches 0, and hands the building card the
+  progress figure it never had. It moves the cost rather than removing it;
+  `faceOf` above is the half that removes it. **A queue that cannot drain must
+  not hang the card**, so the wait gives up on a stalled probe count or a
+  backstop clock and lets the remainder land in the round exactly as it used
+  to. See [`docs/states.md`](states.md).
 - **`radius` (800 m) is the only term in the bake priced on the map's SIZE.** A
   probe's render list is the opaque world within 800 m of it, measured to the
   NEAR SIDE of each mesh's bounding sphere: `distance - radiusWorld`, which is

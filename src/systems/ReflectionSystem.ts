@@ -26,6 +26,16 @@
  *   and the D3D12 device is lost inside it. `queue` and `releaseBatch` are
  *   what turn that into `drawsPerFrame` at a time. It is still a BUILD step;
  *   it is no longer a build step that happens in one command submission.
+ * - **And the frames it is spent over are the LOADING card's**, not the
+ *   round's. `Game` holds `loading` until `bakePending` reaches 0, which is
+ *   the one thing outside this file that knows the bake is spread at all. A
+ *   queue that cannot drain must not hang the card, so the wait is capped at
+ *   the caller's end rather than here.
+ * - **Each FACE draws only what that face can see** (`faceOf`, on
+ *   `getCustomRenderList`). A cube target has no frustum culling of its own,
+ *   so a probe used to draw its whole render list six times over; this is the
+ *   only reduction to the bake in the file that cannot move a pixel, and the
+ *   queue's budget is deliberately not told about it.
  * - **The probe count has a ceiling and it is stated in MEMORY**, because the
  *   count is the map's glazing and glazing has no natural bound: past
  *   `poolBudgetMiB` glazed blocks are grouped in twos, then fours, until the
@@ -143,6 +153,15 @@ export class ReflectionSystem {
    * way round. `releaseBatch` spends them against the same budget.
    */
   private readonly inFlight: { probe: ReflectionProbe; draws: number }[] = [];
+  /**
+   * The list one FACE of one probe is actually drawn from — `renderList`
+   * minus whatever that face cannot see. See `faceOf`, which is the only
+   * thing that writes it, and which hands it straight to Babylon: it is
+   * refilled at the top of every face and consumed inside the same
+   * `ObjectRenderer.render` call, so one array serves all six faces of every
+   * probe in the pool. A bake mints no garbage.
+   */
+  private readonly faceList: AbstractMesh[] = [];
   /** Scratch for the box handed to the factory, which copies it. */
   private readonly boxMin = Vector3.Zero();
   private readonly boxMax = Vector3.Zero();
@@ -185,6 +204,32 @@ export class ReflectionSystem {
     const first = this.probeAt(0);
     this.release(first);
     this.mats.setDefaultReflection(first.cubeTexture);
+  }
+
+  /**
+   * How much of this install's bake has NOT happened yet, in probes: every
+   * probe still in the queue, plus every probe released and not yet seen to
+   * render.
+   *
+   * **A released probe is not a baked one**, which is the same gap `inFlight`
+   * exists for — a refresh-once target whose counter is still -1 is one
+   * Babylon has been asked to draw and has not drawn, either because the
+   * frame it was released on has not run yet or because something in its list
+   * was not ready and it is re-baking in full. Counting only the queue would
+   * report a bake finished one frame before its largest batch is issued,
+   * which is the one frame the caller of this is trying not to spend in the
+   * round.
+   *
+   * Read by `Game` while the building card is up and by nothing else. It
+   * allocates nothing and walks at most the pool, so it is free to ask every
+   * frame.
+   */
+  get bakePending(): number {
+    let pending = this.queue.length;
+    for (const held of this.inFlight) {
+      if (held.probe.cubeTexture.currentRefreshId === -1) pending++;
+    }
+    return pending;
   }
 
   /**
@@ -641,7 +686,76 @@ export class ReflectionSystem {
     rtt.onBeforeRenderObservable.add(() => {
       this.mats.updateCamera(probe.position);
     });
+    // **And the face is asked what it can SEE, which is the one question the
+    // bake had never been asked.** See `faceOf`. It is registered here rather
+    // than in `build` so both pools get it and neither can be given a probe
+    // that draws its whole list six times.
+    rtt.getCustomRenderList = (_face, list, length) => this.faceOf(list, length);
     return probe;
+  }
+
+  /**
+   * This face's share of a probe's render list: the meshes inside the frustum
+   * Babylon is about to rasterise with, and nothing else.
+   *
+   * **A cube target has no frustum culling of its own, and that is the whole
+   * of what this is.** `ObjectRenderer._prepareRenderingManager` walks the
+   * render list and dispatches every mesh in it — the readiness check, the LOD
+   * get, `_activate` and a draw per submesh — with no `isInFrustum` anywhere,
+   * because a render list is normally something a caller has already chosen.
+   * So a probe drew its whole neighbourhood SIX TIMES, once per face, where
+   * the main pass draws each mesh at most once and usually not at all: at
+   * 1500 m that is 1,348 meshes x 6 against a frame that reaches 146 active
+   * out of 23,031. `ENGINE_UPGRADE.md` S0c calls this the only lever on the
+   * bake that removes work rather than moving it, and this is it.
+   *
+   * **It cannot move a pixel, and that is why it is preferred over every
+   * other way of making the list shorter.** A shorter RADIUS drops geometry
+   * the face would have drawn and leaves a hole the shader fills with sky; a
+   * coarser `perCell` drops a building out of the middle of a cube. This drops
+   * only what falls outside the six planes the rasteriser is about to clip
+   * against anyway — the same test, by the same code, that
+   * `_evaluateActiveMeshes` uses for the main pass, including
+   * `alwaysSelectAsActiveMesh` so a mesh that opts out of the frame's cull
+   * opts out of this one too. Nothing in `map.visuals` sets it today; it is
+   * here so that a mesh which one day does cannot vanish out of the glass
+   * silently.
+   *
+   * **`scene.frustumPlanes` is THIS FACE's, and the ordering that makes that
+   * true is Babylon's rather than ours.** `ReflectionProbe` writes the face's
+   * view and projection through `scene.setTransformMatrix` from the render
+   * target's `onBeforeRenderObservable`, `setTransformMatrix` refreshes the
+   * planes, and `ObjectRenderer.render` fires that observable immediately
+   * before it calls `_prepareRenderingManager` — which is what calls this. A
+   * Babylon version that moved either of those two lines would leave this
+   * culling every face against the previous one's planes, and the tell would
+   * be a seam of missing geometry that rotates with the probe.
+   *
+   * **What it deliberately does NOT do is make the queue's budget go further.**
+   * A queued probe is still priced at `list.length * 6` — see `releaseBatch`
+   * — so the frames a bake takes are exactly the frames it took before and
+   * each one merely issues far fewer draws. That is the conservative
+   * direction on the one number standing between this bake and a lost D3D12
+   * device, and `drawsPerFrame` is not a lever this step was allowed to move.
+   */
+  private faceOf(
+    list: readonly AbstractMesh[] | null,
+    length: number,
+  ): AbstractMesh[] {
+    const planes = this.scene.frustumPlanes;
+    const out = this.faceList;
+    out.length = 0;
+    if (!list) return out;
+    for (let i = 0; i < length; i++) {
+      const mesh = list[i];
+      // The list can hold dummy entries — Babylon's own note on this hook —
+      // so the null check is the contract rather than defensiveness.
+      if (!mesh) continue;
+      if (mesh.alwaysSelectAsActiveMesh || mesh.isInFrustum(planes)) {
+        out.push(mesh);
+      }
+    }
+    return out;
   }
 }
 
