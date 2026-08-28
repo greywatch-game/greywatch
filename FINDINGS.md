@@ -2610,7 +2610,7 @@ harrowmead/borderland at 0%) — which is the same evidence S4 used, and finding
 
 ---
 
-## 25. Half the install is not the build, and it is two sites: Havok's compound is quadratic and Babylon walks the whole scene once per render pass id — **THE COMPOUND IS CLOSED**
+## 25. Half the install is not the build, and it is two sites: Havok's compound is quadratic and Babylon walks the whole scene once per render pass id — **CLOSED, BOTH HALVES**
 
 **Asked because finding 24 left a 17.5 s hole.** `build:total` is 17,422 ms at
 1500/0 and install-to-`deploy` is 34,923, so more than half the load was
@@ -2635,6 +2635,14 @@ A CPU profile over `buildRound`, attributed to the direct children of
 34,923; the split is what matters and it is internally consistent.
 `WaterSystem.build` and `GrassSystem.build` do not appear because the proving
 ground has neither — a map with water owes its own reading.)
+
+**This table is the BEFORE and both bold rows have since been fixed.** S5b
+bucketed the compound and S5c stopped the render-pass walk, so at 1500 m
+`PhysicsWorld.setMap` is **181 ms** and `ReflectionSystem.build` **72**, against
+`MapBuilder.build`'s 18,837 in the same run — 98.7% of a 19,117 ms install.
+Quote the table for the RANKING that produced the two steps, never for what an
+install costs today. And the water reading it says is owed now exists: it is in
+the reflection section below, and it moved with the rest.
 
 **Everything in `installMap` that is not those three is 27 ms at 1500 m.** All
 the wiring — the six `setWorld` calls, the fog pushes, the leash, the ground
@@ -2695,7 +2703,7 @@ reading, and `plans/physics-ref/drop.mjs` is the oracle that came with it — th
 answer to "a physics change has nothing to check it" this file had no entry
 for.
 
-### `ReflectionSystem.build` is doing nothing at all, 106 million times
+### `ReflectionSystem.build` is doing nothing at all, 34.5 million times — **FIXED, S5c**
 
 96% of it is probe CONSTRUCTION — `newProbe` → `ReflectionProbe` →
 `RenderTargetTexture` → `ObjectRenderer` — and inside that, 5,058 of 5,272 ms
@@ -2729,6 +2737,11 @@ probes x 6 x 9,002 meshes = **14.3 million mesh visits** for 1,075 ms; at
 1500/0, on wall 5's count of 770 probes (carried forward, not re-measured this
 session) x 6 x 23,014 = **106 million** for 5,272 ms. The ratio of the work is
 7.4x and of the time 4.9x, which is as close as a per-submesh inner loop gets.
+**Both of those figures are wrong and S5c re-measured them** — see the fix
+below: the count at 1500/0 is 250 probes and not 770, so the visits are 34.5
+million, and the work grows 2.41x between the extents where the time grows
+5.05x. The direction is the opposite of what this paragraph reads off the
+carried-forward count.
 
 **It is priced on map AREA twice over** — more glazed blocks and more meshes to
 walk per block — which makes it a wall-1-shaped cost hiding in the load rather
@@ -2738,13 +2751,47 @@ was ever allocated.
 The lever is the multiplier, since the loop is Babylon's. The probes are POOLED
 and survive a rebuild, so this is a first-install cost, and it is paid when
 `scene.meshes` is at its longest — right after `MapBuilder.build`. Growing the
-pool while the scene is SHORT is what removes it: `installMap` disposes the old
-map on its first line, and between there and the build the scene is ~1,020
+pool while the scene is SHORT would remove most of it: `installMap` disposes the
+old map on its first line, and between there and the build the scene is ~1,020
 meshes rather than 23,014, which is a 22x cut. What stands in the way is that
-the probe count is not known until the map is built. Nobody has looked at
-whether it can be estimated off the layout, or whether it is simpler to hide
-`scene.meshes` from the walk for the length of the construction loop the way
-`WorldCulling` already replaces `getActiveMeshCandidates`.
+the probe count is not known until the map is built.
+
+**The other shape landed instead and it takes the walk to nothing rather than
+to a 22nd.** `ReflectionSystem.newProbe` hands `scene.meshes` an empty array
+for the length of the `new ReflectionProbe(...)` call and puts the real one
+back in a `finally`. Both pools mint through that one method, so the water half
+below is covered by construction rather than by remembering to cover it.
+
+| `ReflectionSystem.build` | probes x scene meshes | before | after | |
+| --- | --- | --- | --- | --- |
+| Coldharbour | 40 x 2,213 | 41 ms | **5 ms** | |
+| 900 / 300 | 265 x 9,002 | 1,298 ms | **38 ms** | 34x |
+| 1500 / 0 | 250 x 23,014 | 6,551 ms | **72 ms** | 91x |
+
+`installMap` goes 7,510 ms to **6,099** and 24,876 to **19,117**, matched pairs
+through the instrument at the top of this finding. The water pool moves with it
+— Hollowmere's three probes 6.4 ms to 1.1, Greyfen's one 4.6 to 0.5,
+Harrowmead's one 4.2 to 0.7 — which is the fourth line this finding said the
+proving ground could not show.
+
+**Two numbers above this section were wrong and the pair of extents is what
+found them.** The probe count at 1500/0 is **250**, not the 770 carried forward
+from wall 5: `poolBudgetMiB` caps the pool at 320, so 1,153 glazing groups come
+back at `perCell` 2 — the first map in the tree where the grouping is not 1. And
+2.41x the mesh visits between the two extents cost **5.05x** the time, 91 ns a
+visit against 190, because the inner loop walks submeshes and the outer walks a
+23,014-entry array rather than a 9,002-entry one. **A per-visit rate taken on
+the smaller ground understates the larger by half**, which is finding 18's
+0.67 us against finding 19's 1.10 us in a different file.
+
+**What makes the swap safe is two facts and one of them is enforced.** No frame
+renders inside `installMap`, and probe construction creates no mesh; the
+`finally` moves anything that did arrive back into the real list and logs a DEV
+error naming the site, because `Scene.addMesh` pushes into whatever
+`scene.meshes` is at the time. `ENGINE_UPGRADE.md` S5c has the verification —
+the `[reflection]` line identical in every field on all five maps, `bank.mjs
+--check` byte-identical before and after over all fifteen shots, `gate.mjs`
+clean.
 
 ### What this says about S5
 
@@ -2766,17 +2813,18 @@ worker has to overlap the MERGES instead (3,542 against 3,715 ms), which needs
 
 ### What is open
 
-- **The probe half's mitigations are still uncosted.** The early-grown probe
-  pool and the scoped `scene.meshes` swap are shapes, not measurements. The
-  compound's are not: bucketing was taken, measured and landed as S5b.
-- **A map with WATER has a fourth line here and this ground has none.**
-  `WaterSystem.build` bakes bed depth and calls `bakeWater`, which builds a
-  second probe pool — so it is on the wrong side of the reflection finding
-  above and did not appear in either column.
-- **The probe count at 1500/0 was not re-measured.** 265 at 900/300 is
-  confirmed from the `[reflection]` line; 770 is wall 5's figure from before
-  S0b landed, and S0b changed how many blocks share a probe.
-- **`MapBuilder.build` is still 42%** of the install, and finding 24's open
-  threads are where the rest of that is.
+- **`MapBuilder.build` is now 98.7% of the install** — 18,837 ms of 19,117 at
+  1500 m, with the other two sites at 181 and 72 between them. Finding 24's open
+  threads are the whole of what is left of wall 4, and its first one (colliders
+  are still built the ordinary way, 16,526 of them) is the cheapest.
+- **A probe pool grown while the scene is SHORT was never costed and no longer
+  needs to be.** It was the first shape offered here and the swap took the walk
+  to nothing rather than to a 22nd of it, so the estimate-off-the-layout problem
+  it opened is moot unless something else wants the probe count early.
+- **`perCell` is 2 at 1500 m, which is the first live grouping in the tree** and
+  means a probe there drops 96 m of city out of the middle of its own cube (the
+  enclosure rule — see `docs/rendering.md`). Nobody has looked at what that
+  costs the PICTURE, because the proving ground is not a map anyone plays. A
+  1500 m map that ships glazing owes that reading.
 
 ---

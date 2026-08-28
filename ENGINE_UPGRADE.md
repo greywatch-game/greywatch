@@ -246,7 +246,7 @@ WASM. This is the wall that is not "slower" — it is an allocation failure, and
 the JS heap is **3,536 MiB against V8's 4,192 MiB cap** and the renderer's
 working set is 5.4 GB. At 900 / 300 the same figures are 1,696 MiB and 2.6 GB.
 
-### Wall 4 — load time, and the burst builds behind the card — **MOSTLY DOWN, TWO SITES LEFT**
+### Wall 4 — load time, and the burst builds behind the card — **MOSTLY DOWN, AND BOTH SITES ARE CLOSED**
 
 **S5's first half has landed and `FINDINGS.md` 24 is what it produced**: the
 1500 m build is 186 s to 17.4 and the placement loop 161.5 s to 9.4, and the
@@ -255,12 +255,17 @@ because the shape of it is why the fix is shaped the way it is — and because
 **the cause named at the bottom of this section was the wrong one, which is the
 part worth reading twice.**
 
-**What is left of the wall is 18.7 s and it is NOT the build.** `FINDINGS.md`
-25 profiled the gap between `build:total` and install-to-`deploy`, which this
-section had never attributed: `PhysicsWorld.setMap` is 13,402 ms and quadratic
-in collider boxes, `ReflectionSystem.build` is 5,272 and walks the whole scene
-six times per cube probe to release ids it never allocated, and everything else
-in `installMap` is 27 ms between them. Those are **S5b** and **S5c**.
+**What WAS left of the wall was 18.7 s and it was NOT the build.**
+`FINDINGS.md` 25 profiled the gap between `build:total` and
+install-to-`deploy`, which this section had never attributed:
+`PhysicsWorld.setMap` was 13,402 ms and quadratic in collider boxes,
+`ReflectionSystem.build` was 5,272 and walked the whole scene six times per cube
+probe to release ids it never allocated, and everything else in `installMap` is
+27 ms between them. Those were **S5b** and **S5c**, and both have landed: the
+two are **181 ms and 72** at 1500 m now, so 18.7 s of the wall came off for a
+bucketed compound and a three-line swap. **What is left of wall 4 is
+`MapBuilder.build` and nothing else** — 98.7% of a 19.1 s install — and finding
+24's open threads are where it is.
 
 **This wall is real and this section was wrong about all of it.** Derived:
 30-60 s behind the loading card, dominated by `NavGrid`, `CoverMap`, the flood
@@ -925,9 +930,10 @@ Three moves, in increasing order of how much they change:
    built lazily and evicted — is the shape, and `nav.steer()` being the one
    reader is what makes it changeable at all. — *Not taken. Measured, its case
    has gone; see below.*
-3. **Build them off the main thread**, which is S5. — *Still S5, and no longer
-   the only thing left in its way: S5b and S5c are both ahead of it, and the
-   worker is gated on S5b because S5b decides what it can overlap with.*
+3. **Build them off the main thread**, which is S5. — *Still S5, and still not
+   taken. S5b and S5c have both landed since, which is what ungated it: the
+   worker now has to overlap the MERGES, because the 13.4 s compound it could
+   have hidden behind is 181 ms.*
 
 **Move 1 is done and the graph is bit-identical, which is checked rather than
 argued.** The same canonical dump S3 built is what did it — per surface, the
@@ -1392,7 +1398,7 @@ lanes. That decision is S5's and is still not taken.
 
 ---
 
-### S5c — Stop walking the whole scene once per render pass id
+### S5c — Stop walking the whole scene once per render pass id — **LANDED**
 
 **5,272 ms at 1500/0, and every microsecond of it does nothing.** 96% of
 `ReflectionSystem.build` is probe CONSTRUCTION — `newProbe` → `ReflectionProbe`
@@ -1465,6 +1471,78 @@ which is a full description of the bake that costs nothing to compare;
 vantages of it; `gate.mjs`, which asserts no probe re-renders per frame; and the
 `installMap` attribution again. A map WITH water wants its own reading here
 whatever the proving ground says.
+
+---
+
+**Fix 2 landed — the scoped swap — and fix 1 was not needed.** `newProbe` hands
+`scene.meshes` an empty array for the length of the `new ReflectionProbe(...)`
+call and puts the real one back in a `finally`. It is in the one place both
+pools mint a probe, so the WATER half this step said had to be covered
+explicitly is covered by construction instead — and so is probe 0, the one the
+constructor builds before any map exists.
+
+| `ReflectionSystem.build` | probes x scene meshes | before | after | |
+| --- | --- | --- | --- | --- |
+| Coldharbour | 40 x 2,213 | 41 ms | **5 ms** | |
+| 900 / 300 | 265 x 9,002 | 1,298 ms | **38 ms** | 34x |
+| 1500 / 0 | 250 x 23,014 | 6,551 ms | **72 ms** | 91x |
+
+| the WATER pool, which has no proving ground | probes | before | after |
+| --- | --- | --- | --- |
+| Hollowmere | 3 | 6.4 ms | **1.1 ms** |
+| Greyfen | 1 | 4.6 ms | **0.5 ms** |
+| Harrowmead | 1 | 4.2 ms | **0.7 ms** |
+
+`installMap` itself — timed around the method rather than to `deploy`, so the
+lines sum to it — is 7,510 ms to **6,099** at 900/300 and 24,876 to **19,117**
+at 1500/0, both matched pairs on the same tree in the same session.
+
+**The probe count at 1500/0 is 250 and not 770, which was one of finding 25's
+own open threads.** `poolBudgetMiB` caps the pool at 320, so 1,153 glazing
+groups come back at `perCell` **2** — the first map anywhere in this tree where
+the grouping is not 1, and the bounded worst case `docs/rendering.md` describes
+turning out to be live at this size. So the walk is 250 x 6 x 23,014 =
+**34.5 million** mesh visits rather than the 106 million this step opened with.
+The conclusion is untouched; the arithmetic under it was not.
+
+**And the visits do not predict the milliseconds, which is the part to carry
+away.** 2.41x the visits between the two extents cost **5.05x** the time — 91 ns
+a visit at 900/300 against 190 at 1500/0. The inner loop walks each mesh's
+SUBMESH array too, and the outer one walks a 23,014-entry array where the
+smaller ground walks 9,002; either way a rate taken on the smaller extent
+understates the larger by half. That is finding 18's 0.67 us against finding
+19's 1.10 us, in a different file, and it is why the pair was taken.
+
+**Why the swap and not the early-grown pool, which this step listed first.**
+Growing the pool while the scene is short needs the probe count before the map
+that decides it exists — an estimate off the layout, or a ceiling — and it takes
+the walk to ~1,020 meshes rather than to none, which is the 22x this step
+costed against the 34-91x measured above. The swap is two assignments per probe
+and the argument that makes it safe is two sentences, both of them said out loud
+in `newProbe` as this step demanded: **no frame renders inside `installMap`**,
+and **probe construction creates no mesh**. The second is ENFORCED rather than
+merely stated — anything pushed into the hidden array is moved back into the
+real list in the `finally`, with a DEV error naming the site — because
+`Scene.addMesh` pushes into whatever `scene.meshes` IS at that moment, and a
+mesh lost there is one the frame never walks, the shadow map never casts from
+and nothing ever draws.
+
+**Verified:** the `[reflection]` DEV line identical in every field it prints, on
+all five maps and both extents — probes, glazing groups, blocks each, meshes,
+listed, dropped, draws, frames — with only `queued in` moving; `bank.mjs
+--check` producing byte-identical output before and after over all fifteen
+shots, including Coldharbour's four glazing vantages and Harrowmead's millpond,
+which is what says no pixel moved (the bank itself is still the pre-existing red
+S5 records, and re-banking would destroy that evidence); `gate.mjs` clean on all
+four shipped maps (137.8-143.9 fps on Hollowmere, 61.2-80.1 elsewhere, 40 probes
+on Coldharbour, no probe re-rendering); the `installMap` attribution above at
+both extents as matched pairs; `npm run typecheck`; `npm run build`.
+`npm run parity` is not owed and says nothing: this touches no world geometry.
+
+**What this leaves.** `installMap` at 1500 m is `MapBuilder.build` 18,837 ms,
+`PhysicsWorld.setMap` 181 and `ReflectionSystem.build` 72 — **the build is
+98.7% of the install**, everything else in the method is under 300 ms together,
+and finding 24's open threads are the whole of what is left of wall 4.
 
 ---
 

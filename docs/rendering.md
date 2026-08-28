@@ -732,9 +732,39 @@ identically and only a smaller one does not. Three numbers in
   shipped face size and the pool is never disposed, so 160 MiB is 320 probes —
   Coldharbour asks for 40 and the 900 m proving ground for 265 (133 MiB), so
   **nothing in the tree groups anything today** and this is a bounded worst
-  case rather than a live lever. What to know before raising it is the enclosure rule below: a
+  case rather than a live lever. **It stops being one somewhere between 900 m
+  and 1500 m**: regenerated at 1500/0 the same ground asks for ~500 glazed
+  blocks and comes back at `perCell` **2**, 250 probes, which is the first
+  grouping anything has ever measured (`FINDINGS.md` 25). What that costs the
+  picture has not been looked at, for the reason the enclosure note below gives. What to know before raising it is the enclosure rule below: a
   probe drops every block it SERVES out of its own bake, so a cell of four
   blocks is a probe with 96 m of city missing from the middle of its cube.
+
+**A probe COSTS something to build as well as to bake, and it is not the cube —
+it is the whole scene, six times over.** A cube target is six render passes, so
+its `ObjectRenderer` mints six render pass ids, and Babylon's
+`_createRenderPassId` opens by RELEASING the ids it is about to create over an
+array that is still empty. Each of those six `releaseRenderPassId(undefined)`
+calls walks every mesh and every submesh of every scene on the engine, to clear
+a draw wrapper filed under `undefined` that nothing can ever have written —
+`SubMesh._getDrawWrapper` resolves an undefined pass id to the engine's current
+one before it indexes. It is provably a no-op and it is priced on the MAP, paid
+at the worst moment there is: right after `MapBuilder.build` has put the whole
+world in the scene. Measured, it was **1,298 ms on the 900 m proving ground and
+6,551 at 1500 m**, against 38 and 72 with the fix in.
+
+**The fix is a scoped swap and it lives in `ReflectionSystem.newProbe`**, which
+is the one place either pool mints a probe: `scene.meshes` is handed an empty
+array for the length of the `new ReflectionProbe(...)` call and put back in a
+`finally`. Two facts make that safe and both are written out at the site — no
+frame renders inside `installMap`, and probe construction creates no mesh — and
+the second is enforced rather than trusted, because `Scene.addMesh` pushes into
+whatever `scene.meshes` is at the time and a mesh lost there is one nothing
+ever draws. `ENGINE_UPGRADE.md` S5c and `FINDINGS.md` 25 have the measurements.
+**Do not move that swap out to wrap the construction LOOP instead**: the water
+pool is minted from a different moment of the same install
+(`WaterSystem.build` → `bakeWater`), and minting through one method is what
+covers both without either being remembered.
 
 **The probe stands at the centre of the glass it serves.** That puts it inside
 the shaft of a tower's wrap-around curtain wall and exactly ON the plane of a

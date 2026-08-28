@@ -29,7 +29,12 @@
  * - **The probe count has a ceiling and it is stated in MEMORY**, because the
  *   count is the map's glazing and glazing has no natural bound: past
  *   `poolBudgetMiB` glazed blocks are grouped in twos, then fours, until the
- *   pool fits. Nothing in the tree groups anything today.
+ *   pool fits. Nothing in the tree groups anything today — the proving ground
+ *   regenerated at 1500/0 is the first thing that ever has, at `perCell` 2.
+ * - **Building a probe is not free either, and what it costs is the SCENE.**
+ *   `newProbe` hides `scene.meshes` for the length of the construction, which
+ *   is worth 1.3 s at 900 m and 6.6 at 1500. Read it before touching either
+ *   pool: it is what keeps the glazing's and the water's fix in one place.
  * - The renderList must be replaced on every install, before the next frame:
  *   last build's meshes are disposed by then, exactly as for
  *   `ShadowSystem.setCasters`. The QUEUE is emptied on the same line and for
@@ -48,6 +53,7 @@
  *   editor is the one place it is not. See `build`.
  */
 import {
+  type AbstractMesh,
   Color4,
   type Mesh,
   ReflectionProbe,
@@ -63,6 +69,15 @@ import type {
   ProbeReflection,
 } from "../shaders/CelShader";
 import type { GameMap, PaneGroup, WorldBox } from "../world/MapBuilder";
+
+/**
+ * What the scene's mesh list is swapped for while a probe is being built, and
+ * why it is one shared array rather than a fresh one per probe: a large map
+ * mints hundreds of probes and this is not a place to allocate. See
+ * `ReflectionSystem.newProbe`, which is the only thing that touches it, and
+ * which puts anything that lands in it back into the real list.
+ */
+const NO_MESHES: AbstractMesh[] = [];
 
 /**
  * A cube per glazed block, and why the count is what it is.
@@ -539,13 +554,70 @@ export class ReflectionSystem {
    * A probe, set up the one way every probe in the game is set up. Both pools
    * mint through here so a change to the clear colour, the refresh rate or the
    * eye hook cannot land on one kind of mirror and miss the other.
+   *
+   * **And the scene's mesh list is hidden while the probe is CONSTRUCTED,
+   * which is `ENGINE_UPGRADE.md` S5c and was 96% of what a first install spent
+   * in this file.** A cube target is six render passes, so its `ObjectRenderer`
+   * mints six render pass ids — and `_createRenderPassId` opens by RELEASING
+   * the ids it is about to create, over an array that is still empty. That is
+   * six `AbstractEngine.releaseRenderPassId(undefined)` calls, and each one
+   * walks every mesh of every scene on the engine, and every submesh under it,
+   * to clear a draw wrapper filed under `undefined`.
+   *
+   * **Nothing can ever have written that key, so the walk is provably a
+   * no-op**: `SubMesh._getDrawWrapper` resolves an undefined pass id to the
+   * engine's CURRENT one before it indexes, so `undefined` is not a slot the
+   * map has. What the walk is priced on is the MAP — 265 probes x 6 x 9,002
+   * meshes is 14.3 million mesh visits on the 900 m proving ground for
+   * 1,298 ms, and 250 x 6 x 23,014 is 34.5 million at 1500 m for 6,551
+   * (`FINDINGS.md` 25) — and it is paid at the worst moment available,
+   * immediately after `MapBuilder.build` has put the whole map in the scene.
+   * Handing it an empty list is the whole fix, and takes those to 38 ms and 72;
+   * the loop is Babylon's, so the only lever is the multiplier.
+   *
+   * **It is a Babylon FIELD rather than a Babylon hook, so the two things that
+   * make the swap safe are said out loud rather than enforced by its shape.**
+   * (1) No frame renders inside `installMap`: the construction, the queueing
+   * and the install around them are one synchronous call, and `releaseBatch`
+   * rides a render observable that cannot fire inside it — so nothing walks
+   * `scene.meshes` while it is hidden. (2) Probe construction creates no mesh,
+   * so nothing is looking to be ADDED to the list while it is out; the
+   * `finally` below is what turns a Babylon version that changes that from a
+   * silent lost mesh into a loud one. `WorldCulling` replacing
+   * `getActiveMeshCandidates` is the precedent for reaching into the scene like
+   * this, and it is a weaker one than it looks: that is a documented hook and
+   * this is an array.
    */
   private newProbe(name: string): ReflectionProbe {
-    const probe = new ReflectionProbe(
-      name,
-      CONFIG.graphics.reflection.size,
-      this.scene,
-    );
+    const meshes = this.scene.meshes;
+    this.scene.meshes = NO_MESHES;
+    let probe: ReflectionProbe;
+    try {
+      probe = new ReflectionProbe(
+        name,
+        CONFIG.graphics.reflection.size,
+        this.scene,
+      );
+    } finally {
+      // Anything that arrived while the real list was out of the scene goes
+      // back into it rather than onto the floor: `Scene.addMesh` pushes into
+      // whatever `scene.meshes` IS at the time, and a mesh lost here is one
+      // the frame never walks, the shadow map never casts from and nothing
+      // ever draws. Nothing in probe construction adds one today — see the
+      // second half of the note above, which this is the enforcement of.
+      if (NO_MESHES.length > 0) {
+        if (import.meta.env.DEV) {
+          console.error(
+            `[reflection] ${NO_MESHES.length} mesh(es) were added to the ` +
+              `scene while its list was hidden for probe construction — ` +
+              `see ReflectionSystem.newProbe`,
+          );
+        }
+        for (const stray of NO_MESHES) meshes.push(stray);
+        NO_MESHES.length = 0;
+      }
+      this.scene.meshes = meshes;
+    }
     const rtt = probe.cubeTexture;
     // Transparent black, and the alpha is the load-bearing half: it is how the
     // shader tells the city from the sky above it. Everything drawn here is a
