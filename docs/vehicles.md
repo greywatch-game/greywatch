@@ -626,7 +626,8 @@ the sphere's leading edge is the hull's own nose. Measured: the nose now stops
 Three things about that offset, all of them load-bearing:
 
 - **It is world-space and Babylon does not rotate it**, so it is rebuilt every
-  frame the hull moves rather than set once in the constructor.
+  frame the hull STIRS — moves or turns — rather than set once in the
+  constructor. Turning is half of that and it was missing; see below.
 - **The sign flips only while the speed passes through zero**, which is the only
   way the drive ever changes it. The flip teleports the reference point the
   length of the hull, and the end it teleports to is the end the tank has just
@@ -638,6 +639,118 @@ Three things about that offset, all of them load-bearing:
   always has), so the tail was never guarded during the only manoeuvre that
   swings it. Verified: a hull parked against a wall pivots 206 degrees on the
   spot and drives away clean.
+
+### And the arm that offset hangs on is what got the hull stuck
+
+The 1.4 m offset is the fix above and it is also a lever. `moveWithCollisions`
+sweeps a TRANSLATION and nothing else, so a hull's YAW carries the sphere round
+on that arm — at `turnRate * 1.4`, 1.26 m/s at full stick — through anything the
+tank is parked beside, with no test of any kind. Two things followed, and the
+second is the one players reported.
+
+**The swing used to be BANKED and spent at once.** `aimCollider` was called only
+on a frame the hull was moving, so a tank that pivoted while stopped carried an
+offset drawn for a heading it no longer had, and the frame the throttle was
+finally touched the sphere arrived at its true place in one step. Measured: a
+115 deg neutral-steer pivot at a standstill moved the sphere not at all, and
+then **2.37 m in a single frame**. It is aimed on a turn as well now, which
+makes the same swing the continuous 1.26 m/s above.
+
+**And Babylon cannot get out of a sphere that is inside a box.** Its
+swept-ellipsoid response ejects one by `CollisionsEpsilon * 10` per frame in the
+space it has SCALED by the ellipsoid — 0.022 m of world at this radius, measured
+as exactly that constant on every frame of every hang, whatever displacement was
+asked of it. Against a drive pushing back in at up to 11 m/s the hull simply sat
+there. From one captured pose, each input held 1.5 s: the same stick moved it
+0.02 m, letting go moved it 0.00, **pressing the same stick again moved it
+0.00** — and firing the GUN moved it 2.78 m, because `fireGun` writes a velocity
+straight into `speed` and clears the 0.022 in one frame. A bug that reports
+itself as a workaround, and the shape of the original report: *"I stop moving and
+I can't start again; shooting the cannon gets me going."*
+
+`Tank.freeFromWalls` is the answer and it is `ObstacleField.resolve` — the same
+bucketed push-out that keeps a bot out of a tree, asked with the HULL's band
+(`drive.climbHeight` above the tracks to the top of its own box, which is
+`rideableAt`'s pair, so what the tank is ejected from and what it steers around
+cannot come apart). Spent at `drive.freeRate`, 4 m/s: a rate rather than a snap
+for `climbSlope`'s reason one axis over, and three times the fastest a pivot can
+drive the sphere in, which is what makes the state unreachable rather than
+merely survivable. It touches no speed — being pushed out of a wall is a
+correction to a position the drive should never have reached, not a force the
+tracks felt.
+
+**Two things had to move with it.**
+
+- **The blocked check reads PROGRESS and not distance.** `update` docks the
+  speed to a third when a frame achieves less than half what it asked, which is
+  the engine note for a tank pressed against a wall. As a bare magnitude it
+  could not tell that from a hull being EJECTED — ground covered, every metre of
+  it the wrong way — and the frames it called blocked docked the drive exactly
+  when the hull needed the speed to leave. It is the achieved move projected on
+  the asked direction now, and a negative one is not blocked.
+- **`ObstacleField` had to be shown the RIM.** Its constructor drops boxes over
+  200 m because they are bucketed by the circle of their own half-diagonal and a
+  324 x 2 slab would claim 162 m of cells. They are kept on a separate list that
+  only `resolve` walks: `groundAt` and `wallAt` ask what a hull stands on and
+  what is in front of it, and a boundary is neither — but it is very much
+  something a seven-metre vehicle can be inside. It was **445 of the 451
+  remaining deep frames** once the rest of this landed.
+
+Measured over four random-drive trajectories on Coldharbour, 32.6k frames each
+side, counting frames with the sphere more than 0.5 m inside geometry:
+
+| | before | after |
+| --- | --- | --- |
+| frames embedded | 8.88% | **0%** |
+| deepest | 2.04 m of a 2.2 m radius — centre inside the box | **0.00 m** |
+| longest unbroken spell | 13.31 s | **0 s** |
+
+Zero on Harrowmead (22.8k frames) and Sarab (35.7k) as well. Containment is
+unchanged: eight full-speed rams into a 34 x 58 building from eight bearings
+tunnelled none, and 5.3k frames of wandering never left the play square.
+
+### And a second hang under it, on OPEN ground, that the first one was hiding
+
+The push-out above is about walls. This one has no wall in it at all, and it is
+the one that reads as *"I come to a stop, press W, and it chugs for four or five
+seconds before it starts moving."*
+
+`moveWithCollisions` writes the position back **only when the move it worked out
+exceeds `CollisionsEpsilon`** — one millimetre — and otherwise returns the mesh
+exactly where it was, quietly. From a standstill the first frame asks for
+`accel * dt^2`, which is a third of a millimetre at 120 fps. So the hull did not
+move; the blocked check read that as walked-into-something and docked the speed
+to a third; and the two found a fixed point:
+
+```
+s = 0.35 * (s + accel * dt)      →  s = 0.021 m/s at dt = 8.3 ms
+```
+
+Measured at exactly 0.021 m/s, on open ground, throttle wide open, hull
+stationary — **11 of 12 trials, six of which never moved two metres inside eight
+seconds.** The only way out was a frame long enough for `speed * dt` to clear the
+millimetre, which is why it reads as a stutter that eventually gives, and why it
+is **worse the better the machine**: nothing at all below about 40 fps, seconds
+of it at 120.
+
+The gate on the move is therefore the DISTANCE the frame asks for and not the
+speed, because the engine's own gate is a distance. Asking below the engine's
+threshold is asking for nothing, so those frames are skipped outright and
+`speed` goes on building at the throttle's rate; the hull is moving inside three
+frames. Nothing is lost by not asking — those frames never moved it anyway.
+
+| pulling away from a dead stop, 12 spots of vetted open ground | before | after |
+| --- | --- | --- |
+| trials that stalled | 11 of 12 | **0 of 12** |
+| speed while stalled | 0.017–0.023 m/s | — |
+| time to 1 m/s | 2.2 s to never | **222 ms**, which is `1 / accel` |
+| time to cover 2 m | 2.9 s to never | **933 ms**, which is `sqrt(2 * 2 / accel)` |
+
+**Why it went unseen for so long is worth keeping.** A hull embedded in a wall is
+ejected 0.022 m every frame by the engine, which is far over the millimetre — so
+for as long as the tank spent its life stuck in geometry, the thing that was
+stuck was also the thing quietly rescuing every low-speed start. Fixing the
+walls is what let this one show.
 
 ### The ground costs a six-hundredth of what it did, and the camera followed
 

@@ -26,6 +26,36 @@
  *   identical reason: those structures are baked once from a static world, and
  *   a thing that moves cannot be in them. See `docs/vehicles.md`.
  *
+ * ## The collision sphere is on an ARM, so the hull is pushed out of walls
+ *
+ * `moveWithCollisions` sweeps a TRANSLATION and nothing else, and this vehicle
+ * moves its own collider two other ways. The sphere rides `hull.length / 2 -
+ * collideRadius` — 1.4 m — off the hull's centre (`aimCollider`), so the YAW
+ * carries it round on that arm at up to `turnRate * 1.4`, through whatever the
+ * tank is parked beside, untested; and the offset is a world vector, so a hull
+ * that pivoted while stopped used to bank the whole swing and spend it in one
+ * frame the moment the throttle was touched — measured at 2.37 m.
+ *
+ * Neither can be collided (the hull's rotation never has been), and Babylon
+ * cannot leave a sphere that is inside a box: it ejects one by 0.022 m of world
+ * a frame at this radius, which a drive pushing back in beats trivially. That
+ * is a tank that stops and cannot start, and the only thing that used to free
+ * it was FIRING — `fireGun` writes a velocity straight into `speed`.
+ *
+ * So `aimCollider` runs on a turn as well as on a move, and `freeFromWalls`
+ * ejects the hull at `drive.freeRate` off `ObstacleField.resolve`. See that
+ * method, and `docs/vehicles.md`.
+ *
+ * ## ...and it may not ask the engine for less than a millimetre
+ *
+ * `moveWithCollisions` writes the position back only when the move exceeds
+ * `CollisionsEpsilon`, and returns the mesh where it was otherwise. From rest
+ * the first frame asks for `accel * dt^2` — a third of a millimetre at 120 fps
+ * — so the hull did not move, the blocked check called that walked-into-
+ * something, and `s = 0.35 * (s + accel * dt)` pinned the drive at 0.021 m/s
+ * with the throttle wide open on open ground. So the gate on the move is the
+ * DISTANCE the frame asks for and never the speed. See `update`.
+ *
  * ## A hull stands on its TRACKS, and it casts no ray to do it
  *
  * `standOnGround` samples the world under ten track contacts — five along each
@@ -138,7 +168,7 @@
  * every time a tank climbed a kerb. What is bought instead is a whip that is
  * clamped, tunable and free. See `docs/vehicles.md`.
  */
-import { Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/core";
+import { AbstractEngine, Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
@@ -625,6 +655,20 @@ export class Tank implements Combatant, RayHull {
   private obstacles: ObstacleField | null = null;
   // Scratch. This runs every frame a tank exists; nothing below allocates.
   private readonly step = new Vector3();
+  /** Where the push-out would put the hull. See `freeFromWalls`. */
+  private readonly clear = new Vector3();
+  /**
+   * The push-out has not finished: it moved the hull last frame and the
+   * overlap outlasted the rate.
+   *
+   * Held because `freeFromWalls` is otherwise asked only on a frame the hull
+   * STIRS, which is right for finding an overlap and wrong for leaving one — a
+   * driver who lets go halfway out would park a hull inside a wall and it would
+   * sit there until somebody touched a control. `needsGround`'s shape exactly,
+   * and for the same reason: the question stays open until the answer stops
+   * changing.
+   */
+  private clearing = false;
 
   constructor(
     scene: Scene,
@@ -741,6 +785,7 @@ export class Tank implements Combatant, RayHull {
     this.lastTarget = pos.y + t.hull.height / 2;
     this.grounded = true;
     this.climbOwed = 0;
+    this.clearing = false;
     this.groundPitchTarget = 0;
     this.groundRollTarget = 0;
     this.leadSign = 1;
@@ -751,6 +796,11 @@ export class Tank implements Combatant, RayHull {
     this.needsGround = true;
     this.body.position.set(pos.x, pos.y + t.hull.height / 2, pos.z);
     this.body.rotation.y = yaw;
+    // The sphere with it, or a fresh hull stands on its hardstanding carrying
+    // the offset the LAST one's heading left behind — which nothing would
+    // notice until the first frame somebody drove it. Everything a round could
+    // have left behind is written here, and this is one of them.
+    this.aimCollider();
     // A fresh hull is solid again — destruction cleared this, and the pooled
     // mesh is the same one. See `destroy`.
     this.body.metadata = { solid: true };
@@ -1025,15 +1075,53 @@ export class Tank implements Combatant, RayHull {
     // reason `needsGround` skips the probe: two of these are parked doing
     // nothing for most of a round, and writing six transforms a frame to put
     // them back exactly where they were is six world matrices to recompute.
-    if (this.speed !== 0 || yawRate !== 0) {
+    //
+    // The same question the collision sphere and the push-out below both ask,
+    // and asking it once is deliberate: a hull that has neither moved nor
+    // turned cannot have changed what it is touching, and those two are the
+    // only ways it can.
+    const stirred = this.speed !== 0 || yawRate !== 0;
+    if (stirred) {
       const differential = (yawRate * TRACK_GAUGE) / 2;
       this.trackRun[0] += (this.speed + differential) * dt;
       this.trackRun[1] += (this.speed - differential) * dt;
       setTrackRun(this.rig, this.trackRun[0], this.trackRun[1]);
     }
 
-    if (Math.abs(this.speed) > 1e-3) {
-      this.aimCollider();
+    // **Aimed on a TURN as well as on a move, and that is a fix rather than a
+    // tidy-up.** The offset is a world vector swung by the yaw, so a hull that
+    // pivots while stopped is carrying one drawn for a heading it no longer
+    // has — and the frame the throttle is finally touched, the sphere arrives
+    // at its true place in one step. Measured: a 115 deg neutral-steer pivot
+    // at a standstill moved it not at all, and then **2.37 m in a single
+    // frame**, through anything that happened to be in between. Written every
+    // frame the hull stirs, the same swing is a continuous 1.26 m/s at full
+    // stick, which is a rate `freeFromWalls` can answer.
+    if (stirred) this.aimCollider();
+
+    // **The gate is the DISTANCE this frame asks for and not the speed, because
+    // the engine's own gate is a distance — and a speed here was a hull that
+    // could not pull away from a standstill.**
+    //
+    // `moveWithCollisions` writes the position back only when the move it
+    // worked out exceeds `CollisionsEpsilon`, one millimetre, and silently
+    // returns the mesh where it was otherwise. From rest the first frame asks
+    // for `accel * dt^2` — a third of a millimetre at 120 fps — so the hull did
+    // not move, the check below read that as walked-into-something and docked
+    // the speed to a third, and the two settled into a fixed point:
+    // `s = 0.35 * (s + accel * dt)`, which at 8.3 ms is 0.021 m/s. Measured at
+    // exactly 0.021, on open ground, with the throttle wide open and the hull
+    // stationary. It came out of it only when a frame ran long enough for
+    // `speed * dt` to clear the millimetre, so it was WORSE the better the
+    // machine — seconds of a tank refusing to pull away at 120 fps and nothing
+    // at all under about 40.
+    //
+    // Asking below the engine's threshold is asking for nothing, so the frames
+    // that would ask are skipped outright: `speed` goes on building at the
+    // throttle's rate and the hull is moving inside three frames. Nothing is
+    // lost by not asking — those frames never moved the hull anyway.
+    const asked = Math.abs(this.speed * dt);
+    if (asked > AbstractEngine.CollisionsEpsilon) {
       this.step.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
       this.step.scaleInPlace(this.speed * dt);
       const before = this.body.position.x;
@@ -1044,14 +1132,24 @@ export class Tank implements Combatant, RayHull {
       // about the ENGINE noise and the driver's read, not about the position —
       // a tank pressed against a wall that still sounds like it is doing 40 is
       // the tell that nothing noticed.
-      const got = Math.hypot(
-        this.body.position.x - before,
-        this.body.position.z - beforeZ,
-      );
-      const asked = Math.abs(this.speed * dt);
-      if (asked > 1e-4 && got < asked * 0.5) this.speed *= 0.35;
+      //
+      // **Read along the asked direction and not as a distance**, because the
+      // two come apart in exactly the case this used to make worse. A hull
+      // whose sphere is inside a box is being EJECTED — Babylon pushes it back
+      // out along the slide plane whatever the drive asked for — so the ground
+      // it covered is large and every metre of it is the wrong way. As a bare
+      // magnitude that read as "moving fine" on some frames and as "blocked"
+      // on others, and the frames it called blocked docked the drive to a
+      // third exactly when the hull needed the speed to leave. Being shoved
+      // backwards is not the engine note this is about; being held is.
+      const progress =
+        ((this.body.position.x - before) * this.step.x +
+          (this.body.position.z - beforeZ) * this.step.z) /
+        asked;
+      if (progress >= 0 && progress < asked * 0.5) this.speed *= 0.35;
     }
 
+    if (stirred || this.clearing) this.freeFromWalls(dt);
     this.standOnGround(dt);
     this.flexHeave(dt);
     // ...and climbing costs speed, for the same reason walking into a wall
@@ -1257,6 +1355,11 @@ export class Tank implements Combatant, RayHull {
    */
   private aimCollider(): void {
     const t = CONFIG.vehicles.tank;
+    // The SIGN is the only thing here that waits for motion. Where the sphere
+    // sits is a fact about the yaw and has to be written whenever the yaw
+    // moves; which END it sits at is a fact about the direction of travel, and
+    // the safe moment to change that is while the speed is passing through
+    // zero — see `leadSign`.
     if (Math.abs(this.speed) > 1e-3) this.leadSign = this.speed > 0 ? 1 : -1;
     const bias = (t.hull.length / 2 - t.drive.collideRadius) * this.leadSign;
     this.body.ellipsoidOffset.set(
@@ -1264,6 +1367,97 @@ export class Tank implements Combatant, RayHull {
       t.drive.climbHeight / 2,
       Math.cos(this.yaw) * bias,
     );
+  }
+
+  /**
+   * Pushes the hull back out of anything its collision sphere has ended up
+   * INSIDE, at `drive.freeRate`.
+   *
+   * ## Why a vehicle needs this and a body does not
+   *
+   * `moveWithCollisions` sweeps a TRANSLATION. It is the whole of what stops a
+   * hull and it is blind to the other two ways this vehicle moves its own
+   * collider, and both of them are the yaw:
+   *
+   * - **Turning swings the sphere.** It rides `hull.length / 2 -
+   *   collideRadius` — 1.4 m — off the hull's centre, so a yaw carries it
+   *   round on that arm at up to `turnRate * 1.4`, 1.26 m/s, through whatever
+   *   the tank is beside. Nothing tests it, and nothing can: the hull's
+   *   rotation is not collided at all, which `docs/vehicles.md` has always
+   *   said and which is fine for the HULL and was never fine for the sphere.
+   * - **A stopped hull used to bank that swing up and spend it at once**,
+   *   because the offset was only written on a frame the hull was moving.
+   *   `update` now aims it on a turn as well, which turns the teleport into
+   *   the rate above — and a rate is a thing this can beat.
+   *
+   * A body has neither problem: `Player`'s capsule is round, centred, and
+   * turning it moves nothing.
+   *
+   * ## Why the engine cannot do it
+   *
+   * Babylon ejects an embedded collider by `CollisionsEpsilon * 10` per frame
+   * in the space it has SCALED by the ellipsoid — 0.022 m of world at this
+   * radius, measured as exactly that constant on every frame of every hang.
+   * The drive pushes back in at up to 11 m/s, so the hull sits in the wall
+   * with the stick held: 1.5 s of full throttle moved one 0.02 m, and letting
+   * go and pressing again moved it 0.00. It came out when the GUN was fired,
+   * because `fireGun` writes a velocity straight into `speed` and clears the
+   * 0.022 in one frame — which is a bug reporting itself as a workaround.
+   *
+   * ## What it asks
+   *
+   * `ObstacleField.resolve`, which is the same bucketed push-out that keeps a
+   * bot out of a tree and the same primitive `supportAt` already asks ten
+   * times a frame. The BAND is the hull's own two numbers and they are the
+   * pair `rideableAt` uses, so what the tank is pushed out of and what it
+   * steers around cannot come apart: a top face inside `climbHeight` is
+   * something the tracks ride over rather than something to be ejected from,
+   * and an underside above the hull's roof is an archway.
+   *
+   * **The correction is the SPHERE's and the hull carries it**, so it is
+   * applied to `body.position` and not to the offset — the offset is where the
+   * sphere sits on the tank, and moving it would leave the collider somewhere
+   * the vehicle is not.
+   *
+   * **It is a rate and never a snap**, for `climbSlope`'s reason one axis
+   * over: a seven-metre hull moved sideways in one frame is a teleport, and
+   * anything that arrived gradually can leave gradually. Nothing here touches
+   * `speed`: being pushed out of a wall is a correction to a position the
+   * drive should never have reached, not a force the tracks felt.
+   */
+  private freeFromWalls(dt: number): void {
+    const obstacles = this.obstacles;
+    this.clearing = false;
+    if (!obstacles) return;
+    const t = CONFIG.vehicles.tank;
+    const p = this.body.position;
+    const e = this.body.ellipsoidOffset;
+    const cx = p.x + e.x;
+    const cz = p.z + e.z;
+    const tracks = p.y - t.hull.height / 2;
+    if (
+      !obstacles.resolve(
+        cx,
+        p.y,
+        cz,
+        t.drive.collideRadius,
+        this.clear,
+        tracks + t.drive.climbHeight,
+        tracks + t.hull.height,
+      )
+    ) {
+      return;
+    }
+    const dx = this.clear.x - cx;
+    const dz = this.clear.z - cz;
+    const want = Math.hypot(dx, dz);
+    if (want < 1e-4) return;
+    const step = Math.min(want, t.drive.freeRate * dt);
+    p.x += (dx / want) * step;
+    p.z += (dz / want) * step;
+    // Still owed: keep asking next frame even if the driver has let go of
+    // everything. See `clearing`.
+    this.clearing = step < want;
   }
 
   /**

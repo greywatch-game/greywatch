@@ -446,6 +446,38 @@ export const vehicles = {
        */
       launchSpeed: 1.5,
       probeLength: 6,
+      /**
+       * How fast the hull is pushed back out of a collider it has ended up
+       * INSIDE, m/s. The horizontal twin of `climbFloor`, and it exists for
+       * the same kind of reason: a rule the drive cannot state for itself.
+       *
+       * **A hull gets inside a wall by TURNING, and turning is not collided.**
+       * `moveWithCollisions` sweeps the translation and nothing else, while
+       * the collision sphere rides `hull.length / 2 - collideRadius` (1.4 m)
+       * off the hull's centre — so a yaw swings that sphere on a 1.4 m arm
+       * through whatever the tank is parked beside, at up to `turnRate * 1.4`
+       * (1.26 m/s), with no test of any kind. Measured on Coldharbour: 29 deg
+       * of neutral-steer pivot with the hull not moving at all put the sphere
+       * 0.85 m inside a tower, and a second episode reached the sphere's whole
+       * radius — its centre inside the box.
+       *
+       * **And Babylon cannot get out of that.** Its swept-ellipsoid response
+       * ejects an embedded collider by `CollisionsEpsilon * 10` per frame in
+       * the space it has SCALED by the ellipsoid, which for this radius is
+       * 0.022 m of world — measured as exactly that constant on every frame of
+       * every hang, whatever displacement was asked of it. Against a drive
+       * pushing back in, the hull sits there: a stick held for 1.5 s moved it
+       * 0.02 m, and letting go and pressing again moved it 0.00. What freed it
+       * was firing the gun, because `fireGun` writes a velocity straight into
+       * `speed` and beats the 0.022 in one frame.
+       *
+       * So the ejection is this game's rather than the engine's. 4 m/s is
+       * three times the fastest a pivot can drive the sphere in, which is what
+       * makes the state unreachable rather than merely survivable, and it is
+       * spent as a RATE for `climbSlope`'s reason: a seven-metre hull snapped
+       * sideways is a teleport, and this is a metre in a quarter of a second.
+       */
+      freeRate: 4,
     },
     /**
      * What the drawn hull does about its own MASS: the dive under the brake,

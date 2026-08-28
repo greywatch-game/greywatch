@@ -5,7 +5,11 @@
  * Invariants: the push-out is a PREFERENCE, never a veto — callers (Bot) keep
  * the overlapping position if the pushed-clear one isn't walkable; frozen is
  * worse than clipping. HEADROOM and CONFIG.nav.stepHeight must stay in sync
- * with NavGrid. Height tests use box planes and the box frame is entered
+ * with NavGrid, and are the DEFAULT band rather than the only one — a hull
+ * passes its own (`Tank.freeFromWalls`). The oversize boxes a map's rim is made
+ * of are kept out of the buckets and walked by `resolve` alone; do not delete
+ * that list to tidy the constructor, and do not let `groundAt` or `wallAt` see
+ * it — see `oversize` and `resolve` for both halves of why. Height tests use box planes and the box frame is entered
  * through `rotateToLocalXZ` (boxGeometry.ts, shared with NavGrid) so ramps push
  * correctly and a rotated box is not pushed out of backwards.
  */
@@ -58,7 +62,15 @@ import type { WorldBox } from "./MapBuilder";
 
 /** Bucket edge in metres. Comfortably larger than any query radius. */
 const BUCKET = 4;
-/** Query radii are expanded by this when bucketing, so a query hits one bucket. */
+/**
+ * How much slack a box's stamped footprint carries, in metres.
+ *
+ * A query at or under this radius therefore hits everything it can overlap
+ * from the ONE bucket it stands in, which is the arrangement every body-sized
+ * caller wants. It is not a cap: `resolve` widens its own bucket walk by
+ * whatever a larger radius asks for beyond this (a hull's is 2.2), so the
+ * slack is a budget for the common case rather than a limit on the query.
+ */
 const MAX_RADIUS = 1.0;
 /** Vertical clearance a body needs; matches `NavGrid`'s headroom. */
 const HEADROOM = 1.7;
@@ -69,6 +81,23 @@ export class ObstacleField {
   /** Box indices per bucket, `null` where nothing overlaps. */
   private readonly buckets: (number[] | null)[];
   private readonly boxes: WorldBox[] = [];
+  /**
+   * The boxes too big to bucket, walked in full by `resolve` and by nothing
+   * else. Today it is a map's four rim slabs and only those — see the
+   * constructor for why they cannot go in the grid, and `resolve` for why the
+   * push-out still has to know about them.
+   */
+  private readonly oversize: WorldBox[] = [];
+  /**
+   * Each oversize box's world footprint, flat: `cx, cz, halfX, halfZ` per box.
+   *
+   * Held because the list is walked without a bucket to have pre-rejected it,
+   * and a 324 m slab must cost a query on the far side of the map ONE compare
+   * rather than a transform. Conservative — the rotated extent of the whole
+   * solid — for `eachCell`'s reason: a footprint used to reject with may be
+   * too big and may never be too small.
+   */
+  private readonly oversizeBounds: number[] = [];
   /** Scratch for the box-frame transform; `push` runs it per bot per box per step. */
   private readonly localScratch: LocalXZ = { lx: 0, lz: 0 };
 
@@ -80,7 +109,25 @@ export class ObstacleField {
     for (const box of boxes) {
       // Same exclusions as the nav grid: the ground plane is the floor and the
       // ridge is pure boundary, which the grid's own extents already enforce.
-      if (box.w > 200 || box.d > 200) continue;
+      //
+      // **They are KEPT rather than dropped, and the reason is the shape of
+      // the stamp rather than a change of mind about the boundary.** A box is
+      // bucketed by the circle of its own half-diagonal, so a 324 x 2 rim slab
+      // would claim a 162 m radius of cells and cost every query on the map;
+      // that is what this test is really about. But `resolve` is the one
+      // reader that asks what it is INSIDE rather than what it is standing on,
+      // and a rim slab is something a hull can be inside — measured as the
+      // whole of the residual after `Tank.freeFromWalls` landed, 445 of 451
+      // frames. So they go on a list this size can be walked linearly.
+      if (box.w > 200 || box.d > 200) {
+        this.oversize.push(box);
+        const hw = box.w / 2;
+        const hd = Math.max(box.d / 2, halfDepth(box));
+        const c = Math.abs(Math.cos(box.rotY));
+        const sn = Math.abs(Math.sin(box.rotY));
+        this.oversizeBounds.push(box.cx, box.cz, hw * c + hd * sn, hw * sn + hd * c);
+        continue;
+      }
       const index = this.boxes.push(box) - 1;
       this.eachCell(box, (cell) => {
         (this.buckets[cell] ??= []).push(index);
@@ -106,7 +153,15 @@ export class ObstacleField {
    */
   remove(box: WorldBox): boolean {
     const index = this.boxes.indexOf(box);
-    if (index < 0) return false;
+    if (index < 0) {
+      // A pane of glass is never one of these, but the door is the door: a
+      // box taken out of the world has to leave every list this holds.
+      const big = this.oversize.indexOf(box);
+      if (big < 0) return false;
+      this.oversize.splice(big, 1);
+      this.oversizeBounds.splice(big * 4, 4);
+      return true;
+    }
     this.eachCell(box, (cell) => {
       const bucket = this.buckets[cell];
       if (!bucket) return;
@@ -140,19 +195,65 @@ export class ObstacleField {
    * Boxes are resolved in sequence against the running position and the whole
    * set is swept twice, so an inside corner settles instead of ping-ponging
    * between its two walls.
+   *
+   * **The BAND is the caller's, and a caller that does not state one gets a
+   * body's.** What counts as floor to step onto and what counts as headroom to
+   * duck under are properties of the thing being pushed, not of the boxes —
+   * `wallAt` and `groundAt` have taken theirs as arguments from the day a
+   * vehicle asked them, and this is the same split arriving at the push-out.
+   * A hull's two numbers are `drive.climbHeight` above its tracks and the top
+   * of its own box; a body's are `CONFIG.nav.stepHeight` and `HEADROOM`, which
+   * is what the defaults are.
+   *
+   * **The bucket walk widens with the RADIUS rather than assuming one bucket**,
+   * because a hull's 2.2 m is over the `MAX_RADIUS` slack the footprints were
+   * stamped with and the boxes it is inside would otherwise be in the bucket
+   * next door. At or under that slack this is exactly the single-bucket read it
+   * has always been, so nothing a bot asks costs a box more.
+   *
+   * **The rim is in the answer here and in no other query on this class**, and
+   * that asymmetry is deliberate. `groundAt` and `wallAt` ask what a thing is
+   * standing on and what is in front of it, and a map's boundary is neither —
+   * the nav graph's extents settle it for a body and the leash settles it for
+   * a hull. This one asks what a thing is INSIDE, and a boundary slab is
+   * something a seven-metre vehicle can end up inside; leaving it out was the
+   * whole of what `Tank.freeFromWalls` could not eject from. See `oversize`.
    */
-  resolve(x: number, y: number, z: number, radius: number, out: Vector3): boolean {
+  resolve(
+    x: number,
+    y: number,
+    z: number,
+    radius: number,
+    out: Vector3,
+    floor = y + CONFIG.nav.stepHeight,
+    ceiling = y + HEADROOM,
+  ): boolean {
     out.set(x, y, z);
-    const cx = this.clampCell(this.toCell(x));
-    const cz = this.clampCell(this.toCell(z));
-    const bucket = this.buckets[cz * this.dim + cx];
-    if (!bucket) return false;
+    // How far past the query point a box's stamp may fall short. Zero for
+    // every body-sized query, so those still read one bucket.
+    const spill = Math.max(0, radius - MAX_RADIUS);
+    const minX = this.clampCell(this.toCell(x - spill));
+    const maxX = this.clampCell(this.toCell(x + spill));
+    const minZ = this.clampCell(this.toCell(z - spill));
+    const maxZ = this.clampCell(this.toCell(z + spill));
 
     let moved = false;
     for (let pass = 0; pass < 2; pass++) {
       let touched = false;
-      for (const index of bucket) {
-        if (this.push(this.boxes[index], y, radius, out)) touched = true;
+      for (let cz = minZ; cz <= maxZ; cz++) {
+        for (let cx = minX; cx <= maxX; cx++) {
+          const bucket = this.buckets[cz * this.dim + cx];
+          if (!bucket) continue;
+          for (const index of bucket) {
+            if (this.push(this.boxes[index], floor, ceiling, radius, out)) touched = true;
+          }
+        }
+      }
+      for (let i = 0; i < this.oversize.length; i++) {
+        const b = i * 4;
+        if (Math.abs(out.x - this.oversizeBounds[b]) > this.oversizeBounds[b + 2] + radius) continue;
+        if (Math.abs(out.z - this.oversizeBounds[b + 1]) > this.oversizeBounds[b + 3] + radius) continue;
+        if (this.push(this.oversize[i], floor, ceiling, radius, out)) touched = true;
       }
       if (!touched) break;
       moved = true;
@@ -288,8 +389,21 @@ export class ObstacleField {
     return best;
   }
 
-  /** One box against one body. Returns true when `out` was corrected. */
-  private push(box: WorldBox, y: number, radius: number, out: Vector3): boolean {
+  /**
+   * One box against one circle. Returns true when `out` was corrected.
+   *
+   * `floor` and `ceiling` are `wallAt`'s, term for term: a top face at or
+   * below the floor is something to ride over, and an underside at or above
+   * the ceiling is something to pass beneath. Neither is derived here, because
+   * what they are depends on whether the thing being pushed has legs.
+   */
+  private push(
+    box: WorldBox,
+    floor: number,
+    ceiling: number,
+    radius: number,
+    out: Vector3,
+  ): boolean {
     // Into the box's frame through the shared transform rather than a private
     // copy of the yaw convention — that convention has already been got wrong
     // once, and a push resolved in a mirrored frame would shove a bot the wrong
@@ -318,9 +432,9 @@ export class ObstacleField {
     const top = topFaceAtLocalZ(box, clampToTopFace(box, lz));
     if (top === null) return false;
     // Low enough to step onto, so it is floor rather than obstruction.
-    if (top <= y + CONFIG.nav.stepHeight) return false;
+    if (top <= floor) return false;
     // High enough to walk under: a lintel, a hayloft, a bridge deck.
-    if (top - slabThickness(box) >= y + HEADROOM) return false;
+    if (top - slabThickness(box) >= ceiling) return false;
 
     let nx: number;
     let nz: number;
