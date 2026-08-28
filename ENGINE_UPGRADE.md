@@ -246,24 +246,30 @@ WASM. This is the wall that is not "slower" — it is an allocation failure, and
 the JS heap is **3,536 MiB against V8's 4,192 MiB cap** and the renderer's
 working set is 5.4 GB. At 900 / 300 the same figures are 1,696 MiB and 2.6 GB.
 
-### Wall 4 — load time, and the burst builds behind the card
+### Wall 4 — load time, and the burst builds behind the card — **MOSTLY DOWN**
+
+**S5's first half has landed and `FINDINGS.md` 24 is what it produced**: the
+1500 m build is 186 s to 17.4 and the placement loop 161.5 s to 9.4. What
+follows is the wall as S0 measured it, kept because the shape of it is why the
+fix is shaped the way it is — and because **the cause named at the bottom of
+this section was the wrong one, which is the part worth reading twice.**
 
 **This wall is real and this section was wrong about all of it.** Derived:
 30-60 s behind the loading card, dominated by `NavGrid`, `CoverMap`, the flood
 fill and the flow fields. Measured, from `src/world/buildProfile.ts`:
 
-| build phase, ms | Coldharbour | 900 / 300 | 1500 / 0 |
-| --- | --- | --- | --- |
-| **`build:total`** | **1,635** | **11,316** | **182,889** |
-| — the PLACEMENT loop | 908 | 7,564 | **159,249** |
-| — block merge | 62 | 669 | 9,044 |
-| — scatter | 86 | 277 | 4,313 |
-| — road merge | 3 | 162 | 2,662 |
-| — AO bake | 165 | 936 | 2,360 |
-| — `NavGrid` | 140 | 729 | 2,328 |
-| — `CoverMap` | 56 | 294 | 895 |
-| — seven flow fields | 10 | 150 | 368 |
-| **install to `deploy`** | **1,770** | **13,219** | **197,753** |
+| build phase, ms | Coldharbour | 900 / 300 | 1500 / 0 | **1500 / 0 after** |
+| --- | --- | --- | --- | --- |
+| **`build:total`** | **1,635** | **11,316** | **182,889** | **17,422** |
+| — the PLACEMENT loop | 908 | 7,564 | **159,249** | **9,443** |
+| — block merge | 62 | 669 | 9,044 | 1,010 |
+| — scatter | 86 | 277 | 4,313 | 443 |
+| — road merge | 3 | 162 | 2,662 | 41 |
+| — AO bake | 165 | 936 | 2,360 | 2,191 |
+| — `NavGrid` | 140 | 729 | 2,328 | 2,572 |
+| — `CoverMap` | 56 | 294 | 895 | 736 |
+| — seven flow fields | 10 | 150 | 368 | 227 |
+| **install to `deploy`** | **1,770** | **13,219** | **197,753** | **34,923** |
 
 **It is 183 seconds, not 30-60, and the four things this section named are 3.3%
 of them.** `NavGrid`, `CoverMap`, the flow fields and the AO bake are 5,951 ms
@@ -274,7 +280,8 @@ the finding under the finding — 1.1 ms each on Harrowmead's 124, 6.6 on
 Coldharbour's 137, 18.4 on the 900 m square's 410, **143.7 on the 1500 m
 square's 1,108**. About `n^2.9` overall. Nothing in a builder knows how big the
 map is, so this is the cost of adding one structure growing with how many are
-already there.
+already there. — *True, and now 6.4 and 8.5: 2.7x the placements costs 1.33x
+each. The superlinearity is gone with the cause below.*
 
 **Derived, not measured, and it is in Babylon**: `Scene.removeMesh` is an
 `indexOf` over `scene.meshes` plus a second scan of `rootNodes`, and
@@ -282,14 +289,27 @@ already there.
 attribute-aligning path off — see `MapBuilder`'s header). A build that creates
 and destroys ~a million part meshes against a list growing to 23,014 is
 `O(built x live)`. `AssetContainer` / `_blockEntityCollection` is the supported
-door, and re-timing the loop through it is what settles this.
+door, and re-timing the loop through it is what settles this. — ***Wrong, and
+measured wrong by 65x. `removeMesh` is called 88,131 times, scans 547 MILLION
+array elements, and costs 98 ms of a 6,420 ms loop*** — an `indexOf` over a
+packed array is 0.18 ns an element, and this paragraph priced a linear scan as
+a linear number of memory accesses. `AssetContainer` was never the door and
+`rootNodes` has been O(1) since Babylon 9. **What the loop was actually doing
+is talking to the GPU**: `VertexData.applyToMesh` uploads a part's positions,
+normals, UVs and indices the moment a builder makes it, and the merge disposes
+it moments later, so ~4.2 s of an 8.8 s build was `device.createBuffer` and
+`queue.writeBuffer` for geometry no frame ever draws — and the superlinear term
+was the allocator degrading under ~3 million create/destroy cycles.
+`src/world/parts.ts` is what stopped it.
 
 **Which means S5's premise has moved.** Finding 18 says the burst work is the
 worker-shaped part of this codebase and that moving it "buys load time and
 nothing else"; at 1500 m load time IS the problem, so that sentence still
 inverts. But the burst work S5 names is 3.3% of the build. **Flattening the
 placement loop is worth 50x what moving the nav builds to a worker is**, and it
-is a smaller change.
+is a smaller change. — *It was worth 27x, and it has moved the premise a second
+time: the nav/cover/AO builds are now **33%** of a 17.4 s build rather than
+3.3% of a 183 s one. See S5.*
 
 ### Wall 5 — the reflection bake takes the GPU device, and it was not in this document — **DOWN**
 
@@ -1016,7 +1036,7 @@ records.*
 
 ---
 
-### S5 — Move the burst builds off the main thread
+### S5 — Move the burst builds off the main thread — **THE FLATTEN LANDED; THE WORKER IS WHAT IS LEFT**
 
 Wall 4. Finding 18 names the candidates precisely: `MapBuilder`'s geometry, the
 AO bake, the `NavGrid`/`CoverMap`/`ObstacleField` builds, finding 9's flow-field
@@ -1034,6 +1054,68 @@ names `Scene.removeMesh`'s `indexOf` as the derived cause and `AssetContainer`
 as the door — and re-time before spending a session on workers. A worker that
 hides 2 s behind a card that is up for 13 is not the win it looks like.
 
+---
+
+**The flatten has landed and `FINDINGS.md` 24 is what it produced.** The 1500 m
+build is **185,899 ms to 17,422** and the placement loop **161,491 to 9,443**,
+both matched pairs on the same tree. The cause was neither of the two things
+the paragraph above names:
+
+- **`Scene.removeMesh` is not it, and is not within 65x of it.** Measured on the
+  900/300 ground it is called 88,131 times, scans 547 million array elements,
+  and costs **98 ms of a 6,420 ms loop**. `AssetContainer` was never the door;
+  `rootNodes` has been O(1) since Babylon 9; and an `indexOf` over a packed
+  array is 0.18 ns an element. **This document should stop reaching for a list
+  scan**, which is the general lesson rather than the local one.
+- **It is the GPU.** Every part a builder makes is a real `Mesh`, and
+  `VertexData.applyToMesh` uploads its positions, normals, UVs and indices the
+  instant it exists. `mergeByMaterial` reads them back out of the CPU copies
+  Babylon kept anyway and DISPOSES the source — destroying the buffers it just
+  made. ~4.2 s of an 8.8 s build was `device.createBuffer` and
+  `queue.writeBuffer` for geometry no frame ever draws.
+- **And the `n^2.9` was that allocator degrading**, not an `O(built x live)`
+  term. Per placement is now 6.4 ms at 900/300 and 8.5 at 1500/0 — 2.7x the
+  placements for 1.33x each, against 7.8x. The road merge and the block merge
+  build their geometry the ordinary way and still came down 75x and 8.7x,
+  because the device they allocate against is no longer in that state.
+
+`src/world/parts.ts` is the fix: `kit/core.ts`'s seven creation sites build
+their geometry BEFORE its mesh and apply it while `delayLoadState` reads
+NOTLOADED, so `Geometry.applyToMesh` skips the call that creates every
+postponed buffer. `uploadPart` puts a part back on the normal path on the three
+ways out of a merge that keep their source. The oracle is a per-mesh hash of
+every visual and collider — name, material, metadata, transform, flags, counts,
+and the position/normal/uv/colour/index buffers — and **all five maps hash
+identically**, with `gate.mjs` clean, `npm run parity` passing and
+`bank.mjs --check` reproducing S4's control run to four decimals.
+
+**What is left of this step is the worker, and its case has now inverted
+twice.** Where the 1500 m build stands after the flatten:
+
+| | ms | share |
+| --- | --- | --- |
+| the placement loop | 9,443 | 54% |
+| the AO bake | 2,191 | 13% |
+| `NavGrid` | 2,572 | 15% |
+| `CoverMap` | 736 | 4% |
+| seven flow fields | 227 | 1% |
+| **what S5 would move** | **5,726** | **33%** |
+| **`build:total`** | **17,422** | |
+| **install to `deploy`** | **34,923** | |
+
+At S0 it was 3.3% of 183 s and the answer was obviously "flatten first". It is
+now **a third of the build**, and ~5.7 s behind a card that is up for 35 —
+which is a real win rather than a rounding error, and is the measurement this
+step was told to take before spending a session on it. **The counter-argument
+is the one in "must not break" below and it has not weakened**: `loading` is a
+STEP and not a lid, and an async build has to reach `deploy` without ever
+opening a frame where something simulates under the card.
+
+Whoever takes it should also read the three things finding 24 leaves open, one
+of which is cheaper than a worker: **colliders are still built the ordinary
+way** and are 6,349 of the 900/300 ground's meshes, held back only because a
+part has no submeshes and `moveWithCollisions` walks them.
+
 The natural cut is that these are **pure functions over plain data**: `NavGrid`,
 `CoverMap` and `ObstacleField` take `WorldBox[]` and a `TerrainField` and produce
 typed arrays. Neither end needs Babylon. Transfer the boxes and the heightfield
@@ -1044,16 +1126,31 @@ the same shape over vertex buffers.
 
 - **`installMap` stays the one place a map is built**, and both callers — a round
   starting and an editor rebuild — keep going through it. Two copies of it
-  drifted apart once and the failure was silent rather than loud.
+  drifted apart once and the failure was silent rather than loud. — *Untouched
+  by the flatten: nothing about where a map is built moved.*
 - `loading` stays a STEP and not a lid: nothing may simulate under the building
-  card, and asynchrony must not open a window where something does.
+  card, and asynchrony must not open a window where something does. — *The
+  flatten is synchronous end to end, so this is still owed in full by the
+  worker half.*
 - The server, which is Node and has no browser `Worker`. Keep the synchronous
   path working and make the worker the client's optimisation, or use
   `node:worker_threads` behind the same interface — but do not fork the logic, or
-  the two simulations drift and `npm run parity` will tell you once, late.
+  the two simulations drift and `npm run parity` will tell you once, late. —
+  *The flatten never reaches the server: it is inside `MapBuilder`, which the
+  server cannot run at all.*
 - Determinism. Scatter is seeded and the nav graph must be identical on every
   boot; a parallel build that reorders anything reachable from the seeded stream
-  breaks that. `npm run parity` is the oracle again.
+  breaks that. `npm run parity` is the oracle again. — *Checked, and the mesh
+  hash above is the stronger half of it: nothing reordered, because nothing
+  became parallel.*
+
+**Verify:** the per-mesh hash on all five maps; `npm run typecheck`;
+`npm run build`; `npm run parity`; `gate.mjs`; and `bank.mjs --check`. — *All
+done and all clean. **The bank is still red on an unmodified tree and it is
+still pre-existing** (finding 20): the sixteen vantages reproduce S4's control
+run to four decimals with this change in the tree, which is what says it moves
+no pixel, and re-banking would destroy that evidence. `npm run simulate` is
+still the pre-existing NullEngine failure finding 23 records.*
 
 ---
 

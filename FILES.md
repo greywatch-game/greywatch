@@ -357,6 +357,12 @@ src/
                         #   at a given height. Marks, layers, the weight ramp.
                         #   A marked group leaves Babylon's outline pass and
                         #   gets an ink twin (MapBuilder.inkTwin) instead
+    parts.ts            # A structure's PART meshes, built without ever reaching
+                        #   the GPU: uploading geometry that a merge throws away
+                        #   was half of a 1500 m build. partBox / partCylinder /
+                        #   partSurface, and uploadPart, which every path out of
+                        #   a merge owes. Colliders are NOT parts — a part has no
+                        #   submeshes and would stop nothing
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
                         #   palette, builder contract

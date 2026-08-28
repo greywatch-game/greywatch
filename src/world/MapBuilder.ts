@@ -23,6 +23,14 @@
  * collider share vertices (an invisible clone per block); a heightfield has no
  * box to stand in for it, and splitting it per block is what keeps ray picks
  * rejecting it as cheaply as the old flat box did.
+ * Builders arrive with PARTS (world/parts.ts) rather than ordinary meshes: no
+ * device buffer under them, because uploading geometry a merge throws away was
+ * half of a 1500 m build. So every path out of a merge that KEEPS its source
+ * owes uploadPart() — the group-of-one hand-bake in mergeByMaterial and in
+ * paneGroup, and the material-less mesh both of them skip. A part that reaches
+ * the scene without it draws nothing and throws nothing. collider() is
+ * deliberately NOT on that path: a part has no submeshes and moveWithCollisions
+ * walks them.
  * `build(..., { editor: true })` keeps geometry per layout item, tags it with
  * metadata.editorRef and indexes it — at the cost of the BlockMerge pass and
  * roughly 10x the draw calls. Authoring only; never measure frame cost there.
@@ -68,6 +76,7 @@ import { NavGrid } from "./NavGrid";
 import { RayWorld } from "./RayWorld";
 import { CoverMap } from "./CoverMap";
 import { ObstacleField } from "./ObstacleField";
+import { uploadPart } from "./parts";
 import { mulberry32 } from "./rng";
 import {
   buildAshTree,
@@ -1813,7 +1822,12 @@ export class MapBuilder {
     const groups = new Map<Material, number[]>();
     for (const [j, mesh] of s.paneMeshes.entries()) {
       const mat = mesh.material;
-      if (!mat) continue;
+      // As in `mergeByMaterial`: skipped means kept, and a kept part owes the
+      // upload the merge would have done for it.
+      if (!mat) {
+        uploadPart(mesh);
+        continue;
+      }
       const group = groups.get(mat);
       if (group) group.push(j);
       else groups.set(mat, [j]);
@@ -1840,7 +1854,7 @@ export class MapBuilder {
             // same hand-bake `mergeByMaterial` does: the caller composes a
             // transform onto what it gets back, so an unbaked mesh would have
             // its own position clobbered rather than added to.
-            parts[0].bakeCurrentTransformIntoVertices()
+            uploadPart(parts[0]).bakeCurrentTransformIntoVertices()
           : Mesh.MergeMeshes(parts, true, true, undefined, false, false);
       if (!merged) continue;
       merged.name = `${name}-${mat.name}`;
@@ -2376,7 +2390,13 @@ function mergeByMaterial(
   const groups = new Map<Material, Map<string, Group>>();
   for (const m of meshes) {
     const mat0 = m.material;
-    if (!mat0) continue;
+    // A part with no material is not merged and is not disposed, so it is the
+    // one mesh that leaves this function alive without going through a group.
+    // It has to be uploaded or it is a part in the scene — see `parts.ts`.
+    if (!mat0) {
+      uploadPart(m);
+      continue;
+    }
     // **The palette is what takes the COLOUR out of this key.** A matte cel
     // material differs from another only in a uniform, so every one of them can
     // be answered by one material reading the albedo per vertex instead — which
@@ -2415,7 +2435,7 @@ function mergeByMaterial(
             // the colours only one mesh uses — and the caller, which positions
             // and rotates what it gets back, would clobber that mesh's own
             // transform instead of composing with it.
-            group[0].bakeCurrentTransformIntoVertices()
+            uploadPart(group[0]).bakeCurrentTransformIntoVertices()
           : Mesh.MergeMeshes(group, true, true, undefined, false, false);
       if (!merged) continue;
       // Suffixed only where a group actually splits, so the common name is the

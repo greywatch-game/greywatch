@@ -1847,6 +1847,17 @@ the placement loop re-timed. If the ms-per-placement column goes flat, this is
 the whole of it. If it does not, the remainder is in `BlockMerge`'s accumulation
 or in `boxIndex`, and neither has been measured apart.
 
+**DISPROVED — see finding 24, and this paragraph is left standing because how
+it was wrong is the useful part.** `removeMesh` is 98 ms of a 6,420 ms loop:
+88,131 calls scanning 547 million array elements, which is 0.18 ns an element,
+because V8's `indexOf` over a packed array is not a memory access per element.
+`AssetContainer` was never the door and `rootNodes` has been O(1) since Babylon
+9. The loop was uploading a million part meshes' vertex buffers to the GPU and
+disposing them moments later, and the `n^2.9` was the WebGPU allocator
+degrading rather than an `O(built × live)` scan. The ms-per-placement column
+DID go flat — 6.4 at 900/300 and 8.5 at 1500/0 — for a completely different
+reason than this predicted.
+
 ### Wall 3 was right to within 2%, and its table was missing 20 MiB
 
 Every typed array in the built world, summed off `byteLength`:
@@ -2436,5 +2447,165 @@ where a collider is flush with the ground.
   on an unmodified tree at `f18bdc9`, so it predates this work and is unrelated
   to it; it is recorded here because S2's own verify list names that command and
   it could not be run.
+
+---
+
+## 24. Wall 4's cause was the wrong one, and the placement loop is not a list scan — it is a MILLION GPU BUFFERS
+
+**S5's first half. The 1500 m build was 186 s and is now 17.4, the placement
+loop 161.5 s and is now 9.4, and the `n^2.9` shape it was carrying is gone.**
+Every figure is a matched pair on the Windows box (RTX 4070 Ti SUPER, headless
+Chromium via `channel: "chromium"`, 1920x1080), taken with
+`src/world/buildProfile.ts` on the generated proving ground at both extents,
+and the "before" column is the same tree with the change stashed rather than
+finding 19's numbers quoted forward.
+
+### The derivation that was wrong, and it was wrong by 65x
+
+Wall 4 and finding 19 both name `Scene.removeMesh` as the cause: it is
+`this.meshes.indexOf(toRemove)` plus a splice, `mergeByMaterial` disposes its
+sources, so a build creating and destroying ~a million part meshes against a
+`scene.meshes` growing to 23,014 is `O(built x live)` — which is exactly the
+shape the ms-per-placement column had. It was recorded as **derived, not
+measured**, and it is worth saying plainly that the derivation was sound and
+the answer was still wrong.
+
+Measured, by wrapping `scene.removeMesh` on the 900/300 ground and summing
+`scene.meshes.length` at every call:
+
+| | |
+| --- | --- |
+| calls | 88,131 |
+| array elements scanned | **547,517,230** |
+| time inside `removeMesh` | **98 ms** |
+| the placement loop it was blamed for | **6,420 ms** |
+
+Half a BILLION element comparisons for 98 ms. V8's `indexOf` over a packed
+array is ~0.18 ns an element, and the derivation was pricing a linear scan as
+if it were a linear number of memory accesses. **A list scan is not a cost at
+this scale, and this document should stop reaching for one.**
+
+### Where it actually goes, from a CPU profile of the build
+
+`Profiler.start` over `installMap`, aggregated by self time inside
+`build@MapBuilder.ts` (8,802 ms of it, on 900/300):
+
+| self, ms | frame |
+| --- | --- |
+| 1,878 | `createBuffer` (native — `device.createBuffer`) |
+| 1,692 | `writeBuffer` (native — `queue.writeBuffer`) |
+| 515 | `createVertexBuffer` |
+| 690 | `CreateBoxVertexData`'s inner loop |
+| 477 | `occlusionAt` (the AO bake) |
+| 367 | `segmentHitsBox` |
+| 81 | `removeMesh` |
+
+**~4.2 s of an 8.8 s build is uploading geometry to the GPU.** Every part a
+builder makes is a real `Mesh`, and `VertexData.applyToMesh` uploads positions,
+normals, UVs and indices the instant it is created. `mergeByMaterial` then
+reads them back out of the CPU copies Babylon kept anyway, uploads the merged
+result, and disposes every source — destroying the buffers it just made. A
+cottage's twenty planks are twenty round trips to the device for geometry that
+never survives to be drawn.
+
+### What the fix is
+
+`src/world/parts.ts`, and the lever is Babylon's own. `Geometry.setVerticesData`
+postpones the device buffer whenever the geometry has no mesh on it yet, and
+`Geometry.applyToMesh` only runs `_applyToMesh` — which creates every postponed
+buffer — `if (this.isReady())`. So a geometry built BEFORE its mesh and applied
+while `delayLoadState` says NOTLOADED gets a mesh that holds its vertices and
+has never spoken to the device. `kit/core.ts`'s seven creation sites go through
+`partBox`/`partCylinder`/`partSurface`, and `uploadPart` puts a part back on the
+normal path on the three ways out of a merge that keep their source.
+
+**The state is put back on the very next line, and the one trap here is that it
+has to be.** Every read on a `Geometry` is gated on the same `isReady()` —
+`getVertexBuffer`, `getVerticesData` and `getTotalVertices` all return null or
+zero while it is false — so a part left NOTLOADED is not an un-uploaded mesh,
+it is an EMPTY one, and `MergeMeshes` fails it as "Positions are required".
+That cost a run.
+
+### What it bought
+
+| build phase, ms | 900/300 before | 900/300 after | 1500/0 before | 1500/0 after |
+| --- | --- | --- | --- | --- |
+| **`build:total`** | **9,284** | **5,010** | **185,899** | **17,422** |
+| — the PLACEMENT loop | 6,420 | **2,607** | 161,491 | **9,443** |
+| — block merge | 495 | 219 | 8,763 | 1,010 |
+| — scatter | 170 | 108 | 4,002 | 443 |
+| — road merge | 135 | 12 | 3,068 | 41 |
+| — ink twins | 86 | 88 | 1,022 | 278 |
+| — pane merge | 74 | 75 | 535 | 236 |
+| — AO bake | 734 | 724 | 2,514 | 2,191 |
+| — `NavGrid` | 696 | 681 | 2,493 | 2,572 |
+| — `CoverMap` | 245 | 246 | 919 | 736 |
+| — seven flow fields | 67 | 67 | 292 | 227 |
+| **install to `deploy`** | **11,993** | **8,807** | **204,800** | **34,923** |
+
+**10.7x on the whole 1500 m build and 17.1x on the loop.** The phases that
+build no geometry — the AO bake, `NavGrid`, `CoverMap`, the flow fields — are
+unmoved, which is what says the attribution is right.
+
+### The superlinearity was the GPU allocator, not a list
+
+This is the part worth keeping. Finding 19 measured 1.1 ms per placement on
+Harrowmead, 6.6 on Coldharbour, 18.4 at 900/300 and **143.7** at 1500/0, and
+called it `n^2.9`. After:
+
+| | placements | ms in the loop | ms per placement |
+| --- | --- | --- | --- |
+| 900 / 300 | 410 | 2,607 | **6.4** |
+| 1500 / 0 | 1,108 | 9,443 | **8.5** |
+
+2.7x the placements now costs **1.33x** each, against 7.8x before. Nothing in
+this change touches a list, a lookup or an index — so what was superlinear was
+the WebGPU buffer allocator degrading as ~3 million create/destroy cycles ran
+through a device already holding tens of thousands of live buffers. The
+downstream phases say the same thing: the road merge and the block merge build
+their geometry the ordinary way and still came down 75x and 8.7x at 1500/0,
+because the device they allocate against is no longer in that state.
+
+### The oracle, because this change must not move a vertex
+
+A nav-graph fingerprint cannot see it — this is VISUAL geometry, and
+`npm run parity` is blind to it by design. What was compared instead, per map,
+is every mesh in `GameMap.visuals` and `GameMap.colliders` in list order: name,
+material name, metadata, position/rotation/scaling, `isVisible`, `isPickable`,
+`checkCollisions`, rendering group, outline flags, vertex and index counts,
+submesh count, `geometry.delayLoadState`, and FNV hashes of the position,
+normal, uv and colour buffers and of the index buffer. **All five maps hash
+identically** — Hollowmere, Greyfen, Coldharbour, Harrowmead and the proving
+ground — along with `scene.meshes`, `scene.geometries`, the active-mesh count,
+and a count of visuals failing `isReady(true)` after the map draws, which is
+zero on both sides.
+
+`npm run parity` passes on all four, `gate.mjs` is clean on all four, and
+`bank.mjs --check` reproduces S4's control run to four decimals (hollowmere/menu
+0.627, coldharbour/avenue 3.2563, harrowmead/millpond 1.3526, and
+harrowmead/borderland at 0%) — which is the same evidence S4 used, and finding
+20 is still the reason the bank reads red at all.
+
+### What is open
+
+- **Colliders are still built the ordinary way, and it is not an oversight.**
+  6,349 of the 900/300 ground's meshes are collider proxies, and their upload is
+  most of the ~430 ms of buffer work left in the build. They cannot become parts
+  as this module stands: `moveWithCollisions` walks `mesh.subMeshes` and a part
+  has none, so a collider built as a part would stop nothing, silently. Giving a
+  part a submesh without a device buffer is possible and nobody has costed
+  whether it is worth it.
+- **`Props.ts`'s seventy creation sites were left alone**, deliberately: the
+  whole scatter phase is 108 ms at 900/300 and 443 at 1500/0, so converting them
+  is churn against a rounding error. If the desert city's dressing is much
+  denser than the proving ground's, re-measure before assuming that holds.
+- **The remaining 656 ms of `CreateBoxVertexData`** at 900/300 is a fresh unit
+  box tessellated per part. Nothing shares geometry between two identical boxes,
+  and a merge has to bake the transform in anyway — but the six faces of a unit
+  cube are the same six faces every time, and the loop is measurable.
+- **Where the 1500 m build now is**: the placement loop is 54% of it and the
+  nav/cover/AO builds S5 would move to a worker are **33%** (5,768 ms of 17,422)
+  against the 3.3% they were before this landed. See `ENGINE_UPGRADE.md` S5 —
+  that inversion is the decision this measurement was owed.
 
 ---

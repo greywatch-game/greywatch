@@ -595,6 +595,25 @@ and before it did, every colour used by a single part of a rotated building (the
 tavern's sign, the smithy's forge glow, the boathouse lamp) was translated into
 place without being rotated.
 
+**A builder's parts never reach the GPU, and that is a rule rather than a
+tuning knob.** Everything `Build` makes — every box, cylinder and surface — is
+a `partBox`/`partCylinder`/`partSurface` from `src/world/parts.ts`: a real
+`Mesh` holding real vertices with no device buffer, no bounding info and no
+submesh under it. Uploading them was HALF the build. `VertexData.applyToMesh`
+sends a part's positions, normals, UVs and indices to the device the instant it
+exists, `mergeByMaterial` reads them back out of the CPU copies Babylon kept
+anyway, and the merge disposes the source — so a cottage's twenty planks were
+twenty round trips for geometry no frame would ever draw. At 1500 m that was
+161 seconds of a 186-second build; it is 9.4 of 17.4 now (`FINDINGS.md` 24).
+
+Two consequences a builder has to know. **A part may never be drawn, picked or
+collided with** — it has no submeshes, so it would silently do nothing — which
+is why `MapBuilder.collider()` stays on `MeshBuilder` and colliders are not
+parts. And **every path out of a merge that KEEPS its source owes
+`uploadPart`**: the group-of-one hand-bake in both `mergeByMaterial` and
+`paneGroup`, and the material-less mesh both of them skip. A part that reaches
+the scene without it draws nothing and throws nothing.
+
 A **second merge pass** (`BlockMerge`) collapses neighbouring structures and scatter
 fields into one mesh per (48 m map block, material). The village is ~230 structures
 and the outline pass draws every mesh twice, so without it the map alone costs ~670

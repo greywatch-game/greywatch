@@ -13,6 +13,14 @@
  *   road bends onto the ground under it). That is a licence to SAMPLE the
  *   world, not to build in it: the geometry returned is still origin-local,
  *   because MapBuilder still rotates and translates it.
+ * - Geometry here is a PART, not a mesh in the ordinary sense: `Build` makes
+ *   everything through `world/parts.ts`, so a part holds its vertices and has
+ *   no device buffer, no bounding info and no submesh. It may be read,
+ *   transformed, merged and disposed, and may never be DRAWN, PICKED or
+ *   COLLIDED WITH — uploading parts a merge throws away was half of a 1500 m
+ *   build (`FINDINGS.md` 24). Anything new here uses those factories; a raw
+ *   `MeshBuilder` call puts its geometry on the device on the way to being
+ *   thrown away, and buys back its share of that silently.
  * - Builders NEVER set metadata.solid, checkCollisions, or isPickable — the
  *   visual/collider split is MapBuilder's job; builders only declare where
  *   collider boxes go, and what kind: `BoxSpec.porous` is the one property of
@@ -29,7 +37,7 @@
  * - No Hollowmere special-casing; register new builders in
  *   BuildingKit.ts's BUILDERS.
  */
-import { Mesh, MeshBuilder, Scene, VertexData } from "@babylonjs/core";
+import { Mesh, Scene, VertexData } from "@babylonjs/core";
 import type { ShaderMaterial } from "@babylonjs/core";
 import { CONFIG } from "../../config";
 import type {
@@ -37,6 +45,7 @@ import type {
   TranslucencySpec,
 } from "../../shaders/CelShader";
 import type { LightSpec } from "../environment";
+import { partBox, partCylinder, partSurface } from "../parts";
 import type { TerrainField } from "../TerrainField";
 import {
   COBBLE_TEX_SCALE,
@@ -485,7 +494,7 @@ export class Build implements Structure {
     color: string,
     rot?: { x?: number; y?: number; z?: number },
   ): Mesh {
-    const m = MeshBuilder.CreateBox(
+    const m = partBox(
       `${this.tag}-box${this.meshes.length}`,
       { width: w, height: h, depth: d },
       this.scene,
@@ -515,7 +524,7 @@ export class Build implements Structure {
     trans: TranslucencySpec,
     rot?: { x?: number; y?: number; z?: number },
   ): Mesh {
-    const m = MeshBuilder.CreateBox(
+    const m = partBox(
       `${this.tag}-sheet${this.meshes.length}`,
       { width: w, height: h, depth: d },
       this.scene,
@@ -542,7 +551,7 @@ export class Build implements Structure {
     y: number,
     z: number,
   ): Mesh {
-    const m = MeshBuilder.CreateBox(
+    const m = partBox(
       `${this.tag}-ground${this.meshes.length}`,
       { width: w, height: h, depth: d },
       this.scene,
@@ -563,8 +572,11 @@ export class Build implements Structure {
    * own frame, because MapBuilder rotates and translates the result.
    */
   surface(data: VertexData, color?: string): Mesh {
-    const m = new Mesh(`${this.tag}-surface${this.meshes.length}`, this.scene);
-    data.applyToMesh(m);
+    const m = partSurface(
+      `${this.tag}-surface${this.meshes.length}`,
+      data,
+      this.scene,
+    );
     m.material =
       color === undefined ? this.groundMaterial() : this.mats.get(color);
     this.meshes.push(m);
@@ -728,7 +740,7 @@ export class Build implements Structure {
           "room. See Build.pane.",
       );
     }
-    const m = MeshBuilder.CreateBox(
+    const m = partBox(
       `${this.tag}-pane${this.paneMeshes.length}`,
       { width: w, height: h, depth: d },
       this.scene,
@@ -776,7 +788,7 @@ export class Build implements Structure {
     color: string,
     rot?: { x?: number; y?: number; z?: number },
   ): Mesh {
-    const m = MeshBuilder.CreateCylinder(
+    const m = partCylinder(
       `${this.tag}-cyl${this.meshes.length}`,
       { height, diameterTop: dTop, diameterBottom: dBot, tessellation: tess },
       this.scene,
@@ -801,7 +813,7 @@ export class Build implements Structure {
     z: number,
     color: string,
   ): Mesh {
-    const m = MeshBuilder.CreateBox(
+    const m = partBox(
       `${this.tag}-glow${this.meshes.length}`,
       { width: w, height: h, depth: d },
       this.scene,
