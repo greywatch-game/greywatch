@@ -1052,7 +1052,7 @@ records.*
 
 ---
 
-### S5 — The load behind the card — **THE FLATTEN LANDED; S5b HAS UNGATED THE WORKER AND IT IS STILL NOT TAKEN**
+### S5 — The load behind the card — **THE FLATTEN LANDED; THE WORKER IS UNGATED, RE-TIMED, AND STILL NOT PROMOTED**
 
 **This step was called "Move the burst builds off the main thread", and that
 name stopped being true twice.** What landed under it was a GPU-upload fix, and
@@ -1184,6 +1184,69 @@ which needs `build` split into two lanes, and the two sides of that
 fresh ones. Nothing here promotes it — what a worker is worth is now a question
 about `MapBuilder.build`, which is 42% of the install and is where finding 24's
 open threads are.
+
+---
+
+**The re-time S5b and S5c both owed has been taken, and the answer is still not
+S5d.** Measured at 1500/0 on the tree with both of them in, through
+`src/world/buildProfile.ts` and the same `installMap` wrapper finding 25 used:
+
+```
+installMap 19,147 ms = build 18,853 + physics 185 + reflect 79 + 30 rest
+```
+
+| build phase at 1500 / 0 | ms | share of the build |
+| --- | --- | --- |
+| **the placement loop** | **10,092** | **53.5%** |
+| `NavGrid` | 2,806 | 14.9% |
+| the AO bake | 2,414 | 12.8% |
+| block merge | 1,144 | 6.1% |
+| `CoverMap` | 822 | 4.4% |
+| scatter | 469 | 2.5% |
+| ink twins, pane merge, valley | 731 | 3.9% |
+| seven flow fields | 264 | 1.4% |
+| `ObstacleField`, `RayWorld`, the rest | 28 | 0.1% |
+| **`build:total`** | **18,853** | |
+
+**The two lanes are still balanced and the worker's ceiling is still ~20%.** The
+nav lane is `NavGrid` + `CoverMap` + `ObstacleField` + the fields = **3,899 ms**,
+and the merge lane it would have to hide behind is block merge + pane merge +
+the AO bake + the ink twins = **4,106**. That is the 3,542-against-3,715 above,
+re-measured and unmoved in shape. A perfect overlap takes the install from
+19.1 s to about 15.2 — **a fifth**, for `build` split into two lanes and an
+async window opened inside `installMap`, which is the single thing this step's
+must-not-break list is most emphatic about.
+
+**And the phase that decides whether that is worth doing is the one nobody has
+attributed since the flatten.** The placement loop is **53.5% of the build and
+sits ahead of both lanes** — `NavGrid` is built from the FINISHED collider set,
+so no worker can overlap it — and what it is now MADE OF has not been profiled
+since finding 24 changed what it does. The two threads finding 24 names inside
+it are ~430 ms of collider buffer work and 656 ms of `CreateBoxVertexData`, both
+at 900/300 and neither sized at 1500 m; together they are a tenth of the loop at
+the smaller extent, which means **90% of 10 seconds is unaccounted for**.
+
+**So the next measurement is a CPU profile of the placement loop at 1500/0, and
+the next STEP depends on what it says.** If the loop turns out to be another
+single site the way `PhysicsWorld.setMap` and `ReflectionSystem.build` both
+did, it is worth more than the worker and costs none of the worker's risk — and
+this document has now been re-ordered by measurement FOUR times, every one of
+them by profiling a phase nobody had opened. If it turns out to be a thousand
+ordinary milliseconds spread evenly, the worker is the best thing left and S5d
+is the step. **Do not promote it before that profile**, for the reason this
+section has given three times: writing the worker down now commits to a design
+whose cost the next measurement is about to move.
+
+**The collider flatten is NOT that step and is not a candidate yet.** It is
+finding 24's first open thread and it is BLOCKED rather than merely uncosted:
+`moveWithCollisions` walks `mesh.subMeshes` and a part has none, so a collider
+built as a part would stop nothing, silently — which is a physics failure that
+no oracle in the tree would catch as a build change. Giving a part a submesh
+with no device buffer is the door, nobody has costed it, and what is behind it
+is ~430 ms at 900/300. It is a thread inside the loop above, not an alternative
+to the worker.
+
+---
 
 The natural cut, when it comes, is that these are **pure functions over plain
 data**: `NavGrid`, `CoverMap` and `ObstacleField` take `WorldBox[]` and a

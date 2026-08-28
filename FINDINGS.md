@@ -2606,7 +2606,14 @@ harrowmead/borderland at 0%) — which is the same evidence S4 used, and finding
 - **Where the 1500 m build now is**: the placement loop is 54% of it and the
   nav/cover/AO builds S5 would move to a worker are **33%** (5,733 ms of 17,422)
   against the 3.3% they were before this landed. See `ENGINE_UPGRADE.md` S5 —
-  that inversion is the decision this measurement was owed.
+  that inversion is the decision this measurement was owed. **Re-timed after
+  S5b and S5c** (finding 25): `build:total` is 18,853 of a 19,147 ms install,
+  the loop is **10,092 ms and 53.5%**, and the two lanes a worker would have to
+  balance are 3,899 ms of nav against 4,106 of merges. **The loop has not been
+  attributed since this finding changed what it does** — the two threads named
+  above are ~430 ms and 656 ms at 900/300, so nine tenths of ten seconds is
+  unaccounted for, and that profile is what decides whether the worker is the
+  best thing left.
 
 ---
 
@@ -2813,10 +2820,19 @@ worker has to overlap the MERGES instead (3,542 against 3,715 ms), which needs
 
 ### What is open
 
-- **`MapBuilder.build` is now 98.7% of the install** — 18,837 ms of 19,117 at
-  1500 m, with the other two sites at 181 and 72 between them. Finding 24's open
-  threads are the whole of what is left of wall 4, and its first one (colliders
-  are still built the ordinary way, 16,526 of them) is the cheapest.
+- **`MapBuilder.build` is now 98.5% of the install** — 18,853 ms of 19,147 at
+  1500 m, with the other two sites at 185 and 79 between them. Wall 4 is the
+  build and nothing else. **The phase split was re-taken on the same tree** and
+  is under finding 24's last open thread: the placement loop is 10,092 ms and
+  53.5%, and **what it is made of has not been profiled since finding 24
+  changed what it does**. That is the next measurement, and
+  `ENGINE_UPGRADE.md` S5 holds the worker unpromoted until it exists.
+- **The collider thread is BLOCKED, not merely uncosted**, which finding 24's
+  own first bullet says and which is easy to read past when ranking by size:
+  `moveWithCollisions` walks `mesh.subMeshes` and a part has none, so a collider
+  built as a part stops nothing, SILENTLY. No oracle in this tree catches that
+  as a build change — the per-mesh hash would pass and `npm run parity` does not
+  see physics. Anything taking it owes a test that a body still stops.
 - **A probe pool grown while the scene is SHORT was never costed and no longer
   needs to be.** It was the first shape offered here and the swap took the walk
   to nothing rather than to a 22nd of it, so the estimate-off-the-layout problem
