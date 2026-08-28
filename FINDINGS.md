@@ -1650,3 +1650,271 @@ this entry is:
 Both want a pair of eyes rather than another measurement.
 
 ---
+
+## 19. A 1500 m map, measured: the frame is a mesh WALK, the build is quadratic, and the reflection bake takes the GPU device
+
+**Status:** measured on the Windows box against a generated proving ground at
+two extents, one cause located in Babylon's own source, one cause not yet
+located. **This is `ENGINE_UPGRADE.md` S0**, and it replaces every projection in
+that file's walls 1–4 with a measurement. Four of its numbers were right, three
+were wrong in the same direction, and one wall was not in the document at all.
+
+Nothing here is fixed. What it changes is the ORDER: `ENGINE_UPGRADE.md` has
+been corrected in place against these figures.
+
+### The instrument, and what it is measuring
+
+`src/world/proving/` — a generated map, dev-only, registered in `MAPS` behind
+`import.meta.env.DEV` and kept out of both bundles by
+`scripts/check-proving.mjs`. A city block grid on an 80 m pitch at roughly
+Coldharbour's collider density, five flags, both home spawns, one scatter region
+per block; `npm run proving -- --play P --margin M` writes it. It is not a level
+and must never become one — see its header.
+
+Two extents, both **1500 m of ground across**, differing only in how much of
+that is the PLAY square:
+
+- **1500 / 0** — the whole extent is play, closed by a rim.
+- **900 / 300** — a 900 m play square inside a 300 m borderland.
+
+Windows box (RTX 4070 Ti SUPER), headless Chromium via `channel: "chromium"`,
+`--disable-frame-rate-limit --disable-gpu-vsync`, 1920x1080, warm 10 s past the
+compile stall, medians over an 8 s sample — finding 18's protocol, so the
+figures are comparable to its. Coldharbour and Harrowmead were re-measured in
+the same sessions as controls. Build phases come from
+`src/world/buildProfile.ts`, added for this and DEV-only.
+
+### What each extent IS
+
+| | Coldharbour | Harrowmead | **900 / 300** | **1500 / 0** |
+| --- | --- | --- | --- | --- |
+| play square (m) | 320 | 400 | **900** | **1500** |
+| ground across (m) | 320 | 560 | 1500 | 1500 |
+| placements | 137 | 124 | 410 | 1,108 |
+| collider boxes | 768 | 748 | 5,929 | 16,526 |
+| **scene meshes** | 2,213 | 2,187 | **9,002** | **23,014** |
+| nav cells | 45,796 | 71,289 | 360,000 | 1,000,000 |
+| walkable surfaces | 34,142 | 70,524 | 305,193 | 846,766 |
+| glazing groups | 71 | 0 | 389 | 1,153 |
+| cube probes | 40 | 2 | 265 | 770 |
+
+**The first correction is wall 1's headline.** It read Coldharbour's ~2,500
+meshes forward by 22x and predicted **~55,000** at 1500 m. The measured figure
+is **23,014** — 2.4x less, because a merged block is one mesh whatever is in it
+and the terrain patches are cut on a 48 m grid rather than per structure. The
+900 m square is **9,002**, which is 4.1x Coldharbour rather than the 7.9x its
+area would suggest, for the same reason.
+
+### Wall 1 is real, it is the largest thing in the frame, and it is worse per mesh than finding 18 said
+
+The frame, with the reflection bake stubbed out so a frame exists at all (see
+below — at either extent the bake never returns):
+
+| median ms | Coldharbour | **900 / 300** | **1500 / 0** |
+| --- | --- | --- | --- |
+| frame (rAF interval) | 13.7 | **10.1** | **30.3** |
+| `scene.render()` | 12.3 | 9.5 | 26.3 |
+| — `_evaluateActiveMeshes` | 3.4 | **7.6** | **23.0** |
+| — render targets | 2.1 | 0.3 | 0.5 |
+| — main draw phase | 5.5 | 1.1 | 1.7 |
+| the game's own JS | 1.4 | 0.6 | 4.0 |
+| draw calls | 1,441 | 293 | 368 |
+| active meshes | 644 | 125 | 146 |
+| fps | 71.1 | 91.6 | 30.8 |
+
+**At 1500 m, 23.0 ms of a 30.3 ms frame is spent rejecting meshes nobody
+draws.** 23,014 walked, 146 kept. The draw phase is 1.7 ms — the GPU work is
+nothing, and the map is slower than Coldharbour while drawing a quarter of its
+calls.
+
+The two proving columns differ only in map AREA and keep almost the same number
+of meshes (125 against 146), which makes them a clean pair: the marginal cost is
+**(23.0 − 7.6) / (23,014 − 9,002) = 1.10 µs per mesh in the scene, per frame.**
+Finding 18 measured 0.67 µs for the same thing by disabling the meshes the walk
+rejects; **it under-read by 1.6x**, and the honest reading is that its method
+measured the walk with a disabled-mesh early-out rather than the walk in full.
+
+**The 900 m square is FASTER than Coldharbour** — 10.1 ms against 13.7 — and
+that is the shape of the whole problem rather than a surprise: it walks 4x the
+meshes and draws a fifth of the calls, because the camera at its spawn is in an
+empty block looking down a street. Wall 1 does not care what is on screen, and
+neither does this number.
+
+### Wall 4 was right that the build is the problem and wrong about which part
+
+Derived: 30–60 s behind the loading card at 1500 m, dominated by `NavGrid`,
+`CoverMap`, the flood fill and the flow fields. Measured:
+
+| build phase, ms | Coldharbour | Harrowmead | **900 / 300** | **1500 / 0** |
+| --- | --- | --- | --- | --- |
+| **`build:total`** | **1,635** | **877** | **11,316** | **182,889** |
+| — placements | 908 | 132 | 7,564 | **159,249** |
+| — block merge | 62 | 63 | 669 | 9,044 |
+| — scatter | 86 | 357 | 277 | 4,313 |
+| — road merge | 3 | 1 | 162 | 2,662 |
+| — AO bake | 165 | 82 | 936 | 2,360 |
+| — `NavGrid` | 140 | 49 | 729 | 2,328 |
+| — `CoverMap` | 56 | 29 | 294 | 895 |
+| — seven flow fields | 10 | 17 | 150 | 368 |
+| — pane merge | 20 | 0 | 165 | 549 |
+| — ink twins | 20 | 43 | 116 | 316 |
+| — scatter clusters | 4 | 20 | 16 | 624 |
+| — terrain patches | 2 | 5 | 18 | 3 |
+| — `ObstacleField` | 1 | 0.5 | 5 | 7 |
+| **install to `deploy`** | **1,770** | **1,043** | **13,219** | **197,753** |
+
+**It is 183 seconds, not 30–60, and the four things wall 4 named are 3.3% of
+them.** `NavGrid`, `CoverMap`, the flow fields and the AO bake together are
+**5,951 ms of 182,889**. The placement loop alone is **87%**.
+
+**And the placement loop is superlinear in the number of placements**, which is
+the finding under the finding:
+
+| | placements | ms in the loop | **ms per placement** |
+| --- | --- | --- | --- |
+| Harrowmead | 124 | 132 | 1.1 |
+| Coldharbour | 137 | 908 | 6.6 |
+| 900 / 300 | 410 | 7,564 | **18.4** |
+| 1500 / 0 | 1,108 | 159,249 | **143.7** |
+
+2.7x the placements costs 7.8x each, so the loop is about `n^2.9` overall.
+Nothing in a builder knows how big the map is, so this is not a builder getting
+slower — it is the cost of adding one structure growing with how many are
+already there. (Harrowmead against Coldharbour is a different mix rather than a
+scaling point: a farm is not a tower block.)
+
+**The cause is derived, not measured, and it is in Babylon rather than here.**
+`Scene.removeMesh` is `this.meshes.indexOf(toRemove)` followed by a `splice`,
+plus `_removeFromSceneRootNodes`, which is a second linear scan
+(`scene.pure.js`). Every structure builds dozens of part meshes and
+`mergeByMaterial` **disposes its sources** — that is what turns Babylon's
+attribute-aligning path off, and `MapBuilder`'s header says so. So the build
+creates and destroys on the order of a million meshes against a `scene.meshes`
+array that grows to 23,014, and pays a scan over all of it every time. That is
+`O(built × live)`, which is the shape the table has.
+
+**What would settle it** is a build with the part meshes created under
+`scene._blockEntityCollection` — `AssetContainer` is the supported door — and
+the placement loop re-timed. If the ms-per-placement column goes flat, this is
+the whole of it. If it does not, the remainder is in `BlockMerge`'s accumulation
+or in `boxIndex`, and neither has been measured apart.
+
+### Wall 3 was right to within 2%, and its table was missing 20 MiB
+
+Every typed array in the built world, summed off `byteLength`:
+
+| MiB | Coldharbour | Harrowmead | **900 / 300** | **1500 / 0** | wall 3 derived |
+| --- | --- | --- | --- | --- | --- |
+| `NavGrid` (`links` is 122.1 of it) | 6.7 | 7.8 | 52.5 | **145.9** | 153 |
+| `CoverMap` | 2.0 | 2.3 | 15.5 | **42.9** | 24 |
+| seven flow fields | 4.9 | 5.7 | 38.5 | **106.8** | 112 |
+| **total** | **13.5** | **15.8** | **106.4** | **295.6** | **289** |
+
+The derivation was right. The one line it got wrong is `CoverMap`, which is 43
+MiB rather than 24: the table counted its three `Uint16Array` masks and missed
+that it also holds **its own copies of the graph's `heights`, `counts` and
+`walkable`**. That is another 20 MiB at 1500 m and it compacts with the same S3
+change as the rest.
+
+**What it costs in a tab is bigger than the arrays.** At the moment the round
+opens, before a frame is drawn:
+
+| | 900 / 300 | 1500 / 0 |
+| --- | --- | --- |
+| JS heap used | 1,696 MiB | **3,536 MiB** |
+| JS heap limit | 4,192 MiB | 4,192 MiB |
+| renderer working set | 2,554 MB | **5,432 MB** |
+
+**1500 / 0 sits at 84% of V8's heap cap with nothing drawn yet.** That is wall 3
+landing as an allocation failure exactly as the document predicted, and the
+proving ground reaches it by building successfully and then having nowhere left
+to go.
+
+### The wall that was not in the document: the reflection bake takes the GPU device
+
+`ReflectionSystem` bakes **one cube probe per glazed BLOCK**, refresh-once, at
+`CONFIG.graphics.reflection.size` (128). That is priced on map area like
+everything else here, and nothing in `ENGINE_UPGRADE.md` lists it:
+
+| | Coldharbour | 900 / 300 | 1500 / 0 |
+| --- | --- | --- | --- |
+| glazing groups | 71 | 389 | 1,153 |
+| probes | 40 | 265 | **770** |
+| queued in | 47 ms | 1,113 ms | **15,615 ms** |
+| meshes in each probe's render list | 177 | 928 | 2,434 |
+| first frame (the bake) | 1.3 s | **never returned** | **never returned** |
+
+**At BOTH extents the first frame after the build never completes.** At 900/300,
+162 seconds into that frame, the page reports:
+
+```
+Failed to execute 'requestDevice' on 'GPUAdapter': ID3D12Device::CreateDescriptorHeap
+BJS - A fatal error occurred during WebGPU creation/initialization.
+```
+
+— the D3D12 device is LOST during the bake and Babylon's attempt to recreate it
+fails too. At 1500/0 the renderer process is simply replaced. Both were given
+ten minutes.
+
+**So this is not "slow", it is a hard failure, and it is the first thing between
+this tree and a map of either size.** Every frame figure in this entry was taken
+with `ReflectionSystem.build` stubbed to a no-op before the round started, which
+is the single lever that isolates it: a probe is refresh-once, so it costs
+nothing after the frame it bakes on and the steady-state frame is identical
+either way.
+
+Three things about it decide what the fix looks like:
+
+- **The count is the map's GLAZING, not the map's size.** A desert city with
+  less curtain wall has fewer, and a probe per BUILDING rather than per glazed
+  block is not obviously wrong.
+- **The bake is `probes × 6 faces × render list`**, and at 1500 m that is
+  770 × 6 × 2,434 = **11.2 million draws in one frame**. Amortising it over
+  frames does not reduce it; the render list has to come down, or the probe
+  count has to, or both.
+- **`CreateDescriptorHeap` failing is a resource ceiling and not a timeout**, so
+  a slower bake fails identically. The ~400 MB of cube textures (520 KB each,
+  per `CONFIG.graphics.reflection`) is the more obvious half; the descriptor
+  heap is the half that actually breaks.
+
+### The decision the document asked this to make
+
+`ENGINE_UPGRADE.md` recommended **900 m of play inside 1500 m of ground** on a
+derived table and said S0 should settle it with numbers. It settles it, and not
+narrowly:
+
+| | 1500 / 0 | 900 / 300 |
+| --- | --- | --- |
+| build | 183 s | **11.3 s** |
+| frame | 30.3 ms | **10.1 ms** — faster than Coldharbour |
+| `_evaluateActiveMeshes` | 23.0 ms | **7.6 ms** |
+| JS heap at deploy | 3,536 MiB of a 4,192 cap | **1,696 MiB** |
+| nav/cover/flow arrays | 295.6 MiB | **106.4 MiB** |
+| reflection bake | fails | fails |
+
+**900/300 is affordable today except for the reflection bake. 1500/0 is not
+affordable at all** — three minutes of loading, three quarters of its frame in a
+mesh walk, and a heap 84% full before it draws. The committed proving ground is
+therefore the 900/300 variant, and `--play 1500 --margin 0` is one command away
+for anyone re-testing the ceiling.
+
+That is 5.1x Harrowmead's playable area and still reads as 1500 m from every
+vantage, which is what the split was for.
+
+### What is open
+
+- **The reflection bake.** Nothing can be measured past it without a stub, and a
+  game cannot ship with one.
+- **The placement loop's `n^2.9`**, and whether `AssetContainer` flattens it. It
+  is worth more than every worker in S5: 159 s of a 183 s build.
+- **Wall 1 at 1.10 µs per scene mesh**, which is what block visibility has to
+  beat. At 900/300 it is already 7.6 ms of a 10.1 ms frame — the frame is a walk
+  at a size the rest of the engine holds comfortably.
+- **Nothing here was measured with sixteen bots fighting.** The player spawns
+  and the round runs, but the proving ground's flags are hundreds of metres
+  apart and no engagement was forced. Bot cost at this scale is untested.
+- **`ObstacleField` reported no typed arrays**, so it is absent from the memory
+  table. It holds bucketed box references rather than a grid of primitives; its
+  footprint is unmeasured.
+
+---

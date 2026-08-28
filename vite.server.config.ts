@@ -48,6 +48,39 @@ export default defineConfig({
       // time rather than at import time.
       external: ["ws", /^node:/],
       output: { entryFileNames: "[name].js" },
+      /**
+       * The DEV-only proving ground is the one thing in `src/` this build has
+       * to be TOLD is droppable, and it is worth knowing why rather than
+       * copying the line.
+       *
+       * `src/world/maps.ts` states the proving entry inside an
+       * `import.meta.env.DEV` ternary. Vite folds that to `false` here as it
+       * does in the client build, so the `MapDef` goes — but the LAYOUT module
+       * behind it stays, because Rollup's default is that every module has
+       * side effects and `proving/layout.ts` builds its control points with
+       * `new Vector3(...)` at module scope, which Rollup cannot prove is
+       * nothing. The client build shakes it away only because Vite sets
+       * `moduleSideEffects: "no-external"` there and does not set it here.
+       *
+       * Measured: without this, `dist-server` carried the proving ground's
+       * control points and spawns — the two arrays whose elements are
+       * `new Vector3`, about 1 kB. The 1500 m map's other 420 kB (its 1,108
+       * placements and its 141,376-vertex heightfield) is plain object and
+       * number literals and was already shaken. So the leak is small and the
+       * rule is not: a production artefact carrying a dev-only map's flags is
+       * the shake having stopped working, and the next thing added to that
+       * directory will not be so cheap.
+       *
+       * Named as a PREDICATE over these two generated files rather than as
+       * `"no-external"` for the whole tree: the blanket setting would be a
+       * claim about every module under `src/`, made to fix one that is not
+       * shipped at all, and the failure it would buy is a module quietly
+       * dropped on the authority with the client still carrying it.
+       */
+      treeshake: {
+        moduleSideEffects: (id) =>
+          !/[\\/]src[\\/]world[\\/]proving[\\/]/.test(id),
+      },
     },
   },
 });

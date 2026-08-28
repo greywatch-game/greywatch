@@ -25,6 +25,8 @@ import { HarrowmeadEnvironment } from "./harrowmead/environment";
 import { HarrowmeadLayout } from "./harrowmead/layout";
 import { HollowmereEnvironment } from "./hollowmere/environment";
 import { HollowmereLayout } from "./hollowmere/layout";
+import { ProvingEnvironment } from "./proving/environment";
+import { ProvingLayout } from "./proving/layout";
 
 /**
  * A map: the level data, the conditions it is seen under, and what to call it
@@ -131,13 +133,66 @@ export const HARROWMEAD: MapDef = {
   collision: () => import("./harrowmead/collision"),
 };
 
-/** Every map that can be played, in the order a picker would show them. */
-export const MAPS: readonly MapDef[] = [
-  HOLLOWMERE,
-  GREYFEN,
-  COLDHARBOUR,
-  HARROWMEAD,
-];
+/**
+ * The proving ground: not a level, and DEV ONLY.
+ *
+ * `ENGINE_UPGRADE.md` S0 is what it exists for — a generated city block grid at
+ * roughly Coldharbour's collider density carried out to a play square several
+ * times the size, so that the six things under `src/world/` priced on map AREA
+ * can be measured at the scale a 1500 m map asks for rather than projected from
+ * maps a quarter of it. Its layout and heightfield are written wholesale by
+ * `scripts/generate-proving-ground.mjs`; only the environment beside them is
+ * hand-written.
+ *
+ * **It must never reach a production bundle.** It is behind
+ * `import.meta.env.DEV` in `MAPS` below, which is the only place it is
+ * referenced, so a production build folds the ternary and tree-shakes the two
+ * generated modules — 150 to 400 kB of them, depending on the extent it was
+ * generated at — out. That is enforced rather than trusted:
+ * `scripts/check-proving.mjs` runs on the end of `npm run build` and greps
+ * `dist/` AND `dist-server/` for two strings that exist only past this gate.
+ *
+ * **The two builds do not shake alike, and the server one had to be told.**
+ * Vite sets `moduleSideEffects: "no-external"` for the client and leaves
+ * Rollup's default for SSR, so `dist-server` kept this layout's control points
+ * — `new Vector3` at module scope, which Rollup cannot prove is nothing — until
+ * `vite.server.config.ts` named the directory as side-effect-free. See the
+ * comment there.
+ *
+ * It is also absent from `scripts/collision-hash.mjs`'s `MAPS`, so it has no
+ * collision bake, cannot be played in a match, and is not one of the sixteen
+ * banked frames `plans/webgpu-ref` gates on.
+ *
+ * `collision` therefore REJECTS rather than importing anything. A map with no
+ * bake cannot be a match's map, and the honest way to say so is to fail when
+ * asked instead of shipping a stub the server would build a silent, empty world
+ * from.
+ */
+const PROVING: MapDef = {
+  id: "proving",
+  name: "Proving Ground",
+  blurb:
+    "Not a level. A generated block grid at city density, for measuring what " +
+    "a map several times the size of Harrowmead costs to build and to draw.",
+  layout: ProvingLayout,
+  environment: ProvingEnvironment,
+  collision: () =>
+    Promise.reject(
+      new Error("the proving ground has no collision bake and cannot be hosted"),
+    ),
+};
+
+/**
+ * Every map that can be played, in the order a picker would show them.
+ *
+ * The ternary is load-bearing and not a style: `import.meta.env.DEV` folds to a
+ * literal at build time, which is what lets Rollup drop `PROVING` and, with it,
+ * the two generated modules behind it. Pushing onto this array afterwards, or
+ * filtering it at runtime, would keep both in the bundle.
+ */
+export const MAPS: readonly MapDef[] = import.meta.env.DEV
+  ? [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, PROVING]
+  : [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD];
 
 /** What a round starts on with nothing chosen. */
 export const DEFAULT_MAP: MapDef = HOLLOWMERE;

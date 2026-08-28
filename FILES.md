@@ -391,7 +391,13 @@ src/
                         #   and the ONE place a floor material is built
     environment.ts      # EnvironmentSpec + applyEnvironment
     maps.ts             # MapDef + the MAPS registry. The only EXISTING file a
-                        #   new map has to touch (plus vite.config's WRITABLE)
+                        #   new map has to touch (plus vite.config's WRITABLE).
+                        #   `MAPS` is an `import.meta.env.DEV` ternary and must
+                        #   stay one — that fold is what keeps the proving
+                        #   ground out of both bundles
+    buildProfile.ts     # Where the time behind the loading card went, per
+                        #   phase. DEV ONLY and a no-op otherwise; the handle
+                        #   is `window.__buildProfile()`
     collision.ts        # MapCollision: the shape of a baked collider set, and
                         #   the tuple->WorldBox expansion the server rebuilds
                         #   from. Names no map; reached via MapDef.collision,
@@ -428,6 +434,16 @@ src/
     harrowmead/environment.ts # Palette, sun, sky — high summer, late
                               #   morning, no fog wall (`fogEnd: 520`)
     harrowmead/collision.ts   # GENERATED collider boxes (`npm run collision`)
+    proving/layout.ts         # DEV ONLY, and NOT a level: the proving ground
+                              #   ENGINE_UPGRADE.md S0 measures against. A city
+                              #   block grid at Coldharbour's collider density
+                              #   over a play square several times the size.
+                              #   GENERATED (`npm run proving`), gated out of
+                              #   every bundle by `scripts/check-proving.mjs`
+    proving/heights.ts        # GENERATED with it — level under the streets
+    proving/environment.ts    # The one hand-written file there. A dry noon
+                              #   with `fogEnd` past the map's own diagonal, so
+                              #   nothing measured on it is hidden by weather
   ui/                   # One .css beside each module that writes markup
     base.css            #   Reset, canvas, #hud root, and ONLY primitives two
                         #   or more screens share — including THE SHELL every

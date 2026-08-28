@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-collision.mjs && node scripts/check-deep-imports.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/check-collision.mjs && node scripts/check-deep-imports.mjs && tsc --noEmit && vite build && node scripts/check-proving.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json",
     "collision": "node scripts/bake-collision.mjs",
@@ -16,7 +16,8 @@
     "parity": "node scripts/check-world-parity.mjs",
     "shots": "node scripts/capture-map-shots.mjs",
     "textures": "node scripts/generate-water-textures.mjs",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "proving": "node scripts/generate-proving-ground.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.19.1",

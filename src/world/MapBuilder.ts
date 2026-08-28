@@ -44,6 +44,7 @@ import {
 } from "../shaders/CelShader";
 import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
 import { bakeVertexShading } from "./vertexShading";
+import { begin as beginProfile, record, since } from "./buildProfile";
 import type { LightingSystem } from "../systems/LightingSystem";
 import { BUILDERS, type BoxSpec, type Structure } from "./BuildingKit";
 import type { EnvironmentSpec } from "./environment";
@@ -764,6 +765,13 @@ export class MapBuilder {
    * second map is a second layout file and nothing here changes.
    */
   build(layout: MapLayout, env: EnvironmentSpec, opts?: BuildOptions): GameMap {
+    // Where the time behind the loading card goes. DEV-only, a no-op in a
+    // production build, and an ATTRIBUTION rather than a partition: `build`
+    // times itself whole and names the parts worth naming under it, so the
+    // remainder is what is left over. See `buildProfile.ts`, and `FINDINGS.md`
+    // 19 for what it found — 87% of a 1500 m build is the placement loop below.
+    beginProfile();
+    const buildStart = performance.now();
     // The map's own extent, not the global — a village and a downtown are not
     // the same size. Everything downstream already took it as an argument; it
     // reaches them from here and is carried on `GameMap.size` for the readers
@@ -826,15 +834,17 @@ export class MapBuilder {
       margin,
       layout.borderland?.roll,
     );
-    this.buildValley(
-      size,
-      margin,
-      env,
-      terrain,
-      visuals,
-      colliders,
-      terrainColliders,
-      layout.ridge,
+    record("valley", () =>
+      this.buildValley(
+        size,
+        margin,
+        env,
+        terrain,
+        visuals,
+        colliders,
+        terrainColliders,
+        layout.ridge,
+      ),
     );
 
     // --- authored structures ---
@@ -843,6 +853,7 @@ export class MapBuilder {
     const roadParts: Mesh[] = [];
     const blocks = new BlockMerge();
     const paneBlocks = new PaneBlocks();
+    const placementsStart = performance.now();
     for (const [i, p] of layout.placements.entries()) {
       const item = index ? newItem(index.placements) : null;
       this.item = item;
@@ -939,8 +950,11 @@ export class MapBuilder {
       }
     }
     this.item = null;
+    since("placements", placementsStart);
 
-    for (const merged of mergeByMaterial(roadParts, "roads")) {
+    for (const merged of record("roadMerge", () =>
+      mergeByMaterial(roadParts, "roads"),
+    )) {
       // Flat ground sheets receive shadows, never cast them.
       merged.metadata = { ...(merged.metadata ?? {}), noShadowCaster: true };
       // A road that carries lane markings arrives with `noOutline` already on
@@ -952,6 +966,7 @@ export class MapBuilder {
     }
 
     // --- scattered dressing ---
+    const scatterStart = performance.now();
     for (const [i, spec] of layout.scatter.entries()) {
       const item = index ? newItem(index.scatter) : null;
       this.item = item;
@@ -959,22 +974,29 @@ export class MapBuilder {
       if (item) for (const m of item.visuals) visuals.push(m);
     }
     this.item = null;
+    since("scatter", scatterStart);
     // Every region's blocking props at once, and deliberately not region by
     // region: the regions OVERLAP (that is how the layout varies density), so
     // clustering each on its own would hand the same 12 m square one mesh per
     // region standing over it. Measured on Greyfen's forest, per-region
     // grouping left 1,412 props in ~500 meshes; all together it is ~180.
-    colliders.push(...this.clusterColliders("scatter", this.pendingCluster));
+    colliders.push(
+      ...record("scatterClusters", () =>
+        this.clusterColliders("scatter", this.pendingCluster),
+      ),
+    );
     this.pendingCluster = [];
 
     // One more merge across neighbouring structures — see BlockMerge. This is
     // the ONE merge that paletteises, which is also what exempts the editor for
     // free: an editor build files its meshes on the item instead and never
     // reaches this pass at all (see the `item` branch in the placement loop).
-    for (const merged of blocks.finish({
-      slot: (hex) => this.paletteIndex(hex),
-      material: this.mats.getWorldCel(),
-    })) {
+    for (const merged of record("blockMerge", () =>
+      blocks.finish({
+        slot: (hex) => this.paletteIndex(hex),
+        material: this.mats.getWorldCel(),
+      }),
+    )) {
       if (!merged.metadata?.noOutline) addOutline(merged, 0.05);
       visuals.push(merged);
     }
@@ -1003,7 +1025,9 @@ export class MapBuilder {
     // therefore the one visual in the world with no ink, and it loses nothing:
     // what draws a window's frame is the mullion, the collar and the reveal,
     // all of which are geometry with outlines of their own.
-    for (const merged of paneBlocks.finish(this.panes, this.paneGroups)) {
+    for (const merged of record("paneMerge", () =>
+      paneBlocks.finish(this.panes, this.paneGroups),
+    )) {
       merged.metadata = {
         ...(merged.metadata ?? {}),
         noOutline: true,
@@ -1028,7 +1052,9 @@ export class MapBuilder {
     // the whole input besides the terrain. See `world/vertexShading.ts` for
     // what each channel of the colour buffer carries and why.
     const bakeStart = performance.now();
-    const bakedVerts = bakeVertexShading(visuals, this.boxes, terrain, size);
+    const bakedVerts = record("aoBake", () =>
+      bakeVertexShading(visuals, this.boxes, terrain, size),
+    );
     if (import.meta.env.DEV) {
       console.info(
         `[bake] ${bakedVerts} vertices in ${(performance.now() - bakeStart).toFixed(1)} ms`,
@@ -1049,33 +1075,55 @@ export class MapBuilder {
     // `isPickable = false` and the same disposal as every other visual — and
     // pushing it into `visuals` is what gets it all three. It is a VISUAL in
     // every sense the rest of this file means: no collider, no box, no pick.
-    for (const m of [...visuals]) {
-      const twin = inkTwin(m, this.mats);
-      if (twin) visuals.push(twin);
-    }
+    record("inkTwins", () => {
+      for (const m of [...visuals]) {
+        const twin = inkTwin(m, this.mats);
+        if (twin) visuals.push(twin);
+      }
+    });
 
-    for (const m of visuals) this.markVisual(m);
+    record("markVisual", () => {
+      for (const m of visuals) this.markVisual(m);
+    });
 
     // Navigation is derived from the finished collider set, then a flow field
     // is precomputed per objective: five flags plus both home spawns. The map
     // is static, so this is the only time any of it is computed.
-    const nav = new NavGrid(size, this.boxes, terrain, layout.surfaces);
+    const nav = record(
+      "navGrid",
+      () => new NavGrid(size, this.boxes, terrain, layout.surfaces),
+    );
     for (const cp of layout.controlPoints) {
-      nav.buildField(cp.id, cp.pos, cp.radius * 0.6);
+      record(`flowField:${cp.id}`, () =>
+        nav.buildField(cp.id, cp.pos, cp.radius * 0.6),
+      );
     }
     for (const team of [0, 1] as const) {
       const home = layout.spawns.find((s) => s.team === team);
-      if (home) nav.buildField(`home${team}`, home.pos, 6);
+      if (home) {
+        record(`flowField:home${team}`, () =>
+          nav.buildField(`home${team}`, home.pos, 6),
+        );
+      }
     }
+    // Cover needs the finished graph as well as the finished colliders, so it
+    // is built last. Baked once here and only read from then on. Both of these
+    // are named rather than inlined into the returned object for one reason:
+    // the build's own clock has to stop after them and before the object is
+    // assembled, or the profile's total excludes two of its own phases.
+    const cover = record("coverMap", () => new CoverMap(nav, this.boxes));
+    const obstacles = record(
+      "obstacleField",
+      () => new ObstacleField(size, this.boxes),
+    );
+    since("build:total", buildStart);
 
     return {
       size,
       margin,
       nav,
-      // Cover needs the finished graph as well as the finished colliders, so it
-      // is built last. Baked once here and only read from then on.
-      cover: new CoverMap(nav, this.boxes),
-      obstacles: new ObstacleField(size, this.boxes),
+      cover,
+      obstacles,
       controlPoints: layout.controlPoints,
       spawns: layout.spawns,
       vehicleSpawns: layout.vehicles ?? [],
@@ -1118,7 +1166,9 @@ export class MapBuilder {
       env.floorColor,
       env.floorSurface,
     );
-    for (const patch of terrainPatches(terrain, size, BLOCK_SIZE)) {
+    for (const patch of record("terrainPatches", () =>
+      terrainPatches(terrain, size, BLOCK_SIZE),
+    )) {
       const ground = new Mesh(`terrain-${patch.key}`, this.scene);
       patch.data.applyToMesh(ground);
       ground.material = floorMat;

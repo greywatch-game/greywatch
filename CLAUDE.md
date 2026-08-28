@@ -125,6 +125,8 @@ npm run preview    # serve the production build
 npm run icons      # regenerate public/icons (committed)
 npm run shots      # re-photograph the maps for the menu backdrop (committed).
                    #   The ONE script here that needs a real GPU — docs/build.md
+npm run proving    # regenerate the DEV-ONLY proving ground (committed source).
+                   #   `-- --play 900 --margin 300`. Not a level — ENGINE_UPGRADE.md
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -387,6 +389,15 @@ never leashed** — the nav graph stops at the play square.
 valley), **Coldharbour** (a business district — what the first three overrides
 exist for) **and Harrowmead** (`size: 400`, no wall around it). **The last two
 are the two with armour on them**, and they are the two biggest.
+
+**There is a fifth entry in `MAPS` and it is DEV-ONLY and not a level.**
+`src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
+against — a city block grid several times Harrowmead's size, written by
+`npm run proving`. **`MAPS` is an `import.meta.env.DEV` ternary and must stay
+one**: that fold is the only thing keeping 400 kB of it out of both bundles, and
+a `push`, a `filter` or a `const dev = import.meta.env.DEV` one line up would
+silently stop working. `scripts/check-proving.mjs` is what enforces that, on the
+end of `npm run build`, over `dist/` and `dist-server/` both.
 
 → **[`docs/world.md`](docs/world.md)** — the four overrides in full, the
 heightfield and the road slabs cut against it, the winding trap that makes a
