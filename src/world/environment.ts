@@ -253,6 +253,44 @@ export interface EnvironmentSpec {
   fogColor: string;
   fogStart: number;
   fogEnd: number;
+  /**
+   * How far a BODY is worth drawing, in metres, overriding `fogEnd` for the
+   * three gates that ask that question — the bots' rig LOD
+   * (`BattleSystem.viewDistance`), the remote roster's
+   * (`NetRoster.viewDistance`) and the ragdoll pool's one remaining refusal
+   * (`RagdollSystem.viewDistance`). Absent is `fogEnd`, which is what every
+   * shipped map states by saying nothing, so this changes no map that does not
+   * ask for it.
+   *
+   * **It exists because those three were pinned to the weather, and on a map
+   * with no weather that is not a distance at all.** `fogEnd` is where the
+   * world goes to `fogColor`, so it is exactly right for the WALK
+   * (`WorldCulling`, whose reach stays `fogEnd` and must — a structure dropped
+   * inside the fog does not fade, it vanishes). A body is the other case: it
+   * is nineteen merged meshes and it is two pixels tall at four hundred
+   * metres, and a frame that is DRAW-CALL bound (`FINDINGS.md` 17) pays the
+   * whole nineteen for those two pixels. Coldharbour and Harrowmead already
+   * see past their own diagonals, so both of them draw every rig on the map at
+   * all times; at 1500 m that is the largest bucket in the frame.
+   * `ENGINE_UPGRADE.md` S8 is this field.
+   *
+   * **A body still POPS where it is dropped**, which is the whole of the cost
+   * and the reason this defaults to the fog rather than to a number: past
+   * `fogEnd` a body is `fogColor` in front of `fogColor` and dropping it cannot
+   * move a pixel, and inside it a body vanishing is a thing a player can see.
+   * So a map states this only when it has decided that a soldier a few pixels
+   * tall is worth less than the draws — and it is capped at `fogEnd`
+   * (`bodyDrawDistanceOf`), because a body drawn past the fog is a body drawn
+   * as fog.
+   *
+   * **The two riders stay pinned to each other**, which is what
+   * `config/fogWall.ts` exists to say: `bots.lodDisableDistance` and
+   * `bots.death.maxDistance` are the same distance BY CONSTRUCTION, and they
+   * still are — all three systems above are handed the one number this
+   * resolves to, so a corpse can never be refused a tumble somewhere its rig
+   * is still being drawn.
+   */
+  bodyDrawDistance?: number;
   mistColor: string;
   mistHeight: number;
   mistStrength: number;
@@ -331,6 +369,35 @@ export interface EnvironmentSpec {
    * value here.
    */
   groundSpec?: SpecSpec;
+}
+
+/**
+ * How far a body is worth drawing on this map, resolved.
+ *
+ * The one place `EnvironmentSpec.bodyDrawDistance` is read, so the three gates
+ * that ask this question cannot be handed three different answers — which is
+ * the failure `config/fogWall.ts` was written to prevent when the number was
+ * spelled out per system.
+ *
+ * **Capped at `fogEnd` rather than trusted**, because past the fog a body draws
+ * `fogColor` in front of ground that draws `fogColor`: a map asking for more is
+ * asking for draws that cannot move a pixel, and the ragdoll pool would be
+ * tumbling corpses out there to go with them. The cap is silent in a
+ * production build and SAYS SO in a dev one — the two ways to write it, a map
+ * that raised `fogEnd` and forgot this and a map that meant it, are the same
+ * text, so the only thing the engine can do about the first is put it where
+ * the author will see it.
+ */
+export function bodyDrawDistanceOf(env: EnvironmentSpec): number {
+  const stated = env.bodyDrawDistance;
+  if (stated === undefined) return env.fogEnd;
+  if (import.meta.env.DEV && stated > env.fogEnd) {
+    console.warn(
+      `[environment] bodyDrawDistance ${stated} is past fogEnd ${env.fogEnd};` +
+        " a body out there is already drawn as fog. Clamping to fogEnd.",
+    );
+  }
+  return Math.max(0, Math.min(stated, env.fogEnd));
 }
 
 /**

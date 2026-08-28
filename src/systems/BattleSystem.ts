@@ -102,7 +102,7 @@ export class BattleSystem {
   private flashCount = 0;
 
   /**
-   * How far a rig is worth drawing and posing — the map's `fogEnd`, pushed by
+   * How far a rig is worth drawing and posing — the map's, pushed by
    * `Game.installMap`, defaulting to the shipped fog wall.
    *
    * It is a FIELD rather than `CONFIG.bots.lodDisableDistance` because the
@@ -110,6 +110,14 @@ export class BattleSystem {
    * map is free to have none: on a clear one this is several hundred metres
    * and a bot that vanished at 78 would vanish in plain sight. The value the
    * config still holds is what a fogged map gets, which is both shipped maps.
+   *
+   * **It is the map's `fogEnd` only until the map says otherwise.**
+   * `EnvironmentSpec.bodyDrawDistance` overrides it, resolved once by
+   * `bodyDrawDistanceOf` and pushed to all three gates together, because a
+   * body is nineteen merged meshes and two pixels tall long before the world
+   * around it stops being worth drawing — and on a map that can see past its
+   * own diagonal the fog was never going to gate anything at all. The WALK's
+   * reach (`WorldCulling`) deliberately did not move with it.
    */
   private viewDistance = FOG_WALL;
 

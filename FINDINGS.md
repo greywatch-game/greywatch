@@ -3303,3 +3303,123 @@ nav surface on any map, at any size.
   looked at, and neither showed up as a cost in the frame.
 
 ---
+
+## 30. The rigs are the largest thing in a 900 m frame, and the frustum hides that until you look down an avenue
+
+**Status:** measured on the Windows box, landed. **This is `ENGINE_UPGRADE.md`
+S8's engine half** — `EnvironmentSpec.bodyDrawDistance`, a body draw distance a
+map may state ahead of its fog — and it prices the lever S8 named and did not
+cost.
+
+S8 claimed that on a map you cannot fog the three body gates
+(`BattleSystem.viewDistance`, `NetRoster`'s, `RagdollSystem`'s) stop gating and
+"the rigs are now the largest bucket in the frame". Both halves are true, and
+the second one is invisible in the reading anyone would take first.
+
+### The instrument, and the lever
+
+Proving ground 900/300 (`fogEnd: 2400`, past its own 2121 m diagonal, so the
+three gates gate nothing), Windows box (RTX 4070 Ti SUPER), headless Chromium
+via `channel: "chromium"`, `--disable-frame-rate-limit --disable-gpu-vsync`,
+1920x1080, `spawnPlayer()`, warm 12 s past the compile stall, medians over 8 s.
+Findings 17-21's protocol, so the numbers sit beside theirs — and the quiet
+round below reproduces finding 21's 4.80 ms frame to the second decimal, which
+is what says it is the same instrument.
+
+**One process, one lever: `battle.setViewDistance` and the ragdoll gate beside
+it, arms interleaved fog/wall/fog/wall.** The field itself is not stated by any
+map in the tree; the arms are the two values it would resolve to.
+
+### A quiet round says almost nothing, and that is the finding under the finding
+
+| 900/300, quiet | frames/8 s | median ms | `_evaluateActiveMeshes` | active meshes | rig meshes active | rigs on |
+| --- | --- | --- | --- | --- | --- | --- |
+| fog 2400 | 1,607 / 1,664 | 4.8 / 4.7 | 2.96 / 2.85 | 121 | **0** | 15 |
+| wall 550 | 1,779 / 1,548 | 4.3 / 4.5 | 2.50 / 2.75 | 121 | **0** | 7 |
+
+**Zero rig meshes reach the active list either way.** The bots are spread across
+the play square and the FRUSTUM is already dropping every one of them, so the
+lever buys only the walk — 160 rig meshes going from enabled (world matrix
+recomputed, frustum tested) to disabled (an early out). The frame delta is
+**−7.4%, under the 8% floor**, and must not be quoted as a win. The walk's is
+−10%.
+
+A first run of the same arms read −16% on the frame; the four-arm interleave
+above is what corrected it. **The quiet-round number is noise and the honest
+reading is "nothing measurable".**
+
+### With the roster in view it is a quarter of the frame
+
+The case S8 is about is a 900 m sight line with bodies down it, which a 240 m
+map does not have. Sixteen rigs stood 120-900 m ahead of the camera, splayed a
+few degrees each side, re-stood every frame on the drawn ground:
+
+| 900/300, roster in view | median ms | `_evaluateActiveMeshes` | active meshes | rig meshes active | rigs on |
+| --- | --- | --- | --- | --- | --- |
+| fog 2400 | **9.2 / 9.1** | 3.89 / 3.90 | 441 | **288** | 15 |
+| wall 550 | **6.6 / 6.6** | 2.95 / 2.98 | 307 | **154** | 8 |
+| | **−28%** | **−24%** | **−30%** | | |
+
+**65% of the frame's active meshes are soldiers** (288 of 441), and the whole of
+the 134-mesh delta is rigs — nothing else moved, because nothing else was
+levered. Both repeats agree to 0.1 ms, so this is 3.5x the 8% floor and not a
+drift.
+
+**The frame delta is 2.55 ms over 134 meshes, or ~19 us each, which is far more
+than a mesh draw.** Finding 18 measures ~6.3 us for a draw carrying a material
+switch and ~2.3 for an outline shell on a bound material; the walk accounts for
+~0.94. So a rig mesh is being paid for more than once a frame — the outline
+shell and the glow accumulation are the obvious suspects and neither has been
+isolated. **That is a suspect, not a measurement.**
+
+### What landed
+
+`EnvironmentSpec.bodyDrawDistance`, resolved once by `bodyDrawDistanceOf` and
+pushed by `installMap` to all three body gates together. Verified end to end on
+Hollowmere by mutating the environment and rebuilding: absent → 78 (both gates),
+40 → 40, 5000 → 78 with the DEV warning, absent again → 78, and
+`WorldCulling`'s reach 105 m throughout all four.
+
+**No map in the tree states one**, so nothing shipped changed — which is also
+why `bank.mjs` has nothing to say about this and was not run.
+
+**`WorldCulling`'s reach deliberately stayed `fogEnd`.** The block cull is exact
+only because a structure past the fog draws `fogColor` in front of ground that
+draws `fogColor`. A body dropped early POPS, and that is a trade a map author
+takes knowingly; a building dropped early pops out of a skyline being looked at.
+
+### The other half: the shadow window's ceiling is now checked
+
+`ShadowSystem.setShadowWindow` DEV-warns when the window is past what
+`depthRange` can carry at the map's own key-light elevation
+(`2 * halfDepth / cos(elevation)`, halfDepth 89 m). Past that the along-sun
+reach does not move and the extra is texel density spent for nothing — and
+there is no feedback at all, because the line the author is trying to push out
+stays exactly where it was on that axis.
+
+**The four shipped maps are the evidence the ceiling is right, and none of them
+trips it**: Harrowmead states 185 against 183.8 at 14.5 degrees and Coldharbour
+200 against 194.9 at 24 — both authored by eye to within a couple of metres of a
+number neither file names. Greyfen (140 of 201.6), Hollowmere (110 of 226.5) and
+the proving ground (200 of 433, near-overhead noon) are well inside. Verified
+silent on all five with a round installed, and verified to FIRE at 400 m.
+
+### What is open
+
+- **What the ~19 us per rig mesh is made of.** The frame saving is three times
+  what a draw costs and twice what a draw plus the walk costs. Until it is
+  broken down, the 2.55 ms is a measurement whose mechanism is a guess.
+- **No map states the field, so it has never run in anger.** What a body popping
+  at 550 m on a clear map LOOKS like is unjudged — there is no map to judge it
+  on until S11, which is exactly why the field defaults to the fog.
+- **A fade was not built.** The gate is a hard on/off, as `lodDisableDistance`
+  always was, and it was invisible only because it sat where everything was
+  already `fogColor`. If a stated `bodyDrawDistance` reads badly, a short fade
+  band is the obvious next thing and nothing here has costed one.
+- **The rigs are still `loose` candidates whether they are drawn or not.**
+  Finding 21's open thread — ~750 idle POOLED effect meshes that the candidate
+  list could skip by the same mechanism as a collider — covers the rigs too, and
+  is the lever that would take the remaining walk cost rather than the draw
+  cost. Still nobody's step.
+
+---

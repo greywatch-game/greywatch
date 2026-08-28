@@ -139,6 +139,12 @@ export const bots = {
    * Distance past which the rig is not drawn at all — the fog wall, where
    * there is nothing to see. The bot keeps integrating, so the battle line
    * still moves out there; only the drawing and posing stop.
+   *
+   * **What runs is the MAP's** (`BattleSystem.viewDistance`, pushed by
+   * `Game.installMap`): its `fogEnd`, or its `EnvironmentSpec.bodyDrawDistance`
+   * where it states one. This value is what the system carries before any map
+   * is installed — and it is also, by arithmetic rather than by wiring, what
+   * the two valleys get, since both state a `fogEnd` of 78.
    */
   lodDisableDistance: FOG_WALL,
 
@@ -516,6 +522,12 @@ export const bots = {
      * being drawn, so one metre further is a solver tumbling something the
      * player cannot see. Every death inside the fog is eligible, which is
      * what a marksman rifle needs — its own range is bounded by the same wall.
+     *
+     * The construction now has something to survive: a map may state a
+     * `bodyDrawDistance` shorter than its fog, and when it does the rig LOD and
+     * this move together because `Game.installMap` resolves ONE number
+     * (`bodyDrawDistanceOf`) and pushes it to both. This value is what a map
+     * with no opinion gets.
      *
      * It is deliberately NOT `lodFreezeDistance` (35), which is what this was
      * pinned to and why nothing dying across the square ever fell over. That

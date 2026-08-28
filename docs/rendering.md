@@ -1435,6 +1435,18 @@ and never thrashes. A map whose `fogEnd` is past its own diagonal — Coldharbou
 Harrowmead, and the proving ground on purpose — culls nothing by distance and
 gets the hidden half alone.
 
+**And it is `fogEnd` and never `EnvironmentSpec.bodyDrawDistance`, which is the
+one other distance a map may state about drawing.** They are not two spellings
+of one idea. The block cull is EXACT because a structure past the fog draws
+`fogColor` in front of ground that draws `fogColor`, so dropping it cannot move
+a pixel — a claim that is true of the fog and of nothing shorter. A body dropped
+inside the fog genuinely disappears, and a map states `bodyDrawDistance` having
+decided that a soldier two pixels tall is worth less than nineteen merged meshes
+of draw. Measured on the proving ground with the roster in view, **65% of the
+frame's active meshes were rigs** (`FINDINGS.md` 30) — so what that field
+removes is large, and it is removed from the same walk this table governs while
+leaving the table alone.
+
 **A cell's bounds are its MESHES' and not the block's nominal square.** The key
 is a name, not an alignment claim: terrain patches are cut on the heightfield's
 grid lines rather than on `BLOCK_SIZE` seams, and a merged block's geometry can

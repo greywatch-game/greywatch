@@ -129,7 +129,11 @@ import { ShadowSystem } from "../systems/ShadowSystem";
 import { Sky } from "../systems/Sky";
 import { WaterSystem } from "../systems/WaterSystem";
 import { WorldCulling } from "../systems/WorldCulling";
-import { applyEnvironment, type EnvironmentSpec } from "../world/environment";
+import {
+  applyEnvironment,
+  bodyDrawDistanceOf,
+  type EnvironmentSpec,
+} from "../world/environment";
 import { Leash, LEASH_KILLER } from "../world/leash";
 import type { Heightfield } from "../world/layout";
 import type { EditorSession } from "../editor";
@@ -3136,27 +3140,44 @@ export class Game {
       environment.lighting.shadowWindow ?? CONFIG.graphics.shadows.frustumSize,
     );
     this.shadows.setFogRange(environment.fogStart, environment.fogEnd);
-    // The same fog range, to the three systems that gate on where it ENDS: past
-    // it there is nothing to see, so a rig is not drawn, a remote body is not
-    // drawn and a corpse is not worth tumbling.
+    // How far a BODY is worth drawing, to the three systems that gate on it: a
+    // rig is not drawn, a remote body is not drawn and a corpse is not worth
+    // tumbling. One number resolved once and pushed three times, which is what
+    // keeps `bots.lodDisableDistance` and `bots.death.maxDistance` the same
+    // distance by construction — see `config/fogWall.ts`.
     //
-    // It used to be stated twice — here, where it is painted, and in CONFIG,
-    // where those three read it — with a dev warning when a map disagreed. It
-    // is now stated once, by the map, for a reason that warning could only
-    // report: a map is allowed to have no fog, and on one that can see three
-    // hundred metres a body vanishing at seventy-eight vanishes in plain sight.
-    // `FOG_WALL` is what each of them carries until a map is installed, which
-    // is the shipped valleys' number.
-    this.battle.setViewDistance(environment.fogEnd);
-    this.ragdolls.setViewDistance(environment.fogEnd);
-    this.net?.roster.setViewDistance(environment.fogEnd);
-    // And a fourth reader of the same number, for the same reason turned
-    // inside out: past the fog wall there is nothing to see, so there is
-    // nothing to WALK either. `WorldCulling` files the fresh map's meshes and
+    // It used to be stated twice — here, where the fog is painted, and in
+    // CONFIG, where those three read it — with a dev warning when a map
+    // disagreed. It is now stated once, by the map, for a reason that warning
+    // could only report: a map is allowed to have no fog, and on one that can
+    // see three hundred metres a body vanishing at seventy-eight vanishes in
+    // plain sight. `FOG_WALL` is what each of them carries until a map is
+    // installed, which is the shipped valleys' number.
+    //
+    // And it is `fogEnd` only until a map says otherwise. The fog is where the
+    // WORLD stops being worth drawing; a body is nineteen meshes wide and two
+    // pixels tall long before that, and a map with no fog at all had no such
+    // distance to give them. See `EnvironmentSpec.bodyDrawDistance`, which is
+    // `ENGINE_UPGRADE.md` S8, and note that the fourth reader below is
+    // deliberately NOT on it.
+    const bodyDraw = bodyDrawDistanceOf(environment);
+    this.battle.setViewDistance(bodyDraw);
+    this.ragdolls.setViewDistance(bodyDraw);
+    this.net?.roster.setViewDistance(bodyDraw);
+    // And a fourth reader of the FOG, for the same reason turned inside out:
+    // past the fog wall there is nothing to see, so there is nothing to WALK
+    // either. `WorldCulling` files the fresh map's meshes and
     // decides which of them Babylon's per-frame active-mesh pass is offered —
     // it writes nothing onto any of them, so unlike the three lines above it,
     // and unlike every other line in this method, nothing downstream can tell
     // it ran. See `ENGINE_UPGRADE.md` wall 1.
+    //
+    // **It reads `fogEnd` and not `bodyDraw`, and that is the whole difference
+    // between the two numbers.** A body dropped early is a soldier the player
+    // may never look straight at; a BLOCK dropped early is a building that
+    // vanishes out of a skyline the player is looking at. The fog is what makes
+    // the second one exact — past it a structure draws `fogColor` in front of
+    // ground that draws `fogColor` — and nothing else does.
     this.culling.setMap(map, environment.fogEnd);
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
@@ -4771,8 +4792,10 @@ export class Game {
     // pushes it too and is the usual path — a rotation rebuilds the world — but
     // a roster is built when the session is, which on a join into a match
     // already in progress is after the map that decides this. Both, because
-    // neither one on its own covers both orders.
-    net.roster.setViewDistance(this.mapDef.environment.fogEnd);
+    // neither one on its own covers both orders — and through the same resolver
+    // both times, or the two orders would disagree on a map that states a
+    // `bodyDrawDistance`.
+    net.roster.setViewDistance(bodyDrawDistanceOf(this.mapDef.environment));
 
     // Boots. The exact counterpart of `wireBattle`'s `onBotStepped`, down to
     // the callback being handed the body rather than a position, and the one

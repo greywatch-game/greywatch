@@ -394,17 +394,18 @@ map's because `installMap` is one synchronous turn that cannot contain a fetch,
 which is that same object. `size * cell` must still equal the map's extent and
 nothing typed can see the pair any more, so `build` asserts it in a DEV build.
 
-**Six things that read like global constants are the MAP's**, each defaulting so
-that a map saying nothing is unaffected:
+**Seven things that read like global constants are the MAP's**, each defaulting
+so that a map saying nothing is unaffected:
 
 | the map's | default | what a map that raises it owes |
 | --- | --- | --- |
 | `MapLayout.size` — how big it is | `CONFIG.map.size`, 240 | its heightfield's `size * cell` must equal it (asserted in DEV, since `MapDef.heights` is a different file), and the rim's boundary boxes must stay over 200 m so the seven sites keying on `w > 200 \|\| d > 200` still can |
-| `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is pushed into `BattleSystem`, `NetRoster` and `RagdollSystem`; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
+| `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is the reach `WorldCulling` walks to and the default for the row below; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
+| `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | it is resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `BattleSystem`, `NetRoster` and `RagdollSystem` together, which is what keeps `bots.lodDisableDistance` and `bots.death.maxDistance` one distance; a body it drops POPS, and the WALK's reach deliberately stays the fog |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
 | `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** — those want more buckets on a big map, not fewer |
 | `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in all three callers of `terrainPatches` — `buildValley`, the server's `terrainColliders` and the editor's brush — or the two sides tessellate different floors |
-| `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` returns FULLY LIT outside the window rather than fading — an undersized one draws a line across the ground rather than softening |
+| `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` returns FULLY LIT outside the window rather than fading — an undersized one draws a line across the ground rather than softening, and an OVERSIZED one moves that line not at all (the depth volume binds along the sun) while costing texel density, which `ShadowSystem` now DEV-warns about |
 
 **A map is CLOSED one of two ways, and the second has no wall at all.** The rim
 is four boxes at `±size/2` under `Ridge`'s escarpment, and is what three of the

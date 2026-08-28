@@ -190,10 +190,67 @@ export class ShadowSystem {
    * shows up as the crawling edges the snapping exists to prevent.
    */
   setShadowWindow(metres: number): void {
+    // Before the early-out, because the DIRECTION may have moved while the
+    // number stayed put — a map rotation is `setLightDirection` then this, and
+    // which of the two bounds binds is a function of the elevation.
+    if (import.meta.env.DEV) this.warnIfWindowIsWasted(metres);
     if (metres === this.window) return;
     this.window = metres;
     this.light.shadowFrustumSize = metres;
     this.snappedFocus.setAll(Number.POSITIVE_INFINITY);
+  }
+
+  /**
+   * The ceiling the doc above derives, checked instead of trusted.
+   *
+   * A map raises its window because its shadows are longer than 110 m, and the
+   * failure it is trying to fix is a hard line across open ground — so it is a
+   * number chosen by looking, and there is no feedback at all when it is
+   * chosen too big: the depth volume binds along the sun's own azimuth, the
+   * line stays exactly where it was on that axis, and the extra metres are
+   * paid for in texel density (`window / mapSize`, 5.4 cm at 110 and 9.8 at
+   * 200) and in casters. `ENGINE_UPGRADE.md` S8 is where this cost a map.
+   *
+   * DEV-only and a warning rather than a clamp, for `MapBuilder`'s reason:
+   * the window is still the author's, and a map may want the across-sun reach
+   * knowing the along-sun one cannot follow. What it may not do is want it by
+   * accident.
+   *
+   * **The four shipped maps are the evidence that the ceiling is the right
+   * one, and none of them trips this**: Harrowmead states 185 against a 183.8
+   * ceiling at its 14.5-degree sun and Coldharbour 200 against 194.9 at 24, so
+   * both were authored by eye onto within a couple of metres of a number
+   * neither file names. Greyfen (140 of 201.6) and Hollowmere (110 of 226.5)
+   * are well inside it, and the proving ground's near-overhead noon has a
+   * ceiling of 433.
+   */
+  private warnIfWindowIsWasted(metres: number): void {
+    const c = CONFIG.graphics.shadows;
+    const d = this.light.direction;
+    // cos(elevation) — the direction is normalised by `setLightDirection` and
+    // by the constructor, so this is the horizontal component outright. A sun
+    // straight overhead casts nothing sideways and has no such ceiling.
+    const horiz = Math.hypot(d.x, d.z);
+    if (horiz < 1e-3) return;
+    // The volume runs from `shadowMinZ - distance` to `depthRange - distance`
+    // either side of the focus; the shorter half is the one that binds.
+    const halfDepth = Math.min(
+      c.distance - this.light.shadowMinZ,
+      c.depthRange - c.distance,
+    );
+    // Where that half lands on the GROUND along the sun's azimuth, doubled to
+    // put it in the same units as the window's own side.
+    const ceiling = (2 * halfDepth) / horiz;
+    // A tenth of slack: the two bounds are different shapes (a square against
+    // a slab) and being within a few metres of the ceiling is a map that has
+    // sized it correctly, not one that has overshot.
+    if (metres <= ceiling * 1.1) return;
+    const elevation = Math.round((Math.asin(-d.y) * 180) / Math.PI);
+    console.warn(
+      `[shadows] shadowWindow ${metres} m is past what depthRange can carry` +
+        ` at ${elevation} deg: the along-sun reach stops at ~${Math.round(ceiling)} m` +
+        " whatever this says, so the rest is texel density spent for nothing.",
+    );
   }
 
   /** Points the shadow camera along the environment's key light. */

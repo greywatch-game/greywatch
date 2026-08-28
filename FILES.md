@@ -60,8 +60,9 @@ src/
                         #   them. A new tunable goes in a section, not here
     fogWall.ts          # FOG_WALL alone — bots.ts reads it, so it cannot live in
                         #   index.ts without an import cycle. The DEFAULT view
-                        #   distance now: a map's own `fogEnd` overrides it, and
-                        #   Game.installMap pushes that into the three systems
+                        #   distance now: a map's `fogEnd`, or its
+                        #   `bodyDrawDistance`, overrides it, and Game.installMap
+                        #   resolves ONE number into the three body gates
     conquest.ts         # Flags, capture meter, tickets, bleed
     score.ts            # What a kill, a bonus and a flag are worth on the
                         #   board. Spent by both simulations, so a value here
@@ -412,7 +413,9 @@ src/
                         #   the map's floorColor, albedo and height in one pass
     floorSurfaces.ts    # What the valley floor is MADE of: the surface roster
                         #   and the ONE place a floor material is built
-    environment.ts      # EnvironmentSpec + applyEnvironment
+    environment.ts      # EnvironmentSpec + applyEnvironment, and
+                        #   bodyDrawDistanceOf — the one reader of a map's body
+                        #   draw distance, capped at its own fogEnd
     maps.ts             # MapDef + the MAPS registry. The only EXISTING file a
                         #   new map has to touch (plus vite.config's WRITABLE).
                         #   `MAPS` is an `import.meta.env.DEV` ternary and must

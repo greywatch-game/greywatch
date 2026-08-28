@@ -152,14 +152,26 @@ drawn; `NetRoster`, the same call for a body coming off the wire; and
 something nobody can see. `BattleSystem` wrote its own `78` out by hand before
 any of this, which is how the ragdoll gate came to be keyed off an unrelated LOD.
 
-What each of the three now holds is a FIELD that `Game.installMap` pushes
-`EnvironmentSpec.fogEnd` into, and `FOG_WALL` in `config/fogWall.ts` is what they
-carry before a map is installed. It used to be the answer, with a dev warning
-when a map's `fogEnd` disagreed — and the disagreement is now the point:
-Coldharbour has no fog wall at all, sees 480 m, and a body vanishing at 78 there
-would vanish in plain sight. `config/fogWall.ts` is still its own module for the
+What each of the three now holds is a FIELD that `Game.installMap` pushes one
+resolved distance into, and `FOG_WALL` in `config/fogWall.ts` is what they carry
+before a map is installed. It used to be the answer, with a dev warning when a
+map's `fogEnd` disagreed — and the disagreement is now the point: Coldharbour
+has no fog wall at all, sees 480 m, and a body vanishing at 78 there would
+vanish in plain sight. `config/fogWall.ts` is still its own module for the
 original reason (`config/bots.ts` reads it, and taking it from `index.ts` would
 be an import cycle).
+
+**That distance is the map's `fogEnd` until the map states an
+`EnvironmentSpec.bodyDrawDistance`, and the pinning survives it because the
+resolution happens ONCE.** `bodyDrawDistanceOf` is the only reader of that
+field, `installMap` calls it once and pushes the result to all three, and it is
+clamped to `fogEnd` — so this gate is still exactly where the rig stops being
+drawn, whichever of the two numbers decided that. It is `ENGINE_UPGRADE.md` S8,
+and what it is for is a map with no weather: at 480 or 520 m these three gate
+nothing at all, and every rig on the map is drawn at every moment. A map that
+pulls them in is trading a body popping in clear air for the draws — which is a
+map author's call and never this system's, which is why nothing here has a
+number of its own.
 
 **A full pool EVICTS rather than refusing, and `takeSlot` is three tiers deep**: a
 free slot, then a sinking one, then the OLDEST corpse. Only the last costs anything,

@@ -30,10 +30,13 @@ export class NetRoster {
   readonly soldiers: NetSoldier[] = [];
 
   /**
-   * How far a body is worth drawing — the match's map `fogEnd`, pushed by
-   * `Game.installMap`. `BattleSystem.viewDistance` is the same field for the
-   * same reason: past the fog there is nothing to see, and a map with no fog
-   * has no such distance short of its own far side.
+   * How far a body is worth drawing — the match's map's, pushed by
+   * `Game.installMap` (and again by `wireNet`, for a join into a match already
+   * standing). `BattleSystem.viewDistance` is the same field for the same
+   * reason: past the fog there is nothing to see, and a map with no fog has no
+   * such distance short of its own far side — which is why a map may now state
+   * one outright as `EnvironmentSpec.bodyDrawDistance`, resolved by
+   * `bodyDrawDistanceOf` and pushed to the three body gates together.
    */
   private viewDistance = FOG_WALL;
 

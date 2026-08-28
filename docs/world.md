@@ -96,6 +96,32 @@ high sun *because of* the fixed 110 m window, and when the map moved to a low
 one the window had to move with it — which is the same argument `fogEnd` makes,
 one term along.
 
+**`EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing**,
+defaulting to `fogEnd`, clamped to it, and resolved in exactly one place
+(`bodyDrawDistanceOf`). It exists because the three gates above were pinned to
+the WEATHER, and on a map with no weather that is not a distance at all:
+Coldharbour and Harrowmead both see past their own diagonals, so both of them
+draw every rig on the map at every moment, and at 1500 m that is measurably the
+largest thing in the frame — **65% of the active meshes with the roster in view,
+and 2.6 ms of a 9.2 ms frame** (`FINDINGS.md` 30). It is `ENGINE_UPGRADE.md` S8.
+
+**Two things about it are the whole of its design.** The first is that all three
+gates are handed ONE number, resolved once by `installMap` — which is what keeps
+`bots.lodDisableDistance` and `bots.death.maxDistance` the same distance by
+construction, the property `config/fogWall.ts` was written to protect. A corpse
+refused a tumble somewhere its own rig is still being drawn would stand to
+attention until `death.hideTime`.
+
+The second is that **`WorldCulling`'s reach deliberately did not move with it**,
+and the asymmetry is the argument rather than an omission. Past `fogEnd` a
+structure draws exactly `fogColor` in front of ground that draws exactly
+`fogColor`, so dropping it cannot move a pixel — that is what makes the block
+cull exact, and it is true of the fog and of nothing else. A BODY dropped early
+is a soldier a player may never look straight at; a BLOCK dropped early is a
+building that vanishes out of a skyline they are looking at. So the world's
+answer to a map you cannot fog is still S8's first one — **fog it**, well inside
+its own diagonal — and this field is only for the bodies standing in it.
+
 **`MapLayout.surfaces` — how deep the nav graph stacks** (`CONFIG.nav.maxSurfaces`,
 3). See `docs/bots.md`: a map raises it only because it stacks FLOORS, and the
 guarantee that a floor survives is the ORDER its builder declares colliders in,
@@ -179,6 +205,17 @@ therefore comes for free and this number only buys the across-sun half; there is
 no point raising it past where the depth volume clips, and widening `depthRange`
 to chase it is its own trap, because `shadowParams.x` is a NORMALISED bias and a
 deeper volume rescales what it means in metres.
+
+**That ceiling is now CHECKED rather than only written down here** — a DEV
+warning in `ShadowSystem.setShadowWindow`, which is `ENGINE_UPGRADE.md` S8's
+other half. It is arithmetic no author can see: the map raises the window
+because it can see a hard line across the ground, and past the ceiling raising
+it further moves that line not at all while costing texel density on every
+frame. The check is a warning and never a clamp — a map may want the across-sun
+reach knowing the along-sun one cannot follow — and **the four shipped maps are
+the evidence that the ceiling is the right one**: Harrowmead states 185 against
+a 183.8 m ceiling and Coldharbour 200 against 194.9, both authored by eye to
+within a couple of metres of a number neither file names.
 
 What it costs is texel density — `window / mapSize`, so 5.4 cm at 110 and 9.8 cm
 at 200. The four-tap kernel is measured in TEXELS and still cancels the

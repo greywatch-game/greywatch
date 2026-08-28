@@ -337,7 +337,8 @@ menu is up.
 The authority decides who died and has already charged the ticket, written the
 killfeed line and started the respawn clock before a client hears about it. What
 is left is a body falling over, and that is the client's alone — the same
-`RagdollSystem` pool and the same single refusal (past the fog wall) as offline,
+`RagdollSystem` pool and the same single refusal (past the map's body draw
+distance — its `fogEnd`, or its `bodyDrawDistance` where it states one) as offline,
 with the same eviction of the oldest corpse when the pool is full. Three things
 make that work and each has a way of failing quietly.
 

@@ -2033,7 +2033,57 @@ everywhere, and throws nothing. `MapBuilder.build` asserts it in a DEV build.
 
 ---
 
-### S8 — Sight, shadow and fog for a map you cannot fog
+### S8 — Sight, shadow and fog for a map you cannot fog — **THE ENGINE HALF IS LANDED; THE MAP HALF IS S11'S**
+
+**`FINDINGS.md` 30 is the result**, and this step split cleanly in two when it
+was opened. Its FIRST half — pick a `fogEnd` well inside the map, put a high sun
+on it, size the window to that sun — is map authoring with no map to land on,
+and it is restated below unchanged as what S11 owes. Its SECOND half, the two
+riders, is engine work and is done.
+
+**The riders are off the weather.** `EnvironmentSpec.bodyDrawDistance` is how
+far a BODY is worth drawing, defaulting to `fogEnd`, clamped to it, resolved in
+exactly one place (`bodyDrawDistanceOf`) and pushed by `installMap` to all three
+gates together — which is what keeps `bots.lodDisableDistance` and
+`bots.death.maxDistance` one distance, the property `config/fogWall.ts` exists
+to hold. **No map in the tree states one**, so nothing shipped moved.
+
+**What it is worth, and the reading that nearly hid it.** On a QUIET round the
+lever is worth −7.4% of the frame, under the measurement protocol's own floor,
+because the FRUSTUM already drops every distant rig — **zero rig meshes reach
+the active list either way**. Stand the roster down a 900 m sight line, which is
+the case a 240 m map does not have, and **65% of the frame's active meshes are
+soldiers** (288 of 441) and the lever is **9.2 ms → 6.6 ms, −28%**, reproduced
+twice to 0.1 ms. So S8's own claim — that the rigs are the largest bucket in the
+frame at this size — is confirmed, and it is invisible in the first measurement
+anybody would take.
+
+**And `WorldCulling`'s reach deliberately did NOT move with it**, which is where
+this step's two halves meet. The block cull is exact only because a structure
+past the fog draws `fogColor` in front of ground that draws `fogColor`; a
+building dropped early pops out of a skyline being looked at, and no shorter
+number is exact. **So the answer for the WORLD on a map you cannot fog is still
+to fog it**, and S1's dormant block half is still waiting on S11 to state a real
+`fogEnd` — 0.6 ms of walk and 0.8 ms of frame at 550 m, measured in finding 21
+and unchanged by this step.
+
+**The shadow window's ceiling is now checked rather than only written down.**
+`ShadowSystem.setShadowWindow` DEV-warns when the window is past what
+`depthRange` can carry at the map's own elevation, which is arithmetic no author
+can see — past it the along-sun line does not move and the extra is texel
+density spent for nothing. The four shipped maps are the evidence the ceiling is
+right and none of them trips it: Harrowmead states 185 against 183.8, Coldharbour
+200 against 194.9, both authored by eye onto a number neither file names.
+
+**What is still owed:** what the ~19 us per rig mesh is made of (the saving is
+three times a draw and nobody has broken it down), what a body popping at 550 m
+LOOKS like on a map that states one, and the fade band that has not been built.
+Finding 30 carries all three.
+
+What follows is the step as it was written, and its first half is still the
+brief for S11.
+
+---
 
 Coldharbour states `fogEnd: 480` at `size: 320`, and Harrowmead `520` at `400` —
 both at or past their own diagonal. **That trend cannot continue.** At 1500 m the
@@ -2077,7 +2127,8 @@ those gates stop gating anything, and every rig on the map is drawn and posed.
 **That is a real new cost at this size**: post-palette-merge the world is 88
 meshes on Coldharbour and the soldier rigs are 237, so the rigs are now the
 largest bucket in the frame. This probably wants a draw distance separate from
-the fog.
+the fog. — *It got one: `EnvironmentSpec.bodyDrawDistance`, and the claim
+measured true at 65% of the active meshes. See the top of this step.*
 
 ---
 
@@ -2159,6 +2210,13 @@ What this particular map will want, from the contracts rather than from taste:
 - **`vehicles`**, if the map has armour, which at this scale it probably wants:
   one hardstanding a side, on ground a seven-metre hull can get off. That also
   turns on the third kit slot (`Game.armourOffered`), online and off.
+- **A `fogEnd` well inside the map, and a `bodyDrawDistance` inside THAT if the
+  bodies want it.** The first is S8's first half and it is what unlocks the rest
+  of S1 — 0.6 ms of walk and 0.8 ms of frame at 550 m, still dormant because no
+  map in the tree has a fog wall inside its own diagonal. The second is S8's
+  landed field, worth 28% of the frame with the roster down a 900 m sight line
+  (`FINDINGS.md` 30), and the cost of stating it is a body popping in clear air,
+  which nobody has yet had a map to judge.
 - **`groundSpec` left alone.** `config/graphics.ts` warns the wet-cobble sheen is
   tuned to the key light's elevation, and a desert is the wrong weather for it
   entirely.
