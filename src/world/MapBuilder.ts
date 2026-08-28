@@ -13,11 +13,13 @@
  * stand in for (sparks land on colliders). Visuals must never be pickable or
  * solid. Builders arrive at identity transform; merging then transforming is
  * what makes MergeMeshes safe. Must NOT special-case Hollowmere — a second map
- * is one new layout file, and build() takes the layout and environment as
- * arguments precisely so nothing here can reach for a named one.
+ * is one new layout file, and build() takes the layout, the environment and the
+ * heightfield as arguments precisely so nothing here can reach for a named one.
  * Scatter runs off the layout's seeded RNG, never Math.random: blocking props
  * emit colliders, and colliders decide navigation.
- * The floor comes from a TerrainField, not a flat box, and every authored `y`
+ * The floor comes from a TerrainField built over the heightfield the CALLER
+ * hands in — it is fetched rather than bundled and is no longer a field on the
+ * layout (see `MapDef.heights`) — not a flat box, and every authored `y`
  * in the layout is an offset ABOVE it — so a building dropped into a basin
  * needs no bookkeeping. The floor mesh is the one place a visual and a
  * collider share vertices (an invisible clone per block); a heightfield has no
@@ -59,6 +61,7 @@ import type { EnvironmentSpec } from "./environment";
 import { floorMaterial } from "./floorSurfaces";
 import {
   isScatterRect,
+  type Heightfield,
   type MapLayout,
   type RidgeSpec,
   type ScatterSpec,
@@ -805,10 +808,20 @@ export class MapBuilder {
   }
 
   /**
-   * Builds a map. The layout and environment are arguments, not imports: a
-   * second map is a second layout file and nothing here changes.
+   * Builds a map. The layout, the environment and the FLOOR are arguments, not
+   * imports: a second map is a second layout file and nothing here changes.
+   *
+   * `heights` is separate from `layout` because it no longer travels on one —
+   * it is fetched rather than bundled (`MapDef.heights`), so the caller is the
+   * one holding it by the time there is anything to build. `undefined` is a
+   * level floor, exactly as an absent field always was.
    */
-  build(layout: MapLayout, env: EnvironmentSpec, opts?: BuildOptions): GameMap {
+  build(
+    layout: MapLayout,
+    env: EnvironmentSpec,
+    heights: Heightfield | undefined,
+    opts?: BuildOptions,
+  ): GameMap {
     // Where the time behind the loading card goes. DEV-only, a no-op in a
     // production build, and an ATTRIBUTION rather than a partition: `build`
     // times itself whole and names the parts worth naming under it, so the
@@ -882,11 +895,24 @@ export class MapBuilder {
     // the boundary actually is. Zero on every map closed by the rim, which is
     // every map but Harrowmead — see `MapLayout.borderland`.
     const margin = layout.borderland?.margin ?? 0;
-    const terrain = new TerrainField(
-      layout.terrain,
-      margin,
-      layout.borderland?.roll,
-    );
+    // The one thing the two halves of a map owe each other that the compiler
+    // can no longer see. `Heightfield.cell`'s contract is that `size * cell`
+    // IS the map's extent, and `TerrainField` takes its own half-extent from
+    // the grid for exactly that reason — so a pair that disagrees samples the
+    // floor against the wrong origin, reads the wrong row of heights
+    // everywhere, and throws nothing. It used to be unmissable because the
+    // layout imported its own heights module; they are separate files reaching
+    // here by separate routes now (see `MapDef.heights`), so it is asserted.
+    if (import.meta.env.DEV && heights) {
+      const span = heights.size * heights.cell;
+      if (Math.abs(span - size) > 1e-6) {
+        throw new Error(
+          `heightfield is ${heights.size} x ${heights.cell} m = ${span} m over ` +
+            `a ${size} m map — see Heightfield.cell. The wrong map's heights?`,
+        );
+      }
+    }
+    const terrain = new TerrainField(heights, margin, layout.borderland?.roll);
     record("valley", () =>
       this.buildValley(
         size,

@@ -303,20 +303,46 @@ cannot bend honestly), and never the collar a veil is hung from. See
 `docs/rendering.md` for the ramp, for why the trunk is left out and for what a
 swaying group gives up.
 
-**The floor is a height field, not a flat plane.** A `Heightfield` in the layout
-feeds a `TerrainField` (`src/world/TerrainField.ts`), the one place the ground's
+**The floor is a height field, not a flat plane.** A `Heightfield` feeds a
+`TerrainField` (`src/world/TerrainField.ts`), the one place the ground's
 height is decided. It used to be the literal `0`, asserted independently in
 `MapBuilder.buildValley`, `NavGrid.rasterize`, `Player.probeGround`,
 `ShadowSystem.groundYUnder` and `GrassSystem` — five hardcodings of the same
 constant, which is why the floor could not be anything but level. The grid is 80x80
 cells of 3 m, sampled bilinearly, authored with the editor's terrain mode.
 
-**The heights live in their own generated file** (`hollowmere/heights.ts`), imported
-by the layout. `layout.ts` is authored — an ASCII village map, district commentary,
+**The heights live in their own generated file** (`hollowmere/heights.ts`).
+`layout.ts` is authored — an ASCII village map, district commentary,
 `BANK_H`/`TERRACE_H` in place of bare numbers — and the editor patches it one line at
 a time to preserve all of that; several thousand bare numbers would drown it.
 `heights.ts` is the opposite: pure generated data, rewritten wholesale, one grid row
 per line so a diff shows which strips of the map moved.
+
+**And it is no longer ON the layout, which is the one thing to know before
+reaching for `layout.terrain` — there is no such field.** The layout used to
+import its heights module and carry the result, which put every map's grid in
+the main bundle to be parsed on boot whether or not it was ever played: 51 KB
+for Harrowmead's 100 x 100, and ~700 KB for the 375 x 375 that a 1500 m map at
+the same 4 m cell would need. It is `MapDef.heights` now, a lazy `import()`
+beside `MapDef.collision` and for that field's reason, and everything that
+needs the floor is HANDED one:
+
+- `MapBuilder.build(layout, env, heights, opts)` takes it as an argument, and
+  `Game.floor` is where the standing map's is put down — `installMap` is one
+  synchronous turn and cannot contain a fetch, so the two async doors into a
+  build (`buildRound`, `toggleEditor`) resolve it first.
+- `buildServerWorld` awaits it beside the collision bake.
+- The editor reads `map.terrain.field`, which IS that object: the terrain
+  brush writes through it and the rebuild tier reads the edits straight back,
+  exactly as it did when the field hung off the layout constant.
+- The menu's schematic is handed `heightsOf(def)` and repaints when the floor
+  lands, because it draws a row the moment the cursor reaches it and cannot
+  wait for a fetch. A `null` floor draws as a level one.
+
+What that gives up is the pair being checkable by the compiler: `size * cell`
+must still equal the map's extent and nothing in the type system says so any
+more, so `MapBuilder.build` asserts it in a DEV build. See ENGINE_UPGRADE.md
+S7 for the measurement and `src/world/maps.ts` for the shape.
 
 - **`Placement.y`, `ScatterSpec.y` and `GrassRect.y` are offsets above the local
   floor**, not absolute heights, so dressing rides the ground when it moves. Control

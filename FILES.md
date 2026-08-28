@@ -331,7 +331,8 @@ src/
     tuning.ts           #   Tool constants (NOT src/config/ — not gameplay)
   world/
     layout.ts           # Placement/ScatterSpec/Heightfield/MapLayout — the
-                        #   map-data vocabulary, map-agnostic
+                        #   map-data vocabulary, map-agnostic. The floor is
+                        #   NOT a field on MapLayout: see MapDef.heights
     TerrainField.ts     # The floor's height and the ONLY place that knows it:
                         #   heightAt() + per-block VertexData + terrainSlab(),
                         #   and the BORDERLAND past the authored grid on a map
@@ -416,7 +417,9 @@ src/
                         #   new map has to touch (plus vite.config's WRITABLE).
                         #   `MAPS` is an `import.meta.env.DEV` ternary and must
                         #   stay one — that fold is what keeps the proving
-                        #   ground out of both bundles
+                        #   ground out of both bundles. Also loadHeights/
+                        #   heightsOf: a map's floor is a LAZY import and
+                        #   this is where it is asked for and remembered
     buildProfile.ts     # Where the time behind the loading card went, per
                         #   phase. DEV ONLY and a no-op otherwise; the handle
                         #   is `window.__buildProfile()`
@@ -427,14 +430,17 @@ src/
     fingerprint.ts      # A comparable summary of a built world — the nav graph,
                         #   not the boxes. What `npm run parity` diffs
     hollowmere/layout.ts      # A MAP — every placement, flag and spawn
-    hollowmere/heights.ts     # GENERATED floor heights (editor terrain mode)
+    hollowmere/heights.ts     # GENERATED floor heights (editor terrain mode).
+                              #   Reached via MapDef.heights, a LAZY import —
+                              #   a map's grid is not in the main bundle
     hollowmere/environment.ts # Palette, fog, mist, particles — night
     hollowmere/collision.ts   # GENERATED collider boxes (`npm run collision`)
     greyfen/layout.ts         # The second map, being built: the jungle manor
                               #   on C, a stilt-hut settlement and a temple on
                               #   the other flags, and the trestle over the river
     greyfen/heights.ts        # GENERATED floor heights — a Y-shaped river,
-                              #   wadeable everywhere (banks grade at 0.22)
+                              #   wadeable everywhere (banks grade at 0.22).
+                              #   LAZY, like every heights.ts
     greyfen/environment.ts    # Palette, fog, sun, sky, shafts — a jungle
                               #   morning two hours after sunrise
     greyfen/collision.ts      # GENERATED collider boxes (`npm run collision`)
@@ -443,7 +449,8 @@ src/
                               #   first that stacks floors (`surfaces: 4`) and
                               #   the only one with `vehicles` on it
     coldharbour/heights.ts    # GENERATED floor heights — dead level under the
-                              #   city, a 1.2 m skirt into the rim outside it
+                              #   city, a 1.2 m skirt into the rim outside it.
+                              #   LAZY, like every heights.ts
     coldharbour/environment.ts# Palette, sun, sky — a clear afternoon, and the
                               #   first map with no fog wall (`fogEnd: 480`)
     coldharbour/collision.ts  # GENERATED collider boxes (`npm run collision`)
@@ -452,7 +459,8 @@ src/
                               #   farmyard flags in rolling, hedged country,
                               #   and the second map with armour on it
     harrowmead/heights.ts     # GENERATED floor heights — rolling hills and a
-                              #   stream carved to a constant wadeable bed
+                              #   stream carved to a constant wadeable bed.
+                              #   The biggest at 51 KB, and LAZY
     harrowmead/environment.ts # Palette, sun, sky — high summer, late
                               #   morning, no fog wall (`fogEnd: 520`)
     harrowmead/collision.ts   # GENERATED collider boxes (`npm run collision`)
@@ -462,7 +470,8 @@ src/
                               #   over a play square several times the size.
                               #   GENERATED (`npm run proving`), gated out of
                               #   every bundle by `scripts/check-proving.mjs`
-    proving/heights.ts        # GENERATED with it — level under the streets
+    proving/heights.ts        # GENERATED with it — level under the streets, and
+                              #   the third string check-proving.mjs greps for
     proving/environment.ts    # The one hand-written file there. A dry noon
                               #   with `fogEnd` past the map's own diagonal, so
                               #   nothing measured on it is hidden by weather

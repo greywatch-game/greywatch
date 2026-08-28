@@ -373,7 +373,7 @@ the scene into, the painted sky, and the WGSL dialect's own traps.
 ### The map is data, not code
 
 `src/world/hollowmere/layout.ts` is the entire level — placements, scatter
-regions, control points, spawns, the water/grass/terrain rects — and `MapBuilder`
+regions, control points, spawns, the water and grass rects — and `MapBuilder`
 special-cases nothing, so **a second map is one new layout file plus an
 `EnvironmentSpec`**. Every figure on the menu's map panel is read off the layout
 and the environment, so nothing countable is stated twice. The two halves are
@@ -384,12 +384,22 @@ touches, and **nothing outside `maps.ts` may import a map's own modules**. A
 `menu`, and **scatter placement is seeded — never call `Math.random()` in
 world-building code**, or the nav graph differs between page loads.
 
+**Two of a map's four halves are LAZY imports and neither is on the layout** —
+`MapDef.collision`, which only the server reads, and `MapDef.heights`, the
+FLOOR, which grows with the square of the map. **There is no
+`MapLayout.terrain`**: everything that needs the ground is HANDED it —
+`MapBuilder.build` takes it as an argument, `Game.floor` holds the standing
+map's because `installMap` is one synchronous turn that cannot contain a fetch,
+`buildServerWorld` awaits it, and the editor writes through `map.terrain.field`,
+which is that same object. `size * cell` must still equal the map's extent and
+nothing typed can see the pair any more, so `build` asserts it in a DEV build.
+
 **Six things that read like global constants are the MAP's**, each defaulting so
 that a map saying nothing is unaffected:
 
 | the map's | default | what a map that raises it owes |
 | --- | --- | --- |
-| `MapLayout.size` — how big it is | `CONFIG.map.size`, 240 | `terrain.size * terrain.cell` must equal it, and the rim's boundary boxes must stay over 200 m so the seven sites keying on `w > 200 \|\| d > 200` still can |
+| `MapLayout.size` — how big it is | `CONFIG.map.size`, 240 | its heightfield's `size * cell` must equal it (asserted in DEV, since `MapDef.heights` is a different file), and the rim's boundary boxes must stay over 200 m so the seven sites keying on `w > 200 \|\| d > 200` still can |
 | `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is pushed into `BattleSystem`, `NetRoster` and `RagdollSystem`; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
 | `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** — those want more buckets on a big map, not fewer |

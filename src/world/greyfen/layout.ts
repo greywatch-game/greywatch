@@ -22,7 +22,6 @@ import type {
   SpawnPointDef,
   WaterRect,
 } from "../layout";
-import { GreyfenHeights } from "./heights";
 
 /**
  * GREYFEN — a jungle valley, being built around its centrepiece.
@@ -505,7 +504,6 @@ export const GreyfenLayout: MapLayout = {
   spawns,
   water,
   grass,
-  terrain: GreyfenHeights,
   // Fixed so the dressing — and the colliders blocking scatter emits, and so
   // the nav graph — is identical on every boot. Changing it rerolls the whole
   // scatter field, which is a visible change to the level: re-walk the flags.

@@ -8,6 +8,11 @@
  * and is patched line by line by the editor. Several thousand bare numbers have
  * no business in it.
  *
+ * It no longer TRAVELS with it either. `MapDef.heights` is a lazy `import()`
+ * beside `MapDef.collision`, so this file is a chunk of its own and reaches a
+ * browser only when this map is built — see `maps.ts`, and ENGINE_UPGRADE.md
+ * S7 for what that is worth on a map several times this one's size.
+ *
  * 80x80 cells of 3 m over the 240 m map, so 81x81 vertices.
  * Keep any single-cell step under 1.20 m or the nav graph stops
  * linking across it and whatever is beyond becomes an island.
@@ -102,3 +107,7 @@ export const GreyfenHeights: Heightfield = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.68,-1.34,-1.34,-1.34,-1.34,-0.89,0,0.03,0.09,0.16,0.15,0.15,0.15,0.15,0.13,0.06,0.13,0.12,0.09,0.06,0.02,0,0,0,0,0,0,0,0,0.05,0.03,0,
   ],
 };
+
+// Default too, because `MapDef.heights` is a lazy `import()` and a default
+// is the one export name a generic signature can be written against.
+export default GreyfenHeights;

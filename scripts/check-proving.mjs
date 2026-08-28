@@ -25,17 +25,27 @@
  * `filter`, or a `const dev = import.meta.env.DEV` one line up, and the shake
  * silently stops working while everything still compiles and runs.
  *
- * So this greps the emitted bundle for two strings that exist ONLY on the far
- * side of that gate, and fails on either:
+ * So this greps the emitted bundle for three strings that exist ONLY on the far
+ * side of that gate, and fails on any of them:
  *
  *   - `Proving Ground`, the `MapDef.name` in `maps.ts` — present if the ternary
  *     was not folded at all;
  *   - `PG-Alpha`, a generated control point's name — present if the def was
- *     dropped but the layout module was still reached from somewhere else.
+ *     dropped but the layout module was still reached from somewhere else;
+ *   - `PG-Level`, an export of `proving/heights.ts` that exists only to be
+ *     found here — present if the HEIGHTFIELD was reached on its own.
+ *
+ * **The third one is what ENGINE_UPGRADE.md S7 owed this file, and it is the
+ * case its old note predicted.** The heightfield used to hang off the layout,
+ * so `PG-Alpha` covered it: one module reached the other and shaking the first
+ * took the second. `MapDef.heights` made it a lazy `import()` — a chunk ROOT,
+ * which Rollup emits unless the arrow naming it is itself shaken away with
+ * `PROVING`. It is, today. That is a property of how `maps.ts` is written and
+ * not a promise the build makes, which is the entire premise of this script.
  *
  * Strings and not identifiers, because identifiers do not survive minification
- * and string literals do. A third sentinel would be worth adding the day the
- * proving ground grows a module that carries neither.
+ * and string literals do. A fourth would be worth adding the day the proving
+ * ground grows a module that carries none of these.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -45,7 +55,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 
 /** Strings that may only exist behind `import.meta.env.DEV`. See the header. */
-const SENTINELS = ["Proving Ground", "PG-Alpha"];
+const SENTINELS = ["Proving Ground", "PG-Alpha", "PG-Level"];
 
 /**
  * Text the bundler emits. A `.wasm` or a `.png` cannot carry a sentinel.

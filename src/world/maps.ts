@@ -1,22 +1,28 @@
 /**
  * maps.ts — The playable maps, as data: what a map IS, and which ones exist.
  * Owns: the `MapDef` pairing of a layout with the environment it is lit and
- * fogged by, and the registry `Game` picks one out of.
- * Invariants: the two halves travel together. A layout is placements and a
- * heightfield; an `EnvironmentSpec` is the palette, fog, sky and particles it
- * is meant to be seen under, and building one against the other's environment
- * gives a night village in daylight fog. Pairing them here is what stops the
- * orchestrator from having to know either name.
+ * fogged by and the two bulk halves it is fetched with, plus the registry
+ * `Game` picks one out of and the loader that answers for a map's floor.
+ * Invariants: the halves travel together. A layout is placements; a
+ * `Heightfield` is the ground under them; an `EnvironmentSpec` is the palette,
+ * fog, sky and particles it is meant to be seen under, and building one
+ * against the other's environment gives a night village in daylight fog.
+ * Pairing them here is what stops the orchestrator from having to know any of
+ * their names.
  *
  * This is the file a second map is added to, and — with its own `layout.ts`,
  * `heights.ts` and `environment.ts` under a directory of its own — the ONLY
- * existing file it has to touch. Nothing downstream may import a map's modules
+ * existing file it has to touch. Two of those three are named here as LAZY
+ * imports rather than pulled in at the top: the heightfield and the collision
+ * bake are the two halves of a map that are bulk rather than authorship, and
+ * neither belongs in a bundle a player parses before they have chosen anything
+ * (`MapDef.heights`, `MapDef.collision`). Nothing downstream may import a map's modules
  * directly: `Game` holds a `MapDef`, `MapBuilder.build` takes both halves as
  * arguments, and neither special-cases any particular map.
  */
 import type { MapCollision } from "./collision";
 import type { EnvironmentSpec } from "./environment";
-import type { MapLayout } from "./layout";
+import type { Heightfield, MapLayout } from "./layout";
 import { ColdharbourEnvironment } from "./coldharbour/environment";
 import { ColdharbourLayout } from "./coldharbour/layout";
 import { GreyfenEnvironment } from "./greyfen/environment";
@@ -57,6 +63,30 @@ export interface MapDef {
   layout: MapLayout;
   environment: EnvironmentSpec;
   /**
+   * The floor's shape — the third half of a map, and a LAZY import for
+   * `collision`'s reason rather than a field on the layout beside the
+   * placements it belongs with.
+   *
+   * A heightfield is one number per grid vertex and grows with the SQUARE of
+   * the map: 51 KB of JS number literals for Harrowmead's 100 x 100, and about
+   * 700 KB for the 375 x 375 that a 1500 m map at the same 4 m cell needs.
+   * Imported by `layout.ts` it was in the main chunk — every map's, parsed on
+   * every boot, for the one map a session actually builds. Behind `import()`
+   * Vite splits each into a chunk of its own, and the one that is fetched is
+   * the one being played. See ENGINE_UPGRADE.md S7.
+   *
+   * Absent means a level floor, exactly as an absent `MapLayout.terrain` used
+   * to: `TerrainField` with no field returns 0 everywhere. Nothing ships that
+   * way today.
+   *
+   * **The resolved object is the map's, not a copy**, because the module cache
+   * hands back the same one every time — which is what lets the editor's
+   * terrain brush write through it and the next rebuild read the edits back.
+   * Go through `loadHeights` rather than calling this directly; it is what
+   * `heightsOf` can answer synchronously afterwards.
+   */
+  heights?: () => Promise<{ default: Heightfield }>;
+  /**
    * The baked collider set, for the multiplayer server — which has no canvas
    * and so cannot run `MapBuilder` at all (see `world/collision.ts`).
    *
@@ -77,6 +107,7 @@ export const HOLLOWMERE: MapDef = {
     "flag a short fight, and the mist closes the long ones down.",
   layout: HollowmereLayout,
   environment: HollowmereEnvironment,
+  heights: () => import("./hollowmere/heights"),
   collision: () => import("./hollowmere/collision"),
 };
 
@@ -93,6 +124,7 @@ export const GREYFEN: MapDef = {
     "takes the sightlines and gives them back in shafts.",
   layout: GreyfenLayout,
   environment: GreyfenEnvironment,
+  heights: () => import("./greyfen/heights"),
   collision: () => import("./greyfen/collision"),
 };
 
@@ -111,6 +143,7 @@ export const COLDHARBOUR: MapDef = {
     "to break, and no fog at all to be missed in.",
   layout: ColdharbourLayout,
   environment: ColdharbourEnvironment,
+  heights: () => import("./coldharbour/heights"),
   collision: () => import("./coldharbour/collision"),
 };
 
@@ -130,6 +163,7 @@ export const HARROWMEAD: MapDef = {
     "cut the long lanes into bounds, and the hilltops see everything.",
   layout: HarrowmeadLayout,
   environment: HarrowmeadEnvironment,
+  heights: () => import("./harrowmead/heights"),
   collision: () => import("./harrowmead/collision"),
 };
 
@@ -150,7 +184,16 @@ export const HARROWMEAD: MapDef = {
  * generated modules — 150 to 400 kB of them, depending on the extent it was
  * generated at — out. That is enforced rather than trusted:
  * `scripts/check-proving.mjs` runs on the end of `npm run build` and greps
- * `dist/` AND `dist-server/` for two strings that exist only past this gate.
+ * `dist/` AND `dist-server/` for three strings that exist only past this gate.
+ *
+ * **The third of those is new with `heights`, and so is the reason for it.**
+ * `proving/heights.ts` used to be reachable only through `proving/layout.ts`,
+ * so the layout's sentinel covered it; a lazy `import()` makes it a chunk root
+ * of its own, which Rollup emits unless the arrow naming it is itself shaken
+ * away with `PROVING`. It is — the same way `collision` below is — but that is
+ * a property of how this const is written and not a promise, which is exactly
+ * the class of thing this file's gate exists to prove rather than assume. See
+ * `PROVING_HEIGHTS_MARK` in that module.
  *
  * **The two builds do not shake alike, and the server one had to be told.**
  * Vite sets `moduleSideEffects: "no-external"` for the client and leaves
@@ -176,6 +219,7 @@ const PROVING: MapDef = {
     "a map several times the size of Harrowmead costs to build and to draw.",
   layout: ProvingLayout,
   environment: ProvingEnvironment,
+  heights: () => import("./proving/heights"),
   collision: () =>
     Promise.reject(
       new Error("the proving ground has no collision bake and cannot be hosted"),
@@ -196,3 +240,51 @@ export const MAPS: readonly MapDef[] = import.meta.env.DEV
 
 /** What a round starts on with nothing chosen. */
 export const DEFAULT_MAP: MapDef = HOLLOWMERE;
+
+/**
+ * A map's floor, fetched.
+ *
+ * `MapDef.heights` is an `import()`, so the module system already caches it and
+ * a second call is free — what this adds is the RESOLVED object under the
+ * `MapDef` that named it, so that the three callers who cannot wait for a
+ * promise can ask for it synchronously afterwards (`heightsOf`).
+ *
+ * A map with no `heights` resolves to `null` rather than throwing: an absent
+ * heightfield is a level floor, which is what `TerrainField` builds from
+ * `undefined` and what every map in the tree had before Hollowmere grew a
+ * creek. A FAILED fetch is not that and is left to throw — a floor the network
+ * ate is a map whose ground is somewhere else, and the callers turn it into a
+ * refusal to build rather than a village on a flat plane.
+ */
+export async function loadHeights(def: MapDef): Promise<Heightfield | null> {
+  const held = FLOORS.get(def);
+  if (held !== undefined) return held;
+  const field = def.heights ? (await def.heights()).default : null;
+  FLOORS.set(def, field);
+  return field;
+}
+
+/**
+ * The same floor, if `loadHeights` has already been through for this map.
+ * `undefined` means NOT YET — which is a different answer from `null`, a map
+ * that is level, and the two must not be collapsed: one is worth waiting for
+ * and the other is the finished answer.
+ *
+ * For the callers that are handed a paint or a build rather than a turn of
+ * their own: the menu's schematic, which draws the row under the cursor now
+ * and is repainted when the floor lands, and `Game`, which holds the standing
+ * map's so that `installMap` stays the one synchronous turn it has to be.
+ */
+export function heightsOf(def: MapDef): Heightfield | null | undefined {
+  return FLOORS.get(def);
+}
+
+/**
+ * What `loadHeights` has resolved, per map.
+ *
+ * Keyed on the `MapDef` because that is the identity everything else here is
+ * held by (see the interface's note), and weak because a def that has gone out
+ * of the registry — the DEV proving ground, in a build that folded it away —
+ * should take its 100 kB of ground with it.
+ */
+const FLOORS = new WeakMap<MapDef, Heightfield | null>();

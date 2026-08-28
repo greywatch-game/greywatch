@@ -20,7 +20,7 @@
  */
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { MapLayout } from "../world/layout";
+import type { Heightfield, MapLayout } from "../world/layout";
 import type { GameMap } from "../world/MapBuilder";
 import { MAX_WALKABLE_GRADE } from "../world/TerrainField";
 import type { SelectionRef } from "./selection";
@@ -193,6 +193,13 @@ export function validate(
 
   // 6. Cheap static hygiene that needs no navigation at all.
   out.push(...hygiene(layout, map.size));
+
+  // 6b. The floor's own gradients. Beside `hygiene` rather than inside it,
+  //     because the heightfield is no longer one of the layout's fields —
+  //     it is a lazy chunk (`MapDef.heights`) and reaches the editor as the
+  //     BUILD's `terrain.field`, which is also the object the terrain brush
+  //     writes through. Still static; just not the layout's.
+  out.push(...terrainGrade(map.terrain.field));
 
   // 7. The bookkeeping that only breaks once entries can be added and deleted.
   out.push(...structure(layout));
@@ -419,7 +426,6 @@ function hygiene(layout: MapLayout, size: number): Finding[] {
     }
   }
 
-  out.push(...terrainGrade(layout));
   return out;
 }
 
@@ -437,8 +443,11 @@ function hygiene(layout: MapLayout, size: number): Finding[] {
  * island check does it — a brush stroke can make hundreds of steep cells at
  * once and one finding per cell would bury everything else.
  */
-function terrainGrade(layout: MapLayout): Finding[] {
-  const f = layout.terrain;
+function terrainGrade(f: Heightfield | undefined): Finding[] {
+  // Taken off the BUILT map rather than off the layout: the heightfield is a
+  // lazy chunk now (`MapDef.heights`) and `TerrainField.field` is the one the
+  // terrain brush has been writing through, so this grades what is actually
+  // under the camera. Absent is a level map, which has no grade to fail.
   if (!f) return [];
 
   const row = f.size + 1;

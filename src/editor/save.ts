@@ -102,6 +102,11 @@ export function serializeHeights(
  * and is patched line by line by the editor. Several thousand bare numbers have
  * no business in it.
  *
+ * It no longer TRAVELS with it either. \`MapDef.heights\` is a lazy \`import()\`
+ * beside \`MapDef.collision\`, so this file is a chunk of its own and reaches a
+ * browser only when this map is built — see \`maps.ts\`, and ENGINE_UPGRADE.md
+ * S7 for what that is worth on a map several times this one's size.
+ *
  * ${field.size}x${field.size} cells of ${field.cell} m over the ${span} m map, so ${row}x${row} vertices.
  * Keep any single-cell step under ${(field.cell * MAX_WALKABLE_GRADE).toFixed(2)} m or the nav graph stops
  * linking across it and whatever is beyond becomes an island.
@@ -116,6 +121,10 @@ export const ${heightsExport(mapId)}: Heightfield = {
 ${rows.join("\n")}
   ],
 };
+
+// Default too, because \`MapDef.heights\` is a lazy \`import()\` and a default
+// is the one export name a generic signature can be written against.
+export default ${heightsExport(mapId)};
 `;
   return eol === "\n" ? text : text.replace(/\n/g, eol);
 }
@@ -181,7 +190,21 @@ export class LayoutSaver {
     return serializeLayout(this.scan, this.baselines, current).source;
   }
 
-  async save(current: MapLayout): Promise<SaveResult> {
+  /**
+   * Writes the map back: `layout.ts` always, `heights.ts` when the map has a
+   * floor.
+   *
+   * The floor is an ARGUMENT rather than `current.terrain`, because it is not
+   * on the layout any more — it is fetched (`MapDef.heights`) and handed to
+   * `MapBuilder.build`, so what the brush has been editing is
+   * `map.terrain.field` and that is what the caller passes. `null` on a level
+   * map, and then only `layout.ts` is written; a file nobody asked to change
+   * is not one to rewrite.
+   */
+  async save(
+    current: MapLayout,
+    floor: Heightfield | null,
+  ): Promise<SaveResult> {
     if (this.scanError) return { ok: false, message: this.scanError };
 
     let source: string;
@@ -216,10 +239,10 @@ export class LayoutSaver {
     // The floor is a second file, written only when the map has one. Sent
     // after the layout so a failure here cannot leave layout.ts unwritten
     // while the heights it refers to have already moved.
-    if (current.terrain) {
+    if (floor) {
       const wrote = await post(
         heightsPath(this.mapId),
-        serializeHeights(current.terrain, this.mapId, this.scan.eol),
+        serializeHeights(floor, this.mapId, this.scan.eol),
       );
       if (!wrote.ok) return wrote;
     }
@@ -230,7 +253,7 @@ export class LayoutSaver {
         ? `saved — ${skipped.length} unparseable ${
             skipped.length > 1 ? "entries" : "entry"
           } left as-is`
-        : current.terrain
+        : floor
           ? "saved layout.ts + heights.ts"
           : "saved to layout.ts",
     };

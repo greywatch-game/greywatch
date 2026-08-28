@@ -165,8 +165,17 @@ mostly **succeeds** at it — the one failure mode here that loses work with a c
 "saved" in the status bar. The constructor refuses unless the source it found
 declares that map's own `export const <MapId>Layout`, failing into `blocked` rather
 than throwing. `serializeHeights` takes the id for the same reason: it writes the
-`export const <MapId>Heights` that map's `layout.ts` imports, and a wrong name there
-is a checkout that stops compiling after a terrain save.
+`export const <MapId>Heights` that map's own `heights.ts` declares, and a wrong
+name there is a checkout that stops compiling after a terrain save.
+
+**The floor it writes is an ARGUMENT to `save`, not a field on the layout.**
+There is no `MapLayout.terrain` any more — a heightfield reaches a build
+through `MapDef.heights`, a lazy `import()` (ENGINE_UPGRADE.md S7) — so what
+the editor hands the saver is `map.terrain.field`, which is the object the
+terrain brush has been writing through and the same one the rebuild tier reads
+back. `terrainGrade` in `validate.ts` takes it from the same place, and is
+beside `hygiene` rather than inside it for that reason: it is still a static
+check, but it is no longer one of the layout's.
 
 **`environment.ts` is the third file a save may write, and it is patched one KEY
 at a time** (`src/editor/saveEnvironment.ts`). The floor picker is what writes it,

@@ -671,11 +671,22 @@ it is measured against.
   of the finished collider set, which is the honest way to draw a map you are
   standing in; the menu is the one screen in the game where there is no built
   map at all, and building one to illustrate a row costs the ~0.7 s the building
-  card exists to cover. Everything it reads — the heightfield, the water rects,
-  the scatter regions, the placements, the flags — is a module constant that was
-  in the bundle before the player pressed anything, and its palette is the map's
+  card exists to cover. Everything it reads — the water rects, the scatter
+  regions, the placements, the flags — is a module constant that was in the
+  bundle before the player pressed anything, and its palette is the map's
   own `EnvironmentSpec`, so a fourth map is coloured by what it ships with
   rather than by a table here somebody has to remember to extend.
+- **The one exception is the HEIGHTFIELD, and it is why this panel can paint
+  twice for one row.** A map's floor is a lazy `import()` now
+  (`MapDef.heights`, ENGINE_UPGRADE.md S7) — hundreds of kilobytes on a large
+  map, which is a thing to fetch when a row is looked at and never a thing to
+  boot with. `drawMapThumb` takes it as an ARGUMENT and goes and gets nothing:
+  `paintThumb` hands it whatever `heightsOf` already has, which on a cold boot
+  is nothing, and books a repaint for when the ground lands. The row is
+  re-tested inside that callback, because the cursor moves faster than a fetch
+  and a floor arriving for a map the player has scrolled off must not repaint
+  the one they are looking at. A flat map for a moment and then the real relief
+  is the honest order; a hole in the menu until a fetch returns is not.
 - **A `WaterRect` is an EXTENT and the waterline is DERIVED**, which is the one
   thing on that schematic that cannot be read straight off the layout. The real
   surface is a flat plane and the world is opaque, so a body is only the part of

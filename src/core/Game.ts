@@ -131,8 +131,9 @@ import { WaterSystem } from "../systems/WaterSystem";
 import { WorldCulling } from "../systems/WorldCulling";
 import { applyEnvironment, type EnvironmentSpec } from "../world/environment";
 import { Leash, LEASH_KILLER } from "../world/leash";
+import type { Heightfield } from "../world/layout";
 import type { EditorSession } from "../editor";
-import { MAPS, type MapDef } from "../world/maps";
+import { MAPS, loadHeights, type MapDef } from "../world/maps";
 import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
 import { DeployScreen } from "../ui/DeployScreen";
 import { HUD, type CaptureStatus, type ScoreRow } from "../ui/HUD";
@@ -418,6 +419,29 @@ export class Game {
    * orchestrator for the fourteen places the old constants were spelled out.
    */
   private mapDef: MapDef = readMap();
+
+  /**
+   * The standing map's FLOOR — the third half of `mapDef`, held beside it
+   * because it does not arrive with it.
+   *
+   * `MapDef.heights` is a lazy `import()` (ENGINE_UPGRADE.md S7), so the
+   * heightfield is a fetch and `installMap` is one synchronous turn that
+   * cannot contain one. This is where the fetch is put down: the two async
+   * doors into a build — `buildRound` and `toggleEditor` — resolve it before
+   * they start, and everything from there on reads it here.
+   *
+   * **It is the module's own object and is written through.** The editor's
+   * terrain brush edits `map.terrain.field`, which is this, and the rebuild
+   * tier reads the edits straight back — exactly as it did when the field hung
+   * off the layout constant. `null` is a level floor and is what a map with no
+   * `heights` resolves to.
+   *
+   * The one invariant is that it is `mapDef`'s and not the last map's, which is
+   * why nothing assigns it outside those two doors: see `buildRound`, where the
+   * authority is allowed to rotate the map inside the very fetch that is
+   * answering for it.
+   */
+  private floor: Heightfield | null = null;
 
   /**
    * The state machine: the step the game is on, and the screens raised over it.
@@ -2904,7 +2928,9 @@ export class Game {
   }
 
   /**
-   * A map is mid-build with a `buildRound` already queued for the next frame.
+   * A map is mid-build: a `buildRound` is queued for the next frame, or is
+   * standing in one — it awaits the map's floor now (`MapDef.heights`), and
+   * that wait is inside this window rather than beside it.
    *
    * A method rather than `this.state === "loading"` written out twice, because
    * `toggleEditor` has to ask it on both sides of an await and TypeScript
@@ -2973,16 +2999,32 @@ export class Game {
     this.editorLoading = true;
     let createEditor;
     try {
+      // TWO awaits under the one latch, and the second is the map's FLOOR.
+      // F2 is reachable from the menu, where no round has ever been built and
+      // `floor` is still null — and the heightfield is a chunk of its own now
+      // (`MapDef.heights`), so it has to be asked for rather than read off the
+      // layout. It is the module's OWN object: the terrain brush writes through
+      // it and `buildEditorMap` reads the edits straight back, which is what
+      // lets the editor's rebuild tier stay synchronous.
       ({ createEditor } = await import("../editor"));
+      this.floor = await loadHeights(this.mapDef);
+    } catch (err) {
+      // A floor the network ate, or an editor chunk. Nothing has been torn
+      // down yet, so there is nothing to put back — say so and leave the round
+      // where it was.
+      console.error("[editor] could not open", err);
+      this.hud.toast("could not open the editor");
+      return;
     } finally {
       // Cleared before the opening rather than after it: everything below this
       // point is synchronous, so nothing can interleave with it, and a throw in
-      // the import must not wedge F2 for the rest of the session.
+      // either await must not wedge F2 for the rest of the session.
       this.editorLoading = false;
     }
-    // Both pre-await guards owe a second look. The import is a task boundary,
-    // so the `loading` state that was clear a moment ago may not be — a round
-    // started underneath would have its build stomped to "editor" here.
+    // Both pre-await guards owe a second look. The import and the floor are
+    // both task boundaries, so the `loading` state that was clear a moment ago
+    // may not be — a round started underneath would have its build stomped to
+    // "editor" here.
     if (this.buildPending() || this.editor) return;
 
     // F2 is reachable from every screen in the game — the pause card, whose
@@ -3061,6 +3103,10 @@ export class Game {
    */
   private installMap(opts?: BuildOptions): GameMap {
     const { layout, environment } = this.mapDef;
+    // The floor comes off `this.floor` rather than off the layout, because it
+    // is fetched rather than bundled — see the field, and `MapDef.heights`.
+    // Both doors into this method resolve it first; nothing here may wait.
+    const heights = this.floor ?? undefined;
     // Before a single thing is disposed: the seat, because the hull it belongs
     // to is about to stop existing. See the vehicle build at the bottom.
     this.clearVehicle();
@@ -3078,7 +3124,7 @@ export class Game {
     // draws proxies of its own and would double every ring; a round rebuilds
     // them below. Either way they cannot survive the map they were placed on.
     this.zones.dispose();
-    const map = this.mapBuilder.build(layout, environment, opts);
+    const map = this.mapBuilder.build(layout, environment, heights, opts);
     this.map = map;
     // The shadow camera follows the environment's key light, and its casters
     // are the fresh map's visuals — last build's meshes are now disposed.
@@ -3265,9 +3311,10 @@ export class Game {
   /**
    * Puts the building card up and hands the round itself to the next frame.
    *
-   * The split is the whole point. Everything `buildRound` does is synchronous
-   * and adds up to the better part of a second — merges, the occlusion bake,
-   * the nav grid — and a browser paints between TASKS, not inside one, so
+   * The split is the whole point. Everything `buildRound` does past its one
+   * await — the floor's chunk, which is a fetch and not work — is synchronous
+   * and adds up to the better part of a second: merges, the occlusion bake,
+   * the nav grid. A browser paints between TASKS, not inside one, so
    * before this the card the player had just confirmed stayed on screen,
    * frozen, for the entire build and the deploy screen appeared straight out
    * of it. Nothing was slow that is not slow now; what was missing was any
@@ -3314,7 +3361,7 @@ export class Game {
     this.go("loading");
     this.overlayScreen.showBuilding(this.mapDef.name);
     requestAnimationFrame(() =>
-      requestAnimationFrame(() => this.buildRound()),
+      requestAnimationFrame(() => void this.buildRound()),
     );
   }
 
@@ -3323,7 +3370,10 @@ export class Game {
    * screen. Always entered from `startRound`, one frame later — see there for
    * why the two are not one method.
    */
-  private buildRound(): void {
+  private async buildRound(): Promise<void> {
+    // Which map, and the ground under it — in that order, and until the two
+    // agree about which map they are.
+    //
     // The welcome beat the build. Read here for the same reason the team is —
     // it can land on either side of this method, and the half that arrives
     // first has nothing on screen to correct. `NetSession.onSeated` is the
@@ -3332,10 +3382,43 @@ export class Game {
     // FIRST, before a single line of the build: everything below reads
     // `mapDef` — the environment, the sky, `installMap` — so a map applied
     // after any of them is a round half built out of each.
-    if (this.net?.seated) {
-      if (this.applyMatchMap(this.net.mapId) === "unknown") {
-        this.leaveUnknownMap(this.net.mapId);
+    //
+    // **And the fetch below is a hole the map can move through.** The floor is
+    // a chunk of its own now (`MapDef.heights`), so this method has an await in
+    // it, and `onSeated` defers to this method for the whole of that await —
+    // `buildPending` is true from `go("loading")` until `openBakeWait`. So a
+    // welcome landing inside the fetch would be applied by nobody: not there,
+    // because it defers, and not here, because the line that reads it has
+    // already run. Asking again on the far side is the whole fix, and the loop
+    // settles in two passes — the second reads `mapDef` after the map has been
+    // applied, so it cannot move again.
+    for (;;) {
+      if (this.net?.seated) {
+        if (this.applyMatchMap(this.net.mapId) === "unknown") {
+          this.leaveUnknownMap(this.net.mapId);
+          return;
+        }
+      }
+      const def = this.mapDef;
+      let field: Heightfield | null;
+      try {
+        field = await loadHeights(def);
+      } catch (err) {
+        // A floor the network ate. There is no honest half-build to fall back
+        // to — a map with no heightfield is a village on a flat plane with
+        // every authored `y` measured from the wrong ground — so this is
+        // `leaveUnknownMap`'s move for `leaveUnknownMap`'s reason: tear the
+        // round down, put the player back where they chose from, and say what
+        // happened. It also releases `buildPending`, without which the card
+        // stands forever and F2 and Deploy are both dead.
+        console.error(`[map] ${def.id}: could not load the floor`, err);
+        this.enterMenu();
+        this.hud.toast(`could not load ${def.name}'s terrain — try again`);
         return;
+      }
+      if (this.mapDef === def) {
+        this.floor = field;
+        break;
       }
     }
     // Re-draw skills for the chosen tier. The rig pool is never disposed, so

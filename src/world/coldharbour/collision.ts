@@ -42,7 +42,7 @@
 import type { MapCollision } from "../collision";
 
 export const ColdharbourCollision: MapCollision = {
-  sourceHash: "97e72f966245996b",
+  sourceHash: "ecaa3fb0d0c8fcfb",
   boxes: [
   [324,20,2,0,10,161,0,0],
   [324,20,2,0,10,-161,0,0],

@@ -4,7 +4,7 @@
  * Owns: the canvas painting behind the menu's map row and nothing else. Takes
  * a `MapDef` and a 2D context; holds no state, keeps no cache, and is called
  * again whenever the row changes.
- * Invariants: it reads a map's layout DATA ONLY — the heightfield, the water
+ * Invariants: it reads a map's own DATA ONLY — the heightfield, the water
  * rects, the scatter regions, the placements' positions, the control points
  * and the spawns. It never touches `GameMap`, `MapBuilder` or the scene. The
  * one thing it does not read straight off the layout is where the water's EDGE
@@ -18,9 +18,19 @@
  * draw a map you are standing in — the two can never disagree — but it needs a
  * BUILT map, and the main menu is the one screen in the game where there is no
  * such thing: on a cold boot nothing has been built yet, and building one to
- * illustrate a row costs the ~0.7 s the building card exists to cover. Every
- * field this reads is a module constant that was in the bundle before the
- * player pressed anything.
+ * illustrate a row costs the ~0.7 s the building card exists to cover.
+ *
+ * **All but one of the fields it reads is a module constant that was in the
+ * bundle before the player pressed anything, and the exception is the
+ * heightfield.** That one is a chunk of its own now (`MapDef.heights`,
+ * ENGINE_UPGRADE.md S7) — hundreds of kilobytes on a large map, which is a
+ * thing to fetch when a row is looked at and never a thing to boot with. So it
+ * is an ARGUMENT here rather than something this file goes and gets: the
+ * schematic draws whatever it is handed, a `null` floor is drawn as a level
+ * one, and `OverlayScreen.paintThumb` — which is what knows a row is under the
+ * cursor and is allowed to wait — asks again when the ground lands. Drawing a
+ * flat map for a moment and then the real relief is the honest order; drawing
+ * nothing until a fetch returns would put a hole in the menu.
  *
  * So it is a SCHEMATIC and is drawn as one — a relief, some water, the blocks
  * of dressing, a scatter of footprints, and the five flags lettered. It is not
@@ -42,7 +52,7 @@
  */
 import { CONFIG } from "../config";
 import type { MapDef } from "../world/maps";
-import { isScatterRect } from "../world/layout";
+import { isScatterRect, type Heightfield } from "../world/layout";
 import { TerrainField, waterY } from "../world/TerrainField";
 
 /**
@@ -115,7 +125,11 @@ function hue(hex: string): [number, number, number] {
  * canvas left at its attribute size and stretched by CSS is the one thing on
  * these screens that would come out visibly soft.
  */
-export function drawMapThumb(canvas: HTMLCanvasElement, def: MapDef): void {
+export function drawMapThumb(
+  canvas: HTMLCanvasElement,
+  def: MapDef,
+  floor: Heightfield | null,
+): void {
   const box = canvas.getBoundingClientRect();
   if (box.width < 4 || box.height < 4) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -146,8 +160,8 @@ export function drawMapThumb(canvas: HTMLCanvasElement, def: MapDef): void {
   ctx.fillStyle = `rgb(${(paper[0] * 0.07) | 0}, ${(paper[1] * 0.07) | 0}, ${(paper[2] * 0.07) | 0})`;
   ctx.fillRect(ox, oz, size * scale, size * scale);
 
-  drawRelief(ctx, def, px, pz, scale);
-  drawWater(ctx, def, px, pz, size);
+  drawRelief(ctx, def, floor, px, pz, scale);
+  drawWater(ctx, def, floor, px, pz, size);
   drawScatter(ctx, def, px, pz, scale);
   drawPlacements(ctx, def, px, pz, scale);
   drawGrid(ctx, ox, oz, size * scale);
@@ -166,7 +180,7 @@ type Proj = (v: number) => number;
  * The floor, shaded by height and by slope.
  *
  * A flat fill says nothing about a map, and the heightfield is 81x81 vertices
- * that are already in the bundle — the terrace the chapel stands on, the
+ * of what the place IS — the terrace the chapel stands on, the
  * sunken lane the creek runs down and the basin under the bog are the shape of
  * the place. Two terms: height, which separates high ground from low, and the
  * WESTWARD slope, which is what makes a bank read as a bank rather than as a
@@ -181,11 +195,13 @@ type Proj = (v: number) => number;
 function drawRelief(
   ctx: CanvasRenderingContext2D,
   def: MapDef,
+  field: Heightfield | null,
   px: Proj,
   pz: Proj,
   scale: number,
 ): void {
-  const field = def.layout.terrain;
+  // A level map, or one whose ground has not arrived yet. Either way the paper
+  // fill under this is the right drawing — see the header.
   if (!field) return;
   const { size: n, cell, heights } = field;
   const half = (n * cell) / 2;
@@ -248,6 +264,7 @@ function drawRelief(
 function drawWater(
   ctx: CanvasRenderingContext2D,
   def: MapDef,
+  floor: Heightfield | null,
   px: Proj,
   pz: Proj,
   size: number,
@@ -255,10 +272,15 @@ function drawWater(
   const rects = def.layout.water;
   const colors = def.environment.water;
   if (!rects || rects.length === 0 || !colors) return;
+  // A body is where the floor is BELOW it, so with no floor in hand there is
+  // no waterline to derive and a rect is not a shape — see this function's
+  // note. Nothing is drawn rather than the rects being filled, which is the
+  // mistake the note is about. The repaint puts the pools in.
+  if (!floor) return;
   // No margin and no roll: the mask is clipped to the play square below, and
   // the borderland's undulation is zero everywhere inside it — so this field
   // answers what MapBuilder's answers anywhere anything is drawn.
-  const terrain = new TerrainField(def.layout.terrain);
+  const terrain = new TerrainField(floor);
 
   const half = size / 2;
   let x0 = Infinity;

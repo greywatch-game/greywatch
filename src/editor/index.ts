@@ -646,7 +646,14 @@ export class EditorSession {
     if (this.saving) return;
     this.saving = true;
     this.panel.setStatus("saving…", "busy");
-    let result = await this.saver.save(this.deps.layout);
+    // The floor is the BUILD's, not the layout's — it stopped being a field on
+    // one when the heightfield became a lazy chunk (`MapDef.heights`), and
+    // `map.terrain.field` is the same object the terrain brush has been
+    // writing through. `null` on a level map, and then only `layout.ts` moves.
+    let result = await this.saver.save(
+      this.deps.layout,
+      this.map.terrain.field ?? null,
+    );
     if (result.ok && this.envDirty) {
       const env = await this.envSaver.save(floorEdits(this.deps.environment));
       if (env.ok) this.envDirty = false;

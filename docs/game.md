@@ -89,6 +89,24 @@ disagree about: the round applies the environment and repaints the sky while the
 editor drives `applyEnvironment` itself so it can toggle its work light, and the
 round alone owns what is about a *fight* — battle, conquest, flag markers, minimap.
 
+**It is one SYNCHRONOUS turn and that is why the map's floor is resolved before
+it rather than inside it.** A heightfield is a lazy `import()` now
+(`MapDef.heights`, ENGINE_UPGRADE.md S7), so the two doors into a build each
+await it and put it down on `Game.floor`: `buildRound`, which is async for that
+one line, and `toggleEditor`, which already was. `installMap` reads the field
+and hands it to `MapBuilder.build`.
+
+The await in `buildRound` is a hole the MAP can move through, and it is covered
+rather than assumed away. `NetSession.onSeated` defers to `buildRound` for the
+whole of it — `buildPending` is true from `go("loading")` until `openBakeWait`,
+which is what makes the deferral correct in the first place — so a welcome
+landing inside the fetch would otherwise be applied by nobody: not there,
+because it defers, and not in `buildRound`, because the line that reads it has
+already run. So the map is settled, the floor fetched, and the map asked again
+on the far side; the loop settles in two passes. A fetch that FAILS is
+`leaveUnknownMap`'s move — there is no honest half-build of a map with no
+ground under it, and leaving the card up would wedge `buildPending` forever.
+
 **Six of those hand-offs are one line each and one object**, and they are worth
 naming because they are new and because they look skippable. `map.rays` is the
 segment query every ray in the game asks (`world/RayWorld.ts`), and `installMap`

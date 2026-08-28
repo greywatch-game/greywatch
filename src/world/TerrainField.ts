@@ -1,6 +1,6 @@
 /**
  * TerrainField.ts — The valley floor's height, and the one place that knows it.
- * Owns: sampling a layout's Heightfield at any (x, z), editing it, and
+ * Owns: sampling a map's Heightfield at any (x, z), editing it, and
  * tessellating it into per-block VertexData for MapBuilder to hang meshes on —
  * plus `terrainSlab`, which bends a flat footprint (a road) onto that same
  * surface, so ground-hugging dressing is cut against the floor by the one file

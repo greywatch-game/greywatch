@@ -20,7 +20,6 @@ import type {
   SpawnPointDef,
   WaterRect,
 } from "../layout";
-import { HollowmereHeights } from "./heights";
 
 /**
  * HOLLOWMERE — the authored layout.
@@ -563,7 +562,6 @@ export const HollowmereLayout: MapLayout = {
   spawns,
   water,
   grass,
-  terrain: HollowmereHeights,
   /**
    * The valley rim. Only the two cols are authored — everything else about the
    * escarpment falls out of Ridge.ts's defaults.

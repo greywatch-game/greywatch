@@ -29,10 +29,13 @@
  *     and those build meshes and read textures. `MapBuilder.collider()` is the
  *     only place a collider is made and the `WorldBox` it records carries
  *     everything `CreateBox` needs, so the bake is lossless.
- *   - **Everything else is read from the layout**, because it is already data
- *     or already arithmetic: control points and spawns pass through
- *     `MapBuilder.build` untouched, and the floor is `TerrainField`. Baking
- *     those too would be three more things that can go stale for no gain.
+ *   - **Everything else is read from the map's own data**, because it is
+ *     already data or already arithmetic: control points and spawns pass
+ *     through `MapBuilder.build` untouched off the layout, and the floor is
+ *     `TerrainField` over the heightfield — which is a lazy `import()` beside
+ *     the bake rather than a field on the layout, and so is awaited here (see
+ *     `MapDef.heights`). Baking those too would be three more things that can
+ *     go stale for no gain.
  *
  * The four boundary boxes need no special handling — `collider()` made them,
  * so they are in the bake like everything else, and they keep the `w > 200 ||
@@ -241,11 +244,12 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   // one from `MapBuilder` about what the map IS.
   const blockSize = def.layout.blockSize ?? BLOCK_SIZE;
   const terrainBlock = def.layout.terrainBlock ?? BLOCK_SIZE;
-  const terrain = new TerrainField(
-    def.layout.terrain,
-    margin,
-    def.layout.borderland?.roll,
-  );
+  // The floor, which is no longer on the layout: it is a lazy `import()` of its
+  // own (`MapDef.heights`, ENGINE_UPGRADE.md S7), for the reason `collision`
+  // above is one. Awaited beside it rather than bundled — the boxes are baked
+  // and the ground is arithmetic, and this process needs both.
+  const heights = def.heights ? (await def.heights()).default : undefined;
+  const terrain = new TerrainField(heights, margin, def.layout.borderland?.roll);
   const boxes = toWorldBoxes(collision);
 
   // A box gets one mesh, unless the client merged it with its neighbours into a

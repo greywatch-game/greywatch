@@ -143,7 +143,24 @@ export function isScatterRect(s: ScatterSpec): s is ScatterRect {
  *
  * Authored by the editor's terrain mode and written to its own generated file,
  * NOT into the hand-written layout: a grid of several thousand numbers has no
- * business sitting next to the ASCII village map. The layout imports it.
+ * business sitting next to the ASCII village map.
+ *
+ * **It is not ON the layout, and that is the whole of what it costs to keep it
+ * out of the bundle.** The layout used to import its heights module and carry
+ * the result as a field, which put every map's grid in the main chunk to be
+ * parsed on boot whether or not it was ever played — 51 KB for Harrowmead's
+ * 100 x 100, and ~700 KB for the 375 x 375 a 1500 m map at the same 4 m cell
+ * would need. It arrives through `MapDef.heights` instead, a lazy `import()`
+ * beside `MapDef.collision` and for that field's reason, and everything that
+ * needs the floor is HANDED one: `MapBuilder.build` takes it as an argument,
+ * `buildServerWorld` awaits it, and `Game` holds the standing map's. See
+ * ENGINE_UPGRADE.md S7.
+ *
+ * What that gives up is the pair being checkable by the compiler. `size *
+ * cell` must still equal the MAP's size, and nothing in the type system says
+ * so now that the two halves are in different files — so `MapBuilder.build`
+ * asserts it in a DEV build rather than leaving a mismatched pair to read as
+ * a floor sampled against the wrong origin.
  *
  * Placements, scatter and grass rects read their `y` as an offset ABOVE the
  * terrain, so dropping a building into a basin needs no bookkeeping. Control
@@ -320,8 +337,10 @@ export interface MapLayout {
    * The remaining readers of `CONFIG.map.size` are the ones that take the size
    * from nothing at all, and each is now given it.
    *
-   * Three things a larger map owes, none of which this field can check:
-   * `terrain.size * terrain.cell` must equal it (see `Heightfield.cell`), the
+   * Three things a larger map owes, none of which this field can check — the
+   * first of them now checked by `MapBuilder.build` in a DEV build instead,
+   * because the heightfield is no longer even in the same file:
+   * `heights.size * heights.cell` must equal it (see `Heightfield.cell`), the
    * rim's four boundary boxes stay over 200 m and so stay recognisable to the
    * seven sites that identify the boundary by `w > 200 || d > 200`, and the
    * heightfield's own grid grows with the square rather than getting coarser.
@@ -390,8 +409,6 @@ export interface MapLayout {
    * landform out of both readers of one.
    */
   terrainBlock?: number;
-  /** The floor's shape. Absent means a level valley floor. */
-  terrain?: Heightfield;
   /** The rim's shape. Absent means the default escarpment. */
   ridge?: RidgeSpec;
   /**

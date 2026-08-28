@@ -32,7 +32,6 @@ import type {
   ScatterSpec,
   SpawnPointDef,
 } from "../layout";
-import { ProvingHeights } from "./heights";
 
 const placements: Placement[] = [
   { kind: "road", x: -440, z: 0, params: { surface: "asphalt", width: 16, length: 880 } },
@@ -587,7 +586,6 @@ export const ProvingLayout: MapLayout = {
   scatter,
   controlPoints,
   spawns,
-  terrain: ProvingHeights,
   size: 900,
   // Three walked floors, a roof, a spandrel at every window and a wall head
   // under every ceiling — Coldharbour's stack, and Coldharbour's answer.

@@ -34,7 +34,7 @@ import { CONFIG } from "../config";
 import { difficultyTiers } from "../entities/BotSkill";
 import type { SightId } from "../entities/sights";
 import type { PrimaryWeaponId } from "../entities/weapons";
-import type { MapDef } from "../world/maps";
+import { heightsOf, loadHeights, type MapDef } from "../world/maps";
 import { kitLabel, WEAPON_BLURBS } from "./LoadoutScreen";
 import { mapShotUrl } from "./mapShots";
 import { drawMapThumb } from "./MapThumb";
@@ -604,11 +604,32 @@ export class OverlayScreen {
    * the one synchronous reflow this screen pays and is why it is not on a
    * frame callback — a thumbnail that arrives a frame after the row it belongs
    * to reads as the panel flickering.
+   *
+   * **The paint is synchronous and the map's FLOOR may not be here yet, which
+   * is why this can run twice for one row.** The heightfield is a chunk of its
+   * own (`MapDef.heights`, ENGINE_UPGRADE.md S7) — the one field on this panel
+   * that is fetched rather than bundled — so the first paint draws whatever
+   * `heightsOf` already has, which on a cold boot is nothing, and the second
+   * is booked for when the ground lands. The row is re-tested inside the
+   * callback because the cursor moves faster than a fetch: a floor arriving
+   * for the map the player has already scrolled off must not repaint the one
+   * they are looking at now. A warm map answers on the first paint and books
+   * nothing.
    */
   private paintThumb(): void {
     const canvas = this.detailEl?.querySelector("canvas");
     const map = this.maps[this.mapIndex];
-    if (canvas && map) drawMapThumb(canvas, map);
+    if (!canvas || !map) return;
+    const floor = heightsOf(map);
+    drawMapThumb(canvas, map, floor ?? null);
+    if (floor !== undefined) return;
+    void loadHeights(map)
+      .then(() => {
+        if (this.maps[this.mapIndex] === map) this.paintThumb();
+      })
+      // A schematic is not worth a broken menu. The round start asks for the
+      // same chunk and reports the failure where it can be acted on.
+      .catch(() => {});
   }
 
   /** One picture layer of the backdrop. Empty until a map is chosen. */

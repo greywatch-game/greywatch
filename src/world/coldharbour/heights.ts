@@ -6,6 +6,11 @@
  * from the -X/-Z corner. It lives apart from layout.ts for that file's reason:
  * several thousand bare numbers have no business next to an ASCII street plan.
  *
+ * It no longer TRAVELS with it either. `MapDef.heights` is a lazy `import()`
+ * beside `MapDef.collision`, so this file is a chunk of its own and reaches a
+ * browser only when this map is built — see `maps.ts`, and ENGINE_UPGRADE.md
+ * S7 for what that is worth on a map several times this one's size.
+ *
  * 80x80 cells of 4 m over the 320 m map, so 81x81 vertices — the same vertex
  * count both valleys carry, at the coarser cell a larger map needs.
  * `size * cell` must equal `MapLayout.size`; see `Heightfield.cell`.
@@ -114,3 +119,7 @@ export const ColdharbourHeights: Heightfield = {
     1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,1.2,
   ],
 };
+
+// Default too, because `MapDef.heights` is a lazy `import()` and a default
+// is the one export name a generic signature can be written against.
+export default ColdharbourHeights;

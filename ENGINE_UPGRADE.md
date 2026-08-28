@@ -1918,7 +1918,7 @@ unmoved, which they are by construction here. See `FINDINGS.md` 29.
 
 ---
 
-### S7 — Get the heightfield out of the JS bundle
+### S7 — Get the heightfield out of the JS bundle — **LANDED**
 
 `heights.ts` is a module constant imported by `layout.ts`, so it is in the main
 bundle. Harrowmead's is 51 KB for `100 x 100` cells. Derived at 1500 m:
@@ -1937,6 +1937,87 @@ So keep the cell and move the DATA: a binary asset, or a payload behind the same
 lazy `import()` shape `MapDef.collision` already uses, rather than hundreds of
 thousands of JS number literals to parse on boot. `MapDef.collision`'s header
 carries that argument verbatim and is the worked precedent.
+
+**Done, and it is the precedent rather than the binary.** `MapDef.heights` is a
+`() => Promise<{ default: Heightfield }>` beside `MapDef.collision`, each map's
+`heights.ts` grew a default export, and `MapLayout.terrain` **is gone** — the
+layouts no longer import their own heights module, so nothing statically
+reaches one. The FORMAT is untouched, which is what makes all three of the
+must-not-breaks below hold by construction rather than by care: the editor's
+writer, `vite.config.ts`'s `WRITABLE` and `scripts/collision-hash.mjs` are
+unchanged, and `TerrainField` still takes its half-extent from `size * cell`.
+A binary would have bought a smaller file and cost a new writer, a new
+`min`/`marker` rule, and a second way for a map to arrive; the parse this step
+is about is deferred either way, and only the map being played now pays it.
+
+**Measured, `vite build`, before against after:**
+
+| | main chunk | gzip | heights chunks |
+| --- | --- | --- | --- |
+| before | 7,649.89 kB | 1,764.10 kB | — |
+| after | 7,559.67 kB | 1,748.25 kB | 4, 91.18 kB total |
+
+**90.2 kB and every map's grid off the boot path, for the four maps that exist
+at 240–400 m.** That is the whole of what is there to win today: it is the
+SHAPE that S11 needs, because the same change at 1500 m is ~700 kB of number
+literals that never enter the main chunk and are never parsed by a player who
+picks a different map. Harrowmead's 44.56 kB is half of the 91.18, which is the
+curve — the grid grows with the square and the win grows with it.
+
+**Everything that needs the floor is HANDED one, and the reason is that
+`installMap` is one synchronous turn that cannot contain a fetch.**
+`MapBuilder.build(layout, env, heights, opts)` takes it as an argument;
+`Game.floor` is where the standing map's is put down, resolved by the two async
+doors into a build — `buildRound`, which became `async` for that one line, and
+`toggleEditor`, which already was; `buildServerWorld` awaits it beside the bake
+it already awaited; the editor writes through `map.terrain.field`, which IS
+that object, so the brush and the rebuild tier behave exactly as before.
+
+**Two holes were opened by the await and both are covered.** The MAP can move
+through it: `NetSession.onSeated` defers to `buildRound` for the whole wait
+(`buildPending` is true from `go("loading")` until `openBakeWait`, which is what
+made the deferral correct to begin with), so a welcome landing inside the fetch
+would have been applied by nobody. `buildRound` settles the map, fetches, and
+asks again on the far side — two passes, no third. And a fetch that FAILS is
+`leaveUnknownMap`'s move: there is no honest half-build of a map with no ground
+under it, and a card left standing wedges `buildPending` forever.
+
+**The MENU is the one caller that cannot wait**, because it draws the row under
+the cursor now. `drawMapThumb` takes the field as an argument and fetches
+nothing; `OverlayScreen.paintThumb` hands it whatever `heightsOf` already has —
+on a cold boot, nothing — and books a repaint for when the ground lands,
+re-testing the row inside the callback because the cursor moves faster than a
+fetch. A flat map for a moment and then the real relief; a hole in the menu
+until a fetch returns would be the worse drawing.
+
+**`scripts/check-proving.mjs` owed a third sentinel and now has one.**
+`proving/heights.ts` used to be reachable only through `proving/layout.ts`, so
+`PG-Alpha` covered it for free; a lazy `import()` makes it a chunk ROOT, which
+Rollup emits unless the arrow naming it is shaken away with `PROVING`. It is —
+the emitted build carries four heights chunks and none of them is the proving
+ground's 100 kB — but that is a property of how `maps.ts` is written and not a
+promise, which is the entire premise of that script. `PROVING_HEIGHTS_MARK` is
+the string, and the file's own note predicted exactly this case.
+
+**Verified.** `npm run typecheck` and `npm run build` clean, `check-proving`
+passes with the new sentinel, `npm run collision` re-baked all four maps (the
+hashes moved because both hashed files' TEXT moved; **every box is byte-identical
+— the only line that changed in any `collision.ts` is its own `sourceHash`**),
+and `npm run parity` passes on all four. `bank.mjs --check` is byte-for-byte
+identical before and after — S7 moves no pixel — and its 15 standing
+regressions are the bank's, not this step's; they reproduce unchanged on a
+clean tree. A browser smoke run built all five registered maps, each on its own
+floor and at its own extent (Hollowmere and Greyfen 6,561 vertices over 240 m,
+Coldharbour 6,561 over 320, Harrowmead 10,201 over 400, the proving ground
+51,076 over 900), repainted the menu schematic when the floor landed, and
+opened the editor from the MENU — the one door where nothing has ever been
+fetched.
+
+**One thing the compiler used to see and no longer can**, said here because it
+is the price of the step: `size * cell` must equal the map's extent, and the
+two halves are now different files reaching `MapBuilder` by different routes. A
+mismatched pair samples the floor against the wrong origin, reads the wrong row
+everywhere, and throws nothing. `MapBuilder.build` asserts it in a DEV build.
 
 **Must not break:**
 

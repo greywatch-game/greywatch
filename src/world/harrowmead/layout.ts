@@ -23,7 +23,6 @@ import type {
   VehicleSpawnDef,
   WaterRect,
 } from "../layout";
-import { HarrowmeadHeights } from "./heights";
 
 /**
  * HARROWMEAD — a farming town in a broad green vale, high summer.
@@ -637,7 +636,6 @@ export const HarrowmeadLayout: MapLayout = {
   vehicles,
   water,
   grass,
-  terrain: HarrowmeadHeights,
   /**
    * The largest map yet. `terrain.size * terrain.cell` equals it (100 x 4),
    * the rim's boundary boxes stay over 200 m (they are size + 4), and the

@@ -948,6 +948,15 @@ query now — but `Tank.update` drives a hull with `body.moveWithCollisions`, an
 the authority simulates its own hulls. So the geometry stays, for the legs' old
 reason turned on its head.
 
+**The FLOOR is the one part of that world which is not baked and is no longer
+on the layout either.** It is a `TerrainField` over the map's heightfield,
+which is pure arithmetic and so cannot go stale — but the heightfield is a lazy
+`import()` now (`MapDef.heights`, ENGINE_UPGRADE.md S7), exactly as the bake
+beside it is, so `buildServerWorld` awaits both. Nothing about what is baked
+changed, and `sourceHash` still covers `layout.ts` and `heights.ts`: the two
+files a map's boxes depend on are the same two files, wherever they are
+imported from.
+
 **A baked box carries its `porous` flag as a ninth tuple entry, and the bake
 carries a second list beside `boxes` for the `rayOnly` geometry.** Both are what
 the shot ray adds up to (`RayWorld.castRound`; see the collider section of

@@ -384,6 +384,12 @@ writeFileSync(
  * ${HC}x${HC} cells of ${CELL} m over the ${PLAY} m play square, so ${row}x${row} vertices.
  * \`size * cell\` must equal \`MapLayout.size\`; see \`Heightfield.cell\`.
  *
+ * Reached through \`MapDef.heights\`, a lazy \`import()\` beside
+ * \`MapDef.collision\` — so this file is a chunk of its own, and the DEV gate
+ * \`MAPS\` puts in front of the proving ground is now the only thing keeping
+ * 100 kB of dead flat ground out of the production bundle. That is what
+ * \`PG-Level\` below is for; see \`scripts/check-proving.mjs\`.
+ *
  * ${skirtNote}
  *
  * Level under the streets for Coldharbour's reason: a placement's height is
@@ -400,6 +406,22 @@ export const ProvingHeights: Heightfield = {
 ${heightRows.join("\n")}
   ],
 };
+
+/**
+ * The string \`scripts/check-proving.mjs\` greps the production bundle for.
+ *
+ * This file used to be reachable only through \`proving/layout.ts\`, so the
+ * sentinel in THAT module covered it for free. \`MapDef.heights\` made it an
+ * \`import()\` target of its own, and an unreferenced export of a dynamically
+ * imported module is one Rollup keeps — which is exactly what makes this a
+ * usable marker and exactly why one is now needed. A string and not an
+ * identifier, because identifiers do not survive minification.
+ */
+export const PROVING_HEIGHTS_MARK = "PG-Level";
+
+// Default too, because \`MapDef.heights\` is a lazy \`import()\` and a default
+// is the one export name a generic signature can be written against.
+export default ProvingHeights;
 `,
 );
 
@@ -434,7 +456,6 @@ import type {
   ScatterSpec,
   SpawnPointDef,
 } from "../layout";
-import { ProvingHeights } from "./heights";
 
 const placements: Placement[] = [
 ${placements.join("\n")}
@@ -457,7 +478,6 @@ export const ProvingLayout: MapLayout = {
   scatter,
   controlPoints,
   spawns,
-  terrain: ProvingHeights,
   size: ${PLAY},
   // Three walked floors, a roof, a spandrel at every window and a wall head
   // under every ceiling — Coldharbour's stack, and Coldharbour's answer.

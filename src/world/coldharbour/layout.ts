@@ -24,7 +24,6 @@ import type {
   SpawnPointDef,
   VehicleSpawnDef,
 } from "../layout";
-import { ColdharbourHeights } from "./heights";
 
 /**
  * COLDHARBOUR — the business district, mid-afternoon, with the fighting in the
@@ -604,7 +603,6 @@ export const ColdharbourLayout: MapLayout = {
   spawns,
   vehicles,
   grass,
-  terrain: ColdharbourHeights,
   /**
    * The first map that is not `CONFIG.map.size`. Everything downstream takes
    * the extent as an argument and carries it on `GameMap.size`; what a larger
