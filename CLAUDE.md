@@ -450,9 +450,24 @@ nothing round the pool is pale sky and reads as a salt pan.
 GROWS** (`world/roads.ts`, `GameMap.roads`): `MapBuilder` sows no
 `PropBody.rooted` prop on a carriageway and `GrassSystem` no tuft. It is a
 per-PROP fact rather than a per-region flag, because a street is where rubble,
-cones and litter belong. **Any change to a placement rule re-rolls the seeded
-dressing field**, so it owes `npm run collision` and `npm run parity` — the
-staleness guard hashes the LAYOUT and this kind of change is in the BUILDER.
+cones and litter belong — and **what is sown there stands on the ROAD** rather
+than on the floor under it (`roadTopAt`), or the litter is half buried in it.
+**Any change to a placement rule re-rolls the seeded dressing field**, so it
+owes `npm run collision` and `npm run parity` — the staleness guard hashes the
+LAYOUT and this kind of change is in the BUILDER.
+
+**Where two roads CROSS, the SURFACE decides which one is the ground, and it
+decides by HEIGHT**: `ROAD_RANK` (dirt < cobble < asphalt — the order the ground
+was built in) lifts a carriageway two millimetres per rank, because coplanar
+sheets in two meshes are a per-pixel tie whose winner changes as the camera
+moves. **The rungs are tiny because a road is a sheet OVER the floor and almost
+nothing else knows it is there** — a bullet's dust disc clears the ground by
+20 mm and is the tightest of them — so the ladder stays inside the 10 mm a road
+already stood proud by; what a map SOWS on a street is put on the street instead
+(`roadTopAt`). **Any of it works only because NO ROAD IS INKED**: an outline hull
+stamps depth 5 cm above the sheet it wraps, which painted every mixed junction
+black, and no lift beats it since the shell rides with the slab. Do not put the
+ink back, and do not give two surfaces one rank.
 
 **There is a sixth entry in `MAPS` and it is DEV-ONLY and not a level.**
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures

@@ -239,7 +239,8 @@ follow:
   and the pixels the ink pass touched compared against what they covered. Mean
   ink luma falls Hollowmere 0.036 → 0.025, Greyfen 0.059 → 0.045, Coldharbour
   0.142 → 0.125, Harrowmead 0.071 → 0.039, and no outlined mesh on any map now
-  carries an ink over luma 0.054 (that one is the road, at the clamped fallback).
+  carries an ink over luma 0.054 (that one was the road, at the clamped
+  fallback — a road carries no ink at all now, see the crossing rule below).
   **Re-taken on WebGPU at each map's committed vantage**, post chain off, the
   ink pass covers 2.4% / 4.1% / 3.5% / 1.9% of the frame at a mean luma of
   0.050 / 0.060 / 0.052 / 0.057 (Hollowmere, Greyfen, Coldharbour, Harrowmead),
@@ -1578,9 +1579,22 @@ vantages come back to four decimal places.
   offer anyway. **It is the same offset the deck rule above no longer reaches**,
   and what separates them is the SEPARATION: 20 mm between a marking and its
   slab's shell, against 185 mm between a deck's top face and its own. So the
-  surface underneath gives up its ink (`buildRoad` sets `noOutline` on a slab
-  that carries paint), which a flat ground sheet can afford: it has no
-  silhouette, which is the same thing its `noShadowCaster` says.
+  surface underneath gives up its ink, which a flat ground sheet can afford: it
+  has no silhouette, which is the same thing its `noShadowCaster` says.
+  **NO ROAD IS INKED NOW, and the paint was only the first half of why.** A
+  road laid across another road is "anything drawn into that gap" exactly as a
+  marking is — measured on Sarab, where the dirt lanes cross the avenues, and
+  on Harrowmead, where a dirt lane meets the cobble crossroads: the junction
+  came out solid black, in the ink of whichever of the two merged road meshes
+  the front-to-back sort drew second, and which one that was changed as the
+  camera moved round it. **Lifting the winner does not buy it out either** —
+  the shell rides with the slab it wraps, so a road raised 8 cm carries its
+  stamp to 13 — which is why `MapBuilder`'s road merge takes the ink off every
+  road rather than off the slabs that carry paint. The junction is settled by a
+  two millimetres of height per surface RANK instead (`world/roads.ts`), which
+  is a margin only the depth buffer has to beat once no shell stands over it —
+  and it has to be that small because a road is a sheet over the floor and the
+  dust disc a round kicks off the ground clears it by only 20 mm.
   **This is also why a fault of this shape does not reproduce in the editor** —
   roads are left uninked there for an unrelated reason, so the markings were
   visible for the whole of the time they were being authored.

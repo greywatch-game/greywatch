@@ -479,6 +479,70 @@ undoing any puts black holes in the cobbles:
   onto the world *anti*-diagonal, so the road would split every cell the opposite way
   from the ground it lies on; the quad starts one corner along.
 
+**Where two roads CROSS, the SURFACE says which of them is the ground.** A junction
+is two flat sheets at the same height in two different meshes — roads are merged one
+per material, so a crossing of two dirt lanes is a single mesh and has always been
+fine, and a dirt lane crossing a street is not. Coplanar is a tie, a tie is broken
+per pixel, and which sheet won was decided by whichever mesh that frame's
+front-to-back sort handed the renderer first: it changed as you walked round the
+junction. `world/roads.ts` decides it once instead, off the surface —
+
+| surface | rank | top face rides |
+| --- | --- | --- |
+| `dirt` — a scraped track | 0 | 10 mm above the floor |
+| `cobble` — a laid street (the default) | 1 | 12 mm |
+| `asphalt` — poured blacktop | 2 | 14 mm |
+
+— which is the order the ground was actually built in, and therefore the order a
+person reads a junction in. `roadTop` is the whole of the mechanism: `buildRoad` cuts
+its slab to that height and the slab's thickness grows with it, so the underside
+stays the same 7 cm into the ground and a lifted road cannot show daylight under its
+own kerb on the first bank it crosses. **A rank shared between two surfaces is two
+coplanar sheets again**, which is what the table exists to prevent.
+
+**The ladder is two millimetres a rung, and it is squeezed from both sides.** From
+below by what it has to beat, which is nothing at all: the tie between two crossing
+roads is EXACT coplanarity, so any separation the depth buffer can resolve settles
+it, and on `depth32float` that is tiny — measured on Sarab's asphalt/dirt crossings
+from 30, 60, 150, 300 and 420 m, along both roads and from above, a **millimetre** is
+clean at every range and **zero** is wrong at every range. Two is that with the
+margin doubled. (The floor there is the depth FORMAT, which `main.ts`'s
+`stencil: false` picks — see `plans/webgpu-ref/depth.mjs`.) From above by everything
+else that lies on the ground, because a road is a sheet on top of the floor and
+almost nothing else knows it is there. **Feet are not what is at risk** — a road
+carries no collider, so a body has always stood on the floor with the slab over its
+boot soles, and the player has no body mesh at all — but a bullet's DUST DISC is: it
+is spawned on the floor the round actually hit and lifted `CONFIG.effects.discLift`,
+**20 mm**, which is the tightest clearance anything keeps over a carriageway. A blob
+shadow's 40 mm is the next one up. So the whole ladder fits inside the 10 mm every
+road already stood proud by: the top of it is 14 mm, and nothing that cleared a road
+before clears it by more than four millimetres less now.
+
+**And NO ROAD IS INKED, which is the other load-bearing half.** `addOutline` hangs a hull on a mesh expanded 5 cm along its own normals
+and draws it a second time after the mesh with colour write off and depth write ON —
+so a road's ink stands in the depth buffer 5 cm above its own carriageway, and
+anything else at road height is behind a surface nobody can see. The lane markings
+met that first and were given `noOutline` for it; a road crossing a road is the same
+fact, and it painted every mixed junction on Sarab and Harrowmead solid black. **No
+lift fixes that one** — the shell rides with the slab it wraps, so raising the winner
+raises its ink with it — which is why the fix is to take the ink off the road merge
+(`MapBuilder`) rather than to buy clearance. What is given up is a 5 cm line where
+the carriageway meets the verge: a road's outline never thinned (`updateOutlineScales`
+measures to a bounding sphere the camera stands inside, so a map-spanning merge is
+always at full width), and on Hollowmere's square the line is the difference between
+two frames you have to flick between to tell apart.
+
+**A prop sown on a road stands on the ROAD.** Everything the scatter pass places is
+put down against the floor, and a carriageway is a sheet lying on top of that floor,
+so `MapBuilder.scatterRegion` adds `roadTopAt` to a prop's base — the maximum top of
+the carriageways covering the point, which at a junction is the one you would be
+standing on. Without it a scrap of blown litter, twelve millimetres tall, is half
+buried in the first street it lands in — which is a bug the ranks did not introduce
+and this fixes. An authored PLACEMENT is deliberately not lifted: a wall straddling a
+kerb is not standing on the road, and a parked car four millimetres deeper into the
+blacktop is not worth a rule. That, and the dust disc above, is why the step is two
+millimetres rather than the sixty that would let the ink stay.
+
 **And a road is the one visual that REJECTS something, which is the one thing about
 it that is not a picture.** It still carries no collider, still stops no round and no
 body, and is still in no baked structure — but nothing ROOTED may be sown on a

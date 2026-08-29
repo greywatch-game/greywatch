@@ -1,8 +1,10 @@
 /**
- * roads.ts — The road network as RECTANGLES, and the one question they answer:
- * is this patch of ground PAVED?
- * Owns: the road footprint's defaults, its derivation from a layout's
- * placements, and the point-in-road test. Pure arithmetic — no Babylon, no
+ * roads.ts — The road network as RECTANGLES, and the two questions they
+ * answer: is this patch of ground PAVED, and — where two carriageways cross —
+ * which of them is the ground?
+ * Owns: the road footprint's defaults, the surface RANKING and the height that
+ * ranking is expressed as, the footprints' derivation from a layout's
+ * placements, and the point-in-road tests. Pure arithmetic — no Babylon, no
  * allocation per query — so the client, the authority and the grass field all
  * ask it the same way.
  *
@@ -16,9 +18,18 @@
  * sort of rule a layout cannot be trusted with, because nothing checks it and
  * the failure is only ever visible from inside the map.
  *
- * The two readers are `MapBuilder.findSpot`, which holds `PropBody.rooted`
- * props off the carriageway, and `GrassSystem.scatter`, which holds every tuft
- * off it — grass is rooted by definition and has no table to say so in.
+ * The two readers of `onRoad` are `MapBuilder.findSpot`, which holds
+ * `PropBody.rooted` props off the carriageway, and `GrassSystem.scatter`,
+ * which holds every tuft off it — grass is rooted by definition and has no
+ * table to say so in.
+ *
+ * **What is new here is the JUNCTION.** Two roads that cross are two flat
+ * sheets at the same height in two different meshes, and until `ROAD_RANK`
+ * below nothing decided which one you were looking at: the tie was broken per
+ * pixel, by whichever mesh that frame's front-to-back sort happened to draw
+ * first. `roadTop` is that decision, made once, off the SURFACE — and
+ * `buildRoad` is the only thing that draws with it, so a layout still says
+ * nothing about junctions and still cannot.
  *
  * A linear scan is the whole implementation and is deliberate: the busiest map
  * in the tree lists twenty-four roads, and against ~11,000 tufts that is a
@@ -39,6 +50,110 @@ export const ROAD_WIDTH = 8;
 export const ROAD_LENGTH = 40;
 
 /**
+ * What a road is PAVED with, and — through `roadTop` below — which of two
+ * roads owns the ground where they cross.
+ *
+ * The same three the `road` builder draws (`BuildParams.surface`), named here
+ * because the ORDER of them is a road fact rather than a builder's: a layout
+ * states the surface and nothing else, and the junction has to fall out of
+ * that.
+ */
+export type RoadSurface = "dirt" | "cobble" | "asphalt";
+
+/**
+ * Which surface trumps which where two roads cross, low to high.
+ *
+ * **A junction has to be settled by the SURFACES rather than by whatever the
+ * renderer happens to draw first**, and this is the whole of the decision. The
+ * order is how the ground was actually built: a track is scraped, a street is
+ * laid over it, and blacktop is poured over that — so the more made-up surface
+ * is the one that carries on through the crossing, which is also how a person
+ * reads it. A layout says nothing about junctions and cannot: two roads that
+ * cross are two placements that know nothing about each other.
+ *
+ * Adding a fourth surface is a row here and a colour in `buildRoad`. What it
+ * may NOT be is a rank shared with an existing surface — two roads at the same
+ * rank are two coplanar sheets again, which is the bug this exists for.
+ */
+export const ROAD_RANK: Record<RoadSurface, number> = {
+  dirt: 0,
+  cobble: 1,
+  asphalt: 2,
+};
+
+/**
+ * How far the LOWEST-ranked road's top face rides above the floor under it.
+ *
+ * A centimetre — enough that the slab does not fight the ground it is lying
+ * on, and not enough to swallow a character's ankles. Nothing stands on a road
+ * (feet rest on the floor from the ground probe and the nav grid, neither of
+ * which has ever heard of a carriageway), so this is a look and never a walked
+ * height — and `ROAD_RANK_STEP` below is small enough that the highest-ranked
+ * road is still within four millimetres of it.
+ */
+export const ROAD_TOP = 0.01;
+
+/**
+ * What one rank is worth in height. **Two millimetres, and it is squeezed from
+ * both sides.**
+ *
+ * *Below*, by what it has to beat: nothing. Two roads that cross are two sheets
+ * at the SAME height in two different merged meshes — one per material — and an
+ * exact tie is broken per pixel, in favour of whichever mesh that frame's
+ * front-to-back sort happened to draw first, which changes as the camera moves
+ * round the junction. Any separation the depth buffer can resolve settles it,
+ * and on `depth32float` that is a very small number: measured on Sarab's
+ * asphalt/dirt crossings from 30, 60, 150, 300 and 420 m, along both roads and
+ * from above, **a millimetre is clean at every range and zero is wrong at every
+ * range**. Two is that with a doubled margin, not a figure anything was tuned
+ * to. It is worth knowing that the floor here is the DEPTH FORMAT, which
+ * `main.ts`'s `stencil: false` decides (see `plans/webgpu-ref/depth.mjs`) —
+ * putting the stencil back takes the buffer to `depth24plus` and this margin
+ * with it.
+ *
+ * *Above*, by everything else that lies on the ground, because a road is a
+ * sheet ON TOP of the floor and almost nothing else knows it is there. Feet are
+ * not the problem — a road carries no collider, so a body stands on the floor
+ * and always has, and the player has no body mesh to sink anyway — but a
+ * bullet's DUST DISC is: it is spawned on the floor the round actually hit and
+ * lifted `CONFIG.effects.discLift`, **twenty millimetres**, which is the
+ * tightest clearance in the game over a carriageway and the real ceiling on
+ * this ladder. A blob shadow's 40 mm is the next one up. So the whole ladder
+ * has to fit inside what a road already stood proud by, and it does: the top of
+ * it is 14 mm against the 10 mm every road used to sit at, so nothing that
+ * cleared a road before clears it by more than four millimetres less now.
+ *
+ * The one thing that did NOT clear it before is fixed properly instead of by
+ * this number — `MapBuilder`'s scatter pass puts a prop sown on a street on the
+ * STREET (`roadTopAt`), because blown litter is 12 mm tall and was half buried
+ * in the carriageway at the old flat 10 mm.
+ *
+ * The other half of what makes two millimetres enough is that **a road is not
+ * INKED** — see `MapBuilder`'s road merge. An outline shell stamps depth a full
+ * outline-width (5 cm) above the sheet it wraps, which is twenty-five times
+ * this number: with the ink on, the loser's shell painted the whole junction
+ * black however far the winner was lifted.
+ */
+export const ROAD_RANK_STEP = 0.002;
+
+/** The surface a road placement asks for, defaulting as `buildRoad` does. */
+export function roadSurface(surface?: string): RoadSurface {
+  return surface === "dirt" || surface === "asphalt" ? surface : "cobble";
+}
+
+/**
+ * How high a road of this surface rides above the floor under it — the one
+ * number that decides a crossing.
+ *
+ * `buildRoad` cuts its slab to this and `roadRects` records it, so the drawn
+ * junction and the answer anything else gets about the same ground cannot
+ * disagree.
+ */
+export function roadTop(surface: RoadSurface): number {
+  return ROAD_TOP + ROAD_RANK[surface] * ROAD_RANK_STEP;
+}
+
+/**
  * One road's ground footprint in world space: `width` across the carriageway,
  * `length` along it, turned by `rotY` about (x, z).
  *
@@ -55,6 +170,12 @@ export interface RoadRect {
   /** Along the carriageway, along the road's local Z. */
   length: number;
   rotY: number;
+  /**
+   * How far this carriageway's top face rides above the floor — `roadTop` of
+   * its own surface, and the reason a `RoadRect` carries a height at all:
+   * `roadTopAt` is what puts a prop sown on a street ON the street.
+   */
+  top: number;
 }
 
 /**
@@ -75,6 +196,7 @@ export function roadRects(placements: readonly Placement[]): RoadRect[] {
       width: p.params?.width ?? ROAD_WIDTH,
       length: p.params?.length ?? ROAD_LENGTH,
       rotY: p.rotY ?? 0,
+      top: roadTop(roadSurface(p.params?.surface)),
     });
   }
   return out;
@@ -117,4 +239,45 @@ export function onRoad(
     }
   }
   return false;
+}
+
+/**
+ * How high the road surface at (x, z) stands above the floor, or 0 where there
+ * is no road there — the MAXIMUM over every carriageway covering the point,
+ * because at a junction that is the one you would be standing on.
+ *
+ * **A prop sown on a street stands on the STREET.** Everything the scatter
+ * pass places is put down against the floor (`TerrainField`), and a road is a
+ * sheet lying on top of that floor — so blown litter, whose scraps are twelve
+ * millimetres tall, was already half sunk into every carriageway it landed on
+ * before the ranks above widened the gap. `MapBuilder.scatterRegion` adds this
+ * to a prop's base for that reason, and it is the only place in the tree that
+ * needs it: nothing else is placed on a road by anything but an author's hand.
+ *
+ * Zero padding, unlike `onRoad`: this asks what the ground under a point IS,
+ * not whether something may be planted there.
+ */
+export function roadTopAt(
+  roads: readonly RoadRect[],
+  x: number,
+  z: number,
+): number {
+  let top = 0;
+  for (const r of roads) {
+    if (r.top <= top) continue;
+    const dx = x - r.x;
+    const dz = z - r.z;
+    let lx = dx;
+    let lz = dz;
+    if (r.rotY !== 0) {
+      const c = Math.cos(r.rotY);
+      const s = Math.sin(r.rotY);
+      lx = dx * c - dz * s;
+      lz = dx * s + dz * c;
+    }
+    if (Math.abs(lx) <= r.width / 2 && Math.abs(lz) <= r.length / 2) {
+      top = r.top;
+    }
+  }
+  return top;
 }

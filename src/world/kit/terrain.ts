@@ -8,9 +8,14 @@
  * rotX on the COLLIDER, not just the visual.
  */
 import { Scene } from "@babylonjs/core";
-import type { Mesh } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { ROAD_LENGTH, ROAD_WIDTH } from "../roads";
+import {
+  ROAD_LENGTH,
+  ROAD_TOP,
+  ROAD_WIDTH,
+  roadSurface,
+  roadTop,
+} from "../roads";
 import { terrainSlab } from "../TerrainField";
 import {
   Build,
@@ -89,8 +94,8 @@ export function buildRamp(
 /**
  * Road surface. Visual only — it sits on the ground, so nothing ever stands on
  * the slab itself: feet rest on the floor from the ground probe and the nav
- * grid. The slab is therefore sunk so its top sits only a centimetre proud —
- * enough to avoid z-fighting the floor, but not enough to swallow a
+ * grid. The slab is therefore sunk so its top sits barely proud of the floor —
+ * enough to avoid z-fighting the ground, but not enough to swallow a
  * character's ankles. Cobblestone by default; `surface: "dirt"` gives the flat
  * track for farm lanes and `surface: "asphalt"` the blacktop a city street is.
  *
@@ -99,6 +104,19 @@ export function buildRamp(
  * sheen `groundSpec` tunes, and none of that is anything a road wants when it
  * is meant to read as poured. Adding a third tone here is a colour, not a code
  * path.
+ *
+ * **How far proud is the SURFACE's, and it is what settles a junction**
+ * (`roadTop`, `world/roads.ts`). Two roads that cross are two coplanar sheets
+ * in two different merged meshes — one per material — and coplanar is a tie
+ * the depth buffer breaks per pixel, in favour of whichever mesh that frame's
+ * front-to-back sort drew first: the winner changed as you walked round it.
+ * Two millimetres per rank decide it by geometry instead, once, the same way
+ * from every angle — a ladder sized to fit UNDER everything else that lies on
+ * the ground, which `ROAD_RANK_STEP` is the argument for. The thickness grows
+ * with the lift so the underside stays
+ * the same distance INTO the ground however high the top rides — a slab whose
+ * skirt stopped short of the floor would show daylight under its own kerb on
+ * the first bank it crossed.
  *
  * It is the one builder whose shape depends on where it is going. MapBuilder
  * samples the floor once, at a placement's own centre, and translates the whole
@@ -115,8 +133,11 @@ export function buildRoad(
   ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "road");
-  const top = 0.01;
-  const h = 0.08;
+  const surface = roadSurface(p.surface);
+  const top = roadTop(surface);
+  // Sunk the same 7 cm into the floor whatever it is riding at — see the note
+  // above.
+  const h = 0.08 + (top - ROAD_TOP);
   // The two defaults are `roads.ts`'s, not this builder's: the footprint
   // `roadRects` derives has to be the slab that gets drawn, and two roads in
   // the shipped layouts state a length and no width.
@@ -124,7 +145,7 @@ export function buildRoad(
   const len = p.length ?? ROAD_LENGTH;
   // Which flat tone this road is, or null for the textured cobble.
   const flat =
-    p.surface === "dirt" ? DIRT : p.surface === "asphalt" ? ASPHALT : null;
+    surface === "dirt" ? DIRT : surface === "asphalt" ? ASPHALT : null;
 
   const contoured =
     ctx &&
@@ -138,11 +159,8 @@ export function buildRoad(
       top,
       thickness: h,
     });
-  // Kept only on the one path that can carry markings — the flat box. What the
-  // paint below needs from it is its ink, and only that.
-  let slab: Mesh | null = null;
   if (contoured) b.surface(contoured, flat ?? undefined);
-  else if (flat) slab = b.box(w, h, len, 0, top - h / 2, 0, flat);
+  else if (flat) b.box(w, h, len, 0, top - h / 2, 0, flat);
   else b.groundBox(w, h, len, 0, top - h / 2, 0);
 
   // Blacktop gets a broken centre line, and it is not decoration: an asphalt
@@ -155,36 +173,34 @@ export function buildRoad(
   // path is not one — over sculpted ground each would float or bury itself,
   // which is the whole problem `terrainSlab` exists to solve for the slab
   // itself and cannot solve for something laid on top of it.
-  if (p.surface === "asphalt" && !contoured && slab) {
-    // **A marked road is not inked, and this is the whole reason the slab is
-    // held onto above.** `addOutline` draws Babylon's inverted-hull outline,
-    // and the half of that which matters here is invisible: after the mesh is
-    // drawn, the shell is drawn AGAIN with colour write off and depth write
-    // ON, so the hull's own depth — the slab's top face pushed 5 cm up its
-    // normals, and pushed further toward the eye by the renderer's
-    // slope-scaled offset — is what stands in the depth buffer over the whole
-    // carriageway. Anything laid on the road then fails the depth test against
-    // a surface 5 cm above the road that nobody can see. Paint 4 cm proud
-    // simply was not there in play, and no clearance fixes it: the slope-scaled
-    // half of the offset grows with the grazing angle, so measured down an
-    // avenue at eye height, ink thinned to 1 cm still swallowed every dash
-    // past ~35 m. What made this expensive to find is that it did not happen
-    // in the EDITOR, where roads are already left uninked for a different
-    // reason (see MapBuilder) — the markings were on screen the whole time
-    // they were being authored.
+  if (surface === "asphalt" && !contoured) {
+    // **The paint is only ever there because NO ROAD IS INKED**, and that used
+    // to be a rule about this one slab. `addOutline` draws Babylon's outline as
+    // a hull expanded along the mesh's own normals, and the half of it that
+    // matters here is invisible: after the mesh is drawn the shell is drawn
+    // AGAIN with colour write off and depth write ON, so the hull's own depth —
+    // the slab's top face pushed 5 cm up, and pushed further toward the eye by
+    // the renderer's slope-scaled offset — is what stands in the depth buffer
+    // over the whole carriageway. Anything laid on the road then fails the
+    // depth test against a surface 5 cm above the road that nobody can see.
+    // Paint 4 cm proud simply was not there in play, and no clearance fixes it:
+    // the slope-scaled half of the offset grows with the grazing angle, so
+    // measured down an avenue at eye height, ink thinned to 1 cm still
+    // swallowed every dash past ~35 m. What made this expensive to find is that
+    // it did not happen in the EDITOR, where roads have always been left
+    // uninked for a different reason — the markings were on screen the whole
+    // time they were being authored.
     //
-    // A flat sheet lying on the ground has no silhouette to ink in the first
-    // place, which is the same thing `noShadowCaster` says about it one line
-    // later in MapBuilder. What is given up is a 5 cm ink line where the
-    // carriageway meets the pavement, against markings that are load-bearing
-    // for this surface — see the note above. Roads that carry no paint are
-    // untouched and keep their ink: cobble and dirt read against grass by that
-    // line, and it is the merge key (`EXEMPTIONS`) that keeps the two kinds in
-    // separate merged meshes rather than making one of them wrong.
-    slab.metadata = { ...(slab.metadata ?? {}), noOutline: true };
-    // Clear of the slab's own top by more than the centimetre it stands proud
-    // of the floor: coplanar faces in two meshes are a depth-test tie broken
-    // per pixel, which strobes into a line as you walk (see buildTavern).
+    // The same shell is what painted every mixed junction black, because a road
+    // crossing a road is exactly "anything laid on the road": `MapBuilder` no
+    // longer inks the road merge at all, and the paint below now rides on that
+    // rather than on a flag of its own. A flat sheet lying on the ground has no
+    // silhouette to ink in the first place, which is the same thing
+    // `noShadowCaster` says about it one line later in MapBuilder.
+    //
+    // Clear of the slab's own top by more than the slab stands proud of the
+    // floor: coplanar faces in two meshes are a depth-test tie broken per
+    // pixel, which strobes into a line as you walk (see buildTavern).
     const paintY = top + 0.02;
     const dash = 3.2;
     const gap = 3.2;

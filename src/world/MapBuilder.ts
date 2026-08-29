@@ -74,7 +74,7 @@ import {
   insertBox,
 } from "./boxIndex";
 import { ridgeSegments } from "./Ridge";
-import { onRoad, type RoadRect, roadRects } from "./roads";
+import { onRoad, type RoadRect, roadRects, roadTopAt } from "./roads";
 import { TerrainField, terrainPatches } from "./TerrainField";
 import { NavGrid } from "./NavGrid";
 import { RayWorld } from "./RayWorld";
@@ -1024,12 +1024,11 @@ export class MapBuilder {
           item.visuals.push(merged);
           if (isRoad) {
             merged.metadata.noShadowCaster = true;
-            // Roads are NOT outlined here. In play they are first merged into
-            // one mesh, so the outline traces the road network's outer edge
-            // once. Kept separate, each road's back-face shell is drawn over
-            // whatever it overlaps — and roads overlap by design at every
-            // junction, which paints a black patch across the crossing. The
-            // selection highlight shows a road's extent instead.
+            // Roads are NOT outlined, here or in play — see the road merge
+            // below for the whole of why. The editor found it first and for a
+            // narrower reason (unmerged, each road's shell is drawn over
+            // whatever it overlaps, which is a black patch at every junction);
+            // the selection highlight shows a road's extent instead.
           } else {
             addOutline(merged, 0.05);
           }
@@ -1093,11 +1092,26 @@ export class MapBuilder {
     )) {
       // Flat ground sheets receive shadows, never cast them.
       merged.metadata = { ...(merged.metadata ?? {}), noShadowCaster: true };
-      // A road that carries lane markings arrives with `noOutline` already on
-      // it and keeps it through the merge key, because an ink shell over a flat
-      // sheet stamps its own depth 5 cm above that sheet and the paint laid on
-      // it is then behind a surface nobody can see. See `buildRoad`.
-      if (!merged.metadata?.noOutline) addOutline(merged, 0.05);
+      // **AND NO ROAD IS INKED**, which is the same sentence one line up rather
+      // than a second exemption: a sheet lying on the ground has no silhouette
+      // to cast a shadow from and none to draw a line round either. What
+      // `addOutline` would hang on it is a hull expanded 5 cm along its own
+      // normals, drawn a second time after the mesh with colour write off and
+      // depth write ON — so the ink of a road stands in the depth buffer 5 cm
+      // above its own carriageway, and anything else at road height is BEHIND a
+      // surface nobody can see. Lane markings hit that first and were given
+      // `noOutline` for it (see `buildRoad`); a road CROSSING a road is the
+      // same fact, and it painted every junction between two surfaces solid
+      // black — measured on Sarab, where the ink of whichever mesh the
+      // front-to-back sort drew second covered the whole intersection, and no
+      // amount of lift fixed it because the shell rides with the slab.
+      //
+      // What is given up is a 5 cm line where the carriageway meets the verge.
+      // Measured against it: a road's outline never thins (`updateOutlineScales`
+      // measures to a bounding sphere the camera is standing inside, so a
+      // map-spanning merge is always at full width), and on Hollowmere's square
+      // the line is the difference between two frames you have to flick between
+      // to tell apart. The junction is not.
       visuals.push(merged);
     }
 
@@ -1457,7 +1471,19 @@ export class MapBuilder {
       // should follow the bank rather than share one height and float. Stored
       // relative to the region's own floor, since that is what the transform
       // below adds back.
-      const base = (spec.y ?? 0) + terrain.heightAt(spot.x, spot.z) - origin.y;
+      //
+      // **A prop sown on a road stands on the ROAD.** The floor is what
+      // `TerrainField` answers with and a carriageway is a sheet lying on top
+      // of it, so without the lift a scrap of blown litter — twelve millimetres
+      // tall — is half buried in the first street it lands in, and the surface
+      // RANKS (`world/roads.ts`) that settle a junction would bury it outright.
+      // Nothing rooted can be here at all: `findSpot` keeps that off the
+      // carriageway, and what is left is exactly the dressing a street is for.
+      const base =
+        (spec.y ?? 0) +
+        terrain.heightAt(spot.x, spot.z) +
+        roadTopAt(this.roads, spot.x, spot.z) -
+        origin.y;
 
       // The prop's own stream, keyed to where it sits in the layout rather
       // than to how much has been drawn before it — see `propSeed`. Minted
