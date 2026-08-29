@@ -177,9 +177,10 @@ src/
                         #   ordinary WeaponSetup (no fall-off, no spread, no
                         #   reload, `magSize` IS a life's ammunition) and into
                         #   the OrdnanceEffect a detonation is spent through
-    finishes.ts         # FinishId + the four colour schemes each weapon is
-                        #   offered, and the repaint over its colour groups.
-                        #   The one kit table that decides nothing
+    finishes.ts         # FinishId + the sixteen colour schemes, every one of
+                        #   them offered on every weapon, and the repaint over
+                        #   its colour groups. The one kit table that decides
+                        #   nothing
     Combatant.ts        # Team + the shared shootable/shooter interface
     Vehicle.ts          # ONE hull of any KIND: the collider (the only MOVING
                         #   `solid` mesh in the game, and invisible to the nav

@@ -805,23 +805,42 @@ and drawn in `VIEWMODEL_GROUP`.
 - **The hands let go.** A forearm cut off at the elbow reads fine on a carried
   weapon and as a severed arm on a bench, so `ViewModel` hides the arm meshes for the
   duration — one place writes mesh visibility.
-- **The FINISH row is the one pick on this screen that is not a trade, and it
-  is drawn like the other two anyway.** Every other choice here costs
+- **The FINISH row is the one pick on this screen that is not a trade, and the
+  one row that is not drawn like the others.** Every other choice here costs
   something — a magnification is a field of view, a burst is four tenths of a
   second — and a finish costs nothing, so it gets no bar on the chart and never
-  moves one. What it has instead is the stage. Two consequences: its buttons
-  carry a three-stop SWATCH along the top edge (furniture, receiver, fittings,
-  in the order the eye reads a weapon), because "Verdigris" and "Oxblood" are
-  words you would otherwise have to try one at a time; and its COPY is written
-  under the weapon rather than beside the bars, because a finish is the one pick
-  whose whole effect is the thing already turning on the turntable. The swatch
-  is absolutely positioned into padding the button already has, so a finish
-  button measures exactly like a weapon's — four pixels taller, times three
-  rows, is a whole row's worth on the viewport with least height to give.
+  moves one. What it has instead is the stage: its COPY is written under the
+  weapon rather than beside the bars, because a finish is the one pick whose
+  whole effect is the thing already turning on the turntable.
+- **All sixteen finishes are offered on every gun, and sixteen is what took the
+  NAMES off the buttons.** A finish says what it does with COLOUR because its
+  name cannot — "Verdigris" and "Oxblood" are words you would otherwise try one
+  at a time — so the button IS the swatch: three flat stops in the order the eye
+  reads a weapon (furniture, receiver, fittings), in a grid of `.lo-swatch`
+  rather than a row of `.lo-opt`. Four named buttons fitted the row; sixteen
+  would be four LINES of them, which is more panel than the chart and the copy
+  together. **Eight columns rather than `auto-fit`**, because the table is
+  sixteen and eight is two full lines with nothing stranded on a short one, and
+  two lines of swatches measure within a couple of pixels of the one line of
+  named buttons they replaced — which is how the row holds four times the
+  choices without the panel growing.
+- **The name of the lit swatch is written in the ROW'S CAPTION**, in the hot
+  colour beside the dim "Finish" label, and described in full by the stage's
+  paragraph. Both, not either: the paragraph is the first thing a short viewport
+  drops, and a grid of unnamed colours with no name anywhere on the panel is
+  exactly the row-you-try-one-at-a-time the swatches exist to avoid. A `title`
+  covers the fourteen that are not lit, for the pointer that has one.
+- **The selected swatch is RINGED rather than filled**, which is the one place
+  `.on` changes its mind on this screen: every other button says it is chosen by
+  taking the hot colour as its background, and a swatch that did that would
+  paint over the only thing it has to say. The ring is inset (a `clip-path` cuts
+  an outer shadow off) with a dark line inside it, which also keeps two pale
+  schemes — `whitewash`, `frostbite` — from melting into each other and into the
+  panel's own wash.
 - **A third row of buttons is 45 px of panel, and the panel is what paid for
   it.** Two pixels off each row's padding and each gap, a smaller flex BASIS for
-  the two rows whose names are one short word each (68 against the weapon row's
-  96, which is sized for "SUBMACHINE GUN"), and a row gap on the detail card
+  the optic row, whose names are one short word each (68 against the weapon
+  row's 96, which is sized for "SUBMACHINE GUN"), and a row gap on the detail card
   stated apart from its column gap — only one of the two is ever spent, and a
   single number was charging the stacked case for a gutter it does not have.
   Between them the screen fits 1280x720 again, and a landscape phone fits the

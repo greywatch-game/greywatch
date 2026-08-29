@@ -21,20 +21,33 @@
  *   across the viewport, which is the anchor the weapon is placed at. Both
  *   sides are fractions of the viewport, so a resize moves them together.
  *
- * **The FINISH row is the one that is not a trade**, and it is drawn like the
- * other two anyway. Every other choice on this screen costs something — a
- * magnification is a field of view, a weapon is a rate against a magazine —
- * and a finish costs nothing at all, so it has no bar on the chart and never
- * touches one. What it has instead is the STAGE: it is the only pick here
- * whose whole effect is the thing already turning on the turntable, which is
- * why its copy is written under the weapon rather than beside the bars, and
- * why its buttons carry a swatch. A row of names for fifteen colour schemes
- * would be a row you have to try one at a time.
+ * **The FINISH row is the one that is not a trade**, and it is the one row
+ * that is not drawn like the others either. Every other choice on this screen
+ * costs something — a magnification is a field of view, a weapon is a rate
+ * against a magazine — and a finish costs nothing at all, so it has no bar on
+ * the chart and never touches one. What it has instead is the STAGE: it is
+ * the only pick here whose whole effect is the thing already turning on the
+ * turntable, which is why its copy is written under the weapon rather than
+ * beside the bars.
  *
- * The four on offer are the CARRIED weapon's own — the standard finish plus
- * three nothing else is offered, which `FINISHES_BY_WEAPON` decides — so this
- * row is rebuilt when the weapon row moves, exactly as the chart and the blurb
- * are.
+ * **All sixteen are offered on every gun** (`FINISH_IDS` — the finish table
+ * stopped being five lists of four), and sixteen is what makes the row a GRID
+ * OF SWATCHES rather than sixteen more buttons with names on them. Four named
+ * buttons fitted the row; sixteen would be four LINES of them, which is more
+ * panel than the chart and the copy together, on the one screen whose footer
+ * already falls off a landscape phone. So the name comes off the button and
+ * goes where a name is worth reading anyway — **the row's own caption names
+ * whatever is lit, and the stage's paragraph describes it** — and what is left
+ * is the thing the eye was using in the first place: three flat colours in the
+ * order they sit on the weapon. That is the same argument the swatch was
+ * added under, taken one step further: "Verdigris" and "Oxblood" are words you
+ * have to try one at a time, and the row exists precisely so you do not have
+ * to.
+ *
+ * The grid is redrawn with everything else when a pick is made, and what moves
+ * in it when the WEAPON row steps is only the highlight: the list is the same
+ * sixteen for every gun, and which one is lit is that gun's own remembered
+ * finish (`prefs.readFinish`, one key each).
  *
  * A screen rather than a row, because there are three slots now and the row it
  * replaces was a strip of buttons wedged under a menu that already had a
@@ -59,10 +72,11 @@
 import "./loadout.css";
 import { CONFIG } from "../config";
 import {
+  DEFAULT_FINISH,
   finishBlurb,
   finishName,
   finishSwatch,
-  FINISHES_BY_WEAPON,
+  FINISH_IDS,
   type FinishId,
 } from "../entities/finishes";
 import { EQUIPMENT_IDS, type EquipmentId } from "../entities/equipment";
@@ -301,8 +315,12 @@ export class LoadoutScreen {
   private dragY = 0;
   private weapon: PrimaryWeaponId = PRIMARY_WEAPON_IDS[0];
   private sight: SightId = SIGHT_IDS[0];
-  /** The finish on the CARRIED weapon — this row's list turns over with it. */
-  private finish: FinishId = FINISHES_BY_WEAPON[PRIMARY_WEAPON_IDS[0]][0];
+  /**
+   * The finish on the CARRIED weapon. The LIST does not turn over with the
+   * weapon — every gun is offered all sixteen — but which one is lit does,
+   * because the pick is remembered per gun.
+   */
+  private finish: FinishId = DEFAULT_FINISH;
   /** Which row the d-pad is on. Left/right steps inside it; up/down swaps it. */
   private slot: Slot = "weapon";
   /** The AT item the kit has, whether or not this map offers the row. */
@@ -509,18 +527,19 @@ export class LoadoutScreen {
       const i = EQUIPMENT_IDS.indexOf(this.equipment);
       this.onEquipment(EQUIPMENT_IDS[(i + delta + n) % n]);
     } else {
-      // This weapon's own list, not every finish there is — the row wraps
-      // through four, and the other twelve belong to guns that are not in the
-      // player's hands.
-      const ids = FINISHES_BY_WEAPON[this.weapon];
-      const i = ids.indexOf(this.finish);
-      this.onFinish(ids[(i + delta + ids.length) % ids.length]);
+      // Every finish there is, in the table's own order — which is the order
+      // the grid is drawn in, so a key press steps to the swatch next door
+      // and wraps off the end of the last line onto the first.
+      const n = FINISH_IDS.length;
+      const i = FINISH_IDS.indexOf(this.finish);
+      this.onFinish(FINISH_IDS[(i + delta + n) % n]);
     }
   }
 
   /**
    * Rebuilds the whole body rather than patching it. It is two rows of
-   * buttons and six bars, redrawn only when something is picked — and the
+   * buttons, a grid of swatches and six bars, redrawn only when something is
+   * picked — and the
    * alternative is four places that have to agree on which button carries the
    * highlight.
    */
@@ -538,22 +557,23 @@ export class LoadoutScreen {
           <b>${CONFIG.sights[id].name}</b><i>${magLabel(id)}</i>
         </button>`,
     ).join("");
-    // The swatch is what a finish button says instead of a figure: three
-    // custom properties the CSS lays out as a strip along the top edge, in
-    // the order the eye reads a weapon — furniture, receiver, fittings. It
-    // takes the `i` row's place rather than sitting beside the name, so a
-    // finish button measures exactly like a weapon's and the three rows stay
-    // one control.
-    const finishes = FINISHES_BY_WEAPON[this.weapon]
-      .map((id) => {
-        const [a, b, c] = finishSwatch(id);
-        return `
-        <button class="lo-opt lo-finish${id === this.finish ? " on" : ""}" data-finish="${id}"
-                style="--sw-a:${a};--sw-b:${b};--sw-c:${c}">
-          <b>${finishName(id)}</b>
-        </button>`;
-      })
-      .join("");
+    // The finish grid: sixteen swatches and not one word between them. Each is
+    // three custom properties the CSS lays down as flat bands in the order the
+    // eye reads a weapon — furniture, receiver, fittings — and the NAME is the
+    // row's caption below, plus the paragraph under the weapon, plus a
+    // `title` for whichever the pointer is resting on. See the header for why
+    // the name came off the button.
+    //
+    // The names are the finish table's own literals, so there is nothing to
+    // escape here; the same is true of every other row on this screen.
+    const finishes = FINISH_IDS.map((id) => {
+      const [a, b, c] = finishSwatch(id);
+      const name = finishName(id);
+      return `
+        <button class="lo-swatch${id === this.finish ? " on" : ""}" data-finish="${id}"
+                title="${name}" aria-label="${name}"
+                style="--sw-a:${a};--sw-b:${b};--sw-c:${c}"></button>`;
+    }).join("");
     // The AT row's two, and what each button says under the name is the whole
     // of what separates them: how many you get and what sets one off. Both
     // figures are read off `CONFIG.equipment` rather than written here, the
@@ -609,8 +629,8 @@ export class LoadoutScreen {
             : ""
         }
         <div class="lo-slot${this.slot === "finish" ? " active" : ""}" data-slot="finish">
-          <span class="lo-slot-name">Finish</span>
-          <div class="lo-opts">${finishes}</div>
+          <span class="lo-slot-name">Finish<em>${finishName(this.finish)}</em></span>
+          <div class="lo-swatches">${finishes}</div>
         </div>
       </div>
       <div class="lo-detail frame">
@@ -627,7 +647,11 @@ export class LoadoutScreen {
       </div>
     `;
 
-    this.body.querySelectorAll<HTMLElement>("button.lo-opt").forEach((btn) => {
+    // The swatches are picked exactly as the named buttons are — the two
+    // differ in what they LOOK like and in nothing else, so they share the one
+    // handler rather than the finish row growing a second way to be clicked.
+    const picks = "button.lo-opt, button.lo-swatch";
+    this.body.querySelectorAll<HTMLElement>(picks).forEach((btn) => {
       btn.onclick = () => {
         const w = btn.dataset.weapon;
         const f = btn.dataset.finish;

@@ -269,6 +269,24 @@
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.42);
 }
+/* The FINISH row's caption says the row's name AND the pick's, which no other
+   row here has to: its options are swatches with no words on them, so this is
+   where the lit one is named. It is the caption rather than a line under the
+   grid because the caption is already there and already the right size — a
+   name in the hot colour beside a dim label reads as the value of the row, the
+   way the head's "Carried" slot does one panel up.
+
+   The stage's paragraph names it too, and that is not a duplicate: the
+   paragraph is the one thing this screen drops on a short viewport (see the
+   media queries at the foot of this file), and a grid of unnamed colours with
+   no name anywhere on the panel would be exactly the row-you-try-one-at-a-time
+   the swatches exist to avoid. */
+#loadout .lo-slot-name em {
+  font-style: normal;
+  margin-left: 10px;
+  letter-spacing: 0.14em;
+  color: var(--hot);
+}
 /* WRAPS, and that is a correctness rule rather than a nicety. A flex item
    cannot be squeezed below its own longest word, so five buttons carrying
    "SUBMACHINE" have a floor — and a row that cannot reach it does not
@@ -331,58 +349,79 @@
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.4);
 }
-/* The optic and finish rows break LATER than the weapon row, and the extra
-   class on each is what makes that survive the two responsive blocks below
-   that set a basis on `.lo-opt`.
+/* The optic row breaks LATER than the weapon row, and the extra class is what
+   makes that survive the two responsive blocks below that set a basis on
+   `.lo-opt`.
 
    The basis is what decides where a flex row breaks — the line is filled
    before anything is allowed to shrink — and 96 is sized for the weapon row,
-   whose names are two words ("SUBMACHINE GUN", "MARKSMAN RIFLE"). The other
-   two rows are one short word each, so at 96 they were breaking for width
-   they did not need: on a 900x430 window the five optics landed 3 + 2 and the
-   four finishes 3 + 1, which is two extra lines of buttons on the viewport
-   with the least height to give them. At 68 both rows sit on one line down to
-   a landscape phone, and the buttons still fill the row because they still
-   grow. "QUICKSILVER" is the one name that can force a wrap anyway, for the
-   same reason "SUBMACHINE" does one row up: a flex item cannot be squeezed
-   below its own longest word. */
-#loadout button.lo-opt.lo-optic,
-#loadout button.lo-opt.lo-finish { flex-basis: 68px; }
-/* A finish button says what it does with COLOUR, because its name cannot:
-   "Verdigris" and "Oxblood" are words you have to try one at a time, and the
-   row exists precisely so you do not have to. Three stops in the order the eye
-   reads a weapon — furniture, receiver, fittings — laid along the top edge as
-   a strip rather than as a dot, so the proportions survive the button being
-   84 px wide on a phone.
+   whose names are two words ("SUBMACHINE GUN", "MARKSMAN RIFLE"). The optics
+   are one short word each, so at 96 they were breaking for width they did not
+   need: on a 900x430 window the five landed 3 + 2, which is an extra line of
+   buttons on the viewport with the least height to give it. At 68 they sit on
+   one line down to a landscape phone, and the buttons still fill the row
+   because they still grow. */
+#loadout button.lo-opt.lo-optic { flex-basis: 68px; }
 
-   Hard stops, no gradient: these are three flat cel colours and a blend
-   between them would invent two more the weapon does not have.
+/* --- the finish grid ---
+   Sixteen schemes, offered on every weapon, and NO NAMES on them. A finish
+   says what it does with COLOUR, because its name cannot — "Verdigris" and
+   "Oxblood" are words you have to try one at a time — and at sixteen the name
+   is not merely redundant, it is four LINES of buttons in a panel that already
+   ends in a Back button a landscape phone can push off the bottom. So the
+   button IS the swatch, and the name is the row's caption, the paragraph under
+   the weapon, and a `title` under the pointer.
 
-   The strip is the button's own top edge and costs NO HEIGHT: it is absolutely
-   positioned into the padding the button already has above its label, rather
-   than pushing that label down. That is the difference between a finish button
-   measuring like every other button on the screen and measuring four pixels
-   taller than one — which on a landscape phone, where three rows of buttons
-   are what the Back button has to fit under, is a whole row's worth across the
-   screen. It also sits above `.on`'s hot fill, for the same reason it exists:
-   the swatch is the only thing on the button that is not the label, and the
-   selected finish is exactly the one whose colours you want to still see. */
-#loadout button.lo-finish { position: relative; }
-#loadout button.lo-finish::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  /* Inset by the clip-path's own 8px bevel, so the strip stops where the
-     corner is cut instead of being sliced through by it. */
-  left: 8px;
-  right: 0;
-  height: 4px;
+   A GRID rather than a wrapped flex row, and eight columns rather than
+   `auto-fit`: the table is sixteen, so eight is two full lines with nothing
+   stranded on a short one, and every swatch is the same width whatever the
+   panel is doing. A seventeenth scheme would make it three lines with a gap at
+   the end — which is what a grid should look like when a table stops being a
+   round number, rather than the whole row resizing under it. */
+#loadout .lo-swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 5px;
+}
+/* Three flat stops in the order the eye reads a weapon — furniture, receiver,
+   fittings. Hard stops, no gradient: these are three flat cel colours and a
+   blend between them would invent two more the weapon does not have.
+
+   Two rows of these measure within a couple of pixels of the one row of named
+   buttons they replace, which is the whole reason the row can hold four times
+   as many choices without the panel growing.
+
+   The bevel is the option buttons' own, scaled to the smaller box, so the grid
+   reads as the same family of control as the two rows above it. The dark inner
+   line is not decoration: `whitewash` and `frostbite` are pale enough to melt
+   into each other and into the panel's own wash without one. */
+#loadout button.lo-swatch {
+  height: 26px;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
   background: linear-gradient(
     90deg,
     var(--sw-a) 0 34%,
     var(--sw-b) 34% 67%,
     var(--sw-c) 67% 100%
   );
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  transition: box-shadow 0.12s;
+}
+/* The selected swatch is ringed rather than filled, which is the one place
+   this screen's `.on` treatment has to change its mind: every other button
+   says it is chosen by taking the hot colour as its background, and a swatch
+   that did that would paint over the only thing it has to say. The ring is
+   INSET for the same reason the strip used to be — a clip-path cuts an outer
+   shadow off — and the dark line inside it keeps the hot edge off whatever
+   colour the scheme puts behind it. */
+#loadout button.lo-swatch:hover {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.75);
+}
+#loadout button.lo-swatch.on {
+  box-shadow: inset 0 0 0 2px var(--hot), inset 0 0 0 3px rgba(0, 0, 0, 0.7);
 }
 #loadout button.lo-opt:hover {
   background: rgba(255, 230, 128, 0.18);
@@ -511,6 +550,12 @@
   #loadout .lo-stage-note { display: none; }
   #loadout .lo-stage-hint { bottom: 12%; }
   #loadout button.lo-opt { min-height: 40px; padding: 6px 9px; }
+  /* The swatches come down with the buttons and keep their eight columns: a
+     grid this short is still two clean lines, and the three bands are still
+     three bands — what a swatch loses when it shrinks is height, which is the
+     axis carrying none of its information. */
+  #loadout button.lo-swatch { height: 20px; }
+  #loadout .lo-swatches { gap: 4px; }
   #loadout .lo-slot { gap: 4px; padding: 2px 10px; }
 }
 /* A landscape PHONE is where the two axes finally disagree, and the option
@@ -557,16 +602,17 @@
      in a column this narrow it is a second line of head bought for nothing. */
   #loadout .ui-meta { display: none; }
   #loadout button.lo-opt { flex-basis: 84px; min-height: 34px; padding: 6px 8px; }
-  /* The two short-name rows, squeezed to whatever their longest word is. A
-     panel this narrow is 338 px of button track, and five optics at the
-     ordinary basis need 364 — so the row broke 3 + 2 and cost forty pixels of
-     a viewport that has to end in a Back button. Four off the gap and the
-     basis down to the words themselves is what puts all five back on one line;
-     the weapon row above keeps its own basis, because two-word names are why
-     that number is what it is. */
+  /* The optic row, squeezed to whatever its longest word is. A panel this
+     narrow is 338 px of button track, and five optics at the ordinary basis
+     need 364 — so the row broke 3 + 2 and cost forty pixels of a viewport that
+     has to end in a Back button. Four off the gap and the basis down to the
+     words themselves is what puts all five back on one line; the weapon row
+     above keeps its own basis, because two-word names are why that number is
+     what it is. The finish grid needs none of this: a swatch has no word in it
+     to be squeezed below, so eight columns hold at any width the panel takes.
+   */
   #loadout .lo-opts { gap: 4px; }
-  #loadout button.lo-opt.lo-optic,
-  #loadout button.lo-opt.lo-finish { flex-basis: 60px; }
+  #loadout button.lo-opt.lo-optic { flex-basis: 60px; }
   #loadout button.lo-opt i { display: none; }
   #loadout button.lo-opt b { font-size: 11px; }
 }

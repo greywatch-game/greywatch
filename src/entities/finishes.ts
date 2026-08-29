@@ -1,7 +1,7 @@
 /**
- * finishes.ts — What a weapon is PAINTED in: four schemes per gun, as a type
- * and as the colours and gloss levels the viewmodel's merged colour groups
- * take.
+ * finishes.ts — What a weapon is PAINTED in: sixteen schemes, every one of
+ * them on every gun, as a type and as the colours and gloss levels the
+ * viewmodel's merged colour groups take.
  * Owns: the finish table and `applyFinish`, the one place a built weapon's
  * materials are rewritten. Holds no state and no geometry — which weapon is
  * carried is Game's, which finish is on it is Game's, and the meshes are the
@@ -22,11 +22,24 @@
  *   selecting it puts a weapon back to exactly what came off the builder.
  *   Changing a constant there changes the default here, which is the point of
  *   referencing them rather than writing the hexes out twice.
- * - **A finish names ONE weapon, and that is what makes the sets disjoint.**
- *   The requirement is that no scheme is offered on two guns; a per-weapon
- *   list of ids could satisfy it today and quietly stop, so the ownership is a
- *   field on the finish and `FINISHES_BY_WEAPON` is derived from it. `null`
- *   means every weapon, and `standard` is the only entry allowed to say it.
+ * - **Every scheme is on every weapon, and the TABLE is therefore the whole
+ *   of the list.** There is no ownership field on a finish and no derived
+ *   per-weapon list to fall out of step with one: `FINISH_IDS` is what the
+ *   kit screen draws and what `finishFor` validates against, so a scheme
+ *   written here is on all five guns the moment it is written and cannot be
+ *   on four of them by omission. What is still PER WEAPON is the MEMORY —
+ *   `prefs.readFinish`/`writeFinish` keep one key each, so every gun is
+ *   picked up in the colours it was last left in.
+ * - **The table's ORDER is the screen's**, because the kit screen draws all
+ *   sixteen at once as a grid of swatches: `standard` first, and the fifteen
+ *   after it in families of three — weathered, loud, painted, restrained,
+ *   heavy — which is what the grid's rows read as. A finish added to a family
+ *   goes IN it rather than on the end.
+ * - **A blurb describes the PAINT and never the gun under it.** Sixteen
+ *   schemes on five weapons is eighty combinations, so a line claiming the
+ *   weapon is semi-automatic, or heavy, or the only matte thing in the kit is
+ *   a line that is wrong on most of them. Write what the finish is and what
+ *   it costs to be seen in; the weapon's own copy is `LoadoutScreen`'s.
  * - **The BRASS group is never repainted**, and a finish has no key for it.
  *   The LMG's exposed belt is the one part of a weapon that is not part of the
  *   weapon — it is the ammunition — so it stays cartridge-coloured under
@@ -55,7 +68,6 @@ import {
   type FinishGroup,
   type FinishPart,
 } from "./weaponKit";
-import { PRIMARY_WEAPON_IDS, type PrimaryWeaponId } from "./weapons";
 
 /** One colour group's paint: the colour, and how hard the moon comes off it. */
 interface Paint {
@@ -70,11 +82,6 @@ interface FinishDef {
   /** One line, in the player's terms. Copy, not configuration. */
   blurb: string;
   /**
-   * The one weapon that offers it, or `null` for every weapon — see the
-   * header. `standard` is the only entry that may be `null`.
-   */
-  weapon: PrimaryWeaponId | null;
-  /**
    * Per group. A group left out keeps whatever the builder painted it, which
    * is how `brass` — the LMG's belt, which has no key here — stays brass.
    */
@@ -85,8 +92,12 @@ const SPEC = CONFIG.graphics.spec;
 
 /**
  * Every finish there is. Fifteen schemes plus the one every gun ships in, and
- * the fifteen are one gun's each: a scheme is a reason to carry THAT weapon,
- * and a palette that turns up on three of them is a palette nobody chose.
+ * every one of them is offered on every one of the five: a scheme is a reason
+ * to look at a weapon rather than a reason to carry one, and a palette a
+ * player can see but not have is a palette that advertises another gun.
+ * They are grouped in threes by what they have in common — not by the weapon
+ * they were each drawn for, which is a fact about the table's history and
+ * nothing a player can act on.
  *
  * `satisfies` rather than an annotation, so `FinishId` is the union of these
  * keys and a screen cannot ask for a scheme that is not in here.
@@ -101,7 +112,6 @@ const FINISHES = {
     name: "Standard",
     blurb:
       "Issue finish: a grey-black receiver over dark polymer, with the rails and small fittings left in the white to catch the light.",
-    weapon: null,
     groups: {
       body: { color: BODY },
       polymer: { color: POLYMER },
@@ -110,13 +120,12 @@ const FINISHES = {
     },
   },
 
-  // --- the battle rifle: service finishes, because it is the issued gun ---
+  // --- weathered: earth, oil and patina — a weapon that has been somewhere --
 
   coyote: {
     name: "Coyote",
     blurb:
       "Desert issue — flat dark earth under a sand-coloured stock, with every fitting rubbed back so nothing on the weapon can catch the sun and give the position away.",
-    weapon: "rifle",
     groups: {
       body: { color: "#4c4335" },
       polymer: { color: "#a08356" },
@@ -128,7 +137,6 @@ const FINISHES = {
     name: "Blued Steel",
     blurb:
       "Rust-blued steel over oiled walnut: the finish a full-power rifle was issued in for sixty years, polished dark enough that the highlight runs along an edge rather than sitting on it.",
-    weapon: "rifle",
     groups: {
       body: { color: "#232a3d", spec: SPEC.rifleSatin },
       polymer: { color: "#5c3d27" },
@@ -140,7 +148,6 @@ const FINISHES = {
     name: "Verdigris",
     blurb:
       "Copper left out in the weather. A green patina has taken the receiver and the brass under it still shows at every edge a hand has worn.",
-    weapon: "rifle",
     groups: {
       body: { color: "#2f6153" },
       polymer: { color: "#1b2f2a" },
@@ -149,13 +156,12 @@ const FINISHES = {
     },
   },
 
-  // --- the bullpup: modern, compact, and the three loudest schemes here ---
+  // --- loud: the three that are meant to be seen, and cost exactly that ---
 
   quicksilver: {
     name: "Quicksilver",
     blurb:
       "Mirror-polished to the last fitting. The brightest thing you can carry into a night village, and it will show every fingerprint you have ever put on it.",
-    weapon: "carbine",
     groups: {
       body: { color: "#b6c1d2", spec: SPEC.rifleChrome },
       polymer: { color: "#767f8e", spec: SPEC.rifleSatin },
@@ -167,7 +173,6 @@ const FINISHES = {
     name: "Signal",
     blurb:
       "Range-toy orange over a graphite shell. There is nothing about it that is hard to see, which is the whole of what it costs.",
-    weapon: "carbine",
     groups: {
       body: { color: "#33363c" },
       polymer: { color: "#d1621b" },
@@ -179,7 +184,6 @@ const FINISHES = {
     name: "Nightshade",
     blurb:
       "A violet dark enough that it only shows where the light actually lands, with cold plum steel at every rail and pin.",
-    weapon: "carbine",
     groups: {
       body: { color: "#2b2340" },
       polymer: { color: "#191325" },
@@ -188,13 +192,12 @@ const FINISHES = {
     },
   },
 
-  // --- the SMG: cheap, close, and finished the way a cheap gun gets finished --
+  // --- painted: a coat laid on over whatever the weapon was finished in ---
 
   oxblood: {
     name: "Oxblood",
     blurb:
       "Deep lacquered crimson over near-black, with the fittings warmed to match. Reads as brown across a street and as something else entirely up close.",
-    weapon: "smg",
     groups: {
       body: { color: "#5a1f24", spec: SPEC.rifleSatin },
       polymer: { color: "#2a1216" },
@@ -205,14 +208,15 @@ const FINISHES = {
   whitewash: {
     name: "Whitewash",
     blurb:
-      "A coat of bone-white sprayed straight over the parkerising and thin enough that the grey shows through wherever a hand has been. The only weapon here with no shine on it at all.",
-    weapon: "smg",
+      "A coat of bone-white sprayed straight over the parkerising, thin enough that the grey shows through wherever a hand has been and flat enough that there is nothing on it for a light to sit on.",
     groups: {
       body: { color: "#d6d3c8" },
       polymer: { color: "#8e8a7e" },
       // Matte throughout, deliberately: the paint went on over the fittings
-      // too, and this is the one finish in the table with no highlight
-      // anywhere on it — which is what makes the rest of them read as gloss.
+      // too. It and `loam` are the two schemes here with no highlight
+      // anywhere on them, which is what makes the other fourteen read as
+      // gloss — and they arrive at it from opposite ends: a coat sprayed over
+      // everything, against a finish rubbed back until there is nothing left.
       metal: { color: "#5b5c57" },
       rubber: { color: "#2e2c28" },
     },
@@ -221,7 +225,6 @@ const FINISHES = {
     name: "Voltage",
     blurb:
       "Black anodising with every rail, pin and fitting struck in electric cyan. It looks like something that ought to be humming.",
-    weapon: "smg",
     groups: {
       body: { color: "#16202a" },
       polymer: { color: "#1c3a44" },
@@ -230,13 +233,12 @@ const FINISHES = {
     },
   },
 
-  // --- the marksman rifle: cold, restrained, and one that is barely there ---
+  // --- restrained: pale, drab and black — three ways of not being read ---
 
   frostbite: {
     name: "Frostbite",
     blurb:
-      "Glacier grey with the steel left bright — a rifle finished for country where a dark shape at eight hundred metres is the only thing there is to see.",
-    weapon: "dmr",
+      "Glacier grey with the steel left bright — finished for country where a dark shape at eight hundred metres is the only thing there is to see.",
     groups: {
       body: { color: "#8fa4b8" },
       polymer: { color: "#4d6172" },
@@ -247,8 +249,7 @@ const FINISHES = {
   loam: {
     name: "Loam",
     blurb:
-      "Olive drab and rubbed earth, dulled everywhere a highlight could travel. Matte throughout, for the same reason the weapon is semi-automatic: nothing about it announces itself.",
-    weapon: "dmr",
+      "Olive drab and rubbed earth, dulled everywhere a highlight could travel. Matte throughout, and the whole of it is subtraction: there is nothing left on the weapon that could announce it.",
     groups: {
       body: { color: "#414a2e" },
       polymer: { color: "#2a2f1e" },
@@ -260,7 +261,6 @@ const FINISHES = {
     name: "Obsidian",
     blurb:
       "Black on black, lacquered until it behaves like glass. In the dark the only thing that shows is the edge the light runs along, and the outline it is drawn in.",
-    weapon: "dmr",
     groups: {
       body: { color: "#16171b", spec: SPEC.rifleChrome },
       polymer: { color: "#0e0f12" },
@@ -269,13 +269,12 @@ const FINISHES = {
     },
   },
 
-  // --- the machine gun: heavy, industrial, and one outright trophy ---
+  // --- heavy: industrial livery, and one outright trophy ---
 
   bullion: {
     name: "Bullion",
     blurb:
-      "Gold plate over the receiver and every fitting on it, with the belt hanging out of the side in very nearly the same colour. Subtlety was never what this weapon was for.",
-    weapon: "lmg",
+      "Gold plate over the receiver and every fitting on it, laid on thick enough to read as plate rather than as a coat of paint pretending. Subtlety was not the point.",
     groups: {
       body: { color: "#b4893a", spec: SPEC.rifleChrome },
       polymer: { color: "#201c14" },
@@ -287,7 +286,6 @@ const FINISHES = {
     name: "Hazard",
     blurb:
       "Plant-floor livery: a caution-yellow receiver on black furniture, the way anything heavy enough to take a foot off gets painted.",
-    weapon: "lmg",
     groups: {
       body: { color: "#c9a018" },
       polymer: { color: "#1c1e22" },
@@ -299,7 +297,6 @@ const FINISHES = {
     name: "Ironclad",
     blurb:
       "Dockyard grey, laid on thick and over everything. It is the colour of something that was welded together rather than machined.",
-    weapon: "lmg",
     groups: {
       body: { color: "#56646f" },
       polymer: { color: "#2f3840" },
@@ -326,7 +323,11 @@ function def(id: FinishId): FinishDef {
   return FINISHES[id];
 }
 
-/** Every finish there is, in table order. */
+/**
+ * Every finish there is, in table order — which is what every weapon is
+ * offered and the order the kit screen's grid is drawn in. There is no
+ * per-weapon list beside this one; see the header.
+ */
 export const FINISH_IDS = Object.keys(FINISHES) as FinishId[];
 
 /** The scheme every weapon ships in, and the fallback for anything unknown. */
@@ -346,8 +347,9 @@ export function finishBlurb(id: FinishId): string {
 
 /**
  * The three colours a finish is recognised by, front to back: furniture,
- * receiver, fittings. What the kit screen paints its swatch from, so a button
- * says what it does rather than only what it is called.
+ * receiver, fittings. What the kit screen paints its swatch from — and the
+ * swatch is now the whole of the button, so this is what a finish SAYS rather
+ * than a hint beside its name.
  *
  * The order is the eye's rather than the table's — a weapon is mostly stock
  * and receiver, and the fittings are the accent.
@@ -362,42 +364,17 @@ export function finishSwatch(id: FinishId): [string, string, string] {
 }
 
 /**
- * What each weapon offers, in screen order: the standard finish first and its
- * own three after it.
+ * The finish to actually wear, given what was asked for.
  *
- * DERIVED from the `weapon` field rather than written out as five lists, which
- * is what makes "no scheme appears on two guns" true by construction instead
- * of by review — see the header.
+ * There is no weapon in the question any more — every scheme is offered on
+ * every gun — so this is the table's own membership test and nothing else.
+ * It is still a test: the ids are remembered per weapon in `localStorage`,
+ * and a store the player can edit (or one written by a build carrying a
+ * scheme this one has since dropped) can hold anything at all. Whatever does
+ * not fit falls back to the standard.
  */
-export const FINISHES_BY_WEAPON: Record<PrimaryWeaponId, FinishId[]> = (() => {
-  // Seeded from the WEAPON list rather than grown from the finishes, so every
-  // primary has a row whether or not any scheme names it. A weapon added to
-  // `CONFIG.weapons` before its three are written still opens a kit screen —
-  // the alternative is an `undefined` where the row's `.map` goes, on the
-  // one table here nothing validates against.
-  const out = Object.fromEntries(
-    PRIMARY_WEAPON_IDS.map((id) => [id, [DEFAULT_FINISH]]),
-  ) as Record<PrimaryWeaponId, FinishId[]>;
-  for (const id of FINISH_IDS) {
-    const owner = def(id).weapon;
-    if (owner !== null) out[owner].push(id);
-  }
-  return out;
-})();
-
-/**
- * The finish a weapon should actually wear, given what was asked for.
- *
- * The ask is validated against THIS weapon's list rather than against the
- * table, because the ids are remembered per weapon in `localStorage` and a
- * store the player can edit could hold a real finish that belongs to a
- * different gun. Anything that does not fit falls back to the standard, which
- * every weapon offers.
- */
-export function finishFor(weapon: PrimaryWeaponId, id: string): FinishId {
-  return isFinishId(id) && FINISHES_BY_WEAPON[weapon].includes(id)
-    ? id
-    : DEFAULT_FINISH;
+export function finishFor(id: string): FinishId {
+  return isFinishId(id) ? id : DEFAULT_FINISH;
 }
 
 /**

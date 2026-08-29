@@ -56,10 +56,12 @@ const EQUIPMENT_KEY = "greywatch.equipment";
  * …and the finish, which is the one preference here that is remembered PER
  * WEAPON rather than once.
  *
- * A finish belongs to a gun — the three on offer are that gun's and no other's
- * — so a single key would mean picking up the SMG threw away what the rifle
- * was painted in. One key each is what makes "your rifle is Coyote and your
- * SMG is Voltage" a thing the game can remember.
+ * The sixteen schemes are the same sixteen on every gun, and that is exactly
+ * why the MEMORY has to be per weapon rather than once: a single key would
+ * mean picking up the SMG threw away what the rifle was painted in, and now
+ * that both guns can wear the same scheme it would also mean the whole kit
+ * turning gold together. One key each is what makes "your rifle is Coyote
+ * and your SMG is Voltage" a thing the game can remember.
  */
 const FINISH_KEY_PREFIX = "greywatch.finish.";
 /** …and which region the player chose to play in, by `Region.id`. */
@@ -221,16 +223,20 @@ export function writeEquipment(id: EquipmentId): void {
 /**
  * The finish remembered for one weapon.
  *
- * Validated by `finishFor`, which is stricter than the two above and has to
- * be: a stored value that is a real `FinishId` may still be another gun's, and
- * painting the rifle in the machine gun's gold is not something the kit screen
- * could ever have been asked for. Anything that does not fit falls back to the
- * standard finish, which every weapon offers.
+ * Validated by `finishFor`, exactly as the two above are validated against
+ * their own tables — every scheme is offered on every gun, so the only thing
+ * a stored value can be wrong about is being a scheme at all. Anything that
+ * does not fit falls back to the standard finish.
+ *
+ * The KEY is still per weapon and that is the whole point of this pair: what
+ * each gun is painted in is remembered separately, so the row on the kit
+ * screen is the same sixteen for all five while the rifle stays Coyote and
+ * the SMG stays Voltage.
  */
 export function readFinish(weapon: PrimaryWeaponId): FinishId {
   try {
     const raw = window.localStorage.getItem(FINISH_KEY_PREFIX + weapon);
-    if (raw !== null) return finishFor(weapon, raw);
+    if (raw !== null) return finishFor(raw);
   } catch {
     // As above.
   }

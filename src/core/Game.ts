@@ -2258,9 +2258,10 @@ export class Game {
    * Paints the weapon in the player's hands.
    *
    * It writes the CARRIED weapon's entry and no other, which is what makes the
-   * record a per-gun memory rather than one setting with five copies: the kit
-   * screen only ever offers this weapon's schemes, so a pick can only ever be
-   * about this weapon.
+   * record a per-gun memory rather than one setting with five copies. Every
+   * scheme is offered on every gun now, so the entry written is the only thing
+   * saying which gun a pick was about — a finish picked with the rifle in hand
+   * paints the rifle, and the SMG keeps whatever it was last left in.
    */
   private setFinish(id: FinishId): void {
     if (id === this.finishes[this.weapon]) return;

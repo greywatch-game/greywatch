@@ -416,7 +416,7 @@ Read the loudness column against the rate rather than down: at their own fire
 rates the sustained order is LMG, DMR, rifle, SMG, carbine, pistol, which is the
 kit's own story about which weapon owns a fight.
 
-## The loadout: five weapons, five optics, a finish each, and a sidearm
+## The loadout: five weapons, five optics, sixteen finishes, and a sidearm
 
 Two tables, two slots, neither knowing about the other (a third table, the
 finishes, is below and knows about neither; a FOURTH, the anti-tank kit, is
@@ -466,13 +466,28 @@ client-side preference that never touches the wire, the bots, the authority or
 the camera: a remote body is drawn by `SoldierModel`, which has never heard of
 any of it.
 
-**Each weapon offers four: the one it ships in, and three of its own.** The
-requirement is that no scheme is offered on two guns, and the table meets it by
-CONSTRUCTION rather than by review — every finish carries the one
-`PrimaryWeaponId` it belongs to and `FINISHES_BY_WEAPON` is derived from that
-field, so a scheme cannot appear on two lists because it cannot name two
-weapons. `standard` is the single entry allowed to name none, and it is what
-every gun's row opens with.
+**Every weapon offers all sixteen**, and the table is therefore the whole of
+the list: there is no ownership field on a finish and no derived per-weapon
+list that could fall out of step with one. `FINISH_IDS` is what the kit screen
+draws and what `finishFor` validates against, so a scheme written into the
+table is on all five guns the moment it is written and cannot be on four of
+them by omission.
+
+It used to be four each — the standard finish plus three that named that one
+weapon — and the argument for it was that a scheme is a reason to carry THAT
+gun. What that actually bought was twelve palettes a player could see on the
+kit screen and not have, which advertises another weapon rather than
+decorating this one; a finish decides nothing, so it is the one slot here with
+nothing to trade and no reason to be rationed. What survives the change is the
+grouping: the fifteen are still written in families of three (weathered, loud,
+painted, restrained, heavy) and the table's ORDER is the screen's, because the
+kit screen draws all sixteen at once as a grid.
+
+**A blurb therefore describes the PAINT and never the gun under it.** Sixteen
+schemes across five weapons is eighty combinations, so a line claiming the
+weapon is semi-automatic, or heavy enough to take a foot off, or the only matte
+thing in the kit is a line that is wrong on most of them — two of the shipped
+blurbs said exactly that and were rewritten when the lists were merged.
 
 **`standard` is the built state, not a repaint of it.** Its four colours are
 `weaponKit`'s own `BODY`/`POLYMER`/`METAL`/`RUBBER` constants and its metal
@@ -517,11 +532,17 @@ still hands back its `finish` list — `WeaponParts` is one shape for every
 weapon, not five — and nothing ever repaints it.
 
 Which finish is on which gun is remembered PER WEAPON (`prefs.readFinish` /
-`writeFinish`, one `localStorage` key each), because a finish belongs to a gun:
-a single key would mean picking up the SMG threw away what the rifle was
-painted in. The read is validated by `finishFor`, which is stricter than the
-weapon's and the optic's and has to be — a stored value that is a real
-`FinishId` may still be another gun's.
+`writeFinish`, one `localStorage` key each), and the merge is what makes that
+matter MORE rather than less: a single key would mean picking up the SMG threw
+away what the rifle was painted in, and now that any gun can wear any scheme it
+would also mean the whole kit turning gold together. The read is validated by
+`finishFor`, which is now the table's own membership test and nothing more —
+every scheme fits every gun, so the only thing a stored value can be wrong
+about is being a scheme at all.
+
+**On the screen, sixteen is what turns the row into a GRID OF SWATCHES with no
+names on them** — see [`ui.md`](ui.md) for that, and for where the name of the
+lit one is written instead.
 
 ## Recoil has a shape, and the shape is learnable
 
