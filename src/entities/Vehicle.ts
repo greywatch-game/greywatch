@@ -264,7 +264,7 @@ export interface GunAngles {
  * about what a shell is would be two things to keep in step across a wire whose
  * whole point is that they agree.
  */
-function shellShotFor(spec: VehicleSpec): ShotOptions | null {
+function shellShotFor(spec: VehicleSpec, hull: Vehicle): ShotOptions | null {
   const g = spec.gun;
   if (!g) return null;
   return {
@@ -272,6 +272,7 @@ function shellShotFor(spec: VehicleSpec): ShotOptions | null {
     falloffNear: g.range,
     falloffFar: g.range,
     damageKind: "shell",
+    fromHull: hull,
   };
 }
 
@@ -291,11 +292,12 @@ function shellShotFor(spec: VehicleSpec): ShotOptions | null {
  *   that stops a second gun making the first one decoration, and on the truck
  *   is the reason a fast vehicle is not simply a better tank.
  */
-function mgShotFor(spec: VehicleSpec): ShotOptions {
+function mgShotFor(spec: VehicleSpec, hull: Vehicle): ShotOptions {
   return {
     damageFar: spec.mg.damageFar,
     falloffNear: spec.mg.falloffNear,
     falloffFar: spec.mg.falloffFar,
+    fromHull: hull,
   };
 }
 
@@ -877,8 +879,11 @@ export class Vehicle implements Combatant, RayHull {
     this.health = t.maxHealth;
     this.hitRadius = t.hitRadius;
     this.armed = t.gun !== null;
-    this.shellShot = shellShotFor(t);
-    this.mgShot = mgShotFor(t);
+    // `this` is handed in so the round can be taken out of its OWN hull's wall
+    // query — see `ShotOptions.fromHull`. It is only a reference: nothing here
+    // calls `rayBox`, and the collider two lines below is what it will read.
+    this.shellShot = shellShotFor(t, this);
+    this.mgShot = mgShotFor(t, this);
     this.body = MeshBuilder.CreateBox(
       `hull-body-${team}`,
       { width: t.hull.width, height: t.hull.height, depth: t.hull.length },

@@ -711,7 +711,7 @@ gun on it — pass over the collider; the hit sphere still took the damage, so
 what was missing was the SPARK, and a round that hurts a vehicle without marking
 it reads as a miss that happened to work.
 
-### One query leaves the hull out of its own answer
+### Three queries leave the hull out of their own answer
 
 The chase camera's pull-in is a `RayWorld.castBody` and the nearest solid thing
 to its origin is the hull's own, so the hull is passed as that call's `skip`. It
@@ -719,7 +719,44 @@ was two writes to `body.isPickable` around a `scene.pickWithRay` until the
 queries stopped picking meshes, and it is an argument now — the rule is kept
 either way: nothing is allocated per call, and **the other tank stays in the
 answer throughout**, which is what makes one hull block another's camera. The
-dismount's floor test does the same thing for the same reason.
+dismount's floor test does the same thing for the same reason. The crew's
+sightline is the second and is `Game`'s `CrewCtx.visibleFrom` — see the two
+bugs the AI crew found, below.
+
+**The third is the hitscan's own wall cap, and it is the same mistake seen from
+the other end: a hull's guns are DRAWN on the hull, so a muzzle is regularly
+inside the box the hull is answered by.** `boxCast` hands a ray that started
+inside a box its FAR face — deliberately, and two callers flip that normal — so
+a round leaving such a muzzle stopped on the vehicle that fired it, at whatever
+distance the exit face happened to be. It did no damage (the shooter's own hull
+is not in the shooter's own target list, so `hitTarget` stayed null) and simply
+went nowhere.
+
+**The gun truck had it from the day it existed and it was invisible until the
+body closed**, because what it looks like is a gun that works on some bearings.
+Measured on Sarab, both the open-bedded version and the armoured one: the
+station is 2.26 above the tracks and 0.79 behind the hull's centre inside a
+5.4 x 2.5 x 2.5 collider, so a round laid dead ahead died **2.03 m** out and one
+laid astern **0.33 m** (2.25 and 0.15 on the pickup) — while the same gun
+trained abeam worked perfectly, the muzzle swinging out to 1.46 in x against the
+box's 1.25. **The tank escapes it by geometry rather than by rule**, which is
+why nothing had ever caught it: its cupola gun is 3.39 up against a 2.9 m box,
+and its barrel reaches past the hull at every bearing the turret has.
+
+The skip is `ShotOptions.fromHull`, and it is on the GUN rather than at the
+trigger for `shellShotFor`'s reason — there are two triggers and they are in
+different processes, so `Game` and `HeadlessGame` are fixed by one field. It is
+also what stops a third gun bolted to a hull reintroducing this: the options
+object belongs to the hull, so it carries the hull. **The hitscan is the only
+path that needed it**, because `updateDriver` REPLACES `updateOnFoot` — the
+grenade and the launcher are on the frame a mounted player does not run, so no
+other `castRound` in the game ever starts inside a hull.
+
+Measured after: the station reaches 64-141 m on all eight bearings where two of
+them died inside the vehicle, kills a body stood 30 m down the barrel on every
+one of the eight, and **a round fired at the enemy tank parked 20 m ahead still
+stops on it** for 2.75 of 55 — `resist.bullet` at 0.05, which is the trade that
+keeps this gun useless against armour.
 
 **`isPickable` is still read, and it is still load-bearing.** `Vehicle.rayBox`
 gates on `isEnabled() && isPickable` exactly as `SOLID_ONLY` does, so `hide`

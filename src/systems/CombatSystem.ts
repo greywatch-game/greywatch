@@ -42,7 +42,7 @@ import {
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { newRayHit, type RayWorld } from "../world/RayWorld";
+import { newRayHit, type RayHull, type RayWorld } from "../world/RayWorld";
 
 /**
  * What DELIVERED a hit, for the one kind of target that answers differently
@@ -164,6 +164,30 @@ export interface ShotOptions {
    * `DamageKind`.
    */
   damageKind?: DamageKind;
+  /**
+   * The hull this round is LEAVING, taken out of its own wall query.
+   *
+   * **A vehicle's guns are drawn on the vehicle, so a muzzle is regularly
+   * inside the box the hull is answered by** — and `boxCast` hands a ray that
+   * started inside a box the FAR face, so the round stopped on the thing that
+   * fired it. Measured on Sarab before this field existed: the gun truck's
+   * station is 2.26 above the tracks and 0.79 behind the hull's centre, inside
+   * a 5.4 x 2.5 x 2.5 collider, so a round laid dead ahead died 2.03 m out and
+   * one laid astern 0.33 m out, while the same gun trained abeam worked
+   * perfectly — the muzzle swings to 1.46 in x, which is outside the box's
+   * 1.25. The tank escapes it by geometry rather than by rule: its cupola gun
+   * is 3.39 up against a 2.9 m box and its barrel reaches past the hull at
+   * every bearing.
+   *
+   * **It is stated on the GUN and not at the trigger** for `shellShotFor`'s
+   * reason — there are two triggers in two processes — and it is the reason
+   * a third gun bolted to a hull cannot reintroduce this: the options object
+   * belongs to the hull, so it carries the hull.
+   *
+   * Absent on every shooter that is not a vehicle, and absent costs nothing:
+   * the skip is an identity compare inside a loop the cast already runs.
+   */
+  fromHull?: RayHull;
 }
 
 /**
@@ -415,7 +439,8 @@ export class CombatSystem {
     // Wall/prop/floor hit distance caps the shot. `range` is the whole reach of
     // the round, so it bounds this as well as the near-miss sweep below.
     const hitWall =
-      this.rays !== null && this.rays.castRound(origin, dir, range, this.wall);
+      this.rays !== null &&
+      this.rays.castRound(origin, dir, range, this.wall, opts.fromHull ?? null);
     let hitDist = hitWall ? this.wall.distance : range;
 
     // **A HULL is answered by the box the wall query already found it with**,

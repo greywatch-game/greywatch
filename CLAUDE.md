@@ -867,6 +867,14 @@ own nose or tail, its own gun's included. `RayHit.hull` says which hull a cast
 stopped on, armour is out of the sphere sweep, and **nothing reads
 `Vehicle.hitRadius` any more.**
 
+**…which is why a hull's own ROUNDS have to be taken out of that same
+collider.** A vehicle's guns are drawn ON it, so a muzzle regularly sits inside
+the box, and a ray starting inside a box is handed its far face — so a round
+left the muzzle and stopped on the thing that fired it. `ShotOptions.fromHull`
+is the skip and it is stated on the GUN rather than at the trigger, because
+there are two triggers in two processes; it is the third query to leave the
+hull out of its own answer, after the chase camera's and the crew's sightline.
+
 **A tank DRIVES OVER things, and `climbHeight` is the one number deciding what is
 ground and what is a wall** — the collision ellipsoid's floor AND the ceiling of
 the band a track contact accepts a surface from, two uses that must never drift.

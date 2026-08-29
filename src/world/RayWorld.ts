@@ -317,9 +317,24 @@ export class RayWorld {
   /**
    * What stops a round or a look? The old `OPAQUE_ONLY`: the hitscan's wall
    * cap, the grenade's step ray and its blast probe, the rocket.
+   *
+   * **`skip` is `castBody`'s, for a reason that turns out to be the same one
+   * seen from the other end**: a hull's guns are drawn ON it, so a muzzle is
+   * regularly INSIDE the box the hull is answered by, and `boxCast` returns
+   * the FAR face to a ray that started inside — so a round leaving such a
+   * muzzle stops on its own vehicle at whatever distance the exit face
+   * happens to be. It is the same shape as the crew's sightline diving back
+   * into its own cupola (`docs/vehicles.md`), and it is the shooter that
+   * knows which hull to take out, never this.
    */
-  castRound(origin: Vector3, dir: Vector3, length: number, out: RayHit): boolean {
-    return this.cast(origin, dir, length, BLOCKS_ROUND, out, null);
+  castRound(
+    origin: Vector3,
+    dir: Vector3,
+    length: number,
+    out: RayHit,
+    skip: RayHull | null = null,
+  ): boolean {
+    return this.cast(origin, dir, length, BLOCKS_ROUND, out, skip);
   }
 
   /**
