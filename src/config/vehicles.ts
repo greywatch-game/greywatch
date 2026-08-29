@@ -123,6 +123,58 @@ export interface VehicleSpec {
     readonly cameraKick: number;
   } | null;
   /**
+   * What holds this hull up INSTEAD of the ground — or null on a kind that
+   * cannot leave it, which is every kind but the helicopter.
+   *
+   * **`gun`'s shape, and `gun`'s reason.** It is ONE nullable block because a
+   * rotor, a collective and a ceiling are one machine, and a hull with nothing
+   * to lift it cannot be handed a climb rate by accident. `Vehicle.flies` is
+   * that resolved once and is the only question anything else puts, exactly as
+   * `armed` is — and the arithmetic it feeds is an ADDEND rather than a branch:
+   * `Vehicle.lift` is the acceleration the powerplant is producing, it is zero
+   * on a hull that has none, and `standOnGround` asks gravity against it
+   * without ever learning that anything can fly.
+   *
+   * **Most of what a helicopter needs is not here**, and that is the point. The
+   * pedals are `drive.turnRate` under `steerAtRest: 1`/`turnAtSpeed: 1`, the
+   * bank limit is `drive.tiltLimit`, how fast the attitude answers is
+   * `drive.airTiltRate`, and the rotor DISC is `drive.collideRadius`. Each is a
+   * number the other two kinds already state, which is `steerAtRest`'s own rule
+   * applied a second time.
+   */
+  readonly flight: {
+    /** Seconds from cold to full song, and the rad/s the disc turns at then. */
+    readonly spoolTime: number;
+    readonly rotorRate: number;
+    /** How much of the song is needed before the disc lifts anything, 0..1. */
+    readonly liftFloor: number;
+    /** The AUTHORITY, m/s^2: the most the collective may add to or take off hover. */
+    readonly climbAccel: number;
+    /** How hard it chases the rate it was asked for, 1/s. */
+    readonly liftResponse: number;
+    /** The terminal on the vertical axis, each way. */
+    readonly climbRate: number;
+    readonly descentRate: number;
+    /** Metres over the heightfield the rotor runs out of air, and the fade into it. */
+    readonly ceiling: number;
+    readonly ceilingBand: number;
+    /** Radians of nose-down at full cyclic — the PICTURE and the thrust vector at once. */
+    readonly cyclicPitch: number;
+    /** How fast the attitude answers the stick, 1/s. */
+    readonly cyclicRate: number;
+    /** Radians of bank per m/s^2 of lateral, and where the bank stops. */
+    readonly bankPerLateral: number;
+    readonly bankLimit: number;
+    /** m/s^2 of horizontal thrust per radian of disc tilt, and the airspeed it stops at. */
+    readonly thrustPerTilt: number;
+    readonly maxAirspeed: number;
+    /** How fast airspeed bleeds with the stick centred, 1/s. */
+    readonly drag: number;
+    /** The arrival the skids will take, and what each m/s over it costs. */
+    readonly crashJolt: number;
+    readonly crashDamage: number;
+  } | null;
+  /**
    * The machine gun the SECOND seat lays. Every kind has one, because that is
    * what the second seat IS.
    */
@@ -222,6 +274,23 @@ export const vehicles = {
    * you across the street.
    */
   exitOffset: 3.4,
+  /**
+   * How far a dismounting player may DROP to the floor beside the hull, before
+   * getting out is refused outright.
+   *
+   * **It exists because there is no fall damage anywhere in this game.** A body
+   * put down beside a hull hanging forty metres up lands in the street unhurt,
+   * which is a lift to any roof on the map — so the way out is gated on there
+   * being somewhere to step, and `VehicleSystem.dismountable` is the question.
+   *
+   * A HEIGHT and not a kind: a tank parked on the lip of a parkade deck reaches
+   * it too and is refused for the same reason, and the helicopter is only the
+   * vehicle that reaches it every time. 2.2 m is comfortably over the tank's
+   * own deck — so nothing about existing armour changes, and a player who could
+   * get out yesterday still can — and comfortably under a height that reads as
+   * a fall.
+   */
+  exitDrop: 2.2,
   /**
    * Seconds from a hull being destroyed to a fresh one at the team's own spawn.
    * Long enough that losing it is a loss — a Conquest round runs about eight
@@ -1130,6 +1199,14 @@ export const vehicles = {
        */
       gunKick: 5,
     },
+    /**
+     * **It cannot leave the ground, and this null is the whole of what says
+     * so.** `Vehicle.lift` stays 0 on a hull that states this, which makes
+     * `standOnGround`'s free-fall term `velY - gravity * dt` exactly as it has
+     * always been: gravity was never the only vertical acceleration, it was
+     * only the only one anything had ever produced.
+     */
+    flight: null,
     gun: {
       turret: {
         /**
@@ -1753,6 +1830,14 @@ export const vehicles = {
       gunKick: 0,
     },
     /**
+     * **It cannot leave the ground, and this null is the whole of what says
+     * so.** `Vehicle.lift` stays 0 on a hull that states this, which makes
+     * `standOnGround`'s free-fall term `velY - gravity * dt` exactly as it has
+     * always been: gravity was never the only vertical acceleration, it was
+     * only the only one anything had ever produced.
+     */
+    flight: null,
+    /**
      * **No main gun, and this null is the whole of what says so.**
      *
      * It reaches every part of the game through `Vehicle.armed`: the turret
@@ -1868,5 +1953,339 @@ export const vehicles = {
      * noise under a wheeled vehicle is a tank arriving that nobody can see.
      */
     engine: { revMult: 1.55, clatter: 0 },
+  },
+
+  /**
+   * **The HELICOPTER, and it is four statements plus one block.**
+   *
+   * The house rule both other kinds follow: a kind states what it IS, and every
+   * figure below that is not one of those statements is the tank's own, and
+   * deliberately. This one says four things and then states `flight`:
+   *
+   * 1. **It FLIES**, which is the block below and is the only genuinely new
+   *    machinery in the fleet. Everything about how it handles that is NOT in
+   *    that block lives in `drive` as a number the other two kinds already
+   *    state — see `steerAtRest` and `collideRadius`.
+   * 2. **It has no main gun.** `gun: null`, as the truck's is, so `armed` is
+   *    false and the trigger, the loader row and the gun marker are all absent
+   *    rather than dimmed. Its only weapon is the door gun the SECOND man lays,
+   *    which makes a lone pilot a taxi and is the whole of what the second seat
+   *    is worth on this kind.
+   * 3. **It is FRAGILE.** 340 points against the truck's 520, and `resist`
+   *    barely resists: a rifle does 70% of its damage to this and a blast 90%,
+   *    so the counterplay to a machine nothing on the ground can catch is that
+   *    everything on the ground can hurt it.
+   * 4. **It looks DOWN.** `camera.pitchMin` is nearly twice the other two
+   *    kinds', because a chase camera that cannot see past 35 degrees of
+   *    depression cannot see the ground you are hovering over — which on this
+   *    vehicle is the entire view that matters.
+   */
+  heli: {
+    /**
+     * Fragile, and it is the trade rather than a weakness. Nothing on the
+     * ground can catch this, so what keeps it honest is that anything on the
+     * ground can hurt it — see `resist`, and the low ceiling in `flight`, which
+     * is the other half of the same argument.
+     */
+    maxHealth: 340,
+    /** Declared because `Hittable` requires it; nothing reads it. See the tank's note. */
+    hitRadius: 2.6,
+    /**
+     * The FUSELAGE, and deliberately not the disc.
+     *
+     * A round must not stop on air, so what a shell is tested against is the
+     * body — where what the WORLD keeps this vehicle out of is its rotor, which
+     * is `drive.collideRadius`. The two are different shapes because they
+     * answer different questions, and this is the only kind where they come
+     * apart by much.
+     */
+    hull: { length: 11.4, width: 2.6, height: 3.0 },
+    /**
+     * The cabin: what bots test line of sight to, and aim at.
+     *
+     * Low on the box on purpose — it is the crew compartment and not the mast,
+     * because a bot aiming at the rotor head is a bot shooting over the men.
+     */
+    cupolaHeight: 1.6,
+    drive: {
+      /**
+       * **Most of this block is what makes the flight model small**, and each
+       * of the four numbers called out below reaches the whole of the drive
+       * through arithmetic that already exists rather than through a branch.
+       *
+       * `maxSpeed` is the ground path's terminal and is never reached — a
+       * flying hull's speed is MEASURED off its velocity and bounded by
+       * `flight.maxAirspeed`. It is stated because `validateDrive` reads it as
+       * the horizontal bound, so it has to be the true airspeed limit with a
+       * little over it for the diagonal.
+       */
+      maxSpeed: 34,
+      reverseSpeed: 12,
+      accel: 8,
+      brake: 8,
+      /** What the PEDALS give, and it is flat at every speed — see below. */
+      turnRate: 1.35,
+      /**
+       * **1, and that is what a tail rotor is.** `steerAuthority` tapers the
+       * turn with speed on a hull whose steering comes from its tracks; a tail
+       * rotor's authority is the same standing still as it is at 30 m/s, and
+       * stating the reference value here collapses that taper to a flat
+       * `turnRate` with no branch anywhere.
+       */
+      turnAtSpeed: 1,
+      /** …and 1 again, which is the same statement about a standstill. */
+      steerAtRest: 1,
+      /** Dead at `steerAtRest` 1, exactly as it is on the tank. */
+      steerRollSpeed: 0,
+      /** The pedals answer quickly; they are a linkage, not a steering wheel. */
+      steerRate: 6,
+      tiltRate: 6,
+      /**
+       * **How fast the attitude answers in the AIR — and here it is the
+       * CONTROL.** The tank states 1.1 because nothing off the ground can
+       * change its attitude and what it is doing is falling; this states four
+       * times that, because banking and pitching is the whole of how the
+       * machine is flown and a bank that lagged the stick by half a second
+       * would be a helicopter nobody can point.
+       */
+      airTiltRate: 4.5,
+      /** Room for `flight.bankLimit` with the nose attitude on top of it. */
+      tiltLimit: 0.6,
+      /**
+       * **The ROTOR DISC, and this is the one number the world reads off the
+       * drawing.** `ROTOR_R` in `HeliModel.ts` is 5.2, so the narrowest gap
+       * this fits through is 10.4 m — which closes Sarab's seven-metre alleys
+       * to it without a rule being written anywhere, exactly as the truck's 3.2
+       * opens them. It must stay under `hull.length / 2` or `aimCollider`'s arm
+       * flips sign and the sphere rides the tail instead of the nose.
+       */
+      collideRadius: 5.2,
+      /** The tank's, and it must be: `flight.climbAccel` is stated against it. */
+      gravity: 22,
+      /**
+       * A skid steps over almost nothing, which is correct — this vehicle goes
+       * OVER obstacles rather than through them. It is still the collision
+       * ellipsoid's floor, so it may not be zero.
+       */
+      climbHeight: 0.3,
+      climbSlope: 0.7,
+      climbFloor: 0.5,
+      climbDrag: 0.9,
+      launchSpeed: 2,
+      probeLength: 6,
+      freeRate: 4,
+    },
+    /**
+     * Skids, which are softer than a leaf pack and have no progression in them:
+     * a tube in bending is linear until it yields. What they are FOR is the
+     * arrival — see `flight.crashJolt`, which reads the same `jolt` these
+     * springs spend.
+     */
+    suspension: {
+      pitchPerAccel: 0.004,
+      rollPerAccel: 0.01,
+      accelLimit: 26,
+      stiffness: 34,
+      damping: 7.2,
+      progression: 0,
+      /** No main gun to kick them. */
+      gunKick: 0,
+      heaveResponse: 0.16,
+      heaveStiffness: 30,
+      heaveDamping: 5.2,
+      /**
+       * **Bigger than the other two, and `flight.crashJolt` sits under it.**
+       * `jolt` is clamped at this BEFORE the crash check reads it, so this is
+       * the arrival at which full crash damage is reached — and the product
+       * with `heaveResponse` (2.24 m/s) still lands the springs on `heaveBump`,
+       * which is the rule that a stop is sized to be REACHED.
+       */
+      joltLimit: 14,
+      heaveBump: 0.22,
+      heaveDroop: 0.18,
+    },
+    /** The tank's whip, unchanged: a wire aerial is a wire aerial. */
+    antenna: {
+      swayPerAccel: 0.032,
+      lagPerRate: 0.42,
+      stiffness: 230,
+      damping: 7.2,
+      bendLimit: 0.46,
+      baseShare: 0.62,
+      lagRate: 14,
+      wind: { sway: 0.05, speed: 1.1 },
+      gunKick: 0,
+    },
+    /**
+     * **No main gun, and this null is the whole of what says so** — the truck's
+     * note applies word for word, and on this kind it is also the argument for
+     * the second seat: the door gun is the only weapon aboard, so a pilot
+     * without a gunner has flown a taxi to the fight.
+     */
+    gun: null,
+    /**
+     * **What holds it up.** The one block in the fleet that is new machinery
+     * rather than different numbers.
+     *
+     * Read with `Vehicle.flyStep`, which spends every figure here, and with
+     * `Vehicle.lift`, which is the single value this block reaches the ground
+     * model through.
+     */
+    flight: {
+      /** Long enough to be a moment rather than a switch. */
+      spoolTime: 4.5,
+      /**
+       * About two revolutions a second, and it is a DRAWING number rather than
+       * a physical one. Four blades at a realistic rate alias into a stopped or
+       * backwards disc at 60 Hz, which is the one thing this model cannot
+       * afford — the rotor IS the silhouette. `HeliModel`'s tip-path ring is
+       * what makes this read as fast; see its header.
+       */
+      rotorRate: 13,
+      /** Below this the disc turns and lifts nothing, which is what a spool IS. */
+      liftFloor: 0.55,
+      /**
+       * **The collective asks for a RATE and this is the authority it has to
+       * get there**, in m/s^2 against `drive.gravity` of 22 — so full stick is
+       * 31 against 22 going up and 13 against 22 coming down, and neither is a
+       * teleport. At a centred stick the asked rate is zero, the correction is
+       * zero, `lift` comes out at exactly gravity and the machine hangs.
+       *
+       * **A rate and not an acceleration, and the difference is the whole
+       * feel.** A collective that commanded acceleration hovers by holding
+       * VELOCITY rather than height — Newton's first law, and measured: with
+       * the stick centred at the ceiling the machine sailed on up to 237 m,
+       * because nothing was asking it to stop. What a pilot means by letting
+       * go of the collective is "stay where you are", and a target rate of zero
+       * is that sentence.
+       */
+      climbAccel: 9,
+      /** Reaches a commanded rate in about a third of a second. */
+      liftResponse: 3,
+      climbRate: 9,
+      descentRate: 8,
+      /**
+       * **The CEILING, and it is the COUNTERPLAY rather than a limit on the
+       * fun.** Bots acquire at `CONFIG.bots.engageRange` (55 m) measured in
+       * three dimensions, and their acquisition cone has no elevation term at
+       * all — so a machine that could climb out of that bubble would be one
+       * nothing in the game can answer. At 40 m over the floor a helicopter
+       * sitting over a contested flag is inside every rifle under it, which is
+       * what makes it a fast gun platform and not an invulnerable one.
+       *
+       * Measured over the FLOOR and not over sea level: this map runs from -6
+       * to +7, and a ceiling above the origin would be a different height above
+       * every part of it.
+       */
+      ceiling: 40,
+      /** It runs out of air rather than hitting a lid. */
+      ceilingBand: 8,
+      /** ~17 degrees of nose-down at full cyclic. The picture and the thrust at once. */
+      cyclicPitch: 0.3,
+      cyclicRate: 3.4,
+      /** A coordinated turn: it rolls into one, and how far is the lateral it is making. */
+      bankPerLateral: 0.022,
+      /** ~26 degrees, inside `drive.tiltLimit` with the nose attitude on top. */
+      bankLimit: 0.46,
+      /**
+       * m/s^2 of horizontal thrust per radian of disc tilt. At full cyclic that
+       * is 30 * sin(0.3) = 8.9 m/s^2, which against the drag below settles at
+       * about the airspeed named next.
+       */
+      thrustPerTilt: 30,
+      /**
+       * **Nearly twice the truck's road speed**, which is what a helicopter is
+       * FOR on a 900 m map: it crosses the transit ground in a third of the
+       * time, and it does it in a straight line over the wadi.
+       */
+      maxAirspeed: 32,
+      /** Centre the stick and it coasts to a stop over a few seconds. */
+      drag: 0.5,
+      /**
+       * The arrival the skids will take, and what each m/s over it costs.
+       *
+       * Under `suspension.joltLimit` (14), which is what `jolt` is clamped at
+       * before this reads it — so a touchdown at 7 m/s is free and anything at
+       * or past 14 costs 910 against 340 points and is a wreck. Landing is a
+       * skill and a bad one is fatal, which is the honest price of a vehicle
+       * that can be anywhere.
+       */
+      crashJolt: 7,
+      crashDamage: 130,
+    },
+    /**
+     * The door gun — and on this vehicle it is the ONLY gun, which is what
+     * makes its numbers the truck's rather than the tank's cupola's: it is
+     * somebody's whole contribution to the round and not a weapon of last
+     * resort. It elevates further DOWN than either, because what a door gunner
+     * is shooting at is underneath him.
+     */
+    mg: {
+      damage: 52,
+      damageFar: 24,
+      falloffNear: 70,
+      falloffFar: 190,
+      range: 210,
+      fireRate: 8.5,
+      spread: 0.02,
+      traverseRate: 3.2,
+      elevationRate: 2.7,
+      traverseAccel: 15,
+      elevationAccel: 13,
+      settleTime: 0.03,
+      /** **Well past the other two**: it is a door gun, and it looks down. */
+      pitchMin: -0.85,
+      pitchMax: 0.45,
+      cameraKick: 0.004,
+      report: {
+        pitch: 0.72,
+        level: 1.2,
+        snap: 1.2,
+        weight: 1.6,
+        length: 0.8,
+        tail: 1.0,
+        actionPitch: 0.76,
+        actionVol: 1.25,
+      },
+    },
+    /**
+     * **It barely resists anything, and that is the trade.** A rifle does 70%
+     * of its damage here against the tank's 5% and the truck's 45%, so the
+     * machine nothing on the ground can catch is one that everything on the
+     * ground can hurt — which, with the low `flight.ceiling`, is the whole of
+     * the counterplay. A shell still kills it outright.
+     */
+    resist: { bullet: 0.7, blast: 0.9, shell: 1 },
+    /**
+     * It can put its skids on somebody, and only that: `crushes` tests the
+     * collider box against a standing body, and a hull hovering clear has its
+     * box entirely above one. So this needs no gate of its own — a helicopter
+     * cannot crush by accident, by construction.
+     */
+    crush: { damage: 400, minSpeed: 2.4 },
+    camera: {
+      /** Further back than either: the thing being framed is 11.4 m long. */
+      distance: 14,
+      anchorHeight: 2.4,
+      restPitch: -0.2,
+      /**
+       * **Nearly twice the other two kinds', and it is the one camera number
+       * this vehicle could not have taken from them.** A chase camera that
+       * stops at 35 degrees of depression cannot see the ground you are
+       * hovering over, which on this vehicle is the whole view that matters.
+       */
+      pitchMin: -1.1,
+      pitchMax: 0.5,
+      lookMult: 0.85,
+      wallMargin: 0.5,
+      minDistance: 5,
+    },
+    /**
+     * A turbine: it sits much higher than either piston engine and carries no
+     * link noise at all. **It is not a rotor**, and that is a known gap rather
+     * than a choice — `Sfx.buildEngine` is one description of a diesel, and a
+     * rotor slap would be a layer of its own inside it. See `docs/vehicles.md`.
+     */
+    engine: { revMult: 2.1, clatter: 0 },
   },
 } as const;

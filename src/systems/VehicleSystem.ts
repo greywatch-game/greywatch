@@ -517,6 +517,40 @@ export class VehicleSystem {
    * on a one-off event — which is why this may cast the game's most expensive
    * ray at all: nothing here runs per frame.
    */
+  /**
+   * Is there floor beside this hull near enough to step down onto?
+   *
+   * `exitSpot`'s own question, asked BEFORE the step instead of after it, and
+   * it exists because there is no fall damage anywhere in this game: a body put
+   * down beside a hull hanging forty metres up lands in the street unhurt,
+   * which is a lift to any roof on the map. `exitSpot` cannot refuse — it
+   * always has to answer with somewhere, and what it answers with when both
+   * flanks find nothing is the hull's own position, which at altitude is thin
+   * air.
+   *
+   * **A HEIGHT rule and never a kind rule.** A tank parked on the lip of a
+   * parkade deck reaches it too, and gets the same answer for the same reason;
+   * the helicopter is only the vehicle that reaches it every time. So nothing
+   * here asks `flies`, and the two flanks probed are exactly `exitSpot`'s.
+   */
+  dismountable(tank: Vehicle): boolean {
+    const off = CONFIG.vehicles.exitOffset;
+    // Forward is `(sin yaw, cos yaw)`, so right is `(cos yaw, -sin yaw)`.
+    const rx = Math.cos(tank.yaw);
+    const rz = -Math.sin(tank.yaw);
+    for (const side of [1, -1]) {
+      const y = this.groundAt(
+        tank.center.x + rx * off * side,
+        tank.center.z + rz * off * side,
+        tank,
+      );
+      if (y !== null && tank.position.y - y <= CONFIG.vehicles.exitDrop) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private groundAt(x: number, z: number, tank: Vehicle): number | null {
     const t = tank.spec;
     if (!this.rays) return null;

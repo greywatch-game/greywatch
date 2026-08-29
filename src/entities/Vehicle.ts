@@ -127,6 +127,30 @@
  * clearing `isPickable` around a `scene.pickWithRay`; the flag is still read,
  * by `rayBox`, and still for that reason.
  *
+ * ## It can also FLY, and it is the same ten contacts
+ *
+ * A hull that states `VehicleSpec.flight` hangs on a rotor, and the whole of
+ * what that does to the ground model above is ONE TERM. `standOnGround` asks
+ * gravity first, and it now asks it against `lift` — the vertical acceleration
+ * this hull's own powerplant is producing, which is **zero on anything that
+ * cannot fly**, so for a tank and a truck the arithmetic is what it always was.
+ *
+ * Everything else falls out of machinery that was already here. With `lift` at
+ * gravity the free-fall step is a no-op and the hull HANGS, so a hover is an
+ * equality rather than a decision. Airborne it takes the branch this file
+ * already calls "driven off something". Descending, the last `probeLength`
+ * metres are where the ten contacts find the pad, and it is stood on the plank
+ * exactly as a tank is. `jolt` is the arrival — it was always "what the ground
+ * did to the hull's vertical motion this frame", which on a machine that flies
+ * is the whole of a touchdown, so the skids compress through `flexHeave` with
+ * no new code and the crash check is a reading of a number that was already
+ * there. And a hull nobody is in winds its rotor down, `lift` returns to 0, and
+ * the parked-hull skip stops the probe exactly as it does for armour.
+ *
+ * `flyStep` is what writes `lift`, and what it commands is a RATE rather than
+ * an acceleration — see its own note, which carries the two measurements that
+ * decided it.
+ *
  * ## What is a rule and what is a picture
  *
  * `yaw`, the collider box and `center` are rules. The hull's PITCH and ROLL are
@@ -206,6 +230,16 @@ export interface DriveInput {
   throttle: number;
   /** -1 left .. +1 right, of hull yaw. */
   steer: number;
+  /**
+   * The COLLECTIVE: -1 down .. +1 up.
+   *
+   * Ignored by a hull with nothing to lift it, and ignored **by data** rather
+   * than by a caller having to ask — the flight block is the only reader and a
+   * kind that states `flight: null` has none, so `Game.updateDriver` writes it
+   * unconditionally beside the throttle and a tank simply has nothing to spend
+   * it on.
+   */
+  lift: number;
   /** Where the gun is being ASKED to point. The turret walks to it at its own rate. */
   aimYaw: number;
   aimPitch: number;
@@ -335,7 +369,13 @@ export const GUNNER: CrewSeat = 1;
 export const SEATS: readonly CrewSeat[] = [DRIVER, GUNNER];
 
 /** A tank standing still, for the frames nobody is driving one. */
-const IDLE: DriveInput = { throttle: 0, steer: 0, aimYaw: 0, aimPitch: 0 };
+const IDLE: DriveInput = {
+  throttle: 0,
+  steer: 0,
+  lift: 0,
+  aimYaw: 0,
+  aimPitch: 0,
+};
 
 /**
  * How far the reported height may differ from the local probe's before
@@ -528,6 +568,35 @@ export class Vehicle implements Combatant, RayHull {
   readonly armed: boolean;
 
   /**
+   * Can this hull leave the ground under its own power?
+   *
+   * **`armed`'s twin, and the SECOND of the two questions anything asks about
+   * a kind.** It is `spec.flight !== null` resolved once. What it gates is
+   * deliberately small — the drive block here, `updateRemote`'s height, whether
+   * a bot may take the driver's chair, and the two bounds the authority puts on
+   * a claimed position — because nearly everything a helicopter needed turned
+   * out to be a NUMBER the other kinds already state rather than a branch:
+   * `steerAtRest`/`turnAtSpeed` make `steerAuthority` a flat pedal, `tiltLimit`
+   * is the bank, `airTiltRate` is how fast the attitude answers, and
+   * `collideRadius` is the rotor disc.
+   *
+   * **It is emphatically NOT what `standOnGround` asks.** That method has never
+   * heard of this, and the whole of what a flying hull does to it is `lift`.
+   */
+  readonly flies: boolean;
+
+  /**
+   * The fastest this hull can gain height under its own power, m/s.
+   *
+   * Resolved once and read by the AUTHORITY (`validateDrive`), which cannot ask
+   * the hull to prove it and so has to be told what to allow. A tracked hull's
+   * is what riding a grade up gives it — `climbSlope * maxSpeed` — plus what
+   * `launchSpeed` lets it carry off the crest, which is the true maximum the
+   * limiter in `standOnGround` can actually produce.
+   */
+  readonly climbRate: number;
+
+  /**
    * What this hull's own rounds are, resolved once. Null on an unarmed kind,
    * which is `armed` seen from the other side — see `shellShotFor`.
    */
@@ -686,6 +755,46 @@ export class Vehicle implements Combatant, RayHull {
    * springs, and that path never goes near `leanHull`.
    */
   private jolt = 0;
+  /**
+   * The vertical acceleration this hull's own powerplant is producing, m/s^2 UP.
+   *
+   * **Zero on anything that cannot fly, and that is what makes the ground model
+   * one model.** `standOnGround` asks gravity FIRST and it asks it as
+   * `velY + (lift - gravity) * dt`, so on a tank the term is
+   * `velY - gravity * dt` to the bit and the method has never learned that
+   * anything can hold itself up. On a helicopter at a hover `lift` IS gravity,
+   * the free-fall step is a no-op, and the hull hangs — which is the whole of
+   * the hover, held by an equality rather than by anything deciding to hold an
+   * altitude.
+   *
+   * Written by `flyStep` (and by `updateRemote` on a flying hull, where the
+   * rotor is holding it up whatever the wire says), spent by `standOnGround`.
+   */
+  private lift = 0;
+  /**
+   * The hull's HORIZONTAL world velocity, m/s.
+   *
+   * This used to be `(sin yaw, 0, cos yaw) * speed` rebuilt at the move, which
+   * is the same vector for anything whose only way of travelling is forwards.
+   * A helicopter drifts, so the velocity is the state and `speed` is MEASURED
+   * off it — see `flyStep`. On a tracked hull it is still rebuilt from `speed`
+   * every frame and nothing about the drive changed.
+   *
+   * **It stays horizontal on every kind.** The vertical is `standOnGround`'s
+   * alone: two owners on `body.position.y` would have the collision ellipsoid
+   * (whose floor sits `climbHeight/2` up) stopping a descent that the plank
+   * then puts back, once a frame, for ever.
+   */
+  private readonly vel = new Vector3();
+  /** How far spooled, 0..1. A rotor nobody is turning is a rotor at rest. */
+  private rotor = 0;
+  /** Radians of disc, accumulated mod 2pi. `trackRun`'s metres, for a rotor. */
+  private rotorRun = 0;
+  /** What was last drawn, so a turning disc opens the `stirred` gate. */
+  private rotorShown = 0;
+  /** The attitude the CYCLIC is commanding, radians. Nose-up positive. */
+  private tiltPitch = 0;
+  private tiltRoll = 0;
   /**
    * The hull node's attitude as it was LAST frame, and how fast it is turning.
    *
@@ -879,6 +988,15 @@ export class Vehicle implements Combatant, RayHull {
     this.health = t.maxHealth;
     this.hitRadius = t.hitRadius;
     this.armed = t.gun !== null;
+    this.flies = t.flight !== null;
+    // What the AUTHORITY is told to allow on the vertical, and it is the true
+    // maximum each kind can produce rather than a round number: a tracked hull
+    // rides a grade up at `climbSlope * maxSpeed` and may carry `launchSpeed`
+    // off the crest, and a rotor's is simply its own terminal.
+    this.climbRate =
+      t.flight !== null
+        ? t.flight.climbRate
+        : t.drive.climbSlope * t.drive.maxSpeed + t.drive.launchSpeed;
     // `this` is handed in so the round can be taken out of its OWN hull's wall
     // query — see `ShotOptions.fromHull`. It is only a reference: nothing here
     // calls `rayBox`, and the collider two lines below is what it will read.
@@ -998,6 +1116,13 @@ export class Vehicle implements Combatant, RayHull {
     }
     this.velY = 0;
     this.riseRate = 0;
+    this.vel.setAll(0);
+    this.lift = 0;
+    this.rotor = 0;
+    this.rotorRun = 0;
+    this.rotorShown = 0;
+    this.tiltPitch = 0;
+    this.tiltRoll = 0;
     this.lastTarget = pos.y + t.hull.height / 2;
     this.grounded = true;
     this.climbOwed = 0;
@@ -1454,6 +1579,177 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * One frame of a hull that hangs on a rotor, in place of the throttle walk.
+   *
+   * Hands back the two figures the rest of `update` reads off the drive — the
+   * stick the running gear is drawn at, and the yaw rate the lean and the whips
+   * answer to — having written `yaw`, `vel`, `speed`, `lift` and the commanded
+   * attitude. **It moves the hull no further than the ground path does**:
+   * horizontally through the same `moveWithCollisions`, vertically through the
+   * same `standOnGround`, which is what keeps one set of answers about where a
+   * vehicle is.
+   *
+   * ## The hover is an equality, not a decision
+   *
+   * `lift` is an ACCELERATION and not a rate of climb, so the collective is a
+   * control with inertia behind it rather than a lever on the height. At a
+   * centred stick it comes out at exactly `gravity`, `standOnGround`'s free
+   * fall is a no-op and the machine hangs. Nothing anywhere decides to hold an
+   * altitude, and nothing has to be told to stop holding one.
+   *
+   * ## Almost none of this is new machinery
+   *
+   * The pedals are `steerTo` and `steerAuthority` untouched — the spec states
+   * `steerAtRest: 1` and `turnAtSpeed: 1`, which collapses the authority to a
+   * flat `turnRate` at every speed, and a flat yaw authority at every speed is
+   * what a tail rotor IS. The bank is drawn by `leanToGround` at
+   * `drive.airTiltRate`, the skids flex on `flexHeave`, and the arrival is
+   * `jolt`. What is genuinely here is a thrust vector and a collective.
+   */
+  private flyStep(
+    dt: number,
+    d: DriveInput,
+    f: NonNullable<VehicleSpec["flight"]>,
+  ): [number, number] {
+    const c = this.spec.drive;
+    const p = this.body.position;
+
+    // --- the rotor, which turns whether the machine is going anywhere or not ---
+    // Rate-limited exactly rather than lerped, for `steerTo`'s reason: a spool
+    // is a mechanism and not a smoothing, so it must take the same time on
+    // every machine. A hull nobody is in winds down, which is what makes a
+    // parked helicopter cost the frame what a parked tank costs — with `lift`
+    // back at 0 the ground probe's own skip re-arms and stops asking.
+    const want = this.seats[DRIVER] ? 1 : 0;
+    this.rotor +=
+      Math.sign(want - this.rotor) *
+      Math.min(Math.abs(want - this.rotor), dt / f.spoolTime);
+    this.rotorRun =
+      (this.rotorRun + this.rotor * f.rotorRate * dt) % (Math.PI * 2);
+    // How much of the song is worth anything. Below the floor the disc turns
+    // and lifts nothing, which is what a spool-up IS — and it takes the tail
+    // rotor's authority with it, so a machine coming up to speed cannot pedal
+    // either.
+    const power =
+      this.rotor <= f.liftFloor
+        ? 0
+        : (this.rotor - f.liftFloor) / (1 - f.liftFloor);
+
+    // --- the pedals ---
+    const steer = this.steerTo(d.steer, dt);
+    const yawRate = steer * this.steerAuthority() * power;
+    this.yaw += yawRate * dt;
+    this.body.rotation.y = this.yaw;
+
+    // --- the cyclic, and the auto-level is this line with the stick centred ---
+    // What the fore/aft stick commands is an ATTITUDE and not a speed, which is
+    // the whole difference between this and the throttle next door: let go and
+    // the nose comes back level because level is what a centred stick asks for,
+    // and the machine then coasts to a stop on drag alone.
+    //
+    // **`tiltPitch` is the angle as the DRAWN node takes it**, which on this
+    // rig means positive is nose-DOWN — `standOnGround` writes
+    // `groundPitchTarget = -rise` for exactly that reason two hundred lines
+    // below. Holding it in the drawn sense is what keeps the sign honest: the
+    // first version negated here and negated again at the thrust, which
+    // cancelled and flew forwards correctly while drawing the machine 17
+    // degrees nose-UP as it accelerated. The thrust below reads the same field
+    // without a sign of its own, so the picture and the direction of travel
+    // cannot come apart again.
+    const wantTilt = d.throttle * f.cyclicPitch;
+    this.tiltPitch +=
+      (wantTilt - this.tiltPitch) * Math.min(1, dt * f.cyclicRate);
+    // The BANK is drawn rather than flown: a helicopter in a coordinated turn
+    // rolls into it, and how far is the lateral the turn is actually making. So
+    // a pedal turn at a hover banks nothing, which is correct, and is why this
+    // is not simply the stick.
+    //
+    // **It is the AIRSPEED and not `speed`**, which is the one place on this
+    // vehicle the two genuinely come apart. `speed` is the along-heading
+    // component every ground reader wants, and in a hard turn it collapses —
+    // the heading sweeps round faster than the velocity follows it — so a
+    // machine doing 6 m/s through a 77 deg/s turn reported 2 and banked three
+    // degrees, which reads as a vehicle sliding flat round a corner. What a
+    // turn actually pulls is `|v| * omega`, and that is what a wing is holding
+    // up against.
+    const airspeed = Math.hypot(this.vel.x, this.vel.z);
+    const lateral = airspeed * yawRate;
+    const wantBank = Math.max(
+      -f.bankLimit,
+      Math.min(f.bankLimit, lateral * f.bankPerLateral),
+    );
+    this.tiltRoll +=
+      (wantBank - this.tiltRoll) * Math.min(1, dt * f.cyclicRate);
+
+    // --- thrust ---
+    // The disc's thrust is along the hull's own UP, so tilting it by theta puts
+    // `T sin(theta)` along the nose. The vertical share is the collective's and
+    // is spent below; what is taken here is the horizontal alone.
+    const thrust = f.thrustPerTilt * Math.sin(this.tiltPitch) * power;
+    this.vel.x += Math.sin(this.yaw) * thrust * dt;
+    this.vel.z += Math.cos(this.yaw) * thrust * dt;
+
+    // Drag, stepped EXACTLY and not with the frame-lerp idiom: this velocity
+    // moves the hull a gunner is laying a gun from, so it is somewhere bullets
+    // go, and the convention is explicit about which of the two those need.
+    const keep = Math.exp(-f.drag * dt);
+    this.vel.x *= keep;
+    this.vel.z *= keep;
+    // The terminal is separate from the drag so that top speed stays a FACT
+    // rather than a consequence — the same statement `maxSpeed` makes next door.
+    const air = Math.hypot(this.vel.x, this.vel.z);
+    if (air > f.maxAirspeed) {
+      const k = f.maxAirspeed / air;
+      this.vel.x *= k;
+      this.vel.z *= k;
+    }
+
+    // `speed` is still the ALONG-HEADING scalar every downstream reader wants —
+    // the engine note, the crush gate, `steerAuthority`, the collision sphere's
+    // lead sign. MEASURED here rather than decided, exactly as `updateRemote`
+    // measures it, so a machine travelling sideways reports nearly nothing:
+    // which is the honest answer to "how fast is it going forwards".
+    this.speed =
+      this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw);
+
+    // --- the collective ---
+    // The ceiling is measured over the FLOOR and not over sea level: this map
+    // runs from -6 to +7 and a ceiling above the origin would be a different
+    // height above every part of it. It fades rather than clamps, so the
+    // machine runs out of air instead of hitting a lid.
+    const above = p.y - this.spec.hull.height / 2 - this.terrain.surfaceAt(p.x, p.z);
+    const fade = Math.max(
+      0,
+      Math.min(1, (f.ceiling - above) / f.ceilingBand),
+    );
+    // **The collective asks for a RATE, and `lift` is whatever acceleration
+    // chases it.** That is the one thing here that is not simply "a force on a
+    // mass", and it is deliberate twice over.
+    //
+    // It is what a HOVER is. An acceleration-commanding collective holds
+    // VELOCITY when it is centred rather than height — Newton's first law — so
+    // a machine that had been climbing went on climbing with the stick let go,
+    // measured at 237 m over a 40 m ceiling with nothing in the model asking it
+    // to stop. What a pilot means by letting go is "stay where you are", and a
+    // target rate of zero says exactly that with no altitude-holder anywhere.
+    //
+    // And it is what makes the CEILING work. The fade is on the asked rate and
+    // only when it asks to go UP, so at the ceiling full stick asks for zero
+    // and the correction actively arrests a climb already in hand — where
+    // fading `lift` itself would put the machine under gravity and drop it out
+    // of the sky, which was the first version and cost a 35 m fall from a
+    // centred stick. Coming DOWN is never something the air refuses.
+    const wantY =
+      d.lift >= 0 ? d.lift * f.climbRate * fade : d.lift * f.descentRate;
+    const need = (wantY - this.velY) * f.liftResponse;
+    this.lift =
+      (c.gravity +
+        Math.max(-f.climbAccel, Math.min(f.climbAccel, need))) *
+      power;
+    return [steer, yawRate];
+  }
+
+  /**
    * One frame of a tank: the drive, the ground under it, the turret walking
    * toward where it was asked to point, and the lean.
    *
@@ -1489,6 +1785,9 @@ export class Vehicle implements Combatant, RayHull {
     this.reloadT = Math.max(0, this.reloadT - dt);
     const d = drive ?? IDLE;
     const c = this.spec.drive;
+    // Null on a hull that cannot leave the ground, which is the only question
+    // this method puts about a kind. See `Vehicle.flies`.
+    const fl = this.spec.flight;
     // What the drive ACHIEVES this frame, for the suspension to answer to. Read
     // as a difference rather than taken from the throttle because the three
     // things that decelerate a hull are not all the throttle's: letting go of
@@ -1498,23 +1797,41 @@ export class Vehicle implements Combatant, RayHull {
     const speedWas = this.speed;
 
     // --- drive ---
-    // The throttle picks a speed and the hull walks to it; it does not add
-    // force. That keeps a tank's top speed a fact rather than a consequence,
-    // and makes the brake and the coast the same line of arithmetic.
-    const wanted =
-      d.throttle >= 0 ? d.throttle * c.maxSpeed : d.throttle * c.reverseSpeed;
-    // Slowing is faster than speeding up, and letting go is slowing.
-    const rate = Math.abs(wanted) > Math.abs(this.speed) ? c.accel : c.brake;
-    const gap = wanted - this.speed;
-    const move = Math.min(Math.abs(gap), rate * dt);
-    this.speed += Math.sign(gap) * move;
+    // **The two locomotions, and they meet again on the next line.** Both end
+    // by having written `yaw`, `vel` and `speed`, and everything after this
+    // point — the move, the walls, the ground, the turret, the lean, the
+    // whips — is the same code for a hull on tracks and a hull on a rotor.
+    let steer: number;
+    let yawRate: number;
+    if (fl) {
+      [steer, yawRate] = this.flyStep(dt, d, fl);
+    } else {
+      // The throttle picks a speed and the hull walks to it; it does not add
+      // force. That keeps a tank's top speed a fact rather than a consequence,
+      // and makes the brake and the coast the same line of arithmetic.
+      const wanted =
+        d.throttle >= 0 ? d.throttle * c.maxSpeed : d.throttle * c.reverseSpeed;
+      // Slowing is faster than speeding up, and letting go is slowing.
+      const rate = Math.abs(wanted) > Math.abs(this.speed) ? c.accel : c.brake;
+      const gap = wanted - this.speed;
+      const move = Math.min(Math.abs(gap), rate * dt);
+      this.speed += Math.sign(gap) * move;
 
-    // What the LINKAGE has got to, which is what the hull turns on — never the
-    // stick itself. See `steerTo`: a key is not a steering wheel.
-    const steer = this.steerTo(d.steer, dt);
-    const yawRate = steer * this.steerAuthority();
-    this.yaw += yawRate * dt;
-    this.body.rotation.y = this.yaw;
+      // What the LINKAGE has got to, which is what the hull turns on — never
+      // the stick itself. See `steerTo`: a key is not a steering wheel.
+      steer = this.steerTo(d.steer, dt);
+      yawRate = steer * this.steerAuthority();
+      this.yaw += yawRate * dt;
+      this.body.rotation.y = this.yaw;
+      // The velocity a hull whose only way of travelling is FORWARDS has. This
+      // is the vector the move used to build for itself at the step; holding it
+      // as state is what lets a rotor put a different one there.
+      this.vel.set(
+        Math.sin(this.yaw) * this.speed,
+        0,
+        Math.cos(this.yaw) * this.speed,
+      );
+    }
 
     // The drawn tracks, off the drive that has just been decided. A yaw to the
     // RIGHT (which is a positive one — `forward` is `(sin yaw, cos yaw)`, so
@@ -1529,7 +1846,12 @@ export class Vehicle implements Combatant, RayHull {
     // and asking it once is deliberate: a hull that has neither moved nor
     // turned cannot have changed what it is touching, and those two are the
     // only ways it can.
-    const stirred = this.speed !== 0 || yawRate !== 0;
+    // **Asked of the VELOCITY and not of `speed`**, which is the same question
+    // for anything that can only travel forwards and a different one for a
+    // helicopter drifting sideways with its nose still. It gates `aimCollider`
+    // and `freeFromWalls`, and a hovering hull that had drifted into a wall
+    // would otherwise never be pushed back out of it.
+    const stirred = this.vel.lengthSquared() > 0 || yawRate !== 0;
     // **The steering is drawn on a hull that is not moving at all**, which is
     // the one thing the skip above cannot cover on a vehicle that has to be
     // rolling to turn: a parked truck under full lock yaws by nothing, and if
@@ -1539,12 +1861,17 @@ export class Vehicle implements Combatant, RayHull {
     // it costs the parked pair nothing. It is the LINKAGE that is compared
     // rather than the stick, so a parked truck winds its wheels over the same
     // quarter-second a moving one does instead of snapping them.
-    if (stirred || steer !== this.steerShown) {
+    if (
+      stirred ||
+      steer !== this.steerShown ||
+      this.rotorRun !== this.rotorShown
+    ) {
       const differential = (yawRate * this.rig.gauge) / 2;
       this.trackRun[0] += (this.speed + differential) * dt;
       this.trackRun[1] += (this.speed - differential) * dt;
-      this.rig.setRun(this.trackRun[0], this.trackRun[1], steer);
+      this.rig.setRun(this.trackRun[0], this.trackRun[1], steer, this.rotorRun);
       this.steerShown = steer;
+      this.rotorShown = this.rotorRun;
     }
 
     // **Aimed on a TURN as well as on a move, and that is a fix rather than a
@@ -1579,10 +1906,9 @@ export class Vehicle implements Combatant, RayHull {
     // that would ask are skipped outright: `speed` goes on building at the
     // throttle's rate and the hull is moving inside three frames. Nothing is
     // lost by not asking — those frames never moved the hull anyway.
-    const asked = Math.abs(this.speed * dt);
+    this.step.copyFrom(this.vel).scaleInPlace(dt);
+    const asked = this.step.length();
     if (asked > AbstractEngine.CollisionsEpsilon) {
-      this.step.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-      this.step.scaleInPlace(this.speed * dt);
       const before = this.body.position.x;
       const beforeZ = this.body.position.z;
       this.body.moveWithCollisions(this.step);
@@ -1605,12 +1931,40 @@ export class Vehicle implements Combatant, RayHull {
         ((this.body.position.x - before) * this.step.x +
           (this.body.position.z - beforeZ) * this.step.z) /
         asked;
-      if (progress >= 0 && progress < asked * 0.5) this.speed *= 0.35;
+      if (progress >= 0 && progress < asked * 0.5) {
+        // **Both, and one of them is redundant on every kind — which is two
+        // true statements rather than a hedge.** A tracked hull rebuilds `vel`
+        // from `speed` next frame so the second line does nothing; a flying
+        // hull measures `speed` off `vel` so the first does. Docking only the
+        // one this kind happens to read would be a branch on a kind to say
+        // something both are entitled to hear.
+        this.speed *= 0.35;
+        this.vel.scaleInPlace(0.35);
+      }
     }
 
     if (stirred || this.clearing) this.freeFromWalls(dt);
     this.standOnGround(dt);
     this.flexHeave(dt);
+    if (fl) {
+      // **The commanded attitude wins in the AIR and the ground's wins on the
+      // skids, and it is `grounded` that decides — a state, and never a kind.**
+      // That is also what keeps the regression honest: a helicopter sitting on
+      // a level pad takes `standOnGround`'s own targets, so `rig.hull.rotation`
+      // reads 0.0 there exactly as a tank's does.
+      if (!this.grounded) {
+        this.groundPitchTarget = this.tiltPitch;
+        this.groundRollTarget = this.tiltRoll;
+      }
+      // The one thing the ground can do to this kind that it cannot do to the
+      // other two. `jolt` is already "what the ground did to the hull's own
+      // vertical motion this frame", which on a machine that flies is the whole
+      // of an arrival — so this reads a number that was already there rather
+      // than detecting a landing. Spent as `shell` so `resist` cannot shrug it
+      // off, and through the one door damage takes.
+      const over = this.jolt - fl.crashJolt;
+      if (over > 0) this.takeDamage(over * fl.crashDamage, undefined, "shell");
+    }
     // ...and climbing costs speed, for the same reason walking into a wall
     // does. Spent here rather than inside the ground so it lands BEFORE the
     // acceleration below is read off `speed`: shouldering up onto a car is a
@@ -1737,7 +2091,9 @@ export class Vehicle implements Combatant, RayHull {
     // with. The lateral share is deliberately dropped: `speed` is a scalar on
     // the tracks and there is nowhere for a sideways velocity to go, which is
     // the same statement `fireGun` makes about the gun's recoil.
-    const along = (x - p.x) * Math.sin(yaw) + (z - p.z) * Math.cos(yaw);
+    const dx = x - p.x;
+    const dz = z - p.z;
+    const along = dx * Math.sin(yaw) + dz * Math.cos(yaw);
     // **Bounded by what a hull can actually do**, which is not the same as
     // what the interpolator just did. A frame that runs long — a stall, a GC
     // pause, a tab coming back — advances the render clock further than its
@@ -1751,6 +2107,20 @@ export class Vehicle implements Combatant, RayHull {
     const raw = dt > 0 ? along / dt : 0;
     const top = c.maxSpeed;
     this.speed = Math.max(-c.reverseSpeed, Math.min(top, raw));
+    // The velocity, so `stirred` and the collision sphere read a hull that is
+    // DRIFTING rather than one that can only ever go forwards. Bounded in
+    // magnitude the way `speed` is and for the same long-frame reason; on a
+    // tracked hull it is the same vector `speed` already describes, because
+    // the lateral share of the ground it covered is float noise.
+    if (dt > 0) {
+      const vx = dx / dt;
+      const vz = dz / dt;
+      const mag = Math.hypot(vx, vz);
+      const k = mag > top ? top / mag : 1;
+      this.vel.set(vx * k, 0, vz * k);
+    } else {
+      this.vel.setAll(0);
+    }
     const yawRate = dt > 0 ? angleDelta(this.yaw, yaw) / dt : 0;
     this.yaw = yaw;
     this.body.rotation.y = yaw;
@@ -1758,12 +2128,54 @@ export class Vehicle implements Combatant, RayHull {
     p.z = z;
     // See the header: the probe owns `y` unless the wire says the hull is
     // somewhere the probe could not have walked it to.
+    //
+    // **…and on a hull that FLIES the wire owns it outright.** Ten track
+    // contacts answer the same question the same way on every machine, and
+    // that agreement is the whole of what makes the resync below enough for a
+    // tank — where a machine hanging on a rotor is somewhere the ground has no
+    // opinion about at all, so what arrived is what there is. Without this the
+    // local probe would sink every remote helicopter at gravity until the one
+    // metre yanked it back, once a frame, for the whole round.
     const wantY = y + half;
-    if (Math.abs(p.y - wantY) > REMOTE_RESYNC_Y) {
+    const fl = t.flight;
+    if (fl) {
+      // Measured, not sent, for the reason `speed` is measured next door — the
+      // springs answer to it and a driver reporting it could report anything —
+      // and bounded by what the machine can actually do, so one long frame is
+      // not read as a landing.
+      this.velY =
+        dt > 0
+          ? Math.max(
+              -fl.descentRate,
+              Math.min(fl.climbRate, (wantY - p.y) / dt),
+            )
+          : 0;
+      p.y = wantY;
+      // **The rotor is holding it up, whatever it is doing.** With `lift` at
+      // gravity, `standOnGround` below cannot pull the hull down — its free
+      // fall is a no-op — and what is left of that method is the one thing this
+      // side does want from it: the plank as a floor, so a machine that lands
+      // on this screen lands on the frame it landed on the pilot's, skids and
+      // all.
+      this.lift = c.gravity;
+      // The disc, spun on this side rather than sent. It is the picture and
+      // the wire carries none of the picture — the belts, the lean, the heave
+      // and the whips are all worked out locally for the same reason — and a
+      // rotor is the one part of a helicopter that is turning even when the
+      // machine on the wire has not moved at all. Held up by whether anybody
+      // is ABOARD, which the snapshot does carry.
+      const want = this.seats[DRIVER] ? 1 : 0;
+      this.rotor +=
+        Math.sign(want - this.rotor) *
+        Math.min(Math.abs(want - this.rotor), dt / fl.spoolTime);
+      this.rotorRun =
+        (this.rotorRun + this.rotor * fl.rotorRate * dt) % (Math.PI * 2);
+    } else if (Math.abs(p.y - wantY) > REMOTE_RESYNC_Y) {
       p.y = wantY;
       this.velY = 0;
       this.grounded = false;
     }
+
     this.turretYaw = turretYaw;
     this.gunPitch = gunPitch;
 
@@ -1786,8 +2198,15 @@ export class Vehicle implements Combatant, RayHull {
     this.reloadT = Math.max(0, this.reloadT - dt);
 
     // The belts, off the drive that was just measured — `update`'s arithmetic
-    // to the letter, including the skip for a hull doing neither.
-    if (this.speed !== 0 || yawRate !== 0) {
+    // to the letter, including the skip for a hull doing neither, and the same
+    // widening: a disc that has turned is a picture that has changed, and a
+    // helicopter hovering perfectly still is exactly the hull the old gate
+    // would have frozen the rotor on.
+    if (
+      this.speed !== 0 ||
+      yawRate !== 0 ||
+      this.rotorRun !== this.rotorShown
+    ) {
       const differential = (yawRate * this.rig.gauge) / 2;
       this.trackRun[0] += (this.speed + differential) * dt;
       this.trackRun[1] += (this.speed - differential) * dt;
@@ -1801,7 +2220,9 @@ export class Vehicle implements Combatant, RayHull {
         this.trackRun[0],
         this.trackRun[1],
         Math.abs(turn) > 1e-4 ? Math.max(-1, Math.min(1, yawRate / turn)) : 0,
+        this.rotorRun,
       );
+      this.rotorShown = this.rotorRun;
     }
     if (Math.abs(this.speed) > 1e-3) this.aimCollider();
 
@@ -2204,7 +2625,11 @@ export class Vehicle implements Combatant, RayHull {
     // Anything that could have changed what is underfoot re-arms the question;
     // a hull that is stopped, standing and settled asks nothing. See
     // `needsGround`.
-    if (Math.abs(this.speed) > 1e-3) this.needsGround = true;
+    // …and a rotor is one of the things that could have. `lift` is 0 on a hull
+    // that has none, so this reads exactly as it always did on tracks; on a
+    // helicopter it is what stops the answer going stale under a machine that
+    // is holding itself up without going anywhere.
+    if (Math.abs(this.speed) > 1e-3 || this.lift > 0) this.needsGround = true;
     if (!this.needsGround && this.grounded) return;
 
     const tracks = p.y - half;
@@ -2280,7 +2705,14 @@ export class Vehicle implements Combatant, RayHull {
     // and every one of those landings is an impact the springs below would now
     // answer to. A hull following the ground down carries the GROUND's own
     // rate and lands exactly once, when there is finally nothing there.
-    const vFree = this.velY - c.gravity * dt;
+    //
+    // **And what it is asked AGAINST is `lift`**, which is the whole of what a
+    // flying hull does to this method. On tracks `lift` is 0 and this is
+    // `velY - gravity * dt` to the bit; on a rotor at a hover it is exactly
+    // gravity and the step is a no-op, so the hull hangs. Gravity was never
+    // the only vertical acceleration — it was only the only one anything in
+    // this game had ever produced.
+    const vFree = this.velY + (this.lift - c.gravity) * dt;
     const yFree = p.y + vFree * dt;
     if (yFree > target) {
       p.y = yFree;

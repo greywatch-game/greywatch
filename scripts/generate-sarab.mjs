@@ -934,6 +934,35 @@ for (const h of HOMES) {
       `${n2(Number(heightAt(kx, kz).toFixed(2)))}, ${n2(kz)}), ` +
       `yaw: ${h.yaw}, kind: "truck" },`,
   );
+  // …and the HELIPAD, on the far side of the yard from the tank.
+  //
+  // **What it owes is different from the other two's, and shorter.** It owes
+  // nothing at all to the departure-corridor argument above: a helicopter does
+  // not leave a yard, it leaves straight UP, so what replaces that check is
+  // overhead clearance — the gatehouse is the tallest thing in here at 34 m out
+  // and the disc's edge stops 7 m short of it.
+  //
+  // What it does still owe is `crew.boardRadius`, for the truck's reason with
+  // one twist. A bot may man the door gun and may never fly one
+  // (`VehicleCrew.board`), and the second chair is only offered once somebody
+  // IS flying — so this circle is not there to get the machine crewed while it
+  // sits, but so that a pilot who has just lifted picks a gunner up on the way.
+  // 23.3 m to the nearest infantry spawn, inside the 24 m sweep, with the
+  // next at 24.2 — so it is ONE circle rather than two, and deliberately: a
+  // machine nobody can fly does not want a queue of bots walking past it.
+  //
+  // 18 m against the tank's 16, because what has to be clear is the ROTOR DISC
+  // (10.4 m across — `drive.collideRadius`) rather than the fuselage. It stands
+  // 3 m clear of the tank's pad in x, 11 m clear of the truck's in z, and 7.5 m
+  // and 8.5 m clear of the two nearest spawns.
+  const gx = h.x - h.s * 6;
+  const gz = h.z + h.s * 14;
+  claim(gx, gz, 18, 18);
+  vehicles.push(
+    `  { team: ${h.team}, pos: new Vector3(${n2(gx)}, ` +
+      `${n2(Number(heightAt(gx, gz).toFixed(2)))}, ${n2(gz)}), ` +
+      `yaw: ${h.yaw}, kind: "heli" },`,
+  );
 }
 
 // --- A — the Great Mosque ----------------------------------------------------
@@ -2125,8 +2154,8 @@ ${spawns.join("\n")}
 ];
 
 /**
- * TWO hardstandings a side, in each home yard: a tank on the inner edge and a
- * gun truck behind it.
+ * THREE hardstandings a side, in each home yard: a tank on the inner edge, a
+ * gun truck behind it and a helicopter across the yard from both.
  *
  * **The respawn is per hardstanding, so the number of entries here IS how many
  * vehicles a side can ever have on the field** — and it is also what turns the
@@ -2157,10 +2186,36 @@ ${spawns.join("\n")}
  * circle or the other from the frame it deploys.
  *
  * The rest is what any hardstanding owes (see \`docs/vehicles.md\`): the ground
- * is level to 1.1 cm across the whole footprint, the nearest structure over
+ * is level to 1.1 cm across the whole footprint — and dead level, to 0.0 cm,
+ * across the helicopter's whole 10.4 m disc — the nearest structure over
  * 35 cm is 24 m away, and the departure bearing runs 90 m out of the yard
  * through a corridor never narrower than 9.1 m at a gradient never over 0.14 —
  * well inside \`climbSlope\`, and nearly three times \`collideRadius * 2\`.
+ *
+ * **The HELICOPTER is the answer to the half of it NEITHER ground vehicle can
+ * have**, which on a 900 m square is the wadi and the high ground: the fords
+ * are the three places a hull may cross and are therefore the three places
+ * worth watching, and the ridges are ground no hull reaches at all. It crosses
+ * both in a straight line at 32 m/s — nearly twice the truck's road speed — and
+ * it puts a gun over the Crossing, which is the one flag a hull can shell from
+ * outside and never take.
+ *
+ * What it pays is everything a fast thing pays and three things more. It has no
+ * cannon and its only weapon is the door gun the SECOND man lays, so a lone
+ * pilot has flown a taxi to the fight. Its rotor disc is 10.4 m across, which
+ * closes the old town to it outright — the alleys that are a truck's ground and
+ * not a tank's are not an aircraft's either. And it is FRAGILE: a rifle does
+ * 70% of its damage to it against the tank's 5%, and it cannot climb out of
+ * trouble, because \`flight.ceiling\` is 40 m and the bots' own engagement range
+ * is 55 — which is deliberate, and is the whole of what keeps a machine nothing
+ * on the ground can catch from being one nothing on the ground can answer.
+ *
+ * **No bot will ever fly one**, so unlike the other four pads this one is idle
+ * until a player walks to it. Its circle is sized for the other half of that
+ * rule: a bot may take the DOOR GUN, but only once somebody is already at the
+ * controls, so 23.3 m to the nearest infantry spawn is there to put a gunner in
+ * the back of a machine that is about to leave rather than to get a parked one
+ * crewed.
  *
  * **It is also the only thing on this map that costs the AUTHORITY anything
  * that grows with the extent.** A DRIVEN hull is a \`moveWithCollisions\`

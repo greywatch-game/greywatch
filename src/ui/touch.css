@@ -248,6 +248,30 @@
   --frame-fill: rgba(10, 13, 20, 0.32);
 }
 
+/* The COLLECTIVE, and it is where JUMP and CROUCH already are.
+
+   Deliberate rather than convenient: the two keys this is bound to on a
+   keyboard are Space and Ctrl, which are the same two, so a player who has
+   flown anything before reaches for the right place on every device. They sit
+   ONE column inboard of that pair so a thumb already resting on the fire button
+   does not have to travel, and they are stacked up/down in the order they act
+   — an UP button below a DOWN button is a control that reads backwards.
+
+   Framed in amber for .tb-use's reason, and it is the same reason: neither is
+   ever merely available, and both are on screen only while there is something
+   to fly. */
+.tb-climb,
+.tb-descend {
+  right: 108px;
+  width: 66px;
+  height: 60px;
+  font-size: 10px;
+  --frame-edge: rgba(255, 196, 107, 0.5);
+  --frame-fill: rgba(10, 13, 20, 0.32);
+}
+.tb-climb { bottom: 208px; }
+.tb-descend { bottom: 130px; }
+
 /* The claw grip's trigger: a left index finger on the edge, clear of the
    corner the left THUMB works the stick in. Quieter than the main one because
    most players never use it. */

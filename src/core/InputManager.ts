@@ -48,6 +48,7 @@ export interface TouchSource {
     swap: boolean;
     scoreboard: boolean;
     use: boolean;
+    lift: number;
   };
 }
 
@@ -63,6 +64,27 @@ export class InputManager {
   moveX = 0;
   /** Forward axis, -1 (back) .. 1 (forward). */
   moveY = 0;
+  /**
+   * The COLLECTIVE, -1 (down) .. 1 (up). Only a flying hull reads it.
+   *
+   * A third movement AXIS rather than two buttons, because what it asks for is
+   * how hard and not whether — and composed here beside the other two so that
+   * the keyboard, the pad and the glass arrive at one number the way they
+   * already do for a walk.
+   *
+   * **Bound to the two keys that already mean up and down, and it costs the
+   * body nothing.** A driver never calls `Player.update`, so neither meaning
+   * can be live at the same time as this one: `jumpPressed` is an EDGE that
+   * nothing in a vehicle reads, and `crouch` is a LATCH no driver consults.
+   * That is the same two-lives-that-never-overlap argument `usePressed` makes
+   * for the d-pad and `swapPressed` makes for Y.
+   *
+   * The pad's A and B are read RAW here rather than through those two flags,
+   * and that is load-bearing rather than tidy: a collective is a thing you
+   * HOLD, and going through the crouch latch would be a machine that climbed
+   * until you pressed B a second time.
+   */
+  lift = 0;
   /** Mouse look delta in pixels for this frame. */
   mouseLookX = 0;
   mouseLookY = 0;
@@ -583,6 +605,20 @@ export class InputManager {
     const padLoadout = pad ? buttonHeld(pad, 3, trig) : false;
     const padStart = pad ? buttonHeld(pad, 9, trig) : false;
     const padSprint = pad ? buttonHeld(pad, 10, trig) : false;
+
+    // The collective. See `lift`: Space and Ctrl on a keyboard, A and B raw on
+    // the pad, and a contextual pair on glass that is only drawn when there is
+    // something to fly.
+    let kLift = 0;
+    if (this.keys.has("Space")) kLift += 1;
+    if (this.keys.has("ControlLeft") || this.keys.has("ControlRight")) {
+      kLift -= 1;
+    }
+    this.lift = clamp(
+      kLift + (padJump ? 1 : 0) - (padCrouch ? 1 : 0) + (t ? t.lift : 0),
+      -1,
+      1,
+    );
 
     this.padActive =
       pad !== null &&

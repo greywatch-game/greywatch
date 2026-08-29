@@ -63,8 +63,21 @@ import type { ScoreKind } from "../systems/ScoreBook";
  * could be one it has no body for. That is the authority and the client
  * disagreeing about who is in the round, which is squarely what a bump is for.
  * See `server/Roster.ts`.
+ *
+ * 7 is the HELICOPTER, and — exactly as 6 was — it is a bump about what a
+ * number means rather than about a field. No message shape moved: a hull's
+ * position has always carried a `y` and `VehicleState` has always been indexed
+ * by `i`. What changed is what `i` INDEXES. A hardstanding's identity on the
+ * wire is its place in `MapLayout.vehicles`, and Sarab's list goes from four
+ * entries to six with the new pads emitted inside the per-yard loop, so every
+ * index from 2 up now names a different vehicle. A version-6 client would draw
+ * team 1's tank where a helicopter is, index past the end of the fleet for the
+ * last two, and — worse — fail to build the fleet at all, because `kindOf` on a
+ * stale bundle has no row for the kind its layout names. There is no emission
+ * order that avoids the shift and the generator should not be contorted to try
+ * for one. See `docs/vehicles.md`, "What a map owes".
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /**
  * The longest display name a client may claim, in characters.

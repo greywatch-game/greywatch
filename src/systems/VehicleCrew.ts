@@ -476,6 +476,20 @@ export class VehicleCrew {
       // cannot hand the same man both jobs.
       for (const seat of SEATS) {
         if (tank.seats[seat]) continue;
+        // **A bot may man the gun on anything and may drive only what the flow
+        // field can describe.** The driver in this file is `NavGrid.steer` plus
+        // `Vehicle.rideableAt`, and both are answers about GROUND — there is no
+        // route through the air, and `rideableAt` would be asked about a place
+        // nothing is standing on. So a hull that flies is one the AI can shoot
+        // from and not one it can take anywhere. `flies` and never a kind, the
+        // way `armed` is asked three times further down this file.
+        if (seat === DRIVER && tank.flies) continue;
+        // …and the second chair on one is worth filling only once somebody IS
+        // flying it. A gunner is a man `BattleSystem.setCrewed` takes out of the
+        // fight, which on a hull the AI can drive is a trade — the hull goes
+        // somewhere — and on one it cannot is a body sitting on a hardstanding
+        // for the whole round.
+        if (tank.flies && !tank.seats[DRIVER]) continue;
         let best: Bot | null = null;
         let bestDist = reach;
         for (const bot of this.ctx.roster()) {
@@ -500,7 +514,16 @@ export class VehicleCrew {
       // Started on the hull's own heading rather than at zero: a turret asked
       // for world yaw 0 on the frame the crew arrives traverses to due north
       // before it does anything useful.
-      drive: { throttle: 0, steer: 0, aimYaw: tank.turretYaw, aimPitch: 0 },
+      drive: {
+        throttle: 0,
+        steer: 0,
+        // A bot never writes this and never reads one: `board` refuses the
+        // driver's chair on a hull that flies, so nothing here has a
+        // collective to pull. Stated because the shape requires it.
+        lift: 0,
+        aimYaw: tank.turretYaw,
+        aimPitch: 0,
+      },
       // …and the cupola gun on ITS own current bearing, for the identical
       // reason: a gun asked for world yaw 0 on the frame a gunner sits down
       // swings to due north before it does anything useful.

@@ -1792,6 +1792,8 @@ export class Match {
         { x, y, z },
         dt,
         tank.spec.drive.maxSpeed,
+        tank.climbRate,
+        tank.spec.flight?.ceiling ?? null,
       ).ok
     ) {
       return;
@@ -1863,6 +1865,13 @@ export class Match {
     const player = this.game.players.get(peer.slot);
     const tank = player ? this.game.hullOf(player) : null;
     if (!player || !tank) return;
+    // Refused in SILENCE, which is the honest answer to a claim made in bad
+    // faith: a client whose own prompt reads LAND TO GET OUT never asks. What
+    // it is holding back is the whole of the hole — there is no fall damage
+    // anywhere in this game, so a dismount at altitude is a free ride to any
+    // roof on the map. The policy is here rather than in HeadlessGame.seat
+    // because that method is the MECHANISM and this file is where policy goes.
+    if (!this.game.vehicles.dismountable(tank)) return;
     // Read BEFORE the seat is given up: `exitSpot` measures from the hull, and
     // `seat` is what stops this player being on it.
     const spot = this.game.vehicles.exitSpot(tank);

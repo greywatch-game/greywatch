@@ -810,7 +810,7 @@ export function buildTruck(
     // a truck's wheels are its suspension and its contact patch at once. On a
     // tank the two differ, which is the whole reason `VehicleRig` states both.
     wheelReach: AXLE_Z,
-    setRun: (left, right, steer) => setWheelRun(wheels, left, right, steer),
+    setRun: (left, right, steer, _rotor) => setWheelRun(wheels, left, right, steer),
     reset: () => resetTruckPose(rig, mats),
     paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
   };
@@ -864,7 +864,7 @@ function resetTruckPose(rig: VehicleRig, mats: CelMaterialFactory): void {
   rig.turret.rotation.set(0, 0, 0);
   rig.mgMount.rotation.set(0, 0, 0);
   rig.mgGun.rotation.set(0, 0, 0);
-  rig.setRun(0, 0, 0);
+  rig.setRun(0, 0, 0, 0);
   const share = CONFIG.vehicles.truck.antenna.baseShare;
   for (const w of rig.antennae) setAntennaBend(w, share, 0, 0, 0, 0);
   paintRig(rig.meshes, rig.livery, mats, false);

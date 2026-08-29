@@ -1,4 +1,4 @@
-# Vehicles: two kinds, one hull, and everything it is an exception to
+# Vehicles: three kinds, one hull, and everything it is an exception to
 
 What a vehicle IS to each subsystem that meets one, why it is the only moving
 `solid` mesh in the game, how a driver's frame differs from a body's, and what
@@ -6,7 +6,7 @@ is deliberately not built. Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps
 the summary; this file is the contract for `src/entities/Vehicle.ts`,
 `src/entities/vehicleRig.ts`, `src/entities/vehicleKinds.ts`,
 `src/entities/TankModel.ts`, `src/entities/TruckModel.ts`,
-`src/systems/VehicleSystem.ts`, `src/systems/VehicleCamera.ts`,
+`src/entities/HeliModel.ts`, `src/systems/VehicleSystem.ts`, `src/systems/VehicleCamera.ts`,
 `src/systems/VehicleCrew.ts` and for `Game`'s `updateDriver` /
 `frameVehicleCamera` / `mount` / `dismount` / `clearVehicle` / `resolveShell` /
 `offeredSeat`.
@@ -16,6 +16,12 @@ every rule in it was found on, and because the second kind changed none of
 them. Read "tank" as "the hull in front of you" everywhere except where a
 difference is called out.
 
+**The THIRD kind is the first that changed one**, and it changed exactly one:
+`standOnGround` now asks gravity against `Vehicle.lift` rather than against
+gravity alone, which is zero on anything that cannot fly and is therefore the
+same arithmetic it always was on both older kinds. See "Flying, and what
+`standOnGround` turned out to be" below.
+
 ## The shape of it
 
 A vehicle is a block of NUMBERS and a MESH, and everything else is machinery
@@ -24,10 +30,11 @@ that reads those two:
 | the thing | what it owns |
 | --- | --- |
 | `MapLayout.vehicles` | where each side's vehicles stand, and WHAT stands there. One `VehicleSpawnDef` per hardstanding; absent on two of the five shipped maps |
-| `config/vehicles.ts` | `VehicleSpec` — the shape of one kind — and the two kinds: the TANK and the gun TRUCK |
+| `MapLayout.vehicles` (again) | and on Sarab, THREE a side — a tank, a gun truck and a helicopter |
+| `config/vehicles.ts` | `VehicleSpec` — the shape of one kind — and the three kinds: the TANK, the gun TRUCK and the HELICOPTER |
 | `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a model, and the one place the default (a tank) is written down |
 | `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints `Vehicle` writes, the three extents the physics needs off the drawing, and the three closures a model hands back |
-| `entities/TankModel.ts`, `entities/TruckModel.ts` | the ART, one file per kind — the boxes, the running gear, the whips and the guns as JOINTS over them, and the charred repaint a wreck takes |
+| `entities/TankModel.ts`, `entities/TruckModel.ts`, `entities/HeliModel.ts` | the ART, one file per kind — the boxes, the running gear, the whips and the guns as JOINTS over them, and the charred repaint a wreck takes |
 | `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, and the springs behind its lean and its antennae |
 | `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, which seat a boarder gets, and where a dismount lands |
 | `systems/VehicleCamera.ts` | the view from behind a hull, and its pull-in |
@@ -39,18 +46,26 @@ decides who is in what, and wires `VehicleSystem`'s two announcements. Nothing
 in `VehicleSystem` has heard of a player, and nothing in `Vehicle` has heard of a
 hardstanding.
 
-## Two kinds, and the ONE branch between them
+## Three kinds, and the TWO capabilities between them
 
-**There are two vehicles and no code that knows it.** `Vehicle` is handed a
+**There are three vehicles and no code that knows it.** `Vehicle` is handed a
 `VehicleSpec` and a rig BUILDER by `VehicleSystem` and never learns which kind
 it is — `CONFIG.vehicles.tank` used to be read in forty-three places in that
-file and every one of them is `this.spec` now. A third kind is a row in
+file and every one of them is `this.spec` now. A fourth kind is a row in
 `VEHICLE_KINDS`, a block in `config/vehicles.ts` and a model file, and no `if`
 anywhere. **The moment a system asks which kind it is holding, that bargain is
 broken.**
 
-The one thing a kind genuinely differs by in code is whether it has a MAIN GUN,
-and even that is not asked as a kind:
+**Two things a kind genuinely differs by in code, and neither is asked as a
+kind.** Both are one nullable block in the spec resolved once into one boolean,
+and the boolean is what every reader puts instead:
+
+| the block | the question | what it gates |
+| --- | --- | --- |
+| `VehicleSpec.gun` | `Vehicle.armed` | the trigger, the HUD's loader row, the gun marker, an AI driver's lay-and-fire, the authority's rate gate on a claimed shell — six readers, listed below |
+| `VehicleSpec.flight` | `Vehicle.flies` | the drive block, the attitude, the wire's altitude, whether a bot may take the chair, the leash, the shadow focus, the collective's buttons and the authority's two bounds — nine readers, listed in the flight section |
+
+The first, in full:
 
 - `VehicleSpec.gun` is `null` on an unarmed kind, and it is ONE nullable field
   because the mount and the round are one weapon — `turret` nests inside it, so
@@ -1085,6 +1100,152 @@ exception), so every contact takes the higher of the two.
 all — `Game.updateDriver` calls `Player.updateVitals` and nothing else — so the
 hull's ground takes the place of the body's.
 
+## Flying, and what `standOnGround` turned out to be
+
+The "Not built" list used to end with an entry saying that nothing would ever
+fly, that both kinds stand on ground contacts, that **`standOnGround` is the
+whole of what a vehicle's relationship with the world is**, and that a
+helicopter is therefore not a `VehicleSpec` with different numbers in it. The
+first two clauses are exactly right and are the reason this was cheap. The third
+is wrong twice, and how it is wrong is the whole of this section.
+
+### The one term
+
+`standOnGround` asks gravity FIRST — where the hull would be with nothing under
+it is what decides whether there is anything under it — and that question was
+written as `velY - gravity * dt`. It is now:
+
+```ts
+const vFree = this.velY + (this.lift - c.gravity) * dt;
+```
+
+`Vehicle.lift` is the vertical acceleration this hull's own powerplant is
+producing, and it is **zero on anything that cannot fly**, so for a tank and a
+truck that line is bit-identical to the one it replaced. Gravity was never the
+only vertical acceleration in this model; it was only the only one anything had
+ever produced.
+
+What falls out of one term is startling, and every bit of it is machinery that
+was already there:
+
+- **A hover is an EQUALITY.** With `lift` at gravity the free-fall step is a
+  no-op, `yFree` equals `p.y`, and the hull hangs. Nothing anywhere decides to
+  hold an altitude and nothing has to be told to stop.
+- **Airborne, the hull takes the branch the method already calls "driven off
+  something".** The plank is the terrain forty metres below, `yFree > target`,
+  and the hull rides its own `velY` with `grounded` false — which is precisely
+  the state a tank is in for the half-second after it leaves a kerb.
+- **Landing is the OTHER branch, unchanged.** `probeLength` is 6 m, so the last
+  six metres of a descent is where the ten contacts find the pad, the roof or
+  another vehicle's deck; the hull is stood on the plank and `velY` zeroed.
+- **`jolt` is the arrival, and it was already exactly right.** It is
+  `clamp(riseRate - riseWas, ±joltLimit)` — what the ground did to the hull's
+  vertical motion this frame — which on a machine that flies is the whole of a
+  touchdown. The skids compress and rebound through `flexHeave` with no new
+  code, and **nothing in the suspension knows a helicopter landed rather than a
+  tank driving off a kerb.**
+- **`grounded` swaps the tilt rate**, so the frame the skids leave the pad the
+  hull stops following the ground and starts following the cyclic.
+- **A parked helicopter costs the frame what a parked tank costs.** With nobody
+  aboard the rotor winds down, `lift` goes to 0, the re-arm gate below goes
+  false and the whole ten-contact probe is skipped.
+
+The gate above it widened by one term for the same reason:
+`if (Math.abs(this.speed) > 1e-3 || this.lift > 0)`. A machine holding itself up
+without going anywhere is a machine whose ground answer can still go stale.
+
+### `flies`, and the honest count of what asks it
+
+`VehicleSpec.flight` is `null` on a kind that cannot leave the ground and
+`Vehicle.flies` is that resolved once — `gun`/`armed`'s shape and `gun`/`armed`'s
+reason. It is the SECOND capability question in the file and there are still
+only two, but it is worth being as exact about its readers as the section above
+is about `armed`'s six, or a third kind erodes the bargain by stealth. Nine, and
+four of them are one line:
+
+1. `Vehicle.update`'s drive block — `flyStep` in place of the throttle walk.
+2. `Vehicle.update`'s tail — the commanded attitude overrides the ground's while
+   `!grounded`, and the crash check reads `jolt`.
+3. `Vehicle.updateRemote` — the wire owns `y` on a hull the ground has no
+   opinion about, and the rotor is spun locally.
+4. `VehicleCrew.board` — two clauses, below.
+5. `Game.updateDriver` — the leash, below.
+6. `Game.frameVehicleCamera` — the shadow window follows the FLOOR rather than
+   the hull, or an ortho window forty metres up drags the shadows out from under
+   the aircraft on any map with a low sun.
+7. `Game.pushTouchControls` — whether the collective's two buttons are drawn.
+8. `server/HeadlessGame` — the leash again, on the authority.
+9. `server/Match.onDrive` — `tank.spec.flight?.ceiling ?? null`, which is
+   `resolveShell`'s blessed data read rather than a kind test.
+
+**`standOnGround` is not on that list and that is the point of the whole
+design.** It has never heard of `flies`.
+
+### Most of a helicopter is numbers the other kinds already state
+
+This is `steerAtRest`'s rule applied a second time, and it is what kept the
+branch count at nine instead of thirty:
+
+| what you would expect to branch | what it actually is |
+| --- | --- |
+| pedal yaw instead of tracked steering | `turnAtSpeed: 1` and `steerAtRest: 1`, which collapse `steerAuthority` to a flat `turnRate` at every speed — and a flat yaw authority at every speed IS a tail rotor. Not one line changed |
+| the pedal linkage | `drive.steerRate`, through `steerTo` |
+| how far it may bank | `drive.tiltLimit` |
+| how fast the attitude answers | `drive.airTiltRate`, through `leanToGround` — the tank states 1.1 because nothing off the ground can change its attitude, the helicopter states 4.5 because its attitude IS the control |
+| the collision shape | `drive.collideRadius` = the ROTOR RADIUS, 5.2. So the narrowest gap it fits through is 10.4 m, and Sarab's seven-metre alleys are closed to it by the DRAWING rather than by a rule |
+| the skids' flex on touchdown | `flexHeave`, `flexSuspension` and `jolt`, unmodified |
+
+### The collective asks for a RATE, and that is the one non-obvious choice
+
+`lift` is an acceleration, but what the stick commands is a target climb rate
+that `lift` then chases. Both halves of that were measured rather than reasoned:
+
+- An acceleration-commanding collective holds VELOCITY when it is centred rather
+  than height — Newton's first law — so a machine that had been climbing went on
+  climbing after the stick was let go. **Measured at 237 m over a 40 m ceiling**,
+  with nothing in the model asking it to stop.
+- The ceiling fades the asked RATE, and only when it asks to go up. Fading
+  `lift` itself puts the machine under gravity near the ceiling and drops it out
+  of the sky: **measured at a 35 m fall in five seconds from a centred stick**,
+  ending in a crash the pilot did nothing to earn. Coming down is never something
+  the air refuses.
+
+Measured after both: full collective settles at **40.17 m** against a stated
+ceiling of 40, and ten seconds of hover at that height drifts **0.0 cm**.
+
+### The bank is the AIRSPEED, which is the one place `speed` is the wrong number
+
+`Vehicle.speed` is the along-heading scalar every ground reader wants, and in a
+hard turn it collapses — the heading sweeps round faster than the velocity
+follows it. A machine doing 6 m/s through a 77 deg/s turn reported 2 and banked
+three degrees, which reads as a vehicle sliding flat round a corner. What a turn
+actually pulls is `|v| * omega`, so the bank is taken off `hypot(vel.x, vel.z)`.
+A cruising turn banks 8 degrees against a 26-degree limit.
+
+`Vehicle.vel` exists for the same reason: the horizontal velocity used to be
+rebuilt at the move as `(sin yaw, 0, cos yaw) * speed`, which is the same vector
+for anything that can only travel forwards and a lie for something that drifts.
+It is a field now, `speed` is measured off it on a flying hull, and `stirred`
+asks the VELOCITY rather than `speed` — without which a hovering machine that
+had drifted into a wall would never be pushed back out of it.
+
+### Three gaps, all accepted on purpose
+
+- **`vel` stays horizontal and `standOnGround` remains the sole owner of
+  `body.position.y`.** Putting a Y component through `moveWithCollisions` was
+  the obvious move and is wrong: the collision ellipsoid's floor sits
+  `climbHeight/2` above the hull's bottom, so a descending machine would be
+  stopped by the collider and put back by the plank, once a frame, for ever. The
+  cost is that **a flying hull is not collided upward** — it can climb through
+  the underside of an arch. That is the same class of accepted gap as "a hull
+  pivots through whatever it is beside".
+- **No ground effect.** It is invisible from twelve metres back, and what it
+  would buy is that the last metre of every descent behaves differently from the
+  rest of it — which is the part of a landing the player is actually watching.
+- **No autorotation.** A rotor that stops lifting simply stops lifting, and the
+  machine falls at gravity. That is correct and it is also what makes leaving a
+  hull in the air a decision.
+
 ## What a hit is worth: `DamageKind`
 
 `Hittable.takeDamage(amount, from?, kind?)` grew a third parameter, and a tank is
@@ -1665,7 +1826,7 @@ which steps a fleet.
 `MapLayout.vehicles` is absent on Hollowmere and Greyfen, and a map that says
 nothing is unaffected — `VehicleSystem` builds nothing, costs nothing and is
 never asked anything. Coldharbour and Harrowmead state two each, one per team;
-Sarab states FOUR, a tank and a truck a side. What a map owes to be able to:
+Sarab states SIX, a tank, a gun truck and a helicopter a side. What a map owes to be able to:
 
 - **Ground a seven-metre hull can get off.** On Coldharbour the two corner yards
   are the only 32 m squares on the map with nothing in them, which is also why
@@ -1701,6 +1862,17 @@ Sarab states FOUR, a tank and a truck a side. What a map owes to be able to:
   9.1 m at a gradient never over 0.071. The first candidate — on the yard's own
   diagonal — was rejected because the bearing ran into a shed at 36 m, which is
   what the corridor check is for.
+
+**A pad for something that FLIES owes a shorter list, and one item the others
+do not have.** It owes nothing at all to the departure-bearing argument above —
+a helicopter does not leave a yard, it leaves straight up — and what replaces
+that is OVERHEAD clearance, which on Sarab is the gatehouse at 34 m out against
+a disc that stops 7 m short of it. It still owes level ground (both of Sarab's
+are dead level, 0.0 cm across the whole 10.4 m disc, because the home yards are
+flattened terraces) and it still owes `crew.boardRadius` — but for a different
+reason than the truck's, because no bot will ever fly one: the circle is not
+there to get a parked machine crewed, it is there so a pilot who has just lifted
+picks a GUNNER up on the way. 23.3 m to the nearest infantry spawn.
 
 Adding a hardstanding changes the layout hash, so `npm run collision` has to be
 re-run — the entries join `MapBuilder.keepClear`, which is an input to scatter
@@ -2097,11 +2269,56 @@ ray happened to find, which can be a street away.
   characters are not: the depth map re-renders only when the texel-snapped focus
   moves, so a tank driving past a stationary observer would drag a stale shadow.
   Characters get blob discs instead; a vehicle gets nothing yet.
-- **No third kind, and in particular nothing that FLIES or FLOATS.** Both
-  existing kinds stand on ground contacts against `TerrainField` and the
-  collider boxes, and `standOnGround` is the whole of what a vehicle's
-  relationship with the world is. A helicopter is not a `VehicleSpec` with
-  different numbers in it.
+- **~~No third kind, and in particular nothing that FLIES or FLOATS.~~ Three,
+  and the third one flies** — see "Flying, and what `standOnGround` turned out
+  to be" above. The entry that used to stand here said that both kinds stand on
+  ground contacts against `TerrainField` and the collider boxes, that
+  "`standOnGround` is the whole of what a vehicle's relationship with the world
+  is", and that "a helicopter is not a `VehicleSpec` with different numbers in
+  it". **The first two were exactly right and are the reason this was cheap.**
+  `standOnGround` *is* the whole of the relationship — and it turned out to be
+  the whole of a helicopter's relationship too, because what a machine hanging
+  on a rotor needs from the ground is a floor to land on, an attitude to sit at
+  and a jolt to spend on its skids, and it needed all three. What the entry got
+  wrong is the last clause, twice: a helicopter IS a `VehicleSpec` with
+  different numbers in it plus one more nullable block, and `standOnGround` did
+  not have to be replaced, forked or given an `if` — it needed **one term**,
+  `Vehicle.lift`, added to the free-fall integration it already had. What was
+  actually missing was never a second ground model. It was the observation that
+  gravity had only ever been the only vertical acceleration because nothing in
+  the game had ever produced another one.
+- **No ground effect, and no autorotation.** A rotor that stops lifting stops
+  lifting, and the machine falls at gravity — which is what makes leaving a hull
+  in the air a decision rather than a shortcut. Ground effect is invisible from
+  twelve metres back and would make the last metre of every descent behave
+  differently from the rest of it, which is the part of a landing a player is
+  actually watching.
+- **A flying hull is not collided UPWARD.** `vel` is horizontal and
+  `standOnGround` owns `body.position.y` alone, so nothing stops a helicopter
+  climbing through the underside of an arch. Putting a Y component through
+  `moveWithCollisions` is the obvious fix and is worse: the collision ellipsoid's
+  floor sits `climbHeight/2` above the hull's bottom, so a descending machine
+  would be stopped by the collider and put back by the plank once a frame for
+  ever. Same class as "a hull pivots through whatever it is beside".
+- **No bot will ever FLY one**, and that is the one place the AI knows a
+  capability. `VehicleCrew`'s driver is a ground flow field plus
+  `Vehicle.rideableAt`, and neither has anything to say about the air, so
+  `board` refuses the pilot's chair on a hull that flies and refuses the
+  gunner's until somebody is already at the controls. A helipad is therefore the
+  one hardstanding on any map that sits idle until a player walks to it. A bot
+  gunner evicted at altitude falls — it has its own ground probe and lands
+  rather than breaking, but it is a real oddity and it is accepted.
+- **A dismount at height is REFUSED rather than punished**, because there is no
+  fall damage anywhere in this game and inventing some for one vehicle would be
+  a rule with one customer. `VehicleSystem.dismountable` is a HEIGHT rule and
+  not a kind rule — a tank on the lip of a parkade deck reaches it too — and the
+  prompt says `LAND TO GET OUT` rather than the key quietly doing nothing.
+- **The helicopter has no voice of its own.** `Sfx.buildEngine` is one
+  description of a DIESEL and `VehicleSpec.engine` is two numbers against the
+  tank's; a rotor slap would be a seventh source in that graph. It ships with
+  `clatter: 0` and a high `revMult`, which is a turbine and not a rotor, and
+  **a hovering machine is quiet** because `hullEngine` is driven by
+  `travel / maxSpeed`. That is the first thing to fix.
 - **Team-locked.** `VehicleSystem.enterable` refuses the other side's armour.
   Stealing it is a real design choice and a good one in some shooters, but made
   by accident it would mean a hardstanding's respawn timer feeding the wrong team

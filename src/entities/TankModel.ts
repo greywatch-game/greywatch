@@ -705,7 +705,7 @@ export function buildTank(
     gauge: TRACK_GAUGE,
     contactReach: TRACK_REACH,
     wheelReach: WHEEL_REACH,
-    setRun: (left, right, _steer) => setTrackRun(tracks, left, right),
+    setRun: (left, right, _steer, _rotor) => setTrackRun(tracks, left, right),
     reset: () => resetTankPose(rig, mats),
     paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
   };
@@ -759,7 +759,7 @@ function resetTankPose(rig: VehicleRig, mats: CelMaterialFactory): void {
   rig.gun?.rotation.set(0, 0, 0);
   rig.mgMount.rotation.set(0, 0, 0);
   rig.mgGun.rotation.set(0, 0, 0);
-  rig.setRun(0, 0, 0);
+  rig.setRun(0, 0, 0, 0);
   const share = CONFIG.vehicles.tank.antenna.baseShare;
   for (const w of rig.antennae) setAntennaBend(w, share, 0, 0, 0, 0);
   paintRig(rig.meshes, rig.livery, mats, false);

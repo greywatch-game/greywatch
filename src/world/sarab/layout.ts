@@ -1015,8 +1015,8 @@ const spawns: SpawnPointDef[] = [
 ];
 
 /**
- * TWO hardstandings a side, in each home yard: a tank on the inner edge and a
- * gun truck behind it.
+ * THREE hardstandings a side, in each home yard: a tank on the inner edge, a
+ * gun truck behind it and a helicopter across the yard from both.
  *
  * **The respawn is per hardstanding, so the number of entries here IS how many
  * vehicles a side can ever have on the field** — and it is also what turns the
@@ -1047,10 +1047,36 @@ const spawns: SpawnPointDef[] = [
  * circle or the other from the frame it deploys.
  *
  * The rest is what any hardstanding owes (see `docs/vehicles.md`): the ground
- * is level to 1.1 cm across the whole footprint, the nearest structure over
+ * is level to 1.1 cm across the whole footprint — and dead level, to 0.0 cm,
+ * across the helicopter's whole 10.4 m disc — the nearest structure over
  * 35 cm is 24 m away, and the departure bearing runs 90 m out of the yard
  * through a corridor never narrower than 9.1 m at a gradient never over 0.14 —
  * well inside `climbSlope`, and nearly three times `collideRadius * 2`.
+ *
+ * **The HELICOPTER is the answer to the half of it NEITHER ground vehicle can
+ * have**, which on a 900 m square is the wadi and the high ground: the fords
+ * are the three places a hull may cross and are therefore the three places
+ * worth watching, and the ridges are ground no hull reaches at all. It crosses
+ * both in a straight line at 32 m/s — nearly twice the truck's road speed — and
+ * it puts a gun over the Crossing, which is the one flag a hull can shell from
+ * outside and never take.
+ *
+ * What it pays is everything a fast thing pays and three things more. It has no
+ * cannon and its only weapon is the door gun the SECOND man lays, so a lone
+ * pilot has flown a taxi to the fight. Its rotor disc is 10.4 m across, which
+ * closes the old town to it outright — the alleys that are a truck's ground and
+ * not a tank's are not an aircraft's either. And it is FRAGILE: a rifle does
+ * 70% of its damage to it against the tank's 5%, and it cannot climb out of
+ * trouble, because `flight.ceiling` is 40 m and the bots' own engagement range
+ * is 55 — which is deliberate, and is the whole of what keeps a machine nothing
+ * on the ground can catch from being one nothing on the ground can answer.
+ *
+ * **No bot will ever fly one**, so unlike the other four pads this one is idle
+ * until a player walks to it. Its circle is sized for the other half of that
+ * rule: a bot may take the DOOR GUN, but only once somebody is already at the
+ * controls, so 23.3 m to the nearest infantry spawn is there to put a gunner in
+ * the back of a machine that is about to leave rather than to get a parked one
+ * crewed.
  *
  * **It is also the only thing on this map that costs the AUTHORITY anything
  * that grows with the extent.** A DRIVEN hull is a `moveWithCollisions`
@@ -1063,8 +1089,10 @@ const spawns: SpawnPointDef[] = [
 const vehicles: VehicleSpawnDef[] = [
   { team: 0, pos: new Vector3(-292, -2.6, -316), yaw: Math.PI / 4 },
   { team: 0, pos: new Vector3(-322, -2.6, -306), yaw: Math.PI / 4, kind: "truck" },
+  { team: 0, pos: new Vector3(-312, -2.6, -332), yaw: Math.PI / 4, kind: "heli" },
   { team: 1, pos: new Vector3(292, 0, 316), yaw: -Math.PI * 0.75 },
   { team: 1, pos: new Vector3(322, 0, 306), yaw: -Math.PI * 0.75, kind: "truck" },
+  { team: 1, pos: new Vector3(312, 0, 332), yaw: -Math.PI * 0.75, kind: "heli" },
 ];
 
 const water: WaterRect[] = [
@@ -1130,37 +1158,6 @@ export const SarabLayout: MapLayout = {
    * says a larger map owes.
    */
   size: 900,
-  /**
-   * **Twenty-four a side, and it is `size` finishing its own sentence.**
-   * `ENGINE_UPGRADE.md` S10 is the measurement: sixteen bodies over 900 m of
-   * play is one per 51,000 m^2 against Harrowmead's one per 10,000, and what
-   * came of it headless was five of eleven rounds running the full 45-minute
-   * cap with tickets left on both sides and a peak contact of 5-7 bots against
-   * 10-14 on the levels. Difficulty does not move that and neither does the
-   * borderland — a round is made of CONTACT, and this is the lever that buys
-   * it. At 24 the density is one body per 17,000 m^2, between Coldharbour's and
-   * Harrowmead's, which is where the town was laid out to sit.
-   *
-   * It is `CONFIG.bots.maxPerTeam` exactly, and that is not a coincidence — the
-   * bound was raised to this map's roster. What it costs is 48 rigs in the
-   * frame's mesh walk instead of 16, which is the one thing about this map that
-   * is worse than it was and is paid on this map alone: `BattleSystem` builds
-   * its pool to the map's roster, so the four maps that state nothing are
-   * unchanged to the bit.
-   *
-   * The round gets SHORTER with it and is meant to: `CONFIG.conquest.tickets`
-   * is 400 whatever the roster, so three times the bodies is roughly three
-   * times the death rate. That is S10's complaint answered rather than a side
-   * effect of answering it.
-   *
-   * **Six squads a side rather than two**, at `CONFIG.bots.squadSize` of 4 —
-   * which is six of this map's five flags' worth of squad orders, and six
-   * launchers a team rather than two at `antiTankBots.perSquad`, against the
-   * two hulls a side the hardstandings below field. The ratio of tubes to
-   * bodies is untouched; what changed is that there are enough of both for a
-   * street to be contested by more than one squad at a time.
-   */
-  perTeam: 24,
   /**
    * Five, because this town genuinely stacks: the ground, two floors and a roof
    * inside a shelled block, and a parapet or a rubble heap over one of them.

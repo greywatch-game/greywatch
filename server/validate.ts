@@ -212,10 +212,42 @@ export function validateDrive(
    * a fact about it.
    */
   maxSpeed: number,
+  /**
+   * The fastest this hull can GAIN HEIGHT under its own power, in m/s — a
+   * rotor's own climb rate, or, on a tracked hull, what riding a grade up gives
+   * it plus what `launchSpeed` lets it carry off the crest.
+   *
+   * `Vehicle.climbRate` resolves it once per hull, for the reason `maxSpeed` is
+   * passed rather than assumed: the caller has the hull in hand and this is a
+   * fact about it.
+   */
+  maxClimb: number,
+  /**
+   * How far over the heightfield this hull may ever be, or **null for one that
+   * cannot leave the ground** — where the answer is "as high as the map goes",
+   * and a map is full of legitimate high ground the field knows nothing about.
+   * `validateMove`'s own note on its air allowance is the argument.
+   */
+  ceiling: number | null,
 ): Verdict {
   const dx = to.x - from.x;
   const dz = to.z - from.z;
   if (Math.hypot(dx, dz) > maxSpeed * SPEED_TOLERANCE * dt) {
+    return { ok: false, reason: "speed" };
+  }
+  // **The vertical, which until there was something that could fly nothing
+  // bounded at all.** A tracked hull's climb is what riding a grade up gives it
+  // plus what it may carry off the crest, and the tolerance leaves it 65% of
+  // headroom over the fastest rise the limiter in `standOnGround` can actually
+  // produce — so this has never been able to refuse a legitimate tank, and it
+  // is stated for every kind rather than for the one that needed it.
+  //
+  // **The DESCENT is deliberately not bounded**, which is the same acceptance
+  // the body's own check makes on the same axis: falling is gravity's, a client
+  // frame that ran long legitimately covers a lot of it, and a hull claiming to
+  // have fallen is claiming to be somewhere lower than it was — which is not a
+  // thing anybody cheats to do.
+  if (to.y - from.y > maxClimb * SPEED_TOLERANCE * dt) {
     return { ok: false, reason: "speed" };
   }
   // The same extent a body is held to, and for the same reason: past the
@@ -227,6 +259,16 @@ export function validateDrive(
   const half = map.size / 2 + map.margin;
   if (Math.abs(to.x) > half || Math.abs(to.z) > half) {
     return { ok: false, reason: "solid" };
+  }
+  // …and the CEILING, for a hull that has one. Null on a kind that cannot leave
+  // the ground, where the honest answer to "how high may this be" is "as high
+  // as the map goes" — the field knows nothing about the legitimate high ground
+  // a hull can be parked on, which is `validateMove`'s own argument for its air
+  // allowance. Measured over the heightfield rather than over the origin, the
+  // way the flight model measures it, or the same number means a different
+  // altitude at each end of a map that runs from -6 to +7.
+  if (ceiling !== null && to.y > map.terrain.surfaceAt(to.x, to.z) + ceiling) {
+    return { ok: false, reason: "ground" };
   }
   return OK;
 }

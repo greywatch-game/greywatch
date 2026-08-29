@@ -403,7 +403,13 @@ export class HeadlessGame {
         // tank by a countdown he was never shown. Cleared rather than merely
         // paused, so a driver who dismounts out there starts the count from
         // the top instead of from wherever the drive left it.
-        if (player.seat >= 0) {
+        // …and the exemption is a GROUND hull's, because what holds a hull
+        // in is the boundary rather than the clock, and the boundary is four
+        // boxes twenty metres tall. A machine that can be forty metres up flies
+        // over them into ground that has no floor, no nav cell and no terrain
+        // — so a flying hull keeps the countdown, and its pilot is warned by
+        // the same HUD a walking body is. `Vehicle.flies` and never a kind.
+        if (player.seat >= 0 && !this.vehicles.hulls[player.seat]?.flies) {
           player.leash.clear();
           continue;
         }

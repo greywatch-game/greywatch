@@ -13,14 +13,24 @@
  * (`CONFIG.vehicles.<kind>`, shaped by `VehicleSpec`) and a `VehicleRig` that
  * draws them — and everything else about it, the collider and the drive and
  * the ten ground contacts and the two seats and the chase camera and the
- * crush, is machinery that reads those two and nothing else. So a third kind
+ * crush, is machinery that reads those two and nothing else. So a fourth kind
  * is a row here, a block in `config/vehicles.ts` and a model file, and NO
  * `if` anywhere: the moment a system asks which kind it is holding, that
  * bargain is broken.
  *
- * The one thing a kind genuinely differs by in code is whether it has a main
- * gun, and even that is not asked here — `spec.gun` is null on a gunless kind
- * and `Vehicle.armed` is the question every reader puts instead.
+ * **The helicopter was the test of that and it held.** It is the one kind so
+ * far that needed anything the other two did not, and what it needed was a
+ * second nullable block rather than a second code path — `VehicleSpec.flight`,
+ * and `Vehicle.lift`, which is an addend to arithmetic that already existed and
+ * is zero on everything that cannot fly.
+ *
+ * TWO things a kind genuinely differs by in code, and neither is asked here.
+ * Each is one nullable block in the spec resolved once into one boolean that
+ * every reader puts instead: `spec.gun` is null on a gunless kind and
+ * `Vehicle.armed` is the question, and `spec.flight` is null on one that cannot
+ * leave the ground and `Vehicle.flies` is the question. Both are CAPABILITIES
+ * rather than identities, which is what keeps them inside the bargain above — a
+ * reader asks what a hull can DO, and never what it is.
  *
  * ## A map names a kind and nothing else
  *
@@ -34,6 +44,7 @@
 import { CONFIG } from "../config";
 import type { VehicleSpec } from "../config/vehicles";
 import type { Team } from "./Combatant";
+import { buildHeli } from "./HeliModel";
 import { buildTank } from "./TankModel";
 import { buildTruck } from "./TruckModel";
 import type { VehicleRig } from "./vehicleRig";
@@ -44,7 +55,7 @@ import type { Scene } from "@babylonjs/core";
  * What kinds of vehicle exist. A map's hardstanding names one of these, and a
  * hardstanding that names nothing is a tank.
  */
-export type VehicleKind = "tank" | "truck";
+export type VehicleKind = "tank" | "truck" | "heli";
 
 /** The two halves of one kind, as `VehicleSystem` needs them, and its name. */
 export interface VehicleType {
@@ -75,6 +86,7 @@ export interface VehicleType {
 export const VEHICLE_KINDS: Record<VehicleKind, VehicleType> = {
   tank: { name: "TANK", spec: CONFIG.vehicles.tank, build: buildTank },
   truck: { name: "TRUCK", spec: CONFIG.vehicles.truck, build: buildTruck },
+  heli: { name: "HELI", spec: CONFIG.vehicles.heli, build: buildHeli },
 };
 
 /**

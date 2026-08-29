@@ -698,6 +698,7 @@ export class Game {
   private readonly drive: DriveInput = {
     throttle: 0,
     steer: 0,
+    lift: 0,
     aimYaw: 0,
     aimPitch: 0,
   };
@@ -4324,6 +4325,10 @@ export class Game {
     if (driving) {
       this.drive.throttle = this.input.moveY;
       this.drive.steer = this.input.moveX;
+      // Written unconditionally, and a hull with nothing to lift it simply has
+      // nothing to spend it on — `DriveInput.lift` says so. No `if` about a
+      // kind at the one call site that could most easily have had one.
+      this.drive.lift = this.input.lift;
       this.drive.aimYaw = this.vehicleCam.yaw;
       this.drive.aimPitch = this.vehicleCam.pitch;
     } else {
@@ -4353,7 +4358,21 @@ export class Game {
     // which is survivable on a keyboard (the same key got you in a moment ago)
     // and is not on a pad or on glass — on glass it is the whole difference
     // between a hull you can leave and one you are stuck in until it burns.
-    this.offerUse(driving ? `EXIT ${tank.name}` : "LEAVE GUN");
+    // …and it is refused when there is nowhere to step down onto, in WORDS
+    // rather than by the key quietly doing nothing — a prompt and a control
+    // that disagree is the one thing `canSwapSeat` exists to prevent two lines
+    // below, and this is the same rule. There is no fall damage in this game,
+    // so an ungated dismount at height is a lift to any roof on the map; see
+    // `VehicleSystem.dismountable`, which is a HEIGHT rule and asks nothing
+    // about what kind of vehicle this is.
+    const canLeave = this.vehicles.dismountable(tank);
+    this.offerUse(
+      canLeave
+        ? driving
+          ? `EXIT ${tank.name}`
+          : "LEAVE GUN"
+        : "LAND TO GET OUT",
+    );
 
     // …and the way ACROSS. Refused outright when the other chair is taken
     // rather than silently doing nothing: `canSwapSeat` is what the HUD draws
@@ -4368,9 +4387,31 @@ export class Game {
     // body lands is the authority's, exactly as a spawn is, and a client that
     // put its own feet down beside the hull would be choosing a position
     // fifteen other clients are about to be told about.
-    if (this.input.usePressed) {
+    if (this.input.usePressed && canLeave) {
       if (this.net) this.net.sendDismount();
       else this.dismount();
+    }
+
+    // --- the leash, and this is the one seat that owes it ---
+    // **A driver is not leashed** — that rule is stated on both sides and its
+    // reason is Harrowmead's, where the first driver to take the long way round
+    // a flank would otherwise be counted out and burned in his own tank. What
+    // holds a hull in is the boundary, four boxes at the edge of the world.
+    //
+    // Those boxes are twenty metres tall. A machine that can be forty metres up
+    // flies over them, and past them there is no floor, no nav cell and no
+    // terrain — so on a FLYING hull the exemption has nothing left holding the
+    // other end of it, and the countdown goes back on. It is the same clock the
+    // body uses, so a pilot gets the same warning on the same HUD, and the kill
+    // is offline's alone for the reason it is below: in a match the authority
+    // runs its own against the position this client reported.
+    if (tank.flies) {
+      const out = this.leash.update(tank.position.x, tank.position.z, dt);
+      if (out === "expired" && !this.net) {
+        this.player.takeDamage(this.player.health);
+      }
+    } else {
+      this.leash.clear();
     }
   }
 
@@ -4874,6 +4915,14 @@ export class Game {
     // the window, so pushing the window further along the view would walk the
     // vehicle's own shadow out of it.
     this.shadowFocus.copyFrom(tank.center);
+    // …except that on a hull which can be forty metres up, the thing the window
+    // has to cover is the GROUND under it and not the vehicle. The window is
+    // snapped in the light's own basis, so lifting the focus slides it along
+    // the sun by `height * cos(elevation)` — survivable under Sarab's high sun
+    // and a third of the window's width under a low one, which would take the
+    // shadows out from under the aircraft on exactly the map that shows them
+    // best. A hull that casts no shadow of its own loses nothing by this.
+    if (tank.flies) this.shadowFocus.y = tank.floorY;
     this.updateSceneForCamera(dt, this.shadowFocus, null, this.combatants);
     // The load is the THROTTLE the hull is actually being given, which is this
     // player's stick only while they are the one holding it. A gunner pushing
@@ -4979,6 +5028,11 @@ export class Game {
   private dismount(): void {
     const tank = this.driving;
     if (!tank) return;
+    // Guarded again, and deliberately not only at the key: this is the one door
+    // out and its two callers must not each have to remember. See
+    // `VehicleSystem.dismountable` — with no fall damage in the game, a body
+    // put down beside a hull at altitude is a free ride to any roof.
+    if (!this.vehicles.dismountable(tank)) return;
     this.player.placeAt(this.vehicles.exitSpot(tank));
     const yaw = this.vehicleCam.yaw;
     this.clearVehicle();
@@ -7102,6 +7156,15 @@ export class Game {
     // them; glass has nothing to press until this puts it there, which is why
     // a phone could not get into a tank at all.
     this.touch.setUse(this.useOffer);
+    // …and the collective, for the identical reason one paragraph up: a phone
+    // has no Space and no Ctrl, so a helicopter is unflyable on glass until
+    // this puts the pair there. Only for a PILOT — a gunner has no sticks at
+    // all, and two buttons that move nothing are worse than no buttons.
+    this.touch.setFlying(
+      this.driving !== null &&
+        this.driving.flies &&
+        this.drivingSeat === DRIVER,
+    );
   }
 
   private pushScoreboard(): void {

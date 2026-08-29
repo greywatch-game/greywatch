@@ -425,8 +425,9 @@ valley), **Coldharbour** (a business district — what the first three overrides
 exist for), **Harrowmead** (`size: 400`, no wall around it) **and Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
 `ENGINE_UPGRADE.md` exists for). **The last three are the three with vehicles on
-them**, and they are the three biggest; **Sarab is the only one with two KINDS**,
-a tank and a gun truck a side, **and the only one that is not 8v8** — it fields
+them**, and they are the three biggest; **Sarab is the only one with all THREE
+KINDS**, a tank, a gun truck and a helicopter a side, **and the only one that is
+not 8v8** — it fields
 24 a side, online and off, which is `MapLayout.perTeam` and the row above.
 
 **Sarab is the map that SPENDS the levers**, and it is the only one that states
@@ -767,16 +768,16 @@ version cost, the pool's three tiers, the quaternion leak that freezes a
 respawned bot, the fog-wall gate shared with the LOD, the shard pool, and the
 death cam's camera hand-off.
 
-### Vehicles: two kinds, one hull, and the exceptions it is
+### Vehicles: three kinds, one hull, and the exceptions it is
 
 **A vehicle is a `Combatant` you get INSIDE, and TWO people fit.**
 `MapLayout.vehicles` is one hardstanding per vehicle — absent on two of the five
 maps — and `Game.driving` plus `Game.drivingSeat` are the two facts the feature
 turns on.
 
-**There are TWO KINDS and no code that knows it.** `Vehicle` is handed a
+**There are THREE KINDS and no code that knows it.** `Vehicle` is handed a
 `VehicleSpec` (`config/vehicles.ts`) and a rig BUILDER by `VehicleSystem` and
-never learns which it is; a third kind is a row in `VEHICLE_KINDS`
+never learns which it is; a fourth kind is a row in `VEHICLE_KINDS`
 (`entities/vehicleKinds.ts`), a block of numbers and a model file, and **no
 `if` anywhere** — the moment a system asks which kind it is holding, that is
 broken. `VehicleSpawnDef.kind` is what a map states and defaults to `"tank"`,
@@ -784,13 +785,38 @@ in one place. **The rig is CLOSED over its own model** (`setRun`, `reset`,
 `paint` are closures a builder hands back), because no interface over two belts
 of scrolling links and four wheels that steer is honest in both directions.
 
-**The one thing a kind differs by is whether it has a MAIN GUN, and even that
-is not asked as a kind**: `VehicleSpec.gun` is null, `Vehicle.armed` is that
-resolved once, and it is the only question anything else puts — the trigger, the
-HUD's loader row (ABSENT, not dimmed), the gun marker, an AI driver's
-lay-and-fire, and the authority's rate gate on a claimed shell. **An unarmed
-hull keeps `turretYaw` equal to its own yaw**, so a welded ring draws at a
-permanent local zero and `aimMg` needs no branch of its own.
+**TWO things a kind differs by, and neither is asked as a kind.** Each is one
+nullable block in the spec resolved once into one boolean, and the boolean is
+what every reader puts instead. `VehicleSpec.gun` is null on a gunless kind and
+**`Vehicle.armed`** is what the trigger, the HUD's loader row (ABSENT, not
+dimmed), the gun marker, an AI driver's lay-and-fire and the authority's rate
+gate on a claimed shell all ask. **An unarmed hull keeps `turretYaw` equal to
+its own yaw**, so a welded ring draws at a permanent local zero and `aimMg`
+needs no branch of its own.
+
+**`VehicleSpec.flight` is the second, and `Vehicle.flies` is what nine readers
+ask** — the drive block, the attitude, the wire's altitude, whether a bot may
+take the chair, the leash, the shadow focus, the touch collective and the
+authority's two bounds. **`standOnGround` is deliberately not one of them.**
+That method has never heard of `flies`: what a flying hull does to the ground
+model is `Vehicle.lift`, the acceleration its own powerplant is producing, which
+is **zero on anything that cannot fly** and turns the free-fall term into
+`velY + (lift - gravity) * dt` — bit-identical arithmetic on both older kinds. A
+hover is then an EQUALITY rather than a decision, the plank is a landing floor,
+and `jolt` is the arrival the skids spend. Gravity was never the only vertical
+acceleration; it was only the only one anything had ever produced.
+
+**The HELICOPTER is the third trade and it is bought with FRAGILITY**: 32 m/s
+in a straight line over anything, for 340 points at fourteen times the tank's
+small-arms damage, no cannon at all, and a 10.4 m rotor disc
+(`drive.collideRadius`) that closes every alley a truck opens. Its ceiling is
+40 m and that is COUNTERPLAY rather than a limit — bots acquire at 55 m in three
+dimensions and their cone has no elevation term, so a machine that could climb
+out of that bubble is one nothing in the game can answer. **No bot will ever fly
+one** (there is no route graph through the air), a lone pilot is a taxi because
+the door gun is the second seat's, and a dismount at height is REFUSED rather
+than punished — there is no fall damage in this game, so `dismountable` is a
+height rule every kind obeys.
 
 **The TANK is armour and the TRUCK is the trade**: 18 m/s against 11 through a
 3.2 m gap against 4.4, for 520 points against 1200 at nine times the small-arms

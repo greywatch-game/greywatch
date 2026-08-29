@@ -82,6 +82,12 @@ export interface TouchFrame {
    * downstream knows a finger asked.
    */
   use: boolean;
+  /**
+   * The COLLECTIVE, -1..1, from the two contextual buttons — folded into
+   * `InputManager.lift` beside Space/Ctrl and the pad's A/B, so nothing
+   * downstream knows a finger asked.
+   */
+  lift: number;
 }
 
 /** What a finger currently on the glass is doing. */
@@ -100,6 +106,8 @@ type ButtonId =
   | "grenade"
   | "swap"
   | "use"
+  | "climb"
+  | "descend"
   | "score"
   | "menu";
 
@@ -149,6 +157,19 @@ const BUTTONS: readonly ButtonSpec[] = [
   // pushes the crouch lamp and the empty magazine, because this layer cannot
   // know it is standing next to a tank.
   { id: "use", label: "", kind: "tap", group: "main", contextual: true },
+  // The collective, and the same bargain the verb above makes for the same
+  // reason: a phone has no Space and no Ctrl, so the only way to fly one is for
+  // the control to APPEAR when there is something to fly. `hold` and not
+  // `tap`, because how long you hold it IS the input — a tap's one-frame floor
+  // would be a machine that climbed in steps.
+  { id: "climb", label: "UP", kind: "hold", group: "main", contextual: true },
+  {
+    id: "descend",
+    label: "DOWN",
+    kind: "hold",
+    group: "main",
+    contextual: true,
+  },
   { id: "fire2", label: "FIRE", kind: "hold", group: "left", look: true },
   { id: "score", label: "SCORE", kind: "latch", group: "top" },
   { id: "menu", label: "MENU", kind: "tap", group: "top" },
@@ -206,6 +227,8 @@ export class TouchControls {
   /** What the vehicle verb would do right now, or null when it would do
    * nothing. Also the button's label — see `setUse`. */
   private useOffer: string | null = null;
+  /** Whether the collective pair is on screen. See `setFlying`. */
+  private flying = false;
 
   /** Reused, because `consume()` runs every frame of every touch round. */
   private readonly frame: TouchFrame = {
@@ -223,6 +246,7 @@ export class TouchControls {
     swap: false,
     scoreboard: false,
     use: false,
+    lift: 0,
   };
 
   constructor() {
@@ -332,6 +356,31 @@ export class TouchControls {
   }
 
   /**
+   * Whether there is a collective to pull, pushed by `Game` exactly as the
+   * verb above is and for the identical reason: this layer cannot know what a
+   * player is sitting in, and a phone has no key to discover.
+   *
+   * The pair goes away for a GUNNER as well as for a walking body — a gunner
+   * has no sticks at all, and two buttons that move nothing are worse than no
+   * buttons. Letting go on the way out matters here more than it does for the
+   * verb: a finger resting on UP when the pilot swaps seats would otherwise be
+   * reported held for as long as it stayed there.
+   */
+  setFlying(on: boolean): void {
+    if (on === this.flying) return;
+    this.flying = on;
+    for (const id of ["climb", "descend"] as const) {
+      const state = this.buttons.get(id)!;
+      if (!on) {
+        state.down = false;
+        state.pending = false;
+        state.el.classList.remove("held");
+      }
+      state.el.classList.toggle("hidden", !on);
+    }
+  }
+
+  /**
    * The frame's input, spent by reading it: the look delta is zeroed and the
    * one-frame floor under every tap is cleared, so a frame that never ran
    * cannot fire a shot twice and a tap between two frames cannot be lost.
@@ -354,6 +403,7 @@ export class TouchControls {
     f.grenade = this.held("grenade");
     f.swap = this.held("swap");
     f.use = this.held("use");
+    f.lift = (this.held("climb") ? 1 : 0) - (this.held("descend") ? 1 : 0);
     for (const state of this.buttons.values()) state.pending = false;
     return f;
   }
@@ -379,6 +429,10 @@ export class TouchControls {
     // back on here or a round resumed on foot comes back offering a seat.
     this.useOffer = null;
     this.buttons.get("use")!.el.classList.add("hidden");
+    this.flying = false;
+    for (const id of ["climb", "descend"] as const) {
+      this.buttons.get(id)!.el.classList.add("hidden");
+    }
     this.moveX = 0;
     this.moveY = 0;
     this.sprinting = false;

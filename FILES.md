@@ -197,9 +197,14 @@ src/
                         #   where the hull is ABOUT to be, which is the whole
                         #   of an AI driver's road graph), and what a hull
                         #   feels of each DamageKind. Takes a `VehicleSpec` and
-                        #   a rig BUILDER and knows no kinds; `armed` is the
-                        #   one question anything asks about one. Knows nothing
-                        #   about a player
+                        #   a rig BUILDER and knows no kinds; `armed` and
+                        #   `flies` are the only two questions anything asks
+                        #   about one. It also FLIES, on a hull that states a
+                        #   `flight` block — and `standOnGround` has never heard
+                        #   of that: what a rotor does to the ground model is
+                        #   `lift`, an addend that is 0 on anything else, so a
+                        #   hover is an equality and the plank is a landing
+                        #   floor. Knows nothing about a player
     vehicleKinds.ts     # The list of kinds that exist, and the ONE place a
                         #   kind becomes a name, a spec and a model. A map's
                         #   `VehicleSpawnDef.kind` is resolved here, and the
@@ -208,9 +213,12 @@ src/
                         #   writes, the three extents the physics needs off the
                         #   drawing (gauge, contact reach, wheel reach), and
                         #   the three CLOSURES a model hands back — `setRun`,
-                        #   `reset`, `paint`. Plus `Box`/`Cyl`, the per-colour
-                        #   merge and the outline pass both models draw with.
-                        #   No geometry and no numbers
+                        #   `reset`, `paint`. `setRun`'s FOURTH argument is the
+                        #   rotor, for the reason its third is the steer: a
+                        #   tracked hull's powerplant is already in the first
+                        #   two figures and a rotor is not. Plus `Box`/`Cyl`,
+                        #   the per-colour merge and the outline pass every
+                        #   model draws with. No geometry and no numbers
     TankModel.ts        # ~180 boxes and cylinders merged to twenty-five, with
                         #   a SPRUNG body over running gear that is not, a
                         #   turret and a gun that turn, a CUPOLA gun on a ring
@@ -229,6 +237,17 @@ src/
                         #   full depression.
                         #   NO main gun — `VehicleRig.gun`/`muzzle` are null,
                         #   which is what `Vehicle.armed` reads. Art only
+    HeliModel.ts        # The helicopter: a light gunship on skids with a main
+                        #   rotor, a tail rotor and a REMOTE door station on the
+                        #   port sill (the truck's rule — nothing may promise a
+                        #   body standing at it). `gun`/`muzzle` null and
+                        #   `turret` an INERT collar, exactly as the truck does
+                        #   it, so `aimMg` needs no branch. Both discs turn off
+                        #   `setRun`'s FOURTH argument, and the transmission's
+                        #   gear ratio lives here because it is a drawing
+                        #   decision. No tip-path ring: `inkRig` makes anything
+                        #   that thin nearly all ink, and a hoop round a parked
+                        #   aircraft reads as a cage. Art only
     callsigns.ts        # What to call an AI on the scoreboard: roster index ->
                         #   phonetic name, derived on both sides, never sent
     Bot.ts              # Bot FSM (advance/hunt/engage/takeCover/suppressed/

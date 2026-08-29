@@ -246,17 +246,30 @@ export interface VehicleRig {
    */
   wheelReach: number;
   /**
-   * The running gear, given how far each side has covered in metres and how
-   * hard the stick is over (-1..1).
+   * The running gear, given how far each side has covered in metres, how hard
+   * the stick is over (-1..1), and how far the ROTOR has turned in radians.
    *
    * **The steer is the third argument because a truck's front wheels turn and
    * a tank's do not**, and the tank ignores it for a reason rather than by
    * omission: its steer is ALREADY in the first two figures, as the difference
-   * between them. Nothing here may be read back — a side that has run further
-   * than the hull has moved is a track slipping against a wall, not a faster
-   * vehicle.
+   * between them.
+   *
+   * **The rotor is the fourth for that reason one step further out.** A tank's
+   * and a truck's powerplant drives the running gear, so how hard it is working
+   * is already in the first two figures — where a helicopter's rotor turns
+   * whether the machine is going anywhere or not, and is the only part of it
+   * that moves while it sits on its pad. So each kind ignores what its own
+   * drawing has no use for, and all four are figures `Vehicle` already holds.
+   * A nullable second closure was the alternative and was refused: `gun`/
+   * `muzzle` are called out above as "the one place in the rig where a kind is
+   * visible at all", and a second nullable would turn a stated exception into a
+   * pattern — worse, a `setRotor?` would DESCRIBE running gear, which is the
+   * one thing this interface exists not to do.
+   *
+   * Nothing here may be read back — a side that has run further than the hull
+   * has moved is a track slipping against a wall, not a faster vehicle.
    */
-  setRun(left: number, right: number, steer: number): void;
+  setRun(left: number, right: number, steer: number, rotor: number): void;
   /**
    * Back to the pose and the paint a fresh hull arrives in. What a hull goes
    * through on the respawn timer, and the whole reason a destroyed vehicle is
