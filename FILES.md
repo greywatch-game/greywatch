@@ -361,6 +361,11 @@ src/
                         #   one clock per body, and the verdict it reaches.
                         #   Pure — the caller does the killing, and offline that
                         #   is Game while in a match it is HeadlessGame
+    roads.ts            # The road network as rectangles, and the one question
+                        #   they answer: is this ground PAVED? A road still
+                        #   stops no round and no body — what it rejects is
+                        #   something ROOTED sown on it, which is trees and
+                        #   scrub (PropBody.rooted) and every blade of grass
     rng.ts              # mulberry32 — the seeded PRNG world-building uses
     MapBuilder.ts       # Builds the map; merges visuals, emits colliders
     solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the

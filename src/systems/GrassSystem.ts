@@ -34,6 +34,7 @@ import type { EnvironmentSpec } from "../world/environment";
 import { type LocalXZ, rotateToLocalXZ } from "../world/boxGeometry";
 import { type BoxIndex, boxesNear, buildBoxIndex } from "../world/boxIndex";
 import type { GrassRect, WorldBox } from "../world/MapBuilder";
+import { onRoad, type RoadRect } from "../world/roads";
 import type { TerrainField } from "../world/TerrainField";
 import { mulberry32 } from "../world/rng";
 
@@ -131,11 +132,15 @@ export class GrassSystem {
    * no grass rects or the environment has no grass palette. `boxes` are the
    * map's colliders: candidate tufts that would grow inside one are skipped
    * (blades poking through a cottage wall read as a bug, not as undergrowth).
+   * `roads` are the carriageways, and a tuft on one is skipped for the same
+   * reason — grass is ROOTED, and a field is authored as a rectangle over
+   * ground a road happens to cross.
    */
   build(
     rects: readonly GrassRect[],
     env: EnvironmentSpec,
     boxes: readonly WorldBox[],
+    roads: readonly RoadRect[],
     terrain: TerrainField,
     /** The map's extent, for the collider index below. See `GameMap.size`. */
     size: number,
@@ -148,7 +153,7 @@ export class GrassSystem {
     const mesh = new Mesh("grass", this.scene);
     buildTuftVertexData(rng).applyToMesh(mesh);
 
-    const matrices = this.scatter(rects, boxes, terrain, size, rng);
+    const matrices = this.scatter(rects, boxes, roads, terrain, size, rng);
     mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
     mesh.thinInstanceRefreshBoundingInfo(true);
 
@@ -260,11 +265,16 @@ export class GrassSystem {
   /**
    * Packs one thin-instance matrix per accepted tuft. Rejection is a single
    * sample (no retries): fields are mostly open ground, and a slightly
-   * thinner edge against a wall reads as trampled, which is free realism.
+   * thinner edge against a wall reads as trampled, which is free realism —
+   * and it is what makes the road test below cost nothing at all, because a
+   * rejected tuft here takes no further numbers out of the stream. The field
+   * a map grew before roads were in the test is the same field minus the
+   * blades that were standing in the asphalt.
    */
   private scatter(
     rects: readonly GrassRect[],
     boxes: readonly WorldBox[],
+    roads: readonly RoadRect[],
     terrain: TerrainField,
     size: number,
     rng: () => number,
@@ -299,6 +309,9 @@ export class GrassSystem {
         // or half of it grows in mid-air and the other half is buried.
         const y = base + terrain.heightAt(x, z);
         if (insideCollider(x, y, z, index)) continue;
+        // No pad, for the reason the collider test has none: a tuft is a point
+        // and one against the kerb is the verge rather than a bug.
+        if (onRoad(roads, x, z, 0)) continue;
         scale.set(
           0.7 + rng() * 0.6,
           g.heightMin + rng() * (g.heightMax - g.heightMin),

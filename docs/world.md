@@ -479,6 +479,39 @@ undoing any puts black holes in the cobbles:
   onto the world *anti*-diagonal, so the road would split every cell the opposite way
   from the ground it lies on; the quad starts one corner along.
 
+**And a road is the one visual that REJECTS something, which is the one thing about
+it that is not a picture.** It still carries no collider, still stops no round and no
+body, and is still in no baked structure — but nothing ROOTED may be sown on a
+carriageway, because a palm growing out of fourteen metres of asphalt is not cover a
+bot can use or a round can stop on, it is a picture of a bug. `world/roads.ts` is the
+whole of it: `roadRects` derives the rectangles off the layout's own `road`
+placements (so the extent is stated once and the builder's own width and length
+defaults are shared with it), and `onRoad` is the test. There are two readers.
+`MapBuilder.findSpot` refuses a spot for a prop whose `PropBody.rooted` is set,
+padded by the prop's own **half-footprint** rather than by its placement clearance —
+which is the difference between a tree that may lean its crown over a street and one
+that may stand in it, and holding a palm's 2.6 m clearance off every kerb would leave
+a bald verge down both sides of the road the grove is there to shade. `GrassSystem`
+refuses a tuft outright, with no pad at all: grass is rooted by definition and has no
+table to say so in, and a blade against the kerb is the verge rather than a bug.
+
+**The line `rooted` draws is what a thing IS, not how big it is and not whether it
+blocks** — a tree, a shrub, a fern, a toadstool. Everything else in `PROP_BODIES` is
+something people PUT there (rubble, a barrel, a cone, a skip, a drifted boulder, a
+headstone in a graveyard), and a street is exactly where half of those belong. That
+is why this is a per-PROP fact and not a per-region flag: a belt of trees down one
+side of a road wants holding off the carriageway and the litter region over the same
+junction wants nothing of the sort, and neither should have to say so. A layout may
+still dodge the roads by hand and Sarab's does — the rule keeps a region LEGAL, and
+hand-dodging is what keeps it EVEN.
+
+**What it cost, once**: a new rejection takes two more numbers out of the seeded
+stream the whole build shares, so every scatter region authored after the first prop
+turned away is redrawn. That is not avoidable and is not a reason to keep such a rule
+in the layouts — it is a reason to re-bake (`npm run collision`) and re-check
+(`npm run parity`) when one changes, since the staleness guard hashes the LAYOUT and
+this is a change in the BUILDER.
+
 A road over level ground still collapses to the single box it always was
 (`terrainSlab` returns null), so this costs nothing on the shipped map. Only `road`
 does this (`CONFORMS_TO_TERRAIN` in `BuildingKit.ts`); `terrace`, `ramp`, `stairs`,

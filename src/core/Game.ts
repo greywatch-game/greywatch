@@ -3277,6 +3277,7 @@ export class Game {
       map.grass,
       environment,
       map.colliderBoxes,
+      map.roads,
       map.terrain,
       map.size,
     );

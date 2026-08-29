@@ -74,6 +74,7 @@ import {
   insertBox,
 } from "./boxIndex";
 import { ridgeSegments } from "./Ridge";
+import { onRoad, type RoadRect, roadRects } from "./roads";
 import { TerrainField, terrainPatches } from "./TerrainField";
 import { NavGrid } from "./NavGrid";
 import { RayWorld } from "./RayWorld";
@@ -468,6 +469,19 @@ export interface GameMap {
   /** Grass fields from the layout; empty when the map is bald. */
   grass: GrassRect[];
   /**
+   * The carriageways, derived from the layout's `road` placements.
+   *
+   * A road is still visual-only — no collider, no `WorldBox`, invisible to
+   * navigation, to cover and to every ray — and this list is not a step back
+   * from that. It answers one question, "is this ground paved", for the two
+   * things that GROW: `MapBuilder.findSpot` holds rooted props off it and
+   * `GrassSystem` holds every tuft off it. Carried on the map rather than
+   * re-derived by each because the authority builds one too, off the same
+   * layout, so a rule that reads it cannot mean different ground on the two
+   * sides. See `world/roads.ts`.
+   */
+  roads: RoadRect[];
+  /**
    * The floor's height, for everything that used to assume zero. Flat when the
    * layout declares no terrain, which is the whole of the old behaviour.
    */
@@ -553,6 +567,23 @@ interface PropBody {
    * field across the whole map for no gain.
    */
   visualTop: number;
+  /**
+   * This prop GROWS out of the ground, so it may not be sown on a road.
+   *
+   * The line is what a thing IS, not how big it is and not whether it blocks:
+   * a tree, a shrub, a fern, a toadstool. Everything else in the table is
+   * something people PUT there — rubble, a barrel, a cone, a skip, a drifted
+   * boulder, a headstone in a graveyard — and a street is exactly where half
+   * of those belong, which is why this is a per-PROP fact and not a per-region
+   * flag. A belt of trees down one side of a road wants to be held off the
+   * carriageway; the litter region over the same junction wants nothing of the
+   * sort, and neither should have to say so.
+   *
+   * Read by `findSpot` against the layout's roads, padded by the prop's own
+   * half-footprint so a crown may overhang what a bole may not stand in. See
+   * `world/roads.ts`.
+   */
+  rooted?: true;
 }
 
 /**
@@ -576,7 +607,7 @@ interface PropBody {
 const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // Trunk only, at roughly its width around chest height (it tapers 0.85 ->
   // 0.32 over 5.2 m). The branches are 4 cm twigs — nothing should stop on one.
-  deadTree: { w: 0.7, d: 0.7, h: 5.2, visualTop: 5.4 },
+  deadTree: { w: 0.7, d: 0.7, h: 5.2, visualTop: 5.4, rooted: true },
   // The bole only, at the width it presents around chest height — it tapers
   // 0.68 -> 0.44 over 7.6 to 9.2 m, and the frond scars stand 0.05 m proud of
   // that. The crown is five metres of frond starting at eight and is
@@ -585,12 +616,12 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // crown would stop rounds through the open air a palm grove IS. Full bole
   // height, so it bakes as hard cover (CoverMap's 1.7 m) the way a wall does.
   // `visualTop` clears a frond arching over the head of the bole.
-  palm: { w: 0.66, d: 0.66, h: 7.6, visualTop: 10.4 },
+  palm: { w: 0.66, d: 0.66, h: 7.6, visualTop: 10.4, rooted: true },
   // Trunk only, same as the dead tree — the crown is 3.3 m of needles and
   // stopping rounds on it would give the map its one piece of cover you can see
   // daylight through. The builder keeps the lowest tier above the 1.7 m hit
   // sphere so nothing shootable hides in there. `visualTop` clears the tip.
-  pine: { w: 0.62, d: 0.62, h: 6.4, visualTop: 7.0 },
+  pine: { w: 0.62, d: 0.62, h: 6.4, visualTop: 7.0, rooted: true },
   // Trunk only again, at its width around chest height rather than at the
   // flare it stands on: it tapers 0.76 -> 0.30 over 8.6 m, so 0.68 is what a
   // round arriving at 1.7 m actually meets. The crown is 5.8 m of leaf
@@ -598,20 +629,20 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // this tree has three times the leaf to get it wrong with. Full trunk
   // height, so a hedgerow standard bakes as hard cover (CoverMap's 1.7 m) the
   // way a wall does. `visualTop` clears the cap plate.
-  ashTree: { w: 0.68, d: 0.68, h: 8.6, visualTop: 9.9 },
+  ashTree: { w: 0.68, d: 0.68, h: 8.6, visualTop: 9.9, rooted: true },
   // Trunk plus its buttress core: the fins reach 0.97 m from the axis at their
   // widest, so a 1.0 m box is the flare you can see rather than a margin around
   // it. The canopy is 4 m of frond starting nine metres up and is not in this —
   // there is nothing to shoot up there, and a box that held it would stop
   // rounds through open air across the whole stand. Full trunk height, so a
   // jungle tree bakes as hard cover (CoverMap's 1.7 m) the way a wall does.
-  jungleTree: { w: 1.0, d: 1.0, h: 11.2, visualTop: 11.6 },
+  jungleTree: { w: 1.0, d: 1.0, h: 11.2, visualTop: 11.6, rooted: true },
   // Never blocking, so w/d/h are never read — filled honestly anyway, because
   // this is a Record and a lie here would be believed the day someone sets
   // `blocking` on a fern. `visualTop` IS read: findSpot's burial check runs for
   // every prop, blocking or not. The reasoning for keeping ferns walk-through
   // is in buildFernClump.
-  fernClump: { w: 1.7, d: 1.7, h: 1.0, visualTop: 1.2 },
+  fernClump: { w: 1.7, d: 1.7, h: 1.0, visualTop: 1.2, rooted: true },
   // TRUNK ONLY, and lying along its own local X like the log — 5.2 m one way
   // and 1.0 m the other is meaningless axis-aligned. The buttress fins (1.4 m)
   // and the root plate (1.9 m) are thin plates and are deliberately outside
@@ -629,7 +660,7 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // Lies along its own local X, so the collider's rotation is load-bearing:
   // 3 m one way and 0.7 m the other is meaningless axis-aligned.
   log: { w: 3.0, d: 0.7, h: 0.75, visualTop: 0.9 },
-  fungus: { w: 0.8, d: 0.8, h: 0.9, visualTop: 1.1 },
+  fungus: { w: 0.8, d: 0.8, h: 0.9, visualTop: 1.1, rooted: true },
   // Heap plus the chunks piled on it. The rebar is a 6 cm rod sticking out to
   // 1.8 m and is not in this — you do not lose a round to a piece of wire.
   rubble: { w: 1.9, d: 1.7, h: 1.05, visualTop: 1.5 },
@@ -642,7 +673,7 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // 2.0 m box already let rounds through visible rock. Height stays near it so
   // a large boulder still bakes as hard cover (CoverMap's 1.7 m).
   boulder: { w: 2.1, d: 1.9, h: 1.45, visualTop: 1.4 },
-  bramble: { w: 0.8, d: 0.8, h: 1.2, visualTop: 1.6 },
+  bramble: { w: 0.8, d: 0.8, h: 1.2, visualTop: 1.6, rooted: true },
   barrel: { w: 0.88, d: 0.88, h: 1.25, visualTop: 1.3 },
   // The skip is the one prop in this table that needs no compromise: it IS a
   // rectangular prism, so the box is the shape rather than an approximation of
@@ -714,6 +745,11 @@ export class MapBuilder {
   private boxGroups: number[][] = [];
   /** Scatter boxes recorded but not yet given geometry — see `build`. */
   private pendingCluster: number[] = [];
+  /**
+   * Ground a ROOTED scatter prop may not grow out of: every road on the
+   * layout. Rebuilt per `build`, and read only by `findSpot`.
+   */
+  private roads: RoadRect[] = [];
   /**
    * Ground a BLOCKING scatter prop may not stand on, as discs — every control
    * point and every spawn on the layout. Rebuilt per `build`.
@@ -885,6 +921,12 @@ export class MapBuilder {
     ];
     this.panes = [];
     this.paneGroups = [];
+    // The carriageways, derived before anything is built because `findSpot`
+    // asks about them and the scatter pass runs after the placement loop that
+    // draws them. Nothing else about a road changes: it is still visual-only,
+    // still emits no collider, and is still invisible to every ray, to the nav
+    // grid and to cover. See `world/roads.ts`.
+    this.roads = roadRects(layout.placements);
     // Sized to the widest burial test this layout will run. `findSpot` asks
     // about `(spec.clearance ?? 0.8) * scale`, and `scale` tops out at the
     // upper end of the spec's own range — so the layout knows the answer before
@@ -1241,6 +1283,7 @@ export class MapBuilder {
       visuals,
       water: layout.water ?? [],
       grass: layout.grass ?? [],
+      roads: this.roads,
       terrain,
       editor: index,
       dispose: () => {
@@ -1406,7 +1449,7 @@ export class MapBuilder {
     for (let i = 0; i < spec.count; i++) {
       const scale = minS + rng() * (maxS - minS);
       const clearance = (spec.clearance ?? 0.8) * scale;
-      const spot = this.findSpot(spec, rot, clearance, placed, rng);
+      const spot = this.findSpot(spec, rot, clearance, scale, placed, rng);
       if (!spot) continue;
       placed.push({ x: spot.x, z: spot.z, r: clearance });
 
@@ -1495,6 +1538,11 @@ export class MapBuilder {
    *
    * Both shapes draw exactly two numbers per attempt, in the same order, so
    * adding rectangles left every existing region's dressing field untouched.
+   * **A new REJECTION is not free that way and never can be**: an attempt that
+   * now fails takes two more numbers out of a stream shared by the whole build,
+   * so every region authored after the first prop a rule turns away is redrawn.
+   * That is the price of the road test below, it was paid once, and it is why
+   * a rule like it belongs here rather than in fourteen hand-dodged layouts.
    *
    * Returns the spot twice over: `lx`/`lz` in the region's own unrotated frame,
    * which is where the geometry is assembled, and `x`/`z` in the world, which
@@ -1504,9 +1552,12 @@ export class MapBuilder {
     spec: ScatterSpec,
     rot: number,
     clearance: number,
+    /** This prop's own draw from the region's range — see `scatterRegion`. */
+    scale: number,
     placed: { x: number; z: number; r: number }[],
     rng: () => number,
   ): { x: number; z: number; lx: number; lz: number } | null {
+    const body = PROP_BODIES[spec.prop];
     for (let attempt = 0; attempt < 14; attempt++) {
       let lx: number;
       let lz: number;
@@ -1534,6 +1585,16 @@ export class MapBuilder {
         }
       }
       if (ok && this.insideCollider(spec, x, z, clearance)) ok = false;
+      // Nothing GROWS out of a carriageway. Padded by the prop's own
+      // half-footprint rather than by its placement clearance, which is the
+      // difference between a tree that may lean over a street and one that may
+      // stand in it — a palm's `clearance` is 2.6 m and holding a grove that far
+      // back from every kerb would leave a bald verge down both sides of the
+      // road it is supposed to be shading. See `PropBody.rooted`.
+      if (ok && body.rooted && this.roads.length > 0) {
+        const half = (Math.max(body.w, body.d) / 2) * scale;
+        if (onRoad(this.roads, x, z, half)) ok = false;
+      }
       // Only what a body would meet — see `keepClear`. A prop's own clearance
       // is in the test because the disc is about the ground being FREE, and a
       // trunk half a metre outside it still leans over the flag.

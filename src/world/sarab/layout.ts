@@ -10,9 +10,11 @@
  * CONFIG.nav.stepHeight of adjacent ground or bots treat decks as walls; a
  * control point's pos must NOT sit inside a PLACEMENT's collider (surfaceAt
  * returns -1 — scatter is held off flags and spawns by `MapBuilder.keepClear`,
- * placements are not); scatter regions must dodge the roads by hand, because a
- * road is visual-only and rejects nothing; terrain steeper than a 0.4 gradient
- * severs its own nav links.
+ * placements are not); a road holds off only what GROWS, so a region of rubble
+ * or cones may cross a carriageway and one of palms is thinned where it does
+ * (`PropBody.rooted`, `world/roads.ts`) — the regions below still dodge the
+ * roads by hand, which is what keeps a grove even rather than merely legal;
+ * terrain steeper than a 0.4 gradient severs its own nav links.
  *
  * **SEEDED by `scripts/generate-sarab.mjs`, and owned by the editor after
  * that.** The design — the flags, the quarters, the street pitch, the recipe
@@ -148,7 +150,10 @@ import type {
  *   of the sixteen light slots proving nothing. Harrowmead's rule and Greyfen's
  *   before it.
  * - Scatter regions dodge every road by hand — the roads are the first entries
- *   in `placements` and their extents are what the generator claimed.
+ *   in `placements` and their extents are what the generator claimed. The
+ *   builder refuses a ROOTED prop on a carriageway on its own now, so a region
+ *   that strays is thinned rather than left growing out of the asphalt; the
+ *   hand-dodging is what keeps a grove EVEN, and is still worth doing.
  * - The ORDER of the scatter array is load-bearing: every region draws from one
  *   seeded stream, so a region added anywhere but the end re-rolls every field
  *   below it.
@@ -158,10 +163,12 @@ import type {
 
 const placements: Placement[] = [
   // ===== roads =====================================================================
-  // Visual only: a road carries no collider and rejects nothing, so every
-  // quarter and every scatter region below was generated against the
-  // rectangles these claim. The two asphalt routes are the town's spine and
-  // the rest are graded dirt.
+  // Visual only: a road carries no collider, stops no round and is in no
+  // baked structure. The one thing it rejects is something ROOTED sown on
+  // top of it (see `world/roads.ts`), and every quarter and every scatter
+  // region below was generated against the rectangles these claim anyway.
+  // The two asphalt routes are the town's spine and the rest are graded
+  // dirt.
   //
   // ALL FOUR N-S routes FORD the wadi, and that is the map's answer to a
   // watercourse across the middle of it: the bed is 3.6 m down over a 26 m
@@ -857,7 +864,8 @@ const placements: Placement[] = [
 
 /**
  * Dressing. Every region below has been checked against the road extents at the
- * top of `placements`; a road rejects nothing on its own. Blocking props are
+ * top of `placements`; a road rejects only what is ROOTED, and rubble, cones
+ * and litter are exactly what belongs on one. Blocking props are
  * held off every flag, spawn and hardstanding by `MapBuilder.keepClear`, and
  * the clearances here come from `PROP_BODIES` rather than from these numbers.
  *
@@ -912,8 +920,9 @@ const scatter: ScatterSpec[] = [
   { prop: "palm", x: 32, z: 106, radius: 8, count: 3, scale: [1.0, 1.2], blocking: true, clearance: 3.0 },
   // ===== the dead ground ===========================================================
   // Dry scrub, thorn and drifted boulders on the open desert between the
-  // quarters. Every blocking region here is held off the roads by hand — a
-  // road is visual only and rejects nothing.
+  // quarters. Every blocking region here is held off the roads by hand, and
+  // the thorn and the dead trees are held off them a second time by the
+  // builder, which sows nothing rooted on a carriageway.
   { prop: "bramble", x: -300, z: 20, width: 70, depth: 60, count: 12, scale: [0.8, 1.4] },
   { prop: "bramble", x: -90, z: -290, width: 90, depth: 60, count: 10, scale: [0.8, 1.4] },
   { prop: "bramble", x: 120, z: 40, width: 80, depth: 70, count: 16, scale: [0.8, 1.4] },

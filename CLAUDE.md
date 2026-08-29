@@ -446,6 +446,14 @@ but `TerrainField` decides its depth, its shore or where its probe stands — an
 what it LOOKS like is whatever that probe can see, which on a bright map with
 nothing round the pool is pale sky and reads as a salt pan.
 
+**A ROAD is visual-only and rejects exactly one thing, which is anything that
+GROWS** (`world/roads.ts`, `GameMap.roads`): `MapBuilder` sows no
+`PropBody.rooted` prop on a carriageway and `GrassSystem` no tuft. It is a
+per-PROP fact rather than a per-region flag, because a street is where rubble,
+cones and litter belong. **Any change to a placement rule re-rolls the seeded
+dressing field**, so it owes `npm run collision` and `npm run parity` — the
+staleness guard hashes the LAYOUT and this kind of change is in the BUILDER.
+
 **There is a sixth entry in `MAPS` and it is DEV-ONLY and not a level.**
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
 against — a city block grid several times Harrowmead's size, written by
@@ -464,8 +472,8 @@ server half is a production build — reached through `npm run simulate:dev`,
 where `--mode development` alone does not turn the flag over.
 
 → **[`docs/world.md`](docs/world.md)** — the six overrides in full, the
-heightfield and the road slabs cut against it, the winding trap that makes a
-floor vanish, the builder and two-pass merge rules, the layout gotchas that have
+heightfield and the road slabs cut against it, the one thing a road rejects and
+the pad it uses, the winding trap that makes a floor vanish, the builder and two-pass merge rules, the layout gotchas that have
 already cost time, the valley rim's contract with the sky, and the borderland,
 the two rim forms and the leash.
 

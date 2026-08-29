@@ -10,6 +10,7 @@
 import { Scene } from "@babylonjs/core";
 import type { Mesh } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
+import { ROAD_LENGTH, ROAD_WIDTH } from "../roads";
 import { terrainSlab } from "../TerrainField";
 import {
   Build,
@@ -116,8 +117,11 @@ export function buildRoad(
   const b = new Build(scene, mats, "road");
   const top = 0.01;
   const h = 0.08;
-  const w = p.width ?? 8;
-  const len = p.length ?? 40;
+  // The two defaults are `roads.ts`'s, not this builder's: the footprint
+  // `roadRects` derives has to be the slab that gets drawn, and two roads in
+  // the shipped layouts state a length and no width.
+  const w = p.width ?? ROAD_WIDTH;
+  const len = p.length ?? ROAD_LENGTH;
   // Which flat tone this road is, or null for the textured cobble.
   const flat =
     p.surface === "dirt" ? DIRT : p.surface === "asphalt" ? ASPHALT : null;
