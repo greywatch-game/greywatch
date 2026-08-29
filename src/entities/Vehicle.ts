@@ -2355,6 +2355,57 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * How much travel a tilt is asking of its outermost station, in metres.
+   *
+   * `WHEEL_REACH` and not `TRACK_REACH`: a bump stop is something a road-wheel
+   * ARM reaches, and the sprocket and the idler hang off the hull with no arms
+   * at all. The two axes SUM because one station is the corner both of them
+   * reach — a hull diving and leaning at once puts the same wheel nearest its
+   * stop twice over.
+   */
+  private stationTravel(pitch: number, roll: number): number {
+    return (
+      this.rig.wheelReach * Math.abs(Math.sin(pitch)) +
+      (this.rig.gauge / 2) * Math.abs(Math.sin(roll))
+    );
+  }
+
+  /**
+   * What a spring's rate is multiplied by once `f` of its travel is spent.
+   *
+   * **A PROGRESSIVE spring is the difference between a suspension that runs
+   * out and a suspension that resists**, and it is one number:
+   * `1 + progression * f^2`. Squared, so the first part of the travel is
+   * within a few per cent of the plain rate and the last part is where the
+   * pack goes solid — a spring that hardened linearly from rest would be a
+   * stiffer spring rather than a progressive one, and would take the small
+   * movements away along with the flop.
+   *
+   * **It changes where a spring SETTLES and not just how fast it gets there**,
+   * which is the whole of what it is for: the drive term is untouched, so a
+   * steady acceleration now solves `x * rate(x) = want` instead of `x = want`
+   * and the answer is inside the travel where the old one was on the stop.
+   *
+   * **The stops are not what this replaces.** They are still there and still
+   * spend one budget — this is the ramp up to a wall that used to be a wall on
+   * its own, and a hull that has spent its travel on one axis still has none
+   * left for the other. What it does change is who arrives at them: on a
+   * progressive hull the tilt reaches a stop on turn-in and comes off it,
+   * where it used to lie against one, and the heave stops arriving at all —
+   * see `truck.suspension.heaveBump` for why that is a reserve and not dead
+   * space.
+   *
+   * At `progression: 0` it returns 1 and every spring in the file is the exact
+   * arithmetic it was, which is what a tank gets.
+   */
+  private springRate(f: number): number {
+    const p = this.spec.suspension.progression;
+    if (p <= 0) return 1;
+    const spent = Math.min(1, Math.max(0, f));
+    return 1 + p * spent * spent;
+  }
+
+  /**
    * What the hull's own mass does to it: the nose dives under the brake, squats
    * under power, and the body leans out of a turn.
    *
@@ -2385,7 +2436,20 @@ export class Vehicle implements Combatant, RayHull {
    * the same stops, so the two are spent from ONE budget rather than clamped
    * separately at limits that could each be legal and jointly put the belly
    * through the road. It falls out at ~3.3 deg of pitch and ~5.2 deg of roll
-   * on this hull, and nothing in `CONFIG` states either number.
+   * on the tank, and nothing in `CONFIG` states either number.
+   *
+   * **The springs get STIFFER the more of that budget they have spent
+   * (`suspension.progression`), and that is what keeps a stop an event rather
+   * than a driving position.** A linear spring pointed at a target angle
+   * outside its travel has nowhere to go but the stop, and it sits there for
+   * as long as the input holds with its velocity killed — measured on the
+   * truck, where full lock at road speed asks for 19.4 deg against a budget
+   * worth 8.2, the body lay on its side through every corner, and **half the
+   * steering range produced the same lean as the other half**. What hardens is
+   * the RESTORE and never the drive, so the angle a steady acceleration
+   * settles at solves `x * rate(x) = want` and lands inside the travel with
+   * the curve monotone the whole way out. The tank states 0 and its arithmetic
+   * is untouched, exactly and not approximately.
    *
    * Stepped semi-implicit Euler rather than in closed form. `CLAUDE.md`'s rule
    * is that anything that moves where bullets go or reads as recoil is stepped
@@ -2404,27 +2468,44 @@ export class Vehicle implements Combatant, RayHull {
     // which is a positive Z.
     const wantPitch = -s.pitchPerAccel * felt;
     const wantRoll = s.rollPerAccel * bound(lateral, s.accelLimit);
-    this.suspPitchVel +=
-      (s.stiffness * (wantPitch - this.suspPitch) - s.damping * this.suspPitchVel) * dt;
-    this.suspRollVel +=
-      (s.stiffness * (wantRoll - this.suspRoll) - s.damping * this.suspRollVel) * dt;
-    let pitch = this.suspPitch + this.suspPitchVel * dt;
-    let roll = this.suspRoll + this.suspRollVel * dt;
-    // --- the stops, which are at the WHEEL STATIONS and not on the angles ---
-    //
     // How much travel a corner station has left, in metres, AFTER `flexHeave`
     // has spent what it spent. A tilt spends both stops at once — one end down
     // is the other end up — so what is left is the smaller of the two
     // remainders, which is why the tilt is bounded by `heaveDroop` rather than
     // by the larger `heaveBump`.
     const room = Math.min(s.heaveDroop - this.heave, s.heaveBump + this.heave);
-    // What the springs are asking for, at the outermost road wheel and the
-    // outer edge of a track. `WHEEL_REACH` and not `TRACK_REACH`: a bump stop
-    // is something a road-wheel ARM reaches, and the sprocket and the idler
-    // hang off the hull with no arms at all.
-    const asked =
-      this.rig.wheelReach * Math.abs(Math.sin(pitch)) +
-      (this.rig.gauge / 2) * Math.abs(Math.sin(roll));
+    // The RATE the two springs are standing at, off the travel they have
+    // already spent — ONE number for both axes, because they spend one budget,
+    // which is the same argument the stop below makes one step later. Read off
+    // where the tilt IS rather than off where this frame is taking it, which
+    // is the semi-implicit step the rest of this method takes.
+    const rate = this.springRate(
+      room > 1e-6 ? this.stationTravel(this.suspPitch, this.suspRoll) / room : 1,
+    );
+    // **The drive term is the acceleration's and the rate never touches it; it
+    // is the RESTORE that hardens.** `stiffness * (want - rate * x)` is the
+    // plain `stiffness * (want - x)` at rate 1, which is what a hull with no
+    // `progression` gets, exactly and not approximately.
+    //
+    // The DAMPER hardens with it, as the square root of the rate, so that the
+    // damping ratio the two figures were tuned to is the ratio at every point
+    // of the travel: a suspension that rang at full lean and not at rest would
+    // be two different vehicles. What is left over — the spring's TANGENT rate
+    // climbs faster than the secant one the restore is written in — leaves a
+    // hull a little livelier the harder it is leaning, which is the direction
+    // a truck should err in.
+    const damp = s.damping * Math.sqrt(rate);
+    this.suspPitchVel +=
+      (s.stiffness * (wantPitch - rate * this.suspPitch) - damp * this.suspPitchVel) * dt;
+    this.suspRollVel +=
+      (s.stiffness * (wantRoll - rate * this.suspRoll) - damp * this.suspRollVel) * dt;
+    let pitch = this.suspPitch + this.suspPitchVel * dt;
+    let roll = this.suspRoll + this.suspRollVel * dt;
+    // --- the stops, which are at the WHEEL STATIONS and not on the angles ---
+    //
+    // What the springs are asking for now, at the outermost road wheel and the
+    // outer edge of a track.
+    const asked = this.stationTravel(pitch, roll);
     if (asked > room) {
       // Scaled rather than clamped per axis, because the two are drawing on
       // ONE budget: a hull already leaning hard has less dive left in it, and
@@ -2468,6 +2549,13 @@ export class Vehicle implements Combatant, RayHull {
    * how many frames the fall took — where an acceleration read off it and
    * clamped would hand a 30 Hz frame twice the landing of a 60 Hz one.
    *
+   * **The spring is the progressive one `flexSuspension` describes**, on this
+   * axis' own two stops: one suspension has one rate, and a body that has
+   * crushed most of its bump rubber is not on the rate it was parked at. What
+   * it does NOT do is take the stop away — the most the ground can hand these
+   * springs still carries more energy than the hardened spring absorbs inside
+   * `heaveBump`, so a real landing still arrives on the stop and rings off it.
+   *
    * **The two stops are not the same number, they are not this axis' alone,
    * and `heaveBump` is not a taste**: it is two thirds of `TankModel.BELLY`,
    * so a body compressing much further would put the hull through the road it
@@ -2484,8 +2572,19 @@ export class Vehicle implements Combatant, RayHull {
   private flexHeave(dt: number): void {
     const s = this.spec.suspension;
     this.heaveVel -= this.jolt * s.heaveResponse;
+    // The hardening the tilt takes, on this axis' own pair of stops — one
+    // suspension, one rate, and a body two thirds of the way onto its bump
+    // rubber is not standing on the rate it left the ride height at. The two
+    // directions normalise against DIFFERENT stops because they ARE different
+    // stops: `heaveBump` is a rubber being crushed and `heaveDroop` is a body
+    // lifting off its own running gear.
+    const rate = this.springRate(
+      this.heave < 0 ? -this.heave / s.heaveBump : this.heave / s.heaveDroop,
+    );
     this.heaveVel +=
-      (-s.heaveStiffness * this.heave - s.heaveDamping * this.heaveVel) * dt;
+      (-s.heaveStiffness * rate * this.heave -
+        s.heaveDamping * Math.sqrt(rate) * this.heaveVel) *
+      dt;
     const want = this.heave + this.heaveVel * dt;
     this.heave = Math.max(-s.heaveBump, Math.min(s.heaveDroop, want));
     // A stop absorbs rather than bounces: what is left of the travel is spent

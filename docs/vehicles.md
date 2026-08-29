@@ -221,7 +221,7 @@ tilted**:
 | half | what it answers to | how it moves | what it turns |
 | --- | --- | --- | --- |
 | the GROUND (`leanToGround`) | the slope the ten track contacts are standing on, measured by `standOnGround` against the collider boxes AND the terrain | a frame-lerp at `drive.tiltRate` toward a fact, which cannot overshoot | `VehicleRig.hull` — the WHOLE vehicle, tracks and all |
-| the SUSPENSION (`flexSuspension`) | the hull's own mass: `accel` along its forward, and `speed * yawRate` across it | a damped spring at `suspension.stiffness`, which MUST overshoot | `VehicleRig.sprung` — the BODY, against running gear that stays put |
+| the SUSPENSION (`flexSuspension`) | the hull's own mass: `accel` along its forward, and `speed * yawRate` across it | a damped spring at `suspension.stiffness`, which MUST overshoot, stiffening with the travel it has spent (`suspension.progression`) | `VehicleRig.sprung` — the BODY, against running gear that stays put |
 
 **Summing them onto the hull node was a bug and it is the one this section was
 rewritten around.** A vehicle standing on a slope stands on it tracks and all,
@@ -271,6 +271,63 @@ flat, which is what bottoming out does to a body.
 driving**, which is the other half of the same argument: a suspension whose
 every input saturates its travel has one picture for the brake, the gun and the
 ram, and the whole point of weight transfer is that they differ.
+
+**And the springs are PROGRESSIVE, which is what makes that rule keepable on a
+vehicle whose gains cannot be sized to it.** `suspension.progression` hardens a
+spring's RESTORE with the fraction of its travel already spent —
+`1 + progression * f^2`, one rate shared by the two tilt axes because they
+spend one budget, and the heave taking the same treatment on its own two stops.
+The DRIVE term is untouched, so what changes is the angle a steady acceleration
+SETTLES at: it solves `x * rate(x) = want` instead of `x = want`, and lands
+inside the travel where the linear answer was on the stop.
+
+It exists because of the truck. Full lock at road speed is `18 * 0.897` =
+16 m/s^2 across the hull, which at its `rollPerAccel` asks the springs for
+19.4 degrees against a budget worth 8.2 — so the body went over, sat on its
+stops for as long as the wheel was turned with its velocity killed there, and
+**half the steering range produced the same lean as the other half**. Measured
+in degrees of settled lean at road speed:
+
+```
+  lock:    10%   20%   30%   40%   50%   70%  100%
+  linear:  1.94  3.89  5.83  7.77  8.21  8.21  8.21   <- on the stop
+  at 2.5:  1.74  2.94  3.79  4.46  5.02  5.91  6.95
+```
+
+The cost is about a fifth of the lean through the middle of the range and the
+gain is a curve that is still answering at the top of it. Turn-in overshoots far
+enough to touch the stop for a frame and come off it, and a hard brake dives
+3.1 degrees where it used to peg at 5.3.
+
+**The damper hardens with the spring**, as the square root of the rate, so the
+damping ratio the two figures were tuned to holds at every point of the travel —
+a suspension that rang at full lean and not at rest would be two vehicles. What
+is left over (the spring's tangent rate climbs faster than the secant one the
+restore is written in) leaves a hull a little livelier the harder it is leaning,
+which is the direction a truck should err in.
+
+**The stops are not what this replaces.** They are still there and still spend
+one budget, so a hull that has spent its travel on one axis has none left for
+the other. What changes is who arrives at them: the tilt now touches a stop on
+turn-in and comes off it where it used to lie against one, and on the truck the
+HEAVE stops arriving at all — the hardest jolt there is puts a linear body of
+that rate on the stop and a progressive one 15.3 cm down of the 19.
+
+**That is a reserve and not dead space, and the tank's rule that a stop must be
+REACHED is a rule about a linear spring.** The last four centimetres are spent
+every frame the body is compressed, because the pair is the TILT's budget too:
+`room` is `heaveBump + heave` on a hull down on its springs, so a truck landing
+mid-corner has 3.7 cm of station travel for its lean rather than 15 and goes
+flat under itself. The tank is linear and still bottoms out on the same jolt,
+which is the heaviest thing it does.
+
+**The tank states 0 and its arithmetic is untouched, exactly rather than
+approximately.** A torsion bar is very nearly linear right up to the rubber its
+arm meets, which is the stop and not a rate that has been climbing toward it —
+and it is load-bearing for `gunKick` that this is so, since the gun is sized to
+be the one input that reaches the stop and a spring hardening on the way there
+would take that away from it. It is `gunKick: 0` on the truck, the other way
+round.
 
 **The gun is the one input that does not come through the acceleration term,
 and it must not.** `gun.recoilSpeed` shoves the hull backwards and is spent

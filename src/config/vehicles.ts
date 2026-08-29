@@ -88,6 +88,7 @@ export interface VehicleSpec {
     readonly accelLimit: number;
     readonly stiffness: number;
     readonly damping: number;
+    readonly progression: number;
     readonly gunKick: number;
     readonly heaveResponse: number;
     readonly heaveStiffness: number;
@@ -809,6 +810,24 @@ export const vehicles = {
        */
       stiffness: 40,
       damping: 8.6,
+      /**
+       * How much STIFFER a spring stands when its travel is spent: the rate is
+       * `1 + progression * f^2`, where `f` is the fraction of the station's
+       * remaining travel the springs have already used. At 0 the spring is the
+       * plain linear one it was and every number around it is untouched.
+       *
+       * **Zero here, and that is a statement about torsion bars rather than a
+       * default.** A tank's suspension is a bar in torsion: it is very nearly
+       * linear right up to the point a road-wheel arm meets its rubber, and
+       * what happens there is the STOP below and not a rate that has been
+       * climbing all the way to it. The truck's leaf packs are the opposite
+       * kind of spring and say so.
+       *
+       * It is also load-bearing for `gunKick` that this is zero: the gun is
+       * sized to be the one input that reaches the stop, and a spring that
+       * hardened on the way there would take that away from it.
+       */
+      progression: 0,
       /**
        * **There is no `pitchLimit` and no `rollLimit`, and their absence is
        * the rule.** How far the body may tilt is not a number anyone gets to
@@ -1592,6 +1611,50 @@ export const vehicles = {
       stiffness: 52,
       damping: 8,
       /**
+       * **Three and a half times its own rate on the stop, and this is the
+       * number that stops a truck lying on its side through a corner.**
+       *
+       * Leaf packs on rubbers are a progressive spring in a way torsion bars
+       * are not (the tank's `progression` is 0 and says why), and this hull
+       * needed one: full lock at road speed is `18 * 0.897` = 16 m/s^2 across
+       * the hull, which at `rollPerAccel` asks the springs for 19.4 degrees of
+       * lean against a travel budget worth 8.2 — so the body went over, sat on
+       * its stops for as long as the wheel was turned, and had its velocity
+       * killed there. That is a hull with no suspension left in it in exactly
+       * the moment it is being driven hardest, and it broke the rule the gains
+       * next door are sized by: **the stops are for EVENTS and not for
+       * driving**.
+       *
+       * Squared rather than linear because that is what progressive means: the
+       * rate is barely off 1 while the travel is barely spent and climbs where
+       * a pack goes solid, so what it costs is taken from the end of the range
+       * that had nothing left to say. Measured across the steer, in degrees of
+       * settled lean at road speed:
+       *
+       * ```
+       *   lock:    10%   20%   30%   40%   50%   70%  100%
+       *   linear:  1.94  3.89  5.83  7.77  8.21  8.21  8.21   <- on the stop
+       *   at 2.5:  1.74  2.94  3.79  4.46  5.02  5.91  6.95
+       * ```
+       *
+       * **The old curve stopped answering at half lock**, which is the whole
+       * complaint written down: the top half of the steer produced one lean,
+       * so the difference between a corner taken briskly and one taken
+       * flat-out was nothing the body could show. The new one is monotone the
+       * whole way, at the price of about a fifth of the lean in the middle of
+       * the range — a trade in the direction that has more to say.
+       *
+       * Turn-in still overshoots far enough to touch the stop for a frame and
+       * come off it, which is a truck cornering hard rather than a truck that
+       * has run out of suspension.
+       *
+       * A hard brake was over its stop too (12 m/s^2 asks 5.9 degrees of dive
+       * against 5.3) and is now ~3.1, and the heave takes the same hardening on
+       * its own two stops — one suspension, one rate. What that costs on that
+       * axis is stated on `heaveBump`.
+       */
+      progression: 2.5,
+      /**
        * There is no gun to kick it, so this is the one figure here that is
        * simply not reachable. Zero rather than deleted, because the field
        * belongs to the SPRING and not to the gun — `Vehicle.fireGun` is what
@@ -1603,7 +1666,30 @@ export const vehicles = {
       heaveStiffness: 46,
       heaveDamping: 5.8,
       joltLimit: 9,
-      /** More travel than the tank has, both ways: it is a taller ride on less weight. */
+      /**
+       * More travel than the tank has, both ways: it is a taller ride on less
+       * weight.
+       *
+       * **The tank's rule that a stop is sized to be REACHED is a rule about a
+       * LINEAR spring, and this hull is the exception that says so.** The
+       * hardest jolt there is — `joltLimit * heaveResponse`, 2.5 m/s, whether
+       * it came off a three-metre fall or the edge of a car — puts a linear
+       * body of this rate on the stop and puts a progressive one 15.3 cm down
+       * of the 19. Converting a stop into a spring that gets there is what
+       * `progression` IS, so the last four centimetres are a reserve rather
+       * than dead space, and the pictures are the same picture: four fifths of
+       * the bump travel spent in one frame.
+       *
+       * **And that reserve is load-bearing every frame the body is compressed**,
+       * because this pair is the TILT's budget as well as the heave's: `room`
+       * is `heaveBump + heave` on a hull that is down on its springs, so a
+       * truck landing mid-corner has 3.7 cm of station travel for its lean
+       * rather than 15, and goes flat under itself. The number is spent there
+       * even though this axis alone no longer reaches it.
+       *
+       * The tank next door is linear and still bottoms out on the same jolt,
+       * which is the heaviest thing it does and stays that way.
+       */
       heaveBump: 0.19,
       heaveDroop: 0.15,
     },
