@@ -93,6 +93,34 @@ tank rides straight over is a car this drives around, and the whole class of
 "through the scenery" that armour is allowed is closed off — without a line of
 code knowing which kind it is steering.
 
+**The second rule that keeps it honest is that it CANNOT PIVOT, and it is one
+more number of the same shape.** `steerAtRest` is how much of `turnRate` a hull
+has at a standstill — 1 on the tank, which is a neutral-steer pivot and the
+value that leaves the drive's arithmetic exactly where it was, and 0 on the
+truck, which has to be ROLLING to point anywhere. Between the two ends
+`steerRollSpeed` (4 m/s) ramps the authority up linearly in the hull's own
+velocity, and the ramp is SIGNED rather than taken off `travel`: a truck backing
+up steers the way a vehicle backing up steers, the stick left swinging the nose
+right, and a tank is exempt from that too by construction rather than by a
+check. `Vehicle.steerAuthority` is the one place either end is read, and both
+the local drive and `updateRemote`'s derived stick go through it — a yaw rate
+divided by the authority IS the stick that produced it, so the wheels a watcher
+sees are turned as far as the driver has them.
+
+It was `turnRate` flat at every speed until the field existed, and what that
+looked like was a five-tonne truck spinning on its own axis in the road.
+
+**A hull that cannot pivot changes what an AI DRIVER can be asked to do**, and
+that is the one place the change reached outside the drive. `driveOn` tapers the
+throttle away with the heading error so a hull facing the wrong way pivots
+rather than driving a long arc into whatever is beside it — which on a wheeled
+hull is a deadlock, since no throttle is no steering, no steering is no way to
+spend the heading error, and the stuck watchdog stays quiet because it only
+counts a hull that is ASKING for speed. `CONFIG.vehicles.crew.turnCrawl` (0.35)
+is the floor that fall-off now stops at, scaled by `1 - steerAtRest` so it is
+exactly zero on a tank and the line is the one it has always been. What it buys
+is a truck that makes a U-turn where a tank spins on the spot.
+
 It stands on Sarab, one a side, behind each team's tank. Two maps have armour of
 any kind; only that one has two kinds.
 

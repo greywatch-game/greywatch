@@ -926,18 +926,27 @@ export class VehicleCrew {
    * the routed drive and a committed detour go through.
    *
    * **The throttle falls away with the heading error rather than being held
-   * flat**, so a hull facing the wrong way pivots on the spot — which this
-   * vehicle can do at a standstill — instead of driving a long arc into
-   * whatever is beside it. Inside `driveCone` it is full, and it reaches
-   * nothing at a right angle.
+   * flat**, so a hull that CAN pivot on the spot does that instead of driving
+   * a long arc into whatever is beside it. Inside `driveCone` it is full, and
+   * it reaches `turnCrawl` at a right angle.
+   *
+   * **That floor is what a hull which cannot pivot is left standing on, and it
+   * is scaled by the same number that took the pivot away** — `steerAtRest`,
+   * so it is exactly zero on a tank and the fall-off above is the line it has
+   * always been. On a truck a throttle of nothing is steering of nothing,
+   * which is a heading error nothing can spend: the hull sits parked with the
+   * stick hard over, and even the stuck watchdog stays quiet, because it
+   * counts a hull that is ASKING for speed and this one is not. A crawl turns
+   * that deadlock into a U-turn.
    */
   private driveOn(crew: Crew, wantYaw: number, closing: number): void {
     const c = CONFIG.vehicles.crew;
     const err = angleDelta(crew.tank.yaw, wantYaw);
     crew.drive.steer = Math.max(-1, Math.min(1, err * c.steerGain));
+    const floor = c.turnCrawl * (1 - crew.tank.spec.drive.steerAtRest);
     const slack = Math.abs(err) - c.driveCone;
     const fall =
-      slack <= 0 ? 1 : Math.max(0, 1 - slack / (Math.PI / 2 - c.driveCone));
+      slack <= 0 ? 1 : Math.max(floor, 1 - slack / (Math.PI / 2 - c.driveCone));
     crew.drive.throttle = closing * fall;
   }
 

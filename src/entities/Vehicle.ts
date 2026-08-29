@@ -608,11 +608,22 @@ export class Vehicle implements Combatant, RayHull {
    *
    * The split is the tank's, not the drive's: a hull turning at `w` runs its
    * outer track faster than its inner one by `w * TRACK_GAUGE / 2`, so a
-   * neutral-steer pivot (which this vehicle can do at a standstill) comes out
-   * as the two tracks going opposite ways, and a hull that is being STOPPED by
+   * neutral-steer pivot (which a hull whose `steerAtRest` is 1 can do at a
+   * standstill, and which is the only kind that ever reaches this line with no
+   * speed on it) comes out as the two tracks going opposite ways, and a hull that is being STOPPED by
    * something still runs them, because `speed` is what the drive achieved.
    */
   private readonly trackRun: [number, number] = [0, 0];
+  /**
+   * The stick position the running gear was last DRAWN at, and nothing else —
+   * no part of the drive reads it.
+   *
+   * It exists so the skip in `update` can stay the physical question it is
+   * ("has this hull moved or turned?") while still letting a parked vehicle's
+   * wheels answer the stick. Reset with the tracks, because a respawned hull
+   * is drawn straight.
+   */
+  private steerShown = 0;
   /**
    * The drawn hull's attitude, in two halves that are never mixed: where the
    * ground puts it, and what its own mass does to it.
@@ -952,6 +963,7 @@ export class Vehicle implements Combatant, RayHull {
     this.speed = 0;
     this.trackRun[0] = 0;
     this.trackRun[1] = 0;
+    this.steerShown = 0;
     this.groundPitch = 0;
     this.groundRoll = 0;
     this.suspPitch = 0;
@@ -1353,6 +1365,40 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * How fast this hull can turn RIGHT NOW at full stick, in rad/s — signed, so
+   * multiplying a stick position by it is the whole of the steering and a
+   * yaw rate divided by it is the stick that must have produced one.
+   *
+   * Two ends and a taper, and between them they are the only thing in the
+   * codebase that knows tracks from wheels — without knowing it, because both
+   * ends are numbers a `VehicleSpec` states:
+   *
+   * - `turnAtSpeed` is the top end. A hull does not turn as hard at road speed
+   *   as it does off the line, whichever way it is steered.
+   * - `steerAtRest` is the bottom. At 1 the ramp is a flat 1 everywhere and
+   *   this collapses to the taper alone — a tracked hull pivots on the spot
+   *   and reverses into the same pivot. At 0 the authority is proportional to
+   *   the hull's own VELOCITY up to `steerRollSpeed`, so a wheeled hull turns
+   *   nothing while parked and turns the other way backing up, which is what a
+   *   steered axle does and what stops a five-tonne truck spinning in the road.
+   *
+   * Signed by `this.speed` rather than `this.travel` for that last clause, and
+   * a `steerRollSpeed` of 0 means "no ramp" rather than a division by zero.
+   */
+  private steerAuthority(): number {
+    const c = this.spec.drive;
+    const turn =
+      c.turnRate *
+      (1 - (1 - c.turnAtSpeed) * Math.min(1, this.travel / c.maxSpeed));
+    if (c.steerAtRest >= 1 || c.steerRollSpeed <= 0) return turn;
+    const rolling = Math.max(
+      -1,
+      Math.min(1, this.speed / c.steerRollSpeed),
+    );
+    return turn * (c.steerAtRest + (1 - c.steerAtRest) * rolling);
+  }
+
+  /**
    * One frame of a tank: the drive, the ground under it, the turret walking
    * toward where it was asked to point, and the lean.
    *
@@ -1408,11 +1454,7 @@ export class Vehicle implements Combatant, RayHull {
     const move = Math.min(Math.abs(gap), rate * dt);
     this.speed += Math.sign(gap) * move;
 
-    // Neutral steer at a standstill, tapering toward `turnAtSpeed` at road
-    // speed — a tank does not pivot at 40 km/h.
-    const fast = Math.min(1, this.travel / c.maxSpeed);
-    const turn = c.turnRate * (1 - (1 - c.turnAtSpeed) * fast);
-    const yawRate = d.steer * turn;
+    const yawRate = d.steer * this.steerAuthority();
     this.yaw += yawRate * dt;
     this.body.rotation.y = this.yaw;
 
@@ -1430,11 +1472,19 @@ export class Vehicle implements Combatant, RayHull {
     // turned cannot have changed what it is touching, and those two are the
     // only ways it can.
     const stirred = this.speed !== 0 || yawRate !== 0;
-    if (stirred) {
+    // **The stick is drawn on a hull that is not moving at all**, which is the
+    // one thing the skip above cannot cover on a vehicle that has to be
+    // rolling to turn: a parked truck under full lock yaws by nothing, and if
+    // the wheels did not turn either then the driver's only feedback for the
+    // stick being over is that they are still pointing the same way. A tank
+    // has never reached this branch — a stick over on one IS a yaw rate — so
+    // it costs the parked pair nothing.
+    if (stirred || d.steer !== this.steerShown) {
       const differential = (yawRate * this.rig.gauge) / 2;
       this.trackRun[0] += (this.speed + differential) * dt;
       this.trackRun[1] += (this.speed - differential) * dt;
       this.rig.setRun(this.trackRun[0], this.trackRun[1], d.steer);
+      this.steerShown = d.steer;
     }
 
     // **Aimed on a TURN as well as on a move, and that is a fix rather than a
@@ -1686,13 +1736,11 @@ export class Vehicle implements Combatant, RayHull {
       // the wire carries where a hull ended up and every client works the
       // picture out for itself. A yaw rate over the turn the drive could have
       // asked for at this speed IS the stick that produced it.
-      const turn =
-        c.turnRate *
-        (1 - (1 - c.turnAtSpeed) * Math.min(1, Math.abs(this.speed) / c.maxSpeed));
+      const turn = this.steerAuthority();
       this.rig.setRun(
         this.trackRun[0],
         this.trackRun[1],
-        turn > 1e-4 ? Math.max(-1, Math.min(1, yawRate / turn)) : 0,
+        Math.abs(turn) > 1e-4 ? Math.max(-1, Math.min(1, yawRate / turn)) : 0,
       );
     }
     if (Math.abs(this.speed) > 1e-3) this.aimCollider();

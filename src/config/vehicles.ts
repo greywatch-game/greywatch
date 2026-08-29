@@ -67,6 +67,8 @@ export interface VehicleSpec {
     readonly brake: number;
     readonly turnRate: number;
     readonly turnAtSpeed: number;
+    readonly steerAtRest: number;
+    readonly steerRollSpeed: number;
     readonly tiltRate: number;
     readonly airTiltRate: number;
     readonly tiltLimit: number;
@@ -371,6 +373,24 @@ export const vehicles = {
      */
     driveCone: 0.6,
     /**
+     * The throttle a hull that CANNOT pivot keeps on while it is turning onto
+     * a bearing — scaled by `1 - VehicleSpec.drive.steerAtRest`, so it is dead
+     * on a tank and the whole of what makes an AI truck driver possible.
+     *
+     * The line above it falls to nothing at a right angle, which is right for
+     * a vehicle that pivots and is a DEADLOCK for one that steers: no throttle
+     * is no steering, no steering is no way to lose the heading error, and the
+     * watchdog never fires because it only counts a hull that is ASKING for
+     * speed. Measured on the first truck given a bearing behind it: parked,
+     * stick hard over, indefinitely.
+     *
+     * 0.35 is a crawl — enough to be well past `steerRollSpeed`, so the hull
+     * has its full lock and turns in the tightest circle it owns, and slow
+     * enough that the arc it makes of a U-turn is one the whiskers can still
+     * see the end of.
+     */
+    turnCrawl: 0.35,
+    /**
      * A bearing far enough off the wanted one to count as going ROUND
      * something rather than easing past it, in radians — and how long the hull
      * commits to one once it has picked it.
@@ -520,6 +540,27 @@ export const vehicles = {
        * chase camera swing far harder than the hull looked like it was turning.
        */
       turnAtSpeed: 0.45,
+      /**
+       * How much of the turn a hull has at a STANDSTILL, 0..1 — the other end
+       * of `turnAtSpeed`'s taper, and the one number that says whether this
+       * vehicle steers with tracks or with wheels.
+       *
+       * **1 is the reference and means a neutral-steer pivot**, exactly as the
+       * rifle is 1 in every `report` field: a tank turns on the spot because
+       * one belt runs forward while the other runs back, and no part of that
+       * needs the vehicle to be going anywhere. A kind that states less than 1
+       * is a kind that has to be ROLLING to point somewhere, and it reaches the
+       * whole of the drive through one multiplier rather than through a branch
+       * — see `steerRollSpeed`, and the truck's own note for what it costs.
+       */
+      steerAtRest: 1,
+      /**
+       * How fast this has to be going before it has ALL of its steering, in
+       * m/s. Read only by a kind that states `steerAtRest` below 1, and dead
+       * here for that reason rather than by omission: at 1 the ramp is already
+       * full at every speed and this number can say nothing.
+       */
+      steerRollSpeed: 0,
       /**
        * How fast the drawn hull leans onto the ground it is standing on
        * (per second, frame-lerp). The pitch and roll are cosmetic — the
@@ -1450,16 +1491,42 @@ export const vehicles = {
        * 0.45, because a truck steers with its wheels rather than dragging a
        * belt sideways: this is a vehicle that corners, where the tank is one
        * that pivots.
-       *
-       * **What it cannot do is pivot on the spot**, and nothing here says so —
-       * `turnRate` is available at a standstill exactly as the tank's is. That
-       * is a knowing simplification rather than an oversight: a steered
-       * vehicle's turning circle would be a second drive model for one kind,
-       * and what the player actually feels is a vehicle that turns hard and
-       * keeps turning hard while it is moving, which is the read that matters
-       * at 65 km/h.
        */
       turnAtSpeed: 0.78,
+      /**
+       * **0: this cannot pivot on the spot, and that is the wheeled half of
+       * the trade stated as a number.** A parked truck with the stick hard over
+       * has its front wheels turned and goes nowhere, because a steered wheel
+       * standing still is a wheel pointing somewhere rather than a machine
+       * turning — where the tank drags one belt backwards and does not care
+       * whether it is going anywhere at all.
+       *
+       * It was 1 by omission until the field existed, and what that looked like
+       * was a five-tonne truck spinning on its own axis in the road. Nothing in
+       * `Vehicle` learned a kind to fix it: the multiplier is on the drive for
+       * both, and the tank states the value that leaves its own arithmetic
+       * exactly where it was.
+       */
+      steerAtRest: 0,
+      /**
+       * m/s at which the steering is fully there, the ramp up from
+       * `steerAtRest` being linear in the hull's own speed.
+       *
+       * 4 m/s is below a jog, so this is a truck that has its full lock as soon
+       * as it is genuinely rolling rather than one that has to reach road speed
+       * to corner: at 4 it turns at 1.09 rad/s, which is a 3.7 m circle, and at
+       * its own 18 the taper above has it at 0.9 for a 20 m one. The band under
+       * 4 is the manoeuvring one — a driver easing out of a hardstanding turns
+       * about as sharply as the throttle they are giving it, which is the read
+       * a wheeled vehicle owes.
+       *
+       * **The ramp is SIGNED, and that is not a detail**: it is taken from the
+       * hull's velocity rather than its speed, so backing up steers the way
+       * backing up does — the stick left swings the nose right. A tank is
+       * exempt by construction (`steerAtRest: 1` leaves the multiplier at a
+       * flat 1 whichever way it is going) rather than by a check.
+       */
+      steerRollSpeed: 4,
       /** Onto the ground faster than the tank: less mass, shorter wheelbase. */
       tiltRate: 7.5,
       airTiltRate: 1.1,

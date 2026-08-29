@@ -777,9 +777,17 @@ permanent local zero and `aimMg` needs no branch of its own.
 
 **The TANK is armour and the TRUCK is the trade**: 18 m/s against 11 through a
 3.2 m gap against 4.4, for 520 points against 1200 at nine times the small-arms
-damage and no cannon at all. **`climbHeight` is the rule that keeps a fast
-vehicle honest** — 0.55 against 1.25, so the parked car a tank drives over is
-one a truck goes round. Sarab is the only map with both. **`mount` and `clearVehicle` are exact inverses and must be read as a
+damage and no cannon at all. **Two numbers keep a fast vehicle honest and
+neither is a branch**: `climbHeight` (0.55 against 1.25, so the parked car a
+tank drives over is one a truck goes round) and **`steerAtRest`, which is how
+much of `turnRate` a hull has standing still** — 1 is a neutral-steer pivot and
+the tank's, 0 is the truck's, and between them `steerRollSpeed` ramps the
+authority up in the hull's own **signed** velocity, so a truck cannot spin on
+the spot and steers inverted backing up. `Vehicle.steerAuthority` is the one
+place either end is read, the drive and the remote pose both go through it, and
+a hull that cannot pivot is why the AI driver's throttle bottoms out at
+`crew.turnCrawl` scaled by `1 - steerAtRest` rather than at nothing. Sarab is
+the only map with both. **`mount` and `clearVehicle` are exact inverses and must be read as a
 pair.** **A driver's frame is not a body's**: `Player.update` is not called, so
 the hull's ground REPLACES the probe. **The verb is `E`, the pad's d-pad north
 and a button that APPEARS on glass** — one `usePressed`, and `Game.offerUse` is
