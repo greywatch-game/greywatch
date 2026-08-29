@@ -10,15 +10,18 @@
  * setPosition/setOrientation path — keep both. Nothing here schedules a
  * repeating sound: footsteps are one-shots fired by the caller's own gait
  * phase (the camera's bob, a bot's walk cycle), never by a timer in here.
- * There is ONE sustained voice and it is not a counter-example: the driven
- * vehicle's engine (`engineOn`/`engineDrive`/`engineOff`) is a graph of six
- * sources held open between a mount and a dismount, not a timer firing
- * one-shots — the only thing in it that repeats is an oscillator, which is the
- * audio clock's business rather than the frame's. It is unpanned and uncapped
- * for the reason the player's own report is, and it stops with the audio clock
- * like everything else. Its teardown is a loop over `EngineVoice.sources`, and
- * a source added to that graph without a place on that list is a voice running
- * unheard for the rest of the session.
+ * The sustained voices are ENGINES, and they are not a counter-example: one is
+ * a graph of six sources held open, not a timer firing one-shots — the only
+ * thing in it that repeats is an oscillator, which is the audio clock's
+ * business rather than the frame's, and it stops with that clock like
+ * everything else. There are two KINDS and one graph. The hull the player is
+ * driving (`engineOn`/`engineDrive`/`engineOff`) is unpanned and uncapped for
+ * the reason the player's own report is; every other occupied hull within
+ * `CONFIG.audio.engineRange` gets a spatialised one (`hullEngine`/
+ * `hullEngineOff`/`enginesOff`), which is a sound in the world like any other.
+ * Teardown either way is a loop over `EngineVoice.sources`, and a source added
+ * to that graph without a place on that list is a voice running unheard for
+ * the rest of the session.
  */
 import type { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -45,6 +48,19 @@ const SOFT_CLIP_DRIVE = 3;
 const FLAT_REPORT: ReportVoice = CONFIG.weapons.rifle.report;
 
 /**
+ * How much louder somebody else's engine is AT SOURCE than the one the player
+ * is sitting in — `Sfx.hullEngine`, against `engineOn`'s reference of 1.
+ *
+ * A level rather than a distance, so it is here with the rest of this file's
+ * levels rather than in `CONFIG.audio` with `engineRange`, which is a range.
+ * What it pays for is the near field: the panner's rolloff starts biting at
+ * `CONFIG.audio.refDistance` (8 m), so by the time a tank is across a street
+ * it has already taken two thirds of the voice, and the numbers in
+ * `driveEngine` were tuned for a graph with nothing at all in front of it.
+ */
+const HULL_ENGINE_LEVEL = 2.2;
+
+/**
  * The nodes of the tank engine — the one sustained voice in this file, held
  * open between a mount and a dismount.
  *
@@ -64,6 +80,14 @@ interface EngineVoice {
   sources: AudioScheduledSourceNode[];
   /** The output tap: the engine's level, and what takes it off the bus. */
   out: GainNode;
+  /**
+   * Where in the world this engine is, or null for the hull the player is
+   * sitting in — which is the whole of the difference between the two kinds.
+   * On the teardown list in its own right: `out.disconnect()` leaves a panner
+   * still wired to the master, which is silent but is one more node the graph
+   * never lets go of.
+   */
+  panner: PannerNode | null;
   /** The firing rate. Every pitched layer below is a multiple of it. */
   fire: OscillatorNode;
   /** The combustion tone, at twice the firing rate, before its shaper. */
@@ -118,10 +142,18 @@ export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   /**
-   * The driven vehicle's engine — the one held-open voice in this file. Null
-   * whenever the player is on foot. See `engineOn`.
+   * The DRIVEN vehicle's engine — the unpanned one. Null whenever the player
+   * is on foot. See `engineOn`.
    */
   private engine: EngineVoice | null = null;
+  /**
+   * Everybody else's, keyed by whatever the caller uses to tell one hull from
+   * another. Held open for exactly as long as that hull is occupied, alive and
+   * within `CONFIG.audio.engineRange` — see `hullEngine`, which is called every
+   * frame rather than on a mount, and `enginesOff`, which is what a frame that
+   * did not step the fleet at all owes.
+   */
+  private hullVoices = new Map<number, EngineVoice>();
   /**
    * The combustion shaper's curve: built on the first mount and shared by
    * every one after it, for the reason the noise buffer is.
@@ -931,6 +963,43 @@ export class Sfx {
    * The engine of the tank the PLAYER is driving: one sustained voice, started
    * on the way in and stopped on the way out.
    *
+   * Deliberately NOT spatialised and deliberately NOT counted against the
+   * voice cap, and that — plus the CATCH below — is the whole of what makes
+   * this different from the identical graph every other hull gets through
+   * `hullEngine`. It is not a sound in the world you are listening to; it is
+   * the vehicle you are sitting in, the same reason the player's own report is
+   * exempt.
+   */
+  engineOn(): void {
+    if (this.engine) return;
+    const voice = this.buildEngine(null);
+    if (!voice) return;
+    this.engine = voice;
+
+    // The CATCH, and it belongs to THIS voice rather than to the graph. The
+    // build above comes up from silence over a couple of hundred
+    // milliseconds, which on its own is a fade and not a start: three
+    // one-shots make it the starter turning the engine over and the first
+    // cylinders finding compression. Ordinary one-shots, scheduled on the
+    // audio clock and voice-capped like any other — the sustained voice is
+    // the exception in this file, and this is not part of it.
+    //
+    // `hullEngine` fires none of them, because what starts a voice there is a
+    // tank arriving in earshot rather than a hand on a key — see that method.
+    this.burst({ dur: 0.32, vol: 0.15, type: "bandpass", freq: 400, freqEnd: 250, q: 2.4 });
+    this.burst({
+      dur: 0.5, vol: 0.4, type: "lowpass", freq: 430, freqEnd: 70, q: 0.8,
+      delay: 0.24,
+    });
+    this.tone(58, 0.44, "sine", 0.36, 0.55, null, { delay: 0.26 });
+  }
+
+  /**
+   * The engine graph itself: six sources held open, and the ONE description in
+   * this game of what a diesel sounds like. Both kinds of voice are this
+   * method — a null `panner` is the hull the player is sitting inside, wired
+   * straight onto the master bus, and a panner is anybody else's.
+   *
    * **This is the only thing in this file that does not end on its own**, and
    * the header's rule — nothing here schedules a repeating sound — is intact
    * rather than bent: a repeating sound is a timer firing one-shots, and this
@@ -939,11 +1008,8 @@ export class Sfx {
    * clock's business and not the frame's. It still stops with that clock, so a
    * pause holds it exactly as it holds the tail of the last shot.
    *
-   * Deliberately NOT spatialised and deliberately NOT counted against the voice
-   * cap. It is not a sound in the world you are listening to; it is the vehicle
-   * you are sitting in, the same reason the player's own report is exempt.
-   * Somebody else's tank is heard through `cannon` and through nothing else,
-   * which is a real gap and is written down in `docs/vehicles.md`.
+   * It comes up SILENT and at cranking speed, so a caller owes it a
+   * `driveEngine` before there is anything to hear.
    *
    * **A diesel is a string of separate explosions, and that — not the spectrum
    * of any one layer — is what this voice is built around.** Filtered noise and
@@ -968,13 +1034,15 @@ export class Sfx {
    * three, and it is lowpassed hard enough that the seam is not a thing an ear
    * can find.
    */
-  engineOn(): void {
+  private buildEngine(panner: PannerNode | null): EngineVoice | null {
     const ctx = this.ctx;
-    if (!ctx || !this.master || !this.noiseBuffer || this.engine) return;
+    if (!ctx || !this.master || !this.noiseBuffer) return null;
     try {
       const out = ctx.createGain();
       out.gain.value = 0;
-      out.connect(this.master);
+      // When there is a panner it is already on the master — `hullEngine`
+      // builds it, because it is the node the range gate is about.
+      out.connect(panner ?? this.master);
 
       // What comes off the bottom, and it is NOT a DC blocker — the shaper
       // below is asymmetric and the lump multiplies signals by a gain they are
@@ -1130,31 +1198,37 @@ export class Sfx {
         noise, fire, growl, chest, turboA, turboB,
       ];
       for (const s of sources) s.start();
-      this.engine = {
-        sources, out, fire, growl, chest, turbo: [turboA, turboB],
+      return {
+        sources, out, panner, fire, growl, chest, turbo: [turboA, turboB],
         chugTone, growlTone, turboTone, turboLevel, trackLevel,
       };
-
-      // The CATCH. The graph above comes up from silence over a couple of
-      // hundred milliseconds, which on its own is a fade and not a start:
-      // three one-shots make it the starter turning the engine over and the
-      // first cylinders finding compression. Ordinary one-shots, scheduled on
-      // the audio clock and voice-capped like any other — the sustained voice
-      // is the exception in this file, and this is not part of it.
-      this.burst({ dur: 0.32, vol: 0.15, type: "bandpass", freq: 400, freqEnd: 250, q: 2.4 });
-      this.burst({
-        dur: 0.5, vol: 0.4, type: "lowpass", freq: 430, freqEnd: 70, q: 0.8,
-        delay: 0.24,
-      });
-      this.tone(58, 0.44, "sine", 0.36, 0.55, null, { delay: 0.26 });
     } catch {
-      // ignore
+      return null;
     }
   }
 
   /**
-   * How hard the engine is working: `load` is the throttle 0..1 and `speed` is
+   * How hard the PLAYER's engine is working, once a frame for as long as they
+   * are aboard. `driveEngine` is the whole of it and carries the argument.
+   */
+  engineDrive(load: number, speed: number): void {
+    if (this.engine) this.driveEngine(this.engine, load, speed);
+  }
+
+  /**
+   * How hard one engine is working: `load` is the throttle 0..1 and `speed` is
    * how much of the vehicle's top speed it is doing.
+   *
+   * Shared by both kinds of voice, and a hull nobody local is driving is given
+   * its own SPEED for both — see `hullEngine`, which cannot see anybody else's
+   * stick and does not pretend to.
+   *
+   * `level` scales the whole voice and is 1 for the hull the player is inside,
+   * which is the reference the levels below were tuned as. A spatialised one
+   * is louder at source because it is not heard at source: the panner has
+   * already taken it down by two thirds before a tank is even across the
+   * street, and a number tuned for something sitting in your head with no
+   * attenuation at all under it comes out as a machine you cannot hear.
    *
    * Both, not one, and they are asked different questions. SPEED is what the
    * crank is doing, so it carries the pitch and it alone gates the track
@@ -1168,9 +1242,13 @@ export class Sfx {
    * because an engine lugging against a wall pulls down toward idle rather
    * than holding the note it had rolling.
    */
-  engineDrive(load: number, speed: number): void {
-    const e = this.engine;
-    if (!this.ctx || !e) return;
+  private driveEngine(
+    e: EngineVoice,
+    load: number,
+    speed: number,
+    level = 1,
+  ): void {
+    if (!this.ctx) return;
     const t = this.ctx.currentTime;
     const rev = Math.min(1, 0.75 * speed + 0.25 * load);
     // The firing rate, and every pitched layer is a multiple of it so the
@@ -1188,7 +1266,7 @@ export class Sfx {
     // Ramped rather than assigned, or every frame is a click. 80 ms is short
     // enough that the engine still answers the throttle inside a tenth of a
     // second and long enough that no step in it is audible.
-    e.out.gain.setTargetAtTime(0.12 + 0.18 * load, t, 0.08);
+    e.out.gain.setTargetAtTime((0.12 + 0.18 * load) * level, t, 0.08);
     e.chugTone.frequency.setTargetAtTime(420 + 900 * load, t, 0.1);
     e.growlTone.frequency.setTargetAtTime(500 + 1600 * load, t, 0.1);
     // The turbo, whose whole character is that it is LATE. A tenth of a second
@@ -1208,22 +1286,141 @@ export class Sfx {
 
   /**
    * Out of the vehicle: the engine stops, and its nodes are let go.
-   *
-   * It is NOT cut on the frame the player steps down. A diesel that is
-   * switched off falls through its own idle and stops turning over about half
-   * a second later, and a graph this sustained disappearing in one sample is
-   * the single moment the whole thing would sound synthesized. The wind-down
-   * is scheduled on the audio clock and the sources are stopped at the end of
-   * it, so a pause holds the shutdown exactly as it holds everything else.
+   * `stopEngine` is the wind-down and carries the argument for it.
    */
   engineOff(): void {
     const e = this.engine;
-    if (!this.ctx || !e) return;
+    if (!e) return;
     // Dropped before the ramps rather than after them, so `engineOn` can build
     // a fresh voice while this one is still winding down — getting straight
     // back into the same hull is an ordinary thing for a player to do, and the
     // two graphs are independent.
     this.engine = null;
+    this.stopEngine(e);
+  }
+
+  /**
+   * Somebody ELSE's hull, and the gap this used to be is why it exists: a tank
+   * driven past you by a bot or by another player made no sound at all, and
+   * armour you cannot hear is armour that arrives from nowhere.
+   *
+   * The same graph as `engineOn`, spatialised, one voice per `key` and DRIVEN
+   * EVERY FRAME rather than opened on a mount and closed on a dismount. That
+   * is the difference that matters: what is being tracked here is not somebody
+   * getting in, it is a tank being within earshot, so the voice is built when
+   * one comes into range and torn down when it leaves. Which is also why there
+   * is no CATCH — the three one-shots `engineOn` fires are a starter motor
+   * turning over, and firing them on a range crossing would be a tank starting
+   * up once a street.
+   *
+   * `load` and `speed` are asked the way `Game.frameVehicleCamera` asks them
+   * for a GUNNER: the throttle belongs to whoever is holding the stick and
+   * nobody outside the hull can see it, so the hull's own speed is the honest
+   * answer to both. A stationary occupied hull idles, which is what a
+   * stationary occupied hull does.
+   *
+   * The rolloff is INVERSE and is alone in this file in being so — every
+   * one-shot here is linear over `maxDistance`, which reaches exactly nothing
+   * at its own gate and needs no further thought. This one has to carry four
+   * times as far (`CONFIG.audio.engineRange`), and linear over that distance
+   * is a machine as loud at fifty metres as at ten. Inverse is what a point
+   * source actually does, and it is what makes an engine GROW as the thing
+   * arrives.
+   */
+  hullEngine(key: number, at: Vector3, load: number, speed: number): void {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master) return;
+    let voice = this.hullVoices.get(key);
+    const dist = this.distanceToListener(at);
+    // The gate, with a little hysteresis on the way back out — and the
+    // hysteresis is about the BUILD rather than about the sound. By the gate
+    // the rolloff has this voice below anything audible either way, so what a
+    // hull idling on the boundary would otherwise cost is a six-source graph
+    // torn down and stood back up every few frames.
+    if (dist > CONFIG.audio.engineRange * (voice ? 1.15 : 1)) {
+      this.hullEngineOff(key);
+      return;
+    }
+    if (!voice) {
+      const panner = ctx.createPanner();
+      panner.panningModel = "equalpower";
+      panner.distanceModel = "inverse";
+      panner.refDistance = CONFIG.audio.refDistance;
+      panner.rolloffFactor = 1;
+      panner.connect(master);
+      const built = this.buildEngine(panner);
+      if (!built) {
+        panner.disconnect();
+        return;
+      }
+      voice = built;
+      this.hullVoices.set(key, voice);
+    }
+    const p = voice.panner;
+    if (p) {
+      p.positionX.value = at.x;
+      p.positionY.value = at.y;
+      p.positionZ.value = at.z;
+    }
+    this.driveEngine(voice, load, speed, HULL_ENGINE_LEVEL);
+  }
+
+  /**
+   * One hull's engine away: it emptied, it burned, or it drove out of earshot.
+   * Idempotent, and it winds down rather than cutting for `stopEngine`'s
+   * reason — a tank leaving is a diesel receding, which is the same half
+   * second either way.
+   */
+  hullEngineOff(key: number): void {
+    const voice = this.hullVoices.get(key);
+    if (!voice) return;
+    this.hullVoices.delete(key);
+    this.stopEngine(voice);
+  }
+
+  /**
+   * Every hull engine at once, and it is owed by two callers that look
+   * unrelated and are not: a frame that did not STEP the fleet, and a map
+   * being torn down.
+   *
+   * A held world is a fleet whose speeds are frozen, so a voice left running
+   * under the deploy card is a tank droning in a street where nothing moves;
+   * and a fleet that stops existing takes none of its keys with it, so the
+   * per-frame `hullEngineOff` above would never be asked about them again.
+   *
+   * The PLAYER's own engine is deliberately not touched. That one is bracketed
+   * by a mount and a dismount rather than by a frame, and every path out of a
+   * seat already runs `engineOff`.
+   *
+   * A SUSPENDED clock is the one held world this does not answer, and refusing
+   * is the whole of why it knows about `paused` at all: the offline pause card
+   * stops the audio context, which is already holding these voices exactly as
+   * it holds the tail of the last shot. Stopping them as well would schedule a
+   * half-second wind-down that cannot run until the resume — so the frame the
+   * player comes back on would hear a dying engine under the fresh one this
+   * method's own caller immediately rebuilds.
+   */
+  enginesOff(): void {
+    if (this.paused) return;
+    for (const voice of this.hullVoices.values()) this.stopEngine(voice);
+    this.hullVoices.clear();
+  }
+
+  /**
+   * The wind-down, shared by both kinds of voice. The caller has already let
+   * go of it — see `engineOff` — so this only has to spend it.
+   *
+   * It is NOT cut on the frame the player steps down, or on the frame a hull
+   * leaves earshot. A diesel that is switched off falls through its own idle
+   * and stops turning over about half a second later, and a graph this
+   * sustained disappearing in one sample is the single moment the whole thing
+   * would sound synthesized. The wind-down is scheduled on the audio clock and
+   * the sources are stopped at the end of it, so a pause holds the shutdown
+   * exactly as it holds everything else.
+   */
+  private stopEngine(e: EngineVoice): void {
+    if (!this.ctx) return;
     try {
       const t = this.ctx.currentTime;
       // The level is held where it actually is first: the last frame's own
@@ -1241,7 +1438,12 @@ export class Sfx {
       e.chest.frequency.setTargetAtTime(18, t, 0.28);
       const stop = t + 0.6;
       for (const s of e.sources) s.stop(stop);
-      e.sources[0].onended = () => e.out.disconnect();
+      // BOTH nodes: dropping only the gain leaves a panner wired to the master
+      // for the rest of the session — silent, and never collected.
+      e.sources[0].onended = () => {
+        e.out.disconnect();
+        e.panner?.disconnect();
+      };
     } catch {
       // ignore
     }

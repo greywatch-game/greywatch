@@ -1312,6 +1312,62 @@ The hull is POOLED: `Tank.placeAt` puts a destroyed one back rather than buildin
 a new one, and `resetTankPose` is what guarantees nothing survives the round it
 died in. Nothing is disposed inside a round.
 
+## The engine, and the two voices it is
+
+A hull makes a noise whoever is in it. There are **two kinds of voice and one
+graph**, and the graph is `Sfx.buildEngine` — six sources held open, five layers
+hanging off one gain swinging at the firing rate, and the whole of the argument
+for what a diesel sounds like is on that method.
+
+| voice | who | how it is heard |
+| --- | --- | --- |
+| `engineOn` / `engineDrive` / `engineOff` | the hull the PLAYER is sitting in | unpanned and uncapped, for the reason the player's own report is: it is not a sound in the world, it is the vehicle you are in |
+| `hullEngine` / `hullEngineOff` / `enginesOff` | every OTHER occupied hull | a `PannerNode`, at `Tank.center`, gated at `CONFIG.audio.engineRange` |
+
+**The second one is driven per FRAME rather than opened on a mount**, and that
+is the difference the rest of it follows from. What is being tracked is not
+somebody getting in, it is a tank being within earshot — so `Game.pushHullEngines`
+walks the fleet every frame and the voice is built when a hull comes into range
+and wound down when it leaves. Three things silence one: it is the hull the
+player is inside (which has the unpanned voice already, and would otherwise be
+heard twice), it is a wreck, or `Tank.occupied` is false — **a hull parked on its
+hardstanding is silent until somebody climbs aboard**, which is the same one fact
+stated on the hull that the boarding sweep and the wreck clock read, and which a
+match writes off the snapshot.
+
+**There is no CATCH on a hull voice**, and that is not an oversight. The three
+one-shots `engineOn` fires are a starter motor turning over; fired on a range
+crossing they would be a tank starting up once a street.
+
+**`load` and `speed` are both the hull's own speed.** The throttle belongs to
+whoever is holding the stick and nobody outside the hull can see it — the same
+call `Game.frameVehicleCamera` already makes for a GUNNER, who is sitting in the
+thing and still has no business revving it.
+
+**The rolloff is INVERSE, alone in `Sfx.ts`.** Every one-shot in that file is
+linear over `maxDistance`, which reaches exactly nothing at its own gate and
+needs no more thought. An engine has to carry four times as far, and linear over
+150 m is a machine as loud at fifty metres as at ten. Inverse is what a point
+source does, and it is what makes an engine GROW as the thing arrives. It also
+costs `HULL_ENGINE_LEVEL`: the rolloff bites from `refDistance` (8 m), so levels
+tuned for a graph sitting in your head with nothing in front of it come out as a
+tank you cannot hear.
+
+**A frame that did not step the fleet owes `enginesOff`.** `Game.fleetStepped` is
+raised by `updateWorld` and by `updateNetWorld` and spent by `pushHullEngines`,
+which is a flag rather than a test on the state because the state does not answer
+it: offline the world is held under the deploy card and the pause card and
+stepped under the death cam, and in a netplay round it is stepped under all
+three. A held world is a fleet whose speeds are frozen, so a voice left running
+is a tank droning in a street where nothing moves. The offline PAUSE is the one
+held world `enginesOff` refuses, and it refuses because the pause card suspends
+the audio context — which is already holding these voices exactly as it holds
+the tail of the last shot, and stopping them as well would put a half-second
+wind-down under the fresh voice the resume rebuilds. It is also what makes a map
+rebuild safe without knowing anything about one — the key is the hull's index in
+the fleet, and `installMap` runs from `loading` and from the editor, neither of
+which steps a fleet.
+
 ## What a map owes
 
 `MapLayout.vehicles` is absent on Hollowmere and Greyfen, and a map that says
@@ -1709,9 +1765,6 @@ ray happened to find, which can be a street away.
   characters are not: the depth map re-renders only when the texel-snapped focus
   moves, so a tank driving past a stationary observer would drag a stale shadow.
   Characters get blob discs instead; a vehicle gets nothing yet.
-- **Only your own engine is heard.** `Sfx.engineOn` is unpanned and belongs to
-  the hull the player is sitting in. Somebody else's tank is audible through its
-  gun and through nothing else.
 - **Team-locked.** `VehicleSystem.enterable` refuses the other side's armour.
   Stealing it is a real design choice and a good one in some shooters, but made
   by accident it would mean a hardstanding's respawn timer feeding the wrong team

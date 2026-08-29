@@ -94,6 +94,25 @@ export const audio = {
   glassRange: 60,
 
   /**
+   * How far a HULL's engine carries — `Sfx.hullEngine`, the voice belonging to
+   * a tank the player is NOT sitting in.
+   *
+   * Its own number and by far the largest in this file, because a diesel under
+   * load is not a rifle. It is the loudest thing on the map, it runs
+   * continuously rather than in transients, and what it tells you is not that
+   * something happened but that armour is somewhere behind you — a cue that is
+   * only worth anything if it arrives well before the tank does. At 150 m it
+   * reaches across the whole of the three small maps, which is the intent.
+   *
+   * It is a HARD gate rather than a fade: past it the voice is not built at
+   * all. That costs nothing audible at the boundary because the rolloff there
+   * is INVERSE rather than the linear one every one-shot in this file uses,
+   * and inverse has already taken 150 m down to about a twentieth — there is
+   * no cliff to hear, only a six-source graph not worth holding open.
+   */
+  engineRange: 150,
+
+  /**
    * Footsteps. The player's are triggered by the camera's bob phase rather
    * than by a timer of their own — a step you hear off the beat of the dip
    * you see is worse than no step at all — so there is no interval here.

@@ -849,11 +849,22 @@ mounts on one frame. `resolveShell` is the ONE round out of a tank gun (`Game`'s
 offline, `HeadlessGame`'s in a match), and a driver needs no route graph — a
 BEARING and `Tank.rideableAt` are all of it.
 
+**A hull is HEARD whoever is in it, and that is two voices over one graph.** The
+one the player is sitting in is unpanned for the reason their own report is;
+every other OCCUPIED hull gets a spatialised copy of the same six sources,
+driven per FRAME by `Game.pushHullEngines` rather than opened on a mount —
+because what is being tracked is not somebody getting in, it is a tank being
+within earshot. **A frame that did not STEP the fleet owes `Sfx.enginesOff`**
+(`Game.fleetStepped`, raised by the two world steps): a held world is a fleet
+whose speeds are frozen, and a voice left running under the deploy card is a
+tank droning in a street where nothing moves.
+
 → **[`docs/vehicles.md`](docs/vehicles.md)** — the two seats and the swap, the
 cupola gun's world angle and its stowed inversion, the crew of two, the whisker
 fan and the two geometry bugs it found; the collider's three answers; the
 tracks' sweep, its three gates and its two skips; the
-model's twenty-six meshes, its tracks and its whips; the plank, the rate limit
+model's twenty-six meshes, its tracks and its whips; the two engine voices and
+the one graph under them; the plank, the rate limit
 and the leading-end sphere; the damage kinds, the four ways out of a seat, the
 shell, the two clocks a hardstanding runs, what a map owes, and what is not
 built.

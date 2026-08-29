@@ -679,6 +679,19 @@ export class Game {
   private drivingSeat: CrewSeat = DRIVER;
 
   /**
+   * Did anything actually STEP the fleet this frame? Raised by the two places
+   * that do and spent by `pushHullEngines`, which is the only reader.
+   *
+   * A flag rather than a test on the state, because the question is not which
+   * screen is up: offline the world is held under the deploy card and the
+   * pause card and stepped under the death cam, and in a netplay round it is
+   * stepped under all three. `updateWorld` and `updateNetWorld` already know
+   * which of them ran, and this is them saying so rather than a third opinion
+   * that can drift from both.
+   */
+  private fleetStepped = false;
+
+  /**
    * This frame's orders to that hull. A held object rather than one built per
    * frame, the same arrangement `Player.shotOptions` uses and for the same
    * reason — it is passed on the one path that runs on every frame of every
@@ -2560,6 +2573,15 @@ export class Game {
     // the eye rather than over the whole square (`ParticleSpec.volume`). A
     // no-op for every map that states none, which is all of them but one.
     this.atmosphere.update(this.cameraSys.camera.position);
+    // The engines of the hulls the player is NOT sitting in, pushed from here
+    // for the shader's-eye reason and with the opposite conclusion: every
+    // state renders, only some of them simulate, and the ones that do not owe
+    // this one SILENCE. A held world is a fleet whose speeds are frozen, and a
+    // voice left running under the deploy card is a tank droning in a street
+    // where nothing moves. After the switch, so it reads the listener the
+    // frame has already placed and the positions the fleet has already
+    // reached.
+    this.pushHullEngines();
     // In every state too, and AFTER the switch above rather than inside any of
     // its arms: what decides whether the board is up is the state this frame
     // ENDS in, so a frame that deployed the player, killed them or ended the
@@ -4828,6 +4850,48 @@ export class Game {
   }
 
   /**
+   * Every hull the player is not sitting in, once a frame, so a tank driven
+   * past you by a bot crew or by another player is something you can HEAR.
+   * `Sfx.hullEngine` is the voice and carries the argument for its shape.
+   *
+   * Three gates and they are the three ways a hull is not making a noise: it
+   * is the one the player is inside (which has its own unpanned voice through
+   * `engineOn`, and would otherwise be heard twice), it is a wreck, or there
+   * is nobody in it. Occupancy is the honest test on both sides of the wire —
+   * it is stated once, on the hull, and a match writes it from the snapshot —
+   * and it is what makes a hardstanding's parked armour silent until somebody
+   * climbs aboard.
+   *
+   * The key is the hull's index in the fleet, which is stable for as long as a
+   * map is: the stands are built once and neither added to nor reordered. A
+   * map REBUILD invalidates them all, and nothing here has to know that —
+   * `installMap` runs from `loading` and from the editor, neither of which
+   * steps the fleet, so the frame that rebuilds is a frame that has already
+   * called `enginesOff`.
+   */
+  private pushHullEngines(): void {
+    const stepped = this.fleetStepped;
+    this.fleetStepped = false;
+    if (!stepped) {
+      this.sfx.enginesOff();
+      return;
+    }
+    const tanks = this.vehicles.tanks;
+    for (let i = 0; i < tanks.length; i++) {
+      const tank = tanks[i];
+      if (tank === this.driving || !tank.alive || !tank.occupied) {
+        this.sfx.hullEngineOff(i);
+        continue;
+      }
+      // Its own speed for both terms, exactly as `frameVehicleCamera` gives a
+      // GUNNER: the throttle belongs to whoever is holding the stick, and from
+      // outside the hull there is no way to see it and no reason to guess.
+      const speed = Math.min(1, tank.travel / CONFIG.vehicles.tank.drive.maxSpeed);
+      this.sfx.hullEngine(i, tank.center, speed, speed);
+    }
+  }
+
+  /**
    * Getting in. Everything that changes for as long as `driving` is non-null is
    * here, and `clearVehicle` is the exact inverse — the two are meant to be
    * read side by side, because a state that is set in one and not cleared in
@@ -5956,6 +6020,11 @@ export class Game {
     if (!this.vehicles.empty) {
       this.syncNetVehicles();
       this.vehicles.update(dt, this.vehicleOrders);
+      // Posing a hull off the wire is still stepping it, and an engine heard
+      // from outside is a position and a speed either way — so a match's
+      // armour is as audible as an offline bot crew's, including from behind
+      // the deploy card, where this method is the round running without you.
+      this.fleetStepped = true;
     }
     // The local player's own rocket, still flying — the one AT object this
     // client owns a copy of. Everything else about the kit is drawn by
@@ -6176,6 +6245,9 @@ export class Game {
     // sees where the armour ENDED this frame rather than where it started,
     // which is the whole of what running somebody over is.
     this.crushSweep();
+    // The hulls have moved and the crews are aboard, which is everything
+    // `pushHullEngines` reads off them at the end of the frame.
+    this.fleetStepped = true;
 
     // --- bots ---
     this.battle.update(dt, this.cameraSys.camera.position);
