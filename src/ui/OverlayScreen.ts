@@ -34,6 +34,7 @@ import { CONFIG } from "../config";
 import { difficultyTiers } from "../entities/BotSkill";
 import type { SightId } from "../entities/sights";
 import type { PrimaryWeaponId } from "../entities/weapons";
+import { perTeamOf } from "../world/layout";
 import { heightsOf, loadHeights, type MapDef } from "../world/maps";
 import { kitLabel, WEAPON_BLURBS } from "./LoadoutScreen";
 import { mapShotUrl } from "./mapShots";
@@ -333,6 +334,10 @@ export class OverlayScreen {
     const map = maps[selectedMap];
     this.setShot(map);
     const flags = map ? map.layout.controlPoints.length : 0;
+    // Read off the highlighted map for the reason the flag count above it is:
+    // how many a side is the MAP's now (`MapLayout.perTeam`), and a card that
+    // drew CONFIG's default would promise 8 v 8 on the one map that fields 24.
+    const perSide = map ? perTeamOf(map.layout) : CONFIG.bots.perTeam;
     const tiers = difficulties
       .map(
         (name, i) =>
@@ -355,7 +360,7 @@ export class OverlayScreen {
         </div>
         <div class="ui-meta">
           <span>Deployment</span>
-          <b>${CONFIG.bots.perTeam} v ${CONFIG.bots.perTeam}</b>
+          <b>${perSide} v ${perSide}</b>
           <span>${CONFIG.teams[0].name}</span>
         </div>
       </div>
@@ -547,10 +552,24 @@ export class OverlayScreen {
       <p class="ov-blurb">${t.blurb}</p>
       ${facts([
         [`${wind.toFixed(2)} s`, "Reaction"],
-        [`${CONFIG.bots.perTeam}`, "Per side"],
+        [`${this.perSide()}`, "Per side"],
         [`${Math.round(t.centre * 100)}%`, "Skill band"],
       ])}
     `;
+  }
+
+  /**
+   * How many bodies a side the HIGHLIGHTED map fields.
+   *
+   * The enemy-skill panel names it, and it belongs to the map rather than to
+   * the tier — a rookie squad and an ace squad are the same twenty-four bodies
+   * on Sarab and the same eight everywhere else. Read through the fields the
+   * menu already keeps rather than passed in, because the panel is redrawn as
+   * the map selection moves under it.
+   */
+  private perSide(): number {
+    const map = this.maps[this.mapIndex];
+    return map ? perTeamOf(map.layout) : CONFIG.bots.perTeam;
   }
 
   /** The loadout row's panel: the two slots, named apart and quoted. */

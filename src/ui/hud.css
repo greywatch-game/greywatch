@@ -341,6 +341,66 @@
    any distance from — so the fourth track is added by a class on the panel
    rather than sitting empty in every single-player round. */
 #scoreboard.pinged .sb-prow { grid-template-columns: 1fr 52px 34px 34px 46px; }
+/* A DEEP roster — a map fielding more than `DEEP_ROSTER` bodies, which today is
+   Sarab's 24 a side and nothing else — flows each side's list into two
+   sub-columns instead of running one of them off the bottom of the screen.
+
+   `columns` and not a two-track grid, because a grid fills row-major and would
+   put the second-placed body beside the first instead of under it: the board is
+   SORTED, and a sorted column that has to be read left-right-left-right is not
+   one. Multi-column fills top to bottom and then moves across, so each column
+   is still read downward and the whole side is still in rank order.
+
+   The heading stays outside the flow (it is a sibling of `.sb-rows`, not a row
+   in it), or the right-hand column would be twelve unlabelled numbers.
+
+   The panel widens for it, and the ceiling is the VIEWPORT rather than a
+   number: `min-width` above is a promise to the shortest screen the game runs
+   on, and four sub-columns of names cannot keep that promise at a fixed 980. */
+#scoreboard.deep {
+  min-width: min(980px, 96vw);
+  max-width: 96vw;
+}
+#scoreboard.deep .sb-rows {
+  columns: 2;
+  column-gap: 18px;
+}
+/* A row is one line and must never be split across the column break. The
+   numeric tracks tighten with it: a sub-column is half the width the single
+   list had, and at the ordinary 52/34/34 a ten-character callsign
+   (NOVEMBER-2) clips to an ellipsis in the one column that is a NAME. */
+#scoreboard.deep .sb-prow {
+  break-inside: avoid;
+  font-size: 12px;
+  padding: 2px 4px;
+  grid-template-columns: 1fr 40px 26px 26px;
+  gap: 6px;
+}
+#scoreboard.deep .sb-pname { letter-spacing: 0.04em; }
+/* Twenty-four rows two-up is ~430 px of panel, and a landscape phone is 390.
+   This is the one place the board scales itself, and it is deliberately a
+   TRANSFORM rather than `--ov-scale`: `#scoreboard` lives inside `#hud`, which
+   that variable does not touch (see base.css), and the whole reason its width
+   is a fixed promise is that the layout must not move under a viewport. A
+   panel that is simply too tall for the screen is the one case where nothing
+   about the layout is wrong and the only honest answer is to draw it smaller —
+   the alternative is a third sub-column that clips the names, or rows scrolled
+   out of a board whose entire job is to list every body in the round. Only
+   `.deep`, so no 8v8 board on any device is affected. */
+@media (max-height: 470px) {
+  #scoreboard.deep {
+    transform: translate(-50%, -50%) scale(0.8);
+    /* The width cap is stated in the UNSCALED units the box is laid out in, so
+       it has to be divided by the scale to mean the same thing on screen:
+       0.8 x 120vw is the same 96vw the rule above promises. Without this the
+       panel is capped at 96vw and THEN shrunk to 77, and the columns the names
+       have to fit in are narrower on the small screen than on the large one —
+       which is the wrong way round. Both bounds, because it is `min-width`
+       that binds at this size and not `max-width`. */
+    min-width: min(980px, 120vw);
+    max-width: 120vw;
+  }
+}
 #scoreboard .sb-ping {
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.45);

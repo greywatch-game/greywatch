@@ -11,8 +11,37 @@ import { FOG_WALL } from "./fogWall";
 
 /** Bot roster, AI cadence, and the render LOD that makes 16 of them viable. */
 export const bots = {
-  /** Per team. The rig pool is sized to exactly `perTeam * 2`. */
+  /**
+   * Per team, and the DEFAULT rather than the number: a map states its own
+   * (`MapLayout.perTeam`, resolved by `perTeamOf`) and the rig pool is sized to
+   * exactly whatever that resolves to, twice.
+   *
+   * **This is still the figure the rest of this file is written against**, and
+   * it is what four other things are: the NETPLAY roster, which is sixteen
+   * fixed slots built once and never resized (`server/Roster.ts`, and see
+   * `maxPerTeam` for why a map's roster does not reach it), the pool
+   * `BattleSystem` is constructed with before any map is installed, the
+   * `NetRoster` mirror on a client, and the number a map that says nothing
+   * fields — which is four of the five shipped maps, unchanged to the bit.
+   */
   perTeam: 8,
+  /**
+   * The most a map may field a side, and the only thing this number IS is a
+   * bound on `MapLayout.perTeam`.
+   *
+   * It exists because a roster is spent in RIGS: a bot is nineteen merged
+   * meshes that Babylon's active-mesh pass walks every frame whether the body
+   * is enabled or not (`WorldCulling` — a disabled mesh is skipped cheaply, not
+   * skipped), so the pool is a per-frame cost on every map that carries it and
+   * a map's roster has to be a number somebody chose rather than one a layout
+   * can run away with. 24 is Sarab's, which is what it was raised to.
+   *
+   * It is NOT a pool size and nothing is built to it: the pool is the map's own
+   * roster and is rebuilt when that changes (`BattleSystem.setRoster`), which
+   * is what keeps a 240 m village paying for sixteen bodies rather than
+   * forty-eight.
+   */
+  maxPerTeam: 24,
   squadSize: 4,
   maxHealth: 100,
   /**

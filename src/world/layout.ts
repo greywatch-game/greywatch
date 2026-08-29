@@ -13,6 +13,7 @@
  * WaterRect, GrassRect) are declared in MapBuilder.ts next to the GameMap they
  * end up inside, and re-exported here so a layout file has one import.
  */
+import { CONFIG } from "../config";
 import type { BuildParams, BuilderKind } from "./BuildingKit";
 import type {
   ControlPointDef,
@@ -427,4 +428,68 @@ export interface MapLayout {
    * identical on every boot. Change it to reroll the whole scatter field.
    */
   seed?: number;
+  /**
+   * How many bodies a side fields. Absent means `CONFIG.bots.perTeam` (8),
+   * which is what four of the five shipped maps are and what the game has
+   * always been.
+   *
+   * **It is a statement about DENSITY, and it is the map's for the same reason
+   * `size` is.** Sixteen bodies over a 240 m village is a fight in every
+   * street; the same sixteen over Sarab's 900 m of play is one body per
+   * 51,000 m^2, and `ENGINE_UPGRADE.md` S10 measured what that does to a round
+   * — five of eleven headless rounds ran the full 45-minute cap with tickets
+   * left on both sides, against 13-18 minutes on every shipped map, with a peak
+   * contact of 5-7 of 16 bots against 10-14. A bigger map does not need more
+   * bots because it is bigger; it needs them because a round is made of
+   * CONTACT and contact is bodies per square metre.
+   *
+   * **What it costs is RIGS, and that is why it is bounded** by
+   * `CONFIG.bots.maxPerTeam` (24) rather than being any number a layout likes:
+   * a bot is nineteen merged meshes in the frame's own mesh walk whether it is
+   * enabled or not, and `BattleSystem` rebuilds its pool to this value — a map
+   * that says nothing pays exactly what it always paid, and a map that raises
+   * it pays for every body it asked for on every frame of the round. Over the
+   * bound is clamped, and says so in a DEV build.
+   *
+   * Three things follow it for free and one deliberately does not. The squads
+   * (`CONFIG.bots.squadSize`, so 24 a side is six squads rather than two), the
+   * launcher a squad's first body carries (`antiTankBots.perSquad`, so the
+   * ratio of tubes to bodies is what it always was) and the scoreboard, which
+   * is a row per pool slot either way. **The TICKETS do not**
+   * (`CONFIG.conquest.tickets`): three times the bodies is roughly three times
+   * the deaths, so a map that states this is choosing a shorter round as well
+   * as a denser one — which on Sarab is the point of stating it.
+   *
+   * **It reaches the OFFLINE round only.** A netplay match is sixteen fixed
+   * slots built once and never resized, on whatever map it rotates onto; see
+   * `server/Roster.ts` and `docs/multiplayer.md`.
+   */
+  perTeam?: number;
+}
+
+/**
+ * How many bodies a side fields on this map — the layout's, bounded by
+ * `CONFIG.bots.maxPerTeam`, defaulting to `CONFIG.bots.perTeam`.
+ *
+ * The resolver rather than the field is what everything reads, for the reason
+ * `bodyDrawDistanceOf` is: the default and the bound are stated once here
+ * instead of at each of the three sites that ask (the pool, the menu's
+ * deployment figure, and the skill draw that is handed the pool).
+ *
+ * The clamp is silent in production and SAYS SO in a dev build, because the two
+ * ways to write a roster past the bound — a layout that meant it and a layout
+ * that typed a digit twice — are the same text, and the only thing the engine
+ * can do about the second is put it where the author will see it.
+ */
+export function perTeamOf(layout: MapLayout): number {
+  const stated = layout.perTeam;
+  if (stated === undefined) return CONFIG.bots.perTeam;
+  const capped = Math.max(1, Math.min(CONFIG.bots.maxPerTeam, Math.floor(stated)));
+  if (import.meta.env.DEV && capped !== stated) {
+    console.warn(
+      `[layout] perTeam ${stated} is outside 1..${CONFIG.bots.maxPerTeam};` +
+        ` a roster is rigs in the frame's own mesh walk. Clamping to ${capped}.`,
+    );
+  }
+  return capped;
 }

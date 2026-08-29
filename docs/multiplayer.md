@@ -116,6 +116,25 @@ then team 1, `BattleSystem` builds its pool the same way, and both are sized
 from `CONFIG.bots.perTeam`. Keep that true or benching needs a mapping that can
 disagree with itself.
 
+**A MAP's roster does not reach any of this, and the split is deliberate.**
+`MapLayout.perTeam` lets a map field more than eight a side OFFLINE — Sarab is
+24 — and it arrives through `Game.buildRound`, which is the offline round's own
+door: `Match` and `HeadlessGame` never call `BattleSystem.setRoster`, so every
+match is sixteen slots on every map it rotates onto. Three things say why, and
+each of them is this section: a match rotates maps under ONE roster, so a
+per-map size is a table that grows and shrinks under the humans sitting in it; a
+`ScoreBook` row is a slot, so a resize at a rotation changes what every row
+means mid-match; and a rotation onto a smaller map would have to EVICT people,
+which is the one thing "a slot only ever changes who feeds it" exists to
+prevent. A netplay round on Sarab is therefore 8v8 where an offline one is
+24v24, and that is the trade rather than an oversight — raising it is a change
+to this contract and not a config change.
+
+`server/simulate.ts` is the one place on this side that asks for the map's own
+number, and it says so on the line: it exists to measure a ROUND, and the round
+a player gets on Sarab is the 24-a-side one. It calls `setRoster` before
+`startRound`, the one moment nothing is holding a body.
+
 Team balance is corrected by *arrivals*, never by moving anybody. Being
 reassigned mid-round is disorienting; `Roster.claim` always takes the thinner
 side, so an imbalance left by departures heals on its own.

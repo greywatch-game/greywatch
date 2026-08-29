@@ -20,6 +20,11 @@
  * second, because that is the order both `BattleSystem` and `Roster` lay their
  * slots out in — so a side's callsigns are contiguous without anything here
  * knowing what a team is.
+ *
+ * A map may field more than that offline (`MapLayout.perTeam`), and the list
+ * deliberately did not grow with it: see `callsign` for what the lap suffix
+ * reads as on a forty-eight-slot board, and why sixteen names that repeat
+ * beats twenty-six that leave one side entirely suffixed.
  */
 const PHONETIC = [
   "ALPHA",
@@ -44,9 +49,17 @@ const PHONETIC = [
  * The name for the AI in roster slot `index`.
  *
  * Past the sixteenth it repeats with a number rather than running out or
- * throwing — a bigger roster is a config change away (`bots.perTeam`), and a
- * scoreboard row reading `ALPHA-2` is a worse name than `ALPHA` but a better
- * outcome than `undefined`.
+ * throwing, and that fallback is LOAD-BEARING now rather than defensive: a map
+ * states its own roster (`MapLayout.perTeam`) and Sarab's twenty-four a side is
+ * forty-eight slots, so team 0 reads ALPHA..PAPA then ALPHA-2..HOTEL-2 and team
+ * 1 carries on from INDIA-2. Every name is still unique and still derived from
+ * the index alone, which is the whole of what this file promises.
+ *
+ * The list was NOT extended to twenty-six to cover it, which would have been
+ * the obvious move and is the wrong one: the alphabet does not divide into a
+ * side either, so all it buys is a different slot for the first suffix — and at
+ * twenty-four a side it would put every unsuffixed name on team 0 and every
+ * suffixed one on team 1, which reads as one real team and one spare.
  */
 export function callsign(index: number): string {
   const name = PHONETIC[index % PHONETIC.length];

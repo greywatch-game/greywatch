@@ -15,7 +15,12 @@
  * A slot index IS a bot index, by construction: `Roster` lays its slots out
  * team 0 then team 1, `BattleSystem` builds its pool the same way, and both are
  * sized from `CONFIG.bots.perTeam`. That is what makes benching a bot for a
- * human a single array index rather than a mapping that can disagree.
+ * human a single array index rather than a mapping that can disagree. Nothing
+ * here ever calls `BattleSystem.setRoster`, which is what keeps that true on a
+ * map stating a roster of its own (`MapLayout.perTeam`): a match is sixteen
+ * slots on every map it rotates onto — see `server/Roster.ts` for why, and
+ * `server/simulate.ts` for the one tool that deliberately asks for the map's
+ * number instead, because it is measuring a round rather than serving one.
  *
  * A person enters the world through the reinforcement pass in `step` and
  * nowhere else, and only once they have both waited out the clock and ASKED:

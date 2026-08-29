@@ -42,7 +42,7 @@
 import type { MapCollision } from "../collision";
 
 export const SarabCollision: MapCollision = {
-  sourceHash: "b1fc6bc0af02dec3",
+  sourceHash: "08f0382cb362d0ca",
   boxes: [
   [1504,20,2,0,10,751,0,0],
   [1504,20,2,0,10,-751,0,0],

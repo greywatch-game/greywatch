@@ -2244,13 +2244,43 @@ Three levers, and only the first is cheap:
    the count rather than assuming it (`MenuState.flagCount`, `setScoreboard`,
    `showRoundOver`), and the deploy map, the minimap's edge markers and the
    ticket bleed all read it. Check each rather than assuming.
-3. **More bodies, which is the expensive one.** `CONFIG.bots.perTeam` is 8 and
-   the rig pool is sized exactly `perTeam * 2`. Offline that is a config change
-   and a pool resize. **In a match it is a contract change**: `CLAUDE.md` says the
-   roster is *sixteen slots, built once, never resized*, and *a slot index IS a
-   bot index*. `server/Roster.ts`, the wire, `ScoreBook`'s one-row-per-slot
-   ledger, the bench and the scoreboard all rest on it. That is a project, not a
-   step — scope it separately if the density answer turns out to need it.
+3. **More bodies, which is the expensive one — LANDED OFFLINE.**
+   `CONFIG.bots.perTeam` is 8 and the rig pool is sized exactly `perTeam * 2`.
+   Offline that is a config change and a pool resize. **In a match it is a
+   contract change**: `CLAUDE.md` says the roster is *sixteen slots, built once,
+   never resized*, and *a slot index IS a bot index*. `server/Roster.ts`, the
+   wire, `ScoreBook`'s one-row-per-slot ledger, the bench and the scoreboard all
+   rest on it. That is a project, not a step — so the two halves were SPLIT
+   along exactly that line and the offline one taken.
+
+   `MapLayout.perTeam` is the lever (`perTeamOf`, bounded by
+   `CONFIG.bots.maxPerTeam` of 24), Sarab states 24, every other map states
+   nothing and is unchanged to the bit, and `BattleSystem.setRoster` rebuilds
+   the pool when the number moves — from `buildRound`, never from `installMap`.
+   The pool is the ROSTER rather than the ceiling because a rig is nineteen
+   meshes in the frame's own walk whether it is enabled or not (S1's whole
+   argument), so a `maxPerTeam` pool would have taxed the four maps that did not
+   ask for anything.
+
+   **The authority is untouched and a netplay round on Sarab is still 8v8.**
+   `Match` and `HeadlessGame` never call `setRoster`; `server/simulate.ts` does,
+   before `startRound`, because it measures a round rather than serving one.
+
+   **What it bought, measured.** The headless round S9 quoted at 19-30 minutes
+   with 5-7 of 16 in contact at the peak now runs **14.6 minutes with 22 of 48
+   in contact**, 9,004 of 52,502 ticks with nobody engaged against a majority
+   before, and the authority's own tick is 0.61 ms p50 against a 16.67 budget.
+   What it costs is the frame: Sarab warm and uncapped is **15.2-15.7 ms / 62-65
+   fps at 24 a side against 10.8 ms / 90 fps at 8** — two samples of the first
+   and one of the second, taken minutes apart in one session, which is the only
+   way this box's third-of-a-run drift can be read past. Still above 60, and
+   still under what the S11 table quotes for Harrowmead and Coldharbour, though
+   that last comparison is across sessions and the table's own warning applies.
+   The
+   ticket count is deliberately untouched (`CONFIG.conquest.tickets`, 400 on
+   every map), which is most of where the shorter round came from and is the
+   answer to this section's complaint rather than a side effect of it. Lever 2 —
+   more flags — was not needed and is still available.
 
 ---
 

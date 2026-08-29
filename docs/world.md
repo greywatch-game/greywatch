@@ -92,7 +92,7 @@ re-running any `heights.ts` generator does.
 
 No two maps share a module in any direction.
 
-## Six things that look global and are the map's
+## Eight things that look global and are the map's
 
 Everything below defaults to what the two valleys are, so a map that states
 nothing is bit-identical to before any of them existed. Each was a genuine
@@ -168,6 +168,45 @@ its own diagonal — and this field is only for the bodies standing in it.
 3). See `docs/bots.md`: a map raises it only because it stacks FLOORS, and the
 guarantee that a floor survives is the ORDER its builder declares colliders in,
 not the number.
+
+**`MapLayout.perTeam` — how many bodies a side** (`CONFIG.bots.perTeam`, 8).
+Sarab is 24 and is the only map that states one. It is a statement about
+DENSITY, and it is the map's for exactly the reason `size` is: sixteen bodies is
+a fight in every street of a 240 m village and one body per 51,000 m^2 of
+Sarab's play square. `ENGINE_UPGRADE.md` S10 measured what that does to a
+round — five of eleven headless rounds ran the full 45-minute cap with tickets
+left on both sides, against 13-18 minutes on every shipped map, at a peak
+contact of 5-7 of 16 bots against 10-14 on the levels — and the same harness at
+24 a side runs the town in 14.6 minutes with 22 of 48 in contact at the peak and
+only 17% of its ticks with nobody engaged.
+
+**What it costs is RIGS, which is why it is BOUNDED and why the pool is rebuilt
+rather than sized to the ceiling.** A bot is nineteen merged meshes, and a mesh
+in the scene is in the frame's own active-mesh walk whether the body is enabled
+or not — `WorldCulling` is explicit that a disabled mesh is skipped CHEAPLY and
+not skipped, which is the whole reason that file exists. So a pool built to
+`CONFIG.bots.maxPerTeam` (24) on every map would put six hundred meshes nobody
+is fighting into a village whose entire frame is under 2 ms.
+`BattleSystem.setRoster` therefore disposes the pool and builds a new one when
+the number MOVES, which is the one place the "built once and never disposed"
+rule bends, and it bends at a map change — where the whole world is being
+rebuilt anyway and a loading card is already up. Measured on the box this was
+written on, Sarab is 15.2-15.7 ms a frame at 24 a side against 10.8 at 8, warm
+and uncapped; every other map is untouched code and an untouched pool.
+
+**Three things follow it and two deliberately do not.** The squads follow
+(`CONFIG.bots.squadSize` of 4, so 24 a side is six squads rather than two, and
+`ConquestSystem.planSquads` has never counted them), the one launcher a squad's
+first body carries follows with them, and the scoreboard follows — a row per
+pool slot either way, laid out two-up per side past `DEEP_ROSTER` so a
+forty-eight-row board is not taller than the screen. The TICKETS do not
+(`CONFIG.conquest.tickets`, 400 on every map), so three times the bodies is
+roughly three times the death rate and a shorter round, which on Sarab is the
+point rather than a side effect. And the NETPLAY roster does not: a match is
+sixteen fixed slots on whatever map it rotates onto, `BattleSystem.setRoster` is
+never called on the authority, and a slot index is still a bot index there. See
+`docs/multiplayer.md`, and `server/simulate.ts` for the one tool that asks for
+the map's number instead — it measures a round rather than serving one.
 
 **`MapLayout.blockSize` — how big a merge block is** (`BLOCK_SIZE`, 48). The
 side of the square the second merge pass collapses structures over, and it is a

@@ -167,9 +167,9 @@ the prop ate every round aimed at the body inside it. The two symptoms are one b
 Three things carry the frame budget; undoing any costs ~10× draw calls or a
 permanent hitch:
 
-- **The rig pool is built once and never disposed.** Death hides a rig, respawn
-  re-poses it. `new Bot()` allocates a dozen meshes and their GL buffers, and Conquest
-  respawns continuously.
+- **The rig pool is built once per ROSTER SIZE and never disposed inside a
+  round.** Death hides a rig, respawn re-poses it. `new Bot()` allocates a dozen
+  meshes and their GL buffers, and Conquest respawns continuously.
 - **Bot rigs are nineteen merged meshes** (`SoldierModel`) — forty-odd boxes
   merged one mesh per colour per segment. The outline pass draws everything
   twice, so fidelity is ~2× draw calls per bot per mesh, and **what a rig costs
@@ -184,6 +184,47 @@ permanent hitch:
   and `CONFIG.bots.acquireRayBudget` caps how many survivors get tested. A dead bot
   must also not consume a think slot, or the living half of a roster thinks at half
   the advertised rate.
+
+**How big the roster IS is the map's offline and the authority's in a match**,
+and the pool is exactly that roster rather than a ceiling every map pays for.
+`MapLayout.perTeam` defaults to `CONFIG.bots.perTeam` (8) and is bounded by
+`CONFIG.bots.maxPerTeam` (24); Sarab is the only map that states one, and
+`perTeamOf` is where the default and the bound live. `Game.buildRound` pushes it
+through `BattleSystem.setRoster`, which is a no-op at the same size and
+otherwise disposes the pool and builds a new one — so a map that says nothing
+gets the same sixteen bodies with the same squads, the same launchers and the
+same movement seeds it always had, bit for bit.
+
+**Rebuilding is the one place the rule above bends, and it bends because the
+alternative is a per-frame tax on the maps that did not ask for anything.** A
+pool built to `maxPerTeam` would leave thirty-two bodies nobody is fighting in
+the frame's own active-mesh walk on every 8v8 map — `WorldCulling`'s whole
+argument is that a DISABLED mesh is skipped cheaply and not skipped, six hundred
+meshes at ~0.67 µs on a village whose entire frame is under 2 ms. So the bend is
+placed where a map change already disposes the world, rebuilds it and holds a
+loading card over the wait, and `setRoster` is called from `buildRound` and
+never from `installMap` — the editor is that method's other caller and has no
+round, no player and no bots. It runs after `RagdollSystem.reset` and
+`VehicleCrew.clear`, the two things that hold a body, and before
+`setDifficulty`, which draws a skill for every bot in the pool it is handed.
+
+**Nothing else in this layer knows a size.** The squads come out of
+`squadSize` (24 a side is six squads rather than two, and `planSquads` has never
+counted them), `SquadRadio`'s per-squad boards grow on demand, the squad-order
+and centroid arrays are grown in `updateSquads`, the think budget is
+`bots.length * thinkRate * dt`, and `assignSkills` is handed the pool. The one
+paragraph in `BattleSystem` written against a NUMBER is the note declining a
+spatial hash, and 24 a side is ~2,400 pairwise compares a frame — still inside
+the ~64-body roster that note names as the point to revisit it.
+
+**In a NETPLAY match `setRoster` is never called at all.** The roster there is
+sixteen fixed slots built once and never resized, on whatever map the match
+rotates onto, because a slot index IS a bot index and a table that grew and
+shrank under the humans sitting in it would take `ScoreBook`'s rows, the wire's
+identities and the bench with it. `server/simulate.ts` is the deliberate
+exception and states why on the line: it is measuring a ROUND rather than
+serving one, so it asks for the map's own number before `startRound` — the one
+moment nothing is holding a body.
 
 Bots hold a target until it dies, breaks LOS, or leaves range. Without that
 hysteresis, "nearest visible enemy" flips every tick in a crowd, which resets `aimT`

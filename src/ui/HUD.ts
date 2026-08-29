@@ -254,6 +254,18 @@ const RING_FROM = 0.45;
 const RING_TO = 1.5;
 
 /**
+ * Bodies in the round above which the scoreboard lays each side's list out
+ * two-up instead of as one column.
+ *
+ * 24 is chosen against the rosters that exist rather than against a pixel
+ * count: every map but Sarab fields sixteen and must draw exactly as it always
+ * did, and Sarab's forty-eight is the only thing on the far side of it. A
+ * netplay round is sixteen slots on every map, so the online board never goes
+ * two-up and never has to reconcile that with the ping column.
+ */
+const DEEP_ROSTER = 24;
+
+/**
  * One combatant's line on the scoreboard.
  *
  * A body, not a person: a bot and a human are the same row with the same three
@@ -1802,6 +1814,20 @@ export class HUD {
     // because the rebuild does not touch the root's own classes, and read by
     // every `.sb-prow` inside it.
     this.scoreboard.classList.toggle("pinged", rows.pings);
+    // A DEEP roster is laid out two-up inside each side's column rather than as
+    // one list twice as long.
+    //
+    // The board draws every body in the round and not only the people in it, so
+    // its height is the ROSTER's — eight a side is a panel a player reads at a
+    // glance and twenty-four a side is six hundred pixels of it, off the bottom
+    // of every short viewport the game runs on. `MapLayout.perTeam` is what made
+    // that reachable; this is the one thing on screen that had to answer.
+    //
+    // A class rather than a second template, for the reason the ping column is
+    // one: the layout is CSS's, and the only thing this file knows is how many
+    // rows there are. The threshold is a whole roster rather than a side's,
+    // since a side is always half of it.
+    this.scoreboard.classList.toggle("deep", rows.rows.length > DEEP_ROSTER);
     const columns = this.scoreboard.querySelectorAll<HTMLElement>(".sb-col");
     // Your side on the left, always — the board is read from where you are
     // standing, and a column that swaps ends with the team you were seated
@@ -1815,6 +1841,14 @@ export class HUD {
       column.appendChild(
         this.scoreHeading(rows.teams[team].toUpperCase(), rows.pings),
       );
+      // The rows sit in a box of their own under the heading, so a deep roster
+      // can flow them into two sub-columns without taking the heading into the
+      // flow with them and leaving the right-hand one unlabelled. Plain block
+      // otherwise, which is what every roster up to `DEEP_ROSTER` draws as and
+      // is why nothing about the ordinary board moved.
+      const list = document.createElement("div");
+      list.className = "sb-rows";
+      column.appendChild(list);
       // Sorted by SCORE, then by kills, then by the fewer deaths. Score first
       // because it is what the board is now for: the player who has been
       // taking flags outranks the one who has been shooting people away from
@@ -1826,7 +1860,7 @@ export class HUD {
         .sort(
           (a, b) => b.score - a.score || b.kills - a.kills || a.deaths - b.deaths,
         );
-      for (const r of side) column.appendChild(this.scoreRow(r, rows.pings));
+      for (const r of side) list.appendChild(this.scoreRow(r, rows.pings));
     }
   }
 

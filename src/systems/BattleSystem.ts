@@ -1,7 +1,7 @@
 /**
- * BattleSystem.ts — Bot roster: a fixed pool built once and NEVER disposed
- * (death hides a rig, respawn re-poses it — respawning is continuous), AI
- * scheduling, LOS, distance LOD.
+ * BattleSystem.ts — Bot roster: a pool built once PER ROSTER SIZE and never
+ * disposed inside a round (death hides a rig, respawn re-poses it — respawning
+ * is continuous), AI scheduling, LOS, distance LOD.
  * Invariants: think ticks are staggered round-robin at CONFIG.bots.thinkRate,
  * and a dead bot must not consume a budget slot or the living think slower than
  * advertised. Target acquisition ray-tests candidates nearest-first, stops at
@@ -36,6 +36,13 @@
  * A HUMAN ALWAYS HOLDS A SLOT, offline as well as on the server: `seatPlayer`
  * benches the local player's, which is what makes a single-player round 8v8
  * rather than 8v9.
+ * HOW BIG THE ROSTER IS is the MAP's offline (`MapLayout.perTeam`, resolved by
+ * `perTeamOf` and pushed by `Game.buildRound` through `setRoster`) and the
+ * AUTHORITY's in a match, where it is sixteen fixed slots on every map and
+ * `setRoster` is never called at all. The pool is rebuilt when that number
+ * moves and only then — see `setRoster` for why a pool sized to the ceiling
+ * would be the wrong trade — so a map that states nothing is unchanged to the
+ * bit, and nothing in this file is written against a particular size.
  */
 import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
@@ -85,9 +92,11 @@ const BOT_SHOT: ShotOptions = {
  *
  * Deliberately *not* here: a spatial hash. With 17 combatants the pairwise
  * separation pass is ~256 distance checks a frame, which is far cheaper than
- * maintaining buckets. Revisit it if the roster grows past ~64 — four times
- * what it is now, so this has room. (Both figures were written for a 16v16
- * roster and outlived it; `bots.perTeam` is 8.)
+ * maintaining buckets. Revisit it if the roster grows past ~64. (The figures
+ * were written for a 16v16 roster and outlived it twice: `bots.perTeam` is 8,
+ * and a map may now state its own — Sarab's 24 a side is ~2,400 compares a
+ * frame, which is the largest roster `bots.maxPerTeam` allows and still inside
+ * the number this paragraph names.)
  */
 export class BattleSystem {
   readonly bots: Bot[] = [];
@@ -288,46 +297,27 @@ export class BattleSystem {
   private readonly hittableScratch: Combatant[][] = [[], []];
   private readonly candidateScratch: { c: Combatant; d: number }[] = [];
 
+  /**
+   * How many bodies a side the pool currently holds — `bots.length / 2`, and
+   * the map's own `perTeamOf` from the moment one is installed.
+   *
+   * `CONFIG.bots.perTeam` until then, which is what the four maps that state
+   * nothing field and what the AUTHORITY fields on every map: the netplay
+   * roster is sixteen fixed slots and `setRoster` is never called on the
+   * server, so a slot index is still a bot index there. See `setRoster`.
+   */
+  private perTeam: number = CONFIG.bots.perTeam;
+
   constructor(
-    // Not a field: the rig pool is built from it here and the last thing that
-    // wanted one afterwards was the line-of-sight pick.
-    scene: Scene,
-    mats: CelMaterialFactory,
+    // Fields, since a map may state a roster of its own and the pool is then
+    // rebuilt to it — see `setRoster`. They were deliberately NOT fields while
+    // the pool was built exactly once, and the last thing that wanted a scene
+    // afterwards was the line-of-sight pick, which is analytic now.
+    private readonly scene: Scene,
+    private readonly mats: CelMaterialFactory,
     private combat: CombatSystem,
   ) {
-    for (let team = 0; team < 2; team++) {
-      for (let i = 0; i < CONFIG.bots.perTeam; i++) {
-        const bot = new Bot(scene, mats, team as Team);
-        bot.squad = Math.floor(i / CONFIG.bots.squadSize);
-        // One launcher per squad, and it is the squad's FIRST body — a fixed
-        // slot rather than a roll, so a team fields exactly
-        // `antiTankBots.perSquad` of them however the pool is seeded and
-        // however many squads a map's roster cuts into. It rides the pool slot
-        // like the skill seed does, so it survives a bench, a respawn and a
-        // round: which body carries the launcher is a fact about the roster,
-        // not about the life.
-        bot.launcher = i % CONFIG.bots.squadSize < CONFIG.antiTankBots.perSquad;
-        // A stream per bot, seeded off the pool slot: movement personality
-        // differs between bots but is identical between runs.
-        bot.seedRandom(CONFIG.bots.skill.seed + team * 131 + i * 17);
-        bot.onReload = () => this.onBotReloaded(bot);
-        bot.onStep = () => this.onBotStepped(bot);
-        // Where this team's bodies fall, on this team's own board. Taken here
-        // rather than off the kill path because there are three kill paths
-        // (a round, a blast, and whichever side of the wire it happened on)
-        // and exactly one death.
-        bot.onDied = () =>
-          this.radios[bot.team].markHazard(
-            bot.position.x,
-            bot.position.y,
-            bot.position.z,
-            bot.deathFrom.x,
-            bot.deathFrom.y,
-            bot.deathFrom.z,
-          );
-        this.bots.push(bot);
-      }
-    }
+    this.buildPool(this.perTeam);
 
     // The context is built once and reads through to the system, so it never
     // needs rebuilding when the map changes — the same "mutate in place, don't
@@ -396,6 +386,93 @@ export class BattleSystem {
           ? this.obstacles.resolve(x, y, z, CONFIG.nav.bodyRadius, out)
           : (out.set(x, y, z), false),
     };
+  }
+
+  /**
+   * Builds `perTeam * 2` bots, team 0 first, and wires each one's hooks.
+   *
+   * The layout is what makes a pool INDEX usable as a roster slot without a
+   * lookup table that could disagree with it — team 0 takes the first half and
+   * team 1 the second, which is the order `Roster` and `callsign` both already
+   * assume. Everything a bot is given here is a function of its own per-team
+   * index, so the first eight of a side are identical whether the pool is
+   * sixteen bodies or forty-eight: same squad, same launcher, same seed.
+   */
+  private buildPool(perTeam: number): void {
+    for (let team = 0; team < 2; team++) {
+      for (let i = 0; i < perTeam; i++) {
+        const bot = new Bot(this.scene, this.mats, team as Team);
+        bot.squad = Math.floor(i / CONFIG.bots.squadSize);
+        // One launcher per squad, and it is the squad's FIRST body — a fixed
+        // slot rather than a roll, so a team fields exactly
+        // `antiTankBots.perSquad` of them however the pool is seeded and
+        // however many squads a map's roster cuts into. It rides the pool slot
+        // like the skill seed does, so it survives a bench, a respawn and a
+        // round: which body carries the launcher is a fact about the roster,
+        // not about the life.
+        bot.launcher = i % CONFIG.bots.squadSize < CONFIG.antiTankBots.perSquad;
+        // A stream per bot, seeded off the pool slot: movement personality
+        // differs between bots but is identical between runs.
+        bot.seedRandom(CONFIG.bots.skill.seed + team * 131 + i * 17);
+        bot.onReload = () => this.onBotReloaded(bot);
+        bot.onStep = () => this.onBotStepped(bot);
+        // Where this team's bodies fall, on this team's own board. Taken here
+        // rather than off the kill path because there are three kill paths
+        // (a round, a blast, and whichever side of the wire it happened on)
+        // and exactly one death.
+        bot.onDied = () =>
+          this.radios[bot.team].markHazard(
+            bot.position.x,
+            bot.position.y,
+            bot.position.z,
+            bot.deathFrom.x,
+            bot.deathFrom.y,
+            bot.deathFrom.z,
+          );
+        this.bots.push(bot);
+      }
+    }
+  }
+
+  /**
+   * How many bodies this map fields a side (`perTeamOf`), which is the size of
+   * the pool.
+   *
+   * **The pool is built once per ROSTER SIZE rather than once per process, and
+   * that is the one place the "built once and never disposed" rule bends.** It
+   * bends here and nowhere else because the alternative was worse in the one
+   * way that matters: a pool sized to `maxPerTeam` on every map would leave
+   * thirty-two bodies nobody is fighting in the frame's own mesh walk on the
+   * four maps that field sixteen — six hundred meshes at ~0.67 us each, on a
+   * village whose whole frame is 3.5 ms — because a disabled mesh is skipped
+   * CHEAPLY and not skipped (see `WorldCulling`). A map that states nothing
+   * therefore pays exactly what it always paid, which is the standard every
+   * other `MapLayout` lever is held to.
+   *
+   * **Called from `buildRound` and never from `installMap`**, unlike the other
+   * map-derived pushes: this is the ROUND's roster, and the editor rebuild —
+   * that method's other caller — has no round, no player and no bots. It runs
+   * after `RagdollSystem.reset` has handed every rig back and after
+   * `VehicleCrew.clear` has emptied the seats, because both hold a body this
+   * may be about to dispose, and before `setDifficulty`, which draws a skill
+   * for every bot in the pool it is handed.
+   *
+   * A no-op at the same size, which is every round on every map but the first
+   * one after a change of roster — so the ordinary case is one comparison.
+   */
+  setRoster(perTeam: number): void {
+    if (perTeam === this.perTeam) return;
+    this.perTeam = perTeam;
+    // Nothing may be holding a body across this. The two sets are the only
+    // things in this file that do, and `seated` is an index into a pool that
+    // is about to be a different length — `Game.buildRound` seats the player
+    // again a few lines later, through `seatPlayer`, which is idempotent.
+    this.benched.clear();
+    this.crewed.clear();
+    this.seated = -1;
+    this.thinkCursor = 0;
+    this.disposeAll();
+    this.buildPool(perTeam);
   }
 
   setMap(map: GameMap): void {
@@ -990,6 +1067,18 @@ export class BattleSystem {
     }
   }
 
+  /**
+   * Frees every rig and empties the pool.
+   *
+   * Two callers and they are the same event at two scales: `Game.dispose`,
+   * which is the process going away, and `setRoster`, which is this map's
+   * roster being a different size from the last one's. Neither is ever reached
+   * from inside a round.
+   *
+   * `Bot.dispose` frees the rig and deliberately NOT its materials, which are
+   * the factory's shared caches — see it. The outline registry prunes disposed
+   * meshes on its own, so nothing else owes this a cleanup.
+   */
   disposeAll(): void {
     for (const bot of this.bots) bot.dispose();
     this.bots.length = 0;

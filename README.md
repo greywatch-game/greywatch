@@ -1,7 +1,8 @@
 # GREYWATCH — Cel-Shaded Conquest
 
 A browser-based, single-player **Conquest** shooter built with **Babylon.js** and
-**TypeScript**. Eight-a-side against bots over five control points in a
+**TypeScript**. Eight-a-side against bots — twenty-four on the desert town —
+over five control points in a
 fog-drowned horror village, in **first person** (aiming down sights brings the
 fitted sight onto the centre of the screen and zooms the view) with a low-poly
 cel-shaded look: a near-black valley lit by guttering lanterns, burning
@@ -222,6 +223,9 @@ a committed swipe cancels the pull exactly as a committed stick does.
 
 - Two teams of eight — **Valeguard** (warm amber) and **Redline** (cold
   crimson) — fight over **five control points** across a 240 × 240 m village.
+  How many a side is the map's: Sarab is 900 m of desert town and fields
+  twenty-four, because a fight is made of contact and contact is bodies per
+  square metre. A multiplayer match is always sixteen slots, on every map.
   A side is told apart three ways, so the read survives losing any one of
   them: the whole kit is warm or cold, the team colour is worn on pauldrons,
   bandolier and helmet band where some of it faces every direction, and each
@@ -261,8 +265,8 @@ road approaches and almost no cover.
 Everything you see and hear is generated at runtime: every mesh is built from
 Babylon primitives and merged per colour, all audio is synthesized WebAudio,
 the cel look is a custom `ShaderMaterial` with 16 dynamic point-light slots,
-and the 16 bots steer on a precomputed nav grid with one flow field per
-objective — no pathfinding at all. The one engine in the tree is Havok, which
+and the bots — sixteen of them, or forty-eight on the desert town — steer on a
+precomputed nav grid with one flow field per objective, no pathfinding at all. The one engine in the tree is Havok, which
 does nothing but drop the dead and scatter broken glass. It is required — the
 boot screen waits for it, beside the GPU adapter — and nothing falls any other
 way. Every shader in the tree is hand-written WGSL; there is no GLSL left and

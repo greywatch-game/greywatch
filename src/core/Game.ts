@@ -143,7 +143,7 @@ import {
   type EnvironmentSpec,
 } from "../world/environment";
 import { Leash, LEASH_KILLER } from "../world/leash";
-import type { Heightfield } from "../world/layout";
+import { perTeamOf, type Heightfield } from "../world/layout";
 import type { EditorSession } from "../editor";
 import { MAPS, loadHeights, type MapDef } from "../world/maps";
 import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
@@ -3537,10 +3537,6 @@ export class Game {
         break;
       }
     }
-    // Re-draw skills for the chosen tier. The rig pool is never disposed, so
-    // this is the only place the roster's difficulty can change.
-    this.battle.setDifficulty(this.difficulty);
-
     // The environment goes on before the build: the sky is painted from it,
     // and the cel materials the map's meshes are created against read their
     // fog and key light off the uniforms this writes.
@@ -3548,6 +3544,33 @@ export class Game {
     applyEnvironment(this.scene, env, this.mats);
     this.applySky();
     const map = this.installMap();
+
+    // Every rig goes back to the pool restored; a corpse cannot outlive the
+    // round it fell in. FIRST of the four lines below, and no longer beside the
+    // two debris resets it used to sit with, because a ragdoll is the one thing
+    // in the game that holds a bot's RIG — and the next line may be about to
+    // free every rig there is.
+    this.ragdolls.reset();
+    // How many bodies a side this map fields, which is the size of the pool.
+    //
+    // **The map's offline and the AUTHORITY's in a match**, and that split is
+    // the whole of it: `MapLayout.perTeam` is a statement about the density of
+    // ONE map (Sarab is 24 a side over 900 m of play; every other map says
+    // nothing and is the shipped 8), while a netplay round is sixteen fixed
+    // slots on whatever map the match rotates onto — a slot index is a bot
+    // index there, and a client fielding a roster the authority has never heard
+    // of would be numbering bodies nobody else is. See `docs/multiplayer.md`.
+    //
+    // Here rather than in `installMap`, unlike the other map-derived pushes,
+    // because this is the ROUND's roster and that method's other caller is the
+    // editor, which has no round. It runs after the ragdolls above and after
+    // `installMap`'s own `crew.clear()` — the two holders of a body — and
+    // before the skill draw below, which is handed the pool it seeds.
+    this.battle.setRoster(this.net ? CONFIG.bots.perTeam : perTeamOf(this.mapDef.layout));
+    // Re-draw skills for the chosen tier. The pool is rebuilt only when a map
+    // changes the size of the roster, so this is the only place the roster's
+    // difficulty can change.
+    this.battle.setDifficulty(this.difficulty);
 
     this.battle.setMap(map);
     this.battle.reset();
@@ -3564,9 +3587,6 @@ export class Game {
     // and the crew inside it already counts for itself.
     this.battle.setPlayer(this.player);
     for (const tank of this.vehicles.hulls) this.battle.addHuman(tank);
-    // Every rig goes back to the pool restored; a corpse cannot outlive the
-    // round it fell in.
-    this.ragdolls.reset();
     this.debris.reset();
     this.blastDebris.reset();
     this.conquest.start(map);
@@ -3592,9 +3612,10 @@ export class Game {
     // `NetSession.brokenPanes`, and `onSeated` for the other half.
     if (this.net?.brokenPanes.length) this.glass.catchUp(this.net.brokenPanes);
     // …and offline they take a SLOT on that side rather than standing beside
-    // the roster: the bot in it is benched, so the fight is eight a side with
-    // the player as one of the eight. In a match the authority does this on
-    // its own roster and the local pool is not the fight — see
+    // the roster: the bot in it is benched, so the fight is whatever this map
+    // fields a side with the player as one of them — eight on four of the five
+    // maps and twenty-four on Sarab. In a match the authority does this on its
+    // own roster and the local pool is not the fight — see
     // `BattleSystem.seatPlayer`.
     if (!this.net) this.battle.seatPlayer(this.player.team);
     // A new round is a new board. Sized from the pool here rather than at

@@ -1131,6 +1131,37 @@ export const SarabLayout: MapLayout = {
    */
   size: 900,
   /**
+   * **Twenty-four a side, and it is `size` finishing its own sentence.**
+   * `ENGINE_UPGRADE.md` S10 is the measurement: sixteen bodies over 900 m of
+   * play is one per 51,000 m^2 against Harrowmead's one per 10,000, and what
+   * came of it headless was five of eleven rounds running the full 45-minute
+   * cap with tickets left on both sides and a peak contact of 5-7 bots against
+   * 10-14 on the levels. Difficulty does not move that and neither does the
+   * borderland — a round is made of CONTACT, and this is the lever that buys
+   * it. At 24 the density is one body per 17,000 m^2, between Coldharbour's and
+   * Harrowmead's, which is where the town was laid out to sit.
+   *
+   * It is `CONFIG.bots.maxPerTeam` exactly, and that is not a coincidence — the
+   * bound was raised to this map's roster. What it costs is 48 rigs in the
+   * frame's mesh walk instead of 16, which is the one thing about this map that
+   * is worse than it was and is paid on this map alone: `BattleSystem` builds
+   * its pool to the map's roster, so the four maps that state nothing are
+   * unchanged to the bit.
+   *
+   * The round gets SHORTER with it and is meant to: `CONFIG.conquest.tickets`
+   * is 400 whatever the roster, so three times the bodies is roughly three
+   * times the death rate. That is S10's complaint answered rather than a side
+   * effect of answering it.
+   *
+   * **Six squads a side rather than two**, at `CONFIG.bots.squadSize` of 4 —
+   * which is six of this map's five flags' worth of squad orders, and six
+   * launchers a team rather than two at `antiTankBots.perSquad`, against the
+   * two hulls a side the hardstandings below field. The ratio of tubes to
+   * bodies is untouched; what changed is that there are enough of both for a
+   * street to be contested by more than one squad at a time.
+   */
+  perTeam: 24,
+  /**
    * Five, because this town genuinely stacks: the ground, two floors and a roof
    * inside a shelled block, and a parapet or a rubble heap over one of them.
    * Overflow is a SILENT drop in arrival order, which is why every builder in

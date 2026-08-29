@@ -14,6 +14,16 @@
  * 8v8; joining takes a bot's place and leaving gives it back. Nothing is
  * created or destroyed on either path, so there is no roster size for the rest
  * of the game to react to and no spawn/despawn race to get wrong.
+ *
+ * **A MAP's roster does not reach this file, and that is a decision rather than
+ * an omission.** `MapLayout.perTeam` lets a map field more than eight a side
+ * offline — Sarab is twenty-four — and a match rotates between maps under ONE
+ * roster: sizing it per map would mean a table that grows and shrinks under the
+ * humans sitting in it, a `ScoreBook` whose rows change meaning at a rotation,
+ * and a rotation onto a smaller map having to evict people. So `Match` and
+ * `HeadlessGame` never call `BattleSystem.setRoster`, every match is sixteen
+ * slots on every map, and a slot index is still a bot index. See
+ * `docs/multiplayer.md`.
  */
 import { CONFIG } from "../src/config";
 import type { NetTeam, SlotState } from "../src/net/protocol";
