@@ -246,8 +246,8 @@ export const SarabEnvironment: EnvironmentSpec = {
      * 0.13, barely over the 0.12 every other map states, because on this one a
      * mote is additive and does not need the help.
      */
-    count: 1600,
-    size: 0.13,
+    count: 1200,
+    size: 0.07,
     /**
      * 260 m, and the first map to state one.
      *
