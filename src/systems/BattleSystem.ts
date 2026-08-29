@@ -28,7 +28,7 @@
  * respawned, not thought for, not shootable, not drawn — and un-benching drops
  * them back into the ordinary respawn queue with skill and squad intact, which
  * is what makes a human joining and leaving symmetrical. Bots inside a TANK
- * are the bench's twin (`crewed`, written by `TankCrew` through `setCrewed`):
+ * are the bench's twin (`crewed`, written by `VehicleCrew` through `setCrewed`):
  * the same exclusions for a different reason, except that a driver is still
  * alive and still gets its squad's order. Every loop over `bots` must skip
  * both, and the one test that does it is `aside` — never `benched.has`
@@ -245,11 +245,11 @@ export class BattleSystem {
    * having to know which is which.
    *
    * Unlike a benched bot this one is still ALIVE: it holds its ticket, its
-   * scoreboard row and its position, which `TankCrew` slaves to the hull. What
+   * scoreboard row and its position, which `VehicleCrew` slaves to the hull. What
    * it does NOT do is walk, shoot a rifle, take cover or get shot at — the
    * hull is what is being shot at, exactly as it is for a mounted player.
    *
-   * Written only through `setCrewed`, which `Game` wires to `TankCrew`'s two
+   * Written only through `setCrewed`, which `Game` wires to `VehicleCrew`'s two
    * announcements. Nothing in this file decides who is driving.
    */
   private readonly crewed = new Set<Bot>();
@@ -471,7 +471,7 @@ export class BattleSystem {
    * It deliberately does NOT touch `alive`, `state` or `respawnT`, all three
    * of which benching writes: a driver is a living body in a different place,
    * not a slot standing empty. Nor does it hide the rig, which is
-   * `TankCrew`'s to do and undo, because that system is also the one that
+   * `VehicleCrew`'s to do and undo, because that system is also the one that
    * knows where to put the body back down.
    */
   setCrewed(bot: Bot, crewed: boolean): void {
@@ -486,7 +486,7 @@ export class BattleSystem {
    * **Every loop over `bots` in this file owes this test**, and it is one
    * method rather than two `Set.has` calls at nineteen call sites precisely so
    * that a third reason can never be added and missed at eighteen of them. It
-   * is public because `TankCrew` asks it before handing anybody a seat.
+   * is public because `VehicleCrew` asks it before handing anybody a seat.
    */
   aside(bot: Bot): boolean {
     return this.benched.has(bot) || this.crewed.has(bot);
@@ -570,7 +570,7 @@ export class BattleSystem {
    * own line of sight is tested against?
    *
    * The public door onto `visible`, which bots already reach through
-   * `BattleCtx`. It is here for `TankCrew`, whose crews need exactly the ray a
+   * `BattleCtx`. It is here for `VehicleCrew`, whose crews need exactly the ray a
    * bot needs and must get the identical answer — a tank that could see
    * through a wall a rifleman cannot would be a different game running in the
    * same window. Budgeted by the caller, as every LOS ray in this file is.
@@ -646,7 +646,7 @@ export class BattleSystem {
 
     this.updateSquads(dt);
     // ...and orders reach a DRIVER too, which is the one thing being aside
-    // does not take away. `TankCrew` steers a hull down its crewman's squad
+    // does not take away. `VehicleCrew` steers a hull down its crewman's squad
     // objective, and that bot skips the think pass below where `applyOrder`
     // would ordinarily refresh it — so a tank would drive on the order its
     // crewman happened to hold at the moment he climbed in. At most two

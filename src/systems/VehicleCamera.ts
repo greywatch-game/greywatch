@@ -22,7 +22,7 @@
  * the same fact. A tank breaks the usual way of keeping that promise — the gun
  * is not on the camera, it is on a turret that traverses at 40 deg/s — so the
  * promise is kept from the other end: **this camera's angles are a REQUEST**,
- * `Tank` walks the gun toward them at the turret's own rate, and the HUD draws
+ * `Vehicle` walks the gun toward them at the turret's own rate, and the HUD draws
  * its marker where the GUN points rather than at the middle of the screen.
  * Nothing here may ever be read as "where the shell will go".
  *
@@ -43,19 +43,30 @@
  * to be, which may be inside a wall, and an origin that is always in open space
  * is what makes the answer always mean "the eye can see the tank". The one
  * addition is that the anchor sits above the hull's own collider box, and the
- * tank is taken out of the pick anyway (`Tank`'s header says why) — a hull is
+ * tank is taken out of the pick anyway (`Vehicle`'s header says why) — a hull is
  * the nearest solid thing to its own camera by several metres.
  */
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { Tank } from "../entities/Tank";
+import type { VehicleSpec } from "../config/vehicles";
+import type { Vehicle } from "../entities/Vehicle";
 import type { InputManager } from "../core/InputManager";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 
 export class VehicleCamera {
-  /** Where the driver is asking the gun to point. `Tank` walks to these. */
+  /** Where the driver is asking the gun to point. `Vehicle` walks to these. */
   yaw = 0;
   pitch: number = CONFIG.vehicles.tank.camera.restPitch;
+  /**
+   * The hull's own camera block, taken on `take` and held.
+   *
+   * **Held rather than asked per call, because `aim` is not handed a
+   * hull** — it runs before the world step and knows only the input, so
+   * the pitch limits and the look multiplier it applies have to come from
+   * whatever was last mounted. The tank's is the value at rest, which is
+   * what a session that has never been in a vehicle uses and never reads.
+   */
+  private view: VehicleSpec["camera"] = CONFIG.vehicles.tank.camera;
 
   /** This frame's camera pose. `Game` hands both to `CameraSystem.place`. */
   readonly eye = new Vector3();
@@ -115,9 +126,10 @@ export class VehicleCamera {
    * The GUN's current bearing is deliberately not used either. A hull that was
    * left with its turret over the back deck would open the view backwards.
    */
-  take(tank: Tank): void {
+  take(tank: Vehicle): void {
+    this.view = tank.spec.camera;
     this.yaw = tank.yaw;
-    this.pitch = CONFIG.vehicles.tank.camera.restPitch;
+    this.pitch = this.view.restPitch;
     this.kick = 0;
     this.kickVel = 0;
     this.place(tank);
@@ -130,7 +142,7 @@ export class VehicleCamera {
 
   aim(dt: number, input: InputManager): void {
     const c = CONFIG.camera;
-    const v = CONFIG.vehicles.tank.camera;
+    const v = this.view;
 
     // The same three look sources `CameraSystem` folds, times this view's own
     // multiplier: the eye is twelve metres back, so the same wrist sweeps far
@@ -170,8 +182,8 @@ export class VehicleCamera {
    * solid mesh — the one thing `DeathCam.pullIn`'s note says makes the answer
    * meaningless.
    */
-  place(tank: Tank): void {
-    const v = CONFIG.vehicles.tank.camera;
+  place(tank: Vehicle): void {
+    const v = tank.spec.camera;
     this.anchor
       .copyFrom(tank.center)
       .addInPlaceFromFloats(0, v.anchorHeight, 0);
@@ -190,13 +202,13 @@ export class VehicleCamera {
   }
 
   /** Walks the eye in until it is on the same side of the wall as the tank. */
-  private pullIn(tank: Tank): void {
-    const v = CONFIG.vehicles.tank.camera;
+  private pullIn(tank: Vehicle): void {
+    const v = tank.spec.camera;
     this.eye.subtractToRef(this.anchor, this.dir);
     const len = this.dir.length();
     if (len < 1e-4) return;
     this.dir.scaleInPlace(1 / len);
-    // Out of its own query — see `Tank`'s header — which is what `skip` is for.
+    // Out of its own query — see `Vehicle`'s header — which is what `skip` is for.
     // The OTHER tank stays in it, which is what makes one hull block another's
     // camera. `castBody` rather than the shot's `castRound`, the same choice
     // the death cam makes: this asks where the eye may SIT, not what it can see

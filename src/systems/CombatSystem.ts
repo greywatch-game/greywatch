@@ -63,7 +63,7 @@ import { newRayHit, type RayWorld } from "../world/RayWorld";
  * `crush` is the one member no ROUND ever carries — nothing here delivers it,
  * because it is a hull's tracks rather than anything that was fired. It is in
  * this vocabulary anyway for the two readers that already key off it and would
- * otherwise each need a term of their own: `Tank.takeDamage`, where it falls
+ * otherwise each need a term of their own: `Vehicle.takeDamage`, where it falls
  * to `resist.bullet` and is a dead branch by construction (a tank is never in
  * the list a tank's tracks are swept against — see `Game.crushSweep`), and
  * `RagdollSystem.applyImpulse`, whose test is "not a bullet" and which

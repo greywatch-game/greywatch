@@ -344,7 +344,7 @@ entirely. Every part of the FSM above — cover, the peek cycle, the
 crouch, the separation pass, the flow field walked a cell at a time — is about a
 body standing up, and none of it survives contact with a seven-metre vehicle. So
 a crewed bot is taken OUT of the fight exactly as a mounted player is, and
-`systems/TankCrew.ts` is the second brain that drives in its place.
+`systems/VehicleCrew.ts` is the second brain that drives in its place.
 
 What this file owes it is two things:
 

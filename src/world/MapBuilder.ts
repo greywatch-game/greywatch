@@ -47,6 +47,7 @@ import {
   VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { kindOf, type VehicleKind } from "../entities/vehicleKinds";
 import {
   addOutline,
   MAX_PALETTE,
@@ -146,6 +147,19 @@ export interface VehicleSpawnDef {
   pos: Vector3;
   /** Which way the hull faces when it arrives. */
   yaw: number;
+  /**
+   * WHAT stands here, or nothing for a tank.
+   *
+   * Optional so that the maps written before there was a second kind say
+   * nothing at all and are unaffected — the default is stated once, in
+   * `entities/vehicleKinds.ts`, and the two readers here (`keepClear` below and
+   * `VehicleSystem.build`) both go through it rather than repeating it.
+   *
+   * **A team may have as many hardstandings as the layout states, of any mix
+   * of kinds**: the respawn clock is per hardstanding, so what this list is is
+   * exactly the vehicles that side can ever have on the field at once.
+   */
+  kind?: VehicleKind;
 }
 
 /**
@@ -913,10 +927,16 @@ export class MapBuilder {
       // than a prop on a flag: a flag inside a collider merely cannot be
       // captured, while a tank that materialises inside one is a hull the
       // ground probe puts on top of a skip.
+      // …and the radius is the hull's OWN half-length, so a truck's
+      // hardstanding is cleared to a truck and not to a tank. Deriving it from
+      // whatever kind stands here rather than from the biggest is what keeps a
+      // small vehicle's pad from rejecting scatter candidates it has no reason
+      // to — which on a seeded field is not a tidiness point: one extra
+      // rejection re-rolls every prop drawn after it.
       ...(layout.vehicles ?? []).map((v) => ({
         x: v.pos.x,
         z: v.pos.z,
-        r: CONFIG.vehicles.tank.hull.length / 2 + 1.5,
+        r: kindOf(v.kind).spec.hull.length / 2 + 1.5,
       })),
     ];
     this.panes = [];

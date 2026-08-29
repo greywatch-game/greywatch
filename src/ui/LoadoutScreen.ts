@@ -603,7 +603,7 @@ export class LoadoutScreen {
         ${
           this.armour
             ? `<div class="lo-slot${this.slot === "equipment" ? " active" : ""}" data-slot="equipment">
-          <span class="lo-slot-name">Anti-Tank</span>
+          <span class="lo-slot-name">Anti-Vehicle</span>
           <div class="lo-opts">${kit}</div>
         </div>`
             : ""

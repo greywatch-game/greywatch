@@ -1,40 +1,100 @@
-# Vehicles: the one hull, and everything it is an exception to
+# Vehicles: two kinds, one hull, and everything it is an exception to
 
-What a tank IS to each subsystem that meets one, why it is the only moving
+What a vehicle IS to each subsystem that meets one, why it is the only moving
 `solid` mesh in the game, how a driver's frame differs from a body's, and what
 is deliberately not built. Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps
-the summary; this file is the contract for `src/entities/Tank.ts`,
-`src/entities/TankModel.ts`, `src/systems/VehicleSystem.ts`,
-`src/systems/VehicleCamera.ts`, `src/systems/TankCrew.ts` and for `Game`'s
-`updateDriver` / `frameVehicleCamera` / `mount` / `dismount` / `clearVehicle` /
-`resolveShell` / `offeredSeat`.
+the summary; this file is the contract for `src/entities/Vehicle.ts`,
+`src/entities/vehicleRig.ts`, `src/entities/vehicleKinds.ts`,
+`src/entities/TankModel.ts`, `src/entities/TruckModel.ts`,
+`src/systems/VehicleSystem.ts`, `src/systems/VehicleCamera.ts`,
+`src/systems/VehicleCrew.ts` and for `Game`'s `updateDriver` /
+`frameVehicleCamera` / `mount` / `dismount` / `clearVehicle` / `resolveShell` /
+`offeredSeat`.
+
+**Most of what follows is written about a TANK**, because the tank is what
+every rule in it was found on, and because the second kind changed none of
+them. Read "tank" as "the hull in front of you" everywhere except where a
+difference is called out.
 
 ## The shape of it
 
-A vehicle is four things and one line of map data:
+A vehicle is a block of NUMBERS and a MESH, and everything else is machinery
+that reads those two:
 
 | the thing | what it owns |
 | --- | --- |
-| `MapLayout.vehicles` | where each side's armour stands. One `VehicleSpawnDef` per team; absent on two of the five shipped maps |
-| `entities/Tank.ts` | one hull: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, and the springs behind its lean and its antennae |
-| `entities/TankModel.ts` | the boxes it is drawn from, the tracks, the two whips and the cupola gun as JOINTS over them, and the charred repaint a wreck takes |
+| `MapLayout.vehicles` | where each side's vehicles stand, and WHAT stands there. One `VehicleSpawnDef` per hardstanding; absent on two of the five shipped maps |
+| `config/vehicles.ts` | `VehicleSpec` — the shape of one kind — and the two kinds: the TANK and the gun TRUCK |
+| `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a model, and the one place the default (a tank) is written down |
+| `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints `Vehicle` writes, the three extents the physics needs off the drawing, and the three closures a model hands back |
+| `entities/TankModel.ts`, `entities/TruckModel.ts` | the ART, one file per kind — the boxes, the running gear, the whips and the guns as JOINTS over them, and the charred repaint a wreck takes |
+| `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, and the springs behind its lean and its antennae |
 | `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, which seat a boarder gets, and where a dismount lands |
-| `systems/VehicleCamera.ts` | the view from twelve metres behind a hull, and its pull-in |
-| `systems/TankCrew.ts` | the bots that crew: which body is in which SEAT of which hull, where it is taking it, and what each of its guns is laid on |
+| `systems/VehicleCamera.ts` | the view from behind a hull, and its pull-in |
+| `systems/VehicleCrew.ts` | the bots that crew: which body is in which SEAT of which hull, where it is taking it, and what each of its guns is laid on |
 
 `Game` is the only place they meet, exactly as with every other system: it holds
 the two facts the feature turns on (`Game.driving` and `Game.drivingSeat`),
 decides who is in what, and wires `VehicleSystem`'s two announcements. Nothing
-in `VehicleSystem` has heard of a player, and nothing in `Tank` has heard of a
+in `VehicleSystem` has heard of a player, and nothing in `Vehicle` has heard of a
 hardstanding.
 
-**Today there is one vehicle and two maps with any.** Nothing in the code is
-special-cased to a tank — `VehicleSpawnDef` carries a team, a point and a
-heading, and a second vehicle would be a second model plus a second `CONFIG`
-block — but nothing has been designed for two either, and the honest statement
-is that the plural in these file names is aspirational as to KINDS. It is not
-aspirational as to maps: the second map with armour was four lines of layout
-data and a re-bake, which is the test the first one was built to pass.
+## Two kinds, and the ONE branch between them
+
+**There are two vehicles and no code that knows it.** `Vehicle` is handed a
+`VehicleSpec` and a rig BUILDER by `VehicleSystem` and never learns which kind
+it is — `CONFIG.vehicles.tank` used to be read in forty-three places in that
+file and every one of them is `this.spec` now. A third kind is a row in
+`VEHICLE_KINDS`, a block in `config/vehicles.ts` and a model file, and no `if`
+anywhere. **The moment a system asks which kind it is holding, that bargain is
+broken.**
+
+The one thing a kind genuinely differs by in code is whether it has a MAIN GUN,
+and even that is not asked as a kind:
+
+- `VehicleSpec.gun` is `null` on an unarmed kind, and it is ONE nullable field
+  because the mount and the round are one weapon — `turret` nests inside it, so
+  a hull with nothing to traverse cannot be handed a traverse rate by accident.
+- `Vehicle.armed` is that resolved once, and **it is the only question anything
+  else asks.** The trigger (`gunReady`, so `fireGun` and the AI crew's shoot
+  both refuse), the HUD's loader row (`loadProgress` is null, so the row is
+  ABSENT rather than dimmed), the gun marker (a driver with no gun gets none),
+  the crew (`lay` and `shoot` are skipped and the driver acquires as a spotter),
+  and the authority's `onShell` rate gate, which refuses a claimed shell from a
+  turretless hull outright.
+- **An unarmed hull keeps `turretYaw` equal to its own yaw**, which is not a
+  special case dressed up. The drawn angle is `turretYaw - yaw`, so a turret
+  that tracks the hull draws at a permanent local zero — exactly what a ring
+  welded to a truck's bed should do — and `aimMg`, which writes
+  `mgYaw - turretYaw` onto the mount above it, then puts a world-held machine
+  gun on a body-mounted ring with no branch of its own. `updateRemote` takes the
+  same rule, which is what makes the `tyaw` the wire carries for every hull
+  harmless on one that has no turret.
+
+**The rig is CLOSED over its own model**, which is what buys the second kind
+without an interface that lies. A tank's running gear is two belts of scrolling
+links and a truck's is four wheels that turn and two that steer, and no shape
+over both is honest — so `VehicleRig` does not describe running gear at all. It
+carries `setRun(left, right, steer)`, a closure the builder made, and `Vehicle`
+hands it the two distances and the stick it already has. `reset` and `paint` are
+the same bargain for the respawn and the wreck. The three numbers the physics
+cannot get anywhere else — `gauge`, `contactReach`, `wheelReach` — are stated on
+the rig, which is what stopped `Vehicle` importing from a model file at all.
+
+### What the TRUCK is, and the trade it is
+
+`CONFIG.vehicles.truck` carries the argument in full. In one paragraph: it is
+the tank with the cannon taken off and the speed put back. 18 m/s against 11,
+accelerating and stopping nearly twice as hard, through a 3.2 m gap against the
+tank's 4.4 — and 520 points against 1200 at nine times the small-arms damage,
+with no weapon but the machine gun the second man lays. **`climbHeight` is the
+rule that keeps it honest**: 0.55 against the tank's 1.25, so the parked car a
+tank rides straight over is a car this drives around, and the whole class of
+"through the scenery" that armour is allowed is closed off — without a line of
+code knowing which kind it is steering.
+
+It stands on Sarab, one a side, behind each team's tank. Two maps have armour of
+any kind; only that one has two kinds.
 
 ## What it is drawn as, and the tracks that RUN
 
@@ -67,7 +127,7 @@ whose turning can be SEEN**. A road wheel is a disc, and a disc rotating about
 its own axis is indistinguishable from a disc at rest; giving each one a node
 would be twelve more meshes to animate nothing.
 
-**Two figures go in and they are per TRACK, not per hull.** `Tank` keeps
+**Two figures go in and they are per TRACK, not per hull.** `Vehicle` keeps
 `trackRun[2]`, adds `speed ± yawRate * TRACK_GAUGE / 2` to them each frame and
 hands both to `setTrackRun`. That is what makes a neutral-steer pivot — which
 this vehicle can do at a standstill — come out as the two tracks running
@@ -126,14 +186,14 @@ knows the acceleration it achieved and the yaw rate it turned at, and weight
 transfer is those two numbers and a spring.
 
 The hull's attitude is two halves, written in exactly one place
-(`Tank.leanHull`), never mixed — and **written to two different NODES, which is
+(`Vehicle.leanHull`), never mixed — and **written to two different NODES, which is
 the whole of the difference between a tank on a suspension and a tank being
 tilted**:
 
 | half | what it answers to | how it moves | what it turns |
 | --- | --- | --- | --- |
-| the GROUND (`leanToGround`) | the slope the ten track contacts are standing on, measured by `standOnGround` against the collider boxes AND the terrain | a frame-lerp at `drive.tiltRate` toward a fact, which cannot overshoot | `TankRig.hull` — the WHOLE vehicle, tracks and all |
-| the SUSPENSION (`flexSuspension`) | the hull's own mass: `accel` along its forward, and `speed * yawRate` across it | a damped spring at `suspension.stiffness`, which MUST overshoot | `TankRig.sprung` — the BODY, against running gear that stays put |
+| the GROUND (`leanToGround`) | the slope the ten track contacts are standing on, measured by `standOnGround` against the collider boxes AND the terrain | a frame-lerp at `drive.tiltRate` toward a fact, which cannot overshoot | `VehicleRig.hull` — the WHOLE vehicle, tracks and all |
+| the SUSPENSION (`flexSuspension`) | the hull's own mass: `accel` along its forward, and `speed * yawRate` across it | a damped spring at `suspension.stiffness`, which MUST overshoot | `VehicleRig.sprung` — the BODY, against running gear that stays put |
 
 **Summing them onto the hull node was a bug and it is the one this section was
 rewritten around.** A vehicle standing on a slope stands on it tracks and all,
@@ -153,7 +213,7 @@ real tank, being bolted to the hull rather than hung on arms. That is a
 deliberate simplification: what their travel would show is track sag over the
 return run, and the belt is one static mesh that does not sag.
 
-**The acceleration is measured, not asked for.** `Tank.update` snapshots
+**The acceleration is measured, not asked for.** `Vehicle.update` snapshots
 `speed` at the top and reads the difference at the bottom, because the three
 things that decelerate a hull are not all the throttle's: letting go of it,
 braking against it, and driving into a building. A ram spends most of road
@@ -238,11 +298,11 @@ vehicle, rigidly, exactly as far as the ground told it to. **A vehicle with no
 vertical travel at all is the same tell a perfectly level one was.**
 
 So there is a third axis, it is a distance rather than an angle, and it is the
-one that carries the weight. `TankRig.sprung` is everything the springs carry —
+one that carries the weight. `VehicleRig.sprung` is everything the springs carry —
 the tub, the sponson, the stowage, the marking and the whole turret with the
-gun and the masts on it — and it hangs off `TankRig.hull` with the RUNNING GEAR
+gun and the masts on it — and it hangs off `VehicleRig.hull` with the RUNNING GEAR
 left behind on the hull node: the belts, the road wheels, the idlers, the
-sprockets and the link strips. `Tank.flexHeave` moves it in Y and never rotates
+sprockets and the link strips. `Vehicle.flexHeave` moves it in Y and never rotates
 it, so a compressing hull compresses along its own up axis rather than the
 world's.
 
@@ -330,7 +390,7 @@ The two whips are the third picture on this vehicle and the furthest out from
 the drive. A mast is a thin cantilever bolted to the turret roof, and the three
 things that bend one are all numbers this class already has: the acceleration
 the drive achieved, how fast the hull node the foot is bolted to is ROTATING,
-and the wind. So it is two damped springs a mast (`Tank.flexAntennae`), and it
+and the wind. So it is two damped springs a mast (`Vehicle.flexAntennae`), and it
 was asked whether it should be a physics chain instead. It should not, and the
 reasons are worth writing down because the question will come back:
 
@@ -364,7 +424,7 @@ along a tank that was stopping beside them:
 
 **The gun is stated in its own right, and it is the second half of
 `suspension.gunKick`'s argument.** The recoil is spent on `speed` outside
-`Tank.update`, so the only thing the drive terms ever see of a shot is the
+`Vehicle.update`, so the only thing the drive terms ever see of a shot is the
 quarter second AFTERWARDS, where the tracks brake the shove out — an
 acceleration forwards, which lays the masts back. Measured, that came within a
 couple of degrees of cancelling the base-rotation term exactly: the hull rocked
@@ -382,7 +442,7 @@ is greatest at the root — and the upper takes what is left over, which is wher
 the shape comes from. The angle handed to the upper link is a LAGGED copy of the
 spring's, so while the mast is moving the leftover goes negative and the two
 links bend against each other into an S, and when it settles they agree and it
-is one smooth bow. `setAntennaBend` is the whole of that, and `Tank` owns the
+is one smooth bow. `setAntennaBend` is the whole of that, and `Vehicle` owns the
 numbers exactly as it owns `trackRun`.
 
 **The two masts are one spring scaled by their own lengths.** A cantilever's
@@ -415,10 +475,10 @@ What the hull's collider box is:
   of `RayWorld`'s questions: a round stops on it and a sightline breaks on it.
   It reaches those queries as `RayWorld.hulls` — a list `VehicleSystem` keeps
   and every cast walks — because it is in no baked structure and could not
-  reach them any other way. `Tank.rayBox` is the one method that hands it over,
+  reach them any other way. `Vehicle.rayBox` is the one method that hands it over,
   and `deckAt` reads the same scratch box through the same gate. **A player can climb onto the deck, and that no longer follows from the
   metadata** — the ground probe is analytic and reads baked boxes, which a hull
-  is deliberately not in, so the deck is a query of its own (`Tank.deckAt`,
+  is deliberately not in, so the deck is a query of its own (`Vehicle.deckAt`,
   fanned over the fleet by `VehicleSystem.deckAt` and wired to the player by
   `Game`). Verified against the ray it replaced over 1,617 points on and around
   a parked hull: no disagreement anywhere, and a body dropped over the turret
@@ -466,7 +526,7 @@ either way: nothing is allocated per call, and **the other tank stays in the
 answer throughout**, which is what makes one hull block another's camera. The
 dismount's floor test does the same thing for the same reason.
 
-**`isPickable` is still read, and it is still load-bearing.** `Tank.rayBox`
+**`isPickable` is still read, and it is still load-bearing.** `Vehicle.rayBox`
 gates on `isEnabled() && isPickable` exactly as `SOLID_ONLY` does, so `hide`
 takes a wreck that has been carried away out of every ray in one write.
 **The bug that found that term was the ground probe's**, back
@@ -487,7 +547,7 @@ one number, and they hold together only as a set.
 
 ### The support is a plank on ten contacts
 
-`Tank.standOnGround` samples the surface at `CONTACT_ROWS` places along each
+`Vehicle.standOnGround` samples the surface at `CONTACT_ROWS` places along each
 belt — five a side, 1.5 m apart, spanning `TRACK_REACH` fore and aft — and rests
 the hull on the rigid plank they hold up. It is solved in TWO PASSES and the
 order of them is the whole trick:
@@ -620,7 +680,7 @@ collision sphere sat. A 2.2 m circle on the hull's centre stops the tank when
 its centre is 2.2 m off a wall, and the hull is 3.6 m long — so 1.4 m of nose
 was inside the shopfront every time.
 
-`Tank.aimCollider` offsets `ellipsoidOffset` by `hull.length / 2 -
+`Vehicle.aimCollider` offsets `ellipsoidOffset` by `hull.length / 2 -
 collideRadius` along the hull's forward, signed by the direction of TRAVEL, so
 the sphere's leading edge is the hull's own nose. Measured: the nose now stops
 2 cm off the wall face, against 1.4 m inside it.
@@ -670,7 +730,7 @@ straight into `speed` and clears the 0.022 in one frame. A bug that reports
 itself as a workaround, and the shape of the original report: *"I stop moving and
 I can't start again; shooting the cannon gets me going."*
 
-`Tank.freeFromWalls` is the answer and it is `ObstacleField.resolve` — the same
+`Vehicle.freeFromWalls` is the answer and it is `ObstacleField.resolve` — the same
 bucketed push-out that keeps a bot out of a tree, asked with the HULL's band
 (`drive.climbHeight` above the tracks to the top of its own box, which is
 `rideableAt`'s pair, so what the tank is ejected from and what it steers around
@@ -759,7 +819,7 @@ walls is what let this one show.
 `Player.probeGround` used to be the most expensive thing the game does per frame
 (0.483 ms on real hardware, a third of the game's own JS) because
 `scene.pickWithRay` with a predicate walks every mesh in the scene.
-`Tank.applyGround` used to cast the same shape of ray and cost the same, and a
+`Vehicle.applyGround` used to cast the same shape of ray and cost the same, and a
 driver therefore paid TWO of the frame's most expensive pick where a body on
 foot paid one — the hull's ground and the chase camera's pull-in. **Neither is
 a pick any more**, and the second went with every other ray in the game at
@@ -801,7 +861,7 @@ what arrives by what delivered it: `bullet` 0.05, `blast` 0.3, `shell` 1.
 
 There is a fourth kind, `crush`, and it is the one no ROUND carries: nothing
 fires it, and a tank is never in the list it is swept against, so its arm in
-`Tank.takeDamage` is a dead branch that falls to `bullet`. It is in the
+`Vehicle.takeDamage` is a dead branch that falls to `bullet`. It is in the
 vocabulary for the reader on the other side — `RagdollSystem.applyImpulse` asks
 "is this a bullet", and naming the blow is the whole of what tells it to throw
 a crushed body clear of the hull. See the section below.
@@ -841,7 +901,7 @@ one: it would put three and a half metres of live air off each end, which is
 exactly where the infantry beside the tank are standing. So `RayHit.hull` says
 which hull a cast stopped on, `fire` takes armour out of the sphere sweep
 entirely, and the shape a round is tested against is the shape that is drawn.
-`Tank.hitRadius` remains only because `Hittable` requires one; nothing reads it.
+`Vehicle.hitRadius` remains only because `Hittable` requires one; nothing reads it.
 
 ## The TRACKS, and the one thing armour does that is not a weapon
 
@@ -862,7 +922,7 @@ in the road and the squad stood there unmoved. Everything else on this vehicle
 treats a body as something to shoot; this is the one that treats it as
 something in the way.
 
-### The geometry is `Tank.crushes`, and it asks the two heights different questions
+### The geometry is `Vehicle.crushes`, and it asks the two heights different questions
 
 Horizontally it is the body's hit SPHERE against the hull's footprint, in the
 box's own frame through `boxGeometry.rotateToLocalXZ` — the same shape a round
@@ -936,7 +996,7 @@ them; a bot crew gets none of it.
 `updateWorld` returns at its first line in a match. The twin is
 `HeadlessGame.crushSweep`, and the one way it differs is that it sweeps **every**
 hull on the field, the ones a PERSON is driving included. Those are posed on
-that side from the wire — but `Tank.updateRemote` measures `speed` out of the
+that side from the wire — but `Vehicle.updateRemote` measures `speed` out of the
 ground the hull covered, precisely so everything downstream reads a remote hull
 the way it reads a local one, so a person running a squad over resolves there
 exactly as a bot crew's hull does. Nothing about it is predicted on the client:
@@ -945,7 +1005,7 @@ trip a shell's blast already takes.
 
 ## Two seats, and what each of them is
 
-**A hull holds two people and they do two different jobs.** `Tank.seats` is a
+**A hull holds two people and they do two different jobs.** `Vehicle.seats` is a
 pair of booleans indexed by `DRIVER` (0) and `GUNNER` (1), and the split is:
 
 | seat | sticks | weapon | camera |
@@ -966,7 +1026,7 @@ never denies the player their own armour" rule: the ordinary case on a map with
 one hardstanding a side is a hull a bot is already driving, and the right answer
 is for the player to climb onto the gun beside him rather than to throw him out
 of it. `occupiedNear` now means "both chairs taken", and only that reaches
-`TankCrew.evict`.
+`VehicleCrew.evict`.
 
 **Crossing between them is a THIRD verb.**
 `InputManager.seatPressed` is `F`, the pad's Y and the touch layer's swap
@@ -1000,7 +1060,7 @@ answered rather than dropped: the eviction has a PROMPT in front of it now, in
 the words the ground offer already uses (`TAKE OVER TANK`, `TAKE OVER GUN`
 against a bot; `SWAP SEAT` into an empty chair). A PERSON is never moved, on
 either side: `Game.seatHeldBy` is what tells the three kinds apart — offline
-through `TankCrew.crewOf`, in a match through `VehicleState.by`/`by2` against
+through `VehicleCrew.crewOf`, in a match through `VehicleState.by`/`by2` against
 the roster, which is `crewedByBot`'s exception to "a client never learns which
 slots are bots", made for the same reason (this draws a PROMPT).
 
@@ -1021,7 +1081,7 @@ gun a bot had taken looked exactly like a vehicle with one seat, so the key that
 appeared to do nothing had nothing on screen explaining it. It is now one chip
 per chair under the two bars — the job, and `YOU` / `BOT` / `PLAYER` / `EMPTY`
 under it, your own in the hot colour — **built from `SEATS`** (which moved to
-`entities/Tank.ts` for this, since it is what a vehicle HAS rather than what
+`entities/Vehicle.ts` for this, since it is what a vehicle HAS rather than what
 the AI does with one) so a vehicle with a different number of chairs draws the
 chairs it has. The main gun's loader row is still DIMMED rather than removed
 for a gunner: he cannot fire it, and how long until the hull can is exactly
@@ -1079,7 +1139,7 @@ end of a life), and `installMap` (the map is being rebuilt) — call
 `clearVehicle` alone, which deliberately does not move anything.
 
 `installMap`'s is the sharp one: without it `driving` would be a live pointer
-into a disposed `Tank`, which is not the stale-picture failure the funnel usually
+into a disposed `Vehicle`, which is not the stale-picture failure the funnel usually
 prevents but a crash the next time the camera framed it.
 
 **A HULL BREWING UP is an explosion, and the two people it can kill must be told
@@ -1128,7 +1188,7 @@ which the player feels as jitter:
   sixtieth of a second, with the marker snapping onto the reticle instead of
   settling onto it.
 
-So the axis carries a RATE (`Tank.turretRate` / `gunRate`, private, and nothing
+So the axis carries a RATE (`Vehicle.turretRate` / `gunRate`, private, and nothing
 outside asks anything but where the gun POINTS), and `slewRate` decides what that
 rate is asked to be. Three terms, each a different question, smallest wins:
 
@@ -1180,8 +1240,8 @@ is for, and everything about it is the turret's argument made once more, one
 node further out.
 
 **Its bearing is a WORLD angle, and that is the single decision the feature
-rests on.** `Tank.mgYaw`/`mgPitch` are held in the world exactly as
-`turretYaw`/`gunPitch` are, and `Tank.aimMg` writes the DIFFERENCE onto
+rests on.** `Vehicle.mgYaw`/`mgPitch` are held in the world exactly as
+`turretYaw`/`gunPitch` are, and `Vehicle.aimMg` writes the DIFFERENCE onto
 `rig.mgMount`. The mount is parented to the turret, so a bearing held
 *relative* to it would be dragged round by every traverse the driver asked
 for — a gunner laid on a doorway would be swept off it the moment the main gun
@@ -1191,10 +1251,10 @@ if `turretYaw` were the hull's.
 **With nobody on it the rule INVERTS, and that is right rather than an
 exception.** An unmanned gun holds its LOCAL bearing and goes round with the
 ring it is bolted to, because that is what a lump of steel bolted to a turret
-does. `Tank.mgRideYaw` is the previous frame's turret bearing, and the delta
+does. `Vehicle.mgRideYaw` is the previous frame's turret bearing, and the delta
 between it and this frame's is what the stowed gun is given.
 
-**It is stepped from `VehicleSystem` rather than from `Tank.update`**, through
+**It is stepped from `VehicleSystem` rather than from `Vehicle.update`**, through
 `aimMg` (walk toward an order) or `setMg` (a remote gunner's report), and that
 separation is not tidiness. The two guns on one hull can have two owners of
 different KINDS: a person can drive a hull posed off the wire while a bot lays
@@ -1235,7 +1295,7 @@ camera, it is on a turret traversing at 40 deg/s. The promise is kept from the
 other end instead —
 
 1. the look input moves `VehicleCamera.yaw/pitch`, which are an ORDER;
-2. `Tank` walks the gun toward them at the turret's own rate and its own
+2. `Vehicle` walks the gun toward them at the turret's own rate and its own
    acceleration (above);
 3. `Game.fireShell` fires down the **gun's** axis, never the camera's;
 4. `HUD.setGunMarker` draws `#gun-marker` where the barrel points, and
@@ -1295,7 +1355,7 @@ longer `alive` and no longer in the list. Blast kills are credited by
 
 A hardstanding's hull is LIVE, a WRECK, or GONE:
 
-- **`Tank.wreckT`** — how long the burnt-out hull stands where it died. It keeps
+- **`Vehicle.wreckT`** — how long the burnt-out hull stands where it died. It keeps
   its collider for all of it, so **a wreck is cover**. That is the whole reason
   destruction is not `setEnabled(false)`.
 - **`respawnIn`** — how long until a fresh hull is on the hardstanding. It starts
@@ -1308,7 +1368,7 @@ a body — which resolves itself, because `moveWithCollisions` pushes them out o
 their next frame. Refusing would mean a side losing its armour for the rest of
 the round because a bot was loitering, which is far worse than a shove.
 
-The hull is POOLED: `Tank.placeAt` puts a destroyed one back rather than building
+The hull is POOLED: `Vehicle.placeAt` puts a destroyed one back rather than building
 a new one, and `resetTankPose` is what guarantees nothing survives the round it
 died in. Nothing is disposed inside a round.
 
@@ -1322,7 +1382,7 @@ for what a diesel sounds like is on that method.
 | voice | who | how it is heard |
 | --- | --- | --- |
 | `engineOn` / `engineDrive` / `engineOff` | the hull the PLAYER is sitting in | unpanned and uncapped, for the reason the player's own report is: it is not a sound in the world, it is the vehicle you are in |
-| `hullEngine` / `hullEngineOff` / `enginesOff` | every OTHER occupied hull | a `PannerNode`, at `Tank.center`, gated at `CONFIG.audio.engineRange` |
+| `hullEngine` / `hullEngineOff` / `enginesOff` | every OTHER occupied hull | a `PannerNode`, at `Vehicle.center`, gated at `CONFIG.audio.engineRange` |
 
 **The second one is driven per FRAME rather than opened on a mount**, and that
 is the difference the rest of it follows from. What is being tracked is not
@@ -1330,7 +1390,7 @@ somebody getting in, it is a tank being within earshot — so `Game.pushHullEngi
 walks the fleet every frame and the voice is built when a hull comes into range
 and wound down when it leaves. Three things silence one: it is the hull the
 player is inside (which has the unpanned voice already, and would otherwise be
-heard twice), it is a wreck, or `Tank.occupied` is false — **a hull parked on its
+heard twice), it is a wreck, or `Vehicle.occupied` is false — **a hull parked on its
 hardstanding is silent until somebody climbs aboard**, which is the same one fact
 stated on the hull that the boarding sweep and the wreck clock read, and which a
 match writes off the snapshot.
@@ -1372,8 +1432,8 @@ which steps a fleet.
 
 `MapLayout.vehicles` is absent on Hollowmere and Greyfen, and a map that says
 nothing is unaffected — `VehicleSystem` builds nothing, costs nothing and is
-never asked anything. Coldharbour and Harrowmead state two each, one per team,
-and what a map owes to be able to:
+never asked anything. Coldharbour and Harrowmead state two each, one per team;
+Sarab states FOUR, a tank and a truck a side. What a map owes to be able to:
 
 - **Ground a seven-metre hull can get off.** On Coldharbour the two corner yards
   are the only 32 m squares on the map with nothing in them, which is also why
@@ -1386,9 +1446,11 @@ and what a map owes to be able to:
   must not be sitting where somebody just deployed. `keepClear` guarantees no
   PROP is built there; the spacing from the spawn points is the layout's job.
   Eight metres to the nearest, on both maps.
-- **Room to turn.** `collideRadius` (2.2) sets the narrowest gap a tank can drive
-  through at 4.4 m — the sphere rides at the leading end but keeps its radius.
-  Coldharbour's avenues are 16.
+- **Room to turn, and it is the KIND's number.** `collideRadius` sets the
+  narrowest gap a vehicle can drive through at twice itself — the sphere rides
+  at the leading end but keeps its radius — which is 4.4 m for the tank and
+  3.2 m for the truck. Coldharbour's avenues are 16; Sarab's old-town alleys
+  are seven, which is what makes them a truck's ground and not a tank's.
 - **Somewhere to GO, which the city answered with a road and the vale cannot.**
   Coldharbour's heading points a fresh hull down an avenue; Harrowmead has no
   avenue, so what was checked instead is the GROUND along the bearing. Both its
@@ -1400,14 +1462,32 @@ and what a map owes to be able to:
   still looking right in the layout, and it is the one thing here that no
   amount of clearance checking finds.
 
+  Sarab's two truck pads were checked exactly this way and the numbers are in
+  its layout: dead level over the whole footprint, 22 m to the nearest
+  structure over 35 cm, 20.8 m to the nearest infantry spawn, and a departure
+  bearing that runs 80 m out of the yard through a corridor never narrower than
+  9.1 m at a gradient never over 0.071. The first candidate — on the yard's own
+  diagonal — was rejected because the bearing ran into a shed at 36 m, which is
+  what the corridor check is for.
+
 Adding a hardstanding changes the layout hash, so `npm run collision` has to be
 re-run — the entries join `MapBuilder.keepClear`, which is an input to scatter
-placement and therefore to the nav graph. On both maps nothing actually moved
-and only the hash did, and on Harrowmead that was arranged rather than lucky:
-both spots stand more than `keepClear`'s radius clear of every blocking scatter
-region, because a circle clipping one would reject candidates out of the single
-seeded stream every field below it draws from, and re-roll half the dressing on
-the map. `npm run parity` still passes.
+placement and therefore to the nav graph. **`keepClear`'s radius is the
+vehicle's OWN half-length plus 1.5**, so a truck's pad is cleared to a truck
+rather than to a tank: deriving it from the biggest kind would reject scatter
+candidates a small vehicle has no reason to, and on a seeded field one extra
+rejection re-rolls every prop drawn after it. On all three maps nothing
+actually moved and only the hash did — on Harrowmead and Sarab that was
+arranged rather than lucky, because every spot stands more than `keepClear`'s
+radius clear of every blocking scatter region. `npm run parity` still passes.
+
+**A map's own GENERATOR owes the entries too, where it has one.** Sarab's
+layout is emitted by `npm run sarab`, which claims each hardstanding's ground
+before the yard is dressed around it — so a pad added to `layout.ts` and not to
+the generator is a pad the next regeneration puts a shed on. The order the
+entries are emitted in matters as well: an entry's INDEX is a hull's identity on
+the wire (`VehicleState.i`), so a hand-authored list that regenerates in a
+different order is two builds that disagree about which hull is which.
 
 ## Bots drive, and the road graph turned out not to be the blocker
 
@@ -1420,7 +1500,7 @@ about `NavGrid`. It was wrong about what a driver needs.
 way a wall".** The first is what a body's flow field already gives at map
 scale — Coldharbour's avenues are 16 m wide and the field runs down the middle
 of them; what it gets wrong is the last few metres, where it offers a 1.6 m
-doorway. The second is `Tank.rideableAt`, which is the analytic climb-band query
+doorway. The second is `Vehicle.rideableAt`, which is the analytic climb-band query
 this vehicle has been answering ten times a frame since it learned to stand on
 its tracks, spent on where the hull is ABOUT to be instead of where it is. A fan
 of whiskers over that turns the body's bearing into a hull's, and between them
@@ -1428,7 +1508,7 @@ they are a road graph evaluated locally and never baked — which is the only ki
 a moving thing could have been in anyway, for the same reason a hull is in no
 other baked structure.
 
-`systems/TankCrew.ts` is the whole of it and its header carries the argument.
+`systems/VehicleCrew.ts` is the whole of it and its header carries the argument.
 What belongs here is what a crew is to the rest of the vehicle.
 
 ### A crewed bot is out of the fight, exactly as a mounted player is
@@ -1462,7 +1542,7 @@ Three things a driver keeps that a benched bot does not:
 ### Two bots, two jobs
 
 A hull's boarding sweep fills BOTH chairs, driver first, and the two crewmen
-are two different bodies with two different brains — `TankCrew.Crew` carries a
+are two different bodies with two different brains — `VehicleCrew.Crew` carries a
 `seat`, and `stepCrew` branches on it after the think clock and the held target,
 which are one crewman's whichever job he is doing.
 
@@ -1504,7 +1584,7 @@ hardstanding a side, so a crew that held its seat for the life of the hull would
 make whether the player ever drives a race to the yard.
 `VehicleSystem.occupiedNear` is `enterable`'s mirror, `Game.offeredSeat` prefers
 an empty hull and falls back to a crewed one, the prompt says `TAKE OVER TANK`,
-and pressing it runs `TankCrew.evict` and `mount` on the same frame — one gesture,
+and pressing it runs `VehicleCrew.evict` and `mount` on the same frame — one gesture,
 because a seat given up and not immediately taken is one the boarding sweep can
 re-crew. Armour is something the AI uses while nobody else wants it.
 
@@ -1542,7 +1622,7 @@ Three rules the crew's gunnery answers to:
 Both were measured on Coldharbour and both are fixed; they are written down
 because each will be re-introduced by anything that adds a second vehicle.
 
-- **A hull blocks its own line of sight.** `Tank.eyePos` is the cupola, five
+- **A hull blocks its own line of sight.** `Vehicle.eyePos` is the cupola, five
   centimetres above the top of its own collider box, so a sightline to anything
   shorter than 2.95 m dives straight back into the box within the hull's own
   length. Measured: no line of sight to a body standing in the open at 20, 25,
@@ -1613,7 +1693,7 @@ layer that knows which chair this player is in.
 picture: no pitch, no roll, no heave, no track run, no antenna bend. Every one
 of those is a fact about the ground a hull is standing on, and every machine in
 the match holds the identical collider world and heightfield — so
-`Tank.updateRemote` re-derives them locally off the position that did arrive.
+`Vehicle.updateRemote` re-derives them locally off the position that did arrive.
 That is cheaper than sending them AND more stable than interpolating them, and
 it is why **the height is the local probe's rather than the wire's**: an
 interpolated `y` would be in a permanent argument with the plank the springs
@@ -1631,7 +1711,7 @@ divides out at several times road speed. One long frame would otherwise slam
 the springs onto their stops and run the tracks like a conveyor for a hull that
 was driving perfectly steadily.
 
-**A hull in a match refuses local damage.** `Tank.predicted` is
+**A hull in a match refuses local damage.** `Vehicle.predicted` is
 `NetSoldier.takeDamage`'s rule for the one target on a client that is a real
 simulated object rather than a pooled ghost — without it a client could kill a
 tank on its own screen, open the street, burn the crew, and then have the next
@@ -1707,7 +1787,7 @@ there is no rifle in a driver's hands).
 **The speed bound knows what a player is sitting in.** `validateDrive` is
 `validateMove` with the tank's ceiling and without the other two checks, and
 each omission is a decision rather than a saving: there is no ground test
-because `Tank.updateRemote` stands the reported hull on its own ten track
+because `Vehicle.updateRemote` stands the reported hull on its own ten track
 contacts on the authority's side, so a claimed height is never taken; and there
 is no solid test because a hull legitimately stands inside `map.obstacles` — it
 drives OVER the things a body walks around, which is what `climbHeight` is for.
@@ -1740,6 +1820,16 @@ ray happened to find, which can be a street away.
 
 - **~~Netplay.~~ Built** — see "Armour in a match" above, which is where this
   entry used to say a hull could not cross the wire.
+- **~~One kind.~~ Two** — see "Two kinds, and the ONE branch between them"
+  above. The entry that used to stand here said that nothing in the code was
+  special-cased to a tank but that nothing had been designed for two either,
+  and that "the plural in these file names is aspirational as to KINDS". It is
+  not any more: `Tank.ts` is `Vehicle.ts`, `TankCrew.ts` is `VehicleCrew.ts`,
+  the rig moved to `vehicleRig.ts`, and what a kind IS lives in
+  `vehicleKinds.ts`. The prediction was right about the cost — a second kind
+  was a second model and a second `CONFIG` block — and wrong about one thing:
+  the forty-three reads of `CONFIG.vehicles.tank` inside the hull had to become
+  reads of a spec first.
 - **~~One seat.~~ Two** — see "Two seats, and what each of them is" above. The
   entry that used to stand here argued that a commander/gunner split bought
   only "a turret that searches while the hull drives somewhere else", which the
@@ -1747,11 +1837,21 @@ ray happened to find, which can be a street away.
   of a split over ONE gun; what the second seat actually buys is a SECOND gun,
   aimed somewhere the first is not, against the targets the first cannot spend
   a shell on.
-- **There is no third seat and no loader.** Two chairs are two jobs; a third
-  would be a body with nothing to do, which is why `CrewSeat` is a pair of
-  constants rather than an enum that can grow.
+- **There is no third seat and no loader**, and no kind has a seat count of
+  its own. Two chairs are two jobs; a third would be a body with nothing to do,
+  which is why `CrewSeat` is a pair of constants rather than an enum that can
+  grow. The HUD's crew line is nonetheless built from `SEATS` rather than from
+  two hardcoded chips, so a kind that one day has one or three draws what it
+  has.
+- **A kind cannot state its own seats, its own enter radius or its own exit
+  offset.** `CONFIG.vehicles`' fleet-wide block holds those three, and they are
+  sized against the TANK — 6.5 m to be offered a way in and 3.4 m to be put
+  down beside it. Both are generous for a smaller vehicle rather than wrong for
+  one, which is why they were left shared: a truck's boarding circle reaching
+  4 m past its nose costs nothing, and a dismount landing a metre further out
+  than it needs to is a step, not a bug.
 - **A passenger cannot ride on the hull.** Infantry can stand on the deck —
-  `Tank.deckAt` says so — but standing on a moving tank is standing on a
+  `Vehicle.deckAt` says so — but standing on a moving tank is standing on a
   teleporting collider, and nothing carries them.
 - **Bots do not drive the hull they cannot use.** They still walk through a
   parked one, for the ragdoll's reason above, and one per squad still shoots
@@ -1765,6 +1865,11 @@ ray happened to find, which can be a street away.
   characters are not: the depth map re-renders only when the texel-snapped focus
   moves, so a tank driving past a stationary observer would drag a stale shadow.
   Characters get blob discs instead; a vehicle gets nothing yet.
+- **No third kind, and in particular nothing that FLIES or FLOATS.** Both
+  existing kinds stand on ground contacts against `TerrainField` and the
+  collider boxes, and `standOnGround` is the whole of what a vehicle's
+  relationship with the world is. A helicopter is not a `VehicleSpec` with
+  different numbers in it.
 - **Team-locked.** `VehicleSystem.enterable` refuses the other side's armour.
   Stealing it is a real design choice and a good one in some shooters, but made
   by accident it would mean a hardstanding's respawn timer feeding the wrong team

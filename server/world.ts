@@ -8,7 +8,7 @@
  * still required.** They existed so this process's `scene.pickWithRay` had
  * something to pick; every ray on both sides is a box query now (`RayWorld`,
  * `ENGINE_UPGRADE.md` wall 2), so nothing here is picked at all. What still
- * needs them is `Tank.update`, which drives a hull with
+ * needs them is `Vehicle.update`, which drives a hull with
  * `body.moveWithCollisions` — and the authority simulates its own hulls. So a
  * pass that deleted this geometry as dead weight would leave armour driving
  * through walls on the server and stopping at them on every client, which is
@@ -86,7 +86,7 @@ function colliderBox(scene: Scene, box: WorldBox, i: number): Mesh {
   mesh.isPickable = true;
   // `checkCollisions` is what `moveWithCollisions` walks, and it is the ONE
   // thing on this side that still needs these meshes at all: a bot or a human
-  // driving a hull is simulated here, and `Tank.update` moves it that way. The
+  // driving a hull is simulated here, and `Vehicle.update` moves it that way. The
   // legs never touched this list — a client does its own movement and
   // `validateMove` checks the result analytically — and neither did the bots.
   mesh.checkCollisions = true;

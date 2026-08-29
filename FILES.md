@@ -107,12 +107,20 @@ src/
     wind.ts             # The one wind: a shared bearing, and what the grass
                         #   field and the world's foliage each do with it
     teams.ts            # The two sides; index 0 is the player's
-    vehicles.ts         # The one vehicle: its hull, drive, turret, gun, camera
-                        #   — `climbHeight`, the one number deciding what a tank
-                        #   drives over and what stops it — and `resist`, which
-                        #   is where what each kind of damage is worth against
-                        #   armour is written down (a rifle 0.05, a blast 0.3,
-                        #   a shell 1 — and the AT kit fires shells)
+    vehicles.ts         # `VehicleSpec` — the SHAPE of one kind — plus the two
+                        #   kinds themselves: the TANK and the gun TRUCK. Each
+                        #   states its hull, drive, suspension, guns, camera
+                        #   and engine voice; `gun: null` is the one optional
+                        #   thing about a kind and is what `Vehicle.armed`
+                        #   reads. `climbHeight` decides what a vehicle drives
+                        #   over and what stops it (1.25 for the tank, 0.55 for
+                        #   the truck), and `resist` is where what each kind of
+                        #   damage is worth is written down — a rifle 0.05
+                        #   against armour and 0.45 against a soft skin, a
+                        #   blast 0.3/0.7, a shell 1 either way. The fleet-wide
+                        #   figures (the enter radius, the exit offset, the
+                        #   respawn and wreck clocks, the AI crew) sit above
+                        #   both
   core/
     Game.ts             # Orchestrator + main loop + all cross-system wiring.
                         #   Constructor is construction only; wiring is
@@ -173,30 +181,49 @@ src/
                         #   offered, and the repaint over its colour groups.
                         #   The one kit table that decides nothing
     Combatant.ts        # Team + the shared shootable/shooter interface
-    Tank.ts             # The one vehicle: the hull's collider (the only MOVING
+    Vehicle.ts          # ONE hull of any KIND: the collider (the only MOVING
                         #   `solid` mesh in the game, and invisible to the nav
                         #   graph for the reason a corpse is), the drive, the
-                        #   ten TRACK CONTACTS it stands on and the rate-limited
-                        #   climb that rides it over a car, the leading-end
-                        #   collision sphere, the turret's slew, BOTH guns'
-                        #   clocks and angles (the cupola gun's bearing is a
-                        #   WORLD angle exactly as the turret's is, which is
-                        #   what lets the two seats aim independently), which
-                        #   of its two SEATS are filled, the springs behind
-                        #   its lean, its SPRUNG
-                        #   body and its two whips, `rideableAt` (the climb band
-                        #   spent on where the hull is ABOUT to be, which is the
-                        #   whole of an AI driver's road graph), and what a
-                        #   hull feels of each DamageKind. Knows nothing about
-                        #   a player
-    TankModel.ts        # ~180 boxes and cylinders merged to twenty-six, with a
-                        #   SPRUNG body over running gear that is not, a
+                        #   ten GROUND CONTACTS it stands on and the
+                        #   rate-limited climb that rides it over a car, the
+                        #   leading-end collision sphere, the turret's slew,
+                        #   BOTH guns' clocks and angles (the second seat's gun
+                        #   holds a WORLD bearing exactly as the turret does,
+                        #   which is what lets the two seats aim
+                        #   independently), which of its two SEATS are filled,
+                        #   the springs behind its lean, its SPRUNG body and
+                        #   its whips, `rideableAt` (the climb band spent on
+                        #   where the hull is ABOUT to be, which is the whole
+                        #   of an AI driver's road graph), and what a hull
+                        #   feels of each DamageKind. Takes a `VehicleSpec` and
+                        #   a rig BUILDER and knows no kinds; `armed` is the
+                        #   one question anything asks about one. Knows nothing
+                        #   about a player
+    vehicleKinds.ts     # The list of kinds that exist, and the ONE place a
+                        #   kind becomes a name, a spec and a model. A map's
+                        #   `VehicleSpawnDef.kind` is resolved here, and the
+                        #   default (a tank) is written down once
+    vehicleRig.ts       # What every vehicle's MESH is: the joints `Vehicle`
+                        #   writes, the three extents the physics needs off the
+                        #   drawing (gauge, contact reach, wheel reach), and
+                        #   the three CLOSURES a model hands back — `setRun`,
+                        #   `reset`, `paint`. Plus `Box`/`Cyl`, the per-colour
+                        #   merge and the outline pass both models draw with.
+                        #   No geometry and no numbers
+    TankModel.ts        # ~180 boxes and cylinders merged to twenty-five, with
+                        #   a SPRUNG body over running gear that is not, a
                         #   turret and a gun that turn, a CUPOLA gun on a ring
                         #   that turns independently of both, two link strips
                         #   and a toothed sprocket a side that RUN, two whip
                         #   antennae that BOW, and the charred repaint a wreck
                         #   takes.
                         #   Art only — the extents that are RULES are CONFIG's
+    TruckModel.ts       # The gun truck: a cab, an open bed, a ring gun on a
+                        #   pedestal that clears the cab roof by a centimetre,
+                        #   four wheels that TURN and two that STEER, one whip
+                        #   on the front wing, and the same charred repaint.
+                        #   NO main gun — `VehicleRig.gun`/`muzzle` are null,
+                        #   which is what `Vehicle.armed` reads. Art only
     callsigns.ts        # What to call an AI on the scoreboard: roster index ->
                         #   phonetic name, derived on both sides, never sent
     Bot.ts              # Bot FSM (advance/hunt/engage/takeCover/suppressed/
@@ -286,7 +313,7 @@ src/
                         #   `DeathCam`'s shape — it produces an eye and a look
                         #   and `Game` hands both to CameraSystem.place. `aim`
                         #   and `place` straddle the world step on purpose
-    TankCrew.ts         # The bots that crew: which body is in which SEAT of
+    VehicleCrew.ts      # The bots that crew: which body is in which SEAT of
                         #   which hull, and what it asks of the thing in its
                         #   hands. TWO per hull — a driver and a gunner, two
                         #   brains with two target sets, the gunner seeing
@@ -295,7 +322,7 @@ src/
                         #   `Bot`'s FSM entirely (`BattleSystem.aside`) and
                         #   keeps its life, its position and its squad's order.
                         #   Steers on the body flow field for a BEARING and on
-                        #   `Tank.rideableAt` for what is a wall; `evict` is
+                        #   `Vehicle.rideableAt` for what is a wall; `evict` is
                         #   what stops the AI holding a side's only armour
     AimAssistSystem.ts  # Gamepad-only: outer bubble slows the stick, inner one
                         #   rotates. Bounded by the player's own turn rate
@@ -631,7 +658,7 @@ src/
                       #   the same clock as the bodies. The thrower's own is
                       #   skipped — they are watching their local copy
     NetVehicles.ts    #   Somebody else's armour: one interpolation buffer per
-                      #   HARDSTANDING, feeding Tank.updateRemote. Owns no hull
+                      #   HARDSTANDING, feeding Vehicle.updateRemote. Owns no hull
                       #   — the fleet is VehicleSystem's on both sides — and the
                       #   hull the local player is driving is skipped, because
                       #   they are simulating it

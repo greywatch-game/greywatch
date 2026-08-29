@@ -296,15 +296,25 @@ export interface ScoreRow {
 /**
  * The vehicle the player is driving, as the bottom-right band draws it.
  *
- * Derived by `Game` from the live `Tank` each frame, exactly as `CaptureStatus`
+ * Derived by `Game` from the live `Vehicle` each frame, exactly as `CaptureStatus`
  * is derived from a `ControlPoint`: the HUD reads no game system, and the words
  * ("LOADED", "LOADING") are its own.
  */
 export interface VehicleStatus {
   health: number;
   maxHealth: number;
-  /** 0 just fired, 1 loaded. The gun's whole magazine, as one number. */
-  load: number;
+  /**
+   * 0 just fired, 1 loaded — the gun's whole magazine as one number, and
+   * **null on a vehicle that HAS no main gun.**
+   *
+   * Null takes the row away rather than pinning it at full, and the difference
+   * is the one this band has already been wrong about once: a gunner's row is
+   * DIMMED because the hull still has a gun and how long until it can fire is
+   * exactly what he wants to know, and a truck's is ABSENT because there is
+   * nothing there to report. Drawing "LOADED" over a vehicle with no gun is a
+   * gauge for a weapon nobody has.
+   */
+  load: number | null;
   /**
    * Which job this player has aboard — the one thing on this band that is
    * about the person rather than about the vehicle, and the reason it is here
@@ -489,6 +499,8 @@ export class HUD {
     hull: HTMLElement;
     gun: HTMLElement;
     load: HTMLElement;
+    /** The caption row and the bar together: what a gunless vehicle takes away. */
+    loader: NodeListOf<Element>;
     crew: HTMLElement;
     swap: HTMLElement;
   };
@@ -589,6 +601,8 @@ export class HUD {
   private lastHullWidth = "";
   private lastLoadWidth = "";
   private lastLoaded = true;
+  /** Whether the loader rows are up. Toggled on a mount, never on a frame. */
+  private lastHasGun = true;
   private lastSeat = "";
   /**
    * The crew line's whole content as one string — `"DRIVER:you|GUNNER:bot"`.
@@ -736,8 +750,8 @@ export class HUD {
           <div id="vehicle" class="hidden">
             <div class="cap-row"><span class="cap">HULL</span><span class="veh-hp">0</span></div>
             <div class="veh-bar hull"><i></i></div>
-            <div class="cap-row"><span class="cap">MAIN GUN</span><span class="veh-gun">LOADED</span></div>
-            <div class="veh-bar load"><i></i></div>
+            <div class="cap-row veh-loader"><span class="cap">MAIN GUN</span><span class="veh-gun">LOADED</span></div>
+            <div class="veh-bar load veh-loader"><i></i></div>
             <div class="veh-crew"></div>
             <div class="veh-seat"><span class="veh-swap hidden"></span></div>
           </div>
@@ -786,6 +800,7 @@ export class HUD {
       hull: this.vehicle.querySelector(".veh-bar.hull i") as HTMLElement,
       gun: this.vehicle.querySelector(".veh-gun") as HTMLElement,
       load: this.vehicle.querySelector(".veh-bar.load i") as HTMLElement,
+      loader: this.vehicle.querySelectorAll(".veh-loader"),
       crew: this.vehicle.querySelector(".veh-crew") as HTMLElement,
       swap: this.vehicle.querySelector(".veh-swap") as HTMLElement,
     };
@@ -2036,16 +2051,29 @@ export class HUD {
       this.vehicleParts.hull.style.width = width;
       this.vehicle.classList.toggle("hurt", frac <= 0.3);
     }
-    const loaded = status.load >= 1;
-    const loadWidth = `${Math.round(Math.min(1, status.load) * 100)}%`;
-    if (loadWidth !== this.lastLoadWidth) {
-      this.lastLoadWidth = loadWidth;
-      this.vehicleParts.load.style.width = loadWidth;
+    // The loader, and the two rows that are it. Absent for a vehicle with no
+    // main gun — see `VehicleStatus.load` — and guarded like every other line
+    // here, because whether a hull has a gun changes on a mount and never on a
+    // frame.
+    const hasGun = status.load !== null;
+    if (hasGun !== this.lastHasGun) {
+      this.lastHasGun = hasGun;
+      this.vehicleParts.loader.forEach((row) => {
+        (row as HTMLElement).classList.toggle("hidden", !hasGun);
+      });
     }
-    if (loaded !== this.lastLoaded) {
-      this.lastLoaded = loaded;
-      this.vehicleParts.gun.textContent = loaded ? "LOADED" : "LOADING";
-      this.vehicle.classList.toggle("loading", !loaded);
+    if (status.load !== null) {
+      const loaded = status.load >= 1;
+      const loadWidth = `${Math.round(Math.min(1, status.load) * 100)}%`;
+      if (loadWidth !== this.lastLoadWidth) {
+        this.lastLoadWidth = loadWidth;
+        this.vehicleParts.load.style.width = loadWidth;
+      }
+      if (loaded !== this.lastLoaded) {
+        this.lastLoaded = loaded;
+        this.vehicleParts.gun.textContent = loaded ? "LOADED" : "LOADING";
+        this.vehicle.classList.toggle("loading", !loaded);
+      }
     }
     // Which seat, and whether the other one can be had. Guarded like every
     // other line in here — both change on a key press and neither on a frame.

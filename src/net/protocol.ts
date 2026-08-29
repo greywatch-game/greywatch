@@ -296,7 +296,7 @@ export interface GrenadeState {
  * What is deliberately NOT here is the picture: no pitch, no roll, no heave,
  * no track run, no antenna bend. Every one of those is a fact about the ground
  * the hull is standing on, and every client holds the identical collider world
- * and heightfield — so `Tank.updateRemote` derives them locally off the
+ * and heightfield — so `Vehicle.updateRemote` derives them locally off the
  * position that did arrive, which is both cheaper than sending them and more
  * stable than interpolating them. See `docs/vehicles.md`.
  */
@@ -308,11 +308,11 @@ export interface VehicleState {
    * A hull is never created or destroyed inside a round: it is live, it is a
    * wreck, or it is away being rebuilt, and the same index comes back with the
    * fresh one. That is `SlotState.index`'s bargain applied to armour, and it
-   * is what lets a client pool one `Tank` per hardstanding and never learn
+   * is what lets a client pool one `Vehicle` per hardstanding and never learn
    * that the hull it is drawing is a different one.
    */
   i: number;
-  /** Feet — where the tracks rest, matching `Tank.position`. */
+  /** Feet — where the tracks rest, matching `Vehicle.position`. */
   p: Vec3;
   /** The hull's heading, radians. */
   yaw: number;
@@ -324,7 +324,7 @@ export interface VehicleState {
    * Where the CUPOLA gun points, in WORLD radians, and its own elevation.
    *
    * Two more angles rather than a delta off `tyaw`, because that is what they
-   * ARE: `Tank` holds this gun's bearing in the world exactly as it holds the
+   * ARE: `Vehicle` holds this gun's bearing in the world exactly as it holds the
    * turret's, so that traversing one does not drag the other — which is the
    * whole of what makes the second seat a second seat. Sending a difference
    * would be re-deriving on both sides a number neither side holds.
@@ -1159,7 +1159,7 @@ export interface DeployMessage {
  * One reported hull sample, from the person actually driving it.
  *
  * **`MoveMessage` for a body that weighs sixty tonnes**, and it is the same
- * bargain for the same reason: `Tank.update` reads a `DriveInput`, ten ground
+ * bargain for the same reason: `Vehicle.update` reads a `DriveInput`, ten ground
  * probes and `moveWithCollisions` and mutates thirty fields, so replaying a
  * driver's sticks on the authority is the refactor that was declined for
  * `Player.update`. The driver simulates and reports; the server checks that
@@ -1174,7 +1174,7 @@ export interface DeployMessage {
  * `server/validate.ts`): the speed bound is the TANK's, and the ground and
  * solid checks are dropped outright. A hull legitimately stands inside the
  * obstacle field — it drives over the props a body has to walk around — and it
- * is stood on its own ten track contacts by `Tank.updateRemote` on the
+ * is stood on its own ten track contacts by `Vehicle.updateRemote` on the
  * authority's side, which is a better answer than any claim about `y` a client
  * could make.
  */
@@ -1218,7 +1218,7 @@ export interface DriveMessage {
  * travels.
  *
  * It is the same bargain the driver's is, made for the same reason: the person
- * holding the ring simulates their own gun through `Tank.aimMg`, reports where
+ * holding the ring simulates their own gun through `Vehicle.aimMg`, reports where
  * it ended up, and the authority keeps it and relays it. So the gunner has no
  * latency on their own weapon — which `docs/weapons.md`'s reticle rule
  * requires, since a marker is drawn from this axis — and everybody else is a

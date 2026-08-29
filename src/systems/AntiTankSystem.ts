@@ -25,7 +25,7 @@
  *
  * Everything cross-system leaves through callbacks wired in `Game` — this
  * system imports no other system, and in particular it has never heard of a
- * `VehicleSystem`, a `Tank` or a `Player`. It asks "is there a hostile hull
+ * `VehicleSystem`, a `Vehicle` or a `Player`. It asks "is there a hostile hull
  * within this many metres of this point" and is answered by whoever knows.
  */
 import { Mesh, Scene, Vector3 } from "@babylonjs/core";

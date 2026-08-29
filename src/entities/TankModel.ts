@@ -1,5 +1,5 @@
 /**
- * TankModel.ts — The one vehicle's mesh: ~180 boxes and cylinders merged down
+ * TankModel.ts — The TANK's mesh: ~180 boxes and cylinders merged down
  * to twenty-six, with a turret and a gun that turn, a cupola gun that turns
  * independently of both, tracks that RUN, two antennae that BEND, and the
  * charred repaint a wreck takes.
@@ -53,7 +53,7 @@
  * road wheels are not. Widen the pitch or shrink an end wheel and links appear
  * out of the air at the ends of the tracks.
  *
- * `Tank` owns how far each track has run and this file owns what that looks
+ * `Vehicle` owns how far each track has run and this file owns what that looks
  * like; `TRACK_GAUGE` is exported because splitting one hull speed into two
  * track speeds needs the distance between them, and that distance is a drawing
  * decision made here.
@@ -62,49 +62,27 @@
  *
  * A whip is the one part of a tank that is not a rigid body, and it is drawn as
  * two links so that it can BOW: the lower turns at the mast foot and the upper
- * hangs off its top, taking the leftover angle. `Tank` owns the bend for the
+ * hangs off its top, taking the leftover angle. `Vehicle` owns the bend for the
  * same reason it owns the track run — it is a consequence of the drive, and of
  * how fast the hull the mast is bolted to is leaning — and this file owns what
  * it looks like. `ANTENNA_LENGTHS` is exported on `TRACK_GAUGE`'s precedent:
  * the two lengths are a drawing decision, and the spring that bends them is
  * scaled by their ratio rather than tuned twice.
  */
-import {
-  type Material,
-  Mesh,
-  MeshBuilder,
-  Scene,
-  TransformNode,
-} from "@babylonjs/core";
+import { Scene, TransformNode } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
+import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
-
-/**
- * `[width, height, depth, x, y, z, colour, rotX?, rotY?]`, as `SoldierModel`'s
- * with one rotation added.
- *
- * **`rotY` is what a faceted turret is made of.** Everything in the first
- * version was axis-aligned, and an axis-aligned box is a slab whichever way you
- * look at it: the turret came out as a crate with a pipe in it. A plate turned
- * about Y is a cheek, and two of them meeting at the mantlet are the wedge that
- * says "turret" from the front — the same trick the glacis plays with `rotX`,
- * in the other axis.
- */
-type Box = [number, number, number, number, number, number, string, number?, number?];
-
-/**
- * `[diameter, length, x, y, z, colour, axis, diameterTop?]` — the round parts.
- *
- * **A road wheel is the reason this exists.** The first version drew them as
- * boxes, which is a bulldozer's running gear: the one silhouette cue that says
- * "tracked vehicle" is a row of DISCS, and a square wheel reads as a hatch in
- * the side of the track. A twelve-sided cylinder is forty-odd triangles
- * against a box's twelve, and both are free — this model's cost is the
- * colours it merges to, and a round wheel merges into the same mesh a square
- * one did.
- */
-type Cyl = [number, number, number, number, number, string, "x" | "y" | "z", number?];
+import {
+  inkRig,
+  paintRig,
+  segmentOf,
+  setAntennaBend,
+  type Box,
+  type Cyl,
+  type VehicleRig,
+  type Whip,
+} from "./vehicleRig";
 
 /**
  * What one side's armour is PAINTED in — the same three-way read the soldier
@@ -167,14 +145,6 @@ const KITS: readonly TankKit[] = [
   },
 ];
 
-/**
- * What a destroyed hull is repainted in. One colour for the whole vehicle —
- * a wreck has no team, which is the point of it not keeping its accent: the
- * thing standing in the street after the fire is cover, and cover belongs to
- * whoever is behind it.
- */
-const CHARRED = "#221f1c";
-
 /** The gun barrel's length, which the muzzle node sits at the end of. */
 const BARREL_LENGTH = 4.4;
 
@@ -204,7 +174,7 @@ const ROAD_R = 0.34;
  * Exported on `TRACK_GAUGE`'s precedent, and it is NOT `TRACK_REACH`: the
  * suspension's travel is bounded at the wheel STATIONS rather than at the ends
  * of the belt, because a bump stop is something a road-wheel arm reaches and
- * the sprocket and the idler have no arms at all. `Tank` cannot say how far
+ * the sprocket and the idler have no arms at all. `Vehicle` cannot say how far
  * the body may tilt without knowing where the outermost wheel is, and where it
  * is is a drawing decision made here.
  */
@@ -240,7 +210,7 @@ const END_Z = CONFIG.vehicles.tank.hull.length / 2 - 0.6;
  * the sprocket at one end and the idler at the other, which is where a track
  * stops touching anything.
  *
- * Exported on `TRACK_GAUGE`'s precedent and for the same reason: `Tank` stands
+ * Exported on `TRACK_GAUGE`'s precedent and for the same reason: `Vehicle` stands
  * the hull on six TRACK CONTACTS and cannot place them without knowing where
  * the tracks are, and where they are is a drawing decision made here. Using
  * the collider's own half-length instead would sample 0.6 m past the end of
@@ -252,7 +222,7 @@ export const TRACK_REACH = END_Z;
 /**
  * The distance between the two tracks' centrelines.
  *
- * Exported because `Tank` splits one hull speed into two track speeds and
+ * Exported because `Vehicle` splits one hull speed into two track speeds and
  * cannot do it without this — a hull turning at `w` rad/s runs its outer track
  * `w * TRACK_GAUGE / 2` faster than its inner one, which is the whole of why a
  * tank pivoting on the spot has its tracks going opposite ways. It is a
@@ -265,29 +235,13 @@ export const TRACK_GAUGE = TRACK_X * 2;
  * The two whip antennae's lengths in metres, the long one first.
  *
  * Exported for the same reason `TRACK_GAUGE` is: it is a DRAWING decision made
- * here (the masts could be any length), and `Tank` cannot bend them without it.
+ * here (the masts could be any length), and `Vehicle` cannot bend them without it.
  * A cantilever's natural frequency goes as 1/L^2, so the ratio between these
  * two numbers is the whole of why the pair never swing in step — one config
  * spring is scaled by it rather than the short mast being given figures of its
  * own. See `CONFIG.vehicles.tank.antenna`.
  */
 export const ANTENNA_LENGTHS = [1.5, 1.2] as const;
-
-/**
- * One whip antenna, drawn as two links because a rigid rod cannot bow.
- *
- * The lower link turns at the mast foot and the upper hangs off its top, so the
- * pair describe a CURVE rather than a lever — which is the whole read, and the
- * reason four meshes were spent on the only parts of this vehicle that are not
- * rigid. `Tank` owns how far each is bent and `setAntennaBend` is what that
- * looks like, exactly the split `trackRun`/`setTrackRun` has.
- */
-interface Whip {
-  /** Turns at the mast foot. Takes `antenna.baseShare` of the bend. */
-  base: TransformNode;
-  /** Hangs off the base's top and finishes the bow, LAGGING behind it. */
-  tip: TransformNode;
-}
 
 /** One side's moving parts: the two link strips and the toothed sprocket. */
 interface TrackSide {
@@ -297,75 +251,6 @@ interface TrackSide {
   upper: TransformNode;
   /** Turns at `run / END_R`. The one wheel whose rotation can be seen. */
   sprocket: TransformNode;
-}
-
-/**
- * A built tank: the nodes that move, the meshes that draw, and what to repaint
- * them with when it burns.
- */
-export interface TankRig {
-  /** Positioned and yawed by `Tank`. Nothing else may write it. */
-  root: TransformNode;
-  /**
-   * The lean onto the GROUND, and nothing else. Separate from `root` because
-   * the pitch and roll are a picture and the yaw is a rule: the collider box
-   * never tilts, so anything reading the hull's heading reads `root` and gets
-   * an angle that has no suspension in it.
-   *
-   * The RUNNING GEAR hangs off this and not off `sprung`: a track lies on the
-   * ground its contacts found, and the body is what moves against it. **That
-   * is why the SUSPENSION's lean is not written here** — a weight-transfer
-   * pitch on this node rotates the tracks with it and drives one end of the
-   * vehicle under the road. See `sprung`.
-   */
-  hull: TransformNode;
-  /**
-   * The sprung mass — the tub, the sponson, the stowage, the marking and the
-   * whole turret with the gun and the masts on it. **Everything the springs
-   * carry, and therefore everything the springs may move**: `Tank.flexHeave`
-   * writes its Y and `Tank.flexSuspension` writes its pitch and roll, all
-   * three in the frame of the `hull` node it hangs off — so a compressing body
-   * compresses along its OWN up axis rather than the world's, and a body
-   * diving on a slope dives relative to the slope.
-   *
-   * Splitting it off the running gear is the whole of what makes the travel
-   * visible, and it is the same split a real tracked vehicle is built on: the
-   * road wheels are the unsprung mass and each has its own travel, while the
-   * hull rides above them on the bars. A body that took its tracks down with
-   * it would drive them through the road on every landing and bury its nose on
-   * every stop; a body that moves against tracks lying still on the ground is
-   * a tank settling onto its torsion bars, and the fender lip closing on the
-   * belt is where the eye reads it.
-   */
-  sprung: TransformNode;
-  /** Traverses. Local yaw, relative to the hull. */
-  turret: TransformNode;
-  /** Elevates. Local pitch, relative to the turret. */
-  gun: TransformNode;
-  /** The barrel's tip: where a shell leaves and where its flash is lit. */
-  muzzle: TransformNode;
-  /**
-   * The commander's gun on its cupola ring: the mount TRAVERSES (local yaw,
-   * relative to the turret it is bolted to) and the gun ELEVATES on it.
-   *
-   * **The turret is the parent and the angle held is a WORLD one anyway**,
-   * which is the whole of what makes the second seat a second seat: `Tank`
-   * holds `mgYaw` in the world exactly as it holds `turretYaw`, and writes the
-   * DIFFERENCE here — so a turret traversing under a gunner who is not
-   * touching anything leaves his gun laid where he laid it.
-   */
-  mgMount: TransformNode;
-  mgGun: TransformNode;
-  /** Where a machine-gun round leaves, and where its flash is lit. */
-  mgMuzzle: TransformNode;
-  /** `[left, right]` — the side at -x first, the order `Tank` runs them in. */
-  tracks: readonly [TrackSide, TrackSide];
-  /** The two masts, long one first — the order `ANTENNA_LENGTHS` is in. */
-  antennae: readonly [Whip, Whip];
-  /** Every drawn mesh, for the repaint and for whoever needs the list. */
-  meshes: Mesh[];
-  /** What each of `meshes` was painted with when it was built. */
-  livery: Material[];
 }
 
 /**
@@ -380,7 +265,7 @@ export function buildTank(
   scene: Scene,
   mats: CelMaterialFactory,
   team: Team,
-): TankRig {
+): VehicleRig {
   const kit = KITS[team];
   const t = CONFIG.vehicles.tank;
   // The drawn hull is built to the collider's own extents rather than to
@@ -394,76 +279,11 @@ export function buildTank(
   const hull = new TransformNode("tank-hull", scene);
   hull.parent = root;
   // Everything the springs carry, which is everything except the running gear.
-  // See `TankRig.sprung`.
+  // See `VehicleRig.sprung`.
   const sprung = new TransformNode("tank-sprung", scene);
   sprung.parent = hull;
 
-  const meshes: Mesh[] = [];
-  const livery: Material[] = [];
-
-  /**
-   * Builds a list of parts, merges them per colour, and parents the result.
-   *
-   * The two lists are one segment: a cylinder in a colour the boxes beside it
-   * already carry merges into their mesh and costs nothing, which is why the
-   * wheels' hub caps sit in the wheel segment and the barrel sits with the
-   * mantlet.
-   */
-  const segment = (
-    name: string,
-    parent: TransformNode,
-    boxes: Box[],
-    cyls: Cyl[] = [],
-  ): void => {
-    const parts: Mesh[] = [];
-    for (let i = 0; i < boxes.length; i++) {
-      const [w, h, d, x, y, z, color, rotX = 0, rotY = 0] = boxes[i];
-      const m = MeshBuilder.CreateBox(
-        `${name}${i}`,
-        { width: w, height: h, depth: d },
-        scene,
-      );
-      m.position.set(x, y, z);
-      m.rotation.x = rotX;
-      m.rotation.y = rotY;
-      m.material = mats.get(color);
-      parts.push(m);
-    }
-    for (let i = 0; i < cyls.length; i++) {
-      const [dia, len, x, y, z, color, axis, diaTop = dia] = cyls[i];
-      // Facet count by SIZE, so a hub cap is not paying for a road wheel's
-      // silhouette. The cel shader flat-shades from screen-space derivatives,
-      // so what a facet costs is an edge the light bands break on — and at
-      // 20 cm there is no such edge to see.
-      const m = MeshBuilder.CreateCylinder(
-        `${name}c${i}`,
-        {
-          height: len,
-          diameterTop: diaTop,
-          diameterBottom: dia,
-          tessellation: dia >= 0.5 ? 12 : 8,
-        },
-        scene,
-      );
-      // Babylon builds a cylinder along +Y; these two put it along the axis
-      // asked for. Same convention as `weaponKit`'s tube/pin.
-      if (axis === "x") m.rotation.z = Math.PI / 2;
-      else if (axis === "z") m.rotation.x = Math.PI / 2;
-      m.position.set(x, y, z);
-      m.material = mats.get(color);
-      parts.push(m);
-    }
-    for (const merged of mergeByColor(parts, name)) {
-      merged.parent = parent;
-      // The collider box is the only pickable thing a tank has — see `Tank`.
-      // A pickable visual would put the hitscan's wall ray, the bots' LOS and
-      // the ground probe on sixty triangles of track link.
-      merged.isPickable = false;
-      merged.checkCollisions = false;
-      meshes.push(merged);
-      livery.push(merged.material!);
-    }
-  };
+  const { meshes, livery, segment } = segmentOf(scene, mats);
 
   // --- the band: two flat runs, closed at each end by a wheel ---------------
   //
@@ -486,8 +306,8 @@ export function buildTank(
   // reads as tracked.** Built in the track's own dark grey they were invisible:
   // a wheel inside a band of the same value has no edge to see, and the
   // vehicle came out with a black slab where its running gear should be. One
-  // extra colour on this segment is one more mesh and one more outline pass on
-  // the two hulls that exist, which is the cheapest thing in this file.
+  // extra colour on this segment is one more mesh and one more outline pass per
+  // hull on the field, which is the cheapest thing in this file.
   //
   // Proud of the band by 7 cm a side, for the same reason: flush, they are
   // inside its silhouette and cannot be seen at all.
@@ -823,7 +643,19 @@ export function buildTank(
     segment(`tank-whip${i}-hi`, tip, [], [
       [0.042, len / 2, 0, len / 4, 0, kit.stow, "y", 0.028],
     ]);
-    return { base, tip };
+    // A cantilever's natural frequency goes as 1/L^2, so the short mast is
+    // stiffer than the long one by the square of the length ratio and nothing
+    // about it is tuned separately: one config spring is scaled by this. The
+    // pair come out 2.4 Hz and 3.8 Hz, which is why two masts on one turret
+    // never swing in step — and a pair that DID would read as one animation
+    // playing twice. The phases are arbitrary and exist for the same reason,
+    // one layer down: the gust is one gust.
+    return {
+      base,
+      tip,
+      rate: (ANTENNA_LENGTHS[0] / len) ** 2,
+      phase: i * 2.1,
+    };
   };
   // Set against the mast feet above, and staggered in Z as well as X: two masts
   // at the same station are a pair of goalposts.
@@ -860,13 +692,24 @@ export function buildTank(
   // fired from here starts outside the hull's own collider box.
   muzzle.position.set(0, 0, 0.45 + BARREL_LENGTH + 0.2);
 
-  for (const m of meshes) addOutline(m, 0.02);
+  inkRig(meshes);
 
-  return {
+  const rig: VehicleRig = {
     root, hull, sprung, turret, gun, muzzle,
     mgMount, mgGun, mgMuzzle,
-    tracks, antennae, meshes, livery,
+    antennae, meshes, livery,
+    // The three extents `Vehicle` cannot get anywhere else — see
+    // `VehicleRig.gauge`. All three are drawing decisions made in this file,
+    // which is why they are stated here rather than exported as constants a
+    // physics file would have to import from a model.
+    gauge: TRACK_GAUGE,
+    contactReach: TRACK_REACH,
+    wheelReach: WHEEL_REACH,
+    setRun: (left, right, _steer) => setTrackRun(tracks, left, right),
+    reset: () => resetTankPose(rig, mats),
+    paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
   };
+  return rig;
 }
 
 /**
@@ -874,7 +717,7 @@ export function buildTank(
  *
  * The two figures are per TRACK and not per hull: a tank pivoting on the spot
  * has one of them positive and the other negative, which is the read that says
- * "tracks" rather than "wheels". `Tank` owns them — how far a track has run is
+ * "tracks" rather than "wheels". `Vehicle` owns them — how far a track has run is
  * a consequence of the drive — and everything below is the picture.
  *
  * **The strips are slid modulo the pitch and the sprocket is turned modulo a
@@ -884,10 +727,14 @@ export function buildTank(
  * backwards would otherwise slide the strip the wrong side of zero — a seam
  * in the open on every hull that has reversed.
  */
-export function setTrackRun(rig: TankRig, left: number, right: number): void {
+function setTrackRun(
+  tracks: readonly [TrackSide, TrackSide],
+  left: number,
+  right: number,
+): void {
   for (let i = 0; i < 2; i++) {
     const run = i === 0 ? left : right;
-    const side = rig.tracks[i];
+    const side = tracks[i];
     const phase = ((run % LINK_PITCH) + LINK_PITCH) % LINK_PITCH;
     // Under a hull going forwards the ground run goes backwards and the return
     // run goes forwards, at the same speed. That opposition is most of why a
@@ -899,100 +746,21 @@ export function setTrackRun(rig: TankRig, left: number, right: number): void {
 }
 
 /**
- * Bends one whip: the bow the spring is holding, and the lagged angle the tip
- * has actually reached.
- *
- * The two links are given the bend the way a cantilever takes one. `base` gets
- * the share nearest the root, where a real mast's curvature is greatest, and
- * the tip link is handed **what is left over** — `tip` minus what the base has
- * already contributed, because these are nested nodes and a child's rotation is
- * relative to its parent's. That subtraction is the whole trick: `Tank` hands
- * in a tip angle that LAGS the base's, so while the whip is moving the leftover
- * is negative and the upper link bends back against the lower one into an S,
- * and when it settles the two agree and it reads as one smooth bow.
- *
- * Both angles are small and Babylon composes euler rotations in YXZ, so the two
- * axes cross-couple slightly at the extremes. That is a picture on a picture:
- * nothing aims, walks or is picked against a mast.
- */
-export function setAntennaBend(
-  rig: TankRig,
-  i: number,
-  bendX: number,
-  bendZ: number,
-  tipX: number,
-  tipZ: number,
-): void {
-  const share = CONFIG.vehicles.tank.antenna.baseShare;
-  const w = rig.antennae[i];
-  const baseX = bendX * share;
-  const baseZ = bendZ * share;
-  w.base.rotation.x = baseX;
-  w.base.rotation.z = baseZ;
-  w.tip.rotation.x = tipX - baseX;
-  w.tip.rotation.z = tipZ - baseZ;
-}
-
-/**
  * Puts a rig back to how it was built — every joint at rest, the tracks back at
  * the start of their loop and the paint back on. What a hull goes through on
  * the respawn timer, and the whole reason a destroyed tank is repainted rather
  * than replaced.
  */
-export function resetTankPose(rig: TankRig, mats: CelMaterialFactory): void {
+function resetTankPose(rig: VehicleRig, mats: CelMaterialFactory): void {
   rig.hull.rotation.set(0, 0, 0);
   rig.sprung.position.y = 0;
   rig.sprung.rotation.set(0, 0, 0);
   rig.turret.rotation.set(0, 0, 0);
-  rig.gun.rotation.set(0, 0, 0);
+  rig.gun?.rotation.set(0, 0, 0);
   rig.mgMount.rotation.set(0, 0, 0);
   rig.mgGun.rotation.set(0, 0, 0);
-  setTrackRun(rig, 0, 0);
-  setAntennaBend(rig, 0, 0, 0, 0, 0);
-  setAntennaBend(rig, 1, 0, 0, 0, 0);
-  paintTank(rig, mats, false);
-}
-
-/**
- * Swaps the whole vehicle to the charred palette, or back to its livery.
- *
- * The outline ink is deliberately NOT re-derived. `addOutline` reads the
- * material's cel colour once, at registration, and re-inking a wreck would mean
- * either re-registering twenty meshes or reaching into the outline registry —
- * for a difference of a few per cent of one channel on a mesh that is already
- * nearly black. See `CelShader.outlineInkFor`.
- */
-export function paintTank(
-  rig: TankRig,
-  mats: CelMaterialFactory,
-  wrecked: boolean,
-): void {
-  const charred = wrecked ? mats.get(CHARRED) : null;
-  for (let i = 0; i < rig.meshes.length; i++) {
-    rig.meshes[i].material = charred ?? rig.livery[i];
-  }
-}
-
-/** Merges a segment's parts into one mesh per colour, at identity. */
-function mergeByColor(parts: Mesh[], name: string): Mesh[] {
-  const groups = new Map<unknown, Mesh[]>();
-  for (const m of parts) {
-    const key = m.material;
-    const g = groups.get(key);
-    if (g) g.push(m);
-    else groups.set(key, [m]);
-  }
-  const out: Mesh[] = [];
-  for (const group of groups.values()) {
-    const mat = group[0].material;
-    const merged =
-      group.length === 1
-        ? group[0]
-        : Mesh.MergeMeshes(group, true, true, undefined, false, false);
-    if (!merged) continue;
-    merged.name = name;
-    merged.material = mat;
-    out.push(merged as Mesh);
-  }
-  return out;
+  rig.setRun(0, 0, 0);
+  const share = CONFIG.vehicles.tank.antenna.baseShare;
+  for (const w of rig.antennae) setAntennaBend(w, share, 0, 0, 0, 0);
+  paintRig(rig.meshes, rig.livery, mats, false);
 }

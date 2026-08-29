@@ -61,6 +61,23 @@ const FLAT_REPORT: ReportVoice = CONFIG.weapons.rifle.report;
 const HULL_ENGINE_LEVEL = 2.2;
 
 /**
+ * What one KIND of engine is, against the tank's own voice — see
+ * `VehicleSpec.engine`, which is where the two numbers live and carries the
+ * argument for each.
+ *
+ * Restated as a type here rather than imported from the config, because this
+ * file is HANDED one by whoever owns the vehicle and has no business reaching
+ * for a vehicle's block. It is the same bargain `ReportVoice` makes for a
+ * weapon: the caller says what it is, and this file says what that sounds like.
+ */
+export interface EngineKind {
+  /** A multiplier on the firing rate every pitched layer is a multiple of. */
+  revMult: number;
+  /** How much link clatter the voice carries. A tank is 1, a wheeled vehicle 0. */
+  clatter: number;
+}
+
+/**
  * The nodes of the tank engine — the one sustained voice in this file, held
  * open between a mount and a dismount.
  *
@@ -76,6 +93,16 @@ const HULL_ENGINE_LEVEL = 2.2;
  * again.
  */
 interface EngineVoice {
+  /**
+   * What KIND of engine this is — the two numbers `VehicleSpec.engine` states,
+   * held on the voice rather than passed per frame.
+   *
+   * Held, because `driveEngine` runs every frame for every hull in earshot and
+   * what a machine IS does not change between them: a graph is built once for
+   * one vehicle and the thing that varies frame to frame is how hard it is
+   * being worked.
+   */
+  kind: EngineKind;
   /** Everything started, for the one loop that stops it all. */
   sources: AudioScheduledSourceNode[];
   /** The output tap: the engine's level, and what takes it off the bus. */
@@ -970,9 +997,9 @@ export class Sfx {
    * the vehicle you are sitting in, the same reason the player's own report is
    * exempt.
    */
-  engineOn(): void {
+  engineOn(kind: EngineKind): void {
     if (this.engine) return;
-    const voice = this.buildEngine(null);
+    const voice = this.buildEngine(null, kind);
     if (!voice) return;
     this.engine = voice;
 
@@ -1034,7 +1061,10 @@ export class Sfx {
    * three, and it is lowpassed hard enough that the seam is not a thing an ear
    * can find.
    */
-  private buildEngine(panner: PannerNode | null): EngineVoice | null {
+  private buildEngine(
+    panner: PannerNode | null,
+    kind: EngineKind,
+  ): EngineVoice | null {
     const ctx = this.ctx;
     if (!ctx || !this.master || !this.noiseBuffer) return null;
     try {
@@ -1199,7 +1229,7 @@ export class Sfx {
       ];
       for (const s of sources) s.start();
       return {
-        sources, out, panner, fire, growl, chest, turbo: [turboA, turboB],
+        kind, sources, out, panner, fire, growl, chest, turbo: [turboA, turboB],
         chugTone, growlTone, turboTone, turboLevel, trackLevel,
       };
     } catch {
@@ -1255,7 +1285,14 @@ export class Sfx {
     // engine changes note as one machine. 13 Hz is a lope you can count and 32
     // is a diesel working; a real V12's firing rate is far above both, and
     // taking it there trades the lump this voice is built on for a buzz.
-    const fire = 13 + 19 * rev;
+    //
+    // **`revMult` is the one thing a KIND changes about the note**, and it is a
+    // multiplier on this rather than on each layer below: every pitched layer
+    // is a multiple of the firing rate, so scaling it here revs the whole
+    // engine as one machine. A petrol truck at 1.55 idles where the tank's
+    // diesel is working, which is the whole of what tells the two apart from
+    // the next street.
+    const fire = (13 + 19 * rev) * e.kind.revMult;
     e.fire.frequency.setTargetAtTime(fire, t, 0.14);
     e.growl.frequency.setTargetAtTime(fire * 2, t, 0.12);
     e.chest.frequency.setTargetAtTime(fire * 5, t, 0.12);
@@ -1281,7 +1318,15 @@ export class Sfx {
     e.turbo[1].frequency.setTargetAtTime(hz, t, 0.6);
     e.turboTone.frequency.setTargetAtTime(hz, t, 0.6);
     e.turboLevel.gain.setTargetAtTime(0.007 + 0.055 * spool, t, 0.55);
-    e.trackLevel.gain.setTargetAtTime(0.006 + 0.045 * speed, t, 0.12);
+    // …and `clatter` is the other, and it is not a level to be balanced: it is
+    // whether this thing runs on BELTS. At 0 the layer is silent and a wheeled
+    // vehicle is a wheeled vehicle; anything above 0 under one is a tank
+    // arriving that nobody can see.
+    e.trackLevel.gain.setTargetAtTime(
+      (0.006 + 0.045 * speed) * e.kind.clatter,
+      t,
+      0.12,
+    );
   }
 
   /**
@@ -1327,7 +1372,13 @@ export class Sfx {
    * source actually does, and it is what makes an engine GROW as the thing
    * arrives.
    */
-  hullEngine(key: number, at: Vector3, load: number, speed: number): void {
+  hullEngine(
+    key: number,
+    at: Vector3,
+    load: number,
+    speed: number,
+    kind: EngineKind,
+  ): void {
     const ctx = this.ctx;
     const master = this.master;
     if (!ctx || !master) return;
@@ -1349,7 +1400,7 @@ export class Sfx {
       panner.refDistance = CONFIG.audio.refDistance;
       panner.rolloffFactor = 1;
       panner.connect(master);
-      const built = this.buildEngine(panner);
+      const built = this.buildEngine(panner, kind);
       if (!built) {
         panner.disconnect();
         return;

@@ -6,7 +6,7 @@
  * the overlapping position if the pushed-clear one isn't walkable; frozen is
  * worse than clipping. HEADROOM and CONFIG.nav.stepHeight must stay in sync
  * with NavGrid, and are the DEFAULT band rather than the only one — a hull
- * passes its own (`Tank.freeFromWalls`). The oversize boxes a map's rim is made
+ * passes its own (`Vehicle.freeFromWalls`). The oversize boxes a map's rim is made
  * of are kept out of the buckets and walked by `resolve` alone; do not delete
  * that list to tidy the constructor, and do not let `groundAt` or `wallAt` see
  * it — see `oversize` and `resolve` for both halves of why. Height tests use box planes and the box frame is entered
@@ -117,7 +117,7 @@ export class ObstacleField {
       // that is what this test is really about. But `resolve` is the one
       // reader that asks what it is INSIDE rather than what it is standing on,
       // and a rim slab is something a hull can be inside — measured as the
-      // whole of the residual after `Tank.freeFromWalls` landed, 445 of 451
+      // whole of the residual after `Vehicle.freeFromWalls` landed, 445 of 451
       // frames. So they go on a list this size can be walked linearly.
       if (box.w > 200 || box.d > 200) {
         this.oversize.push(box);
@@ -217,7 +217,7 @@ export class ObstacleField {
    * the nav graph's extents settle it for a body and the leash settles it for
    * a hull. This one asks what a thing is INSIDE, and a boundary slab is
    * something a seven-metre vehicle can end up inside; leaving it out was the
-   * whole of what `Tank.freeFromWalls` could not eject from. See `oversize`.
+   * whole of what `Vehicle.freeFromWalls` could not eject from. See `oversize`.
    */
   resolve(
     x: number,
@@ -265,7 +265,7 @@ export class ObstacleField {
    * The highest collider top face directly above `floor` and at or below
    * `ceiling` at `(x, z)`, or null when no box spans that band here.
    *
-   * **TWO THINGS CALL THIS AND BOTH STAND ON IT.** `Tank.supportAt` asks it ten
+   * **TWO THINGS CALL THIS AND BOTH STAND ON IT.** `Vehicle.supportAt` asks it ten
    * times a frame, once per track contact, which is what lets a hull stand on a
    * PLANK rather than on a single point and therefore what lets a tank drive
    * over a parked car. `Player.probeGround` asks it once, and that call is the

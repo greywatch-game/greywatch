@@ -1,14 +1,21 @@
 /**
- * config/vehicles.ts — the one vehicle in the game: what it is made of, how it
- * drives, what its gun does, and how little of a rifle round it feels.
- * Owns: every tunable a tank reads. The BOXES it is drawn from are art and stay
- * in `entities/TankModel.ts`; the extents below are not art — `hull` is the
- * collider a body walks into and a round stops on, and `hitRadius` is the
- * sphere every shot is tested against, so both are rules.
+ * config/vehicles.ts — the KINDS of vehicle in the game: what each is made of,
+ * how it drives, what its guns do, and how much of a rifle round it feels.
+ * Owns: `VehicleSpec` (the shape of one kind) and every tunable a hull reads,
+ * plus the fleet-wide figures above both — the enter radius, the exit offset,
+ * the respawn and wreck clocks, and what an AI crew is allowed to do.
+ * The BOXES a vehicle is drawn from are art and stay in its own model file
+ * (`entities/TankModel.ts`, `entities/TruckModel.ts`); the extents below are
+ * not art — `hull` is the collider a body walks into and a round stops on, and
+ * `hitRadius` is the sphere every shot is tested against, so both are rules.
+ *
+ * **The two kinds are married to their models in `entities/vehicleKinds.ts`**,
+ * which is the only place that knows both halves. Nothing here decides which
+ * kind a hardstanding holds and nothing here has heard of a mesh.
  *
  * **`resist` is where "what a hull is afraid of" is WRITTEN DOWN rather than
  * left as a property of the numbers elsewhere.** A tank takes every kind of
- * damage through one door (`Tank.takeDamage`) and scales it by the kind that
+ * damage through one door (`Vehicle.takeDamage`) and scales it by the kind that
  * arrived, which is what let the anti-tank kit arrive as `shell`-kind ordnance
  * (`CONFIG.equipment`) without a figure here moving. What the small-arms figure
  * buys is that the destruction and the respawn stay REACHABLE for a team with
@@ -19,6 +26,181 @@
  * Gotcha: `camera.distance` is measured from the hull's CENTRE, not its back,
  * so it has to clear half the hull's length before it clears the hull at all.
  */
+
+/**
+ * The shape of ONE KIND of vehicle, and the reason there is an interface here
+ * at all rather than a `typeof vehicles.tank`.
+ *
+ * **`CONFIG` is `as const`, so every number in it has a LITERAL type** — a
+ * second kind whose top speed is 18 is not assignable to a shape that says
+ * `11`. This is what `entities/Vehicle.ts` is actually parameterised by, and
+ * both blocks below satisfy it; a kind is married to the model that draws it
+ * in `entities/vehicleKinds.ts`, which is the only place the pair meet.
+ *
+ * **A vehicle with no main gun is `gun: null`, and that is the ONE optional
+ * thing about a kind.** It is one nullable field rather than two because the
+ * mount and the round are one weapon: `turret` nests inside it, so a hull with
+ * nothing to traverse cannot be handed a traverse rate by accident. Nothing
+ * downstream reads the field — `Vehicle.armed` is the question, and it is what
+ * the loader row on the HUD, the crew's lay-and-fire, the gun marker and the
+ * authority's rate gate all ask.
+ */
+export interface VehicleSpec {
+  readonly maxHealth: number;
+  /**
+   * `Hittable.hitRadius`, which a hull has to declare and which nothing reads
+   * any more — a round is tested against the COLLIDER. See the tank's own note.
+   */
+  readonly hitRadius: number;
+  /** The collider box, and therefore the vehicle's whole physical presence. */
+  readonly hull: {
+    readonly length: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  /** Where the commander stands: what bots test LOS to and aim at. */
+  readonly cupolaHeight: number;
+  readonly drive: {
+    readonly maxSpeed: number;
+    readonly reverseSpeed: number;
+    readonly accel: number;
+    readonly brake: number;
+    readonly turnRate: number;
+    readonly turnAtSpeed: number;
+    readonly tiltRate: number;
+    readonly airTiltRate: number;
+    readonly tiltLimit: number;
+    readonly collideRadius: number;
+    readonly gravity: number;
+    readonly climbHeight: number;
+    readonly climbSlope: number;
+    readonly climbFloor: number;
+    readonly climbDrag: number;
+    readonly launchSpeed: number;
+    readonly probeLength: number;
+    readonly freeRate: number;
+  };
+  readonly suspension: {
+    readonly pitchPerAccel: number;
+    readonly rollPerAccel: number;
+    readonly accelLimit: number;
+    readonly stiffness: number;
+    readonly damping: number;
+    readonly gunKick: number;
+    readonly heaveResponse: number;
+    readonly heaveStiffness: number;
+    readonly heaveDamping: number;
+    readonly joltLimit: number;
+    readonly heaveBump: number;
+    readonly heaveDroop: number;
+  };
+  readonly antenna: {
+    readonly swayPerAccel: number;
+    readonly lagPerRate: number;
+    readonly stiffness: number;
+    readonly damping: number;
+    readonly bendLimit: number;
+    readonly baseShare: number;
+    readonly lagRate: number;
+    readonly wind: { readonly sway: number; readonly speed: number };
+    readonly gunKick: number;
+  };
+  /** The main gun, its mount and its round — or null on a vehicle that has none. */
+  readonly gun: {
+    readonly turret: AxisSpec;
+    readonly damage: number;
+    readonly range: number;
+    readonly cooldown: number;
+    readonly blastRadius: number;
+    readonly blastInner: number;
+    readonly blastDamage: number;
+    readonly blastPower: number;
+    readonly recoilSpeed: number;
+    readonly cameraKick: number;
+  } | null;
+  /**
+   * The machine gun the SECOND seat lays. Every kind has one, because that is
+   * what the second seat IS.
+   */
+  readonly mg: AxisSpec & {
+    readonly damage: number;
+    readonly damageFar: number;
+    readonly falloffNear: number;
+    readonly falloffFar: number;
+    readonly range: number;
+    readonly fireRate: number;
+    readonly spread: number;
+    readonly cameraKick: number;
+    /** `ReportVoice`, stated structurally: `config/` may not import an entity. */
+    readonly report: {
+      readonly pitch: number;
+      readonly level: number;
+      readonly snap: number;
+      readonly weight: number;
+      readonly length: number;
+      readonly tail: number;
+      readonly actionPitch: number;
+      readonly actionVol: number;
+    };
+  };
+  readonly resist: {
+    readonly bullet: number;
+    readonly blast: number;
+    readonly shell: number;
+  };
+  readonly crush: { readonly damage: number; readonly minSpeed: number };
+  readonly camera: {
+    readonly distance: number;
+    readonly anchorHeight: number;
+    readonly restPitch: number;
+    readonly pitchMin: number;
+    readonly pitchMax: number;
+    readonly lookMult: number;
+    readonly wallMargin: number;
+    readonly minDistance: number;
+  };
+  /**
+   * What this kind SOUNDS like, as two numbers against the tank's own voice.
+   *
+   * `Sfx.buildEngine` is one graph and one description of what a diesel is, and
+   * these are the only two things about it that belong to a KIND rather than to
+   * an engine. Stated the way a weapon's `report` is: a field per way this
+   * differs, with the reference at 1.
+   */
+  readonly engine: {
+    /**
+     * A multiplier on the firing rate every pitched layer is a multiple of, so
+     * a lighter engine revs higher as one machine rather than as four layers
+     * each nudged separately.
+     */
+    readonly revMult: number;
+    /**
+     * How much LINK CLATTER the voice carries — the tank as 1, a wheeled
+     * vehicle as 0. Not a level to be balanced by ear: it is whether this
+     * thing runs on belts, and a truck with track noise under it is a tank
+     * you cannot see.
+     */
+    readonly clatter: number;
+  };
+}
+
+/**
+ * One powered MOUNT — how fast it traverses and elevates, how fast those rates
+ * may change, how the last degree of a lay is closed, and where the gun stops.
+ *
+ * Shared by the turret and the cupola ring because they are the same seven
+ * questions asked of two masses; the ANSWERS are an order of magnitude apart
+ * and that gap is the whole of the difference between them.
+ */
+export interface AxisSpec {
+  readonly traverseRate: number;
+  readonly elevationRate: number;
+  readonly traverseAccel: number;
+  readonly elevationAccel: number;
+  readonly settleTime: number;
+  readonly pitchMin: number;
+  readonly pitchMax: number;
+}
 
 export const vehicles = {
   /**
@@ -74,14 +256,28 @@ export const vehicles = {
   crew: {
     /**
      * How near a hardstanding a bot has to be to take the seat, from the hull
-     * centre. Generous, and it is generous on purpose: a bot is never given
-     * the tank as a DESTINATION — no flow field leads to one and a hull is not
+     * centre. Generous, and it is generous on purpose: a bot is never given a
+     * vehicle as a DESTINATION — no flow field leads to one and a hull is not
      * an objective — so the crew is drawn from whoever happens to walk past.
      * Coldharbour puts its two hardstandings in the same corner yards as the
      * home spawns, which is what makes that work: every reinforcement walks
      * out through this circle.
+     *
+     * **It was 18 and a second hardstanding per yard is what moved it.** Three
+     * infantry spawns twelve metres apart with a tank sitting among them leave
+     * nowhere for a SECOND pad that is both eight metres clear of every spawn
+     * and inside eighteen of more than one of them — so Sarab's trucks stood
+     * on their pads for a whole round while the tanks drove two hundred metres,
+     * measured, with the sweep catching a passing bot about once in five
+     * attempts. At 24 a yard with two vehicles in it is one circle again.
+     *
+     * What it costs is that a crewman can be taken from further away, and the
+     * sweep has never had a sightline test — a bot 24 m off behind a wall is a
+     * bot that vanishes into a hull. That was already true at 18 and is the
+     * accepted shape of "whoever walks past"; six more metres makes it a
+     * little more visible and buys a vehicle that is actually used.
      */
-    boardRadius: 18,
+    boardRadius: 24,
     /**
      * Seconds between one hull's boarding attempts. A slow clock, because the
      * question is a sweep over the roster and the answer only changes when
@@ -211,8 +407,8 @@ export const vehicles = {
      * How hard the hull steers while it backs out, as a fraction of full
      * stick. The SIDE is fixed per crew and split by team rather than drawn,
      * so a hull that has backed off a wall always shoulders the same way round
-     * it instead of oscillating — and the two hulls on a map do not both pick
-     * the same way out of the same street.
+     * it instead of oscillating — and two hulls meeting in the same street do
+     * not both pick the same way out of it.
      */
     reverseSteer: 0.7,
     /**
@@ -271,7 +467,7 @@ export const vehicles = {
      * The collider box, and therefore the tank's whole physical presence: what
      * a body walks into, what a round stops on, what a sightline is broken by,
      * and what a player can climb onto. There is no second, finer shape — see
-     * `Tank`'s header on why a vehicle gets one box and not a hierarchy.
+     * `Vehicle`'s header on why a vehicle gets one box and not a hierarchy.
      */
     hull: {
       length: 7.2,
@@ -360,7 +556,7 @@ export const vehicles = {
        *
        * **The sphere rides at the LEADING END, not at the middle**, offset by
        * `hull.length / 2 - collideRadius` along whichever way the hull is
-       * travelling (`Tank.aimCollider`). A circle of this radius parked on the
+       * travelling (`Vehicle.aimCollider`). A circle of this radius parked on the
        * hull's centre stops the tank when its CENTRE is 2.2 m off a wall, which
        * leaves 1.4 m of nose inside the shopfront — the single most-reported
        * thing about driving one. Moved forward by that same 1.4, the sphere's
@@ -400,7 +596,7 @@ export const vehicles = {
        *   `moveWithCollisions` has no notion of climbing and slides along a
        *   vertical face whatever its height, so without the lift a tank is
        *   stopped dead by a 0.3 m kerb.
-       * - Vertically it is the ceiling of the band `Tank.supportAt` will accept
+       * - Vertically it is the ceiling of the band `Vehicle.supportAt` will accept
        *   a surface from. A top face inside the band is floor to stand on; one
        *   above it is not ground at all.
        *
@@ -521,7 +717,7 @@ export const vehicles = {
      *
      * **Every number here is cosmetic in the strict sense the rest of the file
      * is not.** `hull` is a collider and `maxSpeed` is a rule; this block only
-     * ever reaches `TankRig.hull`'s pitch and roll, which the box a round stops
+     * ever reaches `VehicleRig.hull`'s pitch and roll, which the box a round stops
      * on never takes. So it may be tuned by eye, and being wrong costs a look
      * rather than a fight.
      *
@@ -578,7 +774,7 @@ export const vehicles = {
        * author: it is `heaveBump`/`heaveDroop` over the distance to the
        * outermost road wheel, because a tilt is one end of the suspension
        * compressing and the other end extending, and both ends run out of
-       * travel at the stops the heave uses. `Tank.flexSuspension` spends what
+       * travel at the stops the heave uses. `Vehicle.flexSuspension` spends what
        * `flexHeave` has left of ONE budget, so a hull already sitting on its
        * bump stops cannot also dive — which is what bottoming out is.
        *
@@ -605,7 +801,7 @@ export const vehicles = {
        * A tank firing does not brake: the force is a rearward one applied a
        * metre and a half ABOVE the hull's centre, and what that does to a body
        * standing on its tracks is lift the nose. The recoil is spent on
-       * `speed` outside `Tank.update`, so it never reaches the acceleration
+       * `speed` outside `Vehicle.update`, so it never reaches the acceleration
        * term at all, and this is stated in its own right.
        *
        * **It is the one input sized to reach the stop and it is the only one**,
@@ -728,7 +924,7 @@ export const vehicles = {
      * bends because of that same acceleration AND because of how fast the thing
      * it is bolted to is turning — the mast trails a rotating base exactly as a
      * body thrown back in a seat trails an accelerating one. So there is no new
-     * measurement here: `Tank.flexAntennae` reads the numbers `flexSuspension`
+     * measurement here: `Vehicle.flexAntennae` reads the numbers `flexSuspension`
      * already has, plus the rate the hull node is leaning at, and everything
      * below is a gain on one of them.
      *
@@ -777,7 +973,7 @@ export const vehicles = {
        * that rang would be a car, and a whip that did not would be a rod.
        *
        * **The SHORT whip is not given numbers of its own.** A cantilever's
-       * natural frequency goes as 1/L^2, so `Tank` scales these by the square
+       * natural frequency goes as 1/L^2, so `Vehicle` scales these by the square
        * of the length ratio it reads off `ANTENNA_LENGTHS` — the 1.2 m mast
        * comes out 1.6x faster than the 1.5 m one, which is why the pair never
        * beat in step. Retuning one retunes both, and that is the intent.
@@ -839,7 +1035,7 @@ export const vehicles = {
        *
        * **Stated in its own right for exactly the reason `suspension.gunKick`
        * is, and it is the second half of the same argument.** The shove is
-       * spent on `speed` outside `Tank.update`, so what the drive terms see of
+       * spent on `speed` outside `Vehicle.update`, so what the drive terms see of
        * a shot is only the QUARTER SECOND AFTERWARDS, where the tracks brake
        * the hull back to a stop — and that acceleration is forwards, which lays
        * the masts back. Measured, the two came out within a couple of degrees
@@ -854,85 +1050,85 @@ export const vehicles = {
        */
       gunKick: 5,
     },
-    turret: {
-      /**
-       * rad/s. The whole reason the reticle can be honest in a third-person
-       * view: the player's look moves a WANTED angle and the turret walks to
-       * it at this rate, so the gun marker and the gun are the same fact. About
-       * 40 deg/s — a full traverse takes nine seconds, which is what makes
-       * being flanked matter.
-       */
-      traverseRate: 0.72,
-      /** rad/s of gun elevation. Faster than the traverse; a gun is lighter than a turret. */
-      elevationRate: 0.55,
-      /**
-       * rad/s^2. **How fast the traverse itself may change, which is the
-       * difference between a turret with mass and a stepper motor**, and it is
-       * the half of the answer a rate limit cannot give.
-       *
-       * A limit on the RATE says nothing about how a turret arrives at one, so
-       * the old walk started and stopped inside a single frame: measured, the
-       * last frame of every sweep went from full traverse to nothing at
-       * 35 rad/s^2, sixty tonnes of turret arrested in a sixtieth of a second,
-       * with the gun marker snapping onto the reticle rather than settling
-       * onto it. With an acceleration nothing on the barrel can exceed this
-       * figure by construction — it IS the ceiling on the gun's jerk — and
-       * `Tank` decelerates INTO the order rather than at it, which is what puts
-       * the last few degrees of every lay on a ramp instead of a wall.
-       *
-       * 0.3 s from rest to full traverse, and 6.2 deg of lead-out to stop from
-       * it. Both are a fraction of the nine seconds a full traverse takes, so
-       * this costs the flanking argument above nothing. What rejects the
-       * per-frame WOBBLE in a hand's order is `settleTime` below; this is what
-       * gives the movement weight.
-       */
-      traverseAccel: 2.4,
-      /**
-       * rad/s^2 of elevation. Higher than the traverse for the same reason
-       * `elevationRate` is: a gun is lighter than a turret, and a hand nudging
-       * the aim up onto a roofline is a smaller movement than a sweep and must
-       * not feel damped. 0.17 s to full elevation, 2.7 deg of lead-out.
-       */
-      elevationAccel: 3.2,
-      /**
-       * Seconds. The time constant the last degree of a lay is closed on, and
-       * it is there because a deceleration law alone is a lie at small angles.
-       *
-       * `Tank`'s slew asks for the fastest rate it could still stop from, which
-       * near zero error is a rate falling as its square root — still exact at a
-       * hundredth of a degree, where it wants a rate no frame can resolve and
-       * the gun lands on the order one frame and steps off it the next. That is
-       * the same chatter the acceleration exists to remove, one scale down. So
-       * the error's own decay takes over below about a degree and the gun eases
-       * onto the aim instead: there is then no error, at any size, where the
-       * barrel is a copy of a noisy order again.
-       *
-       * **This is also the LAG a turret carries while it is tracking, and that
-       * is not a defect to be tuned away — it is what filtering IS.** An axis
-       * that follows a noisy order with no lag has not rejected the noise, it
-       * has passed it on; the steady-state error while tracking at `v` is
-       * exactly `v * settleTime`, and buying quiet costs that. What bounds it
-       * is a number in another block: `crew.fireCone` (0.02 rad) is the gate an
-       * AI crew's trigger is behind, and a turret whose lag exceeds it stops
-       * firing at anything that MOVES rather than merely shooting behind it.
-       * At 0.06 a target crossing at 0.3 rad/s — a tank at road speed inside
-       * 40 m — leaves 0.014 and the crew still shoots. **Raising this past
-       * about 0.1 disarms bot armour against moving targets**, silently and
-       * from the other side of the config.
-       *
-       * Shared by both axes — it is a number about a HAND finishing a movement
-       * rather than about what is being turned, and the two axes' masses are
-       * already stated in their accelerations. Measured against the drag that
-       * prompted all of this: 0.06 leaves a quarter of the barrel jitter the
-       * old bare rate limit passed through, and 0.12 leaves an eighth and puts
-       * the crew outside its own cone.
-       */
-      settleTime: 0.06,
-      /** How far the gun depresses and elevates. -8 deg to +18 deg. */
-      pitchMin: -0.14,
-      pitchMax: 0.32,
-    },
     gun: {
+      turret: {
+        /**
+         * rad/s. The whole reason the reticle can be honest in a third-person
+         * view: the player's look moves a WANTED angle and the turret walks to
+         * it at this rate, so the gun marker and the gun are the same fact. About
+         * 40 deg/s — a full traverse takes nine seconds, which is what makes
+         * being flanked matter.
+         */
+        traverseRate: 0.72,
+        /** rad/s of gun elevation. Faster than the traverse; a gun is lighter than a turret. */
+        elevationRate: 0.55,
+        /**
+         * rad/s^2. **How fast the traverse itself may change, which is the
+         * difference between a turret with mass and a stepper motor**, and it is
+         * the half of the answer a rate limit cannot give.
+         *
+         * A limit on the RATE says nothing about how a turret arrives at one, so
+         * the old walk started and stopped inside a single frame: measured, the
+         * last frame of every sweep went from full traverse to nothing at
+         * 35 rad/s^2, sixty tonnes of turret arrested in a sixtieth of a second,
+         * with the gun marker snapping onto the reticle rather than settling
+         * onto it. With an acceleration nothing on the barrel can exceed this
+         * figure by construction — it IS the ceiling on the gun's jerk — and
+         * `Vehicle` decelerates INTO the order rather than at it, which is what puts
+         * the last few degrees of every lay on a ramp instead of a wall.
+         *
+         * 0.3 s from rest to full traverse, and 6.2 deg of lead-out to stop from
+         * it. Both are a fraction of the nine seconds a full traverse takes, so
+         * this costs the flanking argument above nothing. What rejects the
+         * per-frame WOBBLE in a hand's order is `settleTime` below; this is what
+         * gives the movement weight.
+         */
+        traverseAccel: 2.4,
+        /**
+         * rad/s^2 of elevation. Higher than the traverse for the same reason
+         * `elevationRate` is: a gun is lighter than a turret, and a hand nudging
+         * the aim up onto a roofline is a smaller movement than a sweep and must
+         * not feel damped. 0.17 s to full elevation, 2.7 deg of lead-out.
+         */
+        elevationAccel: 3.2,
+        /**
+         * Seconds. The time constant the last degree of a lay is closed on, and
+         * it is there because a deceleration law alone is a lie at small angles.
+         *
+         * `Vehicle`'s slew asks for the fastest rate it could still stop from, which
+         * near zero error is a rate falling as its square root — still exact at a
+         * hundredth of a degree, where it wants a rate no frame can resolve and
+         * the gun lands on the order one frame and steps off it the next. That is
+         * the same chatter the acceleration exists to remove, one scale down. So
+         * the error's own decay takes over below about a degree and the gun eases
+         * onto the aim instead: there is then no error, at any size, where the
+         * barrel is a copy of a noisy order again.
+         *
+         * **This is also the LAG a turret carries while it is tracking, and that
+         * is not a defect to be tuned away — it is what filtering IS.** An axis
+         * that follows a noisy order with no lag has not rejected the noise, it
+         * has passed it on; the steady-state error while tracking at `v` is
+         * exactly `v * settleTime`, and buying quiet costs that. What bounds it
+         * is a number in another block: `crew.fireCone` (0.02 rad) is the gate an
+         * AI crew's trigger is behind, and a turret whose lag exceeds it stops
+         * firing at anything that MOVES rather than merely shooting behind it.
+         * At 0.06 a target crossing at 0.3 rad/s — a tank at road speed inside
+         * 40 m — leaves 0.014 and the crew still shoots. **Raising this past
+         * about 0.1 disarms bot armour against moving targets**, silently and
+         * from the other side of the config.
+         *
+         * Shared by both axes — it is a number about a HAND finishing a movement
+         * rather than about what is being turned, and the two axes' masses are
+         * already stated in their accelerations. Measured against the drag that
+         * prompted all of this: 0.06 leaves a quarter of the barrel jitter the
+         * old bare rate limit passed through, and 0.12 leaves an eighth and puts
+         * the crew outside its own cone.
+         */
+        settleTime: 0.06,
+        /** How far the gun depresses and elevates. -8 deg to +18 deg. */
+        pitchMin: -0.14,
+        pitchMax: 0.32,
+      },
       /**
        * A direct hit, before the target's own resistance. Against infantry it
        * is academic — anything over 100 is a kill — and against another hull it
@@ -1000,7 +1196,7 @@ export const vehicles = {
      * while it is loading.
      *
      * The mount is a RING on the cupola, so it traverses independently of the
-     * turret under it and of the hull under that — see `Tank.aimMg`. What it
+     * turret under it and of the hull under that — see `Vehicle.aimMg`. What it
      * cannot do is hurt the thing the main gun exists for: the round is a
      * `bullet`, so `resist.bullet` (0.05) applies and a full belt into another
      * hull is worth about as much as a rifle magazine. That is the point
@@ -1155,5 +1351,318 @@ export const vehicles = {
       /** How close to the hull the pull-in may bring the eye before it gives up. */
       minDistance: 4.5,
     },
+    /**
+     * What a tank sounds like, and the reference every other kind's engine is
+     * stated against — so both numbers are 1 here by definition.
+     */
+    engine: { revMult: 1, clatter: 1 },
+  },
+  /**
+   * The GUN TRUCK: the second kind, and the trade it is.
+   *
+   * **It is the tank with the cannon taken off and the speed put back**, and
+   * that sentence is the whole design. Everything expensive about armour —
+   * the collider that stops a round, the ten ground contacts, the crew of two,
+   * the chase camera, the crush — is the same machinery, because a vehicle in
+   * this game is a `VehicleSpec` and a model and nothing else. What differs is
+   * four things, and each of them is the same trade seen from a different side:
+   *
+   * - **`gun` is null.** The driver has no weapon at all. He drives, and the
+   *   only thing this vehicle can shoot is the machine gun the second man
+   *   lays — which is a `bullet` against `resist.bullet`, and therefore nothing
+   *   at all against armour. A truck cannot kill a tank and is not meant to be
+   *   able to: what it kills is infantry, and what it does about a tank is
+   *   leave.
+   * - **It is FAST.** 18 m/s is 65 km/h, two thirds again the tank's road
+   *   speed and 2.6x a sprint, and it accelerates and stops nearly twice as
+   *   hard. On a 900 m map that is the point of it — the ground between the
+   *   flags is transit, and this is the thing that crosses it.
+   * - **It is SOFT.** 520 points against the tank's 1200, and `resist.bullet`
+   *   is 0.45 rather than 0.05 — nine times as much of every rifle round gets
+   *   through. A squad with no launcher in it kills a truck in seconds, which
+   *   is the half of the trade that makes the speed affordable: the tank's
+   *   small-arms figure exists to make a hull something only the AT kit
+   *   answers, and a soft-skinned vehicle is exactly the thing that must not
+   *   be. A rocket or a mine still ends it outright.
+   * - **It is WHEELED**, which is a rule and not a look: `climbHeight` is 0.55
+   *   against the tank's 1.25, so the kerb a tank rides over is a kerb this
+   *   stops against and the parked car it drives across is a car this drives
+   *   AROUND. That is what keeps the faster vehicle out of the places armour is
+   *   supposed to be kept out of, without a single line of code knowing which
+   *   kind it is steering.
+   *
+   * Every figure below that is NOT one of those four is the tank's own, and
+   * deliberately: the suspension shape, the antenna spring and the camera are
+   * about what a chase view of a road vehicle feels like rather than about
+   * what this particular one is, and two unrelated sets of them would be two
+   * things to tune for one answer.
+   */
+  truck: {
+    /**
+     * Under half the tank's, and read together with `resist` below rather than
+     * on its own: a rifle magazine is worth `30 * 26 * 0.45 = 351` of 520, so
+     * two riflemen with line of sight end this inside a magazine each. That is
+     * the intended answer to a truck standing still in the open.
+     */
+    maxHealth: 520,
+    /** Declared for the interface's sake and read by nothing — see the tank's note. */
+    hitRadius: 2.4,
+    /**
+     * A little over half the tank's volume: 5.4 m of wheelbase and body, 2.5
+     * wide, and 2.5 to the top of the gun ring. The height is the same kind of
+     * over-statement the tank's is and for the same reason — the ring and the
+     * gun on it are INSIDE the box, so a round aimed at the gunner marks the
+     * vehicle rather than passing over a collider that stopped at the roof.
+     */
+    hull: { length: 5.4, width: 2.5, height: 2.5 },
+    /**
+     * Where the gunner's head is: standing on the bed floor behind a ring whose
+     * trunnion is at 2.18 (`TruckModel`'s `RING_Y`), which puts it just inside
+     * the top of the collider box rather than just above it as the tank's is.
+     *
+     * It matters more here than it does on a tank, because it is what bots test
+     * line of sight to and aim at — and on this vehicle the man they are aiming
+     * at is genuinely standing in the open, where the tank's commander is a
+     * hatch.
+     */
+    cupolaHeight: 2.35,
+    drive: {
+      /**
+       * 18 m/s is 65 km/h, and the number this vehicle exists for. Against the
+       * tank's 11 and a sprint's 6.9 it is the difference between armour that
+       * decides a street and a vehicle that decides which street.
+       */
+      maxSpeed: 18,
+      /** Nearly half again the tank's: a truck backs out of what a tank drives through. */
+      reverseSpeed: 8,
+      /** m/s^2. ~2.2 s to its own top speed, which is a lighter machine doing more work. */
+      accel: 8.2,
+      /** m/s^2. Brakes rather than tracks — harder than the drive, but by less than a tank's. */
+      brake: 12,
+      /**
+       * rad/s at full lock — about 66 deg/s, and it is FASTER than the tank's
+       * while being far less useful, which is the wheeled half of the trade.
+       * See `turnAtSpeed`.
+       */
+      turnRate: 1.15,
+      /**
+       * How much of the turn survives at road speed. Well above the tank's
+       * 0.45, because a truck steers with its wheels rather than dragging a
+       * belt sideways: this is a vehicle that corners, where the tank is one
+       * that pivots.
+       *
+       * **What it cannot do is pivot on the spot**, and nothing here says so —
+       * `turnRate` is available at a standstill exactly as the tank's is. That
+       * is a knowing simplification rather than an oversight: a steered
+       * vehicle's turning circle would be a second drive model for one kind,
+       * and what the player actually feels is a vehicle that turns hard and
+       * keeps turning hard while it is moving, which is the read that matters
+       * at 65 km/h.
+       */
+      turnAtSpeed: 0.78,
+      /** Onto the ground faster than the tank: less mass, shorter wheelbase. */
+      tiltRate: 7.5,
+      airTiltRate: 1.1,
+      /** A little more lean than the tank allows, for the same reason. ~16 deg. */
+      tiltLimit: 0.28,
+      /**
+       * The XZ radius of the sphere `moveWithCollisions` walks it around with —
+       * the tank's whole argument, at this vehicle's size: a little over half
+       * the width (1.25), riding at the LEADING end on an arm of
+       * `hull.length / 2 - collideRadius` = 1.1 m.
+       *
+       * It is also what sets the narrowest gap this can drive through, at
+       * 3.2 m against the tank's 4.4 — so a truck fits down Sarab's
+       * seven-metre alleys where a tank does not, which is most of what the
+       * second kind is FOR on that map.
+       */
+      collideRadius: 1.6,
+      /** The same figure the tank falls at, for its reason. */
+      gravity: 22,
+      /**
+       * **The rule that keeps a fast vehicle honest**, and the one number here
+       * that is not about speed at all.
+       *
+       * 0.55 against the tank's 1.25 means the parked car (`buildCar`'s body
+       * collider, 1.1 m) a tank rides straight over is a wall to this: it has
+       * to go round. Kerbs, low walls and rubble stay passable — 0.55 is just
+       * above a soldier's own 0.5 step, which is the right statement about a
+       * wheeled vehicle — but the whole class of "drive through the scenery"
+       * that armour is allowed is closed off here.
+       *
+       * Both halves move together, as the tank's note insists: this is the
+       * collision ellipsoid's floor AND the ceiling of the band a wheel
+       * accepts a surface from, and a pair out of step is a vehicle that
+       * drives through the bottom of things it then refuses to stand on.
+       */
+      climbHeight: 0.55,
+      /** Steeper than the tank's: a tyre on the ground has more grip than a belt. */
+      climbSlope: 0.7,
+      climbFloor: 0.5,
+      /** Costs it more than the tank, because there is less engine behind less weight. */
+      climbDrag: 0.9,
+      /** Lighter, so it goes lighter over a crest. */
+      launchSpeed: 2,
+      probeLength: 6,
+      freeRate: 4,
+    },
+    /**
+     * The tank's springs, softened and quickened.
+     *
+     * A truck's body moves MORE than a tank's for the same acceleration and
+     * settles sooner — less mass on softer springs — so the two gains are up
+     * and the frequency with them. Everything else is the tank's, because it
+     * is about what a chase camera behind a road vehicle should see rather
+     * than about this vehicle.
+     */
+    suspension: {
+      /** Half again the tank's: a truck's nose dives, visibly. */
+      pitchPerAccel: 0.0085,
+      /** …and it rolls harder still, being narrow and tall for its weight. */
+      rollPerAccel: 0.021,
+      accelLimit: 26,
+      /** A lighter body on softer springs: quicker, and a little less damped. */
+      stiffness: 52,
+      damping: 8,
+      /**
+       * There is no gun to kick it, so this is the one figure here that is
+       * simply not reachable. Zero rather than deleted, because the field
+       * belongs to the SPRING and not to the gun — `Vehicle.fireGun` is what
+       * spends it, and on this kind nothing does.
+       */
+      gunKick: 0,
+      heaveResponse: 0.28,
+      /** Softer and slower to settle than the tank's, which is what a leaf spring is. */
+      heaveStiffness: 46,
+      heaveDamping: 5.8,
+      joltLimit: 9,
+      /** More travel than the tank has, both ways: it is a taller ride on less weight. */
+      heaveBump: 0.19,
+      heaveDroop: 0.15,
+    },
+    /** One mast, and the tank's spring for it — see `TruckModel`'s single whip. */
+    antenna: {
+      swayPerAccel: 0.032,
+      lagPerRate: 0.42,
+      stiffness: 230,
+      damping: 7.2,
+      bendLimit: 0.46,
+      baseShare: 0.62,
+      lagRate: 14,
+      wind: { sway: 0.05, speed: 1.1 },
+      /** Nothing to be kicked BY. See `suspension.gunKick`. */
+      gunKick: 0,
+    },
+    /**
+     * **No main gun, and this null is the whole of what says so.**
+     *
+     * It reaches every part of the game through `Vehicle.armed`: the turret
+     * node never traverses (`turretYaw` is held equal to the hull's own yaw, so
+     * the difference drawn on it is always zero), `fireGun` refuses, the HUD's
+     * loader row is absent rather than dimmed, the gun marker follows the
+     * machine gun in both seats, a bot driver never lays or fires anything, and
+     * the authority's `onShell` gate refuses a claim from this hull outright.
+     */
+    gun: null,
+    /**
+     * The turret gun — and on this vehicle it is the ONLY gun, which is what
+     * makes the numbers different from the tank's cupola even though the mount
+     * is the same idea.
+     *
+     * It is a heavier weapon than a commander's gun, because it is not a
+     * supplement to a cannon: it is what the vehicle is for. More damage per
+     * round, a longer reach, a tighter cone and a proper powered ring under it.
+     * The same `bullet` kind, though, so it is still worth about a rifle
+     * magazine against a hull — which is the line this vehicle may not cross.
+     */
+    mg: {
+      damage: 55,
+      damageFar: 26,
+      falloffNear: 70,
+      falloffFar: 190,
+      range: 210,
+      /** Slower than the tank's cupola gun: a heavier round out of a bigger receiver. */
+      fireRate: 7.5,
+      /** Tighter than the cupola's 0.024, being on a proper mount. About 1 deg. */
+      spread: 0.018,
+      /**
+       * A shade slower than the cupola gun's ring, because there is more gun on
+       * this one — but still an order of magnitude above the tank's turret,
+       * which is what a mount rather than a casting means.
+       */
+      traverseRate: 3,
+      elevationRate: 2.5,
+      traverseAccel: 14,
+      elevationAccel: 12,
+      settleTime: 0.035,
+      /** Depresses less and elevates nearly as far: a ring on a flat bed, aimed down streets. */
+      pitchMin: -0.16,
+      pitchMax: 0.7,
+      /** More per round than the cupola's — a heavier gun on a much lighter vehicle. */
+      cameraKick: 0.0046,
+      /**
+       * Heavier and slower than the tank's cupola gun and far deeper than a
+       * rifle: fewer, bigger cracks with a lot of chest in them.
+       */
+      report: {
+        pitch: 0.7,
+        level: 1.25,
+        snap: 1.15,
+        weight: 1.75,
+        length: 0.85,
+        tail: 1.05,
+        actionPitch: 0.72,
+        actionVol: 1.3,
+      },
+    },
+    /**
+     * **What makes it soft, and the other half of the speed's price.**
+     *
+     * `bullet` at 0.45 is nine times the tank's: a rifle magazine is worth 351
+     * of 520 rather than 39 of 1200, so infantry genuinely kill this and do not
+     * need the third slot to do it. `blast` at 0.7 makes a hand grenade worth
+     * ~25 and a pouch of them a real threat. `shell` stays 1, which against 520
+     * points means one tank round or one rocket is the end of it — a truck does
+     * not survive being noticed by armour, which is exactly why it should not
+     * be somewhere armour can see it.
+     */
+    resist: {
+      bullet: 0.45,
+      blast: 0.7,
+      shell: 1,
+    },
+    /**
+     * The wheels are worth what the tracks are — there is no amount of a
+     * five-tonne vehicle at 65 km/h that a body absorbs — but it takes MORE
+     * SPEED to be a run-over rather than a shove, because a truck that is
+     * merely rolling is a thing a man steps out of the way of.
+     */
+    crush: {
+      damage: 400,
+      minSpeed: 2.4,
+    },
+    /**
+     * Closer in than the tank's, because the vehicle is smaller and moving
+     * faster: 9.5 m from a centre with 2.7 m of hull in front of it leaves the
+     * clearance the tank's 12.5 does over 3.6, and the tighter frame is what
+     * makes 65 km/h read as 65 km/h.
+     */
+    camera: {
+      distance: 9.5,
+      anchorHeight: 1.9,
+      restPitch: -0.16,
+      pitchMin: -0.62,
+      pitchMax: 0.5,
+      /** A little more than the tank's, because the eye is three metres nearer. */
+      lookMult: 0.8,
+      wallMargin: 0.5,
+      minDistance: 3.6,
+    },
+    /**
+     * A petrol engine in a light vehicle: it revs half again as high as the
+     * tank's diesel, and it runs on TYRES — `clatter` is 0 here, because link
+     * noise under a wheeled vehicle is a tank arriving that nobody can see.
+     */
+    engine: { revMult: 1.55, clatter: 0 },
   },
 } as const;

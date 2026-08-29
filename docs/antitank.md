@@ -27,7 +27,7 @@ the pick (`Game.equipment`), decides whether there is a slot for it
 question the system asks about a world it may not know.
 
 **There is no third system-to-system edge.** `AntiTankSystem` has never heard of
-a `VehicleSystem`, a `Tank`, a `Player` or a `GrenadeSystem`: it asks "is there a
+a `VehicleSystem`, a `Vehicle`, a `Player` or a `GrenadeSystem`: it asks "is there a
 hostile hull within this many metres of this point" through `hullNear` and
 announces "this went off, on this" through `onDetonated`, and `Game` wires both.
 

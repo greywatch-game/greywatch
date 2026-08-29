@@ -166,15 +166,6 @@ export function validateMove(
   return OK;
 }
 
-/**
- * The fastest a HULL can legitimately travel, in m/s.
- *
- * Ahead rather than in reverse, because the check is on distance covered and
- * has no opinion about which way the tank was pointing. It is an order of
- * magnitude over a body's walk, which is exactly why a driver may not be
- * judged by `validateMove` — see `validateDrive`.
- */
-const MAX_HULL_SPEED = CONFIG.vehicles.tank.drive.maxSpeed;
 
 /**
  * Checks one reported HULL step, from the person driving it.
@@ -189,7 +180,7 @@ const MAX_HULL_SPEED = CONFIG.vehicles.tank.drive.maxSpeed;
  * all — the other two tests a body takes are wrong for a hull rather than
  * merely expensive:
  *
- *   - **No ground test.** `Tank.updateRemote` stands the reported hull on its
+ *   - **No ground test.** `Vehicle.updateRemote` stands the reported hull on its
  *     own ten track contacts on THIS side, against the same colliders the
  *     driver used, so the authority never takes a client's word for a height
  *     in the first place. There is nothing left for a claim to be wrong about.
@@ -208,10 +199,23 @@ export function validateDrive(
   from: Vector3,
   to: { x: number; y: number; z: number },
   dt: number,
+  /**
+   * The fastest THIS hull can legitimately travel, in m/s — its own
+   * `VehicleSpec.drive.maxSpeed`, ahead rather than in reverse because the
+   * check is on distance covered and has no opinion about which way the
+   * vehicle was pointing.
+   *
+   * **Passed in rather than taken as the fastest kind on the map**, which is
+   * the bound this used to be: with one kind that was the same number, and with
+   * two it would hand every tank driver the truck's 18 m/s and a third of the
+   * bound's whole point away. The caller has the hull in hand and its speed is
+   * a fact about it.
+   */
+  maxSpeed: number,
 ): Verdict {
   const dx = to.x - from.x;
   const dz = to.z - from.z;
-  if (Math.hypot(dx, dz) > MAX_HULL_SPEED * SPEED_TOLERANCE * dt) {
+  if (Math.hypot(dx, dz) > maxSpeed * SPEED_TOLERANCE * dt) {
     return { ok: false, reason: "speed" };
   }
   // The same extent a body is held to, and for the same reason: past the

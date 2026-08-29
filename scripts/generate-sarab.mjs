@@ -912,6 +912,28 @@ for (const h of HOMES) {
     `  { team: ${h.team}, pos: new Vector3(${n2(vx)}, ` +
       `${n2(Number(heightAt(vx, vz).toFixed(2)))}, ${n2(vz)}), yaw: ${h.yaw} },`,
   );
+  // …and the gun TRUCK's pad, and **the number that placed it is
+  // `crew.boardRadius` rather than any of the geometry**. A bot is never given
+  // a vehicle as a DESTINATION — the crew is whoever walks past — so a
+  // hardstanding nobody walks within 18 m of is a hardstanding that never gets
+  // crewed, which is exactly what the first version of this was: 21 m off the
+  // nearest spawn, and both trucks sat on their pads for a whole round while
+  // the tanks drove 200 m. This one is 14.6 m from the nearest spawn and 31.6
+  // from its own team's tank, so a reinforcement walking out of the yard is
+  // inside one circle or the other from the frame it deploys.
+  //
+  // The offsets are the same expression on both sides, so the two pads are
+  // mirrors — which is what makes them equally level: 1.1 cm across the
+  // footprint here against Harrowmead's 8 cm standard. A smaller claim than
+  // the tank's because it is a smaller vehicle: 12 m against 16.
+  const kx = h.x + h.s * 4;
+  const kz = h.z - h.s * 12;
+  claim(kx, kz, 12, 12);
+  vehicles.push(
+    `  { team: ${h.team}, pos: new Vector3(${n2(kx)}, ` +
+      `${n2(Number(heightAt(kx, kz).toFixed(2)))}, ${n2(kz)}), ` +
+      `yaw: ${h.yaw}, kind: "truck" },`,
+  );
 }
 
 // --- A — the Great Mosque ----------------------------------------------------
@@ -2103,25 +2125,50 @@ ${spawns.join("\n")}
 ];
 
 /**
- * One hardstanding a side, on the inner edge of each home yard.
+ * TWO hardstandings a side, in each home yard: a tank on the inner edge and a
+ * gun truck behind it.
  *
- * **Two, and exactly two.** The respawn is per hardstanding, so the number of
- * entries here IS how many hulls a side can ever have on the field — and it is
- * also what turns the kit's third slot on (\`Game.armourOffered\`), so this is
- * the map's launcher-and-mine map as well as its armour one.
+ * **The respawn is per hardstanding, so the number of entries here IS how many
+ * vehicles a side can ever have on the field** — and it is also what turns the
+ * kit's third slot on (\`Game.armourOffered\`), so this is the map's
+ * launcher-and-mine map as well as its vehicle one.
  *
  * A 900 m play square is what earns them. The ground between the flags is
- * transit rather than fighting, which is exactly the problem armour exists to
- * answer — and the town answers back: the old town's alleys are seven metres
- * wide and a hull cannot turn in one, the wadi's fords are three places a
- * driver is committed and slow, and the Crossing is a flag a hull can shell
+ * transit rather than fighting, which is exactly the problem a vehicle exists
+ * to answer — and the town answers back: the old town's alleys are seven
+ * metres wide and a TANK cannot turn in one, the wadi's fords are three places
+ * a driver is committed and slow, and the Crossing is a flag a hull can shell
  * from outside and never take.
+ *
+ * **The TRUCK is the answer to the half of that the tank cannot have.** It is
+ * 65 km/h against the tank's 40, so it crosses the transit ground in two
+ * thirds of the time; it fits through 3.2 m against the tank's 4.4, so those
+ * seven-metre alleys are open to it; and it climbs 0.55 m against 1.25, so the
+ * rubble and the parked cars the tank drives over are things it has to go
+ * round. What it pays is everything else: 520 points against 1200 at nine
+ * times the small-arms damage, and no cannon at all.
+ *
+ * **Where the truck's pad is was decided by \`crew.boardRadius\` and not by the
+ * geometry.** A bot is never given a vehicle as a destination, so a
+ * hardstanding nobody walks within 18 m of never gets crewed — which the first
+ * version of this was, and both trucks sat still for a whole round while the
+ * tanks drove 200 m. It stands 14.6 m from the nearest infantry spawn and 31.6
+ * from its own team's tank, so a reinforcement leaving the yard is inside one
+ * circle or the other from the frame it deploys.
+ *
+ * The rest is what any hardstanding owes (see \`docs/vehicles.md\`): the ground
+ * is level to 1.1 cm across the whole footprint, the nearest structure over
+ * 35 cm is 24 m away, and the departure bearing runs 90 m out of the yard
+ * through a corridor never narrower than 9.1 m at a gradient never over 0.14 —
+ * well inside \`climbSlope\`, and nearly three times \`collideRadius * 2\`.
  *
  * **It is also the only thing on this map that costs the AUTHORITY anything
  * that grows with the extent.** A DRIVEN hull is a \`moveWithCollisions\`
  * against every collidable mesh in the map, measured at 0.40 ms a tick at this
- * size against 0.039 on Coldharbour (\`FINDINGS.md\` 31). Two hulls is under 5%
- * of the server step.
+ * size against 0.039 on Coldharbour (\`FINDINGS.md\` 31), and only the ones
+ * somebody is actually driving cost anything at all. Measured over a whole
+ * headless round with all four crewed for most of it, the tick's median went
+ * from 0.27 ms to 0.64 — 3.8% of the 16.67 ms budget, with nothing over it.
  */
 const vehicles: VehicleSpawnDef[] = [
 ${vehicles.join("\n")}

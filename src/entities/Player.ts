@@ -551,7 +551,7 @@ export class Player implements Combatant {
   /**
    * The moving half of the same question, wired by `Game` to the tank fleet.
    * Separate from `obstacles` because it IS separate: the boxes are baked once
-   * at map load and a hull is not in them. See `Tank.deckAt`.
+   * at map load and a hull is not in them. See `Vehicle.deckAt`.
    */
   private movingGround: MovingGround | null = null;
   /**
@@ -1229,13 +1229,14 @@ export class Player implements Combatant {
    *   floor as DRAWN, which the smooth field disagrees with by centimetres on
    *   every twisted quad.
    * - **The static world**, through `ObstacleField.groundAt` — the same query,
-   *   in the same band, that `Tank.supportAt` takes ten times a frame.
+   *   in the same band, that `Vehicle.supportAt` takes ten times a frame.
    * - **The fleet**, through `Game`'s wiring to `VehicleSystem.deckAt`, because
    *   a hull is in no baked structure and you can climb onto one.
    *
    * Highest wins, which is exactly what a ray cast down from the ceiling would
    * have reported, and the whole thing is a bucket lookup, a heightfield sample
-   * and a loop over at most two hulls.
+   * and a loop over the fleet — two hulls on most maps with vehicles, four on
+   * Sarab.
    *
    * ## THIS USED TO BE THE MOST EXPENSIVE THING THE GAME DID PER FRAME
    *
@@ -1280,7 +1281,7 @@ export class Player implements Combatant {
    * Hands the player the world it stands on: the heightfield, the collider
    * boxes bucketed over it, and whatever moves.
    *
-   * All three in one call, for the reason `Tank.setGround` takes two — the
+   * All three in one call, for the reason `Vehicle.setGround` takes two — the
    * probe takes the highest of them and a player holding one without the others
    * answers a fraction of the question. Called from `installMap` and nowhere
    * else, which is the same contract `VehicleSystem.build` has with the fleet:

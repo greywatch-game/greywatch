@@ -22,7 +22,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/editor.md`](docs/editor.md) | anything under `src/editor/` or the dev write endpoint |
 | [`docs/bots.md`](docs/bots.md) | navigation, perception, cover, squads, bot cost |
 | [`docs/deaths.md`](docs/deaths.md) | ragdolls, glass shards, Havok, the death cam |
-| [`docs/vehicles.md`](docs/vehicles.md) | the tank, its hull collider, the chase camera, mounting, the respawn |
+| [`docs/vehicles.md`](docs/vehicles.md) | a vehicle of either kind, a new kind, its hull collider, the chase camera, mounting, the respawn |
 | [`docs/antitank.md`](docs/antitank.md) | the third slot, the launcher, the mine, the rocket that flies, a bot with a tube |
 | [`docs/pwa.md`](docs/pwa.md) | `public/`, `src/pwa/`, the service worker |
 | [`docs/multiplayer.md`](docs/multiplayer.md) | anything under `server/` or `src/net/`, the roster, the collision bake, the regions, the two images and the proxy in front of them |
@@ -423,8 +423,9 @@ never leashed** — the nav graph stops at the play square.
 valley), **Coldharbour** (a business district — what the first three overrides
 exist for), **Harrowmead** (`size: 400`, no wall around it) **and Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
-`ENGINE_UPGRADE.md` exists for). **The last three are the three with armour on
-them**, and they are the three biggest.
+`ENGINE_UPGRADE.md` exists for). **The last three are the three with vehicles on
+them**, and they are the three biggest; **Sarab is the only one with two KINDS**,
+a tank and a gun truck a side.
 
 **Sarab is the map that SPENDS the levers**, and it is the only one that states
 most of them: `blockSize` and `terrainBlock` at 96 (S6), a `fogEnd` (560) inside
@@ -520,7 +521,7 @@ ray**: `Player.probeGround` reads the `WorldBox` list through
 `ObstacleField.groundAt`. So a collider that skips `collider()` is invisible to
 the FLOOR as well as to navigation, and anything SOLID that MOVES owes the probe
 a query of its own, because the boxes are baked once at map load —
-`Tank.deckAt`, and only that.
+`Vehicle.deckAt`, and only that.
 
 | Kind         | visible | pickable | collides | `solid` | merged | frozen |
 | ------------ | ------- | -------- | -------- | ------- | ------ | ------ |
@@ -749,12 +750,36 @@ version cost, the pool's three tiers, the quaternion leak that freezes a
 respawned bot, the fog-wall gate shared with the LOD, the shard pool, and the
 death cam's camera hand-off.
 
-### Vehicles: one hull, and the exceptions it is
+### Vehicles: two kinds, one hull, and the exceptions it is
 
-**A tank is a `Combatant` you get INSIDE, and TWO people fit.**
-`MapLayout.vehicles` is one hardstanding per team — absent on two of the five
+**A vehicle is a `Combatant` you get INSIDE, and TWO people fit.**
+`MapLayout.vehicles` is one hardstanding per vehicle — absent on two of the five
 maps — and `Game.driving` plus `Game.drivingSeat` are the two facts the feature
-turns on. **`mount` and `clearVehicle` are exact inverses and must be read as a
+turns on.
+
+**There are TWO KINDS and no code that knows it.** `Vehicle` is handed a
+`VehicleSpec` (`config/vehicles.ts`) and a rig BUILDER by `VehicleSystem` and
+never learns which it is; a third kind is a row in `VEHICLE_KINDS`
+(`entities/vehicleKinds.ts`), a block of numbers and a model file, and **no
+`if` anywhere** — the moment a system asks which kind it is holding, that is
+broken. `VehicleSpawnDef.kind` is what a map states and defaults to `"tank"`,
+in one place. **The rig is CLOSED over its own model** (`setRun`, `reset`,
+`paint` are closures a builder hands back), because no interface over two belts
+of scrolling links and four wheels that steer is honest in both directions.
+
+**The one thing a kind differs by is whether it has a MAIN GUN, and even that
+is not asked as a kind**: `VehicleSpec.gun` is null, `Vehicle.armed` is that
+resolved once, and it is the only question anything else puts — the trigger, the
+HUD's loader row (ABSENT, not dimmed), the gun marker, an AI driver's
+lay-and-fire, and the authority's rate gate on a claimed shell. **An unarmed
+hull keeps `turretYaw` equal to its own yaw**, so a welded ring draws at a
+permanent local zero and `aimMg` needs no branch of its own.
+
+**The TANK is armour and the TRUCK is the trade**: 18 m/s against 11 through a
+3.2 m gap against 4.4, for 520 points against 1200 at nine times the small-arms
+damage and no cannon at all. **`climbHeight` is the rule that keeps a fast
+vehicle honest** — 0.55 against 1.25, so the parked car a tank drives over is
+one a truck goes round. Sarab is the only map with both. **`mount` and `clearVehicle` are exact inverses and must be read as a
 pair.** **A driver's frame is not a body's**: `Player.update` is not called, so
 the hull's ground REPLACES the probe. **The verb is `E`, the pad's d-pad north
 and a button that APPEARS on glass** — one `usePressed`, and `Game.offerUse` is
@@ -778,7 +803,7 @@ all, which reads as a vehicle with one seat.
 **The CUPOLA gun's bearing is a WORLD angle exactly as the turret's is, and
 that one decision is the whole of the independence**: the mount is parented to
 the turret, so a relative angle would be dragged round by every traverse the
-driver asked for. `Tank.aimMg` writes the difference onto the rig; a gun nobody
+driver asked for. `Vehicle.aimMg` writes the difference onto the rig; a gun nobody
 is on inverts the rule and rides its ring. It is stepped from `VehicleSystem`
 rather than from `update`, because a hull's two guns can have two owners of
 different kinds — a person driving off the wire while a bot lays the cupola
@@ -788,7 +813,7 @@ infantry inside the main gun's reload.
 
 **In a NETPLAY round a driver simulates their own hull and REPORTS it, exactly
 as they do their own legs; every other hull is posed from the wire** by
-`Tank.updateRemote`. `Tank.predicted` says which — it refuses local damage as
+`Vehicle.updateRemote`. `Vehicle.predicted` says which — it refuses local damage as
 `NetSoldier` does and stands both hardstanding clocks down. **Getting in and out
 are ASKS the authority answers**, and **occupancy is stated once, on the hull**.
 
@@ -808,7 +833,7 @@ the collider in front of it always loses: at `hitRadius` 3.2 against a
 half-length of 3.6 a hull swallowed every round arriving within ~32 deg of its
 own nose or tail, its own gun's included. `RayHit.hull` says which hull a cast
 stopped on, armour is out of the sphere sweep, and **nothing reads
-`Tank.hitRadius` any more.**
+`Vehicle.hitRadius` any more.**
 
 **A tank DRIVES OVER things, and `climbHeight` is the one number deciding what is
 ground and what is a wall** — the collision ellipsoid's floor AND the ceiling of
@@ -820,7 +845,7 @@ right after `VehicleSystem.update` and puts down every enemy body a MOVING
 hull's collider is standing in. It is owed to the rule above it: a tank is in no
 baked structure, so bots walk through one as they walk through a corpse, and
 `moveWithCollisions` sweeps the HULL out of the world rather than a body out of
-the hull's way. **`Tank.crushes` asks the two heights different questions** —
+the hull's way. **`Vehicle.crushes` asks the two heights different questions** —
 horizontally the body's hit SPHERE, vertically the FEET, because a man
 crouching on the deck has his chest inside a 2.9 m box and **riding on a hull is
 the one thing a crush must not take away**. Three gates (a live hull,
@@ -847,7 +872,7 @@ SQUAD'S ORDER, which is what it steers on. **A tank is never a DESTINATION**, an
 **a crew never denies the player their own armour**: `TAKE OVER TANK` evicts and
 mounts on one frame. `resolveShell` is the ONE round out of a tank gun (`Game`'s
 offline, `HeadlessGame`'s in a match), and a driver needs no route graph — a
-BEARING and `Tank.rideableAt` are all of it.
+BEARING and `Vehicle.rideableAt` are all of it.
 
 **A hull is HEARD whoever is in it, and that is two voices over one graph.** The
 one the player is sitting in is unpanned for the reason their own report is;
@@ -859,15 +884,15 @@ within earshot. **A frame that did not STEP the fleet owes `Sfx.enginesOff`**
 whose speeds are frozen, and a voice left running under the deploy card is a
 tank droning in a street where nothing moves.
 
-→ **[`docs/vehicles.md`](docs/vehicles.md)** — the two seats and the swap, the
-cupola gun's world angle and its stowed inversion, the crew of two, the whisker
-fan and the two geometry bugs it found; the collider's three answers; the
-tracks' sweep, its three gates and its two skips; the
-model's twenty-six meshes, its tracks and its whips; the two engine voices and
-the one graph under them; the plank, the rate limit
-and the leading-end sphere; the damage kinds, the four ways out of a seat, the
-shell, the two clocks a hardstanding runs, what a map owes, and what is not
-built.
+→ **[`docs/vehicles.md`](docs/vehicles.md)** — the two kinds and the one branch
+between them, the truck's trade; the two seats and the swap, the cupola gun's
+world angle and its stowed inversion, the crew of two, the whisker fan and the
+two geometry bugs it found; the collider's three answers; the tracks' sweep, its
+three gates and its two skips; each model's mesh budget, its running gear and
+its whips; the two engine voices and the one graph under them; the plank, the
+rate limit and the leading-end sphere; the damage kinds, the four ways out of a
+seat, the shell, the two clocks a hardstanding runs, what a map owes — including
+what its GENERATOR owes — and what is not built.
 
 ### Anti-tank: the third slot, and the only thing a hull is afraid of
 

@@ -38,7 +38,7 @@ export interface Combatant extends Hittable {
    * A flag rather than an `instanceof`, for the reason `DamageKind` is a
    * parameter rather than a check inside `takeDamage`: the one thing that
    * needs to ask is a bot deciding whether to reach for its launcher, and
-   * `Bot` importing `Tank` to find out would be an entity reaching across the
+   * `Bot` importing `Vehicle` to find out would be an entity reaching across the
    * game to answer a question about the target in front of it. Everything
    * that ignores it simply does not declare it.
    *

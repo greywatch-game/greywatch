@@ -21,7 +21,7 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../src/config";
 import type { Combatant, Team } from "../src/entities/Combatant";
-import { DRIVER, type CrewSeat } from "../src/entities/Tank";
+import { DRIVER, type CrewSeat } from "../src/entities/Vehicle";
 import type { DamageKind } from "../src/systems/CombatSystem";
 import { Leash } from "../src/world/leash";
 

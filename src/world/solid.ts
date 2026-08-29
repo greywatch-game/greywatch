@@ -61,7 +61,7 @@
  * permanently pickable whatever the flag says. Three places used to take a mesh
  * out of a ray by clearing it — the tank's ground probe, the chase camera's
  * pull-in, the dismount's floor test; all three pass their hull to `RayWorld`'s
- * `skip` now, and `Tank.rayBox` reads the same two terms so a WRECK that has
+ * `skip` now, and `Vehicle.rayBox` reads the same two terms so a WRECK that has
  * been carried away stops stopping rounds in the street. It is LAST so the
  * metadata rejection still short-circuits ahead of it for the ~1,800 visuals
  * that are not solid, and it must stay a flag rather than an `isEnabled()`

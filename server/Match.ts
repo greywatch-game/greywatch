@@ -47,7 +47,7 @@ import {
   isEquipmentId,
   type EquipmentId,
 } from "../src/entities/equipment";
-import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/Tank";
+import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/Vehicle";
 import { MAPS } from "../src/world/maps";
 import { HeadlessGame } from "./HeadlessGame";
 import { Roster } from "./Roster";
@@ -405,7 +405,7 @@ export class Match {
    * client asking for a rocket or a shell is asking the authority to put an
    * object in the world, and without a gate the rate at which it may do so
    * would be a client-side opinion. The gun's own reload already refuses a
-   * shell fired early (`Tank.fireGun` returns false) — this is the cheaper
+   * shell fired early (`Vehicle.fireGun` returns false) — this is the cheaper
    * refusal in front of it, so a flood costs a comparison rather than a hull
    * lookup.
    */
@@ -593,7 +593,7 @@ export class Match {
     // is carrying — it reaches a client no other way, because no client runs
     // the crew that pulled the trigger or resolves the round it fired.
     this.game.onCannon = (tank) => {
-      const i = this.game.vehicles.tanks.indexOf(tank);
+      const i = this.game.vehicles.hulls.indexOf(tank);
       if (i >= 0) this.queue({ e: "cannon", tank: i });
     };
     // The answer to a mount or a dismount, addressed to the one person who
@@ -1166,7 +1166,7 @@ export class Match {
     // The two angles beside the turret's are the CUPOLA gun's, which is laid
     // by the second of them and by nothing else.
     this.vehicleScratch.length = 0;
-    for (const [i, tank] of this.game.vehicles.tanks.entries()) {
+    for (const [i, tank] of this.game.vehicles.hulls.entries()) {
       if (!tank.body.isEnabled()) continue;
       this.vehicleScratch.push({
         i,
@@ -1738,7 +1738,7 @@ export class Match {
    *     put its feet somewhere without being told anything about its tank.
    *     What a refused step costs instead is simply that it is not applied:
    *     the authority's hull stays where it was, the next snapshot says so,
-   *     and `Tank.updateRemote`'s resync pulls the driver's own copy back.
+   *     and `Vehicle.updateRemote`'s resync pulls the driver's own copy back.
    *   - **No seat is granted here.** A `drive` naming a hull this player is
    *     not in is dropped, not obeyed. Getting into a tank is `onMount`'s, and
    *     it is one door for the reason spawning is one door.
@@ -1759,7 +1759,17 @@ export class Match {
     const tank = this.game.hullOf(player);
     if (!tank) return;
     const [x, y, z] = msg.pos;
-    if (!validateDrive(this.game.map, tank.position, { x, y, z }, dt).ok) return;
+    if (
+      !validateDrive(
+        this.game.map,
+        tank.position,
+        { x, y, z },
+        dt,
+        tank.spec.drive.maxSpeed,
+      ).ok
+    ) {
+      return;
+    }
 
     player.seq = msg.seq;
     peer.seq = msg.seq;
@@ -1810,7 +1820,7 @@ export class Match {
     // whatever is nearest instead would seat somebody in a tank they did not
     // choose on the day a map states two.
     const tank =
-      offered && this.game.vehicles.tanks.indexOf(offered) === msg.tank
+      offered && this.game.vehicles.hulls.indexOf(offered) === msg.tank
         ? offered
         : null;
     const taken = tank ? this.game.seat(player, tank, want) : null;
@@ -1876,7 +1886,7 @@ export class Match {
    *
    * `onShot`'s three gates, minus the one that does not apply: there is no
    * weapon slot to look up, because a hull has one gun. The RATE gate is the
-   * cheap refusal in front of `Tank.fireGun`, which owns the real reload; the
+   * cheap refusal in front of `Vehicle.fireGun`, which owns the real reload; the
    * CONE is measured against the driver's reported look rather than against
    * the gun, because the gun's bearing is the very thing being claimed; and
    * the ORIGIN must be near the hull, not near a head.
@@ -1892,8 +1902,13 @@ export class Match {
     const tank = this.game.hullOf(player);
     if (!tank) return;
 
+    // The gun this hull actually has, and **a hull with none refuses the claim
+    // outright** — a client naming a shell out of a truck is either confused or
+    // lying, and either way there is no reload to measure it against.
+    const gun = tank.spec.gun;
+    if (!gun) return;
     const now = Date.now();
-    if (now - (this.lastShell[peer.slot] ?? 0) < CONFIG.vehicles.tank.gun.cooldown * 1000 * 0.9) {
+    if (now - (this.lastShell[peer.slot] ?? 0) < gun.cooldown * 1000 * 0.9) {
       return;
     }
     const [dx, dy, dz] = msg.dir;
@@ -1930,7 +1945,7 @@ export class Match {
    * A round out of the cupola gun a client says it fired. `onShell`'s twin,
    * with the three gates sized for the other weapon.
    *
-   * The RATE gate is the same cheap refusal in front of `Tank.fireMg`, which
+   * The RATE gate is the same cheap refusal in front of `Vehicle.fireMg`, which
    * owns the real one, and it is per-ROUND rather than per-reload: nine a
    * second, so the slack is the same tenth. The CONE is measured against the
    * gunner's reported look, which for this seat is the gun's own order — the
@@ -1946,7 +1961,7 @@ export class Match {
     if (!tank) return;
 
     const now = Date.now();
-    const gap = (1000 / CONFIG.vehicles.tank.mg.fireRate) * 0.9;
+    const gap = (1000 / tank.spec.mg.fireRate) * 0.9;
     if (now - (this.lastMg[peer.slot] ?? 0) < gap) return;
     const [dx, dy, dz] = msg.dir;
     const len = Math.hypot(dx, dy, dz);
@@ -2061,7 +2076,7 @@ export class Match {
    *
    * Derived at the snapshot rather than tracked, and that is deliberate: the
    * two things that can be in a tank keep the fact in two different places
-   * (`NetPlayer.seat` for a person, `TankCrew`'s pairing for a bot), and a
+   * (`NetPlayer.seat` for a person, `VehicleCrew`'s pairing for a bot), and a
    * third copy kept in step with both is the copy that would be wrong. It is
    * sixteen comparisons twenty times a second on a map with armour, twice
    * over now that a hull holds two.
@@ -2070,7 +2085,7 @@ export class Match {
     for (const player of this.game.players.values()) {
       if (player.seat === i && player.crewSeat === seat) return player.slot;
     }
-    const tank = this.game.vehicles.tanks[i];
+    const tank = this.game.vehicles.hulls[i];
     const crew = tank ? this.game.crew.crewOf(tank, seat) : null;
     return crew ? this.game.battle.bots.indexOf(crew) : -1;
   }

@@ -1864,7 +1864,7 @@ export class Bot implements Combatant {
    * (`mats.get`, `mats.getEmissive`), so disposing this rig's materials would
    * dispose the paint every other bot and the map itself are holding, and the
    * factory would hand the dead material out again on the next `get`. See
-   * `Tank.dispose`, where the same flag took most of a city off the screen.
+   * `Vehicle.dispose`, where the same flag took most of a city off the screen.
    */
   dispose(): void {
     this.rig.root.dispose(false);

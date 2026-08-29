@@ -67,7 +67,7 @@ export interface LocalState {
   gun: LocalGun | null;
 }
 
-/** One driven hull, as the upload needs it. `Tank`'s own fields, by reference. */
+/** One driven hull, as the upload needs it. `Vehicle`'s own fields, by reference. */
 export interface LocalHull {
   /** The hardstanding index — the hull's identity on the wire. */
   tank: number;

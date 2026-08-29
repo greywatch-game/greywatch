@@ -161,7 +161,7 @@ export function newRayHit(): RayHit {
  *
  * It answers with a box rather than being one because the body is what moves
  * and a cached copy is a second opinion about where the hull is — the same
- * reasoning as `Tank.deckBox`, which is the scratch this hands back. Null takes
+ * reasoning as `Vehicle.deckBox`, which is the scratch this hands back. Null takes
  * it out of every query, which is what a wreck carried away is.
  */
 export interface RayHull {

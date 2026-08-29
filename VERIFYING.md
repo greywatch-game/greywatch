@@ -454,7 +454,7 @@ is one machine's:
   something computes its world matrix, so the FIRST script run after a build
   reported a rocket flying straight through a tank and every run after it
   reported a hit. The step ray is `RayWorld.castRound` now and the hull reaches
-  it through `Tank.rayBox`, which reads `body.position` — always current, no
+  it through `Vehicle.rayBox`, which reads `body.position` — always current, no
   matrix involved. Anything still asking `getAbsolutePosition()` needs a frame
   driven first. Measured on Coldharbour: 1200 → 580 on a clean strike, which is `damage` exactly and
   no splash — `blastAt` needs line of sight to the hull's centre and the hull is
@@ -515,7 +515,7 @@ is one machine's:
     accepted at all. Agreement to within a metre is a pass; a hull still sitting
     where it started means every report was refused.
 - **A remote hull's derived `speed` is a frame-rate reading and is CLAMPED.**
-  `Tank.updateRemote` measures speed from the ground covered over a clamped
+  `Vehicle.updateRemote` measures speed from the ground covered over a clamped
   `dt`, so at 2 fps the interpolator's catch-up divides out at 80 m/s. It is
   bounded to the hull's own top speed, which means a headless run reads exactly
   `drive.maxSpeed` while driving — treat that as "moving", not as a measurement.
@@ -573,7 +573,7 @@ is one machine's:
   (`|cos rotY| * w + |sin rotY| * d`, and its mirror) and drive across the
   SHORTER one.
 - **Where a tank STOPS is the hull's nose, not its centre.** The collision
-  sphere rides at the leading end (`Tank.aimCollider`), so a hull driven at a
+  sphere rides at the leading end (`Vehicle.aimCollider`), so a hull driven at a
   wall parks with `position.z + 3.6` a couple of centimetres off the face. A
   script that checks `position` against the wall and expects `collideRadius`
   will report a bug that is the fix.

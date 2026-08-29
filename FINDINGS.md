@@ -499,14 +499,14 @@ probe that grows with the map and one that does not.
 
 **The one thing it cost is a rule.** The boxes are the STATIC world, so anything
 `solid` that MOVES is invisible to the probe — today a tank's hull, and only
-that, which is why `Tank.deckAt` exists. Verified against the ray over 1,617
+that, which is why `Vehicle.deckAt` exists. Verified against the ray over 1,617
 points on and around a parked hull with no disagreement, and a body dropped over
 the turret settles on the deck. Anything else that ever moves and can be stood
 on owes the same door.
 
 ### It IS switched on for a vehicle, and that half is closed
 
-`Tank.supportAt` takes it ten times a frame — once per track contact — and the
+`Vehicle.supportAt` takes it ten times a frame — once per track contact — and the
 hull's `pickWithRay` is gone. **The blocker above does not block a HULL**: a
 phantom surface half a metre up is one of ten contacts under a seven-metre
 plank, and the rise it asks for is rate-limited by `drive.climbSlope` before it
@@ -3499,7 +3499,7 @@ is 4x Hollowmere's on a map with FEWER collider boxes.
 A CPU profile of a Coldharbour round says it outright — `_checkCollision` 23.1%,
 `_collideWithWorld` 13.9%, `_testTriangle` 3.3% of all samples, about 2.7 s of a
 round whose ticks total ~3.4 s. That is Babylon's `moveWithCollisions`, and on
-the authority it has exactly one caller: `Tank.update`. The legs never touch it —
+the authority it has exactly one caller: `Vehicle.update`. The legs never touch it —
 a client does its own movement and `validateMove` checks the result analytically
 — and `ENGINE_UPGRADE.md` wall 2 took every ray in the game off the scene. **The
 hull sweep is what was left, and it is the last O(meshes in the map) thing this
@@ -3573,7 +3573,7 @@ it.
 
 ### What is open
 
-- **`Tank.update`'s hull sweep is the last whole-scene walk on the authority.**
+- **`Vehicle.update`'s hull sweep is the last whole-scene walk on the authority.**
   `RayWorld` retired every pick; `moveWithCollisions` was left behind because it
   MOVES a body rather than answering a question about one. An analytic sweep
   against `colliderBoxes` is the same substitution wall 2 already made, and at
@@ -3777,3 +3777,58 @@ internal join.
   something bigger — an awning over a souk lane, a tent — where the shear would
   be across a two-metre span rather than a one-metre one.
 
+
+---
+
+## 34. A second vehicle a side puts HALF the AI in vehicles, and the round goes quiet
+
+**Status:** measured on the authority; the cause is arithmetic and the fix is a
+design decision nobody has made yet.
+
+### What was measured
+
+`npm run simulate sarab`, twice, before and after the map gained a gun truck a
+side (four hardstandings instead of two) and `crew.boardRadius` went from 18 to
+24 so the second pad in each yard is actually inside a circle bots walk through:
+
+| | two vehicles | four vehicles |
+| --- | --- | --- |
+| round length | 23.8 min | 16.5 min |
+| kills | 94 / 67 | 65 / 27 |
+| flag captures in the round | 32 | 15 |
+| tick p50 | 0.269 ms | 0.642 ms |
+| ticks over the 16.67 ms budget | 0 | 0 |
+
+A 33-second browser round says why: within one boarding sweep of the first
+deploy, **all four hulls have both seats filled**. A roster is sixteen slots,
+eight a side; two hulls a side at two seats each is four of those eight, so
+half of each team's AI is inside a vehicle and out of `Bot`'s FSM
+(`BattleSystem.aside`). The flags are taken by the other half.
+
+### What is derived rather than measured
+
+That the drop in captures is CAUSED by the crewing rather than by the trucks
+driving over the people who would have taken the flags. A crewed bot still
+counts for its squad's objective and a vehicle parked on a flag captures it, so
+some of the lost captures are presumably deferred rather than lost — but
+nothing in the two runs separates the two, and the kill count fell as well,
+which a deferral does not explain.
+
+The server cost is not the interesting half. Four driven hulls doubled the
+median tick and it is still 3.8% of the budget with nothing over it; finding 31
+already prices a driven hull and this agrees with it.
+
+### What would settle it
+
+- **A cap on how much of a team may be crewed at once**, which is one counter
+  in `VehicleCrew.board` and the only change here that is cheap. Two of eight is
+  Coldharbour's ratio and is the one the AI was tuned against.
+- **Or make the second seat lower priority than the first ACROSS hulls**: fill
+  every hull's driver before any hull's gunner. That is a re-ordering of the
+  two loops in `board` and it costs nothing, and it is arguably right on its own
+  terms — a hull that moves is worth more than a hull with two men in it.
+- **Or decide this is what a map with four vehicles is**, and leave it. Sarab is
+  900 m of transit ground and armour is the answer to that; a round where half
+  the AI is mounted may simply be the map working. What makes that hard to
+  accept as it stands is that nobody CHOSE it — it fell out of a hardstanding
+  count.

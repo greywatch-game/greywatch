@@ -2,8 +2,8 @@
  * net/NetVehicles.ts — Somebody else's armour, drawn from the wire.
  * Owns: one interpolation buffer per HARDSTANDING, and the state each hull
  * should be in at the client's render time.
- * Owns NO hull. The `Tank` objects are `VehicleSystem`'s exactly as they are
- * offline — this class produces the six numbers `Tank.updateRemote` takes and
+ * Owns NO hull. The `Vehicle` objects are `VehicleSystem`'s exactly as they are
+ * offline — this class produces the six numbers `Vehicle.updateRemote` takes and
  * hands them to `Game`, which is the only place that knows both about a fleet
  * and about a socket. It is `NetRoster`'s job done for the one thing in the
  * game that is a moving `solid` mesh.
@@ -36,7 +36,7 @@
  * gives. The cost is the last `interpDelay` of a wreck standing still, which
  * is nothing at all.
  */
-import type { GunAngles } from "../entities/Tank";
+import type { GunAngles } from "../entities/Vehicle";
 import type { RemoteHull } from "../systems/VehicleSystem";
 import type { Snapshot } from "./protocol";
 
@@ -73,7 +73,7 @@ interface Ghost {
    * keys a hull's first PLACEMENT off.
    *
    * A ghost claimed on a socket callback and posed on the next frame would
-   * otherwise be put on the field at wherever the pooled `Tank` last stood —
+   * otherwise be put on the field at wherever the pooled `Vehicle` last stood —
    * the hardstanding for a hull nobody has driven, and the spot the last one
    * burned for one that has. Both read as a tank flashing across the map.
    */
@@ -157,7 +157,7 @@ export class NetVehicles {
    *
    * Takes no `dt` for `NetGrenades.update`'s reason: nothing here integrates
    * against frame time. What DOES integrate — the lean, the springs, the
-   * belts, the masts — is `Tank.updateRemote`'s, off the positions this
+   * belts, the masts — is `Vehicle.updateRemote`'s, off the positions this
    * produces, and it takes the frame's own `dt` there.
    */
   update(renderTime: number): void {

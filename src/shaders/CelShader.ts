@@ -20,7 +20,7 @@
  * to the mesh, so `dispose(false, true)` on any rig built through here disposes
  * the world's own materials with it. Nothing removes the dead entry from the
  * cache, and the released effect is shared, so what follows is most of the map
- * silently not drawn (see Tank.dispose). A NEW material is seeded with
+ * silently not drawn (see Vehicle.dispose). A NEW material is seeded with
  * every piece of shared state on the spot (applyCamera/applyEnvironment/
  * applyPointLights/applyShadow): the per-frame walks are guarded on change and
  * skip a still frame entirely, so what a material is born with is what it keeps

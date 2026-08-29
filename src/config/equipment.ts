@@ -286,7 +286,7 @@ export const equipment = {
    * fresh start.
    */
   mine: {
-    name: "Anti-Tank Mines",
+    name: "Anti-Vehicle Mines",
     short: "Mines",
     /** Mines a life, and the number that may be live at once. */
     carried: 2,

@@ -21,7 +21,7 @@ import {
 import { CONFIG } from "../config";
 import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
-// Type-only, so no runtime edge is created — the same import `Tank` takes
+// Type-only, so no runtime edge is created — the same import `Vehicle` takes
 // for the same reason. `DamageKind` lives with the shot that carries it.
 import type { DamageKind } from "../systems/CombatSystem";
 

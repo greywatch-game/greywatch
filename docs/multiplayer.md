@@ -945,7 +945,7 @@ same `colliderBoxes` and `rayGroups` — one ray implementation, not two. **The
 collider MESHES this file stands up are no longer what a shot is resolved
 against, and they are still required**: they were there so the server's
 `scene.pickWithRay` had something to pick, and every ray on both sides is a box
-query now — but `Tank.update` drives a hull with `body.moveWithCollisions`, and
+query now — but `Vehicle.update` drives a hull with `body.moveWithCollisions`, and
 the authority simulates its own hulls. So the geometry stays, for the legs' old
 reason turned on its head.
 

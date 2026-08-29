@@ -928,7 +928,7 @@ eight seconds, Harrowmead's 890 → 1,151, Coldharbour's 1,115 → 1,234.
    **But the promise under it — that a query over boxes needs no meshes at all
    — does not hold on the server, and a later step must not act on it.**
    `server/world.ts` still has to stand its collider meshes up, because
-   `Tank.update` drives a hull with `body.moveWithCollisions` and the authority
+   `Vehicle.update` drives a hull with `body.moveWithCollisions` and the authority
    simulates its own hulls. That was true before armour reached netplay and is
    not any more; the file's header said "nothing on the server moves that way"
    and now says why it does. Deleting that geometry would leave armour driving
@@ -1003,7 +1003,7 @@ bug until proven otherwise.
 - The tank hull, which is the one MOVING `solid` mesh and emits **no `WorldBox`**
   at all. It is picked out of its own way by two property writes today and will
   need explicit handling in whatever replaces the pick. — *It got a list of its
-  own (`RayWorld.hulls`, filled by `VehicleSystem.build`), `Tank.rayBox` hands
+  own (`RayWorld.hulls`, filled by `VehicleSystem.build`), `Vehicle.rayBox` hands
   the box over through `deckAt`'s existing gate and scratch, and the two writes
   became a `skip` argument.*
 - `CombatSystem.fire`'s ordering: the wall pick caps the shot and only targets
@@ -2185,7 +2185,7 @@ question at all:
 
 - **S2, "which it needs most", is already spent.** No ray in the process touches
   the scene; `RayWorld` answers all of them off the same boxes. What is left of
-  the old shape is **one** caller — `Tank.update`'s `moveWithCollisions`, which
+  the old shape is **one** caller — `Vehicle.update`'s `moveWithCollisions`, which
   is still O(collidable meshes in the map) and is now the biggest single term in
   the authority's tick. Measured at **0.0394 ms/call on Coldharbour's 754 meshes
   and 0.4020 on the proving ground's 5,904**, and it runs only while a hull is

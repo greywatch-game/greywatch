@@ -1,7 +1,7 @@
 /**
- * Tank.ts — One vehicle: what it is made of physically, how it drives, where
+ * Vehicle.ts — One vehicle: what it is made of physically, how it drives, where
  * its gun points, and what it feels of a round.
- * Owns: the hull's collider mesh, the `TankRig` hanging off it, the drive
+ * Owns: the hull's collider mesh, the `VehicleRig` hanging off it, the drive
  * state, the turret and gun angles, the CUPOLA gun's own two angles, both
  * weapons' clocks, which of its two seats are filled, and the health.
  * Owns NO rules about who is in it, when it respawns or what its shell does
@@ -10,7 +10,7 @@
  *
  * ## TWO guns, two owners, and one world frame between them
  *
- * A hull holds two crewmen (`Tank.seats`, `DRIVER` and `GUNNER`) and each lays
+ * A hull holds two crewmen (`Vehicle.seats`, `DRIVER` and `GUNNER`) and each lays
  * a weapon of his own: the driver traverses the turret and fires the shell,
  * the gunner turns the commander's machine gun on its cupola ring. **The two
  * are independent and the independence is bought by one decision** — every
@@ -197,18 +197,8 @@ import type { ObstacleField } from "../world/ObstacleField";
 import type { RayHull } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
-import {
-  ANTENNA_LENGTHS,
-  buildTank,
-  paintTank,
-  resetTankPose,
-  setAntennaBend,
-  setTrackRun,
-  TRACK_GAUGE,
-  TRACK_REACH,
-  WHEEL_REACH,
-  type TankRig,
-} from "./TankModel";
+import { setAntennaBend, type VehicleRig } from "./vehicleRig";
+import type { VehicleSpec } from "../config/vehicles";
 
 /** What the driver is asking for this frame. */
 export interface DriveInput {
@@ -230,7 +220,7 @@ export interface DriveInput {
  * and a single struct would make either of those a lie about who asked for
  * what. `VehicleSystem` fetches them separately for exactly that reason.
  *
- * Both are WORLD angles and both are ORDERS — `Tank.aimMg` walks the gun to
+ * Both are WORLD angles and both are ORDERS — `Vehicle.aimMg` walks the gun to
  * them at the ring's own rate, which is the same bargain the turret makes and
  * the same reason the marker drawn from this gun cannot lie either.
  */
@@ -239,19 +229,24 @@ export interface GunInput {
   aimPitch: number;
 }
 
-/** Where a machine gun somebody ELSE is laying has got to. See `Tank.setMg`. */
+/** Where a machine gun somebody ELSE is laying has got to. See `Vehicle.setMg`. */
 export interface GunAngles {
   yaw: number;
   pitch: number;
 }
 
 /**
- * What a tank's main gun's round IS, as `CombatSystem` needs it told.
+ * What one vehicle's main gun's round IS, as `CombatSystem` needs it told.
  *
- * A module constant for the reason `Player.shotOptions` is a held object: the
- * shell is fired from a per-frame path and a fresh object per shot would be an
- * allocation on the trigger. Every field is a statement about a shell rather
- * than a tuning knob, which is why they are here and not in `CONFIG.vehicles`:
+ * Built ONCE PER HULL in the constructor and held, for the reason
+ * `Player.shotOptions` is a held object: a shell is fired from a per-frame path
+ * and a fresh object per shot would be an allocation on the trigger. It is
+ * per-hull rather than a module constant because there are two KINDS now and
+ * each states its own gun — and null on a kind that has none, which is the
+ * same statement `VehicleSpec.gun` makes one layer up.
+ *
+ * Every field is a statement about a shell rather than a tuning knob, which is
+ * why they are derived here and not restated in `CONFIG.vehicles`:
  *
  * - **No fall-off.** `damageFar` equals the gun's own damage and the band is
  *   degenerate, because a shell is a shell at any distance this game contains.
@@ -261,47 +256,51 @@ export interface GunAngles {
  *   a body hit — a shell that landed on a body has already spent several times
  *   a headshot's worth on it, and a gate at 1 means the sphere is never tested.
  * - **`shell`.** The one thing in the game a hull does not shrug off. See
- *   `CONFIG.vehicles.tank.resist`.
+ *   `VehicleSpec.resist`.
  *
- * It lives beside the gun rather than in whoever pulls the trigger, because
- * there are two of those now and they are in different PROCESSES: `Game`
- * fires a player's shell and `HeadlessGame` re-fires it, and two copies of a
- * statement about what a shell is would be two things to keep in step across
- * a wire whose whole point is that they agree.
+ * It lives on the gun rather than in whoever pulls the trigger, because there
+ * are two of those and they are in different PROCESSES: `Game` fires a
+ * player's shell and `HeadlessGame` re-fires it, and two copies of a statement
+ * about what a shell is would be two things to keep in step across a wire whose
+ * whole point is that they agree.
  */
-export const SHELL_SHOT: ShotOptions = {
-  damageFar: CONFIG.vehicles.tank.gun.damage,
-  falloffNear: CONFIG.vehicles.tank.gun.range,
-  falloffFar: CONFIG.vehicles.tank.gun.range,
-  damageKind: "shell",
-};
+function shellShotFor(spec: VehicleSpec): ShotOptions | null {
+  const g = spec.gun;
+  if (!g) return null;
+  return {
+    damageFar: g.damage,
+    falloffNear: g.range,
+    falloffFar: g.range,
+    damageKind: "shell",
+  };
+}
 
 /**
- * What a round out of the COMMANDER's gun is, as `CombatSystem` needs it told.
- *
- * A module constant beside `SHELL_SHOT` and for its reasons — it is spent from
- * a per-frame path, and there are two processes firing it. Every field is the
- * opposite of the shell's, which is the whole point of the second seat:
+ * What a round out of the SECOND seat's gun is, as `CombatSystem` needs it
+ * told. `shellShotFor`'s twin, and every field is the opposite of the shell's
+ * — which is the whole point of the second seat:
  *
  * - **Fall-off, and a lot of it.** A machine gun is a bullet weapon and loses
- *   with distance exactly as the rifle does; `CONFIG.vehicles.tank.mg` states
- *   the band.
+ *   with distance exactly as the rifle does; `VehicleSpec.mg` states the band.
  * - **No `headMult`.** The head zone is the player's alone and this gun is
  *   fired at bots as often as by the player — see `ShotOptions.headMult`.
  * - **`bullet`.** Not stated, because absent IS `bullet` and a field saying so
  *   would be a second place to change it. It is what makes this gun useless
- *   against armour by construction: `resist.bullet` is 0.05, so a whole belt
- *   into a hull is worth about a rifle magazine — which is the trade that
- *   stops a second gun making the first one decoration.
+ *   against armour by construction: a tank's `resist.bullet` is 0.05, so a
+ *   whole belt into a hull is worth about a rifle magazine — which is the trade
+ *   that stops a second gun making the first one decoration, and on the truck
+ *   is the reason a fast vehicle is not simply a better tank.
  */
-export const MG_SHOT: ShotOptions = {
-  damageFar: CONFIG.vehicles.tank.mg.damageFar,
-  falloffNear: CONFIG.vehicles.tank.mg.falloffNear,
-  falloffFar: CONFIG.vehicles.tank.mg.falloffFar,
-};
+function mgShotFor(spec: VehicleSpec): ShotOptions {
+  return {
+    damageFar: spec.mg.damageFar,
+    falloffNear: spec.mg.falloffNear,
+    falloffFar: spec.mg.falloffFar,
+  };
+}
 
 /**
- * The two jobs inside a hull, as an index into `Tank.seats`.
+ * The two jobs inside a hull, as an index into `Vehicle.seats`.
  *
  * **They are a PAIR and not a list**, which is why this is two constants and a
  * union rather than an enum that could grow: the driver's seat carries the
@@ -326,7 +325,7 @@ export const GUNNER: CrewSeat = 1;
  * gets — see `VehicleSystem.seatOn`, where the same rule is stated once for
  * both processes.
  *
- * **Here rather than in `TankCrew`, where it was, because it is what a
+ * **Here rather than in `VehicleCrew`, where it was, because it is what a
  * VEHICLE has and not what the AI does with one**: `Game.crewLine` walks it to
  * draw one entry per chair, which is how a hull with a seat count other than
  * two would draw the seats it actually has rather than the two a tank has.
@@ -350,24 +349,6 @@ const IDLE: DriveInput = { throttle: 0, steer: 0, aimYaw: 0, aimPitch: 0 };
  * put where it is.
  */
 const REMOTE_RESYNC_Y = 1;
-
-/**
- * How much faster each whip answers than the LONG one.
- *
- * A cantilever's natural frequency goes as 1/L^2, so the short mast is stiffer
- * than the long one by the square of the length ratio and nothing about it is
- * tuned separately: `CONFIG.vehicles.tank.antenna` states one spring and this
- * scales it. The pair come out 2.4 Hz and 3.8 Hz, which is why two masts on one
- * turret never swing in step — and a pair that DID would read as one animation
- * playing twice, which is the whole thing being avoided.
- */
-const WHIP_RATE = [1, (ANTENNA_LENGTHS[0] / ANTENNA_LENGTHS[1]) ** 2] as const;
-
-/**
- * Where each whip is in the gust, so the two are not stirred in lockstep by a
- * wind that is one wind. Radians of phase, and arbitrary.
- */
-const WHIP_PHASE = [0, 2.1] as const;
 
 /**
  * The one wind's bearing, normalised once — `CONFIG.wind.dir` is documented as
@@ -513,13 +494,43 @@ function slewRate(
   return rate + Math.max(-step, Math.min(step, want - rate));
 }
 
-export class Tank implements Combatant, RayHull {
+export class Vehicle implements Combatant, RayHull {
   /** The collider box, and the thing that MOVES. See the header. */
   readonly body: Mesh;
-  readonly rig: TankRig;
+  readonly rig: VehicleRig;
 
   alive = true;
-  health: number = CONFIG.vehicles.tank.maxHealth;
+  health: number;
+
+  /**
+   * Every number this hull runs on — the `VehicleSpec` its kind states. Read
+   * by everything that used to reach for `CONFIG.vehicles.tank`, which is how
+   * a second kind reached the drive, the camera, the crush and the HUD without
+   * any of them learning that kinds exist.
+   */
+  readonly spec: VehicleSpec;
+  /** What the HUD calls it: `"TANK"`, `"TRUCK"`. See `VehicleType.name`. */
+  readonly name: string;
+
+  /**
+   * Does this vehicle have a main gun at all?
+   *
+   * **The one question anything asks about a KIND, and the only one.** It is
+   * `spec.gun !== null` resolved once, and everything that would otherwise
+   * have to branch on what it is holding asks this instead: the trigger, the
+   * HUD's loader row, the gun marker, an AI driver's lay-and-fire, and the
+   * authority's own rate gate on a claimed shell. `Vehicle` itself uses it in
+   * exactly two places — `update` leaves `turretYaw` on the hull's own heading
+   * so an inert ring draws at a local zero, and `fireGun` refuses.
+   */
+  readonly armed: boolean;
+
+  /**
+   * What this hull's own rounds are, resolved once. Null on an unarmed kind,
+   * which is `armed` seen from the other side — see `shellShotFor`.
+   */
+  readonly shellShot: ShotOptions | null;
+  readonly mgShot: ShotOptions;
 
   /** Feet — the point the tracks rest on, as `Combatant` requires. */
   readonly position = new Vector3();
@@ -527,7 +538,7 @@ export class Tank implements Combatant, RayHull {
   readonly center = new Vector3();
   /** The cupola: what bots test line of sight to, and aim at. */
   readonly eyePos = new Vector3();
-  readonly hitRadius = CONFIG.vehicles.tank.hitRadius;
+  readonly hitRadius: number;
   /**
    * This is a vehicle — the one thing in the game that declares it, and the
    * one bit an AI needs to decide whether the thing in front of it is worth a
@@ -644,7 +655,7 @@ export class Tank implements Combatant, RayHull {
    * its own middle; this one is a distance because a hull landing on its
    * tracks does not turn at all. It is drawn on `rig.sprung`, which is
    * everything the springs carry — see `flexHeave` for what drives it, and
-   * `TankRig.sprung` for why the tracks are not on it.
+   * `VehicleRig.sprung` for why the tracks are not on it.
    */
   private heave = 0;
   private heaveVel = 0;
@@ -818,12 +829,42 @@ export class Tank implements Combatant, RayHull {
 
   constructor(
     scene: Scene,
-    private mats: CelMaterialFactory,
+    mats: CelMaterialFactory,
     readonly team: Team,
+    /**
+     * WHAT this hull is: what to call it, every number it runs on, and the
+     * function that draws it.
+     *
+     * **Handed in rather than reached for**, because a `Vehicle` is one hull of
+     * whatever KIND its hardstanding named and this file may not know which —
+     * and the moment it could ask, the branch it would grow is the thing the
+     * whole arrangement exists to avoid. `entities/vehicleKinds.ts` is where a
+     * kind becomes one of these, and `VehicleSystem.build` is its only caller.
+     *
+     * Stated structurally rather than imported as `VehicleType`, so the
+     * dependency runs one way: the registry knows about the models, and the
+     * hull knows about neither.
+     */
+    private type: {
+      readonly name: string;
+      readonly spec: VehicleSpec;
+      readonly build: (
+        scene: Scene,
+        mats: CelMaterialFactory,
+        team: Team,
+      ) => VehicleRig;
+    },
   ) {
-    const t = CONFIG.vehicles.tank;
+    const t = this.type.spec;
+    this.spec = t;
+    this.name = this.type.name;
+    this.health = t.maxHealth;
+    this.hitRadius = t.hitRadius;
+    this.armed = t.gun !== null;
+    this.shellShot = shellShotFor(t);
+    this.mgShot = mgShotFor(t);
     this.body = MeshBuilder.CreateBox(
-      `tank-body-${team}`,
+      `hull-body-${team}`,
       { width: t.hull.width, height: t.hull.height, depth: t.hull.length },
       scene,
     );
@@ -863,7 +904,7 @@ export class Tank implements Combatant, RayHull {
     );
     this.body.ellipsoidOffset = new Vector3(0, t.drive.climbHeight / 2, 0);
 
-    this.rig = buildTank(scene, mats, team);
+    this.rig = this.type.build(scene, mats, team);
     this.rig.root.parent = this.body;
     // The rig is drawn with `y = 0` at the bottom of the tracks and the
     // collider box is centred on the hull, so the model hangs half a hull
@@ -894,7 +935,7 @@ export class Tank implements Combatant, RayHull {
    * that what comes BACK is clean.
    */
   placeAt(pos: Vector3, yaw: number): void {
-    const t = CONFIG.vehicles.tank;
+    const t = this.spec;
     this.alive = true;
     this.health = t.maxHealth;
     this.yaw = yaw;
@@ -959,7 +1000,7 @@ export class Tank implements Combatant, RayHull {
     this.body.metadata = { solid: true };
     this.body.checkCollisions = true;
     this.body.isPickable = true;
-    resetTankPose(this.rig, this.mats);
+    this.rig.reset();
     this.body.setEnabled(true);
     this.sync();
   }
@@ -991,15 +1032,24 @@ export class Tank implements Combatant, RayHull {
     this.body.dispose();
   }
 
-  /** Is the gun loaded? */
+  /**
+   * Is the gun loaded? **False forever on a hull that has no gun**, which is
+   * what makes `fireGun` and the AI crew's trigger both refuse without either
+   * of them having to ask what kind of vehicle this is.
+   */
   get gunReady(): boolean {
-    return this.alive && this.reloadT <= 0;
+    return this.armed && this.alive && this.reloadT <= 0;
   }
 
-  /** 0 just fired, 1 loaded — what the HUD draws as the gun's own magazine. */
-  get loadProgress(): number {
-    const cool = CONFIG.vehicles.tank.gun.cooldown;
-    return Math.min(1, 1 - this.reloadT / cool);
+  /**
+   * 0 just fired, 1 loaded — what the HUD draws as the gun's own magazine, and
+   * **null on a hull with no gun**, which is what takes the loader row off the
+   * band rather than leaving it dimmed at a permanent full.
+   */
+  get loadProgress(): number | null {
+    const g = this.spec.gun;
+    if (!g) return null;
+    return Math.min(1, 1 - this.reloadT / g.cooldown);
   }
 
   /** How fast the hull is going, regardless of which way. For the engine note. */
@@ -1017,9 +1067,18 @@ export class Tank implements Combatant, RayHull {
     );
   }
 
-  /** The barrel's tip in world space: where a shell starts and its flash is lit. */
+  /**
+   * The barrel's tip in world space: where a shell starts and its flash is lit.
+   *
+   * **On an unarmed hull there is no barrel**, and this answers with the ring
+   * the gun would have been on rather than throwing — every caller is already
+   * behind `armed` or behind `fireGun`'s refusal, so the fallback is
+   * unreachable, and a `Vector3` nobody reads is a cheaper way to say that than
+   * a nullable every call site has to unwrap.
+   */
   muzzleToRef(out: Vector3): Vector3 {
-    return out.copyFrom(this.rig.muzzle.getAbsolutePosition());
+    const muzzle = this.rig.muzzle ?? this.rig.turret;
+    return out.copyFrom(muzzle.getAbsolutePosition());
   }
 
   /** Where the COMMANDER's gun points, in the world. Never where the turret does. */
@@ -1056,7 +1115,7 @@ export class Tank implements Combatant, RayHull {
    */
   fireMg(): boolean {
     if (!this.mgReady) return false;
-    this.mgNextT = 1 / CONFIG.vehicles.tank.mg.fireRate;
+    this.mgNextT = 1 / this.spec.mg.fireRate;
     return true;
   }
 
@@ -1089,7 +1148,7 @@ export class Tank implements Combatant, RayHull {
     this.mgRideYaw = this.turretYaw;
     if (!this.alive) return;
     this.mgNextT = Math.max(0, this.mgNextT - dt);
-    const m = CONFIG.vehicles.tank.mg;
+    const m = this.spec.mg;
     if (!order) {
       this.mgYaw += ride;
       this.mgYawRate = 0;
@@ -1168,8 +1227,10 @@ export class Tank implements Combatant, RayHull {
    * second whether anybody is holding the throttle or not.
    */
   fireGun(): boolean {
-    if (!this.gunReady) return false;
-    const g = CONFIG.vehicles.tank.gun;
+    const g = this.spec.gun;
+    // `gunReady` is already false on an unarmed hull; the second test is what
+    // narrows the type, and the two are one statement rather than two.
+    if (!g || !this.gunReady) return false;
     this.reloadT = g.cooldown;
     // What follows is ONE force spent in three places, and the direction of it
     // is the GUN's and never the hull's. The turret traverses and the hull does
@@ -1209,7 +1270,7 @@ export class Tank implements Combatant, RayHull {
     // exactly as hard whichever way the gun is laid. A positive Z stands the
     // hull's RIGHT side up (`flexSuspension` says so), and a shot to the right
     // shoves the hull left — which lifts the right side, hence the sign.
-    const s = CONFIG.vehicles.tank.suspension;
+    const s = this.spec.suspension;
     this.suspPitchVel -= s.gunKick * along;
     this.suspRollVel += s.gunKick * across;
     // ...and the MASTS crack, which is a third fact and belongs here for the
@@ -1224,8 +1285,8 @@ export class Tank implements Combatant, RayHull {
     // direction a shot throws a mast is the one thing on this vehicle that
     // traversing cannot change. A positive X bend tips a tip toward the
     // turret's +Z, which is where the gun points.
-    const kick = CONFIG.vehicles.tank.antenna.gunKick;
-    for (let i = 0; i < 2; i++) this.whipVelX[i] += kick;
+    const kick = this.spec.antenna.gunKick;
+    for (let i = 0; i < this.rig.antennae.length; i++) this.whipVelX[i] += kick;
     return true;
   }
 
@@ -1243,7 +1304,7 @@ export class Tank implements Combatant, RayHull {
     // that `CombatSystem.fire` and `blastAt` read "nothing died" and neither
     // credits a kill nor burns a crew this client has no business burning.
     if (this.predicted) return false;
-    const resist = CONFIG.vehicles.tank.resist;
+    const resist = this.spec.resist;
     const felt =
       amount *
       (kind === "shell" ? resist.shell : kind === "blast" ? resist.blast : resist.bullet);
@@ -1287,7 +1348,7 @@ export class Tank implements Combatant, RayHull {
     this.leanRateX = 0;
     this.leanRateZ = 0;
     this.wreckT = CONFIG.vehicles.wreckTime;
-    paintTank(this.rig, this.mats, true);
+    this.rig.paint(true);
     this.onDestroyed();
   }
 
@@ -1326,7 +1387,7 @@ export class Tank implements Combatant, RayHull {
 
     this.reloadT = Math.max(0, this.reloadT - dt);
     const d = drive ?? IDLE;
-    const c = CONFIG.vehicles.tank.drive;
+    const c = this.spec.drive;
     // What the drive ACHIEVES this frame, for the suspension to answer to. Read
     // as a difference rather than taken from the throttle because the three
     // things that decelerate a hull are not all the throttle's: letting go of
@@ -1370,10 +1431,10 @@ export class Tank implements Combatant, RayHull {
     // only ways it can.
     const stirred = this.speed !== 0 || yawRate !== 0;
     if (stirred) {
-      const differential = (yawRate * TRACK_GAUGE) / 2;
+      const differential = (yawRate * this.rig.gauge) / 2;
       this.trackRun[0] += (this.speed + differential) * dt;
       this.trackRun[1] += (this.speed - differential) * dt;
-      setTrackRun(this.rig, this.trackRun[0], this.trackRun[1]);
+      this.rig.setRun(this.trackRun[0], this.trackRun[1], d.steer);
     }
 
     // **Aimed on a TURN as well as on a move, and that is a fix rather than a
@@ -1458,8 +1519,21 @@ export class Tank implements Combatant, RayHull {
     // zeroed rather than run down: its gun stays exactly where the last driver
     // left it, and a turret that carried a stale rate across an empty seat
     // would start moving again on the frame somebody sat back in it.
-    if (drive) {
-      const tur = CONFIG.vehicles.tank.turret;
+    //
+    // **An UNARMED hull is the one case that skips it entirely**, and what it
+    // does instead is keep `turretYaw` on the hull's own heading. That is not a
+    // special case dressed up: the drawn angle is `turretYaw - yaw`, so a
+    // turret that tracks the hull draws at a permanent local zero — which is
+    // exactly what a ring welded to a truck's bed should do — and `aimMg`,
+    // which writes `mgYaw - turretYaw` onto the mount above it, then puts a
+    // world-held machine gun on a body-mounted ring with no branch of its own.
+    const tur = this.spec.gun?.turret;
+    if (!tur) {
+      this.turretYaw = this.yaw;
+      this.gunPitch = 0;
+      this.turretRate = 0;
+      this.gunRate = 0;
+    } else if (drive) {
       const dy = angleDelta(this.turretYaw, d.aimYaw);
       this.turretRate = slewRate(
         dt,
@@ -1489,7 +1563,7 @@ export class Tank implements Combatant, RayHull {
     this.rig.turret.rotation.y = angleDelta(this.yaw, this.turretYaw);
     // A positive X rotation tips a box's +Z face DOWN, so the gun's elevation
     // is the negative of it.
-    this.rig.gun.rotation.x = -this.gunPitch;
+    if (this.rig.gun) this.rig.gun.rotation.x = -this.gunPitch;
 
     // Sideways is `speed * yawRate` and nothing else: a neutral-steer pivot at a
     // standstill has no lateral acceleration in it, and a hull that leaned into
@@ -1543,7 +1617,7 @@ export class Tank implements Combatant, RayHull {
     gunPitch: number,
   ): void {
     if (this.wreckT > 0) this.wreckT = Math.max(0, this.wreckT - dt);
-    const t = CONFIG.vehicles.tank;
+    const t = this.spec;
     const c = t.drive;
     const half = t.hull.height / 2;
     const p = this.body.position;
@@ -1604,10 +1678,22 @@ export class Tank implements Combatant, RayHull {
     // The belts, off the drive that was just measured — `update`'s arithmetic
     // to the letter, including the skip for a hull doing neither.
     if (this.speed !== 0 || yawRate !== 0) {
-      const differential = (yawRate * TRACK_GAUGE) / 2;
+      const differential = (yawRate * this.rig.gauge) / 2;
       this.trackRun[0] += (this.speed + differential) * dt;
       this.trackRun[1] += (this.speed - differential) * dt;
-      setTrackRun(this.rig, this.trackRun[0], this.trackRun[1]);
+      // **The steer a watcher sees is DERIVED here and reported nowhere**,
+      // which is the bargain the lean, the heave and the belts already make:
+      // the wire carries where a hull ended up and every client works the
+      // picture out for itself. A yaw rate over the turn the drive could have
+      // asked for at this speed IS the stick that produced it.
+      const turn =
+        c.turnRate *
+        (1 - (1 - c.turnAtSpeed) * Math.min(1, Math.abs(this.speed) / c.maxSpeed));
+      this.rig.setRun(
+        this.trackRun[0],
+        this.trackRun[1],
+        turn > 1e-4 ? Math.max(-1, Math.min(1, yawRate / turn)) : 0,
+      );
     }
     if (Math.abs(this.speed) > 1e-3) this.aimCollider();
 
@@ -1616,9 +1702,15 @@ export class Tank implements Combatant, RayHull {
 
     // Held in the world and drawn against the hull, exactly as `update` does
     // it: the turret is an absolute bearing and the hull turning under it must
-    // not drag it round.
+    // not drag it round. An unarmed hull takes `update`'s rule here too — the
+    // wire carries a `tyaw` for every hull and this is what makes the one it
+    // carries for a turretless one harmless.
+    if (!this.armed) {
+      this.turretYaw = this.yaw;
+      this.gunPitch = 0;
+    }
     this.rig.turret.rotation.y = angleDelta(this.yaw, this.turretYaw);
-    this.rig.gun.rotation.x = -this.gunPitch;
+    if (this.rig.gun) this.rig.gun.rotation.x = -this.gunPitch;
 
     const accel = dt > 0 ? (this.speed - speedWas) / dt : 0;
     const lateral = this.speed * yawRate;
@@ -1642,7 +1734,7 @@ export class Tank implements Combatant, RayHull {
    * and the end it jumps to is the end the tank has just driven away from.
    */
   private aimCollider(): void {
-    const t = CONFIG.vehicles.tank;
+    const t = this.spec;
     // The SIGN is the only thing here that waits for motion. Where the sphere
     // sits is a fact about the yaw and has to be written whenever the yaw
     // moves; which END it sits at is a fact about the direction of travel, and
@@ -1717,7 +1809,7 @@ export class Tank implements Combatant, RayHull {
     const obstacles = this.obstacles;
     this.clearing = false;
     if (!obstacles) return;
-    const t = CONFIG.vehicles.tank;
+    const t = this.spec;
     const p = this.body.position;
     const e = this.body.ellipsoidOffset;
     const cx = p.x + e.x;
@@ -1782,7 +1874,7 @@ export class Tank implements Combatant, RayHull {
    * heightfield sample, the same pair a track contact costs.
    */
   rideableAt(x: number, z: number, reach: number): boolean {
-    const t = CONFIG.vehicles.tank;
+    const t = this.spec;
     const c = t.drive;
     const tracks = this.body.position.y - t.hull.height / 2;
     if (
@@ -1899,7 +1991,7 @@ export class Tank implements Combatant, RayHull {
    */
   rayBox(): WorldBox | null {
     if (!this.body.isEnabled() || !this.body.isPickable) return null;
-    const hull = CONFIG.vehicles.tank.hull;
+    const hull = this.spec.hull;
     const b = this.deckBox;
     b.w = hull.width;
     b.h = hull.height;
@@ -1993,7 +2085,7 @@ export class Tank implements Combatant, RayHull {
    * hull driven off a roof is supposed to drop like one.
    */
   private standOnGround(dt: number): void {
-    const t = CONFIG.vehicles.tank;
+    const t = this.spec;
     const c = t.drive;
     const half = t.hull.height / 2;
     const p = this.body.position;
@@ -2013,8 +2105,8 @@ export class Tank implements Combatant, RayHull {
     // Forward is `(sin yaw, cos yaw)`, so right is `(cos yaw, -sin yaw)`.
     const fx = Math.sin(this.yaw);
     const fz = Math.cos(this.yaw);
-    const reach = TRACK_REACH;
-    const wide = TRACK_GAUGE / 2;
+    const reach = this.rig.contactReach;
+    const wide = this.rig.gauge / 2;
     const h = this.contacts;
     // Fore to aft; right belt then left within each row. `contactLong` and
     // `contactLat` reproduce this order and both passes below walk it.
@@ -2126,7 +2218,7 @@ export class Tank implements Combatant, RayHull {
     // one input the sprung mass has. Nothing here knows whether it was a
     // landing, a kerb or the top of a car — see `flexHeave`, and
     // `suspension.joltLimit` for why a one-frame answer is bounded.
-    const jl = CONFIG.vehicles.tank.suspension.joltLimit;
+    const jl = this.spec.suspension.joltLimit;
     this.jolt = Math.max(-jl, Math.min(jl, this.riseRate - riseWas));
   }
 
@@ -2204,7 +2296,7 @@ export class Tank implements Combatant, RayHull {
    * the spring next door is the half that must.
    */
   private leanToGround(dt: number): void {
-    const c = CONFIG.vehicles.tank.drive;
+    const c = this.spec.drive;
     // Nothing off the ground can change which way it is pointing. The target
     // is measured against the ground BELOW the hull, which a falling tank is
     // nowhere near — so in the air the lerp all but stops and the hull lands on
@@ -2255,7 +2347,7 @@ export class Tank implements Combatant, RayHull {
    * treatment as the camera's landing absorb, and for the same reason.
    */
   private flexSuspension(dt: number, accel: number, lateral: number): void {
-    const s = CONFIG.vehicles.tank.suspension;
+    const s = this.spec.suspension;
     const bound = (v: number, lim: number) => Math.max(-lim, Math.min(lim, v));
     const felt = bound(accel, s.accelLimit);
     // Accelerating lifts the nose and a positive X rotation puts it down, so
@@ -2283,8 +2375,8 @@ export class Tank implements Combatant, RayHull {
     // is something a road-wheel ARM reaches, and the sprocket and the idler
     // hang off the hull with no arms at all.
     const asked =
-      WHEEL_REACH * Math.abs(Math.sin(pitch)) +
-      (TRACK_GAUGE / 2) * Math.abs(Math.sin(roll));
+      this.rig.wheelReach * Math.abs(Math.sin(pitch)) +
+      (this.rig.gauge / 2) * Math.abs(Math.sin(roll));
     if (asked > room) {
       // Scaled rather than clamped per axis, because the two are drawing on
       // ONE budget: a hull already leaning hard has less dive left in it, and
@@ -2342,7 +2434,7 @@ export class Tank implements Combatant, RayHull {
    * reticle still cannot lie.
    */
   private flexHeave(dt: number): void {
-    const s = CONFIG.vehicles.tank.suspension;
+    const s = this.spec.suspension;
     this.heaveVel -= this.jolt * s.heaveResponse;
     this.heaveVel +=
       (-s.heaveStiffness * this.heave - s.heaveDamping * this.heaveVel) * dt;
@@ -2409,8 +2501,8 @@ export class Tank implements Combatant, RayHull {
    * would break it is a stiffer spring, not a slower frame.
    */
   private flexAntennae(dt: number, accel: number, lateral: number): void {
-    const a = CONFIG.vehicles.tank.antenna;
-    const lim = CONFIG.vehicles.tank.suspension.accelLimit;
+    const a = this.spec.antenna;
+    const lim = this.spec.suspension.accelLimit;
     const bound = (v: number, l: number) => Math.max(-l, Math.min(l, v));
     // Into the turret's own frame: its world yaw is `turretYaw`, so the local
     // one is what the drawn node already carries.
@@ -2429,20 +2521,21 @@ export class Tank implements Combatant, RayHull {
     // the gust is continuous across the wrap and the clock does not grow for
     // the length of a round. Same rule as `setTrackRun`'s modulo.
     this.windT = (this.windT + dt) % (200 * Math.PI / a.wind.speed);
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < this.rig.antennae.length; i++) {
+      const whip = this.rig.antennae[i];
       // Two sines well off a whole ratio, so the gust does not come round on a
       // metronome — the same trick the grass shader plays, at a mast's rate.
-      const t = this.windT * a.wind.speed + WHIP_PHASE[i];
+      const t = this.windT * a.wind.speed + whip.phase;
       const puff = a.wind.sway * (Math.sin(t) * 0.7 + Math.sin(t * 0.41) * 0.3);
       // A positive X rotation tips the mast's top toward +Z and a positive Z
       // rotation tips it toward -X, which is where both signs below come from.
       const wantX = -localAZ * a.swayPerAccel - rateX * a.lagPerRate + windZ * puff;
       const wantZ = localAX * a.swayPerAccel - rateZ * a.lagPerRate - windX * puff;
       // One spring per mast, scaled off the long one by its length — see
-      // `WHIP_RATE`. Stiffness goes as the square of the rate and damping as
+      // `Whip.rate`. Stiffness goes as the square of the rate and damping as
       // the rate itself, which is what keeps both at the same damping RATIO:
       // scaling only the stiffness would leave the short mast ringing.
-      const rate = WHIP_RATE[i];
+      const rate = whip.rate;
       const k = a.stiffness * rate * rate;
       const c = a.damping * rate;
       this.whipVelX[i] += (k * (wantX - this.whipX[i]) - c * this.whipVelX[i]) * dt;
@@ -2454,7 +2547,7 @@ export class Tank implements Combatant, RayHull {
       const follow = Math.min(1, dt * a.lagRate);
       this.tipX[i] += (this.whipX[i] - this.tipX[i]) * follow;
       this.tipZ[i] += (this.whipZ[i] - this.tipZ[i]) * follow;
-      setAntennaBend(this.rig, i, this.whipX[i], this.whipZ[i], this.tipX[i], this.tipZ[i]);
+      setAntennaBend(whip, a.baseShare, this.whipX[i], this.whipZ[i], this.tipX[i], this.tipZ[i]);
     }
   }
 
@@ -2463,7 +2556,7 @@ export class Tank implements Combatant, RayHull {
    * they are written, the same rule `Player.syncCombatant` follows.
    */
   private sync(): void {
-    const t = CONFIG.vehicles.tank;
+    const t = this.spec;
     const p = this.body.position;
     const feet = p.y - t.hull.height / 2;
     this.position.set(p.x, feet, p.z);

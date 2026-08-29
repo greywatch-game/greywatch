@@ -1,5 +1,5 @@
 /**
- * TankCrew.ts — The bots that CREW. Which body is in which SEAT of which hull,
+ * VehicleCrew.ts — The bots that CREW. Which body is in which SEAT of which hull,
  * where that hull is being taken, and what each of its two guns is laid on.
  * Owns: the (bot, hull, seat) pairing, one small FSM per crewman, and the
  * drive and gun inputs every crewed hull is stepped with.
@@ -68,7 +68,7 @@
  *    scale. Coldharbour's avenues are 16 m wide and the field runs down the
  *    middle of them; what it gets wrong is the last few metres, where it
  *    offers a 1.6 m doorway.
- * 2. **"Is that way a wall?"**, which is `Tank.rideableAt` — the same
+ * 2. **"Is that way a wall?"**, which is `Vehicle.rideableAt` — the same
  *    analytic climb-band query the hull already answers ten times a frame to
  *    stand on its tracks, spent on where it is about to be instead of where it
  *    is. A fan of whiskers over it turns the body's bearing into a hull's.
@@ -110,8 +110,8 @@ import {
   type CrewSeat,
   type DriveInput,
   type GunInput,
-  type Tank,
-} from "../entities/Tank";
+  type Vehicle,
+} from "../entities/Vehicle";
 import type { GameMap } from "../world/MapBuilder";
 import type { NavGrid } from "../world/NavGrid";
 
@@ -125,7 +125,7 @@ export interface CrewCtx {
    * are live lists whose contents are replaced every round, and a reference
    * captured when this context was built would be last round's.
    */
-  hulls(): readonly Tank[];
+  hulls(): readonly Vehicle[];
   roster(): readonly Bot[];
   /**
    * Is this bot out of the fight for somebody else's reason — a human in its
@@ -135,12 +135,12 @@ export interface CrewCtx {
   aside(bot: Bot): boolean;
   /**
    * Takes or gives up a seat. Routed rather than written here because
-   * `VehicleSystem.setOccupied` is the ONE writer of `Tank.occupied`, and two
+   * `VehicleSystem.setOccupied` is the ONE writer of `Vehicle.occupied`, and two
    * writers is how a hull ends up offered to somebody already sitting in it.
    */
-  setOccupied(tank: Tank, seat: CrewSeat, on: boolean): void;
+  setOccupied(tank: Vehicle, seat: CrewSeat, on: boolean): void;
   /** Where a body stepping out of this hull is put down. Scratch — consume it. */
-  exitSpot(tank: Tank): Vector3;
+  exitSpot(tank: Vehicle): Vector3;
   /** Living enemies of `team`. Scratch — consume it inside the call. */
   targetsFor(team: Team): readonly Combatant[];
   /**
@@ -148,7 +148,7 @@ export interface CrewCtx {
    * system's think clock.
    *
    * **The HULL is passed rather than a point, because the answer is wrong
-   * without it.** A crew's eye is `Tank.eyePos`, five centimetres above the
+   * without it.** A crew's eye is `Vehicle.eyePos`, five centimetres above the
    * top of its own collider box, and any target lower than the cupola puts the
    * sightline back down through that box within the hull's own length — so a
    * tank could see nothing at all in front of it. Measured on Coldharbour: no
@@ -157,34 +157,34 @@ export interface CrewCtx {
    * pick for the length of the call — and it is the caller's to make, because
    * `world/solid.ts` forbids minting a predicate that closes over one.
    */
-  visibleFrom(tank: Tank, to: Vector3): boolean;
+  visibleFrom(tank: Vehicle, to: Vector3): boolean;
   /**
    * Fires this hull's gun, resolved by `Game` exactly as the player's shell
    * is — same damage, same blast, same one implementation. `by` is who the
    * kill belongs to.
    *
-   * The crew must have checked `Tank.gunReady` first: this spends the round in
+   * The crew must have checked `Vehicle.gunReady` first: this spends the round in
    * the breech, and a caller that fires a gun that is not loaded gets nothing
    * and learns nothing, exactly as `GrenadeSystem.throwAlong`'s callers must.
    */
-  fireShell(tank: Tank, by: Bot): void;
+  fireShell(tank: Vehicle, by: Bot): void;
   /**
    * One round out of this hull's CUPOLA gun, resolved by `Game` exactly as the
    * shell is and for the same reason: the player on that seat and a bot on it
    * fire the same weapon, and two copies of a damage figure, a spread and a
    * noise are two things that drift.
    *
-   * The crew must have checked `Tank.mgReady` first — the rate limit is
-   * `Tank.fireMg`'s and a caller that ignores it learns nothing, which is
+   * The crew must have checked `Vehicle.mgReady` first — the rate limit is
+   * `Vehicle.fireMg`'s and a caller that ignores it learns nothing, which is
    * `fireShell`'s contract one calibre down.
    */
-  fireMg(tank: Tank, by: Bot): void;
+  fireMg(tank: Vehicle, by: Bot): void;
 }
 
 /** One body in one SEAT of one hull, and everything it is in the middle of doing. */
 interface Crew {
   readonly bot: Bot;
-  readonly tank: Tank;
+  readonly tank: Vehicle;
   /**
    * Which job this body is doing. `DRIVER` reads every field below; `GUNNER`
    * reads the target, the lay and the burst clocks and nothing else — a man on
@@ -278,7 +278,7 @@ const WHISKER_LATERAL = [0, 0.34, -0.34, 0.67, -0.67, 1, -1] as const;
  */
 const WHISKER_DEPTHS = [0, 0.28, 0.6, 1] as const;
 
-export class TankCrew {
+export class VehicleCrew {
   private readonly crews: Crew[] = [];
   /**
    * The sweep's own copy of the list. A crew can be disbanded from inside the
@@ -297,8 +297,8 @@ export class TankCrew {
    * `BattleSystem`'s to apply, exactly as `Game.mount` applies it to the
    * player by hand.
    */
-  onBoarded: (bot: Bot, tank: Tank) => void = () => {};
-  onLeft: (bot: Bot, tank: Tank) => void = () => {};
+  onBoarded: (bot: Bot, tank: Vehicle) => void = () => {};
+  onLeft: (bot: Bot, tank: Vehicle) => void = () => {};
   /**
    * Wired by `Game`: this crewman's hull burned and he is dead in it. Raised
    * with the body already put down beside the wreck and already back in the
@@ -306,7 +306,7 @@ export class TankCrew {
    * door — the same shape `VehicleSystem.onDestroyed` hands the player's own
    * death to `wireVehicles`.
    */
-  onCrewLost: (bot: Bot, tank: Tank) => void = () => {};
+  onCrewLost: (bot: Bot, tank: Vehicle) => void = () => {};
 
   constructor(private ctx: CrewCtx) {}
 
@@ -322,7 +322,7 @@ export class TankCrew {
    * The bot in this hull's `seat`, or null. What `Game` asks before offering
    * one, and what the authority's snapshot names an occupant from.
    */
-  crewOf(tank: Tank, seat: CrewSeat): Bot | null {
+  crewOf(tank: Vehicle, seat: CrewSeat): Bot | null {
     for (const crew of this.crews) {
       if (crew.tank === tank && crew.seat === seat) return crew.bot;
     }
@@ -330,7 +330,7 @@ export class TankCrew {
   }
 
   /** Is either seat in this hull held by a bot? What an eviction offer asks. */
-  anyCrewIn(tank: Tank): boolean {
+  anyCrewIn(tank: Vehicle): boolean {
     for (const crew of this.crews) if (crew.tank === tank) return true;
     return false;
   }
@@ -341,7 +341,7 @@ export class TankCrew {
    * object; the drive itself was written by `update` earlier in the same
    * frame, exactly as the player's is written by `updateDriver`.
    */
-  driveFor(tank: Tank): DriveInput | null {
+  driveFor(tank: Vehicle): DriveInput | null {
     for (const crew of this.crews) {
       if (crew.tank === tank && crew.seat === DRIVER) return crew.drive;
     }
@@ -353,7 +353,7 @@ export class TankCrew {
    * is on it. `driveFor`'s twin for the second seat, asked once per hull per
    * frame through the same orders object.
    */
-  gunFor(tank: Tank): GunInput | null {
+  gunFor(tank: Vehicle): GunInput | null {
     for (const crew of this.crews) {
       if (crew.tank === tank && crew.seat === GUNNER) return crew.gun;
     }
@@ -369,7 +369,7 @@ export class TankCrew {
    * are offered an empty one, and pressing the key evicts whoever is inside —
    * armour is something the bots use while nobody else wants it.
    */
-  evict(tank: Tank, seat: CrewSeat): Bot | null {
+  evict(tank: Vehicle, seat: CrewSeat): Bot | null {
     const crew = this.crews.find((c) => c.tank === tank && c.seat === seat);
     if (!crew) return null;
     const bot = crew.bot;
@@ -394,7 +394,7 @@ export class TankCrew {
    * hull that keeps its collider for the whole wreck clock falls through the
    * one solid thing in the street.
    */
-  hullDestroyed(tank: Tank): void {
+  hullDestroyed(tank: Vehicle): void {
     // BOTH seats, and the loop is the whole of what a second crewman costs
     // this path: a hull burns with everybody in it, and a driver announced
     // while the gunner beside him was quietly dropped would be a body that
@@ -492,7 +492,7 @@ export class TankCrew {
   }
 
   /** Puts `bot` in `tank`'s `seat`. The exact inverse of `remove`; read them as a pair. */
-  private take(bot: Bot, tank: Tank, seat: CrewSeat): void {
+  private take(bot: Bot, tank: Vehicle, seat: CrewSeat): void {
     this.crews.push({
       bot,
       tank,
@@ -515,8 +515,8 @@ export class TankCrew {
       reverseT: 0,
       detourYaw: 0,
       detourT: 0,
-      // Fixed per crew and split by side, so the two hulls on a map do not
-      // both shoulder the same way out of the same street.
+      // Fixed per crew and split by side, so two hulls in the same street do
+      // not both shoulder the same way out of it.
       reverseSide: tank.team === 0 ? 1 : -1,
       left: false,
     });
@@ -561,9 +561,16 @@ export class TankCrew {
       this.shootMg(dt, crew);
       return;
     }
-    this.lay(dt, crew);
+    // **A driver with no gun only drives**, and that is the whole of what an
+    // unarmed KIND costs this file. `lay` and `shoot` are the main gun's, and
+    // on a hull that has none they would be laying a turret that is welded
+    // down and pulling a trigger `Vehicle.fireGun` refuses — so they are
+    // skipped rather than made to fail quietly, and what is left is a crewman
+    // taking his gunner somewhere. `acquire` still runs above, because a
+    // target is what `steer` holds station on.
+    if (crew.tank.armed) this.lay(dt, crew);
     this.steer(dt, crew);
-    this.shoot(crew);
+    if (crew.tank.armed) this.shoot(crew);
   }
 
   /**
@@ -590,7 +597,16 @@ export class TankCrew {
     // about — a gunner who acquired the enemy hull would spend the fight
     // rattling rounds off it while the squad that arrived with it walked past.
     // So he sees INFANTRY only, and only as far as `mgRange`.
-    const soft = crew.seat === GUNNER;
+    //
+    // **A driver whose vehicle has no cannon is looking for the same thing**,
+    // and for a reason worth stating: what he acquires is not something he can
+    // shoot at all — it is what `steer` holds station ON. A truck driver who
+    // fixed on the enemy hull would drive his gunner toward the one target
+    // neither of them can hurt and park inside its main gun's cone, which is
+    // the worst thing this vehicle can do with its speed. So he sees infantry
+    // only, at the range his gunner's gun reaches, and armour is something he
+    // has no opinion about.
+    const soft = crew.seat === GUNNER || !tank.armed;
     const range = soft ? c.mgRange : c.engageRange;
     const held = crew.target;
     if (
@@ -676,7 +692,7 @@ export class TankCrew {
 
   /**
    * Where the gun is ASKED to point. Never where it points — the turret walks
-   * there at `traverseRate` and `Tank` is the only thing that moves it, which
+   * there at `traverseRate` and `Vehicle` is the only thing that moves it, which
    * is the whole of why a hull's reticle cannot lie.
    *
    * The angles are solved from the MUZZLE rather than from the hull's centre,
@@ -721,7 +737,7 @@ export class TankCrew {
    * that are different about a machine gun and nothing else.
    *
    * **A stowed gun stays stowed.** With no target the order is simply dropped
-   * (`gun.aimYaw` is left where it was), which `Tank.aimMg` reads as "still
+   * (`gun.aimYaw` is left where it was), which `Vehicle.aimMg` reads as "still
    * being laid" — so a gunner who loses sight of a man holds the doorway he
    * was covering instead of snapping back to the hull's heading. The driver's
    * gun does the opposite on purpose: a tank that arrives in a street with its
@@ -755,7 +771,7 @@ export class TankCrew {
   }
 
   /**
-   * The belt, in BURSTS. `Tank.fireMg` is what refuses a round the rate limit
+   * The belt, in BURSTS. `Vehicle.fireMg` is what refuses a round the rate limit
    * has not come round for; this is what decides whether the trigger is down
    * at all.
    *
@@ -793,7 +809,7 @@ export class TankCrew {
     crew.burstT = c.mgBurst;
   }
 
-  /** The trigger. `Tank.fireGun` is what refuses a round that is not loaded. */
+  /** The trigger. `Vehicle.fireGun` is what refuses a round that is not loaded. */
   private shoot(crew: Crew): void {
     if (!crew.target || !crew.tank.gunReady) return;
     if (crew.layT < CONFIG.vehicles.crew.layTime) return;
@@ -935,7 +951,7 @@ export class TankCrew {
    * `steer` aims at the next cell CENTRE, which is a 1.5 m zigzag under a body
    * and a 7.2 m hull sawing down a street.
    */
-  private route(tank: Tank, objective: string): boolean {
+  private route(tank: Vehicle, objective: string): boolean {
     if (!this.nav || !objective) return false;
     const field = this.nav.field(objective);
     if (!field) return false;
@@ -951,7 +967,7 @@ export class TankCrew {
    * — so the answer is always the least detour that works, and the common case
    * costs one bearing's worth of probes.
    */
-  private pickBearing(tank: Tank, wantYaw: number): number | null {
+  private pickBearing(tank: Vehicle, wantYaw: number): number | null {
     const c = CONFIG.vehicles.crew;
     const steps = Math.max(1, Math.floor(c.whiskers / 2));
     // Which side of the fan is walked first: the one the hull is ALREADY
@@ -974,7 +990,7 @@ export class TankCrew {
    * Can this hull drive `whiskerReach` metres along `yaw`?
    *
    * Three depths past the nose and three across the beam, all through
-   * `Tank.rideableAt` — the hull's own climb band, which is what makes a kerb
+   * `Vehicle.rideableAt` — the hull's own climb band, which is what makes a kerb
    * a step and a shopfront a wall without either of them being in any baked
    * structure. Across the beam as well as along the bearing because a single
    * centre line threads gaps a 3.4 m hull does not fit through, which is
@@ -984,9 +1000,9 @@ export class TankCrew {
    * bearing are inside the hull's own footprint, and a probe there answers
    * about the ground the tank is already standing on.
    */
-  private clearAlong(tank: Tank, yaw: number): boolean {
+  private clearAlong(tank: Vehicle, yaw: number): boolean {
     const c = CONFIG.vehicles.crew;
-    const hull = CONFIG.vehicles.tank.hull;
+    const hull = tank.spec.hull;
     const fx = Math.sin(yaw);
     const fz = Math.cos(yaw);
     // The hull's own right, the same basis `VehicleSystem.exitSpot` builds.

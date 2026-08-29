@@ -86,14 +86,12 @@ import { Player } from "../entities/Player";
 import {
   DRIVER,
   GUNNER,
-  MG_SHOT,
   SEATS,
-  SHELL_SHOT,
   type CrewSeat,
   type DriveInput,
   type GunInput,
-  type Tank,
-} from "../entities/Tank";
+  type Vehicle,
+} from "../entities/Vehicle";
 import {
   ordnanceEffect,
   type EquipmentId,
@@ -119,7 +117,7 @@ import {
 import { ConquestSystem, type ControlPoint } from "../systems/ConquestSystem";
 import { DeathCam } from "../systems/DeathCam";
 import { VehicleCamera } from "../systems/VehicleCamera";
-import { TankCrew } from "../systems/TankCrew";
+import { VehicleCrew } from "../systems/VehicleCrew";
 import {
   VehicleSystem,
   type VehicleOrders,
@@ -205,7 +203,7 @@ const FORWARD_Z = new Vector3(0, 0, 1);
  * empty one, or one they may turn a bot crew out of. See `Game.offeredSeat`.
  */
 interface Seat {
-  tank: Tank;
+  tank: Vehicle;
   /**
    * Which of the hull's two jobs this offer is for. `VehicleSystem.seatOn`
    * decides it — the driver's if it is free, the gunner's otherwise — so the
@@ -342,9 +340,9 @@ export class Game {
    * It is a system of its own rather than a branch inside `BattleSystem`
    * because a bot in a hull is not a bot doing something unusual: it is out of
    * `Bot`'s FSM entirely, and everything about how it moves, what it can see
-   * and what it shoots with belongs to the vehicle. See `TankCrew`'s header.
+   * and what it shoots with belongs to the vehicle. See `VehicleCrew`'s header.
    */
-  private crew: TankCrew;
+  private crew: VehicleCrew;
   private battle: BattleSystem;
   private conquest: ConquestSystem;
   /** The flags' in-world markers — rings, skirts and beacons. */
@@ -664,7 +662,7 @@ export class Game {
    * Everything that changes while it is non-null is listed in `mount` and undone
    * in `clearVehicle`; nothing else in this file may write it.
    */
-  private driving: Tank | null = null;
+  private driving: Vehicle | null = null;
   /**
    * …and WHICH of that hull's two seats. Meaningless while `driving` is null,
    * and written only by `mount`, which is the one door in.
@@ -745,7 +743,7 @@ export class Game {
      */
     remoteGunFor: (tank) =>
       this.net && !(tank === this.driving && this.drivingSeat === GUNNER)
-        ? this.net.vehicles.mgFor(this.vehicles.tanks.indexOf(tank))
+        ? this.net.vehicles.mgFor(this.vehicles.hulls.indexOf(tank))
         : null,
     /**
      * In a netplay round every hull but the one under this player is posed
@@ -758,7 +756,7 @@ export class Game {
      */
     remoteFor: (tank) =>
       this.net && !(tank === this.driving && this.drivingSeat === DRIVER)
-        ? this.net.vehicles.stateFor(this.vehicles.tanks.indexOf(tank))
+        ? this.net.vehicles.stateFor(this.vehicles.hulls.indexOf(tank))
         : null,
   };
 
@@ -1038,8 +1036,8 @@ export class Game {
     // is: everything a driver may ask about the rest of the game, and nothing
     // else. The two lists are asked for rather than captured, because what
     // `vehicles` and `battle` hand out is replaced every round.
-    this.crew = new TankCrew({
-      hulls: () => this.vehicles.tanks,
+    this.crew = new VehicleCrew({
+      hulls: () => this.vehicles.hulls,
       roster: () => this.battle.bots,
       aside: (bot) => this.battle.aside(bot),
       setOccupied: (tank, seat, on) => this.vehicles.setOccupied(tank, seat, on),
@@ -1184,7 +1182,7 @@ export class Game {
     // **In a match none of this is ours.** The rocket that reached here is the
     // local PREDICTION of one the authority is also flying — see
     // `launchRocket` — and it decides nothing: the hull refuses local damage
-    // (`Tank.predicted`), the splash has an empty list to resolve against, and
+    // (`Vehicle.predicted`), the splash has an empty list to resolve against, and
     // the fireball arrives on the server's `explode` event with the right
     // power on it. Drawing one here as well would be two blasts a round trip
     // apart, at two points that agree only to within the flight — which for a
@@ -1223,14 +1221,14 @@ export class Game {
     this.vehicles.onDestroyed = (tank) => {
       if (tank.team === this.player.team) {
         this.hud.toast(
-          `ARMOUR DESTROYED - ${Math.round(CONFIG.vehicles.respawnDelay)}s`,
+          `${tank.name} DESTROYED - ${Math.round(CONFIG.vehicles.respawnDelay)}s`,
         );
       }
       // The hull burning is not the same event as the crew dying, and only one
       // of the two is conditional: everybody hears the toast, and the body is
       // only killed if it was the one inside THIS hull.
       // A bot crew burns with the hull exactly as the player does, and the
-      // two are mutually exclusive by construction: `Tank.occupied` is written
+      // two are mutually exclusive by construction: `Vehicle.occupied` is written
       // on both transitions, so nobody can be in a hull somebody else is in.
       this.crew.hullDestroyed(tank);
       if (tank !== this.driving) return;
@@ -1267,10 +1265,10 @@ export class Game {
       this.player.takeDamage(this.player.health, tank.center, "shell");
     };
     this.vehicles.onRespawned = (tank) => {
-      if (tank.team === this.player.team) this.hud.toast("ARMOUR READY");
+      if (tank.team === this.player.team) this.hud.toast(`${tank.name} READY`);
     };
     // What being in a hull COSTS a bot, applied here rather than inside
-    // `TankCrew` for the reason every cross-system consequence is applied
+    // `VehicleCrew` for the reason every cross-system consequence is applied
     // here: that system owns the pairing and `BattleSystem` owns the roster,
     // and neither may reach for the other. It is the same pair of lines
     // `mount`/`clearVehicle` spend on the player, one layer along.
@@ -3366,7 +3364,7 @@ export class Game {
     // A hull the player is inside cannot survive the map it is standing on, so
     // the seat is given up first — this is the same class of failure the funnel
     // exists to prevent, and it is the sharp version of it: `driving` would be
-    // a live pointer into a disposed `Tank`, which is not a stale picture but a
+    // a live pointer into a disposed `Vehicle`, which is not a stale picture but a
     // crash the next time the camera framed it.
     //
     // **A netplay round builds the same fleet and owns none of it.** The
@@ -3391,7 +3389,7 @@ export class Game {
     // The bearing half of a driver's steering. Null in the editor, and null in
     // a NETPLAY round for a different reason worth stating: the hulls are
     // there, but the crews inside them are the authority's — this client runs
-    // no AI at all, and a local `TankCrew` would be a second brain steering a
+    // no AI at all, and a local `VehicleCrew` would be a second brain steering a
     // hull that is being posed from the wire.
     this.crew.setMap(!this.net && !this.vehicles.empty ? map : null);
     return map;
@@ -3565,7 +3563,7 @@ export class Game {
     // `ConquestSystem` counts occupancy from — armour does not capture flags,
     // and the crew inside it already counts for itself.
     this.battle.setPlayer(this.player);
-    for (const tank of this.vehicles.tanks) this.battle.addHuman(tank);
+    for (const tank of this.vehicles.hulls) this.battle.addHuman(tank);
     // Every rig goes back to the pool restored; a corpse cannot outlive the
     // round it fell in.
     this.ragdolls.reset();
@@ -4074,11 +4072,11 @@ export class Game {
     // the server catch up would be a client deciding it is inside a tank
     // somebody else may already be sitting in.
     if (this.net) {
-      this.net.sendMount(this.vehicles.tanks.indexOf(seat.tank), seat.seat);
+      this.net.sendMount(this.vehicles.hulls.indexOf(seat.tank), seat.seat);
       return;
     }
     // The eviction and the mount are one gesture and must land on the same
-    // frame: `mount` writes `Tank.seats` through `setOccupied`, and a crew
+    // frame: `mount` writes `Vehicle.seats` through `setOccupied`, and a crew
     // taken out without somebody taking its place would leave the hull open
     // for the boarding sweep to re-crew before the player's key is even read
     // again.
@@ -4099,7 +4097,7 @@ export class Game {
    * the last resort — a full hull — rather than the greeting.
    *
    * The whole of "a bot crew never denies the player their own armour" is
-   * these six lines and `TankCrew.evict`. Without them a single hull a side
+   * these six lines and `VehicleCrew.evict`. Without them a single hull a side
    * makes whether the player ever drives a race to the yard, which is a worse
    * feature than bots not driving at all.
    */
@@ -4107,14 +4105,14 @@ export class Game {
    * The hull this client is driving, as the upload needs it, or null on foot.
    *
    * Rebuilt in place rather than allocated, because it is read at `INPUT_HZ`
-   * for as long as somebody is driving. Every field is the `Tank`'s own — this
+   * for as long as somebody is driving. Every field is the `Vehicle`'s own — this
    * is a view of it and never a copy that could drift.
    */
   private localHull(): LocalHull | null {
     const tank = this.driving;
     if (!tank || this.drivingSeat !== DRIVER) return null;
     const hull = this.hullReport;
-    hull.tank = this.vehicles.tanks.indexOf(tank);
+    hull.tank = this.vehicles.hulls.indexOf(tank);
     hull.position = tank.position;
     hull.yaw = tank.yaw;
     hull.turretYaw = tank.turretYaw;
@@ -4149,7 +4147,7 @@ export class Game {
     const tank = this.driving;
     if (!tank || this.drivingSeat !== GUNNER) return null;
     const gun = this.gunReport;
-    gun.tank = this.vehicles.tanks.indexOf(tank);
+    gun.tank = this.vehicles.hulls.indexOf(tank);
     gun.yaw = tank.mgYaw;
     gun.pitch = tank.mgPitch;
     return gun;
@@ -4205,7 +4203,10 @@ export class Game {
         seat.tank = free;
         seat.seat = which;
         seat.crewed = false;
-        seat.label = which === DRIVER ? "ENTER TANK" : "MAN THE GUN";
+        // The vehicle's own word — see `VehicleType.name`. `ENTER TANK`
+        // offered over a truck is a prompt naming the wrong machine, which
+        // on Sarab is a thing that happens twenty metres apart.
+        seat.label = which === DRIVER ? `ENTER ${free.name}` : "MAN THE GUN";
         return seat;
       }
     }
@@ -4218,7 +4219,8 @@ export class Game {
       // person already has the sticks.
       seat.seat = this.crew.crewOf(held, DRIVER) ? DRIVER : GUNNER;
       seat.crewed = true;
-      seat.label = seat.seat === DRIVER ? "TAKE OVER TANK" : "TAKE OVER GUN";
+      seat.label =
+        seat.seat === DRIVER ? `TAKE OVER ${held.name}` : "TAKE OVER GUN";
       return seat;
     }
     return null;
@@ -4232,7 +4234,7 @@ export class Game {
    * allowed to know: **what this decides is a PROMPT**, and a prompt offering
    * to evict a person would be a key that does nothing.
    */
-  private crewedByBot(tank: Tank): boolean {
+  private crewedByBot(tank: Vehicle): boolean {
     // EITHER chair holding a bot makes this hull one the player may take over,
     // and `seatHeldBy` is where the offline/netplay split lives — this is the
     // same question asked of the whole vehicle rather than of one chair.
@@ -4274,7 +4276,7 @@ export class Game {
    * step is the whole reason `VehicleCamera` has `aim` and `place` rather than
    * one `update`.
    */
-  private updateDriver(dt: number, tank: Tank): void {
+  private updateDriver(dt: number, tank: Vehicle): void {
     this.player.updateVitals(dt);
     // The body rides the hull. Slaved rather than simulated: every downstream
     // reader — the conquest occupancy count, the minimap arrow, the audio
@@ -4306,7 +4308,7 @@ export class Game {
     // The same three-way gate the rifle's trigger takes, and for the same
     // reason: a UI click must never discharge anything. Neither gun on this
     // hull has a semi-automatic question to ask, so the trigger is simply held
-    // or not — `Tank.fireGun` and `Tank.fireMg` are what refuse a round the
+    // or not — `Vehicle.fireGun` and `Vehicle.fireMg` are what refuse a round the
     // clock has not come round for.
     const canFire =
       this.input.pointerLocked ||
@@ -4321,14 +4323,14 @@ export class Game {
     // which is survivable on a keyboard (the same key got you in a moment ago)
     // and is not on a pad or on glass — on glass it is the whole difference
     // between a hull you can leave and one you are stuck in until it burns.
-    this.offerUse(driving ? "EXIT TANK" : "LEAVE GUN");
+    this.offerUse(driving ? `EXIT ${tank.name}` : "LEAVE GUN");
 
     // …and the way ACROSS. Refused outright when the other chair is taken
     // rather than silently doing nothing: `canSwapSeat` is what the HUD draws
     // its prompt from, so the key and the caption cannot disagree.
     if (this.input.seatPressed && this.canSwapSeat(tank)) {
       const to: CrewSeat = driving ? GUNNER : DRIVER;
-      if (this.net) this.net.sendMount(this.vehicles.tanks.indexOf(tank), to);
+      if (this.net) this.net.sendMount(this.vehicles.hulls.indexOf(tank), to);
       else this.swapSeat(tank, to);
     }
 
@@ -4525,12 +4527,12 @@ export class Game {
    * `blastAt`, after the direct hit has already been dealt, and a body killed
    * by it is no longer `alive` and no longer in the list.
    */
-  private fireShell(tank: Tank): void {
+  private fireShell(tank: Vehicle): void {
     if (!this.resolveShell(tank, this.player)) return;
     // Everything below this line is about the person holding the trigger, and
     // that is the whole of the split: a bot crew's round goes through the same
     // call above and gets none of it.
-    this.vehicleCam.addKick(CONFIG.vehicles.tank.gun.cameraKick);
+    this.vehicleCam.addKick(tank.spec.gun?.cameraKick ?? 0);
     const haptic = CONFIG.rumble;
     this.input.rumble(1, 1, haptic.shotMs * 3);
   }
@@ -4552,15 +4554,18 @@ export class Game {
    * direct hit has already been dealt, and a body killed by it is no longer
    * `alive` and no longer in the list.
    */
-  private resolveShell(tank: Tank, by: Combatant): boolean {
-    if (!tank.fireGun()) return false;
-    const g = CONFIG.vehicles.tank.gun;
+  private resolveShell(tank: Vehicle, by: Combatant): boolean {
+    // `fireGun` refuses on a hull that HAS no gun as well as on one that is
+    // still loading — see `Vehicle.gunReady` — so this one test is what keeps
+    // every caller of a shell out of a turretless vehicle.
+    const g = tank.spec.gun;
+    if (!g || !tank.fireGun()) return false;
     const muzzle = tank.muzzleToRef(this.shellFrom);
     const dir = tank.gunDirToRef(this.shellDir);
     const byPlayer = by === this.player;
     // **In a match this is a PREDICTION**, and everything below behaves
     // accordingly without a second path: the targets refuse damage
-    // (`NetSoldier.takeDamage`, `Tank.predicted`), so `shot.killed` is false
+    // (`NetSoldier.takeDamage`, `Vehicle.predicted`), so `shot.killed` is false
     // and neither the credit nor the killfeed line below can be reached. What
     // it still buys is what the shooter is owed on their own screen the frame
     // the trigger goes — the tracer, the impact, the report and the light —
@@ -4585,7 +4590,7 @@ export class Game {
       // the hull's — a bot crew reaches this line only offline.
       this.net ? this.enemyTargets() : this.battle.hittablesAgainst(tank.team),
       g.range,
-      SHELL_SHOT,
+      tank.shellShot!,
     );
     // The splash, through the one implementation of a blast in the game. `by`
     // is whoever fired, so a kill lands on their row exactly as a grenade's
@@ -4649,9 +4654,9 @@ export class Game {
    * `resolveMg`, and everything below this line is about the person holding
    * the trigger.
    */
-  private fireMg(tank: Tank): void {
+  private fireMg(tank: Vehicle): void {
     if (!this.resolveMg(tank, this.player)) return;
-    this.vehicleCam.addKick(CONFIG.vehicles.tank.mg.cameraKick);
+    this.vehicleCam.addKick(tank.spec.mg.cameraKick);
     const haptic = CONFIG.rumble;
     this.input.rumble(0.35, 0.5, haptic.shotMs);
   }
@@ -4675,9 +4680,9 @@ export class Game {
    * tracer and the report on the shooter's own screen the frame the trigger
    * goes.
    */
-  private resolveMg(tank: Tank, by: Combatant): boolean {
+  private resolveMg(tank: Vehicle, by: Combatant): boolean {
     if (!tank.fireMg()) return false;
-    const m = CONFIG.vehicles.tank.mg;
+    const m = tank.spec.mg;
     const muzzle = tank.mgMuzzleToRef(this.shellFrom);
     const dir = tank.mgDirToRef(this.shellDir);
     const byPlayer = by === this.player;
@@ -4690,7 +4695,7 @@ export class Game {
       muzzle,
       this.net ? this.enemyTargets() : this.battle.hittablesAgainst(tank.team),
       m.range,
-      MG_SHOT,
+      tank.mgShot,
     );
     if (shot.target) {
       const killed = shot.killed && shot.target instanceof Bot;
@@ -4763,8 +4768,11 @@ export class Game {
    * build target lists.
    */
   private crushSweep(): void {
-    const c = CONFIG.vehicles.tank.crush;
-    for (const tank of this.vehicles.tanks) {
+    for (const tank of this.vehicles.hulls) {
+      // The gates are the HULL's own — a truck has to be moving faster than a
+      // tank does before its wheels are a run-over rather than a shove, which
+      // is `VehicleSpec.crush` and is why this is read inside the loop.
+      const c = tank.spec.crush;
       if (!tank.alive || Math.abs(tank.speed) < c.minSpeed) continue;
       const by = this.driverOf(tank);
       if (!by) continue;
@@ -4779,7 +4787,7 @@ export class Game {
         // being narrower than the box — would kill the driver inside the one
         // that got shoved.
         if (target.armoured || target.invulnerable) continue;
-        // `position` is the feet and `center` the chest — see `Tank.crushes`,
+        // `position` is the feet and `center` the chest — see `Vehicle.crushes`,
         // which asks the two heights different questions.
         if (!tank.crushes(target.center, target.position.y, target.hitRadius)) {
           continue;
@@ -4813,7 +4821,7 @@ export class Game {
    * thing at once — which is why this is asked the same two ways
    * `VehicleSystem`'s orders are, the player's seat first and the crew after.
    */
-  private driverOf(tank: Tank): Combatant | null {
+  private driverOf(tank: Vehicle): Combatant | null {
     if (tank === this.driving && this.drivingSeat === DRIVER) return this.player;
     return this.crew.crewOf(tank, DRIVER);
   }
@@ -4828,7 +4836,7 @@ export class Game {
    * which `updateSceneForCamera` gates on a `player` and is therefore passed
    * null for.
    */
-  private frameVehicleCamera(dt: number, tank: Tank): void {
+  private frameVehicleCamera(dt: number, tank: Vehicle): void {
     this.vehicleCam.place(tank);
     this.cameraSys.place(this.vehicleCam.eye, this.vehicleCam.look);
     // Around the HULL rather than the eye, and with no forward bias: the tank
@@ -4842,7 +4850,7 @@ export class Game {
     // a stick that steers nothing used to rev an engine somebody else was
     // driving; the hull's own speed is the honest answer for anyone whose
     // hands are not on it.
-    const speed = Math.min(1, tank.travel / CONFIG.vehicles.tank.drive.maxSpeed);
+    const speed = Math.min(1, tank.travel / tank.spec.drive.maxSpeed);
     this.sfx.engineDrive(
       this.drivingSeat === DRIVER ? Math.min(1, Math.abs(this.input.moveY)) : speed,
       speed,
@@ -4876,7 +4884,7 @@ export class Game {
       this.sfx.enginesOff();
       return;
     }
-    const tanks = this.vehicles.tanks;
+    const tanks = this.vehicles.hulls;
     for (let i = 0; i < tanks.length; i++) {
       const tank = tanks[i];
       if (tank === this.driving || !tank.alive || !tank.occupied) {
@@ -4886,8 +4894,8 @@ export class Game {
       // Its own speed for both terms, exactly as `frameVehicleCamera` gives a
       // GUNNER: the throttle belongs to whoever is holding the stick, and from
       // outside the hull there is no way to see it and no reason to guess.
-      const speed = Math.min(1, tank.travel / CONFIG.vehicles.tank.drive.maxSpeed);
-      this.sfx.hullEngine(i, tank.center, speed, speed);
+      const speed = Math.min(1, tank.travel / tank.spec.drive.maxSpeed);
+      this.sfx.hullEngine(i, tank.center, speed, speed, tank.spec.engine);
     }
   }
 
@@ -4897,7 +4905,7 @@ export class Game {
    * read side by side, because a state that is set in one and not cleared in
    * the other is a player who never really got out.
    */
-  private mount(tank: Tank, seat: CrewSeat): void {
+  private mount(tank: Vehicle, seat: CrewSeat): void {
     this.driving = tank;
     this.drivingSeat = seat;
     this.vehicles.setOccupied(tank, seat, true);
@@ -4912,7 +4920,7 @@ export class Game {
     this.player.invulnerable = true;
     this.battle.removeHuman(this.player);
     this.vehicleCam.take(tank);
-    this.sfx.engineOn();
+    this.sfx.engineOn(tank.spec.engine);
     // A gunner starts the drive laying his gun exactly where the camera opened,
     // so the first frame is not a ring swinging across the deck to catch up
     // with a view that has already arrived.
@@ -4981,7 +4989,7 @@ export class Game {
    * **The one question `crewedByBot` asks about a HULL, asked about a SEAT** —
    * and it is a seat's question because everything reading it names a chair:
    * whether this player may cross into that one, and what the crew line on the
-   * HUD says about it. Offline it is `TankCrew`'s own pairing; in a match it
+   * HUD says about it. Offline it is `VehicleCrew`'s own pairing; in a match it
    * is `VehicleState.by`/`by2` against the roster, which is the same exception
    * `crewedByBot` documents at length — the client is allowed to care which,
    * because what it is drawing is a PROMPT.
@@ -4990,9 +4998,9 @@ export class Game {
    * for both readers: it is the one chair `canSwapSeat` is never asked about,
    * and the crew line marks it from `drivingSeat` rather than from here.
    */
-  private seatHeldBy(tank: Tank, seat: CrewSeat): "open" | "bot" | "player" {
+  private seatHeldBy(tank: Vehicle, seat: CrewSeat): "open" | "bot" | "player" {
     if (this.net) {
-      const i = this.vehicles.tanks.indexOf(tank);
+      const i = this.vehicles.hulls.indexOf(tank);
       const by =
         seat === DRIVER
           ? this.net.vehicles.occupant(i)
@@ -5029,7 +5037,7 @@ export class Game {
    * offer already uses. Turning a PERSON out remains a thing no key in this
    * game does.
    */
-  private canSwapSeat(tank: Tank): boolean {
+  private canSwapSeat(tank: Vehicle): boolean {
     const other: CrewSeat = this.drivingSeat === DRIVER ? GUNNER : DRIVER;
     return this.seatHeldBy(tank, other) !== "player";
   }
@@ -5049,14 +5057,14 @@ export class Game {
    * and a player who has read one of those captions has read the other. An
    * empty chair is a plain swap, because nothing is being taken from anybody.
    */
-  private swapPrompt(tank: Tank): string | null {
+  private swapPrompt(tank: Vehicle): string | null {
     const other: CrewSeat = this.drivingSeat === DRIVER ? GUNNER : DRIVER;
     const held = this.seatHeldBy(tank, other);
     if (held === "player") return null;
     const verb =
       held === "bot"
         ? other === DRIVER
-          ? "TAKE OVER TANK"
+          ? `TAKE OVER ${tank.name}`
           : "TAKE OVER GUN"
         : "SWAP SEAT";
     if (this.input.touchActive) return verb;
@@ -5075,7 +5083,7 @@ export class Game {
    * for the same reason: a vehicle with one chair, or three, draws what it has
    * rather than what a tank has.
    */
-  private crewLine(tank: Tank): VehicleChair[] {
+  private crewLine(tank: Vehicle): VehicleChair[] {
     return SEATS.map((seat) => ({
       name: seat === DRIVER ? "DRIVER" : "GUNNER",
       who: seat === this.drivingSeat ? "you" : this.seatHeldBy(tank, seat),
@@ -5105,7 +5113,7 @@ export class Game {
    * `canSwapSeat` is what proved it is a bot and not a person — this only
    * carries the decision out.
    */
-  private swapSeat(tank: Tank, to: CrewSeat): void {
+  private swapSeat(tank: Vehicle, to: CrewSeat): void {
     if (to === this.drivingSeat) return;
     if (this.crew.crewOf(tank, to)) this.crew.evict(tank, to);
     this.vehicles.setOccupied(tank, this.drivingSeat, false);
@@ -5680,7 +5688,7 @@ export class Game {
       case "seat": {
         if (event.slot !== this.net?.slot) break;
         if (event.tank >= 0) {
-          const tank = this.vehicles.tanks[event.tank];
+          const tank = this.vehicles.hulls[event.tank];
           if (!tank) break;
           // Which chair is the authority's answer too, and the two ways this
           // arrives are one line apart: a hull this player was not in is a
@@ -5717,7 +5725,7 @@ export class Game {
       // the noise is placed on the MUZZLE of that hull, which is the same rule
       // `fire` follows one scale down.
       case "cannon": {
-        const tank = this.vehicles.tanks[event.tank];
+        const tank = this.vehicles.hulls[event.tank];
         if (!tank || tank === this.driving) break;
         this.sfx.cannon(tank.muzzleToRef(this.shellFrom));
         const lc = CONFIG.lighting;
@@ -5793,7 +5801,7 @@ export class Game {
     // has to be in the list for the local cue a hit is owed — without it a
     // round fired at a tank sparks off the collider with no hitmarker, and the
     // aim assist has nothing to hold. What it CANNOT do is damage the thing:
-    // `Tank.predicted` refuses every blow in a match, exactly as
+    // `Vehicle.predicted` refuses every blow in a match, exactly as
     // `NetSoldier.takeDamage` does, so this list is a prediction and nothing
     // more.
     //
@@ -5804,7 +5812,7 @@ export class Game {
     const out = this.netTargets;
     out.length = 0;
     out.push(...this.net.roster.hittablesAgainst(this.player.team));
-    for (const tank of this.vehicles.tanks) {
+    for (const tank of this.vehicles.hulls) {
       if (tank.alive && tank.team !== this.player.team) out.push(tank);
     }
     return out;
@@ -6012,7 +6020,7 @@ export class Game {
     // The hulls are posed from the wire (`NetVehicles`), the one under this
     // player is simulated by them, and what the fleet still owes on both
     // counts is the ground it stands on, the lean, the belts and the masts —
-    // which is `Tank.updateRemote`'s and `Tank.update`'s, and is dressing.
+    // which is `Vehicle.updateRemote`'s and `Vehicle.update`'s, and is dressing.
     //
     // Stepped under the DEPLOY screen too, like the bodies beside it: a tank
     // frozen in the street behind the card and then snapping across it on the
@@ -6059,7 +6067,7 @@ export class Game {
    *   - **arrived** — named again after being gone, so a fresh hull is put on
    *     its hardstanding. `placeAt` is what puts the collider, the paint and
    *     the gun's clock back, exactly as a respawn does offline.
-   *   - **burned** — still there and no longer alive. `Tank.wreck` is the same
+   *   - **burned** — still there and no longer alive. `Vehicle.wreck` is the same
    *     door `destroy` takes, which is what keeps the toast, the crew and the
    *     charred repaint identical on both sides of the wire.
    *
@@ -6071,7 +6079,7 @@ export class Game {
   private syncNetVehicles(): void {
     const net = this.net;
     if (!net) return;
-    for (const [i, tank] of this.vehicles.tanks.entries()) {
+    for (const [i, tank] of this.vehicles.hulls.entries()) {
       const present = net.vehicles.present(i);
       if (!present) {
         if (tank.body.isEnabled()) tank.hide();
@@ -6584,7 +6592,7 @@ export class Game {
       this.driving
         ? {
             health: this.driving.health,
-            maxHealth: CONFIG.vehicles.tank.maxHealth,
+            maxHealth: this.driving.spec.maxHealth,
             load: this.driving.loadProgress,
             seat: this.drivingSeat === DRIVER ? "DRIVER" : "GUNNER",
             crew: this.crewLine(this.driving),
@@ -6682,15 +6690,25 @@ export class Game {
     // which is the exact failure `#gun-marker` was built to prevent one seat
     // up. The range is each gun's own — the point is taken far enough out to
     // stay on screen, and 340 m is off the edge of a cupola gun's frame.
-    const t = CONFIG.vehicles.tank;
+    //
+    // **A DRIVER with no gun gets no marker at all**, which is the same rule
+    // one step further: a reticle drawn for a weapon this seat does not have is
+    // exactly the lie `#gun-marker` exists to prevent. The crosshair does not
+    // come back either — `#hud.mounted` takes it away — so a truck's driver
+    // has a clean screen, which is honest: he is driving.
+    const gun = tank.spec.gun;
     if (this.drivingSeat === DRIVER) {
+      if (!gun) {
+        this.hud.setGunMarker(null);
+        return;
+      }
       tank.muzzleToRef(this.markerAt);
       tank.gunDirToRef(this.shellDir);
-      this.markerAt.addInPlace(this.shellDir.scaleInPlace(t.gun.range));
+      this.markerAt.addInPlace(this.shellDir.scaleInPlace(gun.range));
     } else {
       tank.mgMuzzleToRef(this.markerAt);
       tank.mgDirToRef(this.shellDir);
-      this.markerAt.addInPlace(this.shellDir.scaleInPlace(t.mg.range));
+      this.markerAt.addInPlace(this.shellDir.scaleInPlace(tank.spec.mg.range));
     }
     const cam = this.cameraSys.camera;
     // In front of the eye? `getDirection` is the camera's own forward, which
