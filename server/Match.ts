@@ -645,7 +645,11 @@ export class Match {
       id: this.id,
       mapId: this.mapId,
       humans: this.roster.humanCount,
-      slots: this.roster.slots.length,
+      // How many PEOPLE this match seats, which is not how big the slot table
+      // is: the table is the ceiling any map may field and the seats are the
+      // smallest map in the rotation, so that a rotation never has to evict
+      // anybody. See `Roster.capacity`.
+      slots: this.roster.capacity,
       state: this.rotating ? "rotating" : this.timer ? "live" : "empty",
     };
   }
@@ -934,6 +938,11 @@ export class Match {
       const def = MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
       await this.game.startRound(def, 1);
     }
+    // What this map fields, onto the table. The simulation has already been
+    // told (`HeadlessGame.startRound`); this is the same number reaching the
+    // one thing that decides what goes out on the wire, taken from the
+    // simulation rather than resolved a second time so the two cannot drift.
+    this.roster.setFielded(this.game.perTeam);
     // Wall-clock accumulator rather than one step per timer fire: `setInterval`
     // drifts and coalesces under load, and a simulation that took its `dt` from
     // whenever the timer happened to run would speed up and slow down with the
@@ -1021,11 +1030,18 @@ export class Match {
   /**
    * Next map, same people.
    *
-   * The roster is untouched: who is in which slot is a fact about the MATCH,
-   * not about the round, so a rotation rebuilds the world and restarts the
-   * fight without anybody being re-seated or having to rejoin. Every seated
+   * The slot table is untouched: who is in which slot is a fact about the
+   * MATCH, not about the round, so a rotation rebuilds the world and restarts
+   * the fight without anybody being re-seated or having to rejoin. Every seated
    * player is dead with a zero timer afterwards, which is exactly the state
    * `HeadlessGame.step` deploys them from.
+   *
+   * What the new map DOES bring is how many bodies a side it fields
+   * (`setFielded`), and the whole reason that is safe to change here is that it
+   * moves nobody: the table is the ceiling, a person may only ever sit in the
+   * first eight of a team's block, and every map fields at least that many. So
+   * a rotation onto a smaller map takes bots off the field and never a player
+   * out of a seat. See `server/Roster.ts`.
    */
   private async rotate(): Promise<void> {
     const order = MAPS.map((m) => m.id);
@@ -1034,6 +1050,10 @@ export class Match {
     const def = MAPS.find((m) => m.id === next) ?? MAPS[0];
 
     await this.game.startRound(def, 1);
+    // The new map's roster, onto the table — see `start`. FIRST, because
+    // everything below it either re-benches over the top of what
+    // `setFielded` decided or sends a list this filters.
+    this.roster.setFielded(this.game.perTeam);
     for (const player of this.game.players.values()) {
       player.retire();
       player.respawnT = 0;
@@ -1074,6 +1094,12 @@ export class Match {
     const bots = this.game.battle.bots;
     this.entityScratch.length = 0;
     for (let i = 0; i < bots.length; i++) {
+      // A slot this map does not field is not a body at all — see
+      // `broadcastRoster`. It is left OUT rather than sent dead, which is the
+      // rule the hulls and the grenades already follow: a client pools one
+      // soldier per slot it was told about, and there is nothing there to
+      // describe.
+      if (!this.roster.isFielded(i)) continue;
       // A slot is a person or a bot, and the wire says the same thing either
       // way — one `EntityState` per slot, in slot order. Clients pool one body
       // per slot and never learn which is which.
@@ -2107,8 +2133,22 @@ export class Match {
     return i;
   }
 
+  /**
+   * Who is in which slot, for the slots this round HAS.
+   *
+   * `fielded` and not `slots`: the table is the ceiling (forty-eight, so that a
+   * rotation never renumbers anybody — see `server/Roster.ts`) and the round is
+   * the map's, so on every map but Sarab two thirds of the table is bodies this
+   * round does not field. A client draws one soldier and one scoreboard row per
+   * slot it is told about, so sending them would put thirty-two names on the
+   * board for bodies nobody can see, shoot or score against.
+   *
+   * The arrays indexed BY slot — `scores`, `pings` — are deliberately not
+   * filtered the same way: a client indexes those with a slot number, and a row
+   * for a slot nobody is in costs three zeros a few times a minute.
+   */
   private broadcastRoster(): void {
-    this.broadcast({ t: "roster", slots: this.roster.slots });
+    this.broadcast({ t: "roster", slots: this.roster.fielded() });
   }
 
   /**

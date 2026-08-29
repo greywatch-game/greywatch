@@ -14,13 +14,18 @@
  *
  * A slot index IS a bot index, by construction: `Roster` lays its slots out
  * team 0 then team 1, `BattleSystem` builds its pool the same way, and both are
- * sized from `CONFIG.bots.perTeam`. That is what makes benching a bot for a
- * human a single array index rather than a mapping that can disagree. Nothing
- * here ever calls `BattleSystem.setRoster`, which is what keeps that true on a
- * map stating a roster of its own (`MapLayout.perTeam`): a match is sixteen
- * slots on every map it rotates onto — see `server/Roster.ts` for why, and
- * `server/simulate.ts` for the one tool that deliberately asks for the map's
- * number instead, because it is measuring a round rather than serving one.
+ * sized from `CONFIG.bots.maxPerTeam`. That is what makes benching a bot for a
+ * human a single array index rather than a mapping that can disagree.
+ *
+ * **The pool is the CEILING and the round is the MAP's**, which is the one
+ * place this file differs from `Game.buildRound`. `setRoster` is called ONCE,
+ * in the constructor, at `CONFIG.bots.maxPerTeam` a side and never again — a
+ * match rotates maps under one slot table, and a table sized per map would
+ * renumber every player on team 1 at every rotation. `startRound` then calls
+ * `setFielded` with the map's own `perTeamOf`, which is what makes Sarab
+ * twenty-four a side in a match and every other map eight. See
+ * `server/Roster.ts` for the whole argument, including why human capacity stays
+ * at sixteen whatever the map fields.
  *
  * A person enters the world through the reinforcement pass in `step` and
  * nowhere else, and only once they have both waited out the clock and ASKED:
@@ -69,6 +74,7 @@ import { ordnanceEffect } from "../src/entities/equipment";
 import { CelMaterialFactory } from "../src/shaders/CelShader";
 import type { GameMap } from "../src/world/MapBuilder";
 import type { MapDef } from "../src/world/maps";
+import { perTeamOf } from "../src/world/layout";
 import { LagComp } from "./lagComp";
 import { NetPlayer } from "./NetPlayer";
 import { buildServerWorld } from "./world";
@@ -122,6 +128,17 @@ export class HeadlessGame {
 
   map: GameMap | null = null;
 
+  /**
+   * How many bodies a side the STANDING map fields — its own `perTeamOf`,
+   * resolved once per round by `startRound`.
+   *
+   * Read by `Match`, which owes it to two places: the roster it broadcasts and
+   * the snapshot it builds, both of which must mention the bodies in the round
+   * and no others. `CONFIG.bots.perTeam` before there is a map, which is what a
+   * map stating nothing fields.
+   */
+  perTeam: number = CONFIG.bots.perTeam;
+
   /** Connected humans, by slot. Sparse — most slots are bots. */
   readonly players = new Map<number, NetPlayer>();
 
@@ -142,6 +159,15 @@ export class HeadlessGame {
     // the two files read the same way.
     this.combat = new CombatSystem(this.scene, this.mats);
     this.battle = new BattleSystem(this.scene, this.mats, this.combat);
+    // **The authority's pool is the ceiling, once, for the life of the
+    // process.** A slot index is a bot index and a match rotates maps under one
+    // slot table, so team 1's block has to begin at the same number on every
+    // map there is — which is `CONFIG.bots.maxPerTeam` and not the standing
+    // map's roster. How many of it a round actually fights is `setFielded`'s,
+    // pushed per round from `startRound`. Here rather than in `startRound`
+    // because rebuilding the pool disposes every rig in it, and this side has
+    // no loading card to do that behind.
+    this.battle.setRoster(CONFIG.bots.maxPerTeam);
     // Ballistics without the picture. Where a grenade lands and who it hurts
     // is a rule and belongs here; the dust needs a canvas and a GPU device and
     // does not exist on this side — see `GrenadeOptions`.
@@ -240,6 +266,19 @@ export class HeadlessGame {
     this.map = await buildServerWorld(this.scene, def);
     this.battle.setMap(this.map);
     this.battle.reset();
+    // **How many bodies a side this map fields**, out of the pool the
+    // constructor built at the ceiling. This is the whole of a map's roster
+    // reaching a match: the slot table does not move, nobody is re-seated, and
+    // what changes is how many of each team's block are in the fight — Sarab's
+    // twenty-four against every other map's eight.
+    //
+    // After `reset`, whose "everybody dead with a zero timer" is the state the
+    // fielded half is picked back up from, and before `Match` re-benches the
+    // humans over the top of it. Bots the map does not field are set aside
+    // exactly as a benched one is, so nothing downstream — the target lists,
+    // the tickets, the squads, the board — has to be told twice.
+    this.perTeam = perTeamOf(def.layout);
+    this.battle.setFielded(this.perTeam);
     // Where this map's edge is, for everybody already seated. A rotation can
     // put a rim-closed map up after an open one and back, and `setMap` is what
     // switches the leash off as well as on — a player left holding the last

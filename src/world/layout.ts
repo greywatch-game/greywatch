@@ -460,9 +460,16 @@ export interface MapLayout {
    * the deaths, so a map that states this is choosing a shorter round as well
    * as a denser one — which on Sarab is the point of stating it.
    *
-   * **It reaches the OFFLINE round only.** A netplay match is sixteen fixed
-   * slots built once and never resized, on whatever map it rotates onto; see
-   * `server/Roster.ts` and `docs/multiplayer.md`.
+   * **It reaches a MATCH too, and what it moves there is the BOTS.** The
+   * authority's slot table is fixed at `CONFIG.bots.maxPerTeam` a side — a
+   * match rotates maps under one table and a table sized per map would
+   * renumber every player on team 1 at every rotation — and this is how many
+   * of each team's block a round actually fields, pushed by
+   * `HeadlessGame.startRound` through `BattleSystem.setFielded`. So Sarab is
+   * twenty-four a side online as well as off. **How many PEOPLE a match seats
+   * does not follow it**: that stays at sixteen on every map, because it is
+   * bounded by the SMALLEST roster in the rotation and a rotation may never
+   * evict anybody. See `server/Roster.ts` and `docs/multiplayer.md`.
    */
   perTeam?: number;
 }
@@ -473,8 +480,9 @@ export interface MapLayout {
  *
  * The resolver rather than the field is what everything reads, for the reason
  * `bodyDrawDistanceOf` is: the default and the bound are stated once here
- * instead of at each of the three sites that ask (the pool, the menu's
- * deployment figure, and the skill draw that is handed the pool).
+ * instead of at each of the sites that ask (the offline pool, the client's
+ * `NetRoster`, the authority's `setFielded`, the menu's deployment figure, and
+ * the skill draw that is handed the pool).
  *
  * The clamp is silent in production and SAYS SO in a dev build, because the two
  * ways to write a roster past the bound — a layout that meant it and a layout

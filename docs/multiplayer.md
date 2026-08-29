@@ -92,12 +92,12 @@ sand.
 
 ## The roster is the feature
 
-`server/Roster.ts` holds **sixteen slots, built once, never resized or
+`server/Roster.ts` holds **forty-eight slots, built once, never resized or
 reordered.** A slot is never created or destroyed — only who feeds it changes.
 
 - A match starts as soon as one person is present. Every unfilled slot is a bot.
-- A human joining takes the lowest-numbered bot slot on the thinner team; the
-  bot there is **benched**.
+- A human joining takes the lowest-numbered SEATABLE bot slot on the thinner
+  team; the bot there is **benched**.
 - A human leaving un-benches it, and the bot rejoins through the ordinary
   respawn queue with its skill and squad intact.
 
@@ -113,27 +113,56 @@ that file must skip the bench — respawn, the think budget, `hittablesAgainst`,
 
 **A slot index IS a bot index**, by construction: `Roster` lays slots out team 0
 then team 1, `BattleSystem` builds its pool the same way, and both are sized
-from `CONFIG.bots.perTeam`. Keep that true or benching needs a mapping that can
-disagree with itself.
+from `CONFIG.bots.maxPerTeam`. Keep that true or benching needs a mapping that
+can disagree with itself.
 
-**A MAP's roster does not reach any of this, and the split is deliberate.**
-`MapLayout.perTeam` lets a map field more than eight a side OFFLINE — Sarab is
-24 — and it arrives through `Game.buildRound`, which is the offline round's own
-door: `Match` and `HeadlessGame` never call `BattleSystem.setRoster`, so every
-match is sixteen slots on every map it rotates onto. Three things say why, and
-each of them is this section: a match rotates maps under ONE roster, so a
-per-map size is a table that grows and shrinks under the humans sitting in it; a
-`ScoreBook` row is a slot, so a resize at a rotation changes what every row
-means mid-match; and a rotation onto a smaller map would have to EVICT people,
-which is the one thing "a slot only ever changes who feeds it" exists to
-prevent. A netplay round on Sarab is therefore 8v8 where an offline one is
-24v24, and that is the trade rather than an oversight — raising it is a change
-to this contract and not a config change.
+### The table is the ceiling and the round is the map's
 
-`server/simulate.ts` is the one place on this side that asks for the map's own
-number, and it says so on the line: it exists to measure a ROUND, and the round
-a player gets on Sarab is the 24-a-side one. It calls `setRoster` before
-`startRound`, the one moment nothing is holding a body.
+`MapLayout.perTeam` is how many bodies a side a map fields — Sarab is 24 and
+every other map is 8 — and **a match fields it too**. What it does NOT do is
+size the slot table.
+
+- **The TABLE is `CONFIG.bots.maxPerTeam` a side (24, so 48 slots), on every
+  map, for the life of the process.** `HeadlessGame`'s constructor calls
+  `BattleSystem.setRoster` with it once and never again.
+- **The ROUND is the map's**, pushed by `HeadlessGame.startRound` through
+  `BattleSystem.setFielded` and mirrored onto the table by
+  `Roster.setFielded`. Bots outside it are set aside exactly as a benched one
+  is — dead, off the field, no ticket, no target, no squad — through the third
+  member of `BattleSystem.aside`.
+- **The SEATS are the smallest map in the rotation** (`HUMANS_PER_TEAM`, which
+  is `CONFIG.bots.perTeam` — 8 a side, 16 people, unchanged). `Roster.claim`
+  will only ever seat a person in the first eight of a team's block, which
+  every map fields.
+
+That is what a per-map slot table would have cost, and each of the three is why
+the table is the ceiling instead. A match rotates maps under ONE table, and team
+1's block begins at the team's own size — so a table sized per map would
+**renumber every player on team 1 at every rotation**, and a peer's slot is its
+entity id on the wire, its `ScoreBook` row, its rewind history and the key of
+eight per-slot tables in `Match`; `RoundStart` exists precisely so that a
+rotation re-seats nobody. Capping the seats at the smallest map is what makes a
+rotation onto a smaller map take BOTS off the field and never a person out of a
+seat — **eviction is impossible by construction**, not prevented by a rule.
+
+So a netplay round on Sarab is 24v24, of whom up to sixteen are people, and a
+netplay round anywhere else is the 8v8 it always was. Two things follow from the
+round being smaller than the table and both are on the wire: `RosterMessage`
+carries `Roster.fielded()` and not the whole table, and the snapshot skips the
+slots it does not field — a client pools one `NetSoldier` per slot it is TOLD
+about. The arrays indexed BY slot (`scores`, `pings`) are deliberately sent at
+full length, because a client indexes those with a slot number.
+
+**A bot's callsign in a match comes from its row's place on the board, not from
+its slot** (`Game.scoreRows`). They stopped being the same number here: on a map
+fielding eight a side team 1 sits at slots 24-31, and `callsign` laps every
+sixteen names, so naming from the slot would have put every unsuffixed name on
+one team and every suffixed one on the other. The board is the roster in slot
+order and the roster is only the fielded slots, so its index is dense and
+team-blocked exactly as the offline one is.
+
+`server/simulate.ts` used to be the one place on this side that asked for the
+map's own roster, and it no longer asks at all: `startRound` fields it.
 
 Team balance is corrected by *arrivals*, never by moving anybody. Being
 reassigned mid-round is disorienting; `Roster.claim` always takes the thinner
@@ -157,7 +186,7 @@ outside `playing`, the deploy screen's spawn list. Everything else reads
 
 `NetSoldier` is a `Combatant` with a `SoldierRig`, posed from snapshots. It never
 thinks, never moves itself, never fires and never decides it is dead.
-`NetRoster` pools sixteen of them, indexed by slot, built once and never
+`NetRoster` pools one per FIELDED slot, built once per map and never
 disposed.
 
 The client is **not told** which slots are people. That is what makes "start

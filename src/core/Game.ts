@@ -3553,20 +3553,28 @@ export class Game {
     this.ragdolls.reset();
     // How many bodies a side this map fields, which is the size of the pool.
     //
-    // **The map's offline and the AUTHORITY's in a match**, and that split is
-    // the whole of it: `MapLayout.perTeam` is a statement about the density of
-    // ONE map (Sarab is 24 a side over 900 m of play; every other map says
-    // nothing and is the shipped 8), while a netplay round is sixteen fixed
-    // slots on whatever map the match rotates onto — a slot index is a bot
-    // index there, and a client fielding a roster the authority has never heard
-    // of would be numbering bodies nobody else is. See `docs/multiplayer.md`.
+    // **It is the MAP's on both sides now** — `MapLayout.perTeam`, a statement
+    // about the density of ONE map (Sarab is 24 a side over 900 m of play;
+    // every other map says nothing and is the shipped 8) — and the two sides
+    // spend it in different pools. Offline it is the bot pool below. In a
+    // netplay round `battle` is a pool nothing steps (see `enemyTargets`) and
+    // the bodies are `NetRoster`'s, so the same number goes there instead: the
+    // authority is already fielding it, and a client drawing a different count
+    // would be numbering bodies nobody else is.
+    //
+    // The two pools deliberately do NOT both learn it. A netplay round leaves
+    // `battle` at the shipped 8 a side because nothing in it is ever built,
+    // drawn or stepped, and sizing a dead pool to a big map would be
+    // twenty-four rigs a side of pure cost.
     //
     // Here rather than in `installMap`, unlike the other map-derived pushes,
     // because this is the ROUND's roster and that method's other caller is the
     // editor, which has no round. It runs after the ragdolls above and after
     // `installMap`'s own `crew.clear()` — the two holders of a body — and
     // before the skill draw below, which is handed the pool it seeds.
-    this.battle.setRoster(this.net ? CONFIG.bots.perTeam : perTeamOf(this.mapDef.layout));
+    const perTeam = perTeamOf(this.mapDef.layout);
+    this.battle.setRoster(this.net ? CONFIG.bots.perTeam : perTeam);
+    this.net?.roster.setFielded(perTeam);
     // Re-draw skills for the chosen tier. The pool is rebuilt only when a map
     // changes the size of the roster, so this is the only place the roster's
     // difficulty can change.
@@ -5471,7 +5479,7 @@ export class Game {
         // `CONFIG.teams[-1].name` off the end of it.
         const killer =
           event.killer >= 0 ? CONFIG.teams[event.killer].name : LEASH_KILLER;
-        const victimSlot = this.net?.roster.soldiers[event.victim];
+        const victimSlot = this.net?.roster.at(event.victim);
         const victim = victimSlot ? CONFIG.teams[victimSlot.team].name : "";
         this.hud.addKill(killer, victim, event.killer === this.player.team);
         // Arm the corpse with the round that felled it. It is SPENT later, by
@@ -5620,7 +5628,7 @@ export class Game {
       // choice rather than by ignorance.
       case "fire": {
         if (event.slot === this.net?.slot) break;
-        const shooter = this.net?.roster.soldiers[event.slot];
+        const shooter = this.net?.roster.at(event.slot);
         if (!shooter) break;
         // The eye rather than the feet: a rifle goes off at a shoulder, and
         // this is the only height on a net body that is near one. Offline the
@@ -5656,7 +5664,7 @@ export class Game {
       // played it locally and sent the announcement that came back as this.
       case "reload": {
         if (event.slot === this.net?.slot) break;
-        const who = this.net?.roster.soldiers[event.slot];
+        const who = this.net?.roster.at(event.slot);
         if (who) this.sfx.botReload(who.position, this.netVoice(event.w));
         break;
       }
@@ -7135,16 +7143,27 @@ export class Game {
    *
    * **The two sources meet HERE and nowhere else.** Offline the board is this
    * client's own `ScoreBook`, one line per roster slot. In a match it is the
-   * authority's, read off the session: a slot's name from the roster, its
-   * points, kills and deaths from the last `scores` message, and the row order
-   * straight from the roster, because a slot index is the same number on both
-   * sides of the wire and on both sides of this branch.
+   * authority's, read off the session: a PERSON's name from the roster, every
+   * row's points, kills and deaths from the last `scores` message indexed by
+   * slot, and the row order straight from the roster — a slot index is the same
+   * number on both sides of the wire and on both sides of this branch, which is
+   * what lets one loop read two boards.
    *
    * A bot's name is DERIVED rather than sent (`callsign`), which is what keeps
    * "a bot and a person are the same body on screen" true while still letting
    * this one screen tell them apart: nothing about the row changes how anything
-   * is drawn, and the server spends no bandwidth naming sixteen bodies that
-   * already have a number each.
+   * is drawn, and the server spends no bandwidth naming bodies that already
+   * have a number each.
+   *
+   * **It is derived from the row's place on the BOARD and not from its slot**,
+   * which is the same number offline and is not in a match. The authority's
+   * slot table is the ceiling any map may field, so on a map fielding eight a
+   * side team 1 sits at slots 24-31 — and `callsign` laps every sixteen names,
+   * which would have put every unsuffixed name on one team and every suffixed
+   * one on the other, the exact reading that file refuses. The board is the
+   * roster in slot order and the roster is only the slots this round fields
+   * (`Roster.fielded`), so its own index is dense, team-blocked and identical
+   * to the offline one — INDIA against INDIA-2 on the same map.
    *
    * Assembled only while Tab is held — see the caller.
    */
@@ -7155,7 +7174,7 @@ export class Game {
         const occupant = slot.occupant;
         rows.push({
           name:
-            occupant.kind === "human" ? occupant.name : callsign(slot.index),
+            occupant.kind === "human" ? occupant.name : callsign(rows.length),
           team: slot.team,
           kills: this.net.slotKills[slot.index] ?? 0,
           deaths: this.net.slotDeaths[slot.index] ?? 0,

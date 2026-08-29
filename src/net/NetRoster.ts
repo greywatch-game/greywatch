@@ -1,20 +1,30 @@
 /**
- * net/NetRoster.ts — The sixteen other bodies on screen, driven by snapshots.
+ * net/NetRoster.ts — The other bodies on screen, driven by snapshots.
  * Owns: the `NetSoldier` pool, applying snapshots to it, the mirrored flag and
  * ticket state, the distance LOD, and the target list the local player's own
  * rounds are resolved against. It is the client's replacement for
  * `BattleSystem` in a networked round — same job on screen, none of the job
  * underneath, because no AI runs here.
- * Invariants: the pool is built once and NEVER disposed, sized to the roster,
- * and indexed by slot. A slot's soldier is the same object for the life of the
- * session; only its OCCUPANT changes, which is why a human taking a bot's place
- * costs nothing on this side and is invisible on screen.
+ * Invariants: the pool holds one soldier per slot the ROUND fields, and a
+ * slot's soldier is the same object for as long as the map is standing; only
+ * its OCCUPANT changes, which is why a human taking a bot's place costs nothing
+ * on this side and is invisible on screen.
  * Never runs a think tick, never calls `CombatSystem.fire`, never decides a
  * death. If any of those appear here, AI has come back to the client.
  *
  * The local player is not in the pool. `Game` keeps its own `Player` and the
  * server knows which slot that is; this renders everybody else, and the slot
  * belonging to the local player is left disabled.
+ *
+ * **A SLOT IS NOT A POOL INDEX HERE, and that is the one thing to know before
+ * touching this file.** The authority's slot table is the ceiling any map may
+ * field — forty-eight, so that a rotation never renumbers a player (see
+ * `server/Roster.ts`) — while a round fields the standing map's `perTeam` out
+ * of each team's block. So on a map fielding eight a side the bodies are slots
+ * 0-7 and 24-31, and this class keeps two views of one pool: `soldiers`, dense,
+ * for everything that walks the roster, and `bySlot`, sparse, for everything
+ * that arrives off the wire holding a slot number. They are built and thrown
+ * away together by `setFielded`, which is the only thing that may write either.
  */
 import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
@@ -26,8 +36,19 @@ import type { ControlPoint } from "../systems/ConquestSystem";
 import type { PointState, SlotState, Snapshot } from "./protocol";
 
 export class NetRoster {
-  /** One per roster slot, indexed by slot. Built once, never disposed. */
+  /**
+   * Every body in the round, in slot order — DENSE, so `soldiers[3]` is the
+   * fourth body and not necessarily slot 3. Everything that walks the roster
+   * reads this; anything holding a slot number off the wire goes through
+   * `at`. Rebuilt by `setFielded` when the map changes what it fields.
+   */
   readonly soldiers: NetSoldier[] = [];
+
+  /**
+   * The same bodies indexed BY SLOT — sparse, with a hole at every slot this
+   * map does not field. See the header for why the two are not the same array.
+   */
+  private readonly bySlot: (NetSoldier | undefined)[] = [];
 
   /**
    * How far a body is worth drawing — the match's map's, pushed by
@@ -120,19 +141,77 @@ export class NetRoster {
    */
   onStep: (soldier: NetSoldier) => void = () => {};
 
-  constructor(scene: Scene, mats: CelMaterialFactory) {
+  constructor(
+    private readonly scene: Scene,
+    private readonly mats: CelMaterialFactory,
+  ) {
+    // What a map that states nothing fields, which is four of the five and is
+    // the only honest guess before a `roundstart` has named one. `Game`
+    // pushes the real number every round.
+    this.buildPool(CONFIG.bots.perTeam);
+  }
+
+  /**
+   * How many bodies a side the standing map fields, from `Game.buildRound`.
+   *
+   * **The exact counterpart of `BattleSystem.setRoster`, down to being the one
+   * place "built once and never disposed" bends and to bending at a MAP
+   * CHANGE** — the world is being torn down and rebuilt anyway and a loading
+   * card is already up. It is called for the same reason too: a pool built to
+   * `CONFIG.bots.maxPerTeam` on every map would park thirty-two rigs nobody is
+   * fighting in the frame's own mesh walk on the four maps that field eight,
+   * and a disabled mesh is skipped cheaply rather than skipped.
+   *
+   * It is the CLIENT's copy of a decision the authority has already made:
+   * `Roster.fielded` is what it sends and this is the same count arriving by
+   * the map rather than by the wire, because the map never crosses the wire.
+   *
+   * A no-op at the same size, which is every round on every map but the first
+   * one after a change of roster. Anything holding a body — the ragdoll pool
+   * above all — must have been reset before this is called, exactly as for
+   * `setRoster`.
+   */
+  setFielded(perTeam: number): void {
+    if (perTeam * 2 === this.soldiers.length) return;
+    for (const soldier of this.soldiers) soldier.dispose();
+    this.soldiers.length = 0;
+    this.bySlot.length = 0;
+    this.riding.length = 0;
+    this.buildPool(perTeam);
+  }
+
+  /**
+   * The body in a slot, or undefined for a slot this map does not field.
+   *
+   * The one door for everything that arrives off the wire holding a slot
+   * number. Undefined is an ordinary answer rather than an error: a snapshot
+   * or an event can name a slot from the round before a rotation, and a
+   * message that arrives while the pool is being rebuilt names a slot that
+   * exists on the authority and not yet here.
+   */
+  at(slot: number): NetSoldier | undefined {
+    return this.bySlot[slot];
+  }
+
+  /**
+   * `perTeam` bodies a side, at the slots the authority will name them by.
+   *
+   * The slot arithmetic is `server/Roster.ts`'s: team 1's block begins at
+   * `CONFIG.bots.maxPerTeam` on every map, and a round fills the first
+   * `perTeam` of each block. Getting this wrong is not a crash — it is bodies
+   * that never move, because every snapshot would be addressed to a hole.
+   */
+  private buildPool(perTeam: number): void {
     for (let team = 0; team < 2; team++) {
-      for (let i = 0; i < CONFIG.bots.perTeam; i++) {
-        const soldier = new NetSoldier(
-          scene,
-          mats,
-          this.soldiers.length,
-          team as Team,
-        );
-        // Wired once, at construction, because the pool is built once and never
-        // disposed — the same lifetime `BattleSystem` gives a bot's own hooks.
+      for (let i = 0; i < perTeam; i++) {
+        const slot = team * CONFIG.bots.maxPerTeam + i;
+        const soldier = new NetSoldier(this.scene, this.mats, slot, team as Team);
+        // Wired at construction, because a soldier lives exactly as long as
+        // the pool it is in — the same lifetime `BattleSystem` gives a bot's
+        // own hooks.
         soldier.onStep = () => this.onStep(soldier);
         this.soldiers.push(soldier);
+        this.bySlot[slot] = soldier;
       }
     }
   }
@@ -149,7 +228,7 @@ export class NetRoster {
   applyRoster(slots: readonly SlotState[], localSlot: number): void {
     this.localSlot = localSlot;
     for (const slot of slots) {
-      const soldier = this.soldiers[slot.index];
+      const soldier = this.at(slot.index);
       if (!soldier) continue;
       soldier.team = slot.team;
       if (slot.index !== localSlot) continue;
@@ -165,7 +244,7 @@ export class NetRoster {
   applySnapshot(snap: Snapshot, points: ControlPoint[]): void {
     for (const e of snap.entities) {
       if (e.i === this.localSlot) continue;
-      const soldier = this.soldiers[e.i];
+      const soldier = this.at(e.i);
       if (!soldier) continue;
       soldier.receive(
         snap.now,
@@ -281,6 +360,7 @@ export class NetRoster {
   dispose(): void {
     for (const soldier of this.soldiers) soldier.dispose();
     this.soldiers.length = 0;
+    this.bySlot.length = 0;
   }
 }
 

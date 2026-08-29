@@ -185,8 +185,8 @@ permanent hitch:
   must also not consume a think slot, or the living half of a roster thinks at half
   the advertised rate.
 
-**How big the roster IS is the map's offline and the authority's in a match**,
-and the pool is exactly that roster rather than a ceiling every map pays for.
+**How big the roster IS is the map's, on both sides**, and on a CLIENT the pool
+is exactly that roster rather than a ceiling every map pays for.
 `MapLayout.perTeam` defaults to `CONFIG.bots.perTeam` (8) and is bounded by
 `CONFIG.bots.maxPerTeam` (24); Sarab is the only map that states one, and
 `perTeamOf` is where the default and the bound live. `Game.buildRound` pushes it
@@ -212,19 +212,35 @@ round, no player and no bots. It runs after `RagdollSystem.reset` and
 `squadSize` (24 a side is six squads rather than two, and `planSquads` has never
 counted them), `SquadRadio`'s per-squad boards grow on demand, the squad-order
 and centroid arrays are grown in `updateSquads`, the think budget is
-`bots.length * thinkRate * dt`, and `assignSkills` is handed the pool. The one
+`inPlay * thinkRate * dt`, and `assignSkills` is handed the pool. The one
 paragraph in `BattleSystem` written against a NUMBER is the note declining a
 spatial hash, and 24 a side is ~2,400 pairwise compares a frame — still inside
 the ~64-body roster that note names as the point to revisit it.
 
-**In a NETPLAY match `setRoster` is never called at all.** The roster there is
-sixteen fixed slots built once and never resized, on whatever map the match
+**On the AUTHORITY `setRoster` is called exactly once and the pool IS the
+ceiling**, which is the mirror image of everything above and is the right trade
+there for the opposite reason: that process draws nothing and walks no meshes,
+and it needs team 1's block to begin at the same slot index on every map a match
 rotates onto, because a slot index IS a bot index and a table that grew and
 shrank under the humans sitting in it would take `ScoreBook`'s rows, the wire's
-identities and the bench with it. `server/simulate.ts` is the deliberate
-exception and states why on the line: it is measuring a ROUND rather than
-serving one, so it asks for the map's own number before `startRound` — the one
-moment nothing is holding a body.
+identities and the bench with it. `HeadlessGame`'s constructor sizes the pool to
+`CONFIG.bots.maxPerTeam` and `startRound` calls **`BattleSystem.setFielded`**
+with the map's own `perTeamOf` — so a match on Sarab is 24v24 and a match
+anywhere else is 8v8 out of the same pool.
+
+`setFielded` is the third member of `aside`, and a body it sets aside is set
+aside exactly as a benched one is: dead, off the field, no ticket, no target, no
+squad, nothing torn down. It is a separate set from `benched` because the two
+are cleared by different things — a human leaving un-benches one slot, a
+rotation re-decides all of them — and because `Match` re-benches its humans over
+the top of whatever a rotation just decided. It is EMPTY offline, where the pool
+is already the map's. The one thing that had to follow it is the think budget:
+the pass skips an aside bot without spending on it, so a budget taken from a
+pool three times the size of the fight would have given the bodies that ARE
+fighting three times their advertised reaction speed.
+
+`server/simulate.ts` used to ask for the map's roster itself, because the
+authority would not. It no longer asks at all.
 
 Bots hold a target until it dies, breaks LOS, or leaves range. Without that
 hysteresis, "nearest visible enemy" flips every tick in a crowd, which resets `aimT`

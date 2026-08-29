@@ -35,7 +35,6 @@
 import { PerformanceObserver } from "node:perf_hooks";
 import { TICK_HZ } from "../src/net/protocol";
 import { CONFIG } from "../src/config";
-import { perTeamOf } from "../src/world/layout";
 import { MAPS } from "../src/world/maps";
 import { HeadlessGame } from "./HeadlessGame";
 
@@ -128,19 +127,14 @@ async function runRound(mapId: string, difficulty: number) {
     awards[kind] = (awards[kind] ?? 0) + 1;
   };
 
-  // **The map's own roster, and this is the OFFLINE one on purpose.**
-  // `HeadlessGame` is the authority, and the authority is sixteen fixed slots
-  // on every map it rotates onto (`server/Roster.ts`) — but this tool is not a
-  // match. It exists to measure a ROUND, and the round a player gets on Sarab
-  // is `MapLayout.perTeam`'s twenty-four a side; a harness that measured
-  // sixteen there would be reporting a fight nobody plays, which is exactly the
-  // trap `ENGINE_UPGRADE.md` S10 was measuring its way out of.
-  //
-  // Before `startRound` and not inside it, because that is the one moment
-  // nothing is holding a body: no crew, no bench, no map, no round. It is also
-  // why this is here rather than a parameter on `HeadlessGame` — the authority
-  // has no business being told a roster it is contractually not allowed to use.
-  game.battle.setRoster(perTeamOf(def.layout));
+  // **Nothing sets the roster here any more, and that is the fix rather than
+  // an omission.** This tool exists to measure the ROUND a player actually
+  // gets, which on Sarab is `MapLayout.perTeam`'s twenty-four a side; it used
+  // to have to say so itself, because the authority fielded sixteen on every
+  // map. It does not any more — `HeadlessGame.startRound` fields the map's own
+  // number through `BattleSystem.setFielded` — so asking again here would be a
+  // second opinion about a number that now has one owner. See
+  // `server/Roster.ts`.
 
   const built = Date.now();
   await game.startRound(def, difficulty);
@@ -263,7 +257,10 @@ async function runRound(mapId: string, difficulty: number) {
     })),
     peakContact,
     /** Bodies in the round, which is this map's `perTeam` twice over. */
-    roster: game.battle.bots.length,
+    // The ROUND's roster and not the pool's: the authority builds every bot
+    // any map could field and puts the surplus aside (`BattleSystem.setFielded`),
+    // so `bots.length` is the ceiling on every map and this is the fight.
+    roster: game.perTeam * 2,
     winner: game.conquest.winner,
     tickets: [...game.conquest.tickets] as [number, number],
     // Summed out of the per-slot board rather than kept alongside it — see

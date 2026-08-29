@@ -30,19 +30,24 @@
  * is what makes a human joining and leaving symmetrical. Bots inside a TANK
  * are the bench's twin (`crewed`, written by `VehicleCrew` through `setCrewed`):
  * the same exclusions for a different reason, except that a driver is still
- * alive and still gets its squad's order. Every loop over `bots` must skip
- * both, and the one test that does it is `aside` — never `benched.has`
- * directly. `Bot` itself knows nothing about any of it.
+ * alive and still gets its squad's order. Bots the ROUND does not field are the
+ * third (`unfielded`, written by `setFielded`), and they exist because the
+ * authority's pool is the ceiling rather than the map's number — see
+ * `setFielded`. Every loop over `bots` must skip all three, and the one test
+ * that does it is `aside` — never `benched.has` directly. `Bot` itself knows
+ * nothing about any of it.
  * A HUMAN ALWAYS HOLDS A SLOT, offline as well as on the server: `seatPlayer`
  * benches the local player's, which is what makes a single-player round 8v8
  * rather than 8v9.
- * HOW BIG THE ROSTER IS is the MAP's offline (`MapLayout.perTeam`, resolved by
- * `perTeamOf` and pushed by `Game.buildRound` through `setRoster`) and the
- * AUTHORITY's in a match, where it is sixteen fixed slots on every map and
- * `setRoster` is never called at all. The pool is rebuilt when that number
- * moves and only then — see `setRoster` for why a pool sized to the ceiling
- * would be the wrong trade — so a map that states nothing is unchanged to the
- * bit, and nothing in this file is written against a particular size.
+ * HOW BIG THE ROSTER IS is the MAP's on both sides now (`MapLayout.perTeam`,
+ * resolved by `perTeamOf`), and the two sides spend it differently. Offline
+ * `Game.buildRound` sizes the POOL to it through `setRoster`. On the authority
+ * the pool is `CONFIG.bots.maxPerTeam` a side once and for ever — a slot index
+ * is a bot index there and team 1's block must start at the same number on
+ * every map a match rotates onto — and `setFielded` is what says how many of
+ * it this round is fighting. Nothing in this file is written against a
+ * particular size, and the two numbers are the same one offline, where
+ * `setFielded` is a no-op.
  */
 import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
@@ -263,6 +268,42 @@ export class BattleSystem {
    */
   private readonly crewed = new Set<Bot>();
   /**
+   * Bots this ROUND does not field.
+   *
+   * **The bench's second twin, and it exists because the authority's pool is
+   * the CEILING rather than the map's number.** A slot index is a bot index in
+   * a match, so team 1's block has to start at the same number on every map a
+   * match rotates onto — which means the pool is `CONFIG.bots.maxPerTeam` a
+   * side on all of them, and a map fielding eight leaves sixteen bodies a side
+   * that are in the pool and not in the fight. This is that statement, made
+   * once per round by `setFielded`.
+   *
+   * A third set rather than a term on `Bot` for the bench's reason exactly: how
+   * many bodies this map fields is a fact about the ROSTER, and `Bot` is an AI
+   * combatant that has no business knowing which map it is standing on. It is
+   * kept apart from `benched` because the two are cleared by different things —
+   * a human leaving un-benches one slot, and a rotation re-decides all of them
+   * — and folding them would let a rotation hand a leaver's slot back to a body
+   * this map does not field.
+   *
+   * EMPTY OFFLINE, always: `Game.buildRound` sizes the pool to the map through
+   * `setRoster` and never calls `setFielded`, which is the only thing that
+   * writes this. The single-player path pays one more `Set.has` per bot per
+   * frame for a rule only the server spends.
+   */
+  private readonly unfielded = new Set<Bot>();
+  /**
+   * How many bodies are actually in this round — `bots.length` minus what
+   * `setFielded` set aside, and `bots.length` itself offline.
+   *
+   * The think budget is spent against this rather than against the pool: a
+   * budget of `bots.length * thinkRate` over a pool three times the size of the
+   * round would give the bodies that ARE fighting three times the reaction
+   * speed `thinkRate` advertises, since the pass skips an aside bot without
+   * spending on it.
+   */
+  private inPlay = 0;
+  /**
    * The roster slot the offline player sits in, or -1 before a round has
    * seated them. Written only by `seatPlayer`, and read by the scoreboard,
    * which draws the player's line in place of that slot's bot.
@@ -432,6 +473,10 @@ export class BattleSystem {
         this.bots.push(bot);
       }
     }
+    // A pool freshly built is a roster entirely in play, which is what every
+    // offline round is and what the authority's pool is until `setFielded`
+    // says otherwise.
+    this.inPlay = this.bots.length;
   }
 
   /**
@@ -469,10 +514,56 @@ export class BattleSystem {
     // again a few lines later, through `seatPlayer`, which is idempotent.
     this.benched.clear();
     this.crewed.clear();
+    this.unfielded.clear();
     this.seated = -1;
     this.thinkCursor = 0;
     this.disposeAll();
     this.buildPool(perTeam);
+  }
+
+  /**
+   * How many bodies a side this ROUND fields, out of the pool it already has.
+   *
+   * **The pool's size and the round's are the same number offline and two
+   * numbers on the authority**, which is the whole of why this is a second
+   * method rather than an argument to `setRoster`. Offline nothing calls this
+   * at all: `Game.buildRound` builds exactly what the map asks for, and a call
+   * here would be handed the number the pool already is and add nobody. In a
+   * match a slot index is a bot index, so team 1's block must begin at the same
+   * number on every map a rotation can put up — the pool is therefore
+   * `CONFIG.bots.maxPerTeam` a side on all of them, and this is what takes the
+   * surplus out of the fight on a map that fields fewer.
+   *
+   * A body set aside here is set aside exactly as a benched one is: dead, off
+   * the field, thought for by nobody, shootable by nobody, and holding neither
+   * a ticket nor a place in a squad's formation. It is not disposed and nothing
+   * about it is torn down, so a rotation onto a bigger map hands it back
+   * through the ordinary respawn queue — the same symmetry a human joining and
+   * leaving has.
+   *
+   * It deliberately does NOT touch `benched`: a rotation re-decides which
+   * slots this map fields while the humans sitting in them do not move, and
+   * `Match` re-benches them afterwards over a roster this has already reshaped.
+   * Called after `reset`, whose "everybody dead with a zero timer" is the state
+   * the fielded half is picked back up from.
+   */
+  setFielded(perTeam: number): void {
+    this.unfielded.clear();
+    // The pool is two equal blocks, so a bot's index WITHIN its own team is its
+    // pool index modulo the block length — the same arithmetic `buildPool`
+    // hands out squads and launchers by, and the reason the first eight of a
+    // side are the same eight however big the pool is.
+    const block = this.bots.length / 2;
+    for (let i = 0; i < this.bots.length; i++) {
+      if (i % block < perTeam) continue;
+      const bot = this.bots[i];
+      this.unfielded.add(bot);
+      bot.alive = false;
+      bot.state = "dead";
+      bot.respawnT = 0;
+      bot.setEnabled(false);
+    }
+    this.inPlay = this.bots.length - this.unfielded.size;
   }
 
   setMap(map: GameMap): void {
@@ -557,16 +648,20 @@ export class BattleSystem {
   }
 
   /**
-   * Is this bot out of the fight without being dead — a human in its slot, or
-   * a hull around it?
+   * Is this bot out of the fight without being dead — a human in its slot, a
+   * hull around it, or a round that does not field its slot at all?
    *
    * **Every loop over `bots` in this file owes this test**, and it is one
-   * method rather than two `Set.has` calls at nineteen call sites precisely so
-   * that a third reason can never be added and missed at eighteen of them. It
-   * is public because `VehicleCrew` asks it before handing anybody a seat.
+   * method rather than three `Set.has` calls at nineteen call sites precisely
+   * so that a reason can never be added and missed at eighteen of them. The
+   * third one was added exactly that way, in this method and nowhere else —
+   * see `unfielded`. It is public because `VehicleCrew` asks it before handing
+   * anybody a seat.
    */
   aside(bot: Bot): boolean {
-    return this.benched.has(bot) || this.crewed.has(bot);
+    return (
+      this.benched.has(bot) || this.crewed.has(bot) || this.unfielded.has(bot)
+    );
   }
 
   /** The slot the offline player holds, or -1 if none has been taken. */
@@ -732,11 +827,15 @@ export class BattleSystem {
 
     // --- staggered thinking ---
     // Budget = roster * rate * dt, so each bot thinks `thinkRate` times a
-    // second regardless of frame rate.
-    this.thinkDebt += this.bots.length * b.thinkRate * dt;
+    // second regardless of frame rate. The ROUND's roster and not the pool's
+    // (`inPlay`): the pass below skips an aside bot without spending on it, so
+    // a budget taken from a pool bigger than the fight would divide the same
+    // number of think slots between fewer bodies and quietly speed every one of
+    // them up — which on the authority is every map but the biggest.
+    this.thinkDebt += this.inPlay * b.thinkRate * dt;
     let budget = Math.floor(this.thinkDebt);
     this.thinkDebt -= budget;
-    budget = Math.min(budget, this.bots.length);
+    budget = Math.min(budget, this.inPlay);
     // A dead bot used to consume a budget slot on its way past the cursor, so
     // with half the roster respawning the living half thought at half the rate.
     // Skipping without spending, bounded by one full pass so an all-dead roster

@@ -406,7 +406,7 @@ so that a map saying nothing is unaffected:
 | `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is the reach `WorldCulling` walks to and the default for the row below; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
 | `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | it is resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `BattleSystem`, `NetRoster` and `RagdollSystem` together, which is what keeps `bots.lodDisableDistance` and `bots.death.maxDistance` one distance; a body it drops POPS, and the WALK's reach deliberately stays the fog |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
-| `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — `BattleSystem.setRoster` rebuilds the pool when it moves rather than sizing it to the ceiling, because a disabled mesh is skipped cheaply and not skipped. The squads, the squads' launchers and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **OFFLINE ONLY** — a netplay match is sixteen fixed slots on whatever map it rotates onto |
+| `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — `BattleSystem.setRoster` rebuilds a CLIENT's pool when it moves rather than sizing it to the ceiling, because a disabled mesh is skipped cheaply and not skipped. The squads, the squads' launchers and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too, and what it moves there is the BOTS**: the authority's slot table is the ceiling and `setFielded` says how many of it a round fights, while the SEATS stay at sixteen on every map |
 | `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** — those want more buckets on a big map, not fewer |
 | `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in all three callers of `terrainPatches` — `buildValley`, the server's `terrainColliders` and the editor's brush — or the two sides tessellate different floors |
 | `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` returns FULLY LIT outside the window rather than fading — an undersized one draws a line across the ground rather than softening, and an OVERSIZED one moves that line not at all (the depth volume binds along the sun) while costing texel density, which `ShadowSystem` now DEV-warns about |
@@ -427,7 +427,7 @@ exist for), **Harrowmead** (`size: 400`, no wall around it) **and Sarab**
 `ENGINE_UPGRADE.md` exists for). **The last three are the three with vehicles on
 them**, and they are the three biggest; **Sarab is the only one with two KINDS**,
 a tank and a gun truck a side, **and the only one that is not 8v8** — it fields
-24 a side offline, which is `MapLayout.perTeam` and the row above.
+24 a side, online and off, which is `MapLayout.perTeam` and the row above.
 
 **Sarab is the map that SPENDS the levers**, and it is the only one that states
 most of them: `blockSize` and `terrainBlock` at 96 (S6), a `fogEnd` (560) inside
@@ -672,13 +672,17 @@ misbehaves silently:
 
 ### Bots: navigation, scaling, perception and squads
 
-**How many bots there ARE is the MAP's offline** (`MapLayout.perTeam`, 8
-everywhere but Sarab's 24) and the AUTHORITY's in a match (sixteen fixed slots,
-always). The rig pool IS that roster and `BattleSystem.setRoster` rebuilds it
-when the number moves — from `buildRound`, never from `installMap` — which is
-the one place "built once and never disposed" bends. **Nothing else in this
-layer may know a size**: the squads, the radio's boards, the squad orders and
-the skill draw are all grown from the pool they are handed.
+**How many bots there ARE is the MAP's on both sides** (`MapLayout.perTeam`, 8
+everywhere but Sarab's 24), and the two sides spend it differently. On a CLIENT
+the rig pool IS that roster and `BattleSystem.setRoster` rebuilds it when the
+number moves — from `buildRound`, never from `installMap` — which is the one
+place "built once and never disposed" bends. **The AUTHORITY builds the ceiling
+once** (`CONFIG.bots.maxPerTeam` a side, because a slot index is a bot index and
+a match rotates maps under one slot table) and `setFielded` takes the surplus
+out of each round, which is the third reason a bot can be `aside`. **Nothing
+else in this layer may know a size**: the squads, the radio's boards, the squad
+orders and the skill draw are all grown from the pool they are handed, and the
+think budget from the number of bodies actually in the round.
 
 `NavGrid` is built from the finished collider set at map load, and its node is a
 **surface** — a (cell, height) pair — not a cell. The cap is
@@ -718,9 +722,10 @@ formation and `bots.separation` (1.5 m) is de-penetration; both come out of one
 pairwise pass, and a cover anchor is CLAIMED so a baked lookup cannot hand four
 bots the same corner.
 
-**A bot inside a TANK is out of all of this** (see the vehicles section), and
-what it costs this layer is one rule: `BattleSystem.aside` is the skip test every
-loop over `bots` owes, never `benched.has`.
+**A bot inside a TANK is out of all of this** (see the vehicles section), and so
+is a bot the round does not field; what it costs this layer is one rule:
+`BattleSystem.aside` is the skip test every loop over `bots` owes, never
+`benched.has`.
 
 → **[`docs/bots.md`](docs/bots.md)** — surface and link rules, the acquisition
 cone and target hysteresis, the four states that take the stance, the radio's two
@@ -1035,11 +1040,16 @@ server, the only thing that deals damage. **A client predicts its own MOVEMENT,
 its own health regeneration and — in a hull — its own DRIVE**, each validated on
 arrival; everything else a client steps is DRESSING.
 
-**The roster is sixteen slots, built once, never resized** — on every map,
-including the one that fields 24 a side offline (`MapLayout.perTeam` reaches
-`Game.buildRound` and not the authority, which never calls
-`BattleSystem.setRoster`) — and every slot nobody is sitting in is a bot: a human joining BENCHES the bot in their slot and leaving
-un-benches it. **Benching is not killing** — joining and leaving must never
+**The slot table is forty-eight slots, built once, never resized or reordered**
+— `CONFIG.bots.maxPerTeam` a side, on every map, because a match rotates maps
+under ONE table and a table sized per map would renumber every player on team 1
+at every rotation. **What the map decides is the ROUND**: `MapLayout.perTeam`
+reaches the authority through `setFielded`, so Sarab is 24v24 online as well as
+off and the wire mentions only the slots a round fields. **What the map may
+never decide is the SEATS**, which stay at sixteen — the smallest roster in the
+rotation, so that a rotation takes bots off the field and never a person out of
+a seat. Every slot nobody is sitting in is a bot: a human joining BENCHES the
+bot in their slot and leaving un-benches it. **Benching is not killing** — joining and leaving must never
 charge a team a reinforcement — the bench lives in `BattleSystem` as a `Set<Bot>`
 and never as a flag on `Bot`, **every loop over `bots` there must skip it**
 (through `aside`, which also covers a tank's crew), and **a slot index IS a bot

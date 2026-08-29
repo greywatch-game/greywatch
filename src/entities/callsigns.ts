@@ -8,10 +8,19 @@
  * takes a slot's name off the board, it does not shuffle the fifteen others.
  *
  * A person's name is their own and comes from the roster (`SlotOccupant`); this
- * is only for the slots no person is in. Offline that is every bot but the one
- * the local player sits on (`BattleSystem.seatPlayer`), and the roster index is
- * the bot's index in `BattleSystem.bots`; in a match it is the slot, which is
- * the same number by construction — see `server/Roster.ts`.
+ * is only for the slots no person is in. Offline the index is the bot's index
+ * in `BattleSystem.bots`, and every bot but the one the local player sits on
+ * (`BattleSystem.seatPlayer`) gets a name from it.
+ *
+ * **In a match it is the row's place on the BOARD and not the roster slot**,
+ * which used to be the same number and stopped being one when the authority's
+ * slot table became the ceiling any map may field: on a map fielding eight a
+ * side team 1 sits at slots 24-31, and naming from those would put every
+ * unsuffixed name on one team and every suffixed one on the other — the exact
+ * reading `callsign` refuses below. The board is the roster in slot order and
+ * the roster is only the slots the round fields (`Roster.fielded`), so its own
+ * index is dense, team-blocked and identical to the offline one. See
+ * `Game.scoreRows` and `server/Roster.ts`.
  */
 
 /**

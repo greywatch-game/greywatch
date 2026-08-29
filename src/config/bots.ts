@@ -17,11 +17,12 @@ export const bots = {
    * exactly whatever that resolves to, twice.
    *
    * **This is still the figure the rest of this file is written against**, and
-   * it is what four other things are: the NETPLAY roster, which is sixteen
-   * fixed slots built once and never resized (`server/Roster.ts`, and see
-   * `maxPerTeam` for why a map's roster does not reach it), the pool
-   * `BattleSystem` is constructed with before any map is installed, the
-   * `NetRoster` mirror on a client, and the number a map that says nothing
+   * it is what four other things are: how many PEOPLE a match seats a side,
+   * which is fixed at this number on every map it rotates onto because it is
+   * the smallest roster any of them fields and a rotation may never evict
+   * anybody (`Roster.HUMANS_PER_TEAM`), the pool `BattleSystem` is constructed
+   * with before any map is installed, the `NetRoster` mirror on a client before
+   * a `roundstart` has named a map, and the number a map that says nothing
    * fields — which is four of the five shipped maps, unchanged to the bit.
    */
   perTeam: 8,
@@ -36,10 +37,16 @@ export const bots = {
    * a map's roster has to be a number somebody chose rather than one a layout
    * can run away with. 24 is Sarab's, which is what it was raised to.
    *
-   * It is NOT a pool size and nothing is built to it: the pool is the map's own
-   * roster and is rebuilt when that changes (`BattleSystem.setRoster`), which
-   * is what keeps a 240 m village paying for sixteen bodies rather than
-   * forty-eight.
+   * It is NOT a pool size on a CLIENT and nothing there is built to it: the
+   * pool is the map's own roster and is rebuilt when that changes
+   * (`BattleSystem.setRoster`, `NetRoster.setFielded`), which is what keeps a
+   * 240 m village paying for sixteen bodies rather than forty-eight.
+   *
+   * **The AUTHORITY is the exception and builds exactly this, once.** It draws
+   * no rigs and walks no meshes, and it needs team 1's block to begin at the
+   * same slot index on every map a match rotates onto — so its pool is the
+   * ceiling and `BattleSystem.setFielded` takes the surplus out of each round.
+   * See `server/Roster.ts`.
    */
   maxPerTeam: 24,
   squadSize: 4,

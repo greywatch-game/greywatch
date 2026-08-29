@@ -53,8 +53,18 @@ import type { ScoreKind } from "../systems/ScoreBook";
  * carrying. Every one of those is the authority and the client disagreeing
  * about what a person is doing rather than about what they can see, which is
  * the line a version bump is for.
+ *
+ * 6 is the ROSTER TABLE growing to forty-eight, and it is a bump because it
+ * changes what a NUMBER MEANS rather than adding a field. A slot is still a
+ * slot, but team 1's block now begins at 24 on every map instead of at the
+ * team's own size, and a round carries only the slots its map fields — so a
+ * version-5 client, whose pool is sixteen bodies indexed 0-15, would draw
+ * every friendly and nobody on the other side, on every map. Its own slot
+ * could be one it has no body for. That is the authority and the client
+ * disagreeing about who is in the round, which is squarely what a bump is for.
+ * See `server/Roster.ts`.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /**
  * The longest display name a client may claim, in characters.
@@ -123,7 +133,10 @@ export type NetTeam = 0 | 1;
  * `slots` is on the wire rather than assumed to be sixteen: a client drawing
  * "3 / 16" from its own `CONFIG.bots.perTeam` would draw the wrong denominator
  * against a server built with a different one, and the row would be a lie in
- * the one place a player is choosing between servers.
+ * the one place a player is choosing between servers. It is how many PEOPLE the
+ * match seats — `Roster.capacity`, sixteen on every map — and deliberately not
+ * how many bodies are in the round, which on Sarab is forty-eight and is not a
+ * number anybody can join into.
  */
 export interface MatchSummary {
   id: string;
@@ -160,16 +173,28 @@ export interface MatchList {
 /**
  * Who is in a roster slot.
  *
- * The roster is a fixed 16 slots and a slot is never created or destroyed — it
+ * The roster is a fixed 48 slots and a slot is never created or destroyed — it
  * only changes who feeds it. That is what makes "start without a full lobby"
  * and "backfill a leaver with a bot" the same mechanism rather than two.
+ *
+ * A ROUND fields the standing map's `MapLayout.perTeam` out of each team's
+ * block, and `RosterMessage` carries only those — so a client is told about
+ * sixteen slots on four of the five maps and forty-eight on Sarab, and never
+ * about a body nobody can see. Of the 48 only the first eight of each block may
+ * ever hold a person, which is what keeps a rotation from having to evict
+ * anybody. See `server/Roster.ts`.
  */
 export type SlotOccupant =
   | { kind: "bot" }
   | { kind: "human"; peerId: string; name: string };
 
 export interface SlotState {
-  /** Stable index into the roster, 0..15. Also the entity id on the wire. */
+  /**
+   * Stable index into the roster table, 0..47. Also the entity id on the wire,
+   * the `ScoreBook` row and the `pings` index — which is why it is the table's
+   * number rather than the round's, and why the arrays indexed by it are sent
+   * at full length while `RosterMessage.slots` is not.
+   */
   index: number;
   team: NetTeam;
   occupant: SlotOccupant;
@@ -824,6 +849,15 @@ export interface Welcome {
   brokenPanes?: number[];
 }
 
+/**
+ * Who is in which slot, for the slots the standing round FIELDS.
+ *
+ * Not the whole table: the table is the ceiling any map may field and the round
+ * is the map's, so on every map but Sarab two thirds of it is bodies this round
+ * does not have. A client draws one soldier and one scoreboard row per slot it
+ * is told about, so the filter is what keeps thirty-two names off the board and
+ * thirty-two rigs out of the frame. See `server/Roster.ts`.
+ */
 export interface RosterMessage {
   t: "roster";
   slots: SlotState[];

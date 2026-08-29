@@ -12,10 +12,11 @@
  *
  * **A bot and a remote human are the same thing here, and that is the point.**
  * The server decides which roster slots are people and which are AI; a client
- * draws sixteen of these either way and never learns the difference. That is
- * what makes "start a match without a full lobby" and "give a leaver's slot
- * back to a bot" the same mechanism instead of two, and it is why there is no
- * spawn or despawn on this path at all — a slot only ever changes who feeds it.
+ * draws one of these per slot the round fields either way and never learns the
+ * difference. That is what makes "start a match without a full lobby" and "give
+ * a leaver's slot back to a bot" the same mechanism instead of two, and it is
+ * why there is no spawn or despawn on this path at all — a slot only ever
+ * changes who feeds it.
  *
  * Interpolation runs `CONFIG.net.interpDelay` behind the newest snapshot, so
  * every frame is drawn between two samples that have actually arrived. That
