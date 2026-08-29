@@ -110,6 +110,41 @@ sees are turned as far as the driver has them.
 It was `turnRate` flat at every speed until the field existed, and what that
 looked like was a five-tonne truck spinning on its own axis in the road.
 
+**And a third number sits between the driver and both of those, because a KEY
+IS NOT A STEERING WHEEL.** `InputManager.moveX` is +-1 the instant `A` or `D`
+goes down — right on foot, where walking left is a direction and not a
+quantity, and in a hull a driver who reaches full lock and centres again inside
+one frame. What comes out is a step function of yaw rate, and a step into a
+heavy body reads as exactly the jerk it is. `drive.steerRate` is the LINKAGE:
+`Vehicle.steerTo` walks the steering toward what is being asked for at that
+many stick per second, and the hull turns on what the linkage has got to rather
+than on the stick.
+
+A rate limit rather than a smoothing, which is the honest shape twice over — it
+is what the mechanism IS (a wheel is wound as fast as hands wind it), and it is
+frame-rate exact by construction rather than through the `Math.min(1, dt *
+rate)` idiom, which never quite arrives and arrives differently at 30 Hz. It is
+deliberately the same three lines as the throttle's walk toward its wanted
+speed: both are a control the driver ASKS with and the hull answers at its own
+rate. The DRAWN wheels take it too (`steerShown` is fed from the linkage), or a
+truck would be telling two stories about one mechanism.
+
+The tank's is 8 — a tenth of a second, a hand pulling a tiller, near enough
+instant to leave its handling where it was. The truck's is 3.2, three tenths of
+a second to full lock and six to go lock to lock, and it is meant to be felt: a
+wheel with turns in it. It costs about 8 degrees of heading against an instant
+stick over the first half-second of a corner. **It is also half of why the
+springs stopped touching their stop** — `flexSuspension` answers to
+`speed * yawRate`, so an instant stick was a step input into a spring and a
+step into a spring is an overshoot; ramped, the same corner settles to the same
+6.95 degrees without ever arriving on the stop. The two are independent and
+neither substitutes for the other: this shapes what the springs are ASKED for,
+`suspension.progression` shapes what they do with it.
+
+A bot pays it nothing it was not already paying — a crew's steer is
+`err * steerGain` and is continuous, so the limit bites only where a bot's own
+heading error saturates the stick.
+
 **A hull that cannot pivot changes what an AI DRIVER can be asked to do**, and
 that is the one place the change reached outside the drive. `driveOn` tapers the
 throttle away with the heading error so a hull facing the wrong way pivots

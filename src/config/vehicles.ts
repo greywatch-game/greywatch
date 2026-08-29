@@ -68,6 +68,7 @@ export interface VehicleSpec {
     readonly turnRate: number;
     readonly turnAtSpeed: number;
     readonly steerAtRest: number;
+    readonly steerRate: number;
     readonly steerRollSpeed: number;
     readonly tiltRate: number;
     readonly airTiltRate: number;
@@ -562,6 +563,25 @@ export const vehicles = {
        * full at every speed and this number can say nothing.
        */
       steerRollSpeed: 0,
+      /**
+       * How fast the STEERING itself may be moved, in stick per second — the
+       * linkage between what the driver is asking for and what the hull turns
+       * on (`Vehicle.steerTo`).
+       *
+       * **It exists because a key is not a steering wheel.** `moveX` is +-1
+       * the instant `A` or `D` goes down, which on foot is right and in a hull
+       * is a driver reaching full lock inside one frame; what comes out is a
+       * step function of yaw rate, and a step into a heavy body reads as
+       * exactly the jerk it is.
+       *
+       * 8 is a tenth of a second from centre to full lock, which is a hand
+       * pulling a tiller — near enough instant to leave this vehicle's
+       * handling where it was, far enough from instant to take the corner off
+       * the step. A tank's is fast because its steering IS: a lever with a
+       * brake on the end of it goes over as fast as an arm moves, where the
+       * truck next door has a wheel with turns in it and says so.
+       */
+      steerRate: 8,
       /**
        * How fast the drawn hull leans onto the ground it is standing on
        * (per second, frame-lerp). The pitch and roll are cosmetic — the
@@ -1546,6 +1566,30 @@ export const vehicles = {
        * flat 1 whichever way it is going) rather than by a check.
        */
       steerRollSpeed: 4,
+      /**
+       * **A WHEEL, where the tank has a pair of levers, and this is the number
+       * that is the difference.** Three tenths of a second from centre to full
+       * lock and six from lock to lock, which is a driver winding a wheel with
+       * turns in it rather than a hand flicking a tiller — the tank's 8 is
+       * there to take the corner off a step and this is there to be felt.
+       *
+       * What it fixes is that `A` and `D` are a switch: the hull went from no
+       * yaw rate to 0.897 rad/s between two frames, and back to nothing just
+       * as fast, which is the jerk. Wound on over 0.3 s the same key gives a
+       * turn-in the body has time to answer — and it is worth about 8 degrees
+       * of heading against an instant stick over the first half-second of a
+       * corner, which is the price and is meant to be paid.
+       *
+       * **It is also half of why the springs below stopped touching their
+       * stop.** `flexSuspension` answers to `speed * yawRate`, so an instant
+       * stick was a step input into a spring, and a step into a spring is an
+       * overshoot — turn-in reached the stop for a frame on the strength of
+       * that alone. Ramped, the same corner settles to the same lean without
+       * ever arriving on it. The two changes are independent and neither one
+       * is a substitute for the other: this one shapes what the springs are
+       * ASKED for, `suspension.progression` shapes what they do with it.
+       */
+      steerRate: 3.2,
       /** Onto the ground faster than the tank: less mass, shorter wheelbase. */
       tiltRate: 7.5,
       airTiltRate: 1.1,

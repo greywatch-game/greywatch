@@ -625,6 +625,11 @@ export class Vehicle implements Combatant, RayHull {
    */
   private steerShown = 0;
   /**
+   * Where the STEERING has actually got to, -1..1, as against where the driver
+   * is asking for it — see `steerTo`.
+   */
+  private steerHeld = 0;
+  /**
    * The drawn hull's attitude, in two halves that are never mixed: where the
    * ground puts it, and what its own mass does to it.
    *
@@ -964,6 +969,7 @@ export class Vehicle implements Combatant, RayHull {
     this.trackRun[0] = 0;
     this.trackRun[1] = 0;
     this.steerShown = 0;
+    this.steerHeld = 0;
     this.groundPitch = 0;
     this.groundRoll = 0;
     this.suspPitch = 0;
@@ -1399,6 +1405,50 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * Where the steering has got to this frame, walking toward what the driver is
+   * asking for at `drive.steerRate` — the LINKAGE, and the answer everything
+   * downstream of the stick uses.
+   *
+   * **A key is not a steering wheel, and that is the whole of what this is
+   * for.** `InputManager.moveX` is +-1 the instant `A` or `D` goes down, which
+   * on foot is right — walking left is a direction and not a quantity — and in
+   * a hull is a driver who can hit full lock and centre again inside one
+   * frame. The yaw rate that comes out of it is a step function, and a step
+   * function into a five-tonne body reads exactly as what it is: jerky.
+   *
+   * **This is a rate limit and not a smoothing**, which is the honest shape
+   * for it twice over. It is what the mechanism IS — a wheel is wound at the
+   * speed a pair of hands can wind it, and a tiller is pulled at the speed an
+   * arm moves — and it is frame-rate exact by construction rather than by the
+   * `Math.min(1, dt * rate)` idiom, which never quite arrives and arrives
+   * differently at 30 Hz. It is deliberately the same three lines as the
+   * throttle's walk toward its wanted speed, ten lines below: both are a
+   * control the driver ASKS with and the hull answers at its own rate.
+   *
+   * **It costs the AI driver nothing it was not already doing**: a crew's
+   * steer is `err * steerGain` and is a continuous quantity, so the limit only
+   * bites where a bot's own heading error saturates the stick.
+   *
+   * It is the DRAWN wheels' angle as well, because `steerShown` is fed from
+   * this rather than from the stick — a truck whose wheels snapped to full
+   * lock while the hull turned in over a quarter of a second would be telling
+   * two stories about one linkage.
+   *
+   * At `steerRate` 0 it hands back the ask untouched, which is a kind with no
+   * linkage worth modelling.
+   */
+  private steerTo(want: number, dt: number): number {
+    const rate = this.spec.drive.steerRate;
+    if (rate <= 0) {
+      this.steerHeld = want;
+      return want;
+    }
+    const gap = want - this.steerHeld;
+    this.steerHeld += Math.sign(gap) * Math.min(Math.abs(gap), rate * dt);
+    return this.steerHeld;
+  }
+
+  /**
    * One frame of a tank: the drive, the ground under it, the turret walking
    * toward where it was asked to point, and the lean.
    *
@@ -1454,7 +1504,10 @@ export class Vehicle implements Combatant, RayHull {
     const move = Math.min(Math.abs(gap), rate * dt);
     this.speed += Math.sign(gap) * move;
 
-    const yawRate = d.steer * this.steerAuthority();
+    // What the LINKAGE has got to, which is what the hull turns on — never the
+    // stick itself. See `steerTo`: a key is not a steering wheel.
+    const steer = this.steerTo(d.steer, dt);
+    const yawRate = steer * this.steerAuthority();
     this.yaw += yawRate * dt;
     this.body.rotation.y = this.yaw;
 
@@ -1472,19 +1525,21 @@ export class Vehicle implements Combatant, RayHull {
     // turned cannot have changed what it is touching, and those two are the
     // only ways it can.
     const stirred = this.speed !== 0 || yawRate !== 0;
-    // **The stick is drawn on a hull that is not moving at all**, which is the
-    // one thing the skip above cannot cover on a vehicle that has to be
+    // **The steering is drawn on a hull that is not moving at all**, which is
+    // the one thing the skip above cannot cover on a vehicle that has to be
     // rolling to turn: a parked truck under full lock yaws by nothing, and if
     // the wheels did not turn either then the driver's only feedback for the
     // stick being over is that they are still pointing the same way. A tank
     // has never reached this branch — a stick over on one IS a yaw rate — so
-    // it costs the parked pair nothing.
-    if (stirred || d.steer !== this.steerShown) {
+    // it costs the parked pair nothing. It is the LINKAGE that is compared
+    // rather than the stick, so a parked truck winds its wheels over the same
+    // quarter-second a moving one does instead of snapping them.
+    if (stirred || steer !== this.steerShown) {
       const differential = (yawRate * this.rig.gauge) / 2;
       this.trackRun[0] += (this.speed + differential) * dt;
       this.trackRun[1] += (this.speed - differential) * dt;
-      this.rig.setRun(this.trackRun[0], this.trackRun[1], d.steer);
-      this.steerShown = d.steer;
+      this.rig.setRun(this.trackRun[0], this.trackRun[1], steer);
+      this.steerShown = steer;
     }
 
     // **Aimed on a TURN as well as on a move, and that is a fix rather than a
