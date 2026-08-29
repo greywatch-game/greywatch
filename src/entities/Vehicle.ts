@@ -414,6 +414,26 @@ const IDLE: DriveInput = {
 const REMOTE_RESYNC_Y = 1;
 
 /**
+ * How fast a remote hull's own velocity is chased to get an ACCELERATION out
+ * of it, 1/s. `tiltFromMotion` is the only reader.
+ *
+ * **A lag rather than a difference, and that is the whole of why it works.**
+ * `NetVehicles` lerps LINEARLY between samples, so the velocity measured on
+ * this side is piecewise constant: differencing it frame to frame gives a
+ * spike at every bracket boundary and a zero on every frame between them,
+ * which is not an acceleration but a picture of when the snapshots landed.
+ * Chasing a lagged copy instead makes the estimate an exponentially weighted
+ * MEAN of that train, which is the acceleration — the spikes are what carry
+ * it, and averaging them is exactly what recovers the figure they are a
+ * sampling of.
+ *
+ * At 6 it averages over about a sixth of a second, which is two or three
+ * snapshot intervals: enough for the mean to be the mean, and short against
+ * the `drive.airTiltRate` filter the answer is drawn through anyway.
+ */
+const REMOTE_ACCEL_RATE = 6;
+
+/**
  * The one wind's bearing, normalised once — `CONFIG.wind.dir` is documented as
  * un-normalised and every reader owes this.
  *
@@ -481,6 +501,24 @@ export function angleDelta(a: number, b: number): number {
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   return d;
+}
+
+/**
+ * The disc tilt that would be making `thrust` m/s^2 of horizontal push, given
+ * `scale` m/s^2 per radian of tilt, bounded by what the cyclic can ask for.
+ *
+ * `flyStep`'s own line read backwards, and both of its bounds are load-bearing
+ * rather than defensive tidiness. The ratio is clamped because it is built out
+ * of a velocity `updateRemote` MEASURED off the wire, and a hull the
+ * interpolator is shoving can report a push no disc could produce — `asin` of
+ * which is `NaN`, which would go straight onto a drawn node and take the hull
+ * off the map. The ANGLE is clamped again because the stick has a limit: what
+ * comes back must be an attitude a pilot could be holding, and a machine being
+ * dragged sideways past a wall is evidence of a wall and not of a stick.
+ */
+function tiltFor(thrust: number, scale: number, limit: number): number {
+  const ratio = Math.max(-1, Math.min(1, thrust / scale));
+  return Math.max(-limit, Math.min(limit, Math.asin(ratio)));
 }
 
 /**
@@ -807,6 +845,15 @@ export class Vehicle implements Combatant, RayHull {
    * then puts back, once a frame, for ever.
    */
   private readonly vel = new Vector3();
+  /**
+   * `vel` chased at `REMOTE_ACCEL_RATE`, horizontal, and the difference
+   * between the two IS the acceleration `tiltFromMotion` needs.
+   *
+   * Written on a hull posed from the wire and on no other, which is why it is
+   * not next to the drive: a machine simulating itself knows what its own disc
+   * is doing and never has to ask what the motion implies.
+   */
+  private readonly velLag = new Vector3();
   /** How far spooled, 0..1. A rotor nobody is turning is a rotor at rest. */
   private rotor = 0;
   /** Radians of disc, accumulated mod 2pi. `trackRun`'s metres, for a rotor. */
@@ -818,6 +865,11 @@ export class Vehicle implements Combatant, RayHull {
    * positive `tiltPitch` is nose-DOWN and positive `cyclicRoll` raises the
    * hull's own RIGHT side. Both are held that way so that the picture and the
    * thrust taken off them cannot come apart; `flyStep` has the measurements.
+   *
+   * Written by `flyStep` on the machine somebody is flying and by
+   * `tiltFromMotion` on the ones they are not — the same two angles either
+   * way, the second worked out of the motion that arrived instead of out of a
+   * stick, so a hull is drawn at one attitude on every screen in the match.
    *
    * (This said "nose-up positive" for as long as it existed and was wrong the
    * whole time — `standOnGround` writes `groundPitchTarget = -rise` from a
@@ -835,7 +887,8 @@ export class Vehicle implements Combatant, RayHull {
   /**
    * What is actually DRAWN: `cyclicRoll + bankRoll`, clamped. Held as a field
    * rather than recomputed because the airborne branch of `update` hands it
-   * straight to `groundRollTarget`.
+   * straight to `groundRollTarget`, and `updateRemote`'s hands it the copy
+   * `tiltFromMotion` worked out.
    */
   private tiltRoll = 0;
   /**
@@ -1160,6 +1213,7 @@ export class Vehicle implements Combatant, RayHull {
     this.velY = 0;
     this.riseRate = 0;
     this.vel.setAll(0);
+    this.velLag.setAll(0);
     this.lift = 0;
     this.rotor = 0;
     this.rotorRun = 0;
@@ -1624,6 +1678,135 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * How much of the rotor's song is worth anything, 0..1.
+   *
+   * Below `liftFloor` the disc turns and lifts nothing, which is what a
+   * spool-up IS — and it takes the tail rotor's authority with it, so a
+   * machine coming up to speed cannot pedal either.
+   *
+   * A method rather than a line inside `flyStep` because the hull on the WIRE
+   * asks it too: `tiltFromMotion` divides the push a machine is making by this
+   * to get the angle its disc must be at, and a second copy of the fade would
+   * be a way for the two screens to draw different attitudes for one spool.
+   */
+  private rotorPower(f: NonNullable<VehicleSpec["flight"]>): number {
+    return this.rotor <= f.liftFloor
+      ? 0
+      : (this.rotor - f.liftFloor) / (1 - f.liftFloor);
+  }
+
+  /**
+   * The attitude a hull on the WIRE must be at, worked out from the motion it
+   * has just made, written onto the same four fields `flyStep` writes.
+   *
+   * **This is the one part of the picture a flying hull could not derive, and
+   * on the two ground kinds it never had to.** `updateRemote`'s bargain is
+   * that the wire carries where a hull ended up and every client works the
+   * rest out for itself — the belts, the steer they are drawn at, the lean,
+   * the heave and the whips are all local. A tank's drawn pitch and roll come
+   * out of that bargain for free, because they are `standOnGround`'s: measured
+   * off the ground it is standing on, which every client holds identically. A
+   * helicopter in the air is standing on nothing, `groundPitchTarget` had
+   * nothing to say about it, and so every hull anybody ELSE was flying was
+   * drawn dead level — cruising flat and sliding through its turns without
+   * banking, while the machine under its own pilot was doing neither.
+   *
+   * ## The disc's own equation, run backwards
+   *
+   * `flyStep` spends `thrustPerTilt * sin(tilt) * power` along the hull's
+   * forward, the same off `cyclicRoll` along its right, and both against a
+   * drag of `drag * v`. So the push a disc is making is `a + drag * v` — what
+   * the machine's velocity actually did, plus what the air was taking off it
+   * meanwhile — and an `asin` hands back the angle the disc must be at to be
+   * making it. That is the move `updateRemote` already makes one axis along
+   * for the steer the tracks are drawn at: a yaw rate over the turn the drive
+   * could have asked for IS the stick that produced it.
+   *
+   * **Both terms are needed and the ACCELERATION is the one that is not
+   * obvious.** The drag term alone is the steady-state balance and is exact
+   * whenever the machine is holding a speed, which is most of a cruise — but
+   * this model has no aerodynamic side force at all, so a machine in a hard
+   * turn is one whose velocity has not caught up with its heading, and the
+   * drag term reads that lag as a pilot commanding a strafe. Measured on
+   * Sarab: a hull at full cyclic through a sustained turn came out at 1.8
+   * degrees nose-down against the 17.2 it was flying at, and banked half as
+   * far as the machine under its own pilot. With the acceleration in, both
+   * are within a degree.
+   *
+   * The estimate is `(vel - velLag) * REMOTE_ACCEL_RATE` rather than a
+   * difference between frames, and the reason is the interpolator rather than
+   * the physics — see that constant.
+   *
+   * The BANK is not derived at all: it is `flyStep`'s line with the MEASURED
+   * yaw rate in place of the commanded one, eased at the same `cyclicRate` so
+   * that both screens draw the same roll through the same turn. The two angles
+   * either side of it are deliberately NOT eased again — what a velocity
+   * carries is the attitude as it was after the pilot's own `cyclicRate`
+   * filter, and a second pass would charge that lag twice.
+   */
+  private tiltFromMotion(
+    dt: number,
+    f: NonNullable<VehicleSpec["flight"]>,
+    yawRate: number,
+  ): void {
+    // The acceleration, as a lagged copy of the velocity chasing it. Stepped
+    // whatever the rotor is doing, so that a machine coming back up to power
+    // is not read against a lag left over from before it wound down.
+    const ax = (this.vel.x - this.velLag.x) * REMOTE_ACCEL_RATE;
+    const az = (this.vel.z - this.velLag.z) * REMOTE_ACCEL_RATE;
+    const chase = Math.min(1, dt * REMOTE_ACCEL_RATE);
+    this.velLag.x += (this.vel.x - this.velLag.x) * chase;
+    this.velLag.z += (this.vel.z - this.velLag.z) * chase;
+    const power = this.rotorPower(f);
+    // A disc that is lifting nothing is tilting nothing either. This is the
+    // hull whose pilot has just stepped out, drawn level as it winds down —
+    // and it is also the guard that keeps the divide below off zero.
+    if (power <= 0) {
+      this.tiltPitch = 0;
+      this.cyclicRoll = 0;
+      this.bankRoll = 0;
+      this.tiltRoll = 0;
+      return;
+    }
+    // Forward is `(sin yaw, cos yaw)` and right is therefore
+    // `(cos yaw, -sin yaw)` — the pair `flyStep` spends its thrust on and
+    // `standOnGround` lays its contacts out on. Both the velocity and the
+    // acceleration are resolved onto the CURRENT heading, which is what keeps
+    // a turning hull's own rotation out of the answer: what is wanted is the
+    // world acceleration seen along the hull's axes, not the rate of change of
+    // a quantity measured in a frame that is itself turning.
+    const sn = Math.sin(this.yaw);
+    const cs = Math.cos(this.yaw);
+    const scale = f.thrustPerTilt * power;
+    const pushX = ax + f.drag * this.vel.x;
+    const pushZ = az + f.drag * this.vel.z;
+    this.tiltPitch = tiltFor(pushX * sn + pushZ * cs, scale, f.cyclicPitch);
+    // Negated exactly where `flyStep` negates the thrust it takes OFF this
+    // angle, and for that reason: `cyclicRoll` is held in the drawn sense and
+    // a positive one raises the hull's own right side, so a machine being
+    // pushed to its right is a machine rolled right-side-DOWN.
+    this.cyclicRoll = -tiltFor(pushX * cs - pushZ * sn, scale, f.cyclicRoll);
+    // …and the coordinated half, which is `flyStep`'s to the letter: the
+    // airspeed rather than `speed`, because the two come apart in exactly the
+    // turn this is drawing, and negated because a positive yaw rate sweeps the
+    // nose right and a machine leans INTO its turn.
+    const lateral = Math.hypot(this.vel.x, this.vel.z) * yawRate;
+    const wantBank = Math.max(
+      -f.bankLimit,
+      Math.min(f.bankLimit, -lateral * f.bankPerLateral),
+    );
+    this.bankRoll +=
+      (wantBank - this.bankRoll) * Math.min(1, dt * f.cyclicRate);
+    // The sum, clamped where `flyStep` clamps it and to the same field: what
+    // is drawn is one attitude and `drive.tiltLimit` is what a hull may hold.
+    const limit = this.spec.drive.tiltLimit;
+    this.tiltRoll = Math.max(
+      -limit,
+      Math.min(limit, this.cyclicRoll + this.bankRoll),
+    );
+  }
+
+  /**
    * One frame of a hull that hangs on a rotor, in place of the throttle walk.
    *
    * Hands back the two figures the rest of `update` reads off the drive — the
@@ -1671,14 +1854,9 @@ export class Vehicle implements Combatant, RayHull {
       Math.min(Math.abs(want - this.rotor), dt / f.spoolTime);
     this.rotorRun =
       (this.rotorRun + this.rotor * f.rotorRate * dt) % (Math.PI * 2);
-    // How much of the song is worth anything. Below the floor the disc turns
-    // and lifts nothing, which is what a spool-up IS — and it takes the tail
-    // rotor's authority with it, so a machine coming up to speed cannot pedal
-    // either.
-    const power =
-      this.rotor <= f.liftFloor
-        ? 0
-        : (this.rotor - f.liftFloor) / (1 - f.liftFloor);
+    // How much of the song is worth anything — see `rotorPower`, which
+    // `updateRemote` asks the same question of for the same reason.
+    const power = this.rotorPower(f);
 
     // --- the pedals, and on this kind they are the LOOK ---
     // **The nose follows the eye.** A tracked hull is steered by a stick and a
@@ -2300,6 +2478,13 @@ export class Vehicle implements Combatant, RayHull {
         Math.min(Math.abs(want - this.rotor), dt / fl.spoolTime);
       this.rotorRun =
         (this.rotorRun + this.rotor * fl.rotorRate * dt) % (Math.PI * 2);
+      // The ATTITUDE, worked out from the motion that has just arrived rather
+      // than sent — see `tiltFromMotion`, which is the reason this is the only
+      // part of a helicopter's picture that needed a line of its own. Asked
+      // here because it reads the velocity and the yaw rate measured above,
+      // and SPENT below the ground, where the airborne branch of `update`
+      // spends it.
+      this.tiltFromMotion(dt, fl, yawRate);
     } else if (Math.abs(p.y - wantY) > REMOTE_RESYNC_Y) {
       p.y = wantY;
       this.velY = 0;
@@ -2358,6 +2543,17 @@ export class Vehicle implements Combatant, RayHull {
 
     this.standOnGround(dt);
     this.flexHeave(dt);
+    // **The commanded attitude wins in the AIR and the ground's wins on the
+    // skids**, which is `update`'s line and `update`'s reason: it is
+    // `grounded` that decides, a state and never a kind, so a remote hull
+    // sitting on a level pad takes `standOnGround`'s own targets and draws at
+    // 0.0 exactly as a tank does. What differs on this side is only where the
+    // two angles came from — `tiltFromMotion` above, off the wire's own
+    // motion, rather than off a stick nobody here is holding.
+    if (fl && !this.grounded) {
+      this.groundPitchTarget = this.tiltPitch;
+      this.groundRollTarget = this.tiltRoll;
+    }
 
     // Held in the world and drawn against the hull, exactly as `update` does
     // it: the turret is an absolute bearing and the hull turning under it must

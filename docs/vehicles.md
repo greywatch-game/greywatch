@@ -1167,7 +1167,9 @@ four of them are one line:
 2. `Vehicle.update`'s tail — the commanded attitude overrides the ground's while
    `!grounded`, and the crash check reads `jolt`.
 3. `Vehicle.updateRemote` — the wire owns `y` on a hull the ground has no
-   opinion about, and the rotor is spun locally.
+   opinion about, the rotor is spun locally, and the ATTITUDE is worked out of
+   the motion that arrived (`tiltFromMotion`, below), because a machine in the
+   air has no ground to take one from.
 4. `VehicleCrew.board` — two clauses, below.
 5. `Game.updateDriver` — the leash, below.
 6. `Game.frameVehicleCamera` — the shadow window follows the FLOOR rather than
@@ -2181,6 +2183,62 @@ picture: no pitch, no roll, no heave, no track run, no antenna bend. Every one
 of those is a fact about the ground a hull is standing on, and every machine in
 the match holds the identical collider world and heightfield — so
 `Vehicle.updateRemote` re-derives them locally off the position that did arrive.
+
+**A hull in the AIR is the one that broke that argument, and it is answered
+inside the same bargain rather than by widening the wire.** A helicopter's
+attitude is not a fact about any ground: the machine is hanging on a disc, so
+`standOnGround` had nothing to say about it and every hull anybody else was
+flying was drawn dead level — cruising flat and sliding through its turns
+without banking, while the same machine under its own pilot did neither. What
+answers it is `Vehicle.tiltFromMotion`, which runs the disc's own equation
+backwards: `flyStep` spends `thrustPerTilt * sin(tilt) * power` along the
+hull's forward and the same off `cyclicRoll` along its right, both against a
+drag of `drag * v`, so the motion a machine has just made is enough to say what
+angle its disc must be at — and an `asin` hands that angle back. It is the move
+`updateRemote` already makes one axis along for the steer the tracks are drawn
+at: a yaw rate over the turn the drive could have asked for IS the stick that
+produced it.
+
+**The push a disc is making is `a + drag * v`** — what the machine's velocity
+actually did, plus what the air was taking off it meanwhile — and both terms
+are needed. The drag term alone is the steady-state balance and is exact
+whenever the machine is HOLDING a speed, which is most of a cruise; but this
+model has no aerodynamic side force at all, so a machine in a hard turn is one
+whose velocity has not caught up with its heading, and the drag term alone
+reads that lag as a pilot commanding a strafe. Measured on Sarab: a hull at
+full cyclic through a sustained turn came out at 1.8 degrees nose-down against
+the 17.2 it was flying at, and banked half as far as the machine under its own
+pilot. With the acceleration in, both are inside a degree.
+
+**The acceleration is a LAG rather than a difference, and that is the whole of
+why it works.** `NetVehicles` lerps LINEARLY between samples, so the velocity
+measured on this side is piecewise constant: differencing it frame to frame
+gives a spike at every bracket boundary and a zero on every frame between them,
+which is a picture of when the snapshots landed and not an acceleration.
+Chasing a lagged copy — `(vel - velLag) * REMOTE_ACCEL_RATE` — makes the
+estimate an exponentially weighted MEAN of that train, which is the
+acceleration: the spikes are what carry it, and averaging them is what recovers
+the figure they are a sampling of.
+
+`tiltFor` bounds both ends of the answer — the ratio, because a hull the
+interpolator is shoving can report a push no disc could make and `asin` of that
+is `NaN` on a drawn node; and the ANGLE, because what comes back must be an
+attitude a pilot could be holding. The BANK is not derived at all: it is
+`flyStep`'s line with the measured yaw rate in place of the commanded one,
+eased at the same `cyclicRate` so both screens draw the same roll through the
+same turn — while the two angles either side of it are NOT eased again, a
+velocity already carrying the attitude as it was after the pilot's own filter.
+
+**`grounded` still decides, exactly as it does under a pilot**: a remote hull
+on its skids takes `standOnGround`'s own targets, so one sitting on a level pad
+draws at 0.0 like a tank. Measured on Sarab, flying a real hull and posing a
+second one off 15 Hz samples of it through the interpolator: cruise 17.1
+degrees nose-down against the flown 17.2, a turn onto a bearing 17.1 with the
+roll tracking inside 5 degrees through the transient, a sustained hard turn
+16.5/-8.8 against 17.2/-11.8, a full strafe -14.3 against -14.3, and level
+within a tenth of a degree at a hover, on the ground and with nobody aboard.
+With `tiltFromMotion` stubbed out the same run draws 0.0/0.0 everywhere, which
+is what was shipping.
 That is cheaper than sending them AND more stable than interpolating them, and
 it is why **the height is the local probe's rather than the wire's**: an
 interpolated `y` would be in a permanent argument with the plank the springs
