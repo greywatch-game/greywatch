@@ -440,6 +440,12 @@ ordinary layout file the editor opens, patches and saves like any other.
 Re-running the generator discards editor edits, which is the warning every
 `heights.ts` already carries.
 
+**It is also where the two rules about WATER were found**, both of them
+general: a body of water is a hole in the FLOOR with a plane over it — nothing
+but `TerrainField` decides its depth, its shore or where its probe stands — and
+what it LOOKS like is whatever that probe can see, which on a bright map with
+nothing round the pool is pale sky and reads as a salt pan.
+
 **There is a sixth entry in `MAPS` and it is DEV-ONLY and not a level.**
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
 against — a city block grid several times Harrowmead's size, written by

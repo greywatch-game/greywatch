@@ -58,12 +58,28 @@ of what that document bought: it states `blockSize` and `terrainBlock` (96, S6),
 `surfaces: 5`, a `fogEnd` of 560 INSIDE its own 1,273 m diagonal — the first
 time block visibility has had anything to cull on any map here — and a
 `bodyDrawDistance` of 300 inside that, which nothing else in the tree states.
-Its ground is dunes with each quarter flattened dead level and a wadi cut
-through all of it; its boundary is Harrowmead's open one at nearly four times
-the margin, for a different reason (see that section). It also needed a fourth
-VERNACULAR — `kit/desert.ts`, whose flat WALKED roof is the first in this kit
-and is what makes a town of them a second surface over the whole map — and one
-scatter prop, the date palm.
+Its ground is five passes laid over one another — dunes with three knolls in
+them, each quarter flattened dead level, the whole SOUTHERN group of quarters
+flattened to a terrace 2.6 m below the rest, a flood bench levelled either side
+of the watercourse, and the wadi cut through all of it; its boundary is
+Harrowmead's open one at nearly four times the margin, for a different reason
+(see that section). It also needed a fourth VERNACULAR — `kit/desert.ts`, whose
+flat WALKED roof is the first in this kit and is what makes a town of them a
+second surface over the whole map — and one scatter prop, the date palm.
+
+**The wadi runs dry except in the three basins deep enough to have kept
+something**, and the fourth body is the BIRKAT, a reservoir dug into the mosque
+quarter. Both are worth knowing about outside this map, because the rule they
+found is general: **water in this engine is a hole in the FLOOR with a plane
+over it**, since `WaterSystem.bakeDepth` reads depth, shore and probe site off
+`TerrainField` and off nothing else — so a tank built out of boxes holds
+`CONFIG.water.surfaceY` of water over whatever the ground under it happens to
+be, which is a membrane rather than a pool. And **what a body of water LOOKS
+like is whatever its reflection probe can see**: at any angle a standing player
+sees a pool from, the Fresnel is nearly all mirror, so an open pool on a bright
+map returns pale sky in every direction and reads as a salt pan. The birkat has
+a walled precinct round it for that reason before any other; see `BIRKAT` in
+`scripts/generate-sarab.mjs`, which carries the measurement.
 
 **Its layout was SEEDED rather than typed** (`npm run sarab`), which is a first
 here and is argued in that script's header: a 900 m town is some hundreds of
@@ -778,6 +794,16 @@ reason and its header owns the argument: its ROOF is flat and WALKED, which
 nothing else in the kit has, so a terrace of its houses is a second storey of
 ground with a parapet for cover and a stair to reach it. It re-uses `city.ts`'s
 STAIR LANE unchanged for every building in it that is climbed.
+
+**Four of that file's builders exist to ARGUE with the sentence above**, and
+that is the pattern to copy when a vernacular's workhorse starts making a
+quarter look like one building repeated. `windTower` puts 2.8 m of solid brick
+in the middle of a roof deck, which is the only cover in the kit that is not on
+the ground or on a roof's own edge; `caravanserai` CLOSES — one arched passage
+through a rectangle, where every other enclosure here is a compound with a side
+left open; `hammam` breaks the deck, with five domes standing on a walked roof;
+and `granary` is not a building at all but five metres of solid mud that fits in
+an alley. Each is one disagreement, and none is a re-skin.
 
 **A building that stacks WALKED FLOORS is a different kind of thing from
 everything else in the kit, and `kit/city.ts`'s header is its contract.** Every

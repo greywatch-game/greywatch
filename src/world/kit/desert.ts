@@ -1,8 +1,10 @@
 /**
  * kit/desert.ts — The desert-town builders: the flat-roofed courtyard house,
  * the compound wall, the shelled apartment block, the mosque and its minaret,
- * the souk arcade, and the two pieces of hard furniture a contested town grows
- * — the T-wall run and the sandbag emplacement.
+ * the souk arcade, the four pieces that give a quarter a face — the wind-tower
+ * house, the caravanserai, the hammam and the granary — and the two pieces of
+ * hard furniture a contested town grows, the T-wall run and the sandbag
+ * emplacement.
  * All follow the contract in kit/core.ts (origin-local geometry, no
  * solid/pickable/collisions metadata, colliders declared not created) and the
  * four rules in kit/city.ts's header about buildings that stack walked floors.
@@ -21,6 +23,27 @@
  * flat roof is a second storey of ground; a parapet is the cover on it; a stair
  * is what makes it reachable; and a town of them is a second surface over the
  * whole map that a fight moves through vertically as well as along.
+ *
+ * ## The four that are not the workhorse, and what each one argues with
+ *
+ * `adobeHouse` is nine buildings in ten and that is correct — a town is
+ * repetition — but a quarter built out of nothing else is a quarter with no
+ * face. The other four are each one DISAGREEMENT with the paragraph above,
+ * which is what keeps them from being decoration:
+ *
+ * - **`windTower`** puts something on the deck. Every other piece of cover in
+ *   this file is on the ground or is a roof's own edge, so two squads on the
+ *   roofscape is two lines of men against opposite parapets; the barjeel is
+ *   2.8 m of solid brick standing in the middle of one.
+ * - **`caravanserai`** closes. Every other enclosure here is a compound with a
+ *   side left open, which a squad walks into without slowing; this is the one
+ *   place on the map the fight has a door.
+ * - **`hammam`** breaks the deck. Its roof is walked and has five domes
+ *   standing on it, so it is the one terrace you pick your way across instead
+ *   of sprinting down.
+ * - **`granary`** breaks the alley. Not a building at all — five metres of
+ *   solid mud in a footprint you can walk past, which is what an alley of
+ *   nothing but walls needs standing in it.
  *
  * ## THE STAIR LANE, which is the one thing to understand before editing
  *
@@ -1066,6 +1089,638 @@ export function buildSouk(
   b.wall(PARAPET_T, PARAPET, len, (w - PARAPET_T) / 2, roofY - SLAB + PARAPET / 2, 0, MUDBRICK);
   b.box(PARAPET_T + 0.16, 0.14, len, (w - PARAPET_T) / 2, roofY - SLAB + PARAPET + 0.07, 0, MUDBRICK_DARK);
   parapetOpenX(b, plateW, len, plateX, roofY, MUDBRICK, MUDBRICK_DARK);
+  return b;
+}
+
+/**
+ * A wall run punched with evenly spaced openings, along X or along Z.
+ *
+ * The third form of wall this file needs, and the one `doorWall` cannot be:
+ * that one puts ONE gap in the middle of a run along X, which is what a house's
+ * front is. An arcade is a row of them, and the building below that has a
+ * courtyard is defined by the fact that its inner face is more opening than
+ * wall — a range you can enter anywhere is a building a squad flows through,
+ * and a range with one door is a building they queue at.
+ *
+ * The lintels over the gaps are `wall` and not `box`, which is the honest
+ * answer for mud brick: a lintel course at head height stops a round fired at
+ * the roof line from the far side of the court, and leaving it visual would let
+ * one through a wall that visibly has none.
+ */
+function arcade(
+  b: Build,
+  alongZ: boolean,
+  len: number,
+  h: number,
+  t: number,
+  cx: number,
+  y: number,
+  cz: number,
+  color: string,
+  gaps: number,
+  gapW = 2.3,
+  gapH = 2.35,
+): void {
+  const seg = (len - gaps * gapW) / (gaps + 1);
+  const put = (span: number, height: number, at: number, cy: number): void => {
+    if (span <= 0.06 || height <= 0.06) return;
+    const x = alongZ ? cx : cx + at;
+    const z = alongZ ? cz + at : cz;
+    b.wall(alongZ ? t : span, height, alongZ ? span : t, x, cy, z, color);
+  };
+  for (let i = 0; i <= gaps; i++) {
+    put(seg, h, -len / 2 + i * (seg + gapW) + seg / 2, y);
+  }
+  const lintel = h - gapH;
+  for (let i = 0; i < gaps; i++) {
+    put(gapW, lintel, -len / 2 + seg + i * (seg + gapW) + gapW / 2, y + h / 2 - lintel / 2);
+  }
+}
+
+/**
+ * The wind-tower house: a courtyard house with a `barjeel` standing off its
+ * roof — a hollow shaft, open on all four faces at the head, which is how a hot
+ * town cooled itself before there was anything to plug in.
+ *
+ * ## What it is FOR, against the house it is a variant of
+ *
+ * **A town of flat roofs is a second surface with nothing on it.**
+ * `buildAdobeHouse` gives a squad a terrace to move along and a parapet to
+ * shoot over, and the moment two squads are both up there the fight is two
+ * lines of men lying against opposite parapets with thirty metres of bare deck
+ * between them. Every piece of cover in this kit — the parapet, the sandbags,
+ * the T-wall — is on the GROUND or is a roof's own edge. This is the only thing
+ * that stands in the MIDDLE of a deck: 2.8 m square of solid mud brick, six
+ * metres of it, with four ways round.
+ *
+ * It is also the town's second landmark, and its distance from the minaret is
+ * the design rather than a budget. The minaret is ONE object at 27 m that every
+ * quarter can see, and what it gives a player is absolute position. These are
+ * ten metres and they come in numbers, so what they mark is a NEIGHBOURHOOD:
+ * you cannot navigate by one, and you can tell the old town's skyline from the
+ * north town's by how many are in it.
+ *
+ * ## The head is open, and the collider stops under it
+ *
+ * A barjeel is a chimney run backwards — the shaft is solid for most of its
+ * height and the top metre and a half is four corner posts under a cap, with
+ * the cross-fin inside that decides which face the wind comes down. So the
+ * collider is the SHAFT and stops where the openings start: a round fired at
+ * the head goes between the posts, which is what a hollow head is, and it costs
+ * one box rather than five to say so.
+ *
+ * Everything else is `buildAdobeHouse`'s, the stair lane included — see this
+ * file's header — so `depth` carries the same 12.7 m floor and
+ * `assertClimbable` says so in a DEV build. The tower stands on the roof PLATE
+ * and never over the lane: a stair well with a wind tower on top of it is a
+ * stair to a wall.
+ */
+export function buildWindTower(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  p: BuildParams = {},
+): Structure {
+  const b = new Build(scene, mats, "windtower");
+  const w = p.width ?? 13;
+  const d = p.depth ?? 14;
+  const floors = Math.max(1, Math.min(2, p.floors ?? 1));
+  const towerH = p.height ?? 6.4;
+  const climbs = p.rampSide !== undefined;
+  const ys = levels(floors, STOREY);
+  const roofY = ys[floors];
+  const wallTop = roofY - SLAB;
+  const skin = p.tint ?? MUDBRICK;
+  const { plateW, plateX } = laneGeom(w);
+
+  if (climbs) assertClimbable("windTower", d, ys[1] - ys[0]);
+
+  // 1 — the plinth.
+  b.box(w + 0.5, PLINTH, d + 0.5, 0, PLINTH / 2, 0, MUDBRICK_DARK);
+  b.block({ w: w + 0.5, h: PLINTH, d: d + 0.5, x: 0, y: PLINTH / 2, z: 0 });
+
+  // 2 — the flights, 3 — the slabs. The header's order, and the same lane.
+  const roofW = climbs ? plateW : w;
+  const roofX = climbs ? plateX : 0;
+  if (climbs) {
+    const dir0: 1 | -1 = (p.rampSide ?? -1) === 1 ? 1 : -1;
+    for (let k = 1; k <= floors; k++) {
+      const dir: 1 | -1 = k % 2 === 1 ? dir0 : ((-dir0) as 1 | -1);
+      laneFlight(b, w, d, ys[k - 1], ys[k], dir, PALM_BEAM);
+    }
+  }
+  for (let k = 1; k < floors; k++) {
+    b.box(roofW, SLAB, d - 2 * T, roofX, ys[k] - SLAB / 2, 0, PALM_BEAM);
+    b.block({ w: roofW, h: SLAB, d: d - 2 * T, x: roofX, y: ys[k] - SLAB / 2, z: 0 });
+  }
+
+  // 4 — the walls.
+  const mid = wallTop / 2;
+  if (p.enterable) {
+    b.doorWall(w, wallTop, T, 0, mid, -(d - T) / 2, skin, 1.4, 2.2);
+  } else {
+    b.wall(w, wallTop, T, 0, mid, -(d - T) / 2, skin);
+  }
+  b.wall(w, wallTop, T, 0, mid, (d - T) / 2, skin);
+  const sideD = d - 2 * T;
+  for (const sx of [-1, 1] as const) {
+    b.wall(T, wallTop, sideD, (sx * (w - T)) / 2, mid, 0, skin);
+  }
+  b.box(w + 0.3, 0.16, d + 0.3, 0, wallTop - 0.08, 0, MUDBRICK_DARK);
+  for (let k = 0; k < floors; k++) {
+    const y = PLINTH + k * (STOREY + SLAB) + 1.75;
+    const across = Math.max(1, Math.round(w / 4.5));
+    windowRow(b, w - 2.4, y, -(d / 2) + 0.02, false, across);
+    windowRow(b, w - 2.4, y, d / 2 - 0.02, false, across);
+    windowRow(b, sideD - 2.0, y, -(w / 2) + 0.02, true, Math.max(1, Math.round(d / 5)));
+  }
+  if (p.enterable) b.box(1.7, 0.22, 0.5, 0, 2.32 + PLINTH, -(d / 2) - 0.1, PALM_BEAM);
+
+  // 5 — the roof, 6 — the parapet.
+  b.box(roofW, SLAB, d, roofX, roofY - SLAB / 2, 0, ROOF_MUD);
+  b.block({ w: roofW, h: SLAB, d, x: roofX, y: roofY - SLAB / 2, z: 0 });
+  if (climbs) {
+    b.wall(PARAPET_T, PARAPET, d, (w - PARAPET_T) / 2, wallTop + PARAPET / 2, 0, skin);
+    parapetOpenX(b, roofW, d, roofX, roofY, skin, MUDBRICK_DARK);
+  } else {
+    parapet(b, w, d, roofY, skin, MUDBRICK_DARK);
+  }
+
+  // 7 — the tower, last, because it is the one thing here standing ON a walked
+  // surface rather than under one. Inboard of the deck's corner by its own
+  // width, so a body can pass on every side of it: a tower flush to two
+  // parapets is a corner filled in, and the cover is worth having precisely
+  // because you can be on the wrong side of it.
+  const side = Math.min(2.8, roofW * 0.32);
+  const tx = roofX - roofW * 0.24;
+  const tz = -d * 0.16;
+  const shaft = towerH - 1.55;
+  b.box(side + 0.34, 0.3, side + 0.34, tx, roofY + 0.15, tz, MUDBRICK_DARK);
+  b.box(side, shaft, side, tx, roofY + 0.3 + shaft / 2, tz, skin);
+  b.block({
+    w: side + 0.34,
+    h: shaft + 0.3,
+    d: side + 0.34,
+    x: tx,
+    y: roofY + (shaft + 0.3) / 2,
+    z: tz,
+  });
+  // The courses that give six metres of blank shaft a scale, and the two vents
+  // low on it — the shaft is hollow the whole way down, and a barjeel with no
+  // opening at the bottom is a chimney with no fire.
+  for (let i = 1; i <= 2; i++) {
+    b.box(side + 0.2, 0.14, side + 0.2, tx, roofY + 0.3 + (i / 3) * shaft, tz, MUDBRICK_DARK);
+  }
+  for (const sx of [-1, 1] as const) {
+    b.box(0.06, 0.62, 0.5, tx + (sx * side) / 2, roofY + 1.05, tz, WINDOW_VOID);
+  }
+  // The head: four posts, the cross-fin between them, and the cap over the lot.
+  const headY = roofY + 0.3 + shaft;
+  for (const sx of [-1, 1] as const) {
+    for (const sz of [-1, 1] as const) {
+      b.box(
+        0.52,
+        1.2,
+        0.52,
+        tx + (sx * (side - 0.52)) / 2,
+        headY + 0.6,
+        tz + (sz * (side - 0.52)) / 2,
+        skin,
+      );
+    }
+  }
+  b.box(0.24, 1.05, side - 0.9, tx, headY + 0.55, tz, MUDBRICK_DARK);
+  b.box(side - 0.9, 1.05, 0.24, tx, headY + 0.55, tz, MUDBRICK_DARK);
+  b.box(side + 0.5, 0.26, side + 0.5, tx, headY + 1.33, tz, MUDBRICK_DARK);
+  b.box(side + 0.16, 0.14, side + 0.16, tx, headY + 1.53, tz, skin);
+  return b;
+}
+
+/**
+ * The caravanserai: an inn built as a fort — four ranges of rooms round a
+ * courtyard, one gate, and a walked terrace over the whole of it.
+ *
+ * ## What it is FOR, and why a map wants one rather than ten
+ *
+ * Every other enclosure in this town is a COMPOUND — a wall with one side left
+ * open, which the nav graph routes through and a squad walks into without
+ * slowing down. This is the opposite object and the only one on the map: a
+ * closed rectangle with a single arched passage through it, ranges you fight
+ * along, and a terrace all the way round the top that overlooks its own court
+ * and the streets outside it in the same breath.
+ *
+ * So it plays as the one place the fight has a DOOR. Holding the terrace is
+ * holding the gate; taking it is either eight metres of arched passage in
+ * single file, or getting onto a range roof off a neighbouring house and
+ * dropping in. Both are on purpose, and the second is why the terrace is at an
+ * ordinary storey rather than two — a fort with no way in but the gate is a
+ * fort that is never taken, which is a boring flag.
+ *
+ * ## The construction, and the two things that are not obvious
+ *
+ * **The terrace is FOUR slabs and not one.** Two span the full width along ±Z
+ * and two fill what is left along ±X, which is what leaves the court open; the
+ * corners belong to the ±Z pair, so nothing is drawn twice and nothing is
+ * missing. The parapets come in pairs for the same reason: an outer one
+ * standing on the outer wall, which costs no walked cell (`parapet`'s
+ * argument), and an inner one on the court's edge, which costs one and is worth
+ * it — a terrace you can be shot off from inside your own court is not a
+ * terrace.
+ *
+ * **The stair is a straight flight in the court**, `Build.flight` rather than
+ * the lane every other climbed building here uses. There is no lane because
+ * there is no plate to cut one out of: the walked surface is a RING, and a ring
+ * has an inside edge a flight can land on anywhere. It runs along Z because
+ * `flight` does.
+ *
+ * `width` and `depth` are the OUTER footprint and the court is what is left
+ * after `RANGE` off each side, so a serai under about 28 m has no court at all
+ * and one under about 32 m of depth has no room for its own stair. The DEV
+ * throw below says which rather than emitting a solid block with a terrace
+ * nothing reaches.
+ */
+export function buildCaravanserai(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  p: BuildParams = {},
+): Structure {
+  const b = new Build(scene, mats, "serai");
+  const w = p.width ?? 44;
+  const d = p.depth ?? 38;
+  const skin = p.tint ?? MUDBRICK;
+  /** How deep a range of rooms is. One number: the four ranges are the same. */
+  const RANGE = 7.5;
+  const t = 0.55;
+  const ys = levels(1, STOREY);
+  const roofY = ys[1];
+  const wallTop = roofY - SLAB;
+  const courtW = w - 2 * RANGE;
+  const courtD = d - 2 * RANGE;
+  const rise = roofY - ys[0];
+  const run = rise / GRADE;
+
+  if (import.meta.env.DEV && (courtW < 9 || courtD < run + 3)) {
+    throw new Error(
+      `caravanserai: ${w} x ${d} leaves a ${courtW.toFixed(1)} x ${courtD.toFixed(1)} m ` +
+        `court, which cannot hold the ${run.toFixed(1)} m flight up to its own ` +
+        "terrace. Widen it; see kit/desert.ts.",
+    );
+  }
+
+  // 1 — the plinth: the whole footprint, gate passage included.
+  b.box(w + 0.6, PLINTH, d + 0.6, 0, PLINTH / 2, 0, MUDBRICK_DARK);
+  b.block({ w: w + 0.6, h: PLINTH, d: d + 0.6, x: 0, y: PLINTH / 2, z: 0 });
+
+  // 2 — the flight, in the court, landing on the +Z range's inner edge.
+  b.flight({
+    x: -courtW * 0.22,
+    w: 3.0,
+    topZ: courtD / 2,
+    topY: roofY,
+    run,
+    rise,
+    dir: 1,
+    steps: Math.max(10, Math.round(rise / 0.19)),
+    color: PALM_BEAM,
+  });
+
+  // 4 — the walls. Outer first, then the four inner faces onto the court.
+  const h = wallTop - PLINTH;
+  const mid = PLINTH + h / 2;
+  // The gate: one arched passage through the -Z range, and the only way in.
+  // `doorWall` leaves a lintel course over it, which is what the terrace slab
+  // above lands on.
+  b.doorWall(w, h, t, 0, mid, -(d - t) / 2, skin, 4.6, 3.0);
+  b.wall(w, h, t, 0, mid, (d - t) / 2, skin);
+  for (const sx of [-1, 1] as const) {
+    b.wall(t, h, d - 2 * t, (sx * (w - t)) / 2, mid, 0, skin);
+  }
+  // The passage's own two walls, which is what makes it a passage rather than a
+  // hole: seven metres of blind corridor with the court at the end of it.
+  for (const sx of [-1, 1] as const) {
+    b.wall(t, h, RANGE, sx * 2.85, mid, -(d - RANGE) / 2, skin);
+  }
+  // The inner faces. The long ranges are arcades — a range you enter anywhere —
+  // and the -Z one is punched less because the passage is already through it.
+  arcade(b, false, courtW + 2 * t, h, t, 0, mid, (courtD + t) / 2, skin, 3);
+  arcade(b, false, courtW + 2 * t, h, t, 0, mid, -(courtD + t) / 2, skin, 2);
+  for (const sx of [-1, 1] as const) {
+    arcade(b, true, courtD, h, t, (sx * (courtW + t)) / 2, mid, 0, skin, 3);
+  }
+  // The cross walls that make the side ranges into ROOMS rather than one
+  // corridor each. Two per range, so a body can still get down one.
+  for (const sx of [-1, 1] as const) {
+    for (const sz of [-1, 1] as const) {
+      b.wall(RANGE - t, h, t, (sx * (w - RANGE)) / 2, mid, (sz * courtD) / 3, skin);
+    }
+  }
+  b.box(w + 0.4, 0.18, d + 0.4, 0, wallTop - 0.09, 0, MUDBRICK_DARK);
+
+  // The elevation: small high openings and nothing else. This is a building
+  // whose windows face inward, which is most of what a caravanserai is.
+  for (const sz of [-1, 1] as const) {
+    windowRow(b, w - 8, wallTop - 1.05, (sz * d) / 2 + sz * 0.02, false, Math.round(w / 7));
+  }
+  for (const sx of [-1, 1] as const) {
+    windowRow(b, d - 8, wallTop - 1.05, (sx * w) / 2 + sx * 0.02, true, Math.round(d / 7));
+  }
+
+  // 5 — the terrace, four slabs. See the header.
+  for (const sz of [-1, 1] as const) {
+    b.box(w, SLAB, RANGE, 0, roofY - SLAB / 2, (sz * (d - RANGE)) / 2, ROOF_MUD);
+    b.block({ w, h: SLAB, d: RANGE, x: 0, y: roofY - SLAB / 2, z: (sz * (d - RANGE)) / 2 });
+  }
+  for (const sx of [-1, 1] as const) {
+    b.box(RANGE, SLAB, courtD, (sx * (w - RANGE)) / 2, roofY - SLAB / 2, 0, ROOF_MUD);
+    b.block({
+      w: RANGE,
+      h: SLAB,
+      d: courtD,
+      x: (sx * (w - RANGE)) / 2,
+      y: roofY - SLAB / 2,
+      z: 0,
+    });
+  }
+
+  // 6 — the parapets, outer then inner.
+  parapet(b, w, d, roofY, skin, MUDBRICK_DARK);
+  for (const sz of [-1, 1] as const) {
+    const z = (sz * (courtD + PARAPET_T)) / 2;
+    b.wall(courtW, PARAPET, PARAPET_T, 0, roofY + PARAPET / 2, z, skin);
+    b.box(courtW + 0.16, 0.14, PARAPET_T + 0.16, 0, roofY + PARAPET + 0.07, z, MUDBRICK_DARK);
+  }
+  for (const sx of [-1, 1] as const) {
+    const x = (sx * (courtW + PARAPET_T)) / 2;
+    b.wall(PARAPET_T, PARAPET, courtD, x, roofY + PARAPET / 2, 0, skin);
+    b.box(PARAPET_T + 0.16, 0.14, courtD, x, roofY + PARAPET + 0.07, 0, MUDBRICK_DARK);
+  }
+
+  // 7 — the two gate towers, flanking the passage and standing off the terrace.
+  // They are the silhouette from outside and the strongest position on it from
+  // inside: everything else up here is chest cover, and these are a wall.
+  for (const sx of [-1, 1] as const) {
+    const x = sx * 5.8;
+    const z = -(d - RANGE) / 2;
+    const th = 2.9;
+    b.box(3.5, th, 3.5, x, roofY + th / 2, z, skin);
+    b.block({ w: 3.5, h: th, d: 3.5, x, y: roofY + th / 2, z });
+    b.box(3.9, 0.2, 3.9, x, roofY + th + 0.1, z, MUDBRICK_DARK);
+    for (let i = 0; i < 3; i++) {
+      b.box(0.5, 0.55, 0.5, x + sx * 1.5, roofY + th + 0.48, z - 1.4 + i * 1.4, skin);
+    }
+  }
+
+  // The court's arcade: piers in front of the two side ranges carrying a beam,
+  // with the awnings strung between them. `buildSouk`'s construction, and the
+  // reuse is deliberate — the two are the same street furniture in different
+  // plans, and it is what makes a quarter of these read as one town.
+  const bays = Math.max(3, Math.round(courtD / 4.2));
+  for (const sx of [-1, 1] as const) {
+    const px = (sx * (courtW - 1.6)) / 2;
+    for (let i = 0; i <= bays; i++) {
+      b.wall(0.7, 2.5, 0.7, px, PLINTH + 1.25, -courtD / 2 + (i / bays) * courtD, MUDBRICK);
+    }
+    b.box(0.9, 0.4, courtD, px, PLINTH + 2.7, 0, PALM_BEAM);
+    for (let i = 0; i < bays; i++) {
+      b.translucentBox(
+        1.9,
+        0.08,
+        courtD / bays - 0.5,
+        px - sx * 1.35,
+        PLINTH + 2.42,
+        -courtD / 2 + ((i + 0.5) / bays) * courtD,
+        i % 2 === 0 ? "#a8703f" : "#8d6a4a",
+        CONFIG.graphics.translucency.awning,
+        { z: -sx * 0.11 },
+      );
+    }
+  }
+
+  // The washing over the court, on the -Z range's inner parapet. ONE drape and
+  // not a line of them: this is the biggest thing in the town and the point of
+  // cloth on it is that the eye finds the one thing moving, which a row of six
+  // is not.
+  const hung = clothHash(w, d);
+  drape(b, 0.9 + hung * 0.4, 1.0, courtW * 0.2, roofY + PARAPET, -(courtD + PARAPET_T) / 2, -1, hung);
+  return b;
+}
+
+/**
+ * The hammam: a bathhouse, and the one roof in this town you cannot run across.
+ *
+ * ## What it is FOR
+ *
+ * `kit/desert.ts` exists because a flat roof is a second storey of ground, and
+ * a few hundred of them is a second surface over the whole map. This is the
+ * building that argues with that. Its roof is a walked deck with a cluster of
+ * DOMES standing on it — one big, four small, every one a collider — so the
+ * terrace is somewhere you take cover and pick your way through rather than a
+ * lane you sprint down. A roofscape that is uniformly crossable is a second
+ * flat map, and one obstacle on it is worth more than another parapet.
+ *
+ * Underneath, it is the only single-room INTERIOR in the kit that is not a
+ * house: one hot room with two columns in it, a door on -Z, and no window below
+ * head height anywhere — which is what a bathhouse is, and also what makes it
+ * the darkest place on a map lit from almost directly overhead.
+ *
+ * ## The domes
+ *
+ * Stacked drums, `buildMosque`'s construction and its argument: the cel shader
+ * bands light, so a smooth hemisphere bands into visible contour rings and a
+ * stack of short cylinders bands into what reads as courses. The oculus on each
+ * is `ALLOY` and NOT `TILE_BLUE` — the blue is the mosque's dome and the one
+ * saturated thing on the map, and a bathhouse borrowing it would spend the
+ * landmark. See the palette at the top of this file.
+ *
+ * `depth` carries the stair lane and its 12.7 m floor exactly as the house's
+ * does. A hammam with no `rampSide` still gets its domes; what it does not get
+ * is anything able to stand between them.
+ */
+export function buildHammam(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  p: BuildParams = {},
+): Structure {
+  const b = new Build(scene, mats, "hammam");
+  const w = p.width ?? 18;
+  const d = p.depth ?? 14;
+  const skin = p.tint ?? WHITEWASH;
+  const climbs = p.rampSide !== undefined;
+  const ys = levels(1, STOREY);
+  const roofY = ys[1];
+  const wallTop = roofY - SLAB;
+  const { plateW, plateX } = laneGeom(w);
+  const roofW = climbs ? plateW : w;
+  const roofX = climbs ? plateX : 0;
+  const sideD = d - 2 * T;
+
+  if (climbs) assertClimbable("hammam", d, ys[1] - ys[0]);
+
+  b.box(w + 0.7, PLINTH, d + 0.7, 0, PLINTH / 2, 0, MUDBRICK_DARK);
+  b.block({ w: w + 0.7, h: PLINTH, d: d + 0.7, x: 0, y: PLINTH / 2, z: 0 });
+
+  if (climbs) {
+    laneFlight(b, w, d, ys[0], ys[1], (p.rampSide ?? -1) === 1 ? 1 : -1, PALM_BEAM);
+  }
+
+  // The walls. The doorway on -Z is the only opening below head height on the
+  // whole building.
+  const mid = wallTop / 2;
+  b.doorWall(w, wallTop, T, 0, mid, -(d - T) / 2, skin, 1.5, 2.2);
+  b.wall(w, wallTop, T, 0, mid, (d - T) / 2, skin);
+  for (const sx of [-1, 1] as const) {
+    b.wall(T, wallTop, sideD, (sx * (w - T)) / 2, mid, 0, skin);
+  }
+  // The two columns in the hot room: the only cover inside, and thick enough
+  // for `NavGrid` to represent — the mosque's rule, one building over.
+  for (const sx of [-1, 1] as const) {
+    b.wall(0.8, wallTop - 0.3, 0.8, sx * w * 0.22, PLINTH + (wallTop - 0.3) / 2, 0, skin);
+  }
+  // The vent slots high on the long walls, and the beam over the door.
+  for (const sz of [-1, 1] as const) {
+    const n = Math.max(3, Math.round(w / 3.4));
+    for (let i = 0; i < n; i++) {
+      const x = -w / 2 + 1.4 + (i / (n - 1)) * (w - 2.8);
+      b.box(0.42, 0.5, 0.1, x, wallTop - 0.78, (sz * d) / 2 + sz * 0.02, WINDOW_VOID);
+    }
+  }
+  b.box(2.6, 0.24, 0.7, 0, 2.36 + PLINTH, -(d / 2) - 0.2, PALM_BEAM);
+  b.box(w + 0.34, 0.16, d + 0.34, 0, wallTop - 0.08, 0, MUDBRICK_DARK);
+
+  // The deck, then its parapet, then the domes standing on it — the header's
+  // order, and the domes are the parapet's own case: cover, emitted last.
+  b.box(roofW, SLAB, d, roofX, roofY - SLAB / 2, 0, ROOF_MUD);
+  b.block({ w: roofW, h: SLAB, d, x: roofX, y: roofY - SLAB / 2, z: 0 });
+  if (climbs) {
+    b.wall(PARAPET_T, PARAPET, d, (w - PARAPET_T) / 2, wallTop + PARAPET / 2, 0, skin);
+    parapetOpenX(b, roofW, d, roofX, roofY, skin, MUDBRICK_DARK);
+  } else {
+    parapet(b, w, d, roofY, skin, MUDBRICK_DARK);
+  }
+
+  /** One dome: a drum, three shells over it, and an alloy oculus on top. */
+  const dome = (cx: number, cz: number, r: number): void => {
+    const drumH = 0.55;
+    b.cyl(drumH, r * 2, r * 2.1, 12, cx, roofY + drumH / 2, cz, MUDBRICK_DARK);
+    let y = roofY + drumH;
+    const shells: [number, number, number][] = [
+      [r * 0.44, r * 1.88, r * 2],
+      [r * 0.38, r * 1.42, r * 1.88],
+      [r * 0.3, r * 0.5, r * 1.42],
+    ];
+    for (const [sh, top, bottom] of shells) {
+      b.cyl(sh, top, bottom, 12, cx, y + sh / 2, cz, skin);
+      y += sh;
+    }
+    b.cyl(0.34, 0.2, 0.44, 8, cx, y + 0.17, cz, ALLOY);
+    b.block({ w: r * 1.9, h: y - roofY, d: r * 1.9, x: cx, y: (roofY + y) / 2, z: cz });
+  };
+
+  const big = Math.min(roofW, sideD) * 0.26;
+  dome(roofX, 0, big);
+  for (const sx of [-1, 1] as const) {
+    for (const sz of [-1, 1] as const) {
+      dome(roofX + sx * roofW * 0.3, sz * sideD * 0.3, big * 0.46);
+    }
+  }
+
+  // The furnace stack on the -X elevation, scorched at the head. It is the one
+  // part of a bathhouse anybody outside can read AS a bathhouse, and it is a
+  // collider because it stands off the wall far enough to be cover at the
+  // corner of the building.
+  const stackH = roofY + 2.6;
+  b.wall(1.15, stackH, 1.15, -(w / 2) - 0.5, stackH / 2, sideD * 0.26, MUDBRICK);
+  b.box(1.3, 0.9, 1.3, -(w / 2) - 0.5, stackH - 0.45, sideD * 0.26, SCORCH);
+  b.box(1.45, 0.18, 1.45, -(w / 2) - 0.5, stackH + 0.09, sideD * 0.26, MUDBRICK_DARK);
+  return b;
+}
+
+/**
+ * The granary: three or four tapering mud silos on a shared plinth, coiled by
+ * hand and none of them the same.
+ *
+ * ## What it is FOR
+ *
+ * It is the smallest thing in this file and the only one that is not a
+ * building: nothing goes in it, nothing stands on it, and it is eight metres
+ * across. What it does is stand in an ALLEY. The old town is 30 m plots on a
+ * 7 m pitch, and what makes it a maze is that you cannot see OVER a compound
+ * wall — but you can see along an alley, the whole length of one, so a quarter
+ * of nothing but walls is a quarter of long straight looks at knee-to-eye
+ * height. This is what a layout puts in one to break it: five metres of solid
+ * mud in a footprint that still leaves room to walk past.
+ *
+ * It is also the only piece of this vernacular with no straight line in its
+ * silhouette, which is worth something on a map made of boxes.
+ *
+ * ## No random numbers, and the variation is real anyway
+ *
+ * World-building code may not call `Math.random()` — the nav graph would differ
+ * between page loads (`CLAUDE.md`) — and a structure builder has no seed of its
+ * own. So every silo's height, taper, banding and cap is drawn from `clothHash`
+ * over the params, which is this file's existing answer and the honest one: two
+ * granaries with the same footprint ARE the same granary, and what separates
+ * them on the ground is `rotY` and what is standing next to them.
+ */
+export function buildGranary(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  p: BuildParams = {},
+): Structure {
+  const b = new Build(scene, mats, "granary");
+  const w = p.width ?? 8;
+  const d = p.depth ?? 7;
+  const tall = p.height ?? 5.2;
+  const skin = p.tint ?? MUDBRICK;
+
+  b.box(w, PLINTH, d, 0, PLINTH / 2, 0, MUDBRICK_DARK);
+  b.block({ w, h: PLINTH, d, x: 0, y: PLINTH / 2, z: 0 });
+
+  // Four positions on the plinth, the fourth dropped on about half of them,
+  // which is what makes a row of these read as a store somebody kept adding to
+  // rather than as a fitting placed four at a time.
+  const spots: [number, number][] = [
+    [-w * 0.24, -d * 0.2],
+    [w * 0.22, -d * 0.22],
+    [-w * 0.2, d * 0.24],
+    [w * 0.25, d * 0.2],
+  ];
+  const n = clothHash(w, d, tall) > 0.45 ? 4 : 3;
+  for (let i = 0; i < n; i++) {
+    const [x, z] = spots[i];
+    const r = clothHash(w, d, tall, i);
+    const r2 = clothHash(tall, i, 11);
+    const h = tall * (0.68 + r * 0.42);
+    const bot = Math.min(w, d) * (0.3 + r2 * 0.09);
+    const top = bot * (0.68 + r * 0.14);
+    b.cyl(h, top, bot, 10, x, PLINTH + h / 2, z, skin);
+    b.block({ w: bot * 0.82, h, d: bot * 0.82, x, y: PLINTH + h / 2, z });
+    // The courses a mud silo is coiled in — the only thing giving a smooth
+    // taper any scale, and `buildMinaret`'s banding at a tenth the height.
+    const bands = 2 + (i % 2);
+    for (let k = 1; k <= bands; k++) {
+      const f = k / (bands + 1);
+      const dia = bot + 0.1 - f * (bot - top);
+      b.cyl(0.13, dia, dia, 10, x, PLINTH + f * h, z, MUDBRICK_DARK);
+    }
+    // The cap: a domed lid with a lip, and the hatch under it.
+    b.cyl(0.34, top * 0.72, top * 1.14, 10, x, PLINTH + h + 0.17, z, MUDBRICK_DARK);
+    b.cyl(0.3, top * 0.2, top * 0.72, 10, x, PLINTH + h + 0.49, z, skin);
+    b.box(0.36, 0.44, 0.1, x, PLINTH + h * 0.78, z - bot * 0.45, WINDOW_VOID);
+    // The pegs the ladder is: split palm driven through the wall while it was
+    // still wet. Visual only — an 11 cm peg is a shape `NavGrid` cannot hold,
+    // and three rays a silo is a cost nobody wants (see `Build.guard`).
+    for (let k = 0; k < 3; k++) {
+      b.box(
+        0.62,
+        0.11,
+        0.11,
+        x - bot * 0.42,
+        PLINTH + 0.9 + (k * (h - 1.4)) / 2,
+        z + (k % 2 ? 0.16 : -0.16),
+        PALM_BEAM,
+      );
+    }
+  }
   return b;
 }
 

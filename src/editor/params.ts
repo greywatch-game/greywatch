@@ -317,6 +317,76 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
   ],
   mosque: [...wdh(26, 20, 7.4)],
   minaret: [num("height", "height", 26, 12, 40, 1)],
+  // The wind tower reads `height` as the BARJEEL's rise above its own roof, not
+  // as how tall the building is — it is a house plus a shaft, and the house's
+  // height is `floors` like every other one here.
+  windTower: [
+    num("width", "width", 13, 9, 26),
+    num("depth", "depth", 14, 13, 30),
+    num("height", "tower", 6.4, 3, 11),
+    num("floors", "floors", 1, 1, 2, 1),
+    bool("enterable", "enterable"),
+    {
+      key: "rampSide",
+      type: "choice",
+      label: "stair foot",
+      def: "-1",
+      options: ["-1", "1"],
+      numeric: true,
+    },
+    {
+      key: "tint",
+      type: "choice",
+      label: "render",
+      def: "#8d7757",
+      options: ["#8d7757", "#b6a68f", "#7b6a51", "#6d5b41"],
+    },
+  ],
+  // The two floors here are the DEV throw in the builder rather than
+  // `assertClimbable`: the court has to hold a 10 m flight up to its own
+  // terrace, and the ranges take 7.5 m off each side before the court starts.
+  caravanserai: [
+    num("width", "width", 44, 28, 70, 1),
+    num("depth", "depth", 38, 32, 70, 1),
+    {
+      key: "tint",
+      type: "choice",
+      label: "render",
+      def: "#8d7757",
+      options: ["#8d7757", "#b6a68f", "#6d5b41"],
+    },
+  ],
+  hammam: [
+    num("width", "width", 18, 12, 30),
+    num("depth", "depth", 14, 13, 26),
+    {
+      key: "rampSide",
+      type: "choice",
+      label: "stair foot",
+      def: "-1",
+      options: ["-1", "1"],
+      numeric: true,
+    },
+    {
+      key: "tint",
+      type: "choice",
+      label: "render",
+      def: "#b6a98f",
+      options: ["#b6a98f", "#8d7757", "#6d5b41"],
+    },
+  ],
+  granary: [
+    num("width", "width", 8, 4, 16),
+    num("depth", "depth", 7, 4, 16),
+    num("height", "height", 5.2, 2.5, 9),
+    {
+      key: "tint",
+      type: "choice",
+      label: "render",
+      def: "#8d7757",
+      options: ["#8d7757", "#b6a68f", "#6d5b41"],
+    },
+  ],
   compoundWall: [
     num("length", "length", 14, 4, 48, 1),
     num("height", "height", 2.6, 1.2, 4, 0.2),

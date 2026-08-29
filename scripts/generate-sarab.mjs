@@ -108,6 +108,8 @@ const randInt = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
 const pick = (list) => list[Math.floor(rng() * list.length)];
 /** True with probability `p`. */
 const chance = (p) => rng() < p;
+/** A float in [lo, hi), rounded to two places — for a number a layout STATES. */
+const rnd = (lo, hi) => Number(rand(lo, hi).toFixed(2));
 
 // --- the floor ---------------------------------------------------------------
 
@@ -117,7 +119,33 @@ const smooth = (t) => {
 };
 
 /**
- * The open desert: three long swells, none of them steep enough to matter.
+ * Three low knolls of drifted sand, in the only three places on this map with
+ * room for one.
+ *
+ * **They are placed against a list of constraints rather than by eye, and the
+ * list is most of why there are three.** A knoll may not stand inside a
+ * district's skirt, or the flattening pass has to swallow it and the gradient
+ * it swallows lands on the approach to a quarter; it may not stand inside the
+ * wadi's bench (below), for the same reason one term further on; and it may not
+ * come within about 2.2 sigma of the play boundary, because `TerrainField`
+ * CLAMPS the edge vertex and rolls the borderland off it — a rise cut by the
+ * boundary is extruded 300 m into the margin as a shelf. What is left after
+ * those three is the southern desert and one corner of the north-west, and the
+ * fact that the answer is "the empty ground" is the map being honest about
+ * itself: everywhere else is town, and a town is built on the flat.
+ *
+ * `sigma` is the Gaussian's, so the steepest gradient a knoll makes is
+ * `0.858 * height / sigma` — held near 0.16 on all three, which is a rise you
+ * walk over without pressing anything.
+ */
+const KNOLLS = [
+  { x: -100, z: -370, height: 9, sigma: 46 },
+  { x: 170, z: -350, height: 8, sigma: 48 },
+  { x: -388, z: 372, height: 6, sigma: 34 },
+];
+
+/**
+ * The open desert: long swells, two short ones over them, and the knolls.
  *
  * Closed form and no lattice, for `TerrainField`'s reason one field over: this
  * is evaluated here to write the grid, and the grid is what the client, the
@@ -125,14 +153,37 @@ const smooth = (t) => {
  * evaluated at runtime by all three, so the country outside has to look like
  * more of the country inside without either being able to see the other's
  * numbers. Long smooth swells are what both of them make.
+ *
+ * **The amplitudes are a little over twice what they shipped at**, and what
+ * paid for the raise is the bench below rather than headroom that was already
+ * there. The map shipped with 2.3 m of swell over 1,500 m of ground, which
+ * from any roof in the town reads as a plate: the wadi was the only thing the
+ * eye could find in the middle distance, and past the outskirts there was
+ * nothing at all. At 5.0 m the same ground rolls enough that the two highways
+ * disappear and reappear along their own length, which is what a desert does
+ * and what a 560 m haze needs behind it to have any depth.
+ *
+ * **Every clause is bounded by its own slope and the sum is checked**, which is
+ * what makes raising it safe: the six terms together cannot exceed a 0.075
+ * gradient, against `MAX_WALKABLE_GRADE`'s 0.4, and the emit below refuses a
+ * floor it cannot walk whatever this function does. What the raise actually
+ * spends is the margin at the SEAMS — a district's skirt and the wadi's bank
+ * each have to absorb whatever swell is standing at their lip — and both of
+ * those were widened to pay for it.
  */
 function dunes(x, z) {
-  return (
-    1.05 * Math.sin(x / 196) * Math.cos(z / 171) +
-    0.62 * Math.sin((x + z) / 103) +
-    0.38 * Math.cos((x - 2 * z) / 147) +
-    0.22 * Math.sin((x * 0.7 - z) / 61)
-  );
+  let h =
+    1.9 * Math.sin(x / 196) * Math.cos(z / 171) +
+    1.15 * Math.sin((x + z) / 103) +
+    0.72 * Math.cos((x - 2 * z) / 147) +
+    0.42 * Math.sin((x * 0.7 - z) / 61) +
+    0.55 * Math.sin((x * 0.6 + z * 0.8) / 44) +
+    0.3 * Math.cos((x - 0.6 * z) / 26);
+  for (const k of KNOLLS) {
+    const r = Math.hypot(x - k.x, z - k.z) / k.sigma;
+    if (r < 3) h += k.height * Math.exp(-r * r);
+  }
+  return h;
 }
 
 /**
@@ -158,20 +209,148 @@ const wadiZ = (x) => -60 + 18 * Math.sin(x / 230) + 8 * Math.sin(x / 110);
 const WADI_BED = 26;
 const WADI_LIP = 66;
 /**
+ * The FLOOD TERRACE: how far past the lip the dunes are levelled off before the
+ * bank is cut into them.
+ *
+ * **It is what makes a bigger dune field affordable, and it is a real landform
+ * rather than a fudge.** The bank's job is to be a 0.135 gradient a hull takes
+ * at any point along the run, and it gets that by cutting `WADI_LIP - WADI_BED`
+ * metres of run for the bed's own depth. Cut that into a swell and the gradient
+ * is the bed's depth PLUS whatever dune happened to be standing on the lip,
+ * over the same run — which is how a five-metre dune field turns a 0.135 bank
+ * into a 0.3 one and how the whole thing fails the check at the bottom of this
+ * file. So the ground is brought to the terrace level first, over 70 m either
+ * side, and the bank is cut into flat ground exactly as it was.
+ *
+ * What it looks like is what a watercourse leaves behind: a flat bench either
+ * side of the channel, wider than the channel, with the dunes starting again
+ * past it. The town is built on it, which is also true of every real one.
+ */
+const WADI_BENCH = 70;
+/**
+ * How far the SOUTH bank's terrace stands below the north's.
+ *
+ * **The one place on this map two districts sit at different levels other than
+ * the shelf**, and it is affordable because the whole southern group — the
+ * south bank, the Crossing and T0's home yard — is 184 m clear of the northern
+ * group's nearest core, where `land`'s weighted average needs about 53. See
+ * that function, whose only standing constraint this is.
+ *
+ * What it buys is that the wadi is ASYMMETRIC, which is what a watercourse in a
+ * basin actually is: the north bank climbs 5.4 m out of the bed and the south
+ * bank 2.8, so the two southern flags sit on a shelf below the town rather than
+ * across a ditch from it. From the Souk's roofs you look DOWN at the Depot and
+ * the Crossing; from either of them the old town is a skyline. That reading was
+ * worth more than the symmetry, and it costs one number.
+ */
+const SOUTH_TERRACE = -2.6;
+/**
  * The bed's own height, which is NOT constant: it dips and rises along the run,
  * so the floor of the wadi is a chain of shallow basins rather than a canal.
  *
- * **It is DRY, and that decision was made by LOOKING.** It was built with
- * Harrowmead's construction first — carve the bed, float one `WaterRect` over
- * it and let the ground decide where it is wet — and a 1.6 m pool over a 5.4 m
- * bed read as a sheet of pale membrane rather than as water, because the whole
- * rect was inside the shoreline band and the foam covered all of it. A dry
- * watercourse is the better answer thematically and the cheaper one: no water
- * mesh, no mirror render target and no reflection probe on a map this size. The
- * palms stay, because a date palm is what grows where the water is six feet
- * DOWN.
+ * **It runs DRY, and it stands in the three basins deepest enough to hold**,
+ * which is what a wadi is: a bed you walk the length of, with water in it only
+ * where the ground took the trouble to keep some. See `POOLS` below, which cuts
+ * those three and carries the argument for why the map shipped with none at
+ * all — and note that this function is still the DRY bed, so nothing about the
+ * bank, the fords or the four crossings moved when the water arrived.
+ *
+ * The palms were always here, because a date palm is what grows where the water
+ * is six feet down; what changed is that in three places it is not.
  */
 const wadiBed = (x) => -5.4 + 0.52 * Math.sin(x / 68) + 0.24 * Math.sin(x / 31);
+
+/**
+ * The three standing pools, and the argument for them, because the header of
+ * the file this generates used to say there were none.
+ *
+ * **The map shipped DRY and the reason was measured rather than assumed**: the
+ * first attempt was Harrowmead's construction — carve the bed, float one
+ * `WaterRect` the length of the run and let the ground decide where it is wet —
+ * and a shallow sheet over a 5.4 m bed came back as a pale membrane, because
+ * `WaterSystem` bakes a bed-depth map and everything inside `CONFIG.water`'s
+ * shoreline band is drawn as shore. A body of water reads as water when most of
+ * its area is DEEPER than `depthMax` (1.5 m) and its shore is a line at the
+ * edge, and a rect stretched along a meander is neither.
+ *
+ * So the answer is the one a dry watercourse gives on its own: **it is dry
+ * except where it is not.** The bed already dips and rises along its run; these
+ * three basins are cut a further two and a half metres into the deepest of
+ * them, well inside the flat bed and well short of the banks, and each gets a
+ * rect of its own sitting half a metre under the surrounding bed. That puts
+ * ~2 m of water over the middle of each — saturating the depth map, so the
+ * middle draws as body colour and mirror — and lands the shoreline on the dry
+ * bed around it, where a shoreline belongs.
+ *
+ * They are sited BETWEEN the four fords (x -318, -66, 190, 318) rather than on
+ * them, which is the whole tactical content: a ford is still a ford, and what a
+ * pool does is make the bed either side of one somewhere you do not want to be
+ * caught wading.
+ *
+ * `depth` is the cut below the bed and the two half-extents are the bowl's, so
+ * the steepest gradient a pool makes is `1.5 * depth / halfWid` — about 0.23 on
+ * all three, which is a bank you walk into rather than fall down.
+ */
+const POOLS = [
+  { x: -200, halfLen: 40, halfWid: 16, depth: 2.6 },
+  { x: 60, halfLen: 46, halfWid: 18, depth: 3.0 },
+  { x: 258, halfLen: 26, halfWid: 17, depth: 3.0 },
+];
+
+/** How far a pool is cut below the bed at a point, 0 outside every bowl. */
+function poolCut(x, z) {
+  let cut = 0;
+  for (const p of POOLS) {
+    const r = Math.hypot((x - p.x) / p.halfLen, (z - wadiZ(x)) / p.halfWid);
+    if (r >= 1) continue;
+    cut = Math.max(cut, p.depth * (1 - smooth(r)));
+  }
+  return cut;
+}
+
+/**
+ * The BIRKAT: the walled reservoir the mosque quarter is built around, as a
+ * basin dug into the floor.
+ *
+ * **It is terrain and not a builder, and that is forced rather than chosen.**
+ * `WaterSystem.bakeDepth` samples `TerrainField.surfaceAt` and nothing else —
+ * how deep a body of water is, where its shore is and where its reflection
+ * probe stands are all read off the FLOOR — so a tank built out of boxes would
+ * hold water exactly 0.32 m deep over whatever the ground under it happened to
+ * be, which is the pale membrane above by another route. Water in this engine
+ * is a hole in the ground with a plane over it, and a hole in the ground is
+ * this file's business.
+ *
+ * What it is FOR is the quarter it stands in. The mosque quarter is the oldest
+ * fabric on the map — 32 m plots, walls everywhere, nothing you can see over —
+ * and a maze with no landmark in it is a maze you cannot learn. This is its
+ * one open space, it is 2.7 m DOWN, and standing in it is standing below every
+ * wall around you: a place worth crossing to and a bad place to be caught.
+ *
+ * The skirt is 15 m for a 2.8 m drop, a 0.28 gradient — walkable everywhere, so
+ * the basin is entered and left on any bearing and nothing has to route round
+ * it.
+ *
+ * **It is deliberately SMALL, and the precinct wall round it is not dressing**,
+ * which is the one thing here found by LOOKING rather than reasoned. Water in
+ * this engine is a Fresnel mirror over a dark body, and at any angle a standing
+ * player sees a pool from it is almost all mirror — so what a body of water
+ * looks like is whatever the reflection probe standing on it can see. In an
+ * open square on the brightest map in the tree that is pale sky in every
+ * horizontal direction, and forty metres of pale sky reads as a salt pan. The
+ * walls are what put something IN the mirror: they fill the band the grazing
+ * rays sample, so the pool returns mud brick instead of haze. Do not open the
+ * precinct out, and do not widen the basin past it.
+ */
+const BIRKAT = { x: -186, z: 70, halfW: 10, halfD: 8, skirt: 15, depth: 2.8 };
+
+/** How far the birkat's basin is cut below grade at a point. */
+function birkatCut(x, z) {
+  const dx = Math.max(Math.abs(x - BIRKAT.x) - BIRKAT.halfW, 0);
+  const dz = Math.max(Math.abs(z - BIRKAT.z) - BIRKAT.halfD, 0);
+  const r = Math.hypot(dx, dz) / BIRKAT.skirt;
+  return r >= 1 ? 0 : BIRKAT.depth * (1 - smooth(r));
+}
 
 /**
  * The five quarters and the two home yards, as rounded rectangles that the
@@ -187,14 +366,24 @@ const DISTRICTS = [
   { name: "old town", x: 28, z: 120, hw: 92, hd: 88, level: 0, skirt: 65 },
   { name: "mosque quarter", x: -183, z: 122, hw: 110, hd: 88, level: 0, skirt: 65 },
   { name: "north town", x: -55, z: 279, hw: 195, hd: 61, level: 0, skirt: 65 },
-  { name: "south bank", x: 0, z: -187, hw: 262, hd: 35, level: 0, skirt: 60 },
-  { name: "the crossing", x: 190, z: -135, hw: 70, hd: 45, level: 0, skirt: 55 },
-  // The one district that is not at the town's own level, and the map's only
-  // relief outside the wadi. Its core stands 80 m clear of every other core, so
-  // the weighted blend below never has to average 7 against 0 inside one of
-  // them — see `land`, where that constraint is the whole design.
-  { name: "martyrs shelf", x: 255, z: 150, hw: 55, hd: 60, level: 7, skirt: 85 },
-  { name: "home sw", x: -318, z: -318, hw: 48, hd: 48, level: 0, skirt: 48 },
+  // The southern group, on the wadi's own lower terrace — see `SOUTH_TERRACE`.
+  // All three are one level because they are one bench: the south bank and the
+  // Crossing OVERLAP outright, and T0's yard is 49 m off the south bank's
+  // corner, which is inside the ~53 m the blend below needs to keep two levels
+  // apart.
+  { name: "south bank", x: 0, z: -187, hw: 262, hd: 35, level: SOUTH_TERRACE, skirt: 60 },
+  { name: "the crossing", x: 190, z: -135, hw: 70, hd: 45, level: SOUTH_TERRACE, skirt: 55 },
+  // The high one, and the map's only relief outside the wadi. Its core stands
+  // 80 m clear of every other core, so the weighted blend below never has to
+  // average 7 against 0 inside one of them — see `land`, where that constraint
+  // is the whole design.
+  //
+  // **The skirt went 85 to 95 when the dunes were raised**, and it is the same
+  // trade the wadi's bench makes one constant up: the approach absorbs the
+  // shelf's 7 m PLUS whatever swell is standing at the foot of it, so widening
+  // the run is what keeps a 12 m worst case inside a 0.19 gradient.
+  { name: "martyrs shelf", x: 255, z: 150, hw: 55, hd: 60, level: 7, skirt: 95 },
+  { name: "home sw", x: -318, z: -318, hw: 48, hd: 48, level: SOUTH_TERRACE, skirt: 48 },
   { name: "home ne", x: 318, z: 318, hw: 48, hd: 48, level: 0, skirt: 48 },
 ];
 
@@ -232,13 +421,41 @@ function land(x, z) {
   return base + (hsum / wsum - base) * Math.min(1, wsum);
 }
 
-/** The ground. */
+/**
+ * The ground: the dunes and the districts, then the wadi's terrace levelled
+ * into them, then its channel cut through that, then the birkat dug into
+ * whatever is left.
+ *
+ * **The order is the argument.** Each pass hands the next one ground it can
+ * make a stated gradient out of: the terrace gives the bank flat ground to cut
+ * a 0.135 slope into, the bank gives the pools a flat bed to dip into, and the
+ * districts give the birkat a level plot to be a hole in. Reversed, each pass
+ * would be cutting into whatever the one after it happened to leave, and the
+ * gradient would be a sum of things nobody chose — which is the failure the
+ * check at the bottom of this file exists to catch and the reason the whole
+ * floor is written by one function rather than painted.
+ *
+ * The terrace's target is the bank's OWN side, which is what carries
+ * `SOUTH_TERRACE` across a watercourse without a step anywhere: inside the flat
+ * bed the blend is already fully on the bed's own height, so the side a point
+ * is on stops mattering exactly where the two sides disagree.
+ */
 function heightAt(x, z) {
-  const h = land(x, z);
+  let h = land(x, z);
   const dz = Math.abs(z - wadiZ(x));
-  if (dz >= WADI_LIP) return h;
-  const w = dz <= WADI_BED ? 1 : 1 - smooth((dz - WADI_BED) / (WADI_LIP - WADI_BED));
-  return h + (wadiBed(x) - h) * w;
+  if (dz < WADI_LIP + WADI_BENCH) {
+    const target = z < wadiZ(x) ? SOUTH_TERRACE : 0;
+    const t =
+      dz <= WADI_LIP ? 1 : 1 - smooth((dz - WADI_LIP) / WADI_BENCH);
+    h += (target - h) * t;
+    if (dz < WADI_LIP) {
+      const bed = wadiBed(x) - poolCut(x, z);
+      const w =
+        dz <= WADI_BED ? 1 : 1 - smooth((dz - WADI_BED) / (WADI_LIP - WADI_BED));
+      h += (bed - h) * w;
+    }
+  }
+  return h - birkatCut(x, z);
 }
 
 // --- what is already there ---------------------------------------------------
@@ -335,6 +552,25 @@ function place(kind, x, z, turn, w, d, params, pad = 1.6, force = false) {
       " },",
   );
   return true;
+}
+
+/**
+ * A named SET PIECE: place it, and refuse to write the map if it did not fit.
+ *
+ * `REQUIRED` at the bottom of this file catches a missing set piece by KIND,
+ * which works for a mosque and does not work for a kind the fabric also makes:
+ * a wind tower authored onto the Martyrs' shelf was silently dropped for
+ * overlapping the flag's own claimed ring, and the count came out right anyway
+ * because the block recipes had made nine of them somewhere else. So anything
+ * placed at a coordinate somebody chose goes through here.
+ */
+function must(kind, x, z, turn, w, d, params, pad) {
+  if (place(kind, x, z, turn, w, d, params, pad)) return;
+  throw new Error(
+    `set piece: ${kind} at (${x.toFixed(0)}, ${z.toFixed(0)}) was refused — ` +
+      "something already claimed that ground. Move the piece; the claim list " +
+      "is in authored order and the flags, spawns and hardstandings claim first.",
+  );
 }
 
 /** A section heading inside one of the emitted arrays. */
@@ -465,24 +701,49 @@ function oldTownBlock(cx, cz, core) {
 
   if (roll < 0.2) {
     // An open yard: the block that is not a building, which is what a town has
-    // instead of a park.
+    // instead of a park. A third of them are the household's GRAIN STORE, which
+    // is what a yard in this vernacular is actually for — and, standing in an
+    // alley 7 m wide, the thing that stops you seeing down the whole of it.
     compound(cx, cz, h - 1, h - 1, { open: randInt(0, 3) });
-    if (chance(0.5)) place("well", cx, cz, 0, 2.6, 2.6, null, 1.2);
-    else place("crates", cx + rand(-5, 5), cz + rand(-5, 5), randInt(0, 3), 3, 2.4, null, 1.0);
+    if (chance(0.46)) {
+      place("granary", cx, cz, randInt(0, 3), 8, 7, { height: rnd(4.2, 6.2) }, 1.4);
+    } else if (chance(0.5)) {
+      place("well", cx, cz, 0, 2.6, 2.6, null, 1.2);
+    } else {
+      place("crates", cx + rand(-5, 5), cz + rand(-5, 5), randInt(0, 3), 3, 2.4, null, 1.0);
+    }
     return;
   }
 
-  if (roll < 0.4) {
+  if (roll < 0.44) {
     // One courtyard house standing on most of the plot, with a stair to its
     // roof: the recipe that makes the roofscape reachable.
+    //
+    // **Over half of them carry a wind tower**, which sounds like a lot and is
+    // about a dozen across nine hundred metres — this branch is under a quarter
+    // of the blocks, the block recipes above take most of the rest, and a
+    // fourteen-metre building in a twenty-six-metre core is refused often
+    // enough to matter. A dozen is what the skyline needed: every one is 2.8 m
+    // of solid brick standing in the middle of a roof deck (see kit/desert.ts),
+    // so at this rate no quarter is without one and no two quarters have them
+    // in the same places. At one in ten nobody would learn to expect one; at
+    // three in four they would be a texture rather than a landmark.
     const turn = randInt(0, 3);
-    house(cx, cz, turn, {
-      w: randInt(14, Math.floor(core - 6)),
-      d: randInt(14, Math.floor(core - 6)),
-      stair: true,
-      enterable: true,
-      floors: chance(0.35) ? 2 : 1,
-    });
+    const w = randInt(14, Math.floor(core - 6));
+    const d = randInt(14, Math.floor(core - 6));
+    if (chance(0.55)) {
+      place("windTower", cx, cz, turn, w, d, {
+        width: w,
+        depth: d,
+        floors: chance(0.3) ? 2 : 1,
+        enterable: true,
+        rampSide: chance(0.5) ? 1 : -1,
+        height: rnd(5.2, 7.6),
+        ...(chance(0.3) ? { tint: "#b6a68f" } : {}),
+      }, 1.6);
+      return;
+    }
+    house(cx, cz, turn, { w, d, stair: true, enterable: true, floors: chance(0.35) ? 2 : 1 });
     return;
   }
 
@@ -615,6 +876,18 @@ for (const r of ROADS) {
 // flags standing on bare sand.
 for (const f of FLAGS) claim(f.x, f.z, 26, 26);
 
+// The birkat's DISTURBED ground, claimed before anything is built anywhere
+// near it. What has to be kept clear is not the water but the SKIRT: a
+// placement samples the floor once at its own centre, so a house on the lip of
+// a 2.7 m basin floats at one corner and buries itself at the other. The
+// rectangle is the core plus the whole skirt plus a metre.
+claim(
+  BIRKAT.x,
+  BIRKAT.z,
+  2 * (BIRKAT.halfW + BIRKAT.skirt) + 6,
+  2 * (BIRKAT.halfD + BIRKAT.skirt) + 6,
+);
+
 // The spawns and the hardstandings, computed here rather than at the end,
 // because they have to claim their ground before the yard is dressed around
 // them. A shed on a spawn is a body deploying inside a collider.
@@ -669,6 +942,60 @@ scatter.push(
   `  { prop: "gravestone", x: ${n2(A.x + 6)}, z: ${n2(A.z + 100)}, width: 84, depth: 40, ` +
     `count: 48, scale: [0.8, 1.25], blocking: true, clearance: 0.6 },`,
 );
+
+// --- the birkat, and the bathhouse beside it ---------------------------------
+
+section(placements, "the birkat - the quarter's reservoir, and its hammam");
+placements.push(
+  "  // The one open space in the oldest quarter on the map, and the only ground",
+  "  // in the town that is DOWN. The basin itself is terrain (see the",
+  "  // generator's `BIRKAT`) — water in this engine is a hole in the floor with",
+  "  // a plane over it — so what is placed here is only what stands on the lip:",
+  "  // the precinct wall along the north, the draw-well that feeds it, the",
+  "  // stalls a watering place grows, and the bathhouse on its east side, which",
+  "  // is the one building in the town that puts its plumbing where you can see",
+  "  // it.",
+  "  //",
+  "  // Nothing stands INSIDE the claimed rectangle and nothing may be added",
+  "  // there: it is the skirt as well as the water, and a placement samples the",
+  "  // floor once at its own centre.",
+);
+// The precinct: a head-high wall right round the basin, on the flat ground past
+// the skirt, with the usual gates in it. It is what makes the water read as
+// water — see `BIRKAT` — and it is also what a town does with the only drinking
+// water for four hundred metres.
+const bkHW = BIRKAT.halfW + BIRKAT.skirt + 5;
+const bkHD = BIRKAT.halfD + BIRKAT.skirt + 5;
+compound(BIRKAT.x, BIRKAT.z, bkHW, bkHD, { open: 2, height: 3.0, tint: "#b6a68f" });
+const bkE = BIRKAT.x + bkHW;
+const bkW = BIRKAT.x - bkHW;
+place("well", bkW - 5, BIRKAT.z + 6, 0, 2.6, 2.6, null, 1.2);
+place("shrine", bkW - 6, BIRKAT.z - 18, 0, 2.4, 2.4, null, 1.2);
+for (const [sx, sz] of [
+  [-1, 1],
+  [1, 1],
+  [-1, -1],
+]) {
+  place(
+    "stall",
+    BIRKAT.x + sx * rand(20, 28),
+    BIRKAT.z + sz * (bkHD + 6),
+    randInt(0, 3),
+    4.4,
+    3,
+    null,
+    1.2,
+  );
+}
+// The hammam, hard against the reservoir's east lip. A bathhouse is where the
+// water is, and this is the only water in the town — putting it anywhere else
+// would be putting it nowhere.
+must("hammam", bkE + 13, BIRKAT.z + 4, 0, 18, 14, {
+  width: 18,
+  depth: 14,
+  rampSide: -1,
+}, 2.0);
+place("granary", bkE + 11, BIRKAT.z - 26, 1, 8, 7, { height: 5.4 }, 1.4);
 
 // --- the mosque quarter ------------------------------------------------------
 
@@ -743,12 +1070,13 @@ place("barrier", C.x + 26, C.z + 46, 0, 6, 1, { length: 6 }, 1.0);
 place("sandbags", C.x + 44, C.z - 28, 1, 8, 1.4, { length: 8 }, 1.2);
 
 // The four buildings that face the square, taller and paler than the fabric
-// behind them: what a town puts on its market place.
+// behind them: what a town puts on its market place. The north-east one is the
+// merchant's — a wind tower over the square, which is the thing you can see the
+// middle of the map from every roof in the old town BY.
 for (const [sx, sz] of [
   [-1, -1],
   [1, -1],
   [-1, 1],
-  [1, 1],
 ]) {
   house(C.x + sx * 54, C.z + sz * 52, sx * sz > 0 ? 0 : 1, {
     w: 14,
@@ -759,6 +1087,17 @@ for (const [sx, sz] of [
     tint: "#b6a68f",
   });
 }
+must("windTower", C.x + 54, C.z + 52, 0, 14, 15, {
+  width: 14,
+  depth: 15,
+  floors: 2,
+  enterable: true,
+  rampSide: 1,
+  height: 7.4,
+  tint: "#b6a68f",
+}, 2.0);
+// The bathhouse on the square's south-west corner, clear of the cross road.
+must("hammam", C.x - 58, C.z - 18, 0, 18, 14, { width: 18, depth: 14, rampSide: 1 }, 2.0);
 
 // --- the old town ------------------------------------------------------------
 
@@ -779,6 +1118,16 @@ placements.push(
   "  // town and the north edge had to be worth crossing without being another",
   "  // maze.",
 );
+// THE KHAN, and the only closed enclosure on the map. Every other yard here is
+// a compound with a side left open — a wall the nav grid routes through — and
+// this is a rectangle with one arched passage into it and a terrace round the
+// top. It stands on the north street rather than in the old town because it is
+// what a caravan road builds: an inn on the way in, where there is room for
+// forty metres of building and a beast park outside it.
+must("caravanserai", 66, 262, 0, 44, 38, { width: 44, depth: 38 }, 4);
+place("granary", 66, 296, 0, 8, 7, { height: 6.0 }, 1.6);
+place("well", 30, 234, 0, 2.6, 2.6, null, 1.4);
+
 quarter(-244, 222, 134, 336, 32, 6, (cx, cz, core) => {
   if (chance(0.34)) {
     compound(cx, cz, core / 2 - 1, core / 2 - 1, { open: randInt(0, 3) });
@@ -824,6 +1173,22 @@ for (const [dx, dz, turn] of [
     3,
   );
 }
+// The one house on the shelf that is still whole, and the only wind tower with
+// three hundred metres of open ground under it: from its roof you look down
+// every street in the old town, and from every street in the old town you can
+// see which side is standing on it.
+// Clear of the flag's own claimed ring (26 m square about D) as well as of the
+// blocks: a set piece refused is a set piece nothing downstream mentions, and
+// this one was silently dropped once for exactly that overlap.
+must("windTower", D.x - 4, D.z + 34, 0, 15, 16, {
+  width: 15,
+  depth: 16,
+  floors: 2,
+  enterable: true,
+  rampSide: -1,
+  height: 8.2,
+  tint: "#b6a68f",
+}, 2.5);
 // The school: two floors and a wider plate, so the quarter is not four of one
 // building.
 place("shellBlock", D.x - 34, D.z + 2, 1, 26, 15, { width: 26, depth: 15, floors: 2 }, 3);
@@ -960,6 +1325,12 @@ placements.push(
   "  // walled plots with nothing in them, which is what a town looks like where",
   "  // it was still being built when the fighting reached it.",
 );
+// The second khan, on the south bank's own terrace and 2.6 m below the town —
+// see `SOUTH_TERRACE`. It is 95 m west of the Depot, which is deliberate: B is
+// the one flag with no roofs over it and plays flat and long, and a walled
+// terrace within a rush of it is the cover that fight was missing.
+must("caravanserai", -215, -187, 0, 44, 38, { width: 44, depth: 38, tint: "#b6a68f" }, 4);
+
 quarter(-256, -222, 256, -152, 32, 6, (cx, cz, core) => {
   if (chance(0.38)) {
     compound(cx, cz, core / 2 - 1, core / 2 - 1, { open: randInt(0, 3) });
@@ -1023,6 +1394,22 @@ for (let i = 0; i < 300; i++) {
       d: randInt(8, 11),
       ruined: chance(0.35),
     });
+  }
+  // The grain store, on about a third of them. A smallholding out here is a
+  // wall, a house and the year's barley, and the silos are the part of it worth
+  // a collider at four hundred metres — they are the only thing in the
+  // outskirts tall enough to break a look down the open ground.
+  if (chance(0.34)) {
+    place(
+      "granary",
+      cx + rand(-hw * 0.6, hw * 0.6),
+      cz + rand(-hd * 0.6, hd * 0.6),
+      randInt(0, 3),
+      8,
+      7,
+      { height: rnd(4.4, 6.4) },
+      1.4,
+    );
   }
 }
 
@@ -1175,7 +1562,158 @@ scatter.push(
   `  { prop: "binPair", x: ${n2(A.x + 30)}, z: ${n2(A.z - 40)}, radius: 18, count: 3, scale: [0.9, 1.15], blocking: true, clearance: 1.4 },`,
 );
 
+// APPENDED, and it has to stay appended: `MapBuilder.scatterRegion` draws every
+// region from one seeded stream in array order, so a region inserted above this
+// point re-rolls every field below it. That is the rule the head of this block
+// states and this is the block it was written for.
+section(scatter, "the water");
+scatter.push(
+  "  // The dates, round the two places on this map where the water is at the",
+  "  // surface rather than six feet under it. Held OFF the wet ground by hand —",
+  "  // `scatterRegion` stands a prop on the floor and knows nothing about the",
+  "  // rects in `water`, so a region drawn across a pool puts palms in it.",
+);
+for (const px of [216, 302]) {
+  scatter.push(
+    `  { prop: "palm", x: ${n2(px)}, z: ${n2(Number(wadiZ(px).toFixed(1)))}, radius: 16, ` +
+      `count: ${randInt(5, 8)}, scale: [0.85, 1.2], blocking: true, clearance: 2.6 },`,
+  );
+}
+for (const [sx, sz] of [
+  [-1, -1],
+  [1, -1],
+  [-1, 1],
+  [1, 1],
+]) {
+  scatter.push(
+    `  { prop: "palm", x: ${n2(BIRKAT.x + sx * 26)}, z: ${n2(BIRKAT.z + sz * 24)}, ` +
+      `radius: 10, count: ${randInt(3, 5)}, scale: [1.0, 1.25], blocking: true, ` +
+      "clearance: 3.0 },",
+  );
+}
+
 // --- the water, the grass, the flags and the spawns --------------------------
+
+/**
+ * One water body, measured off the floor this script has already decided.
+ *
+ * **The surface is derived and the rect is derived, and neither is authored**,
+ * which is the whole reason the water is in this file rather than typed into
+ * the layout. `WaterSystem` reads the depth under every point of a rect off
+ * `TerrainField` and draws the shoreline where that crosses zero, so a hand
+ * written surface height is a shoreline nobody can see until the map is built:
+ * a centimetre high and the pool is a puddle in the middle of its own basin, a
+ * centimetre low and it is a sheet lying over dry bed. So the basin is sampled
+ * here, the deepest point of it is found, the surface is put a stated depth
+ * over THAT, and the rect is the wet bounding box with a margin — which cannot
+ * be wrong about a floor it just measured.
+ *
+ * The margin matters as much as the fit. A rect is its EXTENT and not its
+ * shore, and the shoreline is only drawn where the bed rises through the
+ * surface INSIDE the rect — so a rect trimmed to the waterline has no dry
+ * ground in it to draw a shore on and ends in a hard rectangular edge.
+ */
+function waterBody(cx, cz, halfW, halfD, freeboard, margin = 9) {
+  const step = 1.5;
+  // The RIM first: the lowest point anywhere on the sampled window's border.
+  // The surface goes under it, so every edge of the rect is dry ground by
+  // construction and the shoreline is drawn inside the rect rather than cut off
+  // by it. A surface set from the basin's own floor instead cannot promise
+  // that — the wadi's bed rises and falls half a metre along its length, and a
+  // pool half a metre too high bleeds a two-centimetre sheet out along the bed
+  // and off the end of its own rectangle.
+  let rim = Infinity;
+  for (let x = cx - halfW; x <= cx + halfW; x += step) {
+    rim = Math.min(rim, heightAt(x, cz - halfD), heightAt(x, cz + halfD));
+  }
+  for (let z = cz - halfD; z <= cz + halfD; z += step) {
+    rim = Math.min(rim, heightAt(cx - halfW, z), heightAt(cx + halfW, z));
+  }
+  const y = rim - freeboard;
+
+  let deepest = 0;
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let z0 = Infinity;
+  let z1 = -Infinity;
+  for (let x = cx - halfW; x <= cx + halfW; x += step) {
+    for (let z = cz - halfD; z <= cz + halfD; z += step) {
+      const d = y - heightAt(x, z);
+      if (d <= 0) continue;
+      deepest = Math.max(deepest, d);
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      z0 = Math.min(z0, z);
+      z1 = Math.max(z1, z);
+    }
+  }
+  // The floor a body has to clear to be worth drawing at all, and it is
+  // `CONFIG.water.depthMax` (1.5 m) with a margin on it: that is the depth the
+  // bed map saturates at, so a body shallower than it is one the shader can
+  // only ever draw as shoal and shore. This is the check that keeps a basin
+  // edit from quietly turning a pool back into the membrane the map shipped
+  // without.
+  if (deepest < 1.8) {
+    throw new Error(
+      `water: the basin at (${cx}, ${cz}) is only ${deepest.toFixed(2)} m deep under ` +
+        `a surface ${freeboard} m below its own rim, against the 1.8 m a body ` +
+        "needs to draw as water. Cut it deeper; see `POOLS` and `BIRKAT`.",
+    );
+  }
+  return {
+    x: Number(((x0 + x1) / 2).toFixed(2)),
+    z: Number(((z0 + z1) / 2).toFixed(2)),
+    width: Number((x1 - x0 + 2 * margin).toFixed(2)),
+    depth: Number((z1 - z0 + 2 * margin).toFixed(2)),
+    y: Number(y.toFixed(2)),
+    deepest: Number(deepest.toFixed(2)),
+  };
+}
+
+const water = [
+  "  // **The wadi is dry except where it is not**, which is what a dry",
+  "  // watercourse is and is the second answer this map gave to the question.",
+  "  // The first was Harrowmead's — one rect the length of the run, floated over",
+  "  // a carved bed — and it came back as a pale membrane, because everything",
+  "  // inside `CONFIG.water`'s shoreline band draws as shore and a sheet",
+  "  // stretched along a meander is nothing else. See `POOLS` in the generator,",
+  "  // which carries that argument and cuts the basins these sit in.",
+  "  //",
+  "  // Every number below is MEASURED off the floor rather than authored — the",
+  "  // surface is a stated depth over the deepest point of each basin and the",
+  "  // rect is the wet bounding box plus a margin of dry bed for the shoreline",
+  "  // to be drawn on. Re-running the generator re-derives them.",
+];
+const waterBodies = [];
+for (const pool of POOLS) {
+  const wz = wadiZ(pool.x);
+  const body = waterBody(pool.x, wz, pool.halfLen, pool.halfWid + 7, 0.45);
+  waterBodies.push(body);
+  water.push(
+    `  { x: ${n2(body.x)}, z: ${n2(body.z)}, width: ${n2(body.width)}, ` +
+      `depth: ${n2(body.depth)}, y: ${n2(body.y)} },`,
+  );
+}
+water.push(
+  "  // The birkat: the mosque quarter's reservoir, and the only water in the",
+  "  // town itself. Its basin is dug 2.7 m into flat district ground, so this is",
+  "  // the one body on the map whose whole area is out of the shore band.",
+);
+{
+  const body = waterBody(
+    BIRKAT.x,
+    BIRKAT.z,
+    BIRKAT.halfW + BIRKAT.skirt,
+    BIRKAT.halfD + BIRKAT.skirt,
+    0.45,
+    7,
+  );
+  waterBodies.push(body);
+  water.push(
+    `  { x: ${n2(body.x)}, z: ${n2(body.z)}, width: ${n2(body.width)}, ` +
+      `depth: ${n2(body.depth)}, y: ${n2(body.y)} },`,
+  );
+}
 
 const grass = [
   "  // Dry scrub, and a BUDGET rather than a blanket: the field is one mesh of",
@@ -1183,7 +1721,9 @@ const grass = [
   "  // wherever the camera stands. These sum to well under Harrowmead's ~23,000",
   "  // because a desert should be bare — what the rects are for is the two",
   "  // places that are not, the wadi's damp reaches and the shade of the",
-  "  // groves.",
+  "  // groves. The rects along the bed run straight over the three pools, which",
+  "  // is deliberate: an opaque body hides every tuft standing in it, so what is",
+  "  // left of a rect crossing a pool is the ring of it on the shore.",
 ];
 for (let i = -3; i <= 3; i++) {
   const x = i * 62 + 14;
@@ -1192,6 +1732,12 @@ for (let i = -3; i <= 3; i++) {
   );
 }
 grass.push(
+  // The birkat's margins: reeds, and the trick every wet rect in the tree uses.
+  // These deliberately OVERLAP the water — a tuft standing in two metres of an
+  // opaque body is simply not drawn, so what survives is the ring on the shore,
+  // which is where reeds are.
+  `  { x: ${n2(BIRKAT.x)}, z: ${n2(BIRKAT.z + 20)}, width: 50, depth: 16, density: 0.5 },`,
+  `  { x: ${n2(BIRKAT.x)}, z: ${n2(BIRKAT.z - 20)}, width: 50, depth: 16, density: 0.5 },`,
   `  { x: ${n2(A.x - 6)}, z: ${n2(A.z + 92)}, width: 80, depth: 44, density: 0.3 },`,
   "  { x: -300, z: 24, width: 70, depth: 60, density: 0.16 },",
   "  { x: 120, z: 40, width: 80, depth: 70, density: 0.16 },",
@@ -1312,18 +1858,28 @@ writeFileSync(
  * ${CELLS}x${CELLS} cells of ${CELL} m over the ${PLAY} m play square, so ${row}x${row} vertices.
  * \`size * cell\` must equal \`MapLayout.size\`; see \`Heightfield.cell\`.
  *
- * **The shape is three things laid over one another** (see the generator):
- * long, shallow dunes over the open desert; each quarter flattened DEAD LEVEL
- * inside its own core and blended out over a skirt, because a placement samples
- * the ground once at its own centre and a building on a grade floats at one
- * corner and buries itself at the other; and the wadi cut through all of it —
- * a bed 3.6 m down, 56 m across, with banks over 26 m either side, which is a
- * 0.14 gradient a hull takes at any point along its run.
+ * **The shape is five passes laid over one another IN ORDER** (see
+ * \`heightAt\` in the generator, where the order is the argument): dunes over
+ * the open desert, ~5 m of swell with three knolls in it; each quarter
+ * flattened DEAD LEVEL inside its own core and blended out over a skirt,
+ * because a placement samples the ground once at its own centre and a building
+ * on a grade floats at one corner and buries itself at the other — and the
+ * southern group of quarters is flattened to a terrace 2.6 m BELOW the rest;
+ * the wadi's own flood bench levelled 70 m either side of that, so the bank
+ * below is cut into flat ground rather than into a dune; the channel cut
+ * through the bench, 5.4 m down and 52 m across, which is a 0.135 gradient a
+ * hull takes at any point along its run; and the four basins that hold water —
+ * three pools in the bed and the birkat dug into the mosque quarter.
+ *
+ * **The basins are what \`MapLayout.water\` is measured against**, so a hand
+ * edit here moves four shorelines: \`WaterSystem\` bakes its bed-depth map off
+ * this grid, and the generator picks each surface height from the rim of the
+ * basin it just cut.
  *
  * The steepest single-cell step in this grid is ${worstStep.toFixed(2)} m over ${CELL} m — a
  * ${worstGrade.toFixed(3)} gradient against \`MAX_WALKABLE_GRADE\`'s ${MAX_GRADE}, checked by
  * the generator, which refuses to write a floor it cannot walk. The ground runs
- * from ${lo.toFixed(2)} m in the deepest pool to ${hi.toFixed(2)} m on the Martyrs' shelf.
+ * from ${lo.toFixed(2)} m in the deepest pool to ${hi.toFixed(2)} m on the northern knoll.
  */
 import type { Heightfield } from "../layout";
 
@@ -1349,9 +1905,10 @@ writeFileSync(
   join(out, "layout.ts"),
   `/**
  * sarab/layout.ts — THE MAP, as data: structure placements, scatter regions,
- * control points, spawns, the hardstandings and the scrub. The wadi is DRY
- * and this file declares no water at all — see scripts/generate-sarab.mjs,
- * which carries the argument.
+ * control points, spawns, the hardstandings, the scrub and the four bodies of
+ * water. Every number in \`water\` is MEASURED off the floor by the generator
+ * rather than authored — see \`waterBody\` in scripts/generate-sarab.mjs, and
+ * do not hand-tune a surface height here.
  * The floor's shape is generated data and lives in heights.ts. Consumed by
  * MapBuilder; nothing here is code to special-case.
  * Gotchas that have already cost time: collider top faces within
@@ -1380,6 +1937,7 @@ import type {
   ScatterSpec,
   SpawnPointDef,
   VehicleSpawnDef,
+  WaterRect,
 } from "../layout";
 
 /**
@@ -1440,13 +1998,24 @@ import type {
  * — a 0.135 gradient, so it is waded and driven at every point along it and the
  * four fords are landmarks rather than the only ways over. It is what separates
  * the two southern flags from the three northern ones without walling them off,
- * and it is DRY: there is no \`water\` on this map at all.
+ * and it runs DRY except in the three basins deep enough to have kept
+ * something: standing pools between the fords, ~2.1 m at the middle of each,
+ * which is water you wade round rather than through.
+ * **The two banks are not the same height.** The southern one climbs 2.8 m out
+ * of the bed and the northern 5.4, because the whole southern group — the south
+ * bank, the Crossing and T0's yard — sits on a terrace 2.6 m below the town.
+ * From the Souk's roofs you look DOWN at the Depot; from the Depot the old town
+ * is a skyline.
  * **The SHELF** stands 7 m over the town in the north-east and the Martyrs'
  * Quarter is on it — a 0.082 gradient up an 85 m skirt, which is a slope you
  * climb without noticing and a quarter that looks down every street in the old
  * town. **Everything else is dunes**, a couple of metres of swell, flattened
  * dead level under each quarter because a placement samples the ground once at
- * its own centre and a building on a grade floats at one corner.
+ * its own centre and a building on a grade floats at one corner — 5 m of swell
+ * now rather than the 2.3 the map shipped with, plus three knolls in the only
+ * three places with room for one, plus the BIRKAT: a 2.7 m basin dug into the
+ * mosque quarter, which is the only ground in the town that is down and the
+ * only water in it.
  *
  * ## Design intent per flag
  *
@@ -1549,6 +2118,10 @@ const vehicles: VehicleSpawnDef[] = [
 ${vehicles.join("\n")}
 ];
 
+const water: WaterRect[] = [
+${water.join("\n")}
+];
+
 const grass: GrassRect[] = [
 ${grass.join("\n")}
 ];
@@ -1559,6 +2132,7 @@ export const SarabLayout: MapLayout = {
   controlPoints,
   spawns,
   vehicles,
+  water,
   grass,
   /**
    * The play square. \`heights.size * heights.cell\` equals it (${CELLS} x ${CELL}), the
@@ -1664,6 +2238,8 @@ const REQUIRED = {
   minaret: 1,
   souk: 2,
   monument: 1,
+  caravanserai: 2,
+  hammam: 2,
   shellBlock: 5,
   depot: 2,
   silo: 4,
@@ -1671,6 +2247,20 @@ const REQUIRED = {
   watchtower: 1,
   road: ROADS.length,
 };
+
+/**
+ * The two kinds the FABRIC makes as well as the set pieces, and the fewest of
+ * each the map is still the map with.
+ *
+ * They cannot go in `REQUIRED` above because their count is not authored: a
+ * block recipe asks for a wind tower on better than half the plots it can hold
+ * one on, and how many it gets depends on what else already claimed the ground.
+ * What matters is not the number but that the number is not SMALL — eight wind
+ * towers across nine hundred metres is a skyline and two is an oddity, and the
+ * way that turns into two is somebody widening a quarter's plots or moving a
+ * road, which is a change with no visible connection to the roofline it broke.
+ */
+const AT_LEAST = { windTower: 6, granary: 6 };
 
 const byKind = {};
 for (const l of placements) {
@@ -1699,10 +2289,24 @@ for (const [kind, want] of Object.entries(REQUIRED)) {
   }
 }
 
+for (const [kind, least] of Object.entries(AT_LEAST)) {
+  const got = byKind[kind] ?? 0;
+  if (got < least) {
+    throw new Error(
+      `fabric: ${got} x ${kind} placed against a floor of ${least}. Something ` +
+        "upstream is taking the plots this kind needs — see the refusal list " +
+        "above, and raise the recipe's own chance only after finding out what.",
+    );
+  }
+}
+
 console.log(
   `sarab: ${PLAY} m play + ${MARGIN} m margin = ${PLAY + 2 * MARGIN} m across\n` +
     `  ${placementCount} placements, ${scatterCount} scatter regions, ${claimed.length} claims\n` +
     `  ${row}x${row} height vertices, ground ${lo.toFixed(2)}..${hi.toFixed(2)} m\n` +
+    `  ${waterBodies.length} water bodies, deepest ${waterBodies
+      .map((b) => b.deepest.toFixed(2))
+      .join(" / ")} m\n` +
     `  steepest cell step ${worstStep.toFixed(2)} m (grade ${worstGrade.toFixed(3)}) at ${worstAt}\n` +
     `  wrote src/world/sarab/{layout,heights}.ts`,
 );

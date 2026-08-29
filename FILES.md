@@ -405,7 +405,8 @@ src/
                         #   what each of the five buildings is FOR, and the
                         #   collider budget an enterable one is spending
     kit/desert.ts       #   adobeHouse, compoundWall, shellBlock, mosque,
-                        #   minaret, souk, blastWall, sandbags — the desert-town
+                        #   minaret, souk, windTower, caravanserai, hammam,
+                        #   granary, blastWall, sandbags — the desert-town
                         #   set. The first vernacular here whose ROOF is walked,
                         #   which is what it exists for: a flat roof is a second
                         #   storey of ground and a parapet is the cover on it.

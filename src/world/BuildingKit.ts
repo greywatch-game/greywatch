@@ -51,12 +51,16 @@ import {
 import {
   buildAdobeHouse,
   buildBlastWall,
+  buildCaravanserai,
   buildCompoundWall,
+  buildGranary,
+  buildHammam,
   buildMinaret,
   buildMosque,
   buildSandbags,
   buildShellBlock,
   buildSouk,
+  buildWindTower,
 } from "./kit/desert";
 import { buildJungleManor } from "./kit/manor";
 import {
@@ -146,6 +150,10 @@ export const BUILDERS = {
   mosque: buildMosque,
   minaret: buildMinaret,
   souk: buildSouk,
+  windTower: buildWindTower,
+  caravanserai: buildCaravanserai,
+  hammam: buildHammam,
+  granary: buildGranary,
   blastWall: buildBlastWall,
   sandbags: buildSandbags,
 } as const;

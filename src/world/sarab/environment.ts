@@ -42,10 +42,16 @@
  *   Harrowmead kept. A carried flame under a midday sun is a torch at noon, and
  *   it is not merely redundant: a carried light always wins one of the sixteen
  *   shader slots, so an unwanted one is a fixture somewhere going dark.
- * - **There is no `water` block at all**, because the layout declares no rect
- *   for one to colour. The wadi is DRY — `scripts/generate-sarab.mjs` carries
- *   the argument, and what it buys here is that a 900 m map spends nothing on
- *   the mirror, the foam or the reflection probe a body of water costs.
+ * - **The `water` block is the map's SECOND chroma, and it owes the paragraph
+ *   at the bottom of this header an answer.** It did not exist while the wadi
+ *   was dry; there are four bodies now — three standing pools between the fords
+ *   and the birkat dug into the mosque quarter — and every one of them is a
+ *   dark, low-chroma body with a mirror on it rather than a blue rectangle. The
+ *   dome stays the thing you navigate by, because water is drawn almost
+ *   entirely as REFLECTED SKY at the angles a player sees it from and the sky
+ *   here is pale haze. See the block itself for the two numbers that keep it
+ *   there, and note the one it costs: a probe a body, baked once, under the
+ *   loading card.
  * - **`groundSpec` is left alone.** `config/graphics.ts` warns the wet-cobble
  *   sheen is tuned against the key light's elevation, and a desert is the wrong
  *   weather for it entirely — what is stated here instead is a very low, very
@@ -302,6 +308,47 @@ export const SarabEnvironment: EnvironmentSpec = {
      * shafts as something the dust does rather than something the town does.
      */
     rays: { threshold: 0.9, intensity: 0.34 },
+  },
+  /**
+   * Four bodies of standing water in a desert, and the palette is written
+   * against what they are rather than against what water usually is.
+   *
+   * **These are POOLS, not a stream**: no flow, no outfall, a silt bed and a
+   * few months of dust on them. So the body colour is dark and barely
+   * chromatic — the shader's Fresnel puts the sky and the map's own geometry at
+   * the grazing end (see `WaterEnvSpec`), which is most of what a player ever
+   * sees, and what these two colours decide is only what is left looking
+   * straight down into one. A blue would be a swimming pool in a wadi.
+   *
+   * `bedColor` is stated, which almost no map here does, and it is the one
+   * choice that is about this map specifically. The default is `floorColor` —
+   * the bank a body is cut in, which is right where a stream is cut in the
+   * valley floor. A wadi's bed is not the desert: it is what the water left,
+   * which is darker, greyer and damp, and taking the default would have graded
+   * the last few centimetres of every shoreline back into pale sand and made
+   * each pool look like it was painted on.
+   *
+   * **`glint` is the number under real pressure and it is LOW for a map with a
+   * disc in its sky.** `sky.rays.threshold` is 0.9 and the god rays' occlusion
+   * test is luminance with no depth pass, so anything in the world brighter
+   * than that stops occluding and starts radiating; the lit sand is already at
+   * 0.82 (see `skyLightIntensity`, which is held to that margin). A crest
+   * sparkle is a hard specular that fires anywhere on a body including where
+   * the mirror returns nothing, so it is exactly the term that would cross it.
+   * 0.3 is enough to say the surface is moving and spends none of the margin.
+   *
+   * `mirror` is 0.85 rather than 1 for the reason the field exists: these are
+   * silty and a metre of suspended dust scatters most of what lands on them.
+   * The honest way to draw that is to keep the sky and lose a little of the
+   * picture.
+   */
+  water: {
+    deepColor: "#1d2f2b",
+    shallowColor: "#4c6152",
+    foamColor: "#e2d8bf",
+    bedColor: "#6d6047",
+    mirror: 0.85,
+    glint: 0.3,
   },
   /**
    * Dry scrub, and the one place on this map a colour is allowed to be green.
