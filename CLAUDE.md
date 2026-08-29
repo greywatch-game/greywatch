@@ -794,7 +794,14 @@ permanent local zero and `aimMg` needs no branch of its own.
 
 **The TANK is armour and the TRUCK is the trade**: 18 m/s against 11 through a
 3.2 m gap against 4.4, for 520 points against 1200 at nine times the small-arms
-damage and no cannon at all. **Two numbers keep a fast vehicle honest and
+damage and no cannon at all. It is drawn as a closed armoured 4x4 with a
+**REMOTE** weapon station on its roof, and that is a rule rather than a style:
+**there is no player model in this game, so nothing on a vehicle may promise a
+body standing at it** — the pintle, the shield and the spade grips of the
+open-bedded version it replaced were three such promises over an empty bed, and
+what is on the roof now needs nobody. Nothing may stand on that roof inside the
+station's sweep, exactly as nothing may stand on the tank's deck inside the
+turret's. **Two numbers keep a fast vehicle honest and
 neither is a branch**: `climbHeight` (0.55 against 1.25, so the parked car a
 tank drives over is one a truck goes round) and **`steerAtRest`, which is how
 much of `turnRate` a hull has standing still** — 1 is a neutral-steer pivot and

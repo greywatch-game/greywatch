@@ -65,7 +65,7 @@ and even that is not asked as a kind:
 - **An unarmed hull keeps `turretYaw` equal to its own yaw**, which is not a
   special case dressed up. The drawn angle is `turretYaw - yaw`, so a turret
   that tracks the hull draws at a permanent local zero — exactly what a ring
-  welded to a truck's bed should do — and `aimMg`, which writes
+  bolted to a truck's roof should do — and `aimMg`, which writes
   `mgYaw - turretYaw` onto the mount above it, then puts a world-held machine
   gun on a body-mounted ring with no branch of its own. `updateRemote` takes the
   same rule, which is what makes the `tyaw` the wire carries for every hull
@@ -239,6 +239,81 @@ container.
 **None of this moved the collider.** `CONFIG.vehicles.tank.hull` is what the
 model is built to and the model is what changed: the hull got rounder, better
 lit and busier, and the box a round stops on is the box it always was.
+
+### The TRUCK is a CLOSED body, and that is a fix rather than a restyle
+
+`entities/TruckModel.ts` is the same accounting on a smaller machine —
+**twenty-two meshes, fourteen of which move** (eight for the wheels, four for
+the weapon station, two for the mast) — and it was an open-bedded pickup with a
+pintle gun standing on the bed until the thing that was wrong with it turned
+out to be something no number could reach.
+
+**There is no player model in this game, so a gun that visibly needs a man
+behind it is a gun with nobody behind it.** A pintle, a shield and a pair of
+spade grips are three separate promises that somebody is standing there, and
+the empty bed under them is the floor that says nobody is — every frame, from
+every angle, on the one vehicle in the game a player spends whole minutes
+looking at from twelve metres back in the chase camera. It is the exact
+counterpart of the rule the soldier kit is written under: what a player reads
+off a body at range is its silhouette, and this silhouette was making a claim
+the game cannot honour.
+
+An armoured 4x4 estate makes the same absence read correctly instead. The crew
+are INSIDE, behind a 40 cm glazing slot over 70 cm of plate — too shallow and
+too dark to resolve anybody through, which is the proportion that says
+"armoured" before any other detail on the vehicle has landed — and what is on
+the roof is a REMOTE station: a cradle, an armoured shield, an optic head and a
+barrel, with no pintle, no grips and nowhere for a body to stand. The gun
+traverses because the man at the screen below it traversed it. What used to
+look broken now looks like the point, and `Vehicle.aimMg`'s world-held angle
+did not move a line to get there — a station is exactly as much of a
+body-mounted ring as a pintle was.
+
+Three things fell out of it and none was the reason:
+
+- **The arc is 360 degrees by construction.** The pintle's whole geometry
+  problem was that it had to shoot over its own cab, which is what the 1.14 m
+  pedestal under it existed for and what made the ring's height the tightest
+  number in the old file. A station on the ROOF is above everything the vehicle
+  has. What is left is one clearance and it points DOWNWARD: at `mg.pitchMin`
+  the muzzle passes 6.7 cm over a roof at 1.96 — measured, not derived — and
+  that is now the number to re-derive if the roof, the ring height, the barrel
+  or that limit moves.
+- **Nothing may stand on the roof**, which is the pickup's bed rule moved up a
+  storey and tightened. The muzzle reaches 1.46 m past the trunnion and the
+  station turns a full circle, so a rack, a light bar or a rolled tarp anywhere
+  inside that radius is something a traversing gun drives through. The roof is
+  therefore BARE and the stowage is on the rear door, on the flanks and forward
+  of the windscreen — which is where it is on the vehicles this is drawn from
+  anyway, the spare going on the door precisely because there is no bed to put
+  it in.
+- **A body riding on the hull stands 50 cm over the roof instead of 1.7 m over
+  the bed.** `Vehicle.deckAt` answers with the COLLIDER's top face, which is
+  2.5 m up on both designs, so a rider on the pickup floated well clear of the
+  floor he looked like he was standing on.
+
+**It carries about twice the parts for one fewer mesh than the pickup had**
+(22 against 23), and that is the budget rule doing exactly what it is for: a
+greeble in a colour its segment already carries is free. The chassis grew a
+second differential, a transfer case, two propeller shafts, a fuel tank and
+four shock cans, and cost nothing, because the frame was already one mesh and
+a player nosed into a ditch sees the underside. The wheels grew eight tread
+lugs and six hub bolts and cost nothing, because a lug is the tyre's colour and
+a bolt is the hub's — and between them they are two rotation cues rather than
+one, at the silhouette and at the face. The one colour that was ADDED is not a
+colour: `hub` became `metal`, the same value doing the same job on the wheel
+and picking out the four fittings a player might otherwise never find — the
+winch, the snorkel head, the exhaust tip and the station's optic, which is the
+only pale thing above the roof line and is therefore what the eye uses to read
+where the gun is looking.
+
+**The three numbers the physics reads off the drawing did not move.** `gauge`,
+`contactReach` and `wheelReach` are the pickup's to the centimetre, because the
+wheels are where they were: a redesign of the BODY has no business touching the
+axles, and leaving them alone is what makes this a repaint rather than a retune
+of the suspension, the lean and the ten ground contacts. Neither did the
+collider — `CONFIG.vehicles.truck.hull` is what the model is built to, and the
+box a round stops on is the box it always was.
 
 ## The hull LEANS, and it leans TWICE
 

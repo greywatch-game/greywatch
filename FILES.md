@@ -218,10 +218,14 @@ src/
                         #   antennae that BOW, and the charred repaint a wreck
                         #   takes.
                         #   Art only — the extents that are RULES are CONFIG's
-    TruckModel.ts       # The gun truck: a cab, an open bed, a ring gun on a
-                        #   pedestal that clears the cab roof by a centimetre,
-                        #   four wheels that TURN and two that STEER, one whip
-                        #   on the front wing, and the same charred repaint.
+    TruckModel.ts       # The gun truck: a CLOSED armoured 4x4 with a REMOTE
+                        #   weapon station on its roof (no pintle, no grips,
+                        #   nowhere to stand — there is no player model to put
+                        #   there), four wheels that TURN and two that STEER,
+                        #   one whip on the front wing, and the same charred
+                        #   repaint. Nothing may stand on the roof inside the
+                        #   station's sweep; the muzzle clears it by 5 cm at
+                        #   full depression.
                         #   NO main gun — `VehicleRig.gun`/`muzzle` are null,
                         #   which is what `Vehicle.armed` reads. Art only
     callsigns.ts        # What to call an AI on the scoreboard: roster index ->

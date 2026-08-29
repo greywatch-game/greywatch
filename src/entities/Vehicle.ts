@@ -1629,7 +1629,7 @@ export class Vehicle implements Combatant, RayHull {
     // does instead is keep `turretYaw` on the hull's own heading. That is not a
     // special case dressed up: the drawn angle is `turretYaw - yaw`, so a
     // turret that tracks the hull draws at a permanent local zero — which is
-    // exactly what a ring welded to a truck's bed should do — and `aimMg`,
+    // exactly what a ring bolted to a truck's roof should do — and `aimMg`,
     // which writes `mgYaw - turretYaw` onto the mount above it, then puts a
     // world-held machine gun on a body-mounted ring with no branch of its own.
     const tur = this.spec.gun?.turret;

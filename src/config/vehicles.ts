@@ -1489,21 +1489,23 @@ export const vehicles = {
     hitRadius: 2.4,
     /**
      * A little over half the tank's volume: 5.4 m of wheelbase and body, 2.5
-     * wide, and 2.5 to the top of the gun ring. The height is the same kind of
-     * over-statement the tank's is and for the same reason — the ring and the
-     * gun on it are INSIDE the box, so a round aimed at the gunner marks the
-     * vehicle rather than passing over a collider that stopped at the roof.
+     * wide, and 2.5 to the top of the weapon station. The height is the same
+     * kind of over-statement the tank's is and for the same reason — the
+     * station on the roof is INSIDE the box, so a round aimed at the gun marks
+     * the vehicle rather than passing over a collider that stopped at the roof.
      */
     hull: { length: 5.4, width: 2.5, height: 2.5 },
     /**
-     * Where the gunner's head is: standing on the bed floor behind a ring whose
-     * trunnion is at 2.18 (`TruckModel`'s `RING_Y`), which puts it just inside
-     * the top of the collider box rather than just above it as the tank's is.
+     * What bots test line of sight to and aim at, and on this vehicle that is
+     * the WEAPON STATION rather than a man: the body is closed and the gun on
+     * the roof is remote, so 2.35 is the cradle and the shield — sitting on a
+     * roof at 1.96 with a trunnion at 2.24 (`TruckModel`), just inside the top
+     * of the collider box rather than just above it as the tank's is.
      *
-     * It matters more here than it does on a tank, because it is what bots test
-     * line of sight to and aim at — and on this vehicle the man they are aiming
-     * at is genuinely standing in the open, where the tank's commander is a
-     * hatch.
+     * It matters more here than it does on a tank, because a station standing
+     * clear of a low roof is genuinely exposed where the tank's commander is a
+     * hatch in three feet of armour — which is the same trade `resist.bullet`
+     * makes one field down.
      */
     cupolaHeight: 2.35,
     drive: {
@@ -1792,7 +1794,12 @@ export const vehicles = {
       traverseAccel: 14,
       elevationAccel: 12,
       settleTime: 0.035,
-      /** Depresses less and elevates nearly as far: a ring on a flat bed, aimed down streets. */
+      /**
+       * Depresses less and elevates nearly as far: a station on a low roof,
+       * aimed down streets. The depression is also a CLEARANCE — at -0.16 rad
+       * the muzzle passes 6.7 cm over the roof it is standing on, and
+       * `TruckModel`'s note on `mgMuzzle` is where that is measured.
+       */
       pitchMin: -0.16,
       pitchMax: 0.7,
       /** More per round than the cupola's — a heavier gun on a much lighter vehicle. */
