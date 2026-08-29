@@ -1189,11 +1189,77 @@ branch count at nine instead of thirty:
 | what you would expect to branch | what it actually is |
 | --- | --- |
 | pedal yaw instead of tracked steering | `turnAtSpeed: 1` and `steerAtRest: 1`, which collapse `steerAuthority` to a flat `turnRate` at every speed — and a flat yaw authority at every speed IS a tail rotor. Not one line changed |
-| the pedal linkage | `drive.steerRate`, through `steerTo` |
+| the pedal linkage | `drive.steerRate`, through `steerTo` — including the LOOK steering below, which derives a pedal position and then goes through the ordinary linkage |
 | how far it may bank | `drive.tiltLimit` |
 | how fast the attitude answers | `drive.airTiltRate`, through `leanToGround` — the tank states 1.1 because nothing off the ground can change its attitude, the helicopter states 4.5 because its attitude IS the control |
 | the collision shape | `drive.collideRadius` = the ROTOR RADIUS, 5.2. So the narrowest gap it fits through is 10.4 m, and Sarab's seven-metre alleys are closed to it by the DRAWING rather than by a rule |
 | the skids' flex on touchdown | `flexHeave`, `flexSuspension` and `jolt`, unmodified |
+
+### The nose follows the EYE, and A/D is the other axis of the cyclic
+
+**A flying hull is steered by where the pilot is LOOKING, and a driving one by
+the stick.** That is the one control scheme in the game that differs by kind,
+and it costs no branch outside `flyStep`, because both halves of it are
+`DriveInput` fields the caller already writes for every vehicle without knowing
+which it is feeding — the same bargain `lift` makes.
+
+| `DriveInput` | on a hull that drives | on one that flies |
+| --- | --- | --- |
+| `aimYaw` | where the TURRET is asked to point | where the HULL is asked to point |
+| `steer` | hull yaw | lateral translation |
+
+`aimYaw` is `VehicleCamera.yaw` — the chase camera's own free-look, which
+follows nothing and so cannot form a loop with a hull that follows it. Spending
+it on the hull costs nothing that was being used: a helicopter's `spec.gun` is
+null, so `turretYaw` is welded to the hull and the field it was carrying had no
+turret to reach.
+
+**What is derived is a PEDAL, not a heading**, which is what keeps the rest of
+the file out of it. `flyStep` takes `angleDelta(yaw, aimYaw) / flight.yawBand`
+clamped to ±1 and hands it to the ordinary `steerTo` linkage, so
+`steerAuthority`, `yawRate`, the coordinated bank and the whips are the lines
+they always were. Proportional inside the band and full pedal outside it, for
+`slewRate`'s reason one axis down: a hull yawing at 77 deg/s that arrived at a
+standstill in one frame would be the same lie about a mass that the turret's
+old rate limit was. **Measured: a 90-degree change of view is a 1.68 s swing
+landing on the bearing to 0.0 degrees, with no overshoot** — the settle is
+`turnRate`-bound rather than band-bound, so that number is where to go if it
+should feel quicker.
+
+**The gate is `seats[DRIVER]` and it is the one non-obvious line.** An unmanned
+hull is stepped with `IDLE`, whose `aimYaw` is 0 — which, unlike a centred
+stick, is a MEANING: due north. Without the gate a machine whose pilot had just
+stepped out would swing onto north for as long as its rotor took to wind down,
+which is the one window where `power` is non-zero with nobody aboard. Measured
+after: 0.0 degrees of yaw over four seconds of spool-down.
+
+**The strafe is `tiltPitch` with the axis changed.** `steer` commands a roll
+(`flight.cyclicRoll`, ~14 degrees at full stick) and the thrust comes off that
+roll exactly as the forward thrust comes off the nose attitude and off the same
+`thrustPerTilt` — a disc has no opinion about which way it has been tipped. It
+is an attitude and not a speed, so letting go rolls level and the machine
+coasts out of it on drag. Measured from a settled hover: **18.46 m in three
+seconds, 10.96 m/s of lateral, ±14.3 degrees of roll, symmetric to the
+centimetre, and 0.0 degrees of yaw drift.**
+
+**Only the COMMANDED half of the roll has thrust behind it, and the coordinated
+half deliberately does not.** Taking thrust off the whole drawn angle is the
+more physical reading and it is the wrong one here, because with look-steering
+the coordinated bank is made of the pilot's *view*: `lateral` is `airspeed *
+yawRate` and `yawRate` is now how fast the eye is sweeping, so a bank that
+pushed would mean **turning your head translates the aircraft** — a player
+glancing at a flag would slide toward it. The commanded half is the half
+somebody asked for, and it is the half that moves the machine. The drawn roll
+is the sum of the two, clamped to `drive.tiltLimit` — which is what that field
+has always meant on this kind and until now bounded nothing, the flying branch
+writing `groundRollTarget` directly and skipping `standOnGround`'s own clamp.
+A full strafe inside a hard turn was 41 degrees of roll on a machine whose
+stated limit is 34.
+
+**The ground kinds are untouched, and that is measured rather than argued**:
+twenty seconds of scripted driving — throttle, steer, lift and a sweeping
+`aimYaw` — hashed over position, yaw, speed, turret bearing and drawn attitude
+is bit-identical for the tank and the truck with the change and without it.
 
 ### The collective asks for a RATE, and that is the one non-obvious choice
 
@@ -1221,6 +1287,23 @@ follows it. A machine doing 6 m/s through a 77 deg/s turn reported 2 and banked
 three degrees, which reads as a vehicle sliding flat round a corner. What a turn
 actually pulls is `|v| * omega`, so the bank is taken off `hypot(vel.x, vel.z)`.
 A cruising turn banks 8 degrees against a 26-degree limit.
+
+**…and it is NEGATED onto the drawn node, which is the half that was wrong for
+as long as the magnitude was right.** `DriveInput.steer` is positive to the
+RIGHT and forward is `(sin yaw, cos yaw)`, so a positive `yawRate` sweeps the
+nose to the hull's own right and `lateral` is positive in a right turn — but a
+positive Z rotation raises local **+X**, which IS that right side, measured at
++29.6 cm of right-side rise per 0.3 rad. Unnegated, the machine rolled AWAY from
+its turn: 0.42 rad of left bank through a hard right, which reads as being
+thrown out of a corner rather than leaning into one. It is held in the DRAWN
+sense for `tiltPitch`'s reason and stated the same way — `bankPerLateral` is a
+positive magnitude in the spec, exactly as `cyclicPitch` is, and which way it is
+spent belongs to `flyStep`.
+
+**A hull on the ground never had this**, which is why only a flying one looked
+wrong: `standOnGround` measures `right - left` off the ground itself, so its
+`groundRollTarget` carries the convention rather than restating it, and
+`grounded` is what picks between the two.
 
 `Vehicle.vel` exists for the same reason: the horizontal velocity used to be
 rebuilt at the move as `(sin yaw, 0, cos yaw) * speed`, which is the same vector

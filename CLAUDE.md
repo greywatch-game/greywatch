@@ -806,6 +806,20 @@ hover is then an EQUALITY rather than a decision, the plank is a landing floor,
 and `jolt` is the arrival the skids spend. Gravity was never the only vertical
 acceleration; it was only the only one anything had ever produced.
 
+**A flying hull is steered by the LOOK and a driving one by the stick, and that
+one difference of scheme costs no branch outside `flyStep`** — both halves are
+`DriveInput` fields `Game.updateDriver` writes for every kind without knowing
+which it is feeding, as it already does for `lift`. **`aimYaw` points the TURRET
+on a hull that drives and the HULL on one that flies** (there is no turret to
+spend it on), and **`steer` is hull yaw on the one and LATERAL TRANSLATION on
+the other**. What `flyStep` derives from the look is a PEDAL and not a heading,
+so `steerTo`, `steerAuthority` and the bank are the lines they always were.
+**Two rules a change here must not undo**: the yaw chase is gated on
+`seats[DRIVER]`, because `IDLE.aimYaw` is 0 and 0 is a bearing rather than a
+centred stick; and only the COMMANDED half of the roll has thrust behind it,
+because the coordinated half is made of the pilot's view and a bank that pushed
+would mean turning your head translates the aircraft.
+
 **The HELICOPTER is the third trade and it is bought with FRAGILITY**: 32 m/s
 in a straight line over anything, for 340 points at fourteen times the tank's
 small-arms damage, no cannon at all, and a 10.4 m rotor disc

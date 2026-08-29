@@ -160,8 +160,25 @@ export interface VehicleSpec {
     readonly ceilingBand: number;
     /** Radians of nose-down at full cyclic — the PICTURE and the thrust vector at once. */
     readonly cyclicPitch: number;
+    /**
+     * Radians of bank at full LATERAL cyclic — the same statement
+     * `cyclicPitch` makes about the other axis of the same stick, and the
+     * picture and the thrust vector at once for the same reason.
+     */
+    readonly cyclicRoll: number;
     /** How fast the attitude answers the stick, 1/s. */
     readonly cyclicRate: number;
+    /**
+     * Radians of look error at which the tail rotor is at FULL pedal.
+     *
+     * A flying hull is steered by where the pilot is LOOKING rather than by a
+     * stick, so what would have been the driver's steer is derived from the
+     * angle the hull still has to turn through to face the chase camera. This
+     * is the width of the proportional band on that error: outside it the
+     * machine yaws at the whole of `drive.turnRate`, inside it the pedal eases
+     * off, so the hull lands on the look rather than at it.
+     */
+    readonly yawBand: number;
     /** Radians of bank per m/s^2 of lateral, and where the bank stops. */
     readonly bankPerLateral: number;
     readonly bankLimit: number;
@@ -2182,7 +2199,22 @@ export const vehicles = {
       ceilingBand: 8,
       /** ~17 degrees of nose-down at full cyclic. The picture and the thrust at once. */
       cyclicPitch: 0.3,
+      /**
+       * ~14 degrees of bank at full lateral cyclic — 30 * sin(0.25) = 7.4
+       * m/s^2 sideways against the 8.9 the nose gets, which is deliberate:
+       * a strafe is the second axis of this stick and not the first, and a
+       * machine that slid sideways as readily as it flies forward reads as
+       * a hovering camera rather than as an aircraft.
+       */
+      cyclicRoll: 0.25,
       cyclicRate: 3.4,
+      /**
+       * ~20 degrees. Against `turnRate`'s 1.35 rad/s that is a time constant
+       * of 0.26 s over the last of a turn, which is quick enough that the nose
+       * feels bolted to the view and slow enough that a flick of the mouse is
+       * a machine swinging round rather than a hull teleporting onto a bearing.
+       */
+      yawBand: 0.35,
       /** A coordinated turn: it rolls into one, and how far is the lateral it is making. */
       bankPerLateral: 0.022,
       /** ~26 degrees, inside `drive.tiltLimit` with the nose attitude on top. */

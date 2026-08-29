@@ -228,7 +228,19 @@ import type { VehicleSpec } from "../config/vehicles";
 export interface DriveInput {
   /** -1 full reverse .. +1 full ahead. */
   throttle: number;
-  /** -1 left .. +1 right, of hull yaw. */
+  /**
+   * -1 left .. +1 right — of hull YAW on a hull that drives, and of LATERAL
+   * TRANSLATION on one that flies.
+   *
+   * **The one field on this interface that means two things, and the split is
+   * `flight` rather than a caller having to know.** A tracked hull is steered
+   * by this and points where it is steered; a flying one points where the
+   * PILOT IS LOOKING (`aimYaw`, below), which leaves this axis with no yaw
+   * left to command and makes it the lateral half of the cyclic instead — the
+   * machine tips its disc sideways and goes that way. `Game.updateDriver`
+   * writes `input.moveX` here for every kind and has no idea which it is
+   * feeding, exactly as it does for `lift`.
+   */
   steer: number;
   /**
    * The COLLECTIVE: -1 down .. +1 up.
@@ -240,7 +252,16 @@ export interface DriveInput {
    * it on.
    */
   lift: number;
-  /** Where the gun is being ASKED to point. The turret walks to it at its own rate. */
+  /**
+   * Where the gun is being ASKED to point. The turret walks to it at its own
+   * rate.
+   *
+   * **On a hull that FLIES it is what the HULL walks to instead**, and it is
+   * the same number doing both jobs rather than a second field: this is the
+   * chase camera's own yaw, a helicopter has no turret to spend it on
+   * (`spec.gun` is null and `turretYaw` is welded to the hull), and "the nose
+   * follows the eye" is the whole of that kind's steering. See `flyStep`.
+   */
   aimYaw: number;
   aimPitch: number;
 }
@@ -792,8 +813,30 @@ export class Vehicle implements Combatant, RayHull {
   private rotorRun = 0;
   /** What was last drawn, so a turning disc opens the `stirred` gate. */
   private rotorShown = 0;
-  /** The attitude the CYCLIC is commanding, radians. Nose-up positive. */
+  /**
+   * The attitude the CYCLIC is commanding, radians, in the DRAWN sense — so
+   * positive `tiltPitch` is nose-DOWN and positive `cyclicRoll` raises the
+   * hull's own RIGHT side. Both are held that way so that the picture and the
+   * thrust taken off them cannot come apart; `flyStep` has the measurements.
+   *
+   * (This said "nose-up positive" for as long as it existed and was wrong the
+   * whole time — `standOnGround` writes `groundPitchTarget = -rise` from a
+   * nose-up `rise`, and the flying branch assigns `tiltPitch` to that same
+   * field with no negation.)
+   */
   private tiltPitch = 0;
+  private cyclicRoll = 0;
+  /**
+   * The coordinated-turn bank, which is a PICTURE and has no thrust behind it
+   * — see `flyStep`, where the reason is that this half is made of the pilot's
+   * look rather than of anything they asked the machine to do.
+   */
+  private bankRoll = 0;
+  /**
+   * What is actually DRAWN: `cyclicRoll + bankRoll`, clamped. Held as a field
+   * rather than recomputed because the airborne branch of `update` hands it
+   * straight to `groundRollTarget`.
+   */
   private tiltRoll = 0;
   /**
    * The hull node's attitude as it was LAST frame, and how fast it is turning.
@@ -1122,6 +1165,8 @@ export class Vehicle implements Combatant, RayHull {
     this.rotorRun = 0;
     this.rotorShown = 0;
     this.tiltPitch = 0;
+    this.cyclicRoll = 0;
+    this.bankRoll = 0;
     this.tiltRoll = 0;
     this.lastTarget = pos.y + t.hull.height / 2;
     this.grounded = true;
@@ -1635,8 +1680,33 @@ export class Vehicle implements Combatant, RayHull {
         ? 0
         : (this.rotor - f.liftFloor) / (1 - f.liftFloor);
 
-    // --- the pedals ---
-    const steer = this.steerTo(d.steer, dt);
+    // --- the pedals, and on this kind they are the LOOK ---
+    // **The nose follows the eye.** A tracked hull is steered by a stick and a
+    // flying one by where the pilot is pointing the chase camera: `d.aimYaw`
+    // is `VehicleCamera.yaw`, which the tank already sends for the turret to
+    // walk toward and which a machine with no turret at all had nothing to do
+    // with until now. What is derived here is the pedal that WOULD have
+    // produced the turn the look is asking for, so everything downstream —
+    // `steerTo`'s linkage, `steerAuthority`, `yawRate`, the coordinated bank,
+    // the whips — is the line it always was and none of it has heard of this.
+    //
+    // Proportional inside `yawBand` and full pedal outside it: a rate limit
+    // alone lands ON the bearing and stops dead, which is `slewRate`'s whole
+    // argument about the turret next door made at a tenth of the length,
+    // because a hull yawing at 77 deg/s arriving at a standstill in one frame
+    // is the same lie about a mass as a turret doing it.
+    //
+    // **Gated on somebody being AT the controls, and that gate is the one
+    // non-obvious line here.** `IDLE` is what an unmanned hull is stepped
+    // with, and its `aimYaw` is 0 — which unlike a centred stick is a
+    // MEANING: due north. Without this a machine whose pilot has just stepped
+    // out would swing onto north for the second and a half its rotor takes to
+    // wind down, on the one path where `power` is still non-zero with nobody
+    // aboard. A hull nobody is flying is not being asked to point anywhere.
+    const wantSteer = this.seats[DRIVER]
+      ? Math.max(-1, Math.min(1, angleDelta(this.yaw, d.aimYaw) / f.yawBand))
+      : 0;
+    const steer = this.steerTo(wantSteer, dt);
     const yawRate = steer * this.steerAuthority() * power;
     this.yaw += yawRate * dt;
     this.body.rotation.y = this.yaw;
@@ -1672,22 +1742,82 @@ export class Vehicle implements Combatant, RayHull {
     // degrees, which reads as a vehicle sliding flat round a corner. What a
     // turn actually pulls is `|v| * omega`, and that is what a wing is holding
     // up against.
+    //
+    // **It is NEGATED, and that is the DRAWN sense rather than a correction on
+    // top of one** — the same statement `tiltPitch` makes twenty lines above,
+    // got wrong here in the mirror image. `DriveInput.steer` is positive to the
+    // RIGHT and forward is `(sin yaw, cos yaw)`, so a positive `yawRate` sweeps
+    // the nose toward the hull's own right and `lateral` comes out positive in
+    // a right turn — but a positive Z rotation raises local +X, which IS that
+    // right side, measured at +29.6 cm of right-side rise per 0.3 rad. So the
+    // unnegated form rolled AWAY from the turn: 0.42 rad of left bank through a
+    // hard right, which reads as a machine being thrown out of its own turn
+    // rather than leaning into it. `standOnGround` gets the same convention
+    // right two hundred lines below by measuring `right - left` off the ground
+    // itself, which is why a helicopter standing on a slope has always looked
+    // correct and only a FLYING one did not. `bankPerLateral` stays a positive
+    // magnitude in the spec exactly as `cyclicPitch` does; which way it is
+    // spent is this file's to know.
     const airspeed = Math.hypot(this.vel.x, this.vel.z);
     const lateral = airspeed * yawRate;
     const wantBank = Math.max(
       -f.bankLimit,
-      Math.min(f.bankLimit, lateral * f.bankPerLateral),
+      Math.min(f.bankLimit, -lateral * f.bankPerLateral),
     );
-    this.tiltRoll +=
-      (wantBank - this.tiltRoll) * Math.min(1, dt * f.cyclicRate);
+    this.bankRoll +=
+      (wantBank - this.bankRoll) * Math.min(1, dt * f.cyclicRate);
+
+    // --- the LATERAL cyclic, which is the other half of the same stick ---
+    // With the nose bolted to the look there is no yaw left for `d.steer` to
+    // mean, so it means what the other axis of a cyclic means: the disc tilts
+    // sideways and the machine goes that way. This is `tiltPitch` again with
+    // the axis changed — an ATTITUDE and not a speed, so letting go rolls back
+    // to level and the machine coasts out of the strafe on drag alone — and it
+    // is held in the DRAWN sense for the same reason and with the same sign
+    // measured the same way: a positive Z rotation raises the hull's own right
+    // side, so strafing RIGHT is a NEGATIVE roll.
+    const wantRoll = -d.steer * f.cyclicRoll;
+    this.cyclicRoll +=
+      (wantRoll - this.cyclicRoll) * Math.min(1, dt * f.cyclicRate);
+
+    // **The drawn roll is the sum and only the COMMANDED half has thrust
+    // behind it**, which is a decision rather than an oversight and the one
+    // place this model deliberately lets the picture carry more than the
+    // physics. A disc tilted by theta really does push `T sin(theta)` that
+    // way, so taking the thrust off the whole angle is the more physical
+    // reading — and it is the wrong one HERE, because the coordinated half is
+    // now made of the pilot's LOOK: `lateral` is `airspeed * yawRate` and
+    // `yawRate` is how fast the view is sweeping, so a bank with thrust behind
+    // it would mean turning your head translates the aircraft. A player
+    // glancing at a flag would slide toward it. The commanded half is the
+    // half somebody asked for, and it is the half that moves the machine.
+    //
+    // Clamped to `drive.tiltLimit`, which is what that field has always meant
+    // on this kind and until now bounded nothing: the flying branch writes
+    // `groundRollTarget` directly and skips `standOnGround`'s own clamp, so a
+    // full strafe inside a hard turn was 0.71 rad — 41 degrees — of roll on a
+    // machine whose stated bank limit is 34.
+    this.tiltRoll = Math.max(
+      -c.tiltLimit,
+      Math.min(c.tiltLimit, this.cyclicRoll + this.bankRoll),
+    );
 
     // --- thrust ---
     // The disc's thrust is along the hull's own UP, so tilting it by theta puts
-    // `T sin(theta)` along the nose. The vertical share is the collective's and
-    // is spent below; what is taken here is the horizontal alone.
+    // `T sin(theta)` along the tilt. The vertical share is the collective's and
+    // is spent below; what is taken here is the horizontal alone, on BOTH axes
+    // of the stick and off the same constant, because a disc has no opinion
+    // about which way it has been tipped.
+    //
+    // Forward is `(sin yaw, cos yaw)` and right is therefore
+    // `(cos yaw, -sin yaw)` — the same pair `standOnGround` lays its contacts
+    // out on. The lateral term is negated because `cyclicRoll` is the DRAWN
+    // angle and a positive one raises the right side, so a right-side-down
+    // roll has to come out as thrust to the right.
     const thrust = f.thrustPerTilt * Math.sin(this.tiltPitch) * power;
-    this.vel.x += Math.sin(this.yaw) * thrust * dt;
-    this.vel.z += Math.cos(this.yaw) * thrust * dt;
+    const side = f.thrustPerTilt * Math.sin(-this.cyclicRoll) * power;
+    this.vel.x += (Math.sin(this.yaw) * thrust + Math.cos(this.yaw) * side) * dt;
+    this.vel.z += (Math.cos(this.yaw) * thrust - Math.sin(this.yaw) * side) * dt;
 
     // Drag, stepped EXACTLY and not with the frame-lerp idiom: this velocity
     // moves the hull a gunner is laying a gun from, so it is somewhere bullets
