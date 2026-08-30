@@ -28,6 +28,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/multiplayer.md`](docs/multiplayer.md) | anything under `server/` or `src/net/`, the roster, the collision bake, the regions, the two images and the proxy in front of them |
 | [`docs/game.md`](docs/game.md) | extracting anything from `Game.ts`, `installMap`, what a frame owes |
 | [`docs/build.md`](docs/build.md) | adding a generated asset, `vite.config.ts`, anything importing from `@babylonjs/*` |
+| [`docs/profiling.md`](docs/profiling.md) | the frame profiler, a new phase, anything measuring a frame |
 
 Three more companions carry what is looked up rather than reasoned about.
 **`FILES.md`** is the module map, one line per file — read it to find the right
@@ -1097,6 +1098,53 @@ ring is the boundary**: it is built at `ControlPointDef.radius`, which is what
 → **[`docs/rendering.md`](docs/rendering.md)** for the ring's surface sampling
 and the markers that fade themselves out, and
 **[`docs/multiplayer.md`](docs/multiplayer.md)** for the score on the wire.
+
+### Measuring a frame
+
+**The frame profiler SHIPS, and that is the whole feature rather than a
+compromise.** The frame is draw-call bound on hardware nobody here owns, and
+the devices worth measuring — a phone on a home screen, a tablet, somebody
+else's laptop — are exactly the ones that will never run a dev server or open a
+DevTools window. `FrameProfile` is therefore armed by a **setting**
+(`Settings.profiler`) or by **`?profile`**, never by `import.meta.env.DEV`;
+disarmed, every entry point returns on its first line and the ring is not
+allocated. Measured cost while armed, three paired runs: **under 1.5% of frame
+rate**, of which the span calls are ~5 us a frame (0.22 us a pair, ~22 pairs) and
+the rest is `SceneInstrumentation`'s observers. The probes that say so run on
+the DEVICE and land in every capture.
+
+**It records CONTINUOUSLY and the capture reaches BACKWARDS.** You cannot watch
+a graph while playing a first-person shooter with two thumbs, so the ring holds
+`CONFIG.profiling.frames` (3,000 — 50 s at 60 Hz, 12.5 at 240) and the gesture
+is pressed AFTER the hitch: `F3` on a keyboard, the chip's buttons on glass.
+**Nothing allocates while it is recording** — no per-frame object, no label
+string, no closure — because `FINDINGS.md` §1's leading suspect for the hitch
+this exists to find is GC, and a profiler that allocates per frame manufactures
+the bug it was built to catch.
+
+**The brackets live in `Game.ts` and nowhere else.** `tick`, `updateGameplay`,
+`updateNetWorld` and `updateWorld` are where the frame's order is already
+declared, with the argument for it written down, so **the phase list IS that
+order** and no system had to be taught the profiler exists. A phase is a name in
+`PHASES` and a `begin`/`end` pair; the ring, the report and the trace are all
+sized and labelled off that list. The spans NEST and do not partition — read a
+report as an attribution, exactly as `buildProfile`'s does for the build.
+
+**Two limits, and both are recorded into every capture rather than left to
+prose.** The clock is quantised to **100 us** (Chrome, absent cross-origin
+isolation, which `docker/default.conf.template` does not set) while most phases
+cost under 120 us — so a mean over a window converges but a small phase's
+PERCENTILE is quantisation noise, and `clock.belowGrain` names the rows that
+applies to. And the frame is draw-call bound, so the JS spans attribute the
+third that was never the problem: `SceneInstrumentation`'s draw count, mesh walk
+and render-target time are carried beside them for the rest. **GPU time is not
+here** — Babylon can read it, but only if `timestamp-query` is requested at
+device creation and `main.ts` calls `initAsync()` with no descriptor.
+
+→ **[`docs/profiling.md`](docs/profiling.md)** — the phases and what each one
+covers, how to take and read a capture, the trace export and Perfetto, what
+`frame`'s own share means, the three-rung clipboard ladder, and the two levers
+(cross-origin isolation, `timestamp-query`) that are deliberately not in it.
 
 ### The installable app
 

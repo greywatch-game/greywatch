@@ -97,6 +97,29 @@ you are on before you believe anything else in this section.
   does not show up in the call it comes from: summed over a whole round,
   `createRenderPipeline` accounts for 0.6 ms, because Dawn compiles behind the
   call and the stall lands on first use.
+- **There is a frame profiler in the page and it SHIPS, so a script does not
+  have to wrap anything to get a phase breakdown.** Arm it with `?profile` —
+  never by writing the setting, which lives in `localStorage` a fresh profile
+  does not have — and read it back with `window.__profile.capture("x", false)`.
+  It records the last 3,000 frames continuously, so a script takes the capture
+  AFTER whatever it was doing rather than starting and stopping one.
+  `docs/profiling.md` is the contract. Three things to know before believing a
+  number out of it: the clock is quantised to **100 us** here (no cross-origin
+  isolation), so `clock.belowGrain` names the rows whose percentiles are grid
+  noise and whose means are still sound; the `frame` SPAN is the tick while
+  `frame.mean` in the summary is the wall clock, so a share near 50% is the
+  browser holding half the interval and not a bug; and **the profiler costs
+  under 1.5% of frame rate armed** (0.54/0.72/1.35% over three paired runs on
+  this box), which is inside the run-to-run spread of the disarmed side itself —
+  so if you are pricing something at that scale, take the disarmed reading in the
+  same session rather than trusting a number from another one.
+- **Counting `requestAnimationFrame` callbacks beats `Engine.getFps` for
+  anything under a percent.** That readout is a 30-frame rolling mean and cannot
+  see a fractional-percent change; a rAF count over eight seconds is what
+  resolved the profiler's own overhead at all (128.3/128.4/128.8 armed against
+  129.1/129.2/130.6 disarmed). Note which side moved: the ARMED readings agree
+  to 0.4% and the disarmed ones spread by 1.2%, so three paired runs was the
+  minimum that said anything.
 - **Chromium caps the render loop unless you take the limiter off.** Without
   `--disable-frame-rate-limit --disable-gpu-vsync` Hollowmere reads 103 fps
   because that is the ceiling rather than the cost; with them, 132–176. Say

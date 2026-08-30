@@ -77,6 +77,7 @@ import { Bot } from "../entities/Bot";
 import { difficultyNames } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
+import { FrameProfile, P } from "./FrameProfile";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { RegionBook } from "../net/RegionBook";
@@ -160,6 +161,7 @@ import { SettingsScreen } from "../ui/SettingsScreen";
 import { LobbyScreen } from "../ui/LobbyScreen";
 import { Minimap } from "../ui/Minimap";
 import { TouchControls } from "../ui/TouchControls";
+import { ProfileChip } from "../ui/ProfileChip";
 import { enterFullscreenOnTouch } from "../pwa/register";
 import { CameraSystem } from "./CameraSystem";
 import { InputManager } from "./InputManager";
@@ -285,6 +287,21 @@ export class Game {
    * out like every other screen's.
    */
   private touch: TouchControls;
+  /**
+   * Where this frame's milliseconds went, if anybody asked.
+   *
+   * A `FrameProfile` and not a system: it is imported by nothing, it decides
+   * nothing, and every one of the ~26 spans below is a pair of calls this file
+   * makes around a step it already sequences. That is the whole reason the
+   * brackets live HERE — `tick`, `updateGameplay` and `updateWorld` are where
+   * the frame's order is declared, with the argument for it written down, so
+   * the phase list is that order by construction and no system had to be
+   * taught it exists. Disarmed (the default), each call returns on its first
+   * line.
+   */
+  private readonly prof = new FrameProfile();
+  /** The profiler's corner of the HUD. Up only while the ring is recording. */
+  private profChip: ProfileChip;
   private sfx: Sfx;
   private mapBuilder: MapBuilder;
   private combat: CombatSystem;
@@ -998,6 +1015,9 @@ export class Game {
     this.lobbyScreen = new LobbyScreen();
     this.minimap = new Minimap();
     this.touch = new TouchControls();
+    // After the HUD like every other thing on `#hud`, and before
+    // `applySettings` below, which is what may arm it on a reload.
+    this.profChip = new ProfileChip();
     this.lighting = new LightingSystem();
     this.atmosphere = new Atmosphere(this.scene);
     // `mats` is not for building materials here — both systems own their own
@@ -1099,6 +1119,17 @@ export class Game {
     this.showMenu();
     // Debug/test handle (used by automated smoke tests).
     (window as unknown as { __celshock: Game }).__celshock = this;
+    // The profiler's own handle, beside it and for the same reason — but this
+    // one SHIPS, because the whole point of the instrument is the devices that
+    // will never run a dev server. It is the instrument itself rather than a
+    // method on `Game`: a script wants `capture()`, `trace()` and `last()`,
+    // and none of those is anything to do with the game.
+    (window as unknown as { __profile: FrameProfile }).__profile = this.prof;
+    // `?profile` arms it before the first frame is drawn. The setting is in
+    // `localStorage`, which a fresh browser profile and every smoke script
+    // start without — so this is the only way in that does not require a visit
+    // to the settings screen first.
+    if (new URLSearchParams(location.search).has("profile")) this.setProfiling(true);
     this.joinFromUrl();
     this.engine.runRenderLoop(() => this.tick());
   }
@@ -1602,6 +1633,17 @@ export class Game {
       window.setTimeout(() => this.applyRenderScale(), 300);
     });
 
+    // The profiler's capture key, and it is deliberately NOT behind the DEV
+    // gate below: under a pointer lock the chip's buttons cannot be clicked at
+    // all, so on every desktop this is the only way to take a capture — and a
+    // production build is exactly where one is worth taking. It costs a
+    // comparison per keydown while the profiler is off.
+    window.addEventListener("keydown", (e) => {
+      if (e.code !== "F3" || !this.prof.armed) return;
+      e.preventDefault();
+      this.profChip.keep();
+    });
+
     // The map editor is a development tool: the whole of src/editor is behind
     // a dynamic import so none of it reaches a production bundle.
     if (import.meta.env.DEV) {
@@ -1622,6 +1664,13 @@ export class Game {
    * they are bound to is thrown away and rebuilt around them.
    */
   private wireScreens(): void {
+    // The profiler's chip asks for a report rather than being handed the ring:
+    // the instrument is this file's, the clipboard and the download are the
+    // chip's, and neither reaches into the other. `reason` is carried into the
+    // capture so a file on a desktop says how it was taken.
+    this.profChip.onCapture = (full) =>
+      this.prof.capture(full ? "save" : "keep", full);
+    this.profChip.onTrace = () => this.prof.trace();
     this.overlayScreen.onDifficulty = (tier) => this.setDifficulty(tier);
     this.overlayScreen.onMap = (index) => this.setMap(index);
     this.overlayScreen.onOpenLoadout = () => this.openLoadout();
@@ -2034,6 +2083,7 @@ export class Game {
   /** Pushes every setting at whatever owns it. Called on load and on change. */
   private applySettings(): void {
     this.hud.setFpsVisible(this.settings.fpsCounter);
+    this.setProfiling(this.settings.profiler);
     this.applyRenderScale();
     this.setMotionBlurEnabled(this.settings.motionBlur);
     // After the blur, and that is the order rather than a preference: the
@@ -2056,6 +2106,30 @@ export class Game {
       this.settings.stickSensitivity,
       this.settings.touchSensitivity,
     );
+  }
+
+  /**
+   * Arms or disarms the frame profiler, and puts its chip up or takes it down.
+   *
+   * The two are one call because they are one fact: the chip is the only sign
+   * that the ring is recording, and a profiler running with nothing on screen
+   * to say so is a megabyte and ~26 timer reads a frame that nobody remembers
+   * switching on.
+   *
+   * Reached from `applySettings` (so a stored "on" survives the reload it
+   * usually takes to reproduce something) and from `?profile` — which is how a
+   * smoke script arms it, since the setting is in `localStorage` and a fresh
+   * profile has none.
+   */
+  private setProfiling(on: boolean): void {
+    if (on === this.prof.armed) return;
+    if (on) {
+      this.prof.arm(this.scene);
+      this.prof.setMap(this.mapDef.id);
+    } else {
+      this.prof.disarm();
+    }
+    this.profChip.setArmed(on);
   }
 
   /**
@@ -2439,14 +2513,28 @@ export class Game {
   }
 
   private tick(): void {
+    // First line and last line: `frame` is the span every other one sits
+    // inside, and it is opened here rather than by `begin` so that the table of
+    // open spans is cleared in the same breath. A span left open by an early
+    // return anywhere below is therefore never read as the next frame's.
+    this.prof.beginFrame();
     const real = this.engine.getDeltaTime() / 1000;
     const dt = Math.min(real, 0.05);
+    this.prof.begin(P.input);
     this.input.update();
+    this.prof.end(P.input);
     // Every state, including the ones that simulate nothing: the readout is an
     // instrument, and a frame rate that stops being reported the moment you
     // open a menu is a frame rate you cannot investigate. It takes the real
     // delta rather than the clamped one — see `HUD.setFps`.
     this.hud.setFps(this.engine.getFps(), real);
+    // Beside the readout above and on the same terms: every state, because a
+    // hitch on the deploy screen is still a hitch and a ring that stopped
+    // filling the moment a menu opened would be a ring nobody could trust.
+    // Behind `armed` because the chip is not on screen otherwise.
+    if (this.prof.armed) {
+      this.profChip.update(real, this.prof.seconds, this.prof.hitchCount);
+    }
 
     // A round running without you, drawn under whatever you have on screen —
     // every state that owes it, asked once. Before the switch rather than after,
@@ -2455,7 +2543,9 @@ export class Game {
     // inside four of them, because that was the arrangement nothing but prose
     // held together. Offline, and in every state that is either IN the fight or
     // has none behind it, this returns on its first line.
+    this.prof.begin(P.roundBehind);
     this.updateRoundBehind(dt);
+    this.prof.end(P.roundBehind);
 
     switch (this.state) {
       case "menu":
@@ -2500,7 +2590,9 @@ export class Game {
         // also chases a lock for it. Both live states owe it, for the same
         // reason the resume gives the lock back to both.
         this.updatePendingLock(dt);
+        this.prof.begin(P.gameplay);
         this.updateGameplay(dt);
+        this.prof.end(P.gameplay);
         break;
       case "dying":
         // Pausable like any other live frame — a death cam is four seconds
@@ -2529,7 +2621,10 @@ export class Game {
     // lot at once on the resume — the same tell, from the other side. So the
     // question is not which screen is up but whether what is under it moves,
     // which is what `worldHeld` answers.
+    this.prof.begin(P.hudDraw);
     this.hud.update(this.worldHeld ? 0 : dt);
+    this.prof.end(P.hudDraw);
+    this.prof.begin(P.post);
     this.post.update(dt);
     this.sky.update(dt);
     // After every state has had its go at the camera, and before the render
@@ -2548,6 +2643,8 @@ export class Game {
     // the pass sees no rotation and stays inert — which is what we want in an
     // authoring tool.
     this.motionBlur.update(this.cameraSys.aimYaw, this.cameraSys.aimPitch);
+    this.prof.end(P.post);
+    this.prof.begin(P.culling);
     // The eye the cel shader fogs and rims against, last of all and in EVERY
     // state, because every state renders and only some of them simulate. It
     // used to be pushed from `updateSceneForCamera` and by hand from the kit
@@ -2573,6 +2670,7 @@ export class Game {
     // the eye rather than over the whole square (`ParticleSpec.volume`). A
     // no-op for every map that states none, which is all of them but one.
     this.atmosphere.update(this.cameraSys.camera.position);
+    this.prof.end(P.culling);
     // The engines of the hulls the player is NOT sitting in, pushed from here
     // for the shader's-eye reason and with the opposite conclusion: every
     // state renders, only some of them simulate, and the ones that do not owe
@@ -2581,7 +2679,9 @@ export class Game {
     // where nothing moves. After the switch, so it reads the listener the
     // frame has already placed and the positions the fleet has already
     // reached.
+    this.prof.begin(P.audio);
     this.pushHullEngines();
+    this.prof.end(P.audio);
     // In every state too, and AFTER the switch above rather than inside any of
     // its arms: what decides whether the board is up is the state this frame
     // ENDS in, so a frame that deployed the player, killed them or ended the
@@ -2590,7 +2690,9 @@ export class Game {
     // rather than a call every one of those boundaries has to remember.
     this.pushTouchControls();
     this.pushScoreboard();
+    this.prof.begin(P.render);
     this.scene.render();
+    this.prof.end(P.render);
     // AFTER the render, because the render is the thing being waited for: a
     // frame's share of the reflection bake is released from inside
     // `scene.render` and has already been issued by the time this line runs,
@@ -2599,6 +2701,41 @@ export class Game {
     // become one — `loading` simulates nothing and this decides nothing about
     // a world, it only reads a queue and takes a card down. See `bakeWait`.
     if (this.bakeWait) this.updateBakeWait();
+
+    // The frame is closed LAST, after the bake's drain, so `frame` is the whole
+    // of what the render loop did rather than most of it — and after
+    // `scene.render()` in particular, because Babylon's counters are what that
+    // render just did and asking any earlier reports the previous frame's.
+    //
+    // The context is gathered behind `armed` rather than pushed unconditionally
+    // because the bot count is a loop, and a loop over the roster is not
+    // something a disarmed profiler may cost. It is the REAL delta that is
+    // recorded, never the clamped one — a 200 ms hitch is the whole point, and
+    // `dt` has had it taken out.
+    if (this.prof.armed) {
+      const eye = this.cameraSys.camera.position;
+      this.prof.context(eye.x, eye.y, eye.z, this.countAliveBots());
+    }
+    this.prof.endFrame(real * 1000);
+  }
+
+  /**
+   * How many bodies are still up, for a capture's context.
+   *
+   * A plain loop rather than a `filter` or a `reduce`, because it runs once a
+   * frame while the profiler is armed and neither of those is free. It counts
+   * what `BattleSystem` itself would count — `aside` is the skip test every
+   * loop over `bots` owes, and a bot in a tank or on the bench is not a body in
+   * the fight. In a netplay round the roster is somebody else's and the bots
+   * are posed rather than simulated, which is why this can read zero there and
+   * that is the honest answer.
+   */
+  private countAliveBots(): number {
+    let n = 0;
+    for (const bot of this.battle.bots) {
+      if (bot.alive && !this.battle.aside(bot)) n++;
+    }
+    return n;
   }
 
   /**
@@ -3203,6 +3340,13 @@ export class Game {
    */
   private installMap(opts?: BuildOptions): GameMap {
     const { layout, environment } = this.mapDef;
+    // Which map the ring is recording. Here rather than in `setMap` because
+    // this is the one place a map is BUILT, and both doors into it — a round
+    // starting and an editor rebuild — come through here; a capture that named
+    // the map the player last picked rather than the one under their feet
+    // would be wrong in exactly the netplay case (`applyMatchMap`) where it
+    // matters most. A no-op while the profiler is disarmed.
+    this.prof.setMap(this.mapDef.id);
     // The floor comes off `this.floor` rather than off the layout, because it
     // is fetched rather than bundled — see the field, and `MapDef.heights`.
     // Both doors into this method resolve it first; nothing here may wait.
@@ -3869,22 +4013,42 @@ export class Game {
     // here, the view stays on the wreck and the death cam takes it next frame,
     // which is what the cut should look like.
     const driven = this.driving;
-    if (driven) this.updateDriver(dt, driven);
-    else this.updateOnFoot(dt);
+    if (driven) {
+      this.prof.begin(P.driver);
+      this.updateDriver(dt, driven);
+      this.prof.end(P.driver);
+    } else {
+      this.prof.begin(P.onFoot);
+      this.updateOnFoot(dt);
+      this.prof.end(P.onFoot);
+    }
 
-    if (!this.updateWorld(dt)) return;
+    // The span is closed before the early return rather than around it: a frame
+    // that ends the round still spent the time, and `world` reading as "not
+    // entered" on exactly the most interesting frame of a session would be the
+    // wrong kind of missing.
+    this.prof.begin(P.world);
+    const live = this.updateWorld(dt);
+    this.prof.end(P.world);
+    if (!live) return;
 
+    this.prof.begin(P.camera);
     if (driven) this.frameVehicleCamera(dt, driven);
     else this.updateCameraAndLighting(dt);
+    this.prof.end(P.camera);
     // Reads the camera (it fades the markers into the fog wall) but never
     // moves it, so it belongs after the tail above rather than inside it.
+    this.prof.begin(P.zones);
     this.zones.update(
       dt,
       this.conquest.points,
       this.player.team,
       this.cameraSys.camera.position,
     );
+    this.prof.end(P.zones);
+    this.prof.begin(P.hud);
     this.updateHud(dt);
+    this.prof.end(P.hud);
   }
 
   /**
@@ -6114,9 +6278,19 @@ export class Game {
    * running without you.
    */
   private updateNetWorld(dt: number): void {
+    // The same slot names the offline sequence uses, so one report reads the
+    // same way in a match as out of one — a netplay frame is `world` > `net` >
+    // these, and what is MISSING from it (the bots, the flags) is missing
+    // because the authority ran it, which is itself the fact worth seeing.
+    this.prof.begin(P.net);
     this.updateNet(dt);
+    this.prof.end(P.net);
+    this.prof.begin(P.combat);
     this.combat.update(dt);
+    this.prof.end(P.combat);
+    this.prof.begin(P.grenades);
     this.grenades.update(dt);
+    this.prof.end(P.grenades);
     // The armour. It is here rather than in the simulation below for the
     // reason everything else in this method is: none of it decides anything.
     // The hulls are posed from the wire (`NetVehicles`), the one under this
@@ -6128,8 +6302,10 @@ export class Game {
     // frozen in the street behind the card and then snapping across it on the
     // frame the player spawns is the same failure sixteen frozen bodies were.
     if (!this.vehicles.empty) {
+      this.prof.begin(P.vehicles);
       this.syncNetVehicles();
       this.vehicles.update(dt, this.vehicleOrders);
+      this.prof.end(P.vehicles);
       // Posing a hull off the wire is still stepping it, and an engine heard
       // from outside is a position and a speed either way — so a match's
       // armour is as audible as an offline bot crew's, including from behind
@@ -6139,21 +6315,27 @@ export class Game {
     // The local player's own rocket, still flying — the one AT object this
     // client owns a copy of. Everything else about the kit is drawn by
     // `NetOrdnance` off the wire, and neither can hurt anybody.
+    this.prof.begin(P.antiTank);
     this.antiTank.update(dt);
+    this.prof.end(P.antiTank);
     // The engine BEFORE its three clients, always. A corpse tested for stillness
     // or a shard aged before its own step would be reading last frame's
     // velocities — and this is the only place the world is stepped:
     // `scene.physicsEnabled` is false precisely so that a pause, the deploy map
     // and the menu, all of which render, cannot advance it.
+    this.prof.begin(P.physics);
     this.physics.update(dt);
     this.ragdolls.update(dt);
     this.debris.update(dt);
     this.blastDebris.update(dt);
+    this.prof.end(P.physics);
     // A pane can break while the local player is on the deploy screen — the
     // authority is running the round without them — and the rebuild it owes has
     // to drain here too, or a whole deployment's worth of breaks lands as one
     // hitch on the frame they spawn.
+    this.prof.begin(P.glass);
     this.glass.update();
+    this.prof.end(P.glass);
   }
 
   /**
@@ -6322,9 +6504,11 @@ export class Game {
 
     // --- objectives ---
     // Runs before the bots so their think tick sees this frame's ownership.
+    this.prof.begin(P.conquest);
     this.combatants.length = 0;
     this.combatants.push(this.player, ...this.battle.bots);
     this.conquest.update(dt, this.combatants);
+    this.prof.end(P.conquest);
     if (this.conquest.winner !== null) {
       this.endRound(this.conquest.winner);
       return false;
@@ -6347,6 +6531,7 @@ export class Game {
     // before the bots think — a hull destroyed by one is not a target on the
     // same frame's acquisition, exactly as a flag taken by `conquest.update`
     // is not still contested.
+    this.prof.begin(P.vehicles);
     this.crew.update(dt);
     this.vehicles.update(dt, this.vehicleOrders);
     // Immediately after the hulls have moved, and before the bots think: a
@@ -6355,21 +6540,30 @@ export class Game {
     // sees where the armour ENDED this frame rather than where it started,
     // which is the whole of what running somebody over is.
     this.crushSweep();
+    this.prof.end(P.vehicles);
     // The hulls have moved and the crews are aboard, which is everything
     // `pushHullEngines` reads off them at the end of the frame.
     this.fleetStepped = true;
 
     // --- bots ---
+    this.prof.begin(P.bots);
     this.battle.update(dt, this.cameraSys.camera.position);
     this.spendMuzzleLightBudget();
+    this.prof.end(P.bots);
+    this.prof.begin(P.combat);
     this.combat.update(dt);
+    this.prof.end(P.combat);
     // After the bots, so a grenade thrown on this frame's think tick flies on
     // this frame rather than sitting in the thrower's hand until the next one.
+    this.prof.begin(P.grenades);
     this.grenades.update(dt);
+    this.prof.end(P.grenades);
     // Beside them, and after `vehicles.update` for a second reason of its own:
     // a mine's trigger is a distance test against where a hull IS, and running
     // it before the hull moved would arm the road a frame behind the tank.
+    this.prof.begin(P.antiTank);
     this.antiTank.update(dt);
+    this.prof.end(P.antiTank);
     // After the grenades, because a blast kill resolves in there — so a body
     // taken this frame gets its first step this frame rather than hanging in
     // the air for one. Together with the one in `updateNetWorld` this is the
@@ -6380,15 +6574,19 @@ export class Game {
     // The ENGINE first and its three clients after, always: a corpse tested for
     // stillness or a shard aged before its own step would be reading last
     // frame's velocities.
+    this.prof.begin(P.physics);
     this.physics.update(dt);
     this.ragdolls.update(dt);
     this.debris.update(dt);
     this.blastDebris.update(dt);
+    this.prof.end(P.physics);
     // Last, and it is not an effect: this drains the flow-field rebuild a
     // broken pane owes, one field per frame. After the bots on purpose — a
     // field swapped in mid-frame would be read by half this frame's think ticks
     // and not the other half, and next frame's are the ones that should see it.
+    this.prof.begin(P.glass);
     this.glass.update();
+    this.prof.end(P.glass);
     return true;
   }
 

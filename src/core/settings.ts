@@ -85,6 +85,21 @@ export type Settings = {
    * assist through `CameraSystem.touchYawRate`, exactly as the stick's does.
    */
   touchSensitivity: LookScale;
+  /**
+   * The frame profiler: `FrameProfile` recording the last few thousand frames,
+   * and the chip that gets a capture off the device.
+   *
+   * **A setting rather than a dev gate, and that is the whole feature.** The
+   * frame is draw-call bound on hardware nobody here owns, and the devices
+   * worth measuring — a phone on a home screen, a tablet, somebody else's
+   * laptop — are exactly the ones that will never run a dev server or open a
+   * DevTools window. It is remembered like any other setting, so a capture
+   * survives the reload it usually takes to reproduce something.
+   *
+   * It costs a ring (about 1.3 MB) and ~26 `performance.now()` pairs a frame
+   * while it is on, and nothing at all while it is off.
+   */
+  profiler: boolean;
 };
 
 /**
@@ -157,6 +172,9 @@ export const SETTING_DEFAULTS: Settings = {
   mouseSensitivity: 1,
   stickSensitivity: 1,
   touchSensitivity: 1,
+  // Off, for the reason the counter is: it is an instrument, not chrome — and
+  // this one costs a megabyte of ring as well as a line of screen.
+  profiler: false,
 };
 
 /** One key per field, so the fields are independent in the store as well. */
@@ -235,6 +253,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
   stickSensitivity: oneOf(CONFIG.camera.lookScales),
   touchSensitivity: oneOf(CONFIG.camera.lookScales),
+  profiler: bool,
 };
 
 function readRaw(key: keyof Settings): string | null {

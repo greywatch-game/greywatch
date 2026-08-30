@@ -104,6 +104,9 @@ src/
                         #   interpolation delay and clock window, the reconnect
                         #   backoff, the hit-credit window, the ping bands the
                         #   lobby colours by, and the correction snap
+    profiling.ts        # The frame profiler's ring size, hitch threshold and
+                        #   probe depths. Nothing here decides anything about
+                        #   the game — FrameProfile is the only reader
     lighting.ts         # The dynamic light budget (uniforms, not Babylon lights)
     world.ts            # Map extents, occlusion, water, grass (map, ao, water,
                         #   grass)
@@ -151,6 +154,14 @@ src/
     settings.ts         # Settings shape, defaults, localStorage. Applies
                         #   nothing — that is Game.applySettings, the ONLY
                         #   place a setting reaches whatever owns it
+    FrameProfile.ts     # Where a frame's milliseconds went, recorded
+                        #   CONTINUOUSLY into a ring and captured BACKWARDS —
+                        #   you feel the hitch, then press the button. SHIPS,
+                        #   armed by a setting or ?profile, and costs nothing
+                        #   at all while it is off. Allocates nothing while
+                        #   recording (GC is what it exists to catch). Game
+                        #   brackets the phases it already sequences; no system
+                        #   has heard of it. Handle: `window.__profile`
     math.ts             # The scalar helpers more than one file needs: clamp,
                         #   clamp01, hermite, smoothstep, angleDelta. Imports
                         #   NOTHING, which is what makes it safe to import from
@@ -666,6 +677,14 @@ src/
     Minimap.ts          # Corner minimap, player-centred and heading-up: flags,
       minimap.css       #   friendlies, firing enemies, and a rim marker for
                         #   every control point the zoomed view does not reach
+    ProfileChip.ts      # The frame profiler's corner of the HUD: what the ring
+      profile.css       #   is holding, and the three buttons that get a capture
+                        #   off the device. A DEVICE on #hud like TouchControls,
+                        #   not a screen. The buttons exist because the pointer
+                        #   is LOCKED — F3 is the desktop path to the same
+                        #   place, and a phone has only the buttons. Delivery
+                        #   (clipboard, then execCommand, then download) is
+                        #   this file's; the ring is never reached for
     TouchControls.ts    # The on-screen controls a phone plays with: a FLOATING
       touch.css         #   movement stick in the left zone, a look DRAG in the
                         #   right one, and the button cluster over both. A

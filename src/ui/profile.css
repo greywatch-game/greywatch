@@ -1,0 +1,114 @@
+/**
+ * profile.css — the frame profiler's chip, and only that.
+ * Owns: #prof and everything under it. Imported by ProfileChip.ts, which is
+ * the one module that writes this markup — the rule every screen here follows.
+ */
+
+/* Top LEFT, which is the one corner of the HUD nothing else claims: the fps
+   readout and the killfeed are both top-right at x=20, the ticket bar and the
+   flag strip are top-centre, and a phone's button cluster is top-right again.
+   z-index above the touch zones so a thumb reaches the buttons rather than the
+   movement stick underneath them. */
+#prof {
+  position: absolute;
+  z-index: 22;
+  top: 18px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+  /* The chip is an instrument laid over a fight: it must be readable without
+     taking any more of the screen than it has to, so nothing here has a
+     background except the buttons, which need a hit target. */
+  pointer-events: none;
+}
+
+#prof .pr-live {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The recording dot. It pulses because a profiler left armed by accident is a
+   megabyte of ring and ~26 timer reads a frame, and the player should be able
+   to see at a glance that it is on. */
+#prof .pr-live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e2483d;
+  align-self: center;
+  animation: pr-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pr-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.28; }
+}
+
+#prof .pr-live b {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+#prof .pr-live b.hot { color: #ffb454; }
+
+#prof .pr-live em {
+  font-style: normal;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.32);
+  margin-right: 4px;
+}
+
+#prof .pr-acts {
+  display: flex;
+  gap: 4px;
+  /* The one thing on the chip that takes a pointer — see ProfileChip's header
+     on why that is useless under a lock and essential on glass. */
+  pointer-events: auto;
+}
+
+#prof .pr-btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  /* 32px tall and 52 wide: a thumb target, not a mouse target. Everything on
+     this chip is sized for the device that cannot use the key. */
+  min-width: 52px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+#prof .pr-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+/* The outcome line. It has to say what happened — copied, saved, nothing yet —
+   because under a pointer lock there is no other channel back to the player. */
+#prof .pr-flash {
+  max-width: 46vw;
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(0, 0, 0, 0.6);
+  border-left: 2px solid #e2483d;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+#prof .pr-flash.hidden { display: none; }
