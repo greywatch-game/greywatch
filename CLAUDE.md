@@ -1117,10 +1117,33 @@ the DEVICE and land in every capture.
 a graph while playing a first-person shooter with two thumbs, so the ring holds
 `CONFIG.profiling.frames` (3,000 — 50 s at 60 Hz, 12.5 at 240) and the gesture
 is pressed AFTER the hitch: `F3` on a keyboard, the chip's buttons on glass.
-**Nothing allocates while it is recording** — no per-frame object, no label
-string, no closure — because `FINDINGS.md` §1's leading suspect for the hitch
-this exists to find is GC, and a profiler that allocates per frame manufactures
-the bug it was built to catch.
+**Nothing allocates PER FRAME while it is recording** — no per-frame object, no
+label string, no closure — because `FINDINGS.md` §1's leading suspect for the
+hitch this exists to find is GC, and a profiler that allocates per frame
+manufactures the bug it was built to catch. The one exception is per
+COLLECTION: the sentinel below.
+
+**What a hitch IS is relative, because a fixed bar degenerates on the device
+this was built for.** A phone holding 30 fps spends 33 ms in every frame, so at
+`CONFIG.profiling.hitchMs` (24) alone every frame is a hitch, the list floods
+and a capture's headline reaches back three seconds instead of fifty. The bar
+is that floor or `hitchFactor` (2.5) times what the device has lately been
+managing, whichever is larger, and both it and the floor are in every report.
+Measured under a 6x CPU throttle applied mid-session: **292 of 687 frames filed
+at a fixed 24 ms against 25 on the relative bar**, all 25 in the ~1.5 s the
+floor takes to follow the step.
+
+**It watches the COLLECTOR, which is what §1 has always suspected and nothing
+could see.** A `FinalizationRegistry` sentinel — one object per GC event, none
+per frame, no flag needed — puts a count on every frame, so a hitch whose spans
+do not add up to its wall clock is read against it: collections on it is the GC
+pause, none is the browser. **The heap itself is usually FROZEN** (Chrome
+rate-limits the bucketised `performance.memory` to one update every twenty
+minutes) and `probeHeapLive` says so on arming rather than letting a flat line
+read as an idle heap; `--enable-precise-memory-info` is what makes it live, and
+where it is, `memory.allocMbPerSec` is the number to watch — **27.4 MB/s at 2.2
+collections a second on Hollowmere**, the first real figure behind §1's oldest
+guess.
 
 **The brackets live in `Game.ts` and nowhere else.** `tick`, `updateGameplay`,
 `updateNetWorld` and `updateWorld` are where the frame's order is already
@@ -1130,21 +1153,24 @@ order** and no system had to be taught the profiler exists. A phase is a name in
 sized and labelled off that list. The spans NEST and do not partition — read a
 report as an attribution, exactly as `buildProfile`'s does for the build.
 
-**Two limits, and both are recorded into every capture rather than left to
+**Three limits, and each is recorded into every capture rather than left to
 prose.** The clock is quantised to **100 us** (Chrome, absent cross-origin
 isolation, which `docker/default.conf.template` does not set) while most phases
 cost under 120 us — so a mean over a window converges but a small phase's
 PERCENTILE is quantisation noise, and `clock.belowGrain` names the rows that
 applies to. And the frame is draw-call bound, so the JS spans attribute the
 third that was never the problem: `SceneInstrumentation`'s draw count, mesh walk
-and render-target time are carried beside them for the rest. **GPU time is not
+and render-target time are carried beside them for the rest. And the heap is
+frozen on a stock browser, which is the paragraph above. **GPU time is not
 here** — Babylon can read it, but only if `timestamp-query` is requested at
 device creation and `main.ts` calls `initAsync()` with no descriptor.
 
 → **[`docs/profiling.md`](docs/profiling.md)** — the phases and what each one
-covers, how to take and read a capture, the trace export and Perfetto, what
-`frame`'s own share means, the three-rung clipboard ladder, and the two levers
-(cross-origin isolation, `timestamp-query`) that are deliberately not in it.
+covers, how to take and read a capture, the relative hitch bar and what it was
+measured against, the sentinel and the heap probe and how to read a hitch
+against them, the trace export and Perfetto, what `frame`'s own share means, the
+three-rung clipboard ladder, and the levers (cross-origin isolation,
+`timestamp-query`) that are deliberately not in it.
 
 ### The installable app
 

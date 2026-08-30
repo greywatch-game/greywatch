@@ -57,7 +57,18 @@ and the frame time beside it was not recorded.
 
 ### Candidates, none investigated
 
-- **GC.** A collection every second or two matches the cadence closely.
+- **GC.** A collection every second or two matches the cadence closely — and
+  that guess has since been measured rather than left as one. The frame
+  profiler watches collections with a `FinalizationRegistry` sentinel, and on
+  the Windows box, Hollowmere, headless at 130 fps over a 12 s window it reports
+  **2.2 collections a second against a hitch cadence of one per 1.7 s**, with
+  the heap running a mean of 157 MB, a peak of 184 and — the number to look at —
+  an allocation rate of **27.4 MB/s**, or ~210 kB per frame. That is a game
+  allocating steadily enough to keep the collector awake at exactly the cadence
+  this finding is about. **It is not a confirmation**: that window recorded zero
+  hitches (a headless 130 fps box is not the 60 Hz battery case above), so what
+  is established is the input and not the link. Taking the same capture on the
+  machine that actually hitches is now a two-minute job — see below.
 - **The shadow depth pass** (see finding 2) — but that is a *steady* per-frame
   cost, so it fits the mean sitting at 60 rather than the spikes.
 - **HUD `innerHTML` rebuilds.** `magStrip`, `nadePips`, `flagStrip`, the
@@ -70,15 +81,31 @@ and the frame time beside it was not recorded.
 
 ### How to settle it
 
-Per-phase timers around the `updateGameplay` stages, accumulated per frame and
-logged **only for frames over ~25 ms**. That costs nothing on the 99% and
-names the phase on the 1%. If no phase accounts for the gap, the time is
-outside the game's own code and GC is the first suspect —
-`performance.measureUserAgentSpecificMemory()` or a DevTools allocation
-timeline over a minute of play would confirm it.
+**This is built now and the answer is a capture rather than a project.**
+`FrameProfile` is what this section asked for — per-phase timers across the
+whole frame, a ring that keeps the worst frames whole, and a bar that files
+them relative to what the device is managing rather than at a fixed 25 ms.
+Arm it on the laptop, on battery, play for a minute, press `F3`, and read the
+hitch list:
 
-Worth capturing the AC case properly at the same time: `median_ms` from the
-console snippet distinguishes 120 Hz (~8.3) from 60 Hz (~16.7) directly.
+- **A hitch whose `phases` add up to its `frameMs`** names the phase, and this
+  finding becomes that phase's problem.
+- **A hitch whose phases fall well short of its wall clock, with `gc` on it**,
+  is the collection this section has suspected since it was written.
+- **The same shortfall with `gc` at 0** puts the time outside the game
+  altogether — the compositor, or the panel — and eliminating the leading
+  suspect is worth as much as confirming it.
+
+Two things about the reading. The heap columns are 0 unless Chrome is started
+with `--enable-precise-memory-info` (the bucketised counter is rate-limited to
+one update every twenty minutes, and `memory.heapLive` says so), while the
+collection count needs no flag. And `docs/profiling.md` is the contract for all
+of it.
+
+Worth capturing the AC case properly at the same time, which the same capture
+does for free: `frame.mean` distinguishes 120 Hz (~8.3) from 60 Hz (~16.7)
+directly, and `frame`'s own share against it says how much of the interval was
+even the game's.
 
 ---
 

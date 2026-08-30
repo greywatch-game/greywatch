@@ -33,14 +33,63 @@ export const profiling = {
   frames: 3000,
 
   /**
-   * What a capture's `hitches` list is a list OF, in milliseconds.
+   * The FLOOR of what a capture's `hitches` list is a list of, in
+   * milliseconds. The threshold in force is this or `hitchFactor` times what
+   * the device has lately been managing, whichever is LARGER.
    *
    * 24 ms is one missed 60 Hz deadline with a little room: a frame that misses
    * vsync does not take 18 ms, it waits for the next interval and takes 33
-   * (`FINDINGS.md` §1). Anything at or over this is a frame the player felt,
-   * on any panel this game is playable on.
+   * (`FINDINGS.md` §1). Anything at or over this is a frame the player felt on
+   * a panel this game runs well on — and that last clause is the whole reason
+   * `hitchFactor` exists beside it.
    */
   hitchMs: 24,
+
+  /**
+   * What a frame has to cost as a multiple of the device's own recent floor
+   * before it is filed as a hitch.
+   *
+   * **An absolute threshold degenerates on exactly the device this instrument
+   * was built to be carried to.** A mid-range phone holding 30 fps spends 33 ms
+   * in every frame, so at `hitchMs` alone EVERY frame is a hitch: the list
+   * floods, the cap below throws away the older half of it on every lap, and a
+   * capture's headline — the worst frames in the ring, whole — reaches back
+   * three seconds instead of fifty. The chip's counter pegs and stops meaning
+   * anything. A hitch is not an absolute duration; it is a frame that cost
+   * much more than the frames around it, and on a locked-30 device that is
+   * ~82 ms rather than 33.
+   *
+   * It cuts the other way too, which is the half nobody notices: on a 240 Hz
+   * machine at 4 ms a frame, a 20 ms frame is five missed deadlines and a
+   * violent stutter, and a fixed 24 never files it.
+   *
+   * 2.5 is a frame that took two and a half times what its neighbours did.
+   * Below ~2 the ordinary jitter of a browser's frame pacing starts to qualify.
+   */
+  hitchFactor: 2.5,
+
+  /**
+   * How fast the baseline this device is measured against RISES and FALLS, as
+   * an EWMA weight per frame.
+   *
+   * **They are deliberately different, and which one applies is decided by the
+   * BAR rather than by the average.** A symmetric mean is dragged upward by the
+   * very frames it is meant to be the yardstick for; a mean that resisted
+   * everything above itself would resist half of all frames and take several
+   * seconds to follow a device that genuinely changed speed. So the slow rate
+   * applies only to a frame the bar has already called an outlier — a 682 ms
+   * frame against a 7.8 ms floor lifts it by 6.8 ms — and every ordinary frame
+   * moves it most of the way in either direction.
+   *
+   * What that buys is the case nobody thinks of: a profiler armed on the MENU
+   * and then handed a heavy map. The floor triples, and the bar follows it in
+   * about fifty frames rather than in two hundred and thirty. It is also why
+   * the first frame SEEDS the baseline outright instead of averaging up from
+   * zero — a profiler armed on a slow device has the right bar from its second
+   * frame.
+   */
+  baselineRise: 0.01,
+  baselineFall: 0.15,
 
   /**
    * How many hitch frames a capture carries the full phase breakdown for,
@@ -76,4 +125,24 @@ export const profiling = {
    * §31 on the instrument that had been dead since the WebGPU port.
    */
   overheadSamples: 20000,
+
+  /**
+   * How much ballast the heap-liveness probe allocates on arming, in
+   * megabytes.
+   *
+   * **`performance.memory` is frozen on a stock browser and the probe exists to
+   * say so rather than to let a report imply otherwise.** Chrome rate-limits
+   * the bucketised reading to one update every TWENTY MINUTES — deliberately,
+   * so a page cannot compare memory before and after a dubious action — so on
+   * a phone the number does not move, and a heap series taken from it would be
+   * a flat line read as "nothing is allocating". `--enable-precise-memory-info`
+   * lifts that to a 20 ms refresh, which is what a Playwright run should pass
+   * and what makes the curve worth having.
+   *
+   * So the probe allocates this much, reads the counter again, and drops it:
+   * the reading either moved or it did not, and `memory.heapLive` says which.
+   * 16 MB is well past any bucket the coarsened form rounds to, and it is a
+   * few milliseconds during a settings toggle rather than anything in a frame.
+   */
+  heapProbeMb: 16,
 } as const;

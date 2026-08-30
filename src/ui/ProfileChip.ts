@@ -232,8 +232,16 @@ export class ProfileChip {
 function headline(report: ProfileReport): string {
   const worst = report.phases.find((p) => p.name !== "frame");
   const top = worst ? ` · ${worst.name} ${worst.mean.toFixed(1)}ms` : "";
+  // The collector's rate rides on the flash line because under a pointer lock
+  // this is the ONLY channel back to the player, and "is it GC" is the question
+  // `FINDINGS.md` §1 is actually asking. Omitted rather than shown as zero
+  // where the browser has no `FinalizationRegistry` — a 0 that means "not
+  // watched" is worse than no number.
+  const gc = report.memory.gcObserved
+    ? ` · ${report.memory.gcPerSec.toFixed(1)} gc/s`
+    : "";
   return (
     `${report.frame.fps.toFixed(0)} fps · ` +
-    `1% low ${report.frame.onePercentLow.toFixed(0)}${top}`
+    `1% low ${report.frame.onePercentLow.toFixed(0)}${top}${gc}`
   );
 }

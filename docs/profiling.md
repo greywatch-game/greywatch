@@ -71,17 +71,51 @@ difficulty with `FINDINGS.md` §1 is that you do not: a 1% low of 28 at a mean o
 
 So the ring holds `CONFIG.profiling.frames` (3,000 — **50 s at 60 Hz, 25 at 120,
 12.5 at 240**) and the gesture is pressed AFTER you feel something. On top of
-that, `endFrame` files every frame over `CONFIG.profiling.hitchMs` (24 ms, one
-missed 60 Hz deadline with room) into a hitch list, so a capture carries the
-worst frames whole even if the thumb was slow.
+that, `endFrame` files every slow frame into a hitch list, so a capture carries
+the worst frames whole even if the thumb was slow.
 
-**Nothing allocates while it is recording.** Every array is sized once by `arm`
-and written by index; there is no per-frame object, no label string, no closure,
-and `context()` takes four positional numbers rather than one struct for exactly
-that reason. This is not tidiness. §1's leading suspect for the hitch is GC, and
-a profiler that allocates per frame manufactures the bug it was built to find.
-Captures and reports allocate freely — a capture is a deliberate act, not a
-frame.
+**What counts as slow is RELATIVE, and that is not a refinement — a fixed bar
+degenerates on exactly the device this thing was built to be carried to.** A
+mid-range phone holding 30 fps spends 33 ms in every frame, so at
+`CONFIG.profiling.hitchMs` (24) alone *every frame is a hitch*: the list floods,
+laps its own cap every few seconds, and a capture's headline — the worst frames
+in the ring, whole — reaches back three seconds instead of fifty. So the bar is
+`hitchMs` **or** `CONFIG.profiling.hitchFactor` (2.5) times the floor this
+device has lately been managing, whichever is larger, and both the bar and the
+floor are in every report (`frame.hitchThresholdMs`, `frame.baselineMs`)
+because a reader who assumed 24 would read an empty list as a smooth session.
+
+Measured, headless on the Windows box with Chromium throttled to a sixth of its
+speed mid-session — the honest version of "somebody's phone", since it changes
+under a profiler that was already armed:
+
+| | frames in window | filed as hitches |
+| --- | --- | --- |
+| fixed 24 ms | 687 | **292** |
+| relative bar | 687 | **25** |
+
+The 25 all land in the ~1.5 s it takes the floor to follow the step change
+(baseline 7.8 → 15.1 ms after one second, 39 ms after two, bar 24 → 98), and
+the count stops growing once it has. **The floor resists only what the bar
+already calls an outlier** and moves quickly for everything else, which is what
+keeps a 682 ms frame from lifting it by more than 6.8 ms while still letting a
+map install triple it in tens of frames rather than hundreds.
+
+It cuts the other way too: on a 240 Hz machine at 4 ms a frame, a 20 ms frame is
+five missed deadlines and a fixed 24 never files it.
+
+**Nothing allocates per frame while it is recording.** Every array is sized once
+by `arm` and written by index; there is no per-frame object, no label string, no
+closure, and `context()` takes four positional numbers rather than one struct
+for exactly that reason. This is not tidiness. §1's leading suspect for the
+hitch is GC, and a profiler that allocates per frame manufactures the bug it was
+built to find. Captures and reports allocate freely — a capture is a deliberate
+act, not a frame.
+
+**There is exactly one allocation left in the recording path and it is per
+COLLECTION**: the sentinel the GC watch re-registers, below. One empty object
+per GC event, against the alternative of an instrument that cannot see the one
+thing §1 most suspects.
 
 ---
 
@@ -99,7 +133,7 @@ and how many hitches it has seen, and carries three buttons:
 
 | | what it does | where it lands |
 | --- | --- | --- |
-| **KEEP** | compact report — summary, phase table, the worst frames whole | the clipboard (≈6 kB) |
+| **KEEP** | compact report — summary, memory, phase table, the worst frames whole | the clipboard (≈6 kB) |
 | **SAVE** | the same plus the complete per-frame series | a download (≈70 kB for 1,000 frames) |
 | **TRACE** | the last 600 frames as Chrome Trace Event JSON | a download, for `ui.perfetto.dev` |
 
@@ -170,6 +204,59 @@ moves.
 
 ---
 
+## The heap and the collector
+
+**§1's leading suspect is GC, and until this the instrument built to chase it
+could not see a collection.** Two readings answer that now, and they are
+deliberately separate because one of them usually does not work.
+
+**Collections are watched with a `FinalizationRegistry` sentinel.** An empty
+object is registered and dropped in the same expression; the collection that
+sweeps it calls back, which is one collection observed, and the callback
+registers the next. That costs one object per GC event and none per frame, and
+it needs no flag, no header and no permission — it works on the phone. What
+lands in a report is `memory.gcEvents`, `memory.gcPerSec`, and a per-frame count
+on every hitch (`HitchFrame.gc`), plus an instant marker down the flame chart in
+a trace.
+
+**Read it as "a collection happened around this frame", never as "the pause was
+this collection".** The callback runs in a task *after* the collection rather
+than during it, so a count lands on the frame it interrupted or the one after;
+the engine may batch; and nothing here tells a young-generation scavenge from a
+major one. That is still enough for the question §1 asks, because the question
+is answered against the phases: **a hitch whose spans do not add up to its wall
+clock, with `gc` on it, is a collection — and the same shortfall with `gc` at 0
+is the browser, which is a different investigation.** Eliminating the leading
+suspect is worth as much as confirming it.
+
+**The heap itself is usually FROZEN, and the probe exists to say so rather than
+to let a report imply otherwise.** Chrome rate-limits the bucketised
+`performance.memory` to **one update every twenty minutes** — deliberately, so a
+page cannot compare memory before and after a dubious action — so on a stock
+browser the number does not move and a series drawn from it would be a flat line
+read as "nothing is allocating". `probeHeapLive` settles it on arming by
+allocating `CONFIG.profiling.heapProbeMb` (16 MB) and reading again;
+`memory.heapLive` carries the answer, and where it is false the heap fields are
+0 rather than a plausible fiction. `--enable-precise-memory-info` is what drops
+the refresh to 20 ms, and it is what a Playwright run should pass.
+
+Where it *is* live, the number to watch is **`memory.allocMbPerSec` — the sum of
+the RISES over the window, not the difference of its ends.** A heap that climbs
+40 MB and is collected back to where it started has a net delta of zero and an
+allocation rate of megabytes a second, and it is the second figure that says why
+the collector keeps waking up. Measured on this box, Hollowmere, headless at
+130 fps: **157 MB mean, 184 peak, 27.4 MB/s — about 210 kB a frame — at 2.2
+collections a second.** That is the first real number behind §1's oldest guess,
+and the reason it is worth re-taking after anything touching the frame path: the
+no-allocation rule this profiler holds itself to is one nothing else in the game
+obeys, and this is the only readout that would notice it being broken somewhere
+that matters.
+
+`memory.gcPerSec` also rides on the **flash line**, because under a pointer lock
+that is the only channel back to the player and "is it GC" is the whole question.
+
+---
+
 ## Reading a capture
 
 A real one, Hollowmere, 1,038 frames over 9.2 s on the Windows box:
@@ -226,6 +313,14 @@ In the capture above the worst frame is 682 ms at `(0, 3, -8)` with **0 bots**,
 which is the spawn: the round's first frames are the pipeline compiler (§16),
 not the game.
 
+**Each hitch also carries `gc` and `heapMb`, and those two are read against the
+phases rather than on their own.** Add up a hitch's spans: if they account for
+its `frameMs`, the phase list has already named the problem. If they fall well
+short, the time was spent outside the tick, and `gc` is what says whether it was
+the collector. That block above predates both fields — it was taken before the
+memory readings existed, and the numbers in it have not been re-taken, because a
+capture re-printed from a later run is a capture of something else.
+
 ---
 
 ## The trace
@@ -253,6 +348,11 @@ device creation, and `main.ts` calls `initAsync()` with no descriptor at all.
 Adding one means an adapter-support check on every boot, and whether Android's
 Chrome exposes the feature is a question for the handset rather than for this
 file. On a draw-call-bound frame it is the single most valuable thing missing.
+
+**A precise heap without a flag.** `performance.measureUserAgentSpecificMemory()`
+is the standard, unrate-limited answer and it requires cross-origin isolation,
+which is the next item. The sentinel above is what works without it, and it
+gives collections rather than bytes.
 
 **A 5 us clock.** Cross-origin isolation (COOP + COEP) drops
 `performance.now()`'s grain from 100 us to 5, which would make every row of the
@@ -282,3 +382,15 @@ or nothing works):
 5. Check the disarmed page returns `null` and has no `#prof` up. **A profiler
    that is quietly always-on is the failure mode this whole design is arranged
    against.**
+
+Two more, both learned the hard way here:
+
+- **Pass `--enable-precise-memory-info` if you want the heap columns.** Without
+  it `memory.heapLive` comes back false and every heap figure is 0 — correctly,
+  and that is the stock-browser answer, but it is not what you want from a run
+  you are using to chase an allocation. The GC count needs no flag either way.
+- **To exercise the relative hitch bar, change the device's speed UNDER a
+  profiler that is already armed** — `Emulation.setCPUThrottlingRate` over a CDP
+  session. Throttling first and arming afterwards seeds the baseline at the slow
+  rate and tests nothing: the interesting behaviour is the floor climbing to
+  follow a step change, and how many frames get filed while it does.

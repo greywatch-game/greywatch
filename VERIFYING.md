@@ -113,6 +113,24 @@ you are on before you believe anything else in this section.
   this box), which is inside the run-to-run spread of the disarmed side itself —
   so if you are pricing something at that scale, take the disarmed reading in the
   same session rather than trusting a number from another one.
+- **The profiler's HEAP columns need `--enable-precise-memory-info` and its GC
+  count needs nothing.** Chrome rate-limits the bucketised `performance.memory`
+  to one update every twenty minutes on purpose, so without that flag a capture
+  comes back with `memory.heapLive: false` and every heap figure at 0 — which is
+  the correct answer for a stock browser and is useless for a run you are using
+  to chase an allocation. With it: 157 MB mean, 184 peak, **27.4 MB/s of
+  allocation** on Hollowmere headless at 130 fps. The collection count
+  (`memory.gcEvents`, a `FinalizationRegistry` sentinel) works either way, and
+  is the half that also works on a phone.
+- **To test the relative hitch bar, slow the device UNDER a profiler that is
+  already armed.** `Emulation.setCPUThrottlingRate` over
+  `page.context().newCDPSession(page)` is how; throttling first and arming
+  afterwards seeds the baseline at the slow rate and proves nothing, because the
+  behaviour worth testing is the floor climbing to follow a step change. At 6x,
+  armed first: 292 of 687 frames would have been filed at a fixed 24 ms against
+  25 on the relative bar, the baseline going 7.8 → 15.1 → 39 ms over the first
+  two seconds. `frame.hitchThresholdMs` and `frame.baselineMs` are in every
+  capture, so a script can assert on both rather than inferring them.
 - **Counting `requestAnimationFrame` callbacks beats `Engine.getFps` for
   anything under a percent.** That readout is a 30-frame rolling mean and cannot
   see a fractional-percent change; a rAF count over eight seconds is what
