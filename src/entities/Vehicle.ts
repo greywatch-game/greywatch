@@ -1290,6 +1290,102 @@ export class Vehicle implements Combatant, RayHull {
     return Math.abs(this.speed);
   }
 
+  /**
+   * What the powerplant is doing, as the two numbers `Sfx.driveEngine` is
+   * written around: how hard it is being WORKED and how fast it is TURNING,
+   * each 0..1.
+   *
+   * **It is asked OF THE HULL rather than worked out by the caller, and that
+   * is the whole of why it exists.** What a machine geared to its road wheels
+   * is doing can be read from outside it — how fast it is going, and a stick —
+   * and for two kinds that was the entire answer, computed at the call site in
+   * `Game` and handed straight to the voice. A machine hanging from a DISC has
+   * neither number anywhere near the surface. Its rotor turns at one governed
+   * speed whatever the airspeed, and what it works against is the weight it is
+   * holding up; so a caller deriving either from `travel` was describing a
+   * helicopter as a car, which is exactly what it sounded like — revving as it
+   * accelerated, dying away as it slowed, and hovering in silence. **A machine
+   * that hovers in silence is one flying with its engine off**, and it is the
+   * one thing a helicopter cannot do.
+   *
+   * `stick` is the throttle the LOCAL driver is holding, and it is an argument
+   * rather than a field because it is the one term that cannot be read off the
+   * hull: a hull does not keep it, and a GUNNER or a hull on the wire has
+   * nobody local holding it at all. Whoever has no stick passes the hull's own
+   * speed, which is the honest answer from outside — `Game.pushHullEngines`
+   * and a gunner's frame both already did exactly that. **A flying hull
+   * ignores it entirely, by DATA rather than by a branch**, in the same way
+   * `DriveInput.lift` is ignored by a hull with nothing to lift.
+   *
+   * ## What a rotor answers instead
+   *
+   * **`rev` is the SPOOL** — `this.rotor`, the same 0..1 the disc is drawn
+   * turning at, so the turbine winds up in step with the picture and with the
+   * moment the machine gets light on its skids. Not `rotorPower`: that is what
+   * the disc LIFTS, and a rotor below `liftFloor` is turning and audible and
+   * lifting nothing, which is the whole sound of a spool.
+   *
+   * **`load` is DISC LOADING**, and it is built out of three terms because a
+   * rotor is worked by three things:
+   *
+   * - **Hanging there at all**, which is `rotorPower` and is most of it. This
+   *   is the term the old voice had no way to say: a helicopter at a hover
+   *   with the stick centred is at nearly full power, and it is the reason
+   *   half of this number is spent before the pilot has asked for anything.
+   * - **The climb**, taken as the VERTICAL RATE rather than as `lift` or as
+   *   the collective, because that is the one term both a hull under its own
+   *   pilot and a hull on the wire can answer. `updateRemote` pins `lift` at
+   *   gravity (the rotor is holding it up whatever the wire says) and MEASURES
+   *   the motion, so a climb is visible from either side and a collective is
+   *   not. Unsigned: climbing costs power and descending costs blade slap, and
+   *   what a listener hears of either is the disc working harder.
+   * - **Airspeed**, which is the advancing blade. The full horizontal
+   *   magnitude and not `travel`, because `speed` is the along-heading scalar
+   *   and lateral translation is a first-class control on this kind — a
+   *   machine sliding sideways at 30 m/s reports nearly nothing through
+   *   `travel` and is not quietly doing it.
+   *
+   * All three are gated on `rotorPower`, so a hull whose disc has wound down
+   * makes nothing however fast it is still sliding.
+   */
+  /**
+   * Whether this hull is making a NOISE, which is not the same question as
+   * whether anybody is in it — and on two of the three kinds it is the same
+   * answer, which is why it can be one gate.
+   *
+   * A piston engine stops with the hand that switched it off, so `occupied` is
+   * the whole of it: a hardstanding's parked armour is silent until somebody
+   * climbs aboard, which is the rule `Game.pushHullEngines` has always read.
+   * **A rotor does not stop when the pilot steps out.** It winds down over
+   * `flight.spoolTime`, four and a half seconds, and it is DRAWN doing it — so
+   * a gate on occupancy alone put a visibly turning disc in total silence, on
+   * the one kind whose spool the player can watch.
+   *
+   * A WRECK is deliberately not this method's business and is tested before it:
+   * a dead hull is not stepped at all, so its `rotor` is frozen wherever the
+   * shot left it and would answer true here for the rest of the round.
+   */
+  get running(): boolean {
+    return this.occupied || (this.flies && this.rotor > 0);
+  }
+
+  powerplant(stick: number): [load: number, rev: number] {
+    const f = this.spec.flight;
+    if (!f) {
+      return [stick, Math.min(1, this.travel / this.spec.drive.maxSpeed)];
+    }
+    const power = this.rotorPower(f);
+    const climb = Math.min(1, Math.abs(this.velY) / f.climbRate);
+    const fast = Math.min(
+      1,
+      Math.hypot(this.vel.x, this.vel.z) / f.maxAirspeed,
+    );
+    return [
+      Math.min(1, power * (0.5 + 0.3 * climb + 0.3 * fast)),
+      this.rotor,
+    ];
+  }
+
   /** Where the gun actually points, in the world. NOT where the player is looking. */
   gunDirToRef(out: Vector3): Vector3 {
     const cp = Math.cos(this.gunPitch);

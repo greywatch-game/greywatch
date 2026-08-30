@@ -233,18 +233,24 @@ export interface VehicleSpec {
     readonly minDistance: number;
   };
   /**
-   * What this kind SOUNDS like, as two numbers against the tank's own voice.
+   * What this kind SOUNDS like, against the tank's own voice.
    *
-   * `Sfx.buildEngine` is one graph and one description of what a diesel is, and
-   * these are the only two things about it that belong to a KIND rather than to
-   * an engine. Stated the way a weapon's `report` is: a field per way this
+   * `Sfx.buildEngine` is one graph, and these are the ways a KIND differs
+   * inside it. Stated the way a weapon's `report` is: a field per way this
    * differs, with the reference at 1.
+   *
+   * **`rotor` is the same bargain `flight` makes one level up**, and it is
+   * made here a second time for the same reason: a nullable BLOCK rather than
+   * a flag, so a machine geared to its wheels states nothing and the graph
+   * asks the data rather than asking what kind it is holding.
    */
   readonly engine: {
     /**
      * A multiplier on the firing rate every pitched layer is a multiple of, so
      * a lighter engine revs higher as one machine rather than as four layers
-     * each nudged separately.
+     * each nudged separately. **On a rotor it multiplies the blade rate**, and
+     * is the same statement about the same thing: everything pitched in the
+     * voice is a multiple of one rate, whatever produces it.
      */
     readonly revMult: number;
     /**
@@ -254,6 +260,47 @@ export interface VehicleSpec {
      * you cannot see.
      */
     readonly clatter: number;
+    /**
+     * What hangs the machine off a DISC instead of gearing it to wheels, or
+     * null on anything that is geared to its wheels.
+     *
+     * **The whole of what a turbine-and-rotor changes is in here, and none of
+     * it is a level.** A piston engine geared to road wheels changes NOTE with
+     * what the machine is doing; a rotor is held at one governed speed by a
+     * governor and changes only how hard it is WORKING, which is why the two
+     * cannot be one set of numbers with different values. See
+     * `Sfx.buildEngine`, which spends every figure here, and
+     * `Vehicle.powerplant`, which is where the two numbers driving it stop
+     * being road speed and a stick.
+     */
+    readonly rotor: {
+      /**
+       * Blade passages a second at governed rotor speed — the THUMP, and the
+       * one note the whole voice is built on.
+       *
+       * **Deliberately not derived from `flight.rotorRate`**, which is a
+       * DRAWING number chosen so four blades do not alias into a stopped disc
+       * at 60 Hz and is about half what a real rotor turns at. Reading the
+       * sound off it would make the machine sound as slow as it has to look.
+       * 19 Hz is a four-blade disc at about 290 rpm, which is what a gunship
+       * this size actually turns.
+       */
+      readonly slapHz: number;
+      /**
+       * The tail rotor's blade passage as a multiple of the main disc's — so
+       * the two spool together as one machine, exactly as every pitched layer
+       * is a multiple of the firing rate on a piston engine.
+       */
+      readonly tailRatio: number;
+      /**
+       * The turbine's governed note, Hz. It is what says TURBINE rather than
+       * piston, and unlike everything else in the voice it answers to the
+       * SPOOL and not to the load: a governed engine holds its note while the
+       * machine is worked, which is the whole of what the player is meant to
+       * hear.
+       */
+      readonly turbineHz: number;
+    } | null;
   };
 }
 
@@ -1529,7 +1576,7 @@ export const vehicles = {
      * What a tank sounds like, and the reference every other kind's engine is
      * stated against — so both numbers are 1 here by definition.
      */
-    engine: { revMult: 1, clatter: 1 },
+    engine: { revMult: 1, clatter: 1, rotor: null },
   },
   /**
    * The GUN TRUCK: the second kind, and the trade it is.
@@ -1969,7 +2016,7 @@ export const vehicles = {
      * tank's diesel, and it runs on TYRES — `clatter` is 0 here, because link
      * noise under a wheeled vehicle is a tank arriving that nobody can see.
      */
-    engine: { revMult: 1.55, clatter: 0 },
+    engine: { revMult: 1.55, clatter: 0, rotor: null },
   },
 
   /**
@@ -2319,11 +2366,39 @@ export const vehicles = {
       minDistance: 5,
     },
     /**
-     * A turbine: it sits much higher than either piston engine and carries no
-     * link noise at all. **It is not a rotor**, and that is a known gap rather
-     * than a choice — `Sfx.buildEngine` is one description of a diesel, and a
-     * rotor slap would be a layer of its own inside it. See `docs/vehicles.md`.
+     * **A turbine hung off a DISC, and the `rotor` block is the whole of it.**
+     *
+     * `revMult` is back to the tank's 1 and that is not a retreat: what it
+     * multiplies on this kind is `rotor.slapHz`, and a blade rate stated
+     * outright needs no fudge factor on top of it. The 2.1 it used to be was
+     * the only lever a voice with no rotor in it had for saying "not a
+     * diesel", and what it bought was a diesel revved high — a machine that
+     * revved as it accelerated, went quiet as it slowed, and hovered in
+     * silence. A helicopter that hovers in silence is one flying with its
+     * engine off, which is the one thing a helicopter cannot do.
+     *
+     * `clatter` stays 0 for the reason the truck's does: nothing here runs on
+     * belts.
      */
-    engine: { revMult: 2.1, clatter: 0 },
+    engine: {
+      revMult: 1,
+      clatter: 0,
+      rotor: {
+        /** Four blades at about 290 rpm — see `slapHz` on the spec. */
+        slapHz: 19,
+        /**
+         * A tail rotor turning about five times the main disc's rate, which
+         * lands its own blade passage at 93 Hz — the buzz under the thump,
+         * and the second thing after the slap that says helicopter.
+         */
+        tailRatio: 4.9,
+        /**
+         * High, and HELD there. A turboshaft's audible whine is a couple of
+         * kHz and it does not move once the governor has it, so this is the
+         * one layer in the voice that answers the spool alone.
+         */
+        turbineHz: 2400,
+      },
+    },
   },
 } as const;

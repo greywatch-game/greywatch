@@ -22,6 +22,12 @@
  * Teardown either way is a loop over `EngineVoice.sources`, and a source added
  * to that graph without a place on that list is a voice running unheard for
  * the rest of the session.
+ * That is two kinds of PLACEMENT and it is a different axis from what the
+ * machine IS: `EngineKind.rotor` is the second, a nullable block that turns
+ * the same graph from a piston engine geared to road wheels into a turbine
+ * hung off a disc. Both arms are `buildEngine` and the fork is in
+ * `driveEngine`, because the difference is not levels — it is that a rotor's
+ * note is GOVERNED and a piston engine's is not.
  */
 import type { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -71,10 +77,32 @@ const HULL_ENGINE_LEVEL = 2.2;
  * weapon: the caller says what it is, and this file says what that sounds like.
  */
 export interface EngineKind {
-  /** A multiplier on the firing rate every pitched layer is a multiple of. */
+  /**
+   * A multiplier on the rate every pitched layer is a multiple of — a firing
+   * rate on a piston engine, a BLADE rate on a rotor.
+   */
   revMult: number;
   /** How much link clatter the voice carries. A tank is 1, a wheeled vehicle 0. */
   clatter: number;
+  /**
+   * What hangs the machine off a DISC, or null on anything geared to its road
+   * wheels — the same nullable-block bargain `VehicleSpec.flight` makes one
+   * level up, made here for the same reason.
+   *
+   * **The two powerplants are not one set of numbers with different values,
+   * and that is why this is a block and not three more fields.** A piston
+   * engine geared to wheels changes NOTE with what the machine is doing; a
+   * rotor is held at one governed speed and changes only how hard it is
+   * WORKING. `driveEngine` reads this once and takes the other arm.
+   */
+  rotor: {
+    /** Blade passages a second at governed rotor speed: the thump. */
+    slapHz: number;
+    /** The tail rotor's blade passage as a multiple of the main disc's. */
+    tailRatio: number;
+    /** The turbine's governed note, Hz. Answers the SPOOL and not the load. */
+    turbineHz: number;
+  } | null;
 }
 
 /**
@@ -115,8 +143,17 @@ interface EngineVoice {
    * never lets go of.
    */
   panner: PannerNode | null;
-  /** The firing rate. Every pitched layer below is a multiple of it. */
+  /** The firing rate — a BLADE rate on a rotor. Every pitched layer is a multiple. */
   fire: OscillatorNode;
+  /**
+   * How DEEP the lump chops, and it is on this list because a rotor moves it.
+   *
+   * A piston engine's lump is a fixed depth and its throttle is heard in the
+   * filters; a disc's whole voice is the thump, so what a loaded rotor does is
+   * chop harder rather than open up. Never written on a geared kind, which is
+   * what keeps the two ground vehicles the voice they always were.
+   */
+  fireDepth: GainNode;
   /** The combustion tone, at twice the firing rate, before its shaper. */
   growl: OscillatorNode;
   /** A pure tone at the same pitch: the part of it you feel. */
@@ -133,6 +170,13 @@ interface EngineVoice {
   turboLevel: GainNode;
   /** Track clatter, gated by how fast the hull is actually moving. */
   trackLevel: GainNode;
+  /**
+   * The tail rotor, and null on anything without one — which is every kind
+   * whose `EngineKind.rotor` is null. Two nodes rather than one because the
+   * rate spools with the main disc and the level with it.
+   */
+  tail: OscillatorNode | null;
+  tailLevel: GainNode | null;
 }
 
 /**
@@ -1013,6 +1057,20 @@ export class Sfx {
     //
     // `hullEngine` fires none of them, because what starts a voice there is a
     // tank arriving in earshot rather than a hand on a key — see that method.
+    //
+    // **A TURBINE does not catch, and giving it the same three one-shots was
+    // three cylinders finding compression in a machine that has none.** What
+    // starts one is a starter spinning air up through it before there is any
+    // fire at all, which is a single rising hiss and not an event — and unlike
+    // the diesel's catch it is not the start of the engine's own voice but the
+    // thing that happens BEFORE it, over the top of the long spool the rotor
+    // is already climbing through.
+    if (kind.rotor) {
+      this.burst({
+        dur: 1.1, vol: 0.1, type: "bandpass", freq: 200, freqEnd: 900, q: 2.2,
+      });
+      return;
+    }
     this.burst({ dur: 0.32, vol: 0.15, type: "bandpass", freq: 400, freqEnd: 250, q: 2.4 });
     this.burst({
       dur: 0.5, vol: 0.4, type: "lowpass", freq: 430, freqEnd: 70, q: 0.8,
@@ -1022,10 +1080,21 @@ export class Sfx {
   }
 
   /**
-   * The engine graph itself: six sources held open, and the ONE description in
-   * this game of what a diesel sounds like. Both kinds of voice are this
-   * method — a null `panner` is the hull the player is sitting inside, wired
-   * straight onto the master bus, and a panner is anybody else's.
+   * The engine graph itself: six sources held open (seven off a rotor), and the
+   * ONE description in this game of what a powerplant sounds like. Both kinds
+   * of voice are this method — a null `panner` is the hull the player is
+   * sitting inside, wired straight onto the master bus, and a panner is
+   * anybody else's — and so are both kinds of MACHINE, which is the other
+   * nullable block: see `EngineKind.rotor`, read once at the top as `r`.
+   *
+   * **The five layers below are a diesel when `r` is null and a rotor when it
+   * is not, and they are the same five layers either way** — which is not a
+   * coincidence and is why this is one method rather than two. A cylinder
+   * firing and a blade passing are the same event: a lump, at a rate, with air
+   * moving round it. What differs is which rate, how deep the lump is, how far
+   * up the whistle sits, and — the only thing that is not a number — whether a
+   * governor is holding the rate still. The tail rotor is the one layer with
+   * no counterpart, and it is built only when there is one.
    *
    * **This is the only thing in this file that does not end on its own**, and
    * the header's rule — nothing here schedules a repeating sound — is intact
@@ -1052,6 +1121,17 @@ export class Sfx {
    * | turbo — two beating sines through a resonance | the only layer that says TURBO, and the only one that is late |
    * | track — a resonant noise band, gated on speed | link on link, which a tank at speed has and an idling one does not |
    *
+   * …and the same five read off a disc:
+   *
+   * | layer | what it is for |
+   * | --- | --- |
+   * | chug — the same lowpassed noise, lumped harder | the DOWNWASH, and the loudest thing a helicopter makes up close |
+   * | growl — nearly out of the mix | there is no combustion growl in a machine that burns continuously |
+   * | chest — half again, landing on the hull peak | the 95 Hz note that carries when everything over it is gone |
+   * | turbo — the same two sines, plus AIR through the same peak | the turbine, and the one layer that answers the spool alone |
+   * | track — silent, because `clatter` is 0 | nothing hung off a rotor runs on belts |
+   * | tail — a sawtooth read through a band well above itself | the tail rotor: the buzz under the thump |
+   *
    * Everything but the turbo goes through the lump, and the turbo does not
    * because a wheel spinning at forty thousand rpm does not care what the
    * crank is doing — chopping it at the firing rate would make it a further
@@ -1067,6 +1147,11 @@ export class Sfx {
   ): EngineVoice | null {
     const ctx = this.ctx;
     if (!ctx || !this.master || !this.noiseBuffer) return null;
+    // **The one question this method asks about a kind, asked once.** Every
+    // line below that reads it is a level or a corner frequency chosen for a
+    // disc instead of for a cylinder — see `EngineKind.rotor` — and a kind
+    // that states null gets the numbers this graph has always had, to the bit.
+    const r = kind.rotor;
     try {
       const out = ctx.createGain();
       out.gain.value = 0;
@@ -1129,10 +1214,18 @@ export class Sfx {
       // 0.130 without this filter against a 0.36 peak, and about 0.05 with it.
       const fireEdge = ctx.createBiquadFilter();
       fireEdge.type = "lowpass";
-      fireEdge.frequency.value = 190;
+      // A harder edge on a disc, and the argument above is unchanged in kind:
+      // 260 Hz still rounds the step to about half a millisecond, which is far
+      // slower than a sample and far faster than anything else in the mix. A
+      // blade slap is a CRACK where a cylinder firing is a thump, and rounding
+      // both to the same corner made the rotor a soft flutter.
+      fireEdge.frequency.value = r ? 260 : 190;
       fireEdge.Q.value = 0.9;
       const fireDepth = ctx.createGain();
-      fireDepth.gain.value = -0.4;
+      // The resting depth. On a rotor `driveEngine` writes this every frame —
+      // the load IS the depth there — so what it is set to here is only where
+      // the chop starts.
+      fireDepth.gain.value = r ? -0.3 : -0.4;
       fire.connect(fireEdge).connect(fireDepth).connect(lump.gain);
 
       // The chug: the shared noise buffer at a third speed, lowpassed to a
@@ -1147,7 +1240,10 @@ export class Sfx {
       chugTone.frequency.value = 420;
       chugTone.Q.value = 0.8;
       const chugLevel = ctx.createGain();
-      chugLevel.gain.value = 0.88;
+      // On a disc this layer is the DOWNWASH rather than the exhaust, and it
+      // is the loudest thing a helicopter makes at close range — a rotor is
+      // mostly the sound of air being thrown at the ground.
+      chugLevel.gain.value = r ? 1.15 : 0.88;
       noise.connect(chugTone).connect(chugLevel).connect(lump);
 
       // The growl: the combustion tone at twice the firing rate, bent through
@@ -1174,7 +1270,10 @@ export class Sfx {
       growlEdge.type = "highpass";
       growlEdge.frequency.value = 90;
       const growlLevel = ctx.createGain();
-      growlLevel.gain.value = 0.32;
+      // Nearly out of the way on a turbine: there is no combustion growl in a
+      // machine that burns continuously, and what is left of this layer there
+      // is the disc's own harmonics giving the thump an edge.
+      growlLevel.gain.value = r ? 0.13 : 0.32;
       growl.connect(growlDrive).connect(shaper).connect(growlTone);
       growlTone.connect(growlEdge).connect(growlLevel).connect(lump);
 
@@ -1187,7 +1286,10 @@ export class Sfx {
       chest.type = "sine";
       chest.frequency.value = 30;
       const chestLevel = ctx.createGain();
-      chestLevel.gain.value = 0.2;
+      // Half again on a disc, and it lands square on the 92 Hz hull peak
+      // above: five blade passages is 95 Hz, which is the note a helicopter
+      // carries across a valley when everything over it has been lost.
+      chestLevel.gain.value = r ? 0.3 : 0.2;
       chest.connect(chestLevel).connect(lump);
 
       // The turbo. Two sines a few cents apart through a resonant peak: one
@@ -1204,12 +1306,25 @@ export class Sfx {
       const turboTone = ctx.createBiquadFilter();
       turboTone.type = "bandpass";
       turboTone.frequency.value = 700;
-      turboTone.Q.value = 3.2;
+      // Broader on a turbine. A turbocharger is a wheel and a narrow peak is
+      // what makes it one; a turboshaft is a wheel inside a jet, and the same
+      // Q there is a whistle rather than an engine.
+      turboTone.Q.value = r ? 2 : 3.2;
       const turboLevel = ctx.createGain();
       turboLevel.gain.value = 0;
       turboA.connect(turboTone);
       turboB.connect(turboTone);
       turboTone.connect(turboLevel).connect(out);
+      if (r) {
+        // …and the jet is AIR through the same peak. Two beating sines alone
+        // read as a test tone at the level a turboshaft has to sit at, and no
+        // amount of detune fixes that: what is missing is not beating but
+        // breadth. This costs one gain node and the noise source is already
+        // running for the wash.
+        const turbineAir = ctx.createGain();
+        turbineAir.gain.value = 0.85;
+        noise.connect(turbineAir).connect(turboTone);
+      }
 
       // Track clatter: the same noise through a resonant band up where link
       // meets link, gated on how fast the hull is actually going. It rides
@@ -1224,13 +1339,44 @@ export class Sfx {
       trackLevel.gain.value = 0;
       noise.connect(clatter).connect(trackLevel).connect(lump);
 
+      // The tail rotor: a small disc turning about five times as fast, and the
+      // second thing after the slap that says helicopter rather than merely
+      // aircraft. A SAWTOOTH read through a band well ABOVE its own
+      // fundamental, because what an ear picks a tail rotor out by is the rasp
+      // of its harmonics — the 93 Hz they hang off is underneath the main
+      // disc's own weight and would be heard as nothing at all.
+      //
+      // Onto the low cut rather than into the lump, and both halves of that
+      // are deliberate: a tail rotor is its own machine and is not chopped at
+      // the main disc's rate, and going in past `body` keeps its fundamental
+      // off a 92 Hz peak it would otherwise land square on.
+      let tail: OscillatorNode | null = null;
+      let tailLevel: GainNode | null = null;
+      if (r) {
+        tail = ctx.createOscillator();
+        tail.type = "sawtooth";
+        tail.frequency.value = 30;
+        const tailTone = ctx.createBiquadFilter();
+        tailTone.type = "bandpass";
+        tailTone.frequency.value = 780;
+        tailTone.Q.value = 1.6;
+        tailLevel = ctx.createGain();
+        tailLevel.gain.value = 0;
+        tail.connect(tailTone).connect(tailLevel).connect(lowCut);
+      }
+
       const sources: AudioScheduledSourceNode[] = [
         noise, fire, growl, chest, turboA, turboB,
       ];
+      // On the list before anything starts, or it is a voice running unheard
+      // for the rest of the session — see the interface's header, which is the
+      // one rule this graph has.
+      if (tail) sources.push(tail);
       for (const s of sources) s.start();
       return {
-        kind, sources, out, panner, fire, growl, chest, turbo: [turboA, turboB],
-        chugTone, growlTone, turboTone, turboLevel, trackLevel,
+        kind, sources, out, panner, fire, fireDepth, growl, chest,
+        turbo: [turboA, turboB], chugTone, growlTone, turboTone, turboLevel,
+        trackLevel, tail, tailLevel,
       };
     } catch {
       return null;
@@ -1275,12 +1421,20 @@ export class Sfx {
   private driveEngine(
     e: EngineVoice,
     load: number,
-    speed: number,
+    turning: number,
     level = 1,
   ): void {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    const rev = Math.min(1, 0.75 * speed + 0.25 * load);
+    // **The fork, and it is the data rather than the kind.** A rotor is not
+    // this voice with different numbers in it: the note is governed, so
+    // everything below that reads the machine's SPEED to decide a pitch is a
+    // sentence that is false about a helicopter. See `driveRotor`.
+    if (e.kind.rotor) {
+      this.driveRotor(e, e.kind.rotor, load, turning, level, t);
+      return;
+    }
+    const rev = Math.min(1, 0.75 * turning + 0.25 * load);
     // The firing rate, and every pitched layer is a multiple of it so the
     // engine changes note as one machine. 13 Hz is a lope you can count and 32
     // is a diesel working; a real V12's firing rate is far above both, and
@@ -1312,7 +1466,7 @@ export class Sfx {
     // the whistle arriving behind it, and letting go leaves the whistle
     // running on for a moment after the growl has dropped — which is the one
     // cue in the mix that says turbo rather than merely big.
-    const spool = Math.min(1, 0.45 * speed + 0.65 * load);
+    const spool = Math.min(1, 0.45 * turning + 0.65 * load);
     const hz = 700 + 1500 * spool;
     e.turbo[0].frequency.setTargetAtTime(hz, t, 0.6);
     e.turbo[1].frequency.setTargetAtTime(hz, t, 0.6);
@@ -1323,10 +1477,112 @@ export class Sfx {
     // vehicle is a wheeled vehicle; anything above 0 under one is a tank
     // arriving that nobody can see.
     e.trackLevel.gain.setTargetAtTime(
-      (0.006 + 0.045 * speed) * e.kind.clatter,
+      (0.006 + 0.045 * turning) * e.kind.clatter,
       t,
       0.12,
     );
+  }
+
+  /**
+   * The same six sources driven as a TURBINE HANGING OFF A DISC, and the whole
+   * of what makes a helicopter one.
+   *
+   * `turning` here is the SPOOL — how fast the rotor is going round, 0..1 of
+   * governed — and `load` is DISC LOADING, how hard it is being worked. Both
+   * come off the hull itself; `Vehicle.powerplant` is where they are worked
+   * out and carries the argument for each.
+   *
+   * **The one sentence this method exists to make true: the note does not move
+   * with what the machine is doing.** A rotor is held at one speed by a
+   * governor, so a helicopter accelerating does not rev, a helicopter slowing
+   * does not fall away, and a helicopter HOVERING is at nearly full power and
+   * very nearly its loudest. Driving this voice off road speed said the
+   * opposite of all three — a machine that went quiet whenever it stopped
+   * moving, which is a machine flying with its engine switched off.
+   *
+   * So the two numbers are asked completely different questions from the ones
+   * a geared engine asks:
+   *
+   * | | geared to wheels | hung off a disc |
+   * | --- | --- | --- |
+   * | the NOTE | road speed and a quarter of the throttle | the spool, and nothing else |
+   * | the LEVEL | the throttle | the spool floor plus the disc loading |
+   * | the LUMP | a fixed depth | the loading — a worked disc chops harder |
+   * | the whistle | late, and swept by the throttle | governed, and swept by the spool alone |
+   *
+   * The spool is the one thing here that DOES move the note, and it is not an
+   * exception: a rotor coming up to speed is a rotor whose speed is changing.
+   * It is why the whole voice is written against `turning` rather than pinned
+   * at governed — the machine winds up over `flight.spoolTime`, in step with
+   * the disc the player is watching and with the moment it gets light on its
+   * skids, and winds down again when the pilot steps out.
+   */
+  private driveRotor(
+    e: EngineVoice,
+    r: NonNullable<EngineKind["rotor"]>,
+    load: number,
+    turning: number,
+    level: number,
+    t: number,
+  ): void {
+    // The blade rate, and a floor under it so a disc barely turning is a flap
+    // rather than a DC oscillator. `revMult` multiplies it for the reason it
+    // multiplies a firing rate: everything pitched in this voice is a multiple
+    // of one rate, so the machine spools as one machine.
+    const blade = r.slapHz * e.kind.revMult * (0.08 + 0.92 * turning);
+    // A quarter second, which is a twentieth of the spool it is following. Long
+    // enough that nothing in it steps, short enough that the whine arrives with
+    // the disc rather than behind it.
+    e.fire.frequency.setTargetAtTime(blade, t, 0.25);
+    e.growl.frequency.setTargetAtTime(blade * 2, t, 0.25);
+    e.chest.frequency.setTargetAtTime(blade * 5, t, 0.25);
+    if (e.tail) {
+      e.tail.frequency.setTargetAtTime(blade * r.tailRatio, t, 0.25);
+    }
+    // THE SLAP, and it is the load. This is the line a geared engine has no
+    // equivalent of: a throttle is heard in a diesel's filters because a
+    // cylinder firing is the same event however hard it is working, where a
+    // blade beating into its own wake is not — a loaded disc hits harder. The
+    // sign is negative for `buildEngine`'s reason: the bang first, the decay
+    // after it.
+    e.fireDepth.gain.setTargetAtTime(-(0.36 + 0.4 * load), t, 0.12);
+    // Loud at a HOVER. The spool term is what a machine hanging still over a
+    // street is worth before the pilot has asked it for anything, and it is
+    // most of the voice.
+    e.out.gain.setTargetAtTime(
+      (0.045 + 0.05 * turning + 0.2 * load) * level,
+      t,
+      0.1,
+    );
+    // The wash opens further than a diesel's does: what a loaded disc throws
+    // down is air, and air is broadband where exhaust is not.
+    e.chugTone.frequency.setTargetAtTime(380 + 1500 * load, t, 0.12);
+    e.growlTone.frequency.setTargetAtTime(420 + 900 * load, t, 0.12);
+    // The TURBINE, and it answers the spool alone — which is the whole of what
+    // "governed" means and is audible as the machine holding its note through
+    // a hard pull. The one exception is DROOP: a couple of per cent of sag
+    // under load, which is the cue that says there is a governor working
+    // rather than that the note is free to wander.
+    const hz = r.turbineHz * (0.22 + 0.78 * turning) * (1 - 0.025 * load);
+    // A tenth of a second rather than the turbocharger's six tenths. That lag
+    // was the whole character of a turbo — a wheel getting there after the
+    // engine had — and it is exactly wrong here: the spool is already IN
+    // `turning`, measured off the disc the player is watching, so a lag on top
+    // of it is a whine belonging to a rotor it has fallen behind.
+    e.turbo[0].frequency.setTargetAtTime(hz, t, 0.12);
+    e.turbo[1].frequency.setTargetAtTime(hz, t, 0.12);
+    e.turboTone.frequency.setTargetAtTime(hz, t, 0.12);
+    e.turboLevel.gain.setTargetAtTime(
+      0.006 + 0.1 * turning + 0.04 * load,
+      t,
+      0.12,
+    );
+    if (e.tailLevel) {
+      e.tailLevel.gain.setTargetAtTime(0.014 + 0.055 * turning, t, 0.12);
+    }
+    // `trackLevel` is deliberately not written, and it is not an omission: it
+    // was built at 0 and nothing hung off a rotor runs on belts. A kind that
+    // claimed both would be describing a machine that does not exist.
   }
 
   /**

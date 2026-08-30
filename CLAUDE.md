@@ -976,13 +976,26 @@ within earshot. **A frame that did not STEP the fleet owes `Sfx.enginesOff`**
 whose speeds are frozen, and a voice left running under the deploy card is a
 tank droning in a street where nothing moves.
 
+**There are TWO POWERPLANTS in that graph and no code that asks which kind it is
+holding.** `EngineKind.rotor` is a nullable block — `spec.flight`'s bargain made
+again one layer down — turning the same five layers from a piston engine into a
+turbine hung off a disc. **What it changes is not levels: a GOVERNED rotor does
+not change note with what the machine is doing**, so the whistle answers the
+spool alone and what the load moves is how hard the disc CHOPS. **And what
+drives it is asked of the HULL** (`Vehicle.powerplant`): the spool and the disc
+loading on a rotor, road speed and a stick on anything geared to its wheels. A
+voice driven off `travel` **hovered in silence**, which is a machine flying with
+its engine off.
+
 → **[`docs/vehicles.md`](docs/vehicles.md)** — the three kinds and the two
 capabilities that stand in for a branch between them, the truck's trade and the
 helicopter's fragility; the two seats and the swap, the cupola gun's
 world angle and its stowed inversion, the crew of two, the whisker fan and the
 two geometry bugs it found; the collider's three answers; the tracks' sweep, its
 three gates and its two skips; each model's mesh budget, its running gear and
-its whips, and the gunship's chin turret with the four clearances it owes; the two engine voices and the one graph under them; the plank, the
+its whips, and the gunship's chin turret with the four clearances it owes; the
+two engine voices, the two powerplants under them and the measurements on both;
+the plank, the
 rate limit and the leading-end sphere; the damage kinds, the four ways out of a
 seat, the shell, the two clocks a hardstanding runs, what a map owes — including
 what its GENERATOR owes — and what is not built.

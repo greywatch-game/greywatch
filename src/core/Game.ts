@@ -4924,16 +4924,23 @@ export class Game {
     // best. A hull that casts no shadow of its own loses nothing by this.
     if (tank.flies) this.shadowFocus.y = tank.floorY;
     this.updateSceneForCamera(dt, this.shadowFocus, null, this.combatants);
-    // The load is the THROTTLE the hull is actually being given, which is this
-    // player's stick only while they are the one holding it. A gunner pushing
-    // a stick that steers nothing used to rev an engine somebody else was
+    // The stick is the THROTTLE the hull is actually being given, which is this
+    // player's only while they are the one holding it. A gunner pushing a
+    // stick that steers nothing used to rev an engine somebody else was
     // driving; the hull's own speed is the honest answer for anyone whose
     // hands are not on it.
-    const speed = Math.min(1, tank.travel / tank.spec.drive.maxSpeed);
-    this.sfx.engineDrive(
-      this.drivingSeat === DRIVER ? Math.min(1, Math.abs(this.input.moveY)) : speed,
-      speed,
+    //
+    // …and the hull turns that into the two numbers the voice wants, rather
+    // than this frame doing it. `Vehicle.powerplant` carries the argument, and
+    // the short of it is that road speed and a stick describe a machine geared
+    // to its wheels — a rotor is neither, and asking it these two questions
+    // here is what made a helicopter sound like a car.
+    const [load, rev] = tank.powerplant(
+      this.drivingSeat === DRIVER
+        ? Math.min(1, Math.abs(this.input.moveY))
+        : Math.min(1, tank.travel / tank.spec.drive.maxSpeed),
     );
+    this.sfx.engineDrive(load, rev);
   }
 
   /**
@@ -4943,11 +4950,17 @@ export class Game {
    *
    * Three gates and they are the three ways a hull is not making a noise: it
    * is the one the player is inside (which has its own unpanned voice through
-   * `engineOn`, and would otherwise be heard twice), it is a wreck, or there
-   * is nobody in it. Occupancy is the honest test on both sides of the wire —
-   * it is stated once, on the hull, and a match writes it from the snapshot —
-   * and it is what makes a hardstanding's parked armour silent until somebody
-   * climbs aboard.
+   * `engineOn`, and would otherwise be heard twice), it is a wreck, or it is
+   * not RUNNING. Occupancy is most of that last one and is the honest test on
+   * both sides of the wire — it is stated once, on the hull, and a match writes
+   * it from the snapshot — and it is what makes a hardstanding's parked armour
+   * silent until somebody climbs aboard. It is not the whole of it, because a
+   * ROTOR does not stop with the hand that let go of it: see `Vehicle.running`,
+   * which is what keeps a disc that is still visibly turning from doing it in
+   * silence. The half second where a pilot's own unpanned voice is winding down
+   * while this one builds is a crossfade rather than a double — both ramp, in
+   * opposite directions — and it is what stepping out of a machine sounds
+   * like.
    *
    * The key is the hull's index in the fleet, which is stable for as long as a
    * map is: the stands are built once and neither added to nor reordered. A
@@ -4966,15 +4979,20 @@ export class Game {
     const tanks = this.vehicles.hulls;
     for (let i = 0; i < tanks.length; i++) {
       const tank = tanks[i];
-      if (tank === this.driving || !tank.alive || !tank.occupied) {
+      if (tank === this.driving || !tank.alive || !tank.running) {
         this.sfx.hullEngineOff(i);
         continue;
       }
-      // Its own speed for both terms, exactly as `frameVehicleCamera` gives a
-      // GUNNER: the throttle belongs to whoever is holding the stick, and from
+      // Its own speed for the stick, exactly as `frameVehicleCamera` gives a
+      // GUNNER: the throttle belongs to whoever is holding it, and from
       // outside the hull there is no way to see it and no reason to guess.
-      const speed = Math.min(1, tank.travel / tank.spec.drive.maxSpeed);
-      this.sfx.hullEngine(i, tank.center, speed, speed, tank.spec.engine);
+      // Everything else the voice wants is the hull's own answer — see
+      // `Vehicle.powerplant`, which is why a helicopter flown past you by
+      // somebody else is a rotor rather than a car being driven.
+      const [load, rev] = tank.powerplant(
+        Math.min(1, tank.travel / tank.spec.drive.maxSpeed),
+      );
+      this.sfx.hullEngine(i, tank.center, load, rev, tank.spec.engine);
     }
   }
 
