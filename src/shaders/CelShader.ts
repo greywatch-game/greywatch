@@ -1357,12 +1357,27 @@ export class CelMaterialFactory {
     return mat;
   }
 
-  /** Returns the shared cel material for a hex color, creating it on demand. */
-  get(hex: string): ShaderMaterial {
-    let mat = this.cache.get(hex);
+  /**
+   * Returns the shared cel material for a hex color, creating it on demand.
+   *
+   * `depthUnits` biases the depth TEST toward the eye in polygon-offset units,
+   * one unit being the depth buffer's own smallest resolvable step at that
+   * fragment — the same unit `GLASS_DEPTH_UNITS` is stated in, and against the
+   * same class of problem. Its one caller is a ROAD (`ROAD_DEPTH_UNITS` in
+   * `world/roads.ts`), a sheet lying a centimetre over the floor that loses
+   * that centimetre to the buffer's own step long before the fog wall.
+   * It is part of the cache KEY for `getGlossy`'s reason: the offset is
+   * renderer state rather than a uniform, so one hex asked for at two biases
+   * is two materials, and keying on the colour alone would hand whichever
+   * asked first to both — a car's underbody lifted off the ground because a
+   * road had already minted its colour.
+   */
+  get(hex: string, depthUnits = 0): ShaderMaterial {
+    const cacheKey = depthUnits === 0 ? hex : `\0proud-${hex}-${depthUnits}`;
+    let mat = this.cache.get(cacheKey);
     if (!mat) {
       mat = new ShaderMaterial(
-        `cel-${hex}`,
+        depthUnits === 0 ? `cel-${hex}` : `cel-proud-${hex}`,
         this.scene,
         { vertex: "cel", fragment: "cel" },
         {
@@ -1382,7 +1397,8 @@ export class CelMaterialFactory {
       this.applyShadow(mat);
       this.applySpec(mat, null);
       this.applyTranslucency(mat, null);
-      this.cache.set(hex, mat);
+      mat.zOffsetUnits = depthUnits;
+      this.cache.set(cacheKey, mat);
     }
     return mat;
   }
@@ -1702,15 +1718,26 @@ export class CelMaterialFactory {
    *   shader perturbs the normal by its slope (CEL_BUMP). Must tile exactly
    *   like the albedo.
    * @param opts.bumpScale metres of fake relief at height value 1.0
+   * @param opts.depthUnits polygon offset toward the eye, exactly as `get()`
+   *   takes it and keyed the same way — the cobbled road's half of
+   *   `ROAD_DEPTH_UNITS`
    */
   getGroundTextured(
     key: string,
     tex: BaseTexture,
     texScale: number,
-    opts: { spec?: SpecSpec; bump?: BaseTexture; bumpScale?: number } = {},
+    opts: {
+      spec?: SpecSpec;
+      bump?: BaseTexture;
+      bumpScale?: number;
+      depthUnits?: number;
+    } = {},
   ): ShaderMaterial {
     const { spec, bump } = opts;
-    const cacheKey = `\0ground-${key}${spec ? "-spec" : ""}${bump ? "-bump" : ""}`;
+    const depthUnits = opts.depthUnits ?? 0;
+    const cacheKey =
+      `\0ground-${key}${spec ? "-spec" : ""}${bump ? "-bump" : ""}` +
+      (depthUnits === 0 ? "" : `-proud${depthUnits}`);
     let mat = this.cache.get(cacheKey);
     if (!mat) {
       mat = new ShaderMaterial(
@@ -1767,6 +1794,7 @@ export class CelMaterialFactory {
       // in.
       this.applySpec(mat, spec ? this.groundSpec : null);
       this.applyTranslucency(mat, null);
+      mat.zOffsetUnits = depthUnits;
       this.cache.set(cacheKey, mat);
     }
     return mat;

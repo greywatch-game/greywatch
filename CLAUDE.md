@@ -474,6 +474,16 @@ stamps depth 5 cm above the sheet it wraps, which painted every mixed junction
 black, and no lift beats it since the shell rides with the slab. Do not put the
 ink back, and do not give two surfaces one rank.
 
+**That ladder settles a CROSSING and cannot settle the FLOOR**: 10 mm of
+geometry is spent by ~100 m against a depth buffer whose step at the far end of
+a big map is tens of centimetres, and past that a road is eaten by the ground it
+lies on — measured from a helicopter over Sarab, **the far half of a 900 m
+street drawn as detached bands of asphalt on bare sand**. `ROAD_DEPTH_UNITS`
+(-8) is a polygon offset in the buffer's OWN units, carried by the BUILDER
+(`Build`'s `depthUnits`) so a slab and the paint on it move together, and part
+of the material CACHE KEY — one hex at two biases is two materials, or a car's
+underbody rides off the ground.
+
 **There is a sixth entry in `MAPS` and it is DEV-ONLY and not a level.**
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
 against — a city block grid several times Harrowmead's size, written by

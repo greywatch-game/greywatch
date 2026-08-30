@@ -85,13 +85,81 @@ export const ROAD_RANK: Record<RoadSurface, number> = {
  * How far the LOWEST-ranked road's top face rides above the floor under it.
  *
  * A centimetre — enough that the slab does not fight the ground it is lying
- * on, and not enough to swallow a character's ankles. Nothing stands on a road
- * (feet rest on the floor from the ground probe and the nav grid, neither of
- * which has ever heard of a carriageway), so this is a look and never a walked
- * height — and `ROAD_RANK_STEP` below is small enough that the highest-ranked
- * road is still within four millimetres of it.
+ * on **inside a hundred metres or so**, and not enough to swallow a
+ * character's ankles. Nothing stands on a road (feet rest on the floor from
+ * the ground probe and the nav grid, neither of which has ever heard of a
+ * carriageway), so this is a look and never a walked height — and
+ * `ROAD_RANK_STEP` below is small enough that the highest-ranked road is still
+ * within four millimetres of it.
+ *
+ * **What a centimetre does NOT survive is DISTANCE**, and that is what
+ * `ROAD_DEPTH_UNITS` is for: this number is metres, and what the depth buffer
+ * can tell apart is not.
  */
 export const ROAD_TOP = 0.01;
+
+/**
+ * How far toward the eye a carriageway is biased in the depth TEST, in
+ * polygon-offset units — the fix for a road that is eaten by the ground it is
+ * lying on, from about a hundred metres out.
+ *
+ * **`ROAD_TOP` is stated in metres and the depth buffer's own step is not, so
+ * a fixed lift is a promise that expires with range.** The near plane is 5 cm
+ * (it has to be — the viewmodel's optics sit inside it), and against a buffer
+ * resolving 2^-24 of the range that leaves a step of about a centimetre at
+ * 90 m and tens of centimetres by the far end of a big map: past that the slab
+ * and the floor are the SAME depth, the tie is broken per pixel, and it is
+ * broken differently as the eye moves. Measured on Sarab from 40 m up — a
+ * helicopter's height, which is the vantage that made this a bug report rather
+ * than a curiosity, because altitude is what puts half a kilometre of
+ * carriageway on screen at once: **the far half of a 900 m street was drawn as
+ * detached bands of asphalt on bare sand**, 22.0% of the far window covered
+ * against the 35.7% the road actually paves, and the pattern crawled with
+ * every metre the aircraft flew.
+ *
+ * A polygon offset is the fix rather than a bigger lift for the reason
+ * `CelMaterialFactory.GLASS_DEPTH_UNITS` is: it is stated in exactly the units
+ * the problem is in. A unit is derived from the buffer's own smallest
+ * resolvable step at that fragment rather than from any distance, so this is fractions of a millimetre in the street you are
+ * standing in, where a road needs nothing, and metres at the fog wall, where
+ * the buffer's step is that coarse. A lift big enough to survive 560 m would
+ * have to be half a metre of kerb underfoot.
+ *
+ * **Eight is a doubled margin on a measured floor of four, and the plateau
+ * above it is wide.** Swept live over the same two vantages, the far window's
+ * road coverage goes 22.0% unbiased, 34.1% at -2, and 35.7% from -4 — where it
+ * stops moving, and is still exactly 35.7% at -32. The same reading taken in
+ * the band nearest the fog wall saturates at the same place: 14.8% unbiased,
+ * 20.0% at -2, 21.0% at -4 and unchanged at -32. So the number is not tuned to
+ * a look; it is the point at which the carriageway is all there, doubled.
+ *
+ * **It is the BUILDER's and not the slab's** (`Build`'s `depthUnits`), which
+ * is what keeps everything a road already carried in step with it: the lane
+ * markings are painted 2 cm above their own slab and move toward the eye with
+ * it, so that pair is settled by the same geometry it always was. What this
+ * changes is only the road against the FLOOR.
+ *
+ * **What it costs is nothing, and that was measured against the tightest
+ * clearance anything keeps over a carriageway.** A bullet's DUST DISC is the
+ * ceiling `ROAD_RANK_STEP` is squeezed by, and its margin over a road is
+ * tighter than that note's 20 mm: a road carries no collider, so the round
+ * stops on the FLOOR and the disc is lifted `CONFIG.effects.discLift` from
+ * there — 10 mm of clearance over the slab, not 20. Forty of them laid every
+ * 5 m down 200 m of Sarab's asphalt and diffed against the same street with
+ * none: **twelve are drawn, at identical screen positions, with and without
+ * the bias** — the same twelve blobs to within a few pixels of edge
+ * antialiasing. Eight units at the range a disc is still a disc is fractions
+ * of a millimetre; it only becomes metres out where the buffer's own step
+ * already is.
+ *
+ * **The RANKS below are deliberately still millimetres and were measured
+ * rather than assumed.** A crossing is decided by geometry at every range a
+ * road is drawn at — with both surfaces biased by this same number, a
+ * dirt/asphalt junction 400 m away renders BIT-IDENTICALLY to one where the
+ * two are given different offsets, so there is nothing here for a per-rank
+ * unit to buy.
+ */
+export const ROAD_DEPTH_UNITS = -8;
 
 /**
  * What one rank is worth in height. **Two millimetres, and it is squeezed from
@@ -133,6 +201,12 @@ export const ROAD_TOP = 0.01;
  * outline-width (5 cm) above the sheet it wraps, which is twenty-five times
  * this number: with the ink on, the loser's shell painted the whole junction
  * black however far the winner was lifted.
+ *
+ * **This ladder settles a CROSSING and it is not what settles the FLOOR** —
+ * see `ROAD_DEPTH_UNITS`, which is the same question asked at 500 m, where
+ * millimetres of any number are below what the buffer can tell apart. The two
+ * do not interact: both surfaces at a junction carry the same bias, so what
+ * decides between them is still the two millimetres here.
  */
 export const ROAD_RANK_STEP = 0.002;
 

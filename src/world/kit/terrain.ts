@@ -10,6 +10,7 @@
 import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import {
+  ROAD_DEPTH_UNITS,
   ROAD_LENGTH,
   ROAD_TOP,
   ROAD_WIDTH,
@@ -132,7 +133,10 @@ export function buildRoad(
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "road");
+  // Biased toward the eye, and it is the BUILDER that carries it so the slab
+  // and the paint laid on it move together — see `ROAD_DEPTH_UNITS`, and the
+  // note below on how far a centimetre of lift actually gets.
+  const b = new Build(scene, mats, "road", ROAD_DEPTH_UNITS);
   const surface = roadSurface(p.surface);
   const top = roadTop(surface);
   // Sunk the same 7 cm into the floor whatever it is riding at — see the note

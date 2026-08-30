@@ -557,6 +557,51 @@ shadow's 40 mm is the next one up. So the whole ladder fits inside the 10 mm eve
 road already stood proud by: the top of it is 14 mm, and nothing that cleared a road
 before clears it by more than four millimetres less now.
 
+**A LADDER IN MILLIMETRES SETTLES A CROSSING AND CANNOT SETTLE THE FLOOR, and
+those are two different questions that look like one.** A crossing is decided
+between two sheets at the same range, so a millimetre of separation is a
+millimetre however far away the junction is. The FLOOR is not: `ROAD_TOP` is
+10 mm of real geometry, and what the depth buffer can tell apart at 500 m is
+tens of centimetres, so the lift that keeps a road off the ground under your
+feet is spent long before the far end of a big map. Past that the slab and the
+floor are the SAME depth, the tie is broken per pixel, and it is broken
+differently on the next frame. **Measured on Sarab from 40 m up — a
+helicopter's height, which is the vantage that made this a bug report, because
+altitude is what puts half a kilometre of carriageway on screen at once: the
+far half of a 900 m street was drawn as detached bands of asphalt lying on bare
+sand**, 22.0% of the far window covered against the 35.7% the road actually
+paves, and the banding crawled with every metre the aircraft flew. At eye level
+it is invisible, which is why it survived four maps.
+
+**`ROAD_DEPTH_UNITS` is the fix and it is stated in the units the problem is
+in** — polygon offset, one unit being the depth buffer's own smallest
+resolvable step at that fragment, exactly as `CelMaterialFactory`'s
+`GLASS_DEPTH_UNITS` is. So it is a fraction of a millimetre in the street you
+are standing in, where a road needs nothing, and metres at the fog wall, where
+the buffer's step is that coarse; a fixed lift big enough to survive 560 m
+would be half a metre of kerb underfoot. **-8 is a doubled margin on a measured
+floor of four**: swept live, the far window's road coverage reads 22.0%
+unbiased, 34.1% at -2 and 35.7% from -4, where it stops moving and is still
+35.7% at -32; the band nearest the fog wall saturates at the same rung.
+
+**It is carried by the BUILDER and not by the slab** (`Build`'s `depthUnits`,
+which reaches `CelMaterialFactory.get` and `getGroundTextured` and is part of
+their cache KEY — one hex at two biases is two materials, or a car's underbody
+is lifted off the ground because a road minted its colour first). That is what
+keeps the road's own internal ladder intact: the lane markings are painted 2 cm
+over their slab and move toward the eye WITH it, so that pair is settled by the
+same geometry it always was, and what changes is only the road against the
+floor. **What the bias costs is nothing, and that was measured against the tightest
+clearance anything keeps over a carriageway.** The dust disc above is that
+ceiling, and its margin over a road is 10 mm rather than 20 — a road has no
+collider, so the round stops on the FLOOR and the disc is lifted from there.
+Forty of them laid every 5 m down 200 m of Sarab's asphalt and diffed against
+the same street with none: twelve are drawn, at identical screen positions,
+with the bias and without it. **The RANKS above stay millimetres and that was
+measured rather than assumed** — with both surfaces biased by the same number, a dirt/asphalt
+crossing 400 m out renders bit-identically to one where the two are given
+different offsets, so there is nothing for a per-rank unit to buy.
+
 **And NO ROAD IS INKED, which is the other load-bearing half.** `addOutline` hangs a hull on a mesh expanded 5 cm along its own normals
 and draws it a second time after the mesh with colour write off and depth write ON —
 so a road's ink stands in the depth buffer 5 cm above its own carriageway, and

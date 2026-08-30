@@ -481,6 +481,21 @@ export class Build implements Structure {
     private scene: Scene,
     private mats: CelMaterialFactory,
     private tag: string,
+    /**
+     * How far toward the eye everything this builder PAINTS is biased in the
+     * depth test, in polygon-offset units (`CelMaterialFactory.get`).
+     *
+     * Zero for every structure but the ROAD, which is the one thing in the kit
+     * that is a sheet lying ON the floor rather than a mass standing on it —
+     * see `ROAD_DEPTH_UNITS` in `world/roads.ts` for what a centimetre of lift
+     * is worth against the depth buffer's own step at 500 m.
+     *
+     * **It is on the BUILDER and not on a call**, which is what keeps a
+     * structure's own internal ladder intact: the slab and the lane markings
+     * laid on it move toward the eye together, so the 2 cm the paint stands
+     * proud of its carriageway still decides that pair exactly as it did.
+     */
+    private depthUnits = 0,
   ) {}
 
   /** A cel-shaded box. Visual only. */
@@ -501,7 +516,7 @@ export class Build implements Structure {
     );
     m.position.set(x, y, z);
     if (rot) m.rotation.set(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0);
-    m.material = this.mats.get(color);
+    m.material = this.mats.get(color, this.depthUnits);
     this.meshes.push(m);
     return m;
   }
@@ -578,7 +593,9 @@ export class Build implements Structure {
       this.scene,
     );
     m.material =
-      color === undefined ? this.groundMaterial() : this.mats.get(color);
+      color === undefined
+        ? this.groundMaterial()
+        : this.mats.get(color, this.depthUnits);
     this.meshes.push(m);
     return m;
   }
@@ -599,6 +616,7 @@ export class Build implements Structure {
         spec: CONFIG.graphics.spec.cobble,
         bump: getCobblestoneBumpTexture(this.scene),
         bumpScale: CONFIG.graphics.cobbleBumpScale,
+        depthUnits: this.depthUnits,
       },
     );
   }
@@ -795,7 +813,7 @@ export class Build implements Structure {
     );
     m.position.set(x, y, z);
     if (rot) m.rotation.set(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0);
-    m.material = this.mats.get(color);
+    m.material = this.mats.get(color, this.depthUnits);
     this.meshes.push(m);
     return m;
   }

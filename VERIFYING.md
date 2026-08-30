@@ -348,6 +348,19 @@ is one machine's:
   ground material is how the relief is turned off for an A/B. **Prove the remint
   before trusting an A/B that reports no difference**: make `band` return 0 and
   check that most of the frame goes black.
+- **A DEPTH BIAS set live does NOTHING, and it fails silently in the direction
+  that looks like an answer.** `material.zOffsetUnits` (and `zOffset`) is baked
+  into the WebGPU render BUNDLE the first time that material draws, and this
+  engine is built with `compatibilityMode = false`, so a bundle is recorded once
+  and replayed — a sweep that boots, draws, and then walks a material through
+  0, -2, -4, -8, -16 photographs the FIRST value five times and reports a
+  perfectly flat curve. It is the same value at every rung, which reads exactly
+  like "the bias does nothing" rather than like a harness bug; the tell is that
+  the first value in the list is the one the picture agrees with, so **run the
+  list backwards once and see whether the answer moves with it.** The fix is one
+  line: `mesh.resetDrawCache()` after writing the offset, which drops the bundle
+  and re-records it. With that in, `ROAD_DEPTH_UNITS` swept clean in one boot
+  and agreed to a pixel with the same number compiled into the tree.
 - **A tinted mesh is a better instrument than a frame diff when the question is
   whether something is DRAWN AT ALL.** Both depth measurements in
   `plans/webgpu-ref/depth.mjs` work this way: a curtain wall whose glass is
