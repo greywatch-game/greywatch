@@ -133,15 +133,42 @@ and how many hitches it has seen, and carries three buttons:
 
 | | what it does | where it lands |
 | --- | --- | --- |
+| **VIEW** | the full report, handed straight to the reader | `/profile_viewer.html`, opened in a new tab |
 | **KEEP** | compact report — summary, memory, phase table, the worst frames whole | the clipboard (≈6 kB) |
 | **SAVE** | the same plus the complete per-frame series | a download (≈70 kB for 1,000 frames) |
 | **TRACE** | the last 600 frames as Chrome Trace Event JSON | a download, for `ui.perfetto.dev` |
+
+**`VIEW` is the one that closes the loop, and it can only exist because the
+reader is on the game's own origin.** Same origin means the same
+`localStorage`, so the report is written to a key
+(`greywatch.profile.handoff`) and the reader picks it up on load — no clipboard,
+no paste, no file, and nothing leaving the device. That is the payoff of
+shipping the reader in `public/` rather than linking somewhere else: it is the
+difference between a capture being READ on the phone that took it and one being
+mailed to a desktop by somebody who probably will not bother. The **full**
+report goes over, series and all, because a hand-off has no size problem to
+dodge and the timelines are most of what the reader is for.
+
+Neither side clears the key. A reader that consumed it would come up empty on a
+refresh — the first thing anybody does to a page full of charts — so the game
+overwrites it on every hand-off and the reader prints the capture's own
+timestamp rather than letting a stale one pass for fresh.
+
+Two failures it handles rather than ignores. **Storage can refuse** (a private
+window, a quota, a browser told to deny it) and that is no reason to lose a
+capture: it falls through to the clipboard ladder below and says which happened.
+And **`window.open` is called without `noopener`, with the reference severed
+afterwards** — passed as a feature it returns `null` *by specification*, which
+is indistinguishable from a blocked popup, and telling a player to open the page
+themselves when a tab did open is the wrong report.
 
 **`F3` is KEEP**, and it exists because on a desktop mid-round **the pointer is
 locked and none of those buttons can be clicked at all**. On a phone there is no
 lock and the buttons are the whole interface — which is the case this was built
 for. The flash line under the chip reports what actually happened, because under
-a lock there is no other channel back to the player.
+a lock there is no other channel back to the player. (`VIEW` has no key: under a
+lock a new tab is the wrong thing to spring on somebody, and releasing the lock
+is one keypress away from being able to click it.)
 
 **The clipboard is tried three ways and that is not defensive coding.** The
 async clipboard needs a secure context, and the way this game is really played
@@ -329,8 +356,9 @@ capture re-printed from a later run is a capture of something else.
 differences between fields — a hitch's wall clock against its own `frame` span,
 that shortfall against its collection count — and nobody does that arithmetic in
 their head off a phone's clipboard.
-[`public/profile_viewer.html`](../public/profile_viewer.html) does it. Paste or
-drop a `KEEP`/`SAVE` report or a `TRACE`; it detects which.
+[`public/profile_viewer.html`](../public/profile_viewer.html) does it. Press
+`VIEW` on the chip and the capture arrives on its own; otherwise paste or drop a
+`KEEP`/`SAVE` report or a `TRACE`, and it detects which.
 
 **It is served from the game's own origin, and that is the whole point rather
 than a convenience.** This instrument exists because the interesting devices are
@@ -376,8 +404,11 @@ itself:
 - **No imports and no build step.** It is copied out of `public/` verbatim and
   is never typechecked — the `src/pwa/sw.js` arrangement — and it must open from
   a `file://` URL with nothing else present.
-- **Its path lives in `sw.js`'s `DOCS`.** Rename it in one place only and it
-  becomes the game offline, silently, on somebody else's phone.
+- **Its path is written in THREE places and they must agree**: the file's own
+  name in `public/`, `DOCS` in `src/pwa/sw.js` (or it becomes the game offline),
+  and `VIEWER_PATH` in `src/ui/ProfileChip.ts` (or `VIEW` opens nothing). A
+  rename that misses one fails silently, and two of the three fail only offline
+  or only on somebody else's phone. The hand-off key is spelled in two of them.
 
 ---
 

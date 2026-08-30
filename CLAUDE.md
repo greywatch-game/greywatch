@@ -1168,7 +1168,11 @@ device creation and `main.ts` calls `initAsync()` with no descriptor.
 **A capture is READ at `/profile_viewer.html`**, one import-free, network-free
 page in `public/` served from the game's own origin — because the loop has to
 close on the device that is slow, and a viewer you must mail a file to is one
-nobody uses. It draws the verdict, the attribution ladder, the timelines and a
+nobody uses. **The chip's `VIEW` button hands the full report straight over
+through `localStorage`** and opens the page: same origin, so no clipboard, no
+paste, no file, and nothing leaves the device. That path is spelled in THREE
+places — the file in `public/`, `sw.js`'s `DOCS`, and `ProfileChip`'s
+`VIEWER_PATH` — and every way of missing one fails silently. It draws the verdict, the attribution ladder, the timelines and a
 flame chart, and **the capture states its own phase tree** (`ProfileReport.tree`
 from `PARENT_OF`, typed so a new phase does not compile until it names its
 parent) so the reader is never guessing this build's nesting. It is the SECOND

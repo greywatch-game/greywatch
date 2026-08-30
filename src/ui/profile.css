@@ -94,6 +94,15 @@
   touch-action: none;
 }
 
+/* The one button that does not merely deliver bytes — it opens the reader — so
+   it is the one with a fill. Everything else on the chip stays a hairline laid
+   over a fight. */
+#prof .pr-btn.pr-go {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(226, 72, 61, 0.5);
+  color: #fff;
+}
+
 #prof .pr-btn:active {
   background: rgba(255, 255, 255, 0.16);
   border-color: rgba(255, 255, 255, 0.45);

@@ -1,22 +1,46 @@
 /**
  * ProfileChip.ts — the frame profiler's corner of the screen: what it is
- * holding, and the three buttons that get it off the device.
- * Owns: `#prof` and the delivery of a report — the clipboard, the download and
- * the fallbacks between them. Owns NO profiling state: what it shows is PUSHED
- * by `Game` like every other HUD gauge, and a report is fetched through
- * `onCapture` rather than by reaching for the instrument.
+ * holding, and the four buttons that get it off the device or into the reader.
+ * Owns: `#prof` and the delivery of a report — the hand-off, the clipboard, the
+ * download and the fallbacks between them. Owns NO profiling state: what it
+ * shows is PUSHED by `Game` like every other HUD gauge, and a report is fetched
+ * through `onCapture` rather than by reaching for the instrument.
  *
  * **It is a DEVICE on `#hud`, not a screen** — the arrangement `TouchControls`
  * already is. There is no `GameState` for it, it covers nothing, it takes
  * nothing offline, and it is up in every state while the profiler is armed,
  * because a hitch on the deploy screen is still a hitch.
  *
- * **THE THREE BUTTONS EXIST BECAUSE THE POINTER IS LOCKED.** On a desktop
- * mid-round nothing here is clickable at all — the lock eats the click — which
- * is why `F3` is wired to the same path `KEEP` takes and why the flash line
- * reports the outcome on screen rather than in a dialog nobody can dismiss. On
- * a phone there is no lock and the buttons are the whole interface, which is
- * the case this was built for.
+ * **THE BUTTONS EXIST BECAUSE THE POINTER IS LOCKED.** On a desktop mid-round
+ * nothing here is clickable at all — the lock eats the click — which is why
+ * `F3` is wired to the same path `KEEP` takes and why the flash line reports
+ * the outcome on screen rather than in a dialog nobody can dismiss. On a phone
+ * there is no lock and the buttons are the whole interface, which is the case
+ * this was built for.
+ *
+ * **`VIEW` HANDS THE CAPTURE OVER RATHER THAN PUBLISHING IT, and it can only do
+ * that because the reader is on the GAME'S OWN ORIGIN.**
+ * `public/profile_viewer.html` shares this page's `localStorage`, so the report
+ * is written to a key and the viewer reads it on load — no clipboard, no paste,
+ * no file, and nothing leaves the device. That is the whole payoff of shipping
+ * the reader in `public/` rather than linking somewhere else: it is the
+ * difference between a capture being READ on the phone that took it and a
+ * capture being mailed to a desktop by somebody who probably will not bother.
+ *
+ * Three things about it that are not obvious:
+ *  - **The FULL report is handed over**, series and all. The hand-off is not
+ *    going through a clipboard, so it has no size problem to dodge, and the
+ *    timelines are most of what the reader is for.
+ *  - **`window.open` is called WITHOUT `noopener`, and the reference is severed
+ *    afterwards instead.** Passed as a feature, `noopener` makes the call
+ *    return `null` BY SPECIFICATION — which is indistinguishable from a blocked
+ *    popup, and telling a player to open the page themselves when a tab did in
+ *    fact open is the wrong report. It is our own page on our own origin, so
+ *    `win.opener = null` afterwards buys the same thing and leaves the return
+ *    value meaning what it appears to mean.
+ *  - **Storage can refuse** — a private window, a quota, a browser told to deny
+ *    it — and that is not a reason to lose a capture. It falls through to the
+ *    clipboard ladder below, and says which happened.
  *
  * **The clipboard is tried THREE ways and that is not defensive coding.** The
  * async clipboard needs a secure context, and the way this game is actually
@@ -30,6 +54,29 @@ import type { ProfileReport } from "../core/FrameProfile";
 
 /** How long a flash line stays up, in milliseconds. A fact about reading. */
 const FLASH_MS = 4000;
+
+/**
+ * Where the reader lives.
+ *
+ * **This path is written in THREE places and they must agree**: here, `DOCS` in
+ * [`src/pwa/sw.js`](../pwa/sw.js) — which is what makes it answer its own
+ * navigation offline instead of turning into the game — and the file's own name
+ * in `public/`. A rename that misses one of them fails silently, offline, on
+ * somebody else's phone. See `docs/pwa.md`.
+ */
+const VIEWER_PATH = "/profile_viewer.html";
+
+/**
+ * The `localStorage` key the reader picks a handed-over capture up from.
+ *
+ * Namespaced like the settings beside it, and deliberately NOT cleared by
+ * either side: a reader that consumed it would come up empty on a refresh,
+ * which is the first thing anybody does to a page full of charts. The game
+ * overwrites it on every hand-off, so what sits there is always the last
+ * capture taken — and the reader prints its timestamp rather than letting it
+ * pass for fresh.
+ */
+const HANDOFF_KEY = "greywatch.profile.handoff";
 
 /**
  * Seconds between writes to the live line — `HUD`'s `FPS_INTERVAL` and the same
@@ -80,6 +127,7 @@ export class ProfileChip {
         <b class="pr-hitch">0</b><em>hitches</em>
       </div>
       <div class="pr-acts">
+        <button type="button" class="pr-btn pr-go" data-act="view">VIEW</button>
         <button type="button" class="pr-btn" data-act="keep">KEEP</button>
         <button type="button" class="pr-btn" data-act="save">SAVE</button>
         <button type="button" class="pr-btn" data-act="trace">TRACE</button>
@@ -138,6 +186,10 @@ export class ProfileChip {
   }
 
   private act(what: string): void {
+    if (what === "view") {
+      this.view();
+      return;
+    }
     if (what === "trace") {
       const trace = this.onTrace?.();
       if (!trace || trace === "{}") return this.flash("nothing recorded yet");
@@ -156,6 +208,36 @@ export class ProfileChip {
       return;
     }
     void this.copy(json).then((how) => this.flash(`${how} · ${line}`));
+  }
+
+  /**
+   * Hands the capture to the reader on this same origin, and opens it.
+   *
+   * See the header for why the report is full, why `noopener` is set by hand
+   * afterwards rather than passed, and why a refusal from storage falls back to
+   * the clipboard rather than failing.
+   */
+  private view(): void {
+    const report = this.onCapture?.(true);
+    if (!report) return this.flash("nothing recorded yet");
+    const json = JSON.stringify(report);
+    try {
+      localStorage.setItem(HANDOFF_KEY, json);
+    } catch {
+      void this.copy(json).then((how) =>
+        this.flash(`${how} — storage refused the hand-off, so paste it into ${VIEWER_PATH}`),
+      );
+      return;
+    }
+    const win = window.open(VIEWER_PATH, "_blank");
+    if (!win) return this.flash(`capture ready — open ${VIEWER_PATH} to read it`);
+    try {
+      win.opener = null;
+    } catch {
+      // Some browsers refuse the write. The tab is open either way, which is
+      // the thing being reported.
+    }
+    this.flash(`opened the reader · ${headline(report)}`);
   }
 
   /**

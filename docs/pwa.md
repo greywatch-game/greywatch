@@ -180,8 +180,10 @@ Three rules come with it:
   which its own pathname can never equal, so a 404 from nginx is still never
   cached as the shell. That was the original rule's whole point and it is
   preserved rather than re-argued.
-- **A rename in `public/` is a rename in `DOCS`, and the failure is silent** —
-  the game opens instead of the viewer, offline only, on someone else's phone.
+- **A rename in `public/` is a rename in `DOCS` *and* in `ProfileChip`**, whose
+  `VIEWER_PATH` is what the chip's `VIEW` button opens. Three places, and every
+  failure is silent: miss `DOCS` and the game opens instead of the viewer
+  offline, miss `ProfileChip` and the button opens nothing.
 
 Verified against a real build served over localhost, with the worker installed
 off the game's own launch and the context then taken offline: `/` is the game,

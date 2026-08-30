@@ -454,9 +454,11 @@ table.lad tr.rest td { color: var(--ink-3); font-style: italic; }
     <div class="drop" id="drop">
       <h2>Drop a capture in</h2>
       <p>
-        A profile report from <code class="mono">KEEP</code> or <code class="mono">SAVE</code>,
-        or a trace from <code class="mono">TRACE</code>. Drop the file anywhere on this
-        page, paste the JSON below, or open it from disk. Nothing leaves your browser.
+        Press <code class="mono">VIEW</code> on the profiler's chip in the game and the
+        capture arrives here on its own. Otherwise: a report from
+        <code class="mono">KEEP</code> or <code class="mono">SAVE</code>, or a trace from
+        <code class="mono">TRACE</code> — drop the file anywhere on this page, paste the
+        JSON below, or open it from disk. Nothing leaves your browser.
       </p>
       <div class="row">
         <button class="btn" id="btn-file2" type="button">Open file</button>
@@ -638,6 +640,28 @@ const el = (tag, cls, text) => {
 const fmt = (v, p = 2) => (v == null || !isFinite(v) ? "—" : Number(v).toFixed(p));
 const pct = (v) => (v * 100).toFixed(1) + "%";
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ── the hand-off ──────────────────────────────────────────────────────────
+   The chip's VIEW button writes the whole report to this key and opens this
+   page. It works at all only because the reader is on the GAME'S OWN ORIGIN —
+   same origin, same `localStorage` — which is the reason this file is in
+   `public/` rather than hosted somewhere else.
+
+   Neither side clears it. A reader that consumed the key would come up empty on
+   a refresh, which is the first thing anybody does to a page full of charts; so
+   the game overwrites it on every hand-off and this page prints the capture's
+   own timestamp rather than letting a stale one pass for fresh. The key is
+   spelled the same in `src/ui/ProfileChip.ts`. */
+const HANDOFF_KEY = "greywatch.profile.handoff";
+
+function handedOver() {
+  try {
+    return localStorage.getItem(HANDOFF_KEY);
+  } catch (e) {
+    // A browser refusing storage outright. There is still the drop zone.
+    return null;
+  }
+}
 
 /* ── state ─────────────────────────────────────────────────────────────── */
 let REPORT = null;
@@ -1571,8 +1595,24 @@ let rt = 0;
 window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(redraw, 120); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
 
-// Open on the sample so the page is legible before anything is loaded.
-if ($("sample-report").textContent.trim().charAt(0) === "{") sample();
+/* What this page opens on, in order of what the reader most likely wants:
+   the capture the game just handed over, then the bundled sample, then the
+   drop zone. */
+(function open() {
+  const handed = handedOver();
+  if (handed && handed.charAt(0) === "{") {
+    let when = "";
+    try {
+      const t = JSON.parse(handed).takenAt;
+      if (t) when = " · " + String(t).replace("T", " ").replace(/\..*$/, "");
+    } catch (e) {
+      // Unparseable: `load` will say so properly below.
+    }
+    load(handed, "handed over from the game" + when);
+    return;
+  }
+  if ($("sample-report").textContent.trim().charAt(0) === "{") sample();
+})();
 </script>
 
 </body>

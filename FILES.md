@@ -687,13 +687,18 @@ src/
       minimap.css       #   friendlies, firing enemies, and a rim marker for
                         #   every control point the zoomed view does not reach
     ProfileChip.ts      # The frame profiler's corner of the HUD: what the ring
-      profile.css       #   is holding, and the three buttons that get a capture
-                        #   off the device. A DEVICE on #hud like TouchControls,
-                        #   not a screen. The buttons exist because the pointer
-                        #   is LOCKED — F3 is the desktop path to the same
-                        #   place, and a phone has only the buttons. Delivery
-                        #   (clipboard, then execCommand, then download) is
-                        #   this file's; the ring is never reached for
+      profile.css       #   is holding, and the four buttons that get a capture
+                        #   off the device or into the reader. A DEVICE on #hud
+                        #   like TouchControls, not a screen. The buttons exist
+                        #   because the pointer is LOCKED — F3 is the desktop
+                        #   path to KEEP, and a phone has only the buttons.
+                        #   VIEW hands the full report to
+                        #   public/profile_viewer.html through localStorage,
+                        #   which works only because the reader is on the game's
+                        #   OWN ORIGIN; VIEWER_PATH here is one of the three
+                        #   places that path is spelled. Delivery (clipboard,
+                        #   then execCommand, then download) is this file's;
+                        #   the ring is never reached for
     TouchControls.ts    # The on-screen controls a phone plays with: a FLOATING
       touch.css         #   movement stick in the left zone, a look DRAG in the
                         #   right one, and the button cluster over both. A
