@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-collision.mjs && node scripts/check-deep-imports.mjs && tsc --noEmit && vite build && node scripts/check-proving.mjs",
+    "build": "node scripts/check-collision.mjs && node scripts/check-deep-imports.mjs && npm run typecheck && vite build && node scripts/check-proving.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json",
     "collision": "node scripts/bake-collision.mjs",

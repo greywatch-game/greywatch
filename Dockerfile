@@ -50,10 +50,24 @@ COPY shots ./shots
 COPY public ./public
 
 # `npm run build` checks the collision bake is current, typechecks BOTH
-# tsconfigs and then bundles. The typecheck is the only automated gate this repo
-# has, so a type error fails the image build too — and the bake check means a
-# layout edit that was never re-baked cannot ship a server whose walls stand
+# tsconfigs — via `npm run typecheck`, and that indirection is the whole point —
+# and then bundles. A type error fails the image build, and the bake check means
+# a layout edit that was never re-baked cannot ship a server whose walls stand
 # somewhere else from its clients'.
+#
+# **It said all of that before it was true, and the gap shipped.** `build` ran a
+# bare `tsc --noEmit`, which takes the ROOT tsconfig, whose `include` is
+# `["src", "main.ts"]` — so `server/` was never typechecked by anything the
+# image build ran. The line below could not catch it either: `build:server` is a
+# `vite build`, and esbuild strips types without reading them. Measured by
+# putting `const x: number = "s"` in `server/Roster.ts`: the server tsconfig
+# errored, the root one exited 0, and `build:server` emitted a bundle in 1.43s.
+# So a type error anywhere in `server/` passed both RUN lines and reached
+# production, which matters most for the client/server twins `Game.ts` and
+# `HeadlessGame.ts` deliberately keep in step by hand — a shared type that moved
+# on one side and not the other is exactly the failure this gate is for, and
+# exactly the one it could not see. Keep this as `npm run typecheck`; a `tsc
+# --noEmit` here is that hole reopening, and it reopens silently.
 RUN npm run build
 RUN npm run build:server
 

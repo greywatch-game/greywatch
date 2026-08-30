@@ -1,0 +1,138 @@
+# .github/workflows/ci.yml — run the gates this repo already has, on every push.
+#
+# There is no test suite and no linter here by design; `npm run typecheck` and
+# the four scripts around it ARE the gates, and until this file existed nothing
+# ran them automatically. `docker.yml` builds the images, which runs `npm run
+# build` as a side effect of the image build — but only on `main` and `develop`,
+# only after a push has already landed, and it reports a failure as "the image
+# did not build" rather than as the type error it was.
+#
+# **The gap this closes was measured rather than assumed.** `npm run build` used
+# to run a bare `tsc --noEmit`, which takes the ROOT tsconfig, whose `include` is
+# `["src", "main.ts"]` — `server/` was in no project any gate ran. `build:server`
+# could not cover it either: it is a `vite build`, and esbuild strips types
+# without reading them. A deliberate `const x: number = "s"` in
+# `server/Roster.ts` errored under the server tsconfig, exited 0 under the root
+# one, and still emitted a server bundle. `package.json`'s `build` now runs
+# `npm run typecheck`, which is both projects; this file is what makes sure
+# somebody notices when it fails.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to a branch makes the in-flight run irrelevant — the same
+# rationale as `docker.yml`'s group, and the same shape.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The deterministic half: no browser, no GPU, no network beyond npm. This is
+  # the job that must stay green, and it is exactly what the Dockerfile runs, so
+  # a red one here means the image build would have failed too — reported in
+  # thirty seconds against a named file instead of ten minutes into a push.
+  # ---------------------------------------------------------------------------
+  gates:
+    name: gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The floor `README.md` states. `npm ci` is the slow step and the
+          # lockfile rarely moves, so it is worth caching here as it is in the
+          # image build.
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Both tsconfigs, ahead of the build that would run them anyway, so that a
+      # type error is reported as a type error rather than as a failed bundle.
+      # It costs seconds and it names the file.
+      - name: typecheck (client + server)
+        run: npm run typecheck
+
+      # The collision-bake staleness guard, the deep-import guard, the client
+      # bundle and the proving-ground sentinel check, in that order — this is
+      # `npm run build`, and it is the first Dockerfile RUN line verbatim.
+      #
+      # NOTE the guard's own limit, which is stated in CLAUDE.md and is not
+      # something this file can fix: `check-collision.mjs` hashes the LAYOUT, so
+      # a `porous`/`rayOnly` flag changed in a BUILDER leaves the bake stale
+      # without tripping it. `npm run parity` below is what actually catches
+      # that, which is why it is worth having even though it cannot block yet.
+      - name: build (collision + deep-import gates, typecheck, bundle)
+        run: npm run build
+
+      # The second Dockerfile RUN line. Transpile-only — it proves the server
+      # bundles, and the typecheck above is what proves it is correct.
+      - name: build server
+        run: npm run build:server
+
+      # `npm run build` runs `check-proving` BEFORE `dist-server/` exists on a
+      # fresh checkout, so that pass only ever scans `dist/`. The script filters
+      # its roots by `existsSync`, so this second run is what puts the server
+      # bundle under the same sentinel scan — the one that proves 900 kB of
+      # DEV-only proving ground is in neither artefact.
+      - name: check proving ground is in neither bundle
+        run: node scripts/check-proving.mjs
+
+  # ---------------------------------------------------------------------------
+  # The browser half. This is the gate that catches what the bake-staleness hash
+  # cannot: it rebuilds the world on both sides and compares the NAV GRAPH, so a
+  # builder-side flag change that left the bake stale shows up as a server whose
+  # walls stand somewhere else from its clients'.
+  #
+  # **It is `continue-on-error` because it is UNPROVEN on a GPU-less runner, and
+  # that is a measurement rather than a hedge.** `scripts/browser.mjs` needs a
+  # Chromium that hands back a WebGPU adapter, because `main.ts` gates the boot
+  # on one and every browser-driven script in this repo fails as `waitForFunction`
+  # timing out on `window.__celshock` when it cannot get one — a failure that says
+  # nothing about the world. Measured locally on the Windows box: the repo's own
+  # flags plus `channel: "chromium"` return an adapter (nvidia/lovelace); the
+  # headless shell returns null; and forcing software rendering
+  # (`--enable-unsafe-swiftshader --disable-gpu`) ALSO returns null. A GitHub
+  # runner has no GPU, so it needs the software path that did not work here —
+  # though VERIFYING.md records that the Chromebook's Linux headless shell DOES
+  # carry Dawn's SwiftShader backend, which is why this is worth trying on Linux
+  # rather than assuming it cannot work.
+  #
+  # **So read the first few runs before trusting it.** If it goes green, delete
+  # the `continue-on-error` line and it becomes a real gate. If it goes red at
+  # the boot gate, that is the ADAPTER and not the world — check the step's log
+  # for the `__celshock` timeout before believing a parity failure, and either
+  # find the flag that gets Dawn a software adapter on this image or drop the
+  # job and keep running `npm run parity` by hand on a box with a GPU.
+  # ---------------------------------------------------------------------------
+  parity:
+    name: world parity (unproven on CI hardware — see comment)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # `channel: "chromium"` is the full browser build rather than the headless
+      # shell, and it is not a preference — `browser.mjs` has the measurement.
+      # `--with-deps` is what puts the shared libraries on the runner.
+      - name: install chromium
+        run: npx playwright install --with-deps chromium
+
+      # Builds the server bundle twice itself (production and dev-mode, for the
+      # proving ground) and drives a real client, so it is minutes rather than
+      # seconds. It checks all six maps including the two DEV-only ones.
+      - name: parity
+        run: npm run parity

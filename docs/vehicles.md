@@ -171,8 +171,10 @@ is the floor that fall-off now stops at, scaled by `1 - steerAtRest` so it is
 exactly zero on a tank and the line is the one it has always been. What it buys
 is a truck that makes a U-turn where a tank spins on the spot.
 
-It stands on Sarab, one a side, behind each team's tank. Two maps have armour of
-any kind; only that one has two kinds.
+It stands on Sarab, one a side, behind each team's tank. Three maps have armour
+of any kind — Coldharbour and Harrowmead field one tank a side and say no
+`kind` at all, taking the default — and only Sarab has more than one, where the
+tank, the truck and the helicopter each stand one a side.
 
 ## What it is drawn as, and the tracks that RUN
 

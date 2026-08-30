@@ -964,8 +964,9 @@ within earshot. **A frame that did not STEP the fleet owes `Sfx.enginesOff`**
 whose speeds are frozen, and a voice left running under the deploy card is a
 tank droning in a street where nothing moves.
 
-→ **[`docs/vehicles.md`](docs/vehicles.md)** — the two kinds and the one branch
-between them, the truck's trade; the two seats and the swap, the cupola gun's
+→ **[`docs/vehicles.md`](docs/vehicles.md)** — the three kinds and the two
+capabilities that stand in for a branch between them, the truck's trade and the
+helicopter's fragility; the two seats and the swap, the cupola gun's
 world angle and its stowed inversion, the crew of two, the whisker fan and the
 two geometry bugs it found; the collider's three answers; the tracks' sweep, its
 three gates and its two skips; each model's mesh budget, its running gear and
