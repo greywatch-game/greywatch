@@ -189,11 +189,19 @@ export const SarabEnvironment: EnvironmentSpec = {
     skyLightIntensity: 0.34,
     /**
      * Raised from 0.1, and on this map it is a legibility term rather than a
-     * look. The rim is gated off near-level surfaces (`CelShader`), so it
-     * reaches silhouettes and only silhouettes: a body, a parapet or a wall
-     * corner standing against 560 m of haze very nearly its own colour. That
-     * is the case this map has more of than any other in the tree, and 0.1 was
-     * not enough of an edge to find one by.
+     * look. The rim reaches a BODY, a vehicle and the weapon in your hands
+     * standing against 560 m of haze very nearly its own colour. That is the
+     * case this map has more of than any other in the tree, and 0.1 was not
+     * enough of an edge to find one by.
+     *
+     * **It no longer reaches a parapet or a wall corner, and that is the
+     * price of the gate rather than an oversight.** `CelShader` excludes the
+     * static world outright now: on a plane the grazing angle the rim keys on
+     * is nothing but distance from the eye, so a large flat wall wore a
+     * camera-locked disc that slid with the player and read as a shadow with
+     * nothing casting it. This map is where it was found, because a desert
+     * town is mostly large flat wall. The world's edges are the outline ink's
+     * to draw.
      */
     rimColor: "#fff0cc",
     rimIntensity: 0.18,

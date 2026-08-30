@@ -716,6 +716,36 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // 5.0 m against 0.263 at 5.6 m, a 28% step across one hard circle. A floor has
   // no silhouette to catch, so it gets no rim.
   //
+  //
+  // **The tilt gate is HALF the rule, and the half that was found first.** The
+  // sentence above is true of EVERY plane and not only of the floor: for a wall
+  // at perpendicular distance p from the eye, dot(viewDir, n) is p/dist, the
+  // 0.72 step is crossed at dist = 3.57p, and the locus of that on the wall is
+  // a CIRCLE of radius 3.43p about the point nearest the eye. So the same
+  // camera-locked disc the floor gate exists to kill was still being drawn on
+  // every large flat wall in the game, and it slid with the player exactly as
+  // the floor one did: standing 3 m off a wall put a 10 m circle on it, and
+  // looking along a building's flank from a hull put the arc halfway down the
+  // face. It reads as a shadow with nothing casting it.
+  //
+  // **There is no fragment-local signal that separates the two cases**, which
+  // is why this is an exclusion rather than a better test. A limb's grazing
+  // facet and a wall's far corner produce the same dot() and the same distance;
+  // curvature would separate them and there is none to read, because the
+  // shading is FACETED and a normal is constant across a facet by construction.
+  //
+  // So the second gate is vBaked.y, the world marker the variation noise
+  // above already keys on: 1 on baked map geometry and 0 on the rigs, the
+  // vehicles, the viewmodel and every effect mesh. A rim light separates a
+  // SHAPE from its background, and a merged map block IS the background — the
+  // world's edges are drawn by the outline ink, which is per-mesh, thinned with
+  // distance and faded into the fog, and never needed this. What is left is the
+  // case the effect was raised for on the bright maps: a BODY, a vehicle or the
+  // weapon in your hands standing against haze very nearly its own colour.
+  //
+  // The tilt gate stays, and is not made redundant by it: it is what keeps the
+  // near-level top faces of a rig or a hull deck out, and it is the thing that
+  // has to hold if anyone ever gives the world its rim back.
   // The gate is on tilt, not on distance, because distance is the symptom. Zero
   // within 8 deg of level (every road, deck, terrace and the flat majority of
   // the heightfield), full past 26 deg — clear of the shallowest roof pitch in
@@ -725,7 +755,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let viewDir = normalize(uniforms.camPos - fragmentInputs.vPosW);
   let rim = 1.0 - max(dot(viewDir, n), 0.0);
   col += base * uniforms.rimColor
-    * step(0.72, rim) * (1.0 - smoothstep(0.90, 0.99, level));
+    * step(0.72, rim)
+    * (1.0 - smoothstep(0.90, 0.99, level))
+    * (1.0 - step(0.5, fragmentInputs.vBaked.y));
 
   // Toon specular: Blinn half-vector against the key light, quantized into
   // two hard bands (bright core + faint halo) and gated by the same shadow

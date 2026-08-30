@@ -958,6 +958,29 @@ A window's frame is drawn by the mullion, the collar and the reveal, all of whic
 are geometry with ink of their own. Because nothing ever outlines a pane, glass
 is also the one variant that owes `outlineInkFor`'s regex nothing.
 
+**The receiver's depth is the raw clip z, and getting that wrong is invisible
+as a shadow bug.** Under WebGPU `engine.isNDCHalfZRange` is true, so a
+clip-space z is already in [0, 1]; `DirectionalLight.getDepthMinZ/MaxZ` return
+0 and 1 there, which makes Babylon's `depthValuesSM` (0, 1) and the caster
+metric its shadow-map shader writes `(position.z + 0) / 1` — the raw clip z.
+`shadowVisibility` compares against exactly that and its range gate is [0, 1].
+The GLSL form, `(clip.z + 1) * 0.5`, is correct under WebGL's [-1, 1] depth and
+was carried through the WebGPU migration verbatim, where it is an error of
+`(1 - z) / 2` — half the depth range at the near plane, zero only at the far
+one. What it did was decide EVERY texel inside the window against the receiver:
+a fragment on the focus plane sits at z ~ 0.51 and was tested as 0.76 against a
+caster depth of 0.51. So the depth map settled nothing, no bias could reach it,
+and what a player saw was not a missing shadow but a POOL OF SHADE that
+travelled with them — the window's edge drawn as a hard line between everything
+shadowed and everything lit, because the function returns 1.0 outside it. It
+read as an art direction on the night maps and was unmissable on Sarab, where
+the ground is bright sand and the window is 150 m of it.
+
+**The third row of the table below was measured under that bug**, so it says how
+much of each frame was inside the window rather than how much of it was in
+shadow; the first two rows are a kernel-vs-no-kernel difference and are
+unaffected. Re-take the row before quoting it.
+
 **The shadow lookup is FOUR taps, and four is a ceiling rather than a budget.**
 One tap put the depth map's own grid on screen — at 110 m over 2048 texels an
 edge climbs in 5.4 cm steps — so the kernel spans exactly one texel, which is
@@ -1618,6 +1641,27 @@ vantages come back to four decimal places.
   distance is only the symptom, and it reads the **facet** normal rather than the
   bumped one — off the bumped normal, individual setts flick it on and off. It costs
   the rim on the near-horizontal top faces of a rig, which were never silhouettes.
+- **The tilt gate is half the rule, and the other half is the WORLD MARKER.** The
+  sentence above is true of every plane, not only the floor: for a wall at
+  perpendicular distance `p` from the eye, `dot(viewDir, n)` is `p/dist`, the 0.72
+  step is crossed at `dist = 3.57p`, and the locus of that on the wall is a CIRCLE
+  of radius `3.43p` about the point nearest the eye. So the same camera-locked disc
+  went on being drawn on every large flat WALL: standing 3 m off one put a 10 m
+  circle on it, and looking along a building's flank from a hull put the arc halfway
+  down the face, sliding with the player and reading as a shadow with nothing casting
+  it. **There is no fragment-local test that separates a limb's grazing facet from a
+  wall's far corner** — they produce the same `dot()` at the same distance, curvature
+  would separate them, and there is none to read because the shading is faceted and a
+  normal is constant across a facet by construction. So the second gate is an
+  exclusion: `vBaked.y`, the same world marker the variation noise keys on, which is
+  1 on baked map geometry and 0 on the rigs, the vehicles, the viewmodel and every
+  effect mesh. A rim separates a shape from its background and a merged map block IS
+  the background; the world's edges are the **outline ink's** job, which is per-mesh,
+  distance-thinned and fog-faded and never needed this. What is left is what the
+  bright maps raised `rimIntensity` for: a body, a vehicle or the weapon in your hands
+  against haze very nearly its own colour. The tilt gate stays and is not redundant —
+  it is what keeps a rig's top faces and a hull's deck out, and it is what has to hold
+  if the world is ever given its rim back.
 - Rendering group **1 is the viewmodel's**, for the depth clear Babylon does between
   groups. Putting world geometry in group 1 makes it draw through everything. The
   **sky is in it too** (`Sky`'s constructor turns the depth clear back off so the

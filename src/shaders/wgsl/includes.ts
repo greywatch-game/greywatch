@@ -128,8 +128,26 @@ register(
   "celShadow",
   `
 // Stepped directional shadows. lightMatrix is the ShadowGenerator's
-// view*projection (no [0,1] bias baked in — the UV/depth remap below mirrors
-// Babylon's own computeShadow: uv = clip.xy*0.5+0.5, depth = (clip.z+1)*0.5).
+// view*projection with no [0,1] bias baked in, so the XY remap below is the
+// usual uv = clip.xy*0.5+0.5.
+//
+// **The DEPTH is not remapped at all, and that is a WebGPU fact rather than a
+// choice.** Under WebGPU engine.isNDCHalfZRange is true, so a clip-space z is
+// ALREADY in [0, 1] — and DirectionalLight.getDepthMinZ/MaxZ return 0 and 1
+// there, which makes Babylon's own depthValuesSM (0, 1) and its caster metric
+// (position.z + 0) / 1 the raw clip z. The receiver has to compare against
+// exactly that, so depth here is sc.z and the range gate is [0, 1].
+//
+// **This carried the GLSL form through the WebGPU migration** — (clip.z + 1)
+// * 0.5, which is correct under WebGL's [-1, 1] depth — and what it cost is
+// worth writing down, because the failure did not look like a shadow bug. A
+// receiver at the focus plane sits at z ~ 0.51 and was compared as 0.76
+// against a caster depth of 0.51, so EVERY texel inside the window failed the
+// test: the depth map decided nothing, the window's edge became a hard line
+// between all-shadowed and all-lit (this function returns 1.0 outside it), and
+// what a player saw was a pool of shade travelling with them. No bias papers
+// over it — the error is (1 - z) / 2, half the depth range at the near plane,
+// and it reaches zero only at the far one.
 uniform lightMatrix: mat4x4f;
 var shadowMapSampler: sampler;
 var shadowMap: texture_2d<f32>;
@@ -177,8 +195,8 @@ fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
   let sc = sc4.xyz / sc4.w;
   let uv = sc.xy * 0.5 + 0.5;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { return 1.0; }
-  if (sc.z < -1.0 || sc.z > 1.0) { return 1.0; }
-  let depth = (sc.z + 1.0) * 0.5 - uniforms.shadowParams.x;
+  if (sc.z < 0.0 || sc.z > 1.0) { return 1.0; }
+  let depth = sc.z - uniforms.shadowParams.x;
 
   let a = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
     * 6.2831853;
