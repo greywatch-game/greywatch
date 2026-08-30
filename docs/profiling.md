@@ -323,10 +323,71 @@ capture re-printed from a later run is a capture of something else.
 
 ---
 
+## Reading one: `/profile_viewer.html`
+
+**A capture is JSON, and JSON is not a reading.** The numbers that matter are
+differences between fields — a hitch's wall clock against its own `frame` span,
+that shortfall against its collection count — and nobody does that arithmetic in
+their head off a phone's clipboard.
+[`public/profile_viewer.html`](../public/profile_viewer.html) does it. Paste or
+drop a `KEEP`/`SAVE` report or a `TRACE`; it detects which.
+
+**It is served from the game's own origin, and that is the whole point rather
+than a convenience.** This instrument exists because the interesting devices are
+phones and other people's laptops. A viewer somewhere else means mailing
+yourself a file from the device you are standing on, which is a step nobody
+takes — so the reader is one navigation away from the game that produced the
+capture, and `docs/pwa.md` covers what that cost the service worker.
+
+What it draws:
+
+- **A verdict on the worst frame**, which is the reading this file prescribes
+  made mechanical: wall clock minus the `frame` span is the time outside the
+  tick, and the collection count on that frame says whether it was the collector
+  or the browser.
+- **The attribution ladder** — the phase tree indented by containment, each bar
+  drawn *against its parent rather than against the frame*, with an explicit
+  `unattributed` remainder per parent. Sub-grain rows are marked and their
+  percentile columns dimmed, because this file says their tails are the grid.
+- **The frame timeline**, scaled so the body of the distribution is legible with
+  everything over the clip drawn as a full-height spike, the hitch bar and 60 Hz
+  as references, and collections on a rail along the top.
+- **The heap**, where it is live, with the collections aligned to it — and the
+  frozen notice where it is not, rather than a flat line.
+- **The flame chart** for a trace, nested by the phase tree, with GC instants.
+  Perfetto is still the better tool for a trace and the section below still
+  points at it; this is the look you take without leaving the phone.
+
+**The capture states its own tree.** `ProfileReport.tree` is `PARENT_OF` from
+`FrameProfile.ts` — child phase to the span containing it — so the viewer draws
+the containment of the build that produced the capture rather than of the build
+it was written against. `PARENT_OF` is typed `Record<Exclude<Phase, "frame">,
+Phase>`, so **a phase added to `PHASES` does not compile until it says where it
+sits**, and adding one is still a name, a `begin`/`end` pair, and now its parent.
+The viewer keeps a `FALLBACK_TREE` for captures older than the field; that copy
+is the only thing in the page that can go stale.
+
+**Three rules for editing it**, all of them things the file cannot enforce about
+itself:
+
+- **No network.** No fonts, no CDN, nothing. The type is the same system stack
+  `src/ui/base.css` uses, for the reason the game carries no font files, and a
+  capture never leaves the browser it was opened in.
+- **No imports and no build step.** It is copied out of `public/` verbatim and
+  is never typechecked — the `src/pwa/sw.js` arrangement — and it must open from
+  a `file://` URL with nothing else present.
+- **Its path lives in `sw.js`'s `DOCS`.** Rename it in one place only and it
+  becomes the game offline, silently, on somebody else's phone.
+
+---
+
 ## The trace
 
-`TRACE` writes Chrome Trace Event JSON. Open it at **`ui.perfetto.dev`** — no
-viewer was written here and none should be. The spans nest properly by
+`TRACE` writes Chrome Trace Event JSON. Open it at **`ui.perfetto.dev`**, which
+is still the right tool for a trace and always will be — nothing here competes
+with it, and nothing here should try. (`/profile_viewer.html` will draw a flame
+chart from one, because the phone that took the capture has no Perfetto and no
+file manager worth the name; it is a look, not a replacement.) The spans nest properly by
 construction (`frame` ⊃ `gameplay` ⊃ `world` ⊃ `bots`, each start stored
 relative to its own frame), so a flame chart falls out with no further work, and
 `drawCalls`/`activeMeshes` ride along as counter tracks.

@@ -141,6 +141,51 @@ export const P = Object.fromEntries(
   PHASES.map((name, i) => [name, i]),
 ) as Readonly<Record<Phase, number>>;
 
+/**
+ * Which span each phase sits INSIDE.
+ *
+ * **The nesting is a fact about `Game.ts`'s bracket placement, and until this
+ * existed the only written statement of it was prose in `docs/profiling.md`.**
+ * That was enough while a report was read by a person, and stopped being enough
+ * the moment `public/profile_viewer.html` had to draw the containment: a reader
+ * that guesses the tree draws a wrong picture confidently, and one that carries
+ * its own copy goes stale the first time a phase is added here.
+ *
+ * So the tree is declared once, beside the list it is about, and **shipped in
+ * every capture** (`ProfileReport.tree`) — a report states its own shape for
+ * the same reason it states its own clock grain and its own overhead.
+ *
+ * `Exclude<Phase, "frame">` is what makes it safe: every phase but the root
+ * must name a parent, so **a phase added to `PHASES` does not compile until it
+ * has said where it sits** — the arrangement `ScreenStack`'s `SCREENS` uses to
+ * stop a new screen shipping without answering its four questions.
+ */
+export const PARENT_OF: Readonly<Record<Exclude<Phase, "frame">, Phase>> = {
+  input: "frame",
+  roundBehind: "frame",
+  gameplay: "frame",
+  driver: "gameplay",
+  onFoot: "gameplay",
+  world: "gameplay",
+  net: "world",
+  conquest: "world",
+  vehicles: "world",
+  bots: "world",
+  combat: "world",
+  grenades: "world",
+  antiTank: "world",
+  physics: "world",
+  glass: "world",
+  camera: "gameplay",
+  zones: "gameplay",
+  hud: "gameplay",
+  hudDraw: "frame",
+  post: "frame",
+  culling: "frame",
+  audio: "frame",
+  render: "frame",
+};
+
 /** One phase's line in a report. Milliseconds throughout. */
 export interface PhaseStat {
   name: Phase;
@@ -200,6 +245,13 @@ export interface ProfileReport {
     /** `navigator.deviceMemory` where the browser has it. */
     deviceMemoryGb: number | null;
   };
+  /**
+   * Child phase → the span that contains it, straight from `PARENT_OF`.
+   *
+   * Carried so a reader can draw the containment without knowing this build's
+   * phase list — see `PARENT_OF`. A phase absent from here is a root.
+   */
+  tree: Record<string, string>;
   /** What the instrument knows about itself. See the header. */
   clock: {
     /** The smallest non-zero `performance.now()` step observed, in ms. */
@@ -725,6 +777,7 @@ export class FrameProfile {
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
+      tree: PARENT_OF,
       device: this.deviceFacts(),
       clock: {
         grainMs: round(this.grainMs, 4),

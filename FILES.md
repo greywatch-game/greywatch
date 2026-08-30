@@ -50,6 +50,15 @@ main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   first drawn frame, or one of the three failure messages.
 public/             # Copied to dist/ VERBATIM — unhashed URLs named by hand
                     #   (manifest.webmanifest, icons/ from `npm run icons`).
+  profile_viewer.html # Where a frame-profiler capture is READ: paste or drop a
+                    #   KEEP/SAVE report or a TRACE and get the phase
+                    #   attribution, the heap and collector, and a verdict on
+                    #   every slow frame. Served from the game's own origin so
+                    #   the loop closes on the DEVICE that is slow. One file,
+                    #   no imports, no network, never typechecked — the sw.js
+                    #   arrangement. It is the SECOND navigable document, so
+                    #   its path is in sw.js's DOCS or it becomes the game
+                    #   offline. docs/profiling.md is the contract
   regions.json      # Which match servers this deployment offers, by host. The
                     #   one file a deployer edits on the box: adding, moving or
                     #   draining a region is not a rebuild. no-cache in nginx

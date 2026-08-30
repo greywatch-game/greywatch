@@ -1165,8 +1165,20 @@ frozen on a stock browser, which is the paragraph above. **GPU time is not
 here** — Babylon can read it, but only if `timestamp-query` is requested at
 device creation and `main.ts` calls `initAsync()` with no descriptor.
 
+**A capture is READ at `/profile_viewer.html`**, one import-free, network-free
+page in `public/` served from the game's own origin — because the loop has to
+close on the device that is slow, and a viewer you must mail a file to is one
+nobody uses. It draws the verdict, the attribution ladder, the timelines and a
+flame chart, and **the capture states its own phase tree** (`ProfileReport.tree`
+from `PARENT_OF`, typed so a new phase does not compile until it names its
+parent) so the reader is never guessing this build's nesting. It is the SECOND
+navigable document, so **its path is in `sw.js`'s `DOCS`** — without that it
+works online and silently becomes the game offline, which is the one case it
+exists for.
+
 → **[`docs/profiling.md`](docs/profiling.md)** — the phases and what each one
-covers, how to take and read a capture, the relative hitch bar and what it was
+covers, how to take and read a capture, the viewer and the three rules for
+editing it, the relative hitch bar and what it was
 measured against, the sentinel and the heap probe and how to read a hitch
 against them, the trace export and Perfetto, what `frame`'s own share means, the
 three-rung clipboard ladder, and the levers (cross-origin isolation,
@@ -1177,7 +1189,10 @@ three-rung clipboard ladder, and the levers (cross-origin isolation,
 The build installs to a home screen and launches fullscreen, landscape and
 offline. Four files carry it — `public/manifest.webmanifest`, `public/icons/`,
 `src/pwa/register.ts` and `src/pwa/sw.js` — and nothing in the game knows any of
-it exists. Three rules are about the DEVICE rather than the game: a tap arrives
+it exists. **There are TWO navigable documents now**, the game and
+`public/profile_viewer.html`, and a navigation is answered with the shell unless
+its path is in `sw.js`'s `DOCS` — a second page not listed there works online
+and silently becomes the game offline. Three rules are about the DEVICE rather than the game: a tap arrives
 twice (the second as a synthesized mouse event, disbelieved for
 `CONFIG.touch.mouseGrace`), a mouse that has not MOVED is not a mouse being used,
 and the trigger's gate takes `touchActive` beside the pointer lock and the pad.
