@@ -332,6 +332,92 @@ of the suspension, the lean and the ten ground contacts. Neither did the
 collider — `CONFIG.vehicles.truck.hull` is what the model is built to, and the
 box a round stops on is the box it always was.
 
+### The HELICOPTER is a GUNSHIP, and the DOORWAY was what was wrong with it
+
+`entities/HeliModel.ts` is the same accounting a third time — **eighteen meshes,
+ten of which move** (four for the two discs, four for the chin turret, two for
+the mast), for about twice the parts the aircraft it replaces carried and one
+mesh FEWER — and it was a light utility hull with a small remote station let
+into the port sill until the thing that was wrong with it turned out to be the
+truck's own lesson, misapplied.
+
+**A doorway with a gun in it is a promise of a man however remote the mount
+is.** The station was built to the letter of the rule the pickup's pintle broke:
+a cradle, a shield and an optic head, no grips and nowhere to stand. It did not
+matter, because the part a player reads is not the mount — it is the OPENING. An
+aperture in the side of an aircraft at chest height with a weapon on its lip is
+a shape whose only filler is somebody leaning out of it, and the game has
+nobody to put there. The truck fixed the same absence by CLOSING the body; a
+helicopter with a cabin cannot be closed without becoming a box with no way in.
+
+An attack helicopter has no cabin to close. The fuselage is 1.44 m across
+against the utility version's 2.32 — two seats and no more — the crew sit one
+behind the other under a stepped canopy too dark to resolve anything through,
+and **the gun is a TURRET under the nose**, which is a fitting rather than a
+station and needs nobody in any reading of it. `Vehicle.aimMg` did not move a
+line to follow it down there: the bearing is held in the world exactly as it was
+on the sill, and the second seat is the same second seat.
+
+Four things fell out of it and one of them is a bug that predates the redesign:
+
+- **The gun clears its own airframe at nearly every bearing**, where the sill
+  gun swept its barrel through the cabin it was bolted to at every bearing to
+  starboard. A chin turret hangs BELOW everything, so a full traverse aft passes
+  the barrel under the belly in clear air.
+- **The tightest number in the file is measured against the GROUND**, which
+  neither other kind's is. The trunnion is 60 cm over the pad and `MG_REACH`
+  puts the muzzle 70 cm out from it, so at `mg.pitchMin` the muzzle measures
+  7.4 cm over a pad the skids put at 0 — and it has to clear, because a bot
+  gunner will lay this gun at full depression on a PARKED aircraft and a muzzle
+  under the pad is a round spawned inside the terrain.
+- **The nose has a CHIN because of `mg.pitchMax`.** Elevating while traversed
+  aft swings the muzzle up and back to y 0.904 at z 4.120 — measured — so the
+  underside forward of z 3.80 is stepped up 20 cm to 0.95 and the barrel passes
+  4.6 cm under it. At the belly's own 0.75 the gun drives through its own nose
+  at every aft bearing above about twelve degrees.
+- **The aerial was inside the rotor disc, and had been since the kind
+  existed.** The utility version stood a 1.15 m whip on the boom whose tip
+  reached 3.15 against a blade path at 3.06 — six centimetres through it, four
+  times a revolution. It is a 0.66 m blade aerial now, measured at 2.94, and the
+  disc is what bounds it. The same clearance is what sets the fin's top edge and
+  the tail rotor's height: the fin crosses the blade line 15 cm outside the tip,
+  and a tail rotor any higher or any further forward puts its own upper tip
+  inside the main disc's radius.
+
+**The stub wings are bounded by the COLLIDER and not by taste.** The stores are
+what says "attack helicopter" before the canopy or the turret has landed, and
+the temptation is a proper span — but a span wider than `hull.width` is a wing
+rounds pass through, and the rotor disc is the one thing in this vehicle allowed
+outside the box, exempted by MOVING. So the tip is read off `hull.width / 2`
+rather than written down, and what fills the wing out is the DEPTH of what hangs
+under it.
+
+**That depth is the one thing here that was photographed rather than reasoned
+about**, and it generalises: the 58 cm of wing that stands clear of a 1.44 m
+fuselage reads as nothing at all, from any bearing, because a wing that short is
+inside its own body's silhouette from every angle a player is at. The first version hung the pod against the underside
+and it came back as a tank strapped to the flank. `WING_DROP` is the fix —
+wing, gap, pylon, store hanging under it — and the aircraft gains the silhouette
+the span could not buy. Two smaller lessons came out of the same browser: `ord`
+at #3f4038 read as more running gear rather than as stores against the skids'
+own #2b2a26, which is a colour bought for the one thing on this machine a
+player is meant to FIND and spent on nothing; and a 1 m avionics door beside the gunner's quarter pane merged with it
+into a single black mass down the whole forward fuselage, which is the opposite
+of what a panel is for.
+
+**Neither the collider nor the three numbers the physics reads off the drawing
+moved.** `gauge`, `contactReach` and `wheelReach` are the utility version's to
+the centimetre because the skids are where they were, and
+`CONFIG.vehicles.heli.hull` is what the model is built to — the box a round
+stops on is the box it always was. The one palette role that changed is `stow`
+becoming `ord`: a gunship carries ordnance where a taxi carries cargo, and a
+rolled net on the floor of an aircraft with no floor was a colour spent on
+nothing. **The inert `turret` node now draws nothing at all**, which is where
+the nineteenth mesh went — `spec.gun` is null so that node is a permanent local
+zero, the barbette welded to the airframe is therefore drawn in the body segment
+where it is free, and the node survives only because `mgMount` must have the
+same parent it has on a tank.
+
 ## The hull LEANS, and it leans TWICE
 
 A tank that stayed perfectly level was the tell that it was a box being SLID

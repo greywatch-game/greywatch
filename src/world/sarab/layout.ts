@@ -1062,7 +1062,7 @@ const spawns: SpawnPointDef[] = [
  * outside and never take.
  *
  * What it pays is everything a fast thing pays and three things more. It has no
- * cannon and its only weapon is the door gun the SECOND man lays, so a lone
+ * cannon and its only weapon is the CHIN gun the SECOND man lays, so a lone
  * pilot has flown a taxi to the fight. Its rotor disc is 10.4 m across, which
  * closes the old town to it outright — the alleys that are a truck's ground and
  * not a tank's are not an aircraft's either. And it is FRAGILE: a rifle does
