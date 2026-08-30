@@ -21,6 +21,7 @@ import {
   VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { clamp, hermite, smoothstep } from "../core/math";
 import { mulberry32 } from "../world/rng";
 import type { EnvironmentSpec, SkySpec } from "../world/environment";
 
@@ -709,9 +710,9 @@ function fbm3(
       const x0 = Math.floor(fx);
       const y0 = Math.floor(fy);
       const z0 = Math.floor(fz);
-      const tx = smoothCurve(fx - x0);
-      const ty = smoothCurve(fy - y0);
-      const tz = smoothCurve(fz - z0);
+      const tx = hermite(fx - x0);
+      const ty = hermite(fy - y0);
+      const tz = hermite(fz - z0);
       const xa = ((x0 % n) + n) % n;
       const ya = ((y0 % n) + n) % n;
       const za = ((z0 % n) + n) % n;
@@ -773,19 +774,6 @@ function acrossSeam(
   // itself, and a halo that wide has nothing left to be cut off by.
   if (x - reach < 0) draw(x + w);
   else if (x + reach > w) draw(x - w);
-}
-
-function smoothCurve(t: number): number {
-  return t * t * (3 - 2 * t);
-}
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = clamp((x - edge0) / (edge1 - edge0 || 1e-6), 0, 1);
-  return t * t * (3 - 2 * t);
-}
-
-function clamp(x: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, x));
 }
 
 function wrap01(x: number): number {

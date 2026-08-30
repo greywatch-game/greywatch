@@ -19,6 +19,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { clamp } from "../core/math";
 import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 // Type-only, so no runtime edge is created — the same import `Vehicle` takes
@@ -1001,9 +1002,9 @@ function poseLegs(rig: SoldierRig, drop: number, swing: number): void {
     // 0.03, so the clamp is a guard and never a limit.
     const span = Math.max(LEG_SPAN - drop, Math.abs(THIGH - SHIN) + 0.01);
     const psi = Math.acos(
-      clamp((THIGH * THIGH + span * span - SHIN * SHIN) / (2 * THIGH * span)),
+      clamp((THIGH * THIGH + span * span - SHIN * SHIN) / (2 * THIGH * span), -1, 1),
     );
-    shin = Math.asin(clamp((THIGH * Math.sin(psi)) / SHIN));
+    shin = Math.asin(clamp((THIGH * Math.sin(psi)) / SHIN, -1, 1));
     thigh = -psi;
     knee = shin + psi;
   }
@@ -1013,11 +1014,6 @@ function poseLegs(rig: SoldierRig, drop: number, swing: number): void {
   rig.kneeR.rotation.x = knee;
   rig.ankleL.rotation.x = -shin;
   rig.ankleR.rotation.x = -shin;
-}
-
-/** Keeps a cosine or a sine inside its domain against floating-point drift. */
-function clamp(x: number): number {
-  return x < -1 ? -1 : x > 1 ? 1 : x;
 }
 
 /** Merges a limb's boxes into one mesh per colour, at identity. */

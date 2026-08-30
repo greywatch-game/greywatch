@@ -100,6 +100,10 @@ src/
     graphics.ts         # Render pipeline knobs + pooled effects (graphics,
                         #   effects)
     hud.ts              # Minimap and damage arcs (minimap, damageIndicator)
+    net.ts              # The wire's own numbers: the socket path, the
+                        #   interpolation delay and clock window, the reconnect
+                        #   backoff, the hit-credit window, the ping bands the
+                        #   lobby colours by, and the correction snap
     lighting.ts         # The dynamic light budget (uniforms, not Babylon lights)
     world.ts            # Map extents, occlusion, water, grass (map, ao, water,
                         #   grass)
@@ -107,12 +111,13 @@ src/
     wind.ts             # The one wind: a shared bearing, and what the grass
                         #   field and the world's foliage each do with it
     teams.ts            # The two sides; index 0 is the player's
-    vehicles.ts         # `VehicleSpec` — the SHAPE of one kind — plus the two
-                        #   kinds themselves: the TANK and the gun TRUCK. Each
-                        #   states its hull, drive, suspension, guns, camera
-                        #   and engine voice; `gun: null` is the one optional
-                        #   thing about a kind and is what `Vehicle.armed`
-                        #   reads. `climbHeight` decides what a vehicle drives
+    vehicles.ts         # `VehicleSpec` — the SHAPE of one kind — plus the three
+                        #   kinds themselves: the TANK, the gun TRUCK and the
+                        #   HELICOPTER. Each states its hull, drive, suspension,
+                        #   guns, camera and engine voice; `gun: null` and
+                        #   `flight: null` are the two optional blocks, and are
+                        #   what `Vehicle.armed` and `Vehicle.flies` read.
+                        #   `climbHeight` decides what a vehicle drives
                         #   over and what stops it (1.25 for the tank, 0.55 for
                         #   the truck), and `resist` is where what each kind of
                         #   damage is worth is written down — a rifle 0.05
@@ -146,6 +151,17 @@ src/
     settings.ts         # Settings shape, defaults, localStorage. Applies
                         #   nothing — that is Game.applySettings, the ONLY
                         #   place a setting reaches whatever owns it
+    math.ts             # The scalar helpers more than one file needs: clamp,
+                        #   clamp01, hermite, smoothstep, angleDelta. Imports
+                        #   NOTHING, which is what makes it safe to import from
+                        #   anywhere — a leaf, not a path into core/. config/
+                        #   holds NUMBERS a designer tunes; this holds FUNCTIONS
+                        #   with none in them. `hermite` is the raw polynomial
+                        #   and `smoothstep` is the GLSL one that clamps — named
+                        #   apart rather than by a suffix, because `01` cannot
+                        #   mean an output range, an input clamp and a
+                        #   precondition at once. Nothing with a single caller
+                        #   belongs here
   entities/
     Player.ts           # Movement, sprint, crouch, jump, weapon state
     ViewModel.ts        # The first-person weapon: carried gun + gloved arms on

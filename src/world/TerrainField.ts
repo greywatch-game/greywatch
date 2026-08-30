@@ -25,6 +25,7 @@
  */
 import { VertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { clamp } from "../core/math";
 import type { Heightfield, WaterRect } from "./layout";
 
 /** One block's worth of ground, ready to become a mesh. */
@@ -271,10 +272,6 @@ export function waterY(r: WaterRect, terrain: TerrainField): number {
  * and the brush reports it.
  */
 export const MAX_WALKABLE_GRADE = CONFIG.nav.stepHeight / CONFIG.nav.cellSize;
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
-}
 
 /**
  * Tessellates the floor, one VertexData per map block.

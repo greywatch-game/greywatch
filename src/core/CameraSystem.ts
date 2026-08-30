@@ -45,6 +45,7 @@
  */
 import { FreeCamera, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { hermite } from "./math";
 import {
   DEFAULT_SIGHT,
   sightSetup,
@@ -564,7 +565,7 @@ export class CameraSystem {
     this.adsBlend +=
       (target - this.adsBlend) *
       Math.min(1, dt * this.sight.blendSpeed * this.weaponAdsMult);
-    const t = smoothstep(this.adsBlend);
+    const t = hermite(this.adsBlend);
 
     // --- hold sway: the wander of an aimed weapon ---
     // Two sines per axis. The pitch term is the breath and the yaw term runs
@@ -652,8 +653,4 @@ export class CameraSystem {
     this.camera.fov =
       c.fovHip + (this.sight.fovAds - c.fovHip) * t + r.fovPunch * punch;
   }
-}
-
-function smoothstep(x: number): number {
-  return x * x * (3 - 2 * x);
 }

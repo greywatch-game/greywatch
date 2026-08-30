@@ -93,6 +93,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { clamp, hermite } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildCarbine } from "./CarbineModel";
 import { buildDmr } from "./DmrModel";
@@ -350,12 +351,9 @@ const THROW_FOLLOW_FRAC = 0.28;
 /** A plain triple, which is how every pose in CONFIG is written. */
 type XYZ = { x: number; y: number; z: number };
 
-const clamp = (v: number, lo: number, hi: number) =>
-  Math.min(hi, Math.max(lo, v));
-const smoothstep01 = (x: number) => x * x * (3 - 2 * x);
 /** Ramp from a to b, clamped at both ends. */
 const ramp = (a: number, b: number, x: number) =>
-  smoothstep01(clamp((x - a) / (b - a), 0, 1));
+  hermite(clamp((x - a) / (b - a), 0, 1));
 /**
  * An impact and its die-away: 1 on the beat at `at`, squared to nothing over
  * `fall`, and zero outside. All attack and no ease-in, which is the difference
@@ -1009,7 +1007,7 @@ export class ViewModel {
       ? ramp(0, l.tiltIn, lp) * (1 - ramp(l.tiltOut[0], l.tiltOut[1], lp))
       : 0;
     const t =
-      smoothstep01(clamp(p.adsBlend, 0, 1)) *
+      hermite(clamp(p.adsBlend, 0, 1)) *
       (1 - reloadW * r.aimBreak) *
       (1 - loadW * l.aimBreak);
 
@@ -1079,7 +1077,7 @@ export class ViewModel {
     // snapping to the drop. Eased here rather than in Player: the clock is a
     // straight triangle, and the ease is how the weapon moves, which is this
     // file's business.
-    const swapW = smoothstep01(clamp(p.swapBlend, 0, 1));
+    const swapW = hermite(clamp(p.swapBlend, 0, 1));
     if (swapW > 0.001) {
       addScaled(this.off, v.swap.pos, swapW);
       addScaled(this.rot, v.swap.rot, swapW);
@@ -1254,7 +1252,7 @@ export class ViewModel {
     let b = 1;
     let w: number;
     if (t <= cockT) {
-      w = smoothstep01(t / cockT);
+      w = hermite(t / cockT);
     } else if (t <= windup) {
       a = 1;
       b = 2;
@@ -1268,7 +1266,7 @@ export class ViewModel {
     } else {
       a = 3;
       b = 0;
-      w = smoothstep01((t - holdT) / (total - holdT));
+      w = hermite((t - holdT) / (total - holdT));
     }
     Vector3.LerpToRef(
       this.throwKeys[a].pos,
@@ -1443,7 +1441,7 @@ export class ViewModel {
       // Fetching. There is no round yet, and the hand is on its way down to
       // where one will be — which is the same place, so the two never have to
       // be reconciled.
-      reach = smoothstep01(ph / l.offerFrom);
+      reach = hermite(ph / l.offerFrom);
       this.roundPos.set(
         l.offerPos.x * reach,
         l.offerPos.y * reach,
@@ -1453,7 +1451,7 @@ export class ViewModel {
       // Coming up and turning onto the bore. Eased at both ends: this is an
       // arm lifting something heavy into place, not a part travelling on a
       // rail, and it is the half of the gesture the player has time to read.
-      const x = smoothstep01((ph - l.offerFrom) / (l.alignAt - l.offerFrom));
+      const x = hermite((ph - l.offerFrom) / (l.alignAt - l.offerFrom));
       this.roundPos.set(
         l.offerPos.x * (1 - x),
         l.offerPos.y * (1 - x),

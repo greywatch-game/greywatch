@@ -41,6 +41,7 @@
  */
 import "./hud.css";
 import { CONFIG } from "../config";
+import { angleDelta } from "../core/math";
 import type { ControlPoint } from "../systems/ConquestSystem";
 import type { ScoreKind } from "../systems/ScoreBook";
 import { pingQuality, pingText } from "./ping";
@@ -167,14 +168,6 @@ function pipMetrics(perRow: number): { gap: number; w: number } {
   const pitch = MAG_STRIP_W / perRow;
   const gap = Math.min(2, pitch * 0.32);
   return { gap, w: Math.min(5, pitch - gap) };
-}
-
-/** Signed shortest angle from `a` to `b`, in radians. */
-function angleDelta(a: number, b: number): number {
-  let d = (b - a) % (Math.PI * 2);
-  if (d > Math.PI) d -= Math.PI * 2;
-  if (d < -Math.PI) d += Math.PI * 2;
-  return d;
 }
 
 /**

@@ -33,6 +33,7 @@ import {
   VertexData,
   type GlowLayer,
 } from "@babylonjs/core";
+import { clamp01 } from "../core/math";
 import type { Team } from "../entities/Combatant";
 import type { EnvironmentSpec } from "../world/environment";
 import type { ControlPointDef } from "../world/MapBuilder";
@@ -437,8 +438,4 @@ export class CaptureZoneSystem {
 /** 0..1 pulse; 0 at t = 0, so a marker starts at full strength. */
 function wave(t: number): number {
   return 0.5 - 0.5 * Math.cos(t);
-}
-
-function clamp01(x: number): number {
-  return x < 0 ? 0 : x > 1 ? 1 : x;
 }

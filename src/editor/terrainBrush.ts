@@ -42,6 +42,7 @@ import {
   type GlowLayer,
   type Scene,
 } from "@babylonjs/core";
+import { clamp } from "../core/math";
 import type { Heightfield } from "../world/layout";
 import type { GameMap } from "../world/MapBuilder";
 import { MAX_WALKABLE_GRADE, terrainPatches } from "../world/TerrainField";
@@ -524,10 +525,6 @@ function falloff(d: number, inner: number, outer: number): number {
   if (d <= inner) return 1;
   if (d >= outer) return 0;
   return 1 - (d - inner) / (outer - inner);
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
 }
 
 /** Centimetre precision — finer than that is noise in a generated file. */

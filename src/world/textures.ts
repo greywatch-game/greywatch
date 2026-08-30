@@ -43,6 +43,7 @@
  * no-image-processing pipeline (same convention as the player skin).
  */
 import { DynamicTexture, Scene, Texture } from "@babylonjs/core";
+import { clamp01, smoothstep } from "../core/math";
 
 /** The 2D context a `DynamicTexture` hands back. */
 type Ctx = ReturnType<DynamicTexture["getContext"]>;
@@ -81,14 +82,6 @@ function mulberry32(seed: number): () => number {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
-
-/** Hermite ramp between two edges. Returns 0 below `a`, 1 above `b`. */
-function smoothstep(a: number, b: number, v: number): number {
-  const t = clamp01((v - a) / (b - a));
-  return t * t * (3 - 2 * t);
 }
 
 /**

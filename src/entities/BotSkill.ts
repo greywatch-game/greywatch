@@ -7,6 +7,7 @@
  * here. Pure functions and one plain object: no Babylon, no state, no rays.
  */
 import { CONFIG } from "../config";
+import { clamp01 } from "../core/math";
 import { mulberry32 } from "../world/rng";
 
 /**
@@ -109,17 +110,13 @@ export function assignSkills(
   }
 }
 
-function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
-}
-
 function clamp01Index(i: number, n: number): number {
   return i < 0 ? 0 : i >= n ? n - 1 : Math.floor(i);
 }
 
 /** Resolves a skill in 0..1 into the numbers a bot actually runs on. */
 export function profileFor(skill: number): BotProfile {
-  const s = skill < 0 ? 0 : skill > 1 ? 1 : skill;
+  const s = clamp01(skill);
   const k = CONFIG.bots.skill;
   const reactionTime = lerp(k.reactionTime, s);
   const fov = lerp(k.fov, s);

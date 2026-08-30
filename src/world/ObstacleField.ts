@@ -15,6 +15,7 @@
  */
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { clamp } from "../core/math";
 import {
   clampToTopFace,
   halfDepth,
@@ -489,8 +490,4 @@ export class ObstacleField {
   private clampCell(cell: number): number {
     return cell < 0 ? 0 : cell >= this.dim ? this.dim - 1 : cell;
   }
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
 }

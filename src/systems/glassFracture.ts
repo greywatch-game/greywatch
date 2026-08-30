@@ -62,6 +62,9 @@
  * corners repeats its last one, which collapses the spare triangles exactly as
  * `GlassSystem.collapse` collapses a broken pane's.
  */
+// The only import, and it keeps the "pure arithmetic, no Babylon" invariant
+// above rather than bending it: `core/math` imports nothing itself.
+import { clamp } from "../core/math";
 
 /**
  * The most corners a piece can have: four from the wedge, one for each of the
@@ -405,8 +408,4 @@ function fill(piece: ShardPiece, n: number, pack: number): boolean {
   piece.hh = (maxY - minY) / 2;
   piece.area = area * pack * pack;
   return true;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
 }

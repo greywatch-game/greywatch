@@ -19,6 +19,7 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { InputManager } from "../core/InputManager";
+import { clamp, smoothstep } from "../core/math";
 import type { RayWorld } from "../world/RayWorld";
 
 /**
@@ -227,7 +228,8 @@ export class AimAssistSystem {
 
     // --- friction: full at the centre of the bubble, gone at its rim. A
     // gradient, so there is no sensitivity step to feel at the boundary. ---
-    this.depth = 1 - smoothstep01(bestAngle / bubbleAngle(a.slowdownRadius, bestDist));
+    this.depth =
+      1 - smoothstep(0, 1, bestAngle / bubbleAngle(a.slowdownRadius, bestDist));
     const stickMult = this.slow();
 
     // --- rotation. Gated three ways: it happens only inside the tighter
@@ -242,7 +244,9 @@ export class AimAssistSystem {
     const dragY = clamp(input.touchLookY / CONFIG.touch.cancelDrag, -1, 1);
     const drive = Math.max(
       input.fire ? 1 : 0,
-      smoothstep01(
+      smoothstep(
+        0,
+        1,
         (Math.max(
           Math.hypot(input.stickLookX, input.stickLookY),
           Math.hypot(input.moveX, input.moveY),
@@ -254,7 +258,9 @@ export class AimAssistSystem {
     );
     const falloff =
       1 -
-      smoothstep01(
+      smoothstep(
+        0,
+        1,
         (bestDist - a.rotateFullRange) / (a.maxDistance - a.rotateFullRange),
       );
     const gain = bestAngle <= rotAngle ? this.engage * drive * falloff : 0;
@@ -290,7 +296,7 @@ export class AimAssistSystem {
       const pull =
         (input.ads ? a.magnetAds : a.magnetHip) *
         lookRate *
-        smoothstep01(t) *
+        smoothstep(0, 1, t) *
         dt;
       const dir = best.center.subtract(origin).normalize();
       yaw += clamp(wrapPi(Math.atan2(dir.x, dir.z) - aimYaw), -pull, pull);
@@ -361,16 +367,6 @@ function dirPitch(to: Vector3, from: Vector3): number {
   const dy = to.y - from.y;
   const dz = to.z - from.z;
   return Math.atan2(dy, Math.hypot(dx, dz));
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
-}
-
-/** Hermite ease over [0,1], clamped — the shape every ramp here uses. */
-function smoothstep01(x: number): number {
-  const t = clamp(x, 0, 1);
-  return t * t * (3 - 2 * t);
 }
 
 /** Wraps an angle to [-PI, PI] so the pull takes the short way around. */

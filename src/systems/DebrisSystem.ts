@@ -111,6 +111,7 @@ import {
   VertexData,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { clamp } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { WorldPane } from "../world/MapBuilder";
 import { DEBRIS_GROUP, WORLD_GROUP, type PhysicsClient, type PhysicsWorld } from "./PhysicsWorld";
@@ -705,10 +706,6 @@ export class DebrisSystem implements PhysicsClient {
     for (const s of this.shapes.values()) s.dispose();
     this.shapes.clear();
   }
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
 }
 
 /**

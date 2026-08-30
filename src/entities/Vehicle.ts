@@ -213,6 +213,7 @@
  */
 import { AbstractEngine, Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { angleDelta } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
 import { rotateToLocalXZ, topFaceHeight, type LocalXZ } from "../world/boxGeometry";
@@ -486,21 +487,6 @@ function contactLong(i: number, reach: number): number {
 /** Where track contact `i` sits across the hull: positive is the RIGHT belt. */
 function contactLat(i: number, wide: number): number {
   return (i & 1) === 0 ? wide : -wide;
-}
-
-/**
- * Shortest signed angle from `a` to `b`, in (-pi, pi].
- *
- * Exported for the one reader outside this file: an AI crew asks how far the
- * gun still has to walk before it is worth pulling the trigger, and that is
- * the same question `update` asks to walk it. A second copy of four lines of
- * angle wrapping is exactly the kind of thing that gets a sign wrong once.
- */
-export function angleDelta(a: number, b: number): number {
-  let d = (b - a) % (Math.PI * 2);
-  if (d > Math.PI) d -= Math.PI * 2;
-  if (d < -Math.PI) d += Math.PI * 2;
-  return d;
 }
 
 /**
@@ -2982,7 +2968,10 @@ export class Vehicle implements Combatant, RayHull {
 
     // --- the attitude the contacts are asking for ---
     const lim = c.tiltLimit;
-    const clamp = (v: number) => Math.max(-lim, Math.min(lim, v));
+    // Named apart from `core/math`'s `clamp` on purpose: this one is the hull's
+    // own tilt limit closed over, not the general three-argument one, and a
+    // local shadowing that name is how the two get confused.
+    const toTiltLimit = (v: number) => Math.max(-lim, Math.min(lim, v));
     const front = Math.max(h[0], h[1]);
     const rear = Math.max(h[CONTACT_COUNT - 2], h[CONTACT_COUNT - 1]);
     let right = -Infinity;
@@ -2993,8 +2982,8 @@ export class Vehicle implements Combatant, RayHull {
     }
     // Nose-up, and positive. A positive X rotation tips the nose DOWN, so what
     // the drawn node is given is the negative of it.
-    const rise = clamp(Math.atan2(front - rear, reach * 2));
-    const roll = clamp(Math.atan2(right - left, wide * 2));
+    const rise = toTiltLimit(Math.atan2(front - rear, reach * 2));
+    const roll = toTiltLimit(Math.atan2(right - left, wide * 2));
     this.groundPitchTarget = -rise;
     this.groundRollTarget = roll;
 

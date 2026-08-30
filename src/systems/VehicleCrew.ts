@@ -102,8 +102,8 @@ import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Bot } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
+import { angleDelta } from "../core/math";
 import {
-  angleDelta,
   DRIVER,
   GUNNER,
   SEATS,

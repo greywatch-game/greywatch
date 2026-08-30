@@ -13,6 +13,7 @@
  */
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { clamp } from "../core/math";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { ControlPointDef, GameMap, SpawnPointDef } from "../world/MapBuilder";
 
@@ -379,10 +380,6 @@ export class ConquestSystem {
     if (this.tickets[0] <= 0) this.winner = 1;
     else if (this.tickets[1] <= 0) this.winner = 0;
   }
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
 }
 
 function near(a: Vector3, b: Vector3, dist: number): boolean {

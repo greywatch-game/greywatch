@@ -20,6 +20,7 @@
  * reads on its own path; see the field.
  */
 import { CONFIG } from "../config";
+import { clamp } from "./math";
 
 /**
  * One frame of on-screen touch input — the structural subset of
@@ -1092,10 +1093,6 @@ function applyDeadzone(v: number, dz: number): number {
   const a = Math.abs(v);
   if (a < dz) return 0;
   return (Math.sign(v) * (a - dz)) / (1 - dz);
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
 }
 
 /** Maps MouseEvent.button (0/1/2) to the `buttons` bitmask (1/4/2). */
