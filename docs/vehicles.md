@@ -2003,7 +2003,7 @@ died in. Nothing is disposed inside a round.
 A hull makes a noise whoever is in it. There are **two kinds of voice and one
 graph**, and the graph is `Sfx.buildEngine` — six sources held open, five layers
 hanging off one gain swinging at the firing rate, and the whole of the argument
-for what a diesel sounds like is on that method.
+for what a powerplant sounds like is on that method.
 
 | voice | who | how it is heard |
 | --- | --- | --- |
@@ -2025,10 +2025,115 @@ match writes off the snapshot.
 one-shots `engineOn` fires are a starter motor turning over; fired on a range
 crossing they would be a tank starting up once a street.
 
-**`load` and `speed` are both the hull's own speed.** The throttle belongs to
-whoever is holding the stick and nobody outside the hull can see it — the same
-call `Game.frameVehicleCamera` already makes for a GUNNER, who is sitting in the
-thing and still has no business revving it.
+**The STICK is the hull's own speed from outside it.** The throttle belongs to
+whoever is holding it and nobody outside the hull can see one — the same call
+`Game.frameVehicleCamera` already makes for a GUNNER, who is sitting in the
+thing and still has no business revving it. **Everything else the voice wants is
+asked of the HULL**, through `Vehicle.powerplant`, which is the next section.
+
+## The second powerplant: a turbine hung off a disc
+
+**`Sfx.buildEngine` was one description of a DIESEL, and the helicopter was that
+diesel revved high.** `engine: { revMult: 2.1, clatter: 0 }` was the only lever
+a voice with no rotor in it had for saying "not a piston engine", and what it
+bought was a machine that revved as it accelerated, fell away as it slowed, and
+**hovered in silence** — which is a helicopter flying with its engine off, and
+the one thing a helicopter cannot do. Measured on the old voice, over a flight
+that spools on the pad, hovers, crosses at 32 m/s and then climbs on full
+collective:
+
+| | old | now |
+| --- | --- | --- |
+| level hovering, against level in cruise | **0.028 against 0.100** — a machine that went quiet whenever it stopped | **0.076 against 0.109** |
+| level under full collective | 0.029 — hauling itself up sounded like sitting still | 0.106 |
+| level with the rotor stopped | 0.051, two thirds of a hover: the voice opened at idle the moment you mounted | 0.007 |
+| the low note, hover → cruise | **135 Hz → 129 Hz**, and the whistle 1,623 → 2,098: the note chased the airspeed | **93.8 Hz → 93.8 Hz** |
+| the thump | 27.3 Hz at a hover, and gone altogether in flight (depth 0.024) | **19.00 Hz at a hover, 19.00 in cruise, 19.05 in a climb** |
+
+**The fix is in two halves and neither is a branch on a kind.**
+
+**What DRIVES the voice is asked of the hull.** `Vehicle.powerplant(stick)`
+returns the two numbers `Sfx.driveEngine` is written around — how hard the
+machine is being WORKED and how fast it is TURNING — and a machine geared to its
+road wheels answers with exactly what `Game` used to compute at the call site, so
+the two ground kinds do not move. A rotor answers with the SPOOL (`this.rotor`,
+the same 0..1 the disc is drawn turning at — not `rotorPower`, because a rotor
+below `liftFloor` is turning and audible and lifting nothing, which is the whole
+sound of a spool) and with DISC LOADING, built from three terms: hanging there at
+all (`rotorPower`, and most of it — this is the term the old wiring had no way to
+say), the VERTICAL RATE unsigned, and airspeed as the full horizontal magnitude.
+The climb is taken as the rate rather than as `lift` or the collective because it
+is the one term both a hull under its own pilot and a hull on the WIRE can
+answer: `updateRemote` pins `lift` at gravity and measures the motion, so a climb
+is visible from either side and a stick is not.
+
+**What the voice IS is `EngineKind.rotor`, a nullable block** — the same bargain
+`VehicleSpec.flight` makes one level up, and `driveEngine` forks on it into
+`driveRotor`. It is a block and not three more numbers because the two
+powerplants are not one set of levels with different values: **a piston engine
+changes NOTE with what the machine is doing and a governed rotor does not.**
+
+| | geared to wheels | hung off a disc |
+| --- | --- | --- |
+| the NOTE | road speed and a quarter of the throttle | the spool, and nothing else |
+| the LEVEL | the throttle | a spool floor plus the disc loading |
+| the LUMP | a fixed depth | the loading — a worked disc chops harder |
+| the whistle | late, and swept by the throttle | governed, and swept by the spool alone |
+
+The five layers are the same five layers, which is why this is one graph and not
+two: **a cylinder firing and a blade passing are the same event** — a lump, at a
+rate, with air moving round it. The chug becomes the downwash and is lumped
+harder, the growl goes nearly out (nothing that burns continuously has a
+combustion growl), the chest comes up half again onto the 92 Hz hull peak, and
+the turbocharger becomes the turbine with broadband air pushed through the same
+resonance, because two beating sines at the level a turboshaft has to sit at read
+as a test tone. **The tail rotor is the one layer with no counterpart** and is
+built only when there is one: a sawtooth at `tailRatio` × the blade rate, read
+through a band well ABOVE its own fundamental, because what an ear picks a tail
+rotor out by is the rasp of its harmonics and the 93 Hz they hang off is
+underneath the main disc's weight. It goes onto the low cut rather than into the
+lump — a tail rotor is its own machine and is not chopped at the main disc's
+rate.
+
+**`rotor.slapHz` is deliberately NOT derived from `flight.rotorRate`**, and that
+is the one number here that had to be written down twice on purpose. The flight
+block's 13 rad/s is a DRAWING number, chosen so four blades do not alias into a
+stopped disc at 60 Hz, and it is about half what a rotor that size really turns
+at; reading the sound off it would make the machine sound as slow as it has to
+look. 19 Hz is four blades at about 290 rpm.
+
+**The whistle answers the SPOOL and not the load, and that is what "governed"
+sounds like.** Measured: the turbine tone sits at 2,384.8 Hz hovering and
+2,367.2 Hz at full airspeed — 0.7%, which is the deliberate governor DROOP under
+load and the only thing in the voice that moves with what the machine is doing.
+The old voice moved the same tone 1,623 → 2,098 Hz, a fifth. Its time constant
+came down from the turbocharger's 0.6 s to 0.12 s for the same reason: that lag
+was the whole character of a turbo — a wheel arriving after the engine — and here
+the spool is already in the number, measured off the disc the player is watching,
+so a lag on top of it is a whine that has fallen behind its own rotor.
+
+**The starter is a hiss and not a catch.** `engineOn`'s three one-shots are a
+starter motor turning cylinders over and finding compression; a turbine has none,
+so a rotor kind gets one rising band of air instead, over the top of the long
+spool the rotor is already climbing through.
+
+**Where the four bands sit**, as a share of the whole, against the tank in cruise
+— a helicopter is thump-and-whistle where a diesel is middle:
+
+| | 20–120 Hz | 120–500 | 500–1,200 | 1,200–4,500 |
+| --- | --- | --- | --- | --- |
+| tank, cruising | 0.261 | **0.557** | 0.138 | 0.044 |
+| helicopter, hovering | **0.535** | 0.114 | 0.184 | 0.167 |
+| helicopter, at 32 m/s | 0.470 | 0.100 | 0.161 | 0.269 |
+| helicopter, full collective | 0.452 | 0.089 | 0.153 | **0.306** |
+
+**The two ground kinds are proved untouched rather than argued.** A scripted
+ten-second drive — stand, pull away, cruise, lug against a wall, coast — rendered
+through an `OfflineAudioContext` with the change stashed and unstashed agrees to
+**1e-7 of RMS relative**, which is inside Chromium's own render-to-render spread
+(5e-7 over three runs of identical source; the renderer is not bit-reproducible,
+so a hash is not the test here). Every line a rotor moves is either written only
+under `driveRotor` or reads `r ? … : <the old literal>`.
 
 **The rolloff is INVERSE, alone in `Sfx.ts`.** Every one-shot in that file is
 linear over `maxDistance`, which reaches exactly nothing at its own gate and
@@ -2602,12 +2707,6 @@ ray happened to find, which can be a street away.
   a rule with one customer. `VehicleSystem.dismountable` is a HEIGHT rule and
   not a kind rule — a tank on the lip of a parkade deck reaches it too — and the
   prompt says `LAND TO GET OUT` rather than the key quietly doing nothing.
-- **The helicopter has no voice of its own.** `Sfx.buildEngine` is one
-  description of a DIESEL and `VehicleSpec.engine` is two numbers against the
-  tank's; a rotor slap would be a seventh source in that graph. It ships with
-  `clatter: 0` and a high `revMult`, which is a turbine and not a rotor, and
-  **a hovering machine is quiet** because `hullEngine` is driven by
-  `travel / maxSpeed`. That is the first thing to fix.
 - **Team-locked.** `VehicleSystem.enterable` refuses the other side's armour.
   Stealing it is a real design choice and a good one in some shooters, but made
   by accident it would mean a hardstanding's respawn timer feeding the wrong team
