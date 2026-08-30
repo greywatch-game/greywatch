@@ -1985,9 +1985,9 @@ export const vehicles = {
    *    state — see `steerAtRest` and `collideRadius`.
    * 2. **It has no main gun.** `gun: null`, as the truck's is, so `armed` is
    *    false and the trigger, the loader row and the gun marker are all absent
-   *    rather than dimmed. Its only weapon is the door gun the SECOND man lays,
-   *    which makes a lone pilot a taxi and is the whole of what the second seat
-   *    is worth on this kind.
+   *    rather than dimmed. Its only weapon is the CHIN gun the SECOND man
+   *    lays, which makes a lone pilot a taxi and is the whole of what the
+   *    second seat is worth on this kind.
    * 3. **It is FRAGILE.** 340 points against the truck's 520, and `resist`
    *    barely resists: a rifle does 70% of its damage to this and a blast 90%,
    *    so the counterplay to a machine nothing on the ground can catch is that
@@ -2136,7 +2136,7 @@ export const vehicles = {
     /**
      * **No main gun, and this null is the whole of what says so** — the truck's
      * note applies word for word, and on this kind it is also the argument for
-     * the second seat: the door gun is the only weapon aboard, so a pilot
+     * the second seat: the chin gun is the only weapon aboard, so a pilot
      * without a gunner has flown a taxi to the fight.
      */
     gun: null,
@@ -2246,11 +2246,17 @@ export const vehicles = {
       crashDamage: 130,
     },
     /**
-     * The door gun — and on this vehicle it is the ONLY gun, which is what
+     * The CHIN gun — and on this vehicle it is the ONLY gun, which is what
      * makes its numbers the truck's rather than the tank's cupola's: it is
      * somebody's whole contribution to the round and not a weapon of last
-     * resort. It elevates further DOWN than either, because what a door gunner
-     * is shooting at is underneath him.
+     * resort. It elevates further DOWN than either, because what a gunship's
+     * gunner is shooting at is underneath him.
+     *
+     * **`pitchMin` is the one figure here the DRAWING has an opinion about.**
+     * `HeliModel` puts the trunnion 60 cm over the pad and the muzzle 70 cm out
+     * from it, so at -0.85 rad the muzzle clears a pad by 7 cm — measured — and
+     * a deeper limit is a gun firing from inside the terrain on a hull that is
+     * sitting on its skids. Moving it owes that file a re-measurement.
      */
     mg: {
       damage: 52,
@@ -2265,7 +2271,7 @@ export const vehicles = {
       traverseAccel: 15,
       elevationAccel: 13,
       settleTime: 0.03,
-      /** **Well past the other two**: it is a door gun, and it looks down. */
+      /** **Well past the other two**: it is a gunship's chin gun, and it looks down. */
       pitchMin: -0.85,
       pitchMax: 0.45,
       cameraKick: 0.004,

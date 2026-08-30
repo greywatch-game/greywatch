@@ -794,7 +794,7 @@ gate on a claimed shell all ask. **An unarmed hull keeps `turretYaw` equal to
 its own yaw**, so a welded ring draws at a permanent local zero and `aimMg`
 needs no branch of its own.
 
-**`VehicleSpec.flight` is the second, and `Vehicle.flies` is what nine readers
+**`VehicleSpec.flight` is the second, and `Vehicle.flies` is what ten readers
 ask** — the drive block, the attitude, the wire's altitude, whether a bot may
 take the chair, the leash, the shadow focus, the touch collective and the
 authority's two bounds. **`standOnGround` is deliberately not one of them.**
@@ -805,6 +805,11 @@ is **zero on anything that cannot fly** and turns the free-fall term into
 hover is then an EQUALITY rather than a decision, the plank is a landing floor,
 and `jolt` is the arrival the skids spend. Gravity was never the only vertical
 acceleration; it was only the only one anything had ever produced.
+
+**`Vehicle.gearLoad` makes that bargain a second time, for the SUSPENSION**: 1
+wherever `spec.flight` is null, so it scales `flexSuspension`'s drive to nothing
+in flight and to nothing at all on a tank. **`flexHeave` is deliberately not
+scaled** — a landing is an impulse, not a static load.
 
 **A flying hull is steered by the LOOK and a driving one by the stick, and that
 one difference of scheme costs no branch outside `flyStep`** — both halves are
@@ -826,9 +831,16 @@ small-arms damage, no cannon at all, and a 10.4 m rotor disc
 (`drive.collideRadius`) that closes every alley a truck opens. Its ceiling is
 40 m and that is COUNTERPLAY rather than a limit — bots acquire at 55 m in three
 dimensions and their cone has no elevation term, so a machine that could climb
-out of that bubble is one nothing in the game can answer. **No bot will ever fly
+out of that bubble is one nothing in the game can answer. **It is drawn as a tandem-seat
+GUNSHIP with its gun in a CHIN TURRET**, which is the truck's "nothing on a
+vehicle may promise a body" rule paying out a second time: the sill station it
+replaces obeyed the letter of that rule and still failed it, because a DOORWAY
+with a gun on its lip is that promise however remote the mount is. Its stub
+wings stop exactly at `hull.width / 2` — a span outside the collider is mass a
+round passes through, and the rotor disc is the one thing here exempt, by
+MOVING. **No bot will ever fly
 one** (there is no route graph through the air), a lone pilot is a taxi because
-the door gun is the second seat's, and a dismount at height is REFUSED rather
+that chin cannon is the second seat's, and a dismount at height is REFUSED rather
 than punished — there is no fall damage in this game, so `dismountable` is a
 height rule every kind obeys.
 
@@ -970,7 +982,7 @@ helicopter's fragility; the two seats and the swap, the cupola gun's
 world angle and its stowed inversion, the crew of two, the whisker fan and the
 two geometry bugs it found; the collider's three answers; the tracks' sweep, its
 three gates and its two skips; each model's mesh budget, its running gear and
-its whips; the two engine voices and the one graph under them; the plank, the
+its whips, and the gunship's chin turret with the four clearances it owes; the two engine voices and the one graph under them; the plank, the
 rate limit and the leading-end sphere; the damage kinds, the four ways out of a
 seat, the shell, the two clocks a hardstanding runs, what a map owes — including
 what its GENERATOR owes — and what is not built.
