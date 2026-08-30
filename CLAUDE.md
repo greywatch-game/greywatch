@@ -794,7 +794,7 @@ gate on a claimed shell all ask. **An unarmed hull keeps `turretYaw` equal to
 its own yaw**, so a welded ring draws at a permanent local zero and `aimMg`
 needs no branch of its own.
 
-**`VehicleSpec.flight` is the second, and `Vehicle.flies` is what nine readers
+**`VehicleSpec.flight` is the second, and `Vehicle.flies` is what ten readers
 ask** — the drive block, the attitude, the wire's altitude, whether a bot may
 take the chair, the leash, the shadow focus, the touch collective and the
 authority's two bounds. **`standOnGround` is deliberately not one of them.**
@@ -805,6 +805,11 @@ is **zero on anything that cannot fly** and turns the free-fall term into
 hover is then an EQUALITY rather than a decision, the plank is a landing floor,
 and `jolt` is the arrival the skids spend. Gravity was never the only vertical
 acceleration; it was only the only one anything had ever produced.
+
+**`Vehicle.gearLoad` makes that bargain a second time, for the SUSPENSION**: 1
+wherever `spec.flight` is null, so it scales `flexSuspension`'s drive to nothing
+in flight and to nothing at all on a tank. **`flexHeave` is deliberately not
+scaled** — a landing is an impulse, not a static load.
 
 **A flying hull is steered by the LOOK and a driving one by the stick, and that
 one difference of scheme costs no branch outside `flyStep`** — both halves are

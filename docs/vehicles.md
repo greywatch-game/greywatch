@@ -1248,8 +1248,8 @@ without going anywhere is a machine whose ground answer can still go stale.
 `Vehicle.flies` is that resolved once — `gun`/`armed`'s shape and `gun`/`armed`'s
 reason. It is the SECOND capability question in the file and there are still
 only two, but it is worth being as exact about its readers as the section above
-is about `armed`'s six, or a third kind erodes the bargain by stealth. Nine, and
-four of them are one line:
+is about `armed`'s six, or a third kind erodes the bargain by stealth. Ten, and
+five of them are one line:
 
 1. `Vehicle.update`'s drive block — `flyStep` in place of the throttle walk.
 2. `Vehicle.update`'s tail — the commanded attitude overrides the ground's while
@@ -1267,6 +1267,10 @@ four of them are one line:
 8. `server/HeadlessGame` — the leash again, on the authority.
 9. `server/Match.onDrive` — `tank.spec.flight?.ceiling ?? null`, which is
    `resolveShell`'s blessed data read rather than a kind test.
+10. `Vehicle.gearLoad` — how much of its own weight the running gear is
+    carrying, which is 1 wherever the block is null and is what takes the
+    weight transfer out of a hull hanging from its rotor. `flexSuspension` is
+    its only caller, and see the suspension note under the flight section.
 
 **`standOnGround` is not on that list and that is the point of the whole
 design.** It has never heard of `flies`.
@@ -1401,6 +1405,62 @@ for anything that can only travel forwards and a lie for something that drifts.
 It is a field now, `speed` is measured off it on a flying hull, and `stirred`
 asks the VELOCITY rather than `speed` — without which a hovering machine that
 had drifted into a wall would never be pushed back out of it.
+
+### …and the SUSPENSION had to be told the rotor was carrying the weight
+
+The bank above is written to `rig.hull`, so the skids go with it: the whole
+machine is banking and the picture is right. **What was wrong was the OTHER
+lean.** `flexSuspension` writes weight transfer to `rig.sprung`, which is the
+body moving against running gear the ground has put where it is — and it was
+being driven in the air, where the ground has put the running gear nowhere at
+all. A helicopter turning in flight rolled its fuselage against its own skids:
+**measured on Sarab, 8.23 degrees on turn-in**, against a stop-limited ceiling
+of 9.0, on the one vehicle in the fleet a player spends whole minutes watching
+from behind in the chase camera.
+
+**A suspension is a spring between a mass and the ground and it deflects in
+proportion to the load ACROSS it.** Every input that method reads is an
+acceleration, and an acceleration only becomes a lean because the gear has to
+push the hull sideways to produce it. A machine hanging from a rotor is not
+being pushed sideways by anything it is standing on — the disc is doing all of
+it, at the top — so the drive term is not merely small, it is ZERO.
+
+`Vehicle.gearLoad` is that, and **it is the bargain `lift` made with
+`standOnGround`, made the same way: by DATA rather than by a branch on a kind.**
+`spec.flight` is null on anything that cannot fly, so it returns exactly 1 there
+and the two multiplications downstream are multiplications by one — the tank's
+and the truck's arithmetic is untouched to the bit. A flying hull gets a third
+reading of one number rather than a special case, and each of the three is
+right: a rotor at REST is 1, so a wreck stands on its skids and settles like
+anything else; SPOOLING UP slides from 1 to 0, which is a helicopter getting
+light on its gear and costs no code; and FLYING is 0.
+
+**It is `rotorPower` and not `lift`, and that is the one non-obvious choice.**
+`lift` is the acceleration the disc is producing this frame, so it dips whenever
+the collective is pushed over and recovers as the machine settles into the
+descent — which would put a fraction of the lean back every time a pilot pushed
+the nose down, transiently, for no reason a player could read. What is actually
+true is that the rotor is turning and therefore carrying the aircraft, whatever
+the stick is asking of it this instant.
+
+**`flexHeave` is deliberately NOT scaled by it and the two are not in conflict.**
+Weight transfer is a static load; a landing is an IMPULSE. `jolt` is closing
+speed the ground took out of the hull, and a skid gear absorbs that whether the
+rotor is still turning or not — which it always is, on any landing anybody walks
+away from. Scaling the heave would take the touchdown compression away, which is
+the one thing the skids are for and the whole of what made the flying kind cheap
+in the first place. The antennae are not scaled either, for the same division: a
+mast bends because it is a cantilever being accelerated, and inertia does not
+care what is holding the aircraft up.
+
+**Both ground kinds are proved untouched rather than argued.** Twenty seconds of
+scripted driving — throttle, steer, collective and a sweeping `aimYaw` — hashed
+over position, yaw, speed, turret bearing, gun elevation, drawn ground attitude,
+sprung attitude and heave, 1,200 frames each, is bit-identical for the tank and
+the truck with the change stashed and unstashed. On the helicopter the same run
+reports 0.000 degrees of body-against-skid roll throughout, and **-12.37 degrees
+of bank on `rig.hull` either way** — the aircraft still leans into its turn,
+which was never the thing that was wrong.
 
 ### Three gaps, all accepted on purpose
 

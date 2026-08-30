@@ -3224,6 +3224,71 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * How much of its own weight this hull's running gear is carrying, 0..1.
+   *
+   * **A suspension is a spring between a mass and the ground, and it deflects
+   * in proportion to the load ACROSS it.** Every input `flexSuspension` reads
+   * is an acceleration, and an acceleration only becomes a lean because the
+   * gear has to push the hull sideways to produce it. A machine hanging from a
+   * rotor is not being pushed sideways by anything it is standing on — the
+   * disc is doing all of it, at the top — so its skids have nothing to lean
+   * against and the drive term is not merely small, it is ZERO.
+   *
+   * **This is the same bargain `lift` made with `standOnGround` and it is made
+   * the same way: by DATA rather than by a branch on a kind.** `spec.flight` is
+   * null on anything that cannot fly, so this returns exactly 1 there and the
+   * two multiplications downstream are multiplications by one — the tank's and
+   * the truck's arithmetic is untouched to the bit, not approximately. Nothing
+   * here asks what it is holding.
+   *
+   * What a flying hull gets is a THIRD reading of the same number rather than
+   * a special case, and each of the three is right:
+   *
+   * - **Rotor at rest** — a wreck, or a machine nobody is in — is 1. It stands
+   *   on its skids like anything else, and a hull dropped onto them leans and
+   *   settles exactly as a truck does.
+   * - **Spooling up** slides from 1 to 0, which is a helicopter getting light
+   *   on its gear. It costs no code and nothing was tuned for it.
+   * - **Flying** is 0, and that is the fix this method exists for: the drawn
+   *   fuselage no longer rolls against its own skids in a turn. **Measured on
+   *   Sarab, flying a real hull: 8.23 degrees of body-against-skid roll on
+   *   turn-in, and 0.000 with this in.** The ceiling was 9.0 — `rollPerAccel`
+   *   0.01 against an `accelLimit` of 26 asks for 0.26 rad and the
+   *   wheel-station stop cuts it to 0.157 — which is a body rocking on springs
+   *   that are carrying nothing, on the one vehicle in the fleet a player
+   *   spends whole minutes watching from behind.
+   *
+   * **What it does NOT touch is the aircraft's own bank**, and that is the
+   * distinction the node split already draws: the coordinated roll is
+   * `tiltRoll` on `rig.hull`, which takes the skids with it because the whole
+   * machine is banking. Same run, same turn, before and after: -12.37 degrees
+   * on that node either way.
+   *
+   * **`rotorPower` and not `lift`, and that is the one non-obvious choice
+   * here.** `lift` is the acceleration the disc is producing THIS FRAME, so it
+   * dips whenever the collective is pushed over and comes back as the machine
+   * settles into the descent — which would put a fraction of the lean back
+   * every time a pilot pushed the nose down, transiently, for no reason a
+   * player could read. What is actually true is that the rotor is turning and
+   * therefore carrying the aircraft, whatever the stick is asking of it this
+   * instant, and `rotorPower` is that.
+   *
+   * **`flexHeave` is deliberately NOT scaled by this**, and the two are not in
+   * conflict. Weight transfer is a static load and a landing is an IMPULSE:
+   * `jolt` is closing speed the ground took out of the hull, and a skid gear
+   * absorbs that whether the rotor is still turning or not — which it always
+   * is, on any landing anybody walks away from. Scaling the heave would take
+   * the touchdown compression away, which is the one thing the skids are for.
+   * The antennae are not scaled either, for the same division: a mast bends
+   * because it is a cantilever being accelerated, and inertia does not care
+   * what is holding the aircraft up.
+   */
+  private gearLoad(): number {
+    const fl = this.spec.flight;
+    return fl ? 1 - this.rotorPower(fl) : 1;
+  }
+
+  /**
    * What the hull's own mass does to it: the nose dives under the brake, squats
    * under power, and the body leans out of a turn.
    *
@@ -3245,6 +3310,12 @@ export class Vehicle implements Combatant, RayHull {
    *   turn. That is zero for a neutral-steer pivot on the spot, which is
    *   correct: the hull is rotating, not cornering, and there is nothing for it
    *   to lean against.
+   *
+   * **Both are scaled by `gearLoad`, which is the same argument one step
+   * further back**: a hull whose ROTOR is carrying it is not cornering against
+   * its skids either, and there is nothing for that to lean against either. It
+   * is 1 on anything that cannot fly, so neither line moved on the ground
+   * kinds.
    *
    * **What bounds the answer is a TRAVEL and not an angle, and that is the
    * second half of the fix the node split is the first half of.** A real
@@ -3280,12 +3351,17 @@ export class Vehicle implements Combatant, RayHull {
     const s = this.spec.suspension;
     const bound = (v: number, lim: number) => Math.max(-lim, Math.min(lim, v));
     const felt = bound(accel, s.accelLimit);
+    // **Weight transfer needs WEIGHT**, and `gearLoad` is how much of it this
+    // hull's running gear is holding. It is exactly 1 on anything without a
+    // rotor, so the two lines below are the lines they always were on both
+    // ground kinds — see that method.
+    const load = this.gearLoad();
     // Accelerating lifts the nose and a positive X rotation puts it down, so
     // the pitch target is the negative of the acceleration. Turning right is a
     // positive yaw rate, and a body thrown left by it stands its RIGHT side up,
     // which is a positive Z.
-    const wantPitch = -s.pitchPerAccel * felt;
-    const wantRoll = s.rollPerAccel * bound(lateral, s.accelLimit);
+    const wantPitch = -s.pitchPerAccel * felt * load;
+    const wantRoll = s.rollPerAccel * bound(lateral, s.accelLimit) * load;
     // How much travel a corner station has left, in metres, AFTER `flexHeave`
     // has spent what it spent. A tilt spends both stops at once — one end down
     // is the other end up — so what is left is the smaller of the two
