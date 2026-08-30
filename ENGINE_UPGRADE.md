@@ -2111,7 +2111,11 @@ The shadow window is the other half, and it is the environment's
 (`EnvironmentSpec.lighting.shadowWindow`, default 110). Shadow length is
 `h / tan(elevation)`, and the failure when the window is too small is not a soft
 edge — `shadowVisibility` returns **fully lit** outside it, so what you get is a
-straight line across open ground sliding with the player. `mapSize` stays global
+straight line across open ground sliding with the player. — *It is a gradient
+now: `CONFIG.graphics.shadows.edgeFade` ramps the term back over the last tenth
+of the volume, on all three axes. That changed how the boundary READS and not
+where it is, so this step's point stands and Sarab took the window to 240 as
+well.* `mapSize` stays global
 at 2048, so the window costs texel density: 5.4 cm at 110, 9.8 cm at 200.
 
 **A high sun is the desert's answer and it is the cheap one.** Coldharbour kept a

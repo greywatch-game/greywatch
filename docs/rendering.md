@@ -1065,12 +1065,20 @@ there cannot drop anything that could have darkened a texel.
 
 **The window's size is the MAP's, not the config's** — `CONFIG.graphics.shadows.
 frustumSize` (110) is only the default, and `EnvironmentSpec.lighting.shadowWindow`
-is the override (Coldharbour: 200). It had to become one when a map lowered its
-sun: shadow length is `h / tan(elevation)`, and the same 40 m tower throws 25 m
-at 58 degrees and 90 m at 24. **What happens outside the window is not a fade —
-`shadowVisibility` returns 1.0, fully lit, for any fragment outside the depth
-map's UV or its depth volume**, so an undersized window draws a straight line
-across open ground where the shadows stop and slides it along with the player.
+is the override (Coldharbour: 200, Sarab: 240). It had to become one when a map
+lowered its sun: shadow length is `h / tan(elevation)`, and the same 40 m tower
+throws 25 m at 58 degrees and 90 m at 24. **Outside the window
+`shadowVisibility` is fully lit, and the last `CONFIG.graphics.shadows.edgeFade`
+of the volume is what stops that being a LINE** — the whole term ramps back to
+1.0 over the outermost tenth of the box, on all three axes at once, so the
+boundary is a gradient the eye takes for distance haze. Measured on Sarab
+standing on open sand: before the ramp, full shadow to 74.8 m across-sun and
+nothing at 74.8 m — the same number three times, which is what a step reads as;
+after, full to 97.3 m, half at 108 and gone by 120. **What the ramp does not do
+is decide where the boundary IS**: that is still the window, and a map whose
+window ends inside ground the player can see just gets a smoother transition in
+the wrong place. Both halves are needed, which is why Sarab's window moved with
+the ramp landing.
 
 Two consequences of the geometry, both easy to get backwards. The window is a
 square perpendicular to the LIGHT, so its ground footprint stretches by

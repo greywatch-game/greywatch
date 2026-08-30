@@ -41,7 +41,27 @@
  * together, which is easier to remember when they are visibly two halves.
  */
 import { ShaderStore } from "@babylonjs/core";
+import { CONFIG } from "../../config";
 import { DITHER_WGSL } from "../Dither";
+
+/**
+ * `CONFIG.graphics.shadows.edgeFade`, interpolated into `celShadow` below as a
+ * WGSL literal rather than reaching the shader as a uniform.
+ *
+ * **`shadowParams` is a vec4 with all four slots spoken for** (bias, darkness,
+ * normal offset, tap radius), and widening it is not the small change it
+ * looks like: three consumers list those uniforms by name and the WebGPU
+ * `LeftOver` UBO is built from those lists, which is the layout hazard the
+ * header above exists to describe. This number never varies — not per map,
+ * not per frame, not per material — so a compile-time literal is what it
+ * actually is, and it costs no binding at all.
+ *
+ * Clamped away from 0 because it is `smoothstep`’s far edge and the two edges
+ * may not be equal, and emitted through `toFixed` because WGSL is typed and a
+ * whole number would reach the shader as an integer literal. See the config
+ * field for why the floor reads as no ramp.
+ */
+const EDGE_FADE = Math.max(CONFIG.graphics.shadows.edgeFade, 1e-4);
 
 /**
  * Registers one include, refusing to overwrite a DIFFERENT source under a name
@@ -144,8 +164,11 @@ register(
 // receiver at the focus plane sits at z ~ 0.51 and was compared as 0.76
 // against a caster depth of 0.51, so EVERY texel inside the window failed the
 // test: the depth map decided nothing, the window's edge became a hard line
-// between all-shadowed and all-lit (this function returns 1.0 outside it), and
-// what a player saw was a pool of shade travelling with them. No bias papers
+// between all-shadowed and all-lit (this function is fully lit outside it), and
+// what a player saw was a pool of shade travelling with them. The edge ramp
+// added since would have SOFTENED that line and not removed it — it is a
+// property of the boundary, and the bug was that everything inside the
+// boundary was shadow. No bias papers
 // over it — the error is (1 - z) / 2, half the depth range at the near plane,
 // and it reaches zero only at the far one.
 uniform lightMatrix: mat4x4f;
@@ -157,6 +180,18 @@ uniform shadowParams: vec4f;
 // Hard two-level shadow: lit or not, nothing in between — a soft penumbra
 // would fight the flat bands. The sample point is pushed off the facet along
 // its normal so a flat face never tests against its own depth (acne).
+//
+// **The volume's own BOUNDARY is the one place that is not two-level, and it
+// is not a penumbra.** Outside the ortho volume there is no depth to compare
+// against, so the honest answer is fully lit — and answering it abruptly puts
+// a straight line across open ground that slides along with the player, which
+// is a harder artefact than any softness. The last edgeFade of the volume
+// therefore ramps the whole shadow term back to 1.0. What is being faded is
+// the ABSENCE of information rather than the edge of a shadow: an occluder
+// still casts a hard-edged shape out there, it is just drawn weaker the
+// nearer it is to falling off the map, so what the eye reads is the same
+// distance haze that is about to take the geometry too. The two-level rule
+// still holds everywhere a shadow is actually resolved.
 //
 // The normal passed in is the one to OFFSET along, which is not always the one
 // being lit: it must be the real geometry's. The cel shader hands it the facet
@@ -186,7 +221,7 @@ uniform shadowParams: vec4f;
 // full fetch. That is the other half of why the count stops at four.
 //
 // **textureSampleLevel and never textureSample**, and this function is what
-// settled the rule: the fetches sit behind two early-outs, so an implicit LOD
+// settled the rule: the fetches sit behind an early-out, so an implicit LOD
 // is a sample reached through control flow WGSL cannot prove uniform, and the
 // error names a function that has been correct for the life of the project.
 // The map carries no mip chain, so an explicit level 0 is what was meant.
@@ -194,8 +229,16 @@ fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
   let sc4 = uniforms.lightMatrix * vec4f(posW + n * uniforms.shadowParams.z, 1.0);
   let sc = sc4.xyz / sc4.w;
   let uv = sc.xy * 0.5 + 0.5;
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { return 1.0; }
-  if (sc.z < 0.0 || sc.z > 1.0) { return 1.0; }
+  // How far inside the volume this receiver is, along whichever of the three
+  // axes it is closest to leaving by: 0 at a face, 0.5 at the focus. One
+  // min chain rather than three gates, because the ramp below has to be the
+  // same ramp on all three or the softened faces meet the hard ones at a
+  // corner and the corner is the line again.
+  let edge = min(
+    min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)),
+    min(sc.z, 1.0 - sc.z)
+  );
+  if (edge <= 0.0) { return 1.0; }
   let depth = sc.z - uniforms.shadowParams.x;
 
   let a = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
@@ -210,7 +253,12 @@ fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
   // Narrow smoothstep rather than a plain average: the four taps give a 0,
   // 0.25, 0.5, 0.75, 1 ladder, and this pulls the middle of it back toward a
   // decision so the edge stays an edge and only its jaggies are dissolved.
-  return mix(uniforms.shadowParams.y, 1.0, smoothstep(0.25, 0.75, lit * 0.25));
+  let shade = mix(uniforms.shadowParams.y, 1.0, smoothstep(0.25, 0.75, lit * 0.25));
+  // Back to fully lit over the outermost band of the volume. Cubic and not
+  // linear: a linear ramp is flat-shaded ground with a crease in it at each
+  // end, and a crease across open sand is the artefact this exists to remove
+  // rather than a milder version of it.
+  return mix(1.0, shade, smoothstep(0.0, ${EDGE_FADE.toFixed(4)}, edge));
 }
 `,
 );

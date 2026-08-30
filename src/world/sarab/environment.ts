@@ -26,9 +26,15 @@
  *
  * - **The sun is high** (52 degrees), which is S8's cheap answer. Shadow length
  *   is `h / tan(elevation)`, so the 27 m minaret — the tallest thing on the map
- *   — throws 21 m and a house throws 3. That is what lets `shadowWindow` stay
- *   at 150 against Coldharbour's 200, and 150 m of window over the fixed 2048 m
- *   map is 7.3 cm a texel where Coldharbour's is 9.8.
+ *   — throws 21 m and a house throws 3. **What that buys is not a small window,
+ *   which is the thing this map got wrong for a while**: short shadows off tall
+ *   rubble is a LOOK the map wants, and it says nothing about how far away the
+ *   ground you can see them on is. `shadowWindow` is 240 — see it — and what
+ *   the high sun actually pays for is the CEILING, because the depth volume's
+ *   reach along the sun goes as `1 / cos(elevation)` and a midday sun is the
+ *   cheapest hour to buy window at. 240 m over the fixed 2048 map is 11.7 cm a
+ *   texel against Coldharbour's 9.8, and a house's 3 m shadow is 26 texels
+ *   across at that density.
  * - **`bodyDrawDistance` is 300**, and this is the first map in the tree to
  *   state one. `FINDINGS.md` 30 measured the lever with the roster stood down a
  *   900 m sight line: 65% of the frame's active meshes were soldiers and the
@@ -141,9 +147,11 @@ export const SarabEnvironment: EnvironmentSpec = {
      * to the NE-SW diagonal the two home yards face down, so neither side
      * spends the walk in from its own spawn looking into the sun.
      *
-     * The elevation is the load-bearing half: shadow length is
+     * The elevation is the load-bearing half twice over: shadow length is
      * `h / tan(elevation)`, and at 52 degrees the tallest thing on the map
-     * throws 21 m. That is what keeps `shadowWindow` at 150.
+     * throws 21 m — so what `shadowWindow` has to cover is short shadows over
+     * a lot of ground, and the same 52 degrees is what sets the ceiling that
+     * window may not pass (see it for the arithmetic).
      */
     direction: [0.48, -0.79, 0.38],
     /**
@@ -206,16 +214,44 @@ export const SarabEnvironment: EnvironmentSpec = {
     rimColor: "#fff0cc",
     rimIntensity: 0.18,
     /**
-     * 150 m against the default 110 and Coldharbour's 200. The map is four
-     * times Coldharbour's extent and its sun is more than twice as high, so
-     * what decides this is neither: it is that `shadowVisibility` returns FULLY
-     * LIT outside the window rather than fading, and a window that ends inside
-     * the open ground between two quarters draws a straight line across the
-     * sand. 150 m puts that line past the far side of any one quarter, and the
-     * `depthRange` ceiling at this elevation is 380, so nothing is spent for
-     * nothing.
+     * 240 m against the default 110 and Coldharbour's 200 — the widest in the
+     * tree, on the map with the least excuse for a small one.
+     *
+     * **The window is centred on the player, so what it sets is a RADIUS and
+     * the failure is always the same failure**: `shadowVisibility` has to
+     * answer fully lit where it has no depth to compare against, so the
+     * boundary is a ring around you that everything shaded stops at. At 150 m
+     * that ring sat at 75 m across-sun and 95 m along it — and `fogStart` on
+     * this map is 150, so it was 75 m of clear, unhazed air short of the first
+     * thing that could have hidden it. Four maps had lived with the same ring
+     * because four maps could not see it: Hollowmere's is 55 m against a 78 m
+     * fog wall, and Coldharbour's 100 m is buried in streets nobody has a
+     * 100 m view down. **This map has 900 m sight lines** — the two highways,
+     * and the whole town from the Martyrs' shelf — so it is the map where the
+     * accepted trade finally came due, and it came due as a line sliding
+     * across the sand a hundred metres ahead of the player.
+     *
+     * **Half the answer is `CONFIG.graphics.shadows.edgeFade`, which turns the
+     * ring into a gradient**, and this number is the other half: a ramp still
+     * has to finish somewhere, and finishing at 75 m only makes the same
+     * transition smoother rather than putting it where the air is already
+     * doing it. At 240 the ring is 120 m across-sun and 152 m along it, so the
+     * ramp runs 96–120 m and hands over to `fogStart` at 150 with nothing
+     * clear-aired left between them.
+     *
+     * **The ceiling is 291 m and NOT the 380 this file used to claim**, which
+     * is worth stating because the wrong number is what makes 240 look timid.
+     * `ShadowSystem.warnIfWindowIsWasted` derives it as `2 * halfDepth /
+     * cos(elevation)` — `2 * 89 / 0.6125` — past which `depthRange` binds along
+     * the sun whatever this says and the extra metres are texel density spent
+     * for nothing. 240 is inside it with the along-sun reach (145 m from the
+     * depth volume) landing just under the window's own 152, which is the
+     * corner of the two bounds and the most window this map can actually
+     * spend. Widening `depthRange` to go past it is not the way out: the
+     * consumer-side bias is NORMALISED, so a deeper volume rescales what it
+     * means in metres and pays for the reach in peter-panning.
      */
-    shadowWindow: 150,
+    shadowWindow: 240,
     /** No lamps. See the header. */
     lampIntensity: 0,
   },

@@ -290,11 +290,15 @@ export const GreyfenEnvironment: EnvironmentSpec = {
      * the canopy rather than the height of anything. At the shipped ~52 degrees
      * a frond 10 m up laid its shadow 8 m from its own trunk, so the dapple
      * never travelled; at 28 it lands 19 m away, and the pattern on the floor
-     * is made of canopy the player is not standing under. `shadowVisibility`
-     * returns FULLY LIT outside the window rather than fading, so what that
-     * costs at 110 m is a straight line across the forest floor at 55 m —
-     * dappled inside it, uniformly bright beyond — sliding with the player, and
-     * the contrast this file just bought is exactly what makes it visible.
+     * is made of canopy the player is not standing under. `shadowVisibility` is
+     * fully lit outside the window, so what that costs at 110 m is the dapple
+     * ENDING on the forest floor at 55 m — dappled inside it, uniformly bright
+     * beyond — sliding with the player, and the contrast this file just bought
+     * is exactly what makes it visible.
+     * `CONFIG.graphics.shadows.edgeFade` ramps the last tenth of the volume
+     * back to lit, so it is a gradient rather than a line now; on a floor made
+     * of dapple that helps more than it does on open ground, because what
+     * fades out is a pattern and not an edge.
      *
      * 140 puts that edge at 70 m, where the fog is already 67% of the way to
      * `fogColor` and the line has nothing left to draw itself with. It is not

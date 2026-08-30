@@ -46,9 +46,12 @@ import type { EnvironmentSpec } from "../environment";
  * - **The shadow window is now this map's, and it is 200 m** (see
  *   `lighting.shadowWindow`). At 58 degrees a 40 m tower threw 25 m of shadow
  *   and the shipped 110 m window covered it; at 24 it throws 90 m and does not.
- *   `shadowVisibility` returns FULLY LIT outside the window rather than fading,
- *   so the failure is not a soft edge — it is a straight line across the ground
- *   where the shadows stop, sliding with the player.
+ *   `shadowVisibility` is fully lit outside the window, so the failure is the
+ *   shadows STOPPING somewhere the player can see rather than a soft edge —
+ *   `CONFIG.graphics.shadows.edgeFade` has since made that stop a gradient
+ *   instead of a straight line, which changes how it reads and not where it
+ *   is. This map is barely affected either way: at 200 m the boundary is
+ *   100 m out and downtown has no 100 m view down a street to put it in.
  * - **There is a disc and there are shafts**, which is the reverse of what this
  *   file said for its whole life. `CONFIG.godRays`' luminance threshold IS the
  *   whole occlusion test and is calibrated against a night street, so it could

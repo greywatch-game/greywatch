@@ -163,7 +163,7 @@ export const DIFF_VANTAGES = {
       id: "shelf",
       of: "the whole town from the Martyrs' shelf, seven metres up and four hundred metres of it in frame",
       proves:
-        "the fog wall INSIDE the play square — the one thing no other banked frame has, since this is the only map whose `fogEnd` is short of its own diagonal — plus `WorldCulling`'s block half, which is inert everywhere else, and the shadow window's far edge on open sand",
+        "the fog wall INSIDE the play square — the one thing no other banked frame has, since this is the only map whose `fogEnd` is short of its own diagonal — plus `WorldCulling`'s block half, which is inert everywhere else. **It does NOT photograph the shadow window, whatever this note claimed for a while**: a bank is frozen in `deploy`, `shadows.update` is only reached from `updateGameplay`, and the depth map is therefore still centred wherever the install left it — 260 m from this vantage. `docs/rendering.md` has the fix (invalidate, then `shadows.update(cam.position, mats)` before the grab) and a shadow-window change has to be measured with it rather than against this bank",
       pos: [228, 20, 132],
       target: [-120, 2, 96],
       fov: 58,

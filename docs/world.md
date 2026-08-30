@@ -273,10 +273,13 @@ means the editor's work light inherits it for nothing, since that spreads
 
 Shadow length is `h / tan(elevation)`, so Coldharbour's 40 m towers threw 25 m
 at the 58-degree sun the map shipped with and throw 90 m at the 24 it has now.
-The failure when the window is too small is not a soft edge: `shadowVisibility`
-returns **fully lit** for any fragment outside the depth map's UV *or* its depth
-volume, so what you get is a straight line across open ground where the shadows
-stop, sliding with the player.
+The failure when the window is too small is that the shadows stop where the
+window does: `shadowVisibility` is **fully lit** for any fragment outside the
+depth map's UV *or* its depth volume. It is no longer a straight line — the
+last `CONFIG.graphics.shadows.edgeFade` of the volume ramps the term back to
+1.0 on all three axes, so what slides with the player is a gradient rather than
+an edge — but a gradient in ground the player can see is still the wrong place
+for the transition, so the window is still what a map has to size.
 
 **Two things bound it, and which one binds is a function of the hour.** The
 window is a square perpendicular to the light, so its footprint on the ground

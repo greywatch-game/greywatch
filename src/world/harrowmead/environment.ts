@@ -201,8 +201,10 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
      * rather than chosen for comfort: along the sun's own azimuth the depth
      * volume binds first (±89.5 m), and setting the across-sun half to
      * match is `2 * 89.5 / cos(14.5) = 185` — past that the number buys
-     * nothing. The window's hard edge (where `shadowVisibility` snaps to
-     * fully lit) moves from 75 m out to 92, which the hour makes
+     * nothing. The window's boundary (where `shadowVisibility` reaches
+     * fully lit — a ramp over the last `edgeFade` of the volume rather than
+     * the snap this said when it was written) moves from 75 m out to 92,
+     * which the hour makes
      * load-bearing twice over: the shadows crossing it are now 39 m mill
      * stripes and whole hedge lines rather than pools at a tree's foot, and
      * the haze that eats the pop now starts at 100. Costs texel density —

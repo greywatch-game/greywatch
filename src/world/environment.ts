@@ -351,10 +351,17 @@ export interface EnvironmentSpec {
      * MAP's**, and it is here rather than on the layout for the reason
      * `fogEnd` is here: it is not a shape, it is a consequence of the key
      * light's ELEVATION, which is the field directly above it. A 40 m tower
-     * throws 25 m of shadow at 58 degrees and 90 m at 24, and
-     * `shadowVisibility` returns fully-lit outside the window rather than
-     * fading — so a window sized for a high sun does not soften under a low
-     * one, it draws a straight line across the ground where the shadows stop.
+     * throws 25 m of shadow at 58 degrees and 90 m at 24, so a window sized
+     * for a high sun does not quietly degrade under a low one — it stops
+     * covering the ground the shadows are on.
+     *
+     * **What is outside the window is fully lit, and the ramp softens that
+     * transition without MOVING it.** `CONFIG.graphics.shadows.edgeFade` is
+     * the last tenth of the volume easing back to lit on all three axes, so
+     * the boundary reads as haze rather than as a line — which is a different
+     * question from whether the boundary is somewhere the player can see. A
+     * map with 900 m sight lines and a 150 m window put a gradient in clear
+     * air instead of an edge in clear air; what fixed it was the window.
      *
      * Raising it costs texel density (`window / mapSize`), and there is a
      * ceiling past which it buys nothing: along the sun's own azimuth the

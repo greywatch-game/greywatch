@@ -99,6 +99,36 @@ export const graphics = {
     /** Fraction of the key light that survives inside shadow. */
     darkness: 0.15,
     /**
+     * How much of the shadow volume is spent RAMPING back to fully lit at its
+     * own boundary, as a fraction of the window's side.
+     *
+     * **The window has a hard edge and this is the only thing that softens
+     * it.** `shadowVisibility` returns 1.0 outside the volume, so without a
+     * ramp what a player sees on open ground is a straight line sliding along
+     * with them — the whole reason five maps state a `shadowWindow` at all,
+     * and the reason two of them were authored to within a couple of metres of
+     * a ceiling neither file names. The ramp does not move the boundary; it
+     * makes the last few metres of it a gradient the eye reads as haze rather
+     * than as an edge.
+     *
+     * **It is a FRACTION and not metres, because the boundary is only ever
+     * seen from the middle of the volume.** A 110 m window puts its edge 55 m
+     * away and a 240 m one puts it 120 m away, and a band that subtends the
+     * same angle at both is the one that disappears at both. 0.1 is 24 m on
+     * Sarab's 240 and 11 m on Hollowmere's 110.
+     *
+     * **0.1 rather than more, because the ramp is paid for in shadow that is
+     * no longer drawn.** The cubic leaves a receiver at 100 m of Sarab's 120 m
+     * reach at 93% strength, so what is given up is the outer fifth of the
+     * volume and nothing a player is fighting in. A wider band hides the
+     * transition better and washes the mid-field out with it.
+     *
+     * **The floor is 1e-4 and not 0** — the shader interpolates this into a
+     * `smoothstep` whose two edges may not be equal — so setting this to 0
+     * reads as a band 2.4 cm wide, which is the old hard line back again.
+     */
+    edgeFade: 0.1,
+    /**
      * Consumer-side depth bias and facet-normal offset (metres). The
      * faceted shader shades whole triangles at once, so the offset pushes
      * each triangle's sample off its own plane — flat faces never

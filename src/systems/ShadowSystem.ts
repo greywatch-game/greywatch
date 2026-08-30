@@ -94,6 +94,12 @@ export class ShadowSystem {
    * the two shipped valleys agree about neither with a downtown. A 40 m tower
    * throws 25 m at Coldharbour's old 58 deg sun and 90 m at the 24 it has now,
    * so a window sized for the first truncates the second across open ground.
+   *
+   * **How FAR the boundary is, and never how it reads.** The last
+   * `CONFIG.graphics.shadows.edgeFade` of the volume ramps the shadow term
+   * back to fully lit, so what a player crosses is a gradient — but a gradient
+   * on ground with nothing between it and the eye is still a transition in the
+   * open, which is why Sarab needed 240 as well as the ramp.
    */
   private window: number = CONFIG.graphics.shadows.frustumSize;
 
@@ -204,9 +210,10 @@ export class ShadowSystem {
    * The ceiling the doc above derives, checked instead of trusted.
    *
    * A map raises its window because its shadows are longer than 110 m, and the
-   * failure it is trying to fix is a hard line across open ground — so it is a
-   * number chosen by looking, and there is no feedback at all when it is
-   * chosen too big: the depth volume binds along the sun's own azimuth, the
+   * failure it is trying to fix is the shadows stopping on ground the player
+   * can see — a gradient since `CONFIG.graphics.shadows.edgeFade`, a hard line
+   * before it, and in the wrong place either way — so it is a number chosen by
+   * looking, and there is no feedback at all when it is chosen too big: the depth volume binds along the sun's own azimuth, the
    * line stays exactly where it was on that axis, and the extra metres are
    * paid for in texel density (`window / mapSize`, 5.4 cm at 110 and 9.8 at
    * 200) and in casters. `ENGINE_UPGRADE.md` S8 is where this cost a map.

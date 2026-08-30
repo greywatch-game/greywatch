@@ -27,9 +27,9 @@
  *   by toggling the three gates at runtime against this environment, which
  *   only works while this environment is the unlevered arm.
  * - **`shadowWindow` is 200**, Coldharbour's, and deliberately NOT widened to
- *   the map. `shadowVisibility` returns FULLY LIT outside the window rather
- *   than fading, so a wider one is more casters for a picture nobody is
- *   judging; the shadow map's own cost is S8's question and this is not the
+ *   the map. `shadowVisibility` is fully lit outside the window, ramped over
+ *   its last `edgeFade`, so a wider one is more casters for a picture nobody
+ *   is judging; the shadow map's own cost is S8's question and this is not the
  *   instrument for it.
  * - **No water and no lamps.** `lampIntensity` is 0 and the layout states no
  *   water rects, so neither the mirror nor the sixteen light slots are in any
