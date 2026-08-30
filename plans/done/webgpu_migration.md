@@ -1,5 +1,32 @@
 # Migrate Greywatch to WebGPU (WGSL-only, single branch)
 
+> **SHIPPED — archived 2026-08-29. This is a record, not a plan.**
+>
+> Every milestone M0–M8 landed between 2026-08-25 (`791d1ae`, the engine swap
+> with all nine shaders still GLSL) and 2026-08-26 (`38066a1`, the last shader
+> and the last four deep imports). The tree it describes as the FUTURE is the
+> tree that exists: zero GLSL under `src/`, `ShaderLanguage.WGSL` on every
+> material and post-process that declares one, no WebGL fallback engine, and
+> `main.ts` gating the boot on `navigator.gpu` plus an adapter. The two
+> `WebGLEngine` mentions left in the source are prose in comments explaining
+> what used to be there.
+>
+> **It is kept because the ARGUMENTS are still load-bearing** — *Key decisions*
+> carries why the uniform arrays were not repacked, why the shared GLSL
+> constants became registered WGSL includes, and why the deep-import count had
+> to end lower than it started, none of which is written down anywhere else.
+> Read it for those; do not read it for what to do next.
+>
+> **What is still LIVE from this work is the tooling, and it did not move**:
+> `plans/webgpu-ref/` is the reference harness and image bank the milestones
+> diffed against, and it is still how a rendering change is graded — `gate.mjs`,
+> `bank.mjs --check` and `depth.mjs` are cited from `docs/build.md`,
+> `docs/rendering.md`, `docs/world.md`, `VERIFYING.md` and `FINDINGS.md`.
+> `plans/physics-ref/` is the same for Havok.
+>
+> **`ENGINE_UPGRADE.md` is NOT this and is NOT archived.** It is the live plan,
+> with S10 still open.
+
 ## Context
 
 Greywatch renders through WebGL2 with ~1,500 lines of hand-written GLSL ES 1.00.

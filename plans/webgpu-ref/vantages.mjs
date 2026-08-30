@@ -13,7 +13,8 @@
  * rather than in `src/`.
  *
  * **Each row names what it proves, and that field is the whole point of the
- * row.** A reference set is only a defence against `plans/webgpu_migration.md`
+ * row.** A reference set is only a defence against
+ * `plans/done/webgpu_migration.md`
  * risk 2 — the cel fragment silently wrong in one variant on one map — if
  * every variant is somewhere in it. Four menu photographs are four pretty
  * pictures of a village; between them they hold no backed pane at 2 m, no

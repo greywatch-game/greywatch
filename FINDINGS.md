@@ -783,7 +783,7 @@ is what the ceiling is against and the total is not — which is the sentence
 `ENGINE_UPGRADE.md`'s wall 5 had backwards. Coldharbour's forty probes are
 41,934 draws and still land on one frame, unchanged.
 
-**One number in `plans/webgpu_migration.md` and `VERIFYING.md` does not
+**One number in `plans/done/webgpu_migration.md` and `VERIFYING.md` does not
 reproduce and is the open thread here.** Both record this bake at 138 ms on this
 machine, and nothing since has been able to repeat it: in the same gate run that
 puts Coldharbour's forty probes at 1151 ms, Hollowmere's FOUR cost 76 ms, which
