@@ -40,6 +40,12 @@ jobs:
   gates:
     name: gates
     runs-on: ubuntu-latest
+    # Roughly four minutes of work, so this is a tripwire rather than a budget:
+    # every step here is deterministic and none of them waits on anything, so a
+    # run that reaches thirty minutes is stuck and should be killed rather than
+    # left to GitHub's 360-minute default. The parity job that used to sit below
+    # is why this line exists — see the block at the foot of the file.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -66,8 +72,9 @@ jobs:
       # NOTE the guard's own limit, which is stated in CLAUDE.md and is not
       # something this file can fix: `check-collision.mjs` hashes the LAYOUT, so
       # a `porous`/`rayOnly` flag changed in a BUILDER leaves the bake stale
-      # without tripping it. `npm run parity` below is what actually catches
-      # that, which is why it is worth having even though it cannot block yet.
+      # without tripping it. `npm run parity` is what actually catches that, and
+      # it is NOT in this workflow — see the block at the foot of the file for
+      # why, and run it by hand after anything touching the world layer.
       - name: build (collision + deep-import gates, typecheck, bundle)
         run: npm run build
 
@@ -85,54 +92,42 @@ jobs:
         run: node scripts/check-proving.mjs
 
   # ---------------------------------------------------------------------------
-  # The browser half. This is the gate that catches what the bake-staleness hash
+  # THERE IS NO PARITY JOB HERE, AND THIS BLOCK IS WHY — DO NOT ADD ONE BACK
+  # WITHOUT READING IT.
+  #
+  # `npm run parity` is the gate that catches what the bake-staleness hash
   # cannot: it rebuilds the world on both sides and compares the NAV GRAPH, so a
-  # builder-side flag change that left the bake stale shows up as a server whose
-  # walls stand somewhere else from its clients'.
+  # builder-side `porous`/`rayOnly` change that left the bake stale shows up as a
+  # server whose walls stand somewhere else from its clients'. It is worth
+  # wanting in CI. It was tried here, on 2026-08-29, and taken straight back out.
   #
-  # **It is `continue-on-error` because it is UNPROVEN on a GPU-less runner, and
-  # that is a measurement rather than a hedge.** `scripts/browser.mjs` needs a
-  # Chromium that hands back a WebGPU adapter, because `main.ts` gates the boot
-  # on one and every browser-driven script in this repo fails as `waitForFunction`
-  # timing out on `window.__celshock` when it cannot get one — a failure that says
-  # nothing about the world. Measured locally on the Windows box: the repo's own
-  # flags plus `channel: "chromium"` return an adapter (nvidia/lovelace); the
-  # headless shell returns null; and forcing software rendering
-  # (`--enable-unsafe-swiftshader --disable-gpu`) ALSO returns null. A GitHub
-  # runner has no GPU, so it needs the software path that did not work here —
-  # though VERIFYING.md records that the Chromebook's Linux headless shell DOES
-  # carry Dawn's SwiftShader backend, which is why this is worth trying on Linux
-  # rather than assuming it cannot work.
+  # **It did not fail. It HUNG — an hour and a half on a `ubuntu-latest` runner
+  # with no sign of stopping.** That is the important half, because it is not the
+  # failure mode the job was written to expect. `scripts/browser.mjs` needs a
+  # Chromium that hands back a WebGPU adapter, since `main.ts` gates the boot on
+  # one; without an adapter `Game` is never constructed and every browser-driven
+  # script in this repo sits on `waitForFunction` waiting for `window.__celshock`
+  # to appear on a page that will never define it. A GitHub runner has no GPU,
+  # and the software path does not stand in — measured locally on the Windows
+  # box, `--enable-unsafe-swiftshader --disable-gpu` returns a null adapter, as
+  # does the headless shell, while `channel: "chromium"` on real hardware returns
+  # one (nvidia/lovelace).
   #
-  # **So read the first few runs before trusting it.** If it goes green, delete
-  # the `continue-on-error` line and it becomes a real gate. If it goes red at
-  # the boot gate, that is the ADAPTER and not the world — check the step's log
-  # for the `__celshock` timeout before believing a parity failure, and either
-  # find the flag that gets Dawn a software adapter on this image or drop the
-  # job and keep running `npm run parity` by hand on a box with a GPU.
+  # **`continue-on-error: true` does not protect against this and that was the
+  # mistake.** It downgrades a FAILED job to a non-blocking one; it does nothing
+  # at all to a job that never finishes. The missing line was `timeout-minutes`,
+  # and with GitHub's default job cap at 360 minutes the run was on course to
+  # burn six hours of the account's minutes per push. Anything added here that
+  # drives a browser owes a `timeout-minutes` whether or not it is expected to
+  # pass — a hang is the default failure of a boot gate that cannot be satisfied,
+  # not an unlikely one.
+  #
+  # **So parity stays a manual gate on a machine with a GPU**, which is what
+  # `CLAUDE.md` already asks for: run `npm run parity` after anything touching
+  # the world layer. To try CI again, the thing to establish FIRST — outside this
+  # workflow, in a throwaway run — is whether Dawn will hand a software adapter
+  # to `channel: "chromium"` on the runner image at all. If it will not, no
+  # arrangement of this job works and the answer is a self-hosted runner or
+  # nothing. `VERIFYING.md` records that the Chromebook's Linux headless shell
+  # DOES carry SwiftShader, which is the only reason to think it might.
   # ---------------------------------------------------------------------------
-  parity:
-    name: world parity (unproven on CI hardware — see comment)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - run: npm ci
-
-      # `channel: "chromium"` is the full browser build rather than the headless
-      # shell, and it is not a preference — `browser.mjs` has the measurement.
-      # `--with-deps` is what puts the shared libraries on the runner.
-      - name: install chromium
-        run: npx playwright install --with-deps chromium
-
-      # Builds the server bundle twice itself (production and dev-mode, for the
-      # proving ground) and drives a real client, so it is minutes rather than
-      # seconds. It checks all six maps including the two DEV-only ones.
-      - name: parity
-        run: npm run parity
