@@ -220,10 +220,12 @@ put a number on.
 
 ## 3. The GlowLayer draws the whole village into a buffer it cannot light
 
-**Status:** measured, ATTEMPTED, and reverted. The mechanism is confirmed
-against Babylon's source. The open question below — what excluding the geometry
-costs visually — now has half an answer: enough that it cannot be excluded, by
-distance or otherwise. Read the last section of this entry first.
+**Status:** measured, ATTEMPTED TWICE, and reverted twice — once for the WORLD
+and once for the BODIES, which looked like the case the first revert did not
+cover and is not. The mechanism is confirmed against Babylon's source. The open
+question below — what excluding the geometry costs visually — is now answered
+for both: enough that neither can be excluded, by distance or otherwise. Read
+the last TWO sections of this entry first.
 
 **The draw counts below were taken on WebGL2 and are now unattributed.** The
 mechanism is source-level and did not move with the backend — the exclusion scan
@@ -342,6 +344,70 @@ how to collect it, because the black is load-bearing everywhere. If this is
 worth another attempt the shape to look at is making the occluders CHEAPER
 rather than fewer — the glow layer redraws geometry it could in principle share
 a depth buffer with — and that is a Babylon question rather than a content one.
+
+### Tried a SECOND time, for BODIES rather than the world, and it fails the same way
+
+**A soldier looked like the exception to "the black is load-bearing" and is
+not.** The rigs are the largest bucket of meshes in a 24-a-side frame (finding
+30), every mesh of one but the visor is a cel `ShaderMaterial` with no
+`emissiveColor`, and a body is nineteen small boxes rather than a wall — so
+excluding rigs alone, and keeping every wall in the layer, looked like the
+version of this that could not repeat the revert above. It repeats it exactly.
+
+**What it was worth, measured on Sarab with the fight held so four arms saw one
+scene** (`glow+cull` / `glow` / `cull` / `none`, round-robin, against an A-vs-A
+control spanning 12.46-13.05 ms), 48 bodies with 19 of them inside
+`bodyDrawDistance`:
+
+| arm | draws | candidates | mesh walk | frame | fps |
+| --- | --- | --- | --- | --- | --- |
+| none | 1,892 | 2,295 | 2.63 ms | 14.22 ms | 70.3 |
+| glow | **1,582** (−16.4%) | 2,295 | 2.61 ms | 13.20 ms (**−7.2%**) | 75.7 |
+| cull | 1,892 | **1,686** (−26.5%) | 2.24 ms | 13.61 ms (−4.3%) | 73.5 |
+| glow+cull | 1,582 | 1,686 | 2.25 ms | 12.72 ms (−10.6%) | 78.7 |
+
+The two levers are orthogonal — each moves its own counter and nothing else —
+and roughly additive. **The glow half is the bigger one and it is the one that
+had to go.**
+
+**The test that killed it is the one this entry has prescribed since it was
+written**, and it took ten minutes: stand an emissive directly behind the thing
+being excluded and diff. Staged from the `lanterns` vantage in `deploy` (the
+world is held there, so the camera stays where it is put — in `playing`
+`updateGameplay` puts it back on the player every frame and the first attempt at
+this measured nothing but motion), one bot on the eye-to-lamp line, an A-vs-A
+control that came back **byte-identical**, and the lever confirmed applied by a
+draw count that moved by exactly −19:
+
+| eye to body | body height on screen | mean abs | worst pixel |
+| --- | --- | --- | --- |
+| 1.5 m | 1,260 px | 1.899/255 | **254/255** |
+| 4.5 m | 420 px | 0.406 | 253 |
+| 8.5 m | 222 px | 0.152 | 177 |
+| 13.5 m | 140 px | 0.053 | **104** |
+
+It is the lamp blooming through the soldier's chest, and it is obvious in the
+frame rather than a number — two yellow blobs sitting on a body that is between
+you and the light. It decays with the body's screen AREA and it is still 104/255
+at 13.5 m, so **no distance gate rescues it**: tuning one would be this entry's
+own "the mistake worth keeping is the PREDICATE" a second time, in a night
+village where the failure is exactly the walking-past case a bank of stills
+cannot see.
+
+**Rows past 13.5 m in that sweep read zero and mean nothing** — the camera had
+walked back inside a building and neither the lamp nor the body was in frame.
+Noted because the zeros look like the falloff reaching a floor and are a
+staging failure, which is the same shape of mistake as the revert above.
+
+**The occluder-proxy idea is what is left, and nobody has costed it.** A rig is
+nineteen meshes only because of COLOUR merging, and the glow pass does not care
+about colour — it wants one body-shaped depth write. `rig.root` is already an
+invisible capsule of about the right size. Making it draw in the glow pass and
+not in the main one is the "cheaper occluders rather than fewer" shape this
+entry already names, and it is a Babylon question: the layer's render list is
+the scene's ACTIVE meshes, so an occluder has to be `isVisible` to be seen by
+it, and what stops it drawing normally would have to be renderer state the glow
+pass does not inherit. Untried.
 
 ---
 
@@ -3443,11 +3509,15 @@ silent on all five with a round installed, and verified to FIRE at 400 m.
   always was, and it was invisible only because it sat where everything was
   already `fogColor`. If a stated `bodyDrawDistance` reads badly, a short fade
   band is the obvious next thing and nothing here has costed one.
-- **The rigs are still `loose` candidates whether they are drawn or not.**
-  Finding 21's open thread — ~750 idle POOLED effect meshes that the candidate
-  list could skip by the same mechanism as a collider — covers the rigs too, and
-  is the lever that would take the remaining walk cost rather than the draw
-  cost. Still nobody's step.
+- ~~**The rigs are still `loose` candidates whether they are drawn or not.**~~
+  **CLOSED for the rigs.** `WorldCulling` has a fourth class — pooled — and
+  `Game.installBodyPools` files both rosters' rigs under the root the LOD
+  already switches, so a body that is not in the round is offered to nothing.
+  On Sarab at 24 a side that is **candidates 2,299 → 1,690 (−26.5%), the walk
+  2.75 → 2.42 ms (−11.9%) and the frame −4.4%**, with draw calls and active
+  meshes identical in every block — it takes the walk and never the draw, which
+  is the half this thread was about. **Finding 21's ~750 idle effect meshes are
+  still open** and can now take the same door.
 
 ---
 

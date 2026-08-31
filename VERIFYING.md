@@ -217,6 +217,26 @@ you are on before you believe anything else in this section.
   proving ground both. Standing the bots in a ring around the player
   (`bot.position.set(...)`) and re-standing them every second is what findings 22
   and 23 both used; overriding `battle.spawnPointFor` is the other way in.
+- **A staged camera does not survive `playing`, and the reading it gives back
+  looks like a result.** `placeVantage` works because `bank.mjs` never spawns:
+  in `deploy` the world is HELD, so a camera stays where it is put. Call
+  `spawnPlayer()` first and `updateGameplay` puts the camera back on the player
+  every frame, the pose lasts exactly one frame, and a two-grab A/B then diffs
+  two moments of a moving round rather than two arms. Measured: a staged
+  occlusion test that way reported **1.73/255 mean and 230/255 worst** and the
+  whole of it was motion — the same test in `deploy` came back with an A-vs-A
+  control that was byte-identical. **Stage in `deploy`; if the arm needs a live
+  round, hold it by stubbing `battle.update` / `vehicles.update` /
+  `crew.update` after warming, which freezes the fight where it stands and
+  leaves the LOD's last word in place.**
+- **An A-vs-A control taken FIRST measures the post chain converging, not the
+  floor — and it can come back LARGER than the lever it is grading.** The god
+  rays and the motion blur are pinned by the CAMERA rather than by a constant
+  (see `freeze`'s note), so a camera that has just teleported is still smearing
+  for tens of frames. A control grabbed immediately after `freeze` read **252
+  then 61 then 33/255 as the settle lengthened**, against a lever difference of
+  0. Take the control SPANNING the comparison — grab A, B, A, and diff A-vs-A
+  as well as A-vs-B — so both pairs sit in the same wall clock.
 - **The ray to wrap is no longer `scene.pickWithRay`** — nothing in gameplay
   calls it since `ENGINE_UPGRADE.md` wall 2. Wrap `g.map.rays.castRound`,
   `castBody` and `blocked` instead (finding 23 did), and note that

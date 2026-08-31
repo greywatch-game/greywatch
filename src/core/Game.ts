@@ -137,7 +137,7 @@ import { LightingSystem } from "../systems/LightingSystem";
 import { ShadowSystem } from "../systems/ShadowSystem";
 import { Sky } from "../systems/Sky";
 import { WaterSystem } from "../systems/WaterSystem";
-import { WorldCulling } from "../systems/WorldCulling";
+import { WorldCulling, type PooledBody } from "../systems/WorldCulling";
 import {
   applyEnvironment,
   bodyDrawDistanceOf,
@@ -3728,6 +3728,10 @@ export class Game {
     const perTeam = perTeamOf(this.mapDef.layout);
     this.battle.setRoster(this.net ? CONFIG.bots.perTeam : perTeam);
     this.net?.roster.setFielded(perTeam);
+    // …and both pools' rigs to the mesh walk, which would otherwise pay for a
+    // body that is not in the round. After the two lines above, which are what
+    // decide how many rigs there ARE.
+    this.installBodyPools();
     // Re-draw skills for the chosen tier. The pool is rebuilt only when a map
     // changes the size of the roster, so this is the only place the roster's
     // difficulty can change.
@@ -3789,6 +3793,46 @@ export class Game {
     // has rendered inside it, so the reflection bake `installMap` queued has
     // not spent a single one of the frames it is spread over. See `bakeWait`.
     this.openBakeWait();
+  }
+
+  /**
+   * Hands the round's pooled bodies to `WorldCulling`, which would otherwise
+   * offer every mesh of every rig to the frame's mesh walk whether that body is
+   * in the round or not.
+   *
+   * **Here rather than in `installMap`, for `setRoster`'s reason**: this is the
+   * ROUND's roster, and that method's other caller is the editor, which has no
+   * round. It runs after both pools have been sized and before anything draws.
+   *
+   * **BOTH pools, every time, and neither of them is conditional.** A netplay
+   * round builds `battle`'s rigs and never enables one — sixteen bodies that
+   * are pure walk and nothing else, which is exactly the case this is for — and
+   * an offline round's `NetRoster` is empty and files nothing. Asking which one
+   * is this round's would be a second place for the answer in `buildRound` to
+   * live.
+   *
+   * **The GLOW layer is deliberately not fed from here, and that is a
+   * measurement rather than an omission.** Every rig mesh but the visor is a
+   * cel `ShaderMaterial` with no `emissiveColor`, so the layer draws it opaque
+   * BLACK — a second draw per mesh, 310 of them a frame on Sarab with nineteen
+   * bodies in view, worth 7.2% of the frame. Excluding them was built, measured
+   * and thrown away: the black is what makes the glow buffer depth-occlude, and
+   * a body occludes a lamp exactly as a wall does. Staged from the `lanterns`
+   * vantage against an A-vs-A control that was byte-identical, a soldier
+   * standing in front of a lamp differed by **254/255 at 1.5 m, 253 at 4.5,
+   * 177 at 8.5 and 104 at 13.5** — the lamp blooming through his chest, and
+   * still plainly visible at the far end of that. `FINDINGS.md` 3 landed and
+   * reverted the same exclusion for the WORLD, and this is that entry's
+   * argument holding for a body too. The prize is real and mesh exclusion is
+   * not how to collect it.
+   */
+  private installBodyPools(): void {
+    const bodies: PooledBody[] = [];
+    for (const bot of this.battle.bots) bodies.push(bot.rig);
+    for (const soldier of this.net?.roster.soldiers ?? []) {
+      bodies.push(soldier.rig);
+    }
+    this.culling.setPools(bodies);
   }
 
   /**

@@ -362,17 +362,38 @@ a disabled mesh leaves the shadow map's render list, a cube probe's bake and
 Babylon's own default pick filter, and a candidate list leaves all three
 untouched. **A collider is never a candidate at any distance** (invisible by
 construction, so it cannot draw), **a mesh carrying `metadata.block` is one only
-while the camera is inside the map's `fogEnd`**, and **everything else always
+while the camera is inside the map's `fogEnd`**, **a body's RIG is one only
+while the root the roster switches is enabled**, and **everything else always
 is** — which is why the terrain, the roads and the rim carry no block: they are
 what the SKY is behind, and a hole cut in them is a hole onto a gradient.
 **Nothing pooled may ever be block-keyed.**
+
+**The rigs are the fourth class and a ROSTER is why** — `MapLayout.perTeam` is
+the one number a layout may triple, so a pool is 336 rig nodes or Sarab's
+**1,008**, every one offered to the walk whether the body was in the round or not.
+`Game.installBodyPools` files BOTH pools (in a match that includes
+`BattleSystem`'s sixteen, built and never enabled) and the switch is polled per
+BODY. **It is filed mesh by mesh and never by ancestry**, because
+`RagdollSystem` reparents a corpse's joints onto Havok proxies and an ancestry
+test would drop every body in the game the moment it started falling. Sarab:
+**candidates −26.5%, the walk −11.9%, the frame −4.4%, draw calls and active
+meshes identical** — it takes the WALK and never the draw.
+
+**Taking the rigs out of the GLOW layer is deliberately NOT done, and that is a
+measurement.** Every rig mesh but the visor is drawn a second time as opaque
+BLACK into a buffer it cannot light — 310 draws a frame on Sarab, worth 7.2% —
+and that black is what makes the buffer depth-occlude. `FINDINGS.md` 3 landed
+and reverted this for the WORLD; it was tried again for BODIES and fails the
+same way, a lamp blooming through a soldier's chest at **254/255 at 1.5 m and
+still 104 at 13.5**. The prize is real and mesh exclusion is not how to collect
+it.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and mirror
 and the three ways a cube probe goes flat, the four light terms and the colour
 buffer's three further rules, the ink's tint, the wind's two bounds, the
 muzzle-flash budget, the fog split, the shadow window, the reflection bake's
-seven load-bearing details, the three classes of mesh block visibility sorts
-the scene into, the painted sky, and the WGSL dialect's own traps.
+seven load-bearing details, the four classes the candidate list sorts the scene
+into, the painted sky, and the WGSL dialect's own traps.
 
 ### The map is data, not code
 

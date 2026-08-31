@@ -45,8 +45,16 @@
  *   of that cell's own bounds. That is `BlockMerge`'s output, the ink twins of
  *   it and the merged glazing, which between them are every STRUCTURE on the
  *   map.
+ * - **Pooled** — a body's rig, filed under the rig ROOT whose `setEnabled` the
+ *   roster already writes, and offered only while that root is enabled. This is
+ *   the one class whose switch is not a distance: a pool is built once per
+ *   roster and re-posed forever, so a rig that is not in the round is twenty
+ *   meshes and a root the walk pays full price for and rejects — and a roster is the one
+ *   thing on a map that a LAYOUT may triple (`MapLayout.perTeam`, 24 on Sarab
+ *   against the shipped 8), which turns 336 of these nodes into **1,008**. See
+ *   `setPools`.
  * - **Loose** — everything else in the scene, always offered: the terrain, the
- *   roads, the rim, every pool (rigs, tracers, shards, ragdolls, grenades,
+ *   roads, the rim, the other pools (tracers, shards, ragdolls, grenades,
  *   rubble), the sky, the water, the grass, the viewmodel, the hulls, and every
  *   visual an EDITOR build makes, which is keyed per placement and carries no
  *   block at all.
@@ -94,6 +102,34 @@ interface Cell {
   on: boolean;
 }
 
+/**
+ * What `setPools` is handed: something with a root that is switched and meshes
+ * that hang off it. `SoldierRig` already IS this shape, which is why nothing
+ * here has heard of a soldier — this file may not learn what a body is any more
+ * than it has learned what a building is.
+ */
+export interface PooledBody {
+  root: AbstractMesh;
+  meshes: readonly AbstractMesh[];
+}
+
+/**
+ * One pooled body: the rig root the roster switches, and whether what was filed
+ * under it is in the candidate list right now.
+ *
+ * The root rather than a flag of our own, because it is what `Bot.setEnabled`
+ * and `NetSoldier.setEnabled` already write and there must not be a second
+ * answer to "is this body in the round". `isEnabled(false)` — the mesh's OWN
+ * flag, no ancestor walk — because a rig root is parented to nothing and both
+ * of those callers set it directly; asking for the inherited answer would walk
+ * a chain to learn what the first byte already said.
+ */
+interface Pool {
+  root: AbstractMesh;
+  /** Whether what was filed here is in the candidate list right now. */
+  on: boolean;
+}
+
 export class WorldCulling {
   /**
    * The list Babylon is handed. An `ISmartArrayLike`, which is `{ data, length
@@ -110,6 +146,18 @@ export class WorldCulling {
   /** Every drawn map mesh that carries a block, and the cell it was filed in. */
   private cellOf = new Map<AbstractMesh, Cell>();
   private cells: Cell[] = [];
+
+  /**
+   * Every mesh of every pooled body, and the pool it was filed in.
+   *
+   * A map of its own rather than a second kind of value in `cellOf`, and that
+   * is ownership rather than tidiness: `setMap` clears the cells because last
+   * build's meshes are gone, and it runs on a path the ROSTER does not — the
+   * editor's rebuild — so a pool sharing that map would be silently unfiled by
+   * a tier-3 rebuild and quietly become loose again.
+   */
+  private poolOf = new Map<AbstractMesh, Pool>();
+  private pools: Pool[] = [];
 
   /** Set when the candidate list no longer matches the state above. */
   private listDirty = true;
@@ -131,9 +179,11 @@ export class WorldCulling {
     scene: 0,
     hidden: 0,
     blocked: 0,
+    pooled: 0,
     loose: 0,
     cells: 0,
     cellsOn: 0,
+    poolsOn: 0,
     candidates: 0,
   };
 
@@ -245,6 +295,38 @@ export class WorldCulling {
   }
 
   /**
+   * Files the round's pooled bodies. Called from `Game.installBodyPools` and
+   * from nowhere else, on the same terms `setMap` is called on: whatever was
+   * filed last time has been disposed by now, and a pool still holding one
+   * would hand Babylon a dead mesh.
+   *
+   * **Both pools are handed over, not whichever one this round steps.** A
+   * netplay round leaves `BattleSystem`'s rigs built and never enables one, so
+   * they are exactly the case this exists for — sixteen bodies of pure walk —
+   * and an offline round's `NetRoster` is empty and files nothing.
+   *
+   * The ROOT is filed alongside the drawn meshes on purpose: it is an
+   * invisible capsule Babylon rejects late rather than early, and one per body
+   * is one per body.
+   */
+  setPools(bodies: readonly PooledBody[]): void {
+    this.poolOf = new Map();
+    this.pools = [];
+    this.listDirty = true;
+    this.stats.pooled = 0;
+    for (const body of bodies) {
+      const pool: Pool = { root: body.root, on: body.root.isEnabled(false) };
+      this.pools.push(pool);
+      this.poolOf.set(body.root, pool);
+      this.stats.pooled++;
+      for (const mesh of body.meshes) {
+        this.poolOf.set(mesh, pool);
+        this.stats.pooled++;
+      }
+    }
+  }
+
+  /**
    * Picks this frame's candidate list. Called from `Game.tick` in EVERY state,
    * beside `CelMaterialFactory.updateCamera` and for the same reason: every
    * state renders and only some of them simulate, so a menu or a deploy screen
@@ -252,8 +334,9 @@ export class WorldCulling {
    * neighbourhood the last live frame stood in.
    *
    * Cheap when nothing has moved — the cells are re-evaluated only once the
-   * camera has travelled `CONFIG.graphics.culling.step`, and the list is
-   * rebuilt only when the answer changes.
+   * camera has travelled `CONFIG.graphics.culling.step`, the pools are one
+   * property read each, and the list is rebuilt only when one of the two
+   * answers changes.
    */
   update(eye: Vector3): void {
     const step = CONFIG.graphics.culling.step;
@@ -265,6 +348,18 @@ export class WorldCulling {
       this.evalY = eye.y;
       this.evalZ = eye.z;
       this.evaluate(eye.x, eye.y, eye.z);
+    }
+    // Unconditional, and it is the roster rather than the camera: a body is
+    // switched by DISTANCE from the camera (`BattleSystem`'s three LOD gates)
+    // and by being alive, benched, aside or crewed, so there is no travelled
+    // distance this could hang off. It is one property read per BODY — 48 on
+    // the densest map in the tree, against the 1,008 nodes a rebuild answers
+    // for — and it marks the list dirty only on a transition.
+    for (const pool of this.pools) {
+      const on = pool.root.isEnabled(false);
+      if (on === pool.on) continue;
+      pool.on = on;
+      this.listDirty = true;
     }
     if (this.listDirty) this.rebuildList();
   }
@@ -307,11 +402,11 @@ export class WorldCulling {
    * 0.0001 for an unrelated reason that is the BLOCK cull rather than this —
    * see finding 21, which locates it.
    *
-   * The walk is `O(scene)` and the per-mesh work is one `Map.get` — against
-   * `_evaluateActiveMeshes`, which is `O(candidates)` and does an order of
-   * magnitude more per mesh, EVERY frame. This runs only when the answer
-   * changes: a cell crossing its threshold, or a mesh entering or leaving the
-   * scene.
+   * The walk is `O(scene)` and the per-mesh work is one or two `Map.get`s —
+   * against `_evaluateActiveMeshes`, which is `O(candidates)` and does an order
+   * of magnitude more per mesh, EVERY frame. This runs only when the answer
+   * changes: a cell crossing its threshold, a pooled body being switched in or
+   * out of the round, or a mesh entering or leaving the scene.
    */
   private rebuildList(): void {
     const data = this.candidates.data;
@@ -324,6 +419,11 @@ export class WorldCulling {
         continue;
       }
       if (this.hidden.has(mesh)) continue;
+      const pool = this.poolOf.get(mesh);
+      if (pool) {
+        if (pool.on) data.push(mesh);
+        continue;
+      }
       loose++;
       data.push(mesh);
     }
@@ -331,9 +431,12 @@ export class WorldCulling {
     this.listDirty = false;
     let cellsOn = 0;
     for (const cell of this.cells) if (cell.on) cellsOn++;
+    let poolsOn = 0;
+    for (const pool of this.pools) if (pool.on) poolsOn++;
     this.stats.scene = this.scene.meshes.length;
     this.stats.loose = loose;
     this.stats.cellsOn = cellsOn;
+    this.stats.poolsOn = poolsOn;
     this.stats.candidates = data.length;
   }
 }

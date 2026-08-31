@@ -1470,12 +1470,13 @@ disabled mesh is still in the walk, and merely shortens what the walk does with
 it. That is what made finding 18's 0.67 us and finding 19's 1.10 us disagree
 about the same number.
 
-**Three classes of mesh, and which class a mesh is in is the design.**
+**Four classes of mesh, and which class a mesh is in is the design.**
 
 | class | what | offered |
 | --- | --- | --- |
 | hidden | `map.colliders` — invisible by construction | **never**, at any distance |
 | blocked | drawn map geometry carrying `metadata.block` | while the camera is within the map's `fogEnd` |
+| pooled | a body's rig, filed under the root the roster switches | while that root is enabled |
 | loose | everything else in the scene | **always** |
 
 **Most of the win is the hidden class and it is exact rather than a trade.** A
@@ -1493,10 +1494,45 @@ a hole cut in the rim is a hole onto a gradient, and the further up the dome the
 less it is fogColor. They carry no `metadata.block`, which is what makes that
 mechanical rather than a rule anyone has to remember.
 
-**Nothing pooled may ever be block-keyed** — rigs, tracers, shards, ragdolls,
-grenades, rubble, the viewmodel, the hulls. They are loose because they move,
-and this is precisely why `scene.freezeActiveMeshes()` is a bug in this game and
-this is not.
+**The pooled class is the ONE whose switch is not a distance, and it exists
+because a ROSTER is the one thing on a map a layout may triple.**
+`MapLayout.perTeam` is 8 on four maps and 24 on Sarab, so a rig pool is 336
+nodes — twenty meshes and a root apiece — or **1,008**, and every one of them
+was offered to the walk whether the
+body was in the round or not — a bot past `bodyDrawDistance`, a bot benched for
+a human, a bot crewing a tank, and on a netplay round the whole of
+`BattleSystem`'s sixteen, which are built and never enabled at all.
+`Game.installBodyPools` files both pools and `WorldCulling.update` polls each
+rig ROOT once a frame, marking the list dirty only on a transition — 48 property
+reads against the 1,008 nodes a rebuild answers for.
+
+**It is filed MESH BY MESH and never by ancestry, and that is load-bearing
+rather than incidental.** `RagdollSystem` reparents a corpse's joints onto Havok
+proxy nodes, so a ragdolling body's meshes are not descendants of `rig.root` at
+all; a class that asked "is this mesh under an enabled root" would drop every
+corpse in the game the moment it started falling. Measured on Sarab over 120
+frames of a real death, with the joints off the root on every one of them: 20 of
+20 rig meshes active and 20 of 20 offered, identical with the pools filed and
+with them empty.
+
+Measured on Sarab, 24 a side, the fight held so both arms saw one scene, three
+interleaved blocks each against an A-vs-A control spanning 13.48-13.75 ms:
+**candidates 2,299 → 1,690 (−26.5%), the mesh walk 2.75 → 2.42 ms (−11.9%), the
+frame 14.24 → 13.62 ms (−4.4%), 70.2 → 73.4 fps.** Hollowmere at 8 a side is
+vsync-capped so its frame cannot show it, and its walk still goes 1.05 → 0.92 ms
+with candidates 1,178 → 905. **Draw calls and active meshes are identical in
+every block of both**, which is the shape of this lever: it takes the WALK and
+never the draw, because a disabled mesh was going to be rejected anyway — and a
+staged A/B/A with half the roster in frame came back inside its own control
+(27-34/255 worst against a 33/255 control, mean 0.001-0.003).
+
+**Everything else pooled is still loose** — tracers, shards, ragdoll debris,
+grenades, rubble, the viewmodel, the hulls — and finding 21's ~750 idle effect
+meshes are the next thing that could take this same door.
+
+**Nothing pooled may ever be block-keyed.** They are loose or pooled because
+they MOVE, and this is precisely why `scene.freezeActiveMeshes()` is a bug in
+this game and this is not.
 
 **The three numbers in `CONFIG.graphics.culling` are all margins and none of
 them is the reach.** The reach is the map's own `fogEnd`; `pad`, `step` and
