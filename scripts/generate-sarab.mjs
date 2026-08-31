@@ -943,7 +943,7 @@ for (const h of HOMES) {
   // and the disc's edge stops 7 m short of it.
   //
   // What it does still owe is `crew.boardRadius`, for the truck's reason with
-  // one twist. A bot may man the door gun and may never fly one
+  // one twist. A bot may man the chin gun and may never fly one
   // (`VehicleCrew.board`), and the second chair is only offered once somebody
   // IS flying — so this circle is not there to get the machine crewed while it
   // sits, but so that a pilot who has just lifted picks a gunner up on the way.
@@ -2201,7 +2201,7 @@ ${spawns.join("\n")}
  * outside and never take.
  *
  * What it pays is everything a fast thing pays and three things more. It has no
- * cannon and its only weapon is the door gun the SECOND man lays, so a lone
+ * cannon and its only weapon is the CHIN gun the SECOND man lays, so a lone
  * pilot has flown a taxi to the fight. Its rotor disc is 10.4 m across, which
  * closes the old town to it outright — the alleys that are a truck's ground and
  * not a tank's are not an aircraft's either. And it is FRAGILE: a rifle does
@@ -2260,6 +2260,29 @@ export const SarabLayout: MapLayout = {
    * order — and why the fifth slot here is margin rather than need.
    */
   surfaces: 5,
+  /**
+   * **Twenty-four a side — the one lever on this list that is BODIES rather
+   * than metres**, and it is stated for CONTACT rather than for size. Sixteen
+   * over 810,000 m^2 of play is one body per 51,000 of it, and
+   * \`ENGINE_UPGRADE.md\` S10 measured what that does to a round: five of eleven
+   * headless rounds ran the full 45-minute cap with tickets left on both
+   * sides, against 13-18 minutes on every shipped map, at a peak contact of
+   * 5-7 of 16 bots against 10-14. A bigger map does not need more bots because
+   * it is bigger; it needs them because a round is made of contact and contact
+   * is bodies per square metre.
+   *
+   * It is \`CONFIG.bots.maxPerTeam\` exactly, so it is the most a layout may ask
+   * for, and what it buys is paid in RIGS on every frame of the round. Three
+   * things follow it for free — six squads a side rather than two
+   * (\`CONFIG.bots.squadSize\`), a launcher in each of them
+   * (\`antiTankBots.perSquad\`) and a row per pool slot on the board — and
+   * \`CONFIG.conquest.tickets\` deliberately does not, which is what makes this
+   * a SHORTER round as well as a denser one. **It reaches a match too**:
+   * \`HeadlessGame.startRound\` pushes it through \`BattleSystem.setFielded\`, so
+   * Sarab is twenty-four a side online as well as off, while the SEATS stay at
+   * sixteen on every map (\`Roster.HUMANS_PER_TEAM\`).
+   */
+  perTeam: 24,
   /**
    * **The two S6 numbers, and this is the map they were made the map's for.**
    * At the default 48 m a ${PLAY + 2 * MARGIN} m map is a 32 x 32 grid of merge blocks — 1,024

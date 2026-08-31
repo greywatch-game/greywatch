@@ -1167,6 +1167,29 @@ export const SarabLayout: MapLayout = {
    */
   surfaces: 5,
   /**
+   * **Twenty-four a side — the one lever on this list that is BODIES rather
+   * than metres**, and it is stated for CONTACT rather than for size. Sixteen
+   * over 810,000 m^2 of play is one body per 51,000 of it, and
+   * `ENGINE_UPGRADE.md` S10 measured what that does to a round: five of eleven
+   * headless rounds ran the full 45-minute cap with tickets left on both
+   * sides, against 13-18 minutes on every shipped map, at a peak contact of
+   * 5-7 of 16 bots against 10-14. A bigger map does not need more bots because
+   * it is bigger; it needs them because a round is made of contact and contact
+   * is bodies per square metre.
+   *
+   * It is `CONFIG.bots.maxPerTeam` exactly, so it is the most a layout may ask
+   * for, and what it buys is paid in RIGS on every frame of the round. Three
+   * things follow it for free — six squads a side rather than two
+   * (`CONFIG.bots.squadSize`), a launcher in each of them
+   * (`antiTankBots.perSquad`) and a row per pool slot on the board — and
+   * `CONFIG.conquest.tickets` deliberately does not, which is what makes this
+   * a SHORTER round as well as a denser one. **It reaches a match too**:
+   * `HeadlessGame.startRound` pushes it through `BattleSystem.setFielded`, so
+   * Sarab is twenty-four a side online as well as off, while the SEATS stay at
+   * sixteen on every map (`Roster.HUMANS_PER_TEAM`).
+   */
+  perTeam: 24,
+  /**
    * **The two S6 numbers, and this is the map they were made the map's for.**
    * At the default 48 m a 1500 m map is a 32 x 32 grid of merge blocks — 1,024
    * meshes for `_evaluateActiveMeshes` to walk and `WorldCulling` to file a
