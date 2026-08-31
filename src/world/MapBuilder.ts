@@ -79,6 +79,7 @@ import { onRoad, type RoadRect, roadRects, roadTopAt } from "./roads";
 import { TerrainField, terrainPatches } from "./TerrainField";
 import { NavGrid } from "./NavGrid";
 import { RayWorld } from "./RayWorld";
+import { CollisionField } from "./CollisionField";
 import { CoverMap } from "./CoverMap";
 import { ObstacleField } from "./ObstacleField";
 import { uploadPart } from "./parts";
@@ -476,6 +477,19 @@ export interface GameMap {
    * `world/RayWorld.ts`, and `ENGINE_UPGRADE.md` wall 2 for what it replaced.
    */
   rays: RayWorld;
+  /**
+   * The same collider set indexed for a SWEEP — which meshes a moving body's
+   * collision sphere could touch — so `moveWithCollisions` walks a street
+   * rather than the map.
+   *
+   * `rays`' counterpart and here for the identical reason, one question later:
+   * that one answers a LINE analytically and took every pick off the scene,
+   * and this one narrows the last whole-scene walk left behind, which no
+   * analytic query can replace because it MOVES a body rather than asking
+   * about one. See `world/CollisionField.ts` for what it measured and for the
+   * superset rule a caller owes it.
+   */
+  collidables: CollisionField;
   /** Baked directional cover over the nav graph, for the AI. */
   cover: CoverMap;
   /** Shallow-water bodies from the layout; empty when the map is dry. */
@@ -1293,6 +1307,16 @@ export class MapBuilder {
       "rayWorld",
       () => new RayWorld(size, this.boxes, this.rayGroups, terrain),
     );
+    // …and the same set indexed for a SWEEP. Off the finished MESHES rather
+    // than off `boxes`, which is the one thing here that cannot be derived from
+    // geometry: what `moveWithCollisions` walks is the merged collider meshes,
+    // and a cluster of a scatter region's props is one of those and twelve of
+    // the other. The floor and the struts are in `colliders` and carry no
+    // `checkCollisions`, so the constructor drops them for free.
+    const collidables = record(
+      "collisionField",
+      () => new CollisionField(colliders),
+    );
     since("build:total", buildStart);
 
     return {
@@ -1304,6 +1328,7 @@ export class MapBuilder {
       cover,
       obstacles,
       rays,
+      collidables,
       controlPoints: layout.controlPoints,
       spawns: layout.spawns,
       vehicleSpawns: layout.vehicles ?? [],

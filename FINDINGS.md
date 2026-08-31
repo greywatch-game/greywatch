@@ -3424,7 +3424,7 @@ silent on all five with a round installed, and verified to FIRE at 400 m.
 
 ---
 
-## 31. The authority's tick is priced on ARMOUR and not on the map — 1500 m is the CHEAPEST tick in the tree, and the instrument that says so had been dead since the WebGPU port
+## 31. The authority's tick is priced on ARMOUR and not on the map — 1500 m is the CHEAPEST tick in the tree, and the instrument that says so had been dead since the WebGPU port — **its two sweep threads are CLOSED by 35**
 
 **Status:** measured on the Windows box, landed. **This is `ENGINE_UPGRADE.md`
 S9** — the authority at 1500 m — and it is the first step in that document whose
@@ -3573,16 +3573,13 @@ it.
 
 ### What is open
 
-- **`Vehicle.update`'s hull sweep is the last whole-scene walk on the authority.**
-  `RayWorld` retired every pick; `moveWithCollisions` was left behind because it
-  MOVES a body rather than answering a question about one. An analytic sweep
-  against `colliderBoxes` is the same substitution wall 2 already made, and at
-  1500 m it is worth 0.40 ms per driven hull per tick. Nobody's step, and not
-  worth taking until a big map states `vehicles`.
-- **The same sweep is on the CLIENT, per frame, for the hull you are driving.**
-  Nothing here measured it in a real frame — the figure above is a NullEngine
-  scene with the same collider count — but it is the same mesh list, and a 9.3 ms
-  frame at 1500 m has no 0.4 ms to spare that nobody has costed.
+- ~~**`Vehicle.update`'s hull sweep is the last whole-scene walk on the
+  authority.**~~ and ~~**the same sweep is on the CLIENT, per frame**~~ — **BOTH
+  CLOSED by 35.** A big map did state `vehicles` (Sarab, and three kinds of
+  them), the client half turned out to be 96% of everything the fleet cost, and
+  the substitution was not the analytic sweep suggested here: `CollisionField`
+  narrows Babylon's own walk through `surroundingMeshes` instead, which keeps
+  the collision response bit-identical rather than reimplementing it.
 - **Why a rebuild in the same process gets slower**: 1.25 s to 2.78 s over four
   rounds, with `map.dispose()` between them. A match server rotates maps for
   hours.
@@ -3832,3 +3829,103 @@ already prices a driven hull and this agrees with it.
   the AI is mounted may simply be the map working. What makes that hard to
   accept as it stands is that nobody CHOSE it — it fell out of a hardstanding
   count.
+
+---
+
+## 35. The vehicles were 2.3 ms a frame and 96% of it was ONE call — the last whole-scene walk is down, on both sides
+
+**Status:** measured on the Windows box, landed. Closes both open threads of
+finding 31.
+
+### What was measured
+
+Sarab, six hulls (a tank, a gun truck and a helicopter a side), four of them
+crewed and driving by the time the sample starts, headless Chromium through
+`plans/webgpu-ref/harness.mjs`, 12 s windows, every phase of the fleet's frame
+wrapped and accumulated:
+
+| phase | before | after |
+| --- | --- | --- |
+| `VehicleSystem.update` | **2.299 ms/frame** | **0.120** |
+| — of which `moveWithCollisions` | **2.214** (553 us x 4 calls) | **0.039** (11 us) |
+| everything else the fleet does | 0.085 | 0.081 |
+| median frame | 11.3 ms | **8.7** |
+| fps | 87.2 | **117.8** |
+
+**The whole of the vehicle subsystem outside that one call is 0.085 ms** — the
+ten-contact ground probe, the plank, the springs, the hull lean, the antennae,
+the turret slew, the cupola gun, the crew AI, `crushSweep` and
+`pushHullEngines` between them. There was never anything else to find here, and
+a reader who goes looking for it will spend a day confirming that.
+
+And the authority, `npm run simulate sarab 1 3`, one round either side of the
+change on the same tree:
+
+| | before | after |
+| --- | --- | --- |
+| tick p50 | 0.691 ms | **0.053** |
+| p95 / p99 | 0.947 / 1.080 | **0.068 / 0.087** |
+| worst | 8.844 | 4.050 |
+| a round of wall clock | 52.9 s | **3.1 s** |
+| real time on one core | 23.6x | **298.5x** |
+
+Finding 31 priced a driven hull at 0.40 ms per tick on a 1500 m map and called
+it "the only term in the authority that grows with map AREA". It does not grow
+with it any more.
+
+### What it is
+
+`scene.meshes`, walked per call, `isEnabled()` up the parent chain and a
+bounding-box test each, up to `collisionRetryCount` times. Babylon's own
+coordinator reads
+`(excludedMesh && excludedMesh.surroundingMeshes) || this._scene.meshes`, so
+handing the body a list is a supported narrowing of that walk and not a patch
+over it — the collision RESPONSE is untouched, which is the whole reason this
+was preferred to the analytic sweep finding 31 proposed. `CollisionField` is
+the bucket grid behind the list; see its header for the rules.
+
+### Three things had to be right, and two of them were found the expensive way
+
+- **The list must be a SUPERSET of what the sweep can reach** — radius plus the
+  whole step plus a margin, centred on the sphere rather than on the mesh.
+- **The ORDER must be the scene's.** `Collider._testTriangle` rejects on
+  `distToCollision >= _nearestDistance`, so a tie goes to whichever mesh was
+  walked FIRST, and a world made of boxes is full of coplanar ties. A grid
+  walks cell order; `scene.meshes` walks creation order. Left alone this put the
+  hull a few centimetres out against a wall — small, real, and exactly the kind
+  of difference that would have been blamed on the suspension a year later.
+  Sorting the hits back into index order fixes it outright.
+- **The centre must be `getAbsolutePosition()` and not `position`**, because
+  that is the expression `moveWithCollisions` opens with. See VERIFYING.md —
+  the two come apart under a render id, and a list built for the wrong point is
+  the one failure mode this whole mechanism has.
+
+### Two traps for whoever measures this next
+
+- **A scripted DRIVE proves nothing and looks like it proves everything.** Every
+  hull on all three maps with armour completed 1,800 steps of full-throttle
+  turning and reversing **without being blocked once** — a hardstanding is in a
+  yard and armour spends its first half-minute crossing open ground. Two arms
+  agreeing over free motion is two arms agreeing about arithmetic. The test that
+  means something samples positions across the whole play square and reports how
+  many of them actually hit something (760 to 2,484 of 8,000, by kind and map).
+- **Always run an A-vs-A control.** The first oracle written for this reported
+  3 m divergences that were entirely its own doing, and the control is what said
+  so in one line.
+
+### What is open
+
+- **`Player.update` does the same sweep, every frame the player moves**, off the
+  same mesh list, and it is not wired to `map.collidables`. Nothing here measured
+  it — the profile above ran with the player standing still — but it is the same
+  call on the same list and a body's sphere is smaller than a hull's, so the
+  per-call figure should be similar and the frequency is one call rather than
+  four. It is the obvious next caller and was left out only to keep this change
+  to the thing that was asked about.
+- **`CELL` is 24 m and nobody swept it.** It answers with ~10 meshes for a tank
+  and ~12 for the helicopter's 10.4 m disc, which was good enough that the cost
+  stopped being visible; whether 16 or 32 is better has not been asked.
+- **The grid is stamped once and never updated.** That is correct today because
+  the only collidable thing that moves is a hull and hulls are in `movers` — but
+  it is an invariant nothing enforces, and a future collidable that moves and is
+  not registered would be walked through silently.

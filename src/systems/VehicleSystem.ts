@@ -56,6 +56,7 @@ import {
 import { kindOf } from "../entities/vehicleKinds";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { GameMap, VehicleSpawnDef } from "../world/MapBuilder";
+import type { CollisionField } from "../world/CollisionField";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 
 /**
@@ -161,6 +162,11 @@ export class VehicleSystem {
    * it on the same call.
    */
   private rays: RayWorld | null = null;
+  /**
+   * The sweep index the fleet's own bodies are registered into, held for the
+   * same reason and released in the same place as `rays` above.
+   */
+  private collidables: CollisionField | null = null;
   private readonly hit = newRayHit();
   private readonly down = new Vector3(0, -1, 0);
   /**
@@ -235,13 +241,14 @@ export class VehicleSystem {
     // is an instance of it — so the one place that knows the fleet is the one
     // place that can tell every ray in the game there is armour on the field.
     this.rays = map.rays;
+    this.collidables = map.collidables;
     for (const def of map.vehicleSpawns) {
       // **The one place a KIND becomes a hull**, and the whole of what a second
       // kind costs this system: a `VehicleSpawnDef` names one, `kindOf` hands
       // back the numbers and the model, and nothing below this line — nor
       // anywhere else in the file — asks what it is holding.
       const tank = new Vehicle(this.scene, this.mats, def.team, kindOf(def.kind));
-      tank.setGround(map.terrain, map.obstacles);
+      tank.setGround(map.terrain, map.obstacles, map.collidables);
       tank.onDestroyed = () => this.onDestroyed(tank);
       tank.placeAt(def.pos, def.yaw);
       // A hull in a match refuses local damage and answers to the wire for
@@ -253,6 +260,13 @@ export class VehicleSystem {
       this.stands.push({ def, tank, respawnIn: 0 });
       this.fleet.push(tank);
       map.rays.hulls.push(tank);
+      // **And into the sweep index, for the same reason and by the same rule.**
+      // A hull is the one collidable mesh in the game that MOVES, so it is in
+      // no bucket and has to be appended to every answer — which is what
+      // `CollisionField.movers` is. Registered here rather than by the world
+      // layer because this is the only place that knows there is a fleet, and
+      // `world/` may never learn what a vehicle is.
+      map.collidables.movers.push(tank.body);
     }
   }
 
@@ -582,7 +596,17 @@ export class VehicleSystem {
         if (at >= 0) this.rays.hulls.splice(at, 1);
       }
     }
+    // The sweep index's movers, on the same terms. A disposed body left in here
+    // is worse than a stale pointer in the list above: it would be handed to
+    // every surviving hull's `surroundingMeshes`, which Babylon walks.
+    if (this.collidables) {
+      for (const tank of this.fleet) {
+        const at = this.collidables.movers.indexOf(tank.body);
+        if (at >= 0) this.collidables.movers.splice(at, 1);
+      }
+    }
     this.rays = null;
+    this.collidables = null;
     this.fleet.length = 0;
   }
 }

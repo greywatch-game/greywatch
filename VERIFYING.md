@@ -472,6 +472,30 @@ is one machine's:
   driven first. Measured on Coldharbour: 1200 → 580 on a clean strike, which is `damage` exactly and
   no splash — `blastAt` needs line of sight to the hull's centre and the hull is
   in the way.
+- **Teleporting a hull between calls does NOT move the sweep, and the failure
+  looks exactly like a broken collider index.** `moveWithCollisions` opens with
+  `getAbsolutePosition()`, and `computeWorldMatrix()` early-outs when
+  `_currentRenderId` already equals `scene.getRenderId()` — which never advances
+  inside one synchronous `page.evaluate`. So the first `body.position.set()` in
+  such a loop takes and **every one after it is ignored**, and the hull sweeps
+  from wherever it stood at the last render. Chasing this cost an afternoon:
+  a differential harness reported the whole-scene walk colliding with a
+  `compoundWall-col` **600 m away** from where the test had put the body, which
+  reads as an index missing a mesh and is nothing of the kind. **Call
+  `body.computeWorldMatrix(true)` after every position write**, and if something
+  still disagrees, print `collider._basePointWorld` — it says where Babylon
+  thinks the sphere is, and one line of it ends the argument.
+- **A scripted DRIVE is not a test of anything a hull hits.** Measured over
+  1,800 steps of full-throttle turning and reversing, on Sarab, Coldharbour and
+  Harrowmead: **every hull finished without being blocked once.** Hardstandings
+  are in yards and armour spends its first half-minute on open ground, so two
+  arms of a differential test agree about free motion and prove nothing. Sample
+  positions across the play square instead, and REPORT how many samples were
+  blocked — a run with a zero in that column is a run to throw away.
+- **Any differential test of a collision path needs an A-vs-A control**, run
+  in the same loop as the real comparison. The two-arm version of the above
+  reported 3 m divergences that were entirely the harness's own doing, and the
+  control is the one line that would have said so immediately.
 - **A BOT CREW is stepped with `g.crew.update(dt)` immediately before the
   fleet**, in that order and never the other way round — it writes the drive
   input `vehicles.update` then consumes, exactly as `updateDriver` writes the

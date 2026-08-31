@@ -447,6 +447,11 @@ src/
                         #   blocked, the grid behind them, and the hulls, which
                         #   are the one solid thing that moves. It is what
                         #   retired scene.pickWithRay at all eight sites
+    CollisionField.ts   # RayWorld's counterpart for the one whole-scene walk a
+                        #   ray query could not replace: the collider MESHES
+                        #   bucketed, so moveWithCollisions is handed a street
+                        #   through Babylon's own surroundingMeshes instead of
+                        #   walking the map. Superset or nothing — read it
     vertexShading.ts    # The world's baked vertex-colour buffer, written after
                         #   every merge: AO in the ALPHA, the world mark in the
                         #   GREEN, the wind's sway weight in the RED
