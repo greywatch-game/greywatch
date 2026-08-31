@@ -515,6 +515,20 @@ table.lad tr.rest td { color: var(--ink-3); font-style: italic; }
       <div class="body" id="heap-frozen" hidden></div>
     </div>
 
+    <div class="panel" id="p-draws">
+      <header>
+        <h2>Draw calls &amp; active meshes</h2>
+        <div class="legend" id="d-legend"></div>
+      </header>
+      <div class="body flush">
+        <div class="chart">
+          <canvas id="c-draws" height="140"></canvas>
+          <div class="tip" id="t-draws"></div>
+        </div>
+        <div class="scale-note" id="n-draws"></div>
+      </div>
+    </div>
+
     <div class="panel">
       <header>
         <h2>Attribution</h2>
@@ -832,9 +846,13 @@ function renderReport(r) {
   /* charts */
   const series = r.series;
   $("p-frames").hidden = !series;
+  // Older captures have a series without the counters; the panel is absent
+  // rather than empty, the way the heap one is.
+  $("p-draws").hidden = !(series && series.drawCalls && series.drawCalls.length);
   $("p-heap").hidden = !(series || (mem && !mem.heapLive));
   if (series) {
     drawFrames(r);
+    if (series.drawCalls && series.drawCalls.length) drawSeriesCounters(r);
     if (mem && mem.heapLive) {
       $("heap-frozen").hidden = true;
       $("c-heap").parentElement.hidden = false;
@@ -1245,6 +1263,63 @@ function drawFrames(r) {
   });
 }
 
+/* ── draw calls and active meshes ──────────────────────────────────────────
+   Two lines on ONE axis, which is legitimate here only because both are counts
+   of the same kind of thing — never do this with two different units.
+
+   It sits under the frame timeline and shares its x, so a ramp in the draw
+   count can be laid against the frames it cost. That correlation is the whole
+   reason the counters are in the series at all: a batch of pipelines coming
+   into view is a draw count CLIMBING over about a second, and against the mean
+   alone it is invisible. */
+function drawSeriesCounters(r) {
+  const canvas = $("c-draws");
+  canvas._cssH = 140;
+  const { ctx, w, h } = prep(canvas);
+  const dc = r.series.drawCalls, am = r.series.activeMeshes, n = dc.length;
+  if (!n) return;
+  let hi = 0;
+  for (let i = 0; i < n; i++) {
+    if (dc[i] > hi) hi = dc[i];
+    if (am[i] > hi) hi = am[i];
+  }
+  const yMax = hi * 1.12 || 1;
+  const plotW = w - PAD.l - PAD.r, plotH = h - PAD.t - PAD.b;
+  const X = (i) => PAD.l + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+  const Y = (v) => h - PAD.b - (v / yMax) * plotH;
+  axes(ctx, w, h, yMax, "count", 3);
+
+  const line = (arr, color, dash) => {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) { const x = X(i), y = Y(arr[i]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = "round";
+    if (dash) ctx.setLineDash(dash);
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  line(am, css("--heap"), [5, 3]);
+  line(dc, css("--signal"));
+
+  const lg = $("d-legend");
+  lg.innerHTML = "";
+  [[css("--signal"), "draw calls"], [css("--heap"), "active meshes"]].forEach(([c, label]) => {
+    const sp = el("span");
+    const i2 = el("i"); i2.style.background = c;
+    sp.appendChild(i2); sp.appendChild(document.createTextNode(label));
+    lg.appendChild(sp);
+  });
+
+  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  $("n-draws").textContent =
+    "draws " + Math.round(mean(dc)) + " mean · " + Math.min.apply(null, dc) + "–" +
+    Math.max.apply(null, dc) + " over the window · meshes " + Math.round(mean(am)) +
+    " mean · " + Math.min.apply(null, am) + "–" + Math.max.apply(null, am);
+
+  hover(canvas, $("t-draws"), n, X, (i) =>
+    "<b>" + dc[i] + "</b> <span class=\"dim\">draws</span><br><b>" + am[i] +
+    "</b> <span class=\"dim\">meshes</span><br><span class=\"dim\">frame " + (i + 1) +
+    " · " + fmt(r.series.frameMs[i], 1) + " ms</span>");
+}
+
 /* ── heap chart ────────────────────────────────────────────────────────── */
 function drawHeap(r) {
   const canvas = $("c-heap");
@@ -1618,7 +1693,11 @@ $("btn-theme").onclick = () => {
 };
 
 function redraw() {
-  if (REPORT && REPORT.series) { drawFrames(REPORT); if (REPORT.memory && REPORT.memory.heapLive) drawHeap(REPORT); }
+  if (REPORT && REPORT.series) {
+    drawFrames(REPORT);
+    if (REPORT.series.drawCalls && REPORT.series.drawCalls.length) drawSeriesCounters(REPORT);
+    if (REPORT.memory && REPORT.memory.heapLive) drawHeap(REPORT);
+  }
   if (flame) { drawFlame(); }
   if (TRACE) drawCounters(TRACE.traceEvents.filter((e) => e.ph === "C" && e.name === "draws"), flame.t0, flame.t1);
 }

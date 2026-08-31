@@ -279,6 +279,16 @@ no-allocation rule this profiler holds itself to is one nothing else in the game
 obeys, and this is the only readout that would notice it being broken somewhere
 that matters.
 
+**`gcEvents` is summed from the ring at capture time, over the same frames as
+every other figure in the report** — and that is a correction rather than a
+description. It was a running total kept since ARMING while `gcPerSec` divided
+it by the WINDOW's seconds, so any session that outlived its own ring reported a
+rate it had never run at. A real capture caught it: 7 events over a 36.18 s
+window whose ring held 4, an overstatement of 75% on the number that rides the
+flash line. **The figures quoted above are unaffected** — that run was 12 s
+against a 23 s ring, so nothing had aged out — but anything measured over a long
+session before this was fixed should be re-taken.
+
 `memory.gcPerSec` also rides on the **flash line**, because under a pointer lock
 that is the only channel back to the player and "is it GC" is the whole question.
 
@@ -382,6 +392,15 @@ What it draws:
   as references, and collections on a rail along the top.
 - **The heap**, where it is live, with the collections aligned to it — and the
   frozen notice where it is not, rather than a flat line.
+- **Draw calls and active meshes per frame**, under the other two and on the
+  same x, so a ramp in the draw count can be laid against the frames it cost.
+  Both are counts of the same kind of thing, which is the only reason they share
+  an axis. They are in the SERIES rather than only in the summary because the
+  means cannot answer the question they are most often asked: a batch of
+  pipelines coming into view is a draw count CLIMBING over about a second, and
+  against one number for the whole window that is invisible — it had to be
+  inferred from five disconnected hitch records the first time it came up. A
+  capture taken before the fields existed simply has no panel.
 - **The flame chart** for a trace, nested by the phase tree, with GC instants.
   Perfetto is still the better tool for a trace and the section below still
   points at it; this is the look you take without leaving the phone.

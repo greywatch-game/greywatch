@@ -319,7 +319,10 @@ export interface ProfileReport {
      * `gcEvents` is 0 and means nothing.
      */
     gcObserved: boolean;
-    /** Collections the sentinel reported over the window. Best-effort. */
+    /**
+     * Collections the sentinel reported **over this window**, summed from the
+     * ring rather than counted since arming. Best-effort — see the header.
+     */
     gcEvents: number;
     gcPerSec: number;
   };
@@ -337,6 +340,19 @@ export interface ProfileReport {
     /** Collections per frame, and the used heap in MB. See `memory`. */
     gc: number[];
     heapMb: number[];
+    /**
+     * Babylon's two counters, per frame.
+     *
+     * **They are here because the means alone cannot answer the question they
+     * are most often asked.** `counters.drawCalls` is one number for the whole
+     * window and a hitch record carries its own — so a draw count that RAMPS
+     * across a second, which is what a batch of pipelines coming into view
+     * looks like, was visible only as five disconnected hitch records and had
+     * to be inferred. With the series it is a line you can lay against
+     * `frameMs`.
+     */
+    drawCalls: number[];
+    activeMeshes: number[];
     phases: Partial<Record<Phase, number[]>>;
   };
 }
@@ -380,9 +396,19 @@ export class FrameProfile {
   private gcAt: Uint8Array | null = null;
 
   private heapLive = false;
-  /** Collections seen since the last `endFrame`, and over the whole window. */
+  /**
+   * Collections the sentinel has reported since the last `endFrame` closed.
+   *
+   * **There is deliberately no running TOTAL beside it.** One was here, and it
+   * was a bug of exactly the shape this file warns about elsewhere: it counted
+   * every collection since ARMING while `memory.gcPerSec` divided it by the
+   * WINDOW's seconds, so any session outliving its own ring reported a rate it
+   * had never run at. Caught on a real capture — 7 events over a 36.18 s window
+   * whose ring held 4, an overstatement of 75% on the number that rides the
+   * chip's flash line. The count is summed from `gcAt` at capture time now,
+   * over the same frames as every other figure in the report.
+   */
   private gcPending = 0;
-  private gcTotal = 0;
   private gcReg: FinalizationRegistry<number> | null = null;
 
   /**
@@ -494,7 +520,6 @@ export class FrameProfile {
     this.baselineMs = 0;
     this.hitchBarMs = CONFIG.profiling.hitchMs;
     this.gcPending = 0;
-    this.gcTotal = 0;
 
     this.scene = scene;
     // Babylon's own counters, and they are the half of the frame the JS spans
@@ -631,7 +656,6 @@ export class FrameProfile {
     // it interrupted.
     const gc = this.gcPending;
     this.gcPending = 0;
-    this.gcTotal += gc;
     this.gcAt![i] = gc > 255 ? 255 : gc;
     if (this.heapMb) this.heapMb[i] = usedHeapMb();
 
@@ -731,6 +755,8 @@ export class FrameProfile {
       frameMs: [],
       gc: [],
       heapMb: [],
+      drawCalls: [],
+      activeMeshes: [],
       phases: {},
     };
     if (full) {
@@ -739,6 +765,8 @@ export class FrameProfile {
         series.frameMs.push(round(frames[k]));
         series.gc.push(this.gcAt![i]);
         series.heapMb.push(this.heapMb ? round(this.heapMb[i], 2) : 0);
+        series.drawCalls.push(this.drawCalls![i]);
+        series.activeMeshes.push(this.activeMeshes![i]);
       }
     }
 
@@ -821,6 +849,10 @@ export class FrameProfile {
     spanMs: number,
   ): ProfileReport["memory"] {
     const seconds = spanMs > 0 ? spanMs / 1000 : 0;
+    // Summed over the RING rather than kept as a running total — see `gcPending`
+    // on the bug that was.
+    let gc = 0;
+    for (let k = 0; k < n; k++) gc += this.gcAt![(first + k) % cap];
     let sum = 0;
     let peak = 0;
     let risen = 0;
@@ -840,8 +872,8 @@ export class FrameProfile {
       heapPeakMb: this.heapLive ? round(peak, 2) : 0,
       allocMbPerSec: this.heapLive && seconds > 0 ? round(risen / seconds, 2) : 0,
       gcObserved: this.gcReg !== null,
-      gcEvents: this.gcTotal,
-      gcPerSec: seconds > 0 ? round(this.gcTotal / seconds, 2) : 0,
+      gcEvents: gc,
+      gcPerSec: seconds > 0 ? round(gc / seconds, 2) : 0,
     };
   }
 
