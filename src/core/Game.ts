@@ -3457,8 +3457,15 @@ export class Game {
     // whole-scene ray pick until it could. The deck supplier is bound HERE and
     // once per install rather than per frame — `VehicleSystem` is a system and
     // `Player` may not reach for one, which is what this wiring is for.
-    this.player.setGround(map.terrain, map.obstacles, (x, z, ceiling, floor) =>
-      this.vehicles.deckAt(x, z, ceiling, floor),
+    this.player.setGround(
+      map.terrain,
+      map.obstacles,
+      (x, z, ceiling, floor) => this.vehicles.deckAt(x, z, ceiling, floor),
+      // …and the same colliders as MESHES, which is the OTHER question a body
+      // asks of them: not what it stands on but what it walks into.
+      // `moveWithCollisions` was the last thing in the frame still asking that
+      // of the whole scene — see `world/CollisionField.ts`.
+      map.collidables,
     );
     // **The solid world as a SEGMENT QUERY, to the six systems that used to ask
     // the scene.** This is the whole of `ENGINE_UPGRADE.md` wall 2 on this

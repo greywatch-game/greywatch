@@ -593,6 +593,29 @@ colliders were built from, and exactly the substitution that retired
 `cover` and `obstacles`, and the authority builds one off the bake. A NEW RAY
 GOES THERE; nothing may reach for the scene.
 
+**…and the ONE whole-scene walk that survived that is `moveWithCollisions`,
+which is narrowed rather than replaced.** It MOVES a body instead of answering a
+question about one, so no analytic query stands in for it — and Babylon walks
+`scene.meshes` for every call **and again for every retry**, which priced a body
+on the map's size exactly as a pick did, and priced it worst at the moment it is
+pressed against something. **There are exactly TWO sweeps in the game and both
+go through `narrowedMove`**: `Vehicle.update` for a hull and `Player.update` for
+a body on foot. Measured on Sarab: the fleet cost **2.30 ms a frame and 2.21 ms
+of it was that one call**, and the player's own sweep cost **2.21 ms a frame**
+again — between them more than a third of the frame. `map.collidables`
+([`src/world/CollisionField.ts`](src/world/CollisionField.ts)) is `rays`'
+counterpart — the same collider set bucketed as MESHES — and a body hands the
+answer to Babylon's own `surroundingMeshes`, which is the list its coordinator
+walks instead. **The saving is only sound while the list is a SUPERSET of what
+the sweep can reach**, so the reach is the sphere's radius plus the whole step
+plus a margin, the centre is `getAbsolutePosition()`, the order is the scene's,
+and `narrowedMove` CHECKS the promise and re-runs the whole walk when a sweep
+outran it. Proved identical at 6,000-8,000 blocked-and-unblocked samples per
+body on every map: **the fleet 0.12 ms a frame, the player 0.036, Sarab's median
+frame 14.6 ms to 8.7, and the authority's Sarab tick p50 0.691 ms to 0.053.**
+**A THIRD sweep goes through `narrowedMove` too, or it is a body walking the
+whole map** — and the mechanism is now general rather than the vehicles'.
+
 **Colliders are still MERGED, and the grouping is now data rather than a
 performance trick**: nothing in gameplay picks a mesh, but the bake carries the
 grouping to the server and `rayGroups` is how the struts reach the queries at

@@ -65,6 +65,23 @@
  * ejects the hull at `drive.freeRate` off `ObstacleField.resolve`. See that
  * method, and `docs/vehicles.md`.
  *
+ * ## ...and the sweep is handed a STREET rather than the map
+ *
+ * `moveWithCollisions` walks `scene.meshes` — every collidable mesh on the map,
+ * up to `collisionRetryCount` times a call — which was the last whole-scene
+ * walk in the game and, measured on Sarab's six hulls, **96% of everything the
+ * vehicles cost**: 2.21 ms of the fleet's 2.30 a frame. `update` narrows it
+ * through `body.surroundingMeshes`, which is Babylon's own field for exactly
+ * this, off `map.collidables` — see `world/CollisionField.ts` for the grid and
+ * `setGround` for how a hull gets one.
+ *
+ * **It is lossless only while the list is a SUPERSET of what the sweep can
+ * reach, and `update` CHECKS that rather than trusting it** — a sphere that
+ * began inside a box is EJECTED rather than swept, and an ejection is not
+ * bounded by the step. A sweep that outran its list is thrown away and re-run
+ * against the whole scene, which is the old code path, so the answer is the old
+ * answer.
+ *
  * ## ...and it may not ask the engine for less than a millimetre
  *
  * `moveWithCollisions` writes the position back only when the move exceeds
@@ -211,13 +228,21 @@
  * every time a tank climbed a kerb. What is bought instead is a whip that is
  * clamped, tunable and free. See `docs/vehicles.md`.
  */
-import { AbstractEngine, Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/core";
+import {
+  AbstractEngine,
+  type AbstractMesh,
+  Mesh,
+  MeshBuilder,
+  Scene,
+  Vector3,
+} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { angleDelta } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
 import { rotateToLocalXZ, topFaceHeight, type LocalXZ } from "../world/boxGeometry";
 import type { WorldBox } from "../world/MapBuilder";
+import { narrowedMove, type CollisionField } from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import type { RayHull } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
@@ -1019,6 +1044,22 @@ export class Vehicle implements Combatant, RayHull {
    * on an empty field is standing on anyway.
    */
   private obstacles: ObstacleField | null = null;
+  /**
+   * The collidable MESHES, bucketed — what `moveWithCollisions` is narrowed to.
+   *
+   * Null until a map hands one over, and a hull with none sweeps the whole
+   * scene exactly as it always did. That fallback is a correctness floor and
+   * not a mode: it is slow rather than wrong, which is the right way round for
+   * a field nothing but `installMap` is supposed to leave unset.
+   */
+  private collidables: CollisionField | null = null;
+  /**
+   * The list handed to `body.surroundingMeshes` each sweep — this hull's own,
+   * not shared, because Babylon holds the array on the mesh across the call and
+   * two hulls sweeping off one scratch would be the second one's street under
+   * the first one's tracks.
+   */
+  private readonly nearby: AbstractMesh[] = [];
   // Scratch. This runs every frame a tank exists; nothing below allocates.
   private readonly step = new Vector3();
   /** Where the push-out would put the hull. See `freeFromWalls`. */
@@ -1134,16 +1175,28 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
-   * Hands the hull the world it stands on: the collider boxes it rides over
-   * and the heightfield under them.
+   * Hands the hull the world it stands on: the collider boxes it rides over,
+   * the heightfield under them, and the same colliders as MESHES for the sweep.
    *
-   * Both, in one call, because a contact takes the higher of the two and a
-   * hull holding one without the other answers half a question — the boxes
+   * The first two in one call because a contact takes the higher of the two and
+   * a hull holding one without the other answers half a question — the boxes
    * have no floor in them and the field has no kerb.
+   *
+   * The third is the same collider set a third way round and is here rather
+   * than in a setter of its own for the same reason: it is a fact about the
+   * world this hull is standing in, it arrives from `installMap` with the other
+   * two, and a hull that had the boxes but not the meshes would be one whose
+   * ground probe knew about a wall its own drive was pricing against the whole
+   * map. See `world/CollisionField.ts`.
    */
-  setGround(terrain: TerrainField, obstacles: ObstacleField | null): void {
+  setGround(
+    terrain: TerrainField,
+    obstacles: ObstacleField | null,
+    collidables: CollisionField | null = null,
+  ): void {
     this.terrain = terrain;
     this.obstacles = obstacles;
+    this.collidables = collidables;
   }
 
   /**
@@ -2299,9 +2352,12 @@ export class Vehicle implements Combatant, RayHull {
     this.step.copyFrom(this.vel).scaleInPlace(dt);
     const asked = this.step.length();
     if (asked > AbstractEngine.CollisionsEpsilon) {
+      // **The street, not the map** — see `world/CollisionField.ts` for the
+      // three rules this one call is standing on, and the header above for
+      // what it was worth on this hull.
       const before = this.body.position.x;
       const beforeZ = this.body.position.z;
-      this.body.moveWithCollisions(this.step);
+      narrowedMove(this.body, this.step, this.collidables, this.nearby);
       // Walked into something: drop the speed rather than grinding along it at
       // full throttle. `moveWithCollisions` already slid the hull, so this is
       // about the ENGINE noise and the driver's read, not about the position —

@@ -783,23 +783,50 @@ What the hull's collider box is:
   settles on the deck.
 - `checkCollisions`, so `moveWithCollisions` — the player's, and the other
   tank's — is held out of it. It is also the mesh that *moves*, which is what
-  makes that safe: Babylon excludes the mover from its own collision test.
+  makes that safe: Babylon excludes the mover from its own collision test. And
+  because it moves, it is the one collidable mesh that cannot live in
+  `CollisionField`'s grid — `VehicleSystem.build` registers every hull body in
+  `map.collidables.movers` instead, which is appended to every answer, exactly
+  as it pushes the hull into `map.rays.hulls` a line earlier and for the same
+  reason.
 - **No `WorldBox`.** `NavGrid`, `CoverMap`, `ObstacleField`, the AO bake and the
   collision bake are all built once from the finished collider set at map load,
   and a thing that moves cannot be in any of them.
 
-**And the drive is the last thing in the game that walks the whole scene.**
+**The drive USED to be the last thing in the game that walks the whole scene,
+and that is the single most expensive thing a vehicle has ever done.**
 `moveWithCollisions` costs per collidable MESH in the map, which is what every
 ray in this tree stopped doing when `RayWorld` replaced the picks
 (`ENGINE_UPGRADE.md` wall 2) — a hull was left behind because it MOVES a body
-rather than asking a question about one. Measured on the authority, one hull
-stepped 2,000 times: **0.039 ms a call against Coldharbour’s 754 collider
-meshes and 0.402 against a 1500 m map’s 5,904** (`FINDINGS.md` 31). It runs
-only while `|speed| > 1e-3`, so a parked fleet costs nothing — but it is why
-the two maps with armour are the two most expensive server ticks in the tree,
-and it is the one term in that tick which grows with map AREA. At sixteen slots
-and two hardstandings it is 4.8% of a 60 Hz step at 1500 m, which is affordable
-and is not free.
+rather than asking a question about one, so no analytic query stands in for it.
+Measured on the authority, one hull stepped 2,000 times: **0.039 ms a call
+against Coldharbour’s 754 collider meshes and 0.402 against a 1500 m map’s
+5,904** (`FINDINGS.md` 31). On the CLIENT it was worse than either figure
+suggests, because a map fields more than one and all of them are driven:
+**Sarab’s fleet cost 2.30 ms a frame and 2.21 ms of it was this one call** —
+96% of everything the vehicles did, against 0.085 ms for the ground probe, the
+plank, the springs, the lean, the whips, the turret, the cupola gun, the crew
+AI, the crush sweep and the engine audio combined.
+
+**It is narrowed now, and the narrowing is Babylon's own rather than a
+replacement.** `map.collidables` (`world/CollisionField.ts`) buckets the
+collider MESHES, `Vehicle.update` hands the hull's own street to
+`body.surroundingMeshes`, and Babylon's coordinator walks that instead of
+`scene.meshes` — so the collision RESPONSE is untouched and the landing position
+is bit-identical, which was proved at 8,000 samples per hull kind on every map
+with armour rather than argued. **11 us a call, the fleet 0.12 ms a frame,
+Sarab's median frame 11.3 ms to 8.7, and the authority's Sarab tick p50 0.691 ms
+to 0.053** (`FINDINGS.md` 35). It still runs only while `|speed| > 1e-3`, so a
+parked fleet still costs nothing.
+
+**Three rules the narrowing rests on, and a change here must not break any of
+them.** The list must be a SUPERSET of what the sweep can reach — radius plus
+the whole step plus a margin — so `Vehicle.update` CHECKS that the hull did not
+outrun it and re-runs the whole walk when it did, which is what makes an
+ejection out of a wall safe. The list must be in the SCENE's order, because
+Babylon breaks a distance tie in favour of whichever mesh it walked first and a
+box world is full of coplanar ties. And it must be centred on
+`getAbsolutePosition()`, which is what `moveWithCollisions` itself opens with.
 
 The consequence is stated rather than hidden: **bots walk through a parked
 tank.** They walk through corpses too, for the identical reason, and both are in

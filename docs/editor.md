@@ -96,6 +96,18 @@ reads as the ground having disappeared. `waterY()` lives in `TerrainField.ts` so
 | drag released, flag/spawn edited | `NavGrid` + 7 flow fields + `ObstacleField` | ~45 ms |
 | param, kind, add, delete, brush stroke released, **road drag released** | `Game.buildEditorMap()` — the whole map | ~570 ms |
 
+**Two derived structures are NOT in that table and go stale on a drag: `map.rays`
+and `map.collidables`.** Both are built once from the finished collider set in
+`MapBuilder.build`, and tier 1 moves a placement's collider meshes and its
+`WorldBox`es in place (`repositionItem`) without touching either index — so
+until something forces the tier-3 rebuild, a round fired at a dragged building
+resolves against where it USED to be, and a hull sweeps against the same ghost.
+This has always been true of `RayWorld` and is stated here rather than fixed,
+for the reason there is no undo: the editor is dev-only, every structural change
+rebuilds the map anyway, and leaving the editor rebuilds from source. Anyone
+adding a third such index should know it joins these two rather than being
+special.
+
 **That ~570 ms is Hollowmere's, and a map is allowed to cost much more.**
 Coldharbour measures ~2.3 s for the same tier — nearly all of it
 `MapBuilder.build`, and over half of that the 6,139 glazed sheets it draws and

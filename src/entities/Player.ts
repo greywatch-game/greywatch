@@ -57,6 +57,7 @@
  * one not thrown.
  */
 import {
+  type AbstractMesh,
   Mesh,
   MeshBuilder,
   type Node,
@@ -86,6 +87,7 @@ import {
   type WeaponSetup,
 } from "./weapons";
 import { ViewModel, VIEWMODEL_GROUP, type ViewModelParams } from "./ViewModel";
+import { narrowedMove, type CollisionField } from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
@@ -554,6 +556,19 @@ export class Player implements Combatant {
    * at map load and a hull is not in them. See `Vehicle.deckAt`.
    */
   private movingGround: MovingGround | null = null;
+  /**
+   * The collidable MESHES, bucketed — what the move sweep is narrowed to. Null
+   * until a map hands one over, and a body with none walks the whole scene
+   * exactly as it always did: slow rather than wrong.
+   */
+  private collidables: CollisionField | null = null;
+  /**
+   * The list handed to `root.surroundingMeshes` each sweep. Its own, not
+   * shared with the fleet's — Babylon holds the array on the mesh across the
+   * call, and one scratch between two movers is the second one's street under
+   * the first one's feet.
+   */
+  private readonly nearby: AbstractMesh[] = [];
   /**
    * The map's floor, and the probe's floor of last resort. Flat until a map is
    * built. Held rather than reached for through the scene because it is the one
@@ -1279,24 +1294,32 @@ export class Player implements Combatant {
 
   /**
    * Hands the player the world it stands on: the heightfield, the collider
-   * boxes bucketed over it, and whatever moves.
+   * boxes bucketed over it, whatever moves, and the same colliders as MESHES
+   * for the sweep.
    *
-   * All three in one call, for the reason `Vehicle.setGround` takes two — the
-   * probe takes the highest of them and a player holding one without the others
-   * answers a fraction of the question. Called from `installMap` and nowhere
-   * else, which is the same contract `VehicleSystem.build` has with the fleet:
-   * the editor rebuilds `map.obstacles` without going back through
-   * `installMap`, so both go stale there, and neither matters because the
-   * editor frame is the gameplay one MINUS the player.
+   * The first three in one call, for the reason `Vehicle.setGround` takes them
+   * that way — the probe takes the highest of them and a player holding one
+   * without the others answers a fraction of the question.
+   *
+   * The fourth is the same collider set a further way round: what a body WALKS
+   * INTO rather than what it stands on, which is the one thing here that was
+   * still being asked of the whole scene. See `world/CollisionField.ts`.
+   * Called from `installMap` and nowhere else, which is the same contract
+   * `VehicleSystem.build` has with the fleet: the editor rebuilds
+   * `map.obstacles` without going back through `installMap`, so these go stale
+   * there, and it does not matter because the editor frame is the gameplay one
+   * MINUS the player.
    */
   setGround(
     terrain: TerrainField,
     obstacles: ObstacleField | null,
     moving: MovingGround | null,
+    collidables: CollisionField | null = null,
   ): void {
     this.terrain = terrain;
     this.obstacles = obstacles;
     this.movingGround = moving;
+    this.collidables = collidables;
   }
 
 
@@ -1357,7 +1380,24 @@ export class Player implements Combatant {
     const moveInput = Math.min(1, move.length());
     if (move.lengthSquared() > 1) move.normalize();
     if (move.lengthSquared() > 0.0001) {
-      this.root.moveWithCollisions(move.scaleInPlace(speed * dt));
+      // **A street rather than the map**, and on this path that is worth as
+      // much as the whole fleet was. Babylon's coordinator walks `scene.meshes`
+      // for every call, once a frame, on every frame the player is moving —
+      // which is most of them — and the walk is charged AGAIN per retry, so it
+      // is dearest exactly when the player is pressed against something.
+      // Measured walking a real round: **2.21 ms a frame on Sarab, 0.62 on
+      // Coldharbour, 0.52 on Hollowmere**, against 0.036 / 0.015 / 0.026 with
+      // the list. See `world/CollisionField.ts` for the three rules the
+      // substitution rests on and for why it is CHECKED rather than trusted;
+      // the ejection case that check exists for is not theoretical here,
+      // because a hull respawning on its hardstanding arrives around whoever
+      // is standing on it.
+      narrowedMove(
+        this.root,
+        move.scaleInPlace(speed * dt),
+        this.collidables,
+        this.nearby,
+      );
     }
 
     // --- jump & gravity, against whatever surface is actually underfoot ---

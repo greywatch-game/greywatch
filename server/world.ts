@@ -57,6 +57,7 @@ import type { MapDef } from "../src/world/maps";
 import { NavGrid } from "../src/world/NavGrid";
 import { ObstacleField } from "../src/world/ObstacleField";
 import { RayWorld } from "../src/world/RayWorld";
+import { CollisionField } from "../src/world/CollisionField";
 import { roadRects } from "../src/world/roads";
 import { TerrainField, terrainPatches } from "../src/world/TerrainField";
 
@@ -307,6 +308,12 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   // rewound hitscan, sixteen bots' line of sight, the grenade, the rocket —
   // goes through this and never through the scene.
   const rays = new RayWorld(size, boxes, rayGroups, terrain);
+  // And the sweep index beside it, off the same finished meshes the client
+  // builds one from. The authority's tick has exactly one caller of
+  // `moveWithCollisions` — a driven hull — and `FINDINGS.md` #31 priced that
+  // walk at 0.40 ms per hull per tick on a 1500 m map, which was the only term
+  // in this process that grew with map AREA. It does not grow with it any more.
+  const collidables = new CollisionField(colliders);
 
   // One flow field per objective, plus a route home per team — the set
   // `BattleSystem.fieldFor`/`homeFieldFor` ask for by name.
@@ -359,6 +366,7 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     obstacles,
     cover,
     rays,
+    collidables,
     // Passed through rather than left empty. Nothing on the server reads them —
     // water and grass are visual — but a `GameMap` that disagrees with the
     // client's about what the map contains is a trap for whoever next writes a

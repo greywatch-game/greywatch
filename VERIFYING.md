@@ -513,6 +513,45 @@ is one machine's:
   driven first. Measured on Coldharbour: 1200 → 580 on a clean strike, which is `damage` exactly and
   no splash — `blastAt` needs line of sight to the hull's centre and the hull is
   in the way.
+- **To A/B the narrowed sweep against the old one you must CLEAR
+  `surroundingMeshes`, not just null the field.** It is state on the MESH:
+  `narrowedMove` now clears it on the no-field path, but a harness that sets
+  `player.setGround(..., null)` and nothing else is handing Babylon whatever
+  list was last written, so BOTH arms walk the narrow list and the change
+  reports as worth nothing. Measured wrongly this way it read 0.022 ms a frame
+  either side; measured properly it is **2.21 ms against 0.036**.
+- **Time a sweep in a ROUND, not in an isolated loop at the spawn.**
+  `_collideWithWorld` re-walks the whole list on every retry, so the cost peaks
+  when a body is pressed against geometry — which is most of a real round and
+  none of a loop run on open ground. The player's walk reads 106-377 us
+  isolated at a spawn and 388-2,209 us walking a town. The isolated form is
+  still the right instrument for a per-call figure (the clock is clamped, so
+  only a sum over hundreds of calls means anything); it just has to be run
+  somewhere a body is actually colliding.
+- **Teleporting a hull between calls does NOT move the sweep, and the failure
+  looks exactly like a broken collider index.** `moveWithCollisions` opens with
+  `getAbsolutePosition()`, and `computeWorldMatrix()` early-outs when
+  `_currentRenderId` already equals `scene.getRenderId()` — which never advances
+  inside one synchronous `page.evaluate`. So the first `body.position.set()` in
+  such a loop takes and **every one after it is ignored**, and the hull sweeps
+  from wherever it stood at the last render. Chasing this cost an afternoon:
+  a differential harness reported the whole-scene walk colliding with a
+  `compoundWall-col` **600 m away** from where the test had put the body, which
+  reads as an index missing a mesh and is nothing of the kind. **Call
+  `body.computeWorldMatrix(true)` after every position write**, and if something
+  still disagrees, print `collider._basePointWorld` — it says where Babylon
+  thinks the sphere is, and one line of it ends the argument.
+- **A scripted DRIVE is not a test of anything a hull hits.** Measured over
+  1,800 steps of full-throttle turning and reversing, on Sarab, Coldharbour and
+  Harrowmead: **every hull finished without being blocked once.** Hardstandings
+  are in yards and armour spends its first half-minute on open ground, so two
+  arms of a differential test agree about free motion and prove nothing. Sample
+  positions across the play square instead, and REPORT how many samples were
+  blocked — a run with a zero in that column is a run to throw away.
+- **Any differential test of a collision path needs an A-vs-A control**, run
+  in the same loop as the real comparison. The two-arm version of the above
+  reported 3 m divergences that were entirely the harness's own doing, and the
+  control is the one line that would have said so immediately.
 - **A BOT CREW is stepped with `g.crew.update(dt)` immediately before the
   fleet**, in that order and never the other way round — it writes the drive
   input `vehicles.update` then consumes, exactly as `updateDriver` writes the
