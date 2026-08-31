@@ -242,7 +242,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
 import { rotateToLocalXZ, topFaceHeight, type LocalXZ } from "../world/boxGeometry";
 import type { WorldBox } from "../world/MapBuilder";
-import type { CollisionField } from "../world/CollisionField";
+import { narrowedMove, type CollisionField } from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import type { RayHull } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
@@ -437,18 +437,6 @@ const IDLE: DriveInput = {
  * off something would climb back up to it at the kerb rate instead of being
  * put where it is.
  */
-/**
- * Slack on the sweep's locality query, metres.
- *
- * The radius and the step are the whole of what the sweep can reach, so this is
- * pure margin against float error and against a bounding box being fractionally
- * larger than the geometry it wraps. It is a metre because a metre costs
- * nothing — one more mesh in a list of twenty-odd — and because the failure it
- * guards is a hull passing THROUGH a wall on one frame in a thousand, which is
- * exactly the kind of bug nobody would ever attribute to this line.
- */
-const SWEEP_MARGIN = 1;
-
 const REMOTE_RESYNC_Y = 1;
 
 /**
@@ -2364,76 +2352,12 @@ export class Vehicle implements Combatant, RayHull {
     this.step.copyFrom(this.vel).scaleInPlace(dt);
     const asked = this.step.length();
     if (asked > AbstractEngine.CollisionsEpsilon) {
-      // **The street, not the map.** Babylon's coordinator walks
-      // `surroundingMeshes` when a body carries one and `scene.meshes` when it
-      // does not, so this is a narrowing of its own walk rather than anything
-      // added around it — and the answer is unchanged as long as the list is a
-      // SUPERSET of what the sweep can reach. Hence the three terms and not
-      // one: the sphere's own radius, the whole step it is about to ask for,
-      // and a margin. Asked about the SPHERE's centre, which `aimCollider` has
-      // just ridden up to 1.4 m off this mesh's origin.
+      // **The street, not the map** — see `world/CollisionField.ts` for the
+      // three rules this one call is standing on, and the header above for
+      // what it was worth on this hull.
       const before = this.body.position.x;
-      const beforeY = this.body.position.y;
       const beforeZ = this.body.position.z;
-      let listed = false;
-      if (this.collidables) {
-        const e = this.body.ellipsoid;
-        const off = this.body.ellipsoidOffset;
-        // **`getAbsolutePosition()` and NOT `body.position`, even though the
-        // hull has no parent and the two are equal every frame of a real
-        // round.** It is the exact expression `moveWithCollisions` opens with,
-        // and centring the list on anything else makes the superset guarantee
-        // conditional on the two agreeing. They can come apart: the getter
-        // early-outs when the world matrix was already computed under this
-        // render id, so a caller that writes `position` twice inside one frame
-        // — or a harness stepping the hull without rendering — sweeps from the
-        // OLDER point. Reading what the sweep reads makes that case merely
-        // stale rather than wrong, which is the difference between a hull
-        // half a metre behind itself and a hull through a wall.
-        const at = this.body.getAbsolutePosition();
-        this.body.surroundingMeshes = this.collidables.near(
-          at.x + off.x,
-          at.z + off.z,
-          Math.max(e.x, e.z) + asked + SWEEP_MARGIN,
-          this.body,
-          this.nearby,
-        );
-        listed = true;
-      }
-      this.body.moveWithCollisions(this.step);
-      // **The list was a PROMISE about how far this sweep could go, and it is
-      // CHECKED rather than trusted.** A sphere that began INSIDE a box is
-      // ejected rather than swept, and an ejection is not bounded by the
-      // displacement asked for — Babylon pushes out along the slide plane and
-      // then carries on from wherever that put it, which is a place the list
-      // was never asked about. The hull reaches that state in the ordinary way
-      // (`freeFromWalls` exists for it: the sphere rides 1.4 m off centre and
-      // a full-stick pivot swings it into a wall at 1.26 m/s), so this is a
-      // case rather than a curiosity.
-      //
-      // The bound is exact and not a heuristic. A sphere of radius `r` that
-      // travels `T` can only touch geometry within `r + T` of where it
-      // started, and the list covers `r + asked + SWEEP_MARGIN` — so the list
-      // was sufficient exactly when `T <= asked + SWEEP_MARGIN`, and when it
-      // was not, the move is thrown away and re-run against the whole scene
-      // from the position it started at. That is the OLD code path, so the
-      // answer is the old answer: this narrowing is lossless by construction
-      // rather than by argument.
-      //
-      // Measured over a round on all three maps with armour, it fires on a
-      // low single-digit number of sweeps in a thousand — see
-      // `world/CollisionField.ts`.
-      if (listed) {
-        const dx = this.body.position.x - before;
-        const dy = this.body.position.y - beforeY;
-        const dz = this.body.position.z - beforeZ;
-        const budget = asked + SWEEP_MARGIN;
-        if (dx * dx + dy * dy + dz * dz > budget * budget) {
-          this.body.position.set(before, beforeY, beforeZ);
-          this.body.surroundingMeshes = null;
-          this.body.moveWithCollisions(this.step);
-        }
-      }
+      narrowedMove(this.body, this.step, this.collidables, this.nearby);
       // Walked into something: drop the speed rather than grinding along it at
       // full throttle. `moveWithCollisions` already slid the hull, so this is
       // about the ENGINE noise and the driver's read, not about the position —

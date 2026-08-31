@@ -451,7 +451,9 @@ src/
                         #   ray query could not replace: the collider MESHES
                         #   bucketed, so moveWithCollisions is handed a street
                         #   through Babylon's own surroundingMeshes instead of
-                        #   walking the map. Superset or nothing — read it
+                        #   walking the map. `narrowedMove` is the whole of how
+                        #   a body sweeps — a hull's and the player's, the only
+                        #   two in the game. Superset or nothing — read it
     vertexShading.ts    # The world's baked vertex-colour buffer, written after
                         #   every merge: AO in the ALPHA, the world mark in the
                         #   GREEN, the wind's sway weight in the RED

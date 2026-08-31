@@ -3900,7 +3900,7 @@ the bucket grid behind the list; see its header for the rules.
   the two come apart under a render id, and a list built for the wrong point is
   the one failure mode this whole mechanism has.
 
-### Two traps for whoever measures this next
+### Two traps for whoever measures this next — and a third, which is worse
 
 - **A scripted DRIVE proves nothing and looks like it proves everything.** Every
   hull on all three maps with armour completed 1,800 steps of full-throttle
@@ -3912,16 +3912,37 @@ the bucket grid behind the list; see its header for the rules.
 - **Always run an A-vs-A control.** The first oracle written for this reported
   3 m divergences that were entirely its own doing, and the control is what said
   so in one line.
+- **`surroundingMeshes` is state on the MESH, and an A/B that only nulls the
+  FIELD measures the new path twice.** This nearly buried the player half of
+  this finding: an in-frame comparison that called `setGround(..., null)` for
+  its control left Babylon walking the list the previous frame had written, and
+  reported the whole thing as worth 0.003 ms. `narrowedMove` clears it on the
+  no-field path now — which is a real fix and not only a harness one, because a
+  body that stopped being given a field would otherwise sweep forever against a
+  frozen snapshot of one street.
+- **A sweep timed on open ground is not the sweep the game runs.** The walk is
+  charged per RETRY, so it is dearest against geometry: 106-377 us isolated at a
+  spawn, 388-2,209 us walking a town. Both figures are honest measurements of
+  different things, and only the second is the frame.
 
 ### What is open
 
-- **`Player.update` does the same sweep, every frame the player moves**, off the
-  same mesh list, and it is not wired to `map.collidables`. Nothing here measured
-  it — the profile above ran with the player standing still — but it is the same
-  call on the same list and a body's sphere is smaller than a hull's, so the
-  per-call figure should be similar and the frequency is one call rather than
-  four. It is the obvious next caller and was left out only to keep this change
-  to the thing that was asked about.
+- ~~**`Player.update` does the same sweep, every frame the player moves.**~~ —
+  **DONE, and it was worth as much again as the fleet.** Measured walking a real
+  round, the player's own sweep is **2.21 ms a frame on Sarab, 0.616 on
+  Coldharbour and 0.521 on Hollowmere**, against 0.036 / 0.015 / 0.026 with the
+  list — Sarab's median frame 14.6 ms to 11.3, Coldharbour's 11.2 to 9.9.
+  Hollowmere's does not move because that map is already at 6.9 ms and something
+  else is its floor; the half-millisecond is real and goes unspent there.
+  **The guess in this bullet was wrong in the direction that matters**: it
+  reasoned that a smaller sphere and one call instead of four would make the
+  player a fraction of the fleet, and the player turned out to cost the same as
+  all four hulls together. The reason is the RETRY loop — `_collideWithWorld`
+  re-walks the entire list on each retry, so the walk is dearest when a body is
+  pressed against geometry, and a body on foot spends a round doing that.
+  `Vehicle.update` and `Player.update` now share `narrowedMove`, which is where
+  the reach, the ordering and the guard live once. Proved identical at 6,000
+  samples on all five maps, 164 to 991 of them blocked.
 - **`CELL` is 24 m and nobody swept it.** It answers with ~10 meshes for a tank
   and ~12 for the helicopter's 10.4 m disc, which was good enough that the cost
   stopped being visible; whether 16 or 32 is better has not been asked.

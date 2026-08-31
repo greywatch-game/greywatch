@@ -472,6 +472,21 @@ is one machine's:
   driven first. Measured on Coldharbour: 1200 → 580 on a clean strike, which is `damage` exactly and
   no splash — `blastAt` needs line of sight to the hull's centre and the hull is
   in the way.
+- **To A/B the narrowed sweep against the old one you must CLEAR
+  `surroundingMeshes`, not just null the field.** It is state on the MESH:
+  `narrowedMove` now clears it on the no-field path, but a harness that sets
+  `player.setGround(..., null)` and nothing else is handing Babylon whatever
+  list was last written, so BOTH arms walk the narrow list and the change
+  reports as worth nothing. Measured wrongly this way it read 0.022 ms a frame
+  either side; measured properly it is **2.21 ms against 0.036**.
+- **Time a sweep in a ROUND, not in an isolated loop at the spawn.**
+  `_collideWithWorld` re-walks the whole list on every retry, so the cost peaks
+  when a body is pressed against geometry — which is most of a real round and
+  none of a loop run on open ground. The player's walk reads 106-377 us
+  isolated at a spawn and 388-2,209 us walking a town. The isolated form is
+  still the right instrument for a per-call figure (the clock is clamped, so
+  only a sum over hundreds of calls means anything); it just has to be run
+  somewhere a body is actually colliding.
 - **Teleporting a hull between calls does NOT move the sweep, and the failure
   looks exactly like a broken collider index.** `moveWithCollisions` opens with
   `getAbsolutePosition()`, and `computeWorldMatrix()` early-outs when

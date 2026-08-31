@@ -22,6 +22,12 @@
  * ground probe, the springs, the lean, the whips, the crew AI, the crush sweep
  * and the engine audio came to 0.09 ms between them.
  *
+ * **And the PLAYER pays the same walk once a frame on every map**, armour or
+ * not, which turned out to be worth as much again: walking a real round it is
+ * **2.21 ms a frame on Sarab, 0.62 on Coldharbour and 0.52 on Hollowmere**.
+ * The two callers are `Vehicle.update` and `Player.update`, they are the only
+ * two sweeps in the game, and both go through `narrowedMove` below.
+ *
  * ## The substitution, and why it is Babylon's own and not a trick
  *
  * That same line reads `(excludedMesh && excludedMesh.surroundingMeshes) ||
@@ -36,7 +42,16 @@
  * With the list in: **11 us a call including the lookup, ~10 meshes against
  * 2,894, and the fleet 2.30 ms a frame to 0.12** — Sarab's median frame 11.3 ms
  * to 8.7 (87 to 113 fps), which is a quarter of the frame for a change that
- * moves no geometry and draws nothing.
+ * moves no geometry and draws nothing. The player's own sweep goes **2.21 ms a
+ * frame to 0.036** on the same map, and its median frame 14.6 ms to 11.3.
+ *
+ * **The walk is charged PER RETRY, which is why a static measurement of it
+ * under-reports by an order of magnitude.** `_collideWithWorld` recurses up to
+ * `collisionRetryCount` times and re-walks every time, so the cost peaks
+ * exactly when a body is pressed against geometry — which is when it matters
+ * and is not what a body standing in the open measures. Timed in isolation at
+ * a spawn the player's walk reads 106-377 us; timed in a round with the player
+ * actually moving through a town it is 388-2,209.
  *
  * ## It is IDENTICAL and not merely close, and that was measured the hard way
  *
@@ -80,7 +95,7 @@
  * exactly as `RayWorld` already does, and `docs/editor.md` says so in the one
  * place both belong.
  */
-import type { AbstractMesh } from "@babylonjs/core";
+import type { AbstractMesh, Vector3 } from "@babylonjs/core";
 
 /**
  * Bucket edge, metres.
@@ -203,5 +218,102 @@ export class CollisionField {
     // map it stands on, so that is where `scene.meshes` has it.
     for (const mover of this.movers) if (mover !== self) out.push(mover);
     return out;
+  }
+}
+
+/**
+ * Slack on the locality query, metres. See `narrowedMove`.
+ *
+ * The radius and the step are the whole of what a sweep can reach, so this is
+ * pure margin against float error and against a bounding box being
+ * fractionally larger than the geometry it wraps. It is a metre because a metre
+ * costs nothing — one or two more meshes in a list of ten — and because the
+ * failure it guards is a body passing THROUGH a wall on one frame in a
+ * thousand, which is exactly the kind of bug nobody would ever attribute to
+ * this line.
+ */
+const SWEEP_MARGIN = 1;
+
+/**
+ * `mesh.moveWithCollisions(step)`, against `field` instead of against the whole
+ * scene — and the two are the same move, which is the only claim this function
+ * makes and the only one worth checking.
+ *
+ * **Both callers go through here rather than each writing the three rules
+ * out.** `Vehicle.update` for a hull and `Player.update` for a body on foot are
+ * the only two sweeps left in the game, they need the identical reach, the
+ * identical ordering and the identical guard, and a second copy of that
+ * reasoning is a second place for it to drift. `field` may be null, which is
+ * the whole-scene walk exactly as it always was: SLOW rather than wrong, which
+ * is the right way round for a field only `installMap` is supposed to set.
+ *
+ * **The reach is the sphere's own radius plus the WHOLE step plus a margin**,
+ * never the radius alone, and it is centred on `getAbsolutePosition()` plus
+ * `ellipsoidOffset` because that is the expression `moveWithCollisions` itself
+ * opens with. Centring on `mesh.position` instead makes the guarantee
+ * conditional on the two agreeing, and they can come apart — the getter
+ * early-outs when the world matrix was already computed under this render id.
+ *
+ * **And the promise is CHECKED rather than trusted, which is what makes this
+ * lossless by construction instead of by argument.** A sphere that began INSIDE
+ * a box is ejected rather than swept, and an ejection is not bounded by the
+ * displacement asked for: Babylon pushes out along the slide plane and carries
+ * on from wherever that put it, which is a place the list was never asked
+ * about. The bound is exact — a sphere of radius `r` that travels `T` can only
+ * touch geometry within `r + T` of where it started, and the list covers
+ * `r + asked + SWEEP_MARGIN` — so the list was sufficient exactly when
+ * `T <= asked + SWEEP_MARGIN`, and when it was not, the move is thrown away and
+ * re-run from the same start against the whole scene. That is the old code
+ * path, so it is the old answer.
+ *
+ * This is not a rare theoretical case for a body on foot: a hull respawning on
+ * its hardstanding arrives around whoever is standing there, and
+ * `VehicleSystem` deliberately leaves that to be resolved by the shove on their
+ * next frame.
+ */
+export function narrowedMove(
+  mesh: AbstractMesh,
+  step: Vector3,
+  field: CollisionField | null,
+  scratch: AbstractMesh[],
+): void {
+  if (!field) {
+    // **Cleared, not merely skipped.** `surroundingMeshes` is state ON THE
+    // MESH and Babylon keeps walking whatever was last written there, so a
+    // body that stops being given a field would go on sweeping against a
+    // frozen list of the street it was standing in when it last had one —
+    // which is the "through a wall" failure this whole file is arranged to
+    // prevent, arriving by the one route that has nothing to do with the
+    // reach. It cost an afternoon as a measurement bug first: an A/B that
+    // nulled the field to time the old path timed the NEW one twice and
+    // reported the narrowing as worth nothing.
+    mesh.surroundingMeshes = null;
+    mesh.moveWithCollisions(step);
+    return;
+  }
+  const asked = step.length();
+  const e = mesh.ellipsoid;
+  const off = mesh.ellipsoidOffset;
+  const at = mesh.getAbsolutePosition();
+  const p = mesh.position;
+  const fromX = p.x;
+  const fromY = p.y;
+  const fromZ = p.z;
+  mesh.surroundingMeshes = field.near(
+    at.x + off.x,
+    at.z + off.z,
+    Math.max(e.x, e.z) + asked + SWEEP_MARGIN,
+    mesh,
+    scratch,
+  );
+  mesh.moveWithCollisions(step);
+  const dx = p.x - fromX;
+  const dy = p.y - fromY;
+  const dz = p.z - fromZ;
+  const budget = asked + SWEEP_MARGIN;
+  if (dx * dx + dy * dy + dz * dz > budget * budget) {
+    p.set(fromX, fromY, fromZ);
+    mesh.surroundingMeshes = null;
+    mesh.moveWithCollisions(step);
   }
 }
