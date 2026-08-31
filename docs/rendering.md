@@ -513,6 +513,32 @@ to the palette-neutral colour. The translucency term is directional both ways �
 needs the eye looking into the key light *and* the facet turned away from it — so it
 can only be judged from under the thing, moonward.
 
+**The specular's top rung is a MIRROR, and it is a third thing rather than a
+brighter highlight.** `SpecSpec.mirror` is what turns it on, `CONFIG.graphics.
+spec.rifleChrome` is the only entry that states one, and the weapon finishes are
+the only surfaces that wear it — the world never enters the block. What it adds
+is the ROOM down the mirrored eye ray: a hard horizon between what the light is
+worth looking up and what it is worth looking down, the key light as a wide
+banded lobe on that ray, and every point light in range the same way, all tinted
+by the surface's own albedo and weighted by Schlick. **It is the one surface in
+the game that answers a point light with anything but diffuse**, which is what
+lets a chrome weapon see the lantern it walks past.
+
+Three things about it are worth knowing before touching it, and each is written
+out at length in the shader because each was photographed the other way round
+first: it is the *light* in a direction rather than the *picture* in it, because
+the picture on a night map is 0.03 and a mirror built from it is a grey object;
+it is **added** and never mixed toward, because a mix makes chrome darker than
+the paint it is supposed to outshine; and the horizon is **hard**, because a
+weapon is a box whose plates all reflect within a few degrees of the horizontal
+and any smooth gradient hands every one of them the same value.
+
+Unlike the glazing below it is a **uniform branch** and not a define — the same
+call the albedo weathering's mask makes. `specMirror` is constant across a draw,
+so the block (its light loop included) is coherent and skipped whole on every
+matte, satin and metal material; what forces the glazing into a define instead
+is its cube SAMPLER, which a bind group cannot make conditional.
+
 ## The glazing: the one thing here that is not opaque
 
 `getGlass` is the fourth variant and the odd one out three times over, and each

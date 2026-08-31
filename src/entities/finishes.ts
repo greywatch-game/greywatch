@@ -48,7 +48,13 @@
  * - **Gloss is a LADDER with four rungs and no finish may invent a fifth**:
  *   matte (no `spec` at all), `spec.rifleSatin`, `spec.rifle`, and
  *   `spec.rifleChrome`. Two finishes that claim the same gloss have to
- *   genuinely have it, or the vocabulary stops meaning anything.
+ *   genuinely have it, or the vocabulary stops meaning anything. **The top
+ *   rung is a MIRROR rather than a brighter highlight** — it states a
+ *   `mirror` and reflects the room, which is why the six schemes wearing it
+ *   are the ones that change as the weapon turns. A highlight could not do
+ *   it: a Blinn lobe is constant across a flat facet, so on a weapon made of
+ *   plates the brightest rung on the ladder lit a whole plate or none of one,
+ *   and `bullion`'s gold plate read as tan paint. See `docs/rendering.md`.
  * - The OPTIC is out of scope by construction rather than by a check: the
  *   parts a finish can reach are `WeaponParts.finish`, which the builder takes
  *   before any sight is built. A scope bolted to a chrome carbine stays black,

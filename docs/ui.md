@@ -864,10 +864,15 @@ and drawn in `VIEWMODEL_GROUP`.
 position is the load-bearing one — the cel shader fogs against `camPos`, which
 outside a round is whatever the last gameplay frame left and `Vector3.Zero()` before
 the first, so a kit opened off the main menu would fog the weapon to a grey
-silhouette. It also puts up the two bench lamps (`CONFIG.lighting.kitLamps`),
+silhouette. It also puts up the three bench lamps (`CONFIG.lighting.kitLamps`),
 through `LightingSystem` like every other light because a carried light always wins
 a slot; they are far brighter than the shoulder lamp on purpose, since moonlight
-alone on a night game's albedo is a black silhouette. `stowKit` is the single
+alone on a night game's albedo is a black silhouette. **The third of them stands
+BEHIND the eye and is there for the polish rather than for the light**: a mirror
+hands back what is behind the camera, so with both lamps beyond the weapon every
+reflection a chrome finish could return landed on the faces turned away from the
+screen — which is what made the gold plate read as tan paint on the one screen
+whose job is to sell it. `stowKit` is the single
 teardown — screen, pose and lamps — and all four exits go through it, because a
 carried light nobody removes survives `lighting.clear()` and follows the player into
 the round.

@@ -217,6 +217,20 @@ you are on before you believe anything else in this section.
   proving ground both. Standing the bots in a ring around the player
   (`bot.position.set(...)`) and re-standing them every second is what findings 22
   and 23 both used; overriding `battle.spawnPointFor` is the other way in.
+- **A weapon FINISH is judged on the kit stage, and the stage is two calls
+  away.** `g.openLoadout()` puts the real viewmodel on the turntable (it is a
+  lid over `deploy`, so `installRound` is the whole of the setup),
+  `g.setFinish(id)` paints it, and `g.player.view.inspectYaw = r` turns it —
+  both of those are `private` in TypeScript and therefore ordinary properties
+  in the page. Two things about that stage decide what a screenshot means.
+  Its lamps are CARRIED lights, so they take slots 0-2 and arrive one frame
+  after `openLoadout` rather than with it; and it is the harshest place in the
+  game to judge a bright albedo, because those lamps are a metre from the
+  weapon and a pale finish is already clipped before any highlight is added.
+  Judge a gloss change in a ROUND as well, at a pinned position and bearing
+  (`g.player.position.set`, `g.cameraSys.yaw`) — a spawn is not deterministic,
+  and two shots taken at "the same place" without pinning are two different
+  streets.
 - **A staged camera does not survive `playing`, and the reading it gives back
   looks like a result.** `placeVantage` works because `bank.mjs` never spawns:
   in `deploy` the world is HELD, so a camera stays where it is put. Call

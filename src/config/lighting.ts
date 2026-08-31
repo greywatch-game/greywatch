@@ -61,9 +61,24 @@ export const lighting = {
    *
    * The short range is load-bearing: the stage is a hole in the kit screen's
    * scrim, so anything these reach is visible behind the weapon.
+   *
+   * **The third one is BEHIND the eye, and it is there for the polish rather
+   * than for the light.** A mirror hands back what is behind the CAMERA — a
+   * plate facing you reflects the room at your shoulder, never the lamp in
+   * front of it — so with two lamps both beyond the weapon, every reflection
+   * a chrome finish could return landed on the faces turned away from the
+   * screen. Photographed on this stage at a 13-degree highlight and again at
+   * 60: nothing on any visible facet, which is why the gold plate read as tan
+   * paint on the one screen whose job is to sell it. This one sits back and
+   * off to the left of the eye, where the weapon's own faces bounce it
+   * straight down the lens. It is dim and short-ranged because what it is for
+   * is the top rung of the gloss ladder (`graphics.spec.rifleChrome`'s
+   * `mirror`); on a matte finish it is a slight fill on the near faces and
+   * nothing else.
    */
   kitLamps: [
     { ahead: 1, side: 0, up: 0.62, color: "#ffe8c6", range: 3, intensity: 5.2 },
     { ahead: 1.6, side: 0.75, up: -0.25, color: "#a6bfe0", range: 3, intensity: 2.2 },
+    { ahead: -0.3, side: -0.55, up: 0.3, color: "#dce8ff", range: 3, intensity: 2.6 },
   ],
 } as const;

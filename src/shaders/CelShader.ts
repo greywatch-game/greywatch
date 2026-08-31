@@ -408,12 +408,28 @@ uniform pointCount: f32;
 // source. GrassShader settled this; see docs/rendering.md.
 const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
 
+// How big a light is in a mirror — the exponent of the lobe the mirrored ray
+// gathers one over, read as a half-width: 8 is about 35 degrees. And how sharp
+// the horizon in that room is, as the sine either side of level: 0.1 is about
+// 6 degrees. Both are about the LOOK rather than about any one material, which
+// is why they are here beside the band counts rather than in a spec — the same
+// call TranslucencySpec makes. The mirror block says what each buys and what
+// the narrow settings of both photographed as.
+const MIRROR_GLOSS: f32 = 8.0;
+const MIRROR_HORIZON: f32 = 0.10;
+
 #include<celShadow>
 
 // Toon specular: one hard two-band Blinn highlight from the key light.
 // specColor is premultiplied by intensity — black (the default) is matte.
 uniform specColor: vec3f;
 uniform specShininess: f32;
+// The top rung of the gloss ladder, and the one that is not a highlight: how
+// much of the ENVIRONMENT a polished surface hands back instead of its own
+// shaded colour. Zero (the default, and every matte, satin and metal material
+// in the game) leaves the whole mirror block below unentered — a uniform
+// branch, which is the same shape the albedo weathering's mask already is.
+uniform specMirror: f32;
 
 // Translucency: the key light coming THROUGH a thin surface rather than off
 // it — a canvas awning or a pine crown with the moon behind it. Premultiplied
@@ -759,6 +775,108 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     * (1.0 - smoothstep(0.90, 0.99, level))
     * (1.0 - step(0.5, fragmentInputs.vBaked.y));
 
+  // --- the mirror rung: the ROOM, added to what the surface already is ---
+  //
+  // A highlight is not a reflection, and the gloss ladder's top rung had been
+  // trying to be one by being brighter — the one direction that cannot work on
+  // faceted geometry. A Blinn lobe is CONSTANT across a flat facet, so at
+  // shininess 44 a weapon built out of a dozen plates catches the key light on
+  // a whole plate or on none of it, and on the kit stage — where a finish is
+  // actually chosen — it was none. What chrome drew was a flat field of albedo
+  // with the grade's grain over it, which is what a player reads as paint, and
+  // the gold plate came out tan.
+  //
+  // What makes chrome read as chrome is that neighbouring facets hand back
+  // DIFFERENT parts of the room. So this term is the room, gathered down the
+  // mirrored eye ray and built out of the only things this shader knows about
+  // it: a horizon, the key light, and every point light in range.
+  //
+  // THREE DECISIONS, each of which was photographed the other way round first.
+  //
+  // **It is the LIGHT in a direction rather than the picture in it.** The
+  // picture is available — the glazing below reflects the sky's own gradient,
+  // and that is the honest answer for a pane — but a night sky is 0.03 and the
+  // dead village under it is less, so a mirror built out of what is literally
+  // there is a dark grey object on every map this game ships. What a surface
+  // can be LIT to is the one full-range statement about the room the shader
+  // holds; it is the map's own light rather than a constant, and it moves with
+  // the weather and the hour for free.
+  //
+  // **It is ADDED and not mixed toward, which is where this parts company with
+  // what a mirror physically does** — a real one has no diffuse under the
+  // reflection. Written as a mix it makes chrome DARKER than the paint it is
+  // supposed to outshine, and not marginally: the kit stage's own lamps light a
+  // plate past anything the environment is worth, so replacing the shading with
+  // the room put the gold plate under the standard finish. Reflective reads as
+  // brighter than what is beside it. Added, the term is worth what the room is
+  // worth — nothing in a dark cellar, and a weapon in a desert noon lit up like
+  // the sand around it.
+  //
+  // **The horizon is HARD, and that is the whole of the facet-to-facet
+  // contrast.** A gun is a box: its plates are level or vertical, so their
+  // mirrored rays cluster within a few degrees of the horizontal, and any
+  // gradient smooth enough to be a sky hands every one of them the same value —
+  // photographed as a uniformly tan weapon three times over. A step at the
+  // horizon puts those plates on opposite sides of it: what reflects a hair
+  // above takes the sky, what reflects a hair below takes the ground, and
+  // tilting the weapon sweeps that line across the metal. It is also what a
+  // chrome object looks like, which is the horizon drawn across it.
+  //
+  // The lobes are what MOVE. A reflected light is one hard plate that lands,
+  // jumps to the next facet as the weapon turns, and is gone — the one part of
+  // this keyed to the player rather than to where they are standing. Written as
+  // an exponent on the mirrored ray rather than as a Blinn half-vector so that
+  // its width is a half-angle rather than a shininess, and WIDE for the reason
+  // above: a reflection narrow enough to be honest is on no facet at all almost
+  // always, which is the all-or-nothing this term replaces.
+  //
+  // Tinted by the surface's own albedo, because a metal colours what it hands
+  // back: gold plate returns a gold room and quicksilver returns the room. That
+  // is what keeps sixteen finishes distinguishable at the top rung instead of
+  // collapsing them into one mirror wearing sixteen names.
+  //
+  // Schlick over the constant, for the reason every mirror has a bright edge:
+  // face-on a plate returns specMirror of the room, at a graze all of it. NOT
+  // banded — the same call the glazing's fresnel makes and for the same reason,
+  // that a band edge here is a contour line across a flat plate drawn wherever
+  // the view angle crosses a step, which slides over the surface as the weapon
+  // moves and is exactly the artefact this term exists to replace.
+  //
+  // The whole block is behind a uniform branch, so every matte, satin and metal
+  // material in the game skips it — its loop included — rather than multiplying
+  // it out by zero, which is the shape the albedo weathering's mask above
+  // already argues for. It is also the only surface in the game that answers a
+  // POINT light with anything but diffuse: a chrome weapon that could not see
+  // the lantern it was walking past was most of what made the top rung read as
+  // paint, and a wall that could see one would be a change to the world's look
+  // rather than to a weapon's.
+  if (uniforms.specMirror > 0.0) {
+    let mirrorDir = reflect(-viewDir, n);
+    let roomHi = uniforms.ambientColor + uniforms.lightColor
+      + uniforms.skyLightColor;
+    var env = mix(uniforms.ambientColor, roomHi,
+      smoothstep(-MIRROR_HORIZON, MIRROR_HORIZON, mirrorDir.y));
+    env += uniforms.lightColor * band(
+      pow(max(dot(mirrorDir, -uniforms.lightDir), 0.0), MIRROR_GLOSS), 2.0)
+      * shadow;
+    for (var i = 0; i < MAX_POINT_LIGHTS; i++) {
+      if (f32(i) < uniforms.pointCount) {
+        let toLight = uniforms.pointPos[i] - fragmentInputs.vPosW;
+        let dist = length(toLight);
+        var atten = clamp(
+          1.0 - dist / max(uniforms.pointRange[i], 0.001), 0.0, 1.0);
+        atten *= atten;
+        env += uniforms.pointColor[i] * atten * band(pow(
+          max(dot(mirrorDir, toLight / max(dist, 0.001)), 0.0),
+          MIRROR_GLOSS), 2.0);
+      }
+    }
+    let reflectance = uniforms.specMirror
+      + (1.0 - uniforms.specMirror)
+      * pow(1.0 - max(dot(viewDir, n), 0.0), 5.0);
+    col += env * base * reflectance;
+  }
+
   // Toon specular: Blinn half-vector against the key light, quantized into
   // two hard bands (bright core + faint halo) and gated by the same shadow
   // as the diffuse — a glint never appears where the moon doesn't reach.
@@ -938,6 +1056,18 @@ export interface SpecSpec {
   intensity: number;
   /** Blinn exponent — high is a pinpoint glint, low a broad wet sheen. */
   shininess: number;
+  /**
+   * How much of the ENVIRONMENT the surface hands back face-on, 0..1 — a
+   * reflection rather than a highlight, and the one thing that separates a
+   * mirror from a metal that is merely very shiny.
+   *
+   * Absent (and zero) on every surface in the game but the gloss ladder's top
+   * rung: the shader's whole mirror block is behind a uniform branch on it,
+   * so a material that says nothing here pays for none of it. A surface that
+   * claims it also catches the POINT lights, which nothing else in the game
+   * does — both halves of that rule are in the fragment shader.
+   */
+  mirror?: number;
 }
 
 /**
@@ -1058,6 +1188,7 @@ export class CelMaterialFactory {
     "variationAmount",
     "specColor",
     "specShininess",
+    "specMirror",
     "transColor",
     "windTime",
     "windDir",
@@ -1420,7 +1551,9 @@ export class CelMaterialFactory {
    * nothing else, because `inkColorFor` parses it.
    */
   getGlossy(hex: string, spec: SpecSpec): ShaderMaterial {
-    const cacheKey = `\0gloss-${hex}-${spec.color}-${spec.intensity}-${spec.shininess}`;
+    const cacheKey =
+      `\0gloss-${hex}-${spec.color}-${spec.intensity}-${spec.shininess}` +
+      `-${spec.mirror ?? 0}`;
     let mat = this.cache.get(cacheKey);
     if (!mat) {
       mat = new ShaderMaterial(
@@ -2267,6 +2400,11 @@ export class CelMaterialFactory {
       mat.setColor3("specColor", Color3.Black());
       // Shininess 1 is a no-op exponent — the zero specColor wins anyway.
       mat.setFloat("specShininess", 1);
+      // Zero is WRITTEN rather than left where the last spec put it: these
+      // materials are cached and re-applied over (see `specs`), so an
+      // unwritten uniform on a re-used material is the previous map's answer,
+      // and this one is the branch the mirror block is behind.
+      mat.setFloat("specMirror", 0);
       return;
     }
     this.specs.set(mat, spec);
@@ -2275,6 +2413,7 @@ export class CelMaterialFactory {
       Color3.FromHexString(spec.color).scale(spec.intensity),
     );
     mat.setFloat("specShininess", Math.max(1, spec.shininess));
+    mat.setFloat("specMirror", Math.min(1, Math.max(0, spec.mirror ?? 0)));
   }
 
   /** What a ground material created from here on is built with. */

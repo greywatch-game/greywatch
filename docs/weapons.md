@@ -497,7 +497,13 @@ came off the builder, and moving a constant moves the default with it.
 
 **Gloss is a ladder with four rungs and a finish may not invent a fifth**: matte
 (no `spec` at all), `spec.rifleSatin`, `spec.rifle`, `spec.rifleChrome`. Two
-finishes that claim the same gloss have to genuinely have it. That ladder is
+finishes that claim the same gloss have to genuinely have it. **The top rung is
+a different KIND of thing and not a brighter highlight**: `rifleChrome` states a
+`mirror`, which is the one spec in the game that reflects the room rather than
+glinting — see `docs/rendering.md`. It had to become one, because a Blinn lobe
+is constant across a flat facet and a weapon is a dozen flat plates, so the
+brightest highlight in the ladder either lit a whole plate or none of it and
+chrome read as paint; the gold finish came out tan. That ladder is
 also why `CelMaterialFactory.getGlossy` keys its cache on the SPEC as well as
 the colour: the spec is a uniform rather than a define, so one hex asked for at
 two gloss levels is two materials that differ only in what was uploaded to

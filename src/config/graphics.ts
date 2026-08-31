@@ -253,7 +253,32 @@ export const graphics = {
      * it from `rifle` at a glance; the shininess keeps the highlight a
      * hard-edged streak instead of a wash across a receiver.
      */
-    rifleChrome: { color: "#eaf1ff", intensity: 0.95, shininess: 44 },
+    rifleChrome: {
+      color: "#eaf1ff",
+      intensity: 0.95,
+      shininess: 44,
+      /**
+       * And the rung is the only one that is not a highlight at all: a
+       * MIRROR, which hands back the room rather than a point of light in it.
+       *
+       * A Blinn lobe is constant across a flat facet, so on a weapon built
+       * out of a dozen boxes the three rungs below can only ever light a
+       * whole face or none of it — which is why the intensity alone never
+       * made this read as plating and why the gold finish came out as tan
+       * paint. What separates chrome from steel is that every facet returns a
+       * DIFFERENT part of the sky, and that is what this number buys: how
+       * much of the environment the surface hands back face-on, with Schlick
+       * taking it to all of it at a graze. It is the one spec entry the
+       * shader's mirror block runs for, and the one surface in the game that
+       * catches the POINT lights.
+       *
+       * 0.62 rather than 1: a plate that returns the whole sky face-on stops
+       * carrying its own colour, and sixteen finishes at the top rung would
+       * be one mirror wearing sixteen names. What is left of the albedo is
+       * what keeps gold plate gold.
+       */
+      mirror: 0.62,
+    },
     /**
      * Wet cobblestone streets: broad, dim grazing sheen, so the road
      * catches a streak when you look toward the moon — the "rained an
