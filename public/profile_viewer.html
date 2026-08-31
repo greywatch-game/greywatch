@@ -546,6 +546,7 @@ table.lad tr.rest td { color: var(--ink-3); font-style: italic; }
         <h2>Flame chart</h2>
         <div class="legend">
           <span><i class="tick" style="background:var(--collector)"></i>collection</span>
+          <span><i class="tick" style="background:var(--fault)"></i>worst frame</span>
         </div>
         <button class="btn ghost" id="btn-fitflame" type="button">Fit</button>
       </header>
@@ -628,6 +629,10 @@ function useTree(parentMap) {
   roots.forEach((r) => walk(r, 0));
 }
 useTree(FALLBACK_TREE);
+
+/* The canvas font stack, spelled once. Canvas takes a CSS font shorthand, so a
+   family list works here exactly as it does in the stylesheet. */
+const MONO = 'ui-monospace, Menlo, Consolas, monospace';
 
 /* ── small helpers ─────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -1318,7 +1323,10 @@ function renderTrace(t) {
   const evs = t.traceEvents;
   const spans = evs.filter((e) => e.ph === "X");
   const counters = evs.filter((e) => e.ph === "C" && e.name === "draws");
-  const gcs = evs.filter((e) => e.ph === "i" && e.name === "gc");
+  // Every instant, not only collections: a trace also marks the worst frame it
+  // was centred on, and that is the one a reader is looking for.
+  const marks = evs.filter((e) => e.ph === "i");
+  const gcs = marks.filter((e) => e.name === "gc");
   if (!spans.length) {
     $("t-meta").textContent = "no spans in this trace";
     return;
@@ -1326,6 +1334,15 @@ function renderTrace(t) {
   let t0 = Infinity, t1 = 0;
   spans.forEach((s) => { if (s.ts < t0) t0 = s.ts; if (s.ts + s.dur > t1) t1 = s.ts + s.dur; });
   const frames = spans.filter((s) => s.name === "frame").length;
+
+  // A trace carries no map and no device — it is Chrome's format, not this
+  // instrument's — so the thread name is the only place the window describes
+  // itself, and it is what says whether the frame you came looking for is even
+  // in the file.
+  const named = evs.find((e) => e.ph === "M" && e.name === "thread_name");
+  // NOT called `window`: that shadows the global inside this function, and the
+  // next person to reach for `window.devicePixelRatio` here would get a string.
+  const windowLabel = named && named.args ? named.args.name : "";
 
   const meta = $("t-meta"); meta.innerHTML = "";
   [["spans", String(spans.length)], ["frames", String(frames)],
@@ -1335,10 +1352,17 @@ function renderTrace(t) {
     d.appendChild(document.createTextNode(v));
     meta.appendChild(d);
   });
+  if (windowLabel) {
+    const w = el("div");
+    w.style.flexBasis = "100%";
+    w.appendChild(el("b", null, "window "));
+    w.appendChild(document.createTextNode(windowLabel));
+    meta.appendChild(w);
+  }
 
   let maxDepth = 0;
   spans.forEach((sp) => { const d = DEPTH[sp.name]; if (d != null && d > maxDepth) maxDepth = d; });
-  flame = { spans, gcs, t0, t1, view0: t0, view1: t1, maxDepth };
+  flame = { spans, marks, gcs, t0, t1, view0: t0, view1: t1, maxDepth };
   drawFlame();
   drawCounters(counters, t0, t1);
 
@@ -1364,7 +1388,7 @@ function drawFlame() {
   // a shallow capture does not open onto half a screen of empty ground.
   canvas._cssH = top + (flame.maxDepth + 1) * rowH + 10;
   const { ctx, w, h } = prep(canvas);
-  const { spans, gcs, view0, view1 } = flame;
+  const { spans, marks, view0, view1 } = flame;
   const span = Math.max(1, view1 - view0);
   const X = (ts) => ((ts - view0) / span) * w;
 
@@ -1406,12 +1430,20 @@ function drawFlame() {
     }
   }
 
-  ctx.strokeStyle = css("--collector");
   ctx.lineWidth = 2;
-  for (const g of gcs) {
-    const x = Math.round(X(g.ts)) + 0.5;
+  for (const m of marks) {
+    const x = Math.round(X(m.ts)) + 0.5;
     if (x < 0 || x > w) continue;
-    ctx.beginPath(); ctx.moveTo(x, 16); ctx.lineTo(x, h); ctx.stroke();
+    const isWorst = String(m.name).indexOf("worst frame") === 0;
+    ctx.strokeStyle = isWorst ? css("--fault") : css("--collector");
+    ctx.beginPath(); ctx.moveTo(x, isWorst ? 0 : 16); ctx.lineTo(x, h); ctx.stroke();
+    if (isWorst) {
+      ctx.fillStyle = css("--fault");
+      ctx.font = "10px " + MONO;
+      ctx.textAlign = x > w - 90 ? "right" : "left";
+      ctx.textBaseline = "top";
+      ctx.fillText(m.name, x + (x > w - 90 ? -4 : 4), 2);
+    }
   }
 
   canvas._rects = rects;

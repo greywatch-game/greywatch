@@ -423,9 +423,40 @@ construction (`frame` ⊃ `gameplay` ⊃ `world` ⊃ `bots`, each start stored
 relative to its own frame), so a flame chart falls out with no further work, and
 `drawCalls`/`activeMeshes` ride along as counter tracks.
 
-600 frames is the default because the whole ring is tens of thousands of events
-and a hitch lives in the last few hundred frames; `window.__profile.trace(n)`
-takes more.
+**THE WINDOW IS CENTRED ON THE WORST FRAME IN THE RING, and that is this
+file's one design decision finally applied to the one place it had been left
+out.** The ring holds 3,000 frames *because the gesture is pressed after you
+feel something* — and then the trace exported the last 600, which is to say
+whatever happened to be on screen when the thumb arrived.
+
+The arithmetic was never close. At 86 fps a 600-frame tail is **seven seconds
+against a thirty-five second ring**, and a person who feels a hitch and reaches
+for a button takes longer than that. What came back was a trace of the recovery,
+and nothing in the file said so — which is the part that cost real time: a
+healthy-looking trace is indistinguishable from a trace of a healthy game. The
+export that prompted this had a worst frame of **17.6 ms in the file and 332 ms
+in the ring behind it**.
+
+So `trace()` finds the worst frame by wall clock — the same measure the hitch
+list ranks by, so the two artefacts agree about which frame is interesting —
+and builds the window around it. **Centred rather than ending on it**, because
+both sides are evidence: what was building up before, and whether it cascaded
+after. **Clamped to what the ring holds**, so a hitch in the first or last
+frames still comes back inside a full window rather than half of one — which is
+the common case, since the worst frame of a session is usually the spawn.
+
+**And the trace now says which window it is**, in two places, because the
+failure above was only confusing for want of a label:
+
+- the Perfetto track name — `frames 1-600 of 2067 · centred on the worst
+  (692.3 ms)`, which `/profile_viewer.html` also prints above the flame chart;
+- an instant marker on the worst frame itself, so it is one click away instead
+  of something to find by eye.
+
+`window.__profile.trace(n)` still takes more, and `trace(3000)` is the whole
+ring. A trace carries no map, no device and no memory block — that is Chrome's
+format, not this instrument's — so for anything but the shape of a frame,
+`SAVE` is the better artefact.
 
 ---
 

@@ -906,17 +906,83 @@ export class FrameProfile {
    *
    * The spans nest properly by construction — `frame` contains `gameplay`
    * contains `world` contains `bots`, and every start is stored relative to its
-   * own frame — so a flame chart falls out with no further work. Bounded by
-   * default because the whole ring is tens of thousands of events and a hitch
-   * lives in the last few hundred frames.
+   * own frame — so a flame chart falls out with no further work.
+   *
+   * **THE WINDOW IS CENTRED ON THE WORST FRAME IN THE RING, not on the present
+   * moment, and that is this whole file's one design decision applied to the
+   * one place it had been left out.** The ring holds `CONFIG.profiling.frames`
+   * (3,000) *because* the gesture is pressed AFTER you feel something; a trace
+   * that exported the last few hundred instead threw that away and handed back
+   * whatever happened to be on screen when the thumb arrived. At 86 fps a
+   * 600-frame tail is **seven seconds against a thirty-five second ring**, so a
+   * hitch you reacted to in eight was simply not in the file — and nothing in
+   * the file said so, which is worse: it looks like a trace of a healthy game.
+   * Measured on a real export that prompted this: worst frame in it 17.6 ms,
+   * worst frame in the ring behind it 332 ms.
+   *
+   * Centred rather than ending at the hitch, because both sides are evidence —
+   * what was building up before it, and whether it cascaded after — and clamped
+   * to what the ring actually holds, so a hitch in the first or last frames
+   * still comes back with a full window rather than half of one.
+   *
+   * **The trace SAYS which window it is**, in the Perfetto track name and in an
+   * instant marker on the worst frame itself, because the failure above was
+   * only confusing for want of a label.
    */
   trace(maxFrames = 600): string {
     if (!this.on || this.filled === 0) return "{}";
     const cap = this.capacity;
     const n = Math.min(this.filled, maxFrames);
-    const first = (this.cursor - n + cap) % cap;
+    const oldest = (this.cursor - this.filled + cap) % cap;
+
+    // The worst frame in the WHOLE ring, by wall clock — the same measure the
+    // hitch list ranks by, so the trace and the report agree about which frame
+    // is the interesting one.
+    let worstAt = 0;
+    let worstMs = -1;
+    for (let k = 0; k < this.filled; k++) {
+      const ms = this.frameMs![(oldest + k) % cap];
+      if (ms > worstMs) {
+        worstMs = ms;
+        worstAt = k;
+      }
+    }
+
+    // Centre, then clamp. The clamp is what keeps the window FULL at either end
+    // of the ring instead of running off it.
+    let startAt = worstAt - (n >> 1);
+    if (startAt < 0) startAt = 0;
+    if (startAt + n > this.filled) startAt = this.filled - n;
+    const first = (oldest + startAt) % cap;
     const t0 = this.frameAt![first];
+    const worstBase = (this.frameAt![(oldest + worstAt) % cap] - t0) * 1000;
+
     const parts: string[] = [];
+    // Perfetto labels its track from these, which is where a reader finds out
+    // what they are looking at. A trace carries no map and no device — it is
+    // Chrome's format, not this instrument's — so this line is the only place
+    // the window can describe itself.
+    parts.push(
+      '{"name":"process_name","ph":"M","pid":1,"tid":1,"args":{"name":"GREYWATCH frame profiler"}}',
+      '{"name":"thread_name","ph":"M","pid":1,"tid":1,"args":{"name":"frames ' +
+        (startAt + 1) +
+        "-" +
+        (startAt + n) +
+        " of " +
+        this.filled +
+        " · centred on the worst (" +
+        worstMs.toFixed(1) +
+        ' ms)"}}',
+    );
+    // …and a marker on the frame the window was built around, so it is one
+    // click away rather than something to hunt for by eye.
+    parts.push(
+      '{"name":"worst frame ' +
+        worstMs.toFixed(1) +
+        ' ms","cat":"frame","ph":"i","s":"g","pid":1,"tid":1,"ts":' +
+        worstBase.toFixed(1) +
+        "}",
+    );
     for (let k = 0; k < n; k++) {
       const i = (first + k) % cap;
       const base = (this.frameAt![i] - t0) * 1000;

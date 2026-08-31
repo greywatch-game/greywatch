@@ -1153,6 +1153,13 @@ order** and no system had to be taught the profiler exists. A phase is a name in
 sized and labelled off that list. The spans NEST and do not partition — read a
 report as an attribution, exactly as `buildProfile`'s does for the build.
 
+**The `TRACE` export CENTRES its window on the worst frame in the ring**, not on
+the present moment — a 600-frame tail is seven seconds against a thirty-five
+second ring, so the frame you reacted to was routinely not in the file and
+nothing in the file said so. It is clamped to what the ring holds, and it names
+its own window in the Perfetto track title and marks the worst frame with an
+instant.
+
 **Three limits, and each is recorded into every capture rather than left to
 prose.** The clock is quantised to **100 us** (Chrome, absent cross-origin
 isolation, which `docker/default.conf.template` does not set) while most phases
