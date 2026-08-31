@@ -217,6 +217,16 @@ const PAGES: readonly Page[] = [
         hint: "Vignette, grain, and the red damage flash",
         options: OFF_ON,
       },
+      {
+        key: "profiler",
+        label: "Frame profiler",
+        // What it actually does, in the width a hint has: it records
+        // CONTINUOUSLY and the capture reaches backwards, which is the one
+        // thing a player has to know to use it — press the button AFTER the
+        // hitch, not before.
+        hint: "Records the last few thousand frames. KEEP copies a capture; SAVE writes the full one. F3 on a keyboard",
+        options: OFF_ON,
+      },
     ],
     // What the ladder above actually comes to on this machine. The scene's
     // backing store is the display's pixels times the ratio times the scale,

@@ -86,8 +86,35 @@ const CACHE = `greywatch-${PRECACHE.version}`;
 const SHELL_TIMEOUT_MS = 3000;
 const SHELL_GIVE_UP_MS = 12_000;
 
-/** The shell's own key. A navigation is answered with this, whatever it asked for. */
+/** The shell's own key. A navigation is answered with this unless it is below. */
 const SHELL = "/";
+
+/**
+ * The other navigable documents this build emits, which answer a navigation as
+ * THEMSELVES rather than as the shell.
+ *
+ * **Without this list a second page is a page that works online and silently
+ * becomes the game offline**, which is the worst of the three possible
+ * behaviours: `freshShell` falls back to `cache.match(SHELL)`, and `SHELL` is
+ * the game. The profile viewer is precached like every other unhashed file, so
+ * the bytes are right there — it was only ever the key that was wrong.
+ *
+ * It matters most in exactly the case the viewer exists for. The frame
+ * profiler is aimed at phones, and a phone that has just captured something is
+ * regularly a phone on a LAN address with no route to the internet, or a
+ * home-screen install in flight mode. Answering that navigation with the game
+ * would throw away the capture the player pressed a button to keep.
+ *
+ * A path here must be a real emitted file and must be in the precache, or this
+ * is a promise the cache cannot keep. Two entries, because `dist/` writes the
+ * file and nginx serves the extensionless form too.
+ */
+const DOCS = new Set(["/profile_viewer.html", "/profile_viewer"]);
+
+/** The cache key a navigation to `pathname` should be answered from. */
+function shellFor(pathname) {
+  return DOCS.has(pathname) ? "/profile_viewer.html" : SHELL;
+}
 
 /**
  * Fetches one precache entry from the network and stores it.
@@ -192,6 +219,7 @@ self.addEventListener("activate", (event) => {
  */
 async function freshShell(event) {
   const cache = await caches.open(CACHE);
+  const key = shellFor(new URL(event.request.url).pathname);
 
   const fromNetwork = (async () => {
     // The preload response, when there is one, is the navigation's own request
@@ -211,13 +239,15 @@ async function freshShell(event) {
         // able to say so.
         signal: AbortSignal.timeout?.(SHELL_GIVE_UP_MS),
       }));
-    // Only the shell's own URL may be written back as the shell. There is no
+    // Only a document's OWN url may be written back under its key. There is no
     // client-side router here, so any other path is a genuine 404 from nginx —
     // and one cached under "/" would be what every offline launch after it
-    // showed instead of the game.
-    const isShell = new URL(event.request.url).pathname === SHELL;
-    if (res.ok && res.type === "basic" && isShell) {
-      await cache.put(SHELL, res.clone());
+    // showed instead of the game. A path that is not a known document resolves
+    // to the shell's key, which its own pathname cannot equal, so it is never
+    // written back.
+    const isSelf = new URL(event.request.url).pathname === key;
+    if (res.ok && res.type === "basic" && isSelf) {
+      await cache.put(key, res.clone());
     }
     return res.ok ? res : null;
   })();
@@ -227,7 +257,7 @@ async function freshShell(event) {
   // worker error on every offline launch.
   void fromNetwork.catch(() => {});
 
-  const cached = await cache.match(SHELL, { ignoreVary: true });
+  const cached = await cache.match(key, { ignoreVary: true });
   if (!cached) return (await fromNetwork.catch(() => null)) || fetch(event.request);
 
   const raced = await Promise.race([

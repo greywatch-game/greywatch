@@ -31,6 +31,7 @@ import { audio } from "./audio";
 import { graphics, effects } from "./graphics";
 import { minimap, damageIndicator } from "./hud";
 import { net } from "./net";
+import { profiling } from "./profiling";
 import { lighting } from "./lighting";
 import { ao, map, water, grass } from "./world";
 import { sky, godRays } from "./sky";
@@ -69,6 +70,7 @@ export const CONFIG = {
   minimap,
   damageIndicator,
   net,
+  profiling,
   lighting,
   water,
   grass,

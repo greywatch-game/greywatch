@@ -151,6 +151,44 @@ Details about the phone, each of which was a visible bug first:
   the map at a quarter of the height it asked for, and the divide is the identity on
   every desktop.
 
+## The second navigable document
+
+**There are TWO pages in this build now, and the worker had to be told.**
+[`public/profile_viewer.html`](../public/profile_viewer.html) is where a frame
+profiler capture is read (`docs/profiling.md`), and it is on the game's own
+origin for one reason: the loop has to close on the DEVICE that is slow. Press
+KEEP on a phone, open `/profile_viewer.html`, paste.
+
+**Unhandled, that page works online and silently becomes the GAME offline**,
+which is the worst of the three things it could do. `freshShell` answers every
+navigation with `cache.match(SHELL)` when the network does not answer, and
+`SHELL` is `"/"` — so the viewer's bytes sat precached under their own key while
+the navigation to them was served the game. It bites hardest in exactly the case
+the viewer exists for: a phone that has just captured something is regularly a
+phone on a LAN address with no route to the internet, or a home-screen install
+in flight mode, and answering that navigation with the game throws away a
+capture the player pressed a button to keep.
+
+So `sw.js` carries **`DOCS`**, the set of paths that answer a navigation as
+THEMSELVES, and `shellFor` is the one place a navigation's cache key is chosen.
+Three rules come with it:
+
+- **A path in `DOCS` must be a real emitted file and must be in the precache**,
+  or it is a promise the cache cannot keep.
+- **The write-back guard generalised with it and had to.** Only a document's own
+  URL may be stored under its key: an unknown path resolves to the shell's key,
+  which its own pathname can never equal, so a 404 from nginx is still never
+  cached as the shell. That was the original rule's whole point and it is
+  preserved rather than re-argued.
+- **A rename in `public/` is a rename in `DOCS` *and* in `ProfileChip`**, whose
+  `VIEWER_PATH` is what the chip's `VIEW` button opens. Three places, and every
+  failure is silent: miss `DOCS` and the game opens instead of the viewer
+  offline, miss `ProfileChip` and the button opens nothing.
+
+Verified against a real build served over localhost, with the worker installed
+off the game's own launch and the context then taken offline: `/` is the game,
+`/profile_viewer.html` is the viewer, and `/nope.html` is still the game.
+
 ## The controls a phone plays with
 
 `src/ui/TouchControls.ts` is the on-screen set, and it is a **device rather than a

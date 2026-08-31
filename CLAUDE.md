@@ -28,6 +28,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/multiplayer.md`](docs/multiplayer.md) | anything under `server/` or `src/net/`, the roster, the collision bake, the regions, the two images and the proxy in front of them |
 | [`docs/game.md`](docs/game.md) | extracting anything from `Game.ts`, `installMap`, what a frame owes |
 | [`docs/build.md`](docs/build.md) | adding a generated asset, `vite.config.ts`, anything importing from `@babylonjs/*` |
+| [`docs/profiling.md`](docs/profiling.md) | the frame profiler, a new phase, anything measuring a frame |
 
 Three more companions carry what is looked up rather than reasoned about.
 **`FILES.md`** is the module map, one line per file — read it to find the right
@@ -1098,12 +1099,111 @@ ring is the boundary**: it is built at `ControlPointDef.radius`, which is what
 and the markers that fade themselves out, and
 **[`docs/multiplayer.md`](docs/multiplayer.md)** for the score on the wire.
 
+### Measuring a frame
+
+**The frame profiler SHIPS, and that is the whole feature rather than a
+compromise.** The frame is draw-call bound on hardware nobody here owns, and
+the devices worth measuring — a phone on a home screen, a tablet, somebody
+else's laptop — are exactly the ones that will never run a dev server or open a
+DevTools window. `FrameProfile` is therefore armed by a **setting**
+(`Settings.profiler`) or by **`?profile`**, never by `import.meta.env.DEV`;
+disarmed, every entry point returns on its first line and the ring is not
+allocated. Measured cost while armed, three paired runs: **under 1.5% of frame
+rate**, of which the span calls are ~5 us a frame (0.22 us a pair, ~22 pairs) and
+the rest is `SceneInstrumentation`'s observers. The probes that say so run on
+the DEVICE and land in every capture.
+
+**It records CONTINUOUSLY and the capture reaches BACKWARDS.** You cannot watch
+a graph while playing a first-person shooter with two thumbs, so the ring holds
+`CONFIG.profiling.frames` (3,000 — 50 s at 60 Hz, 12.5 at 240) and the gesture
+is pressed AFTER the hitch: `F3` on a keyboard, the chip's buttons on glass.
+**Nothing allocates PER FRAME while it is recording** — no per-frame object, no
+label string, no closure — because `FINDINGS.md` §1's leading suspect for the
+hitch this exists to find is GC, and a profiler that allocates per frame
+manufactures the bug it was built to catch. The one exception is per
+COLLECTION: the sentinel below.
+
+**What a hitch IS is relative, because a fixed bar degenerates on the device
+this was built for.** A phone holding 30 fps spends 33 ms in every frame, so at
+`CONFIG.profiling.hitchMs` (24) alone every frame is a hitch, the list floods
+and a capture's headline reaches back three seconds instead of fifty. The bar
+is that floor or `hitchFactor` (2.5) times what the device has lately been
+managing, whichever is larger, and both it and the floor are in every report.
+Measured under a 6x CPU throttle applied mid-session: **292 of 687 frames filed
+at a fixed 24 ms against 25 on the relative bar**, all 25 in the ~1.5 s the
+floor takes to follow the step.
+
+**It watches the COLLECTOR, which is what §1 has always suspected and nothing
+could see.** A `FinalizationRegistry` sentinel — one object per GC event, none
+per frame, no flag needed — puts a count on every frame, so a hitch whose spans
+do not add up to its wall clock is read against it: collections on it is the GC
+pause, none is the browser. **The heap itself is usually FROZEN** (Chrome
+rate-limits the bucketised `performance.memory` to one update every twenty
+minutes) and `probeHeapLive` says so on arming rather than letting a flat line
+read as an idle heap; `--enable-precise-memory-info` is what makes it live, and
+where it is, `memory.allocMbPerSec` is the number to watch — **27.4 MB/s at 2.2
+collections a second on Hollowmere**, the first real figure behind §1's oldest
+guess.
+
+**The brackets live in `Game.ts` and nowhere else.** `tick`, `updateGameplay`,
+`updateNetWorld` and `updateWorld` are where the frame's order is already
+declared, with the argument for it written down, so **the phase list IS that
+order** and no system had to be taught the profiler exists. A phase is a name in
+`PHASES` and a `begin`/`end` pair; the ring, the report and the trace are all
+sized and labelled off that list. The spans NEST and do not partition — read a
+report as an attribution, exactly as `buildProfile`'s does for the build.
+
+**The `TRACE` export CENTRES its window on the worst frame in the ring**, not on
+the present moment — a 600-frame tail is seven seconds against a thirty-five
+second ring, so the frame you reacted to was routinely not in the file and
+nothing in the file said so. It is clamped to what the ring holds, and it names
+its own window in the Perfetto track title and marks the worst frame with an
+instant.
+
+**Three limits, and each is recorded into every capture rather than left to
+prose.** The clock is quantised to **100 us** (Chrome, absent cross-origin
+isolation, which `docker/default.conf.template` does not set) while most phases
+cost under 120 us — so a mean over a window converges but a small phase's
+PERCENTILE is quantisation noise, and `clock.belowGrain` names the rows that
+applies to. And the frame is draw-call bound, so the JS spans attribute the
+third that was never the problem: `SceneInstrumentation`'s draw count, mesh walk
+and render-target time are carried beside them for the rest. And the heap is
+frozen on a stock browser, which is the paragraph above. **GPU time is not
+here** — Babylon can read it, but only if `timestamp-query` is requested at
+device creation and `main.ts` calls `initAsync()` with no descriptor.
+
+**A capture is READ at `/profile_viewer.html`**, one import-free, network-free
+page in `public/` served from the game's own origin — because the loop has to
+close on the device that is slow, and a viewer you must mail a file to is one
+nobody uses. **The chip's `VIEW` button hands the full report straight over
+through `localStorage`** and opens the page: same origin, so no clipboard, no
+paste, no file, and nothing leaves the device. That path is spelled in THREE
+places — the file in `public/`, `sw.js`'s `DOCS`, and `ProfileChip`'s
+`VIEWER_PATH` — and every way of missing one fails silently. It draws the verdict, the attribution ladder, the timelines and a
+flame chart, and **the capture states its own phase tree** (`ProfileReport.tree`
+from `PARENT_OF`, typed so a new phase does not compile until it names its
+parent) so the reader is never guessing this build's nesting. It is the SECOND
+navigable document, so **its path is in `sw.js`'s `DOCS`** — without that it
+works online and silently becomes the game offline, which is the one case it
+exists for.
+
+→ **[`docs/profiling.md`](docs/profiling.md)** — the phases and what each one
+covers, how to take and read a capture, the viewer and the three rules for
+editing it, the relative hitch bar and what it was
+measured against, the sentinel and the heap probe and how to read a hitch
+against them, the trace export and Perfetto, what `frame`'s own share means, the
+three-rung clipboard ladder, and the levers (cross-origin isolation,
+`timestamp-query`) that are deliberately not in it.
+
 ### The installable app
 
 The build installs to a home screen and launches fullscreen, landscape and
 offline. Four files carry it — `public/manifest.webmanifest`, `public/icons/`,
 `src/pwa/register.ts` and `src/pwa/sw.js` — and nothing in the game knows any of
-it exists. Three rules are about the DEVICE rather than the game: a tap arrives
+it exists. **There are TWO navigable documents now**, the game and
+`public/profile_viewer.html`, and a navigation is answered with the shell unless
+its path is in `sw.js`'s `DOCS` — a second page not listed there works online
+and silently becomes the game offline. Three rules are about the DEVICE rather than the game: a tap arrives
 twice (the second as a synthesized mouse event, disbelieved for
 `CONFIG.touch.mouseGrace`), a mouse that has not MOVED is not a mouse being used,
 and the trigger's gate takes `touchActive` beside the pointer lock and the pad.

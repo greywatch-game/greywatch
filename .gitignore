@@ -5,3 +5,9 @@ dist-server-dev/
 tmp_shots/
 plans/webgpu-ref/gate.json
 plans/webgpu-ref/ref/
+
+# Frame-profiler captures. `ProfileChip.download` names every one
+# `greywatch-<kind>-<stamp>.json` and the browser drops it in the cwd, so these
+# land in the repo root as a matter of course now — they are the instrument's
+# OUTPUT, never source.
+greywatch-*.json

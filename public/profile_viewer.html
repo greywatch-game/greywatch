@@ -1,0 +1,1730 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<meta name="description" content="Read a GREYWATCH frame-profiler capture: phase attribution, the heap and the collector, and a verdict on every slow frame.">
+<title>GREYWATCH · profile viewer</title>
+<!--
+  profile_viewer.html — where a capture from the frame profiler is READ.
+
+  It is served from the game's own origin so the loop closes on the DEVICE that
+  is slow: press KEEP on a phone, open /profile_viewer.html, paste. That is the
+  whole reason it is in `public/` and not a link to somewhere else — the way
+  this game is really played on a phone is a LAN address with no route to the
+  internet, and a viewer you have to email a file to is a viewer nobody uses.
+
+  It is a TEMPLATE-FREE, IMPORT-FREE page, the arrangement `src/pwa/sw.js`
+  already is: never imported, never typechecked, never touched by Vite beyond
+  being copied out of `public/`. Keep it that way — it must open from a file://
+  URL and from a cache with nothing else present.
+
+  Two rules it must not break:
+   - NO NETWORK. No fonts, no CDN, no analytics. Everything is inline, the type
+     is the same system stack `src/ui/base.css` uses, and a capture never leaves
+     the browser it was opened in.
+   - IT ANSWERS ITS OWN NAVIGATION OFFLINE, which is a fact about `sw.js`
+     rather than about this file: `DOCS` there lists this path so a navigation
+     to it falls back to THIS document instead of the game's shell. A rename
+     here is a rename there, and the failure mode is silent — the game opens
+     instead, and the capture is gone.
+
+  The phase tree comes from the capture (`ProfileReport.tree`); `FALLBACK_TREE`
+  below is only for captures older than that field. See docs/profiling.md.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   Tokens. The complete light palette lives on bare :root; the dark blocks
+   redefine ONLY these, twice, so the un-stamped (system) state and both
+   explicit stamps all resolve. No component colour is declared inside a
+   media or [data-theme] block.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --ground:      #E4E8EB;
+  --surface:     #FAFBFC;
+  --surface-2:   #EFF2F4;
+  --sunken:      #DBE1E5;
+  --rule:        #C2CBD1;
+  --rule-soft:   #D6DDE2;
+
+  --ink:         #101619;
+  --ink-2:       #3C4950;
+  --ink-3:       #63737C;
+  --ink-4:       #8B9AA3;
+
+  --signal:      #0087A3;
+  --signal-soft: #0087A31F;
+  --collector:   #A97C00;
+  --collector-soft:#A97C001F;
+  --fault:       #C42C4A;
+  --fault-soft:  #C42C4A1A;
+  --heap:        #5D4EA8;
+  --heap-soft:   #5D4EA81F;
+
+  --good:        #2F6B4F;
+  --focus:       #0087A3;
+
+  --shadow: 0 1px 0 #0000000A;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:    #0C1013;
+    --surface:   #141A1E;
+    --surface-2: #1A2126;
+    --sunken:    #0F1418;
+    --rule:      #2A343A;
+    --rule-soft: #212A30;
+
+    --ink:       #E6ECEF;
+    --ink-2:     #B4C0C7;
+    --ink-3:     #85939C;
+    --ink-4:     #5F6E77;
+
+    --signal:      #1E9BB8;
+    --signal-soft: #1E9BB82E;
+    --collector:   #AE8A1E;
+    --collector-soft:#AE8A1E2E;
+    --fault:       #D45A75;
+    --fault-soft:  #D45A7526;
+    --heap:        #9166D6;
+    --heap-soft:   #9166D62E;
+
+    --good:      #5FA982;
+    --focus:     #1E9BB8;
+    --shadow: 0 1px 0 #00000040;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:    #0C1013;
+  --surface:   #141A1E;
+  --surface-2: #1A2126;
+  --sunken:    #0F1418;
+  --rule:      #2A343A;
+  --rule-soft: #212A30;
+
+  --ink:       #E6ECEF;
+  --ink-2:     #B4C0C7;
+  --ink-3:     #85939C;
+  --ink-4:     #5F6E77;
+
+  --signal:      #1E9BB8;
+  --signal-soft: #1E9BB82E;
+  --collector:   #AE8A1E;
+  --collector-soft:#AE8A1E2E;
+  --fault:       #D45A75;
+  --fault-soft:  #D45A7526;
+  --heap:        #9166D6;
+  --heap-soft:   #9166D62E;
+
+  --good:      #5FA982;
+  --focus:     #1E9BB8;
+  --shadow: 0 1px 0 #00000040;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "Bahnschrift", "DIN Alternate", "DIN Condensed", "Roboto Condensed",
+    "Oswald", "Ubuntu Condensed", "Franklin Gothic Medium", "Arial Narrow",
+    "Liberation Sans Narrow", "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono, code, .num {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; letter-spacing: -0.01em; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px 80px; }
+.prose { max-width: 64ch; }
+
+/* ── masthead ───────────────────────────────────────────────────────────── */
+.mast {
+  position: sticky; top: 0; z-index: 40;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+.mast-in {
+  max-width: 1180px; margin: 0 auto; padding: 10px 20px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+.brand b {
+  font-weight: 700; font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.brand span {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--ink-3);
+  letter-spacing: 0.02em;
+}
+.mast-file {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11.5px; color: var(--ink-3);
+  max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── controls ───────────────────────────────────────────────────────────── */
+.btn {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-2); background: var(--surface-2);
+  border: 1px solid var(--rule); border-radius: 0;
+  padding: 6px 11px; cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.btn:hover { background: var(--sunken); color: var(--ink); border-color: var(--ink-4); }
+.btn[aria-pressed="true"] {
+  background: var(--ink); color: var(--surface); border-color: var(--ink);
+}
+.btn:focus-visible, .tab:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--focus); outline-offset: 2px;
+}
+.btn.ghost { background: transparent; }
+
+/* ── loader ─────────────────────────────────────────────────────────────── */
+#loader { padding-top: 44px; }
+.drop {
+  border: 1px dashed var(--rule); background: var(--surface);
+  padding: 40px 28px; text-align: center;
+}
+.drop.hot { border-color: var(--signal); background: var(--signal-soft); }
+.drop h2 { font-size: 21px; margin-bottom: 8px; }
+.drop p { color: var(--ink-2); margin: 0 auto 20px; max-width: 58ch; }
+.drop .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+textarea {
+  width: 100%; min-height: 130px; margin-top: 18px; padding: 12px;
+  background: var(--sunken); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 0; resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5;
+}
+.hint {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11.5px; color: var(--ink-3);
+  margin-top: 10px;
+}
+.err {
+  border-left: 3px solid var(--fault); background: var(--fault-soft);
+  padding: 10px 14px; margin-top: 16px; color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 12px;
+}
+
+/* ── panels ─────────────────────────────────────────────────────────────── */
+.panel {
+  background: var(--surface); border: 1px solid var(--rule);
+  margin-top: 18px; box-shadow: var(--shadow);
+}
+.panel > header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 11px 16px; border-bottom: 1px solid var(--rule-soft);
+}
+.panel > header h2 {
+  font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-weight: 600; color: var(--ink-2);
+}
+.panel > header .note {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--ink-4);
+  margin-left: auto;
+}
+.panel .body { padding: 16px; }
+.panel .body.flush { padding: 0; }
+
+/* ── capture head ───────────────────────────────────────────────────────── */
+.head { padding-top: 22px; display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+.head h1 { font-size: 27px; letter-spacing: -0.02em; }
+.head .meta {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 12px; color: var(--ink-3);
+  display: flex; gap: 14px; flex-wrap: wrap; padding-bottom: 4px;
+}
+.head .meta b { color: var(--ink-2); font-weight: 500; }
+
+/* ── verdict ────────────────────────────────────────────────────────────── */
+.verdict { border-left: 3px solid var(--ink-4); }
+.verdict.is-gc      { border-left-color: var(--collector); }
+.verdict.is-outside { border-left-color: var(--signal); }
+.verdict.is-tick    { border-left-color: var(--fault); }
+.verdict.is-clean   { border-left-color: var(--good); }
+.verdict .lede { font-size: 18px; line-height: 1.45; letter-spacing: -0.01em; max-width: 62ch; }
+.verdict .lede em { font-style: normal; color: var(--fault); font-weight: 600; }
+.verdict .lede .k { font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.92em; }
+.verdict .sub { color: var(--ink-3); margin-top: 8px; font-size: 13px; max-width: 66ch; }
+
+/* ── stat strip ─────────────────────────────────────────────────────────── */
+.stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  border-top: 1px solid var(--rule); margin-top: 18px;
+  background: var(--rule-soft); gap: 1px;
+}
+.stat { background: var(--surface); padding: 12px 14px 13px; }
+.stat .k {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 10.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-4);
+}
+.stat .v {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 22px; font-weight: 500;
+  letter-spacing: -0.02em; margin-top: 3px; line-height: 1.1;
+}
+.stat .v small { font-size: 12px; color: var(--ink-3); font-weight: 400; margin-left: 2px; }
+.stat.acc-signal .v { color: var(--signal); }
+.stat.acc-fault  .v { color: var(--fault); }
+.stat.acc-coll   .v { color: var(--collector); }
+.stat.acc-heap   .v { color: var(--heap); }
+.stat .f {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 10.5px; color: var(--ink-4); margin-top: 2px;
+}
+
+/* ── charts ─────────────────────────────────────────────────────────────── */
+.chart { position: relative; }
+.chart canvas { display: block; width: 100%; }
+.legend {
+  display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--ink-3);
+}
+.legend i { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: 2px; }
+.legend i.tick { width: 3px; height: 11px; vertical-align: -1px; }
+.tip {
+  position: absolute; pointer-events: none; z-index: 20; opacity: 0;
+  background: var(--surface); border: 1px solid var(--ink-4);
+  padding: 7px 9px; font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11.5px;
+  line-height: 1.5; white-space: nowrap; box-shadow: 0 2px 8px #00000024;
+  transition: opacity 90ms;
+}
+.tip.on { opacity: 1; }
+.tip b { font-weight: 600; }
+.tip .dim { color: var(--ink-3); }
+
+/* ── attribution ladder ─────────────────────────────────────────────────── */
+table.lad { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.lad th {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 10.5px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ink-4); font-weight: 500;
+  text-align: right; padding: 0 10px 7px; border-bottom: 1px solid var(--rule-soft);
+}
+table.lad th:first-child { text-align: left; }
+table.lad td {
+  padding: 4px 10px; border-bottom: 1px solid var(--rule-soft);
+  text-align: right; font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+table.lad td:first-child { text-align: left; width: 40%; }
+table.lad tr:last-child td { border-bottom: 0; }
+table.lad tr.dim td { color: var(--ink-3); }
+table.lad tr.rest td { color: var(--ink-3); font-style: italic; }
+.lad .nm { display: grid; grid-template-columns: 190px 1fr; align-items: center; gap: 10px; }
+.lad .bar {
+  position: relative; height: 13px; background: var(--sunken); flex: 1; min-width: 60px;
+}
+.lad .bar > span {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--signal); border-radius: 0 3px 3px 0;
+}
+.lad .bar.d1 > span { background: color-mix(in oklab, var(--signal) 76%, var(--surface)); }
+.lad .bar.d2 > span { background: color-mix(in oklab, var(--signal) 54%, var(--surface)); }
+.lad .bar.d3 > span { background: color-mix(in oklab, var(--signal) 36%, var(--surface)); }
+.lad .bar.rest > span { background: var(--ink-4); }
+.lad .lbl {
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex; align-items: baseline; gap: 7px;
+}
+.lad .lbl > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.lad .grain {
+  font-size: 10px; color: var(--collector); white-space: nowrap; flex: none;
+  opacity: 0.85;
+}
+.lad td.soft { color: var(--ink-4); }
+
+/* ── hitches ────────────────────────────────────────────────────────────── */
+.hitch { border-bottom: 1px solid var(--rule-soft); }
+.hitch:last-child { border-bottom: 0; }
+.hitch > summary {
+  list-style: none; cursor: pointer; padding: 11px 16px;
+  display: grid; grid-template-columns: 84px 1fr auto; gap: 14px; align-items: center;
+}
+.hitch > summary::-webkit-details-marker { display: none; }
+.hitch > summary:hover { background: var(--surface-2); }
+.hitch .ms {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 16px; font-weight: 500;
+  color: var(--fault); text-align: right;
+}
+.hitch .ms small { font-size: 11px; color: var(--ink-3); font-weight: 400; }
+.split { display: flex; height: 14px; background: var(--sunken); min-width: 80px; }
+.split i { display: block; height: 100%; }
+.split i.tick { background: var(--signal); }
+.split i.out  { background: var(--ink-4); }
+.split i.gc   { background: var(--collector); }
+.hitch .tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.tag {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 0.07em;
+  text-transform: uppercase; padding: 2px 6px; border: 1px solid var(--rule); color: var(--ink-3);
+}
+.tag.gc      { color: var(--collector); border-color: var(--collector); background: var(--collector-soft); }
+.tag.outside { color: var(--signal); border-color: var(--signal); background: var(--signal-soft); }
+.tag.tick    { color: var(--fault); border-color: var(--fault); background: var(--fault-soft); }
+.hitch .detail { padding: 4px 16px 18px; background: var(--surface-2); }
+.hitch .where {
+  display: flex; gap: 18px; flex-wrap: wrap; padding: 10px 0 14px;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11.5px; color: var(--ink-3);
+}
+.hitch .where b { color: var(--ink-2); font-weight: 500; }
+.hitch .read {
+  border-left: 2px solid var(--rule); padding: 2px 0 2px 12px; margin-bottom: 14px;
+  font-size: 13px; color: var(--ink-2); max-width: 66ch;
+}
+
+/* ── kv grid ────────────────────────────────────────────────────────────── */
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1px; background: var(--rule-soft); }
+.kv > div { background: var(--surface); padding: 10px 14px; }
+.kv .k {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 10.5px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ink-4);
+}
+.kv .v { font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 12.5px; margin-top: 2px; word-break: break-word; }
+
+.frozen {
+  display: flex; gap: 12px; align-items: flex-start;
+  font-size: 13px; color: var(--ink-2); max-width: 68ch;
+}
+.frozen .mark {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 10.5px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--collector);
+  border: 1px solid var(--collector); padding: 2px 6px; white-space: nowrap; flex: none;
+}
+.empty { color: var(--ink-3); font-size: 13px; max-width: 64ch; }
+
+/* ── flame ──────────────────────────────────────────────────────────────── */
+.flamewrap { position: relative; background: var(--sunken); }
+.flamewrap canvas { display: block; width: 100%; cursor: grab; }
+.flamewrap canvas.drag { cursor: grabbing; }
+.scale-note {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--ink-4);
+  padding: 8px 16px; border-top: 1px solid var(--rule-soft);
+}
+
+.overflow { overflow-x: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+@media (max-width: 640px) {
+  /* Three rows of chrome pinned to the top of a phone is most of the screen,
+     and the capture below it is the thing being read. */
+  .mast { position: static; }
+  .mast-file { order: 9; flex-basis: 100%; }
+  .head h1 { font-size: 22px; }
+  .hitch > summary { grid-template-columns: 72px 1fr; }
+  .hitch .tags { grid-column: 1 / -1; justify-content: flex-start; }
+  .verdict .lede { font-size: 16px; }
+}
+</style>
+
+<header class="mast">
+  <div class="mast-in">
+    <div class="brand">
+      <b>Frame Reader</b>
+      <span>greywatch · FrameProfile v1</span>
+    </div>
+    <div class="mast-file mono" id="srcname"></div>
+    <button class="btn" id="btn-sample" type="button">Sample</button>
+    <button class="btn" id="btn-file" type="button">Open file</button>
+    <button class="btn ghost" id="btn-new" type="button" hidden>Load another</button>
+    <button class="btn ghost" id="btn-theme" type="button" aria-label="Switch colour theme">Theme</button>
+    <input type="file" id="file" accept=".json,application/json,text/plain" hidden>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- ── loader ────────────────────────────────────────────────────────── -->
+  <section id="loader">
+    <div class="drop" id="drop">
+      <h2>Drop a capture in</h2>
+      <p>
+        Press <code class="mono">VIEW</code> on the profiler's chip in the game and the
+        capture arrives here on its own. Otherwise: a report from
+        <code class="mono">KEEP</code> or <code class="mono">SAVE</code>, or a trace from
+        <code class="mono">TRACE</code> — drop the file anywhere on this page, paste the
+        JSON below, or open it from disk. Nothing leaves your browser.
+      </p>
+      <div class="row">
+        <button class="btn" id="btn-file2" type="button">Open file</button>
+        <button class="btn" id="btn-sample2" type="button">Load the sample capture</button>
+      </div>
+      <textarea id="paste" spellcheck="false" placeholder="…or paste the JSON here"></textarea>
+      <div class="hint">
+        A <b>SAVE</b> report carries the per-frame series, so the timelines below only draw for one of those.
+        <b>KEEP</b> gives you the summary, the phase table and the slow frames.
+      </div>
+      <div id="loaderr"></div>
+    </div>
+  </section>
+
+  <!-- ── report ────────────────────────────────────────────────────────── -->
+  <section id="report" hidden>
+    <div class="head">
+      <h1 id="r-map"></h1>
+      <div class="meta" id="r-meta"></div>
+    </div>
+
+    <div class="panel verdict" id="r-verdict">
+      <div class="body">
+        <div class="lede" id="r-lede"></div>
+        <div class="sub" id="r-sub"></div>
+      </div>
+    </div>
+
+    <div class="stats" id="r-stats"></div>
+
+    <div class="panel" id="p-frames">
+      <header>
+        <h2>Frame time</h2>
+        <div class="legend" id="r-legend"></div>
+        <button class="btn ghost" id="btn-fit" type="button" aria-pressed="false">Fit spikes</button>
+      </header>
+      <div class="body flush">
+        <div class="chart">
+          <canvas id="c-frames" height="200"></canvas>
+          <div class="tip" id="t-frames"></div>
+        </div>
+        <div class="scale-note" id="n-frames"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="p-heap">
+      <header><h2>Heap</h2><div class="note" id="n-heap"></div></header>
+      <div class="body flush">
+        <div class="chart">
+          <canvas id="c-heap" height="140"></canvas>
+          <div class="tip" id="t-heap"></div>
+        </div>
+      </div>
+      <div class="body" id="heap-frozen" hidden></div>
+    </div>
+
+    <div class="panel" id="p-draws">
+      <header>
+        <h2>Draw calls &amp; active meshes</h2>
+        <div class="legend" id="d-legend"></div>
+      </header>
+      <div class="body flush">
+        <div class="chart">
+          <canvas id="c-draws" height="140"></canvas>
+          <div class="tip" id="t-draws"></div>
+        </div>
+        <div class="scale-note" id="n-draws"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <header>
+        <h2>Attribution</h2>
+        <div class="note">spans nest and do not partition</div>
+      </header>
+      <div class="body overflow" id="r-ladder"></div>
+    </div>
+
+    <div class="panel" id="p-hitches">
+      <header><h2>Slow frames</h2><div class="note" id="n-hitches"></div></header>
+      <div class="body flush" id="r-hitches"></div>
+    </div>
+
+    <div class="panel">
+      <header><h2>Instrument &amp; device</h2></header>
+      <div class="body flush"><div class="kv" id="r-device"></div></div>
+    </div>
+  </section>
+
+  <!-- ── trace ─────────────────────────────────────────────────────────── -->
+  <section id="trace" hidden>
+    <div class="head">
+      <h1>Trace</h1>
+      <div class="meta" id="t-meta"></div>
+    </div>
+
+    <div class="panel">
+      <header>
+        <h2>Flame chart</h2>
+        <div class="legend">
+          <span><i class="tick" style="background:var(--collector)"></i>collection</span>
+          <span><i class="tick" style="background:var(--fault)"></i>worst frame</span>
+        </div>
+        <button class="btn ghost" id="btn-fitflame" type="button">Fit</button>
+      </header>
+      <div class="body flush">
+        <div class="flamewrap">
+          <canvas id="c-flame" height="260"></canvas>
+          <div class="tip" id="t-flame"></div>
+        </div>
+        <div class="scale-note">Scroll to zoom · drag to pan. Depth is the phase tree, so a bar sits inside the span that contains it.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <header><h2>Draw calls &amp; active meshes</h2></header>
+      <div class="body flush">
+        <div class="chart">
+          <canvas id="c-counters" height="130"></canvas>
+          <div class="tip" id="t-counters"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <header><h2>Totals by phase</h2><div class="note">time on the chart, summed</div></header>
+      <div class="body overflow" id="t-totals"></div>
+    </div>
+  </section>
+</main>
+
+<script type="application/json" id="sample-report">{"version":1,"takenAt":"2026-08-30T21:53:36.924Z","reason":"sample","map":"hollowmere","tree":{"input":"frame","roundBehind":"frame","gameplay":"frame","driver":"gameplay","onFoot":"gameplay","world":"gameplay","net":"world","conquest":"world","vehicles":"world","bots":"world","combat":"world","grenades":"world","antiTank":"world","physics":"world","glass":"world","camera":"gameplay","zones":"gameplay","hud":"gameplay","hudDraw":"frame","post":"frame","culling":"frame","audio":"frame","render":"frame"},"device":{"userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.0.0 Safari/537.36","devicePixelRatio":1,"window":"1280x720","backingStore":"1280x720","hardwareConcurrency":32,"deviceMemoryGb":32},"clock":{"grainMs":0.1,"overheadUs":0.225,"belowGrain":["input","roundBehind","conquest","vehicles","combat","grenades","antiTank","physics","glass","zones","hudDraw","post","culling","audio"]},"window":{"frames":656,"seconds":6.06},"frame":{"fps":107.5,"mean":9.302,"p50":6.9,"p95":8.3,"p99":49.3,"max":674.7,"onePercentLow":218.2,"hitches":11,"hitchThresholdMs":24,"baselineMs":6.929},"memory":{"heapLive":true,"heapMb":253.18,"heapPeakMb":297.43,"allocMbPerSec":66.14,"gcObserved":true,"gcEvents":11,"gcPerSec":1.82},"counters":{"drawCalls":357,"activeMeshes":117,"meshWalkMs":1.279,"renderTargetsMs":0.662},"phases":[{"name":"frame","frames":656,"mean":4.572,"p50":4.2,"p95":7.2,"p99":10.3,"max":45.8,"share":0.4916},{"name":"render","frames":656,"mean":3.807,"p50":3.4,"p95":6.3,"p99":8.6,"max":45.4,"share":0.4093},{"name":"gameplay","frames":583,"mean":0.757,"p50":0.7,"p95":1.2,"p99":1.6,"max":8.8,"share":0.0814},{"name":"onFoot","frames":583,"mean":0.233,"p50":0.1,"p95":0.5,"p99":0.8,"max":3.7,"share":0.025},{"name":"camera","frames":583,"mean":0.218,"p50":0.2,"p95":0.3,"p99":0.4,"max":3.4,"share":0.0234},{"name":"world","frames":583,"mean":0.145,"p50":0.1,"p95":0.3,"p99":0.4,"max":3.1,"share":0.0156},{"name":"hud","frames":583,"mean":0.142,"p50":0.1,"p95":0.3,"p99":0.4,"max":1.9,"share":0.0153},{"name":"bots","frames":583,"mean":0.109,"p50":0.1,"p95":0.2,"p99":0.3,"max":2,"share":0.0117},{"name":"post","frames":656,"mean":0.025,"p50":0,"p95":0.1,"p99":0.1,"max":0.2,"share":0.0027},{"name":"input","frames":656,"mean":0.023,"p50":0,"p95":0.1,"p99":0.1,"max":0.2,"share":0.0025},{"name":"zones","frames":583,"mean":0.018,"p50":0,"p95":0.1,"p99":0.1,"max":0.2,"share":0.0019},{"name":"combat","frames":583,"mean":0.011,"p50":0,"p95":0.1,"p99":0.1,"max":3,"share":0.0012},{"name":"culling","frames":656,"mean":0.009,"p50":0,"p95":0.1,"p99":0.1,"max":0.3,"share":0.001},{"name":"conquest","frames":583,"mean":0.008,"p50":0,"p95":0.1,"p99":0.1,"max":0.1,"share":0.0009},{"name":"physics","frames":583,"mean":0.005,"p50":0,"p95":0.1,"p99":0.1,"max":0.1,"share":0.0006},{"name":"grenades","frames":583,"mean":0.003,"p50":0,"p95":0,"p99":0.1,"max":0.1,"share":0.0003},{"name":"vehicles","frames":583,"mean":0.002,"p50":0,"p95":0,"p99":0.1,"max":0.1,"share":0.0002},{"name":"hudDraw","frames":656,"mean":0.002,"p50":0,"p95":0,"p99":0.1,"max":0.1,"share":0.0002},{"name":"audio","frames":656,"mean":0.002,"p50":0,"p95":0,"p99":0.1,"max":0.1,"share":0.0002},{"name":"antiTank","frames":583,"mean":0.001,"p50":0,"p95":0,"p99":0.1,"max":0.1,"share":0.0001},{"name":"glass","frames":583,"mean":0.001,"p50":0,"p95":0,"p99":0.1,"max":0.1,"share":0.0001},{"name":"roundBehind","frames":656,"mean":0,"p50":0,"p95":0,"p99":0,"max":0.1,"share":0}],"hitches":[{"ago":4.78,"frameMs":674.7,"x":0,"y":3,"z":-8,"botsAlive":0,"gc":0,"heapMb":280.55,"drawCalls":593,"activeMeshes":73,"meshWalkMs":1.9,"renderTargetsMs":2.6,"phases":{"frame":45.8,"input":0,"roundBehind":0,"hudDraw":0,"post":0,"culling":0.3,"audio":0,"render":45.4}},{"ago":5.82,"frameMs":168.2,"x":0,"y":3,"z":-8,"botsAlive":0,"gc":0,"heapMb":163.96,"drawCalls":13,"activeMeshes":5,"meshWalkMs":1.2,"renderTargetsMs":0.2,"phases":{"frame":3.5,"input":0.1,"roundBehind":0,"hudDraw":0,"post":0.1,"culling":0,"audio":0,"render":3.3}},{"ago":4.37,"frameMs":144.9,"x":0,"y":3,"z":-8,"botsAlive":0,"gc":0,"heapMb":287.49,"drawCalls":161,"activeMeshes":73,"meshWalkMs":1.3,"renderTargetsMs":0.6,"phases":{"frame":5.2,"input":0,"roundBehind":0,"hudDraw":0,"post":0,"culling":0,"audio":0,"render":4.4}},{"ago":4.14,"frameMs":117,"x":-101.5,"y":1.5,"z":97.4,"botsAlive":15,"gc":0,"heapMb":266.7,"drawCalls":458,"activeMeshes":154,"meshWalkMs":2.6,"renderTargetsMs":1.6,"phases":{"frame":9.8,"input":0,"roundBehind":0,"gameplay":1.6,"onFoot":0.3,"world":0.3,"conquest":0,"vehicles":0,"bots":0.3,"combat":0,"grenades":0,"antiTank":0,"physics":0,"glass":0,"camera":0.7,"zones":0.1,"hud":0.2,"hudDraw":0,"post":0.2,"culling":0,"audio":0,"render":8}},{"ago":4.63,"frameMs":102.8,"x":0,"y":3,"z":-8,"botsAlive":0,"gc":1,"heapMb":286.28,"drawCalls":1046,"activeMeshes":73,"meshWalkMs":1.5,"renderTargetsMs":0.7,"phases":{"frame":32.4,"input":0,"roundBehind":0,"hudDraw":0,"post":0.1,"culling":0.2,"audio":0,"render":28.4}},{"ago":4.53,"frameMs":101.7,"x":0,"y":3,"z":-8,"botsAlive":0,"gc":0,"heapMb":286.71,"drawCalls":161,"activeMeshes":73,"meshWalkMs":1.5,"renderTargetsMs":0.6,"phases":{"frame":5.2,"input":0,"roundBehind":0,"hudDraw":0,"post":0,"culling":0,"audio":0,"render":4.1}},{"ago":4.73,"frameMs":50,"x":0,"y":3,"z":-8,"botsAlive":0,"gc":0,"heapMb":254.07,"drawCalls":593,"activeMeshes":73,"meshWalkMs":1.7,"renderTargetsMs":0.8,"phases":{"frame":15.1,"input":0.1,"roundBehind":0,"hudDraw":0,"post":0,"culling":0,"audio":0,"render":15}},{"ago":4.26,"frameMs":49.3,"x":-101.5,"y":1.5,"z":97.4,"botsAlive":15,"gc":1,"heapMb":265.77,"drawCalls":456,"activeMeshes":153,"meshWalkMs":3.6,"renderTargetsMs":2.3,"phases":{"frame":14,"input":0.1,"roundBehind":0,"gameplay":2.2,"onFoot":0.1,"world":1.1,"conquest":0.1,"vehicles":0,"bots":0.9,"combat":0,"grenades":0.1,"antiTank":0,"physics":0,"glass":0,"camera":0.6,"zones":0.1,"hud":0.3,"hudDraw":0,"post":0.1,"culling":0.1,"audio":0,"render":11.4}},{"ago":6.06,"frameMs":46.7,"x":0,"y":3,"z":-8,"botsAlive":0,"gc":0,"heapMb":158.67,"drawCalls":12,"activeMeshes":5,"meshWalkMs":1.3,"renderTargetsMs":2.8,"phases":{"frame":10,"input":0,"roundBehind":0,"hudDraw":0.1,"post":0.1,"culling":0,"audio":0,"render":9.8}},{"ago":4.1,"frameMs":30.1,"x":-101.5,"y":1.5,"z":97.4,"botsAlive":15,"gc":0,"heapMb":268.34,"drawCalls":466,"activeMeshes":156,"meshWalkMs":2.1,"renderTargetsMs":1.7,"phases":{"frame":8.9,"input":0,"roundBehind":0,"gameplay":1.2,"onFoot":0.1,"world":0.4,"conquest":0,"vehicles":0,"bots":0.3,"combat":0,"grenades":0,"antiTank":0,"physics":0.1,"glass":0,"camera":0.4,"zones":0.1,"hud":0.2,"hudDraw":0,"post":0.1,"culling":0,"audio":0,"render":7.6}},{"ago":0.8,"frameMs":25,"x":-102.4,"y":1.5,"z":90.4,"botsAlive":15,"gc":0,"heapMb":179.86,"drawCalls":285,"activeMeshes":91,"meshWalkMs":1.7,"renderTargetsMs":0.4,"phases":{"frame":5.2,"input":0.1,"roundBehind":0,"gameplay":1.3,"onFoot":0.6,"world":0.2,"conquest":0,"vehicles":0,"bots":0.1,"combat":0.1,"grenades":0,"antiTank":0,"physics":0,"glass":0,"camera":0.3,"zones":0,"hud":0.2,"hudDraw":0,"post":0,"culling":0.1,"audio":0,"render":3.7}}],"series":{"frameMs":[46.7,15.9,46.6,3.1,168.2,5.2,8,5.9,7,6.9,7,7,6.9,7,6.9,7.1,6.9,6.8,6.9,7,7,6.9,7,6.9,7,6.9,6.9,7,7.1,6.8,7,6.9,7.1,6.8,7,6.9,6.9,7,7,7,7,6.8,7,6.8,7.1,6.9,7,7.1,6.8,6.9,6.9,7,7,6.9,6.9,7.1,6.8,7,674.7,50,102.8,101.7,7.9,144.9,6,4,5.9,7,6.8,7.1,6.9,7,6.9,8.5,49.3,117,10.5,30.1,9.4,7.8,8.1,6.7,6.3,6.4,6,6.4,7.3,6,7.6,7.4,6.9,7.9,7.1,6.8,6.8,5.8,7.4,5.3,6.7,7.3,6.5,6.8,7.7,6.3,6.9,7,6.9,7,7,6.9,6.9,7.1,6.8,6.9,7,7.1,6.8,6.9,7,6.9,7.1,6.8,7,7,7,14.4,10.6,9.6,8.3,6.4,6.3,6.8,7.2,8.2,7.5,7,6.3,6,6.5,6.9,7,7,6.9,6.9,7,7,7.1,6.7,7,7.1,6.7,7,7,6.9,7,6.9,6.9,7,6.9,7,7.5,7.1,6.4,7.7,7.1,5.8,7,7,7.4,7,6.5,6.9,6.9,7,7.5,8.5,6.7,8.3,6.4,7.4,6.4,6.1,5.8,6.4,6.9,7,6.9,7,6.9,7,6.9,7.6,16.2,8.8,7.7,15.5,8.3,7,6.4,6.7,6.3,6.8,7.4,6.6,6.8,7.2,7.2,6.5,10.2,11.3,9.1,7.8,6.4,6.1,6,6.5,6.1,6.9,7.1,7.3,6.5,7,6.9,6.9,7.6,6.4,6.9,6.9,7.1,6.9,6.9,6.9,7,7,7,6.8,7.1,7.4,6.5,6.9,7.2,6.6,7,6.9,6.9,7,6.9,7.1,6.9,6.9,7,7,6.9,7,6.9,6.9,7,7.9,6.9,6.8,7,7.3,6.6,6.1,7.3,7.3,6.5,7,8.1,6.5,6.7,6.2,6.9,8.3,6.9,6,6.6,7.1,6.8,7,6.9,7,6.9,7,7,6.9,6.9,7.1,6.8,6.9,6.9,7.1,6.9,6.9,7,6.9,7,6.9,7,7,6.9,7.1,6.7,7.1,6.9,7,6.9,7,6.9,6.9,6.9,7,7.1,6.8,7,7,6.9,7,7,6.9,6.9,6.9,7,7,6.9,7.5,6.4,7,7,6.9,6.8,8.6,5.4,6.9,7.1,6.9,7,6.8,7,6.9,6.9,7,6.9,7.2,6.7,7,6.9,7,6.9,7.1,7,6.9,6.9,6.8,7.2,6.8,6.9,6.9,7.1,6.9,7,6.9,7,7,6.9,6.9,6.9,6.9,7,6.9,6.9,7.1,6.9,7,6.9,7,6.9,7,7,6.9,6.9,7,6.9,7.1,6.9,6.8,7,7,6.9,7,6.9,7,6.9,7.1,6.7,7,6.9,7,7.1,6.8,7,6.9,7,6.9,7,6.9,6.9,7,7.1,6.8,7.1,6.8,7,6.9,7,7,6.9,6.9,7,6.9,7,6.9,7,6.9,6.9,7,7,6.9,7,7,6.9,6.9,6.9,7,7,6.9,6.9,6.9,7,6.9,7,6.9,7,6.9,7,6.9,7,7.1,6.8,6.9,7,6.9,7,7,7,6.8,7,7,7,6.8,7,6.9,7,7,7.1,6.8,6.9,7,6.9,7,6.9,7,6.9,6.9,7,6.9,7,6.9,7,7.1,6.8,7,7,6.8,7,6.9,6.9,7,7,6.9,6.9,7,7,7,6.9,7,6.8,7,6.9,6.9,7.2,6.8,6.9,7,6.9,7,7,6.9,6.9,7,7,7,6.9,6.8,7,7,6.9,7,6.9,6.9,7,6.9,7.1,6.8,7.4,6.7,10.8,6.4,5.7,5.2,9.9,6.1,4.7,10.1,5,9,21.2,5.7,16.1,25,5.6,6.2,7,7.1,6.8,6.9,7,7,6.9,7,6.9,6.9,7,6.9,7.1,6.8,7,6.9,7,6.9,6.9,7,7,7,6.8,7.1,6.9,6.9,7,6.9,7,7,6.9,6.9,7,6.9,7,6.9,7.1,6.8,6.9,7,6.9,7,7,7,6.9,6.9,7,7,6.9,6.9,6.9,6.9,7.1,6.9,6.9,7,6.9,7,6.9,6.9,7.1,6.8,7,7,6.9,7,6.9,7,7,6.9,6.9,6.9,7,6.9,7,7,6.9,7.1,6.8,7,6.9,6.9,7.1,6.8,7,7,6.9,7,7,6.8,7,7,6.9,7,6.9,6.9,7,6.9,6.9,7,7,6.9,6.9,7,6.9,7.1,6.9,6.9,6.9,7.1,7,6.8,7,6.8],"gc":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"heapMb":[158.67,158.96,163.45,163.61,163.96,164.04,164.63,164.32,164.39,164.43,164.48,164.53,164.58,164.63,164.68,164.73,164.78,164.82,164.87,164.91,164.96,165.01,165.05,140.16,140.21,140.25,140.34,140.38,140.42,140.47,140.52,140.56,140.62,140.66,140.74,140.78,140.82,140.87,140.91,141.25,141.03,141.07,141.12,141.15,141.2,141.24,141.28,141.35,141.38,141.43,141.49,142.11,141.6,141.64,141.68,141.72,141.77,141.81,280.55,254.07,286.28,286.71,287.4,287.49,287.84,288.38,288.56,288.81,290.21,289.36,289.59,289.83,290.97,295.07,265.77,266.7,267.58,268.34,269.1,269.85,270.56,271.4,272,272.93,273.11,273.78,274.35,275.04,275.71,276.27,277.04,277.74,278.4,279.1,279.69,280.37,280.91,281.47,282.15,282.71,283.19,283.79,284.29,284.8,285.26,285.73,286.19,286.67,287.29,287.75,288.24,288.71,289.18,289.63,266.41,266.85,267.31,267.76,268.22,268.66,269.15,269.58,270.01,270.47,271.56,272.4,273.25,274,274.69,275.28,275.98,276.74,277.43,278.12,278.8,279.43,279.96,280.46,281.01,281.69,282.17,282.7,283.24,283.77,284.3,284.94,285.44,285.99,286.62,287.09,287.71,288.37,288.82,289.32,289.8,290.32,290.82,291.42,291.94,292.58,293.17,293.69,294.34,267.96,268.44,269.04,269.48,270.1,270.75,271.24,271.74,272.22,272.71,273.22,273.86,274.37,275.01,275.53,276.16,276.68,277.16,277.65,278.24,278.71,279.21,279.71,280.15,280.59,281.08,281.53,282,282.99,287.66,288.28,288.91,289.47,289.99,290.52,291.12,291.68,292.24,292.89,293.48,294.05,294.62,295.14,269.43,270.55,271.2,275.7,276.25,276.72,277.21,277.73,278.31,278.74,279.22,279.65,280.21,280.63,281.06,281.49,281.92,282.46,282.94,283.37,283.8,284.32,284.73,285.28,285.75,286.16,286.58,286.99,287.42,287.83,288.4,289.12,289.37,289.9,290.37,290.79,291.2,291.66,292.19,292.61,293.03,293.45,293.85,294.27,294.67,295.07,295.48,295.92,270.7,271.23,271.84,272.38,272.91,273.43,273.99,274.54,275.03,275.58,276.11,276.65,277.15,277.72,278.23,278.74,279.2,279.6,280.1,280.55,280.94,281.38,281.81,282.24,282.73,283.13,283.5,283.92,284.33,284.63,284.99,285.39,285.69,286.05,286.35,286.7,287.1,287.42,287.76,288.12,288.42,288.75,289.09,289.42,289.77,290.12,290.46,290.8,291.14,291.47,291.81,292.15,292.46,292.79,293.09,293.38,293.72,294.05,294.38,294.79,295.11,295.45,295.78,296.11,271.15,271.43,271.76,272.12,272.46,272.74,273.16,273.47,273.74,274.09,274.39,274.7,275.76,275.93,276.26,276.57,276.84,277.17,277.44,277.71,277.99,278.27,278.57,278.84,279.26,279.53,279.85,280.12,280.39,280.66,280.99,281.31,281.58,281.85,282.12,282.47,282.78,283.12,283.37,283.63,283.9,284.18,284.46,284.72,284.99,285.32,285.69,285.93,286.22,286.48,286.72,286.97,287.22,287.48,287.71,288.02,288.33,288.63,288.88,289.12,289.4,289.62,289.9,290.2,290.43,290.65,290.88,291.1,291.32,291.55,291.77,292,292.25,292.48,292.7,293.03,293.27,293.56,293.84,294.08,294.38,294.67,294.98,295.25,295.56,295.87,296.15,296.41,296.68,296.95,271.8,272.1,272.4,272.69,272.91,273.21,273.5,273.74,274.01,274.22,274.48,274.77,275.02,275.24,275.49,275.75,275.96,276.22,276.48,276.74,276.95,277.21,277.47,277.75,277.96,278.22,278.47,278.68,278.93,279.15,279.4,279.67,279.92,280.14,280.41,280.68,280.89,281.15,281.4,281.66,281.87,282.12,282.33,282.6,282.86,283.07,283.36,283.62,283.89,284.1,284.35,284.61,284.92,285.13,285.35,285.61,285.85,286.07,286.28,286.5,286.71,286.97,287.24,287.46,287.7,287.93,288.14,288.36,288.63,288.85,289.16,289.38,289.6,289.86,290.09,290.35,290.57,290.79,291.05,291.32,291.53,291.75,291.97,292.19,292.4,292.62,292.87,293.07,293.31,293.51,293.72,293.92,294.18,294.38,294.59,294.79,295,295.25,295.48,295.71,296.55,296.17,296.99,296.61,296.82,297.02,297.23,297.43,272.22,272.43,272.63,272.85,273.05,273.25,273.46,273.66,273.93,274.13,176.81,177.06,177.34,177.61,177.86,178.05,178.24,178.48,178.67,178.92,179.16,179.39,179.63,179.86,180.06,180.29,180.52,180.76,180.95,181.18,181.41,181.63,181.82,182.04,182.27,182.51,183.11,182.94,183.17,183.38,183.62,183.86,184.1,184.29,184.52,184.76,184.99,185.18,185.43,185.66,185.9,186.09,186.33,186.57,186.81,187,187.25,187.48,187.74,187.97,188.22,188.41,188.64,188.87,189.11,189.29,189.55,189.75,190.01,190.24,190.46,190.64,190.86,191.14,191.37,191.55,191.71,191.89,192.1,192.28,192.48,192.64,192.8,193,193.16,193.31,193.47,193.63,193.8,193.99,194.14,194.39,194.55,194.71,194.87,195.08,195.29,195.49,195.65,195.82,195.98,196.19,196.35,196.51,196.67,196.83,196.99,197.15,197.31,197.55,197.72,197.92,198.07,198.27,198.51,198.67,198.83,198.99,199.15,199.3,199.46,199.66,199.82,199.98,200.14,200.29,200.45,200.6,200.76,200.91,201.07,201.22,201.38,201.53,201.69,201.85,202.01,202.16,202.32,202.47],"phases":{"frame":[10,3.3,2.1,2.2,3.5,2.1,1.8,1.3,1,1.2,1.1,1.1,1.2,1.3,1.5,1.2,1.2,0.9,0.9,0.9,0.9,1,1.3,1.3,0.9,1.3,1.3,1.3,1.1,1.1,0.8,1.2,1,1,1,0.9,1,0.9,0.9,1.1,1.5,1.3,1.6,1.1,1.1,0.7,1,1,0.7,0.9,0.7,1.1,0.9,1,1,0.9,1.5,0.9,45.8,15.1,32.4,5.2,4.2,5.2,3.4,3.4,3.5,3.2,3.2,3.1,3.5,3.1,6.9,20.5,14,9.8,8.3,8.9,7.5,7.8,6.3,6,6,5.7,6,7,5.7,7.2,7,6.1,7.4,6.6,6.5,6.5,5.5,6.9,4.9,5.9,7,5.4,5.7,7.3,5.4,5.8,5.1,4.9,4.8,5.3,6.5,4.9,6,5.4,5.1,5.3,5.6,4.9,4.8,4.5,4.8,4.6,5,5,4.8,5.4,13,10.3,8.4,7.9,6.2,5.7,5.9,6.8,7.4,7.1,6.6,6.1,5.8,5.7,5.7,5.5,5.9,5.4,5.5,5.4,5.8,6.8,5.4,5.7,6.7,5.5,6.4,6.6,5.3,5.3,5.2,5.6,5.5,6.5,5.8,7.2,6.8,6,6,6.7,5.1,6.6,5.1,7.2,6.7,5.4,5.8,6.6,6.1,7.1,8.1,6.3,8.1,6.1,7.1,6,5.8,5.6,5.9,5.4,6.3,5.8,5.8,5.4,5.8,5.2,5.5,11.8,8.4,7.4,6.9,7.5,6.7,6,6.5,5.8,5.6,7,6.1,6.3,6.3,5.8,5.4,9.5,7.6,8.6,6.8,6.1,5.8,5.8,6.2,4.8,5.1,5.2,6.8,5.1,5.7,5.5,5.3,7.1,5.9,5.3,5.3,6.1,5.1,6.6,5.2,5.2,5.4,5.5,5.2,5.2,7.1,5.9,5.4,7.1,5.6,5.7,5,5.8,6.5,5.1,5.4,5,5.6,5.5,4.7,4.7,4.8,4.5,6.2,5.7,7.5,6.7,6.4,6.8,6.9,6.3,5.5,6.8,6.9,6.2,6.2,7.8,6.2,6.4,5.6,4.7,8,6.5,5.8,5.6,5.8,5.8,5.6,4.9,4.1,5.1,4.9,4.3,4.2,5,4.3,4.3,3.8,4,5.2,4.1,4.2,4.2,3.7,3.8,4.5,4.7,4.7,5.2,4.2,4.6,4.4,4.5,4,4,4.3,4.2,4.1,3.8,4.1,4.1,4.4,4.8,4.3,4.2,4.3,4.2,4.3,3.8,4.4,4.2,4.3,5,6.4,5.3,4.6,5.1,4.7,4.5,8.3,5.1,4.2,4.4,4.4,5.2,4.6,4.7,4.3,4.8,4.3,4,5.2,3.9,4,3.8,3.5,3.5,5.1,4.4,4.6,4.7,4.1,4.7,4.5,4.4,3.6,3.6,3.6,3.8,3.9,4.1,3.9,5,4.8,3.5,4.3,3.7,3.6,3.7,4.9,3.6,3.7,4,4.4,4.5,4.4,3.9,5,3.7,4,5.2,3.6,4.2,3.9,3.8,3.2,3.7,3.6,3.9,4.9,3.6,3.6,5.5,3.7,3.9,3.7,3.8,4.8,4.4,4.9,4.7,5.2,5.2,4.5,4.3,4.1,4.7,5.1,5.4,5.2,4.8,3.9,4.7,5,4.7,4.3,4.9,4.2,4.2,3.8,3.6,3.8,3.6,3.4,3.3,3.7,3.6,3.8,5,4.2,5,3.7,3.8,3.9,4,3.9,4.1,3.8,4.1,5.2,4.3,4.3,4.1,4.1,3.9,4.5,3.6,3.3,3.2,3,3.7,3.5,4,3.8,4.2,3.9,3.9,4.6,4.5,5.2,3.4,3.6,4,4.2,3.8,3.6,3.6,3.5,4.1,4.1,3.6,4,4.1,3.2,3.5,3.8,4.1,5.6,3.8,3.6,3.9,4.2,3.8,4.2,3.7,3.6,3.7,3.3,3.5,2.9,4,3.4,4.3,4.5,3.8,4.3,3.2,3.2,3.1,3.6,3,3.6,3.3,3.6,3.8,4.4,4,4.2,3.4,3.8,3.8,3.2,3.3,3.2,3.2,3.4,3.3,3.5,4,4.1,3.7,3.2,3.2,4.2,4,5.8,4.3,4.9,4.5,5.8,4.3,4.3,4.7,3.8,4.9,5.4,4.2,5.2,5.2,3.8,4,3.7,4,3.4,3.6,4.4,3.5,3.7,4,3.8,3.9,4.2,3.9,3.8,3.6,3.2,3.6,3.8,3.1,3.5,3.9,4.4,3.8,3.7,4.1,3.8,3.2,3.4,3.1,3.8,3.2,3.3,3.2,3.4,3.7,3.8,3.9,4.8,4.6,4.1,3.9,4.3,3.4,4.1,3.9,3.7,3.5,4,4.6,3.7,3.7,2.6,3.3,3.3,3.1,3.3,2.9,2.8,3,2.9,2.8,3.2,3,3.7,3.1,2.8,4.4,3.1,2.6,3,3.2,2.7,3.4,3.2,3.5,2.6,4.1,3.2,3.7,3.2,3.1,3.5,3.2,3,4,3.3,3.3,3,3.5,3.9,3.1,3.7,3.8,3.5,3.1,3.2,3.1,3,2.7,3.1,3.1,2.9,2.6,2.7,2.6,2.6,2.6,2.5,2.7,2.8,3.1,2.9,3.4,3,3.1],"input":[0,0.1,0.1,0,0.1,0.1,0.1,0.1,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0.1,0,0,0.1,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0.1,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0.2,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0.1,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0.1,0.1,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0.1,0,0.1,0,0,0.1,0,0,0.1,0.1,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0.1,0.1,0,0,0,0.1,0,0,0,0.1,0,0,0,0.1,0,0,0.1,0.1,0,0,0,0,0,0.1,0,0.1,0,0.1,0,0,0,0.1,0.1,0,0.1,0,0,0.1,0.1,0,0,0,0,0,0.1,0,0.1,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0.1,0.1,0.1,0,0.1,0,0.1,0.1,0,0,0,0.1,0,0.1,0,0.1,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0.1,0,0,0.1,0.1,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0.1,0.1,0,0.1,0.1,0,0,0,0,0,0.1,0,0,0.1,0,0,0.1,0.1,0.1,0.1,0,0.1,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0.1,0,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0.1,0,0.1,0,0,0,0.1,0,0.1,0,0.1,0.1,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0.1,0,0.1,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"roundBehind":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"gameplay":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8.8,2.2,1.6,1.2,1.2,0.9,0.8,0.9,0.8,1,0.6,0.6,0.7,0.7,1.1,0.7,0.7,0.8,0.5,0.6,0.6,0.5,0.8,0.4,0.6,0.6,0.6,0.5,0.6,0.5,0.6,0.6,0.5,0.5,0.7,0.6,0.5,0.8,0.7,0.5,0.6,0.7,0.5,0.4,0.5,0.5,0.5,0.5,0.5,0.5,0.7,4.4,1.6,1.4,1.5,1,1.1,0.9,1,1.1,1.3,1.1,0.9,0.9,0.9,0.8,0.8,1.1,0.9,0.9,0.8,1,0.9,1,1,1,1,0.8,0.9,1,1,0.8,0.9,0.8,1.1,1,1.1,1.1,0.9,1.1,0.8,0.8,0.8,0.8,1.2,0.8,0.8,1,1.2,0.9,1.1,1.1,1,1,1,0.9,0.9,0.9,0.9,0.9,0.8,0.9,0.8,0.9,0.8,0.9,0.8,0.8,2.8,0.9,0.6,0.6,0.9,0.7,0.7,0.5,1,0.6,0.8,0.6,0.7,0.8,0.6,0.7,1.4,0.8,0.9,0.7,0.6,0.5,0.6,0.5,0.5,0.6,0.5,0.7,0.5,0.7,0.9,0.5,0.8,0.5,0.6,0.5,0.6,0.7,0.8,0.5,0.6,0.6,0.8,0.5,0.6,0.5,0.6,0.6,0.7,0.5,0.9,0.5,1,0.7,0.5,0.5,0.5,0.8,0.7,0.5,0.5,0.4,0.4,0.8,0.5,1.1,1.1,1,1.1,1,1,0.8,1,1.3,1,1.1,1.1,1.1,1,0.9,0.9,1.2,1,1.2,1.1,1,1.2,0.9,0.9,0.8,0.8,0.8,0.8,0.8,0.9,0.8,0.8,0.7,0.7,1,0.7,0.8,0.8,0.6,0.8,0.8,0.8,0.9,1,0.7,1,0.9,0.9,0.6,0.6,0.8,0.7,0.8,0.6,0.8,0.7,1,0.8,0.8,0.7,0.9,0.9,0.8,0.6,0.9,0.7,0.7,1,1.2,0.5,0.5,0.5,0.8,0.6,3.6,0.6,0.5,0.6,0.7,0.8,0.6,0.8,0.7,0.6,0.6,0.5,1.2,0.4,0.5,0.4,0.4,0.4,0.7,0.6,0.5,0.8,0.6,0.5,0.5,0.5,0.3,0.4,0.4,0.5,0.6,0.5,0.5,0.6,0.6,0.5,0.5,0.5,0.4,0.7,0.7,0.4,0.5,0.3,0.4,0.6,0.7,0.5,0.8,0.5,0.6,0.6,0.6,0.8,0.7,0.5,0.4,0.6,0.4,0.5,0.7,0.5,0.5,0.9,0.8,0.8,0.7,0.8,1,0.9,0.8,0.8,0.9,0.8,1,0.8,0.9,0.8,1.3,1,0.9,0.8,0.9,0.8,0.9,0.8,0.8,1.5,1,0.7,0.7,0.8,0.8,0.9,0.7,0.6,0.7,0.8,0.8,1.1,0.8,0.9,0.6,0.5,0.7,0.9,0.8,0.9,0.8,0.9,1.3,1.1,1,0.9,0.8,1,1.1,0.7,0.6,0.6,0.6,0.7,0.7,1,0.8,0.8,0.8,0.9,1,0.8,1.2,0.4,0.5,0.5,0.7,0.6,0.5,0.4,0.4,0.7,0.8,0.5,0.5,0.6,0.3,0.4,0.6,0.6,1.2,0.5,0.5,0.5,0.7,0.4,0.6,0.5,0.5,0.6,0.5,0.6,0.4,0.5,0.4,0.7,0.6,0.4,0.6,0.3,0.4,0.4,0.5,0.4,0.4,0.5,0.4,0.4,0.8,0.7,0.5,0.6,0.6,0.5,0.5,0.4,0.5,0.3,0.6,0.3,0.5,0.4,0.5,0.6,0.3,0.5,0.6,0.6,1.2,1.1,1,0.9,1.1,1.1,0.9,1,0.9,1,1.3,0.9,1.1,1.3,0.9,0.9,0.8,1.2,0.9,0.8,1,0.8,0.9,1,0.8,0.9,0.9,1.1,0.7,0.6,0.7,0.8,1,0.7,0.9,0.8,1.1,0.9,0.9,0.8,0.7,0.6,0.7,0.7,0.8,0.7,0.6,0.7,0.7,0.7,0.9,0.9,1.2,1.1,1.1,1,0.9,0.9,0.8,0.9,0.8,0.7,0.8,1.2,0.3,0.4,0.4,0.4,0.5,0.3,0.5,0.4,0.3,0.4,0.5,0.5,0.6,0.5,0.6,0.6,0.3,1.3,0.6,0.4,0.4,0.5,0.4,0.5,0.5,0.3,0.3,0.6,0.5,0.7,0.4,0.4,0.5,0.4,0.4,0.7,0.6,0.5,0.5,0.6,0.8,0.6,0.4,0.7,0.6,0.5,0.6,0.5,0.6,0.5,0.5,0.5,0.5,0.3,0.5,0.5,0.4,0.3,0.3,0.4,0.3,0.4,0.6,0.6,0.5,0.6],"onFoot":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.8,0.1,0.3,0.1,0.1,0.2,0,0.1,0.1,0.1,0,0.1,0,0,0.2,0,0.1,0,0,0,0,0,0.1,0,0,0.1,0.1,0,0,0.1,0,0.1,0,0.1,0,0.1,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,3.7,0.9,0.8,0.8,0.5,0.6,0.4,0.5,0.5,0.8,0.5,0.5,0.4,0.5,0.3,0.4,0.4,0.4,0.4,0.4,0.5,0.5,0.5,0.5,0.4,0.4,0.4,0.5,0.5,0.5,0.4,0.5,0.4,0.5,0.4,0.6,0.6,0.5,0.5,0.4,0.3,0.3,0.4,0.5,0.4,0.4,0.4,0.6,0.5,0.6,0.6,0.5,0.5,0.5,0.4,0.4,0.5,0.5,0.5,0.4,0.4,0.4,0.4,0.4,0.4,0.3,0.4,1.8,0.2,0,0.1,0.2,0,0.1,0,0.1,0,0,0.1,0.1,0.1,0.1,0.1,0.5,0.1,0.1,0.2,0,0,0.1,0,0,0.1,0.1,0,0.1,0.1,0.1,0,0.1,0,0.1,0,0.1,0,0,0.1,0,0.1,0.1,0,0,0,0.1,0.1,0.1,0.1,0.1,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0.5,0.5,0.5,0.5,0.4,0.4,0.4,0.4,0.5,0.5,0.5,0.5,0.5,0.5,0.4,0.5,0.6,0.4,0.5,0.6,0.5,0.5,0.4,0.5,0.4,0.4,0.4,0.3,0.4,0.4,0.4,0.5,0.3,0.3,0.4,0.3,0.4,0.4,0.3,0.4,0.4,0.3,0.4,0.5,0.2,0.5,0.4,0.5,0.2,0.3,0.4,0.4,0.4,0.2,0.4,0.3,0.5,0.4,0.4,0.4,0.4,0.5,0.4,0.3,0.5,0.3,0.3,0.4,0.5,0,0,0,0.1,0.1,0.1,0,0,0.1,0.1,0,0,0,0.1,0,0,0.1,0.6,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0.1,0.1,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0.1,0.1,0.1,0.1,0.1,0.1,0,0,0.1,0.1,0.1,0.1,0,0,0,0,0,0,0,0.4,0.4,0.4,0.3,0.3,0.4,0.4,0.4,0.4,0.5,0.2,0.5,0.3,0.5,0.3,0.6,0.4,0.4,0.4,0.5,0.5,0.4,0.4,0.3,0.8,0.5,0.4,0.4,0.4,0.3,0.4,0.4,0.3,0.4,0.3,0.4,0.5,0.3,0.4,0.3,0.3,0.3,0.5,0.4,0.5,0.4,0.5,0.7,0.5,0.4,0.5,0.4,0.4,0.5,0.3,0.3,0.3,0.4,0.3,0.3,0.5,0.4,0.4,0.5,0.4,0.6,0.4,0.5,0.1,0,0,0.1,0,0.1,0.1,0,0.1,0.1,0,0,0.1,0,0,0,0,0.5,0,0,0,0.1,0,0,0,0.1,0.1,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0.1,0,0,0.1,0.6,0.5,0.5,0.5,0.5,0.5,0.4,0.4,0.4,0.6,0.4,0.5,0.6,0.5,0.4,0.4,0.6,0.5,0.3,0.6,0.4,0.4,0.5,0.4,0.5,0.4,0.6,0.4,0.4,0.3,0.4,0.5,0.3,0.4,0.3,0.4,0.4,0.4,0.3,0.4,0.3,0.4,0.3,0.3,0.3,0.3,0.2,0.4,0.3,0.4,0.4,0.5,0.5,0.6,0.6,0.5,0.5,0.4,0.4,0.4,0.3,0.4,0.6,0,0,0,0,0.1,0,0,0,0,0.1,0.1,0.1,0,0.1,0,0.1,0,0.5,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0.1,0.1,0,0.1,0.1,0,0,0,0,0,0,0.1,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0.1,0],"world":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2.4,1.1,0.3,0.4,0.4,0.2,0.3,0.3,0.2,0.3,0.2,0.1,0.2,0.3,0.5,0.4,0.3,0.4,0.2,0.2,0.2,0.1,0.3,0.1,0.1,0.1,0.2,0.1,0.1,0,0.2,0.1,0.1,0.1,0.3,0.1,0,0.3,0.2,0.2,0.2,0.2,0.1,0.1,0.2,0.2,0.2,0.2,0.2,0.1,0.1,0.2,0.1,0.1,0.3,0.2,0.1,0.2,0.1,0.1,0.1,0.2,0.2,0.2,0.2,0.2,0.2,0.3,0.2,0.1,0.2,0.2,0.1,0.2,0.1,0.2,0.3,0.1,0,0.1,0.2,0.1,0.1,0.1,0.2,0.3,0.1,0.1,0.1,0.3,0.1,0.2,0.2,0.2,0.2,0.1,0,0.2,0.2,0,0.2,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0,0.1,0.1,0.1,0.3,0.1,0.1,0.1,0.2,0.2,0.1,0.2,0.4,0.2,0.2,0.2,0.1,0.1,0.1,0.3,0.2,0.2,0.2,0.1,0.2,0.1,0.1,0.2,0.2,0.1,0.1,0.1,0.1,0.2,0.4,0.2,0.1,0.2,0,0.2,0.1,0.2,0.2,0.1,0.2,0,0.2,0.1,0.2,0.1,0.2,0.1,0.1,0.1,0.3,0.1,0.3,0.2,0.1,0.2,0.2,0.2,0.1,0.1,0.2,0.2,0.1,0.2,0.1,0.1,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0.2,0.1,0.1,0.2,0.2,0.1,0.2,0.1,0.2,0.3,0.1,0.1,0.1,0.3,0.2,0.1,0,0.1,0.1,0.2,0.1,0.1,0,0,0.1,0.1,0.3,0.1,0.1,0,0,0.1,0.1,0.2,0.2,0.2,0.2,0.1,0.2,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0,0.1,0.2,0.2,0.1,0.1,0.1,0.1,0.1,0.1,3.1,0.2,0.2,0.1,0.2,0.2,0.1,0.2,0.1,0.2,0.2,0.1,0.1,0.1,0.2,0,0.1,0,0.2,0.1,0.1,0.4,0.2,0.1,0.1,0.1,0.1,0,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.2,0.2,0.1,0.2,0,0,0.1,0.1,0.1,0.2,0,0,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.2,0.1,0.2,0.2,0.1,0,0.1,0.1,0.1,0.1,0,0.1,0,0.1,0.1,0.1,0,0.1,0.2,0.1,0.1,0.1,0,0,0.1,0.1,0,0.2,0.1,0.1,0.1,0.1,0.2,0.1,0,0.1,0.1,0.2,0.1,0.2,0.1,0.1,0.1,0,0.1,0,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0,0,0.1,0.2,0.1,0.1,0.2,0,0.2,0.1,0.1,0.1,0,0.1,0.1,0.1,0.2,0.1,0,0,0.2,0.3,0.1,0.1,0.1,0,0.1,0.2,0.2,0.1,0.1,0.1,0.1,0.2,0.1,0.2,0.1,0.1,0.1,0.2,0.1,0,0.2,0.1,0.3,0.2,0.1,0.2,0.2,0.2,0,0.2,0,0.1,0.1,0.2,0.1,0.1,0.2,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0,0.2,0.2,0,0,0.1,0.2,0.2,0,0.1,0,0.1,0.1,0.1,0.2,0.1,0.2,0.1,0.2,0.2,0.2,0,0.1,0.1,0.1,0,0.1,0.1,0.1,0.2,0.1,0.1,0.2,0.1,0.2,0,0,0.2,0.1,0.1,0.2,0.1,0.1,0.2,0.2,0.2,0.1,0.1,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0.1,0.2,0.1,0.2,0.3,0.2,0.1,0.1,0,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0,0.1,0.1,0.2,0.1,0.2,0.1,0.1,0.2,0.3,0.1,0,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.4,0.1,0.1,0.2,0.1,0.1,0.2,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0,0.1,0.2,0.2,0.2,0.2,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0,0.2,0.2,0.1,0.1,0.2],"conquest":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0.1,0.1,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"vehicles":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"bots":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0.9,0.3,0.3,0.3,0.1,0.3,0.2,0.2,0.1,0.1,0,0.1,0.2,0.5,0.3,0.3,0.4,0.1,0.2,0.2,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0,0.2,0.1,0.1,0.1,0.2,0.1,0,0.2,0,0.2,0.2,0.1,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0.1,0,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.2,0.1,0.1,0.3,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.2,0.2,0.1,0,0.1,0.1,0.1,0,0.1,0.2,0.3,0.1,0.1,0.1,0.3,0.1,0.2,0.1,0.2,0.2,0.1,0,0.2,0.2,0,0.2,0.1,0.1,0.1,0.1,0.1,0,0,0.1,0.1,0,0.1,0.1,0,0,0,0,0.1,0.1,0.1,0.1,0,0.2,0.1,0.1,0.1,0.4,0.1,0.2,0.1,0.1,0.1,0,0.3,0.2,0.1,0.2,0.1,0.2,0,0.1,0.2,0.1,0.1,0,0.1,0.1,0.2,0.4,0.2,0.1,0.1,0,0.2,0.1,0.2,0.2,0.1,0.2,0,0.2,0.1,0.2,0.1,0.2,0.1,0.1,0.1,0.2,0.1,0.2,0.2,0.1,0.2,0.2,0.2,0,0.1,0,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.2,0.1,0.2,0.2,0.1,0,0.2,0.2,0.1,0.2,0.1,0.2,0.2,0,0.1,0.1,0.3,0.2,0.1,0,0.1,0.1,0.1,0.1,0.1,0,0,0.1,0.1,0.2,0.1,0.1,0,0,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.2,0.1,0,0.1,0.1,0.1,0.1,0,0.1,0.1,0.1,0.1,0.1,0,0.1,0.1,0,0.1,0,0,0.2,0.1,0.1,0.1,0,0.1,0,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0,0,0.1,0.1,0,0,0,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0,0,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0,0.1,0.1,0.1,0.2,0.1,0,0.2,0,0,0,0.1,0,0.1,0,0,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0,0.1,0.1,0.1,0.1,0,0.1,0,0.1,0.1,0.1,0,0.1,0.2,0.1,0.1,0,0,0,0.1,0.1,0,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0,0,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0,0.1,0,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0,0.1,0.1,0.1,0,0,0.1,0.1,0,0.1,0.2,0,0.1,0,0.1,0.1,0,0.1,0.1,0.1,0.2,0.1,0,0,0.2,0,0.1,0,0.1,0,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0,0,0.1,0.1,0,0,0.1,0.2,0.2,0,0.1,0.2,0.2,0,0.1,0,0.1,0.1,0.1,0,0.1,0,0.1,0.1,0.1,0.1,0,0.1,0.1,0.1,0.1,0.1,0,0,0.2,0.2,0,0,0,0.1,0.1,0,0.1,0,0.1,0.1,0.1,0,0.1,0.1,0.1,0.2,0.2,0.1,0,0,0.1,0,0,0.1,0.1,0.1,0.1,0.1,0,0.2,0.1,0.1,0,0,0.2,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.2,0.2,0.1,0,0.1,0.2,0.1,0.1,0.3,0.2,0.1,0.1,0,0.1,0,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0,0.1,0.1,0.1,0.1,0,0,0.1,0.2,0,0,0,0.1,0.2,0.3,0.1,0,0.1,0,0.1,0.1,0.1,0.1,0.2,0.1,0.3,0.1,0.1,0.2,0.1,0.1,0.2,0.1,0.1,0.1,0,0.1,0,0.1,0.1,0.1,0,0.1,0.1,0.2,0.2,0.1,0,0.1,0.1,0.1,0.1,0.1,0,0.1,0.2,0,0.2,0.1,0.1,0.1,0.2],"combat":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.2,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0],"grenades":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0.1,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"antiTank":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"physics":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0.1,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"glass":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"camera":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3.4,0.6,0.7,0.5,0.4,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.2,0.2,0.1,0.2,0.2,0.2,0.2,0.2,0.2,0.3,0.2,0.3,0.3,0.2,0.3,0.4,0.3,0.2,0.2,0.2,0.2,0.3,0.3,0.3,0.2,0.2,0.2,0.2,0.3,0.3,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0.3,0.3,0.4,0.3,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.3,0.2,0.2,0.1,0.2,0.2,0.3,0.2,0.3,0.2,0.2,0.2,0.1,0.3,0.2,0.2,0.2,0.2,0.2,0.1,0.2,0.3,0.2,0.3,0.2,0.3,0.2,0.2,0.2,0.3,0.2,0.2,0.1,0.3,0.2,0.3,0.2,0.2,0.3,0.2,0.3,0.2,0.3,0.3,0.1,0.3,0.2,0.1,0.1,0.1,0.2,0.2,0.2,0.2,0.3,0.2,0.1,0.3,0.4,0.3,0.2,0.3,0.3,0.3,0.1,0.3,0.2,0.2,0.1,0.3,0.4,0.2,0.2,0.4,0.2,0.3,0.2,0.2,0.2,0.3,0.2,0.1,0.2,0.2,0.3,0.2,0.2,0.1,0.1,0.3,0.2,0.2,0.2,0.2,0.3,0.2,0.2,0.2,0.3,0.3,0.3,0.3,0.3,0.2,0.3,0.2,0.1,0.2,0.2,0.2,0.2,0.2,0.2,0.1,0.4,0.4,0.3,0.1,0.2,0.2,0.2,0.1,0.3,0.2,0.2,0.2,0.3,0.2,0.1,0.3,0.2,0.2,0.3,0.1,0.2,0.3,0.2,0.2,0.3,0.2,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.1,0.2,0.3,0.3,0.3,0.2,0.2,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.3,0.1,0.1,0.2,0.2,0.2,0.2,0.2,0.2,0.3,0.2,0.2,0.1,0.3,0.2,0.2,0.2,0.3,0.2,0.1,0.2,0.3,0.3,0.2,0.1,0.4,0.3,0.3,0.1,0.1,0.3,0.3,0.3,0.3,0.2,0.3,0.2,0.2,0.2,0.3,0.2,0.2,0.3,0.2,0.2,0.1,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.3,0.2,0.1,0.3,0.2,0.2,0.3,0.2,0.1,0.2,0.2,0.2,0.3,0.2,0.2,0.2,0.2,0.2,0.3,0.3,0.1,0.3,0.3,0.2,0.2,0.2,0.3,0.2,0.2,0.1,0.2,0.2,0.3,0.2,0.2,0.1,0.2,0.1,0.3,0.1,0.2,0.3,0.2,0.3,0.1,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.3,0.2,0.2,0.2,0.2,0.3,0.1,0.3,0.4,0.2,0.1,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0.2,0.2,0.3,0.2,0.3,0.1,0.1,0.2,0.3,0.3,0.2,0.2,0.2,0.3,0.3,0.2,0.2,0.2,0.3,0.3,0.2,0.1,0.2,0.2,0.2,0.1,0.3,0.2,0.2,0.2,0.1,0.2,0.3,0.2,0.2,0.2,0.3,0.3,0.2,0.1,0.2,0.3,0.2,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.1,0.2,0.3,0.2,0.2,0.2,0.2,0.1,0.2,0.2,0.2,0.1,0.2,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.1,0.1,0.2,0.1,0.2,0.2,0.1,0.1,0.1,0.3,0.3,0.1,0.2,0.2,0.3,0.1,0.2,0.2,0.1,0.2,0.1,0.2,0.1,0.2,0.2,0.1,0.2,0.2,0.2,0.3,0.3,0.2,0.2,0.3,0.3,0.2,0.2,0.2,0.1,0.3,0.2,0.2,0.3,0.2,0.1,0.1,0.2,0.2,0.2,0.2,0.2,0.1,0.2,0.2,0.2,0.2,0.2,0.2,0.1,0.2,0.2,0.3,0.1,0.3,0.2,0.3,0.2,0.2,0.3,0.2,0.2,0.1,0.1,0.2,0.1,0.1,0.1,0.2,0.1,0.3,0.2,0.2,0.2,0.3,0.2,0.2,0.2,0.2,0.1,0.2,0.2,0.2,0.2,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0.2,0.1,0.2,0.2,0.3,0.2,0.2,0.2,0.2,0.1,0.2,0.1,0.1,0.3,0.2,0.1,0.2,0.2,0.1,0.1,0.2,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.3,0.2,0.2,0.3,0.3,0.3,0.3,0.2,0.2,0.1,0.1,0.1,0.2,0.1,0.2,0.1,0.2,0,0.1,0.1,0.2,0.1,0.2,0.2,0.2,0.2],"zones":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.2,0.1,0.1,0,0.1,0.1,0,0.1,0,0.1,0.1,0,0,0,0,0.1,0,0.1,0,0,0.1,0,0,0,0.1,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0.1,0.1,0.1,0,0.1,0,0,0,0.1,0,0.1,0.1,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0.1,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0.1,0.1,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0.1,0.1,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0.1,0,0,0.1,0.1,0,0,0,0.1,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0.1,0,0,0.1,0,0,0,0,0.1,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0.2,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"hud":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1.9,0.3,0.2,0.2,0.2,0.1,0.2,0.1,0.1,0.2,0,0.1,0.2,0.2,0.2,0.1,0.1,0.1,0.1,0.2,0.1,0.2,0.1,0.1,0.1,0,0.1,0.1,0.1,0.1,0.2,0.2,0.1,0.1,0.1,0.1,0.1,0.2,0.2,0.1,0.2,0.2,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0,0.1,0,0.1,0,0.1,0.1,0.1,0,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0,0,0.1,0.1,0.1,0.2,0.1,0.1,0,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.2,0.1,0.1,0.2,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.2,0.2,0.1,0.2,0.1,0.4,0.2,0.2,0.2,0.2,0.1,0.2,0.2,0.2,0.1,0.3,0.2,0.2,0.2,0.2,0.1,0.3,0.2,0.3,0.1,0.2,0.2,0.1,0.1,0.2,0.2,0.1,0.2,0.1,0.2,0.3,0.1,0.3,0.1,0.3,0.1,0.2,0.2,0.4,0.1,0.2,0.2,0.2,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.2,0.2,0.4,0.2,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0,0.1,0.4,0.2,0.2,0.2,0.2,0.2,0.1,0.2,0.2,0.1,0.3,0.2,0.1,0.2,0.2,0.1,0.1,0.1,0.1,0.1,0.3,0.2,0.1,0.2,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0,0.1,0.1,0,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0,0,0.1,0,0,0.1,0.1,0,0.1,0.1,0.1,0.1,0.1,0.1,0,0.1,0,0.1,0.1,0,0.1,0.3,0.1,0.1,0.1,0.2,0.1,0.1,0.2,0.1,0.1,0.1,0.2,0.2,0.4,0.2,0.1,0.2,0.1,0.2,0.1,0.1,0.1,0,0.1,0.3,0.2,0.2,0.1,0.2,0.2,0.2,0.2,0,0,0.1,0.2,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0.1,0.1,0.2,0.3,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.2,0.1,0.3,0.3,0.2,0.3,0.3,0.1,0.2,0.2,0.1,0.1,0.3,0.2,0.2,0.1,0.1,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0.2,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.1,0.2,0.1,0.1,0.1,0.2,0.1,0.2,0.1,0.1,0.2,0.1,0.2,0.1,0.1,0,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.2,0.2,0.1,0.1,0.1,0,0.1,0.1,0.1,0,0,0.1,0.2,0.1,0,0.3,0.1,0.2,0.1,0.1,0.1,0.2,0.1,0.1,0.2,0.1,0.1,0.2,0.2,0.1,0.1,0.2,0.3,0.4,0.1,0.2,0.1,0.1,0.1,0.3,0.2,0.1,0.2,0.2,0.2,0.1,0.1,0.1,0.1,0.1,0,0.2,0,0.1,0.1,0.2,0.1,0.1,0.3,0,0.2,0.4,0.2,0.2,0.2,0.2,0.1,0.2,0.1,0.2,0.1,0.2,0.1,0.1,0.1,0.1,0.2,0.2,0.2,0.2,0.2,0.6,0.2,0.1,0.1,0.2,0.2,0.1,0.2,0.2,0.3,0.3,0.1,0.2,0.2,0.1,0.1,0.2,0.2,0.1,0.2,0.1,0.1,0.2,0.2,0.1,0,0.2,0.1,0.1,0,0,0.1,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0,0,0,0.1,0.1,0.1,0,0.1,0,0,0.1,0.1,0.1,0.2,0.2,0.1,0.1,0.2,0.1,0,0.2,0.1,0.1,0.1,0.3,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0,0.1,0.1,0,0.2,0.1,0.2,0.2,0.1,0.3,0.2,0.2,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.3,0.2,0.1,0.1,0.2,0.2,0.2,0.1,0.2,0.1,0.2,0.1,0.1,0.2,0.2,0.2,0.2,0.1,0,0.1,0.3,0.1,0.2,0.1,0.1,0.1,0.1,0.1,0.3,0.1,0.2],"hudDraw":[0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"post":[0.1,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.2,0.1,0.2,0.1,0.1,0.1,0.1,0,0.1,0,0,0.1,0,0,0,0,0.2,0.1,0.1,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0.1,0.1,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0.1,0,0.1,0,0,0.1,0,0.2,0,0.1,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0.1,0,0,0,0,0.1,0,0,0,0,0,0.2,0.1,0,0,0.1,0,0,0.1,0,0,0,0.1,0.1,0,0,0,0.1,0,0.1,0,0,0,0.1,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0.2,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0.1,0,0,0,0,0,0.1,0,0,0,0.1,0,0.1,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0.1,0.1,0.1,0,0,0.1,0,0,0,0.1,0,0,0.1,0,0.1,0,0,0,0,0,0.1,0.1,0,0.1,0,0.1,0,0,0,0,0.1,0.1,0,0,0,0.1,0,0.1,0,0,0,0.1,0.1,0,0,0,0,0.1,0.1,0,0.1,0.1,0.1,0.1,0,0,0,0.1,0.1,0.1,0,0,0,0,0,0.1,0.1,0,0,0,0,0,0.1,0,0.1,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0.1,0.1,0,0,0.1,0.1,0,0,0,0,0.1,0,0.1,0.1,0,0,0,0.1,0,0.1,0,0,0.1,0,0,0.1,0,0,0.1,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0.1,0,0.1,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0,0,0.1,0,0,0,0,0,0.1,0.1,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0.1,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0.1,0,0.1,0.1,0.1,0,0,0.1,0.1,0,0,0.1,0,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0],"culling":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.3,0,0.2,0,0,0,0,0,0,0,0,0,0,0,0,0.3,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0.1,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.1,0,0.1,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0.1,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0.1,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0.2,0,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0.1,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0],"audio":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.1,0,0,0,0],"render":[9.8,3.1,1.9,2,3.3,2,1.7,1.1,0.9,1.2,1,1.1,1.2,1.3,1.4,1.2,1.2,0.9,0.9,0.8,0.9,1,1.3,1.1,0.9,1.2,1.2,1.1,1.1,1,0.8,1.1,0.9,0.9,0.9,0.8,0.9,0.9,0.9,1.1,1.4,1.1,1.6,0.9,1.1,0.7,0.9,1,0.7,0.9,0.7,1,0.9,0.9,0.9,0.8,1,0.9,45.4,15,28.4,4.1,3.5,4.4,2.7,2.7,2.9,2.7,2.6,2.4,2.5,2.3,5.9,11.2,11.4,8,7,7.6,6.5,6.8,5.3,5,5,5,5.2,6.3,5,6.1,6.3,5.2,6.5,5.9,5.8,5.9,4.9,6.1,4.5,5.2,6.3,4.8,5.1,6.4,4.8,5.1,4.5,4.4,4.2,4.5,5.9,4.4,5,4.7,4.5,4.6,4.9,4.3,4.3,4,4.1,4,4.4,4.4,4.3,4.7,8.5,8.6,7,6.3,5.1,4.6,4.9,5.8,6.3,5.7,5.4,5,4.8,4.7,4.8,4.5,4.6,4.5,4.5,4.5,4.8,5.9,4.4,4.6,5.6,4.4,5.5,5.6,4.2,4.3,4.4,4.6,4.5,5.4,4.7,6,5.7,5,4.9,5.8,4.3,5.7,4.3,6,5.9,4.6,4.8,5.4,5.1,5.9,6.8,5.3,7.1,5,6.2,5,4.8,4.6,5,4.6,5.2,4.9,4.8,4.5,4.9,4.4,4.7,8.8,7.4,6.7,6.3,6.4,5.9,5.3,5.9,4.8,4.9,6.1,5.4,5.5,5.5,5.1,4.7,8,6.8,7.5,6.1,5.5,5.2,5.1,5.6,4.3,4.5,4.6,6,4.6,5,4.6,4.8,6.3,5.3,4.7,4.6,5.5,4.4,5.6,4.6,4.6,4.8,4.7,4.6,4.5,6.5,5.3,4.6,6.4,5.1,4.6,4.4,4.8,5.7,4.5,4.8,4.5,4.7,4.7,4.2,4.1,4.2,4,5.3,5.2,6.3,5.5,5.2,5.6,5.8,5.2,4.6,5.7,5.6,5.2,5.1,6.5,5,5.3,4.5,3.8,6.7,5.4,4.6,4.5,4.7,4.5,4.6,3.9,3.3,4.2,4,3.4,3.4,4.1,3.4,3.4,3,3.3,4,3.4,3.3,3.2,3,3,3.7,3.7,3.7,4.2,3.4,3.6,3.3,3.6,3.2,3.4,3.5,3.5,3.1,3,3.2,3.3,3.4,4,3.3,3.3,3.3,3.2,3.4,3.1,3.4,3.4,3.6,3.9,5.1,4.6,3.8,4.5,3.8,3.9,4.7,4.5,3.6,3.7,3.7,4.4,3.8,3.8,3.6,4,3.6,3.4,3.9,3.3,3.5,3.3,3,3.1,4.4,3.8,4,3.8,3.5,4.1,3.8,3.8,3.1,3.2,3.2,3.3,3.1,3.5,3.4,4.4,4.1,2.9,3.7,3.2,3.2,2.9,4,3.2,3.1,3.6,4,3.9,3.5,3.3,4.1,3.1,3.3,4.4,2.9,3.4,3.2,3.1,2.8,3.1,3.1,3.4,4.1,2.9,3.1,4.4,2.9,3,3,3,3.8,3.4,4.1,3.8,4.3,4.4,3.5,3.4,3.2,3.8,3.8,4.3,4.2,3.8,3,3.8,3.9,3.9,3.5,3.3,3.2,3.4,3.1,2.8,3,2.7,2.6,2.7,3,2.7,2.9,3.7,3.4,4,3,3.2,3.1,3.1,3,3.2,3,3.2,3.8,3.1,3.2,3.1,3.1,2.9,3.3,2.7,2.6,2.6,2.4,2.9,2.8,2.8,3,3.2,3.1,3,3.5,3.5,3.9,3,3,3.5,3.4,3.2,3.1,3.1,3.1,3.4,3.3,3.1,3.5,3.5,2.8,3.1,3.2,3.5,4.3,3.3,3.1,3.4,3.4,3.2,3.6,3.2,3.1,3.1,2.7,2.9,2.5,3.5,3,3.6,3.7,3.3,3.6,2.8,2.7,2.6,3.1,2.6,3,2.7,3.1,3.3,3.6,3.2,3.6,2.8,3.2,3.3,2.7,2.8,2.7,2.8,2.8,2.9,2.9,3.5,3.3,3,2.7,2.6,3.4,3.4,4.4,3.2,3.9,3.5,4.6,3.2,3.3,3.5,2.9,3.9,4,3.2,4,3.7,2.7,3,2.7,2.7,2.4,2.8,3.3,2.7,2.8,2.9,2.9,3,3.3,2.8,3.1,3,2.5,2.8,2.6,2.4,2.5,3.1,3.3,2.8,2.8,3.1,3,2.5,2.6,2.4,2.8,2.4,2.7,2.4,2.6,2.9,2.9,3,3.5,3.5,3,2.8,3.4,2.5,3.2,3,2.8,2.7,3.2,3.4,3.4,3.1,2.2,2.7,2.7,2.7,2.7,2.5,2.3,2.5,2.4,2.3,2.4,2.5,2.9,2.5,2.3,2.9,2.5,2.2,2.6,2.7,2.3,2.8,2.6,3,2.3,3.5,2.7,2.9,2.6,2.7,2.8,2.7,2.5,3.2,2.7,2.7,2.5,2.9,3.1,2.4,3.2,3,2.8,2.5,2.5,2.6,2.4,2.2,2.6,2.5,2.4,2.2,2.2,2,2.2,2.3,2.2,2.3,2.4,2.6,2.3,2.7,2.5,2.5]}}}</script>
+
+<script>
+"use strict";
+
+/* ── the phase tree ────────────────────────────────────────────────────────
+   PHASES in FrameProfile.ts is a flat list and the nesting lives in Game.ts's
+   bracket placement, which the contract writes down. It is restated here
+   because the containment is what makes an attribution readable: a child's
+   time is INSIDE its parent's, so the two must never be added together. */
+/* A capture from this build onward CARRIES its tree (`report.tree`, straight
+   from `PARENT_OF` in FrameProfile.ts), and that is what gets used. This copy
+   is the fallback for captures taken before that field existed — and it is the
+   only thing here that can go stale, so it is the only thing here that should
+   ever need editing. */
+const FALLBACK_TREE = {
+  input: "frame", roundBehind: "frame", gameplay: "frame",
+  driver: "gameplay", onFoot: "gameplay", world: "gameplay",
+  net: "world", conquest: "world", vehicles: "world", bots: "world",
+  combat: "world", grenades: "world", antiTank: "world", physics: "world",
+  glass: "world",
+  camera: "gameplay", zones: "gameplay", hud: "gameplay",
+  hudDraw: "frame", post: "frame", culling: "frame", audio: "frame",
+  render: "frame",
+};
+
+let PARENT = {}, KIDS = {}, DEPTH = {}, ORDER = [];
+
+/**
+ * Rebuilds the containment from a child→parent map.
+ *
+ * Child ORDER is the map's own key order, which is the order the phases were
+ * declared in and therefore the order a frame runs them — the only order the
+ * ladder should be read in.
+ */
+function useTree(parentMap) {
+  PARENT = Object.assign({}, parentMap);
+  KIDS = {};
+  const names = new Set();
+  for (const [child, par] of Object.entries(PARENT)) {
+    names.add(child); names.add(par);
+    (KIDS[par] = KIDS[par] || []).push(child);
+  }
+  const roots = [...names].filter((n) => !PARENT[n]);
+  DEPTH = {}; ORDER = [];
+  const walk = (n, d) => {
+    if (DEPTH[n] != null) return;          // a malformed cycle must not hang the page
+    DEPTH[n] = d; ORDER.push(n);
+    (KIDS[n] || []).forEach((k) => walk(k, d + 1));
+  };
+  roots.forEach((r) => walk(r, 0));
+}
+useTree(FALLBACK_TREE);
+
+/* The canvas font stack, spelled once. Canvas takes a CSS font shorthand, so a
+   family list works here exactly as it does in the stylesheet. */
+const MONO = 'ui-monospace, Menlo, Consolas, monospace';
+
+/* ── small helpers ─────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+const fmt = (v, p = 2) => (v == null || !isFinite(v) ? "—" : Number(v).toFixed(p));
+const pct = (v) => (v * 100).toFixed(1) + "%";
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ── the hand-off ──────────────────────────────────────────────────────────
+   The chip's VIEW button writes the whole report to this key and opens this
+   page. It works at all only because the reader is on the GAME'S OWN ORIGIN —
+   same origin, same `localStorage` — which is the reason this file is in
+   `public/` rather than hosted somewhere else.
+
+   Neither side clears it. A reader that consumed the key would come up empty on
+   a refresh, which is the first thing anybody does to a page full of charts; so
+   the game overwrites it on every hand-off and this page prints the capture's
+   own timestamp rather than letting a stale one pass for fresh. The key is
+   spelled the same in `src/ui/ProfileChip.ts`. */
+const HANDOFF_KEY = "greywatch.profile.handoff";
+
+function handedOver() {
+  try {
+    return localStorage.getItem(HANDOFF_KEY);
+  } catch (e) {
+    // A browser refusing storage outright. There is still the drop zone.
+    return null;
+  }
+}
+
+/* ── state ─────────────────────────────────────────────────────────────── */
+let REPORT = null;
+let TRACE = null;
+let fitSpikes = false;
+
+/* ── loading ───────────────────────────────────────────────────────────── */
+function detect(text) {
+  let json;
+  try { json = JSON.parse(text); }
+  catch (e) { throw new Error("That is not valid JSON. " + e.message); }
+  if (json && Array.isArray(json.traceEvents)) return { kind: "trace", data: json };
+  if (json && Array.isArray(json.phases) && json.frame) return { kind: "report", data: json };
+  throw new Error(
+    "JSON loaded, but it is neither a profile report (no “phases” array) " +
+    "nor a Chrome trace (no “traceEvents”). Check you copied the whole capture."
+  );
+}
+
+function load(text, name) {
+  const err = $("loaderr");
+  err.innerHTML = "";
+  let got;
+  try { got = detect(text); }
+  catch (e) { err.appendChild(el("div", "err", e.message)); return; }
+
+  $("srcname").textContent = name || "";
+  $("loader").hidden = true;
+  $("btn-new").hidden = false;
+  if (got.kind === "report") {
+    REPORT = got.data; TRACE = null;
+    $("trace").hidden = true; $("report").hidden = false;
+    renderReport(REPORT);
+  } else {
+    TRACE = got.data; REPORT = null;
+    $("report").hidden = true; $("trace").hidden = false;
+    renderTrace(TRACE);
+  }
+  window.scrollTo({ top: 0, behavior: "instant" in window ? "instant" : "auto" });
+}
+
+/* ── the reading ───────────────────────────────────────────────────────────
+   The one thing this page exists to do that a JSON dump does not. A hitch's
+   spans are compared with its own wall clock: what the tick did not spend was
+   spent outside it, and whether a collection landed on the same frame is what
+   separates the two investigations. Best-effort by construction — the
+   sentinel's callback runs after the collection, so a count lands on the frame
+   it interrupted or the one after. */
+function readHitch(h) {
+  const wall = h.frameMs;
+  const tick = h.phases && h.phases.frame != null ? h.phases.frame : null;
+  const outside = tick == null ? null : Math.max(0, wall - tick);
+  const outShare = outside == null ? null : outside / wall;
+  let kind = "tick", why = "";
+  if (outShare != null && outShare > 0.5) {
+    if (h.gc > 0) { kind = "gc"; why = "a collection landed on this frame and the tick did not spend the time"; }
+    else { kind = "outside"; why = "the time went outside the tick with no collection on it"; }
+  } else {
+    let top = null, topMs = 0;
+    for (const k of (KIDS.frame || [])) {
+      const v = h.phases ? h.phases[k] : null;
+      if (v != null && v > topMs) { topMs = v; top = k; }
+    }
+    why = top ? "the tick spent it, mostly in " + top : "the tick spent it";
+    kind = "tick";
+  }
+  return { wall, tick, outside, outShare, kind, why };
+}
+
+/* ── report ────────────────────────────────────────────────────────────── */
+function renderReport(r) {
+  // The capture states its own shape where it can. See `useTree`.
+  useTree(r.tree && Object.keys(r.tree).length ? r.tree : FALLBACK_TREE);
+  const mem = r.memory || null;
+  const clock = r.clock || {};
+  const below = new Set(clock.belowGrain || []);
+
+  $("r-map").textContent = r.map && r.map !== "?" ? r.map : "capture";
+  const meta = $("r-meta"); meta.innerHTML = "";
+  const bits = [
+    ["", r.reason || "capture"],
+    ["frames", String(r.window.frames)],
+    ["window", fmt(r.window.seconds, 2) + " s"],
+    ["taken", (r.takenAt || "").replace("T", " ").replace(/\..*$/, "")],
+  ];
+  for (const [k, v] of bits) {
+    const d = el("div");
+    if (k) d.appendChild(el("b", null, k + " "));
+    d.appendChild(document.createTextNode(v));
+    meta.appendChild(d);
+  }
+
+  /* verdict */
+  const reads = (r.hitches || []).map(readHitch);
+  const nGc = reads.filter((x) => x.kind === "gc").length;
+  const nOut = reads.filter((x) => x.kind === "outside").length;
+  const nTick = reads.filter((x) => x.kind === "tick").length;
+  const lede = $("r-lede"), sub = $("r-sub"), vp = $("r-verdict");
+  vp.className = "panel verdict";
+  lede.innerHTML = ""; sub.textContent = "";
+
+  if (!reads.length) {
+    vp.classList.add("is-clean");
+    lede.innerHTML = "No frame in this window cleared the hitch bar of <span class=\"k\">" +
+      fmt(r.frame.hitchThresholdMs, 1) + " ms</span>.";
+    sub.textContent = "The bar is the greater of 24 ms and 2.5x what the device was managing" +
+      (r.frame.baselineMs != null ? " (a floor of " + fmt(r.frame.baselineMs, 1) + " ms here)" : "") +
+      ", so an empty list means smooth on this machine rather than smooth in the abstract.";
+  } else {
+    const worst = reads[0];
+    vp.classList.add("is-" + worst.kind);
+    const parts = [];
+    parts.push(String(reads.length) + (reads.length === 1 ? " slow frame" : " slow frames") + " kept. ");
+    lede.appendChild(document.createTextNode(parts.join("")));
+    const strong = el("em", null, "The worst is " + fmt(worst.wall, 1) + " ms");
+    lede.appendChild(strong);
+    if (worst.tick != null) {
+      lede.appendChild(document.createTextNode(
+        ", and the tick accounts for " + fmt(worst.tick, 1) + " ms of it — "
+      ));
+      const k = el("span", "k", pct(worst.outShare) + " outside the tick");
+      lede.appendChild(k);
+      lede.appendChild(document.createTextNode(worst.kind === "gc"
+        ? ", with a collection on that frame."
+        : worst.kind === "outside" ? ", with no collection on it." : "."));
+    }
+    const tally = [];
+    if (nOut) tally.push(nOut + " outside the tick");
+    if (nGc) tally.push(nGc + " with a collection");
+    if (nTick) tally.push(nTick + " inside the tick");
+    sub.textContent = tally.join(" · ") +
+      ". Time outside the tick is the browser — vsync wait, present, compositing, a shader " +
+      "compile — and a collection count is best-effort: the sentinel reports after the fact, " +
+      "so it lands on the frame it interrupted or the one after.";
+  }
+
+  /* stats */
+  const stats = $("r-stats"); stats.innerHTML = "";
+  const tile = (k, v, unit, foot, acc) => {
+    const d = el("div", "stat" + (acc ? " acc-" + acc : ""));
+    d.appendChild(el("div", "k", k));
+    const val = el("div", "v"); val.textContent = v;
+    if (unit) { const s = el("small"); s.textContent = unit; val.appendChild(s); }
+    d.appendChild(val);
+    if (foot) d.appendChild(el("div", "f", foot));
+    return d;
+  };
+  const f = r.frame;
+  stats.appendChild(tile("Rate", fmt(f.fps, 1), " fps", "mean " + fmt(f.mean, 2) + " ms", "signal"));
+  stats.appendChild(tile("1% low", fmt(f.onePercentLow, 1), " ms", "p99 " + fmt(f.p99, 1), f.onePercentLow > f.mean * 3 ? "fault" : null));
+  stats.appendChild(tile("Worst", fmt(f.max, 1), " ms", "max in window"));
+  stats.appendChild(tile("Slow frames", String(f.hitches), "", f.hitchThresholdMs != null ? "bar " + fmt(f.hitchThresholdMs, 1) + " ms" : "", f.hitches ? "fault" : null));
+  if (mem && mem.gcObserved) {
+    stats.appendChild(tile("Collections", fmt(mem.gcPerSec, 2), " /s", mem.gcEvents + " in window", "coll"));
+  }
+  if (mem && mem.heapLive) {
+    stats.appendChild(tile("Allocation", fmt(mem.allocMbPerSec, 1), " MB/s", "peak " + fmt(mem.heapPeakMb, 0) + " MB", "heap"));
+  }
+  const c = r.counters || {};
+  stats.appendChild(tile("Draw calls", String(c.drawCalls != null ? c.drawCalls : "—"), "", (c.activeMeshes != null ? c.activeMeshes + " meshes" : "")));
+  stats.appendChild(tile("Mesh walk", fmt(c.meshWalkMs, 2), " ms", "rtt " + fmt(c.renderTargetsMs, 2) + " ms"));
+
+  /* charts */
+  const series = r.series;
+  $("p-frames").hidden = !series;
+  // Older captures have a series without the counters; the panel is absent
+  // rather than empty, the way the heap one is.
+  $("p-draws").hidden = !(series && series.drawCalls && series.drawCalls.length);
+  $("p-heap").hidden = !(series || (mem && !mem.heapLive));
+  if (series) {
+    drawFrames(r);
+    if (series.drawCalls && series.drawCalls.length) drawSeriesCounters(r);
+    if (mem && mem.heapLive) {
+      $("heap-frozen").hidden = true;
+      $("c-heap").parentElement.hidden = false;
+      $("n-heap").textContent = fmt(mem.heapMb, 0) + " MB mean · " + fmt(mem.heapPeakMb, 0) + " MB peak · " + fmt(mem.allocMbPerSec, 1) + " MB/s allocated";
+      drawHeap(r);
+    } else {
+      showFrozenHeap(mem);
+    }
+  } else if (mem && !mem.heapLive) {
+    showFrozenHeap(mem);
+  }
+
+  /* ladder */
+  renderLadder($("r-ladder"), r.phases, below, r.frame.mean, clock);
+
+  /* hitches */
+  const box = $("r-hitches"); box.innerHTML = "";
+  $("n-hitches").textContent = reads.length
+    ? reads.length + " kept, worst first"
+    : "none over the bar";
+  if (!reads.length) {
+    const d = el("div"); d.style.padding = "16px";
+    d.appendChild(el("p", "empty", "Nothing in this window cleared the bar. A capture keeps the worst frames whole, so this list being empty is itself the result."));
+    box.appendChild(d);
+  } else {
+    r.hitches.forEach((h, i) => box.appendChild(hitchRow(h, reads[i], below)));
+  }
+
+  /* device */
+  const dv = $("r-device"); dv.innerHTML = "";
+  const kv = (k, v) => { const d = el("div"); d.appendChild(el("div", "k", k)); d.appendChild(el("div", "v", v)); dv.appendChild(d); };
+  const dev = r.device || {};
+  kv("Clock grain", fmt(clock.grainMs, 4) + " ms");
+  kv("Span overhead", fmt(clock.overheadUs, 3) + " µs per pair");
+  kv("Hitch bar", f.hitchThresholdMs != null ? fmt(f.hitchThresholdMs, 1) + " ms  (floor " + fmt(f.baselineMs, 2) + " ms)" : "24 ms (fixed)");
+  kv("Heap readable", mem ? (mem.heapLive ? "yes" : "no — rate-limited") : "not recorded");
+  kv("Viewport", (dev.window || "?") + "  →  " + (dev.backingStore || "?"));
+  kv("Pixel ratio", String(dev.devicePixelRatio != null ? dev.devicePixelRatio : "?"));
+  kv("Cores / memory", (dev.hardwareConcurrency || "?") + " ×  " + (dev.deviceMemoryGb != null ? dev.deviceMemoryGb + " GB" : "?"));
+  kv("Browser", dev.userAgent || "?");
+}
+
+function showFrozenHeap(mem) {
+  const p = $("heap-frozen");
+  p.hidden = false;
+  const c = $("c-heap").parentElement;
+  if (c) c.hidden = true;
+  $("n-heap").textContent = "not readable here";
+  p.innerHTML = "";
+  const row = el("div", "frozen");
+  row.appendChild(el("span", "mark", "frozen"));
+  row.appendChild(el("p", null,
+    "This browser rate-limits its heap counter to one update every twenty minutes, so the " +
+    "capture recorded no series rather than a flat line that would read as an idle heap. " +
+    "Collections are still counted" +
+    (mem && mem.gcObserved ? " — " + mem.gcEvents + " in this window — " : " ") +
+    "because that watch needs no such permission. Start Chrome with --enable-precise-memory-info " +
+    "to get the curve."));
+  p.appendChild(row);
+}
+
+/* ── the attribution ladder ────────────────────────────────────────────── */
+function renderLadder(host, phases, below, frameMean, clock, opts) {
+  opts = opts || {};
+  const single = !!opts.single;
+  host.innerHTML = "";
+  const by = {};
+  phases.forEach((p) => { by[p.name] = p; });
+  const table = el("table", "lad");
+  const thead = el("thead");
+  const hr = el("tr");
+  const COLS = single ? ["Phase", "ms", "Share"] : ["Phase", "Mean", "p50", "p95", "Max", "Share", "Frames"];
+  COLS.forEach((h, i) => {
+    const th = el("th", null, h);
+    if (i === 0) th.colSpan = 1;
+    hr.appendChild(th);
+  });
+  thead.appendChild(hr); table.appendChild(thead);
+  const tb = el("tbody");
+  const root = by.frame ? by.frame.mean : frameMean;
+
+  const addRow = (name) => {
+    const p = by[name];
+    if (!p) return;
+    const depth = DEPTH[name] || 0;
+    const parent = PARENT[name] ? by[PARENT[name]] : null;
+    const basis = parent ? parent.mean : root;
+    const tr = el("tr");
+    if (below.has(name)) tr.className = "dim";
+
+    const td0 = el("td");
+    const nm = el("div", "nm");
+    const lbl = el("span", "lbl mono");
+    lbl.style.paddingLeft = (depth * 14) + "px";
+    lbl.appendChild(el("span", null, name));
+    if (below.has(name)) lbl.appendChild(el("span", "grain", "sub-grain"));
+    nm.appendChild(lbl);
+    const bar = el("div", "bar d" + Math.min(depth, 3));
+    const fill = el("span");
+    fill.style.width = Math.max(0, Math.min(100, basis > 0 ? (p.mean / basis) * 100 : 0)) + "%";
+    bar.appendChild(fill);
+    nm.appendChild(bar);
+    td0.appendChild(nm);
+    tr.appendChild(td0);
+
+    const cells = single
+      ? [fmt(p.mean, 2), root > 0 ? pct(p.mean / root) : "—"]
+      : [fmt(p.mean, 3), fmt(p.p50, 2), fmt(p.p95, 2), fmt(p.max, 2),
+         root > 0 ? pct(p.mean / root) : "—", String(p.frames)];
+    cells.forEach((v, i) => {
+      const td = el("td", null, v);
+      // A sub-grain phase's tails are quantisation noise; its mean is not.
+      if (!single && below.has(name) && (i >= 1 && i <= 3)) td.className = "soft";
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+
+    (KIDS[name] || []).forEach(addRow);
+
+    // The remainder: what the parent spent that none of its children claimed.
+    if (KIDS[name] && by[name]) {
+      let kidSum = 0, any = false;
+      KIDS[name].forEach((k) => { if (by[k]) { kidSum += by[k].mean; any = true; } });
+      const rest = p.mean - kidSum;
+      if (any && rest > 0.0005) {
+        const rtr = el("tr", "rest");
+        const rtd = el("td");
+        const rnm = el("div", "nm");
+        const rlbl = el("span", "lbl mono", "└ unattributed");
+        rlbl.style.paddingLeft = ((depth + 1) * 14) + "px";
+        rnm.appendChild(rlbl);
+        const rbar = el("div", "bar rest");
+        const rfill = el("span");
+        rfill.style.width = Math.max(0, Math.min(100, (rest / p.mean) * 100)) + "%";
+        rbar.appendChild(rfill);
+        rnm.appendChild(rbar);
+        rtd.appendChild(rnm);
+        rtr.appendChild(rtd);
+        (single ? [fmt(rest, 2), root > 0 ? pct(rest / root) : "—"]
+                : [fmt(rest, 3), "", "", "", root > 0 ? pct(rest / root) : "—", ""])
+          .forEach((v) => rtr.appendChild(el("td", null, v)));
+        tb.appendChild(rtr);
+      }
+    }
+  };
+
+  ORDER.forEach((n) => { if (DEPTH[n] === 0) addRow(n); });
+
+  // Anything recorded that the tree does not know about (a phase added later).
+  const known = new Set(ORDER);
+  phases.filter((p) => !known.has(p.name)).forEach((p) => {
+    const tr = el("tr");
+    const td0 = el("td");
+    const nm = el("div", "nm");
+    nm.appendChild(el("span", "lbl mono", p.name));
+    const bar = el("div", "bar");
+    const fill = el("span");
+    fill.style.width = (root > 0 ? Math.min(100, (p.mean / root) * 100) : 0) + "%";
+    bar.appendChild(fill); nm.appendChild(bar); td0.appendChild(nm); tr.appendChild(td0);
+    (single ? [fmt(p.mean, 2), root > 0 ? pct(p.mean / root) : "—"]
+            : [fmt(p.mean, 3), fmt(p.p50, 2), fmt(p.p95, 2), fmt(p.max, 2), root > 0 ? pct(p.mean / root) : "—", String(p.frames)])
+      .forEach((v) => tr.appendChild(el("td", null, v)));
+    tb.appendChild(tr);
+  });
+
+  table.appendChild(tb);
+  host.appendChild(table);
+
+  if (opts.note === false) return;
+  const note = el("p", "empty");
+  note.style.marginTop = "12px";
+  note.textContent =
+    "Each bar is drawn against its parent, not against the frame, because the spans nest: a child's " +
+    "time is already inside the row above it and the two must never be added together. " +
+    (clock.grainMs
+      ? "Rows marked sub-grain cost less than one clock tick (" + fmt(clock.grainMs, 3) +
+        " ms) — their means converge over the window, their percentiles are the grid."
+      : "");
+  host.appendChild(note);
+}
+
+/* ── one slow frame ────────────────────────────────────────────────────── */
+function hitchRow(h, read, below) {
+  const d = el("details", "hitch");
+  const s = el("summary");
+
+  const ms = el("div", "ms");
+  ms.textContent = fmt(h.frameMs, 1);
+  const u = el("small"); u.textContent = " ms"; ms.appendChild(u);
+  s.appendChild(ms);
+
+  const split = el("div", "split");
+  if (read.tick != null) {
+    const tickPart = el("i", "tick");
+    tickPart.style.width = pct(read.tick / read.wall);
+    tickPart.title = "inside the tick";
+    split.appendChild(tickPart);
+    const outPart = el("i", read.kind === "gc" ? "gc" : "out");
+    outPart.style.width = pct(read.outside / read.wall);
+    outPart.title = "outside the tick";
+    split.appendChild(outPart);
+  }
+  s.appendChild(split);
+
+  const tags = el("div", "tags");
+  if (h.gc > 0) tags.appendChild(el("span", "tag gc", h.gc + (h.gc === 1 ? " collection" : " collections")));
+  tags.appendChild(el("span", "tag " + read.kind,
+    read.kind === "tick" ? "in the tick" : read.kind === "gc" ? "collection" : "outside"));
+  tags.appendChild(el("span", "tag", h.ago + " s ago"));
+  s.appendChild(tags);
+  d.appendChild(s);
+
+  const det = el("div", "detail");
+  const read1 = el("p", "read");
+  read1.textContent = read.tick == null
+    ? "This frame recorded no frame span, so nothing can be attributed."
+    : "Wall clock " + fmt(read.wall, 1) + " ms, tick " + fmt(read.tick, 1) + " ms — " +
+      fmt(read.outside, 1) + " ms (" + pct(read.outShare) + ") went outside the tick, and " +
+      read.why + ".";
+  det.appendChild(read1);
+
+  const where = el("div", "where");
+  const w = (k, v) => { const x = el("div"); x.appendChild(el("b", null, k + " ")); x.appendChild(document.createTextNode(v)); where.appendChild(x); };
+  w("at", "(" + h.x + ", " + h.y + ", " + h.z + ")");
+  w("bots", String(h.botsAlive));
+  w("draws", String(h.drawCalls));
+  w("meshes", String(h.activeMeshes));
+  w("walk", fmt(h.meshWalkMs, 2) + " ms");
+  w("rtt", fmt(h.renderTargetsMs, 2) + " ms");
+  if (h.heapMb) w("heap", fmt(h.heapMb, 1) + " MB");
+  det.appendChild(where);
+
+  // This frame's own spans, as the same ladder.
+  const phases = [];
+  for (const name of ORDER) {
+    if (h.phases && h.phases[name] != null) {
+      phases.push({ name, mean: h.phases[name], p50: h.phases[name], p95: h.phases[name], max: h.phases[name], frames: 1 });
+    }
+  }
+  const host = el("div", "overflow");
+  if (phases.length) renderLadder(host, phases, below, h.frameMs, {}, { single: true, note: false });
+  else host.appendChild(el("p", "empty", "No spans were recorded on this frame."));
+  det.appendChild(host);
+  d.appendChild(det);
+  return d;
+}
+
+/* ── canvas plumbing ───────────────────────────────────────────────────── */
+function prep(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || (canvas.parentElement && canvas.parentElement.clientWidth) || 800;
+  const cssH = canvas._cssH || 200;
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(cssH * dpr));
+  canvas.style.height = cssH + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, cssH);
+  return { ctx, w, h: cssH };
+}
+
+/* Canvas has no color-mix(), so the depth ramp is blended here. Both operands
+   come from the token set, so it follows the theme like everything else. */
+function hex2rgb(h) {
+  h = (h || "").trim().replace("#", "");
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const n = parseInt(h.slice(0, 6), 16);
+  return isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [0, 0, 0];
+}
+function mix(a, b, t) {
+  const A = hex2rgb(a), B = hex2rgb(b);
+  const r = Math.round(A[0] + (B[0] - A[0]) * t);
+  const g = Math.round(A[1] + (B[1] - A[1]) * t);
+  const bl = Math.round(A[2] + (B[2] - A[2]) * t);
+  return "rgb(" + r + "," + g + "," + bl + ")";
+}
+
+const PAD = { l: 52, r: 14, t: 21, b: 22 };
+
+function axes(ctx, w, h, yMax, unit, ticks) {
+  ctx.strokeStyle = css("--rule-soft");
+  ctx.fillStyle = css("--ink-4");
+  ctx.lineWidth = 1;
+  ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  const n = ticks || 4;
+  for (let i = 0; i <= n; i++) {
+    const v = (yMax / n) * i;
+    const y = Math.round(h - PAD.b - (v / yMax) * (h - PAD.t - PAD.b)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(w - PAD.r, y); ctx.stroke();
+    ctx.fillText(v >= 100 ? v.toFixed(0) : v.toFixed(1), PAD.l - 8, y);
+  }
+  // Above the top tick, not beside it: at PAD.t the two share a baseline and
+  // read as one string.
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText(unit, 6, 2);
+  ctx.textBaseline = "middle";
+}
+
+function ref(ctx, w, h, yMax, v, label, color, dash, taken) {
+  if (!(v > 0) || v > yMax) return null;
+  const y = Math.round(h - PAD.b - (v / yMax) * (h - PAD.t - PAD.b)) + 0.5;
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = 1;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(w - PAD.r, y); ctx.stroke();
+  ctx.setLineDash([]);
+  // Two reference lines a few pixels apart would stack their labels into an
+  // unreadable smear, so the second one keeps its line and drops its label.
+  const clash = taken != null && Math.abs(y - taken) < 12;
+  if (!clash) {
+    ctx.fillStyle = color;
+    ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.fillText(label, w - PAD.r - 3, y - 2);
+  }
+  ctx.restore();
+  return y;
+}
+
+/* ── frame-time chart ──────────────────────────────────────────────────── */
+function drawFrames(r) {
+  const canvas = $("c-frames");
+  canvas._cssH = 200;
+  const { ctx, w, h } = prep(canvas);
+  const fr = r.series.frameMs, gc = r.series.gc || [], n = fr.length;
+  if (!n) return;
+
+  const sorted = Float64Array.from(fr).sort();
+  const p99 = sorted[Math.min(n - 1, Math.floor(n * 0.99))];
+  const max = sorted[n - 1];
+  // Scaled so the BODY of the distribution is readable and the hitch bar is on
+  // screen; the frames above it are the ones drawn as spikes below, so nothing
+  // is hidden by the clip — it is only refusing to flatten 99% of the window to
+  // draw the 1% to scale. FIT SPIKES is the other reading.
+  const bar = r.frame.hitchThresholdMs || 24;
+  const yMax = fitSpikes ? max * 1.06 : Math.max(bar * 1.4, p99 * 1.2, r.frame.mean * 3, 8);
+  const plotW = w - PAD.l - PAD.r, plotH = h - PAD.t - PAD.b;
+  const X = (i) => PAD.l + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+  const Y = (v) => h - PAD.b - Math.min(1, v / yMax) * plotH;
+
+  axes(ctx, w, h, yMax, "ms");
+  const yBar = ref(ctx, w, h, yMax, r.frame.hitchThresholdMs, "hitch bar", css("--fault"), [4, 3], null);
+  ref(ctx, w, h, yMax, 16.7, "60 Hz", css("--ink-4"), [2, 3], yBar);
+
+  // Clipped spikes get drawn full height in the fault colour so a linear scale
+  // never quietly hides the frames the capture is about.
+  ctx.strokeStyle = css("--fault");
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 1;
+  for (let i = 0; i < n; i++) {
+    if (fr[i] > yMax) {
+      const x = Math.round(X(i)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, h - PAD.b); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Fill then line.
+  ctx.beginPath();
+  ctx.moveTo(X(0), h - PAD.b);
+  for (let i = 0; i < n; i++) ctx.lineTo(X(i), Y(fr[i]));
+  ctx.lineTo(X(n - 1), h - PAD.b);
+  ctx.closePath();
+  ctx.fillStyle = css("--signal-soft");
+  ctx.fill();
+
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { const x = X(i), y = Y(fr[i]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.strokeStyle = css("--signal");
+  ctx.lineWidth = 2; ctx.lineJoin = "round";
+  ctx.stroke();
+
+  // Collections, on their own rail at the top.
+  ctx.strokeStyle = css("--collector");
+  ctx.lineWidth = 2;
+  for (let i = 0; i < n; i++) {
+    if (gc[i] > 0) {
+      const x = Math.round(X(i)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x, PAD.t - 6); ctx.lineTo(x, PAD.t + 6); ctx.stroke();
+    }
+  }
+
+  const over = fr.filter((v) => v > yMax).length;
+  $("n-frames").textContent =
+    n + " frames · scale " + (fitSpikes ? "fits the worst frame (" + fmt(max, 1) + " ms)"
+      : "clipped at " + fmt(yMax, 1) + " ms" + (over ? ", " + over + " frame" + (over === 1 ? "" : "s") + " drawn as full-height spikes" : ""));
+
+  const lg = $("r-legend");
+  lg.innerHTML = "";
+  const item = (color, label, tick) => {
+    const s = el("span");
+    const i2 = el("i", tick ? "tick" : null);
+    i2.style.background = color;
+    s.appendChild(i2); s.appendChild(document.createTextNode(label));
+    lg.appendChild(s);
+  };
+  item(css("--signal"), "frame time");
+  item(css("--collector"), "collection", true);
+  item(css("--fault"), "over scale", true);
+
+  hover(canvas, $("t-frames"), n, X, (i) => {
+    const rows = ["<b>" + fmt(fr[i], 2) + " ms</b>  <span class=\"dim\">frame " + (i + 1) + "</span>"];
+    if (gc[i] > 0) rows.push("<span class=\"dim\">" + gc[i] + " collection" + (gc[i] === 1 ? "" : "s") + "</span>");
+    if (r.series.heapMb && r.series.heapMb[i]) rows.push("<span class=\"dim\">heap " + fmt(r.series.heapMb[i], 1) + " MB</span>");
+    return rows.join("<br>");
+  });
+}
+
+/* ── draw calls and active meshes ──────────────────────────────────────────
+   Two lines on ONE axis, which is legitimate here only because both are counts
+   of the same kind of thing — never do this with two different units.
+
+   It sits under the frame timeline and shares its x, so a ramp in the draw
+   count can be laid against the frames it cost. That correlation is the whole
+   reason the counters are in the series at all: a batch of pipelines coming
+   into view is a draw count CLIMBING over about a second, and against the mean
+   alone it is invisible. */
+function drawSeriesCounters(r) {
+  const canvas = $("c-draws");
+  canvas._cssH = 140;
+  const { ctx, w, h } = prep(canvas);
+  const dc = r.series.drawCalls, am = r.series.activeMeshes, n = dc.length;
+  if (!n) return;
+  let hi = 0;
+  for (let i = 0; i < n; i++) {
+    if (dc[i] > hi) hi = dc[i];
+    if (am[i] > hi) hi = am[i];
+  }
+  const yMax = hi * 1.12 || 1;
+  const plotW = w - PAD.l - PAD.r, plotH = h - PAD.t - PAD.b;
+  const X = (i) => PAD.l + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+  const Y = (v) => h - PAD.b - (v / yMax) * plotH;
+  axes(ctx, w, h, yMax, "count", 3);
+
+  const line = (arr, color, dash) => {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) { const x = X(i), y = Y(arr[i]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = "round";
+    if (dash) ctx.setLineDash(dash);
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  line(am, css("--heap"), [5, 3]);
+  line(dc, css("--signal"));
+
+  const lg = $("d-legend");
+  lg.innerHTML = "";
+  [[css("--signal"), "draw calls"], [css("--heap"), "active meshes"]].forEach(([c, label]) => {
+    const sp = el("span");
+    const i2 = el("i"); i2.style.background = c;
+    sp.appendChild(i2); sp.appendChild(document.createTextNode(label));
+    lg.appendChild(sp);
+  });
+
+  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  $("n-draws").textContent =
+    "draws " + Math.round(mean(dc)) + " mean · " + Math.min.apply(null, dc) + "–" +
+    Math.max.apply(null, dc) + " over the window · meshes " + Math.round(mean(am)) +
+    " mean · " + Math.min.apply(null, am) + "–" + Math.max.apply(null, am);
+
+  hover(canvas, $("t-draws"), n, X, (i) =>
+    "<b>" + dc[i] + "</b> <span class=\"dim\">draws</span><br><b>" + am[i] +
+    "</b> <span class=\"dim\">meshes</span><br><span class=\"dim\">frame " + (i + 1) +
+    " · " + fmt(r.series.frameMs[i], 1) + " ms</span>");
+}
+
+/* ── heap chart ────────────────────────────────────────────────────────── */
+function drawHeap(r) {
+  const canvas = $("c-heap");
+  canvas._cssH = 140;
+  const { ctx, w, h } = prep(canvas);
+  const hp = r.series.heapMb, gc = r.series.gc || [], n = hp.length;
+  if (!n) return;
+  let lo = Infinity, hi = 0;
+  for (let i = 0; i < n; i++) { if (hp[i] < lo) lo = hp[i]; if (hp[i] > hi) hi = hp[i]; }
+  const pad = Math.max(1, (hi - lo) * 0.12);
+  const yMin = Math.max(0, lo - pad), yMax = hi + pad;
+  const plotW = w - PAD.l - PAD.r, plotH = h - PAD.t - PAD.b;
+  const X = (i) => PAD.l + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+  const Y = (v) => h - PAD.b - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  ctx.strokeStyle = css("--rule-soft"); ctx.fillStyle = css("--ink-4");
+  ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let i = 0; i <= 3; i++) {
+    const v = yMin + ((yMax - yMin) / 3) * i;
+    const y = Math.round(Y(v)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(w - PAD.r, y); ctx.stroke();
+    ctx.fillText(v.toFixed(0), PAD.l - 8, y);
+  }
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("MB", 6, 2);
+  ctx.textBaseline = "middle";
+
+  ctx.beginPath();
+  ctx.moveTo(X(0), h - PAD.b);
+  for (let i = 0; i < n; i++) ctx.lineTo(X(i), Y(hp[i]));
+  ctx.lineTo(X(n - 1), h - PAD.b); ctx.closePath();
+  ctx.fillStyle = css("--heap-soft"); ctx.fill();
+
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { const x = X(i), y = Y(hp[i]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.strokeStyle = css("--heap"); ctx.lineWidth = 2; ctx.stroke();
+
+  ctx.strokeStyle = css("--collector"); ctx.lineWidth = 2;
+  for (let i = 0; i < n; i++) {
+    if (gc[i] > 0) {
+      const x = Math.round(X(i)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x, PAD.t - 6); ctx.lineTo(x, PAD.t + 6); ctx.stroke();
+    }
+  }
+
+  hover(canvas, $("t-heap"), n, X, (i) =>
+    "<b>" + fmt(hp[i], 1) + " MB</b>" + (gc[i] > 0 ? "<br><span class=\"dim\">" + gc[i] + " collection" + (gc[i] === 1 ? "" : "s") + "</span>" : ""));
+}
+
+/* ── shared crosshair ──────────────────────────────────────────────────── */
+function hover(canvas, tip, n, X, body) {
+  canvas.onpointermove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const w = rect.width;
+    const t = (x - PAD.l) / Math.max(1, w - PAD.l - PAD.r);
+    const i = Math.max(0, Math.min(n - 1, Math.round(t * (n - 1))));
+    tip.innerHTML = body(i);
+    tip.classList.add("on");
+    const tw = tip.offsetWidth;
+    tip.style.left = Math.max(2, Math.min(w - tw - 2, X(i) - tw / 2)) + "px";
+    tip.style.top = "6px";
+  };
+  canvas.onpointerleave = () => tip.classList.remove("on");
+}
+
+/* ── trace ─────────────────────────────────────────────────────────────── */
+let flame = null;
+
+function renderTrace(t) {
+  // A trace carries no tree — it is Chrome's format, not this instrument's — so
+  // the flame chart's depth comes from the fallback. A phase added after this
+  // page was written lands at depth 0 and is drawn, not dropped.
+  useTree(FALLBACK_TREE);
+  const evs = t.traceEvents;
+  const spans = evs.filter((e) => e.ph === "X");
+  const counters = evs.filter((e) => e.ph === "C" && e.name === "draws");
+  // Every instant, not only collections: a trace also marks the worst frame it
+  // was centred on, and that is the one a reader is looking for.
+  const marks = evs.filter((e) => e.ph === "i");
+  const gcs = marks.filter((e) => e.name === "gc");
+  if (!spans.length) {
+    $("t-meta").textContent = "no spans in this trace";
+    return;
+  }
+  let t0 = Infinity, t1 = 0;
+  spans.forEach((s) => { if (s.ts < t0) t0 = s.ts; if (s.ts + s.dur > t1) t1 = s.ts + s.dur; });
+  const frames = spans.filter((s) => s.name === "frame").length;
+
+  // A trace carries no map and no device — it is Chrome's format, not this
+  // instrument's — so the thread name is the only place the window describes
+  // itself, and it is what says whether the frame you came looking for is even
+  // in the file.
+  const named = evs.find((e) => e.ph === "M" && e.name === "thread_name");
+  // NOT called `window`: that shadows the global inside this function, and the
+  // next person to reach for `window.devicePixelRatio` here would get a string.
+  const windowLabel = named && named.args ? named.args.name : "";
+
+  const meta = $("t-meta"); meta.innerHTML = "";
+  [["spans", String(spans.length)], ["frames", String(frames)],
+   ["span", fmt((t1 - t0) / 1000, 1) + " ms"], ["collections", String(gcs.length)]].forEach(([k, v]) => {
+    const d = el("div");
+    d.appendChild(el("b", null, k + " "));
+    d.appendChild(document.createTextNode(v));
+    meta.appendChild(d);
+  });
+  if (windowLabel) {
+    const w = el("div");
+    w.style.flexBasis = "100%";
+    w.appendChild(el("b", null, "window "));
+    w.appendChild(document.createTextNode(windowLabel));
+    meta.appendChild(w);
+  }
+
+  let maxDepth = 0;
+  spans.forEach((sp) => { const d = DEPTH[sp.name]; if (d != null && d > maxDepth) maxDepth = d; });
+  flame = { spans, marks, gcs, t0, t1, view0: t0, view1: t1, maxDepth };
+  drawFlame();
+  drawCounters(counters, t0, t1);
+
+  // Totals, as the same ladder the report uses.
+  const acc = {};
+  spans.forEach((s) => {
+    if (!acc[s.name]) acc[s.name] = { name: s.name, sum: 0, n: 0, max: 0 };
+    acc[s.name].sum += s.dur / 1000;
+    acc[s.name].n++;
+    acc[s.name].max = Math.max(acc[s.name].max, s.dur / 1000);
+  });
+  const phases = Object.values(acc).map((a) => ({
+    name: a.name, mean: a.sum / a.n, p50: a.sum / a.n, p95: a.max, max: a.max, frames: a.n,
+  }));
+  const frameMean = acc.frame ? acc.frame.sum / acc.frame.n : 0;
+  renderLadder($("t-totals"), phases, new Set(), frameMean, {});
+}
+
+function drawFlame() {
+  const canvas = $("c-flame");
+  const rowH = 22, top = 26;
+  // Sized to the deepest span actually in the trace rather than to a guess, so
+  // a shallow capture does not open onto half a screen of empty ground.
+  canvas._cssH = top + (flame.maxDepth + 1) * rowH + 10;
+  const { ctx, w, h } = prep(canvas);
+  const { spans, marks, view0, view1 } = flame;
+  const span = Math.max(1, view1 - view0);
+  const X = (ts) => ((ts - view0) / span) * w;
+
+  ctx.fillStyle = css("--sunken");
+  ctx.fillRect(0, 0, w, h);
+
+  // Time ruler.
+  ctx.strokeStyle = css("--rule");
+  ctx.fillStyle = css("--ink-4");
+  ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  const stepMs = niceStep((span / 1000) / 8);
+  for (let ms = Math.ceil((view0 / 1000) / stepMs) * stepMs; ms * 1000 <= view1; ms += stepMs) {
+    const x = Math.round(X(ms * 1000)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    ctx.fillText(ms.toFixed(stepMs < 1 ? 2 : 0) + " ms", x + 4, 4);
+  }
+
+  const base = css("--signal");
+  const surf = css("--surface");
+  const rects = [];
+  for (const s of spans) {
+    const x0 = X(s.ts), x1 = X(s.ts + s.dur);
+    if (x1 < -2 || x0 > w + 2) continue;
+    const d = DEPTH[s.name] != null ? DEPTH[s.name] : 0;
+    const y = top + d * rowH;
+    const wd = Math.max(1, x1 - x0);
+    rects.push({ x: x0, y, w: wd, h: rowH - 2, s });
+    ctx.fillStyle = d === 0 ? base : mix(base, surf, Math.min(0.74, d * 0.24));
+    ctx.fillRect(x0, y, wd, rowH - 2);
+    if (wd > 34) {
+      ctx.fillStyle = d <= 1 ? surf : css("--ink");
+      ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+      ctx.textBaseline = "middle";
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x0 + 3, y, wd - 6, rowH - 2); ctx.clip();
+      ctx.fillText(s.name, x0 + 5, y + (rowH - 2) / 2 + 0.5);
+      ctx.restore();
+    }
+  }
+
+  ctx.lineWidth = 2;
+  for (const m of marks) {
+    const x = Math.round(X(m.ts)) + 0.5;
+    if (x < 0 || x > w) continue;
+    const isWorst = String(m.name).indexOf("worst frame") === 0;
+    ctx.strokeStyle = isWorst ? css("--fault") : css("--collector");
+    ctx.beginPath(); ctx.moveTo(x, isWorst ? 0 : 16); ctx.lineTo(x, h); ctx.stroke();
+    if (isWorst) {
+      ctx.fillStyle = css("--fault");
+      ctx.font = "10px " + MONO;
+      ctx.textAlign = x > w - 90 ? "right" : "left";
+      ctx.textBaseline = "top";
+      ctx.fillText(m.name, x + (x > w - 90 ? -4 : 4), 2);
+    }
+  }
+
+  canvas._rects = rects;
+  wireFlame(canvas);
+}
+
+function niceStep(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(Math.max(v, 1e-6))));
+  const n = v / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+}
+
+function wireFlame(canvas) {
+  if (canvas._wired) return;
+  canvas._wired = true;
+  const tip = $("t-flame");
+  let dragging = false, lastX = 0;
+
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const t = (e.clientX - rect.left) / rect.width;
+    const span = flame.view1 - flame.view0;
+    const at = flame.view0 + t * span;
+    const k = e.deltaY > 0 ? 1.22 : 1 / 1.22;
+    let s = span * k;
+    s = Math.max(200, Math.min(flame.t1 - flame.t0, s));
+    flame.view0 = at - t * s;
+    flame.view1 = flame.view0 + s;
+    clampFlame();
+    drawFlame();
+  }, { passive: false });
+
+  canvas.addEventListener("pointerdown", (e) => {
+    dragging = true; lastX = e.clientX; canvas.classList.add("drag");
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointerup", (e) => {
+    dragging = false; canvas.classList.remove("drag");
+    try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    if (dragging) {
+      const dx = (e.clientX - lastX) / rect.width;
+      lastX = e.clientX;
+      const span = flame.view1 - flame.view0;
+      flame.view0 -= dx * span; flame.view1 -= dx * span;
+      clampFlame(); drawFlame();
+      tip.classList.remove("on");
+      return;
+    }
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    const rects = canvas._rects || [];
+    let hit = null;
+    for (const r of rects) if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) hit = r;
+    if (!hit) { tip.classList.remove("on"); return; }
+    tip.innerHTML = "<b>" + hit.s.name + "</b><br><span class=\"dim\">" +
+      fmt(hit.s.dur / 1000, 3) + " ms</span>";
+    tip.classList.add("on");
+    const tw = tip.offsetWidth;
+    tip.style.left = Math.max(2, Math.min(rect.width - tw - 2, x - tw / 2)) + "px";
+    tip.style.top = Math.max(2, y - 46) + "px";
+  });
+  canvas.addEventListener("pointerleave", () => { tip.classList.remove("on"); });
+}
+
+function clampFlame() {
+  const full = flame.t1 - flame.t0;
+  let s = flame.view1 - flame.view0;
+  if (s > full) { flame.view0 = flame.t0; flame.view1 = flame.t1; return; }
+  if (flame.view0 < flame.t0) { flame.view0 = flame.t0; flame.view1 = flame.t0 + s; }
+  if (flame.view1 > flame.t1) { flame.view1 = flame.t1; flame.view0 = flame.t1 - s; }
+}
+
+function drawCounters(counters, t0, t1) {
+  const canvas = $("c-counters");
+  canvas._cssH = 130;
+  const { ctx, w, h } = prep(canvas);
+  const n = counters.length;
+  if (!n) return;
+  const draws = counters.map((c) => c.args.drawCalls);
+  const meshes = counters.map((c) => c.args.activeMeshes);
+  const yMax = Math.max.apply(null, draws.concat(meshes)) * 1.12 || 1;
+  const plotW = w - PAD.l - PAD.r, plotH = h - PAD.t - PAD.b;
+  const X = (i) => PAD.l + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+  const Y = (v) => h - PAD.b - (v / yMax) * plotH;
+  axes(ctx, w, h, yMax, "count", 3);
+
+  const line = (arr, color, dash) => {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) { const x = X(i), y = Y(arr[i]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    if (dash) ctx.setLineDash(dash);
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  line(draws, css("--signal"));
+  line(meshes, css("--heap"), [5, 3]);
+
+  ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillStyle = css("--signal"); ctx.fillText("draw calls", PAD.l + 6, Y(draws[0]) - 12);
+  ctx.fillStyle = css("--heap"); ctx.fillText("active meshes", PAD.l + 6, Y(meshes[0]) + 12);
+
+  hover(canvas, $("t-counters"), n, X, (i) =>
+    "<b>" + draws[i] + "</b> <span class=\"dim\">draws</span><br><b>" + meshes[i] + "</b> <span class=\"dim\">meshes</span>");
+}
+
+/* ── wiring ────────────────────────────────────────────────────────────── */
+function readFile(f) {
+  const rd = new FileReader();
+  rd.onload = () => load(String(rd.result), f.name);
+  rd.readAsText(f);
+}
+
+$("btn-file").onclick = $("btn-file2").onclick = () => $("file").click();
+$("file").onchange = (e) => { const f = e.target.files[0]; if (f) readFile(f); e.target.value = ""; };
+
+const sample = () => {
+  const raw = $("sample-report").textContent.trim();
+  if (!raw || raw.charAt(0) !== "{") {
+    $("loaderr").appendChild(el("div", "err", "No sample is bundled with this page."));
+    return;
+  }
+  load(raw, "sample — hollowmere, 656 frames");
+};
+$("btn-sample").onclick = $("btn-sample2").onclick = sample;
+
+$("btn-new").onclick = () => {
+  $("report").hidden = true; $("trace").hidden = true;
+  $("loader").hidden = false; $("btn-new").hidden = true;
+  $("srcname").textContent = "";
+  $("paste").value = "";
+  $("loaderr").innerHTML = "";
+};
+
+$("paste").addEventListener("input", (e) => {
+  const v = e.target.value.trim();
+  if (v.length > 40 && (v.charAt(0) === "{" || v.charAt(0) === "[")) load(v, "pasted");
+});
+
+const drop = $("drop");
+["dragenter", "dragover"].forEach((ev) => document.addEventListener(ev, (e) => {
+  e.preventDefault(); drop.classList.add("hot");
+}));
+["dragleave", "drop"].forEach((ev) => document.addEventListener(ev, (e) => {
+  e.preventDefault();
+  if (ev === "dragleave" && e.relatedTarget) return;
+  drop.classList.remove("hot");
+}));
+document.addEventListener("drop", (e) => {
+  const f = e.dataTransfer && e.dataTransfer.files[0];
+  if (f) { $("loader").hidden = false; $("report").hidden = true; $("trace").hidden = true; readFile(f); }
+});
+
+$("btn-fit").onclick = (e) => {
+  fitSpikes = !fitSpikes;
+  e.currentTarget.setAttribute("aria-pressed", String(fitSpikes));
+  if (REPORT && REPORT.series) drawFrames(REPORT);
+};
+$("btn-fitflame").onclick = () => {
+  if (!flame) return;
+  flame.view0 = flame.t0; flame.view1 = flame.t1; drawFlame();
+};
+
+$("btn-theme").onclick = () => {
+  const root = document.documentElement;
+  const now = root.getAttribute("data-theme");
+  const dark = now ? now === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.setAttribute("data-theme", dark ? "light" : "dark");
+  redraw();
+};
+
+function redraw() {
+  if (REPORT && REPORT.series) {
+    drawFrames(REPORT);
+    if (REPORT.series.drawCalls && REPORT.series.drawCalls.length) drawSeriesCounters(REPORT);
+    if (REPORT.memory && REPORT.memory.heapLive) drawHeap(REPORT);
+  }
+  if (flame) { drawFlame(); }
+  if (TRACE) drawCounters(TRACE.traceEvents.filter((e) => e.ph === "C" && e.name === "draws"), flame.t0, flame.t1);
+}
+
+let rt = 0;
+window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(redraw, 120); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
+
+/* What this page opens on, in order of what the reader most likely wants:
+   the capture the game just handed over, then the bundled sample, then the
+   drop zone. */
+(function open() {
+  const handed = handedOver();
+  if (handed && handed.charAt(0) === "{") {
+    let when = "";
+    try {
+      const t = JSON.parse(handed).takenAt;
+      if (t) when = " · " + String(t).replace("T", " ").replace(/\..*$/, "");
+    } catch (e) {
+      // Unparseable: `load` will say so properly below.
+    }
+    load(handed, "handed over from the game" + when);
+    return;
+  }
+  if ($("sample-report").textContent.trim().charAt(0) === "{") sample();
+})();
+</script>
+
+</body>
+</html>
