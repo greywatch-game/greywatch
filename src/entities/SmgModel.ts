@@ -53,8 +53,8 @@ const MOUNT: OpticMount = {
 };
 
 /** Where each hand grips, in weapon-local units. */
-const GRIP_HAND = new Vector3(0.02, -0.13, -0.16);
-const GRIP_ELBOW = new Vector3(0.26, -0.5, -0.5);
+const GRIP_HAND = new Vector3(0.02, -0.124, -0.197);
+const GRIP_ELBOW = new Vector3(0.26, -0.494, -0.537);
 const SUPPORT_HAND = new Vector3(-0.02, -0.08, 0.235);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.48, 0.0);
 
@@ -116,8 +116,10 @@ export function buildSmg(
   b.box("triggerToe", METAL, 0.013, 0.022, 0.015, 0, -0.038, 0.007, trigPivot);
 
   // Pistol grip, raked back further than the rifle's: the weapon is held
-  // rather than shouldered, and the wrist angle is what says so.
-  const gripPivot = b.pivot("gripPivot", 0, -0.075, -0.17, -0.34);
+  // rather than shouldered, and the wrist angle is what says so. The sign is
+  // the rifle's — positive lays the toe BACK, which is the only way round a
+  // grip goes.
+  const gripPivot = b.pivot("gripPivot", 0, -0.075, -0.17, 0.34);
   b.box("grip", POLYMER, 0.05, 0.13, 0.07, 0, -0.062, 0, gripPivot);
   b.box("gripSwell", POLYMER, 0.055, 0.045, 0.064, 0, -0.045, -0.005, gripPivot);
   for (let i = 0; i < 3; i++) {
@@ -145,7 +147,9 @@ export function buildSmg(
     }
   }
   b.box("bottomRail", METAL, 0.044, 0.014, 0.12, 0, -0.046, 0.2);
-  const foregripPivot = b.pivot("foregripPivot", 0, -0.04, 0.235, 0.38);
+  // Toe FORWARD — the support grip's sign, which is the firing grip's
+  // inverted. See the rifle's foregrip for why the two lean apart.
+  const foregripPivot = b.pivot("foregripPivot", 0, -0.04, 0.235, -0.38);
   b.box("foregrip", POLYMER, 0.042, 0.085, 0.05, 0, -0.044, 0, foregripPivot);
   b.box("foregripCap", RUBBER, 0.044, 0.014, 0.052, 0, -0.09, 0, foregripPivot);
 

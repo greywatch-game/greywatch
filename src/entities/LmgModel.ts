@@ -70,8 +70,8 @@ const STOCK_TOP = Math.min(0.058, ironSightFloor(MOUNT, -0.3) - 0.006);
  * handguard's REAR half, behind the folded bipod for the DMR's reason: a fist
  * closed around two stowed legs reads as a hand pushed through the weapon.
  */
-const GRIP_HAND = new Vector3(0.02, -0.13, -0.15);
-const GRIP_ELBOW = new Vector3(0.26, -0.53, -0.52);
+const GRIP_HAND = new Vector3(0.02, -0.135, -0.185);
+const GRIP_ELBOW = new Vector3(0.26, -0.535, -0.555);
 const SUPPORT_HAND = new Vector3(-0.02, -0.1, 0.34);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.52, 0.06);
 
@@ -204,7 +204,7 @@ export function buildLmg(
     b.box("safetyLever", METAL, 0.012, 0.036, 0.014, side * 0.049, -0.062, -0.135);
   }
 
-  const gripPivot = b.pivot("gripPivot", 0, -0.075, -0.175, -0.3);
+  const gripPivot = b.pivot("gripPivot", 0, -0.075, -0.175, 0.3);
   b.box("grip", POLYMER, 0.056, 0.145, 0.078, 0, -0.07, 0, gripPivot);
   b.box("gripSwell", POLYMER, 0.061, 0.05, 0.07, 0, -0.052, -0.006, gripPivot);
   for (let i = 0; i < 3; i++) {

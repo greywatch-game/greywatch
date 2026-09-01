@@ -47,8 +47,8 @@ const MOUNT: OpticMount = {
  * forward of the magazine — that is what a bullpup IS — and the support hand
  * is on the handguard, under the folded bipod.
  */
-const GRIP_HAND = new Vector3(0.02, -0.12, -0.1);
-const GRIP_ELBOW = new Vector3(0.26, -0.515, -0.47);
+const GRIP_HAND = new Vector3(0.02, -0.123, -0.127);
+const GRIP_ELBOW = new Vector3(0.26, -0.518, -0.497);
 const SUPPORT_HAND = new Vector3(-0.02, -0.075, 0.2);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, -0.08);
 
@@ -215,7 +215,7 @@ export function buildCarbine(
   // The knuckle where the strap turns into the receiver's underside. Without
   // it the loop stops dead against a flat belly and reads as bolted on.
   b.box("guardKnuckle", POLYMER, 0.05, 0.034, 0.056, 0, -0.052, 0.042);
-  b.box("guardFloor", POLYMER, 0.05, 0.022, 0.15, 0, -0.197, -0.03);
+  b.box("guardFloor", POLYMER, 0.05, 0.022, 0.175, 0, -0.197, -0.0425);
   b.box("guardToe", POLYMER, 0.05, 0.03, 0.03, 0, -0.19, 0.036);
   const trigPivot = b.pivot("trigPivot", 0, -0.062, -0.075, 0.35);
   b.box("trigger", METAL, 0.013, 0.03, 0.013, 0, -0.015, 0, trigPivot);
@@ -238,10 +238,12 @@ export function buildCarbine(
     b.box("selectorMark", BODY, 0.004, 0.01, 0.006, -0.041, -0.008 - i * 0.014, -0.163);
   }
 
-  // Raked forward, but only just: the guard's floor strap now runs into the
-  // grip's toe, and a grip laid over much further than this stops reading as
-  // one and starts reading as the front wall of a hole.
-  const gripPivot = b.pivot("gripPivot", 0, -0.055, -0.12, -0.2);
+  // Raked back, shallower than the rifle's: the bullpup's grip stands ahead
+  // of the magazine rather than behind it, so there is less room to lay it
+  // over before the toe is out under the trigger. The sign is the rifle's and
+  // the pistol's — see either — and the guard's floor strap is lengthened to
+  // reach the toe where the rake now puts it, at the grip's FRONT face.
+  const gripPivot = b.pivot("gripPivot", 0, -0.055, -0.12, 0.2);
   b.box("grip", POLYMER, 0.052, 0.132, 0.084, 0, -0.066, 0.002, gripPivot);
   b.box("gripSwell", POLYMER, 0.058, 0.05, 0.076, 0, -0.05, -0.002, gripPivot);
   for (let i = 0; i < 3; i++) {

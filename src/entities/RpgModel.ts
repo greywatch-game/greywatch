@@ -126,8 +126,8 @@ const opticOuterAt = (dz: number): number => {
 /** Where each hand grips, in weapon-local units. */
 const GRIP_HAND = new Vector3(0.015, -0.165, 0.3);
 const GRIP_ELBOW = new Vector3(0.26, -0.55, -0.05);
-const SUPPORT_HAND = new Vector3(-0.01, -0.16, 0.64);
-const SUPPORT_ELBOW = new Vector3(-0.28, -0.52, 0.47);
+const SUPPORT_HAND = new Vector3(-0.01, -0.156, 0.667);
+const SUPPORT_ELBOW = new Vector3(-0.28, -0.516, 0.497);
 
 /**
  * Builds a low-poly cel-styled shoulder-fired rocket launcher. Local +z is the
@@ -196,7 +196,10 @@ export function buildRpg(
   b.box("housing", BODY, 0.05, 0.06, 0.1, 0, -0.055, 0.29);
 
   // --- the forward grip: the second hand, under the shield ---
-  const fore = b.pivot("forePivot", 0, -0.075, 0.64, 0.16);
+  // Toe FORWARD, against the firing grip's toe back — the support grip's sign,
+  // and the one place in the kit a hand CLOSES round the raked part rather
+  // than clamping the rail beside it, so `SUPPORT_HAND` was re-derived with it.
+  const fore = b.pivot("forePivot", 0, -0.075, 0.64, -0.16);
   b.box("foreBody", POLYMER, 0.038, 0.15, 0.05, 0, -0.075, 0, fore);
   b.box("foreCap", RUBBER, 0.042, 0.018, 0.054, 0, -0.148, 0, fore);
   b.box("foreYoke", BODY, 0.044, 0.05, 0.06, 0, -0.02, 0.64);

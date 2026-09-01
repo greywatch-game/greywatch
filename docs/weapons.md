@@ -1067,6 +1067,25 @@ colour missing from `SECTIONS` is silently never merged, so anything `collect()`
 takes has to be listed there. The merge works only because the root is still at
 identity while building.
 
+**A RAKE is a `Build.pivot`, and its SIGN is decided by which WRIST holds the
+part.** Positive `rotX` sends everything below the pivot BACKWARDS, which is the
+direction `magDropAxis` already reads it in. A rake leans AWAY from the wrist
+that holds it, so the two hands' grips lean APART:
+
+| | sign | toe goes |
+| --- | --- | --- |
+| every `gripPivot` — the firing hand | **positive** (0.18-0.34) | back, the 15-20 deg off vertical a pistol grip stands at |
+| every `foregripPivot` — the support hand | **negative** (-0.16 to -0.45) | forward, which is what an angled foregrip is |
+| a magazine (`MAG_RAKE`) | **negative**, or the pistol's own grip rake | forward, because a curved magazine feeds a receiver ahead of it — `magDropAxis` reads the same sign, so it leaves along its own body |
+
+Get a firing grip's sign wrong and the toe lies out over the trigger guard — a
+grip on backwards, and the thing to check first if a weapon reads as a toy. Get
+a foregrip's wrong and both grips lean the same way, which reads as a mistake in
+one of them rather than as a style. All five long guns carried the firing grip
+inverted until it was caught from the kit stage, and three foregrips with it;
+the comments beside three of them had by then rationalised it into a feature, so
+trust the table over the prose.
+
 **A merge is also how a part is let OUT of the weapon.** `merge` swaps the
 accumulator, so a builder that wants a piece to move on its own builds it after
 the weapon's own merge and merges it into a node of its own — which is what the

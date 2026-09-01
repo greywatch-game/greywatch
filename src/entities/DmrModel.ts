@@ -102,8 +102,8 @@ const BUTT_Y = COMB_TOP - 0.014 - BUTT_H / 2;
  * the bipod is stowed under that end — a fist closed around the folded legs
  * reads as a hand pushed through the weapon.
  */
-const GRIP_HAND = new Vector3(0.02, -0.16, -0.145);
-const GRIP_ELBOW = new Vector3(0.26, -0.56, -0.52);
+const GRIP_HAND = new Vector3(0.02, -0.164, -0.166);
+const GRIP_ELBOW = new Vector3(0.26, -0.564, -0.541);
 const SUPPORT_HAND = new Vector3(-0.02, -0.08, 0.38);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, 0.1);
 
@@ -183,7 +183,7 @@ export function buildDmr(
   // The grip stands closer to vertical than the rifle's. A precision grip puts
   // the wrist under the trigger rather than behind it, which is the difference
   // between squeezing a shot and holding a burst on target.
-  const gripPivot = b.pivot("gripPivot", 0, -0.105, -0.165, -0.18);
+  const gripPivot = b.pivot("gripPivot", 0, -0.105, -0.165, 0.18);
   b.box("grip", POLYMER, 0.056, 0.15, 0.082, 0, -0.075, 0, gripPivot);
   b.box("gripSwell", POLYMER, 0.062, 0.05, 0.074, 0, -0.05, -0.008, gripPivot);
   b.box("gripShelf", POLYMER, 0.06, 0.016, 0.05, 0, 0.006, -0.03, gripPivot);

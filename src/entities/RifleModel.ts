@@ -49,8 +49,8 @@ const MOUNT: OpticMount = {
 };
 
 /** Where each hand grips, in rifle-local units. */
-const GRIP_HAND = new Vector3(0.02, -0.155, -0.13);
-const GRIP_ELBOW = new Vector3(0.26, -0.55, -0.5);
+const GRIP_HAND = new Vector3(0.02, -0.16, -0.165);
+const GRIP_ELBOW = new Vector3(0.26, -0.555, -0.535);
 const SUPPORT_HAND = new Vector3(-0.02, -0.075, 0.4);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, 0.12);
 
@@ -129,7 +129,13 @@ export function buildRifle(
   b.box("trigger", METAL, 0.014, 0.032, 0.014, 0, -0.016, 0, trigPivot);
   b.box("triggerToe", METAL, 0.014, 0.024, 0.017, 0, -0.042, 0.008, trigPivot);
 
-  const gripPivot = b.pivot("gripPivot", 0, -0.1, -0.155, -0.3);
+  // Raked back, and the SIGN is the whole of it: positive `rotX` sends
+  // everything below the pivot BACKWARDS, which is the ~17 deg off vertical a
+  // pistol grip stands at. Negative lays the toe out over the trigger guard,
+  // which is not a rake at all — it is the grip on backwards. `PistolModel`'s
+  // `GRIP_RAKE` carries the same note; every FIRING grip in the kit is this
+  // sign, and every foregrip is its mirror — see the foregrip below.
+  const gripPivot = b.pivot("gripPivot", 0, -0.1, -0.155, 0.3);
   b.box("grip", POLYMER, 0.056, 0.145, 0.078, 0, -0.07, 0, gripPivot);
   b.box("gripSwell", POLYMER, 0.061, 0.05, 0.07, 0, -0.052, -0.006, gripPivot);
   // Finger grooves, as proud ridges rather than cuts: three thin bands in the
@@ -174,7 +180,13 @@ export function buildRifle(
     b.box("mlok", BODY, 0.03, 0.006, 0.05, 0, -0.052, 0.31 + i * 0.07);
   }
   b.box("bottomRail", METAL, 0.05, 0.016, 0.2, 0, -0.058, 0.4);
-  const foregripPivot = b.pivot("foregripPivot", 0, -0.046, 0.44, 0.45);
+  // Raked the OTHER way from the pistol grip, and that is the rule rather
+  // than an inconsistency: a rake leans away from the wrist that holds it, so
+  // the firing hand's grip puts its toe BACK and the support hand's puts its
+  // toe FORWARD. That is what an angled foregrip is, and two grips leaning
+  // apart is the silhouette; two leaning the same way reads as a mistake in
+  // one of them.
+  const foregripPivot = b.pivot("foregripPivot", 0, -0.046, 0.44, -0.45);
   b.box("foregrip", POLYMER, 0.048, 0.1, 0.055, 0, -0.05, 0, foregripPivot);
   b.box("foregripCap", RUBBER, 0.05, 0.016, 0.057, 0, -0.104, 0, foregripPivot);
 
