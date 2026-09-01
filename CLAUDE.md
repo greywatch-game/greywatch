@@ -1153,8 +1153,9 @@ DevTools window. `FrameProfile` is therefore armed by a **setting**
 (`Settings.profiler`) or by **`?profile`**, never by `import.meta.env.DEV`;
 disarmed, every entry point returns on its first line and the ring is not
 allocated. Measured cost while armed, three paired runs: **under 1.5% of frame
-rate**, of which the span calls are ~5 us a frame (0.22 us a pair, ~22 pairs) and
-the rest is `SceneInstrumentation`'s observers. The probes that say so run on
+rate**, of which the span calls are ~5 us a frame (0.22 us a pair, ~22 pairs —
+and ~4 more since, for the spans inside `render`) and the rest is
+`SceneInstrumentation`'s observers. The probes that say so run on
 the DEVICE and land in every capture.
 
 **It records CONTINUOUSLY and the capture reaches BACKWARDS.** You cannot watch
@@ -1189,13 +1190,29 @@ where it is, `memory.allocMbPerSec` is the number to watch — **27.4 MB/s at 2.
 collections a second on Hollowmere**, the first real figure behind §1's oldest
 guess.
 
-**The brackets live in `Game.ts` and nowhere else.** `tick`, `updateGameplay`,
-`updateNetWorld` and `updateWorld` are where the frame's order is already
-declared, with the argument for it written down, so **the phase list IS that
-order** and no system had to be taught the profiler exists. A phase is a name in
-`PHASES` and a `begin`/`end` pair; the ring, the report and the trace are all
-sized and labelled off that list. The spans NEST and do not partition — read a
-report as an attribution, exactly as `buildProfile`'s does for the build.
+**The brackets live in `Game.ts` and nowhere else, with one exception that is
+INSIDE the render.** `tick`, `updateGameplay`, `updateNetWorld` and
+`updateWorld` are where the frame's order is already declared, with the argument
+for it written down, so **the phase list IS that order** and no system had to be
+taught the profiler exists. A phase is a name in `PHASES`, a parent in
+`PARENT_OF` and a `begin`/`end` pair; the ring, the report and the trace are
+all sized and labelled off that list. The spans NEST and do not partition — read
+a report as an attribution, exactly as `buildProfile`'s does for the build.
+
+**`render` is four spans deep now, and they are the exception because there is
+nowhere in `Game.ts` to put a bracket inside `scene.render()`.**
+`FrameProfile.hookRender` hangs `shadowPass`, `glow`, `drawWorld` (rendering
+group 0 — the map and the bodies) and `drawOverlay` (the groups above it —
+the sky shell, the moon, the viewmodel) off the SCENE's own observables when the
+profiler arms and takes them off when it disarms, finding the shadow map through
+`scene.lights` and the glow through `scene.effectLayers`, so no system knows
+about them either. **They cannot overlap and the method carries the proof**:
+Babylon runs the render targets before it opens the draw phase, the camera's
+pass inside it, and the glow's compose after it closes — which is also why the
+group spans are gated on that draw phase, since a render target's own rendering
+manager fires the same scene observable. **What they measure is CPU**, and under
+`compatibilityMode = false` that is the recording of a render BUNDLE rather than
+the work the GPU then does.
 
 **The `TRACE` export CENTRES its window on the worst frame in the ring**, not on
 the present moment — a 600-frame tail is seven seconds against a thirty-five

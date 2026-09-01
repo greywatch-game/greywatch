@@ -722,6 +722,16 @@ is one machine's:
   time the build around `buildRound` if that is what you are measuring. To hold
   the building card still for a screenshot, replace `g.buildRound` with a no-op
   before calling `startRound`.
+- **From `deploy` into `playing` is one call, and it beats pressing keys at
+  the screen**: `g.deployScreen.onDeploy(spawn)` is the callback the Deploy
+  button raises, `Game` wires it to `spawnPlayer`, and any
+  `g.map.spawns` entry will do — so a script that only wants a round running
+  (a profile capture, a frame-rate reading) needs no pointer lock, no button
+  geometry and no retry loop. It is deliberately not the same thing as calling
+  `spawnPlayer()` yourself: that is what the netplay path does NOT do, and
+  going through the callback is what keeps a smoke test on the route the game
+  actually takes. **This is for getting INTO a round, not for placing a camera**
+  — the rule two hundred lines up still holds.
 - Getting into `playing` takes an indeterminate number of Enter presses (the menu
   gates confirm on `overlayT > 0.5`), so press until `state === "playing"`. A LONG
   PRESS is what registers — `keyboard.press()` can fit the down and up inside one

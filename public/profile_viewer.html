@@ -841,7 +841,11 @@ function renderReport(r) {
   }
   const c = r.counters || {};
   stats.appendChild(tile("Draw calls", String(c.drawCalls != null ? c.drawCalls : "—"), "", (c.activeMeshes != null ? c.activeMeshes + " meshes" : "")));
-  stats.appendChild(tile("Mesh walk", fmt(c.meshWalkMs, 2), " ms", "rtt " + fmt(c.renderTargetsMs, 2) + " ms"));
+  // Particles are only on a capture from a build that measures them, and the
+  // line says nothing rather than "0.00 ms" on one that does not.
+  const walkSub = "rtt " + fmt(c.renderTargetsMs, 2) + " ms"
+    + (c.particlesMs != null ? " / particles " + fmt(c.particlesMs, 2) + " ms" : "");
+  stats.appendChild(tile("Mesh walk", fmt(c.meshWalkMs, 2), " ms", walkSub));
 
   /* charts */
   const series = r.series;
@@ -1082,6 +1086,7 @@ function hitchRow(h, read, below) {
   w("meshes", String(h.activeMeshes));
   w("walk", fmt(h.meshWalkMs, 2) + " ms");
   w("rtt", fmt(h.renderTargetsMs, 2) + " ms");
+  if (h.particlesMs != null) w("particles", fmt(h.particlesMs, 2) + " ms");
   if (h.heapMb) w("heap", fmt(h.heapMb, 1) + " MB");
   det.appendChild(where);
 

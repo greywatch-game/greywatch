@@ -3,7 +3,8 @@
 The contract for [`src/core/FrameProfile.ts`](../src/core/FrameProfile.ts),
 [`src/ui/ProfileChip.ts`](../src/ui/ProfileChip.ts) and
 [`src/config/profiling.ts`](../src/config/profiling.ts), and for the ~22 pairs
-of brackets in `Game.ts` that feed them. [`CLAUDE.md`](../CLAUDE.md) carries the
+of brackets in `Game.ts` that feed them, plus the four inside `render` that
+`FrameProfile` hangs off the scene itself. [`CLAUDE.md`](../CLAUDE.md) carries the
 summary; this is the argument.
 
 It is not the only instrument in the tree and is deliberately not the biggest.
@@ -50,6 +51,15 @@ optimising the wrong half.** `probeOverhead` measures one `begin`/`end` pair at
 which over ~22 pairs is **~5 us a frame**, or 0.06% of a 7.8 ms one. The rest is
 `SceneInstrumentation`'s observers and the `getActiveMeshes()` read in
 `endFrame`. If the cost ever has to come down, that is the end to look at.
+
+**The four spans inside `render` add about four more pairs a frame** — the two
+rendering groups, the glow's texture and its compose, with the shadow map's on
+the handful of frames that re-render it — which is ~0.9 us against the 5 above
+and well inside the run-to-run spread the paired runs already showed. It is
+arithmetic on the same probe rather than a new measurement, and the reason it
+did not get one is that a difference that size cannot be resolved here: see the
+rAF-counting note in `VERIFYING.md` for what it took to resolve the whole
+instrument at 1.5%.
 
 Neither figure is a constant in a table: both probes run on arming, on the
 device, and `clock.overheadUs` and `clock.grainMs` are in every capture.
@@ -186,10 +196,10 @@ this and not `__celshock`, because none of it is anything to do with the game.
 
 `PHASES` in `FrameProfile.ts` is the list, and **an index into it is a slot id**,
 which is what keeps the recording loop free of strings. The brackets are in
-`Game.ts` and nowhere else: `tick`, `updateGameplay`, `updateNetWorld` and
-`updateWorld` are where the frame's order is already declared with the argument
-for it written down, so **the phase list IS that order** and no system had to be
-taught the profiler exists.
+`Game.ts` and nowhere else **except the four inside `render`**: `tick`,
+`updateGameplay`, `updateNetWorld` and `updateWorld` are where the frame's
+order is already declared with the argument for it written down, so **the phase
+list IS that order** and no system had to be taught the profiler exists.
 
 ```
 frame                       the whole tick, wall to wall
@@ -213,7 +223,55 @@ frame                       the whole tick, wall to wall
 ├─ culling                  the cull cells, the motes, the shader's eye
 ├─ audio                    pushHullEngines
 └─ render                   scene.render()
+   ├─ shadowPass            the depth map, on the frames that re-render it
+   ├─ glow                  the GlowLayer: its main texture, its four blurs,
+   │                        and its compose two stages later
+   ├─ drawWorld             rendering group 0 — the map and the bodies
+   └─ drawOverlay           groups above it — the sky shell, the moon, the gun
 ```
+
+**The last four are not brackets in `Game.ts` and cannot be**, because the
+boundaries they want are inside `scene.render()`. `FrameProfile.hookRender`
+hangs them off the scene's own observables at `arm` and takes them off again at
+`disarm`, finding the shadow map through `scene.lights` and the glow through
+`scene.effectLayers` — so no system knows about them either.
+
+**They cannot overlap, and the method's header carries the proof** rather than
+the assertion: `Scene._renderForCamera` runs the render targets (the shadow
+map, then the effect layers' main textures) *before* it opens the draw phase,
+the camera's own pass *inside* it, and the glow's compose *after* it closes.
+The group spans are gated on being in that draw phase, because
+`onBeforeRenderingGroupObservable` is the SCENE's and a render target's own
+rendering manager fires it too — without the gate the shadow map's groups would
+be added to `drawWorld` on top of `shadowPass`.
+
+**What is left inside `render` and named by nothing** is the active-mesh
+evaluation (the `Mesh walk` counter, which is the same number in other units),
+the post chain, a frame's share of a reflection bake, and the present. Measured
+on Hollowmere headless, 969 frames at 101 fps: `render` 4.86 ms, of which
+`drawWorld` 2.15, `glow` 1.04, `drawOverlay` 0.25 and `shadowPass` 0.73 — 86%
+of the bar attributed, and the glow's share of the whole frame **10.5%**, which
+is the first continuous reading of a figure `CLAUDE.md` had only from an A/B.
+
+**`shadowPass` reads on a HANDFUL of frames and that is the finding, not a
+fault.** The depth map is `REFRESHRATE_RENDER_ONCE` with a manual reset, so it
+re-renders only when the texel-snapped light window moves — 3 frames in 969 on
+that run. **Read `PhaseStat.frames` before `mean` on any phase like this**: the
+mean is over the frames that ENTERED it, so a phase costing 0.73 ms on three
+frames and a phase costing 0.73 ms on all of them have the same `mean` and the
+same `share`, and only `frames` tells them apart.
+
+**What they measure is CPU.** Under `compatibilityMode = false` that is the
+recording of a render BUNDLE and not the work the GPU then does — still the
+right thing to watch, since the whole of `FINDINGS.md` §17 is that this frame
+is bound by submission, but a group whose bundle Babylon reuses reads cheap
+while the GPU is busy. See **GPU time** below.
+
+**A span that opens more than once a frame closes through `endAdd`**, which
+ADDS rather than assigns — a rendering group is entered once per group, the glow
+twice — and `entered` is what tells it which close is the frame's first. That
+works because `endFrame` clears the slots of the frame it is about to
+overwrite; nothing else in the file depends on that write, and this does.
 
 **They nest and they do not partition.** What is left inside a span is the lines
 nobody thought worth naming — read a report as an ATTRIBUTION, exactly as
@@ -226,8 +284,9 @@ can never leak into the next frame. `updateGameplay` deliberately closes `world`
 still spent the time, and `world` reading as "not entered" on the most
 interesting frame of a session would be the wrong kind of missing.
 
-**Adding a phase** is a name in `PHASES` and a `begin`/`end` pair. Nothing else
-moves.
+**Adding a phase** is a name in `PHASES`, a parent in `PARENT_OF` (it will not
+compile without one) and a `begin`/`end` pair — or, inside `render`, a
+`begin`/`endAdd` pair on an observable in `hookRender`. Nothing else moves.
 
 ---
 
@@ -485,11 +544,16 @@ Both of these are real levers and both have a blast radius bigger than the
 instrument, so neither was folded into it.
 
 **GPU time.** Babylon reads it — `EngineInstrumentation.captureGPUFrameTime`
-over `WebGPUTimestampQuery` — but only if `timestamp-query` is requested at
-device creation, and `main.ts` calls `initAsync()` with no descriptor at all.
-Adding one means an adapter-support check on every boot, and whether Android's
-Chrome exposes the feature is a question for the handset rather than for this
-file. On a draw-call-bound frame it is the single most valuable thing missing.
+over `WebGPUTimestampQuery`, and per render target as
+`WebGPURenderTargetWrapper.gpuTimeInFrame`, which would put a GPU figure beside
+`shadowPass` and `glow` — but only if `timestamp-query` is requested at device
+creation, and `main.ts` calls `initAsync()` with no descriptor at all. Adding
+one means an adapter-support check on every boot, and whether Android's Chrome
+exposes the feature is a question for the handset rather than for this file.
+**It is also the one lever here that could not be a SETTING**: a device feature
+is asked for when the device is created, so arming it would have to be read at
+boot and cost a reload. On a draw-call-bound frame it is the single most
+valuable thing missing.
 
 **A precise heap without a flag.** `performance.measureUserAgentSpecificMemory()`
 is the standard, unrate-limited answer and it requires cross-origin isolation,

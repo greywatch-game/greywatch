@@ -51,12 +51,28 @@
  *    territory and always will be.
  *  - **The frame is draw-call bound** (`FINDINGS.md` §17), so the JS phases
  *    attribute the third of the frame that was never the problem and `render`
- *    is one enormous bar. That is why `SceneInstrumentation`'s counters are
- *    carried beside them: the mesh walk, the render-target time and the draw
- *    count are what the big bar is made of. GPU time is NOT here — Babylon can
- *    read it, but only if `timestamp-query` is requested at device creation,
- *    and `main.ts` calls `initAsync()` with no descriptor. That is a boot
- *    change with its own blast radius and is deliberately not in this cut.
+ *    is the enormous bar. `SceneInstrumentation`'s counters are carried beside
+ *    them for that reason — the mesh walk, the render-target time, the particle
+ *    time and the draw count are what the big bar is made of — and **four spans
+ *    open INSIDE it now**: `shadowPass`, `glow`, `drawWorld` and
+ *    `drawOverlay`. They are the one part of this file `Game` does not
+ *    bracket, because the boundaries they want are inside a Babylon call and
+ *    there is nowhere in `Game.ts` to put them — `hookRender` hangs them off
+ *    the scene's own observables instead, and carries the argument that they
+ *    cannot overlap.
+ *
+ *    **What they measure is CPU, and under `compatibilityMode = false` that is
+ *    the recording of a render BUNDLE rather than the work the GPU then does.**
+ *    That is still the right thing to be watching — the whole of §17 is that
+ *    this frame is bound by the submission and not by the pixels — but a group
+ *    whose bundle Babylon reuses reads cheap while the GPU is saturated, and
+ *    nothing here would say so. GPU time is NOT here: Babylon can read it
+ *    (`gpuTimeInFrameForMainPass`, and `gpuTimeInFrame` per render target),
+ *    but only if `timestamp-query` is requested at DEVICE CREATION, and
+ *    `main.ts` calls `initAsync()` with no descriptor. That is what keeps it
+ *    out of this cut rather than the blast radius: a feature asked for at
+ *    device creation cannot be armed by a SETTING the way everything else here
+ *    is, so it would have to be read at boot and cost a reload to turn on.
  *  - **The heap is usually FROZEN and the GC is only ever INFERRED.** Chrome
  *    rate-limits the bucketised `performance.memory` to one update every twenty
  *    minutes on purpose, so on a stock browser its reading does not move and a
@@ -73,7 +89,13 @@
  *    for; the same hitch with none is not, and eliminating the leading suspect
  *    is worth as much as confirming it.
  */
-import { SceneInstrumentation, type Scene } from "@babylonjs/core";
+import {
+  SceneInstrumentation,
+  type EffectLayer,
+  type Observer,
+  type RenderTargetTexture,
+  type Scene,
+} from "@babylonjs/core";
 import { CONFIG } from "../config";
 
 /**
@@ -124,6 +146,15 @@ export const PHASES = [
   "audio",
   /** `scene.render()`. The big one, and see the header on why. */
   "render",
+  /**
+   * The four spans INSIDE `render`, and the only ones in this list that
+   * `Game` does not bracket — see `hookRender`, which is also where the
+   * argument that they cannot overlap each other is written down.
+   */
+  "shadowPass",
+  "glow",
+  "drawWorld",
+  "drawOverlay",
 ] as const;
 
 export type Phase = (typeof PHASES)[number];
@@ -184,6 +215,10 @@ export const PARENT_OF: Readonly<Record<Exclude<Phase, "frame">, Phase>> = {
   culling: "frame",
   audio: "frame",
   render: "frame",
+  shadowPass: "render",
+  glow: "render",
+  drawWorld: "render",
+  drawOverlay: "render",
 };
 
 /** One phase's line in a report. Milliseconds throughout. */
@@ -224,6 +259,7 @@ export interface HitchFrame {
   activeMeshes: number;
   meshWalkMs: number;
   renderTargetsMs: number;
+  particlesMs: number;
   /** Only the phases this frame actually entered, in `PHASES` order. */
   phases: Partial<Record<Phase, number>>;
 }
@@ -331,6 +367,8 @@ export interface ProfileReport {
     activeMeshes: number;
     meshWalkMs: number;
     renderTargetsMs: number;
+    /** The GPU clouds and the mote field, which no phase covers. */
+    particlesMs: number;
   };
   phases: PhaseStat[];
   hitches: HitchFrame[];
@@ -383,6 +421,7 @@ export class FrameProfile {
   private activeMeshes: Uint32Array | null = null;
   private meshWalkMs: Float32Array | null = null;
   private rttMs: Float32Array | null = null;
+  private particlesMs: Float32Array | null = null;
 
   /**
    * The used heap at the end of each frame in MB, and the collections the
@@ -428,6 +467,26 @@ export class FrameProfile {
   /** Open spans, as absolute stamps. Zero means "not open". */
   private readonly openAt = new Float64Array(SLOTS);
 
+  /**
+   * Whether the frame is inside the CAMERA's own draw phase.
+   *
+   * The one piece of state `hookRender`'s spans need, and it exists because
+   * `onBeforeRenderingGroupObservable` is notified by every `RenderingManager`
+   * in the process — a render target has one of its own and fires the SCENE's
+   * observable from it. Without this the shadow map's groups and the glow's
+   * would be added to `drawWorld` on top of their own spans. See `hookRender`.
+   */
+  private inDraw = false;
+
+  /**
+   * The observers `hookRender` hung off the scene, as teardowns.
+   *
+   * Built once by `arm` and run by `disarm`, which is what keeps the promise
+   * the header makes about a disarmed profiler: not merely that its entry
+   * points return early, but that it is not ON the scene at all.
+   */
+  private unhook: (() => void)[] = [];
+
   /** Where the next frame goes, and how many the ring holds. */
   private cursor = 0;
   private filled = 0;
@@ -450,6 +509,22 @@ export class FrameProfile {
 
   private scene: Scene | null = null;
   private instr: SceneInstrumentation | null = null;
+
+  /**
+   * The glow layer, the main texture it is currently rendering into, and the
+   * observer sitting on that texture.
+   *
+   * **The texture is re-created rather than resized**, by `EffectLayer.render`
+   * itself the frame after the backing store changes — a window resize, or the
+   * render-scale setting — so an observer hung off it once at `arm` is on a
+   * disposed object from then on and `glow` silently reads as the compose
+   * alone. `bindGlow` is one reference comparison at the end of each frame
+   * against exactly that, which is cheaper than any of the ways of being told.
+   */
+  private glowLayer: EffectLayer | null = null;
+  private glowTex: RenderTargetTexture | null = null;
+  private glowIn: Observer<RenderTargetTexture> | null = null;
+  private glowOut: Observer<RenderTargetTexture> | null = null;
 
   private grainMs = 0;
   private overheadUs = 0;
@@ -511,6 +586,7 @@ export class FrameProfile {
     this.activeMeshes = new Uint32Array(n);
     this.meshWalkMs = new Float32Array(n);
     this.rttMs = new Float32Array(n);
+    this.particlesMs = new Float32Array(n);
     this.gcAt = new Uint8Array(n);
     this.cursor = 0;
     this.filled = 0;
@@ -529,6 +605,15 @@ export class FrameProfile {
     this.instr = new SceneInstrumentation(scene);
     this.instr.captureActiveMeshesEvaluationTime = true;
     this.instr.captureRenderTargetsRenderTime = true;
+    // The one counter with a MAP behind it rather than a subsystem: the GPU
+    // clouds a blast raises and the mote field Sarab emits around the eye are
+    // the only particles in the game, and nothing else prices either.
+    this.instr.captureParticlesRenderTime = true;
+    // …and the four spans inside `render`, which are observers rather than
+    // brackets. Registered before `on`, which costs nothing: every one of them
+    // goes through `begin`/`endAdd` and returns on the same first line as the
+    // rest of this class.
+    this.hookRender(scene);
 
     this.on = true;
     this.grainMs = probeGrain();
@@ -548,6 +633,13 @@ export class FrameProfile {
   disarm(): void {
     if (!this.on) return;
     this.on = false;
+    for (const off of this.unhook) off();
+    this.unhook = [];
+    this.glowLayer = null;
+    this.glowTex = null;
+    this.glowIn = null;
+    this.glowOut = null;
+    this.inDraw = false;
     this.instr?.dispose();
     this.instr = null;
     this.scene = null;
@@ -564,6 +656,7 @@ export class FrameProfile {
     this.activeMeshes = null;
     this.meshWalkMs = null;
     this.rttMs = null;
+    this.particlesMs = null;
     this.heapMb = null;
     this.gcAt = null;
     this.hitchAt = [];
@@ -612,6 +705,172 @@ export class FrameProfile {
   }
 
   /**
+   * Closes a span that may open MORE THAN ONCE in a frame, adding to whatever
+   * the frame already has in that slot.
+   *
+   * **Every one of `hookRender`'s spans needs this and none of `Game`'s does**,
+   * which is the whole reason it is a second method rather than `end` growing a
+   * flag: a rendering group is entered once per group per camera, the glow is
+   * entered twice — its main texture, then its compose two stages later — and a
+   * plain `end` would report the LAST of those as the phase's whole cost.
+   *
+   * **`entered` is what says "first this frame", and it is sound because
+   * `endFrame` clears the slots of the frame it is about to overwrite** — the
+   * write that stops a skipped phase flying the previous lap's flag. So the
+   * first close of a frame stamps the start and the rest add to the duration,
+   * and `startMs` stays the start of the FIRST piece, which is what the trace
+   * export wants: the pieces of one of these phases are contiguous in the
+   * frame's order, so a flame chart draws one bar in the right place.
+   */
+  private endAdd(slot: number): void {
+    if (!this.on) return;
+    const t0 = this.openAt[slot];
+    if (t0 === 0) return;
+    this.openAt[slot] = 0;
+    const t1 = performance.now();
+    const at = this.cursor * SLOTS + slot;
+    if (this.entered![at] === 1) {
+      this.durMs![at] += t1 - t0;
+      return;
+    }
+    this.startMs![at] = t0 - this.frameT0;
+    this.durMs![at] = t1 - t0;
+    this.entered![at] = 1;
+  }
+
+  /**
+   * Hangs the four spans inside `render` off Babylon's own observables.
+   *
+   * **This is the one place this file's own arrangement bends, and the reason
+   * is that there is nowhere in `Game.ts` to put these brackets.** Every other
+   * phase is a pair of lines in a method whose order `Game` already declares;
+   * these four are boundaries INSIDE `scene.render()`, and the alternative to
+   * an observer is no measurement at all. Nothing here reaches for a system —
+   * the shadow map and the glow are found through the SCENE (`scene.lights`,
+   * `scene.effectLayers`), so `ShadowSystem` and `Game`'s glow layer still
+   * have not heard of this file and do not have to.
+   *
+   * **THE FOUR CANNOT OVERLAP, and that is a fact about where Babylon runs
+   * them rather than a hope.** `Scene._renderForCamera` is one order:
+   *
+   *  1. the render targets — the shadow map among them, then the effect
+   *     layers' main textures — all of it before the draw phase opens;
+   *  2. `onBeforeDrawPhaseObservable`, the rendering manager, and
+   *     `onAfterDrawPhaseObservable`, which is the camera's own pass;
+   *  3. the after-camera stages, where the glow COMPOSES, and then the post
+   *     chain.
+   *
+   * So the shadow map and the glow's main texture are in (1), the two group
+   * spans are in (2), and the glow's compose is in (3). What is left inside
+   * `render` and named by nothing is the active-mesh evaluation, the post
+   * chain, a frame's share of a reflection bake, and the present.
+   *
+   * **The group spans are gated on `inDraw` and would double-count without
+   * it.** `onBeforeRenderingGroupObservable` is the SCENE's, and every
+   * `RenderingManager` in the process notifies it — including the one inside a
+   * render target — so the shadow map's own groups and the glow's would be
+   * added to `drawWorld` on top of the spans that already hold them.
+   *
+   * **Group 0 is the world and everything above it is `drawOverlay`**, which
+   * today is the sky shell, the moon and the viewmodel (`VIEWMODEL_GROUP`).
+   * Split that way rather than one slot per id because the question worth
+   * asking is what the MAP costs against what the gun costs, and a third group
+   * added to the game should join the overlay rather than go unrecorded.
+   *
+   * **A render target is bracketed BIND to UNBIND, and the unbind is where the
+   * blur is.** A glow layer hangs its four blur passes off that same
+   * `onAfterUnbindObservable` at construction, and observers fire in the order
+   * they were added — ours is added at `arm`, which is always later — so the
+   * blurs are inside the span rather than after it.
+   */
+  private hookRender(scene: Scene): void {
+    const off = this.unhook;
+
+    const drawOn = scene.onBeforeDrawPhaseObservable.add(() => {
+      this.inDraw = true;
+    });
+    off.push(() => scene.onBeforeDrawPhaseObservable.remove(drawOn));
+    const drawOff = scene.onAfterDrawPhaseObservable.add(() => {
+      this.inDraw = false;
+    });
+    off.push(() => scene.onAfterDrawPhaseObservable.remove(drawOff));
+
+    const groupIn = scene.onBeforeRenderingGroupObservable.add((info) => {
+      if (this.inDraw) {
+        this.begin(info.renderingGroupId === 0 ? P.drawWorld : P.drawOverlay);
+      }
+    });
+    off.push(() => scene.onBeforeRenderingGroupObservable.remove(groupIn));
+    const groupOut = scene.onAfterRenderingGroupObservable.add((info) => {
+      if (this.inDraw) {
+        this.endAdd(info.renderingGroupId === 0 ? P.drawWorld : P.drawOverlay);
+      }
+    });
+    off.push(() => scene.onAfterRenderingGroupObservable.remove(groupOut));
+
+    // Every shadow map in the scene, which is ShadowSystem's one directional
+    // light. Its texture is created once at a fixed `mapSize` and never
+    // re-created, so unlike the glow's it needs no re-binding.
+    for (const light of scene.lights) {
+      const map = light.getShadowGenerator()?.getShadowMap();
+      if (!map) continue;
+      const bind = map.onBeforeBindObservable.add(() => this.begin(P.shadowPass));
+      off.push(() => map.onBeforeBindObservable.remove(bind));
+      const unbind = map.onAfterUnbindObservable.add(() =>
+        this.endAdd(P.shadowPass),
+      );
+      off.push(() => map.onAfterUnbindObservable.remove(unbind));
+    }
+
+    // The effect layers, of which this game has exactly one — the glow — and
+    // the COMPOSE half of it, which is the half that is not a render target.
+    const layer = scene.effectLayers[0] ?? null;
+    this.glowLayer = layer;
+    if (!layer) return;
+    const before = layer.onBeforeComposeObservable.add(() => this.begin(P.glow));
+    off.push(() => layer.onBeforeComposeObservable.remove(before));
+    const after = layer.onAfterComposeObservable.add(() => this.endAdd(P.glow));
+    off.push(() => layer.onAfterComposeObservable.remove(after));
+    off.push(() => {
+      if (!this.glowTex) return;
+      if (this.glowIn) this.glowTex.onBeforeBindObservable.remove(this.glowIn);
+      if (this.glowOut) this.glowTex.onAfterUnbindObservable.remove(this.glowOut);
+    });
+    this.bindGlow();
+  }
+
+  /**
+   * Puts the glow's two brackets on whichever main texture the layer is
+   * rendering into now, and does nothing at all while that is the one they are
+   * already on.
+   *
+   * See the fields for why this is POLLED rather than subscribed: the texture
+   * is re-created on a size change, and the observable that announces one fires
+   * BEFORE the replacement exists, so being told is worth less here than one
+   * reference comparison at the end of a frame.
+   *
+   * Both observers move together and both are registered ONCE per texture,
+   * which is the header's no-allocation rule reaching a method that runs inside
+   * `scene.render()`: a one-shot close added per open would be a closure per
+   * frame, on the recording path, in the instrument built to catch exactly
+   * that.
+   */
+  private bindGlow(): void {
+    const tex = this.glowLayer?.mainTexture ?? null;
+    if (tex === this.glowTex) return;
+    if (this.glowTex) {
+      if (this.glowIn) this.glowTex.onBeforeBindObservable.remove(this.glowIn);
+      if (this.glowOut) this.glowTex.onAfterUnbindObservable.remove(this.glowOut);
+    }
+    this.glowTex = tex;
+    this.glowIn = null;
+    this.glowOut = null;
+    if (!tex) return;
+    this.glowIn = tex.onBeforeBindObservable.add(() => this.begin(P.glow));
+    this.glowOut = tex.onAfterUnbindObservable.add(() => this.endAdd(P.glow));
+  }
+
+  /**
    * Where the player was and what was alive, pushed by `Game` once a frame.
    *
    * **Position is the field nobody expects to need and the one that pays.**
@@ -649,7 +908,12 @@ export class FrameProfile {
       this.activeMeshes![i] = this.scene.getActiveMeshes().length;
       this.meshWalkMs![i] = instr.activeMeshesEvaluationTimeCounter.current;
       this.rttMs![i] = instr.renderTargetsRenderTimeCounter.current;
+      this.particlesMs![i] = instr.particlesRenderTimeCounter.current;
     }
+    // One reference comparison, here rather than in `beginFrame`, because the
+    // texture it is watching for is re-created INSIDE the render this frame has
+    // just finished — see `bindGlow`.
+    this.bindGlow();
     // The collections the sentinel reported since the last frame closed, and
     // the heap they left behind. `gcPending` is cleared here rather than in the
     // callback, so a collection that fires between two frames lands on the one
@@ -801,7 +1065,8 @@ export class FrameProfile {
     phases.sort((a, b) => b.mean - a.mean);
 
     return {
-      version: 1,
+      // 2: the four spans inside `render` and the particle counter.
+      version: 2,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
@@ -882,18 +1147,21 @@ export class FrameProfile {
     let meshes = 0;
     let walk = 0;
     let rtt = 0;
+    let particles = 0;
     for (let k = 0; k < n; k++) {
       const i = (first + k) % cap;
       draws += this.drawCalls![i];
       meshes += this.activeMeshes![i];
       walk += this.meshWalkMs![i];
       rtt += this.rttMs![i];
+      particles += this.particlesMs![i];
     }
     return {
       drawCalls: Math.round(draws / n),
       activeMeshes: Math.round(meshes / n),
       meshWalkMs: round(walk / n),
       renderTargetsMs: round(rtt / n),
+      particlesMs: round(particles / n),
     };
   }
 
@@ -925,6 +1193,7 @@ export class FrameProfile {
         activeMeshes: this.activeMeshes![i],
         meshWalkMs: round(this.meshWalkMs![i]),
         renderTargetsMs: round(this.rttMs![i]),
+        particlesMs: round(this.particlesMs![i]),
         phases,
       });
     }
