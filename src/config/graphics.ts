@@ -206,6 +206,35 @@ export const graphics = {
      * does. It is a constant again.
      */
     tint: 0.28,
+    /**
+     * The NEAR BAND: how much of the ink a pixel this close keeps, and how far
+     * out that holds.
+     *
+     * **This is the viewmodel's, and it is a distance rather than a flag
+     * because the weapon is the only thing that can BE this close.** The gun
+     * sits 0.3-0.5 m from the lens and a body cannot get within about 0.4 m of
+     * world geometry, so a depth band names it without any per-mesh data — the
+     * one place `FINDINGS.md` 18 said an ink-id attachment would be needed and
+     * it is not. It replaces the hand-set 0.004 m hull the weapon used to wear,
+     * which existed for the same reason: a full-weight line on parts this small
+     * swallows the whole weapon in black. `scale` is what the ink is multiplied
+     * by AT the eye, ramping to 1 by `until` metres.
+     */
+    near: { until: 1.4, scale: 0.3 },
+    /**
+     * How bright the EMISSIVE buffer has to be under a pixel before the ink
+     * gives way, and how far above that it has given way completely.
+     *
+     * **This is what `noInk` used to buy and the flag no longer can.** Every
+     * emissive part — eyes, flames, signs, lit windows, tracers, the holo
+     * reticle — was excluded from the hull, and an inked emissive is swallowed
+     * glow. The mask is `glow.mainTexture`, which `GlowDepth` already made FULL
+     * RESOLUTION and emissive-only, so it costs one texture read and no pass:
+     * it is the emissive geometry alone, drawn sharp (the blur writes to its own
+     * targets, not back into this one) and already depth-tested against the
+     * frame, so a lamp behind a wall does not protect the wall in front of it.
+     */
+    emissiveMask: { from: 0.12, to: 0.4 },
   },
   /**
    * Toon specular: one hard two-band Blinn highlight from the key light,

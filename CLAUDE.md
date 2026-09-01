@@ -702,17 +702,20 @@ misbehaves silently:
   the queries as `GameMap.rayGroups` instead, which is why that list is on the
   map rather than only in the bake. Declared by `Build.strut`, merged per
   placement, baked in groups. Today it is fence posts and rails.
-- `noOutline: true` — **VESTIGIAL, and the one flag here that currently decides
-  nothing.** It meant "skipped by `addOutline()`", and the ink is a screen-space
-  edge over the depth buffer now (`shaders/CelInk.ts`), which has never heard of
-  a mesh. It is still SET in a dozen places and still read by
-  `mergeByMaterial`'s exemption key, so a group carrying it still merges apart
-  — which is why removing it is not free and has not been done. **What it used
-  to buy and nothing currently buys is keeping the ink off every emissive part**
-  (eyes, flames, signs, reticle); the ink inks them. The cheap way back is
-  `glow.mainTexture`, which `GlowDepth` made full-resolution and emissive-only,
-  sampled as a mask. Until that lands, treat this flag as a merge hint and not
-  as an ink rule.
+- `noInk: true` — **records INTENT, and nothing reads it to decide ink.** It
+  says "this was never meant to carry line work", it is the list a future
+  per-mesh ink would be built from, and today its only consumer is
+  `mergeByMaterial`'s exemption key (measured cost of keeping it there: **≤1
+  draw call on Coldharbour, 0 on Harrowmead and Hollowmere** — an exempt mesh
+  almost always differs by material anyway). **What HONOURS it is three
+  mechanisms, none of which is the flag**, and that is the thing to know before
+  adding a fourth: an emissive part is masked out by `glow.mainTexture`
+  (`ink.emissiveMask`), a viewmodel part is scaled down by the near-depth band
+  (`ink.near`), and a coplanar decal — a road dash, a blob shadow, the capture
+  ring — produces no depth step and no bend, so the pass never finds it. The sky
+  writes no depth at all. It was called `noOutline` while an inverted hull read
+  it; **it is deliberately absent now from grass, water and both debris pools**,
+  which the ink does draw on purpose.
 - `noGlow: true` — excluded from the `GlowLayer` in the `Game` constructor. Only
   meshes existing at construction time are scanned. A mesh that stays in bloom
   is faded with distance instead (`customEmissiveColorSelector`), and
@@ -720,16 +723,6 @@ misbehaves silently:
   sets, and the moon is not in the valley to be fogged out of.
 - `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers
   (ground, roads) need it: casting from them is pure shadow acne.
-- `noReflect: true` — excluded from every cube probe's render list
-  (`ReflectionSystem.opaqueWorld`). **It has NO WRITER any more**, and the
-  mechanism is kept rather than deleted because what it defends against is a
-  property of geometry and not of the thing that used to have it: the ink twins
-  were INVERTED HULLS, a thin line seen from outside and a SEALED ROOM seen from
-  within, and a probe parked against a tower's glass stood inside its own
-  block's hull — all six faces one flat colour, the glazing reflecting a grey
-  card, measured on Coldharbour's curtain wall at 85% of the frame's pixels.
-  Anything inside-out that is ever added back owes this flag on the same
-  argument.
 - `block: "3,2"` — which map block a merged visual came from (the block's side
   is `MapLayout.blockSize`, 48 m by default). A **value**,
   like `surface`, and **absent on everything that is not block-merged — the

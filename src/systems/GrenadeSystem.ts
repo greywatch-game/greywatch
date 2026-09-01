@@ -416,7 +416,7 @@ export class GrenadeSystem {
         scene,
       );
       flash.material = this.fireMats[0];
-      flash.metadata = { noOutline: true };
+      flash.metadata = { noInk: true };
       flash.isVisible = false;
       flash.isPickable = false;
 
@@ -435,7 +435,7 @@ export class GrenadeSystem {
           scene,
         );
         mesh.material = this.fireMats[0];
-        mesh.metadata = { noOutline: true };
+        mesh.metadata = { noInk: true };
         mesh.isVisible = false;
         mesh.isPickable = false;
         // The golden angle around the vertical and a lift that walks up it:
@@ -472,7 +472,7 @@ export class GrenadeSystem {
       // strength in daylight where the fireball behind it is not. It is not
       // inert: this system is built before `Game`'s construction-time
       // glow-exclusion scan, the same ordering `DebrisSystem`'s pool relies on.
-      ring.metadata = { noOutline: true, noGlow: true };
+      ring.metadata = { noInk: true, noGlow: true };
       ring.isVisible = false;
       ring.isPickable = false;
       ring.rotationQuaternion = Quaternion.Identity();
@@ -494,7 +494,7 @@ export class GrenadeSystem {
         scene,
       );
       mesh.material = emberMat;
-      mesh.metadata = { noOutline: true };
+      mesh.metadata = { noInk: true };
       mesh.isVisible = false;
       mesh.isPickable = false;
       this.embers.push({ mesh, vel: new Vector3(), t: 0 });

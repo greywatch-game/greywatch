@@ -1347,7 +1347,7 @@ export function buildParkade(
     // It stops where the void does — the apron at the ramp's head is floor, and
     // a line drawn past it would be marking a drop that is not there.
     //
-    // **Both boxes are `noOutline`, and between them that is what makes the
+    // **Both boxes are `noInk`, and between them that is what makes the
     // line exist at all.** A deck carrying paint is `buildRoad`'s case exactly
     // — read the long note there for the mechanism — so the same two rules
     // apply: the surface underneath gives up its ink, because an outline's
@@ -1360,7 +1360,7 @@ export function buildParkade(
     // sides keep theirs from the upstand and the columns standing on them, and
     // the deck below keeps its own ink for the ceiling this slab's underside
     // makes.
-    slab.metadata = { ...(slab.metadata ?? {}), noOutline: true };
+    slab.metadata = { ...(slab.metadata ?? {}), noInk: true };
     const open = (deckY(s) - deckY(s - 1)) / GRADE / 2;
     const lineD = d / 2 + open;
     b.box(
@@ -1371,7 +1371,7 @@ export function buildParkade(
       y + 0.03,
       (open - d / 2) / 2,
       ROAD_PAINT,
-    ).metadata = { noOutline: true };
+    ).metadata = { noInk: true };
   }
 
   // The ramps. A plain pitched slab rather than `Build.flight`: treads on a car

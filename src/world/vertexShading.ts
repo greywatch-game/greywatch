@@ -275,7 +275,7 @@ export function bakeVertexShading(
     //
     // `visuals` is not all cel materials. `mergeByMaterial` emits one mesh per
     // material, and every lit window, brazier flame, ember and sign in the map
-    // comes out of it as a `block<x>,<y>-emissive-#rrggbb-noOutline` drawn
+    // comes out of it as a `block<x>,<y>-emissive-#rrggbb-noInk` drawn
     // with an unlit emissive `StandardMaterial` — 42 of them on Hollowmere.
     // Writing `rgb = (0, 1, 0)` onto those multiplied every one by pure green:
     // the village's lanterns and fires rendered as green blobs inside their own

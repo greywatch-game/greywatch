@@ -24,7 +24,7 @@
  *   getCustomRenderList) — Babylon culls nothing off an explicit renderList.
  * - Meshes with metadata.noShadowCaster (flat ground sheets, roads) must
  *   never be registered — they are receivers, and casting from them is acne.
- * - Blob discs are isPickable=false, metadata.noOutline, and never casters.
+ * - Blob discs are isPickable=false, metadata.noInk, and never casters.
  * - updateBlobs takes the player's ground height rather than probing for it:
  *   Player.floorY is that number, already found this frame.
  */
@@ -501,7 +501,7 @@ export class ShadowSystem {
       blob.rotation.x = -Math.PI / 2; // CreateDisc faces +Z; tip it face-up
       blob.material = this.blobMaterial;
       blob.isPickable = false;
-      blob.metadata = { noOutline: true, noGlow: true };
+      blob.metadata = { noInk: true, noGlow: true };
       this.blobs.set(cbt, blob);
     }
     return blob;

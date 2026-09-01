@@ -7,7 +7,7 @@
  * pass draws every mesh twice, so the cost of this rig is COLOURS PER SEGMENT
  * and not boxes. A box in a colour a segment already carries is free; a fifth
  * colour on the torso is 32 draw calls across a full roster. Emissive parts
- * (visor) need metadata.noOutline. Rigs are built once by BattleSystem's pool
+ * (visor) need metadata.noInk. Rigs are built once by BattleSystem's pool
  * and re-posed on respawn, never disposed. `rig.rest` is the hierarchy as built
  * and is the ONLY thing a ragdoll may restore from — see JointRest.
  */
@@ -678,7 +678,7 @@ export function buildSoldier(
   visor.parent = head;
   visor.position.set(0, 0.12, 0.145);
   visor.material = mats.getEmissive(kit.visor);
-  visor.metadata = { noOutline: true };
+  visor.metadata = { noInk: true };
   visor.isPickable = false;
   meshes.push(visor);
 

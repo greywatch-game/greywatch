@@ -777,15 +777,20 @@ export class ReflectionSystem {
  * Coldharbour's curtain wall — 85% of the frame's pixels wrong, mean 36/255 —
  * and the same test with the twins dropped from the lists is a skyline again.
  *
- * `noReflect` and not a material-name test, because what disqualifies a mesh
- * here is what it IS rather than what it is painted with — see the metadata
- * contract in `CLAUDE.md`, which this is the seventh flag of.
+ * **There used to be a second term here and its removal is a rule rather than
+ * a tidy-up.** `noReflect` excluded the ink TWINS, and what made them
+ * disqualifying was that an inverted hull is a thin line seen from outside and
+ * a SEALED ROOM seen from within: a probe parked against a tower's glass stood
+ * inside its own block's hull, so all six faces baked one flat colour and the
+ * glazing reflected a grey card — measured on Coldharbour's curtain wall at 85%
+ * of the frame's pixels. The ink is a screen-space pass now and nothing in the
+ * tree is inside-out, so the flag had no writer left. **Anything inside-out
+ * that is ever added back owes this filter again**, on that argument and not on
+ * a material-name test: what disqualifies a mesh here is what it IS.
  */
 function opaqueWorld(map: GameMap): Mesh[] {
   const panes = new Set(map.paneGroups.map((g) => g.mesh));
-  return map.visuals.filter(
-    (m) => !panes.has(m) && m.metadata?.noReflect !== true,
-  );
+  return map.visuals.filter((m) => !panes.has(m));
 }
 
 /** Every mesh survives this. `bakeWater`'s filter, named so it is not a lambda. */

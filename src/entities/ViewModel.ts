@@ -220,7 +220,7 @@ function buildKitBackdrop(scene: Scene): Mesh {
   // Read by the Game constructor's scan; it is up before that runs. A flat
   // painted with an emissive texture is exactly what the glow layer would
   // otherwise bloom, and a bloomed backdrop is a bright wash over the weapon.
-  card.metadata = { noGlow: true, noOutline: true, noShadowCaster: true };
+  card.metadata = { noGlow: true, noInk: true, noShadowCaster: true };
   card.setEnabled(false);
   return card;
 }
@@ -622,7 +622,7 @@ export class ViewModel {
     // the player's visor slit both follow.
     pip.position.y = THROW_BALL;
     pip.material = mats.getEmissive("#ff5a4f");
-    pip.metadata = { noOutline: true };
+    pip.metadata = { noInk: true };
     pip.isPickable = false;
     this.throwBall = ball;
     this.meshes.push(...throwArm, ball, pip);
@@ -654,15 +654,15 @@ export class ViewModel {
     this.applyFit();
 
     for (const m of this.meshes) {
-      // Ink an order of magnitude finer than the world's: a body-width
-      // outline on parts this small swallows the whole weapon in black.
-      // Not registered with addOutline() on purpose — distance thinning is
-      // meaningless for something 0.5 m from the lens.
-      if (!m.metadata?.noOutline) {
-        m.renderOutline = true;
-        m.outlineColor = Color3.Black();
-        m.outlineWidth = 0.004;
-      }
+      // **NO OUTLINE HULL, and this was the LAST one in the game.** The weapon
+      // used to set `renderOutline` by hand — never through `addOutline`, which
+      // is why it outlived the sweep that took the outline pass out — at
+      // 0.004 m, an order of magnitude finer than the world's, because a
+      // body-width line on parts this small swallows the whole weapon in black.
+      // The ink is a screen-space pass now and inks the gun off the same depth
+      // buffer as everything else; what stands in for the fine width is
+      // `CONFIG.graphics.ink.near`, which scales the ink down over the first
+      // couple of metres. See `shaders/CelInk.ts`.
       m.renderingGroupId = VIEWMODEL_GROUP;
       // Bounds of a camera-parented mesh are recomputed from a matrix that
       // moves with the frustum; skip the cull test rather than race it.

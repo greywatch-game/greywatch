@@ -159,7 +159,7 @@ export class GrassSystem {
 
     mesh.isPickable = false;
     mesh.checkCollisions = false;
-    mesh.metadata = { noGlow: true, noOutline: true };
+    mesh.metadata = { noGlow: true };
     mesh.freezeWorldMatrix();
     // Built after Game's construction-time glow scan, so exclude by hand.
     this.glow.addExcludedMesh(mesh);

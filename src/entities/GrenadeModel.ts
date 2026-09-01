@@ -58,7 +58,7 @@ export function buildGrenade(
   // that is a fine line, hence the deliberately thin outline below.
   pip.position.y = g.radius;
   pip.material = mats.getEmissive("#ff5a4f");
-  pip.metadata = { noOutline: true };
+  pip.metadata = { noInk: true };
   pip.isPickable = false;
   pip.isVisible = false;
 

@@ -1132,7 +1132,7 @@ export class MapBuilder {
       // depth write ON — so the ink of a road stands in the depth buffer 5 cm
       // above its own carriageway, and anything else at road height is BEHIND a
       // surface nobody can see. Lane markings hit that first and were given
-      // `noOutline` for it (see `buildRoad`); a road CROSSING a road is the
+      // `noInk` for it (see `buildRoad`); a road CROSSING a road is the
       // same fact, and it painted every junction between two surfaces solid
       // black — measured on Sarab, where the ink of whichever mesh the
       // front-to-back sort drew second covered the whole intersection, and no
@@ -1211,7 +1211,7 @@ export class MapBuilder {
     )) {
       merged.metadata = {
         ...(merged.metadata ?? {}),
-        noOutline: true,
+        noInk: true,
         noShadowCaster: true,
       };
       visuals.push(merged);
@@ -2561,7 +2561,7 @@ function rotateY(x: number, y: number, z: number, angle: number): Vector3 {
  * The render exemptions a merged mesh may carry, and the reason they are part
  * of the merge KEY rather than something read off a member.
  *
- * `noOutline` could have been propagated from any one mesh safely, because it
+ * `noInk` could have been propagated from any one mesh safely, because it
  * tracks the MATERIAL: the kit's `glow()` reaches for `getEmissive`, so an
  * emissive group is unanimous by construction and the group key already
  * implies the flag. `noGlow` and `noShadowCaster` track a mesh's ROLE, which
@@ -2585,7 +2585,7 @@ function rotateY(x: number, y: number, z: number, angle: number): Vector3 {
  * weight per vertex from it, so a group that disagreed would write one layer's
  * answer over both.
  */
-const EXEMPTIONS = ["noOutline", "noGlow", "noShadowCaster"] as const;
+const EXEMPTIONS = ["noInk", "noGlow", "noShadowCaster"] as const;
 
 type Exemption = (typeof EXEMPTIONS)[number];
 
@@ -2679,50 +2679,23 @@ function mergeByMaterial(
       // every source's `metadata` to null and the read came back false for any
       // group of two or more. Only a group of ONE survived it, because that
       // path bakes in place and disposes nothing. Measured on Hollowmere: 19
-      // of the map's 42 merged emissive meshes lost `noOutline` here and were
-      // handed an outline shell by the caller — a black ring drawn around
+      // of the map's 42 merged emissive meshes lost the ink exemption here and
+      // were handed an outline shell by the caller — a black ring drawn around
       // every lantern, flame and sign dense enough to have a neighbour its own
-      // colour. Grouping first means the flags are read while the meshes are
+      // colour. That particular consequence is gone with the outline pass, and
+      // the same read still has to be right for `noGlow` and `noShadowCaster`,
+      // which are live. Grouping first means the flags are read while the meshes are
       // still alive, and the group is unanimous, so the key is what they said.
       for (const flag of flags) {
         merged.metadata = { ...(merged.metadata ?? {}), [flag]: true };
       }
-      // **A swaying group carries the mark forward, and it is taken out of
-      // BABYLON's outline pass — which is a mechanical consequence, not a
-      // preference, and not the same thing as losing its ink.**
-      // `OutlineRenderer.isReady` builds its hull's effect with a hardcoded
-      // attribute list of position and normal (`const color = false`,
-      // literally) and a hardcoded uniform list with no clock in it, so that
-      // hull can see neither the wind nor the per-vertex weight. An outlined
-      // leaf would lean out from under a shell left standing at the rest pose,
-      // and a third of a metre against a five centimetre line is a dark ghost
-      // of the still canopy hanging behind the moving one. What draws the line
-      // instead is `inkTwin`, below: the same hull through the cel shader,
-      // which has the wind and the weight already.
+      // A swaying group carries the mark forward, and that is now all it does.
+      // It used to leave Babylon's outline pass here as well, because that
+      // hull could see neither the wind nor the per-vertex weight and the leaf
+      // leaned out from under a shell left standing at the rest pose. The ink
+      // reads the depth buffer now and the leaf is already in it.
       if (sway) {
         markSwayMerged(merged as Mesh, sway);
-      }
-      // **A paletteised group comes out of Babylon's outline pass for the same
-      // KIND of reason a swaying one does, and it is worth saying which.** The
-      // sway group leaves because the hull cannot see the wind; this one leaves
-      // because the hull is one flat colour per MESH and this mesh is now every
-      // colour in the block. `OutlineRenderer` offers no hook to extend either
-      // its attributes or its uniforms — `OutlineFog` had to bake literals into
-      // its source for want of one — so there is nowhere to put an index or a
-      // palette, and an ink resolved per mesh here would hand a dark plaster's
-      // line to the pale stone beside it. Above the light term that is not a
-      // wrong colour, it is a bright halo, which is the failure `inkState`
-      // exists to make impossible.
-      //
-      // A group that was ALREADY exempt keeps its exemption and gets no twin:
-      // an emissive fitting or a painted road asked not to be inked, and the
-      // palette is not a reason to overrule it.
-      if (mat === palette?.material && !flags.includes("noOutline")) {
-        merged.metadata = {
-          ...(merged.metadata ?? {}),
-          noOutline: true,
-          inkTwin: true,
-        };
       }
       out.push(merged as Mesh);
     }
@@ -2793,16 +2766,16 @@ function writePaletteIndex(mesh: Mesh, slot: number): void {
 }
 
 /**
- * Carries a merged group's sway mark onto the mesh, and takes Babylon's ink off
- * it.
+ * Carries a merged group's sway mark onto the mesh.
  *
- * Both writes in one place because the second is a consequence of the first and
- * nothing must ever do one without the other — see the caller for why that
- * hull cannot follow a moving surface. What replaces it is `inkTwin`, below;
- * the mark is what both of them key on.
+ * It used to do a second thing — take Babylon's ink off the group, because that
+ * hull could see neither the wind nor the per-vertex weight and an outlined leaf
+ * leaned out from under a shell left standing at the rest pose. The ink is a
+ * screen-space pass over the depth buffer now, and the depth buffer already has
+ * the leaf where the wind put it, so there is nothing to take off.
  */
 function markSwayMerged(mesh: Mesh, layer: SwayLayer): void {
   marksSway(mesh, layer);
-  mesh.metadata = { ...(mesh.metadata ?? {}), noOutline: true };
 }
+
 

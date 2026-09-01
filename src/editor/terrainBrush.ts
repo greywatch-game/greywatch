@@ -482,7 +482,7 @@ export class TerrainBrush {
     mesh.material = this.material;
     mesh.isPickable = false;
     mesh.checkCollisions = false;
-    mesh.metadata = { noOutline: true, noGlow: true, noShadowCaster: true };
+    mesh.metadata = { noGlow: true, noShadowCaster: true };
     this.glow.addExcludedMesh(mesh);
     this.overlay = mesh;
   }

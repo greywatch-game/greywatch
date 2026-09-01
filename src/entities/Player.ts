@@ -613,7 +613,7 @@ export class Player implements Combatant {
       petal.rotation.z = (i * Math.PI) / 3;
       petal.position.z = 0.14;
       petal.material = flashMat;
-      petal.metadata = { noOutline: true };
+      petal.metadata = { noInk: true };
       petal.isPickable = false;
       // The flash lives on the viewmodel, so it has to be drawn in the same
       // depth-cleared pass — left in the world group it would be hidden

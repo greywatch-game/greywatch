@@ -929,14 +929,6 @@ export class Game {
     // it draws (they come off a depth buffer, which has no antialiasing of its
     // own), and the shafts, the smear and the grain all land on top of inked
     // geometry rather than under it.
-    this.celInk = new CelInk(this.scene, this.cameraSys.camera);
-    const pipeline = new DefaultRenderingPipeline("post", false, this.scene, [
-      this.cameraSys.camera,
-    ]);
-    // The cel shader outputs display-ready colors; the default image
-    // processing pass would re-apply gamma and wash them out.
-    pipeline.imageProcessingEnabled = false;
-    pipeline.fxaaEnabled = true;
     // FULL resolution and a doubled kernel, both of which `GlowDepth` requires:
     // its occlusion comes from the main pass's depth buffer now, and sharing a
     // depth texture demands matching dimensions. See that file — the two
@@ -946,6 +938,19 @@ export class Game {
       blurKernelSize: g.glowKernel * GLOW_KERNEL_SCALE,
     });
     glow.intensity = g.glowIntensity;
+    // The ink reads that layer's MAIN texture as its emissive mask, which is why
+    // the layer is built above it. An `EffectLayer` composes through
+    // `_afterCameraDrawStage` rather than through the camera's post-process
+    // list, so moving it up the constructor changes no ordering the chain below
+    // depends on.
+    this.celInk = new CelInk(this.scene, this.cameraSys.camera, glow);
+    const pipeline = new DefaultRenderingPipeline("post", false, this.scene, [
+      this.cameraSys.camera,
+    ]);
+    // The cel shader outputs display-ready colors; the default image
+    // processing pass would re-apply gamma and wash them out.
+    pipeline.imageProcessingEnabled = false;
+    pipeline.fxaaEnabled = true;
     // The bloom is the ONE pass that reads a material and never asks where the
     // mesh carrying it stands, so without this a glow is the last thing left
     // when everything around it has gone to fog: Greyfen's chapel windows are

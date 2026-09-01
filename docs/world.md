@@ -609,7 +609,7 @@ different offsets, so there is nothing for a per-rank unit to buy.
 and draws it a second time after the mesh with colour write off and depth write ON —
 so a road's ink stands in the depth buffer 5 cm above its own carriageway, and
 anything else at road height is behind a surface nobody can see. The lane markings
-met that first and were given `noOutline` for it; a road crossing a road is the same
+met that first and were given `noInk` for it; a road crossing a road is the same
 fact, and it painted every mixed junction on Sarab and Harrowmead solid black. **No
 lift fixes that one** — the shell rides with the slab it wraps, so raising the winner
 raises its ink with it — which is why the fix is to take the ink off the road merge
@@ -1090,7 +1090,7 @@ claiming (`skin`, `CITY_BRICK`, `ENAMEL`) rather than naming a colour of its own
 
 Three consequences belong here rather than in the rendering contract:
 
-- **The merged pane meshes are marked `noOutline` and `noShadowCaster`**, in the
+- **The merged pane meshes are marked `noInk` and `noShadowCaster`**, in the
   `paneBlocks.finish` loop in `MapBuilder.build`. Ink on a transparent mesh
   needs a stencil buffer this engine does not have and lands as a dark plate
   behind the pane; a clear sheet laying a hard shadow on the pavement is simply

@@ -149,7 +149,7 @@ export class WaterSystem {
       mesh.position.set(r.x, surfaceY, r.z);
       mesh.isPickable = false;
       mesh.checkCollisions = false;
-      mesh.metadata = { noGlow: true, noOutline: true };
+      mesh.metadata = { noGlow: true };
       mesh.freezeWorldMatrix();
       // Built after Game's construction-time glow scan, so exclude by hand.
       this.glow.addExcludedMesh(mesh);

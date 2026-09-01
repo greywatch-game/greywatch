@@ -212,14 +212,14 @@ export function buildRoad(
     const run = n * (dash + gap) - gap;
     for (let i = 0; i < n; i++) {
       const z = -run / 2 + i * (dash + gap) + dash / 2;
-      // `noOutline`, and it is not a nicety. A dash is 4 cm tall and the ink
+      // `noInk`, and it is not a nicety. A dash is 4 cm tall and the ink
       // shell `addOutline` wraps it in is 5 cm of expansion along its own
       // normals — bigger than the thing it is outlining — so every marking came
       // out as a dark scratch rather than a pale one, which is the same
       // thin-slab failure the SLAB note in kit/city.ts describes from the other
       // end. Paint has no silhouette to ink; it is a colour on a surface.
       b.box(0.26, 0.04, dash, 0, paintY, z, ROAD_PAINT).metadata = {
-        noOutline: true,
+        noInk: true,
       };
     }
   }

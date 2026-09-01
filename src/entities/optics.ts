@@ -474,7 +474,7 @@ export function buildOptics(
     glass.material = glassMat;
     // noGlow for the holo's reason — bloom on a full-window tint is a haze
     // over the one thing the sight exists to keep clear.
-    glass.metadata = { noOutline: true, noGlow: true };
+    glass.metadata = { noInk: true, noGlow: true };
     glass.isPickable = false;
 
     return new Vector3(0, reflexY, winZ);
@@ -568,7 +568,7 @@ export function buildOptics(
     glass.material = glassMat;
     // noGlow: the GlowLayer would turn the faint tint into a cyan haze that
     // obscures the sight picture.
-    glass.metadata = { noOutline: true, noGlow: true };
+    glass.metadata = { noInk: true, noGlow: true };
     glass.isPickable = false;
 
     return new Vector3(0, winY, winZ);

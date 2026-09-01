@@ -488,7 +488,7 @@ export class WeaponBuild {
   lit(m: Mesh, parent: TransformNode): Mesh {
     m.parent = parent;
     m.material = this.mats.getEmissive(RETICLE);
-    m.metadata = { noOutline: true };
+    m.metadata = { noInk: true };
     m.isPickable = false;
     return m;
   }

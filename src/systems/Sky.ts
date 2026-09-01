@@ -36,7 +36,7 @@ import type { EnvironmentSpec, SkySpec } from "../world/environment";
  * Every sky mesh uses `infiniteDistance` (it rides with the camera, so the
  * horizon never gets closer and the clouds are always overhead) and stays
  * outside the pick/collide contract: no `solid` metadata, `isPickable =
- * false`, `noOutline`. These meshes are built after Game's constructor-time
+ * false`, `noInk`. These meshes are built after Game's constructor-time
  * GlowLayer scan, so the pieces that must NOT bloom (dome, clouds — a
  * full-screen gradient would haze the frame) are excluded directly, the
  * WaterSystem way. The moon keeps its bloom on purpose.
@@ -305,8 +305,8 @@ export class Sky {
     // noGlow only where true — the moon keeps its bloom, so it must not
     // claim the flag (the contract reads it as "excluded from the GlowLayer").
     mesh.metadata = excludeGlow
-      ? { noOutline: true, noGlow: true }
-      : { noOutline: true };
+      ? { noInk: true, noGlow: true }
+      : { noInk: true };
     if (excludeGlow) this.glow.addExcludedMesh(mesh);
     this.disposables.push(mesh);
   }

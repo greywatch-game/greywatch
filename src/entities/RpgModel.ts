@@ -480,7 +480,7 @@ export function buildRocket(
   flame.parent = head;
   flame.position.z = -r * 6;
   flame.material = mats.getEmissive("#ffb046");
-  flame.metadata = { noOutline: true };
+  flame.metadata = { noInk: true };
   flame.isPickable = false;
 
   // Ink, or a dark warhead crossing a dark street is a hole in the picture

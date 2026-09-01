@@ -207,7 +207,7 @@ export function buildMineBody(
   // the same reason: it is the only warning the thing gives.
   lamp.position.y = 0.095;
   lamp.material = mats.getEmissive("#ff4a3a");
-  lamp.metadata = { noOutline: true };
+  lamp.metadata = { noInk: true };
   lamp.isPickable = false;
   // The lamp is toggled INSIDE an enabled mine — dark while it arms, lit once
   // it is live — so it keeps its own `isVisible` on top of the subtree switch

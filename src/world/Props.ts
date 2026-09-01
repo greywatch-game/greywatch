@@ -4,7 +4,7 @@
  * mesh builders: each assembles at the origin and returns a
  * hierarchy; placement/merging/colliders are the caller's job.
  * Invariants: emissive parts (lantern glow, fire, fungus) MUST set
- * metadata.noOutline (and noGlow where they shouldn't feed the GlowLayer).
+ * metadata.noInk (and noGlow where they shouldn't feed the GlowLayer).
  * Foliage the wind moves calls `marksSway`, and NOTHING a collider stands in
  * for may (`PROP_BODIES` is the list to check) — see `world/sway.ts`.
  * Never set metadata.solid here — colliders come from MapBuilder only.
@@ -26,7 +26,7 @@ import { marksSway } from "./sway";
  * the authored buildings. Harvested from the retired room themes; each builder
  * takes `(scene, mats)` — plus an `rng` where the prop is randomised —
  * assembles a parented primitive hierarchy at the origin, and returns the root.
- * Emissive children are tagged `noOutline` so the outline shell doesn't swallow
+ * Emissive children are tagged `noInk` so the outline shell doesn't swallow
  * their glow.
  *
  * Placement (position, rotation, scale) is the caller's business — unlike the
@@ -1168,7 +1168,7 @@ export function buildLantern(scene: Scene, mats: CelMaterialFactory): Mesh {
   );
   flame.parent = cage;
   flame.material = mats.getEmissive("#ffbe63");
-  flame.metadata = { noOutline: true };
+  flame.metadata = { noInk: true };
 
   const cap = MeshBuilder.CreateCylinder(
     "lantern-cap",
@@ -1219,7 +1219,7 @@ export function buildFungus(
     cap.position.y = h / 2;
     cap.scaling.y = 0.55;
     cap.material = glow;
-    cap.metadata = { noOutline: true };
+    cap.metadata = { noInk: true };
   }
   return base;
 }
@@ -1279,7 +1279,7 @@ export function buildFireDrum(scene: Scene, mats: CelMaterialFactory): Mesh {
   fire.parent = drum;
   fire.position.y = 0.9;
   fire.material = mats.getEmissive("#ff8a2a");
-  fire.metadata = { noOutline: true };
+  fire.metadata = { noInk: true };
   return drum;
 }
 

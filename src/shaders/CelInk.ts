@@ -52,21 +52,31 @@
  * textureDimensions(depth)`, and those index the same screen point in the same
  * convention whatever the storage is.
  *
- * WHAT IT DOES NOT DO YET, and each is a deliberate hole rather than an
- * oversight — see `FINDINGS.md`:
- * - **It has no `noOutline`.** Every emissive part was excluded from the hull;
- *   this inks them. The cheap answer is `glow.mainTexture`, which `GlowDepth`
- *   made full-resolution and emissive-only — a ready-made mask.
- * - **It inks the viewmodel at full weight.** The gun sits 0.3 m from the eye,
- *   so its silhouette is an enormous depth step, where the hull gave it 0.004 m
- *   of deliberately fine line.
- * - **It inks the terrain and the grass**, neither of which the hull touched.
- *   The grass is the loud one and it is KEPT: every blade writes depth, so
- *   every blade is a silhouette, and what that reads as is denser, darker
- *   grass. A judgement, not an accident.
+ * TWO THINGS STAND IN FOR THE HULL'S PER-MESH CONTROL AND NEITHER IS A FLAG,
+ * which is the part `FINDINGS.md` 18 said would need an ink-id attachment.
+ * - **Emissives are masked out by `glow.mainTexture`.** Every emissive part was
+ *   excluded from the hull through what is now `noInk`, and an inked emissive
+ *   is swallowed glow. `GlowDepth` had already made that texture FULL
+ *   RESOLUTION and emissive-only, so the mask costs one texture read and no
+ *   pass. It is SHARP — the layer's blur writes to its own targets rather than
+ *   back into this one — and already depth-tested against this frame, so a lamp
+ *   behind a wall does not protect the wall in front of it.
+ * - **The viewmodel is scaled down by a DEPTH band.** The gun sits 0.3-0.5 m
+ *   from the lens and a body cannot get within about 0.4 m of world geometry,
+ *   so distance names the weapon with no per-mesh data at all. It replaces the
+ *   hand-set 0.004 m hull `ViewModel` used to wear — the LAST outline in the
+ *   game, which outlived the sweep that took the pass out because it set
+ *   `renderOutline` directly and never went through `addOutline`.
+ *
+ * **It inks the terrain, the grass, the water and the debris, none of which the
+ * hull touched, and that is KEPT.** Every blade of grass writes depth, so every
+ * blade is a silhouette, and what that reads as is denser, darker grass. A
+ * judgement rather than an accident — and `noInk` is deliberately absent from
+ * those meshes so the flag does not claim otherwise.
  */
 import {
   Camera,
+  GlowLayer,
   PostProcess,
   Scene,
   ShaderLanguage,
@@ -87,9 +97,18 @@ var textureSampler: texture_2d<f32>;
 // for it and there is none to get wrong.
 var depthTexture: texture_depth_2d;
 
+// The GLOW layer's main texture: the emissive meshes ALONE, full resolution and
+// UNBLURRED (the blur writes to the layer's own blur targets, not back into
+// this one), already depth-tested against this same frame. See
+// CONFIG.graphics.ink.emissiveMask.
+var emissiveSamplerSampler: sampler;
+var emissiveSampler: texture_2d<f32>;
+
 uniform nearFar: vec2f;
 uniform thresholds: vec2f;   // x = silhouette, y = crease
 uniform fadeBand: vec2f;     // the map's fog start and end, in metres
+uniform nearBand: vec2f;     // x = metres it holds for, y = ink kept at the eye
+uniform maskBand: vec2f;     // x = emissive luma where ink starts giving way, y = gone
 uniform tint: f32;
 
 // Buffer depth -> metres. Babylon is left-handed and WebGPU's NDC z is [0, 1]
@@ -149,6 +168,20 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let t = saturate((dc - uniforms.fadeBand.x) / max(0.001, uniforms.fadeBand.y - uniforms.fadeBand.x));
   edge *= 1.0 - t * t;
 
+  // The NEAR BAND, which is the viewmodel and can only be the viewmodel: a body
+  // cannot get within about 0.4 m of world geometry, so this names the weapon
+  // without any per-mesh data. It stands in for the 0.004 m hull the gun used
+  // to wear — full-weight line work on parts that small swallows it in black.
+  edge *= mix(uniforms.nearBand.y, 1.0, saturate(dc / max(0.001, uniforms.nearBand.x)));
+
+  // The EMISSIVE MASK — what the noInk flag used to buy. An inked emissive is
+  // swallowed glow, so the ink gives way wherever the glow layer drew
+  // something. Luma rather than a channel, because an emissive may be any
+  // colour and a green sign must mask as well as a white one.
+  let emissive = textureSampleLevel(emissiveSampler, emissiveSamplerSampler, input.vUV, 0.0).rgb;
+  let lit = dot(emissive, vec3f(0.2126, 0.7152, 0.0722));
+  edge *= 1.0 - smoothstep(uniforms.maskBand.x, uniforms.maskBand.y, lit);
+
   // ONLY EVER DARKER. tint < 1, so no pixel can leave this pass brighter than
   // it arrived — which is what lets the ink sit over a finished frame with the
   // glow already composited into it without touching the bloom.
@@ -181,11 +214,13 @@ export class CelInk {
   constructor(
     private readonly scene: Scene,
     private readonly camera: Camera,
+    /** Read for its main texture ALONE — the emissive mask. Never mutated. */
+    private readonly glow: GlowLayer,
   ) {
     const ink = CONFIG.graphics.ink;
     this.pass = new PostProcess("celInk", "celInk", {
-      uniforms: ["nearFar", "thresholds", "fadeBand", "tint"],
-      samplers: ["depthTexture"],
+      uniforms: ["nearFar", "thresholds", "fadeBand", "nearBand", "maskBand", "tint"],
+      samplers: ["depthTexture", "emissiveSampler"],
       size: 1.0,
       camera,
       engine: scene.getEngine(),
@@ -196,6 +231,8 @@ export class CelInk {
       effect.setFloat2("nearFar", this.camera.minZ, this.camera.maxZ);
       effect.setFloat2("thresholds", ink.silhouette, ink.crease);
       effect.setFloat2("fadeBand", this.fadeStart, this.fadeEnd);
+      effect.setFloat2("nearBand", ink.near.until, ink.near.scale);
+      effect.setFloat2("maskBand", ink.emissiveMask.from, ink.emissiveMask.to);
       effect.setFloat("tint", ink.tint);
       // A DECLARED texture must be BOUND or the bind group fails to build and
       // the draw is silently lost. It cannot be null by the time this runs —
@@ -203,6 +240,9 @@ export class CelInk {
       // scene.render() — but `applyEnvironment` keeps the pass off the camera
       // until the first frame has handed one over, rather than resting on it.
       if (this.depth) effect.setTexture("depthTexture", this.depth);
+      // Same rule, and this one cannot be null: the layer owns its main texture
+      // from construction and `Game` builds the layer before this pass.
+      effect.setTexture("emissiveSampler", this.glow.mainTexture);
     };
 
     this.applyEnvironment();

@@ -459,7 +459,7 @@ export class BlastDebrisSystem implements PhysicsClient {
         // seconds; `noGlow` is not inert, because this system is built before
         // `Game`'s construction-time glow-exclusion scan runs — the same
         // ordering `DebrisSystem`'s pool relies on.
-        mesh.metadata = { noOutline: true, noGlow: true };
+        mesh.metadata = { noGlow: true };
 
         const shape = new PhysicsShapeBox(
           Vector3.Zero(),
@@ -614,7 +614,7 @@ class ScorchMarks {
         scene,
       );
       mesh.material = this.material;
-      mesh.metadata = { noOutline: true, noGlow: true, noShadowCaster: true };
+      mesh.metadata = { noGlow: true, noShadowCaster: true };
       mesh.isPickable = false;
       mesh.checkCollisions = false;
       mesh.rotationQuaternion = Quaternion.Identity();

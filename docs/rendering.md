@@ -199,14 +199,24 @@ its own.
 **It owes the fog and gets it exactly**, over the MAP's band — so `Game` pushes
 `applyEnvironment` at it on every environment change, including the editor's.
 
-**Three things it does not do, each deliberate rather than missed.** It has no
-`noOutline`, so every emissive part is inked where the hull excluded them — the
-cheap way back is `glow.mainTexture`, which `GlowDepth` made full-resolution and
-emissive-only. It inks the viewmodel at full weight where the hull gave the gun
-0.004 m of deliberately fine line. And it inks the terrain and the grass, which
-the hull never touched: every blade of grass writes depth, so every blade is a
-silhouette, and what that reads as is denser, darker grass. That one is a
-judgement and not an accident.
+**Two things stand in for the hull's per-mesh control, and NEITHER is a flag.**
+An emissive part was excluded from the hull by `noOutline`, and an inked
+emissive is swallowed glow; the ink masks it out with `glow.mainTexture`
+instead, which `GlowDepth` had already made full-resolution and emissive-only —
+sharp, because the layer's blur writes to its own targets rather than back into
+that one, and already depth-tested against this frame, so a lamp behind a wall
+does not protect the wall. The weapon wore a hand-set 0.004 m hull because a
+full-weight line on parts that small swallows it in black; what replaces that is
+`ink.near`, a DEPTH band — the gun is 0.3-0.5 m out and a body cannot get within
+about 0.4 m of world geometry, so distance names the viewmodel with no per-mesh
+data at all. That is the one place `FINDINGS.md` 18 said an ink-id attachment
+would be needed, and it is not.
+
+**It inks the terrain, the grass, the water and the debris, none of which the
+hull touched, and that is kept.** Every blade of grass writes depth, so every
+blade is a silhouette; what it reads as is denser, darker grass. A judgement,
+not an accident — and `noInk` is deliberately absent from those meshes so the
+flag does not claim otherwise.
 
 ## The wind, and the one thing in the world that moves
 
@@ -326,14 +336,17 @@ Two consequences are worth stating plainly, because both look like bugs:
   shared its source's `Geometry`, wearing a `CEL_INK` material that had the
   wind, the weight, the eye and the fog. It worked, and it cost a mesh: 53 of
   them on Coldharbour and **144 on Harrowmead**, each a draw with a material
-  switch, plus a build phase, plus `noReflect` (an inside-out hull is a sealed
-  room to a probe parked inside it) and a `block` key it had to carry so
-  `WorldCulling` could not strand one.
+  switch, plus a build phase, plus a `noReflect` flag (an inside-out hull is a
+  sealed room to a probe parked inside it) and a `block` key it had to carry so
+  `WorldCulling` could not strand one. Both of those flags are gone with it —
+  `noReflect` has no writer and its filter came out of
+  `ReflectionSystem.opaqueWorld`, which is a rule and not a tidy-up: anything
+  inside-out added back owes it again.
 
   `CelInk` reads the depth buffer, and the depth buffer already has the leaf
   where the wind put it. Sway is not a case it handles — it is not a case at
-  all. `mergeByMaterial` still sets `noOutline` alongside the sway mark, which
-  now only keys the merge.
+  all. `mergeByMaterial` no longer takes the ink off a swaying group at
+  all — there is nothing to take off.
 - **The shadow it casts is the REST pose's, always.** The depth map is rendered
   from Babylon's own shadow shader, which never sees the displacement, so the
   dapple does not move — and, more importantly, does not *stutter*: the map

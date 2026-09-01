@@ -7,7 +7,7 @@
  * Invariants: this is annotation geometry and nothing else — never
  * `metadata.solid`, never `checkCollisions`, never pickable, and never a
  * WorldBox, so no ray test (hitscan, LOS, ground probe) and no nav consumer
- * can see it. Every mesh sets noOutline/noGlow/noShadowCaster AND calls
+ * can see it. Every mesh sets noInk/noGlow/noShadowCaster AND calls
  * `glow.addExcludedMesh` by hand: Game's GlowLayer exclusion scan runs once at
  * construction, so nothing built later is picked up by it (same reason
  * WaterSystem and the editor proxies exclude their own meshes).
@@ -427,7 +427,7 @@ export class CaptureZoneSystem {
     // Annotation, not world: out of every ray test and off the collidable list.
     mesh.isPickable = false;
     mesh.checkCollisions = false;
-    mesh.metadata = { noOutline: true, noGlow: true, noShadowCaster: true };
+    mesh.metadata = { noInk: true, noGlow: true, noShadowCaster: true };
     this.glow.addExcludedMesh(mesh);
     mesh.freezeWorldMatrix();
 

@@ -819,7 +819,7 @@ export class Build implements Structure {
   }
 
   /**
-   * An unlit emissive detail — a flame, a window's glow. Tagged `noOutline`
+   * An unlit emissive detail — a flame, a window's glow. Tagged `noInk`
    * because the outline shell would otherwise swallow it.
    */
   glow(
@@ -838,7 +838,7 @@ export class Build implements Structure {
     );
     m.position.set(x, y, z);
     m.material = this.mats.getEmissive(color);
-    m.metadata = { noOutline: true };
+    m.metadata = { noInk: true };
     this.meshes.push(m);
     return m;
   }

@@ -149,7 +149,7 @@ export class NavOverlay {
     // Editor furniture: no outline, no glow, no shadows, and excluded from the
     // GlowLayer by hand because Game's exclusion scan ran long ago.
     quad.isPickable = false;
-    quad.metadata = { noOutline: true, noGlow: true, noShadowCaster: true };
+    quad.metadata = { noGlow: true, noShadowCaster: true };
     this.glow.addExcludedMesh(quad);
     quad.setEnabled(this.visible);
     this.meshes.set(bucket, quad);

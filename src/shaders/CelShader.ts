@@ -25,7 +25,7 @@
  * applyPointLights/applyShadow): the per-frame walks are guarded on change and
  * skip a still frame entirely, so what a material is born with is what it keeps
  * until that state next moves. addOutline() skips meshes with
- * metadata.noOutline, tints the ink from the mesh's own cel colour, and
+ * metadata.noInk, tints the ink from the mesh's own cel colour, and
  * registers the mesh for updateOutlineScales() (distance thinning, prunes
  * disposed meshes). Effect meshes use getEmissive() (unlit StandardMaterial).
  * Also owns the fog as a published fact: setEnvironment writes it once, the cel

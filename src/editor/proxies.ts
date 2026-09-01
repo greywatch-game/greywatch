@@ -10,7 +10,7 @@
  *   `MapBuilder.collider()` is the only thing allowed to make a collider, and
  *   a proxy that leaked into the nav grid would wall off the very region it
  *   was drawn to describe.
- * - Every proxy sets noOutline + noGlow + noShadowCaster AND calls
+ * - Every proxy sets noInk + noGlow + noShadowCaster AND calls
  *   glow.addExcludedMesh by hand. Game's GlowLayer exclusion scan runs once at
  *   construction, so nothing created later is ever picked up by it — the same
  *   reason WaterSystem and GrassSystem exclude their own meshes.
@@ -131,7 +131,6 @@ export class ProxyLayer {
     mesh.checkCollisions = false;
     mesh.metadata = {
       editorRef: ref,
-      noOutline: true,
       noGlow: true,
       noShadowCaster: true,
     };

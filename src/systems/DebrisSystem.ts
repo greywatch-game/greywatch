@@ -669,7 +669,7 @@ export class DebrisSystem implements PhysicsClient {
         // the second half true and is NOT inert: this pool exists by the time
         // `Game`'s construction-time exclusion scan runs, because `Game` builds
         // this system before it builds the glow layer's exclusions.
-        mesh.metadata = { noOutline: true, noGlow: true };
+        mesh.metadata = { noGlow: true };
 
         const body = new PhysicsBody(
           mesh,
