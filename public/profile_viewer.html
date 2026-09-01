@@ -191,7 +191,11 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; letter-spacing: -0
   transition: background 120ms, color 120ms, border-color 120ms;
 }
 .btn:hover { background: var(--sunken); color: var(--ink); border-color: var(--ink-4); }
-.btn[aria-pressed="true"] {
+/* The ghost variant is spelled again here rather than merely inherited: it is
+   the same specificity as the bare pressed rule and comes LATER, so without
+   this it strips the pressed background and leaves --surface text on a --surface
+   panel — a button whose label vanishes when you press it. */
+.btn[aria-pressed="true"], .btn.ghost[aria-pressed="true"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink);
 }
 .btn:focus-visible, .tab:focus-visible, textarea:focus-visible, summary:focus-visible {
@@ -562,6 +566,7 @@ table.lad tr.rest td { color: var(--ink-3); font-style: italic; }
           <span><i class="tick" style="background:var(--collector)"></i>collection</span>
           <span><i class="tick" style="background:var(--fault)"></i>worst frame</span>
         </div>
+        <button class="btn ghost" id="btn-lanes" type="button" aria-pressed="false">Lanes</button>
         <button class="btn ghost" id="btn-fitflame" type="button">Fit</button>
       </header>
       <div class="body flush">
@@ -569,7 +574,7 @@ table.lad tr.rest td { color: var(--ink-3); font-style: italic; }
           <canvas id="c-flame" height="260"></canvas>
           <div class="tip" id="t-flame"></div>
         </div>
-        <div class="scale-note">Scroll to zoom · drag to pan. Depth is the phase tree, so a bar sits inside the span that contains it.</div>
+        <div class="scale-note" id="n-flame"></div>
       </div>
     </div>
 
@@ -614,6 +619,7 @@ const FALLBACK_TREE = {
   camera: "gameplay", zones: "gameplay", hud: "gameplay",
   hudDraw: "frame", post: "frame", culling: "frame", audio: "frame",
   render: "frame",
+  shadowPass: "render", glow: "render", drawWorld: "render", drawOverlay: "render",
 };
 
 let PARENT = {}, KIDS = {}, DEPTH = {}, ORDER = [];
@@ -1394,6 +1400,12 @@ function hover(canvas, tip, n, X, body) {
 
 /* ── trace ─────────────────────────────────────────────────────────────── */
 let flame = null;
+/* Which way the chart stacks its rows. DEPTH packs siblings onto one row, which
+   is what makes it a flame chart and what makes a deep frame short; LANES gives
+   every phase in the trace a row of its own, so a phase that is quiet is still
+   a line you can read along rather than a gap in somebody else's row. Depth is
+   the default because it is the shape that shows containment at a glance. */
+let flameLanes = false;
 
 function renderTrace(t) {
   // A trace carries no tree — it is Chrome's format, not this instrument's — so
@@ -1442,7 +1454,24 @@ function renderTrace(t) {
 
   let maxDepth = 0;
   spans.forEach((sp) => { const d = DEPTH[sp.name]; if (d != null && d > maxDepth) maxDepth = d; });
-  flame = { spans, marks, gcs, t0, t1, view0: t0, view1: t1, maxDepth };
+
+  // The lane view's row order: the tree's own declaration order — which is the
+  // order a frame runs its phases — narrowed to what this trace actually holds,
+  // so a capture that never entered a phase does not open onto empty rows. A
+  // name the tree has never heard of is appended rather than dropped, exactly
+  // as the depth view draws it at 0.
+  const present = new Set();
+  const strangers = [];
+  spans.forEach((sp) => {
+    if (present.has(sp.name)) return;
+    present.add(sp.name);
+    if (DEPTH[sp.name] == null) strangers.push(sp.name);
+  });
+  const lanes = ORDER.filter((n) => present.has(n)).concat(strangers);
+  const laneOf = {};
+  lanes.forEach((n, i) => { laneOf[n] = i; });
+
+  flame = { spans, marks, gcs, t0, t1, view0: t0, view1: t1, maxDepth, lanes, laneOf, gut: 0 };
   drawFlame();
   drawCounters(counters, t0, t1);
 
@@ -1463,17 +1492,33 @@ function renderTrace(t) {
 
 function drawFlame() {
   const canvas = $("c-flame");
-  const rowH = 22, top = 26;
-  // Sized to the deepest span actually in the trace rather than to a guess, so
-  // a shallow capture does not open onto half a screen of empty ground.
-  canvas._cssH = top + (flame.maxDepth + 1) * rowH + 10;
+  const lanes = flameLanes;
+  const rowH = lanes ? 16 : 22, top = 26;
+  const rows = lanes ? Math.max(1, flame.lanes.length) : flame.maxDepth + 1;
+  // Sized to what is actually being drawn — the deepest span in the trace, or
+  // one row per phase it holds — rather than to a guess, so a shallow capture
+  // does not open onto half a screen of empty ground.
+  canvas._cssH = top + rows * rowH + 10;
   const { ctx, w, h } = prep(canvas);
   const { spans, marks, view0, view1 } = flame;
+  // In lanes the row is named down the left, so the plot starts past a gutter;
+  // in depth it is named in the bar and there is none. Everything below reads
+  // the gutter off `flame` rather than assuming zero — the wheel and the drag
+  // included, or a zoom would be anchored a gutter's width off the pointer.
+  const gut = lanes ? Math.max(78, Math.min(140, Math.round(w * 0.16))) : 0;
+  flame.gut = gut;
+  const plotW = Math.max(1, w - gut);
   const span = Math.max(1, view1 - view0);
-  const X = (ts) => ((ts - view0) / span) * w;
+  const X = (ts) => gut + ((ts - view0) / span) * plotW;
 
   ctx.fillStyle = css("--sunken");
   ctx.fillRect(0, 0, w, h);
+
+  // Row banding, so a long lane can be read across a wide window.
+  if (lanes) {
+    ctx.fillStyle = mix(css("--sunken"), css("--surface"), 0.4);
+    for (let i = 1; i < flame.lanes.length; i += 2) ctx.fillRect(0, top + i * rowH, w, rowH);
+  }
 
   // Time ruler.
   ctx.strokeStyle = css("--rule");
@@ -1490,22 +1535,36 @@ function drawFlame() {
   const base = css("--signal");
   const surf = css("--surface");
   const rects = [];
+  // Bars are clipped to the plot: panned far enough, a bar's left edge is under
+  // the gutter, and a name written over is a name that cannot be read.
+  ctx.save();
+  ctx.beginPath(); ctx.rect(gut, 0, plotW, h); ctx.clip();
   for (const s of spans) {
     const x0 = X(s.ts), x1 = X(s.ts + s.dur);
-    if (x1 < -2 || x0 > w + 2) continue;
+    if (x1 < gut - 2 || x0 > w + 2) continue;
     const d = DEPTH[s.name] != null ? DEPTH[s.name] : 0;
-    const y = top + d * rowH;
+    // The COLOUR stays the depth ramp in both views, so containment still reads
+    // in lanes, where the row no longer says it.
+    const row = lanes ? (flame.laneOf[s.name] != null ? flame.laneOf[s.name] : 0) : d;
+    const y = top + row * rowH + (lanes ? 2 : 0);
+    const barH = rowH - (lanes ? 5 : 2);
     const wd = Math.max(1, x1 - x0);
-    rects.push({ x: x0, y, w: wd, h: rowH - 2, s });
+    const rx = Math.max(x0, gut);
+    rects.push({ x: rx, y, w: Math.max(1, x1 - rx), h: barH, s });
     ctx.fillStyle = d === 0 ? base : mix(base, surf, Math.min(0.74, d * 0.24));
-    ctx.fillRect(x0, y, wd, rowH - 2);
-    if (wd > 34) {
+    ctx.fillRect(x0, y, wd, barH);
+    // In lanes the gutter has already named the row, so a bar wide enough to
+    // carry text carries the one thing the row does not say.
+    const label = lanes ? (wd > 52 ? fmt(s.dur / 1000, 2) + " ms" : null)
+                        : (wd > 34 ? s.name : null);
+    if (label) {
       ctx.fillStyle = d <= 1 ? surf : css("--ink");
-      ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+      ctx.font = (lanes ? "10px " : "11px ") + MONO;
+      ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.save();
-      ctx.beginPath(); ctx.rect(x0 + 3, y, wd - 6, rowH - 2); ctx.clip();
-      ctx.fillText(s.name, x0 + 5, y + (rowH - 2) / 2 + 0.5);
+      ctx.beginPath(); ctx.rect(x0 + 3, y, wd - 6, barH); ctx.clip();
+      ctx.fillText(label, x0 + 5, y + barH / 2 + 0.5);
       ctx.restore();
     }
   }
@@ -1513,7 +1572,7 @@ function drawFlame() {
   ctx.lineWidth = 2;
   for (const m of marks) {
     const x = Math.round(X(m.ts)) + 0.5;
-    if (x < 0 || x > w) continue;
+    if (x < gut || x > w) continue;
     const isWorst = String(m.name).indexOf("worst frame") === 0;
     ctx.strokeStyle = isWorst ? css("--fault") : css("--collector");
     ctx.beginPath(); ctx.moveTo(x, isWorst ? 0 : 16); ctx.lineTo(x, h); ctx.stroke();
@@ -1525,9 +1584,41 @@ function drawFlame() {
       ctx.fillText(m.name, x + (x > w - 90 ? -4 : 4), 2);
     }
   }
+  ctx.restore();
+  ctx.lineWidth = 1;
+
+  // The gutter last, over the banding and past the clip, so nothing reaches it.
+  if (lanes) {
+    ctx.fillStyle = css("--sunken");
+    ctx.fillRect(0, 0, gut, h);
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    for (let i = 0; i < flame.lanes.length; i++) {
+      const name = flame.lanes[i];
+      const d = DEPTH[name] != null ? DEPTH[name] : 0;
+      const y = top + i * rowH;
+      ctx.fillStyle = css(d === 0 ? "--ink" : "--ink-2");
+      ctx.font = (d === 0 ? "600 10px " : "10px ") + MONO;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(0, y, gut - 5, rowH); ctx.clip();
+      ctx.fillText(name, 5 + d * 8, y + rowH / 2 + 0.5);
+      ctx.restore();
+    }
+    ctx.strokeStyle = css("--rule");
+    ctx.beginPath(); ctx.moveTo(gut - 0.5, 0); ctx.lineTo(gut - 0.5, h); ctx.stroke();
+  }
 
   canvas._rects = rects;
   wireFlame(canvas);
+}
+
+/** The note under the chart says which way it is stacked, so the button's state
+ *  is legible without pressing it. */
+function setFlameNote() {
+  const n = $("n-flame");
+  if (!n) return;
+  n.textContent = flameLanes
+    ? "Scroll to zoom · drag to pan. One row per phase, in the order a frame runs them; indent and tone are the phase tree, so a bar sits inside the span that contains it."
+    : "Scroll to zoom · drag to pan. Depth is the phase tree, so a bar sits inside the span that contains it.";
 }
 
 function niceStep(v) {
@@ -1545,7 +1636,8 @@ function wireFlame(canvas) {
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
-    const t = (e.clientX - rect.left) / rect.width;
+    const gut = flame.gut || 0;
+    const t = (e.clientX - rect.left - gut) / Math.max(1, rect.width - gut);
     const span = flame.view1 - flame.view0;
     const at = flame.view0 + t * span;
     const k = e.deltaY > 0 ? 1.22 : 1 / 1.22;
@@ -1568,7 +1660,7 @@ function wireFlame(canvas) {
   canvas.addEventListener("pointermove", (e) => {
     const rect = canvas.getBoundingClientRect();
     if (dragging) {
-      const dx = (e.clientX - lastX) / rect.width;
+      const dx = (e.clientX - lastX) / Math.max(1, rect.width - (flame.gut || 0));
       lastX = e.clientX;
       const span = flame.view1 - flame.view0;
       flame.view0 -= dx * span; flame.view1 -= dx * span;
@@ -1684,6 +1776,14 @@ $("btn-fit").onclick = (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(fitSpikes));
   if (REPORT && REPORT.series) drawFrames(REPORT);
 };
+$("btn-lanes").onclick = () => {
+  flameLanes = !flameLanes;
+  $("btn-lanes").setAttribute("aria-pressed", flameLanes ? "true" : "false");
+  setFlameNote();
+  if (flame) drawFlame();
+};
+setFlameNote();
+
 $("btn-fitflame").onclick = () => {
   if (!flame) return;
   flame.view0 = flame.t0; flame.view1 = flame.t1; drawFlame();

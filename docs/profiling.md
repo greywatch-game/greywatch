@@ -460,9 +460,20 @@ What it draws:
   against one number for the whole window that is invisible — it had to be
   inferred from five disconnected hitch records the first time it came up. A
   capture taken before the fields existed simply has no panel.
-- **The flame chart** for a trace, nested by the phase tree, with GC instants.
-  Perfetto is still the better tool for a trace and the section below still
-  points at it; this is the look you take without leaving the phone.
+- **The flame chart** for a trace, with GC instants — and it stacks its rows
+  two ways, because one shape cannot answer both questions. **DEPTH** is the
+  flame chart proper: a row per level of the phase tree, siblings packed onto
+  one row, which is what shows containment at a glance and what keeps a frame
+  four rows tall. **LANES** (the button beside `Fit`) gives every phase in the
+  trace a row of its OWN, named down a gutter, in the order a frame runs them
+  — so a phase that is a hairline beside its siblings is still a line you can
+  read along, and a phase that did not run in a given frame is a GAP in its own
+  row rather than something you have to notice is missing from somebody else's.
+  Depth is the default. The tone stays the depth ramp in both, so containment
+  still reads in lanes, where the row no longer says it. Only the phases the
+  trace actually contains get a row, so a shallow capture does not open onto
+  empty ground. Perfetto is still the better tool for a trace and the section
+  below still points at it; this is the look you take without leaving the phone.
 
 **The capture states its own tree.** `ProfileReport.tree` is `PARENT_OF` from
 `FrameProfile.ts` — child phase to the span containing it — so the viewer draws
@@ -471,7 +482,13 @@ it was written against. `PARENT_OF` is typed `Record<Exclude<Phase, "frame">,
 Phase>`, so **a phase added to `PHASES` does not compile until it says where it
 sits**, and adding one is still a name, a `begin`/`end` pair, and now its parent.
 The viewer keeps a `FALLBACK_TREE` for captures older than the field; that copy
-is the only thing in the page that can go stale.
+is the only thing in the page that can go stale. **A TRACE always uses it** —
+Chrome's format carries no tree, so a `TRACE` export has nowhere to state one —
+which makes the fallback load-bearing rather than a legacy path: a phase missing
+from it lands at depth 0 and is drawn as a top-level bar over `frame`, silently
+and confidently. It went stale exactly once that way, when `render` grew its
+four children. **Add a phase to `PARENT_OF` and add it here in the same
+change.**
 
 **Three rules for editing it**, all of them things the file cannot enforce about
 itself:
