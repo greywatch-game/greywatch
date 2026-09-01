@@ -78,6 +78,7 @@ import { difficultyNames } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import { FrameProfile, P } from "./FrameProfile";
+import { GLOW_KERNEL_SCALE, GLOW_TEXTURE_RATIO, GlowDepth } from "./GlowDepth";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { RegionBook } from "../net/RegionBook";
@@ -431,6 +432,13 @@ export class Game {
    * overlays) has to exclude itself by hand and needs the layer to do it.
    */
   private glow: GlowLayer;
+  /**
+   * Installs its own hooks on the layer and is never spoken to again — held
+   * because it owns them, and public for the reason `scene` and `battle`
+   * are: the smoke scripts that check the glow's occlusion read it off
+   * `window.__celshock`.
+   */
+  readonly glowDepth: GlowDepth;
   /** Non-null only while the state is "editor". Dev builds only. */
   private editor: EditorSession | null = null;
   /**
@@ -915,8 +923,13 @@ export class Game {
     // processing pass would re-apply gamma and wash them out.
     pipeline.imageProcessingEnabled = false;
     pipeline.fxaaEnabled = true;
+    // FULL resolution and a doubled kernel, both of which `GlowDepth` requires:
+    // its occlusion comes from the main pass's depth buffer now, and sharing a
+    // depth texture demands matching dimensions. See that file — the two
+    // constants move together or the bloom changes size on screen.
     const glow = new GlowLayer("glow", this.scene, {
-      blurKernelSize: g.glowKernel,
+      mainTextureRatio: GLOW_TEXTURE_RATIO,
+      blurKernelSize: g.glowKernel * GLOW_KERNEL_SCALE,
     });
     glow.intensity = g.glowIntensity;
     // The bloom is the ONE pass that reads a material and never asks where the
@@ -989,6 +1002,12 @@ export class Game {
       result.set(emissive.r * k, emissive.g * k, emissive.b * k, material.alpha);
     };
     this.glow = glow;
+    // Takes the layer's occlusion from the depth buffer the frame has already
+    // written, so its render list is the emissive meshes rather than the whole
+    // visible scene drawn black. Worth 1.85 ms on Coldharbour and ~20% of the
+    // frame on all three big maps; `FINDINGS.md` 3
+    // has the three attempts that tried to narrow that list some other way.
+    this.glowDepth = new GlowDepth(this.scene, glow, this.cameraSys.camera);
     // Moon shafts read the finished frame and add light back into it, so they
     // come after FXAA and before the grade — the vignette and grain have to
     // land on top of the beams, not under them.

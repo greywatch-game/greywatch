@@ -218,14 +218,26 @@ put a number on.
 
 ---
 
-## 3. The GlowLayer draws the whole village into a buffer it cannot light
+## 3. ~~The GlowLayer draws the whole village into a buffer it cannot light~~ — FIXED
 
-**Status:** measured, ATTEMPTED TWICE, and reverted twice — once for the WORLD
-and once for the BODIES, which looked like the case the first revert did not
-cover and is not. The mechanism is confirmed against Babylon's source. The open
+**Status: FIXED and LANDED** — `src/core/GlowDepth.ts`, folded into
+`CLAUDE.md` and `docs/rendering.md`. **Worth ~20% of the frame on all three big
+maps**; the last section has the numbers and what landed. The entry is kept
+whole because the three attempts that came first are the argument for the shape
+of the fix, and because each of them looked right when it was written.
+
+The history: measured, ATTEMPTED THREE TIMES and reverted three times — for the
+WORLD in world space, for the BODIES, and for the world again in SCREEN space,
+which was the one that was geometrically right and died on the block merge
+instead. **All three asked WHICH GEOMETRY MATTERS to a bloom. None of them
+could have worked, and the fix is that the frame already answers that question
+per pixel and the layer only had to be handed the answer.** The mechanism is confirmed against Babylon's source. The open
 question below — what excluding the geometry costs visually — is now answered
-for both: enough that neither can be excluded, by distance or otherwise. Read
-the last TWO sections of this entry first.
+for both: enough that neither can be excluded, by distance or otherwise.
+**RE-MEASURED after finding 18 and the share did not move**, which is the last
+section and is the one to read first — it also carries the first breakdown of
+who is actually in the layer's list, and that breakdown is what re-ranks the
+three shapes left.
 
 **The draw counts below were taken on WebGL2 and are now unattributed.** The
 mechanism is source-level and did not move with the backend — the exclusion scan
@@ -241,6 +253,10 @@ on a backend where a draw call was cheap. On WebGPU **disabling the layer
 outright is worth +22.5% on Coldharbour**, the layer is 883 of that map's 2,647
 draws a frame, and this frame is draw-call bound rather than fill bound — see
 finding 17 for the measurement and for why the backend changed the answer.
+**Those two figures are PRE-finding-18 and the draw count is superseded; the
++22.5% is not.** Both were re-taken on the current tree and the last section has
+them — the layer's list is 585 meshes against the frame's 1,362 draws now, and
+it is still 22.7% of the frame, which is not the coincidence it looks like.
 **So the count is now the reason to reach for this, and the visual question in
 it is the thing standing in the way.** Nothing about that question has moved:
 what has to be established is still whether the village's opaque black is
@@ -408,6 +424,419 @@ entry already names, and it is a Babylon question: the layer's render list is
 the scene's ACTIVE meshes, so an occluder has to be `isVisible` to be seen by
 it, and what stops it drawing normally would have to be renderer state the glow
 pass does not inherit. Untried.
+
+---
+
+### RE-MEASURED on the current tree: the share is INVARIANT, and who is in the list
+
+**Status:** measured on the Windows box, three instruments agreeing. Nothing
+landed; what this settles is the SIZE of the prize and the RANKING of the three
+shapes above, both of which were being read off pre-finding-18 numbers.
+
+The question was whether finding 18 had quietly eaten this entry. It cut
+Coldharbour from 2,641 draws to 1,431 by taking colour out of the merge key, and
+the glow layer's list is derived from the scene rather than stated, so the
+expectation was that the prize had shrunk with it and this entry could be
+closed. **It has not shrunk, and the reason it has not is the thing worth
+keeping.**
+
+Coldharbour, uncapped headless at 1920x1080, a live round with sixteen bots,
+warm past the compile stall, the shipped profiler armed with `?profile` and its
+capture reaching back over 3,000 frames:
+
+```
+frame        9.905 ms   98.0%      draws 1362 | active 601
+  render     9.398      93.0%      mesh walk 2.06 ms | render targets 2.292 ms
+    drawWorld    4.719  46.7%
+    glow         2.297  22.7%
+    drawOverlay  0.199   2.0%
+  gameplay   0.462       4.6%
+```
+
+and an A/B/A/B on `layer.isEnabled` in the same session, 6 s windows with a
+1.5 s settle, which is the instrument that does not depend on the span being
+bracketed correctly:
+
+| arm | glow | median | fps |
+| --- | --- | --- | --- |
+| 1 | on | 10.10 ms | 99.0 |
+| 2 | **off** | 7.80 ms | 128.2 |
+| 3 | on | 10.60 ms | 94.3 |
+| 4 | **off** | 8.20 ms | 122.0 |
+
+**The layer is 2.35 ms — 22.7% of the frame, and +29.4% fps if it goes.** The
+`glow` span says 2.297, the A/B says 2.35, and `SceneInstrumentation`'s
+render-target counter says 2.292 without being asked, because the glow's main
+texture is the only render target that runs every frame on this map. Three
+instruments inside 2%. The drift between the two ON arms is 4.7%, which is well
+under the effect and is the reason the arms alternate.
+
+Finding 17 measured +22.5% before the palette merge. This is +22.7% after it.
+
+### Why it did not move, which is a rule rather than a coincidence
+
+The layer's render list is not stated anywhere — `effectLayer.js` sets
+`_mainTexture.renderList = null` and `objectRenderer.js` then falls back to
+`scene.getActiveMeshes()`. **So the layer's cost is per ACTIVE MESH, exactly
+like the main pass's, and every fix that removes active meshes removes them from
+both halves at once.** Finding 18 cut the glow's list by the same proportion it
+cut the main pass, in the same frame, and left the ratio exactly where it was.
+
+**The glow layer's share of the frame cannot be reduced by making the scene
+smaller.** That is the general form and it is worth having before anyone spends
+a week on the next mesh-count lever expecting this to fall out of it: mesh-count
+work pays into this entry proportionally and never changes it. Only changing the
+LAYER changes the share. It also disposes of one idea that looks adjacent and is
+not — paletteising `SoldierModel`'s `mergeByColor` the way `BlockMerge` was
+paletteised is worth having for the main and ink passes, and it will not move
+this number.
+
+### Who is in the list, counted for the first time
+
+607 active meshes, 585 of them in the layer, 22 excluded (the sky, the water,
+the grass, the zones, the viewmodel's own exclusions):
+
+| bucket | meshes | share of the layer |
+| --- | --- | --- |
+| bot rigs | 212 | 36% |
+| block-merged world | 220 | 38% |
+| terrain patches (`terrain-#,#`) | 49 | 8% |
+| tank parts | 36 | 6% |
+| ridge scree and rock | 20 | 3% |
+| blob shadows | 15 | 3% |
+
+**That list is 43% of the frame's 1,362 draws and the layer is 23% of its
+time**, and the gap between those two is the same one finding 17 found under
+the outline shells: a glow draw reuses one bound material, so it is a cheap
+draw rather than a free one. (The 43% is the list size against the counter's
+total, not a per-pass draw count — nothing here attributes draws by pass, and
+the 2.35 ms is measured rather than inferred.)
+
+**What the breakdown re-ranks:**
+
+- **The rigs are 36% of the layer, so ~0.85 ms, so ~8% of the frame.** That is
+  the −7.2% the section above measured on Sarab, arrived at from the opposite
+  direction on a different map, which is the best evidence either number is
+  right. It is also the bucket where the occluder proxy is a **92% cut** — 212
+  meshes down to one capsule per body — against the ~37% a colour-merge fix
+  would give, and it is the only one of the three shapes that changes the ratio
+  rather than riding it down. That is the argument for trying it, and the
+  section above is still the caution: the capsule's silhouette is not the
+  body's, so it can fail the emissive-behind test in the OTHER direction —
+  occluding a lamp visible between an arm and the torso — and that test is what
+  it owes before anything else. Untried, and this changes nothing about that.
+- **The world, the terrain and the ridge are 49% between them** and are exactly
+  what the first revert killed. No proxy exists for arbitrary block geometry,
+  and the terrain patches are the specific thing that revert names.
+- **The 15 blob shadows are free and are the only free thing here.** They are
+  flat decals lying on terrain that is already in the list, so they occlude
+  nothing the ground does not already occlude. It is 2.5% of the layer — worth
+  taking only because it is the one exclusion in this entry that carries no
+  visual question at all, and therefore the one that needs no test.
+
+### Tried a THIRD time, in SCREEN space, and it is defeated by the block merge
+
+**Status:** built, verified picture-identical, measured, and REVERTED — this
+time on the numbers rather than on sight. The mechanism was sound and the
+prize is not there, for a reason that is worth more than the attempt.
+
+The two reverts above both narrowed the occluder set in WORLD space, and the
+lesson drawn from the first is that they could not: "occlusion is a property of
+the LINE OF SIGHT, not of proximity to the light." **A screen-space overlap
+test is that line of sight.** A mesh can occlude a bloomed pixel only if it
+covers pixels within the blur's reach of an emissive pixel — a projection
+rather than a distance — and a wall two hundred metres from a lamp still passes
+it while it stands between the lamp and the eye, which is the exact case that
+killed the range version. So this was not that predicate retuned.
+
+`GlowOccluders` put a `getCustomRenderList` hook on the layer's main texture
+(the same public hook `ShadowSystem` uses), stamped each emissive mesh's
+projected bounding sphere — grown by the blur's reach and a margin — into a
+32x18 screen grid, and kept only the meshes whose own projection touched a
+stamped cell. Everything was rounded OUTWARD, and anything that could not be
+bounded at all was kept.
+
+**It works, and the frame is bit-identical.** Twelve poses on Hollowmere — the
+three committed diff vantages at four yaws each, frozen, with an A-vs-A control
+— report **0.0/255 mean and 0 worst pixel** against the un-narrowed frame, on a
+control that is byte-identical. Every pose had the lever confirmed applied by a
+counter that moved, which is the check the first revert did not have.
+
+**And it saves nothing, because the emissive geometry is BLOCK-MERGED.** In a
+live round it kept **584 of 607** meshes on Coldharbour — a 3.8% cut — and
+159/171 then 78/90 on Hollowmere. The measured frame did not improve on either
+map and was worse on the cheap one, where two bounding-sphere projections per
+active mesh per frame in JS cost more than the handful of draws they removed:
+
+| map | narrowed | whole-scene | drift between the two narrowed arms |
+| --- | --- | --- | --- |
+| Coldharbour | 13.20 ms | 12.90 ms | 13.50 / 12.90 |
+| Hollowmere | 2.80 ms | 2.25 ms | 3.30 / 2.30 |
+
+Read the Hollowmere row as noisy and the Coldharbour row as decisive: at a 3.8%
+cut there is nothing to win whatever the drift is.
+
+**WHY, and this is the finding.** After finding 18, an emissive "mesh" is not a
+lamp — it is every emissive fitting in a 48 m block, merged per colour.
+Coldharbour's whole visible emissive set in a frozen frame is **five meshes**,
+and Hollowmere's sixteen, each with a bounding sphere tens of metres across;
+two of Hollowmere's had the camera INSIDE them. A block-sized sphere projects
+to most of the screen, so the stamp covers the grid and the test keeps
+everything. **The merge that bought half the main pass's draws also destroyed
+the spatial granularity any screen-space reasoning about emissives needs**, and
+that trade is not recorded anywhere else.
+
+**One real bug was found on the way and it is in this idea rather than in the
+game.** `Sky`'s four cloud decks carry an emissive AND `infiniteDistance`, so
+their centre sits on the eye with a ~1,000 m radius around it. They are
+correctly excluded from the layer, but the render list a `getCustomRenderList`
+hook is handed is the scene's active meshes BEFORE the layer's own exclusions,
+so consulting one stamped the whole screen on every frame of every map. The
+first version of this cut exactly 0% everywhere and that was why. **Anything
+reading that list owes `layer.hasMesh` before it believes a mesh is in the
+pass.**
+
+**What this leaves.** The occluder-proxy idea in the section above is NOT
+affected — a rig is per-body and small, so a body's footprint is a body — but
+the world half of this entry now has three failed approaches rather than two,
+and all three failed on the same thing: **there is no cheap way to know which
+geometry matters to a bloom, because the only honest answer is a per-pixel
+depth test.** That is an argument for moving the emissive into the MAIN pass as
+a second attachment and blooming it in post, where occlusion is inherited from
+the depth test the frame already does and merge granularity stops mattering
+entirely. What blocks that is not the shader — every fragment in this game goes
+through hand-written WGSL — but that a scene-wide MRT needs every OTHER
+material in the pass to write the attachment too, Babylon's own
+`StandardMaterial` included. **That sentence has now been tested twice and it
+is exactly right, which was not the expected answer — see the next section.**
+
+### The MRT route, spiked: it WORKS, and the attachment mask is PASS-WIDE
+
+**Status:** measured, on the Windows box, in raw WebGPU and then through
+Babylon with this game's real materials. Nothing landed. This is here so the
+next attempt starts from the constraint rather than from the hope.
+
+**1. WebGPU allows a pipeline to leave a colour target unwritten, but only if
+that target's `writeMask` is 0.** Raw WebGPU, two `rgba8unorm` targets,
+attachment 1 cleared to blue:
+
+| case | result |
+| --- | --- |
+| shader writes both, two full targets | **OK** — a0 red, a1 green |
+| writes `@location(0)` only, two full targets | **INVALID** |
+| writes `@location(0)` only, `targets[1].writeMask = 0` | **OK**, a1 keeps its clear value |
+| writes `@location(0)` only, `targets[1] = null` | pipeline builds, the render PASS rejects it |
+
+The message is `Color target has no corresponding fragment stage output but
+writeMask (ColorWriteMask::(Red|Green|Blue|Alpha)) is not zero`. An unwritten
+attachment keeps the CLEAR value rather than garbage, which is the half that
+makes the idea viable at all.
+
+**2. Babylon emits exactly that form, and the switch is
+`engine.bindAttachments(engine.buildTextureLayout([...]))`** —
+`webgpuCacheRenderPipeline.js` writes `writeMask: (this._mrtEnabledMask & (1 <<
+i)) !== 0 ? this._writeMask : 0`. Put the game's own active meshes into a
+two-attachment `MultiRenderTarget` with that layout bound and **the scene
+draws**: attachment 0 came back `[20,29,43,255]`, which is Hollowmere.
+
+**3. And the mask is ENGINE state applied per render-target BIND, not per
+material — which is the whole finding.** Setting it pass-wide works. Varying it
+per draw through `mesh.onBeforeDrawObservable` does NOT: the pipeline for that
+draw is already built by the time the hook runs, and the trial fails with the
+same `writeMask` error as doing nothing at all. So within one pass there is one
+attachment mask, and therefore **either every material in the pass writes
+`@location(1)`, or none of them can.**
+
+**What that costs, enumerated on Hollowmere's 73 active meshes: 51
+`ShaderMaterial` and 22 `StandardMaterial`** — and the `StandardMaterial` half
+is not the awkward remainder, it is the EMISSIVE half, the tracers and embers
+and lamps the layer exists for. So the list is every hand-written shader in
+`src/shaders/` (yours, easy), Babylon's `StandardMaterial`, Babylon's
+`OutlineRenderer` pass and the particle shaders (not yours). The technique for
+the last three is not new here — `OutlineFog.ts` already patches Babylon's WGSL
+shader store by hand and forces the recompile — but it is three more shaders
+under that regime, and `OutlineFog`'s header is a fair estimate of what each
+one costs to get right.
+
+**Two traps, both of which cost time in the spike itself.**
+
+- **A bad pipeline is SILENT.** The baseline trial drew nothing at all —
+  attachment 0 all zeros — with `pageErrors` empty and `consoleErrors` empty.
+  The only trace was a `pushErrorScope("validation")` put there on purpose.
+  This is finding 18's black-frame cascade arriving from a third direction, and
+  it means **any attempt at this owes an explicit WebGPU error scope**, or a
+  wrong answer looks like a working one that renders nothing.
+- **Babylon's pipeline cache POISONS later trials in the same page.** Once one
+  invalid pipeline exists, every later trial reports `[Invalid RenderPipeline
+  ...] is invalid due to a previous error` whatever it actually did — the first
+  run of this spike read that as "the escape hatch does not work" and it was
+  the cache. **One page per trial**, or the result is the previous trial's.
+
+**And render bundles are keyed on attachment state.** With
+`compatibilityMode = false`, a mesh recorded into a bundle for the one-attachment
+backbuffer pass and then replayed into a two-attachment pass is
+`Attachment state of renderBundles[17] is not compatible with
+[RenderPassEncoder]`. Harmless in a spike that adds a second pass; a real
+implementation has one pass and would not hit it, but it is the thing to watch
+if the main pass ever gains an attachment conditionally.
+
+**Where this leaves the route.** It is not blocked and it is not plumbing. It
+is one shader-store patch each for `StandardMaterial`, `OutlineRenderer` and
+the particles, plus an output on every shader in `src/shaders/`, plus the post
+chain re-pointed at attachment 0 — for the 2.60 ms this entry is about. Nobody
+has decided whether that trade is worth taking.
+
+### The DEPTH-SHARING route, spiked: it WORKS, and it needs no shader changed
+
+**Status:** measured on the Windows box, mechanism proven end to end. Nothing
+landed. **This is the cheapest route found so far and the first one that is not
+blocked on something.**
+
+The idea sidesteps every wall above. Do not narrow the occluder set and do not
+move the emissive into the main pass — instead draw ONLY the emissive meshes
+into the glow buffer and take the occlusion from the main pass's own depth
+buffer, which already holds exactly the answer at exactly the right
+granularity. `RenderTargetWrapper.shareDepth` is engine-agnostic in 9.19.1 — a
+plain `_depthStencilTexture` reassignment — so WebGPU needs no override.
+
+Hollowmere, the `lanterns` vantage, render scaled to 480x270 because depth
+sharing REQUIRES matching dimensions and a full-resolution readback per trial
+is not worth the wait. An emissive-only buffer holding the frame's 20 emissive
+meshes against the 204 the layer draws today:
+
+| arm | lit pixels |
+| --- | --- |
+| its OWN depth, freshly cleared (nothing can occlude) | 1,672 |
+| the main pass's depth, SHARED | **926** |
+| shared, with the depth test INVERTED (the control) | 748 |
+
+**926 + 748 = 1,674, against the 1,672 the unoccluded arm drew.** The normal
+and inverted tests partition the set exactly, which is what says the depth is
+being read per PIXEL rather than approximately — a control worth copying,
+because "fewer pixels" on its own is also what a broken render looks like.
+
+**Four things it took to get there, and the second is the one that wasted the
+first run.**
+
+- The main pass IS a render target during the draw phase
+  (`WebGPURenderTargetWrapper`, reachable as `engine._currentRenderTarget` from
+  `scene.onAfterDrawPhaseObservable`) and it DOES carry a depth texture, at the
+  render size. Neither was obvious; the camera has three post-processes and it
+  is the first of those that owns the target.
+- **The glow buffer must clear COLOUR ONLY.** Babylon's default RTT clear wipes
+  depth and stencil too, so the first run cleared the very buffer it had just
+  been handed and occluded nothing — 1,673 against 1,675, which reads exactly
+  like "the mechanism does not work". `rtt.onClearObservable.add((e) =>
+  e.clear(color, true, false, false))` is the whole fix.
+- It has to render from `onAfterDrawPhaseObservable`, so the depth is THIS
+  frame's. An effect layer's own texture renders in the render-target phase,
+  which is BEFORE the main draw — one frame stale, which for a bloom is a halo
+  that lags the camera.
+- No validation errors on any arm, under `compatibilityMode = false`.
+
+**What it would cost to build, and it is all in one place.** `GlowLayer` cannot
+be configured into this — its texture renders in the wrong phase and clears the
+wrong buffers — so this is a custom layer: an RTT holding the emissive meshes,
+a blur, and an additive composite in the post chain, plus a port of
+`Game`'s `customEmissiveColorSelector` (the per-mesh fog fade and the kit-screen
+blanking, both of which are look decisions with arguments written down beside
+them). Two details are not optional. The pass needs its own material so a mesh
+contributes its EMISSIVE term rather than its full shaded colour —
+`RenderTargetTexture.setMaterialForRendering` is the hook, and the spike did
+not use it, so its pixel counts are "what drew" and not "what would bloom".
+And the buffer must be FULL resolution, where the layer's is half
+(`mainTextureRatio` 0.5), because that is what depth sharing demands — four
+times the pixels through the blur, which is free on the box these numbers come
+from and is exactly the trade `FINDINGS.md` 17's third open thread says will
+invert on a phone.
+
+**Against the MRT route it wins on every axis but one.** No shader gains an
+output, no Babylon shader store is patched, no material has to participate, and
+the occlusion is exact rather than conservative. What it does not do is remove
+the second geometry pass — it makes that pass 20 meshes instead of 204, which
+is the same ~90% the whole entry has been chasing, but the pass is still there
+and still costs a bind. **Nobody has measured the frame with it built.**
+
+### WHAT LANDED — `src/core/GlowDepth.ts`
+
+The layer keeps its blur, its compose, its emissive selector and its exclusion
+list. Two things change: **its render list is the emissive meshes alone**, and
+**its occlusion is the main pass's depth buffer**, shared rather than redrawn.
+That is the same answer the opaque black was computing, exact to the pixel, for
+none of the draws.
+
+**The frame, a live round, uncapped headless, fresh page per arm:**
+
+| map | stock | landed | saving |
+| --- | --- | --- | --- |
+| Coldharbour | 9.45 ms | 7.60 ms | **1.85 ms, 19.6%** (106 -> 132 fps) |
+| Harrowmead | 10.55 ms | 8.25 ms | **2.30 ms, 21.8%** (95 -> 121 fps) |
+| Sarab | 13.40 ms | 10.55 ms | **2.85 ms, 21.3%** (75 -> 95 fps) |
+
+Both arms of every pair agree to within 0.3 ms (9.4/9.5, 7.6/7.6, 13.4/13.4),
+which is far tighter than this box's usual spread and is what makes a ~20%
+reading believable at all.
+
+**The picture: 36 frozen vantages across Hollowmere, Coldharbour and Greyfen —
+three committed diff vantages per map at four yaws each — worst mean
+0.0258/255, worst pixel 90, and zero page or console errors on every map.**
+Two poses came back exactly 0. For scale, finding 18 landed at 0.19 to 3.26.
+The residue is the blur resampling at full resolution rather than half; it is
+not occlusion, which the spike proved separately by showing the normal and
+inverted depth tests PARTITION the emissive pixels exactly (926 + 748 against
+1,672 unoccluded).
+
+**Four mechanics, and every one of them failed silently first** — they are on
+the line in `GlowDepth.ts` and repeated here because each cost a measurement
+round:
+
+1. **The main texture must render LATE.** The scene component registers
+   `_renderMainTexture` on `_cameraDrawRenderTargetStage` (before the camera
+   draws) and the compose on `_afterCameraDrawStage` (after). Only the first is
+   in the wrong place. It must be MOVED and never skipped, because it also
+   raises the `_renderEffects` flag the compose reads — skipping it stops the
+   layer compositing at all, which looks like the glow having been deleted.
+2. **The clear must be REPLACED, not added to.** `_createMainTexture` installs
+   its own `onClearObservable` handler that clears colour, depth AND stencil,
+   and an `Observable` runs every observer. Adding a colour-only clear beside it
+   leaves the depth wiped — the arm with sharing and the arm without came back
+   BIT-IDENTICAL, which reads exactly like "the mechanism does not work" and
+   actually meant "it never ran".
+3. **The framebuffer must be re-bound after the render**, because an RTT render
+   restores the DEFAULT framebuffer and the compose would otherwise land on the
+   canvas, under the post chain.
+4. **The texture must be FULL resolution with a doubled kernel.** `shareDepth`
+   demands matching dimensions and the layer's default is half; the kernel is in
+   texels of that texture, so it doubles with it or the bloom halves on screen.
+
+**What this cost that is not milliseconds.** The glow buffer is four times the
+pixels through the blur. That is free on a draw-call-bound desktop frame and is
+precisely the trade finding 17's third open thread says inverts on a phone —
+**nobody has measured this on a phone, and it is the one open thread this
+change leaves.** It also reaches into three Babylon internals (`_getComponent`,
+`_renderMainTexture`, `_currentRenderTarget`), each asserted in a DEV build for
+the reason `OutlineFog.ts` asserts its patch anchors.
+
+**And it retires the entry's whole premise.** The rigs are no longer in the
+layer's render list, so the second attempt's 310 draws on Sarab are gone
+without excluding anything; `CLAUDE.md`'s paragraph saying rig exclusion is
+deliberately not done has been replaced.
+
+### One thing noticed on the way, and it belongs to finding 32 rather than here
+
+**Coldharbour's frame has roughly halved since finding 32 was written.** That
+entry has it at 52.6 warm fps and a 19.3 ms median; the same map, same
+resolution, same instrument class, profiler armed (which costs ~1.5%), now reads
+94-99 fps and a 10.1-10.6 ms median. 1.9x is well past the ~1/3
+cross-session drift that entry warns about, so most of it is real and is
+presumably `narrowedMove` and the rig culling landing after it. **Finding 32's
+table is stale enough to mislead anyone sizing a lever against it.**
+
+And `shadowPass` fired on **zero of 3,000 frames** on both maps measured. That
+is not a dead hook: `ShadowSystem` sets `REFRESHRATE_RENDER_ONCE` and the
+refresh test genuinely never fails during play, which is finding 2's headline
+confirmed continuously rather than by inference. The 2.18 ms left unattributed
+inside `render` is the mesh walk (2.06 ms by the counter), not the shadows.
 
 ---
 

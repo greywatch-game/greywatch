@@ -379,14 +379,24 @@ test would drop every body in the game the moment it started falling. Sarab:
 **candidates −26.5%, the walk −11.9%, the frame −4.4%, draw calls and active
 meshes identical** — it takes the WALK and never the draw.
 
-**Taking the rigs out of the GLOW layer is deliberately NOT done, and that is a
-measurement.** Every rig mesh but the visor is drawn a second time as opaque
-BLACK into a buffer it cannot light — 310 draws a frame on Sarab, worth 7.2% —
-and that black is what makes the buffer depth-occlude. `FINDINGS.md` 3 landed
-and reverted this for the WORLD; it was tried again for BODIES and fails the
-same way, a lamp blooming through a soldier's chest at **254/255 at 1.5 m and
-still 104 at 13.5**. The prize is real and mesh exclusion is not how to collect
-it.
+**The GLOW layer draws the EMISSIVE meshes and nothing else, and what makes
+that safe is that its occlusion is the FRAME's own depth buffer.** It used to
+redraw the whole visible scene into its own texture as opaque BLACK — 586
+meshes of which 57 were emissive on Coldharbour — because that black is what
+made the buffer depth-occlude, so a brazier behind a cottage did not bloom
+through the wall. `src/core/GlowDepth.ts` takes the depth the main pass has
+already written instead (`shareDepth`), which is the same answer exact to the
+pixel, and the render list collapses to the emissive meshes. **Worth ~20% of
+the frame on all three big maps** — Coldharbour 9.45 -> 7.60 ms, Harrowmead
+10.55 -> 8.25, Sarab 13.40 -> 10.55 — with 36 frozen vantages across three maps
+inside **0.026/255**. Three earlier attempts tried to narrow that list by
+asking WHICH GEOMETRY MATTERS to a bloom (by distance from the light, by
+excluding the rigs, by a screen-space overlap test) and all three failed;
+`FINDINGS.md` 3 has them, and the reason they had to fail is that the only
+honest answer to that question is a per-pixel depth test. **Do not put the
+whole-scene render list back**, and read `GlowDepth`'s header before touching
+the layer: the schedule, the clear, the framebuffer rebind and the texture's
+resolution are four separate things that each fail SILENTLY.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and mirror
 and the three ways a cube probe goes flat, the four light terms and the colour

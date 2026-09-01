@@ -1602,6 +1602,21 @@ vantages come back to four decimal places.
   hand-written (`src/shaders/HorrorPost.ts`).
 - Glow is a `GlowLayer` keyed off emissive color, deliberately not threshold bloom —
   bright-but-not-emissive surfaces must stay crisp.
+- **Its occlusion is the MAIN pass's depth buffer, not a second drawing of the
+  world** (`src/core/GlowDepth.ts`). The layer used to redraw every visible mesh
+  into its own texture as opaque black solely so the buffer would depth-occlude;
+  it now shares the depth the frame has already written and its render list is
+  the emissive meshes alone — ~20% of the frame on the three big maps, and the
+  occlusion is exact rather than approximate. **Four things make it work and
+  each fails silently on its own**: the main texture renders LATE (from the end
+  of the draw phase, or it can only share the previous frame's depth), its clear
+  is REPLACED rather than added to (the layer installs one that wipes depth, and
+  an `Observable` runs every observer), the framebuffer is re-bound after the
+  render (an RTT render restores the default one, so the compose would land on
+  the canvas), and the texture is FULL resolution with a doubled kernel (depth
+  sharing demands matching dimensions; the kernel is in texels of that texture).
+  `FINDINGS.md` 3 has the three attempts that instead tried to work out which
+  geometry could matter to a bloom, and why none of them could.
 - Flat shading is recovered in the fragment shader from screen-space derivatives of
   the world position. Do not call `convertToFlatShadedMesh()`; it would unweld vertices
   on every prop and clone for no visual gain.

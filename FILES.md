@@ -182,6 +182,12 @@ src/
                         #   mean an output range, an input clamp and a
                         #   precondition at once. Nothing with a single caller
                         #   belongs here
+    GlowDepth.ts        # Takes the GlowLayer's occlusion from the depth the
+                        #   FRAME has already written (shareDepth), so its
+                        #   render list is the emissive meshes and not the
+                        #   whole visible scene drawn black. ~20% of the frame
+                        #   on the big maps. FOUR mechanics and each fails
+                        #   SILENTLY on its own — read the header first
   entities/
     Player.ts           # Movement, sprint, crouch, jump, weapon state
     ViewModel.ts        # The first-person weapon: carried gun + gloved arms on
