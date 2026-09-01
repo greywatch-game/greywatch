@@ -23,7 +23,7 @@
  * at a thing in your hands does.
  */
 import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from "@babylonjs/core";
-import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
+import { type CelMaterialFactory } from "../shaders/CelShader";
 import {
   BODY,
   METAL,
@@ -217,7 +217,6 @@ export function buildMineBody(
   // Ink, or a dark plate on a dark road is invisible from the one direction it
   // matters from — which for the object a driver is meant to notice in time is
   // the whole ball game.
-  addOutline(mesh, 0.02);
   // Disabled rather than invisible, for the reason `buildRocket` gives at
   // length: `isVisible` does not reach a child, and a pool of sixteen hidden
   // mines would leave sixteen pressure plates lying at the world origin.

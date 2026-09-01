@@ -778,12 +778,12 @@ src/
                         #   Network-first for the navigation, cache-first for
                         #   the content-hashed rest
   shaders/
-    CelShader.ts        # Custom cel ShaderMaterial + outline helper. Both
-                        #   stages WGSL; six defines, six UBO layouts
-    OutlineFog.ts       # Bakes the map's fog into Babylon's outline pass, so
-                        #   ink fades per PIXEL instead of per merged mesh.
-                        #   Patches ShadersStoreWGSL — the renderer picks WGSL
-                        #   for itself and has no flag to say otherwise
+    CelShader.ts        # Custom cel ShaderMaterial. Both stages WGSL; six
+                        #   defines, six UBO layouts
+    CelInk.ts           # THE INK: one full-screen edge over the depth the
+                        #   frame already wrote. Replaced Babylon's outline
+                        #   hull AND MapBuilder's ink twins — Coldharbour
+                        #   +32%, Harrowmead +51%. Only ever DARKENS
     EmissiveFog.ts      # The same fog as a material plugin on every unlit
                         #   emissive material — windows, flames, tracers. WGSL
                         #   only, which is what isCompatible states

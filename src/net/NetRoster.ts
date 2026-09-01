@@ -278,7 +278,6 @@ export class NetRoster {
    * integrates against frame time.
    */
   update(renderTime: number, cameraPos: Vector3): void {
-    const b = CONFIG.bots;
     for (const soldier of this.soldiers) {
       if (soldier.slot === this.localSlot) continue;
       // The two edges the ragdoll pool cares about, read either side of the one
@@ -311,7 +310,6 @@ export class NetRoster {
       // back into it has no other way home. `NetSoldier.update` cannot do it —
       // it stands aside entirely while the pool owns the rig.
       if (soldier.ragdolling) soldier.setEnabled(true);
-      soldier.setOutlines(d < b.lodOutlineDistance);
     }
   }
 

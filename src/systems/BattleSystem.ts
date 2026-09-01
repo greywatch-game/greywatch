@@ -92,8 +92,11 @@ const BOT_SHOT: ShotOptions = {
  *    ray picks per frame for the whole roster. Movement still integrates every
  *    frame, so nothing looks choppy.
  * 3. **Distance LOD.** Past the fog the rig is disabled outright; past
- *    `lodFreezeDistance` the pose freezes but the bot keeps walking; past
- *    `lodOutlineDistance` the outline pass is skipped, halving its draw calls.
+ *    `lodFreezeDistance` the pose freezes but the bot keeps walking. There was
+ *    a third rung — dropping the OUTLINE past `lodOutlineDistance` (20 m),
+ *    which halved the pass's draw calls — and it went with the outline pass
+ *    itself: the ink is a screen-space edge now and has no per-mesh state to
+ *    switch.
  *
  * Deliberately *not* here: a spatial hash. With 17 combatants the pairwise
  * separation pass is ~256 distance checks a frame, which is far cheaper than
@@ -872,7 +875,6 @@ export class BattleSystem {
         continue;
       }
       if (bot.alive || bot.state === "dead") bot.setEnabled(true);
-      bot.setOutlines(d < b.lodOutlineDistance);
       bot.update(dt, this.ctx, d < b.lodFreezeDistance);
     }
   }

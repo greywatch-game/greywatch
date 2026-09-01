@@ -54,7 +54,7 @@ import {
   Scene,
   TransformNode,
 } from "@babylonjs/core";
-import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
+import { type CelMaterialFactory } from "../shaders/CelShader";
 
 /**
  * `[width, height, depth, x, y, z, colour, rotX?, rotY?]`, as `SoldierModel`'s
@@ -424,18 +424,6 @@ function mergeByColor(parts: Mesh[], name: string): Mesh[] {
     out.push(merged as Mesh);
   }
   return out;
-}
-
-/**
- * The ink, and the repaint that must not re-derive it.
- *
- * `addOutline` reads the material's cel colour once, at registration, and
- * re-inking a wreck would mean either re-registering every mesh or reaching
- * into the outline registry — for a difference of a few per cent of one
- * channel on a mesh that is already nearly black. See `CelShader.outlineInkFor`.
- */
-export function inkRig(meshes: readonly Mesh[]): void {
-  for (const m of meshes) addOutline(m, 0.02);
 }
 
 /** Swaps the whole vehicle to the charred palette, or back to its livery. */

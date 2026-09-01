@@ -44,13 +44,22 @@ All three take their fog from the one published by
 from the wall it hangs in front of — but they take it at **different
 granularities, and the difference is forced**:
 
-- **The outline fades per PIXEL**, baked into its shader by `src/shaders/OutlineFog.ts`.
-  It has to. `BlockMerge` gives one mesh per 48 m block, so a per-mesh ink fade
-  leaves the far half of a block in clear ink over a wall that has already gone
-  to fog — measured on Greyfen, **50 of 687 outlined meshes span the entire fog
-  band** (fog 0.0 at the near edge, 1.0 at the far), and those 50 are the
-  village. Thinning is not a substitute: `outlines.minScale` still leaves a line,
-  and a line of un-fogged ink is as visible thin as thick.
+- **The INK fades per PIXEL, and it gets that for free.** `shaders/CelInk.ts`
+  is a full-screen pass over the depth buffer, so it has the distance to every
+  pixel in hand and evaluates the cel shader's own `t * t` curve exactly, over
+  the MAP's fog band. **Roughly 230 lines stood here and every one of them was
+  about the hull this replaced**, which could do neither: `OutlineRenderer`
+  hardcodes its `uniformsNames`, so the fade could not be a uniform at all and
+  `OutlineFog` had to recover the distance from the rows of `viewProjection` and
+  BAKE the fog colour and range in as literals — which meant re-baking on every
+  environment change, which meant making Babylon forget compiled programs, which
+  was the only place in this tree that touched the compiled-effect cache and
+  carried three separate hard-won rules about ref-counting draw wrappers. It is
+  all deleted. The per-mesh half went with it: `BlockMerge` gives one mesh per
+  48 m block and 50 of Greyfen's 687 outlined meshes spanned the ENTIRE fog band,
+  so a per-mesh ink fade left the far half of a block in clear ink over a wall
+  that had already gone; `updateOutlineScales` thinned the WIDTH to paper over
+  that, and a line of un-fogged ink is as visible thin as thick.
 - **The bloom fades per MESH**, through `fogAmountAt` in
   `glow.customEmissiveColorSelector`. The glow map is generated from a material's
   emissive colour with no per-pixel hook at all, and it is affordable here where
@@ -58,22 +67,20 @@ granularities, and the difference is forced**:
   only 4 of 290 emissive meshes span more than half the fog band.
 - **The emissive material fades per PIXEL**, through a `MaterialPluginBase` in
   `src/shaders/EmissiveFog.ts` that injects the same curve at
-  `CUSTOM_FRAGMENT_MAIN_END`. A plugin *can* declare real uniforms, so unlike the
-  ink this one is a buffer write rather than a re-bake — `setEmissiveFog` needs no
-  cache invalidation at all. Distance is `vPositionW` against `vEyePosition`, both
-  unconditional in `default.fragment`.
+  `CUSTOM_FRAGMENT_MAIN_END`. A plugin *can* declare real uniforms, so
+  `setEmissiveFog` is a buffer write and needs no cache invalidation.
+  Distance is `vPositionW` against `vEyePosition`, both unconditional in
+  `default.fragment`.
 
 That this was invisible for a whole map is the point: on Hollowmere unfogged ink
 is near-black against near-black fog and an unfogged glow reads as a lamp doing
 its job. **A bright fog is what makes an un-attenuated pass obvious**, and
-Greyfen showed all three — a stand of dead trees whose trunks fogged to pale grey
-while every branch stayed a black scratch (a branch is 0.04 m of geometry inside
-a 0.05 m ink shell, so it is almost entirely outline), six chapel windows that
-were three saturated cyan bars on a wall faded almost to white, and a cottage
-window measured at 77.6 m — inside a `fogEnd` of 78 — coming back rgb(249,177,92)
-against its own `#ffb257` over a fog of rgb(194,204,212). **Fading the bloom is
-not fading the thing**: the selector dimmed the halo around that bar and left the
-bar. With the plugin the same pixel reads rgb(196,204,210).
+Greyfen showed it — six chapel windows that were three saturated cyan bars on a
+wall faded almost to white, and a cottage window measured at 77.6 m, inside a
+`fogEnd` of 78, coming back rgb(249,177,92) against its own `#ffb257` over a fog
+of rgb(194,204,212). **Fading the bloom is not fading the thing**: the selector
+dimmed the halo around that bar and left the bar. With the plugin the same pixel
+reads rgb(196,204,210).
 
 **The three obvious cheaper fixes for the emissive pass are all wrong, and the
 first one is the trap.** `scene.fogMode` would have been one line —
@@ -83,191 +90,22 @@ against its own wall through the whole middle of the band and disagrees by up to
 1.4x at the corners; it is also scene-wide, so the sky dome would need opting out
 by hand. A `ShaderMaterial` of our own loses `material.emissiveColor`, which is
 what the GlowLayer's selector reads — every lantern, tracer, visor and reticle in
-the game stops glowing. And baking literals the way `OutlineFog` must is pure
-cost here, where uniforms are available.
+the game stops glowing.
 
-**`OutlineFog` is the only place this tree touches Babylon's compiled-effect
-cache, and its header is the argument for why.** `OutlineRenderer` hardcodes its
-`uniformsNames`, so the fade cannot be given a uniform at all: the distance is
-recovered from `viewProjection` in the vertex shader (rows 0/1/3 are `P00*right`,
-`P11*up` and `forward`, and the eye is the point whose clip x, y and w all
-vanish — verified exact to 1e-6, and it must be that radial distance rather than
-the free `gl_Position.w`, which disagrees by up to 1.4x at the corners), and the
-fog colour and range are baked in as literals. Re-baking therefore has to make
-Babylon forget the compiled programs, since it rebuilds a submesh's effect only
-when its *defines* change, which a re-bake does not.
-
-Three rules about that invalidation, all learned the hard way:
-
-- **Clear the draw wrappers FIRST and IMMEDIATELY, then forget the cache entry.**
-  `mesh.resetDrawCache()` defaults to `immediate = false`, which does not merely
-  drop each wrapper — it queues that wrapper's `Effect.dispose()` on the engine's
-  `endFrame`, and a dispose is a REF RELEASE: Babylon ref-counts an effect by how
-  many wrappers asked `createEffect` for it, and the release that reaches zero
-  deletes the GL program and drops the cache entry itself. Deleting the entry by
-  hand *first* desynchronises that count. The bake runs inside `startRound`, so
-  the order was: forget the entry, clear ~500 wrappers with their releases still
-  pending, build and render the new map (which compiles a fresh effect, the entry
-  being gone, and hands it to every wrapper the frame rebuilds), and only then, at
-  `endFrame`, do the queued releases land and take a LIVE generation to zero — its
-  program deleted under the wrappers still pointing at it. **The map is rebuilt
-  after the bake, so its meshes are innocent and the damage lands only on what
-  SURVIVES a map change: the pooled bot rigs and the viewmodel.** Their outline
-  shells then draw from a deleted program as garbage that swallows the body it
-  belongs to — on Greyfen's pale fog a squad reads as flat yellow cut-outs of
-  itself, measured at 534 of 642 outline wrappers holding a freed effect one
-  switch in and compounding with every further switch, while on Hollowmere the
-  same garbage is near-black against near-black and invisible. Resetting
-  immediately puts the releases back inside the bake, where the last one frees the
-  effect with nothing holding it; the delete that follows is a backstop that can
-  now strand nobody. `_releaseEffect` is still not the way to do it — it deletes
-  the program on the spot, wrappers or no wrappers.
-- **Scope that reset to the outline PASSES, not the whole mesh.** An unscoped
-  `resetDrawCache` disposes every material's wrapper too, and disposing is a
-  release: with nothing else holding them the cel materials, the sky and the
-  post-process chain lose their programs and recompile. Measured on a map change:
-  15 recompiles unscoped against the 1 the outline itself owes.
-  `OutlineRenderer` keeps its four render-pass ids in `_passIdForDrawWrapper`.
-- **Reset the draw cache of EVERY mesh in the scene, and never filter that walk.**
-  The reset is the whole mechanism, not a belt-and-braces beside the cache delete:
-  `OutlineRenderer.isReady` asks the engine for an effect only when its *defines*
-  string changes, and the outline pass's defines never change, so a draw wrapper
-  that already holds an effect never consults the cache again however many entries
-  are forgotten. Two narrower sets have both been tried and both were wrong. The
-  outline REGISTRY misses `ViewModel`'s ~40 meshes, which set `renderOutline` by
-  hand and never call `addOutline`. `scene.meshes` filtered on `renderOutline`
-  looks exactly right and is the same mistake one layer along: the flag is a
-  runtime toggle — `Bot.setOutlines` clears it past `lodOutlineDistance` (20 m),
-  so most bot rigs have it off at any instant — and rigs are POOLED, alive across
-  every map change, so one LOD'd out during a re-bake keeps last map's fog for the
-  rest of the session. Greyfen → Hollowmere left 148 wrappers mixing ink to
-  `#c2ccd4`, which at the fog wall IS the ink: each rig's nine merged meshes read
-  as white slivers scattered over the village, and it survived a whole session
-  because a fresh boot has only one bake and nothing stale to keep. Unfiltered
-  costs 4.9 ms for 1,910 meshes across the four passes, once per fog change,
-  beside a ~570 ms map build.
-  `setOutlineFog` owns its own invalidation for exactly this reason — the first
-  cut split it across the caller and got that list wrong.
-
-**All three survived the port to WGSL, and they were RE-MEASURED rather than
-re-read.** The plan called them the most important re-run in the migration,
-because WebGPU adds a second cache layer that the hand `delete cache[key]`
-backstop does not reach (`_deletePipelineContext` calls `resetCachedPipeline`
-rather than `_deleteProgram`) and because both failure modes are silent on
-Hollowmere. Played on Hollowmere with the player spawned and the pooled rigs
-built, then back to the menu and into Greyfen: **exactly 1 outline effect in the
-cache**, **0 of 438 outline draw wrappers holding a freed effect**, and **one
-distinct fog literal** in the compiled fragment source — Greyfen's
-`0.7098, 0.7686, 0.6431`, equal to the `fogColor` the cel materials are carrying
-in the same frame. Against 534 of 642 and 148 respectively for the two bugs.
-`setMap` refuses outside `menu`/`lobby`, so a test that changes map has to go
-back the way a player does; one that calls it from `playing` measures the first
-map twice and reports clean.
-
-**The ink's TINT is the MAP's, and it is derived rather than authored, because
-an unlit line over a lit surface is only a line while it is the darker of the
-two.** `inkColorFor` returns `albedo * tint` and the ink carries no lighting at
-all — that is the whole of the `CEL_INK` branch, and Babylon's
-`fragmentOutputs.color = uniforms.color` from the other side — while the surface
-under it is `albedo * light`. So a constant tint inverts into a bright HALO the
-moment the light term falls under it, and it flips with the SHADOW rather than
-with distance: on Greyfen a trunk in the sun was outlined in ink and the same
-trunk two steps into the canopy's shade was outlined in something twice as
-bright as itself. Greyfen's own environment file records the re-lighting that
-caused it (ambient 0.7 → 0.24, key 1.12 → 1.55) with no mention of this end of
-it, which is exactly why the number is no longer one somebody has to keep in
-step by hand.
-
-**The first derivation was still too bright on every map, and by 2.2x to 2.9x.**
-It took `outlines.shadeHeadroom` (0.6) of the LUMA of `ambient + skyFill * 0.5`,
-which describes a vertical face in shadow that is fully unoccluded — and three
-separate things in the frame are darker than that:
-
-- **Occlusion.** `vBaked.w` multiplies both ambient terms and the bake runs the
-  full `[0.45, 1]` its strength allows, so the darkest a shaded face gets is
-  `1 - CONFIG.ao.strength` of what that reference assumed. The places it reaches
-  are creases, eaves and doorways — exactly where outlines are densest.
-- **The sky fill is not there at all on an underside.**
-  `band(0.5 + 0.5 * n.y, 3.0)` is 0 for `n.y <= -1/3`, so every soffit, sill and
-  branch-bottom receives the flat ambient and nothing else; the old reference
-  credited it with half the fill.
-- **A scalar tint against a coloured light.** The ink is `albedo * tint` per
-  CHANNEL and the surface is `albedo * light` per channel, so one number
-  compared against a luma inverts in whichever channel the ambient is weakest
-  in. On Greyfen — a green ambient — that is the blue: the old tint 0.099 sat
-  above a blue ambient of 0.087 before occlusion was applied at all.
-
-So the ink is the albedo under the DARKEST LIGHT the shader can actually put on
-it: `ambient * (1 - CONFIG.ao.strength)`, per channel, times
-`outlines.shadeHeadroom`, clamped per channel to `outlines.tintFactor`. Every
-other term of `light` is either absent by construction in that case (the key is
-shadow-gated, the sky fill is `n.y`-gated to zero) or purely additive (the point
-lights, the rim, the specular), so `light >= ambient * ao >= ambient * (1 -
-strength)` holds for every pixel of every cel-shaded mesh — and the ink is under
-it as ARITHMETIC rather than as a headroom number chosen generously. Six things
-follow:
-
-- **The atmosphere cannot undo it, which is why the guarantee is worth having.**
-  Both the fog and the ground mist are convex combinations toward a colour far
-  above the ink, applied to the surface and the line on the same curve at the
-  same distance — `OutlineFog` bakes the identical `t * t` — so `ink < surface`
-  survives them. What the mist does to the hull is nothing at all, which is the
-  safe direction: it lightens the surface and leaves the line alone.
-- **What `shadeHeadroom` is left covering is the WEATHERING**, the one thing that
-  darkens a surface after the light has been applied. `albedoVariation.amount`
-  (0.14) is peak-to-peak, so a wall can arrive at 0.93 of its palette colour
-  while the ink beside it is minted from that colour. 0.9 clears it, and doubles
-  as the margin that keeps the line visible rather than exactly equal to the
-  surface at the floor. Raise the variation and this comes down with it.
-- **The FALLBACK is bounded the same way and is the weaker bound.** Hollowmere's
-  road network is `cel-ground-*`, so it wears `outlines.fallbackColor` —
-  rgb(0.070, 0.078, 0.102) against a cobble measuring (0.038, 0.054, 0.075)
-  under the night ambient, a light line down every street. It is now clamped to
-  the same floor, but a fallback has no albedo to scale, so it is bounded as if
-  the surface were WHITE and a dark enough texture can still out-dark it. That is
-  the honest limit of an ink for a material whose colour cannot be recovered, and
-  it is why the authored value stays a CEILING rather than being replaced.
-- **All four maps move, and none of them is the one that showed the bug.** Per
-  channel, the tint goes Greyfen 0.099 → (0.038, 0.046, 0.035), Hollowmere
-  0.103 → (0.041, 0.056, 0.078), Coldharbour 0.212 → (0.085, 0.092, 0.104),
-  Harrowmead 0.190 → (0.060, 0.066, 0.073). What it costs is brightness, in the
-  amount by which each was wrong; what it keeps is more colour than a scalar
-  carried, because the ink now takes the map's ambient hue as well as the mesh's
-  — Hollowmere's lines are blue where Greyfen's are green.
-- **MEASURED, and the measurement is most of the work.** Each map rendered twice
-  from the same eye — once as shipped, once with every outline and ink twin off —
-  and the pixels the ink pass touched compared against what they covered. Mean
-  ink luma falls Hollowmere 0.036 → 0.025, Greyfen 0.059 → 0.045, Coldharbour
-  0.142 → 0.125, Harrowmead 0.071 → 0.039, and no outlined mesh on any map now
-  carries an ink over luma 0.054 (that one was the road, at the clamped
-  fallback — a road carries no ink at all now, see the crossing rule below).
-  **Re-taken on WebGPU at each map's committed vantage**, post chain off, the
-  ink pass covers 2.4% / 4.1% / 3.5% / 1.9% of the frame at a mean luma of
-  0.050 / 0.060 / 0.052 / 0.057 (Hollowmere, Greyfen, Coldharbour, Harrowmead),
-  over 844 / 668 / 953 / 824 inked meshes and 2 / 81 / 8 / 100 ink twins. **The
-  brightest TINT is 0.082 and it is on Coldharbour's `cel-#e8e4dc`**, against
-  the 0.054 above — which is not a regression and cannot be one: `outlineInkFor`
-  is CPU arithmetic over the palette and the ambient, untouched by the backend,
-  and a near-white façade is by construction the brightest ink a per-albedo tint
-  can mint. The 0.054 was the darkest of the four maps' worst cases at the time
-  and two of those maps have been re-cut since. What the bound actually says is
-  relative — `ink < surface` per channel — and that is the sentence to re-derive,
-  not the absolute.
-  **Take the whole post chain off before believing any of it**: bloom spreads a
-  lit window over a wide radius, FXAA smears every edge, the god rays build their
-  shafts from an occlusion mask of the scene and the film grain is fresh noise
-  over the frame — so toggling ANY mesh moves pixels nowhere near it, and the
-  first cut of this measurement reported a cottage window as ink and put 96% of
-  the frame in the diff.
-- **Both ink paths owe a re-resolve on an environment change, and they get it
-  from different places.** The cel materials take it from the `applyEnvironment`
-  walk `setEnvironment` already runs, which recovers the palette colour out of
-  the material name `getInk` mints (`cel-ink-<source>`). Babylon's hull holds
-  `outlineColor` per MESH and is in no walk at all, so `reinkOutlines` goes over
-  the outline registry instead — and that registry is the right set here where it
-  is the wrong one for the fog above. `ViewModel` is missing from it and does not
-  need to be in it, because it inks itself BLACK rather than from `inkColorFor`.
-  What it does carry is the pooled bot rigs, which outlive every map change.
+**THE INK'S TINT NEEDS NO DERIVATION NOW, AND THAT IS THE OTHER HALF OF WHAT
+WENT.** The hull's ink was UNLIT — `albedo * tint` with no light term at all —
+laid over a surface that was `albedo * light`, so a constant tint inverted into a
+bright HALO the moment the light fell under it, and it flipped with the SHADOW
+rather than with distance: on Greyfen a trunk in the sun was outlined in ink and
+the same trunk two steps into the canopy's shade was outlined in something twice
+as bright as itself. What that cost was a per-map, per-CHANNEL derivation from
+`ambient * (1 - CONFIG.ao.strength)` — the darkest light the shader can put on
+any pixel — with a headroom factor for the albedo weathering on top, plus a
+`fallbackColor` bound for the textured materials that have no albedo to recover,
+plus a re-ink of every registered mesh whenever a map changed. `CelInk`
+multiplies the pixel that is ALREADY THERE, lit, shadowed, fogged and weathered,
+so it is under the light term as arithmetic and cannot invert whatever a map
+does. `CONFIG.graphics.ink.tint` is a constant again.
 
 **What is left LIGHT after all of that is the fog, and it is meant to be.**
 Past the fog wall the ink IS `fogColor` — pale green on Greyfen, cream on
@@ -275,9 +113,7 @@ Harrowmead — and the surface it outlines is that same colour, because they
 dissolve on one curve. A silhouette against the SKY is where that reads as a
 bright line, the sky being the one thing in the frame the world's fog never
 touches; the object behind the line is equally pale, so the line is not brighter
-than what it belongs to. Undoing it is the regression `OutlineFog` exists to fix
-— black scratches over a wall that has already gone to fog.
-
+than what it belongs to.
 
 **A fifth term modifies two of the four, and it arrives as a VERTEX ATTRIBUTE
 rather than a uniform.** `world/vertexShading.ts` bakes per-vertex ambient
@@ -296,8 +132,7 @@ Three rules about it, and the first is the one everything else rests on:
   buffer after `unbindAllAttributes()`. Alpha therefore defaults to exactly the
   neutral value, so the pooled bot rigs, the viewmodel's meshes, the grenades and
   the death cam's stand-in body are all correct **without carrying a buffer at
-  all** — no define, no branch, and above all no fourth `cel-<variant>-#rrggbb`
-  cache entry for `outlineInkFor`'s regex to learn. RGB defaults to 0, which is
+  all** — no define and no branch. RGB defaults to 0, which is
   not neutral for a multiplier, which is why the green channel is used as a
   *mask* (1 on baked world geometry) rather than as a second multiplier.
 - **The bake runs AFTER every merge, and cannot be moved earlier.**
@@ -328,6 +163,50 @@ slow value-noise drift over world position that stops a 48 m merged block
 arriving as one flat tone. It is keyed on position rather than on anything
 per-object because that survives the merge for free — and it is gated because a
 world-keyed term on a *moving* mesh makes it shimmer as it walks.
+
+## The ink: one pass, over depth the frame already wrote
+
+`shaders/CelInk.ts` owns the argument, the mechanism and the measurements; this
+is the part a reader of this file must not violate.
+
+**It only ever DARKENS.** `mix(scene, scene * tint, edge)` with `tint < 1`, so
+no pixel leaves the pass brighter than it arrived. That is what makes it safe to
+lay over a finished frame with the glow already composited into it, and it is
+worth keeping true: it was checked rather than assumed, at seven frozen vantages
+across two maps, and came back **0 brighter channels of 6.2 M per frame**. If a
+halo ever appears to come through a wall, this pass is not where it came from —
+the god rays are screen-space and depth-unaware BY DESIGN (`GodRays.ts` says so
+on the line), and a bloom spreads by blurring after its depth test.
+
+**It runs FIRST in the post chain and that ordering is load-bearing.** It is
+part of the picture, not a grade over one: FXAA behind it antialiases the lines
+(they come off a depth buffer, which has no antialiasing of its own), and the
+shafts, the smear and the grain all land on top of inked geometry rather than
+under it. A `PostProcess` given a camera attaches itself and `attachPostProcess`
+APPENDS, so what is constructed first runs first — which is why `Game` builds it
+above the `DefaultRenderingPipeline` rather than beside the other three passes.
+
+**It needs no normal buffer, and the reason is worth knowing before anyone adds
+one.** A `GeometryBufferRenderer` re-renders the map — the wall `GodRays` and
+`MotionBlur` both hit and both wrote down. It is not needed because under a
+perspective projection `1/z` is LINEAR in screen space across any plane, so the
+centre texel against what its two neighbours predict for it is exactly zero on a
+flat surface at any angle, a floor seen edge-on included, and large at a corner.
+That is the crease term; the silhouette term is a plain relative depth step.
+Both are dimensionless, so one threshold holds at every range and no map states
+its own.
+
+**It owes the fog and gets it exactly**, over the MAP's band — so `Game` pushes
+`applyEnvironment` at it on every environment change, including the editor's.
+
+**Three things it does not do, each deliberate rather than missed.** It has no
+`noOutline`, so every emissive part is inked where the hull excluded them — the
+cheap way back is `glow.mainTexture`, which `GlowDepth` made full-resolution and
+emissive-only. It inks the viewmodel at full weight where the hull gave the gun
+0.004 m of deliberately fine line. And it inks the terrain and the grass, which
+the hull never touched: every blade of grass writes depth, so every blade is a
+silhouette, and what that reads as is denser, darker grass. That one is a
+judgement and not an accident.
 
 ## The wind, and the one thing in the world that moves
 
@@ -433,46 +312,28 @@ than by care.
 
 Two consequences are worth stating plainly, because both look like bugs:
 
-- **A swaying merge group leaves BABYLON's outline pass and draws its own ink
-  instead**, and the first half of that is mechanical rather than a preference.
+- **A swaying group needed its own ink and no longer does, which is the
+  cleanest thing the screen-space pass bought.** Babylon's hull could not follow
+  the wind and the reason was mechanical rather than a preference:
   `OutlineRenderer.isReady` builds the hull's effect with a hardcoded attribute
   list of position and normal — `const color = false`, literally — and a
-  hardcoded `uniformsNames` with no clock in it. Patching the shader source, as
-  `OutlineFog` does, cannot reach either list. So that hull can see neither the
-  wind nor the per-vertex weight: an outlined leaf leans out from under a shell
-  left standing at the rest pose, and a third of a metre against a five
-  centimetre line is a dark ghost of the still canopy hanging behind the moving
-  one. `mergeByMaterial` sets `noOutline` with the mark so the two can never be
-  separated.
+  hardcoded `uniformsNames` with no clock in it, and patching the shader source
+  reaches neither list. So the hull saw neither the wind nor the per-vertex
+  weight: a leaf leaned out from under a shell left standing at the rest pose,
+  and a third of a metre against a five centimetre line is a dark ghost of the
+  still canopy hanging behind the moving one. What covered that was
+  `MapBuilder.inkTwin` — one INVERTED HULL MESH per swaying group, cloned so it
+  shared its source's `Geometry`, wearing a `CEL_INK` material that had the
+  wind, the weight, the eye and the fog. It worked, and it cost a mesh: 53 of
+  them on Coldharbour and **144 on Harrowmead**, each a draw with a material
+  switch, plus a build phase, plus `noReflect` (an inside-out hull is a sealed
+  room to a probe parked inside it) and a `block` key it had to carry so
+  `WorldCulling` could not strand one.
 
-  What draws the line instead is `MapBuilder.inkTwin`: one inverted hull per
-  swaying mesh, through this shader's `CEL_INK` variant, which has the wind, the
-  weight, the eye and the fog already. Three things fall out of that which are
-  better than what Babylon was doing, not merely equal:
-
-  - **The twin SHARES its source's `Geometry`** — `Mesh.clone` hands the same
-    instance to both — so eighty-odd of them cost no vertex memory, no upload
-    and no second bake, and the ink cannot drift from the leaf because there is
-    only one buffer to drift from.
-  - **The width thins per VERTEX** against the same eye the fog uses, rather
-    than per mesh in `updateOutlineScales`. That is a correction, not a
-    convenience: `BlockMerge` hands out meshes spanning the whole fog band
-    (measured: 50 of 687), which is exactly why the ink's *colour* fade was
-    moved per pixel. This is the width catching up.
-  - **It is one draw rather than two.** Babylon renders an opaque mesh's
-    outline twice — once before it with depth-write off, once after with
-    colour-write off to repair the depth buffer. An inverted hull with
-    `cullBackFaces = false` and ordinary depth state needs neither pass, and
-    needs no ordering against the surface it wraps: inside the silhouette its
-    back faces lose the depth test, outside it they are the nearest thing there
-    is, and that ring is the line.
-
-  The fade is the surface's own, out of the same `fogParams` and `mistParams` in
-  the same block, so a line over a wall dissolves on the curve the wall
-  dissolves on — and picks up the ground mist, which `OutlineFog`'s baked
-  literals cannot do at all. Verified on Greyfen: 81 swaying meshes, 81 twins,
-  every one of them carrying a non-zero weight, and none of them in Babylon's
-  pass or in the shadow map.
+  `CelInk` reads the depth buffer, and the depth buffer already has the leaf
+  where the wind put it. Sway is not a case it handles — it is not a case at
+  all. `mergeByMaterial` still sets `noOutline` alongside the sway mark, which
+  now only keys the merge.
 - **The shadow it casts is the REST pose's, always.** The depth map is rendered
   from Babylon's own shadow shader, which never sees the displacement, so the
   dapple does not move — and, more importantly, does not *stutter*: the map
@@ -507,9 +368,11 @@ a pine's needle tiers, a jungle canopy's plates, a hedgerow ash's leaf. Both def
 cel material carries both uniforms and zero multiplies the term out. A material is
 matte, glossy *or* translucent — never two — because the cache is per colour and an
 axis that multiplies is an axis that costs. Another such variant means a spec type,
-an `apply*`, a `get*` under its own key, one entry in `UNIFORMS`, **and** teaching
-`outlineInkFor`'s regex the new `cel-<variant>-#rrggbb` name, or the ink falls back
-to the palette-neutral colour. The translucency term is directional both ways — it
+an `apply*`, a `get*` under its own key and one entry in `UNIFORMS`. (It used to
+cost a fifth thing — teaching `outlineInkFor`'s regex the new
+`cel-<variant>-#rrggbb` name, or the ink fell back to a neutral colour. The ink
+is a screen-space pass now and has never heard of a material name.) The
+translucency term is directional both ways — it
 needs the eye looking into the key light *and* the facet turned away from it — so it
 can only be judged from under the thing, moonward.
 
@@ -545,9 +408,8 @@ is its cube SAMPLER, which a bind group cannot make conditional.
 difference is forced by what a window is. (`getInk` is a fifth, added for the
 wind — see the outline note above. It is cheap to add to this roster because it
 takes the albedo path away rather than adding one: it writes a flat colour and
-falls straight through to the atmosphere block, so it needs no spec, no
-translucency and no `outlineInkFor` name of its own — nothing outlines an
-outline.)
+falls straight through to the atmosphere block, so it needs no spec and no
+translucency.)
 
 **It is a DEFINE (`CEL_GLASS`) rather than a uniform**, unlike the two above. The
 trick that makes those free is that a black colour multiplies the term out — but
@@ -981,8 +843,9 @@ stencil on to get a ring around a pane would silently re-tune
 one flag and three measurements; `plans/webgpu-ref/depth.mjs` re-takes two of
 them.
 A window's frame is drawn by the mullion, the collar and the reveal, all of which
-are geometry with ink of their own. Because nothing ever outlines a pane, glass
-is also the one variant that owes `outlineInkFor`'s regex nothing.
+are geometry the ink finds on its own. See-through glazing writes no depth, so
+`CelInk` never finds a pane at all — which arrives at the old rule that nothing
+outlines a pane, by construction rather than by exemption.
 
 **The receiver's depth is the raw clip z, and getting that wrong is invisible
 as a shadow bug.** Under WebGPU `engine.isNDCHalfZRange` is true, so a
@@ -1297,13 +1160,14 @@ are in different places. A shader is registered into
 `ShaderStore.ShadersStoreWGSL` rather than `Effect.ShadersStore`, and its
 consumer states `shaderLanguage: ShaderLanguage.WGSL` — a `PostProcess` and a
 `ShaderMaterial` both default to GLSL and will otherwise look the shader up in
-a store nothing wrote. **The one thing in the engine that does the opposite is
-`OutlineRenderer`**, which picks WGSL for itself under WebGPU with no flag to
-say otherwise — its constructor sets GLSL and then overwrites it, and unlike
-`StandardMaterial` there is no `ForceGLSL` between. So `OutlineFog` writes
-`ShaderStore.ShadersStoreWGSL`, and writing the other store is not a compile
-error but a patch that silently does nothing: unfogged ink, invisible on
-Hollowmere and loud on Greyfen.
+a store nothing wrote. There used to be one thing in the engine that did the
+opposite — `OutlineRenderer` picks WGSL for itself under WebGPU with no flag to
+say otherwise, its constructor setting GLSL and then overwriting it, with no
+`ForceGLSL` between as `StandardMaterial` has — and the patch that had to know
+that (`OutlineFog`) is gone with the outline pass. Nothing in the tree drives
+`OutlineRenderer` any more. The rule the trap taught still stands for every pass
+here: name the store explicitly, because writing the wrong one is not a compile
+error but a patch that silently does nothing.
 
 **What several shaders share is a registered INCLUDE and not an interpolated
 string**, and the reason is specific to WGSL rather than tidiness.
@@ -1442,8 +1306,8 @@ constraints below; it is repeated here because it is the rule most likely to be
 tripped by a hand-written shader that declares more than the variant it is
 compiling actually uses.
 
-**WGSL has `transpose()` and has no `inverse()`.** The eye position
-`OutlineFog` recovers from the rows of `viewProjection` is therefore still
+**WGSL has `transpose()` and has no `inverse()`.** An eye position recovered
+from the rows of `viewProjection` is therefore still
 recovered that way — for a NEW reason, and the difference matters to whoever
 next reads it as a workaround. It used to be that a WebGL2 context runs these
 shaders in GLSL ES 1.00 mode, where `inverse` does not exist; it is now that
@@ -1626,96 +1490,43 @@ vantages come back to four decimal places.
   them — and a layout entry with nothing behind it is not the harmless no-op it
   was on WebGL2, where an unbound sampler read as black and the frame carried
   on. The bind group fails to build and every draw using it is lost.
-  `CelMaterialFactory.getInk` is the case that found it: `CEL_INK` is unlit,
-  binds no lights and used to bind no shadow either, so Hollowmere's two
-  swaying merge groups took their ink twins, `Failed to read the 'resource'
-  property from 'GPUBindGroupEntry'` and a black frame with them.
+  The case that found it was the retired `CEL_INK` variant: unlit, binding no
+  lights and at first no shadow either, so Hollowmere's two swaying merge groups
+  took their ink twins, `Failed to read the 'resource' property from
+  'GPUBindGroupEntry'` and a black frame with them. **`CelInk` is now the pass
+  most exposed to this rule** — it declares a `texture_depth_2d` and binds it
+  from `onApply`, and a frame where that bind is missed is a lost draw and no
+  error.
   **UNIFORMS are the opposite and need no equivalent care**: an unwritten
   uniform in the leftover UBO reads as zeros, which is why the ink still binds
   no point lights.
-- `renderOutline` draws a back-face shell expanded by `outlineWidth` in every
-  direction, so an emissive detail must protrude past its neighbours' shells or the
-  glow is swallowed (why the player's visor slit and the lamp lens stick out).
-- **A flat surface you WALK on must be a thick box, not a thin slab**, and the
-  reason is that same shell. `OutlineRenderer` draws it with a negative,
-  slope-scaled polygon offset (`setZOffset(-1)`, `setZOffsetUnits(-4)`) that pulls
-  it toward the camera, and the slope term is enormous at the grazing angle a
-  floor is seen from — so the shell's underside, only `height + outlineWidth`
-  behind the real top face, WINS the depth test and paints the surface flat in its
-  own ink. The manor's board deck was 0.14 m thick and its whole 22 x 15 m hall
-  floor came back as `outlineInkFor` of the boards, which on a dark timber reads as
-  a black void and on a pale one as a grey wash. Nothing in the console, and the
-  usual suspects all test clean: clearing the shadow casters changes nothing,
-  because it is not a lighting bug at all. The same floor as a 0.54 m box renders
-  correctly, which is why the podium under it never showed the fault. Depth is what
-  buys the margin, so a walked surface gets a box as deep as whatever it stands on
-  and is placed by its TOP face.
-  **THE FAULT DOES NOT REPRODUCE UNDER `depth32float`, and the rule is kept
-  anyway.** Re-derived in situ rather than argued about: `boardDeck` thinned back
-  to the 0.14 m slab, Greyfen rebuilt, the camera stood in the great hall looking
-  the long way across the boards — **byte-identical to the shipped 0.54 m box, 0%
-  of pixels.** The offset that used to win is now worth about a millimetre per
-  metre of range (`plans/webgpu-ref/depth.mjs zoffset`: 20 mm of separation is
-  beaten from 20.6 m, 50 mm from 61.7 m, 150 mm never inside 200 m), and a shell
-  185 mm under its own top face would need ~185 m of hall to lose to. So the rule
-  is currently unfalsifiable rather than disproved: it costs nothing, it is the
-  same geometry a walked surface wants anyway, and the offset's UNIT is decided
-  by a boot flag — `stencil: true` would put the format back to
-  `depth24plus-stencil8` and this with it. Do not thin a deck on the strength of
-  the null result, and do not read it as the mechanism being gone: the sibling
-  rule below still bites, hard, and on the same offset.
-- **Nothing may be laid ON an inked surface, and no clearance buys its way
-  out.** The third face of that same shell, and the one that costs a mesh of its
-  own: `OutlineRenderer` draws the hull twice, and the second pass
-  (`_afterRenderingMesh`) writes **depth with colour write off** — so once an
-  inked mesh has been drawn, the depth buffer holds a surface `outlineWidth`
-  in front of it across the whole of it, not merely around its silhouette.
-  Anything drawn into that gap afterwards fails the depth test against
-  something invisible. Coldharbour's lane markings are the worked case: 4 cm of
-  paint under a 5 cm shell, present in every list, active, lit, and not on
-  screen at all. Thinning the road's ink does not fix it, because the offset
-  that pulls the shell toward the eye is slope-scaled and a road is seen at a
-  grazing angle — measured down an avenue at eye height, ink at 3 cm left one
-  dash standing and ink at 1 cm still swallowed everything past ~35 m.
-  **Re-derived on WebGPU by putting the ink back at runtime and tinting the paint
-  so a surviving dash is countable**, down the x = +40 avenue from the south end:
-  at the shipped 45 mm ink **none of the paint survives at any range** (0.1% of
-  its pixels, no dash anywhere), at 3 cm 57% survives and the furthest dash is at
-  71 m, and at 1 cm 89% survives out to 187 m. The conclusion is unchanged and
-  the thin end of the argument has moved a long way — the offset is weaker than
-  it was, 1 cm of ink no longer swallows the street, and 1 cm of ink is not on
-  offer anyway. **It is the same offset the deck rule above no longer reaches**,
-  and what separates them is the SEPARATION: 20 mm between a marking and its
-  slab's shell, against 185 mm between a deck's top face and its own. So the
-  surface underneath gives up its ink, which a flat ground sheet can afford: it
-  has no silhouette, which is the same thing its `noShadowCaster` says.
-  **NO ROAD IS INKED NOW, and the paint was only the first half of why.** A
-  road laid across another road is "anything drawn into that gap" exactly as a
-  marking is — measured on Sarab, where the dirt lanes cross the avenues, and
-  on Harrowmead, where a dirt lane meets the cobble crossroads: the junction
-  came out solid black, in the ink of whichever of the two merged road meshes
-  the front-to-back sort drew second, and which one that was changed as the
-  camera moved round it. **Lifting the winner does not buy it out either** —
-  the shell rides with the slab it wraps, so a road raised 8 cm carries its
-  stamp to 13 — which is why `MapBuilder`'s road merge takes the ink off every
-  road rather than off the slabs that carry paint. The junction is settled by a
-  two millimetres of height per surface RANK instead (`world/roads.ts`), which
-  is a margin only the depth buffer has to beat once no shell stands over it —
-  and it has to be that small because a road is a sheet over the floor and the
-  dust disc a round kicks off the ground clears it by only 20 mm.
-  **This is also why a fault of this shape does not reproduce in the editor** —
-  roads are left uninked there for an unrelated reason, so the markings were
-  visible for the whole of the time they were being authored.
-  There are two markings in the tree and both pay this: the second is the
-  parkade's painted deck edge (`buildParkade`), where the exemption is worth
-  stating because the deck is NOT a ground sheet — it gives up the ink along
-  its own edge over the void, which is the very edge the paint is there to
-  call out, and gets it back in pale instead of dark. The merge key is what
-  keeps the price that small: only the slabs that carry a line leave the
-  block's concrete group, and the rest of it is inked exactly as before.
-  **The paint needs `noOutline` of its own as well** — a 5 cm shell around a
-  4–6 cm box is most of the box, so a mark that survives the depth test still
-  arrives dark unless it is exempt too.
+- **THE INK IS A SCREEN-SPACE PASS AND NOT GEOMETRY, and this bullet used to be
+  five.** `shaders/CelInk.ts` runs one full-screen edge over the depth buffer
+  the frame has already written; it owns the argument, the mechanism and the
+  measurements. What stood here before was the family of rules that existed
+  BECAUSE the ink was an inverted hull — a thick box under any walked surface,
+  "nothing may be laid ON an inked surface", an emissive detail having to
+  protrude past its neighbours' shells, and the reason no road may be inked.
+  **Every one of them was a consequence of the hull writing DEPTH**:
+  `OutlineRenderer` drew each shell twice, the second pass writing depth with
+  colour write off and a negative slope-scaled offset, so once an inked mesh had
+  been drawn the buffer held an invisible surface `outlineWidth` in front of it
+  across the whole of it, and anything drawn into that gap afterwards failed the
+  depth test against nothing. Coldharbour's lane markings were the worked case:
+  4 cm of paint under a 5 cm shell, in every list, lit, and not on screen at all.
+  **None of it can happen now.** The ink writes no depth, occupies no space and
+  wraps nothing; it reads the depth buffer and darkens the colour buffer. The
+  geometry those rules produced is still there and still fine — a walked surface
+  is a thick box because that is also what a walked surface wants — but nothing
+  is being defended against any more, and a new thin deck or a decal laid on a
+  wall no longer owes anyone a clearance.
+- **What the ink DOES still owe is the fog.** Anything drawn unshaded owes the
+  cel shader's `t * t` curve or it hangs in front of the fog wall at full
+  strength while the world behind it dissolves. The hull needed a shader-store
+  patch (`OutlineFog`, now deleted) to get that per pixel and a per-mesh width
+  ramp (`updateOutlineScales`, also gone) to approximate it; `CelInk` has the
+  distance in hand and evaluates the curve exactly, over the MAP's own fog band,
+  which is why `Game` re-pushes that band on every environment change.
 - **The rim highlight is gated off near-level surfaces, and the gate is not
   optional.** On a plane the grazing angle it keys on is nothing but distance from the
   eye — for a floor, `1 - dot(viewDir, n)` is `1 - eyeHeight/dist` — so an ungated rim

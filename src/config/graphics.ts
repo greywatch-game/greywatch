@@ -167,57 +167,45 @@ export const graphics = {
     blobOpacity: 0.55,
   },
   /**
-   * Outlines are coloured ink (a darkened take on the mesh's own palette
-   * colour) that thins out with distance, so far buildings stop reading as
-   * black cut-outs against the fog.
+   * The ink, as a SCREEN-SPACE edge over the depth the frame has already
+   * written — `shaders/CelInk.ts`, which owns the argument. It replaced an
+   * inverted-hull outline pass (`renderOutline`) plus a per-merge-group ink
+   * TWIN mesh, which between them drew a second copy of a large part of the
+   * map every frame.
    */
-  outlines: {
-    /** Full width this near; shrinks to minScale by farDistance. */
-    fullDistance: 14,
-    farDistance: 60,
-    minScale: 0.3,
+  ink: {
     /**
-     * Outline colour = the mesh's base colour scaled by this — the CEILING on
-     * that scale rather than the scale itself, and per CHANNEL. What is
-     * actually spent is derived per map from that map's own darkest light; see
-     * `shadeHeadroom`. No shipped map comes anywhere near this, which is the
-     * point of it being a ceiling: it bounds a map lit brightly enough that the
-     * derivation would hand the ink more of the albedo than reads as a line.
+     * How big a STEP in depth reads as a silhouette, as a fraction of the
+     * distance to the pixel — dimensionless on purpose, so one doorway reads
+     * the same at 5 m and at 50 and no map has to state its own number.
      */
-    tintFactor: 0.3,
+    silhouette: 0.02,
     /**
-     * How much of the DARKEST light on a map the ink may return.
+     * How sharply the surface has to BEND to read as a crease, on the same
+     * scale-free footing. This is the term that catches a box corner, where
+     * depth is continuous and only its slope jumps, and it is why no normal
+     * buffer is needed: under a perspective projection 1/z is linear in screen
+     * space across any plane, so the centre against what its neighbours
+     * predict is exactly zero on a flat surface at any angle — a floor seen
+     * edge-on included — and large at a corner.
+     */
+    crease: 0.06,
+    /**
+     * What an inked pixel keeps of the colour it had, per channel.
      *
-     * The ink is a fraction of the ALBEDO drawn with no lighting at all, while
-     * the surface under it is that albedo times the light on it — so the line
-     * reads as ink only while it sits under that light term, and inverts into a
-     * bright halo as soon as the surface is darker than the ink.
-     * `CelMaterialFactory.setEnvironment` derives the working ink from the flat
-     * ambient at the occlusion bake's floor, per channel, which is the least
-     * light the shader can put on any pixel of any cel-shaded mesh — so the ink
-     * is under it as a matter of arithmetic rather than of this number being
-     * chosen generously. See `inkState` in `shaders/CelShader.ts` for the three
-     * things that were darker than the previous reference, and the measurement
-     * that found them.
-     *
-     * **What is left for this to cover is the WEATHERING**, which is the one
-     * thing that darkens a surface after the light has been applied:
-     * `albedoVariation.amount` is peak-to-peak, so a wall can arrive at 0.93 of
-     * its palette colour while the ink beside it is minted from the colour
-     * itself. 0.9 clears that with a little to spare, and doubles as the margin
-     * that keeps the line visible rather than exactly equal to the surface at
-     * the floor. Raise `albedoVariation.amount` and this has to come down with
-     * it.
+     * **The hull's `tintFactor` was a CEILING with a per-map derivation under
+     * it (`shadeHeadroom`, `inkState`) and this needs neither, which is the
+     * one simplification the mechanism buys outright.** All of that existed
+     * because the hull's ink was UNLIT: a fraction of the albedo drawn with no
+     * light term, laid over a surface that had one, so it inverted into a
+     * bright halo the moment the surface was darker than the ink, and the
+     * working value had to be derived from the darkest light each map could
+     * put on any pixel. A screen-space line multiplies the pixel that is
+     * ALREADY THERE, lit, shadowed, fogged and weathered, so it is under the
+     * light term as a matter of arithmetic and cannot invert whatever the map
+     * does. It is a constant again.
      */
-    shadeHeadroom: 0.9,
-    /**
-     * Fallback ink for materials with no flat base colour to darken — roads and
-     * the terrain, which are textured. **A ceiling like `tintFactor`**: the
-     * same per-map floor clamps it, because a constant dark grey is a LIGHT
-     * line on a night map's cobble. It is the weaker of the two bounds, and
-     * `inkColorFor` says why.
-     */
-    fallbackColor: "#12141a",
+    tint: 0.28,
   },
   /**
    * Toon specular: one hard two-band Blinn highlight from the key light,

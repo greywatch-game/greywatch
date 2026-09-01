@@ -169,8 +169,6 @@ export const bots = {
   detourProbe: 1.6,
   /** Distance past which the pose is frozen (still translates). */
   lodFreezeDistance: 35,
-  /** Distance past which outlines are dropped. */
-  lodOutlineDistance: 20,
   /**
    * Distance past which the rig is not drawn at all — the fog wall, where
    * there is nothing to see. The bot keeps integrating, so the battle line

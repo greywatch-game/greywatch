@@ -339,13 +339,6 @@ export class NetSoldier implements Combatant, RagdollSubject {
     for (const mesh of this.rig.meshes) mesh.setEnabled(on);
   }
 
-  /** Matches `Bot.setOutlines` — every emissive part opts out via `noOutline`. */
-  setOutlines(on: boolean): void {
-    for (const mesh of this.rig.meshes) {
-      if (!mesh.metadata?.noOutline) mesh.renderOutline = on;
-    }
-  }
-
   /**
    * A net body is shot at like any other, but the DAMAGE is not decided here.
    *

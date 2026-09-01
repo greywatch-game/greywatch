@@ -68,10 +68,10 @@ import { CONFIG } from "../config";
 import {
   CelMaterialFactory,
   fogAmountAt,
-  updateOutlineScales,
 } from "../shaders/CelShader";
 import { GodRays } from "../shaders/GodRays";
 import { HorrorPost } from "../shaders/HorrorPost";
+import { CelInk } from "../shaders/CelInk";
 import { MotionBlur } from "../shaders/MotionBlur";
 import { Bot } from "../entities/Bot";
 import { difficultyNames } from "../entities/BotSkill";
@@ -422,6 +422,11 @@ export class Game {
   private godRaysAttached = true;
   private godRaysSlot = 0;
   private motionBlur: MotionBlur;
+  /**
+   * The ink. One full-screen edge over the depth the frame already wrote —
+   * `shaders/CelInk.ts` owns the argument and the measurements.
+   */
+  private celInk: CelInk;
   /** The environment the sky is currently painted for — see applySky(). */
   private skyEnv: EnvironmentSpec | null = null;
   private player: Player;
@@ -916,6 +921,15 @@ export class Game {
     // emissive color, so neon/reticle/tracer meshes bloom while bright
     // non-emissive surfaces stay crisp.
     const g = CONFIG.graphics;
+    // THE INK GOES ON FIRST, and the ordering is the whole of why it is
+    // constructed here rather than beside the other three passes. A
+    // `PostProcess` given a camera attaches itself, and `attachPostProcess`
+    // APPENDS — so what is built first runs first. The ink is part of the
+    // PICTURE and not a grade over one: FXAA below then antialiases the lines
+    // it draws (they come off a depth buffer, which has no antialiasing of its
+    // own), and the shafts, the smear and the grain all land on top of inked
+    // geometry rather than under it.
+    this.celInk = new CelInk(this.scene, this.cameraSys.camera);
     const pipeline = new DefaultRenderingPipeline("post", false, this.scene, [
       this.cameraSys.camera,
     ]);
@@ -3316,7 +3330,10 @@ export class Game {
       layout: this.mapDef.layout,
       environment: this.mapDef.environment,
       fixtures: this.lighting.fixtures,
-      applyEnvironment: (env) => applyEnvironment(this.scene, env, this.mats),
+      applyEnvironment: (env) => {
+        applyEnvironment(this.scene, env, this.mats);
+        this.celInk.applyEnvironment();
+      },
       invalidateShadows: () => this.shadows.invalidate(),
     });
     // Open where the player was standing, looking the way they were looking.
@@ -3714,6 +3731,10 @@ export class Game {
     // fog and key light off the uniforms this writes.
     const env = this.mapDef.environment;
     applyEnvironment(this.scene, env, this.mats);
+    // The ink fades over the MAP's fog band, so it owes a re-read here and at
+    // the editor's own call above — an ink that kept the previous map's band
+    // would either hang in front of the fog wall or vanish inside it.
+    this.celInk.applyEnvironment();
     this.applySky();
     const map = this.installMap();
 
@@ -6847,7 +6868,6 @@ export class Game {
         player.floorY,
       );
     }
-    updateOutlineScales(this.cameraSys.camera.position);
     if (player) {
       const lc = CONFIG.lighting;
       // The map decides whether the player carries a lamp at all. A carried

@@ -50,7 +50,6 @@ import {
   type BaseTexture,
   Color3,
   Matrix,
-  Mesh,
   Scene,
   ShaderLanguage,
   ShaderMaterial,
@@ -62,7 +61,6 @@ import {
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
-import { refreshOutlineFog, setOutlineFog } from "./OutlineFog";
 // The shared includes self-register in the IncludesShadersStoreWGSL; import
 // them explicitly so the #include<cel...> lines below can never be tree-shaken
 // away, and so registration is provably before the first effect COMPILE rather
@@ -1580,109 +1578,6 @@ export class CelMaterialFactory {
     return mat;
   }
 
-  /**
-   * The INK for a surface that moves — an inverted hull drawn through this
-   * shader instead of through Babylon's outline pass.
-   *
-   * **It exists because Babylon's hull cannot follow a vertex-animated
-   * surface, and that is a fact about its renderer rather than a taste.**
-   * `OutlineRenderer.isReady` builds its effect with a hardcoded attribute list
-   * of position and normal — `const color = false`, literally — and a hardcoded
-   * `uniformsNames` with no clock in it. So the hull can see neither the wind
-   * nor the per-vertex weight, and a swaying leaf leans out from under a shell
-   * left standing at the rest pose: a third of a metre against a five
-   * centimetre line, which reads as a dark ghost of the still canopy hanging
-   * behind the moving one. Everything the hull needs is already in THIS shader,
-   * so the answer is to draw it here.
-   *
-   * Three things fall out of that which are worth having on their own:
-   *
-   * - **The width is thinned per VERTEX**, against the same eye the fog uses,
-   *   rather than per mesh by `updateOutlineScales`. That is a correction:
-   *   `BlockMerge` hands out meshes that span the whole fog band (measured: 50
-   *   of 687), and the ink's COLOUR fade was already moved per pixel for
-   *   exactly that reason. This is the width catching up.
-   * - **The fade is the surface's own**, computed from the same `fogParams`
-   *   and `mistParams` in the same block, so the line over a wall dissolves on
-   *   the curve the wall dissolves on. `OutlineFog` has to bake literals into
-   *   Babylon's shader and drop compiled programs to get half of this, and
-   *   cannot get the ground mist at all.
-   * - **It is ONE draw rather than two.** Babylon renders an opaque mesh's
-   *   outline twice — once before with depth-write off, once after with
-   *   colour-write off to repair the depth buffer. An inverted hull with
-   *   `cullBackFaces = false` and ordinary depth state needs neither pass.
-   *
-   * Keyed on the SOURCE material's name rather than on a hex, so `inkColorFor`
-   * resolves exactly the colour `outlineInkFor` would have given the same
-   * surface, and a matte and a translucent green get their own entries the way
-   * they already do everywhere else in this cache.
-   */
-  getInk(sourceName: string): ShaderMaterial {
-    const cacheKey = `\0ink-${sourceName}`;
-    let mat = this.cache.get(cacheKey);
-    if (!mat) {
-      // The world's ink is the one that has no single albedo to be derived
-      // from, so it takes the palette exactly as its surface does and resolves
-      // per pixel. Everything else is one colour and resolves on the CPU in
-      // `applyEnvironment`.
-      const paletted = sourceName === WORLD_CEL_NAME;
-      mat = new ShaderMaterial(
-        `${INK_PREFIX}${sourceName}`,
-        this.scene,
-        { vertex: "cel", fragment: "cel" },
-        {
-          attributes: paletted
-            ? [...CelMaterialFactory.PALETTE_ATTRIBUTES]
-            : [...CelMaterialFactory.ATTRIBUTES],
-          uniforms: paletted
-            ? [...CelMaterialFactory.UNIFORMS, "celPalette"]
-            : [...CelMaterialFactory.UNIFORMS],
-          samplers: [...CelMaterialFactory.SAMPLERS],
-          defines: paletted
-            ? ["#define CEL_INK", "#define CEL_PALETTE"]
-            : ["#define CEL_INK"],
-          shaderLanguage: ShaderLanguage.WGSL,
-        },
-      );
-      if (paletted) this.applyPalette(mat);
-      // Culling is ON and it is the FRONT faces that go: an inverted hull is
-      // the back of an expanded copy, which is why this needs no ordering
-      // against the surface it wraps. Inside the silhouette the back faces are
-      // behind the real surface and lose the depth test; outside it they are
-      // the nearest thing there is, and that ring is the line.
-      mat.backFaceCulling = true;
-      mat.cullBackFaces = false;
-      // `inkColor` is NOT set here: the tint is the environment's, so
-      // `applyEnvironment` below owns it and is the one writer — the same
-      // arrangement the fog and the light terms are under.
-      const o = CONFIG.graphics.outlines;
-      mat.setVector4(
-        "inkParams",
-        new Vector4(INK_WIDTH, o.fullDistance, o.farDistance, o.minScale),
-      );
-      this.applyCamera(mat);
-      this.applyWind(mat);
-      this.applyEnvironment(mat);
-      // **The ink samples no shadow and is still BOUND one, because a sampler
-      // that is DECLARED has to be bound whether or not the variant reads
-      // it.** `SAMPLERS` is one list for every cel variant, so `CEL_INK`
-      // carries `shadowMap` into the bind group layout like all the others,
-      // and a layout entry with nothing behind it is not the harmless no-op it
-      // was under WebGL2 — the bind group fails to build and the draw is lost
-      // with it. Measured on Hollowmere: two swaying merge groups, two ink
-      // twins, `Failed to read the 'resource' property from
-      // 'GPUBindGroupEntry'` and a black frame.
-      //
-      // This is NOT the migration's scaffolding and does not come out with it.
-      // What comes out is the `if` in `applyShadow`, if the map ever stops
-      // being bound after the materials exist. Point lights are the same shape
-      // and need no equivalent: they are UNIFORMS, and an unwritten uniform in
-      // a UBO reads as zeros rather than failing.
-      this.applyShadow(mat);
-      this.cache.set(cacheKey, mat);
-    }
-    return mat;
-  }
 
   /**
    * The same flat cel colour as get(), but with the translucency band enabled
@@ -1980,50 +1875,11 @@ export class CelMaterialFactory {
     // materials this call is about to write. It owns its own invalidation —
     // notably it must NOT be given `outlineEntries`, which leaves out every
     // viewmodel mesh.
-    setOutlineFog(this.scene, fogState.color, fogState.start, fogState.end);
     // And the third pass that never runs the cel shader: the unlit emissive
     // materials behind every window, flame and tracer.
     setEmissiveFog(fogState.color, fogState.start, fogState.end);
     this.mistColor = env.mistColor;
     this.mistParams.set(env.mistHeight, env.mistStrength);
-    // The ink's tint is DERIVED from the two light terms just stored, and it is
-    // settled here — before the walk below, which is what pushes it onto every
-    // CEL_INK material. See `inkState`: an unlit line over a lit surface is only
-    // a line while it is the darker of the two, and what a map calls dark is the
-    // map's own business.
-    const o = CONFIG.graphics.outlines;
-    const floor = darkestLight(this.ambientColor).scale(o.shadeHeadroom);
-    // Per channel against its own ceiling, because both are a statement about
-    // the same thing: the ink may be as dark as it likes and never brighter
-    // than what it is drawn beside.
-    const tint = new Color3(
-      Math.min(o.tintFactor, floor.r),
-      Math.min(o.tintFactor, floor.g),
-      Math.min(o.tintFactor, floor.b),
-    );
-    // The flat ink is bounded the same way, and it is the same bug when it is
-    // not: Hollowmere's road network is `cel-ground-*`, so it wears
-    // `fallbackColor` — rgb(0.070, 0.078, 0.102) against a cobble that measures
-    // (0.038, 0.054, 0.075) under the night ambient, a light line down every
-    // street. What this cannot promise is what the tinted ink can: a fallback
-    // has no albedo to scale, so it is bounded as if the surface were WHITE and
-    // a dark enough texture can still out-dark it. That is the honest limit of
-    // an ink for a material whose colour cannot be recovered, and it is why the
-    // authored value stays the ceiling rather than being replaced.
-    const fallbackCeil = Color3.FromHexString(o.fallbackColor);
-    const fallback = new Color3(
-      Math.min(fallbackCeil.r, floor.r),
-      Math.min(fallbackCeil.g, floor.g),
-      Math.min(fallbackCeil.b, floor.b),
-    );
-    if (!tint.equals(inkState.tint) || !fallback.equals(inkState.fallback)) {
-      inkState.tint = tint;
-      inkState.fallback = fallback;
-      // Babylon's hull holds its colour per MESH and is never walked by the
-      // cache below, so the half of the ink that is not a cel material is
-      // re-inked here.
-      reinkOutlines();
-    }
     this.cache.forEach((mat) => this.applyEnvironment(mat));
   }
 
@@ -2139,11 +1995,6 @@ export class CelMaterialFactory {
       this.camPos.copyFrom(camPos);
       this.cache.forEach((mat) => this.applyCamera(mat));
     }
-    // A bake that arrived before Babylon had dynamically imported the outline
-    // shaders is still outstanding; this is where it lands. No-op otherwise.
-    // Outside the guard: it is not about the camera, and a bake landing on a
-    // frame the player happened to be standing still for would be dropped.
-    refreshOutlineFog(this.scene);
   }
 
   /**
@@ -2315,25 +2166,6 @@ export class CelMaterialFactory {
     const variation = CONFIG.graphics.albedoVariation;
     mat.setFloat("variationScale", 1 / Math.max(0.001, variation.metersPerCell));
     mat.setFloat("variationAmount", variation.amount);
-    // CEL_INK materials only, and the SOURCE material's name is recovered from
-    // this one's — `inkColorFor` needs the palette colour, and the ink material
-    // is the only thing that still knows which one it was drawn for. The tint
-    // it scales by is the environment's (see `inkState`), so it is re-derived
-    // on every change exactly as the light terms above are, and this is already
-    // the walk that runs on creation and on every change alike.
-    if (mat.name.startsWith(INK_PREFIX)) {
-      const source = mat.name.slice(INK_PREFIX.length);
-      // The world's ink carries the TINT and multiplies the albedo in per
-      // vertex, because one material stands for every colour in the village and
-      // there is no single albedo to fold in here. The product a pixel ends up
-      // with is the same `albedo * tint` per channel `inkColorFor` computes for
-      // everything else — which is the arithmetic, not the aesthetic, that
-      // keeps an ink under the light term (see `inkState`).
-      mat.setColor3(
-        "inkColor",
-        source === WORLD_CEL_NAME ? inkState.tint : inkColorFor(source),
-      );
-    }
   }
 
   /** The eye the shader fogs and rims against. See `camPos` for why on create. */
@@ -2505,86 +2337,7 @@ export class CelMaterialFactory {
  */
 const fogState = { color: new Color3(0.05, 0.06, 0.08), start: 24, end: 78 };
 
-/**
- * The working ink: how much of a mesh's own albedo its outline returns, PER
- * CHANNEL, plus the flat ink for the meshes that have no albedo to return.
- *
- * **`CONFIG.graphics.outlines.tintFactor` and `fallbackColor` are CEILINGS on
- * these two, not the values.** The ink is unlit — that is the whole of the
- * `CEL_INK` branch, and Babylon's outline fragment shader is
- * `fragmentOutputs.color = uniforms.color` and nothing else — while the
- * surface under it is `albedo * light`. So an ink is a line only while it sits
- * UNDER that light term, and inverts into a bright halo the moment the surface
- * goes darker than it does.
- *
- * That is not hypothetical, and it was not fixed by deriving the tint from the
- * shaded FLOOR, which is what this used to do: a scalar 0.6 of the luma of
- * `ambient + skyFill * 0.5` describes a vertical face in shadow that is fully
- * unoccluded, and three separate things in the frame are darker than that.
- * Measured by rendering each map twice from the menu's own vantage — once as
- * shipped and once with every outline and ink twin off — and asking how many of
- * the pixels the ink pass touched it made BRIGHTER: Hollowmere 47.8%, Greyfen
- * 40.6%, Coldharbour 38.3%, Harrowmead 45.7%. It was never one map's problem.
- * The three:
- *
- * - **Occlusion.** `vBaked.w` multiplies both ambient terms and the bake runs
- *   the full [0.45, 1] its strength allows, so the darkest a shaded face gets
- *   is `1 - CONFIG.ao.strength` of what the old reference assumed — and the
- *   places it reaches are creases, eaves and doorways, which is exactly where
- *   outlines are densest.
- * - **The sky fill is not there at all on an underside.**
- *   `band(0.5 + 0.5 * n.y, 3.0)` is 0 for `n.y <= -1/3`, so every soffit, sill
- *   and branch-bottom in the game receives the flat ambient and nothing else —
- *   the old reference credited it with half the fill.
- * - **A scalar tint against a coloured light.** The ink is `albedo * tint` per
- *   CHANNEL and the surface is `albedo * light` per channel, so one number
- *   compared against a LUMA inverts in whichever channel the map's ambient is
- *   weakest in. On Greyfen (a green ambient) that is the blue: the old tint
- *   0.099 sat above a blue ambient of 0.087 before occlusion was applied at
- *   all.
- *
- * So the ink is now the albedo under the darkest light the shader can actually
- * put on it — `ambient * (1 - ao.strength)`, per channel — and being under that
- * is a property of the arithmetic rather than of a headroom number being
- * generous enough. What it costs is brightness: the four maps' inks are 2.2x
- * to 2.9x darker than they were, which is the amount by which they were wrong.
- * What it keeps is the colour, and more of it than a scalar did — the ink now
- * carries the map's own ambient hue as well as the mesh's, so Hollowmere's
- * lines are blue where Greyfen's are green.
- *
- * `setEnvironment` is the only writer, so the ink and the light it is judged
- * against cannot describe different weather — the rule `fogState` above is
- * kept by, for the same reason.
- */
-const inkState = {
-  /** Per channel, because the light it has to stay under is coloured. */
-  tint: new Color3(1, 1, 1).scale(CONFIG.graphics.outlines.tintFactor),
-  /** The same, for the ink that has no albedo to scale — see `inkColorFor`. */
-  fallback: Color3.FromHexString(CONFIG.graphics.outlines.fallbackColor),
-};
 
-/**
- * The darkest light the cel shader can put on a surface, per channel: the flat
- * ambient alone, at the occlusion bake's floor.
- *
- * Every other term is either absent here by construction or additive on top of
- * it. The key light is gated by the shadow map and this is the shadowed case;
- * the sky fill is gated by `band(0.5 + 0.5 * n.y, 3.0)`, which is exactly 0 on
- * anything facing down past -1/3 (keep the two in step if that band count ever
- * moves); the point lights, the rim and the specular all only add. So
- * `light >= ambient * ao >= ambient * (1 - strength)` holds for every pixel of
- * every cel-shaded mesh in the game, which is what makes an ink derived from it
- * a line rather than a halo — not a tuning that happens to hold.
- *
- * **The occlusion floor is a REAL floor and not a pessimistic one.** The bake's
- * alpha comes out across the whole [0.45, 1] the strength allows (see
- * `world/vertexShading.ts`), and a mesh with no colour buffer reads the
- * disabled attrib's 1 — so rigs, the viewmodel and every effect mesh are
- * brighter than this rather than darker, and their ink is safe for free.
- */
-function darkestLight(ambient: Color3): Color3 {
-  return ambient.scale(1 - CONFIG.ao.strength);
-}
 
 /**
  * The wind's bearing, normalised once.
@@ -2595,25 +2348,7 @@ function darkestLight(ambient: Color3): Color3 {
  * normalises the same pair for its own material — two readers of one bearing,
  * which is exactly what moving it out of `CONFIG.grass` bought.
  */
-/**
- * The ink hull's width in metres, matching what `MapBuilder` hands
- * `addOutline` for the same world geometry — 0.05, the world's line weight.
- *
- * Not in `CONFIG.graphics.outlines` beside the four numbers it is spent with,
- * because those four are about the FADE and this is the one thing the callers
- * of `addOutline` already state per call site (the viewmodel's is 0.004 and a
- * grenade's is 0.02). The swaying geometry is all world geometry, so there is
- * one value and it is that one.
- */
-const INK_WIDTH = 0.05;
 
-/**
- * The prefix `getInk` mints its materials under, and the one thing that makes
- * an ink material recognisable after the fact — `applyEnvironment` recovers the
- * SOURCE material's name from it to re-derive the tint on an environment
- * change, the same way `inkColorFor` recovers a palette colour from `cel-`.
- */
-const INK_PREFIX = "cel-ink-";
 
 /**
  * The name of the one material every matte surface in the village wears.
@@ -2651,133 +2386,19 @@ export function fogAmountAt(dist: number): number {
 }
 
 /**
- * Outlined meshes and the width they were authored at, so
- * updateOutlineScales() can thin the ink with distance. Entries for disposed
- * meshes (the map is rebuilt every round) are pruned lazily on the next pass.
- * The ink's own fade is NOT here — it is per pixel, in `OutlineFog`.
+ * The same curve's two ends, for the one reader that evaluates it PER PIXEL in
+ * a shader of its own rather than calling `fogAmountAt` per mesh.
+ *
+ * `CelInk` is that reader. It owes the curve for the reason stated above — an
+ * unfogged line hangs in front of the fog wall at full strength while the wall
+ * behind it dissolves — and it is the map's band and not a constant, so it has
+ * to be read after `setEnvironment` rather than captured once. Handed out as
+ * the raw pair because the shader needs the ends to interpolate between, where
+ * every other caller wants the answer.
  */
-const outlineEntries: { mesh: Mesh; width: number }[] = [];
-
-/**
- * Ink for a mesh: a darkened take on its own cel colour, so outlines read as
- * coloured line work instead of a uniform black cut-out. The factory names
- * flat materials `cel-#rrggbb` (matte), `cel-gloss-#rrggbb` (specular) or
- * `cel-trans-#rrggbb` (translucent), which is how the colour is recovered
- * here; a ground-textured material has no palette colour to recover and gets
- * the neutral fallback ink.
- */
-function outlineInkFor(mesh: Mesh): Color3 {
-  return inkColorFor(mesh.material?.name ?? "");
+export function fogBand(): { start: number; end: number } {
+  return { start: fogState.start, end: fogState.end };
 }
 
-/**
- * The same ink, resolved from a material NAME rather than from a mesh.
- *
- * Split out because the ink is now drawn two ways and both must arrive at the
- * same colour: Babylon's outline pass takes it per mesh through
- * `outlineInkFor`, and `getInk` takes it per material for the geometry that
- * sways — where Babylon's hull cannot follow. A second darkening rule would
- * put two different lines on one map.
- *
- * The tint it scales by is `inkState`'s, which is the MAP's rather than a
- * constant, so both readers owe a re-resolve on an environment change:
- * `reinkOutlines` for the hull, `applyEnvironment` for the cel materials.
- */
-export function inkColorFor(materialName: string): Color3 {
-  const m = /^cel-(?:gloss-|trans-)?(#(?:[0-9a-fA-F]{6}))$/.exec(materialName);
-  if (m) {
-    // Per channel: the ink is the albedo under the darkest light this map can
-    // put on it, which is a colour and not a scale. See `inkState`.
-    return Color3.FromHexString(m[1]).multiply(inkState.tint);
-  }
-  return inkState.fallback.clone();
-}
 
-/**
- * Enables bold outlines on a mesh and all of its children — coloured ink that
- * updateOutlineScales() thins with distance. Meshes tagged
- * `metadata.noOutline` (glows, holo reticles) are skipped.
- */
-export function addOutline(mesh: Mesh, width = 0.045): void {
-  const apply = (m: Mesh) => {
-    if (m.metadata && m.metadata.noOutline === true) return;
-    m.renderOutline = true;
-    m.outlineColor = outlineInkFor(m);
-    m.outlineWidth = width;
-    outlineEntries.push({ mesh: m, width });
-  };
-  apply(mesh);
-  for (const child of mesh.getChildMeshes()) {
-    if (child instanceof Mesh) apply(child);
-  }
-}
 
-/**
- * Re-inks every registered outline for a new tint. Called only from
- * `setEnvironment`, and only when the derived tint actually moved.
- *
- * **The outline REGISTRY is the right set here where it is the wrong one for
- * the fog.** `OutlineFog.dropCompiled` has to walk the whole scene because
- * `ViewModel` sets `renderOutline` by hand and never registers — but it does
- * not need to be reached from here at all, because the viewmodel inks itself
- * BLACK rather than from `inkColorFor`, so there is no derived tint of its to
- * be stale. What the registry does carry, and what makes this necessary rather
- * than tidy, is the POOLED bot rigs: built once and alive across every map
- * change, so a rig inked under Hollowmere would go on wearing that tint through
- * Greyfen's forest for the rest of the session.
- *
- * The map's own geometry is inked at build time and would be correct either
- * way, since `installMap` mints it after the environment is pushed. This does
- * not rely on that ordering, which is the point of doing it at all.
- */
-function reinkOutlines(): void {
-  for (let i = outlineEntries.length - 1; i >= 0; i--) {
-    const e = outlineEntries[i];
-    if (e.mesh.isDisposed()) {
-      outlineEntries[i] = outlineEntries[outlineEntries.length - 1];
-      outlineEntries.pop();
-      continue;
-    }
-    e.mesh.outlineColor = outlineInkFor(e.mesh);
-  }
-}
-
-/**
- * Re-scales every registered outline for the camera's current position: full
- * width up close, thinning to `outlines.minScale` at the fog wall, so distant
- * silhouettes stay shaped instead of filling in. Meshes whose outlines were
- * LOD-dropped (bots past `lodOutlineDistance` — `renderOutline` false) are
- * left alone; their authored width returns when the LOD flips them back on.
- * Called once per frame from Game.
- *
- * **Width only — the ink's colour is not this function's to fade.** Distance
- * here is per mesh (the bounding sphere's near point), which a width can live
- * with and a colour cannot: `BlockMerge` gives one mesh per 48 m block, so a
- * per-mesh ink fade leaves the far half of a block in clear ink over a wall
- * that has already gone to fog. That fade is per pixel, baked into the outline
- * shader by `OutlineFog`. Thinning is not a substitute for it either —
- * `minScale` still leaves a line, and a line of un-fogged ink is exactly as
- * visible as a thick one.
- */
-export function updateOutlineScales(camPos: Vector3): void {
-  const o = CONFIG.graphics.outlines;
-  for (let i = outlineEntries.length - 1; i >= 0; i--) {
-    const e = outlineEntries[i];
-    if (e.mesh.isDisposed()) {
-      outlineEntries[i] = outlineEntries[outlineEntries.length - 1];
-      outlineEntries.pop();
-      continue;
-    }
-    if (!e.mesh.renderOutline) continue;
-    const sphere = e.mesh.getBoundingInfo().boundingSphere;
-    const d = Math.max(
-      0,
-      Vector3.Distance(sphere.centerWorld, camPos) - sphere.radiusWorld,
-    );
-    const t = Math.min(
-      1,
-      Math.max(0, (d - o.fullDistance) / (o.farDistance - o.fullDistance)),
-    );
-    e.mesh.outlineWidth = e.width * (1 - t * (1 - o.minScale));
-  }
-}

@@ -2105,17 +2105,42 @@ looks like. But the prize shrinks with this entry: the world's glow occluders go
 409 -> 88, leaving the layer mostly the 237 soldier-rig meshes rather than the
 village. **Take that number after this lands, not before.**
 
-Replacing the OUTLINE with a screen-space edge is the half to leave alone. It is
-not a generic edge — it is per-material coloured ink, applied selectively
-through `noOutline`, thinned per mesh by `updateOutlineScales` and fogged per
-pixel by `OutlineFog` — so a screen-space version needs an ink-id attachment,
-which means every draw in the main pass has to participate, the compute ash
-field and the sky included. And `docs/rendering.md` carries a family of rules
-that exist BECAUSE the outline is an inverted hull with a slope-scaled depth
-offset: the thick-box rule for a walked surface, "nothing may be laid ON an
-inked surface", an emissive detail having to protrude past its neighbours'
-shells. Swapping the mechanism does not only change the look, it invalidates the
-reason a good deal of geometry is shaped the way it is.
+~~Replacing the OUTLINE with a screen-space edge is the half to leave alone.~~
+**DONE, and this paragraph was wrong in every particular that mattered.** It
+said a screen-space version needs an ink-id attachment, because the ink is
+per-material coloured, selective through `noOutline`, thinned per mesh and
+fogged per pixel. What it missed is that **every one of those four was a
+CONSEQUENCE of the ink being an unlit inverted hull**, not a requirement of the
+look: a screen-space line multiplies the pixel already there, so it is coloured
+and lit and fogged and weathered for free and cannot invert; the thinning was
+papering over a per-mesh fade the pass now does per pixel; and only `noOutline`
+was a real loss, which is still outstanding and has a cheap answer
+(`glow.mainTexture`). It also worried that swapping the mechanism invalidates
+the rules a good deal of geometry is shaped by — the thick-box rule, "nothing
+may be laid ON an inked surface", emissive details protruding past their
+neighbours' shells. It does, and that is a REFUND rather than a cost: all three
+existed because the hull wrote depth in front of what it wrapped, nothing has to
+be re-shaped, and Coldharbour's lane markings stop being invisible.
+
+**The counting in the table above is also STALE and was the load-bearing error.**
+It reports 429 outline shells on Coldharbour. Counted live on the current tree:
+**84 of 609 active meshes** — the palette merge had already taken the world out
+of Babylon's outline pass, because `cel-world` is one mesh of ten colours and
+`addOutline` is per mesh. The world's ink had moved to `MapBuilder.inkTwin`, a
+separate INVERTED-HULL MESH per merge group: **53 on Coldharbour and 144 on
+Harrowmead**, each the expensive kind of draw. So the prize was never the shells.
+
+**What landed** (`shaders/CelInk.ts`): one full-screen edge over the depth the
+frame has already written, replacing both mechanisms. `OutlineFog.ts`, the
+`CEL_INK` shader variant, `getInk`, `inkTwin`, `addOutline`,
+`updateOutlineScales`, `reinkOutlines`, the outline registry and the per-map ink
+derivation are all deleted. Measured live, uncapped, 6 s windows, spawn
+position: **Coldharbour 7.66 -> 5.80 ms (+32%), Harrowmead 9.22 -> 6.30 ms
+(+51%)**. That beats the runtime A/B that predicted it (+15.4% / +34.7%) because
+the A/B only DISABLED the twins and a disabled mesh is still walked — never
+building them takes them out of `scene.meshes` as well, active meshes 609 -> 555
+and 726 -> 582, which is finding 22's per-mesh walk cost arriving on top of the
+draws.
 
 ### Two null results and one correction, so nobody re-runs them
 

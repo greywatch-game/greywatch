@@ -20,7 +20,7 @@ import {
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
-import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
+import { type CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 // Type-only, so no runtime edge is created — the same import `Vehicle` takes
 // for the same reason. `DamageKind` lives with the shot that carries it.
@@ -802,9 +802,6 @@ export function buildSoldier(
   hipR.position.set(0.12, -0.02, 0);
   const [kneeR, ankleR] = leg("bot-legR", hipR);
 
-  for (const m of meshes) {
-    if (!m.metadata?.noOutline) addOutline(m, 0.012);
-  }
 
   const rig: SoldierRig = {
     root,

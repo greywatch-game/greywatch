@@ -26,7 +26,7 @@
  */
 import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
+import { type CelMaterialFactory } from "../shaders/CelShader";
 import { eyeDistance, PRISM_CONE, PRISM_WALL } from "./optics";
 import {
   BODY,
@@ -486,6 +486,5 @@ export function buildRocket(
   // Ink, or a dark warhead crossing a dark street is a hole in the picture
   // rather than a thing arriving — the same argument the grenade's outline
   // makes, against a body moving forty times faster.
-  addOutline(head, 0.02);
   return { mesh: head, flame };
 }

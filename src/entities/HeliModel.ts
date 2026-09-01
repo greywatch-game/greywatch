@@ -189,7 +189,6 @@ import type { Team } from "./Combatant";
 import {
   type Box,
   type Cyl,
-  inkRig,
   paintRig,
   segmentOf,
   setAntennaBend,
@@ -774,7 +773,6 @@ export function buildHeli(
     { base: whipBase, tip: whipTip, rate: 1, phase: 0 },
   ];
 
-  inkRig(meshes);
 
   const rig: VehicleRig = {
     root,

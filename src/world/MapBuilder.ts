@@ -49,7 +49,6 @@ import {
 import { CONFIG } from "../config";
 import { kindOf, type VehicleKind } from "../entities/vehicleKinds";
 import {
-  addOutline,
   MAX_PALETTE,
   type CelMaterialFactory,
 } from "../shaders/CelShader";
@@ -1064,7 +1063,6 @@ export class MapBuilder {
             // whatever it overlaps, which is a black patch at every junction);
             // the selection highlight shows a road's extent instead.
           } else {
-            addOutline(merged, 0.05);
           }
           visuals.push(merged);
         } else if (isRoad) {
@@ -1181,7 +1179,6 @@ export class MapBuilder {
         material: this.mats.getWorldCel(),
       }),
     )) {
-      if (!merged.metadata?.noOutline) addOutline(merged, 0.05);
       visuals.push(merged);
     }
     // Published before anything draws and after the merge that discovers it —
@@ -1254,18 +1251,6 @@ export class MapBuilder {
     // by the same amount, and cannot drift from the surface it wraps. Baking
     // afterwards would walk the same vertices a second time to write them the
     // same values.
-    //
-    // Before `markVisual`, because the twin needs the same freeze, the same
-    // `isPickable = false` and the same disposal as every other visual — and
-    // pushing it into `visuals` is what gets it all three. It is a VISUAL in
-    // every sense the rest of this file means: no collider, no box, no pick.
-    record("inkTwins", () => {
-      for (const m of [...visuals]) {
-        const twin = inkTwin(m, this.mats);
-        if (twin) visuals.push(twin);
-      }
-    });
-
     record("markVisual", () => {
       for (const m of visuals) this.markVisual(m);
     });
@@ -1455,7 +1440,6 @@ export class MapBuilder {
       // casting rim would end its shadow in a hard line that slides across open
       // ground as you walk. It is a receiver only.
       mesh.metadata = { noShadowCaster: true };
-      addOutline(mesh, 0.05);
       visuals.push(mesh);
     }
   }
@@ -1594,7 +1578,6 @@ export class MapBuilder {
       merged.position.addInPlace(origin);
       if (item) {
         tag(merged, { list: "scatter", index });
-        addOutline(merged, 0.05);
         item.visuals.push(merged);
       } else {
         blocks.add(spec.x, spec.z, merged);
@@ -2823,57 +2806,3 @@ function markSwayMerged(mesh: Mesh, layer: SwayLayer): void {
   mesh.metadata = { ...(mesh.metadata ?? {}), noOutline: true };
 }
 
-/**
- * The ink for one swaying mesh: an inverted hull sharing its geometry, drawn
- * through the cel shader's `CEL_INK` variant so it leans with the leaf.
- *
- * Returns null for everything that does not sway, which is the whole map bar
- * the foliage — Babylon's outline pass is still what draws the other 600-odd
- * meshes, and this is not a replacement for it.
- *
- * **The twin SHARES its source's `Geometry` rather than copying it**
- * (`Mesh.clone` hands the same instance to both), so eighty-odd of these cost
- * no vertex memory, no upload, and no second bake — and cannot fall out of step
- * with the surface, because there is only one buffer to fall out of step with.
- * What they do cost is one draw call each, which is still half of what the
- * outline pass was charging for the same meshes: Babylon renders an opaque
- * mesh's hull TWICE, once before it with depth-write off and once after with
- * colour-write off to repair the depth buffer.
- *
- * The four exemptions are not a precaution. A hull that cast a shadow would
- * lay a fattened copy of the canopy on the floor; one in the glow layer would
- * bloom the line; one carrying an outline of its own is the start of an
- * infinite regress; and one in a REFLECTION list is a room a cube probe is
- * parked inside, which comes back as six faces of flat ink — see
- * `ReflectionSystem`'s `opaqueWorld`, where the measurement is. That fourth one
- * was latent for as long as the foliage was the only thing twinned, because a
- * canopy is small and Greyfen glazes almost nothing; giving the whole village
- * twins is what made it the loudest thing in the frame.
- */
-function inkTwin(mesh: Mesh, mats: CelMaterialFactory): Mesh | null {
-  // Two callers now and one twin either way. A swaying mesh needs this because
-  // Babylon's hull cannot see the wind; a paletteised one because that hull is
-  // one colour per mesh and a merged block is many — see `mergeByMaterial`,
-  // which sets the mark. A mesh that is both still gets exactly one twin, and
-  // the twin's material is the same `getInk` answer in both cases.
-  if (!swayLayerOf(mesh) && mesh.metadata?.inkTwin !== true) return null;
-  const source = mesh.material;
-  if (!source) return null;
-  const twin = mesh.clone(`${mesh.name}-ink`, mesh.parent, true);
-  if (!twin) return null;
-  twin.material = mats.getInk(source.name);
-  twin.metadata = {
-    noOutline: true,
-    noGlow: true,
-    noShadowCaster: true,
-    noReflect: true,
-    // The block travels, because a twin came from the same one its source did
-    // and `WorldCulling` files both by it. A twin left behind when its source
-    // goes out of the frame is an INVERTED HULL drawn on its own, which is a
-    // solid silhouette in the fog rather than a line around anything. It
-    // cannot reach `ReflectionSystem.encloses`, the other reader of this key,
-    // because `noReflect` above takes it out of every probe's list first.
-    block: mesh.metadata?.block,
-  };
-  return twin;
-}

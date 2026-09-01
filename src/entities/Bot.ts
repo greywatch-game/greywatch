@@ -618,13 +618,6 @@ export class Bot implements Combatant {
     this.syncTransform();
   }
 
-  /** LOD hook: distant bots stop animating but keep moving. */
-  setOutlines(on: boolean): void {
-    for (const m of this.rig.meshes) {
-      if (!m.metadata?.noOutline) m.renderOutline = on;
-    }
-  }
-
   /**
    * `from` is the shooter's origin. `CombatSystem.fire` has always passed it and
    * this class used to drop it on the floor, which is why a bot shot in the back

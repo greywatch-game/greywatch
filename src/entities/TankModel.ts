@@ -74,7 +74,6 @@ import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import {
-  inkRig,
   paintRig,
   segmentOf,
   setAntennaBend,
@@ -692,7 +691,6 @@ export function buildTank(
   // fired from here starts outside the hull's own collider box.
   muzzle.position.set(0, 0, 0.45 + BARREL_LENGTH + 0.2);
 
-  inkRig(meshes);
 
   const rig: VehicleRig = {
     root, hull, sprung, turret, gun, muzzle,

@@ -105,7 +105,6 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import {
   type Box,
-  inkRig,
   paintRig,
   segmentOf,
   setAntennaBend,
@@ -785,7 +784,6 @@ export function buildTruck(
     { base: whipBase, tip: whipTip, rate: 1, phase: 0 },
   ];
 
-  inkRig(meshes);
 
   const rig: VehicleRig = {
     root,

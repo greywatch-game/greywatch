@@ -336,8 +336,9 @@ and another does not.
 **There is ONE wind and everything that leans in it leans the same way** —
 `CONFIG.wind`, clocked by `CelMaterialFactory.updateWind` beside the grass
 field's clock rather than the shader's eye, because a pause that holds the world
-must hold the canopy. **Anything a collider stands in for may never sway**, and
-**a swaying merge group draws its own ink** through `MapBuilder.inkTwin`.
+must hold the canopy. **Anything a collider stands in for may never sway**. A swaying group used to
+need an ink TWIN because Babylon's hull could not follow the wind; the ink is a
+screen-space pass now and gets sway for free.
 
 **Water is a MIRROR with a dark body under it, and it is SAMPLED FROM NOTHING** —
 directional wave trains, no normal map, and re-adding one brings back four rules
@@ -349,8 +350,10 @@ GLAZED BLOCK** — not one for the map, not one per material. Glass you cannot i
 `Build.pane({ backed })`, which composites the mass behind it arithmetically and
 therefore writes DEPTH; **it pays only if the pane is drawn first**, which is why
 `Game`'s constructor sorts the opaque queue FRONT TO BACK, and **`backed` is a
-claim about the WORLD that nothing throws over**. **No pane of either kind is
-outlined or a shadow caster.**
+claim about the WORLD that nothing throws over**. **No pane of either kind is a shadow
+caster**, and see-through glazing writes no depth, so the ink does not find it
+either — a `backed` pane does write depth and is inked like the mass it stands
+for.
 
 **The frame WALKS the scene, and the scene is the map** — Babylon evaluates
 every mesh in it every frame before it has decided anything, at ~1 us each, so
@@ -501,10 +504,18 @@ moves. **The rungs are tiny because a road is a sheet OVER the floor and almost
 nothing else knows it is there** — a bullet's dust disc clears the ground by
 20 mm and is the tightest of them — so the ladder stays inside the 10 mm a road
 already stood proud by; what a map SOWS on a street is put on the street instead
-(`roadTopAt`). **Any of it works only because NO ROAD IS INKED**: an outline hull
-stamps depth 5 cm above the sheet it wraps, which painted every mixed junction
-black, and no lift beats it since the shell rides with the slab. Do not put the
-ink back, and do not give two surfaces one rank.
+(`roadTopAt`). Do not give two surfaces one rank.
+
+**A road is still not inked, and it is now UNINKABLE rather than forbidden** —
+which is the one rule in this family the screen-space ink retired outright.
+Under the hull, ink was geometry: an inverted shell stamping depth 5 cm above
+the sheet it wrapped, which painted every mixed junction black in whichever of
+the two road meshes the sort drew second, and no lift could beat it because the
+shell rode with the slab. `CelInk` finds an edge by asking whether depth STEPS
+or BENDS, and two coplanar sheets do neither, so a carriageway laid across
+another produces no line at all and needs no rule to stop it. The ladder above
+survives untouched because it is not about ink: it settles a per-pixel depth
+tie between two coplanar meshes, which is still exactly as real.
 
 **That ladder settles a CROSSING and cannot settle the FLOOR**: 10 mm of
 geometry is spent by ~100 m against a depth buffer whose step at the far end of
@@ -691,15 +702,17 @@ misbehaves silently:
   the queries as `GameMap.rayGroups` instead, which is why that list is on the
   map rather than only in the bake. Declared by `Build.strut`, merged per
   placement, baked in groups. Today it is fence posts and rails.
-- `noOutline: true` — skipped by `addOutline()`. Every emissive part (eyes, flames,
-  signs, reticle) needs it. Outlines are coloured ink (a darkened take on the mesh's
-  own cel colour), thinned with distance per mesh by `updateOutlineScales()` and
-  faded into the fog per pixel by `OutlineFog`. **How far it is darkened is the
-  MAP's**, derived by `setEnvironment` PER CHANNEL from `ambient * (1 -
-  ao.strength)` — the darkest light the shader can put on any pixel: the ink is
-  unlit and the surface under it is not, so a tint above that light term inverts
-  into a bright halo, and deriving it from anything but the true floor leaves the
-  creases, the undersides and the weakest channel still inverted.
+- `noOutline: true` — **VESTIGIAL, and the one flag here that currently decides
+  nothing.** It meant "skipped by `addOutline()`", and the ink is a screen-space
+  edge over the depth buffer now (`shaders/CelInk.ts`), which has never heard of
+  a mesh. It is still SET in a dozen places and still read by
+  `mergeByMaterial`'s exemption key, so a group carrying it still merges apart
+  — which is why removing it is not free and has not been done. **What it used
+  to buy and nothing currently buys is keeping the ink off every emissive part**
+  (eyes, flames, signs, reticle); the ink inks them. The cheap way back is
+  `glow.mainTexture`, which `GlowDepth` made full-resolution and emissive-only,
+  sampled as a mask. Until that lands, treat this flag as a merge hint and not
+  as an ink rule.
 - `noGlow: true` — excluded from the `GlowLayer` in the `Game` constructor. Only
   meshes existing at construction time are scanned. A mesh that stays in bloom
   is faded with distance instead (`customEmissiveColorSelector`), and
@@ -708,21 +721,22 @@ misbehaves silently:
 - `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers
   (ground, roads) need it: casting from them is pure shadow acne.
 - `noReflect: true` — excluded from every cube probe's render list
-  (`ReflectionSystem.opaqueWorld`). Today it is the ink twins and only them, and
-  it is not a tidiness flag: an ink twin is an INVERTED HULL, which is a thin
-  line seen from outside and a sealed room seen from within, and a probe parked
-  against a tower's glass stands inside its own block's hull. All six faces come
-  back one flat ink colour and the glazing reflects a grey card. Measured on
-  Coldharbour's curtain wall at 85% of the frame's pixels.
+  (`ReflectionSystem.opaqueWorld`). **It has NO WRITER any more**, and the
+  mechanism is kept rather than deleted because what it defends against is a
+  property of geometry and not of the thing that used to have it: the ink twins
+  were INVERTED HULLS, a thin line seen from outside and a SEALED ROOM seen from
+  within, and a probe parked against a tower's glass stood inside its own
+  block's hull — all six faces one flat colour, the glazing reflecting a grey
+  card, measured on Coldharbour's curtain wall at 85% of the frame's pixels.
+  Anything inside-out that is ever added back owes this flag on the same
+  argument.
 - `block: "3,2"` — which map block a merged visual came from (the block's side
   is `MapLayout.blockSize`, 48 m by default). A **value**,
   like `surface`, and **absent on everything that is not block-merged — the
   terrain, the roads and the rim**, which is what keeps the landform out of
   both tests that read it. Written in three places and they must agree:
-  `BlockMerge.finish`, `PaneBlocks.finish` for the glazing hung on the same
-  building, and `inkTwin`, which carries its source's — a twin is an INVERTED
-  HULL, so one left behind when its source goes is a solid silhouette rather
-  than a line. **Two readers.** `ReflectionSystem.encloses`: a probe drops its
+  `BlockMerge.finish` and `PaneBlocks.finish` for the glazing hung on the same
+  building. **Two readers.** `ReflectionSystem.encloses`: a probe drops its
   own building from its bake, and since the albedo palette took the colour out
   of the merge key there is no longer any geometry-shaped way to ask which
   building a mesh IS. And `WorldCulling`, which files every mesh carrying one

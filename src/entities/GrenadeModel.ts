@@ -17,7 +17,7 @@
  */
 import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { addOutline, type CelMaterialFactory } from "../shaders/CelShader";
+import { type CelMaterialFactory } from "../shaders/CelShader";
 
 /** One grenade's meshes. The pip is parented to the body and moves with it. */
 export interface GrenadeMeshes {
@@ -65,7 +65,6 @@ export function buildGrenade(
   // Ink, or a dark green sphere in a night game is invisible against the
   // ground it is rolling across — which for the one object the player has to
   // notice arriving is the whole ball game.
-  addOutline(mesh, 0.02);
   return { mesh, pip };
 }
 
