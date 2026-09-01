@@ -8,9 +8,12 @@
  * uniforms, uploaded by LightingSystem once per frame. Flat/faceted shading is
  * recovered in the fragment shader from screen-space derivatives — NEVER call
  * convertToFlatShadedMesh(). Output is display-ready color, which is why
- * pipeline.imageProcessingEnabled must stay false. Output is also opaque —
- * fragmentOutputs.color's alpha is 1 for every variant but getGlass(), the world's one
- * alpha-blended material, which writes a Fresnel alpha, needs no depth write
+ * pipeline.imageProcessingEnabled must stay false. Output is also opaque, and
+ * an opaque cel fragment writes `opaqueAlpha` rather than 1 — the frame's alpha
+ * channel is TRANSLUCENT COVERAGE and a probe's is the cube's own mask, so the
+ * two passes want opposite values out of the same line (see that uniform, and
+ * CelInk). Every variant but getGlass() writes it; that one, the world's one
+ * alpha-blended material, writes a Fresnel alpha, needs no depth write
  * (see there, and MapBuilder's pane rules), carries the one depth bias in
  * the renderer — GLASS_DEPTH_UNITS, without which a pane past ~100 m is not
  * drawn at all — and is the one variant that samples anything the renderer
@@ -387,6 +390,18 @@ uniform mistColor: vec3f;
 uniform mistParams: vec2f; // x = height falloff, y = strength
 uniform camPos: vec3f;
 
+// WHAT AN OPAQUE FRAGMENT WRITES INTO THE ALPHA CHANNEL, and it is 0 in the
+// frame and 1 in a probe's bake because that channel means two different
+// things in the two passes. In the FRAME it is TRANSLUCENT COVERAGE, which
+// CelInk reads to know how much smoke got between it and the depth it is
+// drawing an edge off — see that file. In a reflection PROBE it is the cube's
+// own coverage mask, which is how the glazing below tells the city from the
+// sky above it (city.a), and there it has to be 1 or the bake comes back
+// empty. CelMaterialFactory.setOpaqueAlpha is the flip and
+// ReflectionSystem is its only caller, on the same two hooks that lend the
+// bake the probe's eye.
+uniform opaqueAlpha: f32;
+
 // Albedo weathering: cell size (as 1/metres) and peak-to-peak swing. Uniforms
 // rather than literals so the pair can be judged live against a wall.
 uniform variationScale: f32;
@@ -576,7 +591,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     col *= uniforms.celPalette[u32(fragmentInputs.vPalette + 0.5) - 1u];
   }
   #endif
-  var alpha = 1.0;
+  // Opaque: see opaqueAlpha.
+  var alpha = uniforms.opaqueAlpha;
   #else
   var n = facetNormal();
 
@@ -902,7 +918,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   col += uniforms.transColor * band(through, 2.0) * shadow;
 
   // Opaque unless this is glazing, and the whole of what makes a pane a pane.
-  var alpha = 1.0;
+  // What "opaque" WRITES is not 1 — see opaqueAlpha.
+  var alpha = uniforms.opaqueAlpha;
 
 #ifdef CEL_GLASS
   // A window is two layers over one another and nothing else in the world is:
@@ -1176,6 +1193,7 @@ export class CelMaterialFactory {
     "mistColor",
     "mistParams",
     "camPos",
+    "opaqueAlpha",
     "pointPos",
     "pointColor",
     "pointRange",
@@ -1346,6 +1364,8 @@ export class CelMaterialFactory {
    * origin needs no walk, because the cache is already there.
    */
   private readonly camPos = Vector3.Zero();
+  /** See `setOpaqueAlpha`. The FRAME's value, which is what a material is born with. */
+  private opaqueAlpha = 0;
 
   /**
    * The wind's clock, in seconds of WORLD time — see `updateWind` for why that
@@ -1998,6 +2018,25 @@ export class CelMaterialFactory {
   }
 
   /**
+   * What an OPAQUE cel fragment writes into the alpha channel: 0 for the frame,
+   * 1 for a reflection bake. The argument is on `opaqueAlpha` in the fragment
+   * source; this is only the walk.
+   *
+   * Guarded like `updateCamera` and for the same reason, and it wins by more:
+   * this moves on the frames a probe bakes and on no others, so a round that is
+   * not installing a map never walks the cache for it at all. It is seeded on
+   * create through `applyCamera`, which every one of the six creation paths
+   * already calls — the same thing that pays for the guard there pays for it
+   * here, since skipping a walk is only sound while the cache cannot hold a
+   * material the walk has never visited.
+   */
+  setOpaqueAlpha(alpha: number): void {
+    if (alpha === this.opaqueAlpha) return;
+    this.opaqueAlpha = alpha;
+    this.cache.forEach((mat) => mat.setFloat("opaqueAlpha", alpha));
+  }
+
+  /**
    * Copies the eye the cache is currently holding into `out`.
    *
    * For the one caller that has to BORROW it: `ReflectionSystem` renders the
@@ -2168,9 +2207,17 @@ export class CelMaterialFactory {
     mat.setFloat("variationAmount", variation.amount);
   }
 
-  /** The eye the shader fogs and rims against. See `camPos` for why on create. */
+  /**
+   * WHOSE PASS this material is about to be drawn for: the eye it fogs and rims
+   * against, and what it writes into that pass's alpha channel. See `camPos`
+   * for why on create, and `opaqueAlpha` in the fragment for why the second one
+   * is not a constant — the two facts move together and both are owned by
+   * `ReflectionSystem`, which is the only thing in the tree that draws the
+   * world from anywhere but the player's head.
+   */
   private applyCamera(mat: ShaderMaterial): void {
     mat.setVector3("camPos", this.camPos);
+    mat.setFloat("opaqueAlpha", this.opaqueAlpha);
   }
 
   /**

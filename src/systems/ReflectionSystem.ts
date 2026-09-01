@@ -194,6 +194,11 @@ export class ReflectionSystem {
     });
     scene.onAfterRenderTargetsRenderObservable.add(() => {
       this.mats.updateCamera(this.savedEye);
+      // And the frame's own meaning for the alpha channel, put back on the same
+      // hook and for the same reason: what the bake borrows, the main pass of
+      // this same frame has to find as it left it. Guarded, so on the thousands
+      // of frames that bake nothing this is a comparison.
+      this.mats.setOpaqueAlpha(0);
     });
     // Probe 0 exists before any map does, because `MapBuilder` asks for a
     // glazing material during the build and that material has to be born with
@@ -666,7 +671,11 @@ export class ReflectionSystem {
     const rtt = probe.cubeTexture;
     // Transparent black, and the alpha is the load-bearing half: it is how the
     // shader tells the city from the sky above it. Everything drawn here is a
-    // cel material, and every cel variant but the glazing writes alpha 1.
+    // cel material, and a cel material writes `opaqueAlpha` — which is 0 in the
+    // frame, where that channel is translucent coverage for the ink, and is
+    // flipped to 1 for the length of a bake by the hook above. Without that
+    // flip a cube comes back with alpha 0 everywhere and both readers
+    // (`city.a` in the glazing, `cube.a` in the water) see nothing but sky.
     rtt.clearColor = new Color4(0, 0, 0, 0);
     // The world is static, so a bake is not a per-frame cost at all. `build`
     // and `bakeWater` are the only things that ever ask for another one, and
@@ -685,6 +694,12 @@ export class ReflectionSystem {
     // faces of one probe cost one walk of the material cache between them.
     rtt.onBeforeRenderObservable.add(() => {
       this.mats.updateCamera(probe.position);
+      // A cel fragment's alpha means the CUBE's coverage in here and translucent
+      // coverage out in the frame, and the two are opposite — see
+      // `CelMaterialFactory.setOpaqueAlpha` and the `clearColor` below. Guarded
+      // the same way, so the six faces of one probe cost one walk between them
+      // and the restore above costs one more.
+      this.mats.setOpaqueAlpha(1);
     });
     // **And the face is asked what it can SEE, which is the one question the
     // bake had never been asked.** See `faceOf`. It is registered here rather

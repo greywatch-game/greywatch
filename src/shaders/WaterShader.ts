@@ -574,8 +574,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
       / (uniforms.fogParams.y - uniforms.fogParams.x), 0.0, 1.0);
   col = mix(col, uniforms.fogColor, fog * fog);
 
-  // Last thing before the write, because the write is the quantiser.
-  fragmentOutputs.color = vec4f(dither(col), 1.0);
+  // Last thing before the write, because the write is the quantiser. Alpha 0
+  // and not 1, for the reason the grass writes 0: the frame's alpha channel is
+  // TRANSLUCENT COVERAGE and the water is opaque (the body under it is what
+  // makes it dark, not a blend). See CelInk. It is in no probe's render list
+  // either, so there is nothing to flip for a bake.
+  fragmentOutputs.color = vec4f(dither(col), 0.0);
 }
 `;
 

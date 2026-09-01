@@ -251,8 +251,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let fog = clamp((dist - uniforms.fogParams.x) / (uniforms.fogParams.y - uniforms.fogParams.x), 0.0, 1.0);
   col = mix(col, uniforms.fogColor, fog * fog);
 
-  // Last thing before the write, because the write is the quantiser.
-  fragmentOutputs.color = vec4f(dither(col), 1.0);
+  // Last thing before the write, because the write is the quantiser. Alpha 0
+  // and not 1: a blade is opaque, and the frame's alpha channel is TRANSLUCENT
+  // COVERAGE — what the ink reads to know how much smoke is in front of the
+  // depth it is drawing an edge off. See CelInk. Grass is in no reflection
+  // probe's render list (those are map.visuals), so unlike the cel shader it
+  // needs no uniform to say which pass it is in.
+  fragmentOutputs.color = vec4f(dither(col), 0.0);
 }
 `;
 

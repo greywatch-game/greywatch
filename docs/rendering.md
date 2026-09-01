@@ -212,6 +212,38 @@ about 0.4 m of world geometry, so distance names the viewmodel with no per-mesh
 data at all. That is the one place `FINDINGS.md` 18 said an ink-id attachment
 would be needed, and it is not.
 
+**The frame's ALPHA CHANNEL is translucent coverage, and that is a rule the
+whole renderer keeps rather than one this pass owns.** A depth buffer cannot say
+that smoke got between the pass and the geometry it is drawing an edge off:
+nothing alpha-blended writes depth, and the capture markers must not
+(`disableDepthWrite` — a marker may never hide what it marks), so an edge
+derived from the bodies behind a plume was painted over the plume at full
+strength and read as ink floating in FRONT of the effect. The channel nothing
+was using carries the answer. Everything opaque writes **0** into it —
+`CelShader`'s `opaqueAlpha` uniform, and a literal 0 in `GrassShader` and
+`WaterShader` — `applyEnvironment` clears to 0, and every alpha-blended draw
+accumulates into it with no help at all, because Babylon's `ALPHA_COMBINE`
+blends the alpha channel as (ONE, ONE). The pass then does `edge *= 1 -
+saturate(a)` and writes 1 back out. **So it costs no pass, no target and not
+even a texture read**: it is the fourth channel of the sample the shader already
+took, and nothing downstream ever sees it.
+
+Four things share that channel and each was checked in the tree rather than
+assumed. The glow layer composes with `ALPHA_ADD`, whose alpha factors are
+(ZERO, ONE), so a bloom cannot claim coverage it does not have. An ADDITIVE
+effect leaves the channel alone and should — a flare adds light rather than
+hiding what is behind it. The GLAZING writes its Fresnel alpha, so ink behind a
+window is attenuated by how opaque the window is, which is what you want and is
+visible on Coldharbour's parked cars. And a REFLECTION PROBE wants the OPPOSITE
+value out of the same line, because in a cube that channel is the bake's own
+coverage mask — the thing `city.a` and `cube.a` read to tell the city from the
+sky above it. That is the whole reason `opaqueAlpha` is a uniform rather than a
+constant: `ReflectionSystem` flips it to 1 for the length of a bake, on the same
+two hooks that already lend the bake the probe's eye, and a walk of the material
+cache therefore happens only on the frames a probe renders. Get that flip wrong
+and the cube comes back alpha 0 everywhere and every pane reflects nothing but
+sky.
+
 **It inks the terrain, the grass, the water and the debris, none of which the
 hull touched, and that is kept.** Every blade of grass writes depth, so every
 blade is a silhouette; what it reads as is denser, darker grass. A judgement,

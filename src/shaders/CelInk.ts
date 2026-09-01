@@ -5,6 +5,9 @@
  * Invariants: it runs FIRST in the post chain, before the god rays and the
  * blur and the grade, because it is part of the picture rather than a grade
  * over one — shafts and grain belong on top of inked geometry, not under it.
+ * Running first is also what lets it read the frame's alpha as translucent
+ * coverage: it is the last pass that could, since every pass after it writes
+ * alpha 1.
  * It only ever DARKENS (`mix(scene, scene * tint, edge)` with tint < 1), which
  * is what makes it safe to lay over a finished frame and is worth keeping
  * true. Its shader is hand-written WGSL and `shaderLanguage` on the
@@ -68,6 +71,27 @@
  *   game, which outlived the sweep that took the pass out because it set
  *   `renderOutline` directly and never went through `addOutline`.
  *
+ * THE FRAME'S ALPHA CHANNEL IS TRANSLUCENT COVERAGE, and that is the one fact
+ * in this file that is not this file's alone. A depth buffer cannot say that
+ * smoke got between the pass and the geometry it is drawing an edge off —
+ * nothing alpha-blended writes depth, and the capture markers must not, or a
+ * marker would hide what it marks — so an edge derived from the bots behind a
+ * plume was painted over the plume at full strength. The channel nothing was
+ * using carries the answer: everything opaque writes 0 into it
+ * (`CelShader`'s `opaqueAlpha`, and a literal 0 in `GrassShader` and
+ * `WaterShader`), `applyEnvironment` clears to 0, and every alpha-blended draw
+ * accumulates into it with no help at all, because Babylon's ALPHA_COMBINE
+ * blends alpha as (ONE, ONE). **So it costs no pass, no target and no texture
+ * read** — it is the fourth channel of the sample this shader already took —
+ * and this pass writes 1 back out, so nothing downstream ever sees it. THREE
+ * things share it and each is checked in the tree rather than assumed: the glow
+ * layer composes with ALPHA_ADD, whose alpha factors are (ZERO, ONE), so a
+ * bloom cannot claim coverage it does not have; an ADDITIVE effect leaves the
+ * channel alone and should, since a flare adds light rather than hiding what is
+ * behind it; and a REFLECTION PROBE wants the opposite value out of the same
+ * line, which is why `opaqueAlpha` is a uniform and `ReflectionSystem` flips it
+ * for the length of a bake.
+ *
  * **It inks the terrain, the grass, the water and the debris, none of which the
  * hull touched, and that is KEPT.** Every blade of grass writes depth, so every
  * blade is a silhouette, and what that reads as is denser, darker grass. A
@@ -124,7 +148,9 @@ fn rawAt(p: vec2i, dims: vec2i) -> f32 {
 
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
-  let scene = textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV, 0.0).rgb;
+  // RGBA, because the alpha is doing work here — see the coverage term below.
+  let frame = textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV, 0.0);
+  let scene = frame.rgb;
 
   let nf = uniforms.nearFar;
   let dims = vec2i(textureDimensions(depthTexture, 0));
@@ -181,6 +207,25 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let emissive = textureSampleLevel(emissiveSampler, emissiveSamplerSampler, input.vUV, 0.0).rgb;
   let lit = dot(emissive, vec3f(0.2126, 0.7152, 0.0722));
   edge *= 1.0 - smoothstep(uniforms.maskBand.x, uniforms.maskBand.y, lit);
+
+  // TRANSLUCENT COVERAGE, and it is the one thing a depth buffer cannot tell
+  // this pass. Smoke and the capture columns write no depth — they must not,
+  // or a marker would hide what it marks — so the depth here is the bots and
+  // the crates BEHIND them, and their line work was landing on top of the
+  // effect at full strength, which reads as ink floating in front of it. The
+  // frame's alpha channel carries how much got in the way: everything opaque
+  // writes 0 (opaqueAlpha in CelShader, and the same 0 in the grass and the
+  // water), the clear is 0, and every alpha-blended draw accumulates into it
+  // for free, because Babylon's ALPHA_COMBINE blends the alpha channel (ONE,
+  // ONE). So this costs no pass, no target and not even a texture read — it is
+  // the channel of the sample the first line already took.
+  //
+  // It ATTENUATES rather than deletes, which is what makes it right rather than
+  // merely absent: a wall seen through thin smoke keeps a faint line, and only
+  // a fully opaque plume takes the line away. An ADDITIVE effect contributes
+  // nothing here (ALPHA_ADD leaves the channel alone) and wants to contribute
+  // nothing — a tracer's flare adds light rather than hiding what is behind it.
+  edge *= 1.0 - saturate(frame.a);
 
   // ONLY EVER DARKER. tint < 1, so no pixel can leave this pass brighter than
   // it arrived — which is what lets the ink sit over a finished frame with the

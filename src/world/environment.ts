@@ -449,7 +449,13 @@ export function applyEnvironment(
   mats: CelMaterialFactory,
 ): void {
   const sky = Color3.FromHexString(env.skyColor);
-  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
+  // Alpha 0, and it is the frame's alpha channel rather than the canvas's: that
+  // channel is TRANSLUCENT COVERAGE for `CelInk`, everything opaque writes 0
+  // into it and every alpha-blended draw accumulates into it, so the clear is
+  // where "nothing has covered this pixel yet" is stated. Nothing downstream
+  // sees it — the ink consumes it and writes 1, and the grade at the end of the
+  // chain writes 1 again.
+  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 0);
 
   const [dx, dy, dz] = env.lighting.direction;
   const lit = env.lighting;

@@ -340,6 +340,20 @@ must hold the canopy. **Anything a collider stands in for may never sway**. A sw
 need an ink TWIN because Babylon's hull could not follow the wind; the ink is a
 screen-space pass now and gets sway for free.
 
+**The frame's ALPHA CHANNEL is TRANSLUCENT COVERAGE, and every shader in the
+tree owes it.** The ink comes off DEPTH, and nothing alpha-blended writes depth
+— a capture marker must not hide what it marks — so smoke and the objective
+columns had the line work of whatever stood BEHIND them painted over the top of
+them. Everything opaque writes **0** into that channel (`CelShader`'s
+`opaqueAlpha`, a literal 0 in the grass and the water, and the clear in
+`applyEnvironment`), every alpha-blended draw accumulates into it for free
+(`ALPHA_COMBINE` blends alpha as ONE, ONE), and `CelInk` scales its edge by
+`1 - a` and writes 1 back out. It costs no pass and no target. **A REFLECTION
+PROBE inverts it**: in a cube that channel is the bake's own coverage mask —
+what the glazing and the water read to tell the city from the sky — so
+`ReflectionSystem` flips `opaqueAlpha` to 1 for the length of a bake, and a
+shader that hardcodes either value breaks one of the two passes silently.
+
 **Water is a MIRROR with a dark body under it, and it is SAMPLED FROM NOTHING** —
 directional wave trains, no normal map, and re-adding one brings back four rules
 that existed only to hide its lattice.
