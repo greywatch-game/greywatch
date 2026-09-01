@@ -372,6 +372,34 @@ something to shoot at. `HUD.LABELS` is a total map over `ScoreKind`, so a new
 award in `config/score.ts` does not compile until this file has decided what to
 call it.
 
+**`#capture-status` is UN-PANELLED, and it was the last piece of gameplay
+chrome that was not.** It said which side of a capture boundary you are standing
+on from inside a chamfered plate with a border and a near-opaque fill — the one
+thing `base.css`'s house rules name outright as what makes a HUD look like a web
+page, and `#hud-bottom` gave up for exactly that reason years earlier. This one
+kept it longest because it sits in the middle of the screen where a player
+cannot look away from it, which is the argument for the plate and, once it is
+written down, the argument against. What replaced it is a soft radial scrim with
+no edge anywhere in it: the same legibility over a lamp-lit street or bright
+sand, and because it has no boundary it reads as the screen darkening under the
+words rather than as a box laid over the village. The three lines carry the
+hierarchy the plate was standing in for — the zone loud, the meter watched, the
+state a caption under it — and the meter is skewed and segmented at the vitals
+bar's own proportions, because two meters on one HUD drawn to two ideas read as
+two different games.
+
+**Nothing on that element may carry an ANIMATION, and the reason is one line in
+`setCapture`.** The panel's className is rewritten on every whole percent the
+meter moves, a className write restarts every animation on the element, and the
+contested pulse used to live there — so it ran its first frame several times a
+second and never got any further. It is on `.cap-state` now, whose only write is
+a text node, and what it pulses is OPACITY for `#outbounds`'s reason: motion is
+what the eye catches while its owner is being shot at, and a hue change is not.
+The state line is also `nowrap`. The longest string it can hold is a contested
+zone on Sarab, where `MapLayout.perTeam` bounds the count at 24, and a second
+line would move the meter and the name under the crosshair every time the number
+crossed the width.
+
 **`#outbounds` is the one thing on the HUD that is the map's EDGE**, and it is
 the loudest thing the chrome draws for exactly that reason. On the three maps
 closed by the rim it never appears: there is a wall and the player is standing
@@ -413,6 +441,26 @@ rim would post a marker for a flag the player can already see sitting in one.
 And **the player's own arrow needs no clamp any more**: it was clamped because a
 borderland let its owner stand eighty metres off the bitmap, and a canvas clips;
 now it is the one marker with no arithmetic behind it at all.
+
+**The PLATE is translucent and the SHAPE is the canvas's, and those two are
+one decision.** The map used to paint an opaque rectangle over the village with
+its chamfer clipped in CSS and its edge drawn as a solid layer showing a pixel
+proud behind it — the `.hull` trick every chamfered panel in the interface uses.
+Thinning the plate breaks that outright: an edge layer BEHIND a see-through
+canvas is a lit rectangle rather than a line, and a CSS background under one is
+the opaque square the plate stopped being. So `Minimap.ts` owns the shape now —
+it clips the two-cut chamfer and strokes the hairline in canvas pixels, the CSS
+box and the backing store already being the same size — and `minimap.css` is
+left positioning the box and styling the compass. What that buys is the same
+thing `#hud-bottom` and `#capture-status` buy: legibility from a scrim rather
+than from a panel, and a map that sits IN the scene instead of on top of it.
+
+**Everything drawn inside it is drawn in the HUD's own face**, read off the
+element once with `getComputedStyle` rather than restated as a stack. Canvas
+takes a font as a string and inherits nothing, so the flag letters were the
+browser's UI face sitting in the corner of an interface set entirely in
+`--font` — the one thing on this map that was not the same piece of software as
+the rest of it.
 
 **What the backdrop stops at is the PLAY SQUARE**, and on a map with a
 borderland that edge is worth the pixel it costs — it is the line the leash is

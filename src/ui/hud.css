@@ -540,8 +540,10 @@
 .flag.theirs .id { color: var(--theirs); }
 /* A contested flag pulses so it reads from the corner of the eye. It has
    to be `drop-shadow` and not `box-shadow`: the hull is clipped to the
-   hexagon, and a box shadow is clipped away with the corners.
-   `#capture-status` borrows the same keyframes for the same reason. */
+   hexagon, and a box shadow is clipped away with the corners. The capture
+   panel used to borrow these keyframes and no longer does — it is
+   un-panelled now and pulses its own state line (`capPulse`), for the
+   reason written down there. */
 .flag.contested { animation: flagPulse 0.7s ease-in-out infinite alternate; }
 @keyframes flagPulse {
   from { filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
@@ -552,78 +554,129 @@
    Shown only while the player is inside a capture zone. The ring drawn
    on the ground says where the boundary is; this says which side of it
    you are on, so it sits low and centred, under the crosshair and clear
-   of the vitals and ammo. */
+   of the vitals and ammo.
+
+   **It is UN-PANELLED, for the reason `#hud-bottom` is.** It used to be a
+   chamfered plate with a border and a near-opaque fill, which is the one
+   thing base.css's house rules name outright as what makes a HUD look
+   like a web page — and it was the last piece of gameplay chrome still
+   doing it, sitting in the middle of the screen where it is least
+   avoidable. What replaced the plate is a soft radial scrim with no edge
+   anywhere in it: it carries the same legibility over a lamp-lit street
+   or bright sand, and because it has no boundary it reads as the screen
+   getting darker under the words rather than as a box laid over the
+   village.
+
+   Three lines with three weights, which is the hierarchy the plate was
+   doing instead of: the zone is the loud one, the meter is the thing
+   being watched, and the state is a caption under it. */
 #capture-status {
   position: absolute;
   left: 50%;
   bottom: 104px;
   transform: translateX(-50%);
-  width: 288px;
-  padding: 8px 12px 9px;
+  width: 304px;
+  padding: 12px 20px 13px;
   text-align: center;
-  --cham: 11px;
+  background: radial-gradient(
+    ellipse 62% 62% at 50% 50%,
+    rgba(4, 6, 11, 0.62),
+    rgba(4, 6, 11, 0) 72%
+  );
 }
 #capture-status .cap-head {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 9px;
 }
-/* The letter as a chamfered chip, matching the flag strip's cells. */
+/* The letter as a chamfered chip, matching the flag strip's cells. Small:
+   it is the one saturated thing in the panel and the whole of what says
+   which team owns the ground, so it works by being the only colour rather
+   than by being big. */
 #capture-status .cap-id {
-  font-size: 14px;
+  min-width: 17px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
-  padding: 4px 7px;
-  color: #12141a;
+  padding: 3px 4px;
+  color: #10131a;
   background: var(--neutral);
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
 }
 #capture-status .cap-name {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.26em;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.92);
 }
 #capture-status.mine .cap-id { background: var(--mine); }
 #capture-status.theirs .cap-id { background: var(--theirs); }
+/* Skewed and segmented at the vitals bar's own proportions, because this
+   is the HUD's second meter and two meters drawn to two different ideas
+   read as two different games. Thinner than the vitals — that one is a
+   number you act on and this one is a clock you glance at — and the
+   notches are the health bar's pitch rather than the 10px hatch that was
+   here, which at this width was a texture rather than a scale. */
 #capture-status .cap-meter {
   position: relative;
-  height: 7px;
-  margin: 7px 0 6px;
+  height: 5px;
+  margin: 9px 0 8px;
   background: rgba(255, 255, 255, 0.1);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  transform: skewX(-20deg);
 }
 #capture-status .cap-meter-fill {
   height: 100%;
   width: 0;
   transition: width 0.15s linear;
 }
-#capture-status .cap-meter-fill.mine { background: var(--mine); }
-#capture-status .cap-meter-fill.theirs { background: var(--theirs); }
-/* Notches over the fill: a segmented meter reads as an instrument, and
-   the ticks give the eye something to measure progress against. */
-#capture-status .cap-meter .ticks {
+#capture-status .cap-meter-fill.mine {
+  background: linear-gradient(to bottom, #ffdca7, var(--mine));
+}
+#capture-status .cap-meter-fill.theirs {
+  background: linear-gradient(to bottom, #ff9089, var(--theirs));
+}
+#capture-status .cap-meter .segs {
   position: absolute;
   inset: 0;
   background: repeating-linear-gradient(
     to right,
-    transparent 0 10px,
-    rgba(0, 0, 0, 0.5) 10px 11px
+    transparent 0 22px,
+    rgba(0, 0, 0, 0.5) 22px 24px
   );
 }
 #capture-status .cap-state {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.22em;
-  color: rgba(255, 255, 255, 0.9);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  /* Never wrapped. The longest line this can hold is a contested zone on
+     Sarab — `CONTESTED — 24 ENEMIES IN ZONE`, since `MapLayout.perTeam` is
+     what bounds the count — and a second line would move the meter and the
+     name every time the number crossed the width, under the crosshair. The
+     panel is cut to fit that string; if it ever overflows it does so
+     symmetrically, into a scrim that has no edge to overflow. */
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.68);
 }
-#capture-status.contested {
-  --frame-edge: rgba(255, 90, 79, 0.75);
-  animation: flagPulse 0.7s ease-in-out infinite alternate;
+/* **The pulse is on the STATE line and not on the panel**, and that is
+   forced rather than stylistic: `HUD.setCapture` rewrites the panel's
+   className on every whole percent the meter moves, and a className write
+   restarts every animation on the element — so a pulse up here ran its
+   first frame several times a second and never got any further. This
+   element's only write is a text node.
+
+   It pulses the OPACITY, which is `#outbounds`'s idiom for the same
+   reason: what the eye catches while its owner is being shot at is
+   motion, and a hue change is not. */
+#capture-status.contested .cap-state {
+  color: var(--theirs);
+  animation: capPulse 0.7s ease-in-out infinite;
 }
-#capture-status.contested .cap-state { color: var(--theirs); }
+@keyframes capPulse {
+  50% { opacity: 0.4; }
+}
 
 /* --- bottom band: vitals and ammunition ---
    Deliberately un-panelled. The old version was two bordered cards, and

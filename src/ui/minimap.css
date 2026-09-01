@@ -1,25 +1,32 @@
 /**
- * minimap.css — The corner minimap's frame, canvas and heading mark.
- * Owns: #minimap-frame and #minimap only. The canvas's own width/height are
- * set from CONFIG.minimap.size in Minimap.ts, so the backing hull here has to
- * size itself off the element rather than restating the number.
+ * minimap.css — Where the corner minimap sits, and the heading mark above it.
+ * Owns: #minimap-frame and #minimap only.
+ *
+ * **The map's SHAPE and its PLATE are NOT here any more.** The canvas's own
+ * width/height come from CONFIG.minimap.size in Minimap.ts, and since the
+ * plate went translucent the chamfer and its hairline edge had to follow it
+ * into the canvas: a CSS edge layer sitting BEHIND a see-through canvas is a
+ * lit rectangle rather than a line, and a CSS background is an opaque square
+ * behind a map that is deliberately not one. So this file positions the box
+ * and styles the one piece of text outside it, and everything inside the
+ * rectangle is drawn.
  */
 
 /* --- minimap --- */
-/* Width/height are set from CONFIG.minimap.size in JS so the backing
-   store and the CSS box can never drift apart and blur. The frame is a
-   wrapper element (Minimap.ts) because a canvas cannot carry the corner
-   brackets itself — a pseudo-element needs a container. */
 #minimap-frame {
   position: absolute;
   top: 18px;
   left: 18px;
-  /* Its own stacking context, so the hull's `z-index: -1` puts it behind
-     the canvas and nothing else. */
+  /* Its own stacking context. Nothing sits behind the canvas any more, but
+     the compass is positioned against this box and the shadow below is the
+     element's. */
   z-index: 0;
   line-height: 0;
-  opacity: 0.94;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.7));
+  /* `drop-shadow` follows the canvas's own alpha, so the cut corners cast a
+     cut-corner shadow and the transparent ones cast none. Wider and softer
+     than a panel's: what it is for is separating a translucent map from the
+     street behind it, not putting a bevel on a plate. */
+  filter: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.6));
 }
 /* The controls are up, and on a landscape phone this is 220px of a ~390px
    screen — most of the left zone the movement thumb works in. Scaled from its
@@ -33,23 +40,10 @@
 
 #minimap {
   display: block;
-  /* Same cut corners as .frame, so the map reads as part of the set. */
-  clip-path: polygon(
-    12px 0, 100% 0, 100% calc(100% - 12px),
-    calc(100% - 12px) 100%, 0 100%, 0 12px
-  );
-  background: #0b0e12;
-}
-/* The hull, drawn a pixel proud of the canvas on every side. */
-#minimap-frame .hull {
-  position: absolute;
-  inset: -1px;
-  background: var(--edge);
-  clip-path: polygon(
-    13px 0, 100% 0, 100% calc(100% - 13px),
-    calc(100% - 13px) 100%, 0 100%, 0 13px
-  );
-  z-index: -1;
+  /* Deliberately no background and no clip-path: both are the canvas's, and a
+     CSS background here would be the opaque rectangle the plate stopped
+     being. See the header. */
+  background: transparent;
 }
 /* The heading the top of the map is pointing at — the north the map gives up
    by turning, handed back as a word.
@@ -58,16 +52,20 @@
    it is not in the corner it used to sit in: the rim now carries a lettered
    marker for every control point off the view, and a compass reading E an inch
    from a flag marker reading E is two different alphabets in one box. Nothing
-   else is up there — the ticket bar is centred and the fps counter is right. */
+   else is up there — the ticket bar is centred and the fps counter is right.
+
+   It carries its own separation, because it is the one part of this that
+   stands on the scene with no plate under it at all. */
 #minimap-frame .compass {
   position: absolute;
   bottom: 100%;
-  right: 0;
-  margin-bottom: 3px;
+  right: 1px;
+  margin-bottom: 5px;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.24em;
   line-height: 1;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.5);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }

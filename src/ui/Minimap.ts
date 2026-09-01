@@ -11,6 +11,11 @@
  * `Bot`s and in a netplay round they are the roster's `NetSoldier`s, and this
  * class must never be able to tell which — a remote human is a body on the map
  * exactly as a bot is.
+ * **The map's SHAPE and its PLATE are this file's, not the stylesheet's**: the
+ * chamfer is a canvas clip and the edge is a canvas stroke, because the plate
+ * is translucent and a CSS edge layer behind a translucent canvas is a lit
+ * rectangle rather than a line. `minimap.css` positions the box and styles the
+ * one piece of text outside it; everything inside the rectangle is drawn here.
  */
 import "./minimap.css";
 import type { Vector3 } from "@babylonjs/core";
@@ -23,13 +28,38 @@ import type { GameMap } from "../world/MapBuilder";
 // but canvas drawing needs them here.
 const COLOR_MINE = "#ffc46b";
 const COLOR_THEIRS = "#ff5a4f";
-const COLOR_NEUTRAL = "#8b8f96";
-const COLOR_TEXT = "#e8e8ea";
-/** The play square's ground, and everything past it. */
-const COLOR_GROUND = "#0b0e12";
-const COLOR_OUTSIDE = "#05070a";
+const COLOR_NEUTRAL = "#9aa4b2";
+const COLOR_TEXT = "#eef1f6";
+/**
+ * The play square's ground, and everything past it — **translucent, and that
+ * is the whole of the plate**. The HUD's own house rule is that legibility
+ * comes from a scrim rather than from an opaque panel over a moving scene
+ * (`base.css`), and this map was the last gameplay chrome still painting a
+ * solid rectangle over the village. They are dense enough that a lamp-lit
+ * street behind them cannot take a footprint off the map, and thin enough that
+ * the map sits IN the scene rather than on top of it.
+ */
+const COLOR_GROUND = "rgba(10, 13, 19, 0.84)";
+const COLOR_OUTSIDE = "rgba(4, 6, 10, 0.62)";
+/**
+ * A building footprint, stated as WHITE over the plate rather than as a flat
+ * slate, and both reasons are the line above: the mass has to lift off
+ * whatever the plate is standing on rather than off one authored ground
+ * colour, and over a translucent plate an opaque grey block is the one thing
+ * on the map that does not let the scene through.
+ */
+const COLOR_BUILDING = "rgba(158, 176, 200, 0.28)";
+/** The hairline the plate is closed with, drawn along the chamfer. */
+const COLOR_EDGE = "rgba(255, 255, 255, 0.2)";
 /** How far the player's view cone reaches, in canvas pixels. */
-const CONE_LENGTH = 30;
+const CONE_LENGTH = 32;
+/**
+ * The corner cut, in canvas pixels — the same two-cut plate `.frame` draws in
+ * CSS, and the reason the number is HERE is that the shape is clipped and
+ * stroked in canvas coordinates. The CSS box and the backing store are the
+ * same size (see the constructor), so a pixel is a pixel in both.
+ */
+const CHAMFER = 12;
 /** The eight-point compass the heading label is quantised to. */
 const CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
@@ -67,8 +97,8 @@ const CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 export class Minimap {
   private canvas: HTMLCanvasElement;
   /**
-   * The chrome around the canvas — chamfered hull and heading mark. A canvas
-   * cannot carry those itself (a pseudo-element needs a container), and the
+   * The chrome around the canvas — the heading mark, and the box the drop
+   * shadow hangs off. A canvas cannot carry a label outside itself, and the
    * frame is what `setVisible` toggles, so the two can never disagree.
    */
   private frame: HTMLElement;
@@ -89,6 +119,20 @@ export class Minimap {
   private readonly revealed = new Map<Combatant, number>();
   /** Accumulator driving the contested-flag pulse. */
   private pulseT = 0;
+  /**
+   * The HUD's own condensed grotesque, read off the element once rather than
+   * restated as a stack. Canvas takes a font as a string and inherits nothing,
+   * so a letter drawn here would otherwise be the browser's UI face sitting
+   * beside a HUD set entirely in `--font`.
+   */
+  private readonly face: string;
+  /**
+   * The view cone's fade, built once. A gradient is resolved in the space it
+   * is PAINTED in, and this one is painted with the origin at the canvas
+   * centre every time — a point that never moves — so caching it is exact
+   * rather than an approximation, and this class draws every frame of a round.
+   */
+  private cone: CanvasGradient | null = null;
 
   constructor() {
     const size = CONFIG.minimap.size;
@@ -97,19 +141,22 @@ export class Minimap {
     this.canvas.width = size;
     this.canvas.height = size;
     // Keep the CSS box and the backing store the same size, or the canvas
-    // is scaled and every blip blurs.
+    // is scaled and every blip blurs — and the chamfer clipped below is drawn
+    // in these same pixels.
     this.canvas.style.width = `${size}px`;
     this.canvas.style.height = `${size}px`;
 
     this.frame = document.createElement("div");
     this.frame.id = "minimap-frame";
     this.frame.className = "hidden";
-    this.frame.innerHTML = `<div class="hull"></div><div class="compass">↑ N</div>`;
-    // The hull is sized off the canvas, so the canvas has to be inside it.
+    this.frame.innerHTML = `<div class="compass">↑ N</div>`;
     this.compass = this.frame.querySelector(".compass")!;
     this.frame.insertBefore(this.canvas, this.compass);
     document.getElementById("hud")!.appendChild(this.frame);
     this.ctx = this.canvas.getContext("2d")!;
+    // Read after the append, so the cascade has already put `#hud`'s `--font`
+    // on it.
+    this.face = getComputedStyle(this.frame).fontFamily || "sans-serif";
   }
 
   setVisible(visible: boolean): void {
@@ -146,7 +193,7 @@ export class Minimap {
     c.fillRect(0, 0, dim, dim);
 
     // Building footprints, from the same collider data the deploy map draws.
-    c.fillStyle = "#39434a";
+    c.fillStyle = COLOR_BUILDING;
     for (const b of map.colliderBoxes) {
       if (b.w > 200 || b.d > 200) continue; // ground plane and ridge
       c.save();
@@ -161,29 +208,36 @@ export class Minimap {
       c.restore();
     }
 
-    // Home gates, so both ends of the map read at a glance.
+    // Home gates, so both ends of the map read at a glance. Outlined rather
+    // than filled, and for the reason the zone rings are: a gate is a PLACE on
+    // the map, and three solid lozenges of the loudest colour the HUD owns
+    // outshouted the flags, the friendlies and the player's own arrow.
+    c.lineWidth = 1;
     for (const s of map.spawns) {
       if (s.team === null) continue; // flag spawns are drawn per frame
       const x = toX(s.pos.x);
       const y = toY(s.pos.z);
       const color = s.team === playerTeam ? COLOR_MINE : COLOR_THEIRS;
       c.beginPath();
-      c.moveTo(x, y - 6);
-      c.lineTo(x + 6, y);
-      c.lineTo(x, y + 6);
-      c.lineTo(x - 6, y);
+      c.moveTo(x, y - 5);
+      c.lineTo(x + 5, y);
+      c.lineTo(x, y + 5);
+      c.lineTo(x - 5, y);
       c.closePath();
       c.fillStyle = color;
-      c.globalAlpha = 0.65;
+      c.globalAlpha = 0.16;
       c.fill();
+      c.globalAlpha = 0.72;
+      c.strokeStyle = color;
+      c.stroke();
       c.globalAlpha = 1;
     }
 
     // The play square's own edge, baked in rather than stroked per frame:
     // the one line on this map that is the boundary the leash measures.
-    c.strokeStyle = "rgba(255, 255, 255, 0.16)";
-    c.lineWidth = 2;
-    c.strokeRect(1, 1, dim - 2, dim - 2);
+    c.strokeStyle = "rgba(255, 255, 255, 0.13)";
+    c.lineWidth = 1;
+    c.strokeRect(0.5, 0.5, dim - 1, dim - 1);
 
     this.base = base;
   }
@@ -191,6 +245,27 @@ export class Minimap {
   /** Marks an enemy as visible for a while — wired to gunfire in Game. */
   reveal(who: Combatant): void {
     this.revealed.set(who, CONFIG.minimap.enemyRevealTime);
+  }
+
+  /**
+   * The plate's outline: the two-cut chamfer `.frame` draws in CSS, as a path
+   * in canvas pixels. `inset` moves it inward, which is how one description of
+   * the shape serves both the clip (0) and the hairline that closes it (0.5,
+   * so a 1 px stroke lands wholly inside the clip instead of half outside it
+   * and half antialiased away).
+   */
+  private outline(c: CanvasRenderingContext2D, inset: number): void {
+    const s = CONFIG.minimap.size;
+    const a = inset;
+    const b = s - inset;
+    c.beginPath();
+    c.moveTo(a + CHAMFER, a);
+    c.lineTo(b, a);
+    c.lineTo(b, b - CHAMFER);
+    c.lineTo(b - CHAMFER, b);
+    c.lineTo(a, b);
+    c.lineTo(a, a + CHAMFER);
+    c.closePath();
   }
 
   /**
@@ -218,6 +293,14 @@ export class Minimap {
     const toY = (wz: number) => (this.mapSize / 2 - wz) * scale;
     this.pulseT += dt;
     const pulse = 0.55 + 0.45 * Math.sin(this.pulseT * 9);
+
+    // The plate is translucent, so a frame that merely painted over the last
+    // one would stack its own alpha until the map was opaque. Cleared BEFORE
+    // the clip, because the clip is the shape being cleared.
+    c.clearRect(0, 0, size, size);
+    c.save();
+    this.outline(c, 0);
+    c.clip();
 
     // Ground past the play square. The backdrop covers the square itself, so
     // this only ever shows on a map with a borderland — where it is the point.
@@ -255,12 +338,12 @@ export class Minimap {
 
       c.beginPath();
       c.arc(x, y, r, 0, Math.PI * 2);
-      c.fillStyle = hexA(ownerColor, 0.16);
+      c.fillStyle = hexA(ownerColor, 0.12);
       c.fill();
       c.strokeStyle = ownerColor;
-      c.lineWidth = p.contested ? 2 : 1.25;
+      c.lineWidth = p.contested ? 1.6 : 1;
       // A contested flag pulses so it reads from the corner of the eye.
-      c.globalAlpha = p.contested ? pulse : 1;
+      c.globalAlpha = p.contested ? pulse : 0.7;
       c.stroke();
       c.globalAlpha = 1;
 
@@ -280,30 +363,44 @@ export class Minimap {
             : COLOR_THEIRS;
         const from = -Math.PI / 2 + playerYaw;
         c.beginPath();
-        c.arc(x, y, r + 2.5, from, from + Math.abs(p.meter) * Math.PI * 2);
+        c.arc(x, y, r + 3, from, from + Math.abs(p.meter) * Math.PI * 2);
         c.strokeStyle = meterColor;
         c.lineWidth = 2;
+        // Round caps: the dial is the one moving line on the map, and a
+        // squared-off end reads as a tick mark rather than as a level.
+        c.lineCap = "round";
         c.stroke();
+        c.lineCap = "butt";
       }
 
       // Upright, whichever way the map is turned: the one thing on here that
-      // has to be READ rather than merely seen.
+      // has to be READ rather than merely seen. The halo is what lets it be
+      // read over a footprint as well as over open ground, which a plain fill
+      // could only manage by being heavy enough to shout on both.
       c.save();
       c.translate(x, y);
       c.rotate(playerYaw);
+      c.font = `700 10px ${this.face}`;
+      c.shadowColor = "rgba(0, 0, 0, 0.9)";
+      c.shadowBlur = 3;
       c.fillStyle = COLOR_TEXT;
-      c.font = "bold 11px system-ui, sans-serif";
       c.fillText(p.def.id, 0, 0);
       c.restore();
     }
 
     // --- friendlies ---
+    // A dot and the dark ring that separates it from whatever it is standing
+    // on: over a pale footprint an unringed blip of much the same value simply
+    // disappears, and the ring costs one stroke.
+    c.strokeStyle = "rgba(6, 9, 14, 0.8)";
+    c.lineWidth = 1;
     c.fillStyle = COLOR_MINE;
     for (const body of bodies) {
       if (!body.alive || body.team !== playerTeam) continue;
       c.beginPath();
       c.arc(toX(body.position.x), toY(body.position.z), mr.friendlyRadius, 0, Math.PI * 2);
       c.fill();
+      c.stroke();
     }
 
     // --- enemies, only while their gunfire gives them away ---
@@ -319,6 +416,7 @@ export class Minimap {
       c.beginPath();
       c.arc(toX(body.position.x), toY(body.position.z), mr.enemyRadius, 0, Math.PI * 2);
       c.fill();
+      c.stroke();
       c.globalAlpha = 1;
     }
 
@@ -354,27 +452,27 @@ export class Minimap {
       c.translate(x, y);
       c.rotate(Math.atan2(sy, sx));
       c.beginPath();
-      c.moveTo(mr.edgeRadius + 6, 0);
-      c.lineTo(mr.edgeRadius + 0.5, -4.5);
-      c.lineTo(mr.edgeRadius + 0.5, 4.5);
+      c.moveTo(mr.edgeRadius + 5, 0);
+      c.lineTo(mr.edgeRadius + 1, -3.6);
+      c.lineTo(mr.edgeRadius + 1, 3.6);
       c.closePath();
       c.fillStyle = color;
-      c.globalAlpha = p.contested ? pulse : 0.9;
+      c.globalAlpha = p.contested ? pulse : 0.8;
       c.fill();
       c.restore();
 
       c.beginPath();
       c.arc(x, y, mr.edgeRadius, 0, Math.PI * 2);
-      c.fillStyle = "rgba(11, 14, 18, 0.85)";
+      c.fillStyle = "rgba(8, 11, 16, 0.9)";
       c.globalAlpha = 1;
       c.fill();
       c.strokeStyle = color;
-      c.lineWidth = p.contested ? 2 : 1.25;
-      c.globalAlpha = p.contested ? pulse : 1;
+      c.lineWidth = 1;
+      c.globalAlpha = p.contested ? pulse : 0.85;
       c.stroke();
       c.globalAlpha = 1;
       c.fillStyle = COLOR_TEXT;
-      c.font = "bold 9px system-ui, sans-serif";
+      c.font = `700 9px ${this.face}`;
       c.fillText(p.def.id, x, y);
     }
 
@@ -383,22 +481,38 @@ export class Minimap {
     // arithmetic behind it at all: dead centre, pointing up, every frame.
     c.save();
     c.translate(half, half);
+    if (!this.cone) {
+      // A flat wedge is a shape; a fade is a REACH. What the cone stands for
+      // is how far the player can see, which has no edge in the world either.
+      this.cone = c.createRadialGradient(0, 0, 0, 0, 0, CONE_LENGTH);
+      this.cone.addColorStop(0, "rgba(255, 255, 255, 0.2)");
+      this.cone.addColorStop(1, "rgba(255, 255, 255, 0)");
+    }
     c.beginPath();
     c.moveTo(0, 0);
-    c.arc(0, 0, CONE_LENGTH, -Math.PI / 2 - 0.62, -Math.PI / 2 + 0.62);
+    c.arc(0, 0, CONE_LENGTH, -Math.PI / 2 - 0.6, -Math.PI / 2 + 0.6);
     c.closePath();
-    c.fillStyle = "rgba(255, 255, 255, 0.10)";
+    c.fillStyle = this.cone;
     c.fill();
     c.beginPath();
-    c.moveTo(0, -5.5);
-    c.lineTo(4, 4.5);
-    c.lineTo(0, 2);
-    c.lineTo(-4, 4.5);
+    c.moveTo(0, -6.5);
+    c.lineTo(4.4, 4.6);
+    c.lineTo(0, 2.2);
+    c.lineTo(-4.4, 4.6);
     c.closePath();
+    // A halo rather than a hard black outline: at this size a 1 px stroke is a
+    // third of the arrow's own width, which is what made it read as a blob.
+    c.shadowColor = "rgba(0, 0, 0, 0.9)";
+    c.shadowBlur = 4;
     c.fillStyle = "#ffffff";
-    c.strokeStyle = "rgba(0, 0, 0, 0.8)";
-    c.lineWidth = 1;
     c.fill();
+    c.restore();
+
+    // The plate's own edge, last and inside the clip: one hairline along the
+    // chamfer, which is the whole of the frame now.
+    this.outline(c, 0.5);
+    c.strokeStyle = COLOR_EDGE;
+    c.lineWidth = 1;
     c.stroke();
     c.restore();
 

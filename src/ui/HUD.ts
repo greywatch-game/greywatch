@@ -717,7 +717,7 @@ export class HUD {
       </div>
       <div id="capture-status" class="hidden">
         <div class="cap-head"><span class="cap-id"></span><span class="cap-name"></span></div>
-        <div class="cap-meter"><div class="cap-meter-fill"></div><i class="ticks"></i></div>
+        <div class="cap-meter"><div class="cap-meter-fill"></div><i class="segs"></i></div>
         <div class="cap-state"></div>
       </div>
       <div id="hud-bottom">
@@ -1489,9 +1489,15 @@ export class HUD {
     this.lastCaptureKey = key;
     const parts = this.captureParts;
     // Rewritten wholesale rather than toggled, which is also what clears the
-    // `hidden` the null branch above puts back on. `frame` has to be re-stated
-    // here — it is what draws the panel's chamfered hull.
-    this.capture.className = `frame zone ${status.owner}${
+    // `hidden` the null branch above puts back on.
+    //
+    // **Nothing on this element may carry an ANIMATION, and that is what this
+    // line costs.** A className written from JS restarts every animation on
+    // the element, and this one is written on every whole percent the meter
+    // moves — so the contested pulse that used to live here restarted several
+    // times a second and never advanced past its first frame. It is on
+    // `.cap-state` instead, whose only write is a text node.
+    this.capture.className = `zone ${status.owner}${
       status.contested ? " contested" : ""
     }`;
     parts.id.textContent = status.id;
