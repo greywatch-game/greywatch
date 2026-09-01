@@ -30,13 +30,18 @@
      It stops WELL short of `--ov-scale`'s 0.45, and that is the constraint
      this ladder is really written against: a control smaller than about 44 CSS
      px is one a thumb misses, so past this point the room has to come from
-     somewhere else. It does — `--hud-touch` in base.css shrinks the gauges
-     that were sitting in these corners. Scaling the controls further instead
-     would trade a legible HUD for an unusable one. */
+     somewhere else. It does — `#hud.touching` in base.css takes a fifth off
+     the ladder every gauge sitting in these corners is stated in. Scaling the
+     controls further instead would trade a legible HUD for an unusable one. */
   --tscale: 1;
 }
-@media (max-height: 620px) { #touch { --tscale: 0.82; } }
-@media (max-height: 430px) { #touch { --tscale: 0.72; } }
+/* On the SHORT side of the viewport, whichever side that is. Held sideways it
+   is the height, which is what this ladder was written against; held upright it
+   is the width, and a 260 px cluster on a 390 px-wide screen is two thirds of
+   the glass. One ladder answering to either side rather than two, so the two
+   cases cannot disagree about what a phone is. */
+@media (max-width: 620px), (max-height: 620px) { #touch { --tscale: 0.82; } }
+@media (max-width: 430px), (max-height: 430px) { #touch { --tscale: 0.72; } }
 #touch.hidden { display: none; }
 
 /* --- the two zones ---

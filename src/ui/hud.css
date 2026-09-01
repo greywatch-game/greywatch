@@ -46,11 +46,11 @@
 #hud-fps {
   position: absolute;
   z-index: 13;
-  top: 18px;
-  right: 20px;
+  top: calc(18 * var(--hud-u));
+  right: calc(20 * var(--hud-u));
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: calc(12 * var(--hud-u));
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.62);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
@@ -58,7 +58,7 @@
 #hud-fps span {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: calc(4 * var(--hud-u));
 }
 #hud-fps b {
   text-align: right;
@@ -76,13 +76,13 @@
    rate has already told you something is odd, so they are set smaller and
    dimmer rather than given equal weight. Each number carries a min-width so
    a field crossing 9 -> 10 or 99 -> 100 does not shuffle the two beside it. */
-#hud-fps .fps-main b { min-width: 34px; font-size: 15px; }
-#hud-fps .fps-main em { font-size: 9px; }
+#hud-fps .fps-main b { min-width: calc(34 * var(--hud-u)); font-size: calc(15 * var(--hud-mid)); }
+#hud-fps .fps-main em { font-size: calc(9 * var(--hud-cap)); }
 #hud-fps .fps-sub {
   color: rgba(255, 255, 255, 0.4);
 }
-#hud-fps .fps-sub b { min-width: 26px; font-size: 11px; }
-#hud-fps .fps-sub em { font-size: 8px; color: rgba(255, 255, 255, 0.24); }
+#hud-fps .fps-sub b { min-width: calc(26 * var(--hud-u)); font-size: calc(11 * var(--hud-cap)); }
+#hud-fps .fps-sub em { font-size: calc(8 * var(--hud-cap)); color: rgba(255, 255, 255, 0.24); }
 
 /* --- killfeed ---
    Flat lines with a colour flag on the outer edge, not bordered boxes:
@@ -90,13 +90,13 @@
    ignore until one of them has your name on it. */
 #killfeed {
   position: absolute;
-  top: 104px;
-  right: 20px;
+  top: calc(104 * var(--hud-u));
+  right: calc(20 * var(--hud-u));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 3px;
-  font-size: 12px;
+  gap: calc(3 * var(--hud-u));
+  font-size: calc(12 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.1em;
   /* Names arrive as CONFIG.teams entries ("Valeguard"), and mixed case
@@ -105,9 +105,9 @@
 }
 .kill {
   display: flex;
-  gap: 8px;
+  gap: calc(8 * var(--hud-u));
   align-items: center;
-  padding: 4px 9px 4px 14px;
+  padding: calc(4 * var(--hud-u)) calc(9 * var(--hud-u)) calc(4 * var(--hud-u)) calc(14 * var(--hud-u));
   border-right: 2px solid rgba(255, 255, 255, 0.28);
   background: linear-gradient(to right, transparent, rgba(6, 8, 13, 0.72));
   transition: opacity 0.6s ease-out;
@@ -119,9 +119,9 @@
 /* The kill glyph as a chamfered chip: it reads as a slot on the line
    rather than as a piece of punctuation between two names. */
 .kill .x {
-  font-size: 10px;
+  font-size: calc(10 * var(--hud-cap));
   line-height: 1;
-  padding: 3px 5px;
+  padding: calc(3 * var(--hud-u)) calc(5 * var(--hud-u));
   color: #cfd6e2;
   background: rgba(255, 255, 255, 0.1);
   clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px);
@@ -151,20 +151,20 @@
    actually reading downward every time another award landed. */
 #scorefeed {
   position: absolute;
-  right: 34px;
-  bottom: 190px;
+  right: calc(34 * var(--hud-u));
+  bottom: calc(190 * var(--hud-u));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
-  font-size: 12px;
+  gap: calc(2 * var(--hud-u));
+  font-size: calc(12 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.14em;
 }
 .score-line {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: calc(8 * var(--hud-u));
   color: rgba(255, 255, 255, 0.62);
   transition: opacity 0.5s ease-out;
   animation: scoreIn 0.16s ease-out;
@@ -175,7 +175,7 @@
    which is what makes a line about YOU rather than about the round — the
    killfeed's `.mine` tint is the same idea one panel over. */
 .score-line b {
-  font-size: 17px;
+  font-size: calc(17 * var(--hud-mid));
   font-weight: 800;
   letter-spacing: 0.02em;
   color: var(--hot);
@@ -432,28 +432,28 @@
    are losing" is a shape rather than a subtraction. */
 #ticket-bar {
   position: absolute;
-  top: 14px;
+  top: calc(14 * var(--hud-u));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: calc(12 * var(--hud-u));
 }
 #ticket-bar .side {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  min-width: 168px;
+  gap: calc(8 * var(--hud-u));
+  min-width: calc(168 * var(--hud-u));
 }
 #ticket-bar .side.mine { justify-content: flex-end; }
 #ticket-bar .tag {
-  font-size: 11px;
+  font-size: calc(11 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.22em;
   color: rgba(255, 255, 255, 0.55);
 }
 #ticket-bar .n {
-  font-size: 26px;
+  font-size: calc(26 * var(--hud-mid));
   font-weight: 800;
   letter-spacing: 0.03em;
   line-height: 1;
@@ -463,11 +463,11 @@
 /* Running out is the round ending, so it gets the one animated readout
    in the top band. */
 #ticket-bar .n.critical { animation: pulse 0.9s ease-in-out infinite; }
-#ticket-bar .gauge { display: flex; gap: 5px; }
+#ticket-bar .gauge { display: flex; gap: calc(5 * var(--hud-u)); }
 #ticket-bar .track {
   position: relative;
-  width: 108px;
-  height: 7px;
+  width: calc(108 * var(--hud-u));
+  height: calc(7 * var(--hud-u));
   background: rgba(255, 255, 255, 0.11);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
   overflow: hidden;
@@ -491,17 +491,17 @@
    element and `.core` is the dark inset that leaves a 2px rim. */
 #flag-strip {
   position: absolute;
-  top: 58px;
+  top: calc(58 * var(--hud-u));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 7px;
+  gap: calc(7 * var(--hud-u));
 }
 .flag {
   --hex: polygon(50% 0, 100% 26%, 100% 74%, 50% 100%, 0 74%, 0 26%);
   position: relative;
-  width: 36px;
-  height: 42px;
+  width: calc(36 * var(--hud-u));
+  height: calc(42 * var(--hud-u));
   clip-path: var(--hex);
   background: var(--neutral);
 }
@@ -530,7 +530,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 15px;
+  font-size: calc(15 * var(--hud-mid));
   font-weight: 800;
   letter-spacing: 0.06em;
   color: #d3d9e2;
@@ -573,10 +573,10 @@
 #capture-status {
   position: absolute;
   left: 50%;
-  bottom: 104px;
+  bottom: calc(104 * var(--hud-u));
   transform: translateX(-50%);
-  width: 304px;
-  padding: 12px 20px 13px;
+  width: calc(304 * var(--hud-u));
+  padding: calc(12 * var(--hud-u)) calc(20 * var(--hud-u)) calc(13 * var(--hud-u));
   text-align: center;
   background: radial-gradient(
     ellipse 62% 62% at 50% 50%,
@@ -588,24 +588,24 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
+  gap: calc(9 * var(--hud-u));
 }
 /* The letter as a chamfered chip, matching the flag strip's cells. Small:
    it is the one saturated thing in the panel and the whole of what says
    which team owns the ground, so it works by being the only colour rather
    than by being big. */
 #capture-status .cap-id {
-  min-width: 17px;
-  font-size: 12px;
+  min-width: calc(17 * var(--hud-u));
+  font-size: calc(12 * var(--hud-cap));
   font-weight: 800;
   line-height: 1;
-  padding: 3px 4px;
+  padding: calc(3 * var(--hud-u)) calc(4 * var(--hud-u));
   color: #10131a;
   background: var(--neutral);
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
 }
 #capture-status .cap-name {
-  font-size: 12px;
+  font-size: calc(12 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.26em;
   color: rgba(255, 255, 255, 0.92);
@@ -620,8 +620,8 @@
    here, which at this width was a texture rather than a scale. */
 #capture-status .cap-meter {
   position: relative;
-  height: 5px;
-  margin: 9px 0 8px;
+  height: calc(5 * var(--hud-u));
+  margin: calc(9 * var(--hud-u)) 0 calc(8 * var(--hud-u));
   background: rgba(255, 255, 255, 0.1);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
   overflow: hidden;
@@ -643,12 +643,12 @@
   inset: 0;
   background: repeating-linear-gradient(
     to right,
-    transparent 0 22px,
-    rgba(0, 0, 0, 0.5) 22px 24px
+    transparent 0 calc(22 * var(--hud-u)),
+    rgba(0, 0, 0, 0.5) calc(22 * var(--hud-u)) calc(24 * var(--hud-u))
   );
 }
 #capture-status .cap-state {
-  font-size: 10px;
+  font-size: calc(10 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.2em;
   /* Never wrapped. The longest line this can hold is a contested zone on
@@ -690,20 +690,20 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  padding: 26px 34px;
+  padding: calc(26 * var(--hud-u)) calc(34 * var(--hud-u));
 }
-#hud-left { display: flex; flex-direction: column; gap: 5px; }
+#hud-left { display: flex; flex-direction: column; gap: calc(5 * var(--hud-u)); }
 #hud-right {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 5px;
+  gap: calc(5 * var(--hud-u));
 }
 #hud-left .cap-row,
 #hud-right .cap-row {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: calc(10 * var(--hud-u));
 }
 
 /* The skew is the signature of the set: bars, gauges and magazine ticks
@@ -711,8 +711,8 @@
    bottom one without drawing a single box. */
 .hp-bar {
   position: relative;
-  width: 224px;
-  height: 11px;
+  width: calc(224 * var(--hud-u));
+  height: calc(11 * var(--hud-u));
   background: rgba(255, 255, 255, 0.1);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
   overflow: hidden;
@@ -730,8 +730,8 @@
   inset: 0;
   background: repeating-linear-gradient(
     to right,
-    transparent 0 21px,
-    rgba(0, 0, 0, 0.5) 21px 23px
+    transparent 0 calc(21 * var(--hud-u)),
+    rgba(0, 0, 0, 0.5) calc(21 * var(--hud-u)) calc(23 * var(--hud-u))
   );
 }
 .hp-bar.low #health-fill { background: linear-gradient(to bottom, #ff9a92, var(--theirs)); }
@@ -740,9 +740,9 @@
   from { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55); }
   to { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 10px rgba(255, 90, 79, 0.65); }
 }
-.hp-num { display: flex; align-items: baseline; gap: 6px; }
+.hp-num { display: flex; align-items: baseline; gap: calc(6 * var(--hud-u)); }
 #health-text {
-  font-size: 34px;
+  font-size: calc(34 * var(--hud-num));
   font-weight: 800;
   line-height: 0.9;
   letter-spacing: 0.02em;
@@ -750,7 +750,7 @@
 #health-text.low { color: var(--theirs); }
 .hp-num em {
   font-style: normal;
-  font-size: 11px;
+  font-size: calc(11 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.24em;
   color: rgba(255, 255, 255, 0.45);
@@ -773,19 +773,19 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 16px;
-  min-width: 224px;
+  gap: calc(16 * var(--hud-u));
+  min-width: calc(224 * var(--hud-u));
 }
-#hud-right .ammo { display: flex; align-items: baseline; gap: 8px; }
+#hud-right .ammo { display: flex; align-items: baseline; gap: calc(8 * var(--hud-u)); }
 #ammo-mag {
-  font-size: 46px;
+  font-size: calc(46 * var(--hud-num));
   font-weight: 800;
   line-height: 0.85;
   letter-spacing: 0.01em;
 }
 #ammo-mag.low { color: var(--theirs); }
 #ammo-cap {
-  font-size: 17px;
+  font-size: calc(17 * var(--hud-mid));
   font-weight: 700;
   letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.42);
@@ -813,22 +813,22 @@
   flex-direction: column;
   align-items: flex-end;
   justify-content: flex-end;
-  gap: 1px;
-  width: 224px;
-  height: 13px;
+  gap: calc(1 * var(--hud-u));
+  width: calc(224 * var(--hud-u));
+  height: calc(13 * var(--hud-u));
   overflow: hidden;
   transform: skewX(-20deg);
 }
 #mag-strip b {
   display: flex;
   justify-content: flex-end;
-  gap: var(--pip-gap, 2px);
-  height: var(--pip-h, 13px);
+  gap: var(--pip-gap, calc(2 * var(--hud-u)));
+  height: var(--pip-h, calc(13 * var(--hud-u)));
 }
 #mag-strip i {
   display: block;
   flex: 0 0 auto;
-  width: var(--pip-w, 5px);
+  width: var(--pip-w, calc(5 * var(--hud-u)));
   height: 100%;
   background: var(--hot);
   box-shadow: 0 0 4px rgba(255, 230, 128, 0.35);
@@ -841,12 +841,12 @@
    anything in a row of five-pixel bars would read as a nearly-empty
    magazine, and the two counts sit one above the other. */
 #nade-pips,
-#at-pips { display: flex; gap: 6px; align-items: center; }
+#at-pips { display: flex; gap: calc(6 * var(--hud-u)); align-items: center; }
 #nade-pips i,
 #at-pips i {
   display: block;
-  width: 9px;
-  height: 9px;
+  width: calc(9 * var(--hud-u));
+  height: calc(9 * var(--hud-u));
   background: var(--hot);
   box-shadow: 0 0 5px rgba(255, 230, 128, 0.4);
   transform: rotate(45deg);
@@ -877,7 +877,7 @@
 #stowed {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: calc(8 * var(--hud-u));
 }
 /* The key that draws it, as a chamfered chip — the same idiom as the
    killfeed's glyph and the capture panel's letter, and sized to be READ
@@ -887,9 +887,9 @@
    HUD.setStowedKit is handed it rather than deciding it. */
 #stowed .key {
   flex: 0 0 auto;
-  min-width: 18px;
-  padding: 3px 0 4px;
-  font-size: 12px;
+  min-width: calc(18 * var(--hud-u));
+  padding: calc(3 * var(--hud-u)) 0 calc(4 * var(--hud-u));
+  font-size: calc(12 * var(--hud-cap));
   font-weight: 800;
   line-height: 1;
   letter-spacing: 0;
@@ -912,10 +912,10 @@
   flex: 0 0 auto;
   display: flex;
   align-items: baseline;
-  gap: 2px;
+  gap: calc(2 * var(--hud-u));
 }
 #stowed .n b {
-  font-size: 15px;
+  font-size: calc(15 * var(--hud-mid));
   font-weight: 800;
   line-height: 0.85;
   letter-spacing: 0.01em;
@@ -923,7 +923,7 @@
 }
 #stowed .n em {
   font-style: normal;
-  font-size: 10px;
+  font-size: calc(10 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.06em;
   color: rgba(255, 255, 255, 0.3);
@@ -946,7 +946,7 @@
 #stowed.ready .cap { color: rgba(255, 255, 255, 0.7); }
 #stowed.ready .n b { color: var(--hot); }
 #hud-right .reload-note {
-  font-size: 11px;
+  font-size: calc(11 * var(--hud-cap));
   font-weight: 800;
   letter-spacing: 0.26em;
   color: var(--hot);
@@ -1172,10 +1172,10 @@
 }
 #damage-dirs .arc {
   position: absolute;
-  top: -150px;
-  left: -150px;
-  width: 300px;
-  height: 300px;
+  top: calc(-150 * var(--hud-u));
+  left: calc(-150 * var(--hud-u));
+  width: calc(300 * var(--hud-u));
+  height: calc(300 * var(--hud-u));
   display: none;
   opacity: 0;
   filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
@@ -1192,8 +1192,8 @@
   top: 24%;
   left: 50%;
   transform: translateX(-50%);
-  padding: 9px 0;
-  font-size: 24px;
+  padding: calc(9 * var(--hud-u)) 0;
+  font-size: calc(24 * var(--hud-mid));
   font-weight: 800;
   letter-spacing: 0.28em;
   text-align: center;
@@ -1232,14 +1232,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: calc(6 * var(--hud-u));
   text-align: center;
   white-space: nowrap;
   animation: obIn 0.2s ease-out;
 }
 #outbounds .ob-head {
-  padding: 5px 18px;
-  font-size: 15px;
+  padding: calc(5 * var(--hud-u)) calc(18 * var(--hud-u));
+  font-size: calc(15 * var(--hud-mid));
   font-weight: 800;
   letter-spacing: 0.3em;
   color: #ffd9d3;
@@ -1250,14 +1250,14 @@
 #outbounds .ob-count {
   display: flex;
   align-items: baseline;
-  gap: 9px;
+  gap: calc(9 * var(--hud-u));
   animation: obPulse 1s ease-in-out infinite;
 }
 #outbounds.urgent .ob-count {
   animation-duration: 0.4s;
 }
 #outbounds .ob-count b {
-  font-size: 46px;
+  font-size: calc(46 * var(--hud-num));
   font-weight: 800;
   line-height: 1;
   color: #ff5544;
@@ -1267,7 +1267,7 @@
   font-variant-numeric: tabular-nums;
 }
 #outbounds .ob-count em {
-  font-size: 13px;
+  font-size: calc(13 * var(--hud-cap));
   font-style: normal;
   font-weight: 700;
   letter-spacing: 0.26em;
@@ -1288,17 +1288,17 @@
    theirs alone. */
 #toasts {
   position: absolute;
-  bottom: 194px;
+  bottom: calc(194 * var(--hud-u));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: calc(5 * var(--hud-u));
 }
 .toast {
-  padding: 6px 15px;
-  font-size: 12px;
+  padding: calc(6 * var(--hud-u)) calc(15 * var(--hud-u));
+  font-size: calc(12 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.2em;
   /* Same reason as the killfeed: the text is a ControlPoint's own name. */
@@ -1313,10 +1313,10 @@
 
 #lock-hint {
   position: absolute;
-  bottom: 58px;
+  bottom: calc(58 * var(--hud-u));
   left: 50%;
   transform: translateX(-50%);
-  font-size: 11px;
+  font-size: calc(11 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.28em;
   color: rgba(255, 255, 255, 0.65);
@@ -1333,30 +1333,30 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 5px;
+  gap: calc(5 * var(--hud-u));
 }
 #vehicle {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 5px;
-  min-width: 190px;
+  gap: calc(5 * var(--hud-u));
+  min-width: calc(190 * var(--hud-u));
 }
 #vehicle .veh-hp,
 #vehicle .veh-gun {
-  font-size: 20px;
+  font-size: calc(20 * var(--hud-mid));
   font-weight: 700;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
 }
-#vehicle .veh-gun { font-size: 13px; letter-spacing: 0.2em; }
+#vehicle .veh-gun { font-size: calc(13 * var(--hud-cap)); letter-spacing: 0.2em; }
 /* The same 20-degree lean the vitals bar and the magazine ticks carry — it is
    the signature of the set, and a vehicle readout that sat square would be the
    one flat thing on the screen. */
 .veh-bar {
   position: relative;
-  width: 190px;
-  height: 7px;
+  width: calc(190 * var(--hud-u));
+  height: calc(7 * var(--hud-u));
   background: rgba(255, 255, 255, 0.12);
   transform: skewX(-20deg);
   overflow: hidden;
@@ -1386,14 +1386,14 @@
    be drawn as nothing at all and read as a vehicle with one seat. */
 #vehicle .veh-crew {
   display: flex;
-  gap: 8px;
+  gap: calc(8 * var(--hud-u));
 }
 #vehicle .veh-chair {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 1px;
-  padding: 2px 6px;
+  gap: calc(1 * var(--hud-u));
+  padding: calc(2 * var(--hud-u)) calc(6 * var(--hud-u));
   border-right: 2px solid rgba(255, 255, 255, 0.14);
   /* Skewed with the bars above it, for the reason they are: this band leans
      20 degrees and a square chip in the middle of it is the one flat thing. */
@@ -1401,13 +1401,13 @@
 }
 #vehicle .veh-chair > * { transform: skewX(20deg); }
 #vehicle .veh-chair b {
-  font-size: 11px;
+  font-size: calc(11 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.2em;
   color: rgba(255, 255, 255, 0.45);
 }
 #vehicle .veh-chair i {
-  font-size: 9px;
+  font-size: calc(9 * var(--hud-cap));
   font-style: normal;
   letter-spacing: 0.18em;
   color: rgba(255, 255, 255, 0.32);
@@ -1427,11 +1427,11 @@
 #vehicle .veh-seat {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  min-height: 12px;
+  gap: calc(10 * var(--hud-u));
+  min-height: calc(12 * var(--hud-u));
 }
 #vehicle .veh-swap {
-  font-size: 10px;
+  font-size: calc(10 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.2em;
   color: rgba(255, 255, 255, 0.45);
@@ -1474,13 +1474,13 @@
    exactly the player who most needs to be told about E. */
 #use-prompt {
   position: absolute;
-  bottom: 92px;
+  bottom: calc(92 * var(--hud-u));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 12px;
+  gap: calc(9 * var(--hud-u));
+  font-size: calc(12 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.24em;
   color: rgba(255, 255, 255, 0.82);
@@ -1490,13 +1490,39 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  padding: 3px 5px;
-  font-size: 11px;
+  min-width: calc(22 * var(--hud-u));
+  padding: calc(3 * var(--hud-u)) calc(5 * var(--hud-u));
+  font-size: calc(11 * var(--hud-cap));
   letter-spacing: 0.06em;
   color: var(--hot);
   border: 1px solid rgba(255, 255, 255, 0.35);
   background: rgba(6, 8, 13, 0.55);
+}
+
+/* --- held the wrong way round ---
+   The game asks for landscape and takes it wherever a browser will give it —
+   the manifest says so for the installed app and `enterFullscreenOnTouch` says
+   it again for the tab — but the lock is Android-only and refuses outside
+   fullscreen, so a phone in Safari held upright is a viewport this HUD really
+   does get. It is not a layout worth designing; it is a layout worth not being
+   BROKEN, and what breaks it is one thing.
+
+   The top band has three tenants — the map in the corner, the reinforcement
+   gauge centred, the killfeed on the right — and at 844 px of width they sit
+   side by side with room to spare. At 390 they are one on top of another, and
+   no ladder fixes that: the collision is between a corner and a centre, and
+   scaling both only makes two smaller things overlap. So the centre column
+   MOVES, down past the corner the map is pinned in, and takes the killfeed
+   with it. The map keeps the corner because that is the one readout whose
+   position is part of what it means.
+
+   Keyed on the ASPECT and not on a width, because what is being asked is
+   whether this viewport is taller than it is wide — a narrow desktop window is
+   still a landscape layout and must not take this. */
+@media (max-aspect-ratio: 4 / 5) {
+  #ticket-bar { top: calc(var(--hud-map) + 30 * var(--hud-u)); }
+  #flag-strip { top: calc(var(--hud-map) + 74 * var(--hud-u)); }
+  #killfeed { top: calc(var(--hud-map) + 120 * var(--hud-u)); }
 }
 
 /* --- in a vehicle ---
@@ -1556,16 +1582,30 @@
 #hud.paused #lock-hint { display: none; }
 
 /* --- the on-screen controls are up (HUD.setTouching) ---
-   The bottom band scales about its own bottom CENTRE, which is what makes one
-   rule free both corners: `#hud-bottom` is a full-width row with the vitals
-   pinned left and the ammo right, so shrinking it toward the middle walks both
-   ends inward as well as down. The ladder is `--hud-touch` in base.css and is 1
-   on a screen with room for both, so a desktop and a tablet are untouched.
-   See `docs/pwa.md` for what is standing where. */
+   Almost nothing is left here, and that is the point. The bottom band used to
+   be SCALED about its own bottom centre by `--hud-touch`, which freed both
+   corners at once and shrank the captions along with the numerals; the trim in
+   `base.css` takes the same room out of the ladder every gauge on this sheet is
+   already stated in, so the band is LAID OUT smaller rather than drawn smaller
+   and no transform is involved. See `docs/pwa.md` for what is standing where.
+
+   What is left is the two things a uniform trim cannot say. The band gives up
+   the last of the gutter it was keeping for a mouse, because the ammunition
+   column and the vitals sit exactly where the trigger and the movement thumb
+   do — and then the DRIVER's block gives up its leading as well, below. */
 #hud.touching #hud-bottom {
-  transform: scale(var(--hud-touch));
-  transform-origin: bottom center;
+  padding: calc(14 * var(--hud-u)) calc(20 * var(--hud-u));
 }
+/* And the DRIVER's band gives up its leading on top of that, because it is the
+   tallest thing this corner ever holds: five rows against the infantry block's
+   four, which is what puts it up into the trigger rather than under it. Sixty-
+   nine pixels of fire button standing eighty-three off the bottom of a
+   landscape phone is the measurement it has to clear, and the leading is what
+   there is to give — a row would be a fact about the hull the driver no longer
+   has. The hull's own number comes down with it, since the bar beside it is
+   what is actually being read. */
+#hud.touching #vehicle { gap: calc(2 * var(--hud-u)); }
+#hud.touching #vehicle .veh-hp { font-size: calc(17 * var(--hud-mid)); }
 
 /* --- death cam ---
    Raised by HUD.setDeathCam while the player is down and the camera is

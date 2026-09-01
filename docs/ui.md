@@ -568,6 +568,94 @@ change moved no content-hashed filename. Three rules keep it that way:
   one step further along. Neither may grow a rule that styles anything a module
   writes, and nothing else may be added beside them.
 
+## The gauges' metric: one authored pixel, four rates
+
+The shell above is the SCREENS. The chrome — the minimap, the reinforcement
+gauge, the flag strip, the vitals, the ammunition, the killfeed, the driver's
+band — is a different problem with a different answer, and this is it.
+
+**It was authored in pixels for a 720p window**, and every number in `hud.css`
+still is: a 224 px health bar, a 46 px ammunition numeral, a 13 px magazine
+strip, a 220 px minimap. On a landscape phone that is roughly twice the chrome
+it should be, on about a fifth of the area to put it in. The two symptoms are
+the ones anybody notices first — the map is too big, and the readouts crowd the
+middle of a screen that has none to spare.
+
+**The fix is a UNIT, not a transform, and that distinction is the whole
+section.** `--hud-u` in [`base.css`](../src/ui/base.css) is one authored pixel,
+and every size in `hud.css` and `minimap.css` is stated as a multiple of it —
+`calc(224 * var(--hud-u))`. A transform was what this used to be (`--hud-touch`,
+on the bottom band and the minimap), and a transform can only do one thing to
+everything it covers: at the scale that brings a 46 px numeral down to a phone's
+size it takes a 10 px caption to six, which is not a caption any more. A unit
+can be several units, and the HUD's three jobs want three of them:
+
+| ladder | what it carries | floor |
+| --- | --- | --- |
+| `--hud-cap` | the micro-captions — VITALS, FRAG, the weapon's name, 8–13 px | 0.88 |
+| `--hud-mid` | the ticket counts, the flag letters, the centre message, the vehicle readouts, 15–28 px | 0.78 |
+| `--hud-num` | the two display numerals, health and ammunition | 0.66 |
+| `--hud-u` | everything that is a SHAPE rather than a word — bar widths, insets, gaps, pips | 0.62 |
+
+All four are `clamp()` over `vmin` against a reference of 800, so **a desktop
+and a laptop are untouched** — a 1366x768 window lands at 0.96 and a 1080p one
+saturates at 1 — and it is the phone the ramp is really for. `vmin` and not
+`vh`, for the shell's own reason: an ultrawide is short for its width, and a
+phone held upright is not a tall screen with room to spare.
+
+**`--hud-map` is the minimap and is a SIZE rather than a unit**, because it is
+the one readout whose cost is an AREA: 220 px is a tenth of a 1080p screen and a
+third of a landscape phone, which is why it is the first thing that reads as too
+big. `Minimap.ts` watches its own canvas and matches the backing store to
+whatever the stylesheet resolved to, so the map is REDRAWN at its size rather
+than resampled — see below.
+
+**The TRIM is the on-screen controls asking for the corner.** `#hud.touching`
+(`HUD.setTouching`, pushed per frame from `Game.pushTouchControls`) multiplies
+the ladder by 0.78, and the captions by 0.94 for the reason they have a rung at
+all. It is keyed on the CONTROLS being up and not on the viewport, which is the
+case no ladder above can cover: **a tablet** is tall enough that none of them
+has engaged and still has a 96 px trigger standing on top of its ammunition
+count. What it replaced hid nothing and still does — every gauge is exactly as
+true on a phone, and the band is laid out smaller rather than drawn smaller.
+
+Two rules for anything added to `hud.css`:
+
+- **State a size as a multiple of the ladder, never in bare pixels** — the one
+  exception below, and hairlines, rims and chamfers, which are a pixel because
+  a pixel is what they are.
+- **An INSTRUMENT is exempt, and the test is whether its size is a claim about
+  the screen.** `#crosshair` is the live bullet spread projected onto the glass
+  (`HUD.setCrosshair` writes `--sp` in real pixels), `#gun-marker` is where the
+  barrel points, `#hitmarker` is a confirmation drawn at the point of aim. None
+  of them is a design decision that a smaller screen should scale, and all three
+  are left in pixels on purpose. `#scoreboard` is exempt for its own reason,
+  written down beside it: its width is a promise to the shortest viewport the
+  game runs on, and it already scales the one case that cannot keep it.
+
+**The minimap is the one canvas in the tree that resizes itself.** `Minimap`
+observes its own element, sets the backing store to the box times the device
+ratio, and leaves the 2D context scaled by that ratio — so every line in the
+file is written in CSS pixels and comes out crisp on a handset, which the old
+fixed 220 px store never was at DPR 3. Two consequences worth knowing before
+editing it: the pixels-per-metre scale moves with the box, so the prerendered
+backdrop has to be rebuilt when the box does (`buildBase`, split out of `setMap`
+for exactly that); and the drawn furniture splits in two — **a SHAPE follows the
+box down** (the chamfer, the view cone, the rim gutter) while **a MARK that has
+to be READ has a floor** (`MIN_BLIP`, `MIN_GLYPH`), because a blip drawn to
+scale on a phone-sized map is a blip nobody can see.
+
+**A phone held upright is not a layout, it is a layout worth not being broken.**
+The game asks for landscape everywhere it can — the manifest for the installed
+app, `enterFullscreenOnTouch` for the tab — but the orientation lock is
+Android-only and refuses outside fullscreen, so a portrait viewport is one this
+HUD really does get. The top band has three tenants (the map in a corner, the
+gauge centred, the killfeed right) and at 390 px of width they stack on top of
+one another; no ladder fixes a collision between a CORNER and a CENTRE, so the
+centre column moves down past the map and takes the killfeed with it. Keyed on
+the aspect ratio and not on a width, because the question is whether this
+viewport is taller than it is wide — a narrow desktop window is still landscape.
+
 ## The menu's backdrop
 
 **The main menu stands on a photograph of the map that is chosen**, and choosing

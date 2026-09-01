@@ -228,4 +228,15 @@ What belongs here is the part that is about **the phone rather than the game**:
   ring one notch's width from the thumb holding it. The three button groups take
   their own `env(safe-area-inset-*)` back, and scale on short viewports through
   `--tscale` — the same trick `--ov-scale` plays for the menu, one transform per
-  group about the corner that group is pinned to.
+  group about the corner that group is pinned to. **The ladder answers to
+  whichever side of the viewport is the SHORT one**, height held sideways and
+  width held upright, because a 260 px cluster on a 390 px-wide screen is two
+  thirds of the glass.
+- **The gauges get out of the thumbs' way, and they do it by being LAID OUT
+  smaller rather than drawn smaller.** `#hud.touching` is a trim on the metric
+  every size in `hud.css` is stated in — see the gauges' metric in
+  [`ui.md`](ui.md) — so the vitals, the ammunition and the minimap give up a
+  fifth wherever the controls are up, captions less than the rest. It is keyed
+  on the controls and not on the viewport, which is what makes a TABLET come
+  out right: tall enough that nothing else has engaged, and still with a 96 px
+  trigger standing on its ammunition count.

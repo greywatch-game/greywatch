@@ -152,9 +152,11 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 .brackets::before { top: -5px; left: -5px; border-right: 0; border-bottom: 0; }
 .brackets::after { bottom: -5px; right: -5px; border-left: 0; border-top: 0; }
 
-/* Micro-captions: the small all-caps labels that name a readout. */
+/* Micro-captions: the small all-caps labels that name a readout. The one
+   piece of the gauges' metric that lives here, because this is the one
+   primitive more than one sheet draws itself out of. */
 #hud .cap {
-  font-size: 10px;
+  font-size: calc(10 * var(--hud-cap));
   font-weight: 700;
   letter-spacing: 0.22em;
   color: rgba(255, 255, 255, 0.5);
@@ -191,19 +193,66 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 @media (max-height: 380px) { #hud { --ov-scale: 0.84; } }
 @media (max-height: 300px) { #hud { --ov-scale: 0.66; } }
 
-/* --- and the gauges, when a thumb needs the corner they are in ---
-   `--hud-touch` is the sibling ladder, applied under `#hud.touching`
-   (HUD.setTouching) by two rules that live beside the markup they move:
-   `#hud-bottom` in hud.css and `#minimap-frame` in minimap.css. It is here
-   because two sheets read it, which is the only thing this file is for.
+/* --- THE GAUGES' OWN METRIC, and it is a UNIT rather than a transform ---
+   The gameplay chrome was authored in pixels for a 720p window — a 224 px
+   health bar, a 46 px ammunition numeral, a 220 px minimap — and on a
+   landscape phone that is a HUD about twice the size it should be, sitting on
+   a screen with about a fifth of the area to give it. What used to answer that
+   was `--hud-touch`, a transform on the two boxes the thumbs wanted back; the
+   trouble with a transform is that it scales a 10 px caption to 6 px along
+   with everything else, so the readouts you must still be able to READ paid
+   the same tax as the ones that were merely too big.
 
-   Milder than `--ov-scale`, and it stops rather than following it down: what
-   this frees is the two BOTTOM corners and the top-left, where a full-screen
-   card needs the whole viewport. It is 1 on any screen tall enough that the
-   controls and the gauges never met, so a tablet is untouched. */
-#hud { --hud-touch: 1; }
-@media (max-height: 620px) { #hud { --hud-touch: 0.78; } }
-@media (max-height: 430px) { #hud { --hud-touch: 0.62; } }
+   So the ladder is a UNIT. `--hud-u` is one authored pixel, and everything in
+   `hud.css` that has a size states it as a multiple —
+   `calc(224 * var(--hud-u))`. What that buys over a transform is that there
+   can be MORE THAN ONE of them, falling at different rates, and the HUD's
+   three jobs genuinely do want three:
+
+   - `--hud-cap` — the micro-captions (VITALS, FRAG, the weapon's name). They
+     barely move, because 8 px is the floor under which a label stops being one
+     and a caption is not what is taking up the room.
+   - `--hud-mid` — the middle band: the ticket counts, the flag letters, the
+     centre message, the vehicle readouts.
+   - `--hud-num` — the two display numerals (health, ammunition), which are the
+     things a phone can least afford at their authored size and the things that
+     stay legible smallest.
+   - `--hud-u` — everything that is a SHAPE rather than a word: bar widths, the
+     bands' insets, the gaps, the pips.
+
+   All four are `clamp()` over `vmin` against a reference of 800, so a desktop
+   and a laptop are untouched (a 1366x768 window lands at 0.96) and it is the
+   phone the ramp is really for. `vmin` and not `vh`, for the shell's own
+   reason further down: an ultrawide is short for its width, and a phone held
+   the wrong way round is not a tall screen with room to spare.
+
+   `--hud-map` is the minimap and is stated as a size rather than a unit,
+   because it is the one readout whose cost is an AREA — 220 px of it is 12% of
+   a 1080p screen and 35% of a landscape phone, which is why it is the thing
+   that reads as "too big" long before anything else does. `Minimap.ts` resizes
+   its canvas to whatever this resolves to; it is not a transform there either.
+
+   --- and the TRIM, which is the on-screen controls asking for the corner ---
+   `#hud.touching` (HUD.setTouching) takes another fifth off, because the
+   thumbs' clusters stand exactly where the vitals and the ammunition do. It is
+   a multiplier on the ladder rather than a ladder of its own, and the captions
+   take a gentler one for the reason they have their own rung at all. It is
+   keyed on the CONTROLS being up and not on the viewport, which is what makes
+   a tablet — tall enough that neither ladder above has engaged, and with a
+   96 px trigger sitting on top of its ammunition count — come out right. */
+#hud {
+  --hud-trim: 1;
+  --hud-trim-cap: 1;
+  --hud-u: calc(clamp(0.62px, 0.125vmin, 1px) * var(--hud-trim));
+  --hud-num: calc(clamp(0.66px, 0.125vmin, 1px) * var(--hud-trim));
+  --hud-mid: calc(clamp(0.78px, 0.125vmin, 1px) * var(--hud-trim));
+  --hud-cap: calc(clamp(0.88px, 0.125vmin, 1px) * var(--hud-trim-cap));
+  --hud-map: calc(clamp(120px, 24vmin, 220px) * var(--hud-trim));
+}
+#hud.touching {
+  --hud-trim: 0.78;
+  --hud-trim-cap: 0.94;
+}
 #overlay, #deploy, #settings, #lobby {
   width: calc(100% / var(--ov-scale));
   height: calc(100% / var(--ov-scale));

@@ -300,11 +300,25 @@ not**, and **the PAUSE is the one card that does not take the screen**.
 OWN at z-index 9 rather than a child of `#overlay`, which would paint over the
 veil whatever its z-index. **A map with no row in `mapShots.ts` is not broken.**
 
+**The CHROME is sized by a UNIT, never by a transform** — a transform takes a
+10 px caption to six along with the 46 px numeral it was aimed at. `hud.css` and
+`minimap.css` are still authored in a 720p window's pixels and state every size
+as a multiple of a ladder in `base.css`: `--hud-u` for shapes,
+`--hud-cap`/`--hud-mid`/`--hud-num` for the three bands of type, `--hud-map` for
+the minimap, all `clamp()`ed over `vmin` so a desktop is untouched. **A new size
+is a multiple, never a bare pixel**; **an INSTRUMENT is exempt**, and the test is
+whether its size is a claim about the SCREEN (the crosshair is the live spread,
+the gun marker is where the barrel points); **`#hud.touching` is a TRIM on that
+ladder**, keyed on the controls rather than the viewport, which is the only
+thing that gets a TABLET right; and **the minimap is the one canvas that resizes
+itself**, redrawn at its box times the device ratio rather than resampled.
+
 → **[`docs/ui.md`](docs/ui.md)** — the shell, the four cards as one class, the
 menu's rail and the map schematic drawn from a LAYOUT, why **the pointer deploys
 only through the Deploy button**, the deploy map, the kit turntable, the settings
-panel, the lobby's row identity, the short-viewport scaling, and the touch
-controls as a screen — with [`docs/pwa.md`](docs/pwa.md) for them as a phone.
+panel, the lobby's row identity, the gauges' metric and the four ladders, the
+short-viewport scaling, the portrait fallback, and the touch controls as a
+screen — with [`docs/pwa.md`](docs/pwa.md) for them as a phone.
 
 ### The scene has (almost) no Babylon lights
 

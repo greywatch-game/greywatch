@@ -51,15 +51,26 @@ const COLOR_OUTSIDE = "rgba(4, 6, 10, 0.62)";
 const COLOR_BUILDING = "rgba(158, 176, 200, 0.28)";
 /** The hairline the plate is closed with, drawn along the chamfer. */
 const COLOR_EDGE = "rgba(255, 255, 255, 0.2)";
-/** How far the player's view cone reaches, in canvas pixels. */
+/** How far the player's view cone reaches, at the authored size. */
 const CONE_LENGTH = 32;
 /**
- * The corner cut, in canvas pixels — the same two-cut plate `.frame` draws in
- * CSS, and the reason the number is HERE is that the shape is clipped and
- * stroked in canvas coordinates. The CSS box and the backing store are the
- * same size (see the constructor), so a pixel is a pixel in both.
+ * The corner cut — the same two-cut plate `.frame` draws in CSS, and the reason
+ * the number is HERE is that the shape is clipped and stroked in canvas
+ * coordinates rather than by the stylesheet.
+ *
+ * Like everything else on this plate it is stated at the AUTHORED size and
+ * multiplied by `Minimap.k`; a chamfer held at twelve pixels while the box came
+ * down to a phone's would be an eighth of the map cut off each corner.
  */
 const CHAMFER = 12;
+/**
+ * The floor under anything on this map that has to be READ rather than merely
+ * seen — a blip, a letter, a rim marker. Below about this the mark stops being
+ * one, so the shape constants follow the box down and these do not: the map
+ * shrinks, the things standing on it do not shrink with it all the way.
+ */
+const MIN_BLIP = 2.4;
+const MIN_GLYPH = 7.5;
 /** The eight-point compass the heading label is quantised to. */
 const CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
@@ -78,14 +89,21 @@ const CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
  * it already shows. What that costs is NORTH, which the frame's compass gives
  * back as the heading the top of the map is currently pointing at.
  *
+ * **How BIG it is is the stylesheet's** (`--hud-map`), and `resize` is what
+ * follows it — the map is the one readout on this HUD whose cost is an area, so
+ * it is the first thing that reads as too big on a phone. Everything drawn here
+ * is stated at the AUTHORED size (`CONFIG.minimap.size`) and multiplied by `k`;
+ * see that field for the one split that matters, which is that a SHAPE follows
+ * the box down and a MARK a player has to read does not.
+ *
  * The static village backdrop is prerendered once per round straight from the
  * collider boxes — the same source the deploy screen draws from, so the two
  * maps can never disagree, and a layout change updates both for free. It is
  * rendered at the SAME pixels-per-metre the canvas is drawn at, so scrolling
  * and turning it is a 1:1 blit and nothing blurs; the backdrop is therefore as
  * many pixels across as the play square is metres times that scale — 733 px on
- * Harrowmead's 400 m — and that is the reason the scale is a fixed number rather
- * than something a zoom control moves.
+ * Harrowmead's 400 m at the authored box — which is why a resize has to build
+ * it again (`buildBase`) rather than merely redrawing.
  *
  * Enemies are deliberately NOT shown: that would be a wallhack. Instead a body
  * that opens fire is revealed for `CONFIG.minimap.enemyRevealTime` seconds —
@@ -110,11 +128,37 @@ export class Minimap {
   private base: HTMLCanvasElement | null = null;
   private mapSize: number = CONFIG.map.size;
   /**
+   * The map's side in CSS pixels, which is whatever `--hud-map` resolved to —
+   * `resize` reads it back off the element rather than this file deciding it.
+   * Everything below is drawn in these units; `dpr` is what the backing store
+   * carries on top, so a phone gets a crisp map and this code never mentions
+   * device pixels again.
+   */
+  private box: number = CONFIG.minimap.size;
+  private dpr = 1;
+  /**
+   * The box against the size this map was AUTHORED at, and the one number that
+   * says how much smaller the plate has become. Shapes on it — the chamfer, the
+   * view cone, the rim gutter — are stated at the authored size and multiplied
+   * by this; the marks a player has to read are floored instead (see
+   * `MIN_BLIP`), because a blip drawn to scale on a phone-sized map is a blip
+   * nobody can see.
+   */
+  private k = 1;
+  /**
    * Canvas pixels per world metre — the ONE scale in this file. The backdrop
    * is prerendered at it and the live view is drawn at it, which is what makes
-   * the per-frame blit 1:1.
+   * the per-frame blit 1:1. It moves with the box, which is why the backdrop
+   * has to be rebuilt when the box does.
    */
-  private readonly ppm = CONFIG.minimap.size / (2 * CONFIG.minimap.viewRange);
+  private ppm = CONFIG.minimap.size / (2 * CONFIG.minimap.viewRange);
+  /**
+   * The round's map and side, held only so a RESIZE can prerender the backdrop
+   * again at the new scale. Nothing else reads them: `setMap` is still the one
+   * place a backdrop is described, and this is the one place it is repeated.
+   */
+  private lastMap: GameMap | null = null;
+  private lastTeam: Team = 0;
   /** Enemies currently given away by their gunfire, seconds remaining. */
   private readonly revealed = new Map<Combatant, number>();
   /** Accumulator driving the contested-flag pulse. */
@@ -135,16 +179,11 @@ export class Minimap {
   private cone: CanvasGradient | null = null;
 
   constructor() {
-    const size = CONFIG.minimap.size;
     this.canvas = document.createElement("canvas");
     this.canvas.id = "minimap";
-    this.canvas.width = size;
-    this.canvas.height = size;
-    // Keep the CSS box and the backing store the same size, or the canvas
-    // is scaled and every blip blurs — and the chamfer clipped below is drawn
-    // in these same pixels.
-    this.canvas.style.width = `${size}px`;
-    this.canvas.style.height = `${size}px`;
+    // No inline size: the box is `--hud-map` in `minimap.css` and `resize`
+    // below follows it. Writing one here would beat the stylesheet and pin the
+    // map at its desktop size on every device.
 
     this.frame = document.createElement("div");
     this.frame.id = "minimap-frame";
@@ -157,6 +196,53 @@ export class Minimap {
     // Read after the append, so the cascade has already put `#hud`'s `--font`
     // on it.
     this.face = getComputedStyle(this.frame).fontFamily || "sans-serif";
+    // The element is what is watched and not the window, so the map follows
+    // `--hud-map` however it moved — a rotation, a resize, the on-screen
+    // controls coming up and taking the trim with them. Setting `width` from
+    // inside the callback does not change the element's LAYOUT size, so this
+    // cannot feed itself.
+    new ResizeObserver(() => this.resize()).observe(this.canvas);
+    this.resize();
+  }
+
+  /**
+   * Matches the backing store to the box the stylesheet gave the element, and
+   * re-prerenders the backdrop at the new scale.
+   *
+   * **The context is left scaled by the device ratio**, so every line below is
+   * written in CSS pixels and comes out crisp on a phone — which is the half of
+   * this that is not about the phone being small. A canvas whose backing store
+   * is its CSS size is drawn at a third of the resolution on a modern handset,
+   * and this map is the finest line work on the HUD.
+   *
+   * A hidden frame measures zero and is ignored: `#minimap-frame.hidden` is
+   * `display: none`, and a zero-sized canvas would rebuild the backdrop at a
+   * scale of nothing and hand it back on the next round.
+   */
+  private resize(): void {
+    const box = this.canvas.clientWidth;
+    if (box < 1) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const store = Math.round(box * dpr);
+    // The BACKING STORE is what the early-out is measured against and not the
+    // two fields, because those are seeded with the authored size so that `ppm`
+    // and `k` are coherent before anything has been drawn: a first call on a
+    // desktop, where the box IS the authored size, would otherwise agree with
+    // itself and leave the canvas at its 300x150 default — a squashed map that
+    // looks like a drawing bug rather than a sizing one.
+    if (this.canvas.width === store && dpr === this.dpr) return;
+    this.box = box;
+    this.dpr = dpr;
+    this.k = box / CONFIG.minimap.size;
+    this.ppm = box / (2 * CONFIG.minimap.viewRange);
+    this.canvas.width = store;
+    this.canvas.height = store;
+    // Resizing the backing store resets the context, so the ratio transform and
+    // the cached cone both have to be put back — the gradient was built in the
+    // old space and is a REACH rather than a shape (see the field).
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.cone = null;
+    if (this.lastMap) this.buildBase(this.lastMap, this.lastTeam);
   }
 
   setVisible(visible: boolean): void {
@@ -176,6 +262,17 @@ export class Minimap {
   setMap(map: GameMap, playerTeam: Team): void {
     this.mapSize = map.size;
     this.revealed.clear();
+    this.lastMap = map;
+    this.lastTeam = playerTeam;
+    this.buildBase(map, playerTeam);
+  }
+
+  /**
+   * The backdrop itself, split out of `setMap` because a RESIZE needs it too:
+   * the scale it is prerendered at is the live view's, and the live view's
+   * scale moves with the box.
+   */
+  private buildBase(map: GameMap, playerTeam: Team): void {
     /** The backdrop is the play square at the live view's own scale. */
     const dim = Math.round(map.size * this.ppm);
     const scale = this.ppm;
@@ -255,16 +352,16 @@ export class Minimap {
    * and half antialiased away).
    */
   private outline(c: CanvasRenderingContext2D, inset: number): void {
-    const s = CONFIG.minimap.size;
     const a = inset;
-    const b = s - inset;
+    const b = this.box - inset;
+    const cham = CHAMFER * this.k;
     c.beginPath();
-    c.moveTo(a + CHAMFER, a);
+    c.moveTo(a + cham, a);
     c.lineTo(b, a);
-    c.lineTo(b, b - CHAMFER);
-    c.lineTo(b - CHAMFER, b);
+    c.lineTo(b, b - cham);
+    c.lineTo(b - cham, b);
     c.lineTo(a, b);
-    c.lineTo(a, a + CHAMFER);
+    c.lineTo(a, a + cham);
     c.closePath();
   }
 
@@ -285,8 +382,12 @@ export class Minimap {
   ): void {
     if (!this.base) return;
     const c = this.ctx;
-    const size = this.canvas.width;
+    // The BOX and not the backing store: the context is scaled by the device
+    // ratio for the length of the canvas's life, so everything here is in CSS
+    // pixels. See `resize`.
+    const size = this.box;
     const half = size / 2;
+    const k = this.k;
     const mr = CONFIG.minimap;
     const scale = this.ppm;
     const toX = (wx: number) => (wx + this.mapSize / 2) * scale;
@@ -342,6 +443,7 @@ export class Minimap {
       c.fill();
       c.strokeStyle = ownerColor;
       c.lineWidth = p.contested ? 1.6 : 1;
+      c.lineWidth *= Math.max(k, 0.8);
       // A contested flag pulses so it reads from the corner of the eye.
       c.globalAlpha = p.contested ? pulse : 0.7;
       c.stroke();
@@ -363,9 +465,9 @@ export class Minimap {
             : COLOR_THEIRS;
         const from = -Math.PI / 2 + playerYaw;
         c.beginPath();
-        c.arc(x, y, r + 3, from, from + Math.abs(p.meter) * Math.PI * 2);
+        c.arc(x, y, r + 3 * k, from, from + Math.abs(p.meter) * Math.PI * 2);
         c.strokeStyle = meterColor;
-        c.lineWidth = 2;
+        c.lineWidth = Math.max(2 * k, 1.2);
         // Round caps: the dial is the one moving line on the map, and a
         // squared-off end reads as a tick mark rather than as a level.
         c.lineCap = "round";
@@ -380,7 +482,7 @@ export class Minimap {
       c.save();
       c.translate(x, y);
       c.rotate(playerYaw);
-      c.font = `700 10px ${this.face}`;
+      c.font = `700 ${Math.max(10 * k, MIN_GLYPH).toFixed(1)}px ${this.face}`;
       c.shadowColor = "rgba(0, 0, 0, 0.9)";
       c.shadowBlur = 3;
       c.fillStyle = COLOR_TEXT;
@@ -395,10 +497,12 @@ export class Minimap {
     c.strokeStyle = "rgba(6, 9, 14, 0.8)";
     c.lineWidth = 1;
     c.fillStyle = COLOR_MINE;
+    const friendR = Math.max(mr.friendlyRadius * k, MIN_BLIP);
+    const enemyR = Math.max(mr.enemyRadius * k, MIN_BLIP);
     for (const body of bodies) {
       if (!body.alive || body.team !== playerTeam) continue;
       c.beginPath();
-      c.arc(toX(body.position.x), toY(body.position.z), mr.friendlyRadius, 0, Math.PI * 2);
+      c.arc(toX(body.position.x), toY(body.position.z), friendR, 0, Math.PI * 2);
       c.fill();
       c.stroke();
     }
@@ -414,7 +518,7 @@ export class Minimap {
       c.globalAlpha = Math.min(1, left / mr.enemyFadeTime);
       c.fillStyle = COLOR_THEIRS;
       c.beginPath();
-      c.arc(toX(body.position.x), toY(body.position.z), mr.enemyRadius, 0, Math.PI * 2);
+      c.arc(toX(body.position.x), toY(body.position.z), enemyR, 0, Math.PI * 2);
       c.fill();
       c.stroke();
       c.globalAlpha = 1;
@@ -434,7 +538,16 @@ export class Minimap {
     // The rim is the SQUARE's, not a circle inscribed in it: the corners are
     // drawn map like everywhere else, and a circular rim would post a marker
     // for a flag the player can already see sitting in one.
-    const lim = half - mr.edgePad;
+    // The disc is sized off the LETTER it carries rather than given a floor of
+    // its own: the glyph has one (`MIN_GLYPH`) because it has to be read, and a
+    // disc that followed the box all the way down would end up smaller than the
+    // letter standing in it. The authored pair is 9 px of type in a 7 px disc,
+    // which is where the 0.78 comes from — at full size this is `edgeRadius`
+    // to within a rounding error. The gutter is then measured out from whatever
+    // the disc came to, so the chevron on its outer side clears the chamfer.
+    const rimGlyph = Math.max(9 * k, MIN_GLYPH);
+    const edgeR = Math.max(mr.edgeRadius * k, rimGlyph * 0.78);
+    const lim = half - edgeR - Math.max((mr.edgePad - mr.edgeRadius) * k, 6);
     for (const p of points) {
       const bx = toX(p.def.pos.x) - px;
       const by = toY(p.def.pos.z) - py;
@@ -452,9 +565,9 @@ export class Minimap {
       c.translate(x, y);
       c.rotate(Math.atan2(sy, sx));
       c.beginPath();
-      c.moveTo(mr.edgeRadius + 5, 0);
-      c.lineTo(mr.edgeRadius + 1, -3.6);
-      c.lineTo(mr.edgeRadius + 1, 3.6);
+      c.moveTo(edgeR + 5 * k, 0);
+      c.lineTo(edgeR + 1, -3.6 * k);
+      c.lineTo(edgeR + 1, 3.6 * k);
       c.closePath();
       c.fillStyle = color;
       c.globalAlpha = p.contested ? pulse : 0.8;
@@ -462,7 +575,7 @@ export class Minimap {
       c.restore();
 
       c.beginPath();
-      c.arc(x, y, mr.edgeRadius, 0, Math.PI * 2);
+      c.arc(x, y, edgeR, 0, Math.PI * 2);
       c.fillStyle = "rgba(8, 11, 16, 0.9)";
       c.globalAlpha = 1;
       c.fill();
@@ -472,7 +585,7 @@ export class Minimap {
       c.stroke();
       c.globalAlpha = 1;
       c.fillStyle = COLOR_TEXT;
-      c.font = `700 9px ${this.face}`;
+      c.font = `700 ${rimGlyph.toFixed(1)}px ${this.face}`;
       c.fillText(p.def.id, x, y);
     }
 
@@ -481,24 +594,28 @@ export class Minimap {
     // arithmetic behind it at all: dead centre, pointing up, every frame.
     c.save();
     c.translate(half, half);
+    // The cone is a REACH and follows the box; the arrow is the player and is
+    // floored with the blips, since it is the mark the eye goes to first.
+    const coneLen = CONE_LENGTH * k;
+    const ak = Math.max(k, 0.72);
     if (!this.cone) {
       // A flat wedge is a shape; a fade is a REACH. What the cone stands for
       // is how far the player can see, which has no edge in the world either.
-      this.cone = c.createRadialGradient(0, 0, 0, 0, 0, CONE_LENGTH);
+      this.cone = c.createRadialGradient(0, 0, 0, 0, 0, coneLen);
       this.cone.addColorStop(0, "rgba(255, 255, 255, 0.2)");
       this.cone.addColorStop(1, "rgba(255, 255, 255, 0)");
     }
     c.beginPath();
     c.moveTo(0, 0);
-    c.arc(0, 0, CONE_LENGTH, -Math.PI / 2 - 0.6, -Math.PI / 2 + 0.6);
+    c.arc(0, 0, coneLen, -Math.PI / 2 - 0.6, -Math.PI / 2 + 0.6);
     c.closePath();
     c.fillStyle = this.cone;
     c.fill();
     c.beginPath();
-    c.moveTo(0, -6.5);
-    c.lineTo(4.4, 4.6);
-    c.lineTo(0, 2.2);
-    c.lineTo(-4.4, 4.6);
+    c.moveTo(0, -6.5 * ak);
+    c.lineTo(4.4 * ak, 4.6 * ak);
+    c.lineTo(0, 2.2 * ak);
+    c.lineTo(-4.4 * ak, 4.6 * ak);
     c.closePath();
     // A halo rather than a hard black outline: at this size a 1 px stroke is a
     // third of the arrow's own width, which is what made it read as a blob.

@@ -1153,10 +1153,17 @@ export class HUD {
       const rows = pipMetrics(magSize).w < MIN_PIP_W ? 2 : 1;
       const cols = Math.ceil(magSize / rows);
       const { gap, w } = pipMetrics(cols);
-      this.magStrip.style.setProperty("--pip-gap", `${gap.toFixed(2)}px`);
-      this.magStrip.style.setProperty("--pip-w", `${w.toFixed(2)}px`);
+      // Written in the gauges' own unit rather than in pixels: the strip's
+      // BOX is `calc(224 * var(--hud-u))` in the stylesheet, so a tick stated
+      // in absolute pixels would keep its desktop width inside a box that had
+      // come down to a phone's and the row would run off the end. The
+      // arithmetic above is unchanged — it is still the authored 224-pixel
+      // design the pitch is divided out of, and `--hud-u` is what turns that
+      // design into what this device is drawing.
+      this.magStrip.style.setProperty("--pip-gap", `calc(${gap.toFixed(2)} * var(--hud-u))`);
+      this.magStrip.style.setProperty("--pip-w", `calc(${w.toFixed(2)} * var(--hud-u))`);
       const rowH = (MAG_STRIP_H - (rows - 1) * MAG_ROW_GAP) / rows;
-      this.magStrip.style.setProperty("--pip-h", `${rowH.toFixed(2)}px`);
+      this.magStrip.style.setProperty("--pip-h", `calc(${rowH.toFixed(2)} * var(--hud-u))`);
       // Filled by COLUMN, not by line: consecutive rounds are the top and the
       // bottom of one column, so a column is worth `rows` rounds and the lit
       // FRACTION of the strip is the fraction of the magazine left — the same
@@ -2215,18 +2222,17 @@ export class HUD {
   /**
    * The on-screen controls are up, so the chrome gets out of their way.
    *
-   * It hides nothing — every gauge here is exactly as true on a phone — it
-   * SHRINKS the two that sit where the thumbs go: the bottom band (about its
-   * bottom centre, which pulls both ends inward as it goes) and the minimap.
-   * The rules are in `hud.css` and `minimap.css` beside the markup they move,
-   * and the ladder they share is `--hud-touch` in `base.css`.
+   * It hides nothing — every gauge here is exactly as true on a phone — and it
+   * moves nothing either. All it does is set a class, and `base.css` reads it as
+   * a TRIM on the ladder every size in `hud.css` and `minimap.css` is already
+   * stated in, so the gauges are laid out smaller rather than drawn smaller.
+   * That is the whole difference from what this used to do: `--hud-touch` was a
+   * transform on the bottom band and the minimap, and a transform takes a 10 px
+   * caption down to 6 with everything else.
    *
-   * This is a fix the gauges had coming anyway. They are authored in pixels for
-   * a 720p window — a 224 px health bar, 46 px ammo numerals, a 220 px minimap
-   * — and a landscape phone is ~390 px tall, so the corners were already
-   * carrying about twice the chrome they should. The controls are simply what
-   * made it impossible to ignore: a trigger drawn over the magazine strip is a
-   * trigger that reads as part of it.
+   * It is keyed on the CONTROLS and not on the viewport, which is what the
+   * ladder itself cannot cover: a tablet is tall enough that no rung of it has
+   * engaged, and a 96 px trigger still lands on top of the ammunition count.
    */
   setTouching(on: boolean): void {
     if (on === this.lastTouching) return;

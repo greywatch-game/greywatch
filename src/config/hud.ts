@@ -13,7 +13,18 @@
  * Enemies are hidden unless their own gunfire gives them away.
  */
 export const minimap = {
-  /** Canvas size in pixels (square); the CSS box is set to match. */
+  /**
+   * The map's AUTHORED size in pixels, square — the one it was drawn for and
+   * the one every constant below is stated against.
+   *
+   * It is no longer the canvas's size. The box is `--hud-map` in `base.css`,
+   * which comes down with the viewport and again when the on-screen controls
+   * want the corner, and `Minimap.resize` matches the backing store to it; this
+   * is what that box is measured against to give `Minimap.k`, the scale the
+   * plate's shapes follow down. Raising it therefore makes the map SMALLER
+   * relative to its own furniture on every device but a desktop, which is not
+   * what it reads like.
+   */
   size: 220,
   /**
    * Metres from the player to the MID-EDGE of the canvas — half the map's

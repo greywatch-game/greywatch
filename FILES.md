@@ -703,7 +703,9 @@ src/
                         #   collapses it to the three-column screen it was
     Minimap.ts          # Corner minimap, player-centred and heading-up: flags,
       minimap.css       #   friendlies, firing enemies, and a rim marker for
-                        #   every control point the zoomed view does not reach
+                        #   every control point the zoomed view does not reach.
+                        #   The one canvas that RESIZES itself: the box is
+                        #   --hud-map and the backing store follows it
     ProfileChip.ts      # The frame profiler's corner of the HUD: what the ring
       profile.css       #   is holding, and the four buttons that get a capture
                         #   off the device or into the reader. A DEVICE on #hud
