@@ -106,6 +106,7 @@ import {
   IRON,
   TEAK,
   TIMBER,
+  type BuildCtx,
   type BuildParams,
   type Structure,
 } from "./core";
@@ -1798,5 +1799,126 @@ export function buildSandbags(
   b.strut(len, 0.06, 0.06, 0, h + 0.9, -0.55, IRON);
   b.box(len * 0.6, 0.14, 0.4, len * 0.1, h + 0.07, 0.5, TIMBER);
   b.box(1.1, 0.3, 0.7, -len * 0.3, h + 0.15, 0.42, TEAK);
+  return b;
+}
+
+/**
+ * A power pole, and the SPAN of wire running from it to the next one.
+ *
+ * **The span is what this builder is for, and it is why the wire lives on the
+ * pole rather than between two of them.** A placement is built at the origin
+ * and knows nothing about any other placement, so a line of poles with the
+ * cable authored between them is not expressible here at all. What is
+ * expressible is a pole that carries the segment AHEAD of it: `length` is the
+ * distance to the next pole along local +X, and a chain of them at that pitch
+ * draws one continuous line. The last pole in a run states no `length` and the
+ * wire stops on it, which is what a line arriving at a town does.
+ *
+ * **What it is FOR is the middle distance.** Sarab is 900 m of play square
+ * with quarters in it and open ground between them, and open ground with
+ * nothing on it reads as no distance at all: the eye has no object between the
+ * body and the haze to measure against. A line of poles at a known pitch is
+ * the cheapest ruler there is — it states the scale of the ground it crosses,
+ * it says which way the road goes from a mile off, and it costs no draw call,
+ * because every part of it is in the map's own palette and merges into the
+ * block it stands in.
+ *
+ * **The pole is a `strut` and the wire is not solid at all.** A 0.28 m post is
+ * exactly the shape `NavGrid` gets wrong (see the rule in `CLAUDE.md`), so it
+ * stops a round and a look and is invisible to navigation, the cover bake and
+ * the obstacle field — the fence's posts, one vernacular over. The cable is
+ * drawn and nothing more: a round that clipped a cable nine metres up would be
+ * a hitscan stopping in the sky.
+ */
+export function buildPylon(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  p: BuildParams = {},
+  ctx?: BuildCtx,
+): Structure {
+  const b = new Build(scene, mats, "pylon");
+  const h = p.height ?? 8.4;
+  /** Distance to the NEXT pole along local +X. 0 draws no span. */
+  const span = p.length ?? 0;
+  const r = clothHash(h, span);
+
+  // The pole: split palm, planted crooked, because every pole in a town that
+  // wired itself is. The lean is in the DRAWING and not the collider — a 3 cm
+  // offset at the head is not a shape a ray needs to know about.
+  //
+  // Squared rather than round, and that is the `strut` word deciding rather
+  // than a preference: `strut` is one call that draws the pole AND declares
+  // the ray body, where a cylinder would be a drawn part plus a box beside it
+  // — two pieces of geometry for one 28 cm post. A sawn pole is what this town
+  // would have put up anyway.
+  const lean = (r - 0.5) * 0.06;
+  b.strut(0.28, h, 0.28, 0, h / 2, 0, PALM_BEAM, { z: lean });
+  // The concrete collar a pole is set in, and the sand drifted against it.
+  b.cyl(0.5, 0.46, 0.58, 6, 0, 0.25, 0, CONCRETE);
+  b.cyl(0.22, 0.7, 1.0, 6, 0, 0.11, 0, SANDBAG);
+
+  // The crossarm, along local Z — square across the run, so the two conductors
+  // hang either side of the line rather than one behind the other.
+  const armY = h - 0.5;
+  const armZ = 1.1;
+  b.box(0.16, 0.14, armZ * 2, 0, armY, 0, TIMBER);
+  for (const s of [-1, 1]) {
+    // The knee brace under each end: two boxes rather than one rotated, since
+    // a brace reads by its triangle and not by its section.
+    b.box(0.1, 0.1, 0.95, 0, armY - 0.42, s * 0.62, TIMBER, { x: s * 0.72 });
+    // The insulator: a limewashed porcelain pot, and the only pale thing on
+    // the pole — which is what makes a line legible against sand at range.
+    b.cyl(0.3, 0.11, 0.15, 6, 0, armY + 0.24, s * armZ, WHITEWASH);
+  }
+  // The transformer can a third of these carry, and the drop wire off it.
+  if (r > 0.66) {
+    b.cyl(1.1, 0.34, 0.34, 8, 0, h * 0.55, 0.42, ALLOY);
+    b.box(0.07, h * 0.4, 0.07, 0, h * 0.72, 0.42, IRON);
+  }
+
+  // The span: a catenary in five chords per conductor, sagging 3.5% of its own
+  // length at mid-span and capped at 1.6 m so the long ford crossings stay off
+  // the bed. Drawn as boxes rotated about Z, which is the only axis a wire
+  // running along X sags in.
+  if (span > 0.5) {
+    // **The far end is the GROUND'S and not this pole's, which is the one
+    // thing this builder has to ask the world for.** A placement is built at
+    // the origin and translated to the floor under its own centre, so a wire
+    // drawn flat in local space lands wherever the next pole's floor happens
+    // not to be — and Sarab's open ground rolls five metres over a swell, so
+    // a run across one had cable hanging in mid-air at every second station.
+    // `BuildCtx` already carries the terrain and the Y this placement was
+    // dropped to, so the rise is one sample and the editor gets it for free.
+    let rise = 0;
+    if (ctx) {
+      const nx = ctx.x + span * Math.cos(ctx.rotY);
+      const nz = ctx.z - span * Math.sin(ctx.rotY);
+      rise = ctx.terrain.heightAt(nx, nz) - ctx.y;
+    }
+    const seg = 5;
+    const sag = Math.min(1.6, span * 0.035);
+    // The chord plus the dip: a catenary between two ends at different heights
+    // is the level one tilted, which is near enough at this span and is what a
+    // cable actually does.
+    const wire = (t: number) => rise * t - 4 * sag * t * (1 - t);
+    for (const s of [-1, 1]) {
+      for (let i = 0; i < seg; i++) {
+        const t0 = i / seg;
+        const t1 = (i + 1) / seg;
+        const dx = (t1 - t0) * span;
+        const dy = wire(t1) - wire(t0);
+        b.box(
+          Math.hypot(dx, dy),
+          0.075,
+          0.075,
+          ((t0 + t1) / 2) * span,
+          armY + 0.32 + (wire(t0) + wire(t1)) / 2,
+          s * armZ,
+          IRON,
+          { z: Math.atan2(dy, dx) },
+        );
+      }
+    }
+  }
   return b;
 }

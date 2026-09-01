@@ -164,9 +164,10 @@ const KNOLLS = [
  * and what a 560 m haze needs behind it to have any depth.
  *
  * **Every clause is bounded by its own slope and the sum is checked**, which is
- * what makes raising it safe: the six terms together cannot exceed a 0.075
- * gradient, against `MAX_WALKABLE_GRADE`'s 0.4, and the emit below refuses a
- * floor it cannot walk whatever this function does. What the raise actually
+ * what makes raising it safe: the eight terms cannot exceed a 0.121 gradient
+ * by their own bounds and reach 0.080 in fact (sampled at half a metre over
+ * the whole 1,500 m field, against 0.046 before the drift terms), and the emit
+ * below refuses a floor it cannot walk whatever this function does. What the raise actually
  * spends is the margin at the SEAMS — a district's skirt and the wadi's bank
  * each have to absorb whatever swell is standing at their lip — and both of
  * those were widened to pay for it.
@@ -178,7 +179,30 @@ function dunes(x, z) {
     0.72 * Math.cos((x - 2 * z) / 147) +
     0.42 * Math.sin((x * 0.7 - z) / 61) +
     0.55 * Math.sin((x * 0.6 + z * 0.8) / 44) +
-    0.3 * Math.cos((x - 0.6 * z) / 26);
+    0.3 * Math.cos((x - 0.6 * z) / 26) +
+    // The two DRIFT terms, and they are a different thing from the five swells
+    // above rather than more of them. A swell is 150-1,200 m and is read from
+    // a roof; these are 79 m and 132 m, which is the band a body standing on
+    // the ground can actually see — the distance at which a floor stops being
+    // a floor and starts being ground that goes somewhere. The map shipped
+    // with nothing in it: every wavelength on the plate was longer than the
+    // eye's own reach across it, so a two-hundred-metre walk between quarters
+    // crossed no feature at all and the sand read as a table.
+    //
+    // **Both are aligned rather than isotropic, because drifted sand is.**
+    // They share a prevailing wind (roughly NNE) — the first is the transverse
+    // train across it, the second the cross-hatch riding over that — which is
+    // what makes the corrugation read as weather rather than as noise, and
+    // what makes it agree with the borderland `TerrainField` rolls off the
+    // edge without either being able to see the other's numbers.
+    //
+    // 0.55 and 0.30 m, which is what the SEAM can absorb: a district's skirt
+    // and the wadi's bank each take up whatever is standing at their lip, and
+    // the emit at the bottom of this file refuses a floor it cannot walk. At
+    // 20 heightfield cells to the shorter wavelength there is no aliasing in
+    // it either — the grid is not the thing being sampled.
+    0.55 * Math.sin((x * 0.35 + z * 0.94) / 21) +
+    0.3 * Math.sin((x * 0.9 - z * 0.42) / 12.5);
   for (const k of KNOLLS) {
     const r = Math.hypot(x - k.x, z - k.z) / k.sigma;
     if (r < 3) h += k.height * Math.exp(-r * r);
@@ -493,12 +517,21 @@ function free(x, z, w, d, pad = 1.6) {
   return true;
 }
 
-function claim(x, z, w, d, pad = 0) {
+/**
+ * `low` marks ground a claim holds but nothing STANDS on: a carriageway, a
+ * capture ring, a spawn, a hardstanding, the birkat's basin. Every one of them
+ * refuses a building and none of them is in the way of a cable nine metres up,
+ * which is the one reader that asks — see `poleRun`'s span test. `place`
+ * never sets it, so a claim made by a builder is solid by default and the flag
+ * cannot be forgotten into existence.
+ */
+function claim(x, z, w, d, pad = 0, low = false) {
   claimed.push({
     x0: x - w / 2 - pad,
     x1: x + w / 2 + pad,
     z0: z - d / 2 - pad,
     z1: z + d / 2 + pad,
+    low,
   });
 }
 
@@ -626,6 +659,122 @@ function wallRun(x, z, turn, len, opts = {}) {
   if (opts.height) params.height = opts.height;
   if (opts.tint) params.tint = opts.tint;
   return place("compoundWall", x, z, turn, len, 0.8, params, 0.6);
+}
+
+/**
+ * A line of power poles along a road, wired end to end.
+ *
+ * **A refused pole must not leave a wire hanging in the air**, and that is the
+ * whole reason this is a helper rather than a loop at the call site. `place`
+ * drops a candidate that lands on claimed ground — a house, a wreck, a quarter
+ * that grew out to the verge — and `buildPylon` carries the span AHEAD of it,
+ * so one pole dropped out of the middle of a naive run leaves its predecessor
+ * paying out cable to nothing there.
+ *
+ * So the run is RESOLVED before any of it is emitted: every station is tested,
+ * the survivors are cut into contiguous chunks, a chunk shorter than three
+ * poles is thrown away as a stub, and only the last pole of each chunk is
+ * emitted without a span. What that draws is a line that stops at the edge of
+ * the town and picks up again on the far side — which is what a line crossing
+ * a built-up area does anyway, and is why the gaps did not need authoring.
+ *
+ * `axis` is the world axis the run travels along; a pole is built with its
+ * span on local +X, so a run along Z is turned by `-PI/2` and one along X is
+ * not turned at all.
+ */
+function poleRun(axis, at, from, to, pitch) {
+  const turn = axis === "z" ? 3 : 0;
+  const put = (t) => (axis === "z" ? [at, t] : [t, at]);
+  const clear = (t) => {
+    const [x, z] = put(t);
+    // A pole standing in the bed of a watercourse is a pole in the next flood.
+    // The line crosses on the bank, exactly as the fords do.
+    if (Math.abs(z - wadiZ(x)) < WADI_BED + 6) return false;
+    return free(x, z, 2.4, 1.2, 1.2);
+  };
+  // A station is NUDGED ALONG THE RUN before it is given up on, and along it
+  // rather than across it because the span is what has to stay honest: the
+  // wire is drawn from this pole toward the next at the distance stated on
+  // THIS one, so a pole shifted sideways pays out cable that misses. Shifted
+  // up or down the run it still lands on its neighbour, and the span it states
+  // is simply the gap it actually left. +-20 m out of a 46 m pitch is the jog
+  // a line makes round a yard somebody built under it, and is as far as it
+  // goes before the jog would be a detour.
+  const stations = [];
+  for (let t = from; t <= to; t += pitch) {
+    let at2 = null;
+    for (const d of [0, 5, -5, 10, -10, 15, -15, 20, -20]) {
+      if (clear(t + d)) {
+        at2 = t + d;
+        break;
+      }
+    }
+    stations.push(at2);
+  }
+  // **The SPAN has to be clear as well as the pole, and that is a second test
+  // rather than a wider footprint on the first.** A pole claims two metres of
+  // ground and the wire it pays out crosses forty-six, so a run whose stations
+  // both found ground can still have its cable drawn straight through a
+  // building standing between them — which is what the first version of this
+  // did through the souk's arcade, in the map's own menu photograph. The
+  // segment is sampled instead, and a span that is not clear ENDS the run: a
+  // line that stops at the edge of a quarter and picks up on the far side is
+  // what a line crossing a built-up area does, and is the same answer the
+  // chunking above already gives for a station that found nowhere to stand.
+  const spanClear = (a, b) => {
+    for (let k = 1; k < 6; k++) {
+      const t = a + ((b - a) * k) / 6;
+      const [x, z] = put(t);
+      for (const c of claimed) {
+        // A `low` claim is ground nothing stands on — a carriageway, a capture
+        // ring, a yard — and a line crosses all three. That exemption is the
+        // whole reason `claim` carries the flag: without it the span test
+        // broke every run at the first road it crossed, which is the one place
+        // a power line is guaranteed to be.
+        if (c.low) continue;
+        if (x + 1.5 > c.x0 && x - 1.5 < c.x1 && z + 1.5 > c.z0 && z - 1.5 < c.z1) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+  let run = [];
+  const flush = () => {
+    if (run.length >= 3) {
+      run.forEach((t, i) => {
+        const [x, z] = put(t);
+        place(
+          "pylon",
+          x,
+          z,
+          turn,
+          1.2,
+          2.4,
+          {
+            height: rnd(7.8, 9.2),
+            // The gap this pole actually left, not the pitch it was asked for.
+            ...(i < run.length - 1
+              ? { length: Number(Math.abs(run[i + 1] - t).toFixed(2)) }
+              : {}),
+          },
+          1.2,
+        );
+      });
+    }
+    run = [];
+  };
+  for (const t of stations) {
+    if (t === null) {
+      flush();
+      continue;
+    }
+    if (run.length && !spanClear(run[run.length - 1], t)) {
+      flush();
+    }
+    run.push(t);
+  }
+  flush();
 }
 
 /**
@@ -857,7 +1006,7 @@ for (const r of ROADS) {
   const len = r.to - r.from;
   const mid = (r.from + r.to) / 2;
   const [x, z, turn] = r.kind === "ns" ? [r.at, mid, 0] : [mid, r.at, 1];
-  claim(x, z, r.kind === "ns" ? r.w : len, r.kind === "ns" ? len : r.w, 1.5);
+  claim(x, z, r.kind === "ns" ? r.w : len, r.kind === "ns" ? len : r.w, 1.5, true);
   placements.push(
     `  { kind: "road", x: ${n2(x)}, z: ${n2(z)}${TURN[turn]}, ` +
       `params: { length: ${n2(len)}, width: ${n2(r.w)}, surface: "${r.surface}" } },`,
@@ -876,7 +1025,7 @@ for (const r of ROADS) {
 // zone free for the stalls, the walls and the wrecks that make a flag a place
 // — a ring sized to the whole zone refused every one of them and left five
 // flags standing on bare sand.
-for (const f of FLAGS) claim(f.x, f.z, 26, 26);
+for (const f of FLAGS) claim(f.x, f.z, 26, 26, 0, true);
 
 // The birkat's DISTURBED ground, claimed before anything is built anywhere
 // near it. What has to be kept clear is not the water but the SKIRT: a
@@ -888,6 +1037,8 @@ claim(
   BIRKAT.z,
   2 * (BIRKAT.halfW + BIRKAT.skirt) + 6,
   2 * (BIRKAT.halfD + BIRKAT.skirt) + 6,
+  0,
+  true,
 );
 
 // The spawns and the hardstandings, computed here rather than at the end,
@@ -899,7 +1050,7 @@ for (const h of HOMES) {
   for (let i = 0; i < 3; i++) {
     const x = h.x - h.s * (10 + i * 8);
     const z = h.z - h.s * (16 - i * 9);
-    claim(x, z, 7, 7);
+    claim(x, z, 7, 7, 0, true);
     spawns.push(
       `  { team: ${h.team}, pos: new Vector3(${n2(x)}, ` +
         `${n2(Number(heightAt(x, z).toFixed(2)))}, ${n2(z)}), yaw: ${h.yaw} },`,
@@ -907,7 +1058,7 @@ for (const h of HOMES) {
   }
   const vx = h.x - h.s * 26;
   const vz = h.z - h.s * 2;
-  claim(vx, vz, 16, 16);
+  claim(vx, vz, 16, 16, 0, true);
   vehicles.push(
     `  { team: ${h.team}, pos: new Vector3(${n2(vx)}, ` +
       `${n2(Number(heightAt(vx, vz).toFixed(2)))}, ${n2(vz)}), yaw: ${h.yaw} },`,
@@ -928,7 +1079,7 @@ for (const h of HOMES) {
   // the tank's because it is a smaller vehicle: 12 m against 16.
   const kx = h.x + h.s * 4;
   const kz = h.z - h.s * 12;
-  claim(kx, kz, 12, 12);
+  claim(kx, kz, 12, 12, 0, true);
   vehicles.push(
     `  { team: ${h.team}, pos: new Vector3(${n2(kx)}, ` +
       `${n2(Number(heightAt(kx, kz).toFixed(2)))}, ${n2(kz)}), ` +
@@ -957,7 +1108,7 @@ for (const h of HOMES) {
   // and 8.5 m clear of the two nearest spawns.
   const gx = h.x - h.s * 6;
   const gz = h.z + h.s * 14;
-  claim(gx, gz, 18, 18);
+  claim(gx, gz, 18, 18, 0, true);
   vehicles.push(
     `  { team: ${h.team}, pos: new Vector3(${n2(gx)}, ` +
       `${n2(Number(heightAt(gx, gz).toFixed(2)))}, ${n2(gz)}), ` +
@@ -1428,14 +1579,23 @@ placements.push(
   "  // sparse: the country outside the town is TRANSIT, and 900 m of play needs",
   "  // some of it to be ground you cross rather than ground you clear.",
 );
-for (let i = 0; i < 300; i++) {
+for (let i = 0; i < 440; i++) {
   const a = rng() * Math.PI * 2;
-  const r = rand(214, 418);
+  // **The ring reaches further IN than it used to** (was 214), and that is the
+  // half of the sparseness the dead ground could not fix. A quarter's edge is
+  // a wall and then nothing for two hundred metres, so what a crossing needed
+  // was not more thorn on it but somewhere in the middle to be going: a yard
+  // at 190 m is a place, and a place two hundred metres from the last one is
+  // what makes the ground between them a route rather than a gap.
+  const r = rand(186, 422);
   const cx = Math.cos(a) * r;
   const cz = Math.sin(a) * r;
   if (Math.abs(cx) > 415 || Math.abs(cz) > 415) continue;
   if (Math.abs(cz - wadiZ(cx)) < WADI_LIP + 14) continue;
-  if (grade(cx, cz) > 0.13) continue;
+  // 0.16 rather than 0.13, because the drift terms this map's floor gained
+  // put more of the open ground on a gentle grade than there used to be and
+  // the old bar was turning down flat-enough yards for it.
+  if (grade(cx, cz) > 0.16) continue;
   const hw = rand(13, 22);
   const hd = rand(12, 20);
   if (!free(cx, cz, hw * 2 + 6, hd * 2 + 6, 3)) continue;
@@ -1466,15 +1626,144 @@ for (let i = 0; i < 300; i++) {
   }
 }
 
+// --- the wayside -------------------------------------------------------------
+
+section(placements, "the wayside");
+placements.push(
+  "  // The half-dozen things standing on the open desert that are not a",
+  "  // smallholding, and they exist for a reason the dead ground's thorn and",
+  "  // stone cannot serve: a crossing needs somewhere to be GOING, not just",
+  "  // something to look at on the way. Every one of these is a shape you can",
+  "  // see from four hundred metres and get behind at four, put where the map",
+  "  // is otherwise nothing — the burial ground on the western flat, the three",
+  "  // cisterns the tracks out of town were dug for, the convoy that did not",
+  "  // make the ford, and the stock pens on the northern approach.",
+  "  //",
+  "  // Authored rather than lattice-generated, and that is the whole point of",
+  "  // them: what the grid is good at is TEXTURE, and a landmark is the thing",
+  "  // texture cannot be. The one piece placed with `must` is the shrine at the",
+  "  // head of the burial ground, because that is the piece the ground is FOR",
+  "  // and a silent refusal would leave a walled plot with nothing in it; every",
+  "  // other line here is dressing on ground that reads without it, and is",
+  "  // allowed to lose to something the fabric already grew.",
+);
+
+/**
+ * The burial ground: a low wall round a plot of headstones with a shrine at
+ * its head, out on the western flat where the map had nothing at all.
+ *
+ * The wall is DELIBERATELY low and broken by the compound's open side — a
+ * sealed rectangle out here is a box bots route the long way round, and the
+ * whole value of a landmark is that people go to it.
+ */
+const CEMETERY = { x: -300, z: -108 };
+must("shrine", CEMETERY.x, CEMETERY.z + 18, 0, 4, 4, undefined, 2);
+compound(CEMETERY.x, CEMETERY.z, 22, 16, { open: 0, height: 1.5 });
+place("well", CEMETERY.x - 14, CEMETERY.z - 8, 0, 3, 3, undefined, 1.4);
+
+/**
+ * The three cisterns on the open ground, each with its trough and its palm.
+ *
+ * A well in a desert is the strongest landmark there is because it is the only
+ * one that explains itself: the road bends to it, the ground round it is worn,
+ * and it is the one place on a crossing anybody would have had a reason to
+ * stand. They are held well off the wadi on purpose — water at the surface is
+ * the wadi's own story and a cistern is what you dig where there is none.
+ */
+const CISTERNS = [
+  { x: 96, z: -318 },
+  { x: -156, z: 330 },
+  { x: 330, z: -212 },
+];
+for (const c of CISTERNS) {
+  if (!place("well", c.x, c.z, 0, 3, 3, undefined, 2)) continue;
+  place("trough", c.x + 5, c.z + 1, 1, 3.2, 1.2, undefined, 1.2);
+  place("crates", c.x - 4, c.z + 4, randInt(0, 3), 2.4, 2.4, undefined, 1.2);
+  wallRun(c.x, c.z - 7, 0, 9, { height: 1.6 });
+  scatter.push(
+    `  { prop: "palm", x: ${n2(c.x + 3)}, z: ${n2(c.z + 8)}, radius: 9, count: 3, ` +
+      "scale: [0.9, 1.15], blocking: true, clearance: 3.0 },",
+  );
+}
+
+/**
+ * The convoy that did not make the ford: five burnt hulls, a T-wall somebody
+ * dragged across afterwards and the drums they were carrying, on the open
+ * ground short of the eastern highway's crossing.
+ *
+ * The only cluster on the map that is COVER in the middle of open ground
+ * rather than at the edge of it, which is what makes the eastern approach to
+ * the Crossing crossable at all.
+ */
+const CONVOY = { x: 268, z: -60 };
+for (let i = 0; i < 5; i++) {
+  place(
+    "car",
+    CONVOY.x + rand(-16, 16),
+    CONVOY.z + i * 9 - 18 + rand(-3, 3),
+    randInt(0, 3),
+    4.4,
+    2.2,
+    { tint: pick(["#2f3338", "#4a4f45", "#3f4b52"]) },
+    1.4,
+  );
+}
+place("blastWall", CONVOY.x - 12, CONVOY.z + 6, 1, 14, 1, { length: 14 }, 1.2);
+place("sandbags", CONVOY.x + 10, CONVOY.z - 4, 0, 6, 1, { length: 6 }, 1.2);
+scatter.push(
+  `  { prop: "barrel", x: ${n2(CONVOY.x)}, z: ${n2(CONVOY.z)}, radius: 20, ` +
+    "count: 9, scale: [0.9, 1.15], blocking: true, clearance: 1.2 },",
+  `  { prop: "rubble", x: ${n2(CONVOY.x)}, z: ${n2(CONVOY.z)}, radius: 24, ` +
+    "count: 12, scale: [0.7, 1.2], clearance: 1.2 },",
+);
+
+/**
+ * The stock pens on the northern approach: three empty enclosures and the
+ * feed store beside them, which is a compound with no house in it and reads
+ * from the air as the edge of a town rather than as a building nobody
+ * finished.
+ */
+const PENS = { x: 60, z: 372 };
+for (let i = 0; i < 3; i++) {
+  compound(PENS.x + i * 34 - 34, PENS.z + (i % 2) * 10, 15, 11, {
+    open: (i + 1) % 4,
+    height: 1.7,
+  });
+  place("trough", PENS.x + i * 34 - 34, PENS.z + (i % 2) * 10, 0, 3.2, 1.2, undefined, 1.2);
+}
+place("granary", PENS.x + 44, PENS.z - 6, 0, 8, 7, { height: 5.0 }, 1.4);
+place("shed", PENS.x - 52, PENS.z + 4, 1, 6, 5, undefined, 1.4);
+
 // --- the roadside ------------------------------------------------------------
 
 section(placements, "the roadside");
 placements.push(
-  "  // Burnt-out vehicles along the two highways and the checkpoints between",
-  "  // them. Placed ON the verge rather than in the carriageway on purpose: a",
-  "  // wreck across a road is cover on the one line every hull on the map takes,",
-  "  // and this map already has four fords to be caught in.",
+  "  // The power line, the burnt-out vehicles along the two highways and the",
+  "  // checkpoints between them. The wrecks are placed ON the verge rather",
+  "  // than in the carriageway on purpose: a wreck across a road is cover on",
+  "  // the one line every hull on the map takes, and this map already has four",
+  "  // fords to be caught in.",
+  "  //",
+  "  // THE POLES ARE THE MIDDLE DISTANCE and are worth more than they look.",
+  "  // 900 m of play square with quarters in it is 900 m of open ground",
+  "  // between them, and open ground with nothing standing on it reads as no",
+  "  // distance at all — there is nothing between the body and the haze for",
+  "  // the eye to measure against, which is exactly what made this map read as",
+  "  // sparse from the air. A line of poles at a known pitch is the cheapest",
+  "  // ruler there is: it states the scale of the ground it crosses and it says",
+  "  // which way the road goes from four hundred metres, and it costs no draw",
+  "  // call, because every part of it is in the map's own palette and merges",
+  "  // into whichever block it stands in. See `buildPylon`, which carries the",
+  "  // span AHEAD of each pole, and `poleRun`, which is what stops a refused",
+  "  // pole leaving a wire hanging in the air.",
 );
+// The two asphalt highways and the cross route. 46 m of pitch, which is a
+// span the sag term is tuned for and a spacing that puts eight or nine poles
+// inside `fogEnd` from any point on the road — enough of a line to read as one
+// and few enough that the run is not a fence.
+poleRun("z", -80, -414, 414, 46);
+poleRun("z", 204, -414, 414, 46);
+poleRun("x", 44, -414, 414, 46);
 for (let i = 0; i < 30; i++) {
   const road = chance(0.5) ? -66 : 190;
   const side = chance(0.5) ? 1 : -1;
@@ -1537,42 +1826,169 @@ scatter.push(
 
 section(scatter, "the dead ground");
 scatter.push(
-  "  // Dry scrub, thorn and drifted boulders on the open desert between the",
-  "  // quarters. Every blocking region here is held off the roads by hand, and",
-  "  // the thorn and the dead trees are held off them a second time by the",
-  "  // builder, which sows nothing rooted on a carriageway.",
+  "  // The open desert between the quarters, and it is dressed on a GRID",
+  "  // rather than by hand for the reason every other bulk pass in this file",
+  "  // is: ten authored patches over 810,000 square metres is one patch every",
+  "  // three hundred metres, which from the ground is bare sand with an",
+  "  // occasional bush in it — and bare sand with an occasional bush in it is",
+  "  // what made this map read as unfinished. A 62 m lattice with a character",
+  "  // drawn per cell covers the same ground at a density the eye reads as",
+  "  // continuous while leaving one cell in eight EMPTY, which is what keeps a",
+  "  // desert a desert: what is wanted is ground that goes somewhere, not",
+  "  // ground that is full.",
+  "  //",
+  "  // **Almost all of it is non-blocking, and that is the budget.** A prop",
+  "  // with no collider emits no `WorldBox`, costs no ray, no nav cell and no",
+  "  // cover query, and its geometry merges into whichever 96 m block it",
+  "  // stands in — so the whole of this pass is VERTICES in meshes that were",
+  "  // already being drawn, and `WorldCulling` drops them past `fogEnd` with",
+  "  // the block they belong to. The one kind that does block is the stone",
+  "  // field, deliberately: an open crossing with nothing to get behind is a",
+  "  // crossing nobody makes twice, and the boulders are the only cover on it.",
+  "  //",
+  "  // Held off the carriageways by hand, because `blocking` and `boulder`",
+  "  // between them are the case the builder cannot cover: it sows nothing",
+  "  // ROOTED on a road, and a boulder is not rooted.",
 );
-const SCRUB = [
-  [-300, 20, 70, 60],
-  [-90, -290, 90, 60],
-  [120, 40, 80, 70],
-  [300, -60, 90, 80],
-  [-60, 330, 110, 60],
-  [260, -280, 90, 70],
-  [-330, 200, 80, 70],
-  [340, 120, 80, 90],
-  [-260, -60, 70, 80],
-  [30, -350, 120, 60],
-];
-for (const [x, z, w, d] of SCRUB) {
-  scatter.push(
-    `  { prop: "bramble", x: ${n2(x)}, z: ${n2(z)}, width: ${n2(w)}, depth: ${n2(d)}, ` +
-      `count: ${randInt(10, 18)}, scale: [0.8, 1.4] },`,
-  );
+
+/** How far a point is from the nearest carriageway EDGE, 0 if it is on one. */
+function roadDist(x, z) {
+  let best = Infinity;
+  for (const r of ROADS) {
+    const [along, across, at] = r.kind === "ns" ? [z, x, r.at] : [x, z, r.at];
+    if (along < r.from || along > r.to) continue;
+    best = Math.min(best, Math.abs(across - at) - r.w / 2);
+  }
+  return Math.max(0, best);
 }
-for (const [x, z, w, d] of SCRUB) {
-  if (!chance(0.7)) continue;
-  scatter.push(
-    `  { prop: "boulder", x: ${n2(x + rand(-20, 20))}, z: ${n2(z + rand(-20, 20))}, ` +
-      `radius: ${randInt(14, 20)}, count: ${randInt(4, 6)}, scale: [0.8, 1.35], ` +
-      `blocking: true, clearance: 1.0 },`,
-  );
+
+/**
+ * How many things have already claimed ground within `reach` of a point.
+ *
+ * **This is the test for "is this a street", and a district is NOT that test**,
+ * which is the thing a first version of this pass got wrong. `DISTRICTS` are
+ * the rectangles the FLOOR is flattened over, and two of them are enormous —
+ * the south bank is 524 m wide and the north town 390 — because a terrace is
+ * a shape the ground takes, not a shape the town fills. Keying the dead
+ * ground off them threw away more than half of the open desert as though it
+ * were built up, which is the same emptiness this pass exists to fix. What
+ * says a cell is a street is that there are BUILDINGS in it, and the claim
+ * list is where that is written down.
+ */
+function claimsNear(x, z, reach) {
+  let n = 0;
+  for (const c of claimed) {
+    if (x + reach > c.x0 && x - reach < c.x1 && z + reach > c.z0 && z - reach < c.z1) n++;
+  }
+  return n;
 }
+
+const DEAD_PITCH = 62;
+for (let gx = -7; gx <= 7; gx++) {
+  for (let gz = -7; gz <= 7; gz++) {
+    const cx = Math.round(gx * DEAD_PITCH + rand(-15, 15));
+    const cz = Math.round(gz * DEAD_PITCH + rand(-15, 15));
+    if (Math.abs(cx) > 406 || Math.abs(cz) > 406) continue;
+    // A quarter is where the CLAIMS are, and 12 inside 40 m is the knee: a
+    // town block runs to twenty and past, a smallholding on the outskirts is
+    // six or seven, and thorn growing round a smallholding is the point.
+    if (claimsNear(cx, cz, 40) >= 12) continue;
+    if (roadDist(cx, cz) < 13) continue;
+    const roll = rng();
+    // One cell in eight is left bare on purpose — see the head of this block.
+    if (roll > 0.87) continue;
+    const inBed = Math.abs(cz - wadiZ(cx)) < WADI_BED;
+    const r = randInt(34, 46);
+    if (roll < 0.34) {
+      // Thorn: the commonest thing growing out here, and the only one of the
+      // four characters that is nothing but drawing — no cover in it at any
+      // scale, which is what makes it the one safe to put anywhere.
+      scatter.push(
+        `  { prop: "bramble", x: ${n2(cx)}, z: ${n2(cz)}, radius: ${r}, ` +
+          `count: ${randInt(16, 30)}, scale: [0.7, 1.5] },`,
+      );
+    } else if (roll < 0.66) {
+      // A stone field, and it is the WORKHORSE of this pass rather than the
+      // thorn: a boulder is two polyhedra where a bramble is nine cylinders,
+      // so it is a quarter of the vertices for something that reads at four
+      // hundred metres instead of at forty. Non-blocking and small, so it is
+      // drawing only — nothing here is cover, and nothing here costs a ray.
+      scatter.push(
+        `  { prop: "boulder", x: ${n2(cx)}, z: ${n2(cz)}, radius: ${r}, ` +
+          `count: ${randInt(14, 26)}, scale: [0.28, 0.66], clearance: 1.0 },`,
+      );
+      if (chance(0.6)) {
+        scatter.push(
+          `  { prop: "bramble", x: ${n2(cx + randInt(-16, 16))}, ` +
+            `z: ${n2(cz + randInt(-16, 16))}, radius: ${randInt(18, 26)}, ` +
+            `count: ${randInt(8, 15)}, scale: [0.7, 1.35] },`,
+        );
+      }
+    } else if (roll < 0.79) {
+      // The cover cell: boulders big enough to get behind, which is the one
+      // thing in this pass that changes how the ground plays rather than how
+      // it looks. Held well off the roads above, and it is the ONLY blocking
+      // region the lattice makes.
+      scatter.push(
+        `  { prop: "boulder", x: ${n2(cx)}, z: ${n2(cz)}, radius: ${randInt(16, 24)}, ` +
+          `count: ${randInt(4, 7)}, scale: [0.95, 1.5], blocking: true, clearance: 1.0 },`,
+        `  { prop: "boulder", x: ${n2(cx)}, z: ${n2(cz)}, radius: ${r}, ` +
+          `count: ${randInt(12, 20)}, scale: [0.28, 0.62], clearance: 1.0 },`,
+      );
+    } else {
+      // Dead standing timber, and it is the RAREST of the four on purpose: the
+      // prop is `BARK` at #4a4238, which is a wet valley's tree, and against
+      // bleached sand under a high sun it silhouettes almost black. A few of
+      // them across a quarter of a mile is a landmark; a lattice of them is a
+      // rash of dark spiders on pale ground. A wadi bed gets DRIFTWOOD instead
+      // — the same prop laid along the run rather than in a clump, because
+      // what collects in a watercourse arrived in one, and lying down it reads
+      // as debris rather than as a tree that should not be there.
+      scatter.push(
+        inBed
+          ? `  { prop: "deadTree", x: ${n2(cx)}, z: ${n2(cz)}, width: ${r * 2}, ` +
+              `depth: 18, count: ${randInt(4, 8)}, scale: [0.5, 0.85], clearance: 1.6 },`
+          : `  { prop: "deadTree", x: ${n2(cx)}, z: ${n2(cz)}, radius: ${randInt(18, 26)}, ` +
+              `count: ${randInt(3, 5)}, scale: [0.7, 1.15], blocking: true, clearance: 1.4 },`,
+        `  { prop: "bramble", x: ${n2(cx + randInt(-16, 16))}, ` +
+          `z: ${n2(cz + randInt(-16, 16))}, radius: ${randInt(20, 28)}, ` +
+          `count: ${randInt(10, 18)}, scale: [0.75, 1.4] },`,
+      );
+    }
+  }
+}
+
+section(scatter, "the wadi bed");
 scatter.push(
-  `  { prop: "deadTree", x: -140, z: -300, radius: 22, count: 6, scale: [0.8, 1.2], blocking: true, clearance: 0.8 },`,
-  `  { prop: "deadTree", x: 210, z: 320, radius: 20, count: 5, scale: [0.8, 1.2], blocking: true, clearance: 0.8 },`,
-  `  { prop: "deadTree", x: -350, z: 60, radius: 22, count: 6, scale: [0.8, 1.2], blocking: true, clearance: 0.8 },`,
+  "  // Gravel bars and dry thorn down the whole run of the bed, and every",
+  "  // region here is NON-BLOCKING without exception. That is the wadi's own",
+  "  // rule restated rather than a budget: the bed is a ROUTE, its only cover",
+  "  // is the palm boles, and a watercourse you cannot be caught in is not the",
+  "  // feature this map put across its middle. What was missing was never",
+  "  // cover — it was that 900 m of dry channel had the same bare floor as the",
+  "  // open desert either side of it, so nothing said it was a channel at all",
+  "  // until you were standing in it.",
+  "  //",
+  "  // Small stone at a high count is what a bar of shingle is, and it is also",
+  "  // the cheapest thing in the prop table: two polyhedra, no collider, no",
+  "  // `WorldBox`, no ray and no nav cell.",
 );
+for (let x = -400; x <= 400; x += 46) {
+  const z = wadiZ(x);
+  const off = rand(-9, 9);
+  scatter.push(
+    `  { prop: "boulder", x: ${n2(x)}, z: ${n2(Number((z + off).toFixed(1)))}, ` +
+      `width: 54, depth: ${randInt(26, 40)}, count: ${randInt(20, 34)}, ` +
+      `scale: [0.22, 0.55], clearance: 0.9 },`,
+  );
+  if (chance(0.62)) {
+    scatter.push(
+      `  { prop: "bramble", x: ${n2(x + rand(-14, 14))}, ` +
+        `z: ${n2(Number((z + rand(-18, 18)).toFixed(1)))}, radius: ${randInt(16, 24)}, ` +
+        `count: ${randInt(8, 16)}, scale: [0.6, 1.15] },`,
+    );
+  }
+}
 
 section(scatter, "the streets");
 scatter.push(
@@ -1771,18 +2187,32 @@ water.push(
 
 const grass = [
   "  // Dry scrub, and a BUDGET rather than a blanket: the field is one mesh of",
-  "  // thin instances with no culling inside it, so the cost is the tuft count",
-  "  // wherever the camera stands. These sum to well under Harrowmead's ~23,000",
-  "  // because a desert should be bare — what the rects are for is the two",
-  "  // places that are not, the wadi's damp reaches and the shade of the",
-  "  // groves. The rects along the bed run straight over the three pools, which",
-  "  // is deliberate: an opaque body hides every tuft standing in it, so what is",
-  "  // left of a rect crossing a pool is the ring of it on the shore.",
+  "  // thin instances with NO culling inside it, so the cost is the whole tuft",
+  "  // count wherever the camera stands — which is the one thing on this map",
+  "  // that is not paid for by distance and is why the number is stated here.",
+  "  // ~17,400, against Harrowmead's ~23,000 on a fifth of the ground.",
+  "  //",
+  "  // A desert should be BARE, so what these are for is the ground that is",
+  "  // not: the wadi's whole run at two densities (see the loop — the middle",
+  "  // is where the pools are and the ends are drier), the birkat's margins,",
+  "  // and five low patches on the open desert. The rects along the bed run",
+  "  // straight over the three pools, which is deliberate: an opaque body",
+  "  // hides every tuft standing in it, so what is left of a rect crossing a",
+  "  // pool is the ring of it on the shore.",
 ];
-for (let i = -3; i <= 3; i++) {
+// **The bed carries the whole run now and not only its middle.** The seven
+// rects it shipped with covered x -172..200, which is the reach of the three
+// pools and is the ground that is genuinely damp; either side of that a dry
+// channel had exactly the floor the open desert has, so nothing on the western
+// or eastern approach said there was a watercourse there at all until you
+// were standing in it. The outer six are sown at half the density for the
+// reason the inner seven are sown at all: what grows in a wadi grows where
+// the water is, and out at the ends there is less of it.
+for (let i = -6; i <= 6; i++) {
   const x = i * 62 + 14;
   grass.push(
-    `  { x: ${n2(x)}, z: ${n2(Number(wadiZ(x).toFixed(1)))}, width: 58, depth: 46, density: 0.4 },`,
+    `  { x: ${n2(x)}, z: ${n2(Number(wadiZ(x).toFixed(1)))}, width: 58, depth: 46, ` +
+      `density: ${Math.abs(i) <= 3 ? 0.4 : 0.22} },`,
   );
 }
 grass.push(
@@ -2065,13 +2495,17 @@ import type {
  * **The SHELF** stands 7 m over the town in the north-east and the Martyrs'
  * Quarter is on it — a 0.082 gradient up an 85 m skirt, which is a slope you
  * climb without noticing and a quarter that looks down every street in the old
- * town. **Everything else is dunes**, a couple of metres of swell, flattened
- * dead level under each quarter because a placement samples the ground once at
- * its own centre and a building on a grade floats at one corner — 5 m of swell
- * now rather than the 2.3 the map shipped with, plus three knolls in the only
- * three places with room for one, plus the BIRKAT: a 2.7 m basin dug into the
- * mosque quarter, which is the only ground in the town that is down and the
- * only water in it.
+ * town. **Everything else is dunes**, flattened dead level under each quarter
+ * because a placement samples the ground once at its own centre and a building
+ * on a grade floats at one corner. It is TWO scales and the second is the one
+ * a body on the ground can see: 5 m of long swell at 150 to 1,200 m, read from
+ * a roof and from the air, and 0.85 m of wind DRIFT at 79 and 132 m, which is
+ * the band the eye actually reaches across — without it a two-hundred-metre
+ * walk between quarters crossed no feature at all and the sand read as a
+ * table. Both are aligned to one prevailing wind. Then three knolls in the
+ * only three places with room for one, and the BIRKAT: a 2.7 m basin dug into
+ * the mosque quarter, which is the only ground in the town that is down and
+ * the only water in it.
  *
  * ## Design intent per flag
  *

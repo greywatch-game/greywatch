@@ -514,8 +514,13 @@ src/
                         #   collider budget an enterable one is spending
     kit/desert.ts       #   adobeHouse, compoundWall, shellBlock, mosque,
                         #   minaret, souk, windTower, caravanserai, hammam,
-                        #   granary, blastWall, sandbags — the desert-town
-                        #   set. The first vernacular here whose ROOF is walked,
+                        #   granary, blastWall, sandbags, pylon — the desert-town
+                        #   set. `pylon` is the odd one: a power pole that
+                        #   carries the SPAN of wire ahead of it (`length`), so a
+                        #   chain of them draws one line across ground a
+                        #   placement cannot otherwise reach off the end of, and
+                        #   it samples `BuildCtx.terrain` for the far end's
+                        #   height. The first vernacular here whose ROOF is walked,
                         #   which is what it exists for: a flat roof is a second
                         #   storey of ground and a parapet is the cover on it.
                         #   Its header owns the STAIR LANE every climbed building

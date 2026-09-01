@@ -57,6 +57,7 @@ import {
   buildHammam,
   buildMinaret,
   buildMosque,
+  buildPylon,
   buildSandbags,
   buildShellBlock,
   buildSouk,
@@ -156,6 +157,7 @@ export const BUILDERS = {
   granary: buildGranary,
   blastWall: buildBlastWall,
   sandbags: buildSandbags,
+  pylon: buildPylon,
 } as const;
 
 export type BuilderKind = keyof typeof BUILDERS;

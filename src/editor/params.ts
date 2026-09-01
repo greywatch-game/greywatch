@@ -406,6 +406,12 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     num("length", "length", 6, 2, 24, 0.5),
     num("height", "height", 1.15, 0.6, 1.6, 0.05),
   ],
+  // `length` is the SPAN to the next pole rather than this one's own extent —
+  // see `buildPylon`, which carries the wire ahead of it. 0 ends a run.
+  pylon: [
+    num("length", "span", 0, 0, 90, 1),
+    num("height", "height", 8.4, 5, 13, 0.2),
+  ],
 
   // Fixed-geometry kinds: placed, rotated, and otherwise not configurable.
   tavern: [],
