@@ -55,6 +55,36 @@
  * textureDimensions(depth)`, and those index the same screen point in the same
  * convention whatever the storage is.
  *
+ * THE NIB HAS A WIDTH AND THE WIDTH IS A DISTANCE, which is the second thing
+ * this pass spends depth on and the one the fog fade could not give. A line one
+ * texel wide everywhere is the one thing a pen never draws: it gives the palm
+ * grove at 300 m exactly the weight of the crate at 5, so a dense frame arrives
+ * with no hierarchy in it. Darkness and weight are not one reading — a thin
+ * black line comes FORWARD and a thick pale one does not — so `ink.width` sits
+ * beside the fade rather than instead of it, and aerial perspective in ink is
+ * the two together. The curve has TWO SIDES because the near end is the
+ * viewmodel's, which is `ink.near`'s argument about darkness spent again on
+ * width. Width is bought with a SECOND RING at two texels, both rings divided
+ * by their own radius so one pair of thresholds serves both — and what that
+ * division costs on a weak edge is the PRESSURE it buys, since a weak edge
+ * keeps the inner ring alone and stays a hairline while a strong one carries
+ * the whole nib. Three smaller terms finish the hand and none of them is new
+ * data: a CONTOUR and a CREASE are drawn at different weight and width
+ * (`ink.creaseStroke`), a line the geometry only just asks for is laid down
+ * lighter than one it shouts (`ink.pressure`), and the sample cross is nudged
+ * by a sub-texel two-octave field so a long straight edge is not exactly
+ * straight (`ink.wobble`, anchored in screen space, which the config says out
+ * loud). `docs/rendering.md` carries the argument in full.
+ *
+ * **The second ring costs eight more depth loads a pixel and no measurable
+ * time**, which is what a DRAW-CALL bound frame means in practice. Interleaved
+ * A B A, uncapped headless, live round on the Windows box: Coldharbour 152.8 /
+ * 152.4 / 152.0 fps at a 6.4 ms median in all three arms, and Sarab 115.1 /
+ * 109.5 / 106.6 with the two LIKE arms 7.4% apart — the run's own drift is
+ * larger than the difference between the arms, and the baseline sits inside
+ * it. Do not read that as headroom for a THIRD ring on a phone: it is a
+ * statement about where this frame's bottleneck is, taken on a 4070 Ti SUPER.
+ *
  * TWO THINGS STAND IN FOR THE HULL'S PER-MESH CONTROL AND NEITHER IS A FLAG,
  * which is the part `FINDINGS.md` 18 said would need an ink-id attachment.
  * - **Emissives are masked out by `glow.mainTexture`.** Every emissive part was
@@ -134,6 +164,10 @@ uniform fadeBand: vec2f;     // the map's fog start and end, in metres
 uniform nearBand: vec2f;     // x = metres it holds for, y = ink kept at the eye
 uniform maskBand: vec2f;     // x = emissive luma where ink starts giving way, y = gone
 uniform tint: f32;
+uniform widthBand: vec4f;    // the NIB, in texels: x at the eye, y bold, z fine, w = the rows it is stated at
+uniform widthRange: vec2f;   // x = where the bold nib is, y = where the fine one is, in metres
+uniform creaseStroke: vec2f; // what a CREASE is worth against a contour: x = darkness, y = width
+uniform grain: vec3f;        // x = pressure of the faintest line, y = wobble in texels, z = wobble frequency
 
 // Buffer depth -> metres. Babylon is left-handed and WebGPU's NDC z is [0, 1]
 // (engine.isNDCHalfZRange), and nothing in the tree turns on a reverse depth
@@ -146,6 +180,54 @@ fn rawAt(p: vec2i, dims: vec2i) -> f32 {
   return textureLoad(depthTexture, clamp(p, vec2i(0), dims - vec2i(1)), 0);
 }
 
+// THE TWO TESTS, taken at a RING of radius r and handed back as (silhouette,
+// crease), so one function serves every ring the nib is wide enough to want.
+//
+// A SILHOUETTE is a step in depth, taken relative to the centre so that one
+// doorway reads the same at 5 m and at 50.
+//
+// A CREASE is a box corner, where depth is CONTINUOUS and only its slope
+// jumps — what a naive Sobel of depth misses, and what a normal buffer is
+// usually bought for. See CONFIG.graphics.ink.crease: 1/z is linear in screen
+// space across any plane, so this is zero on a flat surface at any angle and
+// large at a corner. Multiplying back by dc makes it dimensionless, so one
+// threshold holds at every range.
+//
+// **BOTH ARE DIVIDED BY r, and that is what lets ONE PAIR OF THRESHOLDS serve
+// every ring.** Across a sloped surface a depth difference grows in proportion
+// to the step taken over it, and a slope BREAK's second difference does the
+// same, so without the division an outer ring would read a grazing floor as a
+// silhouette and every dune would be a contour. What the division costs is
+// sensitivity on the outer ring at a WEAK edge — and that cost is the feature
+// rather than the price: a weak edge keeps the inner ring alone and is drawn
+// as a hairline, a strong one carries the whole nib, so a stroke varies in
+// width along its length with what it is describing. That is pressure, and it
+// is arrived at rather than painted on.
+fn ringAt(p: vec2i, dims: vec2i, r: i32, dc: f32, nf: vec2f) -> vec2f {
+  let rf = f32(r);
+  let dl = linearise(rawAt(p + vec2i(-r,  0), dims), nf);
+  let dr = linearise(rawAt(p + vec2i( r,  0), dims), nf);
+  let du = linearise(rawAt(p + vec2i( 0, -r), dims), nf);
+  let dd = linearise(rawAt(p + vec2i( 0,  r), dims), nf);
+
+  let sil = max(max(abs(dc - dl), abs(dc - dr)),
+                max(abs(dc - du), abs(dc - dd))) / (max(dc, 0.001) * rf);
+
+  let ic = 1.0 / max(dc, 0.001);
+  let cx = abs((1.0 / max(dl, 0.001) + 1.0 / max(dr, 0.001)) * 0.5 - ic) * dc / rf;
+  let cy = abs((1.0 / max(du, 0.001) + 1.0 / max(dd, 0.001)) * 0.5 - ic) * dc / rf;
+  return vec2f(sil, max(cx, cy));
+}
+
+// A stroke's DARKNESS from a measurement and its threshold. The first factor is
+// whether there is a line here at all; the second is PRESSURE — a line that
+// only just qualifies is laid down lighter than one the geometry shouts, over a
+// band (t..5t) wide enough that the variation runs ALONG a stroke rather than
+// sitting at its ends. The floor is what the faintest line keeps.
+fn strokeOf(m: f32, t: f32, press: f32) -> f32 {
+  return smoothstep(t, t * 2.0, m) * mix(press, 1.0, smoothstep(t, t * 5.0, m));
+}
+
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
   // RGBA, because the alpha is doing work here — see the coverage term below.
@@ -154,43 +236,93 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
   let nf = uniforms.nearFar;
   let dims = vec2i(textureDimensions(depthTexture, 0));
-  let p = vec2i(input.vUV * vec2f(dims));
+  let dimsf = vec2f(dims);
+  let base = input.vUV * dimsf;
+
+  // THE WOBBLE — the whole cross displaced together, so a stroke MEANDERS
+  // rather than its sampling breaking up. Two octaves per axis, the long one
+  // carrying the drift and the short one the tremor, at an amplitude under a
+  // texel. What it buys is that a long straight edge is no longer exactly
+  // straight, which is the clearest single tell of a machine-drawn line.
+  // **It is anchored in SCREEN space, and that is a compromise stated rather
+  // than hidden**: a surface-anchored field would want the world position
+  // reconstructed per pixel, and would swim over every bot that walks anyway.
+  // At this amplitude and this frequency it reads as a line that wavers rather
+  // than as a pattern the camera slides across — turning grain.y or grain.z up
+  // finds the shower door quickly, which is why both are small.
+  let n = base * uniforms.grain.z;
+  let wob = vec2f(
+    sin(n.y * 1.7 + 1.3) + 0.5 * sin(n.y * 4.3 + n.x * 1.1),
+    sin(n.x * 1.9 + 2.7) + 0.5 * sin(n.x * 4.7 + n.y * 0.9)
+  ) * uniforms.grain.y;
+  let p = vec2i(base + wob);
 
   let dc = linearise(rawAt(p, dims), nf);
-  let dl = linearise(rawAt(p + vec2i(-1,  0), dims), nf);
-  let dr = linearise(rawAt(p + vec2i( 1,  0), dims), nf);
-  let du = linearise(rawAt(p + vec2i( 0, -1), dims), nf);
-  let dd = linearise(rawAt(p + vec2i( 0,  1), dims), nf);
 
-  // TWO TESTS, and the second is why depth alone is enough.
+  // THE NIB, WHICH IS THE WHOLE OF WHY DISTANCE IS IN THIS PASS TWICE.
   //
-  // A SILHOUETTE is a step in depth, taken relative to the centre so that one
-  // doorway reads the same at 5 m and at 50.
-  let sil = max(max(abs(dc - dl), abs(dc - dr)),
-                max(abs(dc - du), abs(dc - dd))) / max(dc, 0.001);
+  // A line one texel wide everywhere is the one thing a pen never draws: it
+  // gives the palm grove at 300 m exactly the weight of the crate at 5, so a
+  // frame full of geometry arrives with no hierarchy in it and the fog fade is
+  // left to do alone what a draughtsman does with the NIB. Darkness and weight
+  // are not one reading — a thin black line comes forward and a thick pale one
+  // does not — so the two are separated here and spent together.
+  //
+  // The curve has TWO SIDES, because the near end is the viewmodel's: bold at
+  // widthRange.x, tapering to a fine line by widthRange.y, and tapering back
+  // DOWN inside widthRange.x for the reason ink.near already exists — at arm's
+  // length the parts are smaller than the pen, and a full nib on a trigger
+  // guard is a smudge.
+  // The outward taper is on sqrt so most of the thinning happens in the first
+  // few metres, where perspective does most of its own — but nowhere near the
+  // 1/z that a constant WORLD thickness would give, which is the inverted hull
+  // this pass replaced and which vanished at range.
+  //
+  // Widths are stated at widthBand.w rows and scale with the frame's own,
+  // because a stroke is a fraction of the PICTURE rather than a count of
+  // pixels — the same drawing on a phone and on a 4K panel. The reach is two
+  // rings, so the nib is clamped at 3 texels (a five-texel stroke); past that a
+  // third ring is four more loads.
+  let wb = uniforms.widthBand;
+  let far = saturate((dc - uniforms.widthRange.x)
+    / max(0.001, uniforms.widthRange.y - uniforms.widthRange.x));
+  let arm = smoothstep(0.0, 1.0, saturate(dc / max(0.001, uniforms.widthRange.x)));
+  let nib = min(3.0, mix(wb.x, mix(wb.y, wb.z, sqrt(far)), arm) * (dimsf.y / wb.w));
 
-  // A CREASE is a box corner, where depth is CONTINUOUS and only its slope
-  // jumps — what a naive Sobel of depth misses, and what a normal buffer is
-  // usually bought for. See CONFIG.graphics.ink.crease: 1/z is linear in
-  // screen space across any plane, so this is zero on a flat surface at any
-  // angle and large at a corner. Multiplying back by dc makes it
-  // dimensionless, so one threshold holds at every range.
-  let ic = 1.0 / max(dc, 0.001);
-  let cx = abs((1.0 / max(dl, 0.001) + 1.0 / max(dr, 0.001)) * 0.5 - ic) * dc;
-  let cy = abs((1.0 / max(du, 0.001) + 1.0 / max(dd, 0.001)) * 0.5 - ic) * dc;
-  let crease = max(cx, cy);
+  // What each ring is worth at this nib. The inner one carries a stroke up to a
+  // texel wide and LIGHTENS below that rather than vanishing, which is the
+  // honest reading of a sub-texel line and is what keeps distant clutter from
+  // matting into a tangle of full-strength hairlines. The outer one is the
+  // flank, and it arrives only once the core is full — so a stroke has a dark
+  // centre and a softer edge, which is what a nib does and what a single ring
+  // could never give.
+  let core = saturate(nib);
+  let flank = saturate((nib - 1.0) * 0.5);
+  // A crease is interior detail, and an artist draws it finer as well as
+  // lighter: the contour is laid down first and heaviest.
+  let kNib = nib * uniforms.creaseStroke.y;
+  let kCore = saturate(kNib);
+  let kFlank = saturate((kNib - 1.0) * 0.5);
 
-  var edge = max(
-    smoothstep(uniforms.thresholds.x, uniforms.thresholds.x * 2.0, sil),
-    smoothstep(uniforms.thresholds.y, uniforms.thresholds.y * 2.0, crease)
-  );
+  let r1 = ringAt(p, dims, 1, dc, nf);
+  let r2 = ringAt(p, dims, 2, dc, nf);
+
+  let press = uniforms.grain.x;
+  let contour = max(strokeOf(r1.x, uniforms.thresholds.x, press) * core,
+                    strokeOf(r2.x, uniforms.thresholds.x, press) * flank);
+  let crease = max(strokeOf(r1.y, uniforms.thresholds.y, press) * kCore,
+                   strokeOf(r2.y, uniforms.thresholds.y, press) * kFlank);
+
+  var edge = max(contour, crease * uniforms.creaseStroke.x);
 
   // The ink's own fade, on the cel shader's t*t curve. **Anything drawn
   // unshaded owes this** — see fogAmountAt — and here it is free and exact,
   // because the distance is already in hand where the hull needed a whole
   // shader-store patch (OutlineFog) to get it per pixel and a per-mesh width
   // ramp to approximate it. Without it a dense map at range mats into black
-  // lines, which is the classic screen-space outline failure.
+  // lines, which is the classic screen-space outline failure. The nib's taper
+  // is the OTHER half of that and neither stands in for the other: this one
+  // takes the line's DARKNESS, the nib takes its WEIGHT.
   let t = saturate((dc - uniforms.fadeBand.x) / max(0.001, uniforms.fadeBand.y - uniforms.fadeBand.x));
   edge *= 1.0 - t * t;
 
@@ -198,6 +330,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // cannot get within about 0.4 m of world geometry, so this names the weapon
   // without any per-mesh data. It stands in for the 0.004 m hull the gun used
   // to wear — full-weight line work on parts that small swallows it in black.
+  // The nib's inward taper above is that same argument spent on WIDTH; this is
+  // the darkness half, and the weapon wants both.
   edge *= mix(uniforms.nearBand.y, 1.0, saturate(dc / max(0.001, uniforms.nearBand.x)));
 
   // The EMISSIVE MASK — what the noInk flag used to buy. An inked emissive is
@@ -264,7 +398,18 @@ export class CelInk {
   ) {
     const ink = CONFIG.graphics.ink;
     this.pass = new PostProcess("celInk", "celInk", {
-      uniforms: ["nearFar", "thresholds", "fadeBand", "nearBand", "maskBand", "tint"],
+      uniforms: [
+        "nearFar",
+        "thresholds",
+        "fadeBand",
+        "nearBand",
+        "maskBand",
+        "tint",
+        "widthBand",
+        "widthRange",
+        "creaseStroke",
+        "grain",
+      ],
       samplers: ["depthTexture", "emissiveSampler"],
       size: 1.0,
       camera,
@@ -279,6 +424,10 @@ export class CelInk {
       effect.setFloat2("nearBand", ink.near.until, ink.near.scale);
       effect.setFloat2("maskBand", ink.emissiveMask.from, ink.emissiveMask.to);
       effect.setFloat("tint", ink.tint);
+      effect.setFloat4("widthBand", ink.width.eye, ink.width.bold, ink.width.fine, ink.width.rows);
+      effect.setFloat2("widthRange", ink.width.from, ink.width.to);
+      effect.setFloat2("creaseStroke", ink.creaseStroke.weight, ink.creaseStroke.width);
+      effect.setFloat3("grain", ink.pressure, ink.wobble.amount, ink.wobble.scale);
       // A DECLARED texture must be BOUND or the bind group fails to build and
       // the draw is silently lost. It cannot be null by the time this runs —
       // the capture below is on the draw phase, which is earlier in the same

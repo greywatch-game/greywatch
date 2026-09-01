@@ -205,7 +205,69 @@ export const graphics = {
      * light term as a matter of arithmetic and cannot invert whatever the map
      * does. It is a constant again.
      */
-    tint: 0.28,
+    tint: 0.32,
+    /**
+     * THE NIB: how WIDE the stroke is, in texels, as a function of how far away
+     * the pixel is — `eye` at the lens, `bold` at `from` metres, `fine` by
+     * `to`, stated at `rows` rows of screen and scaled with the frame's own.
+     *
+     * **A line of one texel everywhere is the one thing a pen never draws.** It
+     * gives the palm grove at 300 m exactly the weight of the crate at 5, so a
+     * dense frame arrives with no hierarchy in it and `fadeBand` is left doing
+     * alone what a draughtsman does with the nib. Darkness and weight are not
+     * one reading — a thin black line comes forward and a thick pale one does
+     * not — which is why this exists beside the fade rather than instead of it.
+     *
+     * **The curve has TWO SIDES because the near end is the viewmodel's**, and
+     * it is the same argument `near` below makes about DARKNESS, spent on
+     * width: at arm's length the parts are smaller than the pen and a full nib
+     * on a trigger guard is a smudge. Everything between is the near field,
+     * drawn boldest, and everything past `to` gets the fine nib.
+     *
+     * `to` is an absolute distance rather than a share of the map's fog band on
+     * purpose: what the taper is about is the near FIELD, and tying it to the
+     * band would leave Sarab's foreground bold for two hundred metres and
+     * Hollowmere's fine at forty. The pass clamps the nib at 3 texels, which is
+     * the reach of the two rings it samples.
+     */
+    width: { eye: 0.85, bold: 2.3, fine: 0.85, from: 7, to: 90, rows: 1080 },
+    /**
+     * What a CREASE is worth against a contour — its darkness and its width, as
+     * fractions.
+     *
+     * The pass measures the two separately (a depth STEP against a depth BEND)
+     * and used to spend them identically, which is what a machine does and not
+     * what a draughtsman does: the outer contour is laid down first and
+     * heaviest and the interior detail is drawn finer and lighter under it.
+     * Splitting them is what gives a frame its read — and it is free, because
+     * both numbers were already in hand.
+     */
+    creaseStroke: { weight: 0.6, width: 0.5 },
+    /**
+     * What the FAINTEST line keeps of a strong one's darkness.
+     *
+     * A threshold answers yes or no, and a pen does not: a stroke the geometry
+     * only just asks for should be lighter than one it shouts. The pass ramps
+     * from this to 1 over a band wide enough (the threshold to five times it)
+     * that the variation runs ALONG a stroke rather than sitting at its ends.
+     * At 1 the ink is uniform, which is where it was.
+     */
+    pressure: 0.62,
+    /**
+     * The WOBBLE: how far the edge lookup is displaced, in texels, and at what
+     * screen frequency.
+     *
+     * A perfectly straight line is the clearest single tell of a machine, so
+     * the whole sample cross is nudged by a two-octave field before it is read
+     * — the stroke meanders instead of the sampling breaking up. **It is
+     * anchored in SCREEN space**, which is a compromise rather than an
+     * oversight: a surface-anchored field wants the world position
+     * reconstructed per pixel and would swim over every bot that walks anyway.
+     * Under a texel and at this frequency it reads as a line that wavers;
+     * turning either number up finds the shower door quickly. Zero switches it
+     * off and costs nothing worth measuring.
+     */
+    wobble: { amount: 0.4, scale: 0.03 },
     /**
      * The NEAR BAND: how much of the ink a pixel this close keeps, and how far
      * out that holds.

@@ -340,6 +340,13 @@ must hold the canopy. **Anything a collider stands in for may never sway**. A sw
 need an ink TWIN because Babylon's hull could not follow the wind; the ink is a
 screen-space pass now and gets sway for free.
 
+**The ink's line WEIGHT is a function of distance and is not the same reading
+as its fade** — a thin black line comes forward and a thick pale one does not,
+so `ink.width` takes the stroke's weight down with range while `fadeBand` takes
+its darkness. Its near end is `ink.near`'s viewmodel argument spent on width.
+Width is a second sample ring, both rings divided by their own radius so one
+pair of thresholds serves both.
+
 **The frame's ALPHA CHANNEL is TRANSLUCENT COVERAGE, and every shader in the
 tree owes it.** The ink comes off DEPTH, and nothing alpha-blended writes depth
 — a capture marker must not hide what it marks — so smoke and the objective
@@ -417,7 +424,8 @@ resolution are four separate things that each fail SILENTLY.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and mirror
 and the three ways a cube probe goes flat, the four light terms and the colour
-buffer's three further rules, the ink's tint, the wind's two bounds, the
+buffer's three further rules, the ink's tint and the NIB it varies with
+distance, the wind's two bounds, the
 muzzle-flash budget, the fog split, the shadow window, the reflection bake's
 seven load-bearing details, the four classes the candidate list sorts the scene
 into, the painted sky, and the WGSL dialect's own traps.

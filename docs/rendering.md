@@ -196,6 +196,63 @@ That is the crease term; the silhouette term is a plain relative depth step.
 Both are dimensionless, so one threshold holds at every range and no map states
 its own.
 
+**THE NIB IS A FUNCTION OF DISTANCE, AND THAT IS THE OTHER READING THE FOG FADE
+COULD NOT GIVE.** A line one texel wide everywhere is the one thing a pen never
+draws: it gives the palm grove at 300 m exactly the weight of the crate at 5, so
+a dense frame arrives with no hierarchy in it. Darkness and weight are not one
+reading — a thin black line comes FORWARD and a thick pale one does not — which
+is why `ink.width` sits beside `fadeBand` rather than instead of it: the fade
+takes a distant line's darkness, the nib takes its weight, and aerial
+perspective in ink is the two together.
+
+The curve has **two sides**, because the near end is the viewmodel's: fine at
+the lens, bold at `width.from`, tapering to fine again by `width.to`. The inward
+half is the same argument `ink.near` already makes about DARKNESS spent on
+WIDTH — at arm's length the parts are smaller than the pen, and a full nib on a
+trigger guard is a smudge — and the weapon wants both halves. The outward taper
+is on `sqrt` so most of the thinning happens in the first few metres, where
+perspective does most of its own, but nowhere near the `1/z` that a constant
+WORLD thickness would give: that is the inverted hull this pass replaced, and it
+vanished at range. `width.to` is an absolute distance and deliberately not a
+share of the map's fog band, because what it describes is the near FIELD — tying
+it to the band would leave Sarab's foreground bold for two hundred metres and
+Hollowmere's fine at forty. Widths are stated at `width.rows` rows and scale
+with the frame's own, because a stroke is a fraction of the PICTURE and not a
+count of pixels.
+
+**Width is bought with a SECOND RING, and both rings are divided by their own
+radius.** The pass takes the depth cross at one texel and at two; the inner one
+carries a stroke up to a texel wide and LIGHTENS below that rather than
+vanishing, which is the honest reading of a sub-texel line and is what stops
+distant clutter matting into a tangle of full-strength hairlines, and the outer
+one is the flank and arrives only once the core is full — so a stroke has a dark
+centre and a softer edge, which one ring could never give. The nib is therefore
+clamped at 3 texels, which is the reach of two rings. **The division by radius is
+what lets ONE pair of thresholds serve both**: over a sloped surface a depth
+difference grows in proportion to the step taken across it, and a slope break's
+second difference does the same, so without it the outer ring reads a grazing
+floor as a silhouette and every dune is a contour. What the division costs is
+sensitivity at a WEAK edge on the outer ring, and that cost is the feature — a
+weak edge keeps the inner ring alone and stays a hairline while a strong one
+carries the whole nib, so a stroke varies in width along its length with what it
+is describing. That is pressure, arrived at rather than painted on.
+
+**A CONTOUR and a CREASE are no longer spent identically.** The pass has always
+measured them separately — a depth STEP against a depth BEND — and drew both at
+one weight, which is what a machine does: a draughtsman lays the outer contour
+down first and heaviest and draws the interior detail finer and lighter under
+it. `ink.creaseStroke` is that split, in darkness and in width, and it costs
+nothing because both numbers were already in hand. Two smaller terms finish the
+hand: `ink.pressure` is what the faintest line keeps of a strong one's darkness,
+ramped over the threshold to five times it so the variation runs ALONG a stroke
+rather than sitting at its ends; and `ink.wobble` nudges the whole sample cross
+by a two-octave field under a texel wide, so a long straight edge is no longer
+exactly straight. **The wobble is anchored in SCREEN space and that is a
+compromise stated rather than hidden** — a surface-anchored field wants the world
+position reconstructed per pixel, and would swim over every bot that walks
+anyway. At this amplitude it reads as a line that wavers; turning either number
+up finds the shower door quickly.
+
 **It owes the fog and gets it exactly**, over the MAP's band — so `Game` pushes
 `applyEnvironment` at it on every environment change, including the editor's.
 
