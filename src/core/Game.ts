@@ -3190,6 +3190,20 @@ export class Game {
     this.deathCam.stop();
     this.hud.setDeathCam(false);
     this.minimap.setVisible(false);
+    // The seat, for the reason `endRound` gives up its own and with the same
+    // ordering: this is a way of LEAVING a round, and a round abandoned from
+    // inside a hull is one whose driver never got out. The map is deliberately
+    // left standing here, so nothing downstream disposes the fleet and nothing
+    // else ever calls this — `installMap` does, but only on the frame the NEXT
+    // round is built, which is a whole visit to the menu later. What that
+    // silence was worth: `engineOff` is the player's OWN unpanned voice, and
+    // `pushHullEngines` cannot stand it down for them — it skips the hull the
+    // player is sitting in, and a held world reaches `enginesOff`, which is
+    // every OTHER hull — so a helicopter quit out of kept its rotor running
+    // under the main menu. It is also what puts the body back in
+    // `battle.humans` and takes the invulnerability off it, and it must stay
+    // ABOVE the line below because giving up a seat puts the viewmodel back.
+    this.clearVehicle();
     this.player.setBodyHidden(true);
     this.hud.clearDamageDirections();
     this.hud.setCapture(null);
