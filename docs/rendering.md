@@ -1573,16 +1573,35 @@ vantages come back to four decimal places.
   into its own texture as opaque black solely so the buffer would depth-occlude;
   it now shares the depth the frame has already written and its render list is
   the emissive meshes alone — ~20% of the frame on the three big maps, and the
-  occlusion is exact rather than approximate. **Four things make it work and
+  occlusion is exact rather than approximate. **Five things make it work and
   each fails silently on its own**: the main texture renders LATE (from the end
   of the draw phase, or it can only share the previous frame's depth), its clear
   is REPLACED rather than added to (the layer installs one that wipes depth, and
   an `Observable` runs every observer), the framebuffer is re-bound after the
   render (an RTT render restores the default one, so the compose would land on
-  the canvas), and the texture is FULL resolution with a doubled kernel (depth
-  sharing demands matching dimensions; the kernel is in texels of that texture).
+  the canvas), the texture is FULL resolution with a doubled kernel (depth
+  sharing demands matching dimensions; the kernel is in texels of that texture),
+  and the hooks are RE-INSTALLED BY IDENTITY every frame rather than once.
   `FINDINGS.md` 3 has the three attempts that instead tried to work out which
   geometry could matter to a bloom, and why none of them could.
+- **The fifth of those shipped as a bug, and it is the shape to remember rather
+  than the line that fixed it.** `EffectLayer.render` — the compose — throws the
+  main texture away and builds another whenever the render size moves, and the
+  new one carries Babylon's own colour-depth-stencil clear again while the
+  emissive-only render list SURVIVES, because that list lives on the
+  `ObjectRenderer` the new texture is handed and not on the texture. Losing both
+  halves would only have put the stock whole-scene pass back; losing one left
+  the layer drawing the emissive meshes ALONE into a freshly cleared private
+  depth buffer, which is no occluders anywhere. Every `engine.resize()` is a
+  trigger — a resized window, a browser zoom, a monitor with a different
+  density, the render-scale setting, a phone turned on its side — and nothing
+  but a reload cleared it, which is why it read as intermittent: what it looked
+  like was the muzzle flash drawn ON TOP of the gun it came out of. A depth
+  SHARE is a relation between two targets, so it is cached on both of them;
+  caching it on the source alone was the whole of the bug. Reproduced and fixed
+  under a headless client: a frozen vantage photographed either side of a resize
+  round-trip back to the same size, which differed by a lantern blooming through
+  the bell tower before and is byte-identical after.
 - Flat shading is recovered in the fragment shader from screen-space derivatives of
   the world position. Do not call `convertToFlatShadedMesh()`; it would unweld vertices
   on every prop and clone for no visual gain.

@@ -433,8 +433,18 @@ excluding the rigs, by a screen-space overlap test) and all three failed;
 `FINDINGS.md` 3 has them, and the reason they had to fail is that the only
 honest answer to that question is a per-pixel depth test. **Do not put the
 whole-scene render list back**, and read `GlowDepth`'s header before touching
-the layer: the schedule, the clear, the framebuffer rebind and the texture's
-resolution are four separate things that each fail SILENTLY.
+the layer: the schedule, the clear, the framebuffer rebind, the texture's
+resolution and the REBUILD are five separate things that each fail SILENTLY.
+**The rebuild is the one that shipped as a bug**: the layer throws its main
+texture away and builds another on every `engine.resize()`, and the new one
+takes Babylon's own depth-clearing clear back while KEEPING the emissive-only
+render list, which lives on the object renderer rather than on the texture.
+Reverting both halves would only have cost the measurement; reverting one left
+the pass occluding against nothing, so a window dragged to another size — or a
+zoom, a second monitor, the render-scale setting, a phone turned on its side —
+bloomed every lamp in the map through its own wall until the page was reloaded.
+The hooks are re-installed by IDENTITY every frame for that reason, and the
+depth share is keyed on BOTH of its ends.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and mirror
 and the three ways a cube probe goes flat, the four light terms and the colour

@@ -35,7 +35,7 @@
  * is the blur and the compose, which is the trade the full-resolution texture
  * below buys.
  *
- * FOUR THINGS MAKE IT WORK AND EVERY ONE OF THEM FAILED SILENTLY FIRST.
+ * FIVE THINGS MAKE IT WORK AND EVERY ONE OF THEM FAILED SILENTLY FIRST.
  *
  * 1. **The main texture has to render LATE.** The scene component registers
  *    `_renderMainTexture` on `_cameraDrawRenderTargetStage`, which runs BEFORE
@@ -70,6 +70,26 @@
  *    in TEXELS of that texture, so it must double with it or the bloom silently
  *    halves in size on screen; `GLOW_KERNEL_SCALE` is that doubling and the two
  *    constants have to move together.
+ *
+ * 5. **The main texture is REBUILT on any resize, and the two halves of this
+ *    do not come back together.** `EffectLayer.render` — the compose, which
+ *    runs after this hook in the same frame — throws the texture away and
+ *    builds another whenever the render size moves, and the new one carries
+ *    Babylon's own clear again (colour, depth AND stencil) while the render
+ *    list SURVIVES, because that lives on the `ObjectRenderer` the new texture
+ *    is handed rather than on the texture. Reverting BOTH would only have cost
+ *    the measurement above; reverting ONE leaves the pass drawing the emissive
+ *    meshes ALONE into a freshly cleared private depth buffer, which is no
+ *    occluders anywhere — every lamp in the map blooming through the wall it
+ *    hangs on, for the rest of the page's life. A window dragged to another
+ *    size, a browser zoom, a monitor with a different density, the render-scale
+ *    setting, a phone turned on its side: all of them are `engine.resize()`,
+ *    and the only thing that ever cleared it was a reload, which is what made
+ *    it read as intermittent. So the hooks are re-installed BY IDENTITY every
+ *    frame rather than once in the constructor, and the share is keyed on BOTH
+ *    of its ends — a share is a relation between two targets and caching it on
+ *    one of them was the whole of the bug. Two reference comparisons a frame,
+ *    and the work still only happens on the frames a target actually moves.
  *
  * WHAT IT REACHES INTO. `_getComponent`, `_renderMainTexture` and
  * `_currentRenderTarget` are Babylon internals, and a version bump can move any
@@ -106,11 +126,16 @@ type LayerComponent = {
   _renderMainTexture?: (camera: Camera) => boolean;
 };
 
+/** A render-target wrapper as the two ends of a depth share need to be seen. */
+type RenderTarget = {
+  shareDepth(target: unknown): void;
+  /** Read only by the DEV check below: a `shareDepth` with no depth to give is a no-op. */
+  _depthStencilTexture?: object | null;
+};
+
 /** The two engine internals this needs, named so the casts stay in one place. */
 type EngineInternals = {
-  _currentRenderTarget?: {
-    shareDepth(target: unknown): void;
-  } | null;
+  _currentRenderTarget?: RenderTarget | null;
   bindFramebuffer(
     target: unknown,
     faceIndex?: number,
@@ -127,14 +152,50 @@ export class GlowDepth {
   /** The main-pass target the depth currently comes from; re-shared when it moves. */
   private sharedFrom: object | null = null;
 
+  /**
+   * The glow target the depth was last shared TO. A share has two ends and
+   * either of them can move underneath it — see (5): the layer rebuilds its
+   * main texture on every resize, and keying the cache on the source alone
+   * left the new one holding a private depth buffer nobody had ever drawn an
+   * occluder into.
+   */
+  private sharedTo: object | null = null;
+
+  /** The main texture the two hooks are installed on; re-hooked when it moves. */
+  private hooked: object | null = null;
+
   constructor(
     private readonly scene: Scene,
     private readonly glow: GlowLayer,
     private readonly camera: Camera,
   ) {
+    this.hookMainTexture();
+    this.installLateRender();
+  }
+
+  /**
+   * Puts the render list and the clear back on whatever the layer's main
+   * texture is NOW, and forgets the share if the texture has moved.
+   *
+   * Called once from the constructor and then once a frame, because there is
+   * no observable for the rebuild in (5): `onSizeChangedObservable` fires
+   * BEFORE it, on the texture that is about to be thrown away. An identity
+   * test is the whole of the mechanism, and on every frame but the one after a
+   * resize it is the only thing here that runs.
+   */
+  private hookMainTexture(): void {
+    const tex = this.glow.mainTexture as unknown as object;
+    if (tex === this.hooked) return;
+    this.hooked = tex;
     this.installRenderList();
     this.installClear();
-    this.installLateRender();
+    // A new texture is a new depth attachment, so whatever was shared last was
+    // shared to a target that is gone. BOTH ends are forgotten rather than only
+    // the destination: the source is re-read below either way, and a share
+    // remembered by halves is exactly the state this pair exists to make
+    // unreachable.
+    this.sharedFrom = null;
+    this.sharedTo = null;
   }
 
   /**
@@ -169,7 +230,12 @@ export class GlowDepth {
     };
   }
 
-  /** Colour only — see (2) in the header, and note the `clear()` before the add. */
+  /**
+   * Colour only — see (2) in the header, and note the `clear()` before the add.
+   * Re-run by `hookMainTexture` after a rebuild, where what that `clear()`
+   * takes off is the default handler the new texture was born with rather than
+   * an older copy of our own.
+   */
   private installClear(): void {
     const tex = this.glow.mainTexture;
     tex.onClearObservable.clear();
@@ -205,9 +271,27 @@ export class GlowDepth {
       if (this.scene.activeCamera !== this.camera) return;
       const main = engine._currentRenderTarget;
       if (!main) return;
-      if (main !== this.sharedFrom) {
-        main.shareDepth(this.glow.mainTexture.renderTarget);
+      // Before the share, because a rebuilt texture is a different target to
+      // share TO as well as a clear that has to be replaced again.
+      this.hookMainTexture();
+      const dest = this.glow.mainTexture.renderTarget as RenderTarget | null;
+      if (!dest) return;
+      if (main !== this.sharedFrom || dest !== this.sharedTo) {
+        main.shareDepth(dest);
         this.sharedFrom = main;
+        this.sharedTo = dest;
+        if (import.meta.env.DEV && dest._depthStencilTexture !== main._depthStencilTexture) {
+          // `shareDepth` is a NO-OP when the source has no depth of its own,
+          // and a no-op here paints the same picture as (5): the emissive
+          // meshes alone against a buffer no occluder was ever drawn into.
+          // The frame draws into the FIRST post-process in the camera's chain
+          // and Babylon gives a depth buffer to that one alone, so this is
+          // really an assertion about the order `Game` assembled the chain in.
+          throw new Error(
+            "GlowDepth: the main pass handed over no depth — the glow layer is about " +
+              "to occlude against nothing and every lamp will bloom through its wall",
+          );
+        }
       }
       original.call(component, this.camera);
       // (3): the RTT render restored the default framebuffer, and the compose
