@@ -31,6 +31,7 @@
  * emitted, and a re-shoot invalidates its own url without anybody editing a
  * cache list.
  */
+import cinderhavenShot from "../../shots/cinderhaven.jpg?url";
 import coldharbourShot from "../../shots/coldharbour.jpg?url";
 import sarabShot from "../../shots/sarab.jpg?url";
 import harrowmeadShot from "../../shots/harrowmead.jpg?url";
@@ -127,6 +128,30 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
   sarab: {
     url: sarabShot,
     vantage: { pos: [96, 9, 30], target: [-190, 12, 150], fov: 56 },
+  },
+  // CINDER BAY from Netstrand's beach, looking west-north-west across the
+  // water: the bay road curving out of the near corner with the net sheds and
+  // the drying racks on it, the strand and the surf line below, four hundred
+  // metres of open harbour, CHAPEL ROCK standing in the middle of it with its
+  // churchyard wall along the ridge, the quay's lights on the far shore, and
+  // Grimhold's shoulder under the crater's glow on the left.
+  //
+  // **The frame to preserve is the ROCK IN THE WATER.** That is what this map
+  // now is, and it is the one thing no other map here has — a control point on
+  // an island in the middle of a bay, with a town on two shores of it. The
+  // glow is the second thing and it is free: the key light's direction is set
+  // so that the disc hangs over the mountain (`cinderhaven/environment.ts`),
+  // so any westward eye gets both.
+  //
+  // A low eye on purpose, unlike Sarab's: this map's extent is water and does
+  // not photograph, so the shot is a PLACE rather than a survey. It stands on
+  // a waterfront for that reason, and it stands on the north-eastern one
+  // because that is the only shore from which the rock, the far town and the
+  // mountain are all on the same side of the camera. What it replaced looked
+  // up a reach that no longer exists.
+  cinderhaven: {
+    url: cinderhavenShot,
+    vantage: { pos: [372, 11, -128], target: [-340, 48, -320], fov: 60 },
   },
 };
 

@@ -151,6 +151,16 @@ you are on before you believe anything else in this section.
   was three wall-clock seconds on the Chromebook and 45 ms here, and running
   `npm run shots` would have overwritten Hollowmere's and Harrowmead's
   committed backdrops with blank frames.
+- **Do not touch `src/` while a dev-server-backed script is running.** Vite's
+  HMR full-reloads the page on a change under the module graph, and what that
+  looks like from Playwright is `page.evaluate: Execution context was
+  destroyed, most likely because of a navigation` from whatever call happened
+  to be in flight — with nothing in the message about the file you saved.
+  Re-running a map generator (`npm run cinderhaven`) mid-bake is the way this
+  is usually met, because the output goes straight into `src/world/<map>/`;
+  it killed a collision bake and a screenshot run in the same session. Finish
+  the edit, then start the browser.
+
 - **Do NOT read pixels back off the canvas; screenshot the page.** A
   `drawImage` readback of the WebGPU canvas comes back fully transparent on
   Hollowmere — alpha 0, every channel 0 — while `page.screenshot()` of the same

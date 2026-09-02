@@ -19,7 +19,8 @@
     "textures": "node scripts/generate-water-textures.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "proving": "node scripts/generate-proving-ground.mjs",
-    "sarab": "node scripts/generate-sarab.mjs"
+    "sarab": "node scripts/generate-sarab.mjs",
+    "cinderhaven": "node scripts/generate-cinderhaven.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.19.1",

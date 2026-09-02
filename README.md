@@ -223,9 +223,9 @@ a committed swipe cancels the pull exactly as a committed stick does.
 
 - Two teams of eight — **Valeguard** (warm amber) and **Redline** (cold
   crimson) — fight over **five control points** across a 240 × 240 m village.
-  How many a side is the map's: Sarab is 900 m of desert town and fields
-  twenty-four, because a fight is made of contact and contact is bodies per
-  square metre. A multiplayer match is always sixteen slots, on every map.
+  How many a side is the map's: Sarab is 900 m of desert town and Cinderhaven
+  1,500 m of volcanic island, and both field twenty-four, because a fight is
+  made of contact and contact is bodies per square metre. A multiplayer match is always sixteen slots, on every map.
   A side is told apart three ways, so the read survives losing any one of
   them: the whole kit is warm or cold, the team colour is worn on pauldrons,
   bandolier and helmet band where some of it faces every direction, and each
@@ -315,14 +315,18 @@ the top.
 - Nav cells hold a few surfaces each — three by default, and a map states its
   own where it stacks floors (Coldharbour's offices are three deep). Unusually
   deep stacks still need that number raised, and overflow is silent.
-- Four maps: **Hollowmere**, a fog-drowned village at night; **Greyfen**, a
+- Six maps: **Hollowmere**, a fog-drowned village at night; **Greyfen**, a
   jungle valley two hours after sunrise, with the sun coming down through the
   canopy in shafts; **Coldharbour**, a city's business district before dusk —
-  larger than the first two, with no fog wall and with buildings you can fight
-  through on three floors; and **Harrowmead**, the biggest of them, with no wall
-  around it at all — the floor simply carries on and a leash counts you back.
-  The last two are the two with armour on them. The system supports more; a
-  fifth is one layout file plus an environment.
+  with no fog wall and with buildings you can fight through on three floors;
+  **Harrowmead**, a farming vale at sunset with no wall around it at all, where
+  the floor simply carries on and a leash counts you back; **Sarab**, a desert
+  town an hour before noon, nine hundred metres of it inside a kilometre and a
+  half of sand; and **Cinderhaven**, the biggest — a harbour town on a volcanic
+  island at night, fifteen hundred metres square, lit by the mountain standing
+  over it and cut in two by an inlet with one ford across it. The last four are
+  the four with vehicles on them. The system supports more; a seventh is one
+  layout file plus an environment.
 - **Multiplayer is one server process, and the lobby lists only that one.**
   Matches live in its memory, so it cannot be scaled by running a second copy
   behind the same address — that needs a shared matchmaker, which is not built.

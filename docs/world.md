@@ -27,8 +27,9 @@ and `DEFAULT_MAP` is the fallback. `Game` holds one `mapDef` field (`Game.mapDef
 reads both halves off it. Nothing outside `maps.ts` may import a map's own modules.
 The shipped maps are **Hollowmere** (night), **Greyfen** (a jungle morning, sun
 through the canopy), **Coldharbour** (a city before dusk), **Harrowmead** (a
-farming vale at sunset in high summer) and **Sarab** (a desert town an hour
-before noon). Greyfen
+farming vale at sunset in high summer), **Sarab** (a desert town an hour
+before noon) and **Cinderhaven** (a harbour town on a volcanic island, at
+night). Greyfen
 was forked from Hollowmere's layout, cleared back to a blank valley, and is
 now being rebuilt as a jungle one: what stands is the **manor** on flag C, the
 districts around the other four flags, and the forest itself — ~1,390 canopy
@@ -89,6 +90,81 @@ file — flat arrays of one-line entries, which is what `src/editor/sourceScan.t
 requires — so the editor opens, patches and saves it exactly as it does
 Harrowmead's, and re-running the generator discards those edits the way
 re-running any `heights.ts` generator does.
+
+**Cinderhaven is the sixth and the biggest: 1,500 m of PLAY inside 2,000 m of
+ground**, 2.8 times Sarab's playable area, seeded by `npm run cinderhaven` on
+Sarab's precedent and fielding the same 24 a side. Five things about it are
+new here rather than borrowed, and each is written up where it belongs:
+
+- **The FLOOR is the level.** Every other map in the tree is a town on ground;
+  this one is ground with a town on it, because an island's shape decides what
+  is land at all, where the water goes and which slopes sever their own nav
+  links. `heightAt` in the generator is five passes in a fixed order — a
+  harmonic coast, a 120 m cone MASKED by that coast so it rises out of the
+  water as a sea cliff, CINDER BAY cut through both, CHAPEL ROCK raised in the
+  middle of the bay AFTER the cut (raised before it, the cut flattens it), and
+  the districts levelled last — and the generator refuses to write a floor
+  whose steep land is anywhere but the two places it is meant to be. **It
+  proves the floor BEFORE it places anything on it**, which is the other way
+  round from where it started: a generator that lays two hundred buildings and
+  then finds its own ground unwalkable reports the first set piece that could
+  not find dry ground, which is a sentence about a chapel when the fact is a
+  coastline. `--probe` prints the floor as a plan and a section and stops.
+- **The island is a C and the BAY is what bends it** — a basin 600 m across
+  with a mouth half that, two arms curling round it, a town on two shores and a
+  control point on the rock in the middle. The whole bay is 2.6 m at worst, so
+  that middle flag is WADEABLE from either side: there is no swimming in this
+  engine, and a body of water nobody can cross is a hole in the map rather than
+  a feature of it. The generator proves the wade rather than asserting it — its
+  flood fill has never heard of water, so the rock being REACHABLE is the
+  proof that the bed links.
+- **A waterfront is DERIVED from the floor, never authored against it.** The
+  generator marches the finished ground outward from the middle of the bay,
+  finds where it actually crosses the sea on each bearing, and places the
+  Strand, the bay road, every jetty, boat shed, quay wall and lamp a stated
+  distance inland of THAT. What is authored is an ARC and a SETBACK, which are
+  the two things that are decisions; the shoreline moves whenever the bay's
+  radius, the foreshore's slope or a district's level does, and a coordinate
+  typed against it would be quietly wrong after every one of those with nothing
+  in a screenshot to say which. Two rules fell out of building it that way: a
+  district may not level ground the bay has taken (or a skirt fills the harbour
+  in and the shoreline becomes the town's rather than the floor's), and **a
+  foreshore has to be as long as the ground behind it is high** — a fixed beach
+  that links on a 10 m shelf is a 0.47 gradient where the same water meets a
+  26 m volcanic apron.
+- **The sea is four rectangles that TILE, as a pinwheel.** See the water
+  section below; the short version is that a `WaterRect`'s reflection probe
+  stands at the depth-weighted centroid of its wet cells, so one rect over an
+  island plants a cube probe inside a mountain — and a SEAM between two rects
+  is where the mirror changes, so a partition must not put one across open
+  water anybody is looking over. The bay, its mouth and the whole eastern sea
+  are one rect; the three carrying the open sea meet only out past the coast.
+- **The key light comes out of the MOUNTAIN**, which is what puts the sky's one
+  bright disc and every shaft `GodRays` draws over the crater — see
+  `cinderhaven/environment.ts`, which owns that argument and the measurement
+  behind its `fogEnd`.
+- **The town is generated as a NETWORK and the houses are arranged against
+  it**, which is the one part of that generator worth stealing for any other
+  map that has to seed a town. A quarter is a rotated rectangle cut into blocks
+  by its own streets; the streets are emitted as ordinary `road` placements and
+  CLAIM their ground before any building does, so each house can be laid on the
+  frontage line and turned to face the carriageway it stands on. The rule that
+  makes the turning possible is that **everything in the kit with a front faces
+  its own local -Z** — the shophouse and the depot are the two exceptions and
+  face +Z — so a row with the wrong `rotY` is a run of blank plaster or a
+  warehouse with its loading bays against a wall, and nothing in a screenshot
+  says so. Two smaller decisions come with it: the claim list holds ORIENTED
+  rectangles (which is also what lets the two waterfront quarters be TURNED to
+  their own shores rather than to the compass — a 200 m street 7 m wide laid at
+  a quarter turn has a bounding box 39 m wide, which refuses every house meant
+  to stand on it), and a SQUARE claims nothing
+  — its paving is laid over the streets that bound it and what keeps the middle
+  clear is the flag's own ring, which is what leaves room for the stalls and
+  the lamps. **The street WIDTH is also the only lever on this map that a
+  vehicle reads**: the old town's lanes are 2.8 m with the houses on them,
+  which leaves 5.2 m between two rows of doors — a gun truck's
+  `drive.collideRadius` is 1.6 and a tank's 2.2, so the trade those two hulls
+  exist for is bought without a single rule that knows a vehicle exists.
 
 No two maps share a module in any direction.
 
@@ -170,7 +246,7 @@ guarantee that a floor survives is the ORDER its builder declares colliders in,
 not the number.
 
 **`MapLayout.perTeam` — how many bodies a side** (`CONFIG.bots.perTeam`, 8).
-Sarab is 24 and is the only map that states one. It is a statement about
+Sarab and Cinderhaven are 24 and are the only maps that state one. It is a statement about
 DENSITY, and it is the map's for exactly the reason `size` is: sixteen bodies is
 a fight in every street of a 240 m village and one body per 51,000 m^2 of
 Sarab's play square. `ENGINE_UPGRADE.md` S10 measured what that does to a
@@ -486,6 +562,31 @@ S7 for the measurement and `src/world/maps.ts` for the shape.
   drawn as large as is convenient, since the bed decides what is water; and
   **anything that reshapes the bed owes a water rebuild**, which `installMap` already
   does — the map dies with the terrain it was baked against.
+- **A rect may be drawn as large as is convenient and its RECTS MAY NOT
+  OVERLAP, and the second half is the reflection probe rather than the
+  drawing.** Two coplanar planes at one height are a per-pixel tie whose winner
+  changes as the camera moves — the road ranks' problem in a body of water —
+  and, worse, `WaterSystem.bakeDepth` stands each rect's cube probe at the
+  DEPTH-WEIGHTED CENTROID of its own wet cells. For a pool that is the middle
+  of the pool and is exactly right. For an island in the middle of a square
+  sea it is the middle of the ISLAND: a probe baked from inside a mountain, and
+  every surface on the map mirroring the inside of a hill. Cinderhaven is where
+  that was found and its layout carries the answer, which is a PARTITION of the
+  whole square rather than a shape that hugs the water: four rects tiling
+  2,000 m of ground as a pinwheel, each with a probe standing out over its own
+  sea. **The second rule is the SEAM, and it is what picked the pinwheel over
+  the frame-round-a-hole that came first.** Two rects sharing an edge are
+  invisible in the geometry — the shoreline either side is drawn from a bed
+  that is continuous across it — but they carry two DIFFERENT probes, so the
+  mirror changes across the line. Over four hundred metres of open harbour with
+  a lit town on one side that is a visible join in the water, and a frame round
+  a hole would have put one straight down the middle of the bay. So the bay,
+  its mouth and the whole eastern sea are ONE rect with one probe in the throat
+  of the mouth, and the three carrying the open sea meet only out past the
+  coast where both sides of every seam are empty water under the same sky. The
+  generator PROVES the partition rather than leaving it to be read off the
+  numbers: every wet vertex in exactly one rect, no two rects overlapping, and
+  every probe site standing in water.
 - **`NavGrid.link` is the slope limit.** It links neighbouring surfaces only within
   `stepHeight`, so at `cellSize` 1.5 a bank is walkable up to a gradient of 0.4
   (~22 deg) and severs itself above that — `MAX_WALKABLE_GRADE`. On a 3 m terrain cell

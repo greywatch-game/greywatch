@@ -23,6 +23,8 @@
 import type { MapCollision } from "./collision";
 import type { EnvironmentSpec } from "./environment";
 import type { Heightfield, MapLayout } from "./layout";
+import { CinderhavenEnvironment } from "./cinderhaven/environment";
+import { CinderhavenLayout } from "./cinderhaven/layout";
 import { ColdharbourEnvironment } from "./coldharbour/environment";
 import { ColdharbourLayout } from "./coldharbour/layout";
 import { GreyfenEnvironment } from "./greyfen/environment";
@@ -200,6 +202,53 @@ export const SARAB: MapDef = {
 };
 
 /**
+ * Cinderhaven: a harbour town on a volcanic island, at night. **The biggest map
+ * in the tree — 1,500 m of play inside 2,000 m of ground**, 2.8 times Sarab's
+ * playable area and 14 times Hollowmere's.
+ *
+ * **What keeps it a fight rather than a walk is that only 1.38 km² of that
+ * square is dry.** The other 0.88 km² is CINDER BAY and the open sea, so the
+ * twenty-four bodies a side this map fields — `MapLayout.perTeam` at
+ * `CONFIG.bots.maxPerTeam`, as Sarab's is — are spread over land rather than
+ * over the extent. That is the figure to compare against Sarab's 0.81 km², and
+ * it is why a map nearly three times the play square asks for the same roster.
+ *
+ * **The island is a C and the bay is what bends it**: a basin six hundred
+ * metres across with a mouth half that, two arms of land curling round it, a
+ * town on two of its shores and a control point on the rock in the middle. The
+ * whole of it is 2.6 m deep at worst, so the middle flag is WADEABLE from
+ * either side — a slow, exposed, four-hundred-metre crossing with no cover on
+ * it. Nothing in the layout needs a boat; what a boat would add is speed and a
+ * gun, not access.
+ *
+ * Two things about it are new here rather than borrowed. **The FLOOR is the
+ * level**: an island's shape decides what is land at all, where the water
+ * goes, and which slopes sever their own nav links — so `heightAt` in the
+ * generator is the map, and the town is what stands on the answer, down to the
+ * quays, which are placed by MARCHING the finished floor for the waterline
+ * rather than by authoring a coordinate on it. And **the key light comes out
+ * of the mountain**, which puts the sky's one bright disc and every shaft
+ * `GodRays` draws over the crater, and splits the palette by surface NORMAL
+ * rather than by hue: warm on everything facing the cone, cold starlight on
+ * everything facing up. `cinderhaven/environment.ts` owns that argument.
+ *
+ * Its layout was SEEDED by `scripts/generate-cinderhaven.mjs` on Sarab's
+ * precedent, and it is an ordinary layout file in every other way. It shares
+ * no module with the other five and must not.
+ */
+export const CINDERHAVEN: MapDef = {
+  id: "cinderhaven",
+  name: "Cinderhaven",
+  blurb:
+    "A harbour town on a volcanic island, under a burning mountain. A bay you " +
+    "wade to reach the chapel on the rock, and the dark to cross it in.",
+  layout: CinderhavenLayout,
+  environment: CinderhavenEnvironment,
+  heights: () => import("./cinderhaven/heights"),
+  collision: () => import("./cinderhaven/collision"),
+};
+
+/**
  * The proving ground: not a level, and DEV ONLY.
  *
  * `ENGINE_UPGRADE.md` S0 is what it exists for — a generated city block grid at
@@ -280,8 +329,8 @@ const PROVING: MapDef = {
  * filtering it at runtime, would keep both in the bundle.
  */
 export const MAPS: readonly MapDef[] = import.meta.env.DEV
-  ? [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, PROVING]
-  : [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB];
+  ? [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN, PROVING]
+  : [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN];
 
 /** What a round starts on with nothing chosen. */
 export const DEFAULT_MAP: MapDef = HOLLOWMERE;

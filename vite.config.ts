@@ -59,6 +59,18 @@ const WRITABLE = {
     min: 1200,
     marker: "export const GreyfenEnvironment",
   },
+  "src/world/cinderhaven/layout.ts": {
+    min: 4000,
+    marker: "export const CinderhavenLayout",
+  },
+  "src/world/cinderhaven/heights.ts": {
+    min: 500,
+    marker: "export const CinderhavenHeights",
+  },
+  "src/world/cinderhaven/environment.ts": {
+    min: 1200,
+    marker: "export const CinderhavenEnvironment",
+  },
   "src/world/coldharbour/layout.ts": {
     min: 4000,
     marker: "export const ColdharbourLayout",

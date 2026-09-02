@@ -131,6 +131,13 @@ npm run proving    # regenerate the DEV-ONLY proving ground (committed source).
 npm run sarab      # RE-SEED the desert town's layout and heights (committed
                    #   source). One-shot: it discards editor edits to either
                    #   file. Not part of any build — ENGINE_UPGRADE.md S11
+npm run cinderhaven# RE-SEED the volcanic island's layout and heights
+                   #   (committed source). Same one-shot rule as `sarab`, and
+                   #   the same warning: it discards editor edits to either
+                   #   file. Not part of any build.
+                   #   `-- --probe` prints the FLOOR as a plan, a section and a
+                   #   survey and writes nothing — on a map whose floor is the
+                   #   level, that is how you iterate on a coastline
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -485,7 +492,7 @@ so that a map saying nothing is unaffected:
 | --- | --- | --- |
 | `MapLayout.size` — how big it is | `CONFIG.map.size`, 240 | its heightfield's `size * cell` must equal it (asserted in DEV, since `MapDef.heights` is a different file), and the rim's boundary boxes must stay over 200 m so the seven sites keying on `w > 200 \|\| d > 200` still can |
 | `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is the reach `WorldCulling` walks to and the default for the row below; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
-| `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | it is resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `BattleSystem`, `NetRoster` and `RagdollSystem` together, which is what keeps `bots.lodDisableDistance` and `bots.death.maxDistance` one distance; a body it drops POPS, and the WALK's reach deliberately stays the fog |
+| `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | it is resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `BattleSystem`, `NetRoster` and `RagdollSystem` together, which is what keeps `bots.lodDisableDistance` and `bots.death.maxDistance` one distance; a body it drops POPS, and the WALK's reach deliberately stays the fog. **A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in the world**, which is the trap Cinderhaven found: a fog wall chosen for the cull budget put that map's volcano — the thing every road and the whole sky is arranged around — in flat `fogColor` from everywhere anybody played, and the honest fix was to buy the fog back and take the saving out of this row instead |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
 | `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — `BattleSystem.setRoster` rebuilds a CLIENT's pool when it moves rather than sizing it to the ceiling, because a disabled mesh is skipped cheaply and not skipped. The squads, the squads' launchers and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too, and what it moves there is the BOTS**: the authority's slot table is the ceiling and `setFielded` says how many of it a round fights, while the SEATS stay at sixteen on every map |
 | `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** — those want more buckets on a big map, not fewer |
@@ -503,13 +510,15 @@ never leashed** — the nav graph stops at the play square.
 
 **The shipped maps are Hollowmere** (a night village), **Greyfen** (a jungle
 valley), **Coldharbour** (a business district — what the first three overrides
-exist for), **Harrowmead** (`size: 400`, no wall around it) **and Sarab**
+exist for), **Harrowmead** (`size: 400`, no wall around it), **Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
-`ENGINE_UPGRADE.md` exists for). **The last three are the three with vehicles on
-them**, and they are the three biggest; **Sarab is the only one with all THREE
-KINDS**, a tank, a gun truck and a helicopter a side, **and the only one that is
-not 8v8** — it fields
-24 a side, online and off, which is `MapLayout.perTeam` and the row above.
+`ENGINE_UPGRADE.md` exists for) **and Cinderhaven** (`size: 1500` inside 2000 m
+of ground — a harbour town on a volcanic island, at night, and the biggest map
+in the tree). **The last four are the four with vehicles on them**, and they are
+the four biggest; **Sarab and Cinderhaven are the two with all THREE KINDS**, a
+tank, a gun truck and a helicopter a side, **and the two that are not 8v8** —
+both field 24 a side, online and off, which is `MapLayout.perTeam` and the row
+above.
 
 **Sarab is the map that SPENDS the levers**, and it is the only one that states
 most of them: `blockSize` and `terrainBlock` at 96 (S6), a `fogEnd` (560) inside
@@ -526,11 +535,43 @@ ordinary layout file the editor opens, patches and saves like any other.
 Re-running the generator discards editor edits, which is the warning every
 `heights.ts` already carries.
 
-**It is also where the two rules about WATER were found**, both of them
-general: a body of water is a hole in the FLOOR with a plane over it — nothing
-but `TerrainField` decides its depth, its shore or where its probe stands — and
-what it LOOKS like is whatever that probe can see, which on a bright map with
-nothing round the pool is pale sky and reads as a salt pan.
+**Cinderhaven spends them again at 1,500 m and adds five rules of its own**,
+each general rather than a detail of this map. **Its TOWN IS A NETWORK and the
+houses are arranged against it** — a quarter is blocks cut by its own streets,
+the streets are `road` placements that CLAIM their ground before anything is
+built, and every house is laid on the frontage line facing the carriageway,
+which works only because everything in the kit with a front faces its own local
+-Z (the shophouse and the depot are the two that face +Z). **Its FLOOR IS THE
+LEVEL** —
+what is land, where the sea goes and which slopes sever their own nav links are
+one continuous function, so `heightAt` in its generator is the map and the town
+is what stands on the answer. **And a WATERFRONT IS DERIVED FROM THE FLOOR
+rather than authored against it**: the generator MARCHES the finished ground
+outward from the middle of Cinder Bay, finds where it actually crosses the sea
+on each bearing, and places the Strand, the bay road, every jetty, boat shed,
+quay wall and lamp a stated distance inland of THAT — so what is authored is an
+arc and a setback, and the shore may move (a radius, a foreshore slope, a
+district's level) without a coordinate going quietly wrong. **A `WaterRect`'s
+reflection probe stands at the depth-weighted centroid of its WET cells**, so
+one rect over an island bakes a cube probe inside a mountain — and the second
+half of that rule is that a SEAM between two rects is where the mirror CHANGES,
+so a partition must not put one where anybody looks across it. Its sea is a
+PINWHEEL of four: the bay, its mouth and the whole eastern sea are one rect
+with one probe standing in the throat, and the three carrying the open sea meet
+only out past the coast. And **there is no swimming in this game**, so its
+whole bay is 2.6 m at the deepest and walkable — a shelf you step off into
+eight metres of water is a pit with a back-face-culled lid on it — which is
+what lets its middle flag stand on an island and still be reached on foot,
+while everything that must NOT be walked is made steep enough to sever instead.
+
+**It is also where three rules about WATER were found**, all of them general: a
+body of water is a hole in the FLOOR with a plane over it — nothing but
+`TerrainField` decides its depth, its shore or where its probe stands; what it
+LOOKS like is whatever that probe can see, which on a bright map with nothing
+round the pool is pale sky and reads as a salt pan; and **a FORESHORE has to be
+as long as the ground behind it is high**, because a fixed beach that links on
+a 10 m shelf is a 0.47 gradient and a severed shoreline where the same water
+meets a 26 m volcanic apron.
 
 **A ROAD is visual-only and rejects exactly one thing, which is anything that
 GROWS** (`world/roads.ts`, `GameMap.roads`): `MapBuilder` sows no

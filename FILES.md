@@ -623,6 +623,29 @@ src/
                               #   diagonal) and the first to state a
                               #   `bodyDrawDistance`
     sarab/collision.ts        # GENERATED collider boxes (`npm run collision`)
+    cinderhaven/layout.ts     # The sixth map and the biggest: a harbour town on
+                              #   a volcanic island at night, 1500 m of play
+                              #   inside 2000 m of ground. SEEDED by
+                              #   `npm run cinderhaven` on Sarab's precedent.
+                              #   The first map whose FLOOR is the level — what
+                              #   is land, where the sea goes and which slopes
+                              #   sever are one function — and the first whose
+                              #   town is generated as a STREET NETWORK with
+                              #   the houses turned to face it. A C-shaped
+                              #   island round a wadeable bay, with a control
+                              #   point on the rock in the middle of it and
+                              #   every waterfront DERIVED from where the floor
+                              #   crosses the sea rather than authored
+    cinderhaven/heights.ts    # GENERATED with it — a harmonic coast, a 120 m
+                              #   cone masked by it, CINDER BAY cut through
+                              #   both, and Chapel Rock raised in the middle of
+                              #   the bay after the cut. 251x251 vertices, the
+                              #   biggest in the tree, and LAZY
+    cinderhaven/environment.ts# Palette, sky and light — and the one map lit
+                              #   from the MOUNTAIN rather than from a moon, so
+                              #   the disc, the halo and every god ray hang
+                              #   over the crater
+    cinderhaven/collision.ts  # GENERATED collider boxes (`npm run collision`)
     proving/layout.ts         # DEV ONLY, and NOT a level: the proving ground
                               #   ENGINE_UPGRADE.md S0 measures against. A city
                               #   block grid at Coldharbour's collider density
