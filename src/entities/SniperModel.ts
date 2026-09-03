@@ -10,6 +10,24 @@
  * The optics are `optics.ts`'s, built against `MOUNT` rather than re-tuned.
  * Invariant: the BOLT is built about the bore and merged into a node of its
  * own — see `WeaponParts.bolt`, and `CONFIG.viewmodel.cycle` for what moves it.
+ * Invariant: a colour group is a ROLE, not a material, and this is the weapon
+ * that had to learn it. A chassis rifle is machined where the rest of the kit
+ * is moulded, so its lower, its free-float handguard, its skeleton stock and
+ * its magazine were all built in METAL — honest about the alloy and wrong
+ * about the paint, because METAL is the ACCENT group and `POLYMER`'s own
+ * comment in `weaponKit.ts` names those four parts by role. It put **49.9% of
+ * the weapon's painted area in the accent group against a kit running
+ * 11.5-16.3%**, and left the furniture group at **5.2% against 27.2-46.8%**.
+ * **The gloss is the half that made it read as a different gun**: six of the
+ * sixteen schemes put `rifleChrome` — the MIRROR rung — on METAL, so under
+ * Voltage and Frostbite half this rifle was not merely the lightest colour in
+ * the scheme but the only mirrored surface at that size in the kit, and
+ * photographed on the turntable it clipped to white while the DMR beside it
+ * stayed teal. They are POLYMER now, part for part as the DMR's
+ * `lower`/`handguard`/`stockTop`/`stockBottom`/`buttPlate`/`mag` are. What is
+ * machined about this rifle is said in its SHAPE — the skeleton stock, the
+ * chassis flank, the bare tube — and a finish is not the place to say it
+ * twice.
  */
 import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -207,16 +225,16 @@ export function buildSniper(
   // --- chassis: trigger housing, magwell, near-vertical grip ---
   // Deliberately narrower than the action above it (0.07 against 0.076), which
   // is what leaves the bolt knob somewhere to hang: see BOLT_REST.
-  b.box("chassis", METAL, 0.07, 0.086, 0.42, 0, -0.075, -0.04);
-  b.box("magwell", METAL, 0.062, 0.078, 0.135, 0, -0.098, 0.055);
-  b.box("magFlareF", METAL, 0.07, 0.02, 0.014, 0, -0.132, 0.116);
-  b.box("magFlareR", METAL, 0.07, 0.02, 0.014, 0, -0.132, -0.006);
+  b.box("chassis", POLYMER, 0.07, 0.086, 0.42, 0, -0.075, -0.04);
+  b.box("magwell", POLYMER, 0.062, 0.078, 0.135, 0, -0.098, 0.055);
+  b.box("magFlareF", POLYMER, 0.07, 0.02, 0.014, 0, -0.132, 0.116);
+  b.box("magFlareR", POLYMER, 0.07, 0.02, 0.014, 0, -0.132, -0.006);
   for (const side of [-1, 1] as const) {
-    b.box("magFlareS", METAL, 0.008, 0.02, 0.135, side * 0.032, -0.132, 0.055);
+    b.box("magFlareS", POLYMER, 0.008, 0.02, 0.135, side * 0.032, -0.132, 0.055);
   }
   b.box("magLatch", METAL, 0.026, 0.024, 0.018, 0, -0.118, -0.02);
-  b.box("guardFront", METAL, 0.044, 0.062, 0.016, 0, -0.148, -0.095);
-  b.box("guardBottom", METAL, 0.044, 0.014, 0.11, 0, -0.176, -0.148);
+  b.box("guardFront", POLYMER, 0.044, 0.062, 0.016, 0, -0.148, -0.095);
+  b.box("guardBottom", POLYMER, 0.044, 0.014, 0.11, 0, -0.176, -0.148);
   // A two-stage trigger with a flat shoe. It gets its own face for the DMR's
   // reason and more so: on a weapon fired once every second and a quarter, the
   // trigger is the only control the shooter thinks about at all.
@@ -235,9 +253,9 @@ export function buildSniper(
   b.box("gripCap", RUBBER, 0.056, 0.018, 0.082, 0, -0.162, 0, gripPivot);
 
   // --- handguard: a long free-float tube, slotted, carrying the bipod ---
-  b.box("handguard", METAL, 0.082, 0.07, 0.5, 0, -0.012, 0.5);
-  b.box("hgTop", METAL, 0.066, 0.014, 0.5, 0, 0.026, 0.5);
-  b.box("hgBottom", METAL, 0.066, 0.014, 0.5, 0, -0.05, 0.5);
+  b.box("handguard", POLYMER, 0.082, 0.07, 0.5, 0, -0.012, 0.5);
+  b.box("hgTop", POLYMER, 0.066, 0.014, 0.5, 0, 0.026, 0.5);
+  b.box("hgBottom", POLYMER, 0.066, 0.014, 0.5, 0, -0.05, 0.5);
   b.box("hgCap", BODY, 0.078, 0.078, 0.014, 0, -0.012, 0.743);
   for (const side of [-1, 1] as const) {
     for (let i = 0; i < 5; i++) {
@@ -301,13 +319,13 @@ export function buildSniper(
   // Every height is derived — see COMB_TOP, which is the sight picture's floor
   // rather than a number anybody liked the look of.
   b.box("stockBlock", BODY, 0.07, 0.115, 0.075, 0, 0.006, -0.335);
-  b.box("stockSpine", METAL, 0.05, 0.036, 0.26, 0, SPINE_TOP - 0.018, -0.455);
-  b.box("stockKeel", METAL, 0.048, 0.032, 0.24, 0, BUTT_Y - 0.07, -0.445);
+  b.box("stockSpine", POLYMER, 0.05, 0.036, 0.26, 0, SPINE_TOP - 0.018, -0.455);
+  b.box("stockKeel", POLYMER, 0.048, 0.032, 0.24, 0, BUTT_Y - 0.07, -0.445);
   // Two struts between spine and keel, leaving three windows between them.
   for (const dz of [-0.4, -0.55] as const) {
     b.box(
       "stockStrut",
-      METAL,
+      POLYMER,
       0.042,
       SPINE_TOP - 0.036 - (BUTT_Y - 0.054),
       0.026,
@@ -340,7 +358,7 @@ export function buildSniper(
   for (const side of [-1, 1] as const) {
     b.tube("padRail", METAL, 0.014, 0.014, 0.11, side * 0.024, BUTT_Y - 0.03, -0.51);
   }
-  b.box("buttPlate", METAL, 0.066, BUTT_H, 0.03, 0, BUTT_Y, -0.567);
+  b.box("buttPlate", POLYMER, 0.066, BUTT_H, 0.03, 0, BUTT_Y, -0.567);
   for (let i = 0; i < 2; i++) {
     b.box("padSpacer", BODY, 0.068, BUTT_H * 0.94, 0.008, 0, BUTT_Y, -0.585 - i * 0.009);
   }
@@ -365,7 +383,7 @@ export function buildSniper(
   const magazine = new TransformNode(`${prefix}_magazine`, scene);
   magazine.parent = root;
   const magPivot = b.pivot("magPivot", 0, -0.135, 0.055, MAG_RAKE);
-  b.box("mag", METAL, 0.04, 0.2, 0.1, 0, -0.1, 0, magPivot);
+  b.box("mag", POLYMER, 0.04, 0.2, 0.1, 0, -0.1, 0, magPivot);
   b.box("magSpine", BODY, 0.044, 0.19, 0.016, 0, -0.1, -0.044, magPivot);
   for (let i = 0; i < 3; i++) {
     b.box("magWitness", BODY, 0.043, 0.008, 0.05, 0, -0.06 - i * 0.045, 0.01, magPivot);

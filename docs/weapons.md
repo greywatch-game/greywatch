@@ -1502,6 +1502,42 @@ the merge does: `merge` records which group each merged mesh came from and
 optics. See the finish section above for what that buys and what it deliberately
 leaves out.
 
+**A colour group is a ROLE, not a material, and the four names are misleading
+about exactly that.** `POLYMER` is the FURNITURE — its own comment in
+`weaponKit.ts` lists what belongs to it and the list is roles: lower receiver,
+grip, magazine, handguard, stock. `METAL` is the ACCENT: rails, sights, the
+charging handle, small fittings. A finish is written against that reading —
+`finishes.ts` puts a scheme's brightest colour on `METAL` (Frostbite's steel,
+Voltage's cyan, Bullion's gold) because it expects to be lighting up rails and
+pins, and `finishSwatch` reads the three groups as "furniture, receiver,
+fittings" in the eye's own order.
+
+So a part goes in the group that matches what it IS ON THE WEAPON, never what
+it is made of, and **the sniper is where that was got wrong**: a chassis rifle
+is machined where the rest of the kit is moulded, so its lower, its free-float
+handguard, its skeleton stock and its magazine were all built in `METAL`. That
+is honest about the alloy and wrong about the paint — measured as painted
+surface area it put **49.9% of the weapon in the accent group against a kit
+running 11.5-16.3%**, and left the furniture group at **5.2% against
+27.2-46.8%**.
+
+**The GLOSS is the half that made it read as a different gun rather than as a
+lighter one**, and it is the reason a group swap is the fix rather than a
+recolour. `METAL` is the rung the ladder's top lives on: six of the sixteen
+schemes state `rifleChrome` on it — blued, quicksilver, voltage, frostbite,
+obsidian, bullion — so under those six half this rifle was not merely the
+lightest colour in the scheme but the only MIRRORED surface at that size in the
+kit. Photographed on the turntable in Voltage the chassis, handguard and stock
+clipped to white while the DMR standing beside it stayed teal. Nothing about
+the finishes was wrong; they were being asked to accent half a weapon.
+
+The four parts are `POLYMER` now, part for part as the DMR's
+`lower`/`handguard`/`stockTop`/`stockBottom`/`buttPlate`/`mag` are, which puts
+the sniper inside the kit's band on every group (BODY 39.7%, POLYMER 37.8%,
+METAL 17.3%, RUBBER 5.2%). **What is machined about that rifle is said in its
+SHAPE** — the skeletonised stock, the chassis flank, the bare tube — and a
+finish is not the place to say it a second time.
+
 **A colour group is free where it is unused, which is why BRASS is one.** `merge`
 skips a group with nothing in it, so the LMG's exposed belt costs the other four
 weapons nothing at all — and the belt has to be its own group rather than METAL,
