@@ -31,10 +31,16 @@
  * camera, never to aimPitch/aimYaw, so bullets and bots never see them. The
  * punch's angles are drawn ONCE per shot and held, not re-rolled per frame —
  * white noise at 8-13 rounds a second is a buzz, not an impact.
- * The aimed hold sway is the ONE exception, and deliberately so: it is part of
+ * TWO offsets are deliberately the exception and both are part of
  * aimPitch/aimYaw, because the weapon hangs off this camera and a sight
  * picture that drifts while the rounds fly down an undrifted axis is a reticle
- * that lies. See CONFIG.camera.aimSway.
+ * that lies. The aimed hold sway (CONFIG.camera.aimSway) is one; the bolt
+ * cycle's wobble (CONFIG.viewmodel.cycle.wobble) is the other, and it is here
+ * for exactly that reason — a bolt gun keeps its sight picture through the
+ * cycle, so the only honest place left to spend the cycle is on where the
+ * rifle POINTS. Both are OFFSETS and neither is integrated into pitch/yaw:
+ * each is a pure function of a phase and each is exactly zero when its phase
+ * is not running, so no amount of breathing or cycling walks the aim anywhere.
  * The landing absorb is a damped spring this system owns and the viewmodel
  * READS (`landDip`) — one integrator per impact, the same rule as the bob
  * phase. It and the view punch are the only two things that write the camera's
@@ -45,7 +51,7 @@
  */
 import { FreeCamera, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { hermite } from "./math";
+import { hermite, impulse, smoothstep } from "./math";
 import {
   DEFAULT_SIGHT,
   sightSetup,
@@ -162,6 +168,22 @@ export class CameraSystem {
   private swayTarget = 1;
 
   /**
+   * The bolt cycle, 0..1 and 1 whenever nothing is being cycled — pushed by
+   * `Player`, which owns the clock (`Player.cycleProgress`), for the reason the
+   * bob and sway drives are pushed rather than pulled.
+   *
+   * The two offsets under it are what a rifle being worked does to the HOLD,
+   * and they are here rather than on the weapon because a bolt gun is the one
+   * weapon whose gesture keeps the sight picture: the scope stays on the eye,
+   * so the rifle may not move, so what moves is where it is pointed. See
+   * `CONFIG.viewmodel.cycle` — the timeline is stated once, over there, beside
+   * the roll this crosses with.
+   */
+  private cyclePhase = 1;
+  private cyclePitch = 0;
+  private cycleYaw = 0;
+
+  /**
    * The landing absorb: how far the eye has sunk into a touchdown, in metres
    * and never positive until the recovery overshoots. A damped spring rather
    * than a decaying pulse, because knees are one — it is given a downward
@@ -222,11 +244,11 @@ export class CameraSystem {
    * construction rather than by anyone remembering to add it.
    */
   get aimPitch(): number {
-    return this.pitch + this.recoilPitch + this.swayPitch;
+    return this.pitch + this.recoilPitch + this.swayPitch + this.cyclePitch;
   }
 
   get aimYaw(): number {
-    return this.yaw + this.recoilYaw + this.swayYaw;
+    return this.yaw + this.recoilYaw + this.swayYaw + this.cycleYaw;
   }
 
   /**
@@ -338,6 +360,9 @@ export class CameraSystem {
     this.swayYaw = 0;
     this.swayAmount = 1;
     this.swayTarget = 1;
+    this.cyclePhase = 1;
+    this.cyclePitch = 0;
+    this.cycleYaw = 0;
     this.bobPhase = 0;
     this.bobAmount = 0;
     this.bobTarget = 0;
@@ -380,6 +405,21 @@ export class CameraSystem {
    */
   setSwayDrive(steadiness: number): void {
     this.swayTarget = Math.max(0, steadiness);
+  }
+
+  /**
+   * Where the bolt is this frame, 0..1 and 1 for every weapon that has none —
+   * `Player.cycleProgress`, pushed here for the reason the two drives above are
+   * pushed: the clock is the fire cooldown and movement owns it, and this
+   * system has no business re-deriving a gesture's phase.
+   *
+   * It carries no state of its own and cannot strand one. The offsets it drives
+   * are recomputed from scratch every frame and are zero the moment the phase
+   * returns to 1, which a swap, a death and a fresh weapon in the hands all do
+   * at the source.
+   */
+  setCyclePhase(phase: number): void {
+    this.cyclePhase = phase;
   }
 
   /**
@@ -589,6 +629,47 @@ export class CameraSystem {
       sw.pitch * (Math.sin(b) + 0.28 * Math.sin(b * 2.5 + 0.6)) * swayW;
     this.swayYaw =
       sw.yaw * (Math.sin(b * 0.5 + 1) + 0.22 * Math.sin(b * 3.5 + 2.4)) * swayW;
+
+    // --- the bolt cycle, spent on the hold instead of on the picture ---
+    // The hold sway's sibling and its opposite number: that one is a wander
+    // with no cause, this one is a cause with no wander. A bolt is worked with
+    // the scope still on the eye, so the rifle may not move (`ViewModel` takes
+    // the roll to nothing across this same blend) and what a hand hauling a
+    // bolt back and slamming it home actually disturbs is the thing left —
+    // where the rifle is POINTED. The reticle stays on the axis and the world
+    // swings behind it, which is the only version of this that does not make
+    // the sight lie.
+    //
+    // Three terms over the phase, and every one of them is exactly zero at
+    // both ends of it: the arc of the bolt's own travel, and the two impacts
+    // at the ends of that travel, on the same beats and the same shape as the
+    // jolts `ViewModel` lays on the weapon at the hip. One event, one clock,
+    // two places it can be spent.
+    //
+    // Scaled by the ADS blend, so the hip keeps the roll and pays none of
+    // this, and by the same eased stance weight the sway runs on, so crouching
+    // steadies a cycle exactly as it steadies a hold. Neither is a new number.
+    const cyc = CONFIG.viewmodel.cycle;
+    if (this.cyclePhase < 1) {
+      const wob = cyc.wobble;
+      const ph = this.cyclePhase;
+      const drift =
+        smoothstep(cyc.lift, cyc.back, ph) - smoothstep(cyc.back, cyc.home, ph);
+      const stop = impulse(ph, cyc.back, wob.kickFall);
+      const home = impulse(ph, cyc.home, wob.kickFall);
+      const cw = t * this.swayAmount;
+      this.cyclePitch =
+        cw *
+        (wob.drift.pitch * drift +
+          wob.stop.pitch * stop +
+          wob.home.pitch * home);
+      this.cycleYaw =
+        cw *
+        (wob.drift.yaw * drift + wob.stop.yaw * stop + wob.home.yaw * home);
+    } else if (this.cyclePitch !== 0 || this.cycleYaw !== 0) {
+      this.cyclePitch = 0;
+      this.cycleYaw = 0;
+    }
 
     // --- head bob: phase advances with travel, amplitude eases with intent ---
     this.bobAmount +=

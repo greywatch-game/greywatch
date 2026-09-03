@@ -1590,6 +1590,14 @@ export class Player implements Combatant {
         (1 + CONFIG.player.suppressSwayMult * this.suppression),
     );
 
+    // Where the bolt is, for the wobble the camera puts on the aim while one is
+    // being worked. Pushed for the same reason as the two drives above — this
+    // side owns the clock — and it is the same number `ViewModel` plays the
+    // roll off, because an aimed cycle and a hip one are one gesture spent two
+    // ways rather than two gestures. It reads 1 on every weapon that is not a
+    // bolt gun, so nothing here asks which weapon is in the hands.
+    cam.setCyclePhase(this.cycleProgress);
+
     // --- footfalls, off that same phase ---
     // The phase read here is a frame behind (the camera has not run yet), the
     // same 16 ms the viewmodel's bob is behind, and for the same reason.

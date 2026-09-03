@@ -268,9 +268,23 @@ launcher's load (`muzzleLoad`) and the bolt cycle (`boltCycle`) are both the FIR
 COOLDOWN read as a gesture, and hold no state at all — that clock is already
 dropped by a swap, already zeroed by a fresh weapon and already what refuses the
 trigger, so neither can be stranded or disagree with what the weapon may do. **A
-new gesture over a wait belongs on that clock, not on a new one.** What each
-takes away is `aimBreak`, and on the bolt gun that IS the weapon: one that kept
-its sight picture through the cycle would be a slow DMR.
+new gesture over a wait belongs on that clock, not on a new one.** The reload and
+the load take the aim away with them (`aimBreak`); **the bolt cycle is the one
+that KEEPS THE SIGHT PICTURE, and it is where a gesture over an aimed weapon
+must go.** A bolt is worked with the butt in the shoulder and the scope on the
+eye — but `applyFit` puts the fitted sight's reticle on the camera axis, so an
+aimed weapon that moves is a reticle that lies, and half a roll is half a lie.
+So the gesture has **two expressions over one clock, crossed on the ADS blend**:
+at the hip the ROLL (`cyclePos`/`cycleRot`, `ViewModel`), and aimed
+`cycle.wobble` — the same disturbance spent on where the rifle POINTS, as an
+OFFSET on `aimPitch`/`aimYaw` that is a pure function of the phase and exactly
+zero at both ends of it. The reticle stays on the axis, the world swings behind
+it, and what the wait costs is watching the man you missed rather than the
+picture you watch him through. **The aimed roll is zero including its travel
+along the bore** — which the per-shot kick keeps and this may not, because
+`cyclePos.z` held for the better part of a second is EYE RELIEF and would pull
+the 6x eyepiece through the near plane. Take `wobble` to 0 and the weapon is a
+slow DMR, which is what `aimBreak` was for; only where the wait is spent moved.
 
 **An optic's `eyeRelief` has to RISE with its magnification**, and the failure is
 silent. The aimed stand-off is `eyeRelief * zoomComp` and `zoomComp` falls as the

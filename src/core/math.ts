@@ -1,7 +1,8 @@
 /**
  * math.ts — the scalar helpers more than one file needs, and the one place each
  * of them is written down.
- * Owns: `clamp`, `clamp01`, `hermite`, `smoothstep` and `angleDelta`.
+ * Owns: `clamp`, `clamp01`, `hermite`, `smoothstep`, `impulse` and
+ * `angleDelta`.
  * Owns NO state, NO tunable and NO geometry. It imports NOTHING — not
  * `@babylonjs/core`, not `CONFIG` — and that is the property that makes it
  * safe to import from anywhere.
@@ -161,4 +162,25 @@ export function angleDelta(a: number, b: number): number {
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   return d;
+}
+
+/**
+ * An impact and its die-away over a normalised timeline: 1 exactly on the beat
+ * at `at`, squared to nothing over `fall`, and zero everywhere outside that
+ * window.
+ *
+ * All attack and no ease-in, which is the difference between something
+ * ARRIVING and something being moved into place — the same shape the per-shot
+ * kick has, for the same reason. `x`, `at` and `fall` are all fractions of
+ * whatever gesture is being played, so the impulse stretches with the gesture
+ * rather than having a duration of its own.
+ *
+ * It is here rather than beside one of its callers because the bolt cycle
+ * spends the SAME impact twice, on two different things: `ViewModel` lays it
+ * on the weapon as a jolt in the frame, and `CameraSystem` lays it on the aim
+ * as a snatch on the hold. Those are one event and must have one shape.
+ */
+export function impulse(x: number, at: number, fall: number): number {
+  const t = (x - at) / fall;
+  return t < 0 || t > 1 ? 0 : (1 - t) * (1 - t);
 }

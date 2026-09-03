@@ -93,7 +93,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { clamp, hermite } from "../core/math";
+import { clamp, hermite, impulse } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildCarbine } from "./CarbineModel";
 import { buildDmr } from "./DmrModel";
@@ -367,16 +367,6 @@ type XYZ = { x: number; y: number; z: number };
 /** Ramp from a to b, clamped at both ends. */
 const ramp = (a: number, b: number, x: number) =>
   hermite(clamp((x - a) / (b - a), 0, 1));
-/**
- * An impact and its die-away: 1 on the beat at `at`, squared to nothing over
- * `fall`, and zero outside. All attack and no ease-in, which is the difference
- * between something arriving and something being moved into place — the same
- * shape the per-shot kick has, for the same reason.
- */
-const impulse = (x: number, at: number, fall: number) => {
-  const t = (x - at) / fall;
-  return t < 0 || t > 1 ? 0 : (1 - t) * (1 - t);
-};
 
 /**
  * What the turntable needs from the camera it is parented to. The weapon is
@@ -1050,12 +1040,19 @@ export class ViewModel {
     const loadW = loading
       ? ramp(0, l.tiltIn, lp) * (1 - ramp(l.tiltOut[0], l.tiltOut[1], lp))
       : 0;
-    // The bolt cycle is the third of these and the same shape again: a weight
-    // over a phase, gating the aim exactly as the other two do. It is the only
-    // one that can genuinely coincide with another — the round that empties the
-    // magazine starts a reload on the frame it fires — and `Player
-    // .cycleProgress` settles that at the source by reading 1 while reloading,
-    // so the aim never has both taken off it at once.
+    // The bolt cycle is the third of these and the same weight over a phase —
+    // and the ONE that does not gate the aim. A bolt is worked with the butt in
+    // the shoulder and the scope on the eye, so this gesture keeps the sight
+    // picture and pays for the wait on the AIM instead (`cycle.wobble`, spent
+    // in `CameraSystem`). What that costs here is that the roll below is the
+    // HIP's alone and has to be taken to nothing by the same blend, or an aimed
+    // cycle would swing the reticle 22 degrees off the axis the rounds fly
+    // down.
+    //
+    // It is also the only one of the three that could genuinely coincide with
+    // another — the round that empties the magazine starts a reload on the
+    // frame it fires — and `Player.cycleProgress` settles that at the source by
+    // reading 1 while reloading, so there is never a roll under a reload.
     const c = v.cycle;
     const cp = p.cyclePhase;
     const cycling = cp < 1;
@@ -1065,8 +1062,7 @@ export class ViewModel {
     const t =
       hermite(clamp(p.adsBlend, 0, 1)) *
       (1 - reloadW * r.aimBreak) *
-      (1 - loadW * l.aimBreak) *
-      (1 - cycleW * c.aimBreak);
+      (1 - loadW * l.aimBreak);
 
     // --- base pose: hip -> aimed, with sprint and reload layered on top ---
     // The state offsets are additive rather than exclusive, so a reload that
@@ -1134,17 +1130,35 @@ export class ViewModel {
     // construction as the reload and the load above it, for the third time and
     // the same reason: a pose over a timeline, with the events laid on top so
     // each one lands on the sound it is.
-    if (cycleW > 0.001) {
-      addScaled(this.off, v.cyclePos, cycleW);
-      addScaled(this.rot, v.cycleRot, cycleW);
+    //
+    // …and the one difference, which is the whole of how a bolt gun is carried:
+    // ALL THREE ARE THE HIP'S, taken to nothing by the aim. This is the one
+    // gesture that keeps the sight picture, and a weapon that keeps a sight
+    // picture is a weapon that may not move: the sight is ON it, so a roll, a
+    // cant, a sideways snatch — and, uniquely here, travel along the bore,
+    // because that is EYE RELIEF and 3 cm of it is most of the 6x scope's —
+    // each either take the reticle off the axis the rounds fly down or pull
+    // the eyepiece through the near plane. The per-shot kick can spend its z
+    // travel aimed because it is a transient measured in tens of
+    // milliseconds; this is nearly a second of sustained hold.
+    //
+    // So what is left of an aimed cycle in the FRAME is the bolt and the hand
+    // on it, neither of which carries the sight, and what is left of it on the
+    // AIM is `cycle.wobble` — which is where the whole weight of the gesture
+    // goes as this comes off.
+    const cycleHip = cycleW * (1 - t);
+    if (cycleHip > 0.001) {
+      addScaled(this.off, v.cyclePos, cycleHip);
+      addScaled(this.rot, v.cycleRot, cycleHip);
     }
-    if (cycling) {
-      const stop = impulse(cp, c.back, c.kickFall);
+    if (cycling && t < 0.999) {
+      const hip = 1 - t;
+      const stop = impulse(cp, c.back, c.kickFall) * hip;
       if (stop > 0.001) {
         addScaled(this.off, c.stopKick.pos, stop);
         addScaled(this.rot, c.stopKick.rot, stop);
       }
-      const home = impulse(cp, c.home, c.kickFall);
+      const home = impulse(cp, c.home, c.kickFall) * hip;
       if (home > 0.001) {
         addScaled(this.off, c.homeKick.pos, home);
         addScaled(this.rot, c.homeKick.rot, home);

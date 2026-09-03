@@ -329,13 +329,40 @@ export const viewmodel = {
    * is that clock read as a phase, and it is 1 on every weapon that does not
    * declare `boltCycle`.
    *
-   * **`aimBreak` is the whole feature and everything else here dresses it.**
-   * What separates a bolt-action from a slow semi-automatic is not the wait, it
-   * is that you spend the wait not looking at your target: the rifle comes off
-   * the shoulder line, the 6x picture swings away, and when it comes back the
-   * man you shot at is somewhere else. Take this to 0 and the weapon becomes a
-   * DMR that fires every 1.25 s, which is strictly worse than the DMR and
-   * interesting to nobody.
+   * **A CYCLE NEVER TAKES THE SIGHT PICTURE AWAY, AND THE COST IS SPENT ON
+   * THE AIM INSTEAD.** You can work a bolt with the butt in the shoulder and
+   * the cheek on the comb — the scope does not leave your eye — and a gesture
+   * that swung it away was the one thing in this file that read as animation
+   * rather than as a rifle. But the fix cannot be to swing it away LESS:
+   * `applyFit` puts the fitted sight's own reticle on the camera axis, so any
+   * aimed weapon that MOVES is a reticle that lies, and half a roll is half a
+   * lie. So the gesture has TWO EXPRESSIONS OVER ONE CLOCK, crossed on the ADS
+   * blend and never both at full: at the hip it is the ROLL — `cyclePos`,
+   * `cycleRot` and the two impulses, the weapon working in the frame — and
+   * aimed it is `wobble`, the same disturbance spent on where the rifle POINTS
+   * rather than on where it sits. The reticle stays on the axis, the world
+   * swings behind it, and what the wait costs is the ability to watch the man
+   * you just missed rather than the picture you are watching him through.
+   *
+   * **So the roll is the HIP's ENTIRELY, including its travel along the bore**,
+   * which is the one place this is stricter than the per-shot kick beside it.
+   * That kick keeps its z travel aimed on the argument that a weapon coming
+   * toward the eye leaves the picture centred — true, and it is also EYE
+   * RELIEF, which for a transient measured in tens of milliseconds costs
+   * nothing and for `cyclePos.z`'s 3 cm held for the better part of a second
+   * would pull the 6x eyepiece through `CameraSystem`'s near plane and open
+   * the tube into a hole. An aimed cycle therefore moves the weapon not at
+   * all. What is left of it in the FRAME is the bolt and the hand working it,
+   * which run at full travel whatever the aim is doing because neither of them
+   * carries the sight.
+   *
+   * Take `wobble` to 0 and the weapon is a DMR that fires every 1.25 s, which
+   * is strictly worse than the DMR and interesting to nobody. That was
+   * `aimBreak`'s argument and it survives it: what separates a bolt-action
+   * from a slow semi-automatic is not the wait — a wait is a number, and
+   * `fireRate` already carries it — it is that the wait is spent not watching
+   * your target. It is only WHERE the wait is spent that moved, from the
+   * picture to the hold.
    *
    * The order the beats run in, all fractions of `weapons[id].shotInterval`:
    * - `0` — the shot. The weapon is still in recoil and the hand is still on
@@ -354,8 +381,8 @@ export const viewmodel = {
    * - `lock` — the handle turns down into the notch and the weapon is live.
    *   Deliberately NOT an impulse: it is a wrist turning, not a mass stopping,
    *   and a third jolt here would make the whole gesture read as rattling.
-   * - `[lock, tiltOut[1]]` — the hand goes back to the grip and the picture
-   *   comes back, finishing before the round it just chambered can be fired.
+   * - `[lock, tiltOut[1]]` — the hand goes back to the grip and the rifle
+   *   settles, finishing before the round it just chambered can be fired.
    */
   cyclePos: { x: -0.015, y: -0.012, z: -0.03 },
   cycleRot: { x: 0.09, y: -0.12, z: 0.38 },
@@ -369,31 +396,73 @@ export const viewmodel = {
     /** The handle is down and the rifle is live again. */
     lock: 0.78,
     /**
-     * The roll out of the aim and back into it. It starts on the shot rather
-     * than after it — the two are one motion, and a weapon that sat level for
-     * a tenth of a second before beginning would read as the player deciding
-     * to work the bolt rather than as the rifle being worked. It finishes
-     * short of the end for the reload's reason: the round this is chambering
-     * is fired from the sight picture, so the picture has to be back before
-     * the trigger is live.
+     * The weight over the whole gesture — the roll out of the carry and back
+     * into it at the hip, and the wobble on the hold when aimed. It starts on
+     * the shot rather than after it — the two are one motion, and a weapon
+     * that sat level for a tenth of a second before beginning would read as
+     * the player deciding to work the bolt rather than as the rifle being
+     * worked. It finishes short of the end for the reload's reason: the round
+     * this is chambering is fired from a settled rifle, so both expressions
+     * have to be off it before the trigger is live.
      */
     tiltIn: 0.1,
     tiltOut: [0.78, 0.96],
     /**
-     * How much of the AIM the gesture takes away — see the header, this is the
-     * feature.
+     * The AIMED half of the gesture: what working the bolt does to where the
+     * rifle is POINTED, in radians on `aimPitch`/`aimYaw`. See the header —
+     * this is the feature, and `CameraSystem` is where it is spent.
      *
-     * Under the reload's 0.8 rather than over it, which is the one thing here
-     * that might read backwards. A reload is a weapon taken out of the fight:
-     * both hands are on it, it is doing something that has nothing to do with
-     * where it is pointed, and the honest pose is down at the hip. A bolt is
-     * worked with the butt still in the shoulder and the cheek still near the
-     * comb — what moves is a wrist and a roll — so a break as deep as a
-     * reload's would be a rifle put down and picked up twice a second. At 0.7
-     * the sight leaves the axis decisively and the weapon never stops being
-     * held at a target, which is the difference the number is for.
+     * **It is an OFFSET and never an integration**, which is the hold sway's
+     * rule and it is what makes this safe on the aim at all: it is a pure
+     * function of the cycle phase, it is exactly zero at both ends of it, and
+     * a weapon put down mid-cycle takes the whole thing away on the frame
+     * `cycleProgress` returns to 1. Nothing can be stranded, and no amount of
+     * cycling walks the player's own aim anywhere — unlike `addRecoil`, which
+     * is meant to.
+     *
+     * It is scaled by the ADS blend, so the hip keeps the roll and pays none
+     * of this, and by the stance steadiness the hold sway already runs on
+     * (`CameraSystem.swayAmount`) — so crouching steadies a cycle for the same
+     * reason it steadies a hold, and working a bolt at a jog is worse than
+     * working one standing still. Both were already there to be read; neither
+     * is a second knob.
+     *
+     * `drift` rides the bolt's OWN travel — out to the rear stop and back to
+     * closed — so it is the arc a rifle takes when the firing hand comes off
+     * the grip, goes up and pulls back: the muzzle swings toward the hand
+     * working it and comes home as the bolt does.
+     *
+     * `stop` and `home` are the two impacts, on the same beats and the same
+     * squared decay as `stopKick`/`homeKick` — and, like that pair, they go
+     * OPPOSITE ways, because a mass driven back and a mass driven home do not
+     * snatch a rifle the same way. They are about a third of the drift: they
+     * are what stops the arc reading as one smooth swing, which is a hand
+     * moving a rifle rather than a mechanism being worked in one.
+     *
+     * **All six are sized against the 6x TUBE and not against a degree**,
+     * which is what makes them small: the glass this weapon is built around
+     * magnifies the disturbance along with everything else, and its aimed
+     * field is 9.8 deg, so the tube's own radius is 4.9 deg of apparent
+     * movement and there is no room in it for a number that reads generous
+     * written down. Worst of the whole gesture is the rear stop, where yaw
+     * reaches drift + stop = 0.0105 rad — 0.6 deg of aim, 3.6 deg of apparent
+     * movement, **74% of the tube's radius** with the pitch term added in. So
+     * a man standing in the middle of the picture when the shot broke slides
+     * most of the way to the edge of it and is back in the middle before the
+     * trigger is live, and a man who was MOVING is somewhere the shooter did
+     * not watch him get to. Take these much further and he is outside the tube
+     * and has to be found again, which is the swing-away this replaced wearing
+     * a different hat. Pitch is deliberately about half of yaw and peaks
+     * before the stop rather than on it: a bolt throw pivots a rifle in the
+     * shoulder far more than it lifts it, and two axes peaking on one beat
+     * would spend the whole budget in one direction.
      */
-    aimBreak: 0.7,
+    wobble: {
+      drift: { pitch: 0.0035, yaw: 0.008 },
+      stop: { pitch: -0.002, yaw: 0.0025 },
+      home: { pitch: 0.0022, yaw: -0.0032 },
+      kickFall: 0.11,
+    },
     /**
      * How far the bolt travels, in model units along -z, and how far the
      * handle turns getting there (radians, about the bore).
