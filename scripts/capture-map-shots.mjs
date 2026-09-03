@@ -66,6 +66,13 @@
  * real time and the frame is whatever the machine had rendered when the
  * screenshot was taken. Re-run it when a map or a vantage has actually moved,
  * not as housekeeping.
+ *
+ * **Which is why it takes map ids on the command line** — `npm run shots --
+ * cinderhaven` — and why that is a feature rather than a convenience. One map
+ * moving is the ordinary case, and a full run would rewrite five committed
+ * pictures that nothing has happened to with five different ones, in a diff
+ * where the sixth is the only one anybody meant. With no ids it does the lot,
+ * which is what a fresh checkout and a palette change both want.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -245,7 +252,20 @@ try {
   });
   await page.close();
 
+  const only = new Set(process.argv.slice(2));
+  if (only.size) {
+    const known = new Set(shots.map(([id]) => id));
+    const stray = [...only].filter((id) => !known.has(id));
+    if (stray.length) {
+      throw new Error(
+        `no vantage for ${stray.join(", ")} — the ids are ` +
+          `${[...known].join(", ")} (see src/ui/mapShots.ts)`,
+      );
+    }
+  }
+
   for (const [id, vantage] of shots) {
+    if (only.size && !only.has(id)) continue;
     const started = Date.now();
     const jpeg = await captureMap(browser, vite.url, id, vantage);
     writeFileSync(shotPath(id), jpeg);

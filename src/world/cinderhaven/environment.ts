@@ -87,18 +87,19 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
   floorColor: "#332e38",
   floorSurface: "gravel",
   /**
-   * The far islands, a kilometre out. Almost all of it is drawn in `fogColor`;
-   * what these two decide is the last two hundred metres of it, seen from a
-   * headland.
+   * **Nothing on this map is painted in either of these, and they are here
+   * because the type asks for them.** They were the far islands — the rest of
+   * the caldera's wall, a ring of downs a kilometre out — and the layout now
+   * states `ridge: { form: "none" }`, so no rim geometry is built at all: what
+   * closes this horizon is the ocean running out past `fogEnd`, which is that
+   * layout entry's argument and `Ridge.ts`'s.
+   *
+   * They are left at what they were rather than deleted or blanked. A map's
+   * environment is swapped live by the editor's work light and read by
+   * `MapThumb`, so an unused colour is worth nothing and a wrong one is worth
+   * less than nothing the day somebody puts an island back out there.
    */
   ridgeColor: "#211c24",
-  /**
-   * The rim's foot, and its job is to melt the boundary into `floorColor`
-   * rather than to trim it — near it and slightly warmer, never lighter. The
-   * sky term lifts albedo, so a bright tone here comes back chalky on every
-   * up-facing ledge, and on this map that ledge would be the only pale thing
-   * on the horizon.
-   */
   ridgeScreeColor: "#2c2528",
   accentColor: "#ff7a2a",
   skyColor: "#0a0716",

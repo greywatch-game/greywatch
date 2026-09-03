@@ -511,13 +511,23 @@ leaving is `src/world/leash.ts`, a countdown rather than a shape. **It is sized
 by the leash, it kills on the AUTHORITY and only draws on a client, and bots are
 never leashed** — the nav graph stops at the play square.
 
+**What a boundary is closed BY and what it is closed WITH are two questions**,
+and `RidgeSpec.form` has a third value for maps that answer the second some
+other way: `none` builds no landform at all. What earns it is having laid
+something out there already, because the sky dome is flat `fogColor` below the
+horizon and `Sky` culls its stars out of the lowest 7.2 deg — so a boundary with
+nothing over it and nothing beyond it is a dead band of sky under a starless
+one, which is the picture the other two forms were paying for. Cinderhaven is
+the map it was added for and the only one that takes it: an ISLAND states its
+horizon in water instead.
+
 **The shipped maps are Hollowmere** (a night village), **Greyfen** (a jungle
 valley), **Coldharbour** (a business district — what the first three overrides
 exist for), **Harrowmead** (`size: 400`, no wall around it), **Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
 `ENGINE_UPGRADE.md` exists for) **and Cinderhaven** (`size: 1500` inside 2000 m
-of ground — a harbour town on a volcanic island, at night, and the biggest map
-in the tree). **The last four are the four with vehicles on them**, and they are
+of ground and 4,600 m of sea — a harbour town on a volcanic island, at night,
+the biggest map in the tree and the only one with no rim on it at all). **The last four are the four with vehicles on them**, and they are
 the four biggest; **Sarab and Cinderhaven are the two with all THREE KINDS**, a
 tank, a gun truck and a helicopter a side, **and the two that are not 8v8** —
 both field 24 a side, online and off, which is `MapLayout.perTeam` and the row
@@ -538,7 +548,7 @@ ordinary layout file the editor opens, patches and saves like any other.
 Re-running the generator discards editor edits, which is the warning every
 `heights.ts` already carries.
 
-**Cinderhaven spends them again at 1,500 m and adds seven rules of its own**,
+**Cinderhaven spends them again at 1,500 m and adds eight rules of its own**,
 each general rather than a detail of this map. **Its TOWN IS A NETWORK and the
 houses are arranged against it** — a quarter is blocks cut by its own streets,
 the streets are `road` placements that CLAIM their ground before anything is
@@ -561,7 +571,24 @@ half of that rule is that a SEAM between two rects is where the mirror CHANGES,
 so a partition must not put one where anybody looks across it. Its sea is a
 PINWHEEL of four: the bay, its mouth and the whole eastern sea are one rect
 with one probe standing in the throat, and the three carrying the open sea meet
-only out past the coast. And **there is no swimming in this game**, so its
+only out past the coast. **An ISLAND'S HORIZON IS THE SEA, and it is priced in
+QUADS rather than in ground** — a second pinwheel of four rects runs the water
+to 2,300 m, which is `fogEnd` past the furthest point anything in the
+simulation can reach, so the rim came off (`ridge: { form: "none" }`) and what
+closes the map is the fog over open water. **The floor does NOT go with it**:
+water is a quad with a texture for a bed and is opaque past
+`CONFIG.water.depthMax`, so the ground still stops at the `borderland`'s
+margin and nothing is drawn under the ocean at all. Two rules fall out and both
+are general. The ring is not the inner four made bigger — **a rect's bed map is
+512 texels a side however big the rect is**, so widening one that carries a
+shoreline spends that coastline's own resolution on empty sea. And **the FLOOR'S
+outer ring is what the ocean is drawn over**, because `TerrainField` clamps
+every query outside the heightfield to its edge: two 60 m stretches of foreshore
+reached the boundary at 0.9 m above the water, which was a spit while the sea
+stopped at the margin and a kilometre and a half of dead-straight sandbar
+afterwards, so the generator now pulls that last band under — deep enough that
+`borderRoll` cannot lift it back into the shallows. And **there is no swimming
+in this game**, so its
 whole bay is 2.6 m at the deepest and walkable — a shelf you step off into
 eight metres of water is a pit with a back-face-culled lid on it — which is
 what lets its middle flag stand on an island and still be reached on foot,

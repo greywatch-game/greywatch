@@ -23,6 +23,11 @@
  * every line of the emit loop and differ in a profile table, the tone split and
  * the two rules called out below.
  *
+ * **There is a third that is not a landform: `none` emits nothing**, for a map
+ * that has already put something past its own boundary for the horizon to be
+ * made of. It is the first line of `ridgeSegments` and the argument for it is
+ * there.
+ *
  * Invariants:
  * - **Nothing it emits is inside `±size/2`.** The band runs from the boundary
  *   OUTWARD, where there is no playable space at all, so the whole landform
@@ -526,6 +531,19 @@ export function ridgeSegments(
   terrain: TerrainField,
 ): RidgeSegment[] {
   const half = size / 2;
+  // **`none` is a map saying the horizon is already closed, and it is the one
+  // form that emits nothing.** Every other map here needs a landform on its
+  // boundary because there is nothing beyond it: the sky dome is flat
+  // `fogColor` below the horizon and `paintStars` culls the lowest 7.2 deg
+  // outright, so a boundary drawn by nothing shows as a dead band of sky with
+  // the star field stopping in a line above it. What buys the exemption is not
+  // the absence of a rim but the presence of something else out there — on
+  // Cinderhaven a sea laid past `fogEnd` on every bearing, so the lowest
+  // degrees of the frame are fogged water rather than empty dome, and the
+  // starless band is the one the field's own `altFade` had already faded to
+  // nothing before the cull line. A map that takes this form without laying
+  // that something owes the picture the other two forms were paying for.
+  if (spec?.form === "none") return [];
   // Which landform. Everything below is shared — the stations, the noise, the
   // pass windows, the crest solve and the emit loop are the rim's, not the
   // escarpment's — and the form picks the profile, the tone split and the two

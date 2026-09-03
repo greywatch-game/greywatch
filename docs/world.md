@@ -132,13 +132,15 @@ new here rather than borrowed, and each is written up where it belongs:
   foreshore has to be as long as the ground behind it is high** — a fixed beach
   that links on a 10 m shelf is a 0.47 gradient where the same water meets a
   26 m volcanic apron.
-- **The sea is four rectangles that TILE, as a pinwheel.** See the water
-  section below; the short version is that a `WaterRect`'s reflection probe
-  stands at the depth-weighted centroid of its wet cells, so one rect over an
-  island plants a cube probe inside a mountain — and a SEAM between two rects
-  is where the mirror changes, so a partition must not put one across open
-  water anybody is looking over. The bay, its mouth and the whole eastern sea
-  are one rect; the three carrying the open sea meet only out past the coast.
+- **The sea is eight rectangles that TILE, as a pinwheel inside a pinwheel.**
+  See the water section below; the short version is that a `WaterRect`'s
+  reflection probe stands at the depth-weighted centroid of its wet cells, so
+  one rect over an island plants a cube probe inside a mountain — and a SEAM
+  between two rects is where the mirror changes, so a partition must not put
+  one across open water anybody is looking over. The bay, its mouth and the
+  whole eastern sea are one rect; the three carrying the open sea meet only out
+  past the coast; and the outer four are the OCEAN, which is what closes this
+  map instead of a rim.
 - **The key light comes out of the MOUNTAIN**, which is what puts the sky's one
   bright disc and every shaft `GodRays` draws over the crater — see
   `cinderhaven/environment.ts`, which owns that argument and the measurement
@@ -628,6 +630,29 @@ S7 for the measurement and `src/world/maps.ts` for the shape.
   generator PROVES the partition rather than leaving it to be read off the
   numbers: every wet vertex in exactly one rect, no two rects overlapping, and
   every probe site standing in water.
+- **An island's HORIZON is water, and it is priced in QUADS rather than in
+  ground.** Cinderhaven has no rim (`RidgeSpec.form: "none"`), so what closes it
+  is a SECOND pinwheel round the first, running the sea to 2,300 m — `fogEnd`
+  past the boundary colliders, which are the furthest anything can get — where
+  the water is exactly `fogColor` and the dome above it is a horizon rather than
+  a seam. It costs four quads and four bed textures and NO FLOOR: a rect is a
+  single plane, the bed under it is a texture, and past `CONFIG.water.depthMax`
+  (1.5 m) the body is opaque, so there is nothing to tessellate under an ocean
+  and nothing to see if you did. The ground still stops at the `borderland`'s
+  own margin. Two rules came out of it and both outlive this map. **The ring is
+  not the inner rects made bigger**, because a bed map is
+  `CONFIG.water.depthTexelsMax` (512) texels a side however large the rect is —
+  widening a rect that carries a shoreline spends that coastline's own
+  resolution on empty sea, and every rect but one here carries the island's.
+  And **the floor's outer ring is what the ocean is drawn over**: `TerrainField`
+  clamps every query outside the heightfield to its edge, so whatever stands on
+  the last row of vertices runs outward for as far as anything is drawn out
+  there. Two 60 m stretches of foreshore reached Cinderhaven's boundary at 0.9 m
+  ABOVE the water, which was a 250 m spit while the sea stopped at the margin
+  and a kilometre and a half of dead-straight sandbar once it did not. The
+  generator pulls that last 48 m band under (`EDGE_BAND`/`EDGE_SEA`), deep
+  enough that `borderRoll` cannot lift it back into the shallows — where it
+  would grow foam and a shoal instead.
 - **`NavGrid.link` is the slope limit.** It links neighbouring surfaces only within
   `stepHeight`, so at `cellSize` 1.5 a bank is walkable up to a gradient of 0.4
   (~22 deg) and severs itself above that — `MAX_WALKABLE_GRADE`. On a 3 m terrain cell
@@ -865,7 +890,19 @@ exactly ±120) and they are the only thing that stops anything leaving;
 
 **That is one of two ways a map may be closed, and the other one is below** —
 Harrowmead has no wall at all. Everything in this section is the rim's, which is
-still the default and still what Hollowmere, Greyfen and Coldharbour are. That split is
+still the default and still what Hollowmere, Greyfen and Coldharbour are.
+
+**And the LANDFORM is separable from the boundary a third time**: `RidgeSpec.form:
+"none"` builds no geometry at all, for a map that has already put something out
+past its own boundary for the horizon to be made of. Cinderhaven is the one that
+takes it — a `borderland` of ground with 2,300 m of open sea drawn over and past
+it, which is `fogEnd` beyond the furthest point anything in the simulation can
+reach. What a map owes before it may take that form is exactly the crest rule
+three bullets down, paid in something other than rock: the sky dome is flat
+`fogColor` below the horizon and `Sky` culls its stars out of the lowest 7.2°, so
+a boundary with nothing over it AND nothing beyond it is a dead band under a
+starless one. The boxes are untouched by the form — they are what stops anything
+leaving, and nothing here has ever drawn them. That split is
 why seven sites — `NavGrid` (rasterize, severLinks, clearBlocked), `ObstacleField`,
 `CoverMap`, `Minimap`, `DeployScreen` — identify the boundary with `box.w > 200 ||
 box.d > 200` and know nothing about the rim. **Keep the boxes over 200 m and keep

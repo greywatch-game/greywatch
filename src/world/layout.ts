@@ -239,8 +239,18 @@ export interface RidgeSpec {
    *   to remember — the band exists to line up with a collider plane a player
    *   can stand against, and on an open boundary the rim stands a margin's
    *   width beyond anywhere a living player is.
+   * - `none` — no landform at all: the map draws nothing over its own
+   *   boundary, and what closes the horizon is whatever it has already laid
+   *   out there. **A map may only take it if that something reaches past its
+   *   own `fogEnd` from everywhere a player can be**, which is the one thing
+   *   the other two forms guarantee by standing up: the sky dome is painted
+   *   flat `fogColor` below the horizon and `Sky` culls its stars out of the
+   *   lowest 7.2 deg, so a boundary with nothing over it and nothing beyond it
+   *   is a band of empty sky under a starless one. Cinderhaven is the map it
+   *   was added for — an island whose ocean runs out past the fog wall on
+   *   every bearing — and `Ridge.ts` carries the argument in full.
    */
-  form?: "escarpment" | "downs";
+  form?: "escarpment" | "downs" | "none";
   /**
    * Crest height as a tangent from the map centre — an ANGLE, not a height, so
    * the corners (further from the centre) rise higher than the sides on their

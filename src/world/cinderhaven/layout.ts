@@ -7,9 +7,9 @@
  *
  * ## Cinderhaven: a harbour town on a volcanic island, at night
  *
- * **The biggest map in the tree — a 1500 m play square inside 2000 m of ground**,
- * 2.8 times Sarab's playable area. What keeps it a FIGHT rather than a
- * walk is that only 1.39 km² of it is dry: 0.88 km² of the square is
+ * **The biggest map in the tree — a 1500 m play square inside 2000 m of ground and
+ * 4600 m of sea**, 2.8 times Sarab's playable area. What keeps it a FIGHT rather than a
+ * walk is that only 1.38 km² of it is dry: 0.89 km² of the square is
  * water, so the 48 bodies on the field are spread over land, not over the
  * square. That is the number to compare against Sarab's 0.81 km², and the
  * reason this map states `perTeam: 24` for the same reason Sarab does — a
@@ -18,7 +18,7 @@
  *
  * ### The island is a C, and CINDER BAY is what bends it
  *
- * **0.25 km² of sheltered water inside the island**, a basin six hundred
+ * **0.26 km² of sheltered water inside the island**, a basin six hundred
  * metres across with a mouth 260 m wide, and two arms of land
  * curling round it: the north arm from Grimhold's flank out to team 1's
  * headland, the south arm along the shelf to the cape and the light. The mouth
@@ -1316,8 +1316,8 @@ const spawns: SpawnPointDef[] = [
  * ceiling that keeps it inside the bots' own 55 m engagement range.
  *
  * **There is no boat here yet and the map is laid out as though there will
- * be.** The bay, its mouth and the sea round the island are 0.88 km² of
- * navigable water inside the play square — 0.25 km² of it sheltered —
+ * be.** The bay, its mouth and the sea round the island are 0.89 km² of
+ * navigable water inside the play square — 0.26 km² of it sheltered —
  * with a town on two shores of it, a flag in the middle and a mouth that can
  * be held. Nothing in the layout depends on a boat existing: C is wadeable
  * today, and what a gunboat would add is speed and a gun, not access. That is
@@ -1343,9 +1343,18 @@ const vehicles: VehicleSpawnDef[] = [
 ];
 
 /**
- * The sea, as FOUR rectangles that TILE the whole map — a pinwheel rather
- * than a frame round a hole — and the reason they tile is the reflection
- * probe rather than the drawing.
+ * The sea, as EIGHT rectangles that TILE everything out to the horizon — a
+ * pinwheel inside a pinwheel rather than a frame round a hole — and the reason
+ * they tile is the reflection probe rather than the drawing.
+ *
+ * **The outer four are the OCEAN and they are what closes this map**, which is
+ * the job a rim does everywhere else and the reason this is the one layout in
+ * the tree with `ridge: { form: "none" }` on it. They run to 2300 m, which is
+ * past `fogEnd` from the furthest point anything can reach, so the water's own
+ * far edge is exactly `fogColor` and the sky above it is a horizon rather than
+ * a seam. They cost four quads and four bed textures: no floor is tessellated
+ * out there, because at `CONFIG.water.depthMax` (1.5 m) the body is opaque and
+ * there is nothing under it to see.
  *
  * A `WaterRect` is an extent and the BED decides where the shore is, so any
  * partition of the square draws exactly the same coastline. What varies is
@@ -1362,9 +1371,20 @@ const vehicles: VehicleSpawnDef[] = [
  * ONE rect with one probe standing in the throat of the mouth, so there is no
  * seam anywhere a player can see across the harbour; the three that carry the
  * open sea meet only out past the coast, where both sides of every seam are
- * empty water under the same sky. The generator PROVES the partition rather
- * than leaving it to be read off the numbers — every wet vertex in exactly one
- * rect, no two rects overlapping, and every probe site standing in water.
+ * empty water under the same sky. The outer four meet those at the boundary,
+ * 250 m further out again, where the same is true twice over. The generator
+ * PROVES the partition rather than leaving it to be read off the numbers —
+ * every wet vertex in exactly one rect, no two rects overlapping, and every
+ * probe site standing in water.
+ *
+ * **The inner four are not widened to reach the horizon, and that is the one
+ * thing to keep if this is ever repartitioned.** A rect's bed map is a fixed
+ * 512 texels a side (`CONFIG.water.depthTexelsMax`) however big the rect is,
+ * and three of these four carry the island's own shoreline — the waterline,
+ * the foam and the shoal grading are all read off that texture, so stretching
+ * the western sea out to 2300 m would have spent three quarters of the west
+ * coast's shoreline resolution on empty ocean. The ring has no shore in it and
+ * can be as coarse as it likes.
  */
 const water: WaterRect[] = [
   // the bay, its mouth and the sea east of the island.
@@ -1375,6 +1395,14 @@ const water: WaterRect[] = [
   { x: 310, z: -690, width: 1380, depth: 620, y: 0 },
   // the southern sea.
   { x: 310, z: 690, width: 1380, depth: 620, y: 0 },
+  // the western ocean.
+  { x: -1650, z: -650, width: 1300, depth: 3300, y: 0 },
+  // the northern ocean.
+  { x: 650, z: -1650, width: 3300, depth: 1300, y: 0 },
+  // the eastern ocean.
+  { x: 1650, z: 650, width: 1300, depth: 3300, y: 0 },
+  // the southern ocean.
+  { x: -650, z: 1650, width: 3300, depth: 1300, y: 0 },
 ];
 
 const grass: GrassRect[] = [
@@ -1413,7 +1441,7 @@ export const CinderhavenLayout: MapLayout = {
    */
   size: 1500,
   /**
-   * Twenty-four a side, and the field is 1.39 km² of dry land rather than
+   * Twenty-four a side, and the field is 1.38 km² of dry land rather than
    * the 2.25 km² of the square — see the header. `CONFIG.bots.maxPerTeam`
    * is the ceiling and this is at it, so there is no lever left if this is not
    * enough.
@@ -1460,12 +1488,15 @@ export const CinderhavenLayout: MapLayout = {
    * carries on for 250 m past the play square and what stops you is a countdown
    * rather than a shape (`Borderland`, and `world/leash.ts` for the rule).
    *
-   * 250 m is sized by the HORIZON rather than by the leash, which is Sarab's
-   * argument rather than Harrowmead's: ten seconds at a sprint is 69 m, so any
-   * margin over about 80 is invisible to a living player. What the rest of it
-   * buys is that at 900 m of sea haze the fog wall stands over open water from
-   * every point on the island, instead of over the edge of a plate with sky
-   * under it.
+   * 250 m is sized by the LEASH and nothing else now, which is Harrowmead's
+   * argument rather than Sarab's: ten seconds at a sprint is 69 m, so the
+   * boundary colliders stand three times that beyond anywhere a living player
+   * is. It used to be sized by the horizon as well — the ground had to reach
+   * far enough out that the fog wall stood over open water rather than over the
+   * edge of a plate — and it does not any more, because the WATER goes on
+   * without it: a rect is a quad with a texture for a bed, so the sea is drawn
+   * to `OCEAN` (2300 m) over no floor at all. What the margin still owes is
+   * the shelf a leashed player wades out onto, and 250 m of it is that.
    *
    * `roll` is small because this is WATER: the borderland is the shelf
    * continuing, and a swell in ground nobody will ever stand on would only
@@ -1473,33 +1504,29 @@ export const CinderhavenLayout: MapLayout = {
    */
   borderland: { margin: 250, roll: 1.4 },
   /**
-   * `form: "downs"` because `borderland` is stated, and the two are a pair
-   * rather than a choice: an escarpment's basal band is a vertical face flush
-   * with a collider plane, and on an open boundary there is nothing within a
-   * margin's width for it to be flush with.
+   * **`form: "none"`: THE HORIZON IS THE SEA, and this is the only map in the
+   * tree with no landform on its boundary at all.**
    *
-   * What stands out there is the rest of the archipelago — the far walls of
-   * the same caldera, 1000 m out and drawn almost entirely in `fogColor`.
-   * The slope is at the floor `Ridge` clamps to, because its job here is to be
-   * a horizon line at the edge of the haze rather than a landform: anything
-   * more would be a mountain range in a place the map has already said is
-   * open sea.
+   * What stood here was the rest of the archipelago — the far walls of the same
+   * caldera, a ring of downs 1000 m out drawn almost entirely in `fogColor`.
+   * Every argument for it was about the SKY: the dome is flat `fogColor` below
+   * the horizon and `Sky` culls its stars out of the lowest 7.2 deg, so a
+   * boundary with nothing over it is a dead band under a starless one, and a
+   * rim is the cheapest thing that covers it. On an island it is also the one
+   * thing that cannot be true, and no amount of breaking it up fixes that: a
+   * ring of hills at a kilometre is a bowl seen from anywhere in the middle of
+   * it, and this is a map you are meant to be able to see the whole way round.
    *
-   * Four passes, one on each side, so the far islands read as broken rather
-   * than as a bowl.
+   * What covers the band instead is WATER — `OCEAN` in the generator, 2300 m
+   * of it, which is past `fogEnd` (1,250) from the furthest point anything in
+   * the simulation can reach (the boundary colliders, at 1000). The lowest
+   * degrees of the frame are therefore fogged sea rather than empty dome on
+   * every bearing, the star field's own `altFade` had already faded to nothing
+   * by the cull line, and the sea meets the sky in a horizon rather than in a
+   * seam. That is the condition `RidgeSpec.form`'s `none` states, and this map
+   * is what it was added for.
    */
-  ridge: {
-    form: "downs",
-    slope: 0.138,
-    slopeVariance: 0.03,
-    passes: [
-      { x: 0, z: -1000, width: 52 },
-      { x: 0, z: 1000, width: 52 },
-      { x: -1000, z: 40, width: 46 },
-      { x: 1000, z: 220, width: 60 },
-    ],
-    seed: 0x43494e45,
-  },
+  ridge: { form: "none" },
   // Fixed so the dressing — and the colliders blocking scatter emits, and so
   // the nav graph — is identical on every boot. Changing it rerolls the whole
   // scatter field, which is a visible change to the level: re-walk the flags.
