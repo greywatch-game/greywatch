@@ -3,8 +3,14 @@
  * Owns: the weapon table (its keys ARE `WeaponId`), the head zone (`combat`),
  * recoil, and the gunfeel dressing. Contract: `docs/weapons.md`.
  * Gotcha: every round in the game is hitscan through the same
- * `CombatSystem.fire`; a weapon's `recoilMult`/`bloomMult`/`yawBias` SCALE
- * `recoil` rather than restating it.
+ * `CombatSystem.fire`; a weapon's `recoilMult`/`recoilImpulse`/`bloomMult`/
+ * `yawBias` SCALE `recoil` rather than restating it.
+ * Gotcha: `recoilMult` and `recoilImpulse` are two different quantities and
+ * were one field until the DMR and the bolt gun forced them apart. The first
+ * is the MOMENT (how far the muzzle tips) and reaches `pitchPerShot` and
+ * nothing else; the second is the SHOVE (how hard it arrives) and reaches the
+ * settle spring, the post-shot unsteadiness, the view punch and the
+ * viewmodel's own travel — never an angle.
  * Gotcha: a weapon's `report` is DEVIATIONS from the reference gunshot, which
  * `Sfx.shoot` owns and the rifle's all-ones row IS; nothing here is an
  * absolute level.
@@ -73,11 +79,21 @@
  * THIRD question over the same trigger and is asked of the frame rather than
  * of the rules — see the field on the rifle.
  *
- * `recoilMult` and `bloomMult` SCALE `CONFIG.recoil` rather than restating
- * it: the shape of recoil — how much springs back, how fast, where it is
- * capped — belongs to the game, not to the weapon. Bloom is multiplied at
- * its ceiling too, or a weapon that blooms faster would pay nothing for it
- * after the second shot.
+ * `recoilMult`, `recoilImpulse` and `bloomMult` SCALE `CONFIG.recoil` rather
+ * than restating it: the shape of recoil — how much springs back, how fast,
+ * where it is capped — belongs to the game, not to the weapon. Bloom is
+ * multiplied at its ceiling too, or a weapon that blooms faster would pay
+ * nothing for it after the second shot.
+ *
+ * **The two recoil multipliers are the one place this table describes the same
+ * event twice on purpose, and reading them as a PAIR is how the kit is meant
+ * to be read.** Muzzle rise is a moment arm — recoil runs along the bore and
+ * the hands hold the weapon below it — so it is decided by the shape of the
+ * gun; the shove is decided by the cartridge. They are not correlated and in
+ * this table they are frequently inverted: the pistol flips at 1.15 on a
+ * shove of 0.55, the LMG shoves 0.9 and flips 0.7, and the bolt gun is the
+ * only entry where both are the largest number in the column. A weapon added
+ * here that sets one of them from the other has not said anything.
  */
 export const weapons = {
   rifle: {
@@ -141,8 +157,28 @@ export const weapons = {
     spreadHip: 0.045,
     spreadAds: 0.006,
     range: 120,
-    /** Scales `recoil.pitchPerShot`/`yawPerShot`. */
+    /**
+     * Scales `recoil.pitchPerShot`/`yawPerShot` — how far the MUZZLE RISES,
+     * and nothing else. **The reference, and the whole of what this field
+     * means since `recoilImpulse` was split out of it.**
+     */
     recoilMult: 1,
+    /**
+     * How hard the shot SHOVES, as against how far it tips the muzzle. The
+     * reference, at 1, exactly as `recoilMult` is.
+     *
+     * The two are genuinely different quantities and were one field until the
+     * DMR and the bolt gun made it impossible to pretend otherwise. Muzzle
+     * rise is a MOMENT: the recoil force runs along the bore and the shoulder
+     * holds the weapon below it, so what tips the muzzle is that offset, and a
+     * heavy rifle mounted properly tips remarkably little. What actually
+     * doubles with the cartridge is the IMPULSE — the free recoil energy going
+     * straight back into the shooter — and what that costs is not angle but
+     * TIME and STEADINESS. See `recoil.settle`, `recoil.shake` and
+     * `recoil.punchCompress`, which are the three things this drives; nothing
+     * here reaches `pitchPerShot`.
+     */
+    recoilImpulse: 1,
     /**
      * Which way this weapon pulls, -1 (hard left) to +1 (hard right).
      *
@@ -365,6 +401,8 @@ export const weapons = {
      */
     range: 90,
     recoilMult: 0.8,
+    /** The rifle's round out of a shorter barrel: the same shove, near enough. */
+    recoilImpulse: 1.05,
     /**
      * Strong, and left — the opposite family to the rifle. Three rounds in
      * 0.1 s cannot be steered, only pre-aimed, so a weak bias would be
@@ -434,6 +472,14 @@ export const weapons = {
     /** Past this a round simply stops; the optic on top cannot change it. */
     range: 70,
     recoilMult: 0.55,
+    /**
+     * Half the rifle's, and the lowest in the kit that fires anything: a
+     * pistol round out of a light gun. Note that it is LOWER than
+     * `recoilMult` — this weapon flips more per unit of shove than it shoves,
+     * which is what a light receiver with a high bore line does, and is the
+     * clearest case in the table that the two fields are not one.
+     */
+    recoilImpulse: 0.5,
     /**
      * The strongest in the kit, and the rate is why. Thirteen rounds a second
      * on the smallest per-shot kick is otherwise indistinguishable from
@@ -530,7 +576,32 @@ export const weapons = {
      * does not.
      */
     range: 180,
-    recoilMult: 2.2,
+    /**
+     * **Was 2.2, which was 3.8 deg of muzzle rise on every deliberate scoped
+     * round** — more than twice the rifle's, from a heavy weapon fired off a
+     * shoulder with a cheek on the comb, which is the one place a rifle tips
+     * LEAST. That number was the only language this weapon had for being a
+     * full-power cartridge, and it spent it on the one axis that reads as the
+     * shooter losing control of the gun rather than as the gun being big.
+     *
+     * At 1.35 it is 2.3 deg — still half again the rifle's, because the bore
+     * sits higher over a heavier stock and there is genuinely more moment
+     * here. What the missing 1.5 deg bought is on the line below.
+     */
+    recoilMult: 1.35,
+    /**
+     * A full-power round out of a gas gun: near enough two and a half times
+     * the rifle's shove, and this is where the weight of it is actually
+     * spent. Measured in the client, one aimed round takes 28 ms to reach the
+     * top of its travel and 62 ms to come back down it, against the rifle's 21
+     * and 20 — and at the hip, 63 ms up and 202 down against 41 and 104. It
+     * also opens the hold by 1.7x and quickens it 2.2-fold for 0.85 s
+     * afterwards, and shakes the frame 1.55x as hard.
+     * **None of that is an angle**, which is the point — a shot you have to
+     * re-settle after costs the follow-up without making the first round
+     * something to be pulled down.
+     */
+    recoilImpulse: 2.4,
     /**
      * Zero, and it is the one weapon here where that is a decision rather
      * than a default. One shot at a time is not a pattern — there is no
@@ -676,12 +747,32 @@ export const weapons = {
      */
     range: 300,
     /**
-     * The hardest kick here, and it costs nothing the weapon is not already
-     * paying: there is no second round close enough behind the first for a
-     * climb to compound, and the cycle takes the sight off the target before
-     * the spring has finished coming home either way.
+     * **Was 3.2 — five and a half degrees, the largest single number in the
+     * recoil system, applied in ONE FRAME.** The argument for it was that it
+     * cost the weapon nothing (no second round is close enough behind the
+     * first for a climb to compound), and that was true of the BUDGET and
+     * false of the picture: a bolt gun that throws its own scope five degrees
+     * off the target reads as a rifle nobody has hold of, and it is close to
+     * the opposite of what a heavy rifle on a bipod or a proper mount does.
+     *
+     * 1.7 is 2.9 deg — the most muzzle rise in the kit, still, and by a
+     * distance. Everything the other 2.6 deg used to say is said by
+     * `recoilImpulse` instead, which says it in seconds.
      */
-    recoilMult: 3.2,
+    recoilMult: 1.7,
+    /**
+     * The heaviest cartridge in the game, and now the heaviest SHOVE rather
+     * than the steepest climb. It puts the settle spring at 2.9 Hz and 0.59
+     * Measured in the client: an aimed round takes 35 ms to reach the top of
+     * its travel and 84 ms to come back, and at the hip 84 ms up and 292 down
+     * — the slowest lift in the kit at both ends, which is a heavy rifle
+     * being brought back down rather than a reticle snapping home. It opens
+     * the hold to 2.1x and quickens it 2.7-fold on a time constant of 1.08 s,
+     * and that second is spent inside the 1.25 s `boltCycle` this weapon
+     * already pays: **the wait and the re-settle are the same event**, where
+     * before the wait was empty and the climb was instant.
+     */
+    recoilImpulse: 3.6,
     /** Zero, on the DMR's argument and more so: one round every 1.25 s is not
      *  a string, and a fixed drift would be an error to dial out on every pull. */
     yawBias: 0,
@@ -802,6 +893,14 @@ export const weapons = {
      */
     recoilMult: 0.7,
     /**
+     * A full-power belt round, most of it soaked by the weight of the gun and
+     * the bipod under it. Below the rifle's despite the bigger cartridge,
+     * which is what mass buys and the same trade `recoilMult` above spells
+     * out — the difference is that this one buys a SHORT settle, so the sight
+     * is back between rounds at ten a second.
+     */
+    recoilImpulse: 0.9,
+    /**
      * The gentlest bias in the kit beside the DMR's nothing, and it is the
      * same reward `recoilMult` and `bloomMult` are: a burst you steer rather
      * than one you abandon has to be steerable on both axes, and seventy-five
@@ -891,6 +990,14 @@ export const weapons = {
     /** A pistol's honest reach: across a street, not down the valley. */
     range: 45,
     recoilMult: 1.15,
+    /**
+     * The SMG's round out of a smaller gun: almost no shove at all, and it
+     * sits under `recoilMult` by more than anything else here. A pistol has
+     * the worst bore-axis-to-hand offset in the kit and the least mass to
+     * resist it, so it flips hard on a cartridge that barely pushes — the
+     * textbook case for the two fields being separate.
+     */
+    recoilImpulse: 0.55,
     /**
      * Wrists rather than a shoulder, so a strong pull is honest — and at
      * 5.5/s semi it is trivially corrected between shots, which is what

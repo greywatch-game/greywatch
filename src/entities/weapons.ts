@@ -163,8 +163,19 @@ export interface WeaponSetup {
   spreadAds: number;
   /** Where a round from this weapon stops (m). */
   range: number;
-  /** Scales the per-shot aim kick. */
+  /**
+   * Scales the per-shot aim kick — the MOMENT, how far the muzzle tips. Read
+   * by `Player.recoilKick` and by nothing else.
+   */
   recoilMult: number;
+  /**
+   * How hard the shot SHOVES, which is a different quantity from how far it
+   * tips the muzzle and is spent on entirely different things: the settle
+   * spring's constants and the post-shot unsteadiness (`CameraSystem`), the
+   * view punch's amplitude (`Player.punchShock`) and the viewmodel's own
+   * travel (`Player.kickWeight`). It reaches no angle at all.
+   */
+  recoilImpulse: number;
   /** Which way the horizontal kick drifts, -1 (left) to +1 (right). */
   yawBias: number;
   /** Scales both the per-shot spread bloom and its ceiling. */
@@ -228,6 +239,7 @@ export function weaponSetup(id: WeaponId): WeaponSetup {
     spreadAds: w.spreadAds,
     range: w.range,
     recoilMult: w.recoilMult,
+    recoilImpulse: w.recoilImpulse,
     yawBias: w.yawBias,
     bloomMult: w.bloomMult,
     adsSpeedMult: w.adsSpeedMult,

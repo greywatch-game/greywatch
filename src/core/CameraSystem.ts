@@ -52,6 +52,7 @@
 import { FreeCamera, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { hermite, impulse, smoothstep } from "./math";
+import { RecoilAxis, recoilGain, type RecoilShape } from "./recoilCurve";
 import {
   DEFAULT_SIGHT,
   sightSetup,
@@ -123,12 +124,77 @@ export class CameraSystem {
   private bobTarget = 0;
 
   /**
-   * The springy part of the recoil, stacked on top of the player's own aim
-   * and decaying back to zero. The rest of each kick goes straight into
-   * `pitch`/`yaw` and stays there — see `addRecoil`.
+   * The recoil offset on the aim, stacked on top of the player's own angle:
+   * the gun's own rotation, arrested by the grip and then hauled back by the
+   * shooter. `core/recoilCurve.ts` is the model and carries the argument for
+   * why it is not a spring — the short version is that nothing about a gun
+   * wants to be where it started, so a restoring force is the wrong shape and
+   * reads as rubber at any amplitude worth feeling.
+   *
+   * Two axes, one per angle, stepped on the SAME shape — the pitch and the
+   * yaw of one event, so a weapon whose kick is mostly sideways at the end of
+   * a string still comes home on the timing its mass and the shooter's stance
+   * decide.
    */
-  private recoilPitch = 0;
-  private recoilYaw = 0;
+  private readonly recoilPitch = new RecoilAxis();
+  private readonly recoilYaw = new RecoilAxis();
+  /**
+   * The permanent share of the kicks fired so far that has not yet reached the
+   * player's own aim. A bookkeeping bucket and deliberately not a second model
+   * of the same motion: it holds no rate of its own, is drained at the haul's
+   * own rate, and cannot therefore drift against it the way two integrators on
+   * one impact would.
+   *
+   * It exists because the permanent share used to be applied whole on the
+   * frame the trigger broke. Under a first-order decay that was invisible —
+   * the whole kick was a step function too — but against a model with a rise
+   * it is 30% of every kick landing in one frame underneath an attack that
+   * takes 30-60 ms, which is exactly the artefact the rise was brought in to
+   * remove.
+   */
+  private owedPitch = 0;
+  private owedYaw = 0;
+  /**
+   * How disturbed the shooter's POSITION is, 0 at rest and `recoil.shake.max`
+   * at saturation. Raised by every shot in proportion to the weapon's
+   * `recoilImpulse` and fading on a true exponential; it widens and quickens
+   * the hold sway and nothing else. See `CONFIG.recoil.shake` — this is the
+   * half of a heavy round's cost that is not an angle.
+   */
+  private shotShake = 0;
+  /**
+   * The carried weapon's `recoilImpulse`, and how long its disturbance takes
+   * to fade. Held rather than passed because both are state the shots stack
+   * on, unlike the view punch's scale — see `addPunch`.
+   */
+  private weaponImpulse: number = weaponSetup(DEFAULT_WEAPON).recoilImpulse;
+  private shakeSettle: number = CONFIG.recoil.shake.settle;
+  /**
+   * The recoil model's constants at each end of the ADS blend, resolved from
+   * the carried weapon by `setSettleShape` and blended per frame by `shapeAt`.
+   *
+   * **They are two shapes rather than one scaled, because the two stances are
+   * two mechanical systems.** Aimed, the weapon is in a three-point lock —
+   * shoulder pocket, cheek weld, support hand — which is stiff and which a
+   * braced shooter drives back at once. At the hip it hangs on two arms: a
+   * long, soft lever with nothing constraining it. Under the old spring the
+   * stance was one amplitude multiplier and the SHAPE was identical, so hip
+   * fire was aimed fire turned up, which is the one thing it is not.
+   */
+  private readonly shapeHip: RecoilShape = {
+    grip: CONFIG.recoil.settle.gripHip,
+    haul: CONFIG.recoil.settle.haulHip * CONFIG.recoil.pitchPerShot,
+    riseTurns: CONFIG.recoil.settle.riseTurns,
+    easeBand: CONFIG.recoil.settle.easeBand * CONFIG.recoil.pitchPerShot,
+  };
+  private readonly shapeAds: RecoilShape = {
+    grip: CONFIG.recoil.settle.gripAds,
+    haul: CONFIG.recoil.settle.haulAds * CONFIG.recoil.pitchPerShot,
+    riseTurns: CONFIG.recoil.settle.riseTurns,
+    easeBand: CONFIG.recoil.settle.easeBand * CONFIG.recoil.pitchPerShot,
+  };
+  /** Scratch for the blended shape — stepped every frame, never allocated. */
+  private readonly shape: RecoilShape = { ...this.shapeHip };
   /**
    * View punch, 1 at the shot and falling to 0 over `recoil.punchTime`.
    * Squared before use so the spike is at the impact frame.
@@ -148,6 +214,12 @@ export class CameraSystem {
   private punchPitch = 0;
   private punchYaw = 0;
   private punchRoll = 0;
+  /**
+   * How hard THIS punch hits, scaling all five of its terms together — the
+   * FOV spike, the shove and the three angles. Held for the punch's life like
+   * the direction above, and 1 for anything that does not state one.
+   */
+  private punchScale = 1;
 
   /**
    * The aimed hold sway: this frame's offsets, and the free-running breath
@@ -225,6 +297,70 @@ export class CameraSystem {
     const w = carriedSetup(weapon);
     this.weaponAdsMult = w.adsSpeedMult;
     this.weaponSwayMult = w.swayMult;
+    this.setSettleShape(w.recoilImpulse);
+  }
+
+  /**
+   * Resolves the recoil model for what is now in the hands, at both ends of
+   * the ADS blend.
+   *
+   * **A heavier weapon is a SLOWER response, never a bigger angle**, which is
+   * the whole of the split between `recoilMult` and `recoilImpulse`: more mass
+   * takes longer to arrest and longer to drive back. Neither term can move
+   * where the round went.
+   *
+   * Cheap enough to call on every loadout change, and it may be called with a
+   * kick in flight — a swap does not zero the aim, and an excursion that
+   * continues under new constants is a weapon changing hands rather than a
+   * discontinuity in the picture.
+   */
+  private setSettleShape(impulse: number): void {
+    const st = CONFIG.recoil.settle;
+    const sh = CONFIG.recoil.shake;
+    this.weaponImpulse = impulse;
+    // The mine states 0 (nothing is fired), and both terms are divisions.
+    const imp = Math.max(0.1, impulse);
+    this.shakeSettle = sh.settle * Math.pow(imp, sh.settleExp);
+    const mass = Math.pow(imp, st.massExp);
+    const ref = CONFIG.recoil.pitchPerShot;
+    this.shapeHip.grip = st.gripHip / mass;
+    this.shapeHip.haul = (st.haulHip * ref) / mass;
+    this.shapeHip.easeBand = st.easeBand * ref;
+    this.shapeAds.grip = st.gripAds / mass;
+    this.shapeAds.haul = (st.haulAds * ref) / mass;
+    this.shapeAds.easeBand = st.easeBand * ref;
+  }
+
+  /**
+   * The model's constants for the stance the shooter is actually in, into the
+   * scratch shape. A plain lerp: both ends are the same three quantities and
+   * shouldering a weapon is a continuous act, so a blend between them is a
+   * grip tightening rather than a switch between two behaviours.
+   */
+  private shapeAt(blend: number): RecoilShape {
+    const a = this.shapeHip;
+    const b = this.shapeAds;
+    this.shape.grip = a.grip + (b.grip - a.grip) * blend;
+    this.shape.haul = a.haul + (b.haul - a.haul) * blend;
+    this.shape.riseTurns = a.riseTurns;
+    this.shape.easeBand = a.easeBand;
+    return this.shape;
+  }
+
+  /**
+   * How fast the permanent share is handed into the player's own aim, per
+   * second, for the stance it was fired in.
+   *
+   * **Derived from the haul rather than authored**, because the two are the
+   * same event: the shooter bringing the muzzle down is also the moment they
+   * stop fighting what is left of it. `haul` is a rate in radians and
+   * `pitchPerShot` is what one kick is worth, so their ratio is the
+   * reciprocal of how long a reference kick takes to come home — 12/s aimed
+   * and 7/s at the hip on the reference weapon, which is what the numbers in
+   * `settle` are stated in.
+   */
+  private drainRate(blend: number): number {
+    return this.shapeAt(blend).haul / CONFIG.recoil.pitchPerShot;
   }
 
   /**
@@ -244,11 +380,13 @@ export class CameraSystem {
    * construction rather than by anyone remembering to add it.
    */
   get aimPitch(): number {
-    return this.pitch + this.recoilPitch + this.swayPitch + this.cyclePitch;
+    return (
+      this.pitch + this.recoilPitch.value + this.swayPitch + this.cyclePitch
+    );
   }
 
   get aimYaw(): number {
-    return this.yaw + this.recoilYaw + this.swayYaw + this.cycleYaw;
+    return this.yaw + this.recoilYaw.value + this.swayYaw + this.cycleYaw;
   }
 
   /**
@@ -344,8 +482,15 @@ export class CameraSystem {
     this.yaw = yaw;
     this.pitch = 0.12;
     this.adsBlend = 0;
-    this.recoilPitch = 0;
-    this.recoilYaw = 0;
+    // Both axes in full — the displacement, the impulse still arriving and
+    // the reaction clock — or a death mid-burst finishes the last life's kick,
+    // and hands the last life's permanent walk, in the first frames of the
+    // next one.
+    this.recoilPitch.reset();
+    this.recoilYaw.reset();
+    this.owedPitch = 0;
+    this.owedYaw = 0;
+    this.shotShake = 0;
     this.punchT = 0;
     // All three, not just the roll: `punchT` at 0 already makes them
     // unreadable, so zeroing one of a set that is written together is a
@@ -353,6 +498,7 @@ export class CameraSystem {
     this.punchPitch = 0;
     this.punchYaw = 0;
     this.punchRoll = 0;
+    this.punchScale = 1;
     // The phase deliberately survives a respawn — it is a body breathing, not
     // a round starting, and restarting it would put every life's first aimed
     // shot at the same point of the same wander.
@@ -437,9 +583,18 @@ export class CameraSystem {
    * The roll is drawn AGAINST the drift, opposing the roll the viewmodel takes
    * (`recoil.kickRoll`). Rolled the same way the two cancel and the whole
    * picture tips instead; opposed, the weapon reads as twisting in the hands.
+   *
+   * `shock` scales all five terms together and is the weapon's own
+   * `recoilImpulse`, compressed (`Player.punchShock`). It is PASSED rather
+   * than read off the carried weapon because a blast raises a punch too, and a
+   * grenade has no business being scaled by whatever is in the hands — which
+   * is why this one number arrives per event while the settle spring and the
+   * post-shot unsteadiness are held per weapon. Until it existed a bolt gun
+   * and a submachine gun shook the frame identically.
    */
-  addPunch(drift = 0): void {
+  addPunch(drift = 0, shock = 1): void {
     this.punchT = 1;
+    this.punchScale = shock;
     const d = Math.max(-1, Math.min(1, drift));
     this.punchPitch = 0.6 + Math.random() * 0.4;
     this.punchYaw = d * 0.5 + (Math.random() * 2 - 1) * 0.5;
@@ -447,24 +602,50 @@ export class CameraSystem {
   }
 
   /**
-   * Kicks the aim; called once per shot fired. Each kick is split: most of it
-   * springs back on its own, but `1 - recoverFraction` of it is added to the
-   * player's own aim and never comes back, which is what actually walks the
-   * muzzle off target over a long burst. The permanent part moves `yaw` too,
-   * so the character turns with it — the same as any other look input.
+   * Kicks the aim; called once per shot fired, with the peak radians
+   * `Player.recoilKick` built.
+   *
+   * **It hands the settle spring a VELOCITY rather than setting a level**, the
+   * same idiom and the same argument as the viewmodel's kick one layer down:
+   * the rise, the peak and the slight settle below the line then come out of
+   * the mechanism instead of being authored, and a round arriving on an aim
+   * that has not come home adds to what is already there. What it replaced was
+   * a step to full amplitude and a first-order fade from it, which gave every
+   * weapon in the kit the same instantaneous attack — and nothing with mass
+   * behind it moves like that.
+   *
+   * Each kick is still split: most of it settles out on its own, and
+   * `1 - recoverFraction` of it is owed to the player's own aim and never
+   * comes back, which is what actually walks the muzzle off target over a long
+   * burst. **The owed share is queued rather than applied here** — see
+   * `owedPitch` — so that the whole kick has a rise and not merely 70% of it.
+   * The permanent part moves `yaw` too, so the character turns with it, the
+   * same as any other look input.
+   *
+   * The third thing a shot does is disturb the shooter's POSITION, which is
+   * `shotShake` and is where a heavy round is actually charged. It is raised
+   * from the carried weapon's own impulse (`setSettleSpring` holds it) rather
+   * than passed, because unlike the view punch this is state the shots stack
+   * on and nothing but a weapon can raise it.
    */
   addRecoil(pitch: number, yaw: number): void {
     const r = CONFIG.recoil;
     const keep = 1 - r.recoverFraction;
-    this.pitch += pitch * keep;
-    this.yaw += yaw * keep;
-    this.recoilPitch = Math.min(
-      r.maxPitch,
-      this.recoilPitch + pitch * r.recoverFraction,
-    );
-    this.recoilYaw = Math.max(
-      -r.maxYaw,
-      Math.min(r.maxYaw, this.recoilYaw + yaw * r.recoverFraction),
+    this.owedPitch += pitch * keep;
+    this.owedYaw += yaw * keep;
+    // The gain is taken for the stance the shot was FIRED in, and the bleed
+    // term is the share of `owed` that will have been handed over by the time
+    // the muzzle reaches the top of its travel — without it the two sum past
+    // the kick the table states.
+    const shape = this.shapeAt(this.adsBlend);
+    const rise = shape.riseTurns / shape.grip;
+    const bleed = keep * (1 - Math.exp(-this.drainRate(this.adsBlend) * rise));
+    const gain = recoilGain(shape, bleed);
+    this.recoilPitch.strike(pitch, gain);
+    this.recoilYaw.strike(yaw, gain);
+    this.shotShake = Math.min(
+      r.shake.max,
+      this.shotShake + r.shake.perShot * this.weaponImpulse,
     );
   }
 
@@ -485,19 +666,24 @@ export class CameraSystem {
    * feel's clothing. So this is entirely springy.
    *
    * It rides the SAME spring rather than bringing its own, which is what
-   * makes it recover on the same true exponential, obey the same
-   * `maxPitch`/`maxYaw` ceilings so a crossfire cannot stack it off the
-   * screen, and clear itself in `reset()` for free. Two springs on one aim
-   * would drift against each other for exactly the reason two bob
-   * integrators would.
+   * makes it settle on the same constants, obey the same `maxPitch`/`maxYaw`
+   * ceilings so a crossfire cannot stack it off the screen, and clear itself
+   * in `reset()` for free. Two springs on one aim would drift against each
+   * other for exactly the reason two bob integrators would. Note the
+   * consequence, which is right rather than merely tolerable: a hit taken with
+   * a bolt gun in the hands rocks the view more slowly than one taken with an
+   * SMG, because the spring is the SHOOTER's and the mass in their hands is
+   * part of what absorbs it.
+   *
+   * **It hands a velocity and queues nothing**, which is how the 100%-springy
+   * invariant is now stated: `owedPitch`/`owedYaw` are the only route into
+   * `pitch`/`yaw`, and this method does not touch them.
    */
   addFlinch(pitch: number, yaw: number): void {
-    const r = CONFIG.recoil;
-    this.recoilPitch = Math.min(r.maxPitch, this.recoilPitch + pitch);
-    this.recoilYaw = Math.max(
-      -r.maxYaw,
-      Math.min(r.maxYaw, this.recoilYaw + yaw),
-    );
+    const shape = this.shapeAt(this.adsBlend);
+    const gain = recoilGain(shape);
+    this.recoilPitch.strike(pitch, gain);
+    this.recoilYaw.strike(yaw, gain);
   }
 
   /**
@@ -569,13 +755,57 @@ export class CameraSystem {
     }
     this.pitch = Math.max(c.pitchMin, Math.min(c.pitchMax, this.pitch));
 
-    // --- recoil settles back toward the player's own aim ---
-    // A true exponential, not the frame-lerp used for the cosmetic blends:
-    // this one moves where the bullets go, so how high a burst climbs must
-    // not depend on the frame rate.
-    const settle = Math.exp(-CONFIG.recoil.recovery * dt);
-    this.recoilPitch *= settle;
-    this.recoilYaw *= settle;
+    // --- recoil comes back toward the player's own aim ---
+    // An ARREST and a HAUL, not a spring. `core/recoilCurve.ts` carries the
+    // argument; what it buys here is a shape with a CORNER in it — a fast
+    // flattening rise while the grip stops the gun, then a straight descent
+    // while the shooter drags it back — where a spring's peak is smooth and
+    // symmetric and reads as animation. The stance picks the constants rather
+    // than an amplitude, because a weapon in a three-point lock and a weapon
+    // on two arms are two mechanical systems and not one at two volumes.
+    const rec = CONFIG.recoil;
+    const shape = this.shapeAt(this.adsBlend);
+    // The permanent share is handed over at the haul's own rate, so all of it
+    // has arrived by the time the muzzle is home and none of it before the
+    // muzzle has moved. It is drained rather than applied at the shot because
+    // 30% of a kick landing on one frame is the step function this model
+    // exists to remove. Before the clamp below, which is `pitch`'s.
+    if (this.owedPitch !== 0 || this.owedYaw !== 0) {
+      const give = 1 - Math.exp(-this.drainRate(this.adsBlend) * dt);
+      const dp = this.owedPitch * give;
+      const dy = this.owedYaw * give;
+      this.pitch = Math.max(c.pitchMin, Math.min(c.pitchMax, this.pitch + dp));
+      this.yaw += dy;
+      this.owedPitch -= dp;
+      this.owedYaw -= dy;
+      if (Math.abs(this.owedPitch) < 1e-7) this.owedPitch = 0;
+      if (Math.abs(this.owedYaw) < 1e-7) this.owedYaw = 0;
+    }
+    this.recoilPitch.step(dt, shape);
+    this.recoilYaw.step(dt, shape);
+    // The ceilings are on the DISPLACEMENT, as they always were: sustained
+    // fire must not walk the recoverable part off the screen and a crossfire's
+    // flinches must not stack off it either. Under this model they bind later
+    // and mean more than they did — a spring's peak was bounded by its own
+    // damping, where an arrest that is out-run by a fast string genuinely
+    // keeps climbing.
+    if (this.recoilPitch.value > rec.maxPitch) this.recoilPitch.value = rec.maxPitch;
+    if (this.recoilYaw.value > rec.maxYaw) this.recoilYaw.value = rec.maxYaw;
+    else if (this.recoilYaw.value < -rec.maxYaw) this.recoilYaw.value = -rec.maxYaw;
+
+    // --- the shooter's position settles (the other half of a heavy round) ---
+    // A true exponential for the reason above: it is on the hold sway, which
+    // is on the aim. It fades toward the breathing wander rather than toward
+    // stillness — the sway is what it is disturbing, not what it replaces —
+    // and on the WEAPON's own time constant, because a heavy round does not
+    // merely disturb more, it disturbs for longer. That is also what keeps the
+    // four automatics distinct: they all pile shake up faster than it fades,
+    // so what separates a submachine gun from a belt-fed gun on a held trigger
+    // is where the pile-up balances and not the ceiling it would share.
+    if (this.shotShake !== 0) {
+      this.shotShake *= Math.exp(-dt / this.shakeSettle);
+      if (this.shotShake < 1e-4) this.shotShake = 0;
+    }
 
     // --- view punch decays (cosmetic — safe to use a plain time decay) ---
     this.punchT = Math.max(0, this.punchT - dt / CONFIG.recoil.punchTime);
@@ -618,13 +848,29 @@ export class CameraSystem {
     // fire is left exactly as it was. This is an offset ON TOP of the player's
     // aim, never integrated into `pitch`/`yaw`: it has to average out to where
     // they were pointing, or a held aim would simply drift away.
+    //
+    // A shot DISTURBS that wander and the disturbance is spent here rather
+    // than as an offset of its own, for the reason the bolt cycle's wobble is:
+    // this is already an honest disturbance of where the rifle POINTS, so
+    // widening it cannot make the reticle lie. It both widens the loop and
+    // QUICKENS it — a disturbed position is restless as well as loose, and a
+    // 0.23 Hz breath multiplied by two says nothing inside the second it takes
+    // to fade. Riding `swayW` also means bracing steadies the disturbance
+    // exactly as it steadies the hold, and hip fire pays none of it.
     const sw = c.aimSway;
+    const shake = this.shotShake;
     this.swayAmount +=
       (this.swayTarget - this.swayAmount) * Math.min(1, dt * sw.smooth);
     this.swayPhase =
-      (this.swayPhase + Math.PI * 2 * sw.rate * dt) % (Math.PI * 4);
+      (this.swayPhase +
+        Math.PI * 2 * sw.rate * (1 + shake * rec.shake.rateGain) * dt) %
+      (Math.PI * 4);
     const b = this.swayPhase;
-    const swayW = t * this.swayAmount * this.weaponSwayMult;
+    const swayW =
+      t *
+      this.swayAmount *
+      this.weaponSwayMult *
+      (1 + shake * rec.shake.swayGain);
     this.swayPitch =
       sw.pitch * (Math.sin(b) + 0.28 * Math.sin(b * 2.5 + 0.6)) * swayW;
     this.swayYaw =
@@ -694,7 +940,7 @@ export class CameraSystem {
     // metre of parallax and nothing else, so the bullets are untouched.
     this.eye.y += this.landDip;
     const r = CONFIG.recoil;
-    const punch = this.punchT * this.punchT;
+    const punch = this.punchT * this.punchT * this.punchScale;
     if (punch > 0) {
       this.eye.subtractInPlace(dir.scale(r.camPush * punch));
     }

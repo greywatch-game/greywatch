@@ -298,11 +298,24 @@ export interface ViewModelParams {
   throwTime: number;
   /**
    * The weapon punch: how far the weapon is displaced along its kick axes, ~1
-   * at a single round's peak and briefly NEGATIVE as the spring overshoots the
-   * carry on the way home. Read, never integrated here — Player owns the
-   * spring, the same rule `landDip` and `bobPhase` follow.
+   * at a single round's peak. Read, never integrated here — Player owns the
+   * motion, the same rule `landDip` and `bobPhase` follow.
    */
   kick: number;
+  /**
+   * The ACTION's jolt, signed, and 0 on anything without a self-loading one —
+   * `Player.viewActionJolt`, which carries the argument. Positive is the
+   * carrier stopping at the back of its travel and negative is it arriving in
+   * battery, so the pair reads as a mechanism cycling rather than as a second
+   * recoil arriving late.
+   *
+   * It is a SEPARATE field from `kick` rather than being added into it,
+   * because the two are different events with different reaches: the shot
+   * throws the whole weapon along every kick axis, and this is a mass moving
+   * inside the receiver, which is felt fore-and-aft and in pitch and nowhere
+   * else.
+   */
+  actionJolt: number;
   /**
    * Which way the last round walked, -1..+1. The same signed draw the aim kick
    * is built from (`Player.kickDrift`), so the model leans the way the muzzle
@@ -1252,7 +1265,17 @@ export class ViewModel {
     // nothing, which is also what a braced shoulder actually does with a rifle.
     if (p.kick !== 0) {
       const r = CONFIG.recoil;
-      const k = p.kick * p.kickWeight;
+      // **`p.kick` already carries the weapon's weight** — `Player` strikes the
+      // axis with `kickWeight` — and multiplying by it again here SQUARED it,
+      // which is what this line did for as long as there was a spring behind
+      // it. Two consequences, and the second is why it was invisible: the
+      // heavy weapons travelled far further than the table said (the bolt gun
+      // at 4.7x the rifle rather than 2.2x), and the aimed near-plane bound
+      // below applies the weight ONCE, so it was under-predicting the travel
+      // it was supposed to be bounding by exactly that factor. Measured after
+      // the fix, the worst aimed stand-off in the kit went from 26 cm BEHIND
+      // the eye to 6.6 cm in front of it.
+      const k = p.kick;
       // Everything that moves the SIGHT off the camera axis rides this; only
       // the z travel below is exempt. Named for what it does rather than for an
       // axis, because it covers both a translation and two rotations.
@@ -1290,6 +1313,23 @@ export class ViewModel {
       // roll negative to lean into where it is going rather than away from it.
       this.rot.z -= r.kickRoll * side;
       this.rot.y += r.kickYaw * side;
+    }
+
+    // The ACTION, on two axes and no more. A carrier running back and slamming
+    // into battery is felt fore-and-aft and as a nod; it does not throw the
+    // weapon sideways or roll it, and giving it those would make it a second
+    // recoil instead of a mechanism working inside one. It is damped while
+    // aimed but deliberately NOT to nothing (`action.adsMult`): a rifle in a
+    // three-point lock still buzzes, and that buzz is most of what tells you
+    // the thing in your hands is a gas gun rather than a catapult.
+    //
+    // Its reach is a FRACTION of the kick's own, so a heavy weapon's action
+    // hits harder for free and nothing has to be stated per weapon.
+    if (p.actionJolt !== 0) {
+      const r = CONFIG.recoil;
+      const jolt = p.actionJolt * (1 - (1 - r.kick.action.adsMult) * t);
+      this.off.z -= r.kickBack * jolt;
+      this.rot.x -= r.kickPitch * jolt;
     }
 
     // The zoom compensation rides the same blend as the pose, so the weapon

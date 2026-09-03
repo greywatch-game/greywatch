@@ -66,6 +66,12 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { impulse } from "../core/math";
+import {
+  RecoilAxis,
+  recoilGain,
+  type RecoilShape,
+} from "../core/recoilCurve";
 import { CelMaterialFactory } from "../shaders/CelShader";
 import type { CameraSystem } from "../core/CameraSystem";
 import type { InputManager } from "../core/InputManager";
@@ -466,27 +472,58 @@ export class Player implements Combatant {
    */
   private suppression = 0;
   /**
-   * The weapon punch on the viewmodel: a damped spring, not a fading level.
+   * The weapon punch on the viewmodel: the gun thrown by the charge, ARRESTED
+   * by the grip and then HAULED back into the shoulder.
    *
-   * `kickDisp` is how far the weapon is displaced along its kick axes, 1 being
-   * a single round's peak at the shipped spring numbers (`CONFIG.recoil.kick`
-   * derives that peak and says so). A shot adds VELOCITY rather than setting a
-   * displacement, which is what gives the motion a rise, an overshoot past the
-   * carry and a settle — and what makes a second round arriving on a weapon
-   * that has not come home add to what is already there instead of restarting
-   * it. The same arrangement, and the same argument, as `CameraSystem.land`.
+   * `kick.value` is how far the weapon is displaced along its kick axes, 1
+   * being a single round's peak. A shot adds VELOCITY rather than setting a
+   * displacement, so a second round arriving on a weapon that has not come
+   * home adds to what is already there instead of restarting it.
+   *
+   * **It was a damped spring and the model is deliberately not that any more.**
+   * A spring is symmetric about its peak and smooth in the first derivative
+   * through it, so the weapon eased out of the top of its travel on the curve
+   * it eased in — an animation rather than an impact, and at the amplitude a
+   * heavy weapon wants it read as rubber. `core/recoilCurve.ts` carries the
+   * argument in full; the short version is that no part of a gun wants to be
+   * where it started, and what brings it back is a person.
    *
    * `kickDrift` is the SIGNED lateral of the round that last fired, -1..+1: the
    * same number the aim kick's horizontal is built from, kept so the model can
    * lean the way the muzzle actually walked. One shot's worth — it is replaced,
    * never accumulated, because the pose it feeds is about the last round.
    *
-   * This system owns the spring and `ViewModel` reads it, the split the bob
+   * This system owns the motion and `ViewModel` reads it, the split the bob
    * phase and the landing dip already document: two integrators on one impact
    * drift apart and the weapon swims against the view.
    */
-  private kickDisp = 0;
-  private kickVel = 0;
+  private readonly kick = new RecoilAxis();
+  /**
+   * The weapon's own recoil constants at each end of the ADS blend, and the
+   * scratch they blend into. Stiffer than the aim's at both ends because it is
+   * a shorter lever — the aim is the shooter's whole upper body rotating, this
+   * is a receiver moving in two hands.
+   */
+  private readonly kickHip: RecoilShape = {
+    grip: CONFIG.recoil.kick.grip,
+    haul: CONFIG.recoil.kick.haul,
+    riseTurns: CONFIG.recoil.kick.riseTurns,
+    easeBand: CONFIG.recoil.kick.easeBand,
+  };
+  private readonly kickAds: RecoilShape = {
+    grip: CONFIG.recoil.kick.gripAds,
+    haul: CONFIG.recoil.kick.haulAds,
+    riseTurns: CONFIG.recoil.kick.riseTurns,
+    easeBand: CONFIG.recoil.kick.easeBand,
+  };
+  private readonly kickShape: RecoilShape = { ...this.kickHip };
+  /**
+   * The ADS blend as of the last frame, for the ONE reader that has no camera
+   * to ask: `tryShot` runs from `Game`'s trigger handling rather than from
+   * `animate`, so the shot has to take the stance the step left behind. It is
+   * one frame old, which is 16 ms against a blend that takes 150-400.
+   */
+  private adsForKick = 0;
   /** Public because `Game` throws the view punch the same way (`addPunch`). */
   kickDrift = 0;
   /** Muzzle flash star: shown for `gunfeel.flashTime` after each shot. */
@@ -518,6 +555,7 @@ export class Player implements Combatant {
     swapBlend: 0,
     throwTime: -1,
     kick: 0,
+    actionJolt: 0,
     kickDrift: 0,
     kickWeight: 0,
     turnRate: 0,
@@ -871,14 +909,87 @@ export class Player implements Combatant {
    */
   /**
    * How much of the carried weapon's kick reaches the MODEL, as opposed to the
-   * aim. A compression of `recoilMult`, and the compression is the point: 2.2
-   * is a defensible thing to do to an aim measured in fractions of a degree and
-   * an indefensible thing to do to a pose measured in centimetres, which is why
-   * the model used to ignore the weapon entirely rather than read this. At
-   * `kick.compress` 0.6 the rifle is 1.00, the DMR 1.61 and the SMG 0.70.
+   * aim. A compression, and the compression is the point: 2.4 is a defensible
+   * thing to do to an aim measured in fractions of a degree and an
+   * indefensible thing to do to a pose measured in centimetres, which is why
+   * the model used to ignore the weapon entirely rather than read this.
+   *
+   * **It reads `recoilImpulse` and not `recoilMult`, and that is the honest
+   * one of the two.** The kick's largest term by a distance is `kickBack`,
+   * travel straight along the bore toward the eye — which is the LINEAR
+   * impulse and nothing to do with how far the muzzle tips. At `kick.compress`
+   * 0.6 the rifle is 1.00, the DMR 1.69, the bolt gun 2.16 and the SMG 0.66.
    */
   private get kickWeight(): number {
-    return Math.pow(this.weapon.recoilMult, CONFIG.recoil.kick.compress);
+    return Math.pow(this.weapon.recoilImpulse, CONFIG.recoil.kick.compress);
+  }
+
+  /**
+   * The weapon's recoil constants for the stance it is actually held in, into
+   * the scratch shape. `riseTurns` and `easeBand` do not blend — they are the
+   * SHAPE of the response rather than its speed, and the same at both ends.
+   */
+  private kickShapeAt(blend: number): RecoilShape {
+    const a = this.kickHip;
+    const b = this.kickAds;
+    this.kickShape.grip = a.grip + (b.grip - a.grip) * blend;
+    this.kickShape.haul = a.haul + (b.haul - a.haul) * blend;
+    this.kickShape.riseTurns = a.riseTurns;
+    this.kickShape.easeBand = a.easeBand;
+    return this.kickShape;
+  }
+
+  /**
+   * The ACTION, as one signed number on the shot clock: the carrier reaching
+   * the back of its travel and then slamming into battery.
+   *
+   * **This is what makes a self-loader read as a machine.** The charge is not
+   * the only impulse a shooter feels and a rifle does not make one smooth
+   * excursion per round — there is the shot, then a mass stopping hard against
+   * the buffer some milliseconds later, then the same mass arriving in
+   * battery. The two beats are OPPOSITE in sign, which is the whole of why the
+   * pair reads as a mechanism cycling rather than as a second recoil: mass
+   * travelling rearward drives the weapon back into the shoulder, and the same
+   * mass arriving forward pulls it out and dips the muzzle.
+   *
+   * It costs no state at all. `sinceShot` is already here — the string
+   * counter's clock, raised by a shot and dropped by anything that takes the
+   * weapon away — and `impulse` is already the shape of an arrival, all attack
+   * and no ease-in. Past the last beat both terms are zero and this is 0
+   * without a test.
+   *
+   * **A bolt gun is exempt and so is anything that is not a gun.** `boltCycle`
+   * says the action is worked by a hand rather than by the gas, and
+   * `CONFIG.viewmodel.cycle` already plays that over a second and a quarter;
+   * two accounts of one mechanism would be one too many. The launcher and the
+   * mine have no action to cycle.
+   */
+  private get viewActionJolt(): number {
+    const w = this.weapon;
+    if (w.boltCycle || this.carriedEquipment) return 0;
+    const a = CONFIG.recoil.kick.action;
+    const t = this.sinceShot;
+    if (t > a.home + a.fall) return 0;
+    return (
+      (a.backKick * impulse(t, a.back, a.fall) +
+        a.homeKick * impulse(t, a.home, a.fall)) *
+      this.kickWeight
+    );
+  }
+
+  /**
+   * How hard this weapon SHOCKS the frame — `CameraSystem.addPunch`'s scale,
+   * compressed out of the same impulse for the reason `kickWeight` is.
+   *
+   * Public and read by `Game` at the two shot sites, because the punch has a
+   * caller that is not a weapon at all: a blast raises one too, and a grenade
+   * going off has no business being scaled by whatever happens to be in the
+   * player's hands. So the SHOCK is per-EVENT and passed, while the settle
+   * spring and the post-shot unsteadiness are per-WEAPON and held by the
+   * camera across the shots that stack on them.
+   */
+  get punchShock(): number {
+    return Math.pow(this.weapon.recoilImpulse, CONFIG.recoil.punchCompress);
   }
 
   recoilKick(adsBlend: number): { pitch: number; yaw: number } {
@@ -1150,8 +1261,7 @@ export class Player implements Combatant {
     // The spring's velocity as well as its displacement: a body that died with
     // the weapon still travelling would otherwise come back carrying the last
     // life's kick and finish it in the new one's first frames.
-    this.kickDisp = 0;
-    this.kickVel = 0;
+    this.kick.reset();
     this.kickDrift = 0;
     this.flashT = 0;
     this.flashRoot.setEnabled(false);
@@ -1535,38 +1645,26 @@ export class Player implements Combatant {
     this.prevPitch = cam.pitch;
     this.pitchRate = ease(this.pitchRate, dt > 0 ? dPitch / dt : 0, 8);
 
-    // --- weapon punch: a damped spring settling back to the carry ---
-    // **Stepped in CLOSED FORM, not integrated**, and that is not a flourish.
-    // The landing absorb next door can afford semi-implicit Euler because it is
-    // a 2 Hz spring; this one is 6 Hz, and at 30 fps `omega * dt` is 1.26,
-    // which is far outside where that integrator is accurate. Measured on the
-    // Euler version: one round peaked at 0.08 of its intended travel at 30 fps,
-    // 0.54 at 60 and 0.78 at 120 — the recoil visibly growing with the frame
-    // rate, the exact failure `recoil.recovery`'s true exponential exists to
-    // avoid one field over. The analytic step is right at any dt and costs two
-    // trigonometric calls on the frames a weapon is actually moving.
+    // --- weapon punch: an arrest and a haul, not a spring ---
+    // The same model the aim runs on (`core/recoilCurve.ts`) at this system's
+    // own, stiffer constants, and for the same reason: the charge throws the
+    // gun, the grip stops it, and the shooter drives it back. What that gives
+    // that a spring cannot is a CORNER at the top of the travel — the point
+    // where the motion changes cause — and a descent that is a straight line
+    // rather than the back half of a cosine.
     //
-    // Parking it exactly is not tidiness either. The kick is an additive offset
-    // on the viewmodel's pose, so a spring left ringing at a micrometre puts
-    // all twenty-six sight pictures a micrometre off the camera axis forever,
-    // and the alignment check in VERIFYING.md reads that as a geometry bug.
-    if (this.kickDisp !== 0 || this.kickVel !== 0) {
-      const k = CONFIG.recoil.kick;
-      const wn = Math.PI * 2 * k.frequency;
-      const wd = wn * Math.sqrt(1 - k.damping * k.damping);
-      const e = Math.exp(-k.damping * wn * dt);
-      const c = Math.cos(wd * dt);
-      const s = Math.sin(wd * dt);
-      const x = this.kickDisp;
-      const v = this.kickVel;
-      this.kickDisp = e * (x * c + ((v + k.damping * wn * x) / wd) * s);
-      this.kickVel =
-        e * (v * c - ((wn * wn * x + k.damping * wn * v) / wd) * s);
-      if (Math.abs(this.kickDisp) < 1e-4 && Math.abs(this.kickVel) < 1e-3) {
-        this.kickDisp = 0;
-        this.kickVel = 0;
-      }
-    }
+    // **Stepped exactly at any `dt`**, which the spring it replaced also had
+    // to be: measured on a semi-implicit Euler version, one round peaked at
+    // 0.08 of its intended travel at 30 fps, 0.54 at 60 and 0.78 at 120 — the
+    // recoil visibly growing with the frame rate. The arrest integrates in
+    // closed form and the haul is a rate, so neither can do that.
+    //
+    // Parking it exactly is not tidiness either. The kick is an additive
+    // offset on the viewmodel's pose, so a residue left running puts all
+    // twenty-six sight pictures that far off the camera axis forever, and the
+    // alignment check in VERIFYING.md reads that as a geometry bug.
+    this.adsForKick = cam.adsBlend;
+    this.kick.step(dt, this.kickShapeAt(cam.adsBlend));
 
     // The camera bobs on the same drive the weapon does; it owns the phase.
     // The drive is movement *intent*, not speed, so the crouch damping has to
@@ -1633,7 +1731,8 @@ export class Player implements Combatant {
     v.cyclePhase = this.cycleProgress;
     v.swapBlend = this.swapWeight();
     v.throwTime = this.throwT;
-    v.kick = this.kickDisp;
+    v.kick = this.kick.value;
+    v.actionJolt = this.viewActionJolt;
     v.kickDrift = this.kickDrift;
     v.kickWeight = this.kickWeight;
     v.turnRate = this.turnRate;
@@ -1746,10 +1845,16 @@ export class Player implements Combatant {
     // the symmetric noise this replaced.
     const bias = this.weapon.yawBias;
     this.kickDrift = (Math.random() * 2 - 1) * (1 - Math.abs(bias)) + bias;
-    // The weapon takes a velocity, not a displacement: see `kickDisp`. It
+    // The weapon takes a velocity, not a displacement: see `kick`. It
     // ACCUMULATES on a weapon still coming home, which is the whole reason a
-    // held trigger looks different from a string of taps.
-    this.kickVel += r.kick.speed * this.kickWeight;
+    // held trigger looks different from a string of taps — and the shot also
+    // restarts the shooter's reaction, so a round landing mid-recovery pauses
+    // the haul exactly as it does on the aim.
+    //
+    // `sinceShot` has already been zeroed above, which is the clock the ACTION
+    // beats are laid on (`viewActionJolt`). One shot, one clock, three impacts
+    // hanging off it.
+    this.kick.strike(this.kickWeight, recoilGain(this.kickShapeAt(this.adsForKick)));
     // **The three things an anti-tank item does not do**, and they are one
     // test rather than three because they are one fact: it is not a gun. No
     // brass, because nothing here is cased; no muzzle strobe, because a

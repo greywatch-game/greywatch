@@ -129,6 +129,7 @@ export function equipmentSetup(id: EquipmentId): WeaponSetup {
     spreadAds: 0,
     range: c.range,
     recoilMult: c.recoilMult,
+    recoilImpulse: c.recoilImpulse,
     yawBias: c.yawBias,
     bloomMult: c.bloomMult,
     adsSpeedMult: c.adsSpeedMult,

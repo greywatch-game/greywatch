@@ -707,8 +707,163 @@ lit one is written instead.
 
 ## Recoil has a shape, and the shape is learnable
 
-Four terms make the difference between recoil you fight and recoil you learn, and
+Five terms make the difference between recoil you fight and recoil you learn, and
 none of them is a weapon's own number scaled.
+
+**The first is the one a weapon states twice: `recoilMult` and `recoilImpulse`
+are two different quantities and were one field for most of this system's
+life.** Muzzle rise is a MOMENT — recoil runs along the bore and the hands hold
+the weapon below it, so what tips the muzzle is that offset, and a heavy rifle
+mounted against a shoulder with a cheek on the comb tips remarkably little. The
+shove is the CARTRIDGE. They are uncorrelated and in this kit they are
+frequently inverted: the pistol flips at 1.15 on a shove of 0.55 (the worst
+bore-axis offset in the game and the least mass to resist it), the LMG shoves
+0.9 and flips 0.7 (a full-power belt round soaked by the weight of the gun), and
+only the bolt gun tops both columns.
+
+Conflating them is why the two heaviest weapons said "I am a big cartridge" the
+only way one number can — by ANGLE. The DMR threw the reticle **3.78° on every
+deliberate scoped round** and the bolt gun **5.50°**, which is not what a
+mounted rifle does and, more to the point, is not what one costs. They are 2.32°
+and 2.92° now; **the pitch budget of every other weapon in the kit is
+untouched**, and so is the rifle's derived 10.6°/2.4° magazine walk.
+
+**The second is the SHAPE, and it is not a spring — which took two goes to get
+right.** The first version of the settle was a first-order decay, which has no
+rise at all: the whole kick landed on one frame and fell away from there, so
+every weapon in the kit moved the sight as a step function. The obvious fix was
+a damped spring given a velocity, and it is the wrong fix. **A damped spring is
+symmetric about its peak and smooth in the first derivative through it**, so the
+sight eases out of the top of its travel on the same curve it eased in, and the
+whole excursion reads as something ANIMATED rather than something hit. At any
+amplitude worth feeling it reads as rubber.
+
+[`src/core/recoilCurve.ts`](../src/core/recoilCurve.ts) is the model that
+replaced it and carries the argument in full. The short version is that
+**nothing about a gun wants to be where it started**, so a restoring force is
+the wrong idea at the root. What actually happens is three things with three
+different causes:
+
+1. **The impulse.** The charge delivers its momentum while the bullet is in the
+   barrel and for a few milliseconds of gas jet after it — 2-5 ms, which at any
+   frame rate is instant. The gun leaves that with an angular VELOCITY.
+2. **The grip arrests it.** Shoulder, cheek and support hand stop the rotation
+   over tens of milliseconds, so the muzzle climbs fast and FLATTENS. Left
+   alone it would stop there: a gun that is fired and dropped does not come
+   back down.
+3. **The shooter hauls it back.** Muscularly, at a roughly constant force — so
+   the return is a RATE, close to a straight line in time — and not until they
+   have reacted to the gun having moved.
+
+**The corner between (2) and (3) is the whole feature.** It is where the motion
+changes cause, and a curve that is smooth through that point is claiming the
+rise and the fall are one motion. Measured in the client, the rifle aimed:
+`0.51 → 0.77 → 0.89 → 0.77 → 0.63 → 0.48 → 0.32 → 0.15` degrees at 7 ms
+intervals — a flattening rise to a peak at 21 ms, then a descent whose
+successive differences are 0.14/0.15/0.16/0.17, which is a straight line at the
+haul rate and not the back half of anything.
+
+**`riseTurns` is what keeps the peak honest.** The rise gets a fixed number of
+grip time constants before the haul begins, so at 2.7 it is 93% complete at the
+handover and the peak lands ON that handover for every impulse a weapon can
+produce — which is what lets `pitchPerShot` go on meaning radians of peak even
+though a rate limit is not a linear system. Where it stops being linear is a
+BURST, and there the nonlinearity is the behaviour you want: stack enough
+impulse and the residual velocity still beats the haul, so the muzzle climbs
+past the handover and the peak arrives late and high. A string outruns the
+shooter's correction, which is why a held trigger walks and a tap does not.
+
+**The third term is the STANCE, and it changes the timing rather than the
+amplitude — which is the half the old model could not say at all.** Aimed, the
+weapon is in a three-point lock: shoulder pocket, cheek weld, support hand. That
+is a stiff system a braced shooter drives straight back. At the hip it hangs on
+two arms — a long, soft lever with nothing constraining it. Under a single
+`adsMult` scaling one number, hip fire was aimed fire turned up, which is the
+one thing it is not. Measured in the client, one shot, rise to peak against fall
+back to the resting line:
+
+| | hip | aimed |
+| --- | --- | --- |
+| SMG | 0.98° · 35 ms up, 43 down | 0.57° · 14 ms up, 14 down |
+| rifle | 1.74° · 41 ms up, 104 down | 0.89° · 21 ms up, 20 down |
+| DMR | 2.31° · 63 ms up, 202 down | 1.23° · 28 ms up, 62 down |
+| bolt gun | 2.94° · 84 ms up, 292 down | 1.55° · 35 ms up, 84 down |
+
+So an aimed weapon is a snap that is home in a twentieth of a second and a
+hip-fired one is a lift you watch come down — the same weapon, two mechanical
+systems. `massExp` is what spreads the four rows: more mass takes longer to
+arrest and longer to drive back, and **neither of those is an angle.**
+
+**The permanent share is HANDED OVER rather than applied at the shot**, which it
+had to become the moment the kick got a rise. `1 - recoverFraction` of every
+kick goes into the player's own aim and never comes back; applied whole on the
+frame the trigger broke that is 30% of the kick arriving as a step underneath a
+rise taking 20-85 ms — the exact artefact the rise exists to remove.
+`CameraSystem.owedPitch`/`owedYaw` are a bookkeeping bucket drained at the
+haul's own rate, so all of it lands by the time the sight is home and none of it
+before the sight has moved. **The total is unchanged**, which is why every walk
+figure in this file still holds.
+
+**The fourth term is the ACTION, and it is what makes a self-loader read as a
+MACHINE.** A rifle's recoil is not one impulse and a shooter does not feel it as
+one: there is the shot, then the carrier reaching the back of its travel and
+stopping against the buffer, then the carrier slamming into battery. Three
+events, and the second and third are what a shooter means when they call a gas
+gun "busy" against a bolt gun's single clean shove. Without them the weapon on
+screen makes one smooth excursion per round however sharp its attack, and one
+smooth excursion is a catapult.
+
+`CONFIG.recoil.kick.action` lays two `impulse()` beats on `Player.sinceShot` —
+the string counter's clock, which already exists and is already dropped by
+anything that takes the weapon away, so **the whole feature costs no state**.
+They are OPPOSITE in sign, which is the entire reason the pair reads as a
+mechanism cycling rather than as a second recoil arriving late: mass travelling
+rearward drives the weapon into the shoulder, and the same mass arriving forward
+pulls it out and dips the muzzle. Measured off a real shot: `+0.141` at 22 ms,
+`-0.105` at 49 ms, zero by 77. **A bolt gun states `boltCycle` and is exempt** —
+its action is worked by a hand, and `CONFIG.viewmodel.cycle` already plays that
+over a second and a quarter; two accounts of one mechanism would be one too
+many. Measured on the bolt gun the term is exactly 0 on every frame.
+
+They ride two axes and no more (`kickBack` and `kickPitch`): a carrier is felt
+fore-and-aft and as a nod, and giving it roll and lateral would make it a second
+recoil. `action.adsMult` (0.45) damps but deliberately does not remove it while
+aimed — a rifle in a three-point lock still buzzes, and that buzz is most of
+what tells you what you are holding.
+
+**Spend recoil's visual budget on the MODEL, not on the aim** — which is what
+`kickPitch` 0.12 → 0.22 and `kick.adsMult` 0.3 → 0.16 are, as one change. Their
+PRODUCT is what an aimed weapon takes (0.035 rad against 0.036 before — the same
+sight picture) and the bare number is what hip fire takes: **12.6° of muzzle
+flip on the model against 6.9°**. A rotation of the model while aimed takes the
+fitted sight's reticle off the axis the rounds fly down and has to stay small;
+at the hip there is no sight on the eye and the flip is free, and it is most of
+what you actually see. Move either number alone and the aimed picture moves with
+it.
+
+**And the near-plane bound was BROKEN, in shipped code, for as long as there was
+a spring behind it.** `Player` struck the kick with `kickWeight` and `ViewModel`
+multiplied by `p.kickWeight` again, so the weapon's weight was SQUARED — the
+bolt gun travelled 4.7x the rifle rather than 2.2x — while `adsClearance`'s
+`fit` applies that weight ONCE and was therefore under-predicting exactly the
+travel it exists to bound. Measured on the shipped build by walking the fitted
+sight's own `sightCenter` node into camera space through a held burst, the bolt
+gun's scope reached **2.18 cm and its 6x 1.59 cm against a 5 cm near plane** —
+inside it, which is the eyepiece opening into a hole in the air. With the weight
+applied once the worst combination in the kit is **13.81 cm**, and nothing is
+within 2.7x of the plane. `stackPeak` moved 1.35 → 1.5 in the same pass, because
+a round landing mid-recovery now restarts the shooter's reaction and a string
+stacks higher than a spring's did.
+
+
+**The view punch knows what is in your hands now**, which it did not: every
+weapon in the game shook the frame by exactly the same amount, so a bolt gun and
+a submachine gun made the identical picture. `recoil.punchCompress` (0.5) scales
+all five of its terms together — 0.71× on the SMG to 1.90× on the bolt gun — and
+amplitude only, because a shock is a SNAP and what takes a second to fade is
+`shake` above. It is **passed** to `addPunch` rather than read off the carried
+weapon (`Player.punchShock`), because a blast raises a punch too and a grenade
+has no business being scaled by whatever the player happens to be holding.
 
 **The kick's DIRECTION rotates as a string runs, and `recoil.pattern` is that.**
 Two envelopes over the counter `firstShotMult` already reads: `pitchSettled`
@@ -943,11 +1098,13 @@ all, so a body killed mid-burst would otherwise owe rounds to the next life.
 **The DMR steps outside that too, and `semiAuto` is why it can.** Two rounds at 3/s is
 0.333 s — the best ideal TTK in the kit — but the rate is a *ceiling on the trigger
 finger* rather than a cadence, and the error budget pays for it: a missed rifle
-round costs 0.125 s, a missed DMR round 0.333. Its `recoilMult` of 2.2 is the second
-half of the bill: only 70% of a kick springs back (`recoil.recoverFraction`), so a
-third of a second after a shot ~1.4 deg is still on the aim. That also makes a high
-`bloomMult` cheap: at any deliberate pace the bloom has bled off before the next
-round leaves.
+round costs 0.125 s, a missed DMR round 0.333. The recoil is the second half of
+the bill, and since `recoilImpulse` was split out of `recoilMult` it is mostly
+paid in TIME rather than in angle: 2.32° of muzzle rise (it was 3.78°), of which
+only 70% settles out (`recoil.recoverFraction`), on a spring that is still
+moving 286 ms later — and then a hold opened to 1.72× and quickened 2.2-fold for
+0.85 s while the shooter re-settles. That also makes a high `bloomMult` cheap:
+at any deliberate pace the bloom has bled off before the next round leaves.
 
 **The LMG is the third weapon you simply hold the trigger down on, and the only
 one here that does not have to stop; every other number on it is the price of
@@ -975,7 +1132,11 @@ burst lands where the fourth did. A weapon that bloomed like the rifle would car
 seventy-five rounds and have nothing to do with the last fifty. `recoilMult` 0.7 is
 the same argument on the other axis: at 10 rounds a second the rifle's own kick is
 0.24 rad/s of settled climb, and 0.168 is the gentlest in the kit — a burst you steer
-rather than one you abandon.
+rather than one you abandon. Its `recoilImpulse` of 0.9 is the same trade read
+the other way: a full-power belt round, most of it soaked by the weight of the
+gun, so the settle is 150 ms and the sight is back between rounds at ten a
+second — but it is the highest shake equilibrium in the kit (1.41), because at
+that rate the disturbance never fully clears.
 
 The trigger latch lives in **`Player.tryShot`, which takes the trigger rather than
 being called behind it** — a semi-automatic has to see the trigger come *up*, and a

@@ -189,12 +189,28 @@ export const equipment = {
        */
       range: 150,
       /**
-       * The heaviest kick in the game, and it is the launcher's whole
-       * drawback in the hands: a tube on a shoulder with a rocket motor
-       * leaving it does not come back down inside two seconds, and the
-       * player has two seconds anyway.
+       * **Was 2.4 — the heaviest kick in the game, spent entirely on ANGLE.**
+       * A launcher is the one weapon here that is actually recoilless: the
+       * gases leave backwards, which is the whole design, and what a tube on a
+       * shoulder does when a motor lights is jump and then take a long time to
+       * come back to where it was pointed. 1.6 is still the second-steepest
+       * climb in the game and more than the bolt gun's.
+       *
+       * The claim the old number was making — that it does not come back down
+       * inside two seconds — is still true and is now made by the line below,
+       * which makes it in SECONDS instead of degrees. The player still has two
+       * seconds anyway (`muzzleLoad`), so what changed is that the wait and
+       * the settle are the same event rather than two.
        */
-      recoilMult: 2.4,
+      recoilMult: 1.6,
+      /**
+       * The largest shove in the game, ahead of the bolt gun's 3.6. It is a
+       * motor rather than a charge — the impulse arrives over a longer window
+       * and keeps arriving after the round has gone — so the settle spring
+       * bottoms out at `settle.minFrequency` and the hold stays open for the
+       * best part of the load.
+       */
+      recoilImpulse: 3,
       /** Straight up and slightly right, like everything else in the kit. */
       yawBias: 0.2,
       /** Nothing blooms on a one-shot weapon; the number is here to be zero. */
@@ -349,8 +365,9 @@ export const equipment = {
       fireRate: 2,
       /** Where one can be placed, which is arm's length. */
       range: 3,
-      /** Nothing is fired, so nothing kicks. */
+      /** Nothing is fired, so nothing kicks — on either axis. */
       recoilMult: 0,
+      recoilImpulse: 0,
       yawBias: 0,
       bloomMult: 0,
       /** Nothing to look through, so the blend is quick and means nothing. */

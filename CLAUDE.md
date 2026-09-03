@@ -246,9 +246,10 @@ in that row.
 `CONFIG.weapons` owns the round, `CONFIG.sights` owns the picture and
 `entities/finishes.ts` owns the paint, and **the finish table decides nothing** —
 it reaches neither the camera nor a caption nor the wire. **What a weapon SOUNDS
-like is a field stating only what is DIFFERENT**, as `recoilMult` scales
-`CONFIG.recoil`, and **the rifle is the reference with every number 1** — a
-shooter with no weapon of its own needs no default anywhere.
+like is a field stating only what is DIFFERENT**, as `recoilMult` and
+`recoilImpulse` scale `CONFIG.recoil`, and **the rifle is the reference with
+every number 1** — a shooter with no weapon of its own needs no default
+anywhere.
 
 **Everything about an aimed weapon is arranged so that the reticle cannot lie.**
 The aimed pose is DERIVED and never authored — `applyFit` cancels the fitted
@@ -1583,18 +1584,63 @@ rewind, the lobby and the regions' two headers, and what is not built.
   `let x: number` instead.
 - Smoothing is normally the frame-lerp idiom `Math.min(1, dt * rate)`. **Anything
   that moves where bullets go, or that a player will read as recoil, is stepped
-  EXACTLY instead** — recoil decay uses true `Math.exp(-rate * dt)` because burst
-  climb must not vary with frame rate, and the viewmodel's kick spring is stepped
-  in closed form at a stiffness Euler cannot hold. The landing absorb next door
-  is semi-implicit Euler and may stay that way. Frequency decides which you need.
+  EXACTLY instead** — both recoil responses integrate their arrest in CLOSED
+  FORM and haul at a rate, because burst climb must not vary with frame rate.
+  The landing absorb next door is semi-implicit Euler and may stay that way.
+  Frequency decides which you need.
+- **A weapon states its recoil TWICE, and reading the two as a pair is how the
+  kit is meant to be read.** `recoilMult` is the MOMENT — how far the muzzle
+  tips, and the only thing that reaches `pitchPerShot`. `recoilImpulse` is the
+  SHOVE, and it reaches no angle at all: the settle spring's constants, the
+  post-shot unsteadiness, the view punch's amplitude and the viewmodel's own
+  travel. They are physically different quantities (muzzle rise is a bore-axis
+  moment arm; the shove is the cartridge) and in this table they are frequently
+  inverted — the pistol flips at 1.15 on a shove of 0.55 and the LMG shoves 0.9
+  and flips 0.7. **A weapon that sets one of them from the other has not said
+  anything.**
+- **Recoil is an ARREST and a HAUL and must never become a spring again** —
+  [`src/core/recoilCurve.ts`](src/core/recoilCurve.ts), run by both the aim
+  (`CONFIG.recoil.settle`) and the weapon on screen (`CONFIG.recoil.kick`). It
+  has been a first-order decay (no rise: the kick landed in one frame) and a
+  damped spring, and **the spring is the instructive failure** — symmetric about
+  its peak and smooth through it, so the excursion read as ANIMATION rather than
+  impact. Nothing about a gun wants to be where it started: the charge hands it
+  a velocity, the grip ARRESTS that, and the shooter HAULS it back at a rate,
+  after a reaction. **The CORNER between the arrest and the haul is the
+  feature.** `riseTurns` is what keeps the peak linear in the impulse — under
+  ~2.5 the kick a weapon states stops being the kick it delivers.
+- **The STANCE changes recoil's TIMING, not just its amplitude** (a three-point
+  lock and two arms are two mechanical systems): the rifle is 21 ms up and 20
+  down aimed against 41 and 104 at the hip. **`CONFIG.recoil.kick.action` is the
+  carrier** — two opposite-signed `impulse()` beats on `Player.sinceShot`, which
+  is what makes a self-loader read as a machine; it costs no state, never
+  touches the aim, and **a `boltCycle` weapon is exempt** because
+  `CONFIG.viewmodel.cycle` already plays its action as a gesture.
+- **Spend recoil's visual budget on the MODEL, not the aim.** `kickPitch` and
+  `kick.adsMult` move as a PAIR: their product is what an aimed weapon takes —
+  a rotation while aimed takes the fitted sight's reticle off the axis the
+  rounds fly down — and the bare `kickPitch` is what hip fire takes, where there
+  is no sight on the eye and the flip is free. **`kickWeight` reaches the model
+  ONCE**: `Player` strikes the kick with it and `ViewModel` must not multiply by
+  it again — it did, which SQUARED the weight while `kick.adsClearance`'s `fit`
+  applies it once, so the bound under-predicted its own travel and the bolt
+  gun's 6x eyepiece reached 1.59 cm inside a 5 cm near plane.
+  `CONFIG.recoil.shake` is the other half of a heavy round's bill and is spent
+  on the hold SWAY rather than as an offset of its own (the reason the bolt
+  cycle's wobble is), so a heavy round costs the follow-up rather than a fixed
+  pull-down.
 - Recoil only partly springs back: `CONFIG.recoil.recoverFraction` (0.7) returns 70%
   and pushes 30% permanently into the player's own `pitch`/`yaw`, so a magazine held
   down genuinely walks off target. An explicit product decision — a fully-recovering
-  version was rejected. **`CameraSystem.addFlinch` is the one aim kick that is
-  100% springy and must stay that way**: a hit *taken* is not a choice the player
-  made, so a permanent share would ratchet the view skyward over one exchange. It
-  shares the recoil spring rather than owning one, for the reason the bob phase
-  has a single integrator.
+  version was rejected. **That share is HANDED OVER at the haul's own rate
+  rather than applied at the shot** (`CameraSystem.owedPitch`): applied whole it
+  is a step function underneath a rise, which is what the rise exists to remove.
+  The total is unchanged. **`CameraSystem.addFlinch` is the one aim kick that is
+  100% springy and must stay that way**: a hit *taken* is not a choice the
+  player made, so a permanent share would ratchet the view skyward over one
+  exchange — now stated as "it queues nothing", since the owed buckets are the
+  only route into `pitch`/`yaw`. It shares the recoil axes rather than owning
+  its own, for the reason the bob phase has a single integrator.
 - **A string of shots has a SHAPE, and the shape is two envelopes over one
   counter.** `CONFIG.recoil.pattern` tapers the vertical toward `pitchSettled`
   and ramps the horizontal up from `yawStart` across `patternShots`, both keyed
