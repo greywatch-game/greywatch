@@ -207,21 +207,26 @@ export const recoil = {
     /**
      * How fast the grip arrests the rotation (1/s), braced and unbraced. The
      * rise's time constant is its reciprocal, and `riseTurns` of it is what
-     * the whole attack takes: **20 ms aimed and 45 ms at the hip** on the
-     * reference weapon, against a descent of 40 and 115. Roughly 2:1 either
-     * way, which is what "it comes down about as fast as it went up" means
-     * once the shooter rather than a spring is doing the coming down.
+     * the whole attack takes: **32 ms aimed and 60 ms at the hip** on the
+     * reference weapon, against descents of 55 and 165.
+     *
+     * **They are set against the FRAME as much as against the gun.** The first
+     * tuning of this was almost twice as quick — 21 ms up and 20 down aimed —
+     * and at 60 Hz that is an entire excursion inside two and a half samples,
+     * which cannot read as motion however right its curve is. It read as a
+     * dropped frame. The floor is roughly five samples for the whole
+     * travel; under it, making recoil faster makes it JERKIER.
      */
-    gripAds: 125,
-    gripHip: 58,
+    gripAds: 85,
+    gripHip: 45,
     /**
      * How fast the shooter hauls it back, in REFERENCE KICKS (`pitchPerShot`)
      * per second. A rate rather than a proportion, so a bigger excursion takes
      * proportionally longer to come home — which is why the bolt gun's return
      * is slower than the SMG's without either of them saying so.
      */
-    haulAds: 15,
-    haulHip: 8,
+    haulAds: 10,
+    haulHip: 6,
     /**
      * Grip time constants the rise gets before the haul begins — the
      * shooter's reaction, and the flat at the top of the travel. At 2.7 the
@@ -232,6 +237,12 @@ export const recoil = {
      * it delivers.
      */
     riseTurns: 2.7,
+    /**
+     * How much of the handover the haul is eased in over — see `RecoilShape`.
+     * It is the ACCELERATION through the corner that this bounds, not the
+     * corner itself, which stays exactly where it was.
+     */
+    haulRamp: 0.35,
     /**
      * Below this many reference kicks the haul eases instead of hauling, so
      * the bottom of the travel is an arrival rather than a hard stop. The
@@ -369,11 +380,13 @@ export const recoil = {
      *
      * It is stiffer than the aim's because it is a shorter lever: what
      * `settle` describes is the shooter's whole upper body rotating, and this
-     * is the receiver moving in two hands. The rifle's whole attack is 17 ms
-     * braced and 27 ms at the hip, against descents of 33 and 67.
+     * is the receiver moving in two hands. The rifle's whole attack is 27 ms
+     * braced and 40 ms at the hip, against descents of 67 and 111 — and, as
+     * with `settle`, the floor under all four is the FRAME rather than the
+     * mechanism. See that block; the same tuning pass slowed both.
      */
-    gripAds: 150,
-    grip: 95,
+    gripAds: 95,
+    grip: 65,
     /**
      * How fast it is driven home, in KICK UNITS per second (1 being one
      * round's peak). Nothing scales these by the weapon: `compress` below
@@ -381,10 +394,12 @@ export const recoil = {
      * travel is a longer return for free — which is the right answer and one
      * fewer exponent to keep honest.
      */
-    haulAds: 30,
-    haul: 15,
+    haulAds: 22,
+    haul: 16,
     /** As `settle.riseTurns` and `settle.easeBand`, in this model's units. */
     riseTurns: 2.6,
+    /** As `settle.haulRamp`. */
+    haulRamp: 0.35,
     easeBand: 0.1,
     /**
      * The ACTION, which is the thing that makes a self-loader read as a
@@ -412,12 +427,35 @@ export const recoil = {
      * accounts of one mechanism would be one too many.
      */
     action: {
-      /** Seconds after the shot the carrier stops at the back of its travel. */
-      back: 0.014,
-      /** …and seconds after the shot it slams back into battery. */
-      home: 0.043,
+      /**
+       * Seconds after the shot the carrier stops at the back of its travel,
+       * and seconds after it that it slams back into battery.
+       *
+       * **These are LEGIBLE rather than literal, and the difference is the
+       * display.** A real carrier is at the back of its travel around 10 ms
+       * and in battery around 35 ms, and those were the first numbers here.
+       * At 60 Hz that put two OPPOSITE-SIGNED peaks 1.7 samples apart, which
+       * does not resolve as two events — it aliases, and what aliasing looks
+       * like is the jitter this whole block was added to avoid. Stretched to
+       * 30 and 82 ms the pair is three samples apart inside a seven-sample
+       * window, which reads as what it is: a mass going back, stopping, and
+       * coming home. **A mechanism the frame cannot resolve is noise, and
+       * noise is not more faithful for having the right timing.**
+       */
+      back: 0.03,
+      home: 0.082,
       /** Seconds each of those impacts dies away over. */
-      fall: 0.03,
+      fall: 0.05,
+      /**
+       * …and seconds each takes to ARRIVE. `impulse` is all attack and no
+       * ease-in, which is the right shape for something hitting and the wrong
+       * one at this rate: an instantaneous jump to full is a step in the pose,
+       * and two of them per round at 8 rounds a second is a buzz rather than a
+       * mechanism. Twenty milliseconds is a little over one frame — enough to
+       * be a move rather than a jump, and far short of anything that would
+       * read as a swell.
+       */
+      rise: 0.02,
       /**
        * How hard each is, as a fraction of one round's kick — and they are
        * OPPOSITE in sign, which is the whole of why the pair reads as a
@@ -425,8 +463,8 @@ export const recoil = {
        * into the shoulder; the same mass arriving in battery pulls it
        * forward, and the muzzle dips as it does. Same event, both ends of it.
        */
-      backKick: 0.24,
-      homeKick: -0.16,
+      backKick: 0.2,
+      homeKick: -0.13,
       /**
        * What is left of it while fully aimed. **Not zero, and that is the
        * point**: a rifle in a three-point lock still buzzes, and the buzz is
@@ -499,17 +537,21 @@ export const recoil = {
      * mid-recovery also restarts the shooter's reaction, so a string stacks
      * higher than a spring's did. The worst in the kit is the carbine's three
      * rounds in 0.1 s, and what it reaches depends hard on the STANCE: 2.49x
-     * at the hip against 1.22x aimed, because the haul is more than twice as
-     * fast braced and has nearly come home before the next round lands.
+     * — one PULL, three rounds inside 0.1 s — and measured in the client
+     * through a real held trigger it reaches **1.73x one round aimed**. It is
+     * the only weapon that stacks at all now: at the shipped `haul` every
+     * other weapon in the kit is home before the next round lands, and a
+     * sustained trigger measures 1.00x on all twelve of the other rows.
      *
-     * **The AIMED figure is the one this may be set from**, and that is not a
-     * corner cut. What this bounds is the fitted sight coming through the near
-     * plane, `ViewModel` blends the bound in with the ADS blend, and hip fire
-     * has no sight on the eye to drive anywhere. 1.5 carries the aimed worst
-     * case with margin for a round fired at the hip and then shouldered
-     * mid-recovery, which is the only way the two can meet.
+     * **That is a tuning outcome and not a guarantee, which is why this stays
+     * a measured number with margin rather than a derived one.** Slowing
+     * `haul` to buy a longer, smoother descent is exactly what moves it: at
+     * `haul` 12 the SMG's held trigger stacked to **5.15x** at the hip, and
+     * the number here would have been describing a weapon that no longer
+     * existed. **Re-measure it whenever `grip`, `haul` or `riseTurns` moves**
+     * — the probe is a held trigger in the real client, not arithmetic.
      */
-    stackPeak: 1.5,
+    stackPeak: 2,
   },
   /**
    * The kick's reach on each axis, at a displacement of 1 (one round's peak).

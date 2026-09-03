@@ -66,7 +66,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { impulse } from "../core/math";
+import { impulse, smoothstep } from "../core/math";
 import {
   RecoilAxis,
   recoilGain,
@@ -508,12 +508,14 @@ export class Player implements Combatant {
     grip: CONFIG.recoil.kick.grip,
     haul: CONFIG.recoil.kick.haul,
     riseTurns: CONFIG.recoil.kick.riseTurns,
+    haulRamp: CONFIG.recoil.kick.haulRamp,
     easeBand: CONFIG.recoil.kick.easeBand,
   };
   private readonly kickAds: RecoilShape = {
     grip: CONFIG.recoil.kick.gripAds,
     haul: CONFIG.recoil.kick.haulAds,
     riseTurns: CONFIG.recoil.kick.riseTurns,
+    haulRamp: CONFIG.recoil.kick.haulRamp,
     easeBand: CONFIG.recoil.kick.easeBand,
   };
   private readonly kickShape: RecoilShape = { ...this.kickHip };
@@ -935,6 +937,7 @@ export class Player implements Combatant {
     this.kickShape.grip = a.grip + (b.grip - a.grip) * blend;
     this.kickShape.haul = a.haul + (b.haul - a.haul) * blend;
     this.kickShape.riseTurns = a.riseTurns;
+    this.kickShape.haulRamp = a.haulRamp;
     this.kickShape.easeBand = a.easeBand;
     return this.kickShape;
   }
@@ -970,10 +973,14 @@ export class Player implements Combatant {
     const a = CONFIG.recoil.kick.action;
     const t = this.sinceShot;
     if (t > a.home + a.fall) return 0;
+    // Each beat ARRIVES over `rise` and dies away over `fall`. `impulse` is
+    // the decay — all attack and no ease-in, which is what an arrival is —
+    // and the leading smoothstep is what stops that attack being a STEP in
+    // the pose. The two meet at 1 on the beat, so the pair is continuous.
+    const beat = (at: number): number =>
+      t < at ? smoothstep(at - a.rise, at, t) : impulse(t, at, a.fall);
     return (
-      (a.backKick * impulse(t, a.back, a.fall) +
-        a.homeKick * impulse(t, a.home, a.fall)) *
-      this.kickWeight
+      (a.backKick * beat(a.back) + a.homeKick * beat(a.home)) * this.kickWeight
     );
   }
 

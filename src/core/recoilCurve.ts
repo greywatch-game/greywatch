@@ -3,9 +3,10 @@
  * Owns: `RecoilShape`, `RecoilAxis` and `recoilGain` — the impulse response
  * the aim and the weapon on screen both run on.
  * Owns NO tunable and NO geometry: every number arrives as a `RecoilShape` the
- * caller assembles out of `CONFIG.recoil`. It imports NOTHING, which is the
- * property that makes it safe to import from both `core/` and `entities/` —
- * an edge to it is an edge to a leaf and never a path back to a system.
+ * caller assembles out of `CONFIG.recoil`. It imports nothing but `./math`,
+ * which itself imports nothing, so the property that makes it safe to import
+ * from both `core/` and `entities/` survives — an edge to it is an edge to a
+ * leaf and never a path back to a system.
  *
  * ## Why a gun is not a spring
  *
@@ -43,6 +44,26 @@
  * point is claiming the two are one motion, which is exactly the claim that
  * reads as fake.
  *
+ * ## …but a corner in the POSITION is not a step in the VELOCITY
+ *
+ * The first cut of this switched the haul on at the handover, which put the
+ * whole haul rate into the velocity in a single frame — an unbounded
+ * acceleration, and one the eye reads as a dropped frame rather than as a
+ * corner. `haulRamp` eases the haul in over a window CENTRED on the handover,
+ * so the rate is at half strength exactly where the switch used to be: the
+ * corner stays where it was and stays legible, and the acceleration through it
+ * is finite. It is a smoothing of the CAUSE, not of the shape.
+ *
+ * **The other half of reading smooth is having enough frames to be resolved,
+ * and that is a constraint the physics does not care about.** A 60 Hz display
+ * samples every 16.7 ms; the first tuning of this put an aimed rifle's whole
+ * excursion — up, corner, and back — inside 41 ms, which is two and a half
+ * samples. Nothing that completes in two samples can read as motion, however
+ * correct its curve: it reads as a strobe. The constants a caller passes are
+ * therefore chosen against the FRAME as well as against the gun, and a change
+ * here that shortens an excursion below ~5 frames has made it jerkier no
+ * matter what it did to the arithmetic.
+ *
  * ## The peak is linear in the impulse, and that is arranged rather than lucky
  *
  * `riseTurns` gives the rise a fixed number of grip time constants before the
@@ -59,6 +80,8 @@
  * correction. That is not a defect to be normalised away — it is why a held
  * trigger walks and a tap does not.
  */
+import { smoothstep } from "./math";
+
 
 /** The three numbers a recoil response is made of, plus its ease-out. */
 export interface RecoilShape {
@@ -88,6 +111,17 @@ export interface RecoilShape {
    * quietly stopped matching the table.
    */
   riseTurns: number;
+  /**
+   * How much of the handover the haul is eased in over, as a fraction of the
+   * time to it — so `0.35` ramps from `0.65 t` to `1.35 t`, centred.
+   *
+   * **It smooths the ACCELERATION and deliberately not the shape.** Switching
+   * the haul on puts its whole rate into the velocity in one frame, which is
+   * an unbounded acceleration and reads as a dropped frame; centring the ramp
+   * on the handover leaves the corner where it was, at half rate, and makes
+   * the change through it finite. Set to 0 it is the hard switch again.
+   */
+  haulRamp: number;
   /**
    * Below this displacement the haul EASES rather than hauling at its rate.
    *
@@ -147,12 +181,18 @@ export class RecoilAxis {
     const e = Math.exp(-s.grip * dt);
     this.value += (this.vel * (1 - e)) / s.grip;
     this.vel *= e;
-    // …and then the shooter brings it back, once they have reacted to it.
-    if (this.age >= s.riseTurns / s.grip) {
+    // …and then the shooter brings it back, once they have reacted to it —
+    // easing the force in about that moment rather than switching it on, so
+    // the corner keeps its position and loses its infinite acceleration.
+    const over = s.riseTurns / s.grip;
+    const w = over * s.haulRamp;
+    const ramp =
+      w > 0 ? smoothstep(over - w, over + w, this.age) : this.age >= over ? 1 : 0;
+    if (ramp > 0) {
       const mag = this.value < 0 ? -this.value : this.value;
       if (mag > 0) {
         const eased = s.easeBand > 0 ? Math.min(1, mag / s.easeBand) : 1;
-        const step = Math.min(mag, s.haul * eased * dt);
+        const step = Math.min(mag, s.haul * ramp * eased * dt);
         this.value += this.value < 0 ? step : -step;
       }
     }

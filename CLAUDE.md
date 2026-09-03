@@ -1608,7 +1608,22 @@ rewind, the lobby and the regions' two headers, and what is not built.
   a velocity, the grip ARRESTS that, and the shooter HAULS it back at a rate,
   after a reaction. **The CORNER between the arrest and the haul is the
   feature.** `riseTurns` is what keeps the peak linear in the impulse — under
-  ~2.5 the kick a weapon states stops being the kick it delivers.
+  ~2.5 the kick a weapon states stops being the kick it delivers — and
+  `haulRamp` eases the haul in about the handover, because a corner in the
+  POSITION must not be a step in the VELOCITY: switching the haul on put its
+  whole rate into one frame, which is an unbounded acceleration and reads as a
+  dropped frame.
+- **Recoil is tuned against the FRAME as well as against the gun.** A 60 Hz
+  display samples every 16.7 ms, and nothing that completes in two samples can
+  read as motion however right its curve is — it reads as a strobe. The first
+  tuning of the model above put an aimed rifle's whole excursion inside 41 ms
+  (2.5 frames) and the action's two opposite-signed beats 1.7 frames apart,
+  where they alias into jitter rather than resolving as two events. Both were
+  slowed to span ~5 frames or more. **A change that takes an excursion back
+  under that has made recoil jerkier whatever it did to the arithmetic**, and
+  the action's beats are deliberately LEGIBLE rather than literal for the same
+  reason — a mechanism the frame cannot resolve is noise, and noise is not more
+  faithful for having the right timing.
 - **The STANCE changes recoil's TIMING, not just its amplitude** (a three-point
   lock and two arms are two mechanical systems): the rifle is 21 ms up and 20
   down aimed against 41 and 104 at the hip. **`CONFIG.recoil.kick.action` is the
@@ -1624,7 +1639,10 @@ rewind, the lobby and the regions' two headers, and what is not built.
   ONCE**: `Player` strikes the kick with it and `ViewModel` must not multiply by
   it again — it did, which SQUARED the weight while `kick.adsClearance`'s `fit`
   applies it once, so the bound under-predicted its own travel and the bolt
-  gun's 6x eyepiece reached 1.59 cm inside a 5 cm near plane.
+  gun's 6x eyepiece reached 1.59 cm inside a 5 cm near plane. **`stackPeak` is
+  MEASURED through a held trigger, never derived**: what a string stacks to
+  depends on the haul, and a `haul` slowed for smoothness once took the SMG's
+  hip stack to 5.15x.
   `CONFIG.recoil.shake` is the other half of a heavy round's bill and is spent
   on the hold SWAY rather than as an offset of its own (the reason the bolt
   cycle's wobble is), so a heavy round costs the follow-up rather than a fixed

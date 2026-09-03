@@ -757,11 +757,32 @@ different causes:
 
 **The corner between (2) and (3) is the whole feature.** It is where the motion
 changes cause, and a curve that is smooth through that point is claiming the
-rise and the fall are one motion. Measured in the client, the rifle aimed:
-`0.51 → 0.77 → 0.89 → 0.77 → 0.63 → 0.48 → 0.32 → 0.15` degrees at 7 ms
-intervals — a flattening rise to a peak at 21 ms, then a descent whose
-successive differences are 0.14/0.15/0.16/0.17, which is a straight line at the
-haul rate and not the back half of anything.
+rise and the fall are one motion. Measured in the client, the rifle aimed, at
+7 ms intervals: `0.37 → 0.63 → 0.78 → 0.83 → 0.81 → 0.72 → 0.63 → 0.53 → 0.42
+→ 0.31 → 0.21 → 0.12 → 0.10` degrees — a flattening rise to a peak at 26 ms,
+then a descent whose successive differences settle at 0.10/0.11/0.11/0.11/0.10,
+which is a straight line at the haul rate and not the back half of anything.
+
+**A corner in the POSITION must not be a step in the VELOCITY, though, and the
+first cut of this made it one.** Switching the haul on at the handover put its
+whole rate into the velocity in a single frame — an unbounded acceleration,
+which the eye reads as a dropped frame rather than as a corner.
+`settle.haulRamp` eases the haul in over a window CENTRED on the handover, so
+the rate is at half strength exactly where the switch used to be: the corner
+keeps its position and its legibility and loses only its infinity. It smooths
+the CAUSE, not the shape.
+
+**And the other half of reading smooth is having enough frames to be resolved,
+which is a constraint the physics does not care about.** A 60 Hz display
+samples every 16.7 ms. The first tuning of this model put an aimed rifle's
+entire excursion — up, corner and back — inside 41 ms, which is two and a half
+samples, and the action's two opposite-signed beats 1.7 samples apart. **Nothing
+that completes in two samples can read as motion however right its curve is**;
+it reads as a strobe, and two peaks under two samples apart do not resolve as
+two events at all, they alias. Both were slowed until the whole travel spans
+about five samples or more — the aimed rifle is 0 → 85 ms now — and **a change
+here that takes an excursion back under ~5 frames has made recoil jerkier no
+matter what it did to the arithmetic.**
 
 **`riseTurns` is what keeps the peak honest.** The rise gets a fixed number of
 grip time constants before the haul begins, so at 2.7 it is 93% complete at the
@@ -784,10 +805,10 @@ back to the resting line:
 
 | | hip | aimed |
 | --- | --- | --- |
-| SMG | 0.98° · 35 ms up, 43 down | 0.57° · 14 ms up, 14 down |
-| rifle | 1.74° · 41 ms up, 104 down | 0.89° · 21 ms up, 20 down |
-| DMR | 2.31° · 63 ms up, 202 down | 1.23° · 28 ms up, 62 down |
-| bolt gun | 2.94° · 84 ms up, 292 down | 1.55° · 35 ms up, 84 down |
+| SMG | 0.92° · 42 ms up, 55 down | 0.54° · 22 ms up, 27 down |
+| rifle | 1.73° · 62 ms up, 133 down | 0.83° · 26 ms up, 59 down |
+| DMR | 2.29° · 90 ms up, 258 down | 1.19° · 42 ms up, 90 down |
+| bolt gun | 2.92° · 118 ms up, 382 down | 1.51° · 56 ms up, 118 down |
 
 So an aimed weapon is a snap that is home in a twentieth of a second and a
 hip-fired one is a lift you watch come down — the same weapon, two mechanical
@@ -819,8 +840,8 @@ anything that takes the weapon away, so **the whole feature costs no state**.
 They are OPPOSITE in sign, which is the entire reason the pair reads as a
 mechanism cycling rather than as a second recoil arriving late: mass travelling
 rearward drives the weapon into the shoulder, and the same mass arriving forward
-pulls it out and dips the muzzle. Measured off a real shot: `+0.141` at 22 ms,
-`-0.105` at 49 ms, zero by 77. **A bolt gun states `boltCycle` and is exempt** —
+pulls it out and dips the muzzle. Measured off a real shot: `+0.128` at 28 ms,
+`-0.081` at 83 ms, zero by 140. **A bolt gun states `boltCycle` and is exempt** —
 its action is worked by a hand, and `CONFIG.viewmodel.cycle` already plays that
 over a second and a quarter; two accounts of one mechanism would be one too
 many. Measured on the bolt gun the term is exactly 0 on every frame.
@@ -830,6 +851,18 @@ fore-and-aft and as a nod, and giving it roll and lateral would make it a second
 recoil. `action.adsMult` (0.45) damps but deliberately does not remove it while
 aimed — a rifle in a three-point lock still buzzes, and that buzz is most of
 what tells you what you are holding.
+
+**Their timing is LEGIBLE rather than literal, and the display is why.** A real
+carrier is at the back of its travel around 10 ms and in battery around 35, and
+those were the first numbers here — which put two opposite-signed peaks 1.7
+frames apart at 60 Hz, where they do not resolve as two events but alias into
+jitter. At 30 and 82 ms they are three frames apart inside a seven-frame window
+and read as what they are. Each also ARRIVES over `rise` (20 ms) rather than
+jumping: `impulse` is all attack and no ease-in, which is the right shape for
+something hitting and the wrong one at this rate, because an instantaneous jump
+to full is a step in the pose and two of them per round at eight rounds a second
+is a buzz rather than a mechanism. **A mechanism the frame cannot resolve is
+noise, and noise is not more faithful for having the right timing.**
 
 **Spend recoil's visual budget on the MODEL, not on the aim** — which is what
 `kickPitch` 0.12 → 0.22 and `kick.adsMult` 0.3 → 0.16 are, as one change. Their
@@ -851,9 +884,14 @@ sight's own `sightCenter` node into camera space through a held burst, the bolt
 gun's scope reached **2.18 cm and its 6x 1.59 cm against a 5 cm near plane** —
 inside it, which is the eyepiece opening into a hole in the air. With the weight
 applied once the worst combination in the kit is **13.81 cm**, and nothing is
-within 2.7x of the plane. `stackPeak` moved 1.35 → 1.5 in the same pass, because
-a round landing mid-recovery now restarts the shooter's reaction and a string
-stacks higher than a spring's did.
+within 2.7x of the plane. `stackPeak` is 2 and is **measured through a real held trigger
+rather than derived**, because a round landing mid-recovery restarts the
+shooter's reaction and what a string stacks to therefore depends on the haul.
+The carbine is the only weapon in the kit that stacks at all — one pull, three
+rounds inside 0.1 s, 1.73x one round aimed — and every other weapon measures
+1.00x on a sustained trigger. It is not a guarantee: at an earlier, slower
+`haul` chosen for smoothness the SMG's held trigger stacked to **5.15x** at the
+hip. **Re-measure it whenever `grip`, `haul` or `riseTurns` moves.**
 
 
 **The view punch knows what is in your hands now**, which it did not: every

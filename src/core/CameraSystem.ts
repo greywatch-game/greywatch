@@ -185,12 +185,14 @@ export class CameraSystem {
     grip: CONFIG.recoil.settle.gripHip,
     haul: CONFIG.recoil.settle.haulHip * CONFIG.recoil.pitchPerShot,
     riseTurns: CONFIG.recoil.settle.riseTurns,
+    haulRamp: CONFIG.recoil.settle.haulRamp,
     easeBand: CONFIG.recoil.settle.easeBand * CONFIG.recoil.pitchPerShot,
   };
   private readonly shapeAds: RecoilShape = {
     grip: CONFIG.recoil.settle.gripAds,
     haul: CONFIG.recoil.settle.haulAds * CONFIG.recoil.pitchPerShot,
     riseTurns: CONFIG.recoil.settle.riseTurns,
+    haulRamp: CONFIG.recoil.settle.haulRamp,
     easeBand: CONFIG.recoil.settle.easeBand * CONFIG.recoil.pitchPerShot,
   };
   /** Scratch for the blended shape — stepped every frame, never allocated. */
@@ -343,6 +345,7 @@ export class CameraSystem {
     this.shape.grip = a.grip + (b.grip - a.grip) * blend;
     this.shape.haul = a.haul + (b.haul - a.haul) * blend;
     this.shape.riseTurns = a.riseTurns;
+    this.shape.haulRamp = a.haulRamp;
     this.shape.easeBand = a.easeBand;
     return this.shape;
   }
