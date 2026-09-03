@@ -101,6 +101,7 @@ import { buildLmg } from "./LmgModel";
 import { buildPistol } from "./PistolModel";
 import { buildRifle } from "./RifleModel";
 import { buildSmg } from "./SmgModel";
+import { buildSniper } from "./SniperModel";
 import { applyFinish, type FinishId } from "./finishes";
 import { DEFAULT_SIGHT, sightSetup, type SightId, type SightSetup } from "./sights";
 import { wornSight, type GripSpec, type WeaponBuilder, type WeaponParts } from "./weaponKit";
@@ -133,6 +134,7 @@ const WEAPON_BUILDERS: Record<CarriedId, WeaponBuilder> = {
   carbine: buildCarbine,
   smg: buildSmg,
   dmr: buildDmr,
+  sniper: buildSniper,
   lmg: buildLmg,
   pistol: buildPistol,
   // The anti-tank slot's two. They are in this table for the same reason they
@@ -268,6 +270,17 @@ export interface ViewModelParams {
    */
   loadPhase: number;
   /**
+   * 0..1 through the BOLT CYCLE, and 1 whenever nothing is being cycled — the
+   * whole timeline in `CONFIG.viewmodel.cycle` is read off it.
+   *
+   * `loadPhase`'s twin in every respect, gate included: it needs none, because
+   * `Player.cycleProgress` is a pure function of the fire cooldown and
+   * everything that would cancel a gesture — a swap, a death, a fresh weapon —
+   * zeroes that clock rather than stranding a phase halfway. A weapon with no
+   * bolt to work reads 1 forever and this costs it nothing.
+   */
+  cyclePhase: number;
+  /**
    * 0 = the weapon is in the hands, 1 = it is fully out of frame. A TRIANGLE
    * over the swap rather than a blend toward a state, because a swap is a
    * round trip: the same curve carries one weapon away and brings the next one
@@ -385,6 +398,17 @@ interface WeaponRig {
   parts: WeaponParts;
   /** The support arm, which leaves the handguard for the magazine swap. */
   supportArm: TransformNode;
+  /**
+   * The TRIGGER arm, which leaves the grip for the bolt knob.
+   *
+   * It exists for the same reason the support arm's node does and was added
+   * for the opposite gesture: a reload is worked by the support hand and a bolt
+   * is worked by the firing hand, so the two arms need one posable node each or
+   * one of the two gestures is a part moving on its own. Every weapon has one
+   * and all but the bolt gun leave it at identity forever, which costs a
+   * `TransformNode` per rig and nothing per frame.
+   */
+  triggerArm: TransformNode;
   /** This weapon's magazine, or null if it has nothing that comes out. */
   magazine: TransformNode | null;
   /**
@@ -394,6 +418,14 @@ interface WeaponRig {
    * without arbitrating for it.
    */
   warhead: TransformNode | null;
+  /**
+   * This weapon's BOLT, or null if its action is not worked by hand.
+   *
+   * Unlike the magazine and the warhead this is not exclusive with either — a
+   * bolt gun has a magazine as well — and unlike both of them it never leaves
+   * the weapon. See `WeaponParts.bolt` for the one thing its geometry owes.
+   */
+  bolt: TransformNode | null;
   /**
    * The unit axis that magazine leaves along, weapon-local, resolved once from
    * the model's own rake. Straight down for anything standing vertically in
@@ -570,8 +602,13 @@ export class ViewModel {
       parts.root.parent = root;
       const supportArm = new TransformNode(`viewmodel_${id}_supportArm`, scene);
       supportArm.parent = root;
+      // Both hands hang off a node of their own, so either gesture can take one
+      // off the weapon. Both nodes sit at identity, so a weapon that never
+      // moves a hand is drawn exactly as it was before they existed.
+      const triggerArm = new TransformNode(`viewmodel_${id}_triggerArm`, scene);
+      triggerArm.parent = root;
       const arms = [
-        ...buildArm(scene, mats, `${id}_trigger`, parts.grip, root),
+        ...buildArm(scene, mats, `${id}_trigger`, parts.grip, triggerArm),
         ...buildArm(scene, mats, `${id}_support`, parts.support, supportArm),
       ];
       this.meshes.push(...parts.meshes, ...arms);
@@ -580,8 +617,10 @@ export class ViewModel {
         root,
         parts,
         supportArm,
+        triggerArm,
         magazine: parts.magazine ?? null,
         warhead: parts.warhead ?? null,
+        bolt: parts.bolt ?? null,
         // Straight down is the default, and it is right for anything standing
         // upright in its well — only a raked magazine has to say otherwise.
         magDrop: parts.magDrop ? parts.magDrop.clone() : new Vector3(0, -1, 0),
@@ -855,6 +894,11 @@ export class ViewModel {
       const rig = this.rigs[id];
       rig.supportArm.position.setAll(0);
       rig.supportArm.setEnabled(true);
+      rig.triggerArm.position.setAll(0);
+      if (rig.bolt) {
+        rig.bolt.position.setAll(0);
+        rig.bolt.rotation.setAll(0);
+      }
       if (rig.warhead) {
         rig.warhead.position.setAll(0);
         rig.warhead.rotation.setAll(0);
@@ -1006,10 +1050,23 @@ export class ViewModel {
     const loadW = loading
       ? ramp(0, l.tiltIn, lp) * (1 - ramp(l.tiltOut[0], l.tiltOut[1], lp))
       : 0;
+    // The bolt cycle is the third of these and the same shape again: a weight
+    // over a phase, gating the aim exactly as the other two do. It is the only
+    // one that can genuinely coincide with another — the round that empties the
+    // magazine starts a reload on the frame it fires — and `Player
+    // .cycleProgress` settles that at the source by reading 1 while reloading,
+    // so the aim never has both taken off it at once.
+    const c = v.cycle;
+    const cp = p.cyclePhase;
+    const cycling = cp < 1;
+    const cycleW = cycling
+      ? ramp(0, c.tiltIn, cp) * (1 - ramp(c.tiltOut[0], c.tiltOut[1], cp))
+      : 0;
     const t =
       hermite(clamp(p.adsBlend, 0, 1)) *
       (1 - reloadW * r.aimBreak) *
-      (1 - loadW * l.aimBreak);
+      (1 - loadW * l.aimBreak) *
+      (1 - cycleW * c.aimBreak);
 
     // --- base pose: hip -> aimed, with sprint and reload layered on top ---
     // The state offsets are additive rather than exclusive, so a reload that
@@ -1070,6 +1127,27 @@ export class ViewModel {
       if (cock > 0.001) {
         addScaled(this.off, l.cockKick.pos, cock);
         addScaled(this.rot, l.cockKick.rot, cock);
+      }
+    }
+    // The rifle rolling its right flank up to be worked and coming back down,
+    // and the two ends of the bolt's travel laid on as impulses. Same
+    // construction as the reload and the load above it, for the third time and
+    // the same reason: a pose over a timeline, with the events laid on top so
+    // each one lands on the sound it is.
+    if (cycleW > 0.001) {
+      addScaled(this.off, v.cyclePos, cycleW);
+      addScaled(this.rot, v.cycleRot, cycleW);
+    }
+    if (cycling) {
+      const stop = impulse(cp, c.back, c.kickFall);
+      if (stop > 0.001) {
+        addScaled(this.off, c.stopKick.pos, stop);
+        addScaled(this.rot, c.stopKick.rot, stop);
+      }
+      const home = impulse(cp, c.home, c.kickFall);
+      if (home > 0.001) {
+        addScaled(this.off, c.homeKick.pos, home);
+        addScaled(this.rot, c.homeKick.rot, home);
       }
     }
     // The swap, on the same additive footing as the two above — which is what
@@ -1218,6 +1296,10 @@ export class ViewModel {
     // simply be the answer.
     if (rig.warhead) this.poseLoad(p, rig, throwing);
     else this.poseReload(p);
+    // …and the bolt, which is neither of those and does not arbitrate with
+    // them: it writes the TRIGGER arm and the bolt node, where both of the
+    // above write the support arm and a round.
+    this.poseBolt(p, rig);
     const supportArm = rig.supportArm;
     // ...and off the weapon entirely for a throw. The hand that throws IS the
     // support hand, so leaving it welded to the handguard would put two left
@@ -1392,6 +1474,84 @@ export class ViewModel {
         o.y * w + axis.y * d,
         o.z * w + axis.z * d,
       );
+    }
+  }
+
+  /**
+   * The bolt cycle: where the bolt is on the timeline, and where the hand
+   * working it is.
+   *
+   * `poseReload`'s and `poseLoad`'s third sibling, and the shortest of the
+   * three because the part it moves never leaves the weapon. A magazine is
+   * released and replaced; a rocket is fetched and pushed home; a bolt is
+   * lifted, drawn a cartridge's length, pushed back and turned down, and every
+   * one of those four is a straight lerp with an ease on it. There is nothing
+   * to hide, nothing to swap and nothing to drop.
+   *
+   * The two motions are deliberately SEPARATE clocks over the one phase rather
+   * than one blend. A bolt turns before it moves and moves before it turns
+   * back, and running the two together would be a handle spiralling out of its
+   * notch — which is not a mechanism, it is a screw.
+   *
+   * The hand and the bolt are one motion by the construction the other two
+   * gestures use: from the lift onward the hand rides EXACTLY the travel the
+   * bolt rides, offset by where a fist sits on a knob, so it is pulling the
+   * thing rather than hovering beside it. Before the lift they part company on
+   * purpose — the hand is coming off the grip and the bolt has not moved yet.
+   *
+   * It runs for every weapon and costs a weapon without a bolt one comparison
+   * and one `lengthSquared`, which is the price of not needing a caller to know
+   * which weapon is in the hands.
+   */
+  private poseBolt(p: ViewModelParams, rig: WeaponRig): void {
+    const c = CONFIG.viewmodel.cycle;
+    const ph = p.cyclePhase;
+    const cycling = ph < 1;
+
+    // How far back the bolt is drawn, and how far the handle is turned.
+    // `draw` opens on the lift and closes on the seat; `liftTurn` is up by the
+    // lift and down again by the lock, so the handle is horizontal for the
+    // whole of the travel between them and vertical at neither end of it.
+    let draw = 0;
+    let turn = 0;
+    if (cycling) {
+      draw =
+        c.draw *
+        (ramp(c.lift, c.back, ph) - ramp(c.back, c.home, ph));
+      turn =
+        c.liftTurn * (ramp(0, c.lift, ph) - ramp(c.home, c.lock, ph));
+    }
+
+    // The bolt, gated on the cycle being live rather than on an eased weight:
+    // it belongs either forward in the action or somewhere along its travel,
+    // and a weapon put down mid-cycle has to come back closed rather than lerp
+    // home through its own receiver. `Player.cycleProgress` cannot strand it —
+    // a swap zeroes the clock — so this is the reload's rule kept for the one
+    // case it cannot cover, which is a rig switched off while the phase was
+    // still running.
+    const bolt = rig.bolt;
+    if (bolt) {
+      if (cycling) {
+        bolt.position.z = -draw;
+        bolt.rotation.z = turn;
+      } else if (bolt.position.z !== 0 || bolt.rotation.z !== 0) {
+        bolt.position.setAll(0);
+        bolt.rotation.setAll(0);
+      }
+    }
+
+    // The hand. Off the grip by the time the handle lifts, home again once it
+    // is locked down, and riding the draw in between. There is no eased blend
+    // over it the way the reload's has, because there is nothing that can
+    // interrupt this halfway: the clock under it is the fire cooldown, and
+    // everything that would abandon the gesture zeroes that clock instead.
+    const w = cycling
+      ? ramp(0, c.lift, ph) * (1 - ramp(c.handHome[0], c.handHome[1], ph))
+      : 0;
+    const arm = rig.triggerArm;
+    if (w > 0.0001 || arm.position.lengthSquared() > 0) {
+      const o = c.cycleHand;
+      arm.position.set(o.x * w, o.y * w, o.z * w - draw);
     }
   }
 

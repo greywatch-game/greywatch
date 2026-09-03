@@ -26,7 +26,7 @@
  *   of the list.** There is no ownership field on a finish and no derived
  *   per-weapon list to fall out of step with one: `FINISH_IDS` is what the
  *   kit screen draws and what `finishFor` validates against, so a scheme
- *   written here is on all five guns the moment it is written and cannot be
+ *   written here is on every gun the moment it is written and cannot be
  *   on four of them by omission. What is still PER WEAPON is the MEMORY —
  *   `prefs.readFinish`/`writeFinish` keep one key each, so every gun is
  *   picked up in the colours it was last left in.
@@ -36,7 +36,8 @@
  *   heavy — which is what the grid's rows read as. A finish added to a family
  *   goes IN it rather than on the end.
  * - **A blurb describes the PAINT and never the gun under it.** Sixteen
- *   schemes on five weapons is eighty combinations, so a line claiming the
+ *   schemes across the primaries is a hundred-odd combinations, so a line
+ *   claiming the
  *   weapon is semi-automatic, or heavy, or the only matte thing in the kit is
  *   a line that is wrong on most of them. Write what the finish is and what
  *   it costs to be seen in; the weapon's own copy is `LoadoutScreen`'s.
@@ -98,7 +99,7 @@ const SPEC = CONFIG.graphics.spec;
 
 /**
  * Every finish there is. Fifteen schemes plus the one every gun ships in, and
- * every one of them is offered on every one of the five: a scheme is a reason
+ * every one of them is offered on every one of them: a scheme is a reason
  * to look at a weapon rather than a reason to carry one, and a palette a
  * player can see but not have is a palette that advertises another gun.
  * They are grouped in threes by what they have in common — not by the weapon

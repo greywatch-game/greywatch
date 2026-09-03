@@ -82,10 +82,13 @@ src/
     bots.ts             # Bot AI + the nav grid (bots, nav)
     player.ts           # Movement, crouch, ground probe, vitals
     weapons.ts          # The weapon table, the round, gunfeel (weapons, combat,
-                        #   gunfeel)
+                        #   gunfeel). `boltCycle` is the one field here that
+                        #   decides a GESTURE rather than a rule
     recoil.ts           # What a shot does to the aim: the per-shot kick, the
                         #   string's two envelopes, recovery, stance
-    sights.ts           # The optic table — its ORDER is the loadout row
+    sights.ts           # The optic table — its ORDER is the loadout row, and
+                        #   `eyeRelief` has to RISE with magnification or the
+                        #   camera's near plane clips the eyepiece open
     viewmodel.ts        # Where the weapon sits in front of the camera
     glass.ts            # Breakable glazing: the sweep's cap, the shard pool,
                         #   the size band a piece is cut to and how far one is
@@ -205,14 +208,20 @@ src/
                         #   full-hand trigger guard, folded bipod
     SmgModel.ts         # Low-poly compact SMG — same contract
     DmrModel.ts         # Low-poly semi-auto marksman rifle
+    SniperModel.ts      # Low-poly bolt-action sniper rifle — an action wrapped
+                        #   around the BORE rather than a receiver sitting on
+                        #   one, a skeletonised chassis stock, and the BOLT in a
+                        #   node of its own so the cycle can work it
     LmgModel.ts         # Low-poly belt-fed light machine gun — feed cover and
                         #   split rail, box under the receiver, the exposed
                         #   brass belt, side-folded carry handle
     PistolModel.ts      # 1911 sidearm — the one weapon that does not call
                         #   optics.ts: no rail, so its notch and blade are its
                         #   own and are all it ever wears
-    optics.ts           # The five optic assemblies, built onto whichever
-                        #   weapon's OpticMount asked for them
+    optics.ts           # Every optic assembly, built onto whichever weapon's
+                        #   OpticMount asked for them. Past ~4x the cone is
+                        #   bounded by the SCREEN rather than by the rail, which
+                        #   inverts how a new one is solved
     weapons.ts          # WeaponId + WeaponSetup, + SIDEARM/PRIMARY_WEAPON_IDS
     sights.ts           # SightId + magnification -> FOV, sensitivity, zoomComp
     equipment.ts        # EquipmentId + the resolution of an AT item into an

@@ -1,6 +1,6 @@
 /**
  * CarbineModel.ts — Builds the low-poly bullpup burst carbine from primitives,
- * and hangs the same five optics off its rail.
+ * and hangs the same optics off its rail.
  * Returns WeaponParts, exactly as the other three builders do: all of them are
  * interchangeable to everything above them, which is what lets `ViewModel`
  * carry any one.

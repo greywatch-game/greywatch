@@ -118,6 +118,11 @@ export function equipmentSetup(id: EquipmentId): WeaponSetup {
     semiAuto: true,
     burst: 1,
     burstCycle: 0,
+    // Both AT items run a cooldown and NEITHER is a bolt. The launcher's is a
+    // gesture and is played as one, but through `muzzleLoad` and
+    // `Player.loadProgress` — a rocket going down a bore, which is a different
+    // thing from an action being worked and has its own timeline.
+    boltCycle: false,
     magSize: e.carried,
     reloadTime: 0,
     spreadHip: 0,

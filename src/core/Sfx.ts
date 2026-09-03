@@ -528,6 +528,66 @@ export class Sfx {
   }
 
   /**
+   * Working the bolt: lugs turning free, the bolt drawn back onto its stop, a
+   * case out, the bolt driven home on a round, and the handle down.
+   *
+   * `reload`'s sibling and `rpgLoad`'s, and it takes its rule from both: the
+   * offsets are FRACTIONS of the duration it is handed, so the sounds land on
+   * `CONFIG.viewmodel.cycle`'s beats to the frame whatever the weapon's rate
+   * is, and the weapon's own mechanism voices it through `actionPitch` /
+   * `actionVol`. Change a fraction here and change it there — the whole of what
+   * makes a gesture legible is that what you SEE lands on what you HEAR.
+   *
+   * **It is the only sound in the game that is a wait rather than an event**,
+   * and that is what the two SLIDES are for. Every other mechanism sound here
+   * is a thing arriving — a catch, a seat, a hammer — because every other
+   * gesture is over before the player has finished reacting to what caused it.
+   * A bolt cycle is a second and a quarter the player spends unable to shoot,
+   * and the two travelling noises are how long that is made audible: without
+   * them the cycle is four unrelated clicks with silence between them, which
+   * sounds like a fault rather than like a rifle being worked.
+   *
+   * The two slides sweep in OPPOSITE directions and that pairing is the whole
+   * read. Drawing back opens out — a case coming free and the action opening
+   * to the air — and closing sweeps down and shuts, because it ends against a
+   * locked breech. A cycle with two identical slides in it reads as one motion
+   * done twice rather than as a thing opened and closed.
+   */
+  boltCycle(duration: number, voice: ReportVoice = FLAT_REPORT): void {
+    const t = duration;
+    const p = voice.actionPitch;
+    const g = voice.actionVol;
+    // The lugs turning out of their seats: high, short and dry. It is the
+    // lightest event of the five and the first, which is what makes the rest
+    // read as consequences of it.
+    this.clack(3100 * p, 0.55 * g, t * 0.16);
+    // Drawn back — the slide, opening upward — onto the rear stop, which is
+    // the hardest single event in the cycle because it is a mass stopped by a
+    // shoulder of steel rather than seated on one.
+    this.burst({
+      dur: 0.16 / p, vol: 0.1 * g, type: "bandpass", freq: 700 * p,
+      freqEnd: 1900 * p, q: 1.1, delay: t * 0.2, send: 0.22,
+    });
+    this.clack(1250 * p, 1 * g, t * 0.42);
+    // The case out: bright, small and OFF to the side of everything else in
+    // the mix, which is what a piece of brass leaving a rifle sounds like
+    // against the mechanism that put it there.
+    this.clack(4200 * p, 0.4 * g, t * 0.47);
+    // Driven home — the slide, closing downward — and the heaviest clack of
+    // the five, because this is the one with a round on the end of it.
+    this.burst({
+      dur: 0.15 / p, vol: 0.11 * g, type: "lowpass", freq: 1700 * p,
+      freqEnd: 420 * p, delay: t * 0.48, send: 0.26,
+    });
+    this.clack(620 * p, 1.1 * g, t * 0.68);
+    this.tone(190 * p, 0.08, "sine", 0.05, 0.6, null, { delay: t * 0.68 });
+    // The handle down into its notch — the sound that says the weapon is live
+    // again, and the one the player is actually waiting on. Last, and pitched
+    // clear of the seat above it so the two do not read as one event.
+    this.clack(2300 * p, 0.8 * g, t * 0.78);
+  }
+
+  /**
    * Swapping weapons: one goes onto the sling, the other comes off it.
    *
    * Two events rather than a rummage, and they are placed where the hands

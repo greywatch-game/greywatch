@@ -314,6 +314,141 @@ export const viewmodel = {
     kickFall: 0.13,
   },
   /**
+   * The BOLT CYCLE: the third gesture in this file, and the one that is not
+   * about ammunition at all.
+   *
+   * **It runs on the fire cooldown, exactly as the launcher's load does, and
+   * for a reason one step further on.** The launcher's argument is that on a
+   * two-shot weapon the cooldown IS the loader; here the argument is that on a
+   * bolt gun the cooldown is the SHOOTER. `weapons.sniper.fireRate` is 0.8, and
+   * 1.25 s of a rifle sitting perfectly still between rounds would be the
+   * clearest possible statement that the wait is a rule rather than an action.
+   * So this needs no state of its own, no cancel path and no eased gate: it is
+   * a pure function of a clock that is already kept, already dropped by a swap
+   * and already zeroed by a fresh weapon in the hands — `Player.cycleProgress`
+   * is that clock read as a phase, and it is 1 on every weapon that does not
+   * declare `boltCycle`.
+   *
+   * **`aimBreak` is the whole feature and everything else here dresses it.**
+   * What separates a bolt-action from a slow semi-automatic is not the wait, it
+   * is that you spend the wait not looking at your target: the rifle comes off
+   * the shoulder line, the 6x picture swings away, and when it comes back the
+   * man you shot at is somewhere else. Take this to 0 and the weapon becomes a
+   * DMR that fires every 1.25 s, which is strictly worse than the DMR and
+   * interesting to nobody.
+   *
+   * The order the beats run in, all fractions of `weapons[id].shotInterval`:
+   * - `0` — the shot. The weapon is still in recoil and the hand is still on
+   *   the grip; nothing here has started.
+   * - `[0, lift]` — the weapon rolls its right flank up under `cyclePos`/
+   *   `cycleRot` and the trigger hand comes off the grip onto the knob.
+   * - `lift` — the handle is turned up out of its notch, `liftTurn` complete.
+   * - `[lift, back]` — the bolt is drawn to the rear stop, `draw` behind it,
+   *   and the case is out.
+   * - `back` — it hits the stop: `stopKick` is the weapon taking that, thrown
+   *   FORWARD, because a bolt pulled back pushes the rifle the other way.
+   * - `[back, home]` — pushed forward again, stripping a round out of the
+   *   magazine.
+   * - `home` — closed. `homeKick` is the heavier of the two and goes the other
+   *   way for the same reason.
+   * - `lock` — the handle turns down into the notch and the weapon is live.
+   *   Deliberately NOT an impulse: it is a wrist turning, not a mass stopping,
+   *   and a third jolt here would make the whole gesture read as rattling.
+   * - `[lock, tiltOut[1]]` — the hand goes back to the grip and the picture
+   *   comes back, finishing before the round it just chambered can be fired.
+   */
+  cyclePos: { x: -0.015, y: -0.012, z: -0.03 },
+  cycleRot: { x: 0.09, y: -0.12, z: 0.38 },
+  cycle: {
+    /** The handle is up out of its notch. */
+    lift: 0.16,
+    /** The bolt is at the rear stop and the case is clear. */
+    back: 0.42,
+    /** It is closed on a fresh round. */
+    home: 0.68,
+    /** The handle is down and the rifle is live again. */
+    lock: 0.78,
+    /**
+     * The roll out of the aim and back into it. It starts on the shot rather
+     * than after it — the two are one motion, and a weapon that sat level for
+     * a tenth of a second before beginning would read as the player deciding
+     * to work the bolt rather than as the rifle being worked. It finishes
+     * short of the end for the reload's reason: the round this is chambering
+     * is fired from the sight picture, so the picture has to be back before
+     * the trigger is live.
+     */
+    tiltIn: 0.1,
+    tiltOut: [0.78, 0.96],
+    /**
+     * How much of the AIM the gesture takes away — see the header, this is the
+     * feature.
+     *
+     * Under the reload's 0.8 rather than over it, which is the one thing here
+     * that might read backwards. A reload is a weapon taken out of the fight:
+     * both hands are on it, it is doing something that has nothing to do with
+     * where it is pointed, and the honest pose is down at the hip. A bolt is
+     * worked with the butt still in the shoulder and the cheek still near the
+     * comb — what moves is a wrist and a roll — so a break as deep as a
+     * reload's would be a rifle put down and picked up twice a second. At 0.7
+     * the sight leaves the axis decisively and the weapon never stops being
+     * held at a target, which is the difference the number is for.
+     */
+    aimBreak: 0.7,
+    /**
+     * How far the bolt travels, in model units along -z, and how far the
+     * handle turns getting there (radians, about the bore).
+     *
+     * `draw` is the cartridge's own length and not a number picked for the
+     * read: this action is cut for the longest round in the game and the bolt
+     * has to clear one, which is also why the model's shroud stands proud of
+     * the tang far enough to still be visible at full travel.
+     *
+     * `liftTurn` is 72 deg and it is the other half of a pair: `SniperModel`'s
+     * `BOLT_REST` hangs the handle 20 deg BELOW horizontal, so this takes it to
+     * 49 above — out of the chassis's outline at one end and clear of the
+     * scope's rings at the other, which is the arc that is actually visible on
+     * a rifle rolled right-flank-up for the cycle. Both numbers were moved
+     * together after a photograph: at the honest 45-degree rest angle the knob
+     * lives between the action's underside and the chassis's flank, and closed
+     * against open was a two-pixel difference on the one part of this weapon
+     * that exists to be watched moving.
+     */
+    draw: 0.09,
+    liftTurn: 1.25,
+    /**
+     * Where the trigger hand goes, relative to its home on the grip and
+     * weapon-local — up, out and forward onto the knob. It rides this PLUS the
+     * bolt's own draw from `lift` on, so the hand is pulling the bolt rather
+     * than hovering beside it, exactly as the magazine's hand carries the
+     * magazine.
+     *
+     * One offset shared by every weapon that declares `boltCycle`, which today
+     * is one. A second bolt gun with its handle somewhere else would want the
+     * `WeaponParts.magHand` treatment — a per-weapon override with this as the
+     * fallback — and nothing else here would move.
+     */
+    cycleHand: { x: 0.034, y: 0.128, z: 0.115 },
+    /** The hand's trip back to the grip, once the handle is locked down. */
+    handHome: [0.78, 0.93],
+    /**
+     * The two impacts, as impulses on the weapon, in the same shape and for
+     * the same reason as `reload.seatKick`/`boltKick`: instant attack, squared
+     * decay over `kickFall`, laid on top of the roll rather than blended into
+     * it.
+     *
+     * Both take the weapon along the bore AGAINST the bolt, which is the one
+     * thing this pair says that the reload's does not: a mass driven backwards
+     * throws the rifle forward and a mass driven home throws it back, and
+     * getting that round the wrong way is the difference between a bolt being
+     * worked and a weapon shivering. `home` is the heavier of the two because
+     * it is the one with a round on the end of it. Both roll AGAINST
+     * `cycleRot.z`, the rule the other two gestures already follow.
+     */
+    stopKick: { pos: { x: 0, y: -0.004, z: 0.016 }, rot: { x: 0.04, y: 0, z: -0.06 } },
+    homeKick: { pos: { x: 0, y: 0.006, z: -0.02 }, rot: { x: -0.05, y: 0, z: -0.07 } },
+    kickFall: 0.11,
+  },
+  /**
    * The weapon swap: one gun goes away below the frame and the other comes
    * up in its place, on a triangle that peaks halfway through
    * `weapons[id].drawTime`.

@@ -235,6 +235,13 @@ defines and bots test LOS against — and there is **no player body mesh at all*
 Crouch is that one point moving, and `Player.center` must come down the same half
 metre or crouching makes you *easier* to kill.
 
+**A new weapon is a table entry, a model builder and a row in `ViewModel`'s
+`WEAPON_BUILDERS`; a new optic is a table entry and a builder in `optics.ts`.**
+Both are `Record`s over the derived id union, so neither compiles half-added, and
+nothing else has to be told — but the kit screen's stat bars are shares of the
+BEST figure in the kit, so a weapon that sets a new best shortens every other bar
+in that row.
+
 **Three tables carry the kit and none of them knows about the others**:
 `CONFIG.weapons` owns the round, `CONFIG.sights` owns the picture and
 `entities/finishes.ts` owns the paint, and **the finish table decides nothing** —
@@ -254,6 +261,25 @@ reload breaks the aim outright rather than posing an aimed weapon.
 the bob phase is `CameraSystem`'s, and the reload is a timeline keyed to
 `Sfx.reload`'s clacks. **The trigger is two questions** (`semiAuto`, `burst`), and
 a reload, a swap, an empty magazine or a death must ABANDON what a burst owes.
+
+**There are THREE gestures over a weapon and only one has a clock of its own.**
+The reload runs on `reloadTime` and needs a gate, a phase and a cancel path; the
+launcher's load (`muzzleLoad`) and the bolt cycle (`boltCycle`) are both the FIRE
+COOLDOWN read as a gesture, and hold no state at all — that clock is already
+dropped by a swap, already zeroed by a fresh weapon and already what refuses the
+trigger, so neither can be stranded or disagree with what the weapon may do. **A
+new gesture over a wait belongs on that clock, not on a new one.** What each
+takes away is `aimBreak`, and on the bolt gun that IS the weapon: one that kept
+its sight picture through the cycle would be a slow DMR.
+
+**An optic's `eyeRelief` has to RISE with its magnification**, and the failure is
+silent. The aimed stand-off is `eyeRelief * zoomComp` and `zoomComp` falls as the
+magnification rises, so the 3.5x scope's 0.17 buys 7.8 cm of eye and the same
+number at 6x would buy 4.5 — inside `CameraSystem`'s 0.05 near plane, which clips
+the eyepiece open and turns the tube into a hole in the air. The same number
+sizes the optic (`optics.ts` measures every dimension against `eyeDistance`), so
+the biggest glass in the kit is the one held furthest from the eye, which is the
+honest way round.
 
 → **[`docs/weapons.md`](docs/weapons.md)** — the report's five layers, the crouch
 latch, the gloss ladder, the viewmodel's rendering group and pose stack, the

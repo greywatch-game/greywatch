@@ -1,6 +1,6 @@
 # Weapons, the viewmodel and the loadout
 
-How the first-person camera, the gun on it, the two weapon slots and the five
+How the first-person camera, the gun on it, the two weapon slots and the six
 optics fit together, plus the procedural model rules they are built under. Split
 out of [`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the
 contract. Read it before touching `ViewModel`, `Player`'s carry/aim path,
@@ -130,11 +130,14 @@ parented to the camera and posed in camera space.
     clamp stops the weapon dead partway through the kick and reads as a clunk.
     The bound is derived from the fitted sight's own `eyeRelief * zoomComp`, the
     same rule `adsPos` follows, so nothing is authored per combination — and
-    only the prism and the scope ever reach it. Measured over all ten
+    only the prism, the scope and the 6x ever reach it. Measured over all ten
     magnified combinations with a burst stacked on the spring, the worst aimed
     sight distance is **6.2 cm** (the DMR on the prism) against a near plane at
     5.0, where before the bound that same case sat at **3.8 cm** — 1.2 cm the
-    wrong side of it. **Move `minZ` and `adsClearance` has to follow.**
+    wrong side of it. **Move `minZ` and `adsClearance` has to follow.** The 6x
+    is the tightest of the three at rest — 5.87 cm of stand-off, measured — and
+    is where the rule below about `eyeRelief` rising with magnification is
+    actually being paid; re-measure this set when a magnified optic is added.
   - **That damping made the aimed picture steadier than it has ever been, not
     less steady.** The kick had no ADS term at all before, which was survivable
     only because it had no lateral component either — but its `kickPitch` was
@@ -300,7 +303,8 @@ machine gun without a per-weapon number anywhere.
   the magazine leaves through that edge, and the aimed reload keeps the whole
   middle of the screen clear.
 
-**There is a SECOND gesture built on this one and it is not a reload**: the
+**There is a SECOND gesture built on this one and it is not a reload** (a
+THIRD is the section below): the
 launcher is loaded through the MUZZLE, off `CONFIG.viewmodel.load`, and it runs
 on the fire cooldown rather than on a `reloadTime` the anti-tank slot does not
 have. Everything above about a timeline, an aim break, an impulse landing on a
@@ -310,6 +314,82 @@ that moves goes back down a bore instead of up into a well. `poseReload` and
 `poseLoad` are exclusive — a rig carries a `magazine` or a `warhead` and never
 both — and the argument for each beat is in
 [`docs/antitank.md`](antitank.md#the-load-and-why-a-weapon-with-no-reload-has-one).
+
+## The bolt cycle is the third gesture, and it is the whole of a sniper rifle
+
+`CONFIG.viewmodel.cycle`, played off `Player.cycleProgress`, on the one weapon
+whose table row says `boltCycle: true`. Read it beside the launcher's load: they
+are the same mechanism reached from opposite ends of the kit, and between them
+they say what the pattern is for.
+
+- **It runs on the FIRE COOLDOWN and holds no state**, exactly as the load does.
+  The launcher's argument is that on a two-shot weapon `shotInterval` IS the
+  loader; the sniper's is that on a bolt gun it is the SHOOTER. So there is no
+  gesture clock, no cancel path, no eased gate and nothing that can be stranded:
+  `fireCooldown` is already dropped by a swap, already zeroed by a fresh weapon
+  in the hands, and already the thing that refuses the trigger — which is why
+  `tryShot` needs no term from either gesture and neither can disagree with it.
+- **`cycleProgress` reads 1 on every weapon that is not a bolt gun**, so the
+  `boltCycle` test is made once and no caller repeats it. It also reads 1 while
+  `reloading` and on `ammo <= 0`, which is one case rather than two: the round
+  that empties the magazine starts a reload inside `tryShot` on the frame it
+  fires, and a bolt worked under a magazine change would be two gestures on one
+  pair of hands. The reload wins, because the reload is what is actually
+  happening.
+- **`cycle.aimBreak` is the feature and everything else dresses it.** What
+  separates a bolt-action from a slow semi-automatic is not the wait — a wait is
+  a number, and `fireRate` already carries it — it is that the wait is spent NOT
+  LOOKING AT THE TARGET. Take `aimBreak` to 0 and the weapon becomes a DMR that
+  fires every 1.25 s, which is strictly worse than the DMR and interesting to
+  nobody. It is 0.7 against the reload's 0.8, which reads backwards until you
+  notice what each gesture is: a reload is a weapon taken out of the fight with
+  both hands on it and the honest pose is down at the hip, and a bolt is worked
+  with the butt still in the shoulder — what moves is a wrist and a roll.
+- **`cycleRot.z` is POSITIVE, and it is the one place this gesture inverts the
+  reload's rule.** A reload rolls the underside toward the camera to present the
+  magwell to the support hand, which is negative; a bolt is worked by the
+  FIRING hand on a handle on the weapon's right, so the roll that brings the
+  work where the hand is takes the right flank UP. `stopKick`/`homeKick` roll
+  against that cant, which is the reload's rule kept rather than inverted.
+- **The two impulses go opposite ways along the bore, and getting that round
+  the wrong way is the whole difference between a bolt being worked and a
+  weapon shivering.** A mass driven backwards throws the rifle forward
+  (`stopKick`, on the rear stop) and a mass driven home throws it back
+  (`homeKick`, the heavier of the two, because it is the one with a round on the
+  end of it). The handle turning down into its notch is deliberately NOT an
+  impulse: it is a wrist, not a mass stopping, and a third jolt makes the whole
+  gesture read as rattling.
+- **The bolt is a node of its own (`WeaponParts.bolt`) and its geometry must be
+  built about the BORE.** `poseBolt` turns that node about z to lift the handle,
+  and the node sits at the weapon's own origin — so a raceway built anywhere
+  else swings the bolt through the receiver instead of turning it in one. That
+  is not a constraint the animation imposes on the model: a bolt IS in line with
+  the barrel, and a model that puts it elsewhere is wrong before it is animated.
+  It is the third of these movable nodes and the only one that never leaves the
+  weapon, which is also why it is not exclusive with the other two — a bolt gun
+  has a magazine as well, and `poseBolt` runs beside `poseReload` rather than
+  instead of it.
+- **The lift and the draw are SEPARATE clocks over the one phase**, not one
+  blend. A bolt turns before it moves and moves before it turns back; run the
+  two together and the handle spirals out of its notch, which is not a mechanism,
+  it is a screw.
+- **The hand is the TRIGGER arm**, which is why that arm has a node of its own
+  at all (`WeaponRig.triggerArm`, added for this and left at identity on every
+  other weapon). A reload is worked by the support hand and a bolt by the firing
+  hand, so the two need one posable node each or one of the two gestures is a
+  part moving on its own. From the lift onward the hand rides exactly the travel
+  the bolt rides, which is `poseReload`'s construction for the third time.
+- **The beats are `Sfx.boltCycle`'s and must move with them**, exactly as the
+  reload's are its clacks': `lift`, `back`, `home` and `lock` are four of its
+  five events to the frame. It is raised beside `Sfx.shoot` off `Player
+  .cycleTime` — `loadTime`'s twin — rather than from inside the gesture, because
+  the shot and the cycle it starts are one event.
+- **It is the only sound in the game that is a WAIT rather than an event**, and
+  the two travelling noises inside it are why. Every other mechanism sound here
+  is a thing arriving, because every other gesture is over before the player has
+  finished reacting to what caused it; a cycle is a second and a quarter of not
+  being able to shoot, and without the slides it is four unrelated clicks with
+  silence between them, which sounds like a fault rather than like a rifle.
 
 ## The report: one shape, six deviations from it
 
@@ -416,7 +496,19 @@ Read the loudness column against the rate rather than down: at their own fire
 rates the sustained order is LMG, DMR, rifle, SMG, carbine, pistol, which is the
 kit's own story about which weapon owns a fight.
 
-## The loadout: five weapons, five optics, sixteen finishes, and a sidearm
+**The SNIPER is a seventh voice and is deliberately NOT in that table.** Those
+six figures were rendered through the real graph and measured; the sniper's row
+has not been, so putting a number beside them would be six measurements and a
+guess wearing the same formatting. What it was AUTHORED to be is the DMR's
+argument at half the rate and one size up — `pitch` 0.6 against 0.7,
+`weight`/`tail` at 2 against 1.65/1.8, `length` 2.1 against 1.75 — which should
+put it below the DMR's 166 Hz centroid and above its 0.69 s decay, with `snap`
+1.9 keeping the leading edge the sharpest in the kit rather than letting the
+weapon read as something a long way off. **Re-run the measurement before quoting
+it**, and add the row then; the harness that produced the table is not in the
+tree, which is the actual reason this paragraph exists rather than a row.
+
+## The loadout: six weapons, six optics, sixteen finishes, and a sidearm
 
 Two tables, two slots, neither knowing about the other (a third table, the
 finishes, is below and knows about neither; a FOURTH, the anti-tank kit, is
@@ -428,6 +520,19 @@ what can be carried and `CONFIG.sights` what can be bolted to it;
 `entities/weapons.ts` and `entities/sights.ts` derive `WeaponId`/`SightId` **from
 those tables**, so each is declared in exactly one place. Every weapon *with a
 rail* takes every optic; the sidearm has no rail.
+
+**A new weapon is an entry in the table, a model builder and a row in
+`ViewModel`'s `WEAPON_BUILDERS`, and the type system enforces the third** — the
+`Record<CarriedId, WeaponBuilder>` does not compile with a weapon missing from
+it, and neither does `WEAPON_BLURBS` or `SIGHT_BLURBS` on the kit screen. Adding
+the sniper touched no signature and no system: the wire already resolves whatever
+weapon a client declares through `weaponSetup`, the server's fire-rate gate is
+`Math.max` over the table, and the stat chart's bars are shares of the best
+figure in the kit rather than absolutes. **That last one is worth knowing before
+adding a weapon that sets a new best in a column** — 100 damage takes the
+rifle's damage bar to under a third of the width it used to draw, which is the
+chart working rather than breaking, and pinning the scale to an absolute instead
+would mean re-tuning every bar in the kit the day a weapon is added.
 
 **A weapon owns the round; an optic owns the picture.** Damage, rate, magazine,
 spread, range and the recoil multipliers are the weapon's and reach nothing but
@@ -470,7 +575,7 @@ any of it.
 the list: there is no ownership field on a finish and no derived per-weapon
 list that could fall out of step with one. `FINISH_IDS` is what the kit screen
 draws and what `finishFor` validates against, so a scheme written into the
-table is on all five guns the moment it is written and cannot be on four of
+table is on every gun the moment it is written and cannot be on all but one of
 them by omission.
 
 It used to be four each — the standard finish plus three that named that one
@@ -484,7 +589,8 @@ painted, restrained, heavy) and the table's ORDER is the screen's, because the
 kit screen draws all sixteen at once as a grid.
 
 **A blurb therefore describes the PAINT and never the gun under it.** Sixteen
-schemes across five weapons is eighty combinations, so a line claiming the
+schemes across the primaries is near a hundred combinations, so a line claiming
+the
 weapon is semi-automatic, or heavy enough to take a foot off, or the only matte
 thing in the kit is a line that is wrong on most of them — two of the shipped
 blurbs said exactly that and were rewritten when the lists were merged.
@@ -712,10 +818,19 @@ assuming it followed.**
 
 A round inside `CONFIG.combat.headRadius` (0.22 m) of the target's `eyePos` is
 worth `headshotMult` (2). The rifle and the pistol kill in two, the SMG in
-three, the LMG in three, and **the DMR kills in one at any range** — the only
-one-shot kill in the game, and the reward its `semiAuto`, its 2.2 recoil
-multiplier and its exemption from fall-off have all been asking for. It costs a
-scope, a 3/s ceiling and a 22 cm target.
+three, the LMG in three, and **the DMR kills in one at any range** — the reward
+its `semiAuto`, its 2.2 recoil multiplier and its exemption from fall-off have
+all been asking for. It costs a scope, a 3/s ceiling and a 22 cm target.
+
+**The sniper is the one weapon this column does nothing for, and that is the
+decision rather than an oversight.** It kills in one on the BODY, so there is
+nothing for a head hit to upgrade and the sphere is never a candidate — but the
+two one-shot kills are still different weapons, and the difference is exactly
+what the multiplier is. The DMR's is a 22 cm target you may take three times a
+second; the sniper's is a man-sized one you may take once every 1.25 s, and the
+cycle is what that costs. A one-shot kill that had to be a head hit AND cost a
+bolt cycle would be a weapon nobody could justify carrying, which is why the
+sniper's `damage` is 100 and not 51.
 
 Three things about it are structural rather than tuning:
 
@@ -868,6 +983,28 @@ which belongs to the weapon, goes with the weapon.
   picture instead of the sight. Two floors bound it: the camera's near plane (`minZ`
   0.05 against a stand-off of `eyeRelief * zoomComp` — the scope's 0.17 buys ~0.02 m
   of margin) and the cone's clearance over the rail, which is what the rises are.
+- **`eyeRelief` has to RISE with magnification or the near plane eats the
+  eyepiece, and that is the least obvious rule in this file.** The stand-off is
+  `eyeRelief * zoomComp` and `zoomComp` is `adsMagReference / magnification`, so
+  the two move against each other: the 3.5x's 0.17 buys 7.8 cm, and the same
+  0.17 at 6x would buy **4.5 cm** — inside `minZ`, which clips the ocular open
+  and turns the tube into a hole in the air. The 6x states 0.22 for that reason
+  alone and measures 5.87 cm. A longer relief is also what makes it the biggest
+  optic in the kit, since every dimension is measured against `eyeDistance` —
+  which is the honest way round for the one that should look like it weighs
+  something.
+- **Past about 4x the RAIL stops being what bounds the cone, and the solve
+  inverts.** `PRISM_CONE` is derived from its rise because the rail is the
+  binding constraint at 2.5x; run the same solve at 6x and it comes out at
+  0.0967, which is 1.13 of the screen's own half-height — a sight picture with
+  no rim in it at all, which is not a scope, it is the absence of one. A higher
+  magnification is a narrower aimed FOV, so the same angular cone fills more of
+  the frame. `LONG_CONE` is therefore authored against the FRAME (0.072, which is
+  0.84 of the half-height, against the 3.5x's 0.674 and the prism's 0.506) and
+  its rise is set by the objective bell's own radius instead, with the rail's
+  inequality satisfied comfortably as a consequence. **A bigger, heavier optic
+  showing MORE of the frame is the intended reading**: the tunnel is the 3.5x's
+  character, not a tax every scope owes.
 - **A straight tube is the worst shape to spend the cone on** — a cylinder wide
   enough not to clip at the objective is far wider than the cone needs at the
   eyepiece, which is how the scope became a drainpipe. It is built as
@@ -878,10 +1015,20 @@ which belongs to the weapon, goes with the weapon.
 **The optics are built against the weapon, not for it.** `optics.ts` takes an
 `OpticMount` — the rail's height, where along it the sight sits, and its two back-up
 iron stations — and measures everything from those four numbers, so the SMG's
-shallow receiver and the DMR's deeper one carry the same five sights with nothing
+shallow receiver and the DMR's deeper one carry the same sights with nothing
 re-tuned. Adding a weapon is a config entry, a model builder returning
 `WeaponParts`, and an `OpticMount` (or, with no rail, a `fixed` sight assembly);
-adding an optic is a config entry and a builder in `optics.ts`.
+adding an optic is a config entry and a builder in `optics.ts`. Both are checked
+by a `Record` that does not compile with a member missing, so neither can be
+half-added.
+
+**The whole grid is checkable off the scene with no round and no map**, because
+every weapon and every optic is built in `Game`'s constructor. Two readings are
+worth taking after touching either table, and both were taken for the 6x: every
+`sightCenter` must sit on its weapon's own x axis (36 of 36 did), and a disc of
+rays down each optic's cone must find none of the weapon under it (0 of 72
+blocked, on all six weapons). `VERIFYING.md` has the method, including the trap
+that makes twenty-three of twenty-five combinations read wrong.
 
 **The mount is not free, and the DMR is where that shows.** Two of the four numbers
 are bounded by the optics rather than the receiver: the scope's cone reaches the

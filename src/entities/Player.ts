@@ -514,6 +514,7 @@ export class Player implements Combatant {
     reloadPhase: 0,
     reloading: false,
     loadPhase: 1,
+    cyclePhase: 1,
     swapBlend: 0,
     throwTime: -1,
     kick: 0,
@@ -1621,6 +1622,7 @@ export class Player implements Combatant {
     v.reloadPhase = this.reloadProgress;
     v.reloading = this.reloading;
     v.loadPhase = this.loadProgress;
+    v.cyclePhase = this.cycleProgress;
     v.swapBlend = this.swapWeight();
     v.throwTime = this.throwT;
     v.kick = this.kickDisp;
@@ -1995,6 +1997,50 @@ export class Player implements Combatant {
    */
   get loadTime(): number {
     return this.loadProgress < 1 ? this.weapon.shotInterval : 0;
+  }
+
+  /**
+   * Where the BOLT is, 0..1, and 1 whenever nothing is being cycled — the
+   * clock `ViewModel` plays `CONFIG.viewmodel.cycle` off.
+   *
+   * **`loadProgress`'s twin, arrived at from the other end of the kit**, and
+   * worth reading beside it: both are the fire cooldown read as a gesture, and
+   * both exist because a wait with nothing on screen to be is a wait the player
+   * reads as a rule rather than as an action. The launcher's cooldown is a
+   * rocket going down a bore; this one is a shooter working an action, which is
+   * the same idea one weapon further from the trigger.
+   *
+   * So it needs no state of its own either: no cancel path, no eased gate, and
+   * nothing to strand. `fireCooldown` is already dropped by a swap
+   * (`completeSwap`), already zeroed by a fresh weapon in the hands, and already
+   * the thing that stops the trigger — which is why `tryShot` needs no term
+   * from this and there is nothing here that could disagree with it.
+   *
+   * Three things read 1 and each is a different weapon not cycling. `boltCycle`
+   * is the table's own answer and is false on everything but the sniper, so
+   * this is the whole of the "is this a bolt gun" test and no caller repeats
+   * it. `ammo <= 0` is the round that emptied the magazine: `tryShot` has
+   * already started the reload on that frame and the reload owns the weapon
+   * from there — a bolt worked under a magazine change would be two gestures on
+   * one pair of hands. And `reloading` covers the reload started by the key
+   * rather than by the last round.
+   */
+  get cycleProgress(): number {
+    if (!this.alive || !this.weapon.boltCycle) return 1;
+    if (this.reloading || this.ammo <= 0) return 1;
+    const total = this.weapon.shotInterval;
+    if (this.fireCooldown <= 0 || total <= 0) return 1;
+    return Math.max(0, 1 - this.fireCooldown / total);
+  }
+
+  /**
+   * How long the cycle now beginning takes, or 0 when there is none — for the
+   * sound that has to fit it. `loadTime`'s twin, and it exists for that
+   * field's reason: the gesture and the noise over it are one event, and the
+   * only way they stay one is if both read the same number.
+   */
+  get cycleTime(): number {
+    return this.cycleProgress < 1 ? this.weapon.shotInterval : 0;
   }
 
   /** World position of the rifle muzzle (tracer origin). */

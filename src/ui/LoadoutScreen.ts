@@ -127,7 +127,9 @@ export const WEAPON_BLURBS: Record<PrimaryWeaponId, string> = {
   carbine:
     "A bullpup, and the trigger buys three rounds rather than one. All three land in a tenth of a second and all three together are a kill — then the weapon sits out four tenths whether they hit or not, which makes a wasted burst the most expensive mistake in the kit.",
   smg: "Pistol-calibre, and it empties a long magazine in under three seconds. Quickest to the shoulder, cheapest to miss with, and past the width of a street it will not group whatever optic is on top of it.",
-  dmr: "Semi-automatic: one round per trigger pull, and two rounds anywhere on a man will do it. The tightest group and the longest reach in the kit, paid for with a kick that has to be ridden back down before the second shot means anything.",
+  dmr: "Semi-automatic: one round per trigger pull, and two rounds anywhere on a man will do it. The tightest group in the kit short of the bolt gun, paid for with a kick that has to be ridden back down before the second shot means anything — but you keep your sight picture the whole way, which is the thing the sniper cannot offer.",
+  sniper:
+    "Bolt-action, and one round anywhere on a man is a kill at any range it reaches. Then you work the bolt: a second and a quarter with the rifle off your target and no way to hurry it, which is the whole price of the weapon and is charged whether the round landed or not. Five in the magazine, nothing to offer inside a room, and a sidearm you will need.",
   lmg: "Belt-fed, and the only weapon here that does not have to stop: seventy-five rounds is fifteen kills without a pause, and the group barely opens across the whole belt. Slowest into the shoulder, useless from the hip, and a reload long enough that being caught empty is a decision about the sidearm.",
 };
 
@@ -154,6 +156,8 @@ const SIGHT_BLURBS: Record<SightId, string> = {
     "A short prismatic body on an integral mount, with an etched chevron. Enough magnification to make a body across the square worth shooting at, and enough field left to swing onto the next one.",
   scope:
     "Telescopic, with a duplex reticle. Slow to bring up and a tunnel to look down, and the only thing on offer that will show you a body at the far end of the valley.",
+  longScope:
+    "Six times, on the biggest optic in the kit. It will show you a man at three hundred metres and it will show you nothing else at all — the field is half the scope's, the slowest thing here into the shoulder, and it magnifies your own hands along with everything you are looking at.",
 };
 
 /** One bar on the stat chart: a caption, the figure, and its share of the best. */
@@ -203,6 +207,11 @@ function sustainedRate(w: (typeof CONFIG.weapons)[WeaponId]): number {
  */
 function fireMode(w: (typeof CONFIG.weapons)[WeaponId]): string {
   if (w.burst > 1) return `burst ×${w.burst}`;
+  // A bolt gun is `semiAuto` too and "semi" would be true and useless — it is
+  // what the DMR says, and the two weapons are as far apart as anything in the
+  // kit. What the word has to carry is that the trigger is not the thing you
+  // are waiting for, which is the same job "burst" does above.
+  if (w.boltCycle) return "bolt";
   return w.semiAuto ? "semi" : "auto";
 }
 
@@ -220,8 +229,17 @@ function fireMode(w: (typeof CONFIG.weapons)[WeaponId]): string {
  * curve, because one number is now a half-truth — the SMG's 18 and the LMG's 24
  * rank one way in a room and the other way at 40 m. The bar stays keyed to the
  * close figure, which is the one a weapon is picked to win a room with. A
- * weapon with no fall-off prints one number, and that is the whole of the DMR's
- * case made without a sentence.
+ * weapon with no fall-off prints one number, and on the two that do it that is
+ * their whole case made without a sentence.
+ *
+ * **The chart is RELATIVE and the sniper is what proves it costs nothing.**
+ * Every bar is a share of the best figure in the kit, so a weapon that sets a
+ * new best shortens every other bar in that row — 100 damage against the
+ * rifle's 30 takes the rifle's damage bar to under a third of the width it used
+ * to draw. That is the chart working rather than breaking: the rifle has not
+ * changed, and what the row is for is saying where a weapon sits among the ones
+ * it is being chosen against. Pinning the scale to an absolute instead would
+ * mean every bar in the kit needing a re-tune the day a weapon is added.
  *
  * Range is `falloffFar`, **not** `range`, and that is a correction rather than
  * a choice: `range` is where the ray stops, which since fall-off arrived is no
@@ -240,8 +258,8 @@ function weaponStats(id: PrimaryWeaponId): StatRow[] {
       // SMG's 18 and the LMG's 24 rank one way close and the other way at
       // 40 m. The bar itself stays keyed to the CLOSE figure — that is the
       // one a player is choosing a weapon to win a room with — and the value
-      // column says what happens to it. A weapon with no fall-off (the DMR)
-      // prints one number, which is the whole of its case.
+      // column says what happens to it. A weapon with no fall-off (the DMR and
+      // the sniper) prints one number, which is the whole of its case.
       label: "Damage",
       value:
         w.damageFar === w.damage
@@ -269,7 +287,10 @@ function weaponStats(id: PrimaryWeaponId): StatRow[] {
       // fall-off arrived it is no longer the interesting end of the weapon:
       // the DMR's 180 m is most of it spent past a fog wall at 78, while the
       // SMG's rounds carry to 70 m and stopped being worth firing at 40. The
-      // distance a player can act on is the one where the damage runs out.
+      // distance a player can act on is the one where the damage runs out —
+      // and on the sniper, which never runs out, `falloffFar` is still the
+      // honest figure, because past it the round is unchanged and the LIMIT is
+      // whether the map has anything that far away to shoot at.
       label: "Range",
       value: `${w.falloffFar} m`,
       frac: w.falloffFar / best((x) => x.falloffFar),

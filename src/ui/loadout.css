@@ -288,21 +288,36 @@
   color: var(--hot);
 }
 /* WRAPS, and that is a correctness rule rather than a nicety. A flex item
-   cannot be squeezed below its own longest word, so five buttons carrying
+   cannot be squeezed below its own longest word, so buttons carrying
    "SUBMACHINE" have a floor — and a row that cannot reach it does not
    shrink, it OVERFLOWS: at 1280 the weapon row used to run 50 px past the
    scrim's edge and hang its last button over the stage, on top of the
-   weapon. The type below is sized so the five fit on one line at every
-   ordinary window; the wrap is what happens on the ones that are not, and
-   two short lines of buttons is a layout rather than a spill.
+   weapon. So the wrap is the designed answer and not a fallback, and the
+   BASIS is the whole of how a row is told where to break.
 
-   The basis is what decides how they break: at 96 px five still fit a
-   1280 panel on one line, and a column too narrow for that breaks 3 + 2
-   rather than stranding one button on a line of its own. */
+   The two rows are given different bases because they are different words.
+   The optics are single short names and six of them measure 84 px each in
+   the 532 px track a 1280 window leaves, so they sit on ONE line at the
+   shared 96 and are pinned there below.
+
+   The weapons are two-word names with a floor near 106 px, and six of those
+   is 636 against 532 — so the row has to break, and the only question the
+   basis answers is WHERE. At 96 it broke 5 + 1, which put one button alone
+   on a line at the full width of the column, and that is the one break that
+   reads as a mistake rather than as a layout. 150 is wide enough that four
+   cannot fit in 532 (4 x 150 + 18 = 618) and narrow enough that three
+   always can.
+
+   **The measured answer is 3 + 3 up to 1440 and 4 + 2 from 1920 on**, and
+   the second half of that is not a wide-window bonus — the button track
+   CAPS at 754 px, so six never sit on one line however big the window is.
+   Both are layouts; neither strands one. A seventh weapon would land
+   3 + 3 + 1 at 1280, so **measure the break when one is added** rather than
+   trusting this number to keep being right. */
 #loadout .lo-opts { display: flex; flex-wrap: wrap; gap: 6px; }
 #loadout button.lo-opt {
   font: inherit;
-  flex: 1 1 96px;
+  flex: 1 1 150px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -338,6 +353,10 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+/* The optic row keeps the basis the weapon row grew out of — see the block
+   above. One short word each, so six of them still measure inside a 1280
+   panel's track and a wider basis would break a row that does not need to. */
+#loadout button.lo-opt.lo-optic { flex-basis: 96px; }
 /* The figures under each name — the magnification as a lens is marked,
    and the weapon's damage, rate and fire mode. Tabular so the buttons
    line their numbers up rather than shuffling by a pixel each. */
@@ -582,15 +601,16 @@
   /* One point off the name and twelve off the basis, and between them they
      buy a whole LINE. Where a flex row breaks is decided by the BASIS, not
      by what the buttons could be squeezed to — the line is filled before
-     anything is allowed to shrink — so 96 puts only two of these on a 290 px
-     row and the five weapons land as 2 + 2 + 1. At 84 they land as 3 + 2 and
-     each slot costs two rows instead of three, which is the difference
-     between the Back button being on this screen and being under it. */
+     anything is allowed to shrink — so the ordinary basis puts only two of
+     these on a 290 px row and the weapons land in threes. At 84 they land
+     3 + 3 and each slot costs two rows instead of three, which is the
+     difference between the Back button being on this screen and being under
+     it. */
   #loadout .lo-detail { padding: 6px 12px; }
   #loadout .lo-stats { gap: 3px; }
 }
 /* And the same button sizing wherever the PANEL is narrow, which is the other
-   way to arrive at five buttons that will not sit on a line: `--panel` is a
+   way to arrive at buttons that will not sit on a line: `--panel` is a
    fraction (46% — see the top of this file, it is welded to where the
    turntable is back-projected to), so a portrait phone hands this column
    190 px however tall the window is. Keyed on width rather than folded into
@@ -602,17 +622,26 @@
      in a column this narrow it is a second line of head bought for nothing. */
   #loadout .ui-meta { display: none; }
   #loadout button.lo-opt { flex-basis: 84px; min-height: 34px; padding: 6px 8px; }
-  /* The optic row, squeezed to whatever its longest word is. A panel this
-     narrow is 338 px of button track, and five optics at the ordinary basis
-     need 364 — so the row broke 3 + 2 and cost forty pixels of a viewport that
-     has to end in a Back button. Four off the gap and the basis down to the
-     words themselves is what puts all five back on one line; the weapon row
-     above keeps its own basis, because two-word names are why that number is
-     what it is. The finish grid needs none of this: a swatch has no word in it
-     to be squeezed below, so eight columns hold at any width the panel takes.
-   */
+  /* The optic row, and it USED to be squeezable onto one line. A panel this
+     narrow is 338 px of button track; at five optics, four off the gap and the
+     basis down to the words themselves put them all on one row and bought back
+     forty pixels of a viewport that has to end in a Back button.
+
+     **Six will not fit at any basis and that is arithmetic, not tuning.** The
+     shortest name here floors a button near 58 px at this type size, so six of
+     them plus five gaps is 368 against 338 — the basis cannot buy a line that
+     does not exist. Left at 60 the row therefore broke 5 + 1, which is the
+     stranded button the block at the top of this file exists to avoid, so 90
+     is what it takes instead: four cannot fit (4 x 90 + 12 = 372) and three
+     always can, and the row lands 3 + 3. The extra row costs height rather
+     than reachability, because `.lo-panel` scrolls at every height now.
+
+     The weapon row above keeps its own basis, because two-word names are why
+     that number is what it is. The finish grid needs none of this: a swatch has
+     no word in it to be squeezed below, so eight columns hold at any width the
+     panel takes. */
   #loadout .lo-opts { gap: 4px; }
-  #loadout button.lo-opt.lo-optic { flex-basis: 60px; }
+  #loadout button.lo-opt.lo-optic { flex-basis: 90px; }
   #loadout button.lo-opt i { display: none; }
   #loadout button.lo-opt b { font-size: 11px; }
 }

@@ -124,4 +124,43 @@ export const sights = {
     eyeRelief: 0.17,
     adsSpeedMult: 0.75,
   },
+  /**
+   * A 6x telescopic sight with a floating dot in a fine crosshair: the longest
+   * reach on offer, and the last entry in this table for the reason the table
+   * is written in this order.
+   *
+   * At 6x a man at 300 m subtends what a man at 50 m does through the irons,
+   * which is the whole of what it buys — and the whole of what it costs is
+   * that everything else is gone. The aimed field is 9.8 deg against the 3.5x
+   * scope's 16.7, so a second target is not merely off-centre, it is outside
+   * the tube; and a picture magnified six times is a HAND magnified six times,
+   * which is why `swayMult` on the weapon this was built for is the lowest in
+   * the game. Bring it up in a room and you are looking at a wall.
+   *
+   * **Its `eyeRelief` is the longest in the table and that is a constraint
+   * rather than a style.** The aimed stand-off is `eyeRelief * zoomComp` and
+   * `zoomComp` falls as the magnification rises (`viewmodel.adsMagReference` /
+   * 6 = 0.267 here, against the 3.5x's 0.457), so the same 0.17 the scope uses
+   * would put the eyepiece 0.045 m from the camera — INSIDE `CameraSystem`'s
+   * 0.05 near plane, which clips the ocular open and turns the tube into a
+   * hole. At 0.22 the eyepiece sits at 0.0587 m — measured, not derived — with
+   * the geometry behind the sight centre clearing the plane by a comfortable
+   * margin. Anything that raises the magnification without raising this breaks
+   * the picture silently.
+   *
+   * The long relief is also what makes the OPTIC the biggest thing in the kit:
+   * every dimension in `optics.ts` is measured against `eyeDistance`, so an eye
+   * held further back buys the same angular picture on a larger sight. That is
+   * the honest way round — this is the one optic that should look like it
+   * weighs something.
+   */
+  longScope: {
+    name: "Long Scope",
+    magnification: 6,
+    /** See the entry above: this is the near plane's number, not a taste. */
+    eyeRelief: 0.22,
+    /** The slowest optic here by a distance, and the pair with the sniper's own
+     *  0.5 is the slowest thing in the game into the shoulder. */
+    adsSpeedMult: 0.62,
+  },
 } as const;

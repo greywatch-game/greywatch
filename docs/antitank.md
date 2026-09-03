@@ -341,6 +341,14 @@ Five things are load-bearing:
   it: the consequence is movement, which is too far from this table to leave to
   a default. Its counterpart at the model's end is `WeaponParts.warhead` — one
   says the cooldown is a load, the other draws it.
+
+  **`CONFIG.weapons[id].boltCycle` is the same flag on the other table**, and
+  the pair is the pattern rather than a coincidence: a fire cooldown may be a
+  RULE or a GESTURE, only the item knows which, and the weapon that says so also
+  provides the part that moves (`WeaponParts.bolt` there, `warhead` here). See
+  [`weapons.md`](weapons.md) — the bolt cycle is this mechanism reached from the
+  primary slot, and between the two of them they say why a wait with nothing on
+  screen to be is a wait a player reads as arbitrary.
 - **A THROW takes the round with the hand.** The throwing hand is the support
   hand, so the arm is switched off for the gesture — and a round left drawn is
   a rocket hanging in mid-air with nothing holding it. The magazine next door

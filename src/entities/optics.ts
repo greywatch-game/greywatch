@@ -1,14 +1,13 @@
 /**
- * optics.ts — The three fittable sights, built onto whatever weapon asked for
- * them.
- * Owns: the geometry of the irons, the holo and the scope, and the eye
- * reference each one reports. Owns nothing about what a sight DOES — that is
- * `sights.ts`, from `CONFIG.sights`.
+ * optics.ts — Every fittable sight, built onto whatever weapon asked for it.
+ * Owns: the geometry of the irons, the two dots, the prism and the two scopes,
+ * and the eye reference each one reports. Owns nothing about what a sight DOES
+ * — that is `sights.ts`, from `CONFIG.sights`.
  *
  * Shared by every weapon with a rail on purpose: an optic is a thing bolted to
- * one, and all four primaries have one. Duplicating these builders per weapon
- * would be three more places for the eye reference to drift, and the eye
- * reference is the number ADS derives the whole aimed pose from.
+ * one, and every primary has one. Duplicating these builders per weapon would
+ * be a place per weapon for the eye reference to drift, and the eye reference
+ * is the number ADS derives the whole aimed pose from.
  *
  * Everything here is expressed against the weapon's own `OpticMount` — the
  * height of its rail and where along it the sight sits — so the same optic
@@ -91,10 +90,21 @@ const WIN_RISE = 0.078;
 const SCOPE_RISE = 0.1;
 const REFLEX_RISE = 0.072;
 const PRISM_RISE = 0.096;
+/**
+ * The 6x's, and it is the ONE rise here the rail does not decide — see
+ * `LONG_CONE`. What sets it is the objective bell's own outer radius: the
+ * biggest tube in the kit has to stand high enough for the fattest part of it
+ * to clear the receiver, and at 0.0566 of radius that is the number this is
+ * solving. The cone clears the rail with 0.023 to spare as a side effect.
+ */
+const LONG_RISE = 0.098;
 
 /**
  * The far end of the longest rail any weapon here offers, as a depth past the
- * optic's own mount — the DMR's, which runs to z = 0.57 off a `mountZ` of 0.02.
+ * optic's own mount — the DMR's and the sniper's, both of which run to z = 0.57
+ * off a `mountZ` of 0.02. It is a bound on the RAIL and not on the weapon: the
+ * sniper is a quarter longer than the DMR and stops its rail in the same place,
+ * because past this every optic's cone is over barrel rather than over ribs.
  *
  * This is the number every rise above is really solving against, and it was
  * worked out by hand three times before it was written down: a sight's view
@@ -109,6 +119,12 @@ const PRISM_RISE = 0.096;
  *
  * and the margin left over is how much daylight there is under the picture.
  * Break it and the far ribs of the rail sit in the bottom of the sight.
+ *
+ * **It is an inequality and not an equation, and past about 4x it stops
+ * binding.** A higher magnification is a narrower aimed FOV, so the same
+ * angular cone fills more of the screen — and the 6x's cone is chosen against
+ * the FRAME instead, with this satisfied comfortably as a consequence. See
+ * `LONG_CONE`, which is the one number here solved the other way round.
  */
 const RAIL_REACH = 0.55;
 
@@ -251,6 +267,58 @@ const prismBore = (dz: number): number =>
   2 * PRISM_CONE * (eyeDistance("prism") + dz - PRISM_OCULAR_DZ);
 
 /**
+ * The 6x long scope. Built exactly as the 3.5x is — a stepped tube
+ * circumscribing the view cone, in two rings — and the one thing that is
+ * genuinely different about it is which constraint the cone answers to.
+ *
+ * **At 6x the picture is bounded by the SCREEN and not by the rail, which
+ * inverts the rule the other two tube optics are solved under.** `PRISM_CONE`
+ * is derived rather than chosen because the prism's rise is what its cone can
+ * afford; run the same solve here and it comes out at 0.0967, which is 1.13 of
+ * the screen's own half-height at this magnification — a sight picture with no
+ * rim in it at all, which is not a scope, it is the absence of one. A higher
+ * magnification is a NARROWER aimed FOV (`sights.ts` derives it), so the same
+ * angular cone fills more of the frame, and past about 4x the rail stops being
+ * the thing in the way. So this number is authored against the frame and the
+ * rise is what follows, rather than the other way round.
+ *
+ * 0.072 is 0.84 of the screen's half-height at 6x, against the 3.5x scope's
+ * 0.674 and the prism's 0.506 — the reading being that a bigger, heavier optic
+ * shows you MORE of the frame, not less, and that the tunnel is the 3.5x's
+ * character rather than a tax every scope owes. The daylight left under it
+ * against `RAIL_REACH` is 0.023, which is the most of any optic here.
+ */
+const LONG_CONE = 0.072;
+/**
+ * Thicker than the scope's 0.007, and it is the one wall in this file that is
+ * about weight rather than about the picture. Every dimension here is measured
+ * against `eyeDistance`, which for this optic is the longest in the table
+ * (0.355 weapon units against the scope's 0.274) — so a wall carried over at
+ * the scope's thickness would come out proportionally THINNER on the largest
+ * sight in the kit, which reads as a bigger tube made of foil.
+ */
+const LONG_WALL = 0.008;
+const LONG_SECTIONS = 3;
+/**
+ * Ocular and objective, relative to `mountZ` — 0.32 of body, the longest thing
+ * bolted to any weapon here and 28% longer than the 3.5x's.
+ *
+ * The rear end is bounded by the same thing the scope's is: on the rifle this
+ * puts the ocular at z = -0.12 and the objective at 0.20, which stops just
+ * short of that weapon's charging handle at 0.22. It clears every handle in
+ * the kit by height anyway — they all sit at or under y = 0.058 and the tube's
+ * underside is 0.04 above a rail that is itself higher than that — but the
+ * length is authored to the tighter of the two constraints, because a handle
+ * moved up on some future weapon would otherwise put a knob inside the bell.
+ */
+const LONG_OCULAR_DZ = -0.14;
+const LONG_OBJECTIVE_DZ = 0.18;
+
+/** `scopeBore`'s twin again: the clear bore a 6x section ending at `dz` carries. */
+const longBore = (dz: number): number =>
+  2 * LONG_CONE * (eyeDistance("longScope") + dz - LONG_OCULAR_DZ);
+
+/**
  * The height a weapon's own geometry must stay UNDER at depth `z`, if it is not
  * to eat into the iron sight picture.
  *
@@ -295,6 +363,7 @@ export function buildOptics(
   const scopeY = mount.railTop + SCOPE_RISE;
   const reflexY = mount.railTop + REFLEX_RISE;
   const prismY = mount.railTop + PRISM_RISE;
+  const longY = mount.railTop + LONG_RISE;
   const winZ = mount.mountZ;
 
   /**
@@ -824,12 +893,177 @@ export function buildOptics(
     return new Vector3(0, scopeY, ocularZ);
   };
 
+  /**
+   * The 6x long scope: the 3.5x one size up and one constraint different, with
+   * a floating dot in a fine crosshair and two holdover ticks under it.
+   *
+   * Everything structural is `buildScope`'s — a stepped tube that circumscribes
+   * its own view cone, two clamp rings, an eyepiece and a bell — and what is
+   * added is the two things a long-range optic has that a general-purpose one
+   * does not: a SUNSHADE past the objective, and turrets tall enough to be
+   * turned rather than capped and forgotten. Both are sized OUTWARD from their
+   * own section's outer radius, so neither can reach into the picture.
+   */
+  const buildLongScope = (node: TransformNode): Vector3 => {
+    // The rear leaf only, exactly as the scope and the prism do: at this rise a
+    // standing front leaf would be a pillar in the middle of the one sight
+    // picture in the game that has no field to spare.
+    foldedIrons(false);
+    const ocularZ = winZ + LONG_OCULAR_DZ;
+    const objectiveZ = winZ + LONG_OBJECTIVE_DZ;
+    const seg = (LONG_OBJECTIVE_DZ - LONG_OCULAR_DZ) / LONG_SECTIONS;
+    /** The radius a section carries — its FAR rim's. See `outerAt` in the scope. */
+    const outerAt = (dz: number): number => {
+      const i = Math.min(
+        LONG_SECTIONS,
+        Math.max(1, Math.ceil((dz - LONG_OCULAR_DZ) / seg)),
+      );
+      return longBore(LONG_OCULAR_DZ + i * seg) / 2 + LONG_WALL;
+    };
+    for (let i = 0; i < LONG_SECTIONS; i++) {
+      const far = LONG_OCULAR_DZ + seg * (i + 1);
+      b.shell(
+        "longTube",
+        POLYMER,
+        longBore(far),
+        LONG_WALL,
+        seg,
+        longY,
+        winZ + far - seg / 2,
+      );
+    }
+    const rOcular = outerAt(LONG_OCULAR_DZ);
+    const rObjective = outerAt(LONG_OBJECTIVE_DZ);
+    // Eyepiece, diopter ring and a rubber cup. The cup is the prism's part for
+    // the opposite reason: there it stands for an eye box a shooter has to
+    // find, and here it stands for the longest relief in the table — a cup is
+    // what says the weapon is meant to be fired from behind the glass rather
+    // than pressed against it.
+    b.shell("longOcular", POLYMER, rOcular * 2, 0.013, 0.016, longY, ocularZ - 0.004);
+    b.shell("longDiopter", METAL, rOcular * 2, 0.009, 0.011, longY, ocularZ + 0.028, 10);
+    b.shell("longCup", RUBBER, rOcular * 2, 0.006, 0.014, longY, ocularZ - 0.016);
+    b.shell("longBell", POLYMER, rObjective * 2, 0.01, 0.028, longY, objectiveZ + 0.013);
+    // The sunshade: a plain tube standing off the BELL's outer radius and
+    // reaching forward past it. It is the one part of this sight that is not
+    // about what the shooter sees through it — it is about what the sun does to
+    // the glass — and it is the cue that reads at a glance as an optic set up
+    // for one shot at long range.
+    b.shell(
+      "longShade",
+      POLYMER,
+      rObjective * 2 + 0.004,
+      0.006,
+      0.05,
+      longY,
+      objectiveZ + 0.052,
+    );
+    // Two clamp rings, straddling the mount. Taller bases than the scope's: the
+    // bell is the widest thing in the kit and the tube has to stand clear of
+    // the receiver at its fattest, not at its thinnest.
+    const baseBottom = mount.railTop - 0.003;
+    for (const dz of [-0.05, 0.075] as const) {
+      const rRing = outerAt(dz);
+      const baseTop = longY - rRing - 0.008;
+      b.box(
+        "longRingBase",
+        METAL,
+        0.046,
+        baseTop - baseBottom,
+        0.028,
+        0,
+        (baseBottom + baseTop) / 2,
+        winZ + dz,
+      );
+      b.shell("longRing", METAL, rRing * 2, 0.008, 0.024, longY, winZ + dz, 10);
+    }
+    // Exposed target turrets — tall and knurled, which is the one place this
+    // differs from the scope in KIND rather than in size. A capped turret is a
+    // sight zeroed once and left; these are the marks a shooter dials a drop
+    // into between shots, which is exactly the tempo the weapon this was drawn
+    // for is fired at.
+    const turretZ = winZ + 0.012;
+    const rTurret = outerAt(0.012);
+    b.pin("longElev", METAL, 0.03, 0.026, 0, longY + rTurret + 0.013, turretZ, "y");
+    b.pin("longElevCap", METAL, 0.022, 0.007, 0, longY + rTurret + 0.0295, turretZ, "y");
+    b.pin("longWind", METAL, 0.03, 0.026, rTurret + 0.013, longY, turretZ, "x");
+    b.pin("longFocus", METAL, 0.034, 0.016, -(rTurret + 0.008), longY, turretZ, "x");
+    // A throw lever on the ocular: the magnification ring is the one control on
+    // this sight a shooter reaches for with the weapon still shouldered.
+    b.box("longLever", METAL, 0.012, 0.03, 0.014, 0.028, longY + 0.018, ocularZ + 0.028);
+    b.merge("longScope", node);
+
+    // The reticle: a fine full crosshair, a floating centre dot, and two
+    // holdover ticks under it.
+    //
+    // It is the prism's argument answered in the other direction. There, marks
+    // meant to frame a target COVER it, because at 2.5x a body across the
+    // square is a few pixels; here a body at 300 m subtends what one at 50 m
+    // does through the irons, so there is room around it for the marks to mean
+    // something. The arms are thinner than the scope's for the same reason —
+    // magnification scales the reticle along with everything else, and a
+    // duplex's weight at 6x is a fence across the picture.
+    const retZ = objectiveZ - 0.075;
+    const clearR = LONG_CONE * (eyeDistance("longScope") + retZ - ocularZ);
+    const armIn = 0.005;
+    const armOut = clearR - 0.004;
+    const armLen = armOut - armIn;
+    const armMid = (armIn + armOut) / 2;
+    const bars: Mesh[] = [];
+    for (const side of [-1, 1] as const) {
+      const v = MeshBuilder.CreateBox(
+        `${prefix}_longRetV`,
+        { width: 0.0012, height: armLen, depth: 0.0012 },
+        b.scene,
+      );
+      v.position.set(0, longY + side * armMid, retZ);
+      bars.push(v);
+      const h = MeshBuilder.CreateBox(
+        `${prefix}_longRetH`,
+        { width: armLen, height: 0.0012, depth: 0.0012 },
+        b.scene,
+      );
+      h.position.set(side * armMid, longY, retZ);
+      bars.push(h);
+    }
+    // The holdovers, on the lower arm only — a drop is one direction. Spaced as
+    // a fraction of the CONE rather than as a length, exactly as the prism's
+    // caret is sized, so they keep their place against the picture if the cone
+    // is ever re-solved.
+    for (let i = 1; i <= 2; i++) {
+      const tick = MeshBuilder.CreateBox(
+        `${prefix}_longRetTick`,
+        { width: clearR * 0.13, height: 0.0012, depth: 0.0012 },
+        b.scene,
+      );
+      tick.position.set(0, longY - clearR * 0.3 * i, retZ);
+      bars.push(tick);
+    }
+    const centre = MeshBuilder.CreateSphere(
+      `${prefix}_longRetDot`,
+      { diameter: 0.0022, segments: 6 },
+      b.scene,
+    );
+    centre.position.set(0, longY, retZ);
+    bars.push(centre);
+    const reticle = Mesh.MergeMeshes(bars, true, true);
+    if (reticle) {
+      reticle.name = `${prefix}_longReticle`;
+      b.lit(reticle, node);
+    }
+
+    // The ocular rim, as on the scope: a sight's eye relief is measured to the
+    // glass the eye goes behind, and here it is the number the camera's near
+    // plane is arguing with — see `CONFIG.sights.longScope.eyeRelief`.
+    return new Vector3(0, longY, ocularZ);
+  };
+
   const BUILDERS: Record<SightId, (node: TransformNode) => Vector3> = {
     reflex: buildReflex,
     iron: buildIron,
     holo: buildHolo,
     prism: buildPrism,
     scope: buildScope,
+    longScope: buildLongScope,
   };
 
   const sights = {} as Record<SightId, SightAssembly>;

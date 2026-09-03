@@ -1,9 +1,9 @@
 /**
  * DmrModel.ts — Builds the low-poly semi-automatic marksman rifle from
- * primitives, and hangs the same three optics off its rail.
- * Returns WeaponParts, exactly as RifleModel and SmgModel do: all three are
- * interchangeable to everything above them, which is what lets `ViewModel`
- * carry any of them.
+ * primitives, and hangs the same optics off its rail.
+ * Returns WeaponParts, exactly as RifleModel and SmgModel do: every builder is
+ * interchangeable to everything above it, which is what lets `ViewModel` carry
+ * any of them.
  * Invariants: assembled at the origin with the root at identity and merged
  * before it is moved — `weaponKit.ts` owns that contract and the primitives.
  * The optics are `optics.ts`'s, built against `MOUNT` rather than re-tuned.

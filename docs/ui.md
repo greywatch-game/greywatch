@@ -976,11 +976,33 @@ and drawn in `VIEWMODEL_GROUP`.
 - **A third row of buttons is 45 px of panel, and the panel is what paid for
   it.** Two pixels off each row's padding and each gap, a smaller flex BASIS for
   the optic row, whose names are one short word each (68 against the weapon
-  row's 96, which is sized for "SUBMACHINE GUN"), and a row gap on the detail card
+  row's, which is sized for "SUBMACHINE GUN"), and a row gap on the detail card
   stated apart from its column gap — only one of the two is ever spent, and a
   single number was charging the stacked case for a gutter it does not have.
   Between them the screen fits 1280x720 again, and a landscape phone fits the
-  five optics on one line where it used to break them 3 + 2.
+  optics on one line where it used to break them 3 + 2.
+- **The two option rows have different BASES now, and the basis is what tells a
+  row where to break rather than whether it may.** The optics are one short word
+  each and six of them measure 84 px in the 532 px track a 1280 window leaves,
+  so they sit on one line at 96. The weapons are two-word names with a
+  min-content floor near 106, and six of those cannot: at 96 the row broke
+  **5 + 1**, which put one button alone on a line at the full width of the
+  column — the one break that reads as a mistake rather than as a layout. At
+  150 four cannot fit in that track and three always can. Measured: **3 + 3 at
+  1280 and 1440, 4 + 2 from 1920 on** — and the second half of that is not a
+  wide-window bonus, because the button track caps at 754 px and six never sit
+  on one line however big the window is.
+- **On a landscape phone the sixth optic could not be squeezed on at all**, and
+  that is arithmetic rather than tuning: 338 px of track, a floor near 58 px per
+  button at that type size, and 6 x 58 + 5 x 4 = 368. The basis cannot buy a
+  line that does not exist, so the narrow query stops trying — 90 puts the
+  optics on 3 + 3 rather than leaving them at 5 + 1, and the extra row costs
+  height rather than reachability now that `.lo-panel` scrolls at every height.
+- **MEASURE the break when a weapon or an optic is added.** The row cannot
+  overflow — it wraps — but it can strand, and a stranded button is invisible to
+  a typecheck, to a review of the diff, and to anyone not looking at that
+  viewport. Both regressions above were found that way and neither would have
+  been found any other way.
 - **`.lo-panel` scrolls at every height now, and centres SAFELY.** It used to do
   both only below 560 px, so between there and a full desktop a window that ran
   out of room simply put the footer under the bottom edge with no way to reach

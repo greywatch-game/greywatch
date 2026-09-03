@@ -1,6 +1,6 @@
 /**
  * LmgModel.ts — Builds the low-poly belt-fed light machine gun from
- * primitives, and hangs the same five optics off its rail.
+ * primitives, and hangs the same optics off its rail.
  * Returns WeaponParts, exactly as the other four builders do: all of them are
  * interchangeable to everything above them, which is what lets `ViewModel`
  * carry any one.

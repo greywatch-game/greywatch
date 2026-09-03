@@ -145,6 +145,18 @@ export interface WeaponSetup {
   burst: number;
   /** Seconds after a burst's last round before the next may leave. */
   burstCycle: number;
+  /**
+   * Whether this weapon's fire cooldown is a GESTURE — a bolt worked by hand
+   * between rounds — rather than an action that cycles itself.
+   *
+   * It changes no rule: `shotInterval` already stops the trigger and the round
+   * is unaffected. What it decides is that `ViewModel` plays the cycle over
+   * that clock and takes the sight picture away while it runs, which on the one
+   * weapon that sets it is the entire cost of the weapon. See
+   * `Player.cycleProgress`, and `CONFIG.weapons.rifle.boltCycle` for the
+   * argument.
+   */
+  boltCycle: boolean;
   magSize: number;
   reloadTime: number;
   spreadHip: number;
@@ -209,6 +221,7 @@ export function weaponSetup(id: WeaponId): WeaponSetup {
     semiAuto: w.semiAuto,
     burst: w.burst,
     burstCycle: w.burstCycle,
+    boltCycle: w.boltCycle,
     magSize: w.magSize,
     reloadTime: w.reloadTime,
     spreadHip: w.spreadHip,

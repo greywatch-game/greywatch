@@ -4343,6 +4343,15 @@ export class Game {
         lc.muzzleLife,
       );
       this.sfx.shoot(this.player.report);
+      // …and, on a bolt gun, the action being worked, laid out across the fire
+      // cooldown this shot has just set — which on that weapon IS the cycle,
+      // and which `ViewModel` is playing the gesture off at the same moment.
+      // Zero on everything else, and zero on the round that empties the
+      // magazine: `tryShot` has already started the reload and `Sfx.reload` is
+      // the sound of that. Exactly the shape `rpgLoad` is raised in, one
+      // weapon table over.
+      const cycle = this.player.cycleTime;
+      if (cycle > 0) this.sfx.boltCycle(cycle, this.player.report);
       const haptic = CONFIG.rumble;
       this.input.rumble(haptic.shotStrong, haptic.shotWeak, haptic.shotMs);
       if (shot.target) {

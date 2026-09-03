@@ -21,14 +21,15 @@
  * beside `RifleModel` is the whole job.
  *
  * They all fire the same hitscan round through the same `CombatSystem.fire`,
- * and each takes any of the three optics below — an optic is bolted to a
- * rail and every weapon here has one. What separates them is the trade this
- * table spells out: the rifle hits hard enough to kill in four and holds a
- * line across the valley, the SMG empties a bigger magazine half again as
- * fast and cannot be trusted past the far side of a street, the DMR kills in
- * two and gives you one trigger pull at a time to do it with, the carbine
- * spends three rounds on every pull whether or not it needed them, and the
- * LMG is the one that does not have to stop.
+ * and each takes any of the optics below — an optic is bolted to a rail and
+ * every weapon here has one. What separates them is the trade this table
+ * spells out: the rifle hits hard enough to kill in four and holds a line
+ * across the valley, the SMG empties a bigger magazine half again as fast and
+ * cannot be trusted past the far side of a street, the DMR kills in two and
+ * gives you one trigger pull at a time to do it with, the carbine spends three
+ * rounds on every pull whether or not it needed them, the LMG is the one that
+ * does not have to stop, and the sniper kills in ONE and then takes the sight
+ * picture away for a second and a quarter while you find out whether it did.
  *
  * **Every time-to-kill quoted below is the CLOSE one**, and that is a change
  * of meaning rather than a caveat. `damage` is what a round does at or inside
@@ -40,28 +41,37 @@
  * round that has stopped existing.
  *
  * Read down the `damageFar` column and the kit says something it could not say
- * before: the DMR alone is exempt, the LMG loses damage per second and never a
- * round, the carbine's burst stops being a kill at a stated distance, and the
- * SMG falls off hardest and earliest. Two of those are rewards and two are
- * bills, which is the same balance the close figures strike.
+ * before: the DMR and the sniper are exempt, the LMG loses damage per second
+ * and never a round, the carbine's burst stops being a kill at a stated
+ * distance, and the SMG falls off hardest and earliest. Three of those are
+ * rewards and two are bills, which is the same balance the close figures
+ * strike. The two exemptions are not the same exemption: on the DMR it is a
+ * reward the weapon's rate and recoil have paid for, and on the sniper it is
+ * the definition — a rifle that stopped killing in one at range would have
+ * nothing left that the cycle was worth paying for.
  *
  * The time to kill is deliberately close for the three automatics (rifle 4
  * rounds at 8/s = 0.375 s, SMG 6 at 13/s = 0.385 s, LMG 5 at 10/s = 0.4 s).
  * What you are choosing between them is not damage per second — the rifle and
  * the LMG deliver the identical 240 — it is how much of the screen a burst
  * covers, how far away it still means anything, and how long you may keep
- * firing it. The other two step outside that at opposite ends: the DMR is
- * 2 rounds at 3/s = 0.333 s, faster than any of them, and it pays for it with
- * the error budget — a missed rifle round costs 0.125 s and a missed DMR round
- * costs 0.333 — while the carbine's three rounds leave in 0.1 s and cost 0.4 s
- * of nothing at all afterwards.
+ * firing it. The other three step outside that at three different ends: the
+ * DMR is 2 rounds at 3/s = 0.333 s, faster than any of them, and it pays for
+ * it with the error budget — a missed rifle round costs 0.125 s and a missed
+ * DMR round costs 0.333; the carbine's three rounds leave in 0.1 s and cost
+ * 0.4 s of nothing at all afterwards; and the sniper's single round is 0 s,
+ * which is not a time to kill at all — the whole of that weapon is what a MISS
+ * costs, and a missed one is 1.25 s during which you cannot see the man you
+ * missed.
  *
  * `semiAuto` and `burst` are two different questions and the carbine is what
  * proves it: `semiAuto` asks whether the trigger has to come UP between pulls
- * and `burst` asks what one pull SPENDS. Three of the four answer only the
- * first; the carbine answers both, and nothing here answers `burst` without
- * also answering `semiAuto`, because a burst weapon that fired on a held
- * trigger would be an automatic with a stutter.
+ * and `burst` asks what one pull SPENDS. Every weapon here but the carbine
+ * answers only the first; the carbine answers both, and nothing here answers
+ * `burst` without also answering `semiAuto`, because a burst weapon that fired
+ * on a held trigger would be an automatic with a stutter. `boltCycle` is a
+ * THIRD question over the same trigger and is asked of the frame rather than
+ * of the rules — see the field on the rifle.
  *
  * `recoilMult` and `bloomMult` SCALE `CONFIG.recoil` rather than restating
  * it: the shape of recoil — how much springs back, how fast, where it is
@@ -107,6 +117,24 @@ export const weapons = {
      * cost of the mode.
      */
     burstCycle: 0,
+    /**
+     * Whether this weapon's fire cooldown is a GESTURE — a bolt worked by hand
+     * between rounds, rather than an action that cycles itself.
+     *
+     * **It declares nothing about the numbers and everything about the frame.**
+     * `shotInterval` already stops the trigger; what this says is that the wait
+     * is something the shooter DOES, so `ViewModel` plays `CONFIG.viewmodel
+     * .cycle` over it, the handle travels, and the sight picture is taken away
+     * and given back. That last part is the whole cost of a bolt gun and the
+     * reason this is not simply a low `fireRate`: a weapon that kept its scope
+     * on the target through the cycle would be a slow DMR, and what a
+     * bolt-action actually trades is knowing where your target went.
+     *
+     * Read exactly as `equipment.muzzleLoad` is and for the same reason — both
+     * AT items run a cooldown and only one of them is a gesture. See
+     * `Player.cycleProgress`, which is this clock read as a phase.
+     */
+    boltCycle: false,
     magSize: 24,
     reloadTime: 1.4,
     /** Bullet spread half-angle (radians). */
@@ -315,6 +343,7 @@ export const weapons = {
     burst: 3,
     /** The bill for the mode, and the only thing holding it in the kit. */
     burstCycle: 0.4,
+    boltCycle: false,
     /** Seven bursts, so seven kills — one more than the rifle's magazine. */
     magSize: 21,
     reloadTime: 1.45,
@@ -397,6 +426,7 @@ export const weapons = {
     semiAuto: false,
     burst: 1,
     burstCycle: 0,
+    boltCycle: false,
     magSize: 34,
     reloadTime: 1.15,
     spreadHip: 0.07,
@@ -486,6 +516,7 @@ export const weapons = {
     semiAuto: true,
     burst: 1,
     burstCycle: 0,
+    boltCycle: false,
     magSize: 12,
     reloadTime: 1.9,
     spreadHip: 0.09,
@@ -548,6 +579,154 @@ export const weapons = {
     },
   },
   /**
+   * The bolt-action sniper rifle: one round kills, and then you are out of the
+   * fight for a second and a quarter.
+   *
+   * It is the only weapon here that does not need a second round, and the only
+   * one that cannot have one. 100 against 100 HP is a kill anywhere on a man at
+   * any range the round reaches — no fall-off, no head zone required, no second
+   * shot to ride the recoil back down for — which is a bigger claim than
+   * anything else in this table makes. What pays for it is `boltCycle`: the
+   * 1.25 s between rounds is not a rate, it is a GESTURE, and `ViewModel` takes
+   * the sight picture away for most of it. So the cost of a sniper rifle is not
+   * the wait, it is that you do not see what your target did next.
+   *
+   * **Read it against the DMR, which is the weapon it is not.** Two rounds
+   * anywhere at 3/s is 0.333 s and the scope stays on the target the whole
+   * time — a marksman rifle is a weapon you CORRECT with. One round at 0.8/s is
+   * a weapon you commit with: miss, and the man you missed has 1.25 s and your
+   * muzzle flash. That is why this is 6x glass and 0.14 from the hip rather
+   * than a DMR with the numbers turned up, and it is why `magSize` is 5 and the
+   * reload is the second longest in the kit — every part of it is asking the
+   * same question, which is whether you are sure.
+   *
+   * It has no answer at all inside a room. `spreadHip` 0.14 is over three times
+   * the rifle's and the worst here by a distance, `drawTime` 1.0 and
+   * `adsSpeedMult` 0.5 are both the slowest, and the cycle means a man who
+   * survives the first round is on you before the second one exists. The
+   * sidearm is the answer, exactly as it is for the LMG, and this is the weapon
+   * that needs it most.
+   */
+  sniper: {
+    name: "Sniper Rifle",
+    short: "Sniper",
+    /**
+     * 100 against 100 HP = ONE shot to kill, and it is the only one in the
+     * table. `combat.headshotMult` is therefore dead weight on this weapon —
+     * there is nothing for a head hit to upgrade — which is deliberate: a
+     * one-shot kill that had to be a head hit would be a weapon whose whole
+     * case rests on a 22 cm sphere at 200 m, and the cycle below is a cost
+     * that has to be worth paying on an ordinary shot at an ordinary body.
+     */
+    damage: 100,
+    /**
+     * Equal to `damage`, stated rather than absent exactly as the DMR's is —
+     * and here the exemption is not a reward, it is the definition. A rifle
+     * that stopped killing in one somewhere down the valley would be a rifle
+     * whose one advantage evaporates at precisely the distances it exists to
+     * be fired at, while nothing about its cost fell with it.
+     */
+    damageFar: 100,
+    falloffNear: 60,
+    falloffFar: 200,
+    /**
+     * 0.8/s — and this is the one row in the table where `fireRate` is not a
+     * ceiling on the trigger finger but the length of a gesture. 1.25 s is the
+     * bolt: lifted, drawn, pushed home and turned down. See `boltCycle`.
+     */
+    fireRate: 0.8,
+    semiAuto: true,
+    burst: 1,
+    burstCycle: 0,
+    /** The only true in this column, and see the rifle's entry for what it
+     *  buys. Everything else here is a consequence of it. */
+    boltCycle: true,
+    /** Five in a single-stack box, and no sixth up the spout. It is the
+     *  smallest magazine in the game by a factor of one and a half, and on a
+     *  weapon that kills with every round it is still five kills. */
+    magSize: 5,
+    /**
+     * 3 s — second only to the LMG's belt change, for a fifteenth of the
+     * ammunition. What it is priced on is not the magazine, which is a short
+     * single stack, but everything around it: coming off 6x glass, breaking a
+     * position that took time to take up, and getting back behind the same
+     * picture afterwards. It is also the number that says do not empty this —
+     * five rounds and a reload is 9.25 s of a round in which you have fired
+     * five times.
+     */
+    reloadTime: 3,
+    /**
+     * 0.14 — over three times the rifle's, and the worst here by half again on
+     * the LMG. It is not a penalty bolted on; it is the same fact as
+     * `spreadAds` below, which is that this weapon is a rest and a cheek and a
+     * held breath, and none of those is available to a man swinging it round a
+     * doorway.
+     */
+    spreadHip: 0.14,
+    /** 0.09 deg aimed: the tightest group in the game, tighter than the DMR's
+     *  by a third, because a round that kills wherever it lands has to land
+     *  where it was sent. */
+    spreadAds: 0.0016,
+    /**
+     * 300 m. Like the DMR's 180 this mostly buys the open lanes and the line on
+     * the stat chart — on most maps the fog wall is well inside it — but Sarab
+     * and Cinderhaven are 900 m and 1500 m across with 560 m of clear sight
+     * down one of them, and this is the first weapon in the table written
+     * knowing that.
+     */
+    range: 300,
+    /**
+     * The hardest kick here, and it costs nothing the weapon is not already
+     * paying: there is no second round close enough behind the first for a
+     * climb to compound, and the cycle takes the sight off the target before
+     * the spring has finished coming home either way.
+     */
+    recoilMult: 3.2,
+    /** Zero, on the DMR's argument and more so: one round every 1.25 s is not
+     *  a string, and a fixed drift would be an error to dial out on every pull. */
+    yawBias: 0,
+    bloomMult: 2.2,
+    /** The slowest into the shoulder, a hair under the LMG's. */
+    adsSpeedMult: 0.5,
+    /** The longest weapon in the game — a heavy barrel behind a full-length
+     *  stock — so it sits further out than anything else here. */
+    hipZ: 0.11,
+    hipY: 0,
+    hipYaw: 0,
+    /**
+     * The steadiest weapon in the game, and the magnification is why rather
+     * than the mass. Sway is angular, so the 6x glass this is built around
+     * multiplies it by six where the DMR's scope multiplies by three and a
+     * half: at the DMR's 0.7 the picture would wander half again as far across
+     * the screen as the DMR's does, on the one weapon that cannot correct.
+     * Crouched this is ~0.08 deg, which is the DMR's ~0.13 seen through the
+     * bigger optic — the same wander on screen, bought back.
+     */
+    swayMult: 0.42,
+    /** A second, flat. Nothing else here is slower to get into your hands, and
+     *  a weapon you cannot bring up in a hurry is one you have to have been
+     *  holding already. */
+    drawTime: 1,
+    /**
+     * The biggest charge in the game, and every column says so. `pitch` 0.6
+     * puts the chest thump near 32 Hz, `weight` and `tail` at 2 hand almost the
+     * whole shot to the valley, and `length` 2.1 is affordable because 0.8
+     * rounds a second is a report that has finished ringing long before the
+     * next one is decided on — the DMR's argument at half the rate.
+     *
+     * `snap` at 1.9 is the highest here for the DMR's reason one size up: a
+     * long heavy barrel behind a braked full-power round has the sharpest edge
+     * in the game AND the deepest body, and a rifle that was only deep would
+     * sound like something a long way off rather than the loudest thing on the
+     * map. `actionVol` 1.35 is the other half of the identity — a bolt worked
+     * by hand is heard, and it is the sound the player is waiting on.
+     */
+    report: {
+      pitch: 0.6, level: 1.35, snap: 1.9, weight: 2,
+      length: 2.1, tail: 2, actionPitch: 0.68, actionVol: 1.35,
+    },
+  },
+  /**
    * The LMG: belt-fed, and the only weapon here that does not have to stop.
    *
    * Every other primary is built around its magazine running out. Twenty-four
@@ -602,6 +781,7 @@ export const weapons = {
     semiAuto: false,
     burst: 1,
     burstCycle: 0,
+    boltCycle: false,
     /** Fifteen kills on one belt, against the rifle's six. The weapon. */
     magSize: 75,
     /** A belt box is not a magazine, and this is where it says so. */
@@ -702,6 +882,7 @@ export const weapons = {
     semiAuto: true,
     burst: 1,
     burstCycle: 0,
+    boltCycle: false,
     /** Seven in the magazine and one up the spout. */
     magSize: 8,
     reloadTime: 1.05,
@@ -772,8 +953,17 @@ export const combat = {
    * silly: the rifle and the pistol kill in two, the SMG in three, and the DMR
    * kills in ONE at any range — which is the reward its `semiAuto`, its 2.2
    * recoil multiplier and its exemption from fall-off have all been asking for.
-   * It is the only one-shot kill in the game and it costs a scope, a 3/s
-   * ceiling and a 22 cm target.
+   * It costs a scope, a 3/s ceiling and a 22 cm target.
+   *
+   * **The sniper is the one weapon this column does nothing for**, and that is
+   * a decision rather than an oversight. It already kills in one on the body,
+   * so there is nothing for a head hit to upgrade and the sphere is never
+   * tested — but the two one-shot kills are still different weapons, and the
+   * difference is exactly what the multiplier is: the DMR's is a 22 cm target
+   * you may take three times a second, and the sniper's is a man-sized one you
+   * may take once every second and a quarter. A one-shot kill that had to be a
+   * head hit AND cost a bolt cycle would be a weapon nobody could justify
+   * carrying.
    */
   headshotMult: 2,
 } as const;

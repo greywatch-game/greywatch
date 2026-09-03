@@ -4,7 +4,8 @@
  * builder returns.
  * Owns: the build accumulator (`weaponBuild`) and the `WeaponParts` contract.
  * Owns no geometry of its own — `RifleModel`, `CarbineModel`, `SmgModel`,
- * `LmgModel`, `DmrModel` and `PistolModel` are the builders, and `optics.ts`
+ * `LmgModel`, `DmrModel`, `SniperModel` and `PistolModel` are the builders,
+ * and `optics.ts`
  * is the seventh.
  *
  * Invariants:
@@ -231,6 +232,28 @@ export interface WeaponParts {
    * has nothing that comes out, which is what the mine does.
    */
   warhead?: TransformNode;
+  /**
+   * The BOLT, on a weapon whose action is worked by hand — under a node of its
+   * own so the cycle can lift it, draw it, push it home and turn it down.
+   *
+   * The third of these nodes and the only one that never leaves the weapon: a
+   * magazine is thrown away and a warhead flies off, and this travels a
+   * centimetre and comes back. So it is the one whose REST state is the only
+   * state anything but `ViewModel` may see, and the one that is not exclusive
+   * with the other two — a bolt gun has a magazine as well.
+   *
+   * **Its geometry must be built about the BORE**, because the cycle rotates
+   * this node about z to lift the handle and the node sits at the weapon's own
+   * origin. That is not a constraint the animation imposes on the model, it is
+   * how a bolt actually is: the bolt is in line with the barrel, and a model
+   * that puts the raceway somewhere else is wrong before it is animated.
+   *
+   * Optional for the reason the other two are, and today exactly one weapon
+   * sets it. A weapon that declares `boltCycle` without one still plays the
+   * gesture — the pose, the aim break and the two impulses are the weapon's
+   * and not the part's — it simply has nothing visible sliding in it.
+   */
+  bolt?: TransformNode;
   /** A rail's worth of optics, or the one sight this weapon was born with. */
   sights: WeaponSights;
   /**
