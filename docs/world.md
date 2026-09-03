@@ -1308,21 +1308,42 @@ shophouses' 7.8 and 11.6, the latter cut into one bay or two by the unit's own
 width — which a pattern cut at about a metre accounts for. The tower's bays are cut to the same rhythm for the look alone — nothing
 holds a range into them and nothing ever will.
 
-**Breaking a pane is five writes and one deferred rebuild.** The visual
+**Breaking a pane is five writes and nothing deferred.** The visual
 range collapses; `RayWorld.remove` takes the box out of both questions every
 ray asks, and `metadata.solid` is cleared beside it for the editor's own
 predicate; `checkCollisions` is cleared, which is the movement half; `ObstacleField.remove` takes it out of the sub-cell push-out the bots and
 the server's move validator both read; and `NavGrid.openBox` relinks the ground
-it was severing and floods walkability into whatever that opened. All of that is
-local and cheap.
+it was severing, floods walkability into whatever that opened, and relaxes the
+flow fields over the result. All of that is local and cheap.
 
-**What is deferred is the flow fields, and they are the only expensive part.**
-A field is a breadth-first sweep over every walkable surface; Coldharbour has
-183k of them and seven fields, measured at **4.7 ms each and 15.9 ms for the
-set** (headless, so inflated — the ranking is what to trust). `GlassSystem.update`
-rebuilds ONE PER FRAME and every break inside that window folds into the same
-pass. Bots keep steering on the field they have, which monotonicity guarantees
-is stale rather than wrong.
+**The flow fields used to be deferred, and the deferral was the wrong axis.** A
+field is a breadth-first sweep over every walkable surface, so `GlassSystem`
+marked all seven dirty on a break and rebuilt ONE PER FRAME — which spreads a
+cost without reducing it, and at 1500 m one of those units is already five times
+the frame budget. **Measured on Cinderhaven: 1.02 M surfaces, ~30 ms a field, so
+one broken pane was seven consecutive frames of 33–44 ms** on a map whose median
+frame is 7. It was invisible on a village and it grew with the map's area.
+
+**What a break owes is a RELAXATION and not a sweep**, and monotonicity is what
+makes that exact rather than approximate: the graph only ever gains links, so no
+step count can rise, every field already holds correct upper bounds, and
+`NavGrid.relaxFields` walks out from the ground the break touched until nothing
+improves. Its cost is what the pane opened rather than what the map is — the
+break lands inside `openBox`, in the frame it happened, and there is nothing
+left for a caller to drain. Proved against a full re-sweep over all six maps and
+600 randomly opened boxes: **0 of 20.2 M step counts differ**, the sealed-room
+case (`opened > 0`) included.
+
+**Every CLEARED pane comes out of the list `openBox` re-severs against, not
+merely the one being broken** — and that is a correctness rule, not a saving.
+`colliderBoxes` is the bake's order and nothing is ever spliced out of it, so a
+pane broken earlier is still in the array; filtering only the current box let
+`severLinks` put the EARLIER window's wall back into the graph whenever two
+panes stood within a cell rectangle of each other, which two bays in one frontage
+routinely are. It was silent, because the fields were swept from scratch
+afterwards and agreed exactly with a graph that had quietly re-closed a window
+the player had shot out. Measured on Coldharbour's twenty-four: **53,461 step
+counts across the seven fields were describing a wall that was no longer there.**
 
 Two contracts say the map never changes and both now say it changes in exactly
 this one way: `ObstacleField`'s header, and `MapBuilder.build`'s note beside the

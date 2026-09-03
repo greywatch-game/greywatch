@@ -6689,11 +6689,12 @@ export class Game {
    * it, and a second door into the engine would be the thing that quietly
    * reopened.
    *
-   * The glass is last and is not an effect: it drains the flow-field rebuild a
-   * broken pane owes, one field per frame. After the bots wherever there are
-   * any — a field swapped in mid-frame would be read by half this frame's
-   * think ticks and not the other half, and next frame's are the ones that
-   * should see it.
+   * **The glass owes this frame nothing, and it used to.** A broken pane left
+   * seven flow fields to sweep and they were drained here one per frame, which
+   * on Cinderhaven was seven consecutive 40 ms frames for one window. A break
+   * relaxes the fields inside `NavGrid.openBox` now, on the frame it happens
+   * and for a cost bounded by what it opened — so there is no drain left to
+   * order against the bots, and no `glass` phase to measure it with.
    */
   private stepAftermath(dt: number): void {
     this.prof.begin(P.antiTank);
@@ -6705,9 +6706,6 @@ export class Game {
     this.debris.update(dt);
     this.blastDebris.update(dt);
     this.prof.end(P.physics);
-    this.prof.begin(P.glass);
-    this.glass.update();
-    this.prof.end(P.glass);
   }
 
   /**

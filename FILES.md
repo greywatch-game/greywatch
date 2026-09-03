@@ -335,9 +335,13 @@ src/
                         #   clocks and the hull trigger. Owns no blast and has
                         #   never heard of a tank — it asks `hullNear` and
                         #   announces `onDetonated`, and Game spends both
-    GlassSystem.ts      # Breakable panes: the segment sweep, the break, and
-                        #   the amortised flow-field rebuild it owes. The one
-                        #   mutable thing in the world, and monotonically so
+    GlassSystem.ts      # Breakable panes: the segment sweep and the break —
+                        #   the visual, the collider, and the nav graph with
+                        #   the fields over it, all on the frame it happens.
+                        #   The one mutable thing in the world, monotonically
+                        #   so, and every CLEARED pane comes out of the list
+                        #   `openBox` re-severs against or a second break puts
+                        #   the first one's wall back
     PhysicsWorld.ts     # The ONLY Havok in the game: the plugin, the map as
                         #   one static body per 48 m block (a single compound is
                         #   quadratic in its shapes), and the fixed-step clock.

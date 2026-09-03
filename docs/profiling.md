@@ -213,8 +213,7 @@ frame                       the whole tick, wall to wall
 │  │  ├─ vehicles           crews, hulls, the tracks' sweep
 │  │  ├─ bots               battle.update + the muzzle-light budget
 │  │  ├─ combat, grenades, antiTank
-│  │  ├─ physics            Havok and its three clients
-│  │  └─ glass              the flow-field drain a broken pane owes
+│  │  └─ physics            Havok and its three clients
 │  ├─ camera                the eye, the lights, the chase cam
 │  ├─ zones                 the capture rings
 │  └─ hud                   what a gameplay frame pushes at the chrome

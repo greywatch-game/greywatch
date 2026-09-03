@@ -131,7 +131,6 @@ export const PHASES = [
   "antiTank",
   /** Havok's step and its three clients, which is the order they must run in. */
   "physics",
-  "glass",
   "camera",
   "zones",
   /** `updateHud` — what a gameplay frame pushes at the chrome. */
@@ -206,7 +205,6 @@ export const PARENT_OF: Readonly<Record<Exclude<Phase, "frame">, Phase>> = {
   grenades: "world",
   antiTank: "world",
   physics: "world",
-  glass: "world",
   camera: "gameplay",
   zones: "gameplay",
   hud: "gameplay",

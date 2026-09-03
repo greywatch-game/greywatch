@@ -2,8 +2,8 @@
  * GlassSystem.ts — The one mutable thing in the world: panes of glass, and what
  * a round crossing one does to them.
  * Owns: which panes are intact, the segment sweep that finds the ones a shot
- * crossed, the break itself (the visual, the collider, the nav graph), and the
- * amortised flow-field rebuild a break owes.
+ * crossed, and the break itself — the visual, the collider, and the nav graph
+ * with the flow fields over it.
  * Invariants: breaking is MONOTONIC — a pane never mends inside a round, and
  * `setMap` is the only thing that puts them all back, which is exactly right
  * because a round IS a fresh map build and there is no other way to start one.
@@ -42,7 +42,7 @@
  * dozen shopfront bays a round can actually open, and the sweep costs what two
  * dozen panes cost.
  *
- * ## The three things a break touches, and the one it defers
+ * ## The three things a break touches
  *
  * The VISUAL is a vertex range in a merged mesh: collapsing it onto its own
  * first vertex makes every triangle in the pane degenerate, which draws nothing
@@ -57,22 +57,39 @@
  * — `world/solid.ts` is all that still reads it.
  *
  * The NAV GRAPH is `NavGrid.openBox`, which relinks the ground the pane was
- * severing. That is local and cheap.
+ * severing AND relaxes the flow fields over what that opened. Both are local
+ * and cheap, and nothing here defers either.
  *
- * What is DEFERRED is the flow fields, and they are the only expensive part: a
- * field is a breadth-first sweep over every walkable surface, Coldharbour has
- * ~180k of them and seven fields, so rebuilding the set is tens of
- * milliseconds. `update` rebuilds ONE PER FRAME, and every break inside that
- * window folds into the same pass. Bots keep steering on the field they have,
- * which is stale rather than wrong — monotonicity is what guarantees that: the
- * graph only ever gains links, so a route that was valid still is, and the
- * worst a bot does for those few frames is walk the long way round a window
- * that has just opened.
+ * ## Why the fields are no longer this file's problem
+ *
+ * They were, and it was the wrong axis to amortise on. A field is a
+ * breadth-first sweep over every walkable surface, so this file used to mark
+ * all seven dirty on a break and rebuild ONE PER FRAME — which spreads the
+ * cost without reducing it, and at 1500 m a single one of those units is
+ * already five times the frame budget. Measured on Cinderhaven: 1.02 M
+ * surfaces, ~30 ms a field, so one broken pane was SEVEN CONSECUTIVE frames of
+ * 33-44 ms, and a profile of it read as a 44 ms `glass` phase on a map whose
+ * median frame is 7. It was invisible on a village and it grew with the square
+ * of the map.
+ *
+ * A sweep was never what a break owed. The graph only ever GAINS links, so no
+ * step count in a field can rise and every field already holds correct upper
+ * bounds — what is owed is a relaxation from the ground the break touched,
+ * which `NavGrid.relaxFields` does inside `openBox` for a cost bounded by
+ * what the pane actually opened rather than by how big the map is. It is exact
+ * rather than approximate: measured against a full re-sweep of all seven
+ * fields, all 7.1 M step counts on Cinderhaven agree.
+ *
+ * That also puts the two simulations back in step. The drain was a second call
+ * a caller had to remember and `HeadlessGame` never made it, so on the
+ * authority a break relinked the graph and left every field routing bots round
+ * a window that was no longer there — for the rest of the round, not for seven
+ * frames.
  */
 import type { Mesh, Vector3 } from "@babylonjs/core";
 import { VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { GameMap, WorldPane } from "../world/MapBuilder";
+import type { GameMap, WorldBox, WorldPane } from "../world/MapBuilder";
 import { BLOCK_SIZE } from "../world/MapBuilder";
 
 /** One pane a segment crossed, and how far along it the crossing was. */
@@ -114,8 +131,6 @@ export class GlassSystem {
    * that make the same mark.
    */
   private colliders = new Map<number, Mesh>();
-  /** Fields owed a rebuild, oldest first. Drained one per frame by `update`. */
-  private dirtyFields: string[] = [];
 
   /**
    * Reusable result buffer. A sweep runs on every shot from every shooter, and
@@ -139,7 +154,6 @@ export class GlassSystem {
     this.map = map;
     this.panes = map.panes;
     this.broken = new Uint8Array(map.panes.length);
-    this.dirtyFields = [];
     this.colliders.clear();
     for (const mesh of map.colliders) {
       const pane = mesh.metadata?.pane;
@@ -283,21 +297,6 @@ export class GlassSystem {
     }
   }
 
-  /**
-   * Drains one field rebuild per frame.
-   *
-   * One, not all, and not none: a field is tens of milliseconds' worth of
-   * breadth-first sweep and the seven of them together are a visible hitch on a
-   * frame budget that already drops one every 1.7 seconds (FINDINGS #1). Spread
-   * over seven frames it is invisible, and the staleness in between costs
-   * nothing — see this file's header on why a stale field is never a wrong one.
-   */
-  update(): void {
-    if (this.dirtyFields.length === 0 || !this.map) return;
-    const name = this.dirtyFields.shift()!;
-    this.map.nav.rebuildField(name);
-  }
-
   /** Collapses a pane's vertex range onto its own first vertex. */
   private collapse(pane: number): void {
     const p = this.panes[pane];
@@ -338,7 +337,7 @@ export class GlassSystem {
     if (!box || box.glass !== true) return;
     // The flag is what makes this idempotent: an authoritative event arriving
     // after a predicted break, or a `catchUp` over a pane already cleared, must
-    // not relink the same ground twice or rebuild seven fields for nothing.
+    // not relink the same ground twice for nothing.
     delete box.glass;
 
     const mesh = this.colliders.get(pane);
@@ -363,11 +362,32 @@ export class GlassSystem {
     // the pane's own `box` index into it, so nothing may be spliced out of it
     // ever. It is filtered here instead, which is the one place a caller needs
     // "the solid world as it stands" rather than "as it was built".
-    const standing = map.colliderBoxes.filter((b) => b !== box);
-    map.nav.openBox(box, standing);
-    for (const name of map.nav.fieldNames) {
-      if (!this.dirtyFields.includes(name)) this.dirtyFields.push(name);
+    //
+    // **EVERY cleared pane comes out of it and not merely this one**, which is
+    // the difference between a graph that only ever gains links and one that
+    // does not. `openBox` re-severs the rectangle it has just relinked against
+    // the list it is handed, and a pane broken earlier is still sitting in
+    // `colliderBoxes` — so filtering only the current box put the EARLIER
+    // window's wall straight back into the nav graph whenever two panes stood
+    // within a cell rectangle of each other. Two shopfront bays in one frontage
+    // is the ordinary case of that, and it was silent: the fields were swept
+    // from scratch afterwards, so they agreed exactly with a graph that had
+    // quietly re-closed a window the player had shot out. Bots walked round it
+    // for the rest of the round.
+    //
+    // A pane's box is cleared exactly when it has lost `glass`, which is this
+    // method's own idempotence flag — so this is the set that is OUT of the
+    // world, and never one a client has merely predicted broken.
+    const gone = new Set<WorldBox>();
+    for (const pane of this.panes) {
+      if (pane.box < 0) continue;
+      const other = map.colliderBoxes[pane.box];
+      if (other && other.glass !== true) gone.add(other);
     }
+    const standing = map.colliderBoxes.filter((b) => !gone.has(b));
+    // Which relinks the ground and relaxes every field over it, in this call.
+    // Nothing is owed afterwards, and there is nothing here to drain.
+    map.nav.openBox(box, standing);
   }
 }
 

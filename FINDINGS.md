@@ -1081,13 +1081,59 @@ floor rather than an estimate.
 
 ---
 
-## 9. A broken pane costs a flow-field rebuild, and the rebuild is not measured on real hardware
+## 9. ~~A broken pane costs a flow-field rebuild, and the rebuild is not measured on real hardware~~ — FIXED: a break RELAXES the fields and there is no rebuild left
 
-**Status:** measured headless, amortised, re-measured on real hardware, and
-worth re-measuring before anyone raises the breakable-pane count. **A field is
-half the bytes it was** — `Uint16Array`, one BFS step count per surface, see
-`NavGrid.FLOW_UNREACHED` — which changes what a rebuild ALLOCATES and not what
-it costs.
+**Status:** measured headless, amortised, re-measured on real hardware, **and
+then closed by deleting the rebuild rather than by placing it.** This entry
+predicted its own failure two milestones early — see "How it scales with the
+MAP" below, which put a 1500 m field at ~32 ms and seven dropped frames in a
+row, and then declined to act because "no map that big exists". Cinderhaven is
+1500 m with four breakable panes, and it arrived at exactly that.
+
+**What it looked like on the shipped map**, from a capture taken on the Windows
+box: `glass` p50 0 and max **44.3 ms** on a map whose median frame is 7, in a
+run of **seven consecutive frames of 33–44 ms** — the queue draining one field
+per frame — for one window. 1,021,019 surfaces, 984,760 walkable, seven fields
+at 25–33 ms each measured in isolation, 208 ms for the set.
+
+**What a break actually owed was a RELAXATION and never a sweep.** The graph's
+one mutation is monotonic, which this entry already said: it only ever gains
+links, so no step count can rise and every field already holds correct upper
+bounds on the new graph. `NavGrid.relaxFields` walks out from the ground the
+break touched until nothing improves, inside `openBox`, in the frame the pane
+broke — so the cost is what the pane OPENED rather than what the map IS, and
+the amortisation it replaces is gone along with `rebuildField`, `fieldGoals`,
+`GlassSystem.update` and the `glass` profiler phase. Measured end to end on
+Cinderhaven, real adapter, warm, all four panes broken on one frame:
+
+| | before | after |
+| --- | --- | --- |
+| worst frame in the 120 after the break | **61.6 ms** | **9.2 ms** |
+| the seven frames after it | 47.8, 47, 51.7, 47.6, 61.6, 48.5, 49.4 | 9.2, 8.3, 7.9, 7.9, 7.6, 8.1, 7.8 |
+| median frame over the window | 8.2 | 7.2 |
+
+**It is exact and not an approximation**, which is the only reason it may
+replace a sweep: against a full re-sweep of all seven fields, **0 of 20.2 M
+step counts differ** — all six shipped maps, 600 randomly opened collider
+boxes, and a synthesised sealed room so the `opened > 0` arm is covered too.
+
+**It also found a correctness bug the sweep was hiding**, which is written up
+in `docs/world.md`: `openBox` re-severs the rectangle it relinks against the
+box list it is handed, and `GlassSystem` was filtering only the box being
+broken out of it — so a second break within a cell rectangle of the first put
+the FIRST window's wall back into the nav graph. Silent, because the fields
+were swept from scratch afterwards and agreed exactly with the corrupted graph.
+On Coldharbour's twenty-four panes, **53,461 step counts across the seven
+fields were describing a wall that was no longer there**, for the rest of the
+round. And the drain was a second call a caller had to remember: `HeadlessGame`
+never made it, so on the AUTHORITY no field was ever updated after a break at
+all.
+
+The historical body follows unchanged.
+
+**A field is half the bytes it was** — `Uint16Array`, one BFS step count per
+surface, see `NavGrid.FLOW_UNREACHED` — which changed what a rebuild ALLOCATED
+and not what it cost.
 
 Breaking a pane relinks the nav graph locally — cheap, bounded by the
 box — and then owes every flow field a rebuild, because a route computed before

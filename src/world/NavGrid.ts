@@ -180,22 +180,16 @@ export class NavGrid {
   /** Neighbour surface ids per surface, `-1`-padded. */
   private readonly links: Int32Array;
 
-  private readonly fields = new Map<string, FlowField>();
-
   /**
-   * What each field was built FROM, so one can be built again.
+   * The fields, built once at load and thereafter only ever RELAXED.
    *
-   * The graph was immutable when `buildField` was written, so a field's own goal
-   * was spent on the way in and never kept. Glass made the graph mutable in one
-   * direction (see `openBox`), and a route computed before a wall opened is a
-   * route that still walks round it — so the arguments are held. Nothing else
-   * reads this: `rebuildFields` is the one caller, and it is what `GlassSystem`
-   * amortises over the frames after a break.
+   * They used to be rebuildable — the goal each was swept from was held beside
+   * it so `GlassSystem` could sweep it again after a break, one field per
+   * frame. Nothing keeps a goal now, because nothing sweeps a second time: the
+   * graph's one mutation is monotonic, so a break RELAXES what stands here
+   * rather than replacing it (see `relaxFields`).
    */
-  private readonly fieldGoals = new Map<
-    string,
-    { goal: Vector3; radius: number }
-  >();
+  private readonly fields = new Map<string, FlowField>();
 
   constructor(
     size: number,
@@ -655,18 +649,21 @@ export class NavGrid {
    *
    * **This is the only mutation the graph admits, and it is monotonic.** A pane
    * of glass breaks and never mends, so the graph only ever GAINS links — which
-   * is what makes an incremental update safe rather than merely cheap. No route
-   * that was valid can become invalid; a field computed before the break is
-   * stale (it walks the long way) and never wrong, so a bot steering on one
-   * while `rebuildField` catches up is following a route that still exists.
+   * is what makes the whole of this incremental rather than merely cheap. No
+   * route that was valid can become invalid, and no step count in a field can
+   * rise; `relaxFields` is that second half, and the reason a break no longer
+   * costs a sweep of the map per objective.
    *
    * `boxes` must be the collider set with `box` ALREADY REMOVED, or the sever
    * pass puts back exactly what this was called to take away.
    *
    * The work is bounded by the box: relink its own cell rectangle, re-sever
-   * that rectangle against everything else, then flood from the surfaces around
-   * its edge. What it does NOT do is rebuild the flow fields — those are the
-   * expensive half and are the caller's to amortise. See `GlassSystem`.
+   * that rectangle against everything else, flood from the surfaces around its
+   * edge, and relax the fields over what that added. **The fields are part of
+   * it and are no longer the caller's to defer** — a caller that had to
+   * remember them is a caller that can forget them, and the authority DID:
+   * `HeadlessGame` never drained the deferral at all, so a break relinked the
+   * server's graph and left all seven of its fields describing the wall.
    *
    * Returns the number of surfaces that became walkable, which is 0 for the
    * ordinary case of a window in a wall a body could already walk round, and
@@ -703,8 +700,96 @@ export class NavGrid {
         queue.push(next);
       }
     }
+
+    // And the fields follow the graph in the same call, because once the step
+    // above has run they are the only thing left describing the world as it
+    // was. See `relaxFields`: it costs what the break actually opened, which
+    // is why this is no longer the caller's to defer.
+    this.relaxFields(rect);
     return opened;
   }
+
+  /**
+   * Brings every flow field up to date over the links `openBox` has just
+   * added, in place.
+   *
+   * **This replaces a full re-sweep of every field, produces the identical
+   * result, and what makes it exact is the monotonicity `openBox` states.**
+   * The graph only ever GAINS links and `walkable` only ever gains surfaces,
+   * so no step count in a field can RISE — each one either stands or drops. A
+   * field is therefore already a set of correct upper bounds on the new graph,
+   * and what it is owed is a relaxation from the surfaces whose links changed
+   * rather than a breadth-first sweep from the goal over the whole map. Every
+   * new link runs OUT of a surface `linkCells` rewrote, which is exactly the
+   * cell rectangle passed in, so seeding that rectangle reaches every edge the
+   * break created.
+   *
+   * **The cost is what the break opened and not what the map is.** A window
+   * into a room a body could already walk round improves a pocket of surfaces
+   * and stops; one that opens genuinely sealed ground improves that ground.
+   * The sweep it replaces was priced on the MAP instead, and that is the bug
+   * this fixes: at 1500 m Cinderhaven is 1.02 M surfaces and seven fields at
+   * ~30 ms each, so one broken pane cost seven consecutive frames of ~40 ms
+   * whatever the pane opened — and it opened nothing at all in the ordinary
+   * case, which is a window in a wall with a door in it.
+   *
+   * **It is written in place, which is safe for the exact reason
+   * `buildField` had to allocate and swap.** A half-finished SWEEP reads
+   * `FLOW_UNREACHED` across everything it has not reached yet, and a bot
+   * standing there reads itself as stranded; a half-finished RELAXATION holds
+   * a real path length at every surface at every moment, because a real path
+   * length is the only thing a relaxation ever writes. Nothing observes an
+   * intermediate state in any case — this runs to completion inside the one
+   * synchronous call — and in place is what lets a break allocate no
+   * per-surface array at all.
+   */
+  private relaxFields(rect: CellRect): void {
+    if (this.fields.size === 0) return;
+    const linkStride = NEIGHBOURS.length;
+    // Whether a surface is already waiting in the queue, so one improved twice
+    // before it is walked is queued once. Allocated on the first break and
+    // kept: every entry is cleared as it is popped and the queue always drains,
+    // so it is all-zero between calls and never needs filling.
+    let queued = this.relaxQueued;
+    if (!queued) queued = this.relaxQueued = new Uint8Array(this.surfaceCount);
+    const queue: number[] = [];
+
+    for (const field of this.fields.values()) {
+      const dist = field.dist;
+      queue.length = 0;
+      for (let cz = rect.minZ; cz <= rect.maxZ; cz++) {
+        for (let cx = rect.minX; cx <= rect.maxX; cx++) {
+          const cell = cz * this.dim + cx;
+          for (let si = 0; si < this.counts[cell]; si++) {
+            const surface = this.cellBase[cell] + si;
+            // Ground this field cannot reach relaxes nothing: its own step
+            // count plus one is past the ceiling and is refused below anyway.
+            if (dist[surface] >= FLOW_UNREACHED || queued[surface]) continue;
+            queued[surface] = 1;
+            queue.push(surface);
+          }
+        }
+      }
+      for (let head = 0; head < queue.length; head++) {
+        const surface = queue[head];
+        queued[surface] = 0;
+        const next = dist[surface] + 1;
+        // The same ceiling `buildField` keeps, for the same reason.
+        if (next >= FLOW_UNREACHED) continue;
+        for (let n = 0; n < linkStride; n++) {
+          const t = this.links[surface * linkStride + n];
+          if (t < 0 || !this.walkable[t] || dist[t] <= next) continue;
+          dist[t] = next;
+          if (queued[t]) continue;
+          queued[t] = 1;
+          queue.push(t);
+        }
+      }
+    }
+  }
+
+  /** `relaxFields`' queue membership, kept between breaks. All-zero at rest. */
+  private relaxQueued: Uint8Array | null = null;
 
   private blocked = new Uint8Array(0);
 
@@ -841,38 +926,11 @@ export class NavGrid {
 
     const field = new FlowField(name, dist);
     this.fields.set(name, field);
-    this.fieldGoals.set(name, { goal: goal.clone(), radius });
     return field;
   }
 
   field(name: string): FlowField | undefined {
     return this.fields.get(name);
-  }
-
-  /** Every field's name, in the order they were first built. */
-  get fieldNames(): string[] {
-    return [...this.fields.keys()];
-  }
-
-  /**
-   * Rebuilds one field from the goal it was first built with.
-   *
-   * **A field is REPLACED rather than written through**, because a bot may be
-   * steering on it in the same frame: `buildField` allocates a fresh
-   * `Uint16Array`, fills it and only then swaps the map entry, so a reader
-   * holding the old `FlowField` sees a complete route that is merely one break
-   * out of date. Filling in place would hand it a half-swept field reading
-   * `FLOW_UNREACHED` across the half not reached yet, and a bot on one of those
-   * surfaces would read itself as stranded and stop.
-   *
-   * Returns false for a name that was never built, which is the only way this
-   * can be asked about a field that does not exist.
-   */
-  rebuildField(name: string): boolean {
-    const from = this.fieldGoals.get(name);
-    if (!from) return false;
-    this.buildField(name, from.goal, from.radius);
-    return true;
   }
 
   /**

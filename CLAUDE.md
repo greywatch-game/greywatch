@@ -1234,9 +1234,20 @@ one kind of pane rather than two: everything else is glazing `MapBuilder` draws
 and no other part of the game has heard of — not in `GameMap.panes`, not bucketed
 for the sweep, not in the collision bake, not nameable on the wire.
 
-A pane breaks and never mends inside a round, and that monotonicity is what makes
-the incremental nav-graph update safe rather than merely cheap: the graph only
-ever GAINS links, so a route that was valid still is.
+A pane breaks and never mends inside a round, and **that monotonicity is what
+makes the whole of the update incremental rather than merely cheap**: the graph
+only ever GAINS links, so a route that was valid still is and no step count in a
+flow field can rise. `NavGrid.openBox` therefore relinks the ground AND relaxes
+the seven fields over it, in the frame the pane broke and for a cost bounded by
+what the break opened. It used to re-SWEEP them instead, one field per frame, and
+that was the wrong axis to amortise on — a sweep is priced on the map, so at
+1500 m one pane cost seven consecutive 40 ms frames. **Two rules keep it honest**:
+monotonicity is a claim about the LIST `openBox` re-severs against, so every
+CLEARED pane must come out of it and not merely the one breaking (or a second
+break in the same frontage puts the first window's wall back); and the fields
+belong to `openBox` rather than to its caller, because a caller that has to
+remember them can forget them, and the authority did — `HeadlessGame` never
+drained the deferral at all.
 
 **A round has to pass THROUGH glass, so a pane can never stop a `castRound` —
 which means the hitscan's wall query can never report one.** `CombatSystem.fire`

@@ -1275,11 +1275,23 @@ is one machine's:
   piece of the map gone wrong. Within ~15 m of the centre, or on an avenue, is
   clear; and the monument at the origin reaches ~10 m, so a camera placed above
   the square looks down at the top of it and not at the floor.
-- **The flow-field rebuild is what a break costs, and it is measurable in one
-  line**: `map.nav.rebuildField(name)` for each of `map.nav.fieldNames`.
-  Measured headless on Coldharbour — 4.7 ms for one and 15.9 ms for all seven,
-  over 183k surfaces — which is why `GlassSystem.update` drains one per frame
-  rather than all of them on the frame a window goes in.
+- **A break costs a RELAXATION now and there is no rebuild to measure**, so
+  `map.nav.rebuildField` and `map.nav.fieldNames` are both gone and a script
+  written against them will throw. `NavGrid.openBox` relaxes every field over
+  what the break opened, in the same call, so what a break costs is the call
+  itself: time `g.glass.applyBreak(pane, at, dir, true)`, or break the lot and
+  watch the frame interval. **The frames after a break are the assertion worth
+  writing**, because the failure this replaced had no other symptom: on
+  Cinderhaven, all four panes broken on one frame, the seven frames after it
+  were 47.8, 47, 51.7, 47.6, 61.6, 48.5 and 49.4 ms before the fix and 9.2,
+  8.3, 7.9, 7.9, 7.6, 8.1 and 7.8 after, against a 7–8 ms median either side.
+  To compare a field against ground truth, sweep it again by hand —
+  `nav.buildField` with the same goal and radius `MapBuilder` and
+  `server/world.ts` both use (a control point's `pos` and `radius * 0.6`, a
+  spawn's `pos` and 6) — and diff the `dist` arrays. That needs no browser at
+  all: `NavGrid` takes a size, the baked boxes and a `TerrainField`, so an
+  esbuild bundle of the three run under node is the whole harness, and
+  1.02 M surfaces on Cinderhaven build in ~360 ms.
 - **Shards step like a ragdoll, and the ENGINE steps separately from its
   clients**: `g.physics.update(1/60)` then `g.debris.update(1/60)` in a loop,
   in that order. `g.debris.burst(pane, at, dir, camPos)` takes the `WorldPane`
