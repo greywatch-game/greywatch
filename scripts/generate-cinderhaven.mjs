@@ -486,7 +486,12 @@ function rockAt(r) {
 const DISTRICTS = [
   { n: "quay", x: -106, z: 361, hw: 116, hd: 116, skirt: 62 },
   { n: "oldtown", x: -380, z: 180, hw: 156, hd: 92, skirt: 120 },
-  { n: "works", x: -330, z: -110, hw: 74, hd: 62, skirt: 172 },
+  // The works' bench runs 90 m further UP the mountain than the yard needs,
+  // and the Cinderworks is why: a smelter is 62 m of hall, furnace and stack
+  // and there is no room for one inside a crossroads. The anchor stays at the
+  // yard, so what the extra core does is CUT the cone's flank rather than
+  // move the level everything else on this flag was built to.
+  { n: "works", x: -330, z: -140, hw: 74, hd: 92, skirt: 172, anchor: [-330, -110] },
   { n: "netstrand", x: 420, z: -165, hw: 116, hd: 116, skirt: 62 },
   { n: "home0", x: -495, z: 495, hw: 82, hd: 74, skirt: 56 },
   { n: "home1", x: 475, z: -475, hw: 82, hd: 74, skirt: 56 },
@@ -1921,7 +1926,57 @@ let roadLegs = 0;
  * claim. Give a street the verge and every frontage in the town is refused;
  * give a house the pad it would want in open country and the same happens.
  */
+/**
+ * Every carriageway on the island, as the oriented rectangle it covers.
+ *
+ * **A road nobody can reach is the failure this list exists to catch**, and it
+ * is a failure with no symptom: a quarter laid two hundred metres off the
+ * network still builds, still looks like a town in a screenshot and is still a
+ * place a player arrives at across open ground wondering what it is for. The
+ * old map shipped with exactly that — four arterials and a shelf of crofts
+ * with no lane anywhere near them — so the coverage is MEASURED here
+ * (`roadDist`, and the `--roads` probe that prints it) and then ASSERTED at
+ * the bottom of this file, rather than being something somebody re-checks by
+ * flying over it.
+ */
+const ROADS = [];
+
+/**
+ * How far a thing people LIVE in may stand from a carriageway.
+ *
+ * It is a hundred and fifty metres because that is roughly the longest track
+ * anybody puts in to a farm and still calls it a farm, and because the thing
+ * it is guarding against is not sixty metres — it is the three hundred that
+ * the old lattice was putting holdings at, out on ground with no lane within
+ * sight of it in any direction.
+ */
+const ROAD_REACH = 150;
+
+/** How far `(x, z)` is from the nearest carriageway EDGE. 0 means on one. */
+function roadDist(x, z) {
+  let best = Infinity;
+  for (const r of ROADS) {
+    // Into the slab's own frame, exactly as `hits` does it: local +X is
+    // (cos, -sin) in world and +Z is (sin, cos).
+    const dx = x - r.x;
+    const dz = z - r.z;
+    const u = Math.abs(dx * r.c - dz * r.s) - r.hw;
+    const v = Math.abs(dx * r.s + dz * r.c) - r.hd;
+    const d = u <= 0 && v <= 0 ? 0 : Math.hypot(Math.max(0, u), Math.max(0, v));
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 function roadSlab(x, z, rot, len, w, surface, pad = 1.4) {
+  ROADS.push({
+    x,
+    z,
+    hw: w / 2,
+    hd: len / 2,
+    c: Math.cos(rot),
+    s: Math.sin(rot),
+  });
   // `null` claims nothing at all, which is what a SQUARE is: its paving is
   // laid over the streets that bound it and over the ground the stalls, the
   // lamps and the memorial stand on, and the only thing keeping the middle of
@@ -2039,7 +2094,18 @@ roadRun([[475, -420], [470, -358], [460, -288], [450, -212]], 7, "dirt");
  * Every metre of it is under a 0.10 gradient on the finished floor.
  */
 roadRun(
-  [[-240, 470], [-90, 495], [100, 505], [290, 470], [430, 395], [512, 306]],
+  [
+    [-495, 440],
+    [-462, 472],
+    [-390, 478],
+    [-320, 472],
+    [-240, 470],
+    [-90, 495],
+    [100, 505],
+    [290, 470],
+    [430, 395],
+    [512, 306],
+  ],
   7,
   "dirt",
 );
@@ -2052,6 +2118,52 @@ roadRun([[512, 306], [556, 246], [580, 186]], 6, "dirt");
  * which is what turns the north arm from a spur into a circuit.
  */
 roadRun([[452, -208], [516, -262], [546, -344], [516, -430]], 7, "dirt");
+
+/**
+ * The NORTH SHORE TRACK: off the bay road at the top of the harbour, over the
+ * north arm and along the outer coast onto team 1's road.
+ *
+ * The arm is 250 m of walkable ground between the bay road on its inside and
+ * the open sea on its outside, and until this it had nothing on it at all —
+ * `--roads` put the whole of it past 150 m. What the track buys is a route
+ * from the middle of the map onto team 1's approach that does not go through
+ * Netstrand, which is the one flank the north half of the island did not have.
+ */
+roadRun(
+  [[160, -247], [130, -330], [162, -418], [256, -452], [356, -420], [430, -350], [460, -288]],
+  6,
+  "dirt",
+);
+
+/**
+ * The MOOR LANE: the old town's west gate, out across the western moor and
+ * back down to where team 0's road meets the coast road.
+ *
+ * **`--roads` is what says this has to exist**, and it is the reason that
+ * probe was written: the whole western third of the island — a quarter of the
+ * dry ground on the map — was over a hundred and fifty metres from any
+ * carriageway, which is a fifth of a 1,500 m square that a player crosses
+ * wondering whether they have left the level. The lane costs four slabs and
+ * turns it into the long way round between B and team 0's landing, which is a
+ * route a truck can take and the Steps are not.
+ *
+ * Every leg of it is proved dry and under a 0.25 gradient by `assertRoadsDry`
+ * below, because a lane authored across a moor nobody had walked is exactly
+ * the thing that comes out lying in the sea or up a cliff.
+ */
+roadRun([[-476, 186], [-560, 232], [-598, 318], [-566, 400], [-495, 440]], 6, "dirt");
+
+/**
+ * The ASH TRACK: off the middle of the haul road, along the mountain's toe and
+ * down to the old town's north gate.
+ *
+ * It is the poorest road on the map on purpose — five metres of dirt with
+ * nothing lit on it and nothing built along it but ruins — because what it
+ * crosses is the ash. What it BUYS is that the works is no longer a dead end
+ * reached only by the haul road: D has a second approach, from the side the
+ * mountain is on, and holding the crossroads no longer holds the flag.
+ */
+roadRun([[-284, -20], [-330, 34], [-400, 60], [-458, 90], [-476, 132]], 5, "dirt");
 
 // --- the quarters, and the streets inside them -------------------------------
 
@@ -2201,6 +2313,40 @@ const FISHMARKET = plaza(
   FISH_BLOCK.rot,
   "dirt",
 );
+
+/**
+ * SALTHOUSES: the salt hamlet on the southern strand, three blocks by two on
+ * the coast road, with its pans on the flat between it and the sea.
+ *
+ * **The southern shelf is the biggest single piece of ground on this island
+ * and it carried a road and nothing else.** Four hundred metres of level
+ * strand between the quay and the cape, on the flank every route from team 0's
+ * landing toward E crosses, with a dozen scattered crofts on it — which is the
+ * shape of a place a player walks over rather than through.
+ *
+ * What makes it a settlement rather than more crofts is that it has a REASON.
+ * There is no river on a lava island and nothing on the shelf to farm, so what
+ * flat ground behind a strand is for is taking salt out of the sea: the pans
+ * are laid seaward of the road on the wettest, lowest ground, the store and
+ * the racks are on the road, and the houses are behind them. That is the third
+ * industry on the map — after the fish and the sulphur — and it is the one
+ * that explains a village standing where nothing grows.
+ *
+ * No street on its seaward side (`edges[2]`), because the coast road already
+ * runs along it: the Quay's rule, and the houses still front it.
+ */
+const SALT = quarterStreets({
+  x: 60,
+  z: 469,
+  rot: -0.053,
+  cols: 3,
+  rows: 2,
+  plot: [32, 26],
+  width: 6,
+  surface: "dirt",
+  edges: [true, true, false, true],
+  fronts: [true, true, true, true],
+});
 
 // The flags, the yards and the hardstandings claim their ground before any
 // building does. `MapBuilder.keepClear` holds SCATTER off them and nothing
@@ -2368,6 +2514,36 @@ for (const t of [0.12, 0.34, 0.56, 0.78]) {
   if (p) must("boathouse", p[0], p[1], faceWater("boathouse", a), 12, 14, undefined, 1.6);
 }
 
+// The two quay cranes, at the head of the middle jetties. **A quay without
+// one is a promenade** — every cargo on this island arrived over a gunwale and
+// until `buildHarbourCrane` nothing in the kit could lift it — and they are
+// the only tall thin silhouettes on five hundred metres of shed roof.
+for (const t of [0.23, 0.67]) {
+  const a = along(QUAY_ARC, t);
+  const p = inland(a, 14);
+  // **The claim is the BASE and not the reach**: a jib eleven metres up over
+  // the bank is not a conflict with anything standing on the bank, and a
+  // rectangle covering it holds the crane a jib's length off the water it is
+  // meant to be lifting out of.
+  if (p) must("crane", p[0], p[1], faceWater("crane", a), 10, 12, undefined, 1.0);
+}
+
+// Two hulls up on the hard, laid along the bank. They are the answer to a
+// question the whole waterfront was raising and none of it answered: eleven
+// boat sheds, eight jetties and nothing anywhere that had ever been in the
+// water. They are also the only hard cover on an open quay.
+// At the ENDS of the arc rather than in the middle of it, and that is the
+// waterfront's own arithmetic rather than a preference: the bank is banded —
+// the quay wall at four metres inland, the sheds at ten, the cranes at
+// fourteen, the lamps at twenty-one, the Strand at thirty-four — and a hull is
+// seven metres deep, so there is no radial gap anywhere between them that one
+// fits into. What there IS is room at either end of the row.
+for (const t of [0.02, 0.9]) {
+  const a = along(QUAY_ARC, t);
+  const p = inland(a, 13);
+  if (p) place("careenedHull", p[0], p[1], a + Math.PI / 2, 5, 13, { length: 11 }, 1.0);
+}
+
 // The jetties, reaching out over the flat.
 //
 // **This is what a wadeable bay pays for.** `buildJetty`'s deck stands 0.57 m
@@ -2416,10 +2592,28 @@ place("kiln", -150, 214, 0, 5.2, 5.2, undefined, 1.6);
 place("cart", -104, 300, 0.4, 4.6, 3.2, undefined, 1.2);
 place("cart", -34, 372, -0.3, 4.6, 3.2, { ruined: true }, 1.2);
 
-// The harbour light, on the point south-east of the quay where the shore turns.
+// THE HARBOUR LIGHT, on the point south-east of the quay where the shore
+// turns. A `lighthouse` rather than the `watchtower` that used to stand in for
+// one: a timber lookout says somebody is watching, and a light says this water
+// is dangerous and people come here anyway — which is the read a harbour cut
+// into a lava island wants, and the thing a player wading the bay at night
+// steers by. Its keeper's cottage is on the -Z face, so it is turned to put
+// that INLAND.
 {
-  const p = inland(1.78, 16);
-  if (p) must("watchtower", p[0], p[1], 0, 7, 7, undefined, 2);
+  const a = 1.78;
+  const p = inland(a, 20);
+  if (p) {
+    must("lighthouse", p[0], p[1], faceRot("lighthouse", Math.cos(a), Math.sin(a)), 13, 24, undefined, 2);
+  }
+}
+
+// The tavern on the inland side of the harbour square: the one thing the quay
+// had none of and the old town did, on a waterfront with four hundred people
+// working it. `facing` puts it ACROSS the lane from the paving, so what
+// encloses the square is a front.
+{
+  const t = facing(QUAY_SQUARE, 2, QUAY.width, -14, 6.5, "tavern");
+  must("tavern", t.x, t.z, t.rot, 14.5, 12, undefined, 0.3);
 }
 
 /**
@@ -2446,13 +2640,30 @@ for (const b of QUAY.blocks) {
 
 // The netlofts on the ramp: lower, poorer, and the last of the town before the
 // Steps climb out of it.
+//
+// **It is now built out of the building it is named after.** The quarter has
+// been called the Netlofts since it was laid and was made entirely of
+// cottages, which is a name for something the map did not have. A `netLoft` is
+// an open undercroft on stone piers with the gear kept dry over it, so a
+// street of them has sightlines a street of cottages does not — you see a
+// body's legs under one at forty metres and cannot shoot through it at chest
+// height — and that is the one thing this quarter has that the old town's
+// alleys do not.
 for (const b of LOFTS.blocks) {
   fillBlock(b, {
     gap: 2.2,
     inset: 9,
-    size: () => [randInt(6, 9), randInt(5, 7)],
-    house: (x, z, rot, w, d) =>
-      chance(0.86) && cottageAt(x, z, rot, { w, d, h: rnd(2.9, 3.5) }),
+    size: () => [randInt(7, 9), randInt(6, 7)],
+    house: (x, z, rot, w, d) => {
+      if (chance(0.42)) {
+        return place("netLoft", x, z, rot, w + 1, d + 0.9, {
+          width: w,
+          depth: d,
+          litWindows: chance(0.5),
+        }, 0.35);
+      }
+      return chance(0.86) && cottageAt(x, z, rot, { w, d, h: rnd(2.9, 3.5) });
+    },
     yard: (blk) => backYard(blk, { count: randInt(1, 2) }),
   });
 }
@@ -2472,8 +2683,11 @@ section(placements, "B - Cinder Steps");
   furnish(B.x, B.z, MARKET_BLOCK.hw, MARKET_BLOCK.hd, MARKET_BLOCK.rot, { stalls: 3, well: [-1, -1], shrine: [1, 1] });
 }
 
-// The mill, on the shelf north-west of the town where the wind is.
-must("mill", B.x - 124, B.z - 72, 0.35, 13, 12, undefined, 2.4);
+// The mill, on the shelf north-west of the town where the wind is — and now
+// beside the ash track rather than in the middle of a field, which is the
+// `croft` rule applied to a set piece: a mill is a place people bring grain
+// to, so it stands on a road or it stands nowhere.
+must("mill", B.x - 138, B.z - 76, 0.35, 13, 12, undefined, 2.4);
 
 /**
  * The old town's blocks: townhouses on the lane, cottages behind, and a walled
@@ -2491,7 +2705,7 @@ for (const b of OLDTOWN.blocks) {
     inset: 9,
     size: () => [randInt(6, 8), randInt(6, 8)],
     house: (x, z, rot, w, d) =>
-      chance(0.9) &&
+      chance(0.94) &&
       (chance(0.62)
         ? townhouseAt(x, z, rot, { w, d })
         : cottageAt(x, z, rot, { w, d })),
@@ -2524,9 +2738,11 @@ must("chapel", ROCK.x, ROCK.z - 34, Math.PI, 14, 27, undefined, 0.4);
 // face and a ramp on the side named by `rampSide`.
 must("terrace", ROCK.x - 36, ROCK.z + 2, 0, 30, 26, { width: 28, depth: 24, height: 2, rampSide: 1 }, 0.6);
 must("ruin", ROCK.x + 36, ROCK.z - 6, -Math.PI / 2, 11, 9, { width: 10, depth: 8 }, 0.6);
-// The watchtower on the crown's seaward lip: the light at the middle of the
-// bay, and the one thing on this map that can see both waterfronts.
-must("watchtower", ROCK.x + 6, ROCK.z + 44, 0, 7, 7, undefined, 2);
+// THE ROCK LIGHT on the crown's seaward lip: the light in the middle of the
+// bay, the one thing on this map that can see both waterfronts, and — with
+// the chapel beside it — what makes the island in the harbour read as a place
+// from either shore. Turned so its keeper's cottage faces back up the green.
+must("lighthouse", ROCK.x + 6, ROCK.z + 32, 0, 13, 24, undefined, 2);
 place("well", ROCK.x - 4, ROCK.z + 20, 0, 5, 5, undefined, 1.4);
 place("shrine", ROCK.x + 20, ROCK.z + 22, Math.PI, 3, 3, undefined, 0.8);
 place("lamp", ROCK.x - 16, ROCK.z + 14, 0, 2.2, 2.2, undefined, 0.8);
@@ -2564,19 +2780,56 @@ for (let i = 0; i < 6; i++) {
 // --- D — the Ashworks --------------------------------------------------------
 
 section(placements, "D - the Ashworks");
+placements.push(
+  "  // **THE CINDERWORKS IS THE MAP'S LANDMARK**, and it stands ninety metres",
+  "  // up the works' own north street rather than on the flag, so that the",
+  "  // stack is what closes the view from the crossroads. It is a hollow hall",
+  "  // with a cart arch wide enough to drive a tank through, a solid furnace",
+  "  // block carrying the one light on this hillside, a forty-metre stack, and",
+  "  // a charging deck six metres over the yard reached by one stone flight.",
+  "  // `kit/harbour.ts` owns the argument for all four.",
+);
 
-// Four sulphur kilns at the inner corners of the four yards: the works' own
-// light, and the reason the shoulder of the mountain is visible from the quay
-// at night. Each carries a `LocalLight`, so four is a deliberate spend of the
-// sixteen slots and there is nothing else lit within two hundred metres.
-for (const [dx, dz] of [[-18, -16], [18, -16], [-18, 16], [18, 16]]) {
+/**
+ * The smelter, on the bench the works district was extended north to hold.
+ *
+ * **A landmark on a 1,500 m map is a thing you steer by before you have
+ * learned the streets**, and until this one there was nothing on the island
+ * over 26 m but the mountain itself — so from the quay, from Netstrand and
+ * from the middle of the bay, the whole northern half of the map was a
+ * silhouette with no features in it at all. What the stack does at that
+ * distance is say where D is; what the hall does at ten metres is give the
+ * flag an interior, which the Ashworks was the only quarter without.
+ *
+ * `rotY: PI` puts the cart arch on the yard and the charging deck uphill,
+ * which is the way round a works is actually built — the ore comes down off
+ * the mountain onto the deck and the metal goes out through the arch onto the
+ * haul road.
+ */
+const WORKS_N = -200;
+must("smelter", D.x, WORKS_N, Math.PI, 62, 32, undefined, 1.0);
+// The spur off the works' north ring to the arch. Without it the landmark is
+// the one building on the island that no road goes to, which is the mistake
+// `--roads` exists to catch.
+roadRun([[D.x, -161], [D.x, WORKS_N + 18]], 7, "dirt");
+
+// TWO sulphur kilns at the yard's north corners rather than four. Each carries
+// a `LocalLight` and the smelter's furnace now carries another, so what was a
+// spend of four of the sixteen slots on one flag is three — and the two that
+// are left stand where the light is between the crossroads and the hall,
+// which is the ground people actually cross.
+for (const [dx, dz] of [[-18, -16], [18, -16]]) {
   must("kiln", D.x + dx, D.z + dz, 0, 5.2, 5.2, undefined, 0.6);
 }
 // The loading platform, the bonded store and the ore barn, each on the outside
 // of the yard where the haul road and the tracks reach them.
 {
-  const t = facing(WORKS.block(1, 0), 0, WORKS.width, 0, 12, "terrace");
-  must("terrace", t.x, t.z, 0, 30, 24, { width: 28, depth: 22, height: 2.2, rampSide: 1 }, 0.6);
+  // The loading platform, moved off the yard's north side because that is the
+  // smelter's ground now: it stands on the EAST instead, where the tramway
+  // would have come down to the haul road, and the four set pieces round the
+  // yard are now one on each of its four sides rather than three on two.
+  const t = facing(WORKS.block(1, 0), 1, WORKS.width, 0, 12, "terrace");
+  must("terrace", t.x, t.z, t.rot, 30, 24, { width: 28, depth: 22, height: 2.2, rampSide: -1 }, 0.6);
   const d = facing(WORKS.block(0, 0), 3, WORKS.width, 0, 9, "depot");
   must("depot", d.x, d.z, d.rot, 30, 18, { width: 28, depth: 16, height: 8 }, 0.3);
   const n = facing(WORKS.block(0, 1), 2, WORKS.width, 0, 11.5, "barn");
@@ -2634,27 +2887,134 @@ for (const t of [0.26, 0.5, 0.74]) {
   const p = bayAtDepth(a, 0.28);
   if (p) must("jetty", p.x, p.z, a + Math.PI / 2, 4, 22, { length: 20 }, 1.2, -0.34);
 }
-// The drying racks between the beach and the bay road: a woodpile run reads as
-// a rack from any distance a player sees one at, and it is the only thing in
-// the kit that is long, low and timber without also being a fence.
+// THE DRYING RACKS between the beach and the bay road, and they are racks now
+// rather than a run of `woodpile`s standing in for one. A woodpile is a solid
+// 1.9 m block, which is exactly the wrong shape for the job: a rack is a thing
+// you see a body THROUGH at forty metres and cannot walk through at two, which
+// is the `porous` + `strut` pair `buildFishRack` is built out of.
 for (let i = 0; i < 9; i++) {
   const a = along(NET_ARC, i / 8);
   const p = inland(a, 22);
-  if (p) place("woodpile", p[0], p[1], a, 6, 2.2, { length: 5 }, 1.0);
+  if (p) place("fishRack", p[0], p[1], a, 11, 2.4, { length: 10 }, 1.0);
+}
+// The hamlet's own crane, on the slip. One, and a small one: Netstrand lands
+// fish and the Quay lands cargo, and the difference between the two
+// waterfronts should be legible without a caption.
+{
+  const a = along(NET_ARC, 0.5);
+  const p = inland(a, 12);
+  if (p) must("crane", p[0], p[1], faceWater("crane", a), 10, 12, undefined, 1.0);
+}
+// Two hulls drawn up at the ends of the beach — the quay's arithmetic again,
+// on a shorter row with the same bands in it.
+for (const t of [0.02, 0.98]) {
+  const a = along(NET_ARC, t);
+  const p = inland(a, 12);
+  if (p) place("careenedHull", p[0], p[1], a + Math.PI / 2, 5, 12, { length: 10 }, 1.0);
 }
 place("kiln", 300, -168, 0, 5.2, 5.2, undefined, 1.6);
 place("kiln", 480, -84, 0, 5.2, 5.2, undefined, 1.6);
 
-// The hamlet itself: single-storey, and every door on a street.
+// The hamlet itself: single-storey, every door on a street, and a net loft on
+// about a quarter of the plots — fewer than the Netlofts quarter, because this
+// is where the boats are kept and that is where the gear is.
 for (const b of NETSTRAND.blocks) {
   if (b === FISH_BLOCK) continue;
   fillBlock(b, {
     gap: 2,
     inset: 9,
-    size: () => [randInt(6, 9), randInt(5, 8)],
-    house: (x, z, rot, w, d) =>
-      chance(0.88) && cottageAt(x, z, rot, { w, d, h: rnd(2.9, 3.6) }),
+    size: () => [randInt(7, 9), randInt(6, 8)],
+    house: (x, z, rot, w, d) => {
+      if (chance(0.24)) {
+        return place("netLoft", x, z, rot, w + 1, d + 0.9, {
+          width: w,
+          depth: d,
+          litWindows: chance(0.4),
+        }, 0.35);
+      }
+      return chance(0.88) && cottageAt(x, z, rot, { w, d, h: rnd(2.9, 3.6) });
+    },
     yard: (blk) => backYard(blk, { count: randInt(1, 3) }),
+  });
+}
+
+// --- Salthouses --------------------------------------------------------------
+
+section(placements, "Salthouses - the salt hamlet on the southern strand");
+placements.push(
+  "  // Not a flag: the sixth settlement, on the coast road halfway between the",
+  "  // quay and the cape. It is what the southern shelf — the largest single",
+  "  // piece of level ground on the island — had instead of a reason to be",
+  "  // crossed. The PANS are the point: no river and nothing to farm means the",
+  "  // flat behind a strand is worth having for the salt, and everything else",
+  "  // here is arranged around them.",
+);
+
+// The salt store on the coast-road frontage, and the smithy across from it.
+{
+  const b = SALT.block(1, 1);
+  const p = onFront(b, 2, 0, 8.5, "barn");
+  must("barn", p.x, p.z, p.rot, 23, 17, undefined, 0.3);
+  const q = onFront(SALT.block(0, 1), 2, 0, 4.5, "smithy");
+  place("smithy", q.x, q.z, q.rot, 10, 9, undefined, 0.3);
+}
+// The well, on the west block's yard rather than at the crossing: a street
+// claims its ground and a pump standing in a carriageway is refused, silently.
+place("well", SALT.block(0, 0).x, SALT.block(0, 0).z, 0, 5, 5, undefined, 1.0);
+
+/**
+ * The pans, on the low flat between the road and the sea.
+ *
+ * They are laid where the ground is one to three metres — the wettest walkable
+ * ground on the island outside the bay — because that is where a pan goes and
+ * because it is the one part of this shelf that never had anything on it.
+ * `buildSaltPan`'s coping is drawn and not collided, so a field of them is as
+ * free to the ray budget as a field of road slabs; what they cost is the
+ * grass, which is why the shelf's grass rects were cut round them.
+ */
+for (const [px, pz, pw, pd] of [
+  [-26, 524, 30, 18],
+  [14, 526, 30, 18],
+  [54, 528, 30, 18],
+  [94, 530, 26, 16],
+  [-6, 552, 26, 16],
+  [66, 554, 26, 16],
+]) {
+  place("saltPan", px, pz, -0.053, pw + 2, pd + 2, { width: pw, depth: pd }, 1.2);
+}
+// The salt sheds and the racks on the pans' own bank, between them and the
+// road: a pan needs somewhere dry to put what comes out of it.
+// Everything here stands SEAWARD of the coast road's own claim (the
+// carriageway is at z ~502 and claims 5 m of verge either side), which is the
+// one number this block is cut to.
+for (const [sx, sz] of [[-46, 514], [22, 516], [88, 518]]) {
+  place("shed", sx, sz, -0.053, 4.4, 3.8, undefined, 1.0);
+}
+// The racks go in the four-metre lane between the road's verge and the first
+// row of pans, which is the only strip on this flat that is neither
+// carriageway nor brine.
+for (const [rx, rz] of [[-84, 510], [-12, 510], [52, 510], [118, 510]]) {
+  place("fishRack", rx, rz, -0.053, 11, 2.4, { length: 10 }, 1.0);
+}
+place("careenedHull", -84, 532, 1.52, 5, 12, { length: 10 }, 1.0);
+place("crates", -66, 516, 0.2, 4, 3.6, undefined, 1.2);
+place("cart", 34, 512, -0.4, 4.6, 3.2, undefined, 1.2);
+place("lamp", 92, 494, 0, 2.2, 2.2, undefined, 0.8);
+
+// The houses: single-storey, cheap, and turned to whichever street they stand
+// on. A net loft here and there, because half of Salthouses fishes too.
+for (const b of SALT.blocks) {
+  fillBlock(b, {
+    gap: 2.2,
+    inset: 9,
+    size: () => [randInt(6, 9), randInt(5, 7)],
+    house: (x, z, rot, w, d) => {
+      if (chance(0.18)) {
+        return place("netLoft", x, z, rot, w + 1, d + 0.9, { width: w, depth: d }, 0.35);
+      }
+      return chance(0.85) && cottageAt(x, z, rot, { w, d, h: rnd(2.9, 3.5) });
+    },
+    yard: (blk) => backYard(blk, { count: randInt(1, 2) }),
   });
 }
 
@@ -2779,6 +3139,18 @@ for (const h of HOMES) {
   place("jetty", ux * (shore.r + deep), uz * (shore.r + deep), t + Math.PI / 2, 4, 24, { length: 22 }, 1.2, -0.34);
   place("crates", ux * (shore.r - 26) - uz * 12, uz * (shore.r - 26) + ux * 12, t, 4, 3.6, undefined, 1.2);
   place("woodpile", ux * (shore.r - 24) + uz * 14, uz * (shore.r - 24) - ux * 14, t, 6, 2.2, { length: 5 }, 1.0);
+  // A hull on the hard beside each slip, which is what says the shed is a shed
+  // and not a hut with a ramp in front of it.
+  place(
+    "careenedHull",
+    ux * (shore.r - 20) - uz * 24,
+    uz * (shore.r - 20) + ux * 24,
+    t + Math.PI / 2,
+    5,
+    13,
+    { length: 11 },
+    1.0,
+  );
 }
 
 // --- the outskirts -----------------------------------------------------------
@@ -2807,6 +3179,34 @@ must("watchtower", ...onCoast(1.62, 40), 0, 7, 7, undefined, 2);
 must("watchtower", ...onCoast(Math.PI * 0.94, 34), 0, 7, 7, undefined, 2);
 
 /**
+ * THE MOUTH LIGHT, on the south cape at the end of the cape lane.
+ *
+ * **The cape lane already went to "the light on the mouth" and there was no
+ * light on the mouth** — the comment on that road has said so since it was
+ * written and what stood there was one more timber watchtower. This is the
+ * one, and it is the piece that makes the whole southern half of the map
+ * legible at night: the bay's entrance is 260 m wide and unmarked, and from
+ * anywhere on the shelf or the water the only thing telling you where the
+ * island ends was the fog.
+ *
+ * Placed FROM the coast function rather than against it, the rule the two
+ * watchtowers above already obey: a landmark whose whole job is to stand at
+ * the water's edge has to move when the water's edge does.
+ */
+{
+  const t = 0.31;
+  must(
+    "lighthouse",
+    ...onCoast(t, 30),
+    faceRot("lighthouse", -Math.cos(t), -Math.sin(t)),
+    13,
+    24,
+    undefined,
+    2,
+  );
+}
+
+/**
  * The roadside farms.
  *
  * **A croft is put where a road goes past it**, which is the one rule that
@@ -2826,7 +3226,12 @@ for (const pts of TRACKS) {
     const len = Math.hypot(bx - ax, bz - az);
     const ux = (bx - ax) / len;
     const uz = (bz - az) / len;
-    for (let t = 40; t < len - 30; t += rand(56, 96)) {
+    // Closer together than they were. What used to fill the country between
+    // the holdings was the free lattice below, and the lattice now needs a
+    // lane within `ROAD_REACH` — so a road that carries more of them is the
+    // honest way to keep the outskirts populated, and it puts what it carries
+    // where somebody walking the road will actually pass it.
+    for (let t = 40; t < len - 30; t += rand(46, 80)) {
       const side = chance(0.5) ? 1 : -1;
       const off = rand(30, 44) * side;
       const x = ax + ux * t - uz * off;
@@ -2846,14 +3251,21 @@ for (const pts of TRACKS) {
 // was and it is what the thinning CUE is made of — the dressing running out is
 // the first thing you notice about leaving, a beat before the leash starts
 // counting.
-for (let gz = -648; gz <= 648; gz += 66) {
-  for (let gx = -648; gx <= 648; gx += 66) {
-    const x = gx + rand(-24, 24);
-    const z = gz + rand(-24, 24);
+for (let gz = -648; gz <= 648; gz += 56) {
+  for (let gx = -648; gx <= 648; gx += 56) {
+    const x = gx + rand(-22, 22);
+    const z = gz + rand(-22, 22);
     if (!dry(x, z, 1.6)) continue;
     if (grade(x, z) > 0.16) continue;
     if (Math.hypot(x - BAY.x, z - BAY.z) < 420) continue;
-    if (!chance(0.42)) continue;
+    // **A HOLDING WITH NO LANE TO IT IS NOT A HOLDING.** The lattice used to
+    // sow the whole outer shelf regardless, which put nine houses on the north
+    // coast and the cone's apron three hundred metres from any carriageway —
+    // the exact failure the assertion at the bottom of this file now refuses
+    // to write. Testing it HERE rather than only asserting it is what makes
+    // the thinning cue honest: the dressing runs out where the roads do.
+    if (roadDist(x, z) > ROAD_REACH) continue;
+    if (!chance(0.62)) continue;
     if (!free(x, z, 30, 30, 4)) continue;
     croft(x, z);
     crofts++;
@@ -2940,7 +3352,11 @@ for (const [mx, mz, cnt, rad] of [
 }
 
 section(scatter, "the wind-bent pines of the two arms");
-for (const [px2, pz2] of [[-380, 470], [-170, 480], [60, 510], [300, 486], [470, 400]]) {
+// **Not on the salt flat.** The belt that used to stand at (60, 510) is now
+// SALTHOUSES' pans, and a scatter region is an extent: what it produced was
+// nine wind-bent pines growing out of a brine pond, which is the same class of
+// mistake `assertScatterDry` catches one step further out to sea.
+for (const [px2, pz2] of [[-380, 470], [-206, 462], [212, 452], [330, 500], [470, 400]]) {
   scat("pine", px2, pz2, 28, { radius: 96, scale: [0.7, 1.15], clearance: 9, blocking: true });
 }
 scat("pine", 540, -230, 24, { radius: 90, scale: [0.7, 1.1], clearance: 9, blocking: true });
@@ -2996,7 +3412,20 @@ for (const [t, prop, n, w] of [
 }
 scat("barrel", D.x, D.z, 18, { radius: 78, clearance: 2.6 });
 scat("rubble", D.x + 40, D.z - 30, 22, { radius: 74, scale: [0.7, 1.2], clearance: 4, blocking: true });
+// The smelter's own spoil, banked along the flank of the hall. A works throws
+// away more than it makes and that is most of what makes one look like a works
+// rather than a big shed.
+scat("rubble", D.x + 46, WORKS_N + 6, 26, { radius: 46, scale: [0.8, 1.4], clearance: 4, blocking: true });
+scat("barrel", D.x - 44, WORKS_N - 4, 12, { radius: 34, clearance: 2.6 });
+scat("palletStack", D.x + 6, WORKS_N + 26, 10, { radius: 30, clearance: 3.4 });
 scat("litter", E.x, E.z, 26, { radius: 92, clearance: 1.6 });
+// SALTHOUSES: the working ground round the pans, and the litter of the hamlet
+// behind them. `crates` and `barrel` because what a salt works ships is dry
+// goods in casks, and a bare flat with nothing on it reads as unfinished
+// ground rather than as somewhere people work.
+scat("barrel", 30, 512, 14, { width: 210, depth: 22, rotY: -0.053, clearance: 2.4 });
+scat("palletStack", -60, 540, 8, { radius: 30, clearance: 3.4 });
+scat("litter", 60, 470, 22, { radius: 76, clearance: 1.6 });
 {
   const p = inland(along(NET_ARC, 0.5), 16);
   if (p) scat("barrel", p[0], p[1], 16, { radius: 84, clearance: 2.4 });
@@ -3083,9 +3512,13 @@ const waterLines = WATER.map(
 );
 
 const grass = [
-  "  // The southern shelf, out of the wind and off the ash.",
-  "  { x: 0, z: 500, width: 420, depth: 130, density: 0.14 },",
-  "  { x: 360, z: 440, width: 260, depth: 120, density: 0.12 },",
+  "  // The southern shelf, out of the wind and off the ash — in two pieces",
+  "  // with SALTHOUSES' pans between them, because a salt flat with grass",
+  "  // growing through it is a salt flat nobody works. `buildSaltPan`'s coping",
+  "  // is drawn and not collided, so nothing else on this map holds a tuft off",
+  "  // one: the gap in this list is the whole of the mechanism.",
+  "  { x: -170, z: 495, width: 250, depth: 125, density: 0.14 },",
+  "  { x: 300, z: 470, width: 250, depth: 120, density: 0.12 },",
   "  // The western moor, and the ash ground between the works and the bay.",
   "  { x: -540, z: 140, width: 190, depth: 240, density: 0.1 },",
   "  { x: -260, z: 40, width: 170, depth: 150, density: 0.07 },",
@@ -3123,9 +3556,12 @@ const NAMED = FLAGS.map(
 const FLAG_SPAWN_DIRS = {
   A: 2.36,
   B: 1.57,
-  C: 1.57,
+  // Turned off due south when the rock light replaced the watchtower: a
+  // lighthouse has a keeper's cottage at its foot and a bigger base under it,
+  // and the old bearing put the spawn inside both.
+  C: 2.36,
   D: 0,
-  E: 2.55,
+  E: 1.57,
 };
 /** Every bearing that would place `f`'s spawn on open dry ground. */
 function spawnBearings(f) {
@@ -3322,8 +3758,9 @@ writeFileSync(
  *   cobbled streets **turned to the shore rather than to the compass**, which
  *   is the first quarter in the tree that is. The harbour square is the middle
  *   of the front row, so the flag stands on paving with the water across the
- *   road. Bonded warehouses and a customs row with the only breakable glass on
- *   the island stand on the Strand.
+ *   road. Bonded warehouses, a customs row with the only breakable glass on the
+ *   island, the tavern and TWO QUAY CRANES stand on the Strand, with two hulls
+ *   up on the hard at either end of the bank.
  * - **B, Cinder Steps** — the old town on the shelf, up the Steps road from the
  *   harbour. **Its lanes are 2.8 m and the houses stand on them**, which leaves
  *   5.2 m between two rows of doors: a gun truck takes that at speed
@@ -3333,27 +3770,68 @@ writeFileSync(
  *   7 m ring road round the outside and the two cross streets.
  * - **C, Chapel Rock** — **the island in the middle of the bay**, and the only
  *   flag here with no road to it. A lava plug with an 88 m dead-level crown
- *   carrying a chapel, a graveyard terrace, a ruin, four cottages and the light
- *   that is the one thing on this map able to see both waterfronts. It is
+ *   carrying a chapel, a graveyard terrace, a ruin, four cottages and the ROCK
+ *   LIGHT — a lighthouse rather than the watchtower that used to stand in for
+ *   one, and the only thing on this map able to see both waterfronts. It is
  *   reached by wading, from either shore, about a hundred and seventy metres of
  *   open water each way — and it is the obvious thing for a boat to change.
  * - **D, The Ashworks** — four yards on a crossroads high on Grimhold's flank,
- *   with the flag at the crossing. Sulphur kilns, silos, the bonded store and
- *   the loading platform at the head of the haul road. The four kilns are four
- *   of the sixteen light slots and there is nothing else lit within two hundred
- *   metres.
+ *   with the flag at the crossing, and **THE CINDERWORKS standing over it**.
+ *   The smelter is the map's landmark: a hollow ore hall with a cart arch a
+ *   tank drives through, a furnace block whose three tap arches are the one
+ *   light on this hillside, a FORTY-METRE STACK — the tallest thing on the
+ *   island by fourteen metres, and what the northern half of the map is
+ *   navigated by from anywhere on the water — and a charging deck six metres
+ *   over the yard, reached by one stone flight and railed on the outboard
+ *   edge. It stands ninety metres up the works' own north street rather than
+ *   on the flag, so that the stack is what closes the view from the crossing.
+ *   Round it: two sulphur kilns, silos, the bonded store, the ore barn and the
+ *   loading platform at the head of the haul road, and the ASH TRACK, which is
+ *   the second way in and the reason holding the crossroads is no longer
+ *   holding the flag.
  * - **E, Netstrand** — the fishing hamlet on the bay's north-eastern shore,
  *   turned to its own water the other quarter-turn from the quay, so the two
  *   waterfronts face each other across five hundred metres of open harbour with
- *   the rock in the middle of it.
+ *   the rock in the middle of it. Its net sheds, its slip crane, its two hulls
+ *   and its DRYING RACKS are on the beach; a quarter of the hamlet is net
+ *   lofts, which is the building the whole waterfront is kept in.
+ *
+ * ### …and the sixth settlement, which is not a flag
+ *
+ * **SALTHOUSES**, on the coast road halfway between the quay and the cape.
+ * The southern shelf is the largest single piece of level ground on the island
+ * and it carried a road, a dozen scattered crofts and nothing else — which is
+ * the shape of somewhere a player walks OVER rather than through. What makes
+ * this a place rather than more crofts is that it has a reason: there is no
+ * river on a lava island and nothing on the shelf to farm, so what flat ground
+ * behind a strand is worth having is the salt. Six pans on the low flat
+ * seaward of the road, the racks and the sheds in the lane between, the store
+ * and the smithy on the frontage, three by two blocks of houses behind. It is
+ * the third industry on this map after the fish and the sulphur, and the only
+ * one that explains a village standing where nothing grows.
  *
  * ### The town is a NETWORK, and the houses are arranged against it
  *
- * Eight arterials carry the island — the Strand along the harbour, the Steps up
- * to the old town, the BAY ROAD right round the inside of the C, the haul road,
- * the coast road along the southern shelf, the shore lane round the north arm
- * and one road out of each landing — and every quarter is a grid of its own
- * streets hung off one of them. The streets are laid BEFORE the buildings and
+ * Eleven arterials carry the island — the Strand along the harbour, the Steps
+ * up to the old town, the BAY ROAD right round the inside of the C, the haul
+ * road, the coast road along the whole southern shelf, the shore lane round the
+ * north arm, the NORTH SHORE TRACK over the arm's outside, the MOOR LANE round
+ * the western moor, the ASH TRACK along the mountain's toe, the cape lane and
+ * one road out of each landing — and every quarter is a grid of its own streets
+ * hung off one of them.
+ *
+ * **The last four of those exist because the coverage was MEASURED.**
+ * \`npm run cinderhaven -- --roads\` prints a plan of how far every square of
+ * dry, in-play ground is from a carriageway, and it said that the whole western
+ * third of the island and the outside of the north arm — a quarter of the land
+ * on the map — were over a hundred and fifty metres from any road at all. The
+ * generator now REFUSES to write a layout with a dwelling that far off the
+ * network, and the free lattice of crofts on the outskirts tests the same
+ * distance before it sows one, so the dressing runs out where the roads do
+ * rather than nine houses further on. It also refuses a carriageway laid in
+ * the sea or up a slope the nav graph severs, which is the same class of bug
+ * one layer down: a road is a picture, and it draws over water and over a
+ * cliff exactly as happily as over ground. The streets are laid BEFORE the buildings and
  * claim their ground first, so each house can be turned to face the carriageway
  * it stands on: **every door in this town is on a street**, and the yards, the
  * walls and the woodpiles are behind them in the middle of the block.
@@ -3390,10 +3868,15 @@ writeFileSync(
  *   what leaves room for the stalls, the lamps and the well.
  * - Compound walls are authored in runs with GAPS. A sealed yard is a plot the
  *   nav flood fill never enters.
- * - Lamps, shrines, kilns and fire drums each carry a \`LocalLight\`, and there
- *   are sixteen slots uploaded nearest-first. What is lit is the Strand, the
- *   two market squares and the works; everything else that glows is emissive
- *   geometry, which costs nothing and lights nothing.
+ * - Lamps, shrines, kilns, fire drums, the smelter's furnace and each of the
+ *   three lighthouse lanterns carry a \`LocalLight\`, and there are sixteen
+ *   slots uploaded nearest-first. What is lit is the Strand, the two market
+ *   squares, the works and the three headlands; everything else that glows —
+ *   the smelter's clerestory and ridge lantern, the ring under its crown, a
+ *   net loft's shutters, every lit window in the town — is emissive geometry,
+ *   which costs nothing and lights nothing. The works gave up two of its four
+ *   kilns to pay for the furnace, and that is the shape of the budget:
+ *   anything new that LIGHTS has to say what it is taking the slot from.
  * - The ORDER of the scatter array is load-bearing: every region draws from one
  *   seeded stream, so a region added anywhere but the end re-rolls every field
  *   below it.
@@ -3629,6 +4112,162 @@ export const CinderhavenLayout: MapLayout = {
 );
 
 /**
+ * **IS EVERY PART OF THE ISLAND ON THE NETWORK?** — measured over the finished
+ * roads and the finished floor, and printed as a plan by `--roads`.
+ *
+ * The failure this catches has no symptom in a screenshot, which is why it is
+ * a test and not a review: a quarter or a run of holdings laid off the network
+ * still builds, still reads as a town from above and is still somewhere a
+ * player arrives at across four hundred metres of open moor wondering what it
+ * is for. The old layout shipped with a shelf of crofts in exactly that state,
+ * and what said so in the end was somebody walking it.
+ *
+ * What is measured is the DRY, IN-PLAY ground, and the bar is `ROAD_REACH`.
+ * The two exemptions are deliberate and are named rather than tuned away: the
+ * ROCK has no road by design (it is the one flag reached by wading), and the
+ * cone above the works is ground the map has already decided nobody holds.
+ */
+function roadCoverage() {
+  const cells = [];
+  const step = 25;
+  for (let z = -HALF + step; z < HALF; z += step) {
+    for (let x = -HALF + step; x < HALF; x += step) {
+      if (!dry(x, z, 0.8)) continue;
+      // The rock is meant to have no road on it, and the cone is meant to have
+      // nobody on it: both are stated in the layout and neither is a hole.
+      if (Math.hypot(x - ROCK.x, z - ROCK.z) < ROCK.top + ROCK.run) continue;
+      if (Math.hypot(x - V.x, z - V.z) < 300) continue;
+      cells.push({ x, z, d: roadDist(x, z) });
+    }
+  }
+  return cells;
+}
+
+/**
+ * **NO CARRIAGEWAY IS LAID IN THE SEA OR UP A CLIFF**, proved rather than
+ * eyeballed — `assertScatterDry`'s argument, applied to the one other thing on
+ * this map authored as bare coordinates.
+ *
+ * A `road` is visual-only: it carries no collider, stops no round and is in no
+ * baked structure, so a leg laid across forty metres of water is DRAWN, is
+ * walked straight through, and says nothing at all. And a leg laid up a slope
+ * past `MAX_WALKABLE_GRADE` is worse than a missing road, because it is a route
+ * drawn on the ground that the nav graph has severed: bots decline to use it
+ * and a player following it walks into a wall of hillside.
+ *
+ * The bar is 0.35 rather than the graph's own 0.4, for `GRADE`'s reason one
+ * layer out: a road sampled every eight metres over a floor sampled every six
+ * is an average, and an average AT the limit is a link that fails somewhere
+ * along it. The steepest carriageway on the finished map is printed in the
+ * summary — it is the bay road climbing off the head of the harbour, at 0.33 —
+ * so the margin here is thin on purpose: what this is meant to catch is a leg
+ * up a sea cliff, which is 0.6 and over, and a bar loose enough to be
+ * comfortable would catch nothing at all.
+ */
+const ROAD_GRADE = 0.35;
+let worstRoadGrade = 0;
+{
+  const bad = [];
+  for (const pts of TRACKS) {
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, az] = pts[i - 1];
+      const [bx, bz] = pts[i];
+      const n = Math.max(2, Math.ceil(Math.hypot(bx - ax, bz - az) / 8));
+      for (let k = 0; k <= n; k++) {
+        const x = ax + ((bx - ax) * k) / n;
+        const z = az + ((bz - az) * k) / n;
+        worstRoadGrade = Math.max(worstRoadGrade, grade(x, z));
+        if (!dry(x, z, 0.35)) {
+          bad.push(`(${x.toFixed(0)}, ${z.toFixed(0)}) is in ${(SEA - heightAt(x, z)).toFixed(2)} m of water`);
+        } else if (grade(x, z) > ROAD_GRADE) {
+          bad.push(`(${x.toFixed(0)}, ${z.toFixed(0)}) is a ${grade(x, z).toFixed(2)} gradient`);
+        }
+      }
+    }
+  }
+  if (bad.length) {
+    throw new Error(
+      `roads: ${bad.length} sample(s) on an arterial are unwalkable — ` +
+        `${bad.slice(0, 6).join("; ")}${bad.length > 6 ? ", ..." : ""}. A road is a ` +
+        "picture: it is drawn over the sea and up a cliff exactly as happily as " +
+        "over ground, and nothing downstream says so.",
+    );
+  }
+}
+
+/**
+ * **EVERY DWELLING ON THE ISLAND IS ON THE NETWORK**, proved rather than flown
+ * over.
+ *
+ * This is the test and `roadCoverage` above is the tool: the coverage plan
+ * shows where the ROADS are thin, which on an island whose outer ring is
+ * deliberately bare is a design question rather than a bug, and this asks the
+ * question that actually has one right answer — is there anywhere somebody
+ * LIVES that has no way in? A quarter or a run of holdings laid off the
+ * network still builds and still reads as a town from above, and the only
+ * thing that ever said so was somebody walking it.
+ *
+ * What is measured is the kinds that are PLACES — a house, a hall, a store, a
+ * works — and not the kinds that are deliberately reached on foot or not at
+ * all: a jetty is over water, a boat shed is on a bank, a lighthouse is on a
+ * headland, a stone wall is a field boundary running out from a croft, and
+ * everything on CHAPEL ROCK is the one flag on this map with no road to it by
+ * design. Those are named rather than tuned away.
+ */
+const ON_THE_NETWORK = new Set([
+  "cottage",
+  "townhouse",
+  "netLoft",
+  "tavern",
+  "smithy",
+  "barn",
+  "mill",
+  "depot",
+  "shophouse",
+  "chapel",
+  "smelter",
+  "saltPan",
+  "gatehouse",
+]);
+{
+  const stranded = [];
+  for (const line of placements) {
+    const m = /kind: "(\w+)", x: (-?[\d.]+), z: (-?[\d.]+)/.exec(line);
+    if (!m || !ON_THE_NETWORK.has(m[1])) continue;
+    const x = Number(m[2]);
+    const z = Number(m[3]);
+    if (Math.hypot(x - ROCK.x, z - ROCK.z) < ROCK.top + ROCK.run) continue;
+    const d = roadDist(x, z);
+    if (d > ROAD_REACH) stranded.push(`${m[1]} at (${x.toFixed(0)}, ${z.toFixed(0)}) is ${d.toFixed(0)} m from one`);
+  }
+  if (stranded.length) {
+    throw new Error(
+      `roads: ${stranded.length} building(s) are off the network — ` +
+        `${stranded.slice(0, 8).join("; ")}${stranded.length > 8 ? ", ..." : ""}. ` +
+        "Run `npm run cinderhaven -- --roads` for the coverage plan, then add a " +
+        "lane rather than moving the building: a house with no way to it is a " +
+        "house somebody put in a field.",
+    );
+  }
+}
+
+const coverage = roadCoverage();
+if (process.argv.includes("--roads")) {
+  const step = 25;
+  const glyph = (d) => (d < 30 ? "." : d < 70 ? ":" : d < ROAD_REACH ? "o" : "#");
+  for (let z = -HALF + step; z < HALF; z += step) {
+    let row = "";
+    for (let x = -HALF + step; x < HALF; x += step) {
+      const c = coverage.find((k) => k.x === x && k.z === z);
+      row += c ? glyph(c.d) : " ";
+    }
+    console.log(row);
+  }
+  console.log(`
+  (blank) sea, the rock or the cone   . <30 m   : <70 m   o <${ROAD_REACH} m   # OFF THE NETWORK`);
+}
+
+/**
  * The set pieces that MUST have found their ground, and how many of each.
  *
  * A refusal is normal and expected in the hundreds — a quarter's recipe asks
@@ -3639,10 +4278,18 @@ export const CinderhavenLayout: MapLayout = {
  */
 const REQUIRED = {
   chapel: 1,
-  tavern: 1,
+  tavern: 2,
   monument: 1,
   gatehouse: 2,
   mill: 1,
+  // The LANDMARK. One, and its absence would be a flag standing in an empty
+  // yard with a road running to nothing — which is the loudest thing on this
+  // map and the quietest possible failure.
+  smelter: 1,
+  // The three lights: the rock, the harbour point and the mouth of the bay.
+  lighthouse: 3,
+  // The two big cranes on the Quay and the small one at Netstrand.
+  crane: 3,
   road: roadLegs,
 };
 
@@ -3659,7 +4306,24 @@ const REQUIRED = {
  * road, which is a change with no visible connection to the waterfront it
  * emptied.
  */
-const AT_LEAST = { boathouse: 6, jetty: 6, silo: 5, kiln: 6, watchtower: 7, cottage: 140 };
+const AT_LEAST = {
+  boathouse: 6,
+  jetty: 6,
+  silo: 5,
+  kiln: 4,
+  // Five rather than seven: the rock's and the harbour point's are lighthouses
+  // now, which is what they were always standing in for.
+  watchtower: 5,
+  cottage: 130,
+  // The three pieces the new waterfront is made of. Each is placed in a run
+  // whose count depends on where the coastline came out, so what is asserted
+  // is that the run is a RUN — four hulls on an island this size is a fishing
+  // town and one is a boat somebody left.
+  careenedHull: 6,
+  fishRack: 9,
+  netLoft: 24,
+  saltPan: 5,
+};
 
 const byKind = {};
 for (const l of placements) {
@@ -3702,6 +4366,8 @@ console.log(
     `  ${row}x${row} height vertices, ground ${lo.toFixed(2)}..${hi.toFixed(2)} m, ` +
     `${landKm2.toFixed(2)} km2 dry, ${seaKm2.toFixed(2)} water (bay ${bayKm2.toFixed(2)}) of ` +
     `${((PLAY * PLAY) / 1e6).toFixed(2)}
+` +
+    `  ${roadLegs} road slabs, steepest carriageway ${worstRoadGrade.toFixed(2)} against a bar of ${ROAD_GRADE}; every dwelling within ${ROAD_REACH} m of one
 ` +
     `  steepest LAND step ${worstStep.toFixed(2)} m at ${worstAt}\n` +
     `  steep land edges exempted: ${EXEMPT.cone} on the cone, ${EXEMPT.cliff} on sea cliffs\n` +

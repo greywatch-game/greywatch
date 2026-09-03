@@ -413,7 +413,28 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     num("height", "height", 8.4, 5, 13, 0.2),
   ],
 
+  // The volcanic coast — kit/harbour.ts.
+  lighthouse: [num("height", "height", 26, 16, 40, 0.5)],
+  fishRack: [num("length", "length", 9, 3, 30, 0.5)],
+  careenedHull: [num("length", "length", 11, 6, 20, 0.5)],
+  netLoft: [
+    num("width", "width", 9, 5, 16),
+    num("depth", "depth", 7, 4, 14),
+    num("height", "loft height", 3.1, 2.4, 4.5, 0.1),
+    bool("litWindows", "lit windows"),
+  ],
+  saltPan: [
+    num("width", "width", 22, 6, 60, 1),
+    num("depth", "depth", 14, 5, 40, 1),
+  ],
+
   // Fixed-geometry kinds: placed, rotated, and otherwise not configurable.
+  // The smelter is the one in this group that is a whole COMPOSITION rather
+  // than a shape: its charging deck, the flight that reaches it and the three
+  // doors it serves are solved against one plan, so a `width` here would move
+  // one of the three and leave the other two where they were.
+  smelter: [],
+  crane: [],
   tavern: [],
   smithy: [],
   watchtower: [],

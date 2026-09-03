@@ -63,6 +63,15 @@ import {
   buildSouk,
   buildWindTower,
 } from "./kit/desert";
+import {
+  buildCareenedHull,
+  buildFishRack,
+  buildHarbourCrane,
+  buildLighthouse,
+  buildNetLoft,
+  buildSaltPan,
+  buildSmelter,
+} from "./kit/harbour";
 import { buildJungleManor } from "./kit/manor";
 import {
   buildSilo,
@@ -158,6 +167,16 @@ export const BUILDERS = {
   blastWall: buildBlastWall,
   sandbags: buildSandbags,
   pylon: buildPylon,
+  // The volcanic-coast set — see kit/harbour.ts, whose header owns the rule
+  // that everything walked in it (the smelter's deck and its flight) obeys
+  // kit/terrain.ts, and the argument for why nothing else in it is climbed.
+  smelter: buildSmelter,
+  lighthouse: buildLighthouse,
+  crane: buildHarbourCrane,
+  fishRack: buildFishRack,
+  careenedHull: buildCareenedHull,
+  netLoft: buildNetLoft,
+  saltPan: buildSaltPan,
 } as const;
 
 export type BuilderKind = keyof typeof BUILDERS;

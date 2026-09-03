@@ -137,7 +137,10 @@ npm run cinderhaven# RE-SEED the volcanic island's layout and heights
                    #   file. Not part of any build.
                    #   `-- --probe` prints the FLOOR as a plan, a section and a
                    #   survey and writes nothing — on a map whose floor is the
-                   #   level, that is how you iterate on a coastline
+                   #   level, that is how you iterate on a coastline.
+                   #   `-- --roads` prints how far every square of dry, in-play
+                   #   ground is from a carriageway — a quarter with no lane to
+                   #   it has no symptom in a screenshot
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -535,7 +538,7 @@ ordinary layout file the editor opens, patches and saves like any other.
 Re-running the generator discards editor edits, which is the warning every
 `heights.ts` already carries.
 
-**Cinderhaven spends them again at 1,500 m and adds five rules of its own**,
+**Cinderhaven spends them again at 1,500 m and adds seven rules of its own**,
 each general rather than a detail of this map. **Its TOWN IS A NETWORK and the
 houses are arranged against it** — a quarter is blocks cut by its own streets,
 the streets are `road` placements that CLAIM their ground before anything is
@@ -563,6 +566,32 @@ whole bay is 2.6 m at the deepest and walkable — a shelf you step off into
 eight metres of water is a pit with a back-face-culled lid on it — which is
 what lets its middle flag stand on an island and still be reached on foot,
 while everything that must NOT be walked is made steep enough to sever instead.
+
+**A MAP FEELS LIKE A PLACE BECAUSE OF WHICH BUILDINGS ARE ON IT, NOT HOW MANY**,
+which is what `src/world/kit/harbour.ts` is: the first kit in the tree written
+for a map that had already shipped. The island was built out of the village set
+and read as Hollowmere with more water in it; the volcanic-coast set is seven
+pieces (`smelter`, `lighthouse`, `crane`, `fishRack`, `careenedHull`,
+`netLoft`, `saltPan`) made of three materials — the basalt the island IS,
+tarred timber that came by sea, and iron a week after it landed. **`smelter` is
+the tree's LANDMARK and the rule it carries is that a landmark needs an
+INSIDE**: Sarab's minaret is legible at 800 m and explicitly refuses to be
+entered, and what lets the Cinderworks do both is that its height is a CHIMNEY
+rather than a room — forty metres of stack over a hall you fight in costs three
+collider boxes and gives away no ground, because there is nothing at the top of
+it to hold.
+
+**AND A ROAD NETWORK IS MEASURED, NEVER REVIEWED.** `npm run cinderhaven --
+--roads` prints how far every square of dry, in-play ground is from a
+carriageway, and the answer on the shipped map was that a quarter of the land
+— the whole western third and the outside of the north arm — was over 150 m
+from any road. **That failure has no symptom in a screenshot**: a quarter laid
+off the network still builds, still reads as a town from above, and is still
+somewhere a player crosses four hundred metres of open moor to reach wondering
+what it is for. The generator now refuses to write a DWELLING that far off the
+network, tests the same distance before it sows a croft, and refuses a
+carriageway laid in the sea or up a slope the nav graph severs — a road is a
+picture and it draws over water as happily as over ground.
 
 **It is also where three rules about WATER were found**, all of them general: a
 body of water is a hole in the FLOOR with a plane over it — nothing but

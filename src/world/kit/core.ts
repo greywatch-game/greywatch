@@ -452,6 +452,57 @@ export const RENDER = "#6e6a5e";
  */
 export const AWNING = "#7c4a3f";
 
+// --- the volcanic coast ----------------------------------------------------
+// A fourth climate, added on exactly the terms the tropical and city sets
+// above were: these are COLOURS, not one map's private swatch, so anything
+// built out of them is available to every map in the tree. What holds them
+// together is that a working harbour on a lava island has only three
+// materials — the rock it is quarried out of, the timber that arrives by sea
+// and is then tarred against the salt, and the iron that rusts the week it
+// lands — and the whole set is those three plus what two industries stain
+// them with.
+//
+// Everything here is dark for the reason the city set is: the sky term lands
+// on every up-facing surface at once, and a hue picked while looking at the
+// swatch comes back a stop and a half lighter as a roof.
+
+/**
+ * Basalt: the island's own stone, and the mass of everything built to last —
+ * the quay wall, the smelter, a lighthouse's base, every foundation.
+ *
+ * Blue-grey rather than the village's `STONE`, which is a warm limestone. The
+ * two are meant to read as different GEOLOGY at a glance, which is most of
+ * what says this town was not carted in from the mainland.
+ */
+export const BASALT = "#3f444b";
+/** The same stone dressed and salt-bleached: copings, quoins, arch voussoirs. */
+export const BASALT_PALE = "#5d616a";
+/**
+ * Pitch over timber: a hull below its boot-topping, a net loft's boards, the
+ * tarred side of a shed that faces the weather.
+ *
+ * Nearly black on purpose. It is the darkest value in the kit, and what it
+ * buys is that a pale plank line laid on it reads as a strake from three
+ * hundred metres — the one place on this palette where the contrast is the
+ * whole silhouette.
+ */
+export const PITCH = "#2a2723";
+/** Canvas: an awning, a tarpaulin over a hull, a net bent to a drying pole. */
+export const SAILCLOTH = "#8d886f";
+/** Iron gone orange in salt air: hoppers, bands, hoist chains, tramway rails. */
+export const RUST = "#6d4130";
+/**
+ * Sulphur crust: what the works stains everything within two hundred metres,
+ * and the one yellow anywhere on this palette.
+ *
+ * Muted almost to olive, because the cel bands posterise a saturated yellow
+ * into stripes and because this is a DEPOSIT rather than a paint — it belongs
+ * on the lip of a kiln and the lee side of a spoil heap, not on an elevation.
+ */
+export const SULPHUR = "#93843c";
+/** Cooled clinker: slag heaps, ballast, the smelter's own casting floor. */
+export const SLAG = "#302d31";
+
 // --- guard rails -----------------------------------------------------------
 
 /**

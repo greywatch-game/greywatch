@@ -507,6 +507,16 @@ src/
                         #   trestleBridge, templeRuin, haystack, lamp, cart,
                         #   crates, woodpile, shed, trough, shrine, kiln
     kit/terrain.ts      #   terrace, ramp, road, jetty, boardwalk, stairs
+    kit/harbour.ts      #   smelter, lighthouse, crane, fishRack, careenedHull,
+                        #   netLoft, saltPan — the volcanic-coast set, and the
+                        #   only one in the kit built for a map that already
+                        #   shipped. `smelter` is the tree's one LANDMARK: a
+                        #   hollow ore hall with an arch armour drives through,
+                        #   a furnace block carrying the light, a 40 m stack and
+                        #   a walked charging deck one flight up. Its header
+                        #   owns why a landmark has to be worth walking INTO,
+                        #   the three materials the whole set is made of, and
+                        #   why nothing else in it is climbable
     kit/city.ts         #   tower, office, shophouse, depot, parkade, planter,
                         #   barrier, car, streetLight, monument — the downtown
                         #   set, and the first builders that stack WALKED floors.

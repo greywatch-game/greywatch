@@ -93,7 +93,7 @@ re-running any `heights.ts` generator does.
 
 **Cinderhaven is the sixth and the biggest: 1,500 m of PLAY inside 2,000 m of
 ground**, 2.8 times Sarab's playable area, seeded by `npm run cinderhaven` on
-Sarab's precedent and fielding the same 24 a side. Five things about it are
+Sarab's precedent and fielding the same 24 a side. Seven things about it are
 new here rather than borrowed, and each is written up where it belongs:
 
 - **The FLOOR is the level.** Every other map in the tree is a town on ground;
@@ -143,6 +143,47 @@ new here rather than borrowed, and each is written up where it belongs:
   bright disc and every shaft `GodRays` draws over the crater — see
   `cinderhaven/environment.ts`, which owns that argument and the measurement
   behind its `fogEnd`.
+- **It has a KIT of its own** (`kit/harbour.ts`), and it is the first map in
+  the tree to get one AFTER shipping. Coldharbour got `kit/city.ts` and Sarab
+  got `kit/desert.ts`; the island was built out of the village set — cottage,
+  townhouse, barn, mill, boathouse — which is most of why a volcanic harbour
+  town read as Hollowmere with more water in it. **A map does not feel like a
+  place because of how MANY buildings are on it; it feels like a place because
+  the buildings are the ones that place would have built.** The set is seven:
+  a smelter, a lighthouse, a quay crane, a drying rack, a careened hull, a net
+  loft and a salt pan, made of three materials and nothing else — the basalt
+  the island IS, tarred timber that arrived by sea, and iron a week after it
+  landed. The rack retired a run of `woodpile`s standing in for one, the
+  lighthouses retired two watchtowers standing in for lights, and the net loft
+  is the building the NETLOFTS quarter had been named after for as long as it
+  had been made of cottages.
+- **It has a LANDMARK, and the landmark has an inside.** `smelter` is the
+  Cinderworks, standing ninety metres up the Ashworks' north street so that
+  the stack closes the view from the crossing: a hollow ore hall with a cart
+  arch a tank drives through, a furnace block whose tap arches are the only
+  light on that hillside, a 40 m stack — the tallest thing on the island by
+  fourteen metres — and a charging deck six metres over the yard reached by one
+  stone flight. **A landmark has two jobs and Sarab's minaret does one**: be
+  legible at a distance nothing else survives, and be worth walking into when
+  you get there. What lets this do both is that its height is a CHIMNEY rather
+  than a room — forty metres of basalt over a hall you fight inside costs three
+  collider boxes to be a horizon line and gives away no ground, because there
+  is nothing at the top of it to hold.
+- **Its road network is MEASURED rather than reviewed**, which is the rule most
+  worth stealing for the next map. `npm run cinderhaven -- --roads` prints a
+  plan of how far every square of dry, in-play ground is from a carriageway,
+  and the first thing it said was that the western third of the island and the
+  outside of the north arm — a quarter of the land on the map — were over
+  150 m from any road at all. **That failure has no symptom in a screenshot**:
+  a quarter or a run of holdings laid off the network still builds, still reads
+  as a town from above, and is still somewhere a player arrives at across four
+  hundred metres of open moor wondering what it is for. Three lanes closed it,
+  and the generator now REFUSES to write a layout with a dwelling that far off
+  the network, tests the same distance before it sows a croft (so the dressing
+  runs out where the roads do rather than nine houses further on), and refuses
+  a carriageway laid in the sea or up a slope the nav graph severs — a road is
+  a picture, and it draws over water and over a cliff as happily as over
+  ground.
 - **The town is generated as a NETWORK and the houses are arranged against
   it**, which is the one part of that generator worth stealing for any other
   map that has to seed a town. A quarter is a rotated rectangle cut into blocks
