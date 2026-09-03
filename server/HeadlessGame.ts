@@ -56,7 +56,7 @@ import {
 import { GlassSystem } from "../src/systems/GlassSystem";
 import { GrenadeSystem } from "../src/systems/GrenadeSystem";
 import { AntiTankSystem, type OrdnanceHit } from "../src/systems/AntiTankSystem";
-import { ScoreBook, awardKill } from "../src/systems/ScoreBook";
+import { ScoreBook, awardKill, awardZone } from "../src/systems/ScoreBook";
 import { VehicleCrew } from "../src/systems/VehicleCrew";
 import {
   VehicleSystem,
@@ -1302,22 +1302,31 @@ export class HeadlessGame {
   /**
    * Pays everyone of `by` standing in `point` for what the flag just did.
    *
-   * The authority's half of `Game.awardZone`, and the same rule: presence at
-   * the moment the meter moved, tested with the same `pointAt` that moved it,
-   * not split between the bodies that earned it. The dead and the benched fall
-   * out through `alive`, which is what stops a benched bot being paid for a
-   * capture the person in its slot is standing somewhere else for.
+   * The authority's half of `Game.awardZone`, and it is the same code rather
+   * than the same rule written twice: both hand `ScoreBook`'s `awardZone` the
+   * three things the two simulations disagree about — whose bodies, what a
+   * point is, and what a slot means — and the rule itself (presence at the
+   * moment the meter moved, tested with the same `pointAt` that moved it, not
+   * split between the bodies that earned it, the dead and the benched out
+   * through `alive`) is stated once, there.
+   *
+   * `slotOf` is the disagreement worth naming: here a body is a `Bot` or a
+   * `NetPlayer` with its own slot, and on a client it is a bot or the player.
    */
   private awardZone(
     point: ControlPoint,
     by: Team,
     kind: "capture" | "neutralise",
   ): void {
-    for (const unit of this.combatants) {
-      if (!unit.alive || unit.team !== by) continue;
-      if (this.conquest.pointAt(unit.position) !== point) continue;
-      this.scores.award(this.slotOf(unit), kind);
-    }
+    awardZone(
+      this.scores,
+      this.combatants,
+      point,
+      by,
+      kind,
+      (unit) => this.conquest.pointAt(unit.position),
+      (unit) => this.slotOf(unit),
+    );
   }
 
   /**

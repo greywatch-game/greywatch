@@ -81,6 +81,7 @@ import { FrameProfile, P } from "./FrameProfile";
 import { GLOW_KERNEL_SCALE, GLOW_TEXTURE_RATIO, GlowDepth } from "./GlowDepth";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
+import { HitCredits } from "../net/HitCredits";
 import { RegionBook } from "../net/RegionBook";
 import { SNAPSHOT_HZ, TICK_HZ, type ServerEvent } from "../net/protocol";
 import { type FinishId } from "../entities/finishes";
@@ -133,7 +134,7 @@ import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
-import { ScoreBook, awardKill } from "../systems/ScoreBook";
+import { ScoreBook, awardKill, awardZone } from "../systems/ScoreBook";
 import { LightingSystem } from "../systems/LightingSystem";
 import { ShadowSystem } from "../systems/ShadowSystem";
 import { Sky } from "../systems/Sky";
@@ -200,6 +201,17 @@ const EMPTY_PUSHERS: readonly Combatant[] = [];
  * through another import.
  */
 const FORWARD_Z = new Vector3(0, 0, 1);
+
+/**
+ * One arm of the server's event union, named by its own tag.
+ *
+ * `ServerEvent`'s members are anonymous — the union is written inline in
+ * `net/protocol.ts`, where being one shape per line is most of what makes it
+ * readable — so a handler lifted out of `onNetEvent`'s switch has no name to
+ * ask for. This is that name, derived rather than declared, so a field added to
+ * an arm reaches its handler without a second edit here.
+ */
+type NetEvent<E extends ServerEvent["e"]> = Extract<ServerEvent, { e: E }>;
 
 /**
  * A hull the player is being offered, and which of the two offers it is: an
@@ -1563,26 +1575,28 @@ export class Game {
    * one body would has done the thing the mode is about, and dividing the
    * award would pay each of them less for doing it better.
    *
-   * The dead and the benched are skipped by the same `alive` test the
-   * occupancy pass uses — a benched bot is `alive = false` (see
-   * `BattleSystem.setBenched`), which matters here for a sharper reason than
-   * tidiness: its slot is the PLAYER's, so counting it would pay the player's
-   * own row twice for one capture.
-   *
    * Offline only, and by construction rather than by a gate: no client steps
    * `ConquestSystem`, so neither callback above ever fires in a match. There
-   * the authority runs this same pass over its own bodies.
+   * the authority runs the SAME PASS over its own bodies — literally the same
+   * one, `ScoreBook`'s `awardZone`, which is where the rest of the rule lives
+   * (the `alive` skip and why a benched bot must not be paid). This method is
+   * the wiring that hands it the three things the two simulations disagree
+   * about: whose bodies, what a point is, and what a slot means.
    */
   private awardZone(
     point: ControlPoint,
     by: Team,
     kind: "capture" | "neutralise",
   ): void {
-    for (const unit of this.combatants) {
-      if (!unit.alive || unit.team !== by) continue;
-      if (this.conquest.pointAt(unit.position) !== point) continue;
-      this.scores.award(this.slotOf(unit), kind);
-    }
+    awardZone(
+      this.scores,
+      this.combatants,
+      point,
+      by,
+      kind,
+      (unit) => this.conquest.pointAt(unit.position),
+      (unit) => this.slotOf(unit),
+    );
   }
 
   /**
@@ -4343,8 +4357,8 @@ export class Game {
         else this.sfx.hit();
         // Netplay: this marker is a guess, and remembering that it was made is
         // what keeps the authority's answer from repeating it a round trip
-        // later. See `claimPredictedHit`.
-        if (this.net) this.creditPredictedHit(shot.headshot);
+        // later. See `HitCredits`.
+        if (this.net) this.hitCredits.note(shot.headshot);
         this.input.rumble(
           killed ? haptic.killStrong : haptic.hitStrong,
           killed ? haptic.killWeak : haptic.hitWeak,
@@ -5810,42 +5824,17 @@ export class Game {
   private leaveMatch(): void {
     this.net?.dispose();
     this.net = null;
-    // Nothing can claim these now. They would time out on their own inside the
-    // second, and clearing them is what makes that a property of the boundary
-    // rather than of the window's length.
-    this.hitCredits.length = 0;
+    // Nothing can claim these now, and dropping them at the boundary is what
+    // stops that being a property of the window's length.
+    this.hitCredits.clear();
   }
 
   /** What a server event does to this client's screen. Presentation only. */
   private onNetEvent(event: ServerEvent): void {
     switch (event.e) {
-      case "kill": {
-        // -1 is a death with no killer, which is the leash and only the leash —
-        // see `ServerEvent`'s `kill`. Guarded rather than assumed: `killer`
-        // indexes a two-row table, and the alternative to this line is reading
-        // `CONFIG.teams[-1].name` off the end of it.
-        const killer =
-          event.killer >= 0 ? CONFIG.teams[event.killer].name : LEASH_KILLER;
-        const victimSlot = this.net?.roster.at(event.victim);
-        const victim = victimSlot ? CONFIG.teams[victimSlot.team].name : "";
-        this.hud.addKill(killer, victim, event.killer === this.player.team);
-        // Arm the corpse with the round that felled it. It is SPENT later, by
-        // `NetRoster` when the interpolated death arrives — this event is real
-        // time and the body is drawn `interpDelay` behind it, so throwing it
-        // here would throw a body that has not visibly been hit yet.
-        if (victimSlot) {
-          victimSlot.deathFrom.set(event.from[0], event.from[1], event.from[2]);
-          victimSlot.deathDamage = event.amount;
-          victimSlot.deathKind = event.kind ?? "bullet";
-        }
-        // The flat "a body went down" cue, which offline every bot death gets
-        // through `registerBotKill` — this event is the authority's version of
-        // that call, raised once per death whoever fell. Our own is the one
-        // exception, exactly as offline: a player's own death is the death cam
-        // and `playerHurt`, not somebody else falling over.
-        if (event.victim !== this.net?.slot) this.sfx.enemyDie();
+      case "kill":
+        this.onNetKill(event);
         break;
-      }
       // The same pair `wireConquest` plays offline, from the authority's
       // version of the same event: a flag taken is worth hearing and a flag
       // lost is worth hearing more, and neither `ConquestSystem` callback fires
@@ -5889,7 +5878,7 @@ export class Game {
       case "hit":
         if (
           event.shooter === this.net?.slot &&
-          !this.claimPredictedHit(event.killed, event.headshot)
+          !this.hitCredits.claim(event.killed, event.headshot)
         ) {
           this.hud.flashHitmarker(event.killed, event.headshot);
           if (event.headshot) this.sfx.headshot();
@@ -5897,110 +5886,17 @@ export class Game {
         }
         break;
 
-      // We were hit. Health is the server's, so it is assigned rather than
-      // subtracted — a client that decremented its own would drift out of step
-      // with the authority over a firefight and disagree about who is alive.
-      // `applyServerHealth` also arms the regen lock, which is the half of the
-      // hit that never crosses the wire: the server holds the health down for
-      // `regenDelay` and then heals it back, and the client runs the identical
-      // curve locally rather than being told about every point of it.
-      //
-      // Addressed to the victim by the server, so — exactly as with `hit` above
-      // — the slot test is a rolling-deploy guard rather than the filter it was.
       case "damage":
-        if (event.victim === this.net?.slot) {
-          this.player.applyServerHealth(event.health);
-          this.netDamageFrom.set(event.from[0], event.from[1], event.from[2]);
-          this.netDamageAmount = event.amount;
-          this.netDamageKind = event.kind ?? "bullet";
-          this.onPlayerDamaged(
-            event.amount,
-            false,
-            this.netDamageFrom,
-            this.netDamageKind,
-          );
-        }
+        this.onNetDamage(event);
         break;
 
-      // A death, decided elsewhere. `killPlayer` is the local path and must not
-      // run here: it charges a ticket and starts a respawn clock, both of which
-      // the server already owns.
-      //
-      // What it DOES owe is the four seconds of watching, because a death cam
-      // decides nothing — it is a camera and a stand-in body, and the round
-      // carries on underneath it either way. The bearing and the size of the
-      // killing blow are the `damage` event's, which the server queues
-      // immediately ahead of this one and which is the only thing that knows
-      // them: `died` carries a slot and a clock and nothing to throw a body
-      // with. `enterDying` falls through to the deploy screen on its own if the
-      // cam cannot come up, so this is not a state that can strand a player.
       case "died":
-        if (event.slot === this.net?.slot) {
-          this.player.health = 0;
-          this.player.alive = false;
-          if (this.state === "playing") {
-            this.enterDying(
-              this.netDamageFrom,
-              this.netDamageAmount,
-              this.netDamageKind,
-              event.respawnIn,
-            );
-          } else {
-            this.enterDeploy(event.respawnIn);
-          }
-        }
+        this.onNetDied(event);
         break;
 
-      // Somebody's weapon went off, and it is worth exactly what offline's
-      // `BattleSystem.onBotFired` is worth: a report to place by ear, and — for
-      // an enemy — a couple of seconds on the minimap. Both are `wireBattle`
-      // reading a callback offline, and that callback fires on nothing here,
-      // because this client runs no AI and never hears another person's
-      // trigger. So the authority says it instead.
-      //
-      // The two halves differ in who they are about, exactly as offline: every
-      // shot in the village is audible whoever fired it, while the reveal is
-      // the enemy's alone — a friendly is drawn on that map whether they are
-      // shooting or not.
-      //
-      // Our own slot is skipped outright. `sfx.shoot` already played that round
-      // at the player's own ear the frame the trigger went, and the roster's
-      // copy of this body is deliberately never sampled, so its position is
-      // wherever the pool was built.
-      //
-      // Public, and it may name a body across the map behind a wall — exactly
-      // as offline, where any enemy bot firing anywhere is revealed. It gives
-      // nothing away that the snapshot has not already handed over: every
-      // position is in there, and what the minimap withholds it withholds by
-      // choice rather than by ignorance.
-      case "fire": {
-        if (event.slot === this.net?.slot) break;
-        const shooter = this.net?.roster.at(event.slot);
-        if (!shooter) break;
-        // The eye rather than the feet: a rifle goes off at a shoulder, and
-        // this is the only height on a net body that is near one. Offline the
-        // same sound is placed at the bot's own muzzle.
-        //
-        // One event carries every round that slot fired inside a snapshot
-        // interval, so they are laid back out across it rather than stacked on
-        // one instant — a burst played as a single louder shot reads as one
-        // shot, and the rate is most of what says which weapon is being fired
-        // at you. Bounded by the ticks in an interval, which is the most a
-        // rate-gated slot can physically have spent, because the count came off
-        // a socket.
-        const rounds = Math.min(Math.max(event.n ?? 1, 1), TICK_HZ / SNAPSHOT_HZ);
-        const spacing = 1 / SNAPSHOT_HZ / rounds;
-        // Voiced by the weapon the authority says is in that slot's hands, so
-        // a match can be read by ear the way an offline round can be read by
-        // eye: a DMR two streets away is not the SMG beside you. A slot with
-        // no weapon named is a bot, and a bot fires the flat round.
-        const voice = this.netVoice(event.w);
-        for (let i = 0; i < rounds; i++) {
-          this.sfx.botShot(shooter.eyePos, i * spacing, voice);
-        }
-        if (shooter.team !== this.player.team) this.minimap.reveal(shooter);
+      case "fire":
+        this.onNetFire(event);
         break;
-      }
 
       // Somebody is changing a magazine. Spatialised, because knowing WHICH of
       // the enemies in front of you has just gone dry is the whole point of
@@ -6054,46 +5950,9 @@ export class Game {
         break;
       }
 
-      // The authority's answer to a mount or a dismount, and the ONLY thing
-      // that puts this player in a hull or takes them out of one in a match.
-      // It reaches `mount`/`clearVehicle` — the same pair an offline round
-      // uses, so everything either of them owns is owned identically here.
-      //
-      // A refusal arrives as `tank: -1` on a player who is already on foot,
-      // which `clearVehicle` reads as the no-op it documents itself to be.
-      case "seat": {
-        if (event.slot !== this.net?.slot) break;
-        if (event.tank >= 0) {
-          const tank = this.vehicles.hulls[event.tank];
-          if (!tank) break;
-          // Which chair is the authority's answer too, and the two ways this
-          // arrives are one line apart: a hull this player was not in is a
-          // MOUNT, and the same hull with a different seat named is the swap
-          // they asked for. Both are told by the server rather than assumed,
-          // for the reason getting in at all is.
-          const seat: CrewSeat = event.seat === GUNNER ? GUNNER : DRIVER;
-          if (tank !== this.driving) this.mount(tank, seat);
-          else if (seat !== this.drivingSeat) this.swapSeat(tank, seat);
-          break;
-        }
-        if (!this.driving) break;
-        // Where the body goes is the authority's, exactly as a spawn's is —
-        // and it is placed BEFORE the seat is given up for `dismount`'s
-        // reason: `clearVehicle` deliberately does not move anybody, and the
-        // camera hand-off below reads the chase yaw that is about to be gone.
-        if (event.pos) {
-          this.netDamageFrom.set(event.pos[0], event.pos[1], event.pos[2]);
-          this.player.placeAt(this.netDamageFrom);
-        }
-        const yaw = event.yaw ?? this.vehicleCam.yaw;
-        this.clearVehicle();
-        // The aim just jumped a long way — see `dismount`, which spends the
-        // same two lines for the same reason on the offline path.
-        this.cameraSys.reset(yaw);
-        this.motionBlur.reset();
-        this.input.consumeFire();
+      case "seat":
+        this.onNetSeat(event);
         break;
-      }
 
       // A tank gun went off somewhere. The report and nothing else: the flash,
       // the light and the round itself are all the authority's, and the hull
@@ -6145,6 +6004,194 @@ export class Game {
    * exactly what `Sfx` reads as that round, so the guard, an absent field and
    * a bot's shot all land in the same place without a second branch.
    */
+  /**
+   * Somebody died, anybody. The feed line, the round that felled them, and the
+   * flat cue that a body went down.
+   *
+   * `killer` is -1 for a death with no killer, which is the leash and only the
+   * leash — see `ServerEvent`'s `kill`. Guarded rather than assumed: it indexes
+   * a two-row table, and the alternative to that line is reading
+   * `CONFIG.teams[-1].name` off the end of it.
+   *
+   * The corpse is ARMED here and thrown later, by `NetRoster` when the
+   * interpolated death arrives. This event is real time and the body is drawn
+   * `interpDelay` behind it, so throwing it here would throw a body that has
+   * not visibly been hit yet.
+   *
+   * The cue is what offline every bot death gets through `registerBotKill` —
+   * this event is the authority's version of that call, raised once per death
+   * whoever fell. Our own is the one exception, exactly as offline: a player's
+   * own death is the death cam and `playerHurt`, not somebody else falling
+   * over.
+   */
+  private onNetKill(event: NetEvent<"kill">): void {
+    const killer =
+      event.killer >= 0 ? CONFIG.teams[event.killer].name : LEASH_KILLER;
+    const victimSlot = this.net?.roster.at(event.victim);
+    const victim = victimSlot ? CONFIG.teams[victimSlot.team].name : "";
+    this.hud.addKill(killer, victim, event.killer === this.player.team);
+    if (victimSlot) {
+      victimSlot.deathFrom.set(event.from[0], event.from[1], event.from[2]);
+      victimSlot.deathDamage = event.amount;
+      victimSlot.deathKind = event.kind ?? "bullet";
+    }
+    if (event.victim !== this.net?.slot) this.sfx.enemyDie();
+  }
+
+  /**
+   * We were hit.
+   *
+   * Health is the server's, so it is ASSIGNED rather than subtracted — a client
+   * that decremented its own would drift out of step with the authority over a
+   * firefight and disagree about who is alive. `applyServerHealth` also arms
+   * the regen lock, which is the half of the hit that never crosses the wire:
+   * the server holds the health down for `regenDelay` and then heals it back,
+   * and the client runs the identical curve locally rather than being told
+   * about every point of it.
+   *
+   * The bearing, the amount and the kind are kept past this call because the
+   * `died` that may follow carries none of them — see `onNetDied`.
+   *
+   * Addressed to the victim by the server, so the slot test is a rolling-deploy
+   * guard rather than the filter it once was, exactly as in the `hit` arm.
+   */
+  private onNetDamage(event: NetEvent<"damage">): void {
+    if (event.victim !== this.net?.slot) return;
+    this.player.applyServerHealth(event.health);
+    this.netDamageFrom.set(event.from[0], event.from[1], event.from[2]);
+    this.netDamageAmount = event.amount;
+    this.netDamageKind = event.kind ?? "bullet";
+    this.onPlayerDamaged(
+      event.amount,
+      false,
+      this.netDamageFrom,
+      this.netDamageKind,
+    );
+  }
+
+  /**
+   * Our own death, decided elsewhere.
+   *
+   * `killPlayer` is the local path and must not run here: it charges a ticket
+   * and starts a respawn clock, both of which the server already owns.
+   *
+   * What it DOES owe is the four seconds of watching, because a death cam
+   * decides nothing — it is a camera and a stand-in body, and the round carries
+   * on underneath it either way. The bearing and the size of the killing blow
+   * are the `damage` event's, which the server queues immediately ahead of this
+   * one and which is the only thing that knows them: `died` carries a slot and
+   * a clock and nothing to throw a body with. `enterDying` falls through to the
+   * deploy screen on its own if the cam cannot come up, so this is not a state
+   * that can strand a player.
+   */
+  private onNetDied(event: NetEvent<"died">): void {
+    if (event.slot !== this.net?.slot) return;
+    this.player.health = 0;
+    this.player.alive = false;
+    if (this.state === "playing") {
+      this.enterDying(
+        this.netDamageFrom,
+        this.netDamageAmount,
+        this.netDamageKind,
+        event.respawnIn,
+      );
+    } else {
+      this.enterDeploy(event.respawnIn);
+    }
+  }
+
+  /**
+   * Somebody's weapon went off.
+   *
+   * Worth exactly what offline's `BattleSystem.onBotFired` is worth: a report
+   * to place by ear, and — for an enemy — a couple of seconds on the minimap.
+   * Both are `wireBattle` reading a callback offline, and that callback fires
+   * on nothing here, because this client runs no AI and never hears another
+   * person's trigger. So the authority says it instead.
+   *
+   * The two halves differ in who they are about, exactly as offline: every shot
+   * in the village is audible whoever fired it, while the reveal is the enemy's
+   * alone — a friendly is drawn on that map whether they are shooting or not.
+   *
+   * Our own slot is skipped outright. `sfx.shoot` already played that round at
+   * the player's own ear the frame the trigger went, and the roster's copy of
+   * this body is deliberately never sampled, so its position is wherever the
+   * pool was built.
+   *
+   * The reveal is public, and it may name a body across the map behind a wall —
+   * exactly as offline, where any enemy bot firing anywhere is revealed. It
+   * gives nothing away that the snapshot has not already handed over: every
+   * position is in there, and what the minimap withholds it withholds by choice
+   * rather than by ignorance.
+   */
+  private onNetFire(event: NetEvent<"fire">): void {
+    if (event.slot === this.net?.slot) return;
+    const shooter = this.net?.roster.at(event.slot);
+    if (!shooter) return;
+    // One event carries every round that slot fired inside a snapshot interval,
+    // so they are laid back out across it rather than stacked on one instant —
+    // a burst played as a single louder shot reads as one shot, and the rate is
+    // most of what says which weapon is being fired at you. Bounded by the
+    // ticks in an interval, which is the most a rate-gated slot can physically
+    // have spent, because the count came off a socket.
+    const rounds = Math.min(Math.max(event.n ?? 1, 1), TICK_HZ / SNAPSHOT_HZ);
+    const spacing = 1 / SNAPSHOT_HZ / rounds;
+    // Voiced by the weapon the authority says is in that slot's hands, so a
+    // match can be read by ear the way an offline round can be read by eye: a
+    // DMR two streets away is not the SMG beside you. A slot with no weapon
+    // named is a bot, and a bot fires the flat round.
+    const voice = this.netVoice(event.w);
+    // The eye rather than the feet: a rifle goes off at a shoulder, and this is
+    // the only height on a net body that is near one. Offline the same sound is
+    // placed at the bot's own muzzle.
+    for (let i = 0; i < rounds; i++) {
+      this.sfx.botShot(shooter.eyePos, i * spacing, voice);
+    }
+    if (shooter.team !== this.player.team) this.minimap.reveal(shooter);
+  }
+
+  /**
+   * The authority's answer to a mount or a dismount, and the ONLY thing that
+   * puts this player in a hull or takes them out of one in a match.
+   *
+   * It reaches `mount`/`clearVehicle` — the same pair an offline round uses, so
+   * everything either of them owns is owned identically here. A refusal arrives
+   * as `tank: -1` on a player who is already on foot, which `clearVehicle`
+   * reads as the no-op it documents itself to be.
+   *
+   * Which chair is the authority's answer too, and the two ways it arrives are
+   * one line apart: a hull this player was not in is a MOUNT, and the same hull
+   * with a different seat named is the swap they asked for. Both are told by
+   * the server rather than assumed, for the reason getting in at all is.
+   */
+  private onNetSeat(event: NetEvent<"seat">): void {
+    if (event.slot !== this.net?.slot) return;
+    if (event.tank >= 0) {
+      const tank = this.vehicles.hulls[event.tank];
+      if (!tank) return;
+      const seat: CrewSeat = event.seat === GUNNER ? GUNNER : DRIVER;
+      if (tank !== this.driving) this.mount(tank, seat);
+      else if (seat !== this.drivingSeat) this.swapSeat(tank, seat);
+      return;
+    }
+    if (!this.driving) return;
+    // Where the body goes is the authority's, exactly as a spawn's is — and it
+    // is placed BEFORE the seat is given up for `dismount`'s reason:
+    // `clearVehicle` deliberately does not move anybody, and the camera
+    // hand-off below reads the chase yaw that is about to be gone.
+    if (event.pos) {
+      this.netDamageFrom.set(event.pos[0], event.pos[1], event.pos[2]);
+      this.player.placeAt(this.netDamageFrom);
+    }
+    const yaw = event.yaw ?? this.vehicleCam.yaw;
+    this.clearVehicle();
+    // The aim just jumped a long way — see `dismount`, which spends the same
+    // two lines for the same reason on the offline path.
+    this.cameraSys.reset(yaw);
+    this.motionBlur.reset();
+    this.input.consumeFire();
+  }
+
   private netVoice(w: string | undefined): ReportVoice | undefined {
     return w !== undefined && isWeaponId(w) ? CONFIG.weapons[w].report : undefined;
   }
@@ -6225,69 +6272,15 @@ export class Game {
    * Rounds this client has already cued a hitmarker for, waiting on the
    * authority to say whether it agrees.
    *
-   * The pair of methods below is the whole of the rule that a landed round is
-   * announced ONCE. Both ends have an opinion about the same bullet — the local
-   * resolve the instant the trigger went, the server's `hit` a round trip later
-   * — and the second is worth a marker and a noise only when it carries
-   * something the first did not.
-   *
-   * A queue rather than a counter because several rounds are in flight at
-   * automatic rates, and each is claimed in the order it was fired: the server
-   * re-resolves them in that order and reports them down one socket, so
-   * first-in-first-out pairs them without the protocol carrying a shot id.
-   * Entries expire on their own, which is what stops a round the authority
-   * scored as a MISS — no event ever arrives for one — from leaving a credit
-   * standing to swallow the next real correction.
-   *
-   * Only bullets are ever in here: `Match` raises `hit` from the shot path and
-   * from nowhere else, so a blast can neither leave a credit nor claim one.
+   * The whole of the rule that a landed round is announced ONCE lives in
+   * `net/HitCredits.ts`. Both ends have an opinion about the same bullet — the
+   * local resolve the instant the trigger went, the server's `hit` a round
+   * trip later — and the second is worth a marker and a noise only when it
+   * carries something the first did not. `Game` spends that answer and draws
+   * the cue; the queue behind it touches no system, no mesh and no frame,
+   * which is why it is a module of its own.
    */
-  private readonly hitCredits: { headshot: boolean; until: number }[] = [];
-
-  /** Drops credits the authority never claimed. Ordered, so the front is oldest. */
-  private pruneHitCredits(now: number): void {
-    while (this.hitCredits.length > 0 && this.hitCredits[0].until <= now) {
-      this.hitCredits.shift();
-    }
-  }
-
-  /** A local resolve says this round landed, and the marker is already up. */
-  private creditPredictedHit(headshot: boolean): void {
-    const now = performance.now();
-    this.pruneHitCredits(now);
-    this.hitCredits.push({
-      headshot,
-      until: now + CONFIG.net.hitCreditWindow * 1000,
-    });
-  }
-
-  /**
-   * The authority's verdict on a round. True when this client has already said
-   * everything the verdict has to say, and the event owes no second cue.
-   *
-   * The credit is spent either way — this round's answer has arrived, whatever
-   * it is. Two things override agreement:
-   *
-   * - **A kill.** The prediction cannot make that claim (`NetSoldier.takeDamage`
-   *   returns false, so the local resolve never reports one), and the red marker
-   *   is the one that means STOP SHOOTING — the most useful thing a hitmarker
-   *   ever says, and never a repetition.
-   * - **A headshot the prediction missed.** The bodies here are drawn
-   *   `interpDelay` behind, so the head zone the server found on its rewound
-   *   copy is not always the one this client tested against.
-   *
-   * The other direction — this client called a headshot and the server scored a
-   * body hit — is deliberately silent. It is a hit either way, the marker for it
-   * is already on screen, and correcting the flavour downward is worth less than
-   * the doubled cue it would cost.
-   */
-  private claimPredictedHit(killed: boolean, headshot: boolean): boolean {
-    this.pruneHitCredits(performance.now());
-    const credit = this.hitCredits.shift();
-    if (!credit) return false;
-    if (killed) return false;
-    return !(headshot && !credit.headshot);
-  }
+  private readonly hitCredits = new HitCredits();
 
   /** Scratch for a networked damage bearing; never allocated per hit. */
   private readonly netDamageFrom = new Vector3();
@@ -6395,12 +6388,7 @@ export class Game {
     this.prof.begin(P.net);
     this.updateNet(dt);
     this.prof.end(P.net);
-    this.prof.begin(P.combat);
-    this.combat.update(dt);
-    this.prof.end(P.combat);
-    this.prof.begin(P.grenades);
-    this.grenades.update(dt);
-    this.prof.end(P.grenades);
+    this.stepShots(dt);
     // The armour. It is here rather than in the simulation below for the
     // reason everything else in this method is: none of it decides anything.
     // The hulls are posed from the wire (`NetVehicles`), the one under this
@@ -6422,30 +6410,15 @@ export class Game {
       // the deploy card, where this method is the round running without you.
       this.fleetStepped = true;
     }
-    // The local player's own rocket, still flying — the one AT object this
-    // client owns a copy of. Everything else about the kit is drawn by
-    // `NetOrdnance` off the wire, and neither can hurt anybody.
-    this.prof.begin(P.antiTank);
-    this.antiTank.update(dt);
-    this.prof.end(P.antiTank);
-    // The engine BEFORE its three clients, always. A corpse tested for stillness
-    // or a shard aged before its own step would be reading last frame's
-    // velocities — and this is the only place the world is stepped:
-    // `scene.physicsEnabled` is false precisely so that a pause, the deploy map
-    // and the menu, all of which render, cannot advance it.
-    this.prof.begin(P.physics);
-    this.physics.update(dt);
-    this.ragdolls.update(dt);
-    this.debris.update(dt);
-    this.blastDebris.update(dt);
-    this.prof.end(P.physics);
-    // A pane can break while the local player is on the deploy screen — the
-    // authority is running the round without them — and the rebuild it owes has
-    // to drain here too, or a whole deployment's worth of breaks lands as one
-    // hitch on the frame they spawn.
-    this.prof.begin(P.glass);
-    this.glass.update();
-    this.prof.end(P.glass);
+    // What follows the armour, and each of its three is owed to this side for
+    // a reason of its own on top of the shared ones. The rocket is the local
+    // player's own, still flying — the one AT object this client owns a copy
+    // of, everything else about the kit being drawn by `NetOrdnance` off the
+    // wire, and neither can hurt anybody. And a pane can break while the local
+    // player is on the deploy screen — the authority is running the round
+    // without them — so the rebuild it owes has to drain here too, or a whole
+    // deployment's worth of breaks lands as one hitch on the frame they spawn.
+    this.stepAftermath(dt);
   }
 
   /**
@@ -6660,44 +6633,81 @@ export class Game {
     this.battle.update(dt, this.cameraSys.camera.position);
     this.spendMuzzleLightBudget();
     this.prof.end(P.bots);
+    // After the bots, so a grenade thrown on this frame's think tick flies on
+    // this frame rather than sitting in the thrower's hand until the next one.
+    this.stepShots(dt);
+    // ...and after the grenades, because a blast kill resolves in there. The
+    // armour moved further up this method rather than just above the call, so
+    // the mine's trigger still sees where a hull IS; the ordering `stepAftermath`
+    // asks for is satisfied by both callers in different places, which is the
+    // only reason the two blocks are two.
+    this.stepAftermath(dt);
+    return true;
+  }
+
+  /**
+   * The rounds in the air and the grenades under them, stepped for both worlds.
+   *
+   * **One of the two blocks both world steps share, and the reason they are
+   * shared is the reason `installMap` is one funnel**: a system added to the
+   * offline sequence and forgotten in the networked one does not throw and does
+   * not log — it simply never runs in a match, and the symptom is a tracer that
+   * hangs at the muzzle or a fuse that never burns down, which reads as a bug
+   * in that system rather than as a missing line here. Nothing in either block
+   * decides an outcome, which is what makes it callable from a client that owns
+   * none.
+   *
+   * They are TWO blocks rather than one because the armour goes between them,
+   * and it goes in a different place on each side: offline the fleet is stepped
+   * before the bots think, and in a match it is posed from the wire after this.
+   * What both orders guarantee is the only thing `stepAftermath` needs — that
+   * the hulls have already moved.
+   */
+  private stepShots(dt: number): void {
     this.prof.begin(P.combat);
     this.combat.update(dt);
     this.prof.end(P.combat);
-    // After the bots, so a grenade thrown on this frame's think tick flies on
-    // this frame rather than sitting in the thrower's hand until the next one.
     this.prof.begin(P.grenades);
     this.grenades.update(dt);
     this.prof.end(P.grenades);
-    // Beside them, and after `vehicles.update` for a second reason of its own:
-    // a mine's trigger is a distance test against where a hull IS, and running
-    // it before the hull moved would arm the road a frame behind the tank.
+  }
+
+  /**
+   * What the frame owes once the armour has moved: the mines, the physics
+   * world, and the rebuild a broken pane left behind.
+   *
+   * `stepShots`'s other half, shared for the same reason, and the ordering it
+   * asks of a caller is one line long: **the hulls must already have been
+   * stepped this frame.** A mine's trigger is a distance test against where a
+   * hull IS, and running it first would arm the road a frame behind the tank.
+   *
+   * **The ENGINE before its three clients, always.** A corpse tested for
+   * stillness or a shard aged before its own step would be reading last frame's
+   * velocities. And this is now the ONE place the physics world is stepped
+   * anywhere in the client — `scene.physicsEnabled` is false precisely so that
+   * a pause, the deploy map and the menu, all of which render, cannot advance
+   * it, and a second door into the engine would be the thing that quietly
+   * reopened.
+   *
+   * The glass is last and is not an effect: it drains the flow-field rebuild a
+   * broken pane owes, one field per frame. After the bots wherever there are
+   * any — a field swapped in mid-frame would be read by half this frame's
+   * think ticks and not the other half, and next frame's are the ones that
+   * should see it.
+   */
+  private stepAftermath(dt: number): void {
     this.prof.begin(P.antiTank);
     this.antiTank.update(dt);
     this.prof.end(P.antiTank);
-    // After the grenades, because a blast kill resolves in there — so a body
-    // taken this frame gets its first step this frame rather than hanging in
-    // the air for one. Together with the one in `updateNetWorld` this is the
-    // ONLY place the physics world is stepped: `scene.physicsEnabled` is false
-    // precisely so that a pause, the deploy map and the menu — all of which
-    // render — cannot advance it.
-    //
-    // The ENGINE first and its three clients after, always: a corpse tested for
-    // stillness or a shard aged before its own step would be reading last
-    // frame's velocities.
     this.prof.begin(P.physics);
     this.physics.update(dt);
     this.ragdolls.update(dt);
     this.debris.update(dt);
     this.blastDebris.update(dt);
     this.prof.end(P.physics);
-    // Last, and it is not an effect: this drains the flow-field rebuild a
-    // broken pane owes, one field per frame. After the bots on purpose — a
-    // field swapped in mid-frame would be read by half this frame's think ticks
-    // and not the other half, and next frame's are the ones that should see it.
     this.prof.begin(P.glass);
     this.glass.update();
     this.prof.end(P.glass);
-    return true;
   }
 
   /**

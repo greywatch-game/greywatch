@@ -1232,8 +1232,13 @@ assembles each frame. The player's health regenerates after
 **A round is SCORED as well as counted, and the score is not the kills.**
 `ScoreBook` is one ledger per simulation — one row per roster SLOT, held by
 `Game` offline and by `HeadlessGame` on the authority, so the two boards cannot
-drift — and `awardKill` is the one place a payout's shape is decided, keyed on
-**the flag the VICTIM was standing in, never the killer's own position**.
+drift — and **the two payout rules are one function each, in that same file,
+called by both simulations**: `awardKill`, keyed on **the flag the VICTIM was
+standing in, never the killer's own position**, and `awardZone`, which pays
+everyone of a side standing in the flag at the moment its meter moved. Neither
+may be written out a second time on either side — the failure of a second copy
+is not a crash but a quiet disagreement, where a player learns a scoring rule
+in practice that the match they take it into does not run.
 **`ConquestSystem.onCaptured`/`onNeutralised` are the SIMULATION's callbacks on
 both sides**, so taking the conquest callback directly (as `npm run simulate`
 did) silently turns the capture awards off.

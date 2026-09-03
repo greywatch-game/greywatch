@@ -319,8 +319,9 @@ src/
     ScoreBook.ts        # The round's board: points, kills and deaths, one row
                         #   per roster SLOT. A ledger, not a system — no update,
                         #   reaches nothing. One per simulation (Game offline,
-                        #   HeadlessGame on the authority) and `awardKill` is
-                        #   the one place a payout's shape is decided
+                        #   HeadlessGame on the authority), and `awardKill` and
+                        #   `awardZone` are the one place each that a payout's
+                        #   shape is decided — both sides call the same two
     CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, beacon
     CombatSystem.ts     # Hitscan, fall-off, the head zone; pooled tracers, sparks, impacts
     GrenadeSystem.ts    # The one thing that isn't hitscan, and six of the
@@ -792,6 +793,11 @@ src/
                       #   region's HOST into its socket and its list URL. Both
                       #   are resolved together, so browsing one server and
                       #   joining another is not representable
+    HitCredits.ts     #   Rounds this client already cued a hitmarker for, and
+                      #   the rule that a landed round is announced ONCE: a
+                      #   FIFO queue of predicted hits the authority's verdict
+                      #   claims. Expiring, so a round the server scored as a
+                      #   miss leaves nothing standing. Cues nothing itself
     RegionBook.ts     #   WHICH region this client browses and joins: the list
                       #   once read, the player's pick, the fastest-answering
                       #   pick for one who has none, and ?server=. resolve() is

@@ -47,7 +47,13 @@ its length *is* its job — and splitting the wiring re-creates exactly the
 system→system edges the rule above spends itself preventing. What may leave is a
 cluster of **private fields that answers only to itself**: nothing else in the
 file reads them, and the methods over them touch no system, no mesh and no
-frame. `net/RegionBook.ts` is the worked example — the region list, its one
+frame. There are two worked examples. `net/HitCredits.ts` is the smaller and
+the plainer: the queue of rounds this client has already cued a hitmarker for
+was one field and three methods that no line outside them touched, so the rule
+that a landed round is announced ONCE is now stated in one file that flashes
+nothing, plays nothing and never reads the wire — `Game` spends the answer and
+draws the cue, which is the two halves below staying behind exactly as they
+should. `net/RegionBook.ts` is the larger — the region list, its one
 read, the player's pick, the automatic pick and the pings ranking it were six
 fields no line outside the five lobby methods over them ever touched. What may
 **not** leave is anything whose methods reach across systems, however big it
@@ -125,6 +131,37 @@ most often, but a round is just as capable of it — and by then the symptom is 
 map that looks a build out of date in one layer only, which reads as a bug in
 that layer. The funnel is cheap insurance against a class of bug that costs a
 day to attribute.
+
+## Both world steps share a tail, and it is one funnel for `installMap`'s reason
+
+`updateWorld` is the offline round and `updateNetWorld` is the client's half of
+a networked one, and the second is not a subset of the first — it runs `net`
+where the other runs `conquest` and the bots, and it poses the fleet off the
+wire rather than stepping a crew. What they DO share is eight system updates
+that are identical on both sides, in the same relative order, and those were
+written out twice.
+
+**They are one call each now, `stepShots` and `stepAftermath`, and the argument
+is `installMap`'s exactly.** A system added to the offline sequence and
+forgotten in the networked one does not throw and does not log — it simply never
+runs in a match. The symptom is a tracer that hangs at the muzzle where the shot
+went off, or a fuse that never burns down, or a corpse that takes a rig and hangs
+in the air; each of those reads as a bug in that system rather than as a missing
+line in a method nobody was looking at. **Anything new that both worlds owe per
+frame goes in one of the two, and a system that only one of them owes goes at
+its own call site with the reason written there.**
+
+**They are TWO blocks rather than one because the armour goes between them, and
+it goes in a different place on each side**: offline the fleet is stepped before
+the bots think, so a hull that has just pulled across a street breaks the
+sightline on the frame it visibly blocked it; in a match it is posed from the
+wire after the shots, because none of it decides anything. What both orders
+guarantee is the only thing `stepAftermath` asks of a caller — that the hulls
+have already moved this frame, since a mine's trigger is a distance test against
+where a hull IS. **`stepAftermath` is also now the ONE place the physics world
+is stepped anywhere in the client**, which was two places and a sentence in each
+saying so; `scene.physicsEnabled` stays false precisely so that a pause, the
+deploy map and the menu, all of which render, cannot advance it.
 
 ## Two things are pushed from `tick`, not from a state's own arm
 

@@ -1,19 +1,24 @@
 /**
  * ScoreBook.ts — the round's board: kills, deaths and POINTS, one row per
- * roster slot.
- * Owns: the three arrays and the version stamp over them. It is a ledger, not
- * a system — it has no update, reaches nothing, and imports nothing but the
- * point table.
+ * roster slot, and the two rules that decide what a payout is worth.
+ * Owns: the three arrays and the version stamp over them, plus `awardKill` and
+ * `awardZone` — the one statement each of what a kill and what a flag pay.
+ * The class is a ledger, not a system: it has no update, reaches nothing, and
+ * imports nothing at runtime but the point table (the `Combatant` import is
+ * type-only, and erased).
  * Invariants: a row is a SLOT and a slot is a bot index (the identity the
  * roster, the bot pool and the wire all already share), so the same index
  * names the same body offline, on the authority and on every client. Kills are
  * credited at the killer's door and deaths at the victim's, once each — see
  * `award` and `registerDeath`. Every write bumps `version`, which is what
  * `Match` compares to decide whether the board has to go out again.
- * Never: decide WHICH award a kill earned. That question needs the victim, the
- * flag they were standing on and who holds it, which is three systems — it is
- * answered in the wiring (`Game.creditKill`, `HeadlessGame.creditKill`) and
- * this file is only told the answer.
+ * Never: let the CLASS decide which award a body earned — `award` is told a
+ * kind and writes it, and nothing else. The two functions below are where that
+ * is decided, and they are free functions rather than methods for the reason
+ * each states: what they need (a victim, the flag they fell on, who holds it,
+ * what a slot means on this side) is three systems' worth of fact, gathered by
+ * the wiring — `Game.creditKill`/`awardZone` and `HeadlessGame`'s pair — and
+ * handed in.
  *
  * **There is one of these per simulation, and that is the point.** The offline
  * round and the authority used to keep a `slotKills`/`slotDeaths` pair each,
@@ -26,7 +31,7 @@
  * board on every screen.
  */
 import { CONFIG } from "../config";
-import type { Team } from "../entities/Combatant";
+import type { Combatant, Team } from "../entities/Combatant";
 
 /**
  * What a body did to earn points.
@@ -170,4 +175,46 @@ export function awardKill(
   book.award(slot, "kill");
   if (headshot) book.award(slot, "headshot");
   if (zone) book.award(slot, zone.owner === killerTeam ? "defend" : "attack");
+}
+
+/**
+ * Pays everyone of `by` standing in `point` for what the flag just did.
+ *
+ * **`awardKill`'s sibling, and here for the same reason.** The offline round
+ * and the authority both run this pass over their own bodies, and it was
+ * written out twice — identically, and documented twice — while the payout it
+ * pays through was already stated once, one function up. A capture is worth
+ * the same on a single-player board as it is on sixteen networked ones, and
+ * that is a property of there being one copy rather than of two copies having
+ * agreed so far.
+ *
+ * The rule is PRESENCE at the moment the meter moved, tested with the same
+ * `pointAt` that moved it, and not split between the bodies that earned it.
+ * The dead and the benched fall out through `alive` — a benched bot is
+ * `alive = false` (`BattleSystem.setBenched`), which matters here for a
+ * sharper reason than tidiness: its slot is a PLAYER's, so counting it would
+ * pay that row twice for one capture.
+ *
+ * Generic in the point so this file stays free of `ConquestSystem`, exactly as
+ * `ZoneOwnership` keeps it free of `ControlPoint`: what is compared is
+ * IDENTITY, and the caller says what a point is and how a body is found in
+ * one. `slotOf` is handed in for the same reason it is not a method here — a
+ * slot is a bot index on one side and a `NetPlayer`'s own number on the other,
+ * and that is the one thing about this pass the two simulations genuinely
+ * disagree about.
+ */
+export function awardZone<P>(
+  book: ScoreBook,
+  units: readonly Combatant[],
+  point: P,
+  by: Team,
+  kind: "capture" | "neutralise",
+  pointAt: (unit: Combatant) => P | null,
+  slotOf: (unit: Combatant) => number,
+): void {
+  for (const unit of units) {
+    if (!unit.alive || unit.team !== by) continue;
+    if (pointAt(unit) !== point) continue;
+    book.award(slotOf(unit), kind);
+  }
 }
