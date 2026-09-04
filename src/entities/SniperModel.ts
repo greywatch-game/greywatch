@@ -28,6 +28,22 @@
  * machined about this rifle is said in its SHAPE — the skeleton stock, the
  * chassis flank, the bare tube — and a finish is not the place to say it
  * twice.
+ * Invariant: THE RAIL IS SUPPORTED FOR ITS WHOLE LENGTH, which on this weapon
+ * is a rule rather than a consequence — it carries the DMR's 0.86 of rail over
+ * the SHORTEST action in the kit. The rail runs -0.29 to 0.57 and the action is
+ * 0.47 of that, so 39 cm of it is over somebody else's business: 9 cm of bolt
+ * raceway behind and 30 cm of barrel in front. Both were built as AIR, and the
+ * forward one read as what it was — a 30 x 4 cm window of open daylight
+ * between the rail's underside and the handguard with the barrel visible
+ * through it, a rail bolted to nothing for a third of its length. The DMR has
+ * never had it because its upper is 0.82 long against its own 0.86 of rail: it
+ * supports its own. What holds this one up is different at each end because
+ * what is underneath is different — a solid `railBridge` the bolt passes under
+ * behind, and the HANDGUARD raised to meet the rail's underside in front —
+ * and the two are joined by a deck that spans the rail rather than the action.
+ * **Anything that lengthens the rail, moves `RAIL_TOP` or drops the handguard
+ * owes the support under it**, and the failure is a hole in the weapon rather
+ * than anything a build would refuse.
  */
 import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -175,9 +191,10 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.51, 0.14);
  *
  * Merged to one mesh per colour, plus a set for the magazine and a set for the
  * bolt — which are the two things that have to move independently. Measured
- * against the rest of the kit: **31 meshes and 11,218 triangles**, against the
- * LMG's 30 and 11,210 and the DMR's 30 and 10,602. The bolt costs exactly ONE
- * mesh over every other primary, and that is the whole price of the animation.
+ * against the rest of the kit: **32 meshes and 11,334 triangles**, against the
+ * LMG's 30 and 11,210 and the DMR's 30 and 10,602. The bolt costs exactly TWO
+ * meshes over every other primary — it is METAL and BODY, and that is the whole
+ * price of the animation.
  */
 export function buildSniper(
   scene: Scene,
@@ -192,7 +209,15 @@ export function buildSniper(
   // and the reason the rail is lower than the DMR's despite the bigger gun:
   // half of this section is under the axis, where the others have air.
   b.box("action", BODY, 0.076, 0.09, 0.47, 0, 0.012, 0.035);
-  b.box("actionTop", BODY, 0.062, 0.014, 0.47, 0, 0.064, 0.035);
+  // The deck runs the RAIL's length rather than the action's, and its top face
+  // IS the rail's underside — see the invariant in the header. Under its rear
+  // 9 cm the action has already stopped, so the bridge below carries it there:
+  // solid over the raceway, with the bolt passing under it exactly as one does
+  // under a real rear receiver bridge. Its floor clears the shroud's 0.042
+  // crown by 3 mm, which is what keeps the draw legible from the side — the
+  // rail over it has always hidden that travel from directly above anyway.
+  b.box("actionTop", BODY, 0.062, 0.015, 0.56, 0, 0.0645, -0.01);
+  b.box("railBridge", BODY, 0.056, 0.033, 0.09, 0, 0.0405, -0.245);
   b.box("recoilLug", METAL, 0.086, 0.026, 0.03, 0, -0.02, 0.22);
   b.box("rail", BODY, 0.058, 0.014, 0.86, 0, 0.079, 0.14);
   for (let i = 0; i < 12; i++) {
@@ -220,7 +245,6 @@ export function buildSniper(
   b.box("tangShelf", BODY, 0.044, 0.014, 0.06, 0, -0.001, -0.262);
   b.box("safetyShelf", METAL, 0.03, 0.016, 0.05, 0.03, -0.038, -0.232);
   b.pin("safetyPin", METAL, 0.012, 0.06, 0, -0.042, -0.212);
-  b.box("slingQdF", METAL, 0.022, 0.028, 0.016, 0.042, -0.038, 0.24);
 
   // --- chassis: trigger housing, magwell, near-vertical grip ---
   // Deliberately narrower than the action above it (0.07 against 0.076), which
@@ -253,9 +277,25 @@ export function buildSniper(
   b.box("gripCap", RUBBER, 0.056, 0.018, 0.082, 0, -0.162, 0, gripPivot);
 
   // --- handguard: a long free-float tube, slotted, carrying the bipod ---
+  // Free-float is a promise about the BARREL, so the top of the tube is free
+  // to come up to the rail — and ahead of the action it has to, because there
+  // is nothing else under 30 cm of rail (see the header). The riser's top face
+  // is the rail's underside, and it steps back down in two tiers the moment
+  // the rail has ended: the heavy barrel is what the front of this weapon is
+  // for, and a tube carried at rail height all the way to the muzzle would be
+  // the widest thing on the gun instead of the barrel.
   b.box("handguard", POLYMER, 0.082, 0.07, 0.5, 0, -0.012, 0.5);
-  b.box("hgTop", POLYMER, 0.066, 0.014, 0.5, 0, 0.026, 0.5);
+  b.box("hgRiser", POLYMER, 0.066, 0.053, 0.32, 0, 0.0455, 0.41);
+  b.box("hgStep", POLYMER, 0.066, 0.03, 0.07, 0, 0.034, 0.605);
+  b.box("hgTop", POLYMER, 0.066, 0.014, 0.11, 0, 0.026, 0.695);
   b.box("hgBottom", POLYMER, 0.066, 0.014, 0.5, 0, -0.05, 0.5);
+  // The two bolts the riser hangs on. A 32 cm flank is the largest blank panel
+  // on the weapon and these are what say it is a bolted-on part rather than a
+  // slab: 0.07 of pin across 0.066 of riser stands 2 mm proud on each side,
+  // which is a bolt head at the distance this is looked at.
+  for (const dz of [0.3, 0.52] as const) {
+    b.pin("hgBolt", METAL, 0.012, 0.07, 0, 0.05, dz);
+  }
   b.box("hgCap", BODY, 0.078, 0.078, 0.014, 0, -0.012, 0.743);
   for (const side of [-1, 1] as const) {
     for (let i = 0; i < 5; i++) {
@@ -268,6 +308,7 @@ export function buildSniper(
   }
   b.box("bottomRail", METAL, 0.048, 0.016, 0.32, 0, -0.062, 0.5);
   b.box("handStop", POLYMER, 0.042, 0.028, 0.028, 0, -0.08, 0.36);
+  b.box("slingQdF", METAL, 0.022, 0.028, 0.016, 0.042, -0.038, 0.345);
   b.box("slingQdM", METAL, 0.022, 0.026, 0.016, -0.044, -0.05, 0.6);
 
   // --- bipod, folded back along the underside ---
@@ -288,7 +329,25 @@ export function buildSniper(
   // for the reason the DMR's is: the vocabulary here is additive, and a groove
   // is the one shape it cannot make.
   b.tube("barrelShank", BODY, 0.056, 0.058, 0.1, 0, 0, 0.3);
-  b.tube("barrelNut", METAL, 0.066, 0.066, 0.018, 0, 0, 0.263);
+  // The nut, and it is the BOLT HANDLE's argument made a second time: drawn at
+  // its own size and station it was a part nobody could ever see. A free-float
+  // handguard clamps OVER the barrel nut — that is what free-float means — and
+  // this tube begins at 0.25 where the action only ends at 0.27, so there is no
+  // bare barrel between the two at all: a 0.066 nut at 0.263 sat inside two
+  // solids for its whole circumference, 40 triangles of nothing.
+  //
+  // So it is drawn against the RECEIVER instead of against the handguard, in
+  // the 20 mm the tube has not reached yet, and sized to stand 9 mm proud of
+  // the action's flanks and 14 mm below its belly — a faceted ring breaking
+  // the bottom outline, hard against `recoilLug`, which is the order those two
+  // parts come in on a real rifle. Its top stays under the action and that is
+  // not a compromise: a barrel nut is below the sight line by nature, and
+  // there is no station on this weapon where one could be seen from above.
+  // It is boxed in on three sides — `recoilLug` ends at 0.235, the handguard
+  // begins at 0.25 and the first `vent` at 0.274 — and it is what pushed
+  // `slingQdF` forward onto the handguard, where a front swivel belongs and
+  // where it stands 12 mm proud of the tube instead of 4 mm of the action.
+  b.tube("barrelNut", METAL, 0.094, 0.094, 0.02, 0, 0, 0.245);
   b.tube("barrel", BODY, 0.048, 0.056, 0.34, 0, 0, 0.52);
   b.tube("barrelFwd", BODY, 0.046, 0.048, 0.13, 0, 0, 0.755);
   for (let i = 0; i < 3; i++) {
