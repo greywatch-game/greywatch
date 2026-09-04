@@ -1236,9 +1236,16 @@ out is having ARRIVED and reading that as lost flies a machine out of the map.
 **And `moveWithCollisions` opens with `getAbsolutePosition()`, which nothing on
 the AUTHORITY had ever computed** — a client's render walk writes it once a
 frame and the server does not render, so every hull on it swept from the origin
-its box was built at. `narrowedMove` forces the matrix now, and **anything else
-that ever sweeps a mesh owes the same line**: the failure is invisible on a
-client.
+its box was built at. `narrowedMove` forces the matrix now, and **the rule is
+not about sweeps: ANY world position read off a node owes the same forced line,
+and the failure is invisible on a client.** `getAbsolutePosition` computes the
+matrix itself but only when the node reports itself out of sync, and nothing
+about MOVING a node makes it say so — Babylon's `Vector3` carries no dirty flag,
+so what invalidates a rig joint is its PARENT having been recomputed by the
+render walk. With no render there is no invalidation and no second answer: a
+node's FIRST read is what it returns for the life of the process. It cost the
+tank's gun and the bots' ears — `Vehicle.muzzleToRef`, `mgMuzzleToRef` and
+`Bot.muzzleWorld` all force it now, which is where a fourth reader should look.
 
 **A hull is HEARD whoever is in it, and that is two voices over one graph.** The
 one the player is sitting in is unpanned for the reason their own report is;

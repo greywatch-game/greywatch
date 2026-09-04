@@ -1457,9 +1457,27 @@ export class Vehicle implements Combatant, RayHull {
    * behind `armed` or behind `fireGun`'s refusal, so the fallback is
    * unreachable, and a `Vector3` nobody reads is a cheaper way to say that than
    * a nullable every call site has to unwrap.
+   *
+   * **The matrix is FORCED, and that is `narrowedMove`'s trap one level down
+   * the rig rather than a tidy-up.** `getAbsolutePosition` computes the world
+   * matrix itself, but only if the node reports itself out of sync — and a
+   * TransformNode's own test never fails on a moved position (Babylon's
+   * `Vector3` carries no dirty flag), so what actually invalidates a rig joint
+   * on a CLIENT is its PARENT having been recomputed by the render walk, which
+   * bumps `_childUpdateId`. **The AUTHORITY never renders**, so nothing ever
+   * bumped it: the first read of this muzzle computed a correct answer and
+   * every read afterwards, for the life of the process, returned that same
+   * point. Measured on Sarab over a headless round — a hull driven to
+   * (115, -26) still fired every shell from the (-192, -217) hardstanding it
+   * spawned on, `resolveShell` casting the round's ray from there and
+   * `VehicleCrew.lay` solving the gun's bearing from there. Forcing it walks
+   * the chain up to the hull (`computeWorldMatrix(true)` recurses into the
+   * parent WITH the force) and costs a client nothing but the compose it was
+   * about to do anyway.
    */
   muzzleToRef(out: Vector3): Vector3 {
     const muzzle = this.rig.muzzle ?? this.rig.turret;
+    muzzle.computeWorldMatrix(true);
     return out.copyFrom(muzzle.getAbsolutePosition());
   }
 
@@ -1473,8 +1491,13 @@ export class Vehicle implements Combatant, RayHull {
     );
   }
 
-  /** The cupola gun's muzzle in world space: where a round starts and its flash is lit. */
+  /**
+   * The cupola gun's muzzle in world space: where a round starts and its flash
+   * is lit. Forced for `muzzleToRef`'s reason, and it is the same bug — on the
+   * authority `resolveMg` cast every belt round from the hardstanding too.
+   */
   mgMuzzleToRef(out: Vector3): Vector3 {
+    this.rig.mgMuzzle.computeWorldMatrix(true);
     return out.copyFrom(this.rig.mgMuzzle.getAbsolutePosition());
   }
 

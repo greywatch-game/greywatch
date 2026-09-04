@@ -1846,7 +1846,21 @@ export class Bot implements Combatant {
     );
   }
 
+  /**
+   * The rifle's muzzle in world space: where the tracer is flown from, where
+   * the flash is lit, and where the shot is HEARD from.
+   *
+   * **Forced, for `Vehicle.muzzleToRef`'s reason** — a rig joint is only
+   * invalidated by its parent being recomputed, the render walk is what does
+   * that, and the authority does not render. Unforced, this answered with the
+   * rig's pose at the first read for the life of the server process; measured
+   * on Sarab, that was (0.2, 0.8) — the ORIGIN, since a pooled rig is built
+   * there — which put every bot's `hearGunshot` cue at the middle of the map
+   * whatever end of it the bot was fighting on. The round's own ray is
+   * `eyePos` and was never affected (`BattleSystem.botFire`).
+   */
   muzzleWorld(): Vector3 {
+    this.rig.muzzle.computeWorldMatrix(true);
     return this.rig.muzzle.getAbsolutePosition();
   }
 
