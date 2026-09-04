@@ -71,6 +71,19 @@
  * hardstanding is in a yard and armour spends its first half-minute crossing
  * open ground. A run in which nothing collided is a run that tested nothing.
  *
+ * ## …and the third thing, which had been wrong on the AUTHORITY all along
+ *
+ * Both of those read `getAbsolutePosition()`, and that is whatever
+ * `computeWorldMatrix` last wrote. On a CLIENT the render walk writes it once a
+ * frame, so nothing ever had to say so. **The authority never renders**, so
+ * nothing wrote it at all: every hull on the server swept from the origin its
+ * box was built at. Measured on Sarab over a headless round before
+ * `narrowedMove` forced the matrix — a tank asking for 11 m/s made 1, every
+ * hull was ejected sideways at a constant 3.1 m/s out of the pile of colliders
+ * standing at 0,0 whatever its route said, and a bot crew took two minutes to
+ * cross ground it covers in twenty seconds. It cost nothing to fix and nothing
+ * to keep: one 4x4 compose per sweep per frame, and there are two sweeps.
+ *
  * ## Two rules a caller owes
  *
  * - **Ask with a reach that covers the whole sweep**, which is the collision
@@ -294,6 +307,27 @@ export function narrowedMove(
   const asked = step.length();
   const e = mesh.ellipsoid;
   const off = mesh.ellipsoidOffset;
+  // **The mover's world matrix is brought up to date first, and this is a
+  // correctness line rather than a tidy-up.** Both the locality query below and
+  // `moveWithCollisions` itself start from `getAbsolutePosition()`, which is
+  // whatever `computeWorldMatrix` last wrote — and on a CLIENT that is the
+  // render walk, once a frame, so nothing ever had to say so. **The AUTHORITY
+  // never renders**, so nothing computed it at all: every hull on the server
+  // swept from wherever its box was when it was built, which is the origin.
+  // Measured on Sarab before this line, over a headless round — a tank asking
+  // for 11 m/s made 1, every hull was ejected sideways at a constant 3.1 m/s
+  // out of the pile of colliders standing at 0,0, and a bot crew took two
+  // minutes to cross ground it should cover in twenty seconds. It costs a
+  // client nothing: it is one 4x4 compose per sweep per frame, and there are
+  // two sweeps in the game.
+  //
+  // **FORCED, and the unforced form is the version that looks right and does
+  // nothing.** `computeWorldMatrix()` returns the cached matrix unless the node
+  // reports itself out of sync, and a node whose matrix has never been computed
+  // has nothing to compare against — so on the authority, where that is every
+  // node, the cheap call returned the identity it was already holding and the
+  // measurement below was unchanged by it.
+  mesh.computeWorldMatrix(true);
   const at = mesh.getAbsolutePosition();
   const p = mesh.position;
   const fromX = p.x;

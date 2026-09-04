@@ -83,6 +83,35 @@
  * driver aimed at a doorway backs out and comes at it again — `Bot.stuckT`'s
  * answer to the identical problem one scale down.
  *
+ * ## …and the route through the AIR it does not need either
+ *
+ * This file said, for as long as there was a helicopter to say it about, that a
+ * bot may man the gun on anything and may drive only what the flow field can
+ * describe — that both halves of the paragraph above are answers about GROUND,
+ * and neither has anything to say about the air. That was the road graph's
+ * mistake made a second time, and it comes apart the same way: a pilot needs a
+ * bearing and a HEIGHT, and each of those already had an answer.
+ *
+ * 1. **The bearing is the same bearing.** A body's flow field is a map-scale
+ *    statement about which way the objective is, and a machine that flies over
+ *    the buildings needs even less of its detail than a tank does. What it
+ *    needs that a tank does not is a way to survive the field having nothing to
+ *    say — a helicopter is regularly over water or over a roof, where no body
+ *    could stand and no surface was ever grown — which is `airHold`.
+ * 2. **The height is `Vehicle.aloftAt`**, which is `rideableAt` asked one axis
+ *    up: how high the air over a column has to be flown, answered off the same
+ *    two halves of the world (`ObstacleField` and `TerrainField`) and against
+ *    the machine's own ceiling and climb gradient. A fan of those turns the
+ *    body's bearing into an aircraft's exactly as the whiskers turn it into a
+ *    hull's — and it hands back the altitude in the same walk, because "which
+ *    way" and "how high" are one question up here.
+ *
+ * So `fly` is `steer` with those two substitutions and nothing else: same three
+ * sources for the bearing, same fan in ascending deviation, same commitment,
+ * same watchdog. What is genuinely new is one control (`collective`) and one
+ * ordering — **the answer to something in the way is UP, and a bearing is what
+ * is left when going over has been refused.**
+ *
  * ## What it never does
  *
  * - **It never denies the player their own armour.** A hull with a CHAIR left
@@ -96,7 +125,10 @@
  * - **It never gets out on its own.** The crew leaves by being evicted or by
  *   the hull burning, and nothing else — a bot that could abandon a hull would
  *   need to know when a tank is a liability, which is a judgement no number
- *   here could make honestly.
+ *   here could make honestly. On a machine that flies that also means it never
+ *   LANDS: there is nothing in the round a landing is the answer to, and a
+ *   pilot that put its skids down would be one more thing to decide when to
+ *   take off again.
  */
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -232,6 +264,12 @@ interface Crew {
    */
   detourYaw: number;
   detourT: number;
+  /**
+   * How long a PILOT has been flying on a bearing it no longer has a route
+   * for. See `CONFIG.vehicles.crew.airHold` — a flow field is a body's, and a
+   * helicopter is regularly over ground no body could stand on.
+   */
+  lostT: number;
   /** Which way it steers while doing that. Fixed per crew — see `reverseSteer`. */
   readonly reverseSide: number;
   /** Set by `remove`, so a crew disbanded mid-sweep is skipped rather than stepped. */
@@ -277,6 +315,40 @@ const WHISKER_LATERAL = [0, 0.34, -0.34, 0.67, -0.67, 1, -1] as const;
  * gap in the middle, which is a parked car's worth of room to hide in.
  */
 const WHISKER_DEPTHS = [0, 0.28, 0.6, 1] as const;
+/**
+ * The PILOT's fan, in the same two axes as the driver's and with one difference
+ * in each.
+ *
+ * **The first probe is AT the nose, and it is there for the driver's reason
+ * rather than in spite of it.** The first version spread them evenly from a
+ * tenth of the reach, on the argument that a machine which answers an obstacle
+ * by climbing needs the run-up rather than the near field — and that opened a
+ * nine-metre hole directly in front of a hull whose rotor disc is ten metres
+ * across. Measured on Sarab: a pilot flew into the side of a building at
+ * fifteen metres, `moveWithCollisions` refused every metre of the drive, and
+ * `freeFromWalls` walked the machine sideways out of the wall at 3.1 m/s for
+ * the rest of the round while the fan reported clear air and the engine note
+ * said fifteen knots. That is `WHISKER_DEPTHS`' own hour, paid a second time
+ * one axis up: **the near field is what a turn swings a bearing onto**, and it
+ * does not stop being that because the vehicle can climb.
+ *
+ * **And five laterals rather than seven**, at `collideRadius` rather than at
+ * the hull's half-width — see `aloftAlong`. The driver's spacing is set by a
+ * 0.6 m shopfront pillar; nothing that slender stands high enough to reach a
+ * machine flying twelve metres over the roofs, and what does — a tower, a
+ * chimney, a hillside — is wider than the 2.6 m these leave between them.
+ */
+const AIR_DEPTHS = [0, 0.12, 0.3, 0.55, 0.8, 1] as const;
+const AIR_LATERAL = [0, 0.5, -0.5, 1, -1] as const;
+/**
+ * The altitude the bearing `pickAloft` chose demands, in metres of world Y.
+ *
+ * Module scratch for `_dir`'s reason — this runs every frame for every crewed
+ * hull and nothing here allocates — and it is a second return value rather than
+ * a field on the crew because that is all it is: it is written and read inside
+ * one call of `fly` and means nothing between two of them.
+ */
+let _aloft = 0;
 
 export class VehicleCrew {
   private readonly crews: Crew[] = [];
@@ -476,20 +548,16 @@ export class VehicleCrew {
       // cannot hand the same man both jobs.
       for (const seat of SEATS) {
         if (tank.seats[seat]) continue;
-        // **A bot may man the gun on anything and may drive only what the flow
-        // field can describe.** The driver in this file is `NavGrid.steer` plus
-        // `Vehicle.rideableAt`, and both are answers about GROUND — there is no
-        // route through the air, and `rideableAt` would be asked about a place
-        // nothing is standing on. So a hull that flies is one the AI can shoot
-        // from and not one it can take anywhere. `flies` and never a kind, the
-        // way `armed` is asked three times further down this file.
-        if (seat === DRIVER && tank.flies) continue;
-        // …and the second chair on one is worth filling only once somebody IS
-        // flying it. A gunner is a man `BattleSystem.setCrewed` takes out of the
-        // fight, which on a hull the AI can drive is a trade — the hull goes
-        // somewhere — and on one it cannot is a body sitting on a hardstanding
-        // for the whole round.
-        if (tank.flies && !tank.seats[DRIVER]) continue;
+        // **Every seat on every kind, and this is where two refusals used to
+        // be.** They said that a bot may man the gun on anything and may drive
+        // only what the flow field can describe — that the driver here is
+        // `NavGrid.steer` plus `Vehicle.rideableAt`, both of them answers
+        // about GROUND, and that neither has anything to say about the air. The
+        // first half was right and the second was the same mistake the road
+        // graph was: a pilot does not need a route through the air either. It
+        // needs a bearing, which the body's field gives at map scale exactly as
+        // it gives one to a tank, and a HEIGHT, which is `Vehicle.aloftAt` —
+        // `rideableAt`'s own question asked one axis up. See `fly`.
         let best: Bot | null = null;
         let bestDist = reach;
         for (const bot of this.ctx.roster()) {
@@ -517,9 +585,10 @@ export class VehicleCrew {
       drive: {
         throttle: 0,
         steer: 0,
-        // A bot never writes this and never reads one: `board` refuses the
-        // driver's chair on a hull that flies, so nothing here has a
-        // collective to pull. Stated because the shape requires it.
+        // The collective, and on a hull with nothing to lift it there is
+        // nothing to spend it on — `DriveInput.lift` says so, and `flyStep` is
+        // the only thing that reads it. Started centred, which on a machine
+        // sitting on its skids is what it means: hold.
         lift: 0,
         aimYaw: tank.turretYaw,
         aimPitch: 0,
@@ -538,6 +607,7 @@ export class VehicleCrew {
       reverseT: 0,
       detourYaw: 0,
       detourT: 0,
+      lostT: 0,
       // Fixed per crew and split by side, so two hulls in the same street do
       // not both shoulder the same way out of it.
       reverseSide: tank.team === 0 ? 1 : -1,
@@ -592,7 +662,24 @@ export class VehicleCrew {
     // taking his gunner somewhere. `acquire` still runs above, because a
     // target is what `steer` holds station on.
     if (crew.tank.armed) this.lay(dt, crew);
-    this.steer(dt, crew);
+    // **The two locomotions, and the branch is `Vehicle.update`'s own** — the
+    // one that decides between `flyStep` and the throttle walk, asked here so
+    // that what is written onto `DriveInput` means what the hull is about to
+    // read it as. Those fields change meaning with the capability rather than
+    // with the kind: `steer` is hull yaw on one and a sideways disc tilt on the
+    // other, `aimYaw` is a turret's order on one and the HEADING on the other,
+    // and `lift` means nothing at all to anything on wheels. A single steering
+    // routine over both would be writing four fields in the hope that the hull
+    // happened to be the sort that wanted them that way round.
+    //
+    // **`armed` and `flies` together is not a kind and would not work if it
+    // were**, which is worth knowing before a fourth kind is written: `lay`
+    // above and `fly` below both claim `aimYaw`, and on a gunship that flies
+    // they would be the gun's bearing and the airframe's heading written over
+    // each other. `DriveInput` would owe that machine a fifth field before the
+    // crew could give it two jobs.
+    if (crew.tank.flies) this.fly(dt, crew);
+    else this.steer(dt, crew);
     if (crew.tank.armed) this.shoot(crew);
   }
 
@@ -628,7 +715,10 @@ export class VehicleCrew {
     // neither of them can hurt and park inside its main gun's cone, which is
     // the worst thing this vehicle can do with its speed. So he sees infantry
     // only, at the range his gunner's gun reaches, and armour is something he
-    // has no opinion about.
+    // has no opinion about. It reads the same way one axis up: a PILOT holds
+    // station over the infantry his gunner can kill, and has nothing to say
+    // about the tank in the street below — which is also the honest shape of
+    // that duel, because the tank has nothing to say about him either.
     const soft = crew.seat === GUNNER || !tank.armed;
     const range = soft ? c.mgRange : c.engageRange;
     const held = crew.target;
@@ -1053,5 +1143,330 @@ export class VehicleCrew {
       }
     }
     return true;
+  }
+
+  // --- the pilot ------------------------------------------------------------
+
+  /**
+   * `steer`'s counterpart for a hull that hangs on a rotor: where it is being
+   * taken, how high it has to be to get there, and the one control the ground
+   * driver has not got.
+   *
+   * **The shape is `steer`'s, line for line, and only the questions changed.**
+   * The bearing comes from the same three places in the same order (a
+   * commitment, a target, the crewman's squad objective), the fan is searched
+   * in the same ascending deviation with the same bias toward the nose, the
+   * same detour holds it, and the same watchdog backs it out. What is
+   * different is that a whisker asks `Vehicle.rideableAt` and hands back yes or
+   * no, while a probe up here asks `Vehicle.aloftAt` and hands back a HEIGHT —
+   * so the fan produces the altitude as well as the bearing, and the two cannot
+   * disagree because they came out of one walk.
+   *
+   * **The answer to something in the way is UP, and a bearing is the second
+   * answer rather than the first.** That is not a preference: `aloftAt` refuses
+   * a column only when the machine cannot get over it — too tall to hold the
+   * clearance under the ceiling, or too near to climb to it — so a bearing that
+   * comes back at all is one this pilot flies straight down while climbing, and
+   * the fan is reached for only once going over has been ruled out. A tank's
+   * fan is the whole of its answer; this one is the exception path.
+   */
+  private fly(dt: number, crew: Crew): void {
+    const c = CONFIG.vehicles.crew;
+    const tank = crew.tank;
+    const d = crew.drive;
+    const p = tank.position;
+    // The floor under every altitude decision below: whatever this machine is
+    // over RIGHT NOW, plus the clearance. Nothing the fan says can take the
+    // pilot under it — a bearing is about where to go, and this is about not
+    // descending into what is already underneath.
+    let want = tank.skylineAt(p.x, p.z) + c.airClearance;
+
+    if (crew.reverseT > 0) {
+      // Backing out, and on this kind that is the cyclic pushed the other way
+      // and the disc tilted sideways — the same two fields spent on the same
+      // two intentions they carry going forwards, which is why the recovery
+      // needed no rewriting. No fan, for the ground driver's reason: the
+      // machine is retracing air it has just flown through.
+      crew.reverseT -= dt;
+      d.throttle = -1;
+      d.steer = crew.reverseSide * c.reverseSteer;
+      // **The nose is HELD rather than left**, because `aimYaw` is a bearing on
+      // this kind and not a stick: one left over from the bearing that got the
+      // machine wedged would have it turning back into the thing it is backing
+      // away from.
+      d.aimYaw = tank.yaw;
+      this.collective(crew, want);
+      return;
+    }
+
+    // A commitment outranks both the route and the target and is dropped the
+    // moment the air it committed to stops being flyable — `steer`'s rule, and
+    // it also carries that bearing's own altitude demand while it lasts.
+    if (crew.detourT > 0) {
+      crew.detourT -= dt;
+      const held = this.aloftAlong(tank, crew.detourYaw);
+      if (held === Infinity) crew.detourT = 0;
+      else if (held > want) want = held;
+    }
+
+    let wantYaw = tank.yaw;
+    let closing = 0;
+    const target = crew.target;
+    if (crew.detourT > 0) {
+      wantYaw = crew.detourYaw;
+      closing = 1;
+      crew.lostT = 0;
+    } else if (target) {
+      // Station-keeping, and it is the driver's to the letter — including the
+      // standoff, which does a second job up here that it does not do on the
+      // ground. With the fan idle inside the band, `want` falls back to the
+      // clearance over whatever is under the machine, so a gunship that has
+      // closed on infantry settles to twelve metres over them: which is what
+      // keeps the target inside the chin gun's own depression limit. A pilot
+      // holding its cruising height over a man at this range would be a gunner
+      // who cannot look down far enough to shoot him.
+      const dx = target.position.x - p.x;
+      const dz = target.position.z - p.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 1e-3) wantYaw = Math.atan2(dx, dz);
+      closing =
+        dist > c.standoff * 1.2
+          ? c.engageThrottle
+          : dist < c.standoff * 0.7
+            ? -c.engageThrottle
+            : 0;
+      crew.lostT = 0;
+    } else if (this.route(tank, crew.bot.objective)) {
+      wantYaw = Math.atan2(_dir.x, _dir.z);
+      closing = 1;
+      crew.lostT = 0;
+    } else if (!this.offGraph(p)) {
+      // A route that has run out over ground a body COULD stand on is a pilot
+      // that has arrived. Hold station over it — which is how a gunship takes a
+      // flag, since a crewed bot's position is the hull's and `pointAt` is a
+      // plan test — and re-arm the clock below for the next crossing.
+      crew.lostT = 0;
+    } else if (crew.lostT < c.airHold) {
+      // **A bearing is not lost by flying over ground nobody could stand on.**
+      // See `CONFIG.vehicles.crew.airHold`: the flow field answers off the
+      // walkable surface nearest the column, and a helicopter is regularly over
+      // water, over a roof, or over anything else the graph was never grown
+      // across. Holding the heading carries it to the far side.
+      //
+      // **The arm above is what distinguishes CROSSING from ARRIVING, and
+      // without it this one is a bug.** A route also runs out when the field
+      // has nothing better to offer, which is what a hull that has reached its
+      // objective looks like — the natural way a tank stops driving and just
+      // fights. Read as "lost", that flew a machine four seconds past the flag
+      // it had come for, and measured on Sarab it put one 41 m outside the play
+      // square with nothing to bring it back: bots are not leashed, and beyond
+      // the nav graph there is no route to find either.
+      //
+      // Which is also why the clock is BOUNDED rather than a latch: outside the
+      // play square is off the graph too, so four seconds is where a machine
+      // that has left the map stops rather than keeps going.
+      crew.lostT += dt;
+      closing = 1;
+    }
+
+    if (closing > 0 && crew.detourT <= 0) {
+      const clear = this.pickAloft(tank, wantYaw);
+      if (clear === null) {
+        // Nowhere to go over and nowhere to go round. The watchdog's own
+        // recovery, taken directly rather than ground against: back off and
+        // come at it again.
+        crew.stuckT = 0;
+        crew.reverseT = c.reverseTime;
+        d.throttle = 0;
+        d.steer = 0;
+        d.aimYaw = tank.yaw;
+        this.collective(crew, want);
+        return;
+      }
+      if (Math.abs(angleDelta(wantYaw, clear)) > c.detourAngle) {
+        crew.detourYaw = clear;
+        crew.detourT = c.detourTime;
+      }
+      wantYaw = clear;
+      if (_aloft > want) want = _aloft;
+    }
+
+    this.collective(crew, want);
+    this.flyOn(crew, wantYaw, closing, want);
+
+    // The watchdog, unchanged and earning its place for a narrower reason than
+    // the driver's: a helicopter asking for speed and not getting it has flown
+    // into the one thing its own probes cannot see, which is a wall the buckets
+    // do not hold — the map's own rim. See `Vehicle.skylineAt`.
+    if (Math.abs(d.throttle) > 0.2 && tank.travel < c.stuckSpeed) {
+      crew.stuckT += dt;
+      if (crew.stuckT >= c.stuckTime) {
+        crew.stuckT = 0;
+        crew.detourT = 0;
+        crew.reverseT = c.reverseTime;
+      }
+    } else {
+      crew.stuckT = 0;
+    }
+  }
+
+  /**
+   * Is this column one the flow field could never have described — no walkable
+   * surface under it at all, or off the graph entirely?
+   *
+   * The one question `route` cannot answer for a pilot, and the whole of what
+   * separates a machine crossing water from one that has arrived. `NavGrid`
+   * answers -1 for both of those and for nothing else, which is why this is a
+   * lookup rather than a rule: the graph already knows the difference between
+   * "no surface here" and "a surface here that the field cannot improve on".
+   *
+   * Outside the grid is also -1 and is deliberately folded in with the rest: a
+   * machine out there is one the hold above will carry a few more seconds and
+   * then stop, which is the bounded version of a problem nothing else in this
+   * layer can fix — the nav graph stops at the play square and bots are never
+   * leashed.
+   */
+  private offGraph(at: Vector3): boolean {
+    return !this.nav || this.nav.surfaceAt(at.x, at.y, at.z) < 0;
+  }
+
+  /**
+   * The collective: fly to `wantY`, which is a belly altitude in the WORLD and
+   * never a height over the ground.
+   *
+   * One proportional term and no clamp on what it may ask for, and the second
+   * half of that is `flyStep`'s to make rather than this file's: the collective
+   * commands a RATE and the ceiling fades the rate, so a pilot ordering a climb
+   * into air the machine cannot hold is answered with zero and stops there. A
+   * limit here would be that limit stated twice, and two of them drift.
+   */
+  private collective(crew: Crew, wantY: number): void {
+    const err = wantY - crew.tank.position.y;
+    crew.drive.lift = Math.max(
+      -1,
+      Math.min(1, err * CONFIG.vehicles.crew.airLift),
+    );
+  }
+
+  /**
+   * The cyclic and the pedals for one bearing — `driveOn`'s counterpart, and
+   * the three fields it writes mean three different things from the three that
+   * one writes.
+   *
+   * **The nose is POINTED and not steered.** `aimYaw` is a bearing on a hull
+   * that flies: `flyStep` derives from it the pedal that would have produced
+   * the turn the look is asking for, which is the same line the player's chase
+   * camera drives. So this hands over the bearing itself, and the linkage, the
+   * authority, the yaw rate and the coordinated bank downstream are the lines
+   * they have always been.
+   *
+   * **`steer` is left at nothing on purpose.** On this kind it is the lateral
+   * cyclic — the machine slides sideways without turning — and it is a control
+   * this pilot has no use for: the nose comes round at a flat 1.35 rad/s at
+   * every speed, so anything a sidestep could reach is somewhere the whole
+   * airframe is pointed a fraction of a second later. It is left to the
+   * recovery above, which is the one place a bearing is not the answer.
+   *
+   * Two fall-offs on the cyclic and they multiply. The first is `driveOn`'s
+   * heading fall-off unchanged. The second is this kind's alone: **climb before
+   * you close** — see `airClimbGate`, and note that it has no floor under it
+   * where the ground one does, because a helicopter with the cyclic centred is
+   * still going up.
+   */
+  private flyOn(
+    crew: Crew,
+    wantYaw: number,
+    closing: number,
+    wantY: number,
+  ): void {
+    const c = CONFIG.vehicles.crew;
+    const tank = crew.tank;
+    const d = crew.drive;
+    d.aimYaw = wantYaw;
+    d.steer = 0;
+    const slack = Math.abs(angleDelta(tank.yaw, wantYaw)) - c.driveCone;
+    const fall =
+      slack <= 0 ? 1 : Math.max(0, 1 - slack / (Math.PI / 2 - c.driveCone));
+    const owed = wantY - tank.position.y;
+    const rise = owed <= 0 ? 1 : Math.max(0, 1 - owed / c.airClimbGate);
+    d.throttle = closing * fall * rise;
+  }
+
+  /**
+   * `pickBearing`'s counterpart: the bearing nearest the one wanted whose air
+   * this hull can actually fly through, or null when none of them is. The
+   * altitude that bearing demands is left in `_aloft`.
+   *
+   * The fan itself is the driver's — the same count, the same spread, the same
+   * ascending deviation with the same bias toward the side the nose is already
+   * on, for the same reason: a symmetric fan hands back the mirror bearing the
+   * moment the machine's own turn makes the other side a hair nearer, and it
+   * saws. The bias costs nothing, because every deviation is tried on both
+   * sides and only the order changes.
+   */
+  private pickAloft(tank: Vehicle, wantYaw: number): number | null {
+    const c = CONFIG.vehicles.crew;
+    const steps = Math.max(1, Math.floor(c.whiskers / 2));
+    const bias = angleDelta(wantYaw, tank.yaw) >= 0 ? 1 : -1;
+    for (let i = 0; i < c.whiskers; i++) {
+      // 0, +1, -1, +2, -2, ... : deviation ascending, sides alternating.
+      const k = i === 0 ? 0 : (i & 1 ? bias : -bias) * Math.ceil(i / 2);
+      const yaw = wantYaw + (k / steps) * c.whiskerSpread;
+      const need = this.aloftAlong(tank, yaw);
+      if (need !== Infinity) {
+        _aloft = need;
+        return yaw;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * How high this hull would have to be to fly `airReach` metres along `yaw`,
+   * or `Infinity` when that is a height it cannot make.
+   *
+   * `clearAlong`'s counterpart, and the two differ in exactly the way their
+   * vehicles do: that one returns at its first failed probe because a wall is a
+   * wall, and this one has to walk the whole grid of a bearing it accepts,
+   * because the answer is the TALLEST thing on it. A refused column still
+   * returns early, so the common case of a blocked bearing is as cheap here as
+   * it is there.
+   *
+   * **The beam is the ROTOR and not the fuselage**, which is the one dimension
+   * in this file that is not the hull box. `collideRadius` is what the world
+   * keeps this machine out of — 5.2 m, a 10.4 m disc — so probing at
+   * `hull.width / 2` would be asking about a corridor a quarter of the width of
+   * the thing being flown down it. It is also why five laterals are enough
+   * where the ground fan needs seven: the driver's spacing is set by a 0.6 m
+   * shopfront pillar, and nothing that narrow has a top face high enough to
+   * matter to a machine twelve metres over the roofs.
+   */
+  private aloftAlong(tank: Vehicle, yaw: number): number {
+    const c = CONFIG.vehicles.crew;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    // The hull's own right, the same basis `clearAlong` and
+    // `VehicleSystem.exitSpot` both build.
+    const rx = Math.cos(yaw);
+    const rz = -Math.sin(yaw);
+    const beam = tank.spec.drive.collideRadius;
+    const nose = tank.spec.hull.length / 2;
+    let need = -Infinity;
+    for (const depth of AIR_DEPTHS) {
+      const along = c.airReach * depth;
+      const px = tank.position.x + fx * (nose + along);
+      const pz = tank.position.z + fz * (nose + along);
+      for (const lat of AIR_LATERAL) {
+        const at = tank.aloftAt(
+          px + rx * beam * lat,
+          pz + rz * beam * lat,
+          along,
+          c.airClearance,
+        );
+        if (at === Infinity) return Infinity;
+        if (at > need) need = at;
+      }
+    }
+    return need;
   }
 }

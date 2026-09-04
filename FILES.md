@@ -402,8 +402,12 @@ src/
                         #   `Bot`'s FSM entirely (`BattleSystem.aside`) and
                         #   keeps its life, its position and its squad's order.
                         #   Steers on the body flow field for a BEARING and on
-                        #   `Vehicle.rideableAt` for what is a wall; `evict` is
-                        #   what stops the AI holding a side's only armour
+                        #   `Vehicle.rideableAt` for what is a wall; a PILOT is
+                        #   that sentence one axis up, on `Vehicle.aloftAt` for
+                        #   how high the air has to be flown, and answers an
+                        #   obstacle by climbing before it answers by turning.
+                        #   `evict` is what stops the AI holding a side's only
+                        #   armour
     AimAssistSystem.ts  # Gamepad-only: outer bubble slows the stick, inner one
                         #   rotates. Bounded by the player's own turn rate
     LightingSystem.ts   # Dynamic point lights: fixtures, flashes, lamps
@@ -493,7 +497,9 @@ src/
                         #   through Babylon's own surroundingMeshes instead of
                         #   walking the map. `narrowedMove` is the whole of how
                         #   a body sweeps — a hull's and the player's, the only
-                        #   two in the game. Superset or nothing — read it
+                        #   two in the game, and it forces the mover's world
+                        #   matrix because the AUTHORITY never renders one.
+                        #   Superset or nothing — read it
     vertexShading.ts    # The world's baked vertex-colour buffer, written after
                         #   every merge: AO in the ALPHA, the world mark in the
                         #   GREEN, the wind's sway weight in the RED

@@ -2235,9 +2235,12 @@ that is OVERHEAD clearance, which on Sarab is the gatehouse at 34 m out against
 a disc that stops 7 m short of it. It still owes level ground (both of Sarab's
 are dead level, 0.0 cm across the whole 10.4 m disc, because the home yards are
 flattened terraces) and it still owes `crew.boardRadius` — but for a different
-reason than the truck's, because no bot will ever fly one: the circle is not
-there to get a parked machine crewed, it is there so a pilot who has just lifted
-picks a GUNNER up on the way. 23.3 m to the nearest infantry spawn.
+reason than the truck's: a pad's circle is there to get a PILOT aboard, and
+then — because the sweep is a distance from the hull's centre and a machine that
+has just lifted is still twelve metres from a body standing under it — to pick a
+GUNNER up on the way out of the yard. 23.3 m to the nearest infantry spawn.
+Measured on Sarab in the real client, a pilot boards on the first sweep and the
+gunner joins him about fifteen seconds later, in the air.
 
 Adding a hardstanding changes the layout hash, so `npm run collision` has to be
 re-run — the entries join `MapBuilder.keepClear`, which is an input to scatter
@@ -2423,6 +2426,169 @@ Measured with all three in: a crew boarded from its own spawn closes from 191 m
 to 44 m of Coldharbour's central flag in 24 seconds, at road speed, with no
 reversals and no grinding. Before the fan was widened it stalled at 122 m and
 sawed against one colonnade for the rest of the run.
+
+## Bots fly, and it was the road graph's mistake made twice
+
+The entry in the list below used to say a bot never would, and its reason was
+the same shape as the one the section above already disproved once: *"a pilot
+needs a route through the air, and `NavGrid` has no such thing — `VehicleCrew`'s
+driver is a ground flow field plus `Vehicle.rideableAt`, and neither has
+anything to say about the air."* Both halves of that are true about the
+existing machinery and the conclusion does not follow, for the identical
+reason.
+
+**A pilot needs a bearing and a HEIGHT, and each of those already had an
+answer.** The bearing is the same bearing a tank uses — a body's flow field is
+a map-scale statement about which way the objective is, and a machine that
+flies over the buildings needs *less* of its detail than a hull threading the
+streets does. The height is `Vehicle.aloftAt`, which is `rideableAt`'s own
+question asked one axis up: how high the air over a column has to be flown,
+answered off the same two halves of the world — `ObstacleField` for what is
+built there and `TerrainField` for the floor under it — and against the
+machine's own ceiling and climb rate rather than against a tank's climb band.
+
+So `VehicleCrew.fly` is `steer` with those two substitutions and nothing else.
+The bearing comes from the same three places in the same order (a commitment, a
+target, the crewman's squad objective), the fan is searched in the same
+ascending deviation with the same bias toward the side the nose is already on,
+the same detour holds it, and the same stuck watchdog backs it out. What is
+genuinely new is one control and one ordering.
+
+### The fan hands back a height, and that is what makes it one walk
+
+A whisker asks `rideableAt` and gets yes or no. A probe up here asks `aloftAt`
+and gets a NUMBER — the belly altitude that column demands, which is the top of
+whatever stands there plus `crew.airClearance` — or `Infinity` when the machine
+cannot get over it. So the pilot's two decisions come out of one walk of the
+world and cannot disagree: the bearing is the least-deviation one that is not
+`Infinity`, and the altitude is the tallest answer on it.
+
+**The answer to something in the way is UP, and a bearing is what is left when
+going over has been refused.** That ordering is not a preference; it falls out
+of `aloftAt` refusing a column only when the machine genuinely cannot clear it.
+There are two ways it says so and each is one of the airframe's own numbers:
+
+- **It cannot be HELD.** `flight.ceiling` is a height over the floor —
+  `flyStep` measures it the same way — and inside `ceilingBand` the collective
+  is already fading, so an altitude in the band is one the machine arrives at
+  with nothing left to correct with. At the shipped numbers that puts the
+  tallest thing a pilot will fly over at about twenty metres; Cinderhaven's
+  forty-metre stack is a thing to go round, which is what a landmark should be.
+- **It cannot be REACHED from here.** `rideableAt` allows a rise of
+  `reach * climbSlope` because a tank's climb is a grade. A rotor's is not, so
+  this is the same allowance written as what it actually is: `climbRate` times
+  the time there is, and the time is `reach` over the speed the hull is
+  CLOSING at.
+
+That last clause is the one figure here that had to be measured rather than
+assumed. Written as a fixed gradient against `maxAirspeed` it refused every
+bearing to a helicopter still sitting on its skids — at rest the whole
+clearance is a climb not yet made — and the machine answered by backing off its
+own hardstanding, every takeoff. Against the closing speed a hover has all the
+time there is, which is the honest answer, and it also closes the loop with the
+cyclic gate below: **a pilot cannot accelerate toward something it has not
+climbed over, and therefore cannot accelerate itself into a refusal.**
+
+### The collective, and the two fall-offs on the cyclic
+
+`fly` writes four fields and three of them mean something different from what
+the same field means on a tank, which is why there is a `flyOn` beside
+`driveOn` rather than one routine with a branch in it. `aimYaw` is the HEADING
+and not a gun's order, so the pilot hands over the bearing itself and
+`flyStep`'s pedal derivation, the yaw authority and the coordinated bank
+downstream are the lines they have always been. `steer` is the lateral cyclic
+and is left at nothing: the nose comes round at a flat 1.35 rad/s at every
+speed, so anything a sidestep could reach is somewhere the whole airframe is
+pointed a fraction of a second later. It is kept for the reverse recovery,
+which is the one place a bearing is not the answer.
+
+`lift` is the control a ground driver has not got, and `collective` is one
+proportional term on the altitude the fan asked for. **Nothing clamps what it
+may ask, and nothing needs to**: the collective commands a RATE and the ceiling
+fades the rate, so a pilot ordering a climb into air the machine cannot hold is
+answered with zero and stops there. A limit in the crew would be that limit
+stated twice, and two of them drift.
+
+The cyclic then takes two fall-offs and they multiply. The first is `driveOn`'s
+heading fall-off unchanged. The second is this kind's alone — **climb before you
+close** — and unlike the ground one it has no floor under it, because a
+helicopter with the cyclic centred is still going up: there is no deadlock to
+protect against, and what it buys instead is that a takeoff reads as one. The
+machine sits on its pad through the spool, goes straight up, and only then
+leaves the yard, which is exactly the departure the pad's own clearance
+argument is written around.
+
+### A bearing is not lost by flying over ground nobody could stand on
+
+`route` runs out for two different reasons and a pilot has to tell them apart,
+which a tank never has to. The flow field answers off the walkable surface
+nearest the column, so a machine over deep water, over a roof, or over anything
+else the graph was never grown across gets no route at all — and for a
+helicopter that is not a failure, it is the vehicle doing what it is for.
+Holding the heading for `crew.airHold` carries it across and the route comes
+back on the far side.
+
+**The gate on that hold is what stops it being a bug**, and it is
+`NavGrid.surfaceAt` returning -1: no surface under the column at all. The other
+way a route runs out is the field having nothing better to offer, which is a
+hull that has ARRIVED — the natural way a tank stops driving and just fights.
+Read as "lost", that flew a machine four seconds past the flag it had come for,
+and measured on Sarab it put one 41 m outside the play square with nothing to
+bring it back: bots are not leashed, and past the nav graph there is no route
+to find either. A column that has a surface and no better neighbour is a pilot
+that has got where it was going, and the honest thing to do there is hold
+station over it — which, because a crewed bot's position is slaved to the hull
+and `pointAt` is a plan test, is also how **a bot-flown gunship takes a flag
+from twelve metres up.**
+
+### What the near field cost, again
+
+The first fan spread its probes evenly from a tenth of the reach, on the
+argument that a machine which answers an obstacle by climbing needs the run-up
+rather than the near field. That opened a nine-metre hole directly in front of
+a hull whose rotor disc is ten metres across, and `WHISKER_DEPTHS`' own hour
+was paid a second time one axis up: measured on Sarab, a pilot flew into the
+side of a building at fifteen metres, `moveWithCollisions` refused every metre
+of the drive, and `freeFromWalls` walked the machine sideways out of the wall
+for the rest of the round while the fan reported clear air and the engine note
+said fifteen knots. **The near field is what a TURN swings a bearing onto, and
+it does not stop being that because the vehicle can climb.** The first probe is
+at the nose now, exactly as the driver's is.
+
+The lateral spacing goes the other way: five probes at `drive.collideRadius`
+rather than seven at the hull's half-width. The beam is the ROTOR and not the
+fuselage — 5.2 m, a 10.4 m disc — so probing at `hull.width / 2` would be
+asking about a corridor a quarter of the width of the thing being flown down
+it; and the driver's seven exist for a 0.6 m shopfront pillar, which does not
+stand high enough to reach a machine twelve metres over the roofs.
+
+### Two bugs it found, and the second one was never the helicopter's
+
+The first is the near-field hole above.
+
+The second is that **`moveWithCollisions` opens with `getAbsolutePosition()`,
+and on the AUTHORITY nothing had ever computed one.** That value is whatever
+`computeWorldMatrix` last wrote; on a client the render walk writes it once a
+frame, so nothing in this tree ever had to say so. The server does not render.
+Every hull on it swept from the origin its collider box was built at — so a
+tank asking for 11 m/s made 1, every hull was ejected sideways at a constant
+3.1 m/s out of the pile of colliders standing at 0,0 whatever its route said,
+and a bot crew took two minutes to cross ground it covers in twenty seconds.
+It was there for as long as bots have crewed anything and nothing could see it,
+because the only tool that watches a headless round prints tickets and kills
+rather than positions. `narrowedMove` forces the matrix now, which is one 4x4
+compose per sweep per frame against the two sweeps this game has; the Sarab
+authority tick is unmoved by it (p50 0.101 ms before, 0.086 after, p95 0.201
+both).
+
+### What it does, measured
+
+Headless rounds on the authority, five minutes each: a crewed machine flies
+1,000–1,700 m on Sarab and 1,600–2,400 m on Cinderhaven, holds a mean 13 m over
+the skyline under it, peaks at 25–31 m over the tall things, cruises at
+16–17 m/s, and left the play square on none of them. In the real client on
+Sarab, both pads launch, the gunner joins in the air, and the round holds
+102–110 fps with the pilots in it.
 
 ## Armour in a match
 
@@ -2721,14 +2887,17 @@ ray happened to find, which can be a street away.
   floor sits `climbHeight/2` above the hull's bottom, so a descending machine
   would be stopped by the collider and put back by the plank once a frame for
   ever. Same class as "a hull pivots through whatever it is beside".
-- **No bot will ever FLY one**, and that is the one place the AI knows a
-  capability. `VehicleCrew`'s driver is a ground flow field plus
-  `Vehicle.rideableAt`, and neither has anything to say about the air, so
-  `board` refuses the pilot's chair on a hull that flies and refuses the
-  gunner's until somebody is already at the controls. A helipad is therefore the
-  one hardstanding on any map that sits idle until a player walks to it. A bot
-  gunner evicted at altitude falls — it has its own ground probe and lands
-  rather than breaking, but it is a real oddity and it is accepted.
+- **~~No bot will ever FLY one.~~ They do** — see "Bots fly, and it was the
+  road graph's mistake made twice" above, which is where this entry used to
+  say they never would. It said that `VehicleCrew`'s driver is a ground flow
+  field plus `Vehicle.rideableAt`, that neither has anything to say about the
+  air, and that a helipad is therefore the one hardstanding on any map that
+  sits idle until a player walks to it. The first clause was true and the
+  conclusion was the road graph's own mistake at one axis up: a pilot needs a
+  bearing and a HEIGHT, the flow field is already the first, and the second is
+  `rideableAt`'s own question asked of the air. A bot gunner evicted at
+  altitude still falls — it has its own ground probe and lands rather than
+  breaking, and it is still accepted.
 - **A dismount at height is REFUSED rather than punished**, because there is no
   fall damage anywhere in this game and inventing some for one vehicle would be
   a rule with one customer. `VehicleSystem.dismountable` is a HEIGHT rule and

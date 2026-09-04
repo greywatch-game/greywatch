@@ -2881,6 +2881,101 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * How high the WORLD stands at `(x, z)`: the floor, or the top of whatever
+   * is built on it.
+   *
+   * Both halves asked for `supportAt`'s reason — the boxes have no floor in
+   * them and the heightfield has no roof — and it is the same pair of lookups
+   * a track contact costs, spent on a column the hull is nowhere near. The
+   * band handed to `ObstacleField.groundAt` is open at the top on purpose:
+   * this is not asking what a hull could stand on, it is asking what is in the
+   * way of something passing OVER, and a forty-metre chimney is exactly the
+   * answer wanted rather than a box outside a band.
+   *
+   * **The rim is not in it**, because the oversize boundary slabs are kept out
+   * of the buckets — see `ObstacleField.oversize`. A map's edge is a thing a
+   * pilot is kept inside by its route rather than by seeing it, exactly as a
+   * body is; what happens to one that reaches it anyway is
+   * `moveWithCollisions` and then the stuck watchdog, which is the same
+   * recovery every other way of being wrong about the world gets.
+   */
+  skylineAt(x: number, z: number): number {
+    const ground = this.terrain.surfaceAt(x, z);
+    const top = this.obstacles?.groundAt(x, z, Infinity, ground) ?? null;
+    return top !== null && top > ground ? top : ground;
+  }
+
+  /**
+   * The belly altitude the world at `(x, z)` demands of this hull — the top of
+   * whatever stands there plus `clearance` — or `Infinity` when a machine
+   * `reach` metres short of it cannot get over that.
+   *
+   * **`rideableAt`'s twin for a hull that flies, and it is the same question
+   * asked one axis up.** That one asks whether the ground at a point is
+   * something the tracks can ride ONTO and answers yes or no; this asks how
+   * high the air over a point has to be flown and answers with a height —
+   * because a pilot's two decisions, which way and how high, come out of one
+   * probe and separating them would be walking the world twice. A bearing is
+   * refused by the `Infinity`; the altitude to hold is what is returned.
+   *
+   * Two ways it says no, and each of them is one of this machine's own
+   * numbers rather than a taste:
+   *
+   * - **It cannot be HELD.** `flight.ceiling` is a height over the FLOOR and
+   *   `flyStep` measures it the same way, and inside `ceilingBand` the
+   *   collective is already fading — so an altitude in the band is one the
+   *   machine arrives at with nothing left to correct with. Anything tall
+   *   enough to put the clearance up there is a thing to go round.
+   * - **It cannot be REACHED from here.** `rideableAt` allows a rise of
+   *   `reach * climbSlope` because a tank's climb is a grade; a rotor's is
+   *   not, so this is the same allowance written as what it actually is —
+   *   `climbRate` times the TIME there is, and the time is `reach` over the
+   *   speed this hull is closing at. **Against the CLOSING speed and not
+   *   against `maxAirspeed`**, which is the one number here that had to be
+   *   measured rather than assumed: a machine that is hovering has all the
+   *   time there is and can climb over anything under its ceiling, and a fixed
+   *   gradient says the opposite — it refused every bearing to a helicopter
+   *   still on its skids, because at rest the whole clearance is a climb it
+   *   has not made yet. It also makes the interlock: the pilot's cyclic is
+   *   gated on the altitude it still owes, so a machine cannot accelerate
+   *   toward something it has not climbed over, and cannot accelerate itself
+   *   into a refusal.
+   *
+   * A STEERING answer and never a collision one, `rideableAt`'s rule to the
+   * letter: nothing here stops a hull, and a wrong answer costs a detour.
+   */
+  aloftAt(x: number, z: number, reach: number, clearance: number): number {
+    const f = this.spec.flight;
+    if (!f) return Infinity;
+    // `skylineAt`'s two lookups written out rather than called, because the
+    // FLOOR is wanted as well as the top of what stands on it: the ceiling is
+    // a height over the ground and that is the one number `skylineAt` folds
+    // away. Same two lookups either way.
+    const ground = this.terrain.surfaceAt(x, z);
+    const top = this.obstacles?.groundAt(x, z, Infinity, ground) ?? null;
+    const skyline = top !== null && top > ground ? top : ground;
+    const need = skyline + clearance;
+    if (need - ground > f.ceiling - f.ceilingBand) return Infinity;
+    // **The reach is asked about the SKYLINE and the clearance is not in it**,
+    // which is the difference between a refusal and a preference. What this
+    // half decides is whether the thing itself can be got over in the ground
+    // there is to do it in; the clearance is how far over it the pilot would
+    // LIKE to be, and asking the machine to have that in hand as well is what
+    // refuses a bearing to a helicopter still sitting on its pad — where the
+    // skyline is exactly the skids and the clearance is the whole twelve
+    // metres it is about to climb. Measured before it was split: every bearing
+    // refused for the first two seconds of every takeoff, and a machine that
+    // answered by backing off its own hardstanding.
+    const belly = this.body.position.y - this.spec.hull.height / 2;
+    // Floored so a hover is a long time rather than a division by zero, and
+    // `speed` rather than the velocity's magnitude because the probes are laid
+    // along the HEADING: what this is asking is how fast the hull is closing on
+    // that column, and a machine drifting sideways is not closing on it at all.
+    const closing = Math.max(Math.abs(this.speed), 0.5);
+    return skyline - belly > (f.climbRate * reach) / closing ? Infinity : need;
+  }
+
+  /**
    * The height of this hull's DECK above `(x, z)`, or null when a body standing
    * there would not be on it. `ObstacleField.groundAt`'s band, term for term,
    * so a caller can take the higher of the two without reconciling anything.

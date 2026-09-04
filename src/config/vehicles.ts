@@ -567,6 +567,99 @@ export const vehicles = {
      */
     reverseSteer: 0.7,
     /**
+     * **The PILOT's four numbers, and they are four because everything else
+     * about him is the driver's already** — the same think clock, the same
+     * held target, the same fan searched in ascending deviation, the same
+     * commitment, the same stuck watchdog. What a hull that hangs on a rotor
+     * genuinely does differently is that it has a second control (the
+     * collective) and a second way past an obstacle (over it), and this block
+     * is those two and nothing else.
+     *
+     * How far over the SKYLINE a pilot flies — the top of whatever stands
+     * under it, floor or roof. It is the cruise height, the engage height and
+     * the takeoff height all at once, and it is one number because on this
+     * machine they are one question: `Vehicle.aloftAt` is asked about every
+     * column in the fan and hands back the tallest answer, so a pilot crossing
+     * a town rides over the roofs and the same pilot holding station in a yard
+     * settles to twelve metres over the yard.
+     *
+     * **It is bounded at the top by the machine and not by taste.** The
+     * ceiling is 40 m over the floor and the collective is already fading
+     * through the last 8 of that, so `ceiling - ceilingBand - airClearance` is
+     * how tall a thing may be before a pilot goes ROUND it rather than over:
+     * 20 m at this figure. Raising the clearance lowers that, and lowering it
+     * puts the disc nearer the roofs than the fan's own sampling can promise —
+     * the probes are `collideRadius` apart across the beam and a fifth of
+     * `airReach` apart along it, so twelve metres is the slack that covers
+     * what falls between them.
+     */
+    airClearance: 12,
+    /**
+     * How far ahead the pilot's fan looks, in metres — `whiskerReach`'s
+     * counterpart, and an order of magnitude longer for a reason that is
+     * arithmetic rather than caution.
+     *
+     * A tracked hull steers around what is in front of it and stops if it must;
+     * a helicopter climbs over it, and a climb takes TIME. This machine makes
+     * 9 m/s up against a cruise of about 17 along and holds `airClearance` over
+     * the roofs already, so the tallest thing on either map that it is not
+     * simply refused by asks about twenty metres of climb — 2.2 seconds, which
+     * is 38 m of run. Sixty is that with half as much again in hand.
+     *
+     * It is a LOOK-AHEAD and not a safety margin, and that is why it is not
+     * simply made enormous: `aloftAlong` returns the tallest thing on the
+     * bearing, so a pilot flies at the height of whatever is inside this
+     * distance. Doubling it is a machine that climbs over a tower a hundred
+     * metres before it reaches one and never comes back down.
+     */
+    airReach: 60,
+    /**
+     * The collective, as stick per metre of altitude error. Proportional
+     * inside about three metres and hard over outside it, which is what a
+     * pilot flying to a height rather than holding one wants: `flyStep`'s
+     * collective commands a RATE, so full stick is `climbRate` and this is
+     * simply how near the wanted height the machine starts easing off.
+     *
+     * Nothing clamps what it may ask for, and nothing needs to: the fade at
+     * the ceiling is on the ASKED rate, so a pilot ordering a climb into air
+     * the machine cannot hold gets a rate of zero and stops there.
+     */
+    airLift: 0.3,
+    /**
+     * How much altitude a pilot may still owe itself before the cyclic comes
+     * all the way off, in metres. **Climb BEFORE you close**, and it is the one
+     * fall-off on this kind that the ground driver has no use for.
+     *
+     * `driveOn`'s heading fall-off next door has a FLOOR under it because a
+     * hull that cannot pivot needs throttle to steer at all; this one has none,
+     * because a helicopter with the cyclic centred is still climbing — the
+     * collective is a separate control and there is no deadlock to protect
+     * against. So a pilot that is twelve metres under the roofline ahead stops
+     * going forwards entirely until it is over them, which is also what makes
+     * a takeoff read as one: the machine sits on its pad through the spool,
+     * goes straight up, and only then leaves the yard.
+     */
+    airClimbGate: 12,
+    /**
+     * How long a pilot flies on its last bearing after the route runs out, in
+     * seconds.
+     *
+     * **A bearing is not lost by flying over ground nobody could stand on**,
+     * and that is the one thing about a flow field that only a flying hull ever
+     * finds out. `NavGrid.steerAhead` answers off the walkable surface nearest
+     * the column, so a machine over deep water, over a roof or over anything
+     * else severed from the graph gets no route at all — where a tank in that
+     * position is a tank that has driven somewhere impossible, a helicopter in
+     * it is a helicopter doing exactly what it is for. Holding the heading
+     * carries it across and the route comes back on the far side.
+     *
+     * It is bounded rather than held for ever because the other thing that
+     * answers with no route is a pilot that has genuinely left the map, and
+     * bots are never leashed. Four seconds is a couple of hundred metres of
+     * water and nothing like a coastline.
+     */
+    airHold: 4,
+    /**
      * The SECOND crewman's numbers, and there are only three of them because
      * everything else about him is the driver's already: the same think clock,
      * the same one ray per acquisition, the same held target.

@@ -1094,11 +1094,10 @@ replaces obeyed the letter of that rule and still failed it, because a DOORWAY
 with a gun on its lip is that promise however remote the mount is. Its stub
 wings stop exactly at `hull.width / 2` — a span outside the collider is mass a
 round passes through, and the rotor disc is the one thing here exempt, by
-MOVING. **No bot will ever fly
-one** (there is no route graph through the air), a lone pilot is a taxi because
-that chin cannon is the second seat's, and a dismount at height is REFUSED rather
-than punished — there is no fall damage in this game, so `dismountable` is a
-height rule every kind obeys.
+MOVING. **BOTS FLY IT**, a lone pilot is a taxi because that chin cannon is the
+second seat's, and a dismount at height is REFUSED rather than punished — there
+is no fall damage in this game, so `dismountable` is a height rule every kind
+obeys.
 
 **The TANK is armour and the TRUCK is the trade**: 18 m/s against 11 through a
 3.2 m gap against 4.4, for 520 points against 1200 at nine times the small-arms
@@ -1221,6 +1220,25 @@ SQUAD'S ORDER, which is what it steers on. **A tank is never a DESTINATION**, an
 mounts on one frame. `resolveShell` is the ONE round out of a tank gun (`Game`'s
 offline, `HeadlessGame`'s in a match), and a driver needs no route graph — a
 BEARING and `Vehicle.rideableAt` are all of it.
+
+**…AND A PILOT IS THAT SAME SENTENCE ONE AXIS UP.** A bot flies the helicopter
+on a bearing (the same flow field) and a HEIGHT — `Vehicle.aloftAt`, which is
+`rideableAt`'s question asked of the air, off the same two halves of the world.
+So `VehicleCrew.fly` is `steer` with two substitutions, the fan hands back the
+altitude with the bearing, and **the answer to something in the way is UP, a
+bearing being what is left when going over has been refused.** Two rules it
+must keep: **the climb allowance is against the CLOSING speed and never a fixed
+gradient** (a gradient refuses every bearing to a machine still on its skids),
+and **a bearing is not lost by flying over ground nobody could stand on** —
+gated on `NavGrid.surfaceAt` returning -1, because the other way a route runs
+out is having ARRIVED and reading that as lost flies a machine out of the map.
+
+**And `moveWithCollisions` opens with `getAbsolutePosition()`, which nothing on
+the AUTHORITY had ever computed** — a client's render walk writes it once a
+frame and the server does not render, so every hull on it swept from the origin
+its box was built at. `narrowedMove` forces the matrix now, and **anything else
+that ever sweeps a mesh owes the same line**: the failure is invisible on a
+client.
 
 **A hull is HEARD whoever is in it, and that is two voices over one graph.** The
 one the player is sitting in is unpanned for the reason their own report is;
