@@ -1650,8 +1650,10 @@ rewind, the lobby and the regions' two headers, and what is not built.
   reason — a mechanism the frame cannot resolve is noise, and noise is not more
   faithful for having the right timing.
 - **The STANCE changes recoil's TIMING, not just its amplitude** (a three-point
-  lock and two arms are two mechanical systems): the rifle is 21 ms up and 20
-  down aimed against 41 and 104 at the hip. **`CONFIG.recoil.kick.action` is the
+  lock and two arms are two mechanical systems): the rifle is 59 ms up and 254
+  down aimed against 112 and 471 at the hip. **The aimed pair is measured off
+  reference footage and the hip pair is scaled from it** — see
+  `CONFIG.recoil.settle`. **`CONFIG.recoil.kick.action` is the
   carrier** — two opposite-signed `impulse()` beats on `Player.sinceShot`, which
   is what makes a self-loader read as a machine; it costs no state, never
   touches the aim, and **a `boltCycle` weapon is exempt** because
@@ -1672,10 +1674,13 @@ rewind, the lobby and the regions' two headers, and what is not built.
   on the hold SWAY rather than as an offset of its own (the reason the bolt
   cycle's wobble is), so a heavy round costs the follow-up rather than a fixed
   pull-down.
-- Recoil only partly springs back: `CONFIG.recoil.recoverFraction` (0.7) returns 70%
-  and pushes 30% permanently into the player's own `pitch`/`yaw`, so a magazine held
-  down genuinely walks off target. An explicit product decision — a fully-recovering
-  version was rejected. **That share is HANDED OVER at the haul's own rate
+- Recoil only partly springs back: `CONFIG.recoil.recoverFraction` (0.93) returns
+  93% and pushes 7% permanently into the player's own `pitch`/`yaw`. **This was
+  0.7, and 0.7 was an explicit product decision that a fully-recovering recoil is
+  decoration** — it was moved to match measured reference footage, where an
+  isolated round is ~90% recovered 300 ms later and a 28-round string leaves
+  0.37° behind. It is the first number to move back if the rifle proves too easy
+  to hold. **That share is HANDED OVER at the haul's own rate
   rather than applied at the shot** (`CameraSystem.owedPitch`): applied whole it
   is a step function underneath a rise, which is what the rise exists to remove.
   The total is unchanged. **`CameraSystem.addFlinch` is the one aim kick that is
@@ -1688,8 +1693,9 @@ rewind, the lobby and the regions' two headers, and what is not built.
   counter.** `CONFIG.recoil.pattern` tapers the vertical toward `pitchSettled`
   and ramps the horizontal up from `yawStart` across `patternShots`, both keyed
   to `Player.stringShots`, so the kick's *direction* rotates as a string runs.
-  The pair is tuned to leave the total walk alone (10.6 deg of climb and 2.4 of
-  drift over the rifle's magazine), and **those two figures are derived —
+  The pair no longer leaves the total walk alone — the walk is what the
+  reference match cut, to 0.71 deg of climb and 0.31 of drift over the rifle's
+  magazine from the hip (from 10.6 and 2.4) — and **those two figures are derived —
   re-derive them rather than assuming they followed** whenever `pattern`,
   `pitchPerShot`, `yawPerShot` or `firstShotMult` moves.
 - **The recoil vector is built in `Player.recoilKick`, never at the call site.**

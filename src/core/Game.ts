@@ -7728,7 +7728,10 @@ export class Game {
     const right = this.cameraSys.flatRight;
     const bearing = (at.x - this.cameraSys.camera.position.x) * right.x +
       (at.z - this.cameraSys.camera.position.z) * right.z;
-    this.cameraSys.addPunch(d > 0.001 ? -bearing / d : 0);
+    // The twist goes with the bearing rather than taking the weapon's fixed
+    // torque: a blast has a side it came from and no bore to rotate about.
+    const blastDrift = d > 0.001 ? -bearing / d : 0;
+    this.cameraSys.addPunch(blastDrift, 1, -blastDrift);
     const haptic = CONFIG.rumble;
     this.input.rumble(haptic.hurtStrong, haptic.hurtWeak, haptic.hurtMs);
   }

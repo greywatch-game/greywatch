@@ -183,12 +183,22 @@ parented to the camera and posed in camera space.
   same reason**: `velY` is a step function at both ends of a jump, so a give read
   straight off it snapped `airDropMax` to neutral on contact.
 
-**Two things write the camera's roll — the landing absorb and the view punch —
-and they do it through ONE assignment** at the end of `CameraSystem.update`,
-which is what stops the roll becoming whichever of them happened to run last.
-Verified as a sum rather than a replacement: a punch taken with a landing already
-in flight reads `landDip * adsMult * land.roll + punchRoll * shakeRoll * punch`
-to the last digit, and neither term alone. `updateUpVectorFromRotation` covers
+**Two things write the camera's roll — the landing absorb and the weapon's
+TWIST — and they do it through ONE assignment** at the end of
+`CameraSystem.update`, which is what stops the roll becoming whichever of them
+happened to run last. Verified as a sum rather than a replacement: a twist taken
+with a landing already in flight reads `landDip * adsMult * land.roll + twist`
+to the last digit, and neither term alone.
+
+The twist rises to a peak and falls from it on `rollT`, its own clock —
+`CONFIG.recoil.rollBeat`, a `smoothstep` up to `peakAt` and an `impulse` down
+from it, continuous because both halves are 1 at the handover.
+**It is a fixed torque and not a drawn direction**: it
+replaced a roll taken against the shot's random lateral drift, which flipped
+sign shot to shot and read as camera shake rather than as a gun. A rifle's bore
+sits above and off the axis of the shoulder pocket, so every round twists it the
+same way — which is what the reference footage shows, nine shots of one sign
+against a 0.001° noise floor. `updateUpVectorFromRotation` covers
 both and must stay on.
 
 The bob and the view punch move the **rendered camera only** — `aimPitch`/`aimYaw`
@@ -724,9 +734,9 @@ only the bolt gun tops both columns.
 Conflating them is why the two heaviest weapons said "I am a big cartridge" the
 only way one number can — by ANGLE. The DMR threw the reticle **3.78° on every
 deliberate scoped round** and the bolt gun **5.50°**, which is not what a
-mounted rifle does and, more to the point, is not what one costs. They are 2.32°
-and 2.92° now; **the pitch budget of every other weapon in the kit is
-untouched**, and so is the rifle's derived 10.6°/2.4° magazine walk.
+mounted rifle does and, more to the point, is not what one costs. They are 1.49°
+and 1.87° now — they were 2.32° and 2.92° until the reference match below cut
+`pitchPerShot`, and every figure in this paragraph scales with it.
 
 **The second is the SHAPE, and it is not a spring — which took two goes to get
 right.** The first version of the settle was a first-order decay, which has no
@@ -913,16 +923,65 @@ about `yawBias`. Before it, the kick was the same vector on shot 1 and shot 20
 and a spray was a straight line with jitter on it; the only shape available was
 magnitude, which can be pulled against but not learned.
 
-**The pair is tuned to leave the total walk alone**, which is what makes it a
-change of shape rather than a nerf. For the rifle's 24 rounds from the hip the
-per-shot multipliers sum to 20.5 against the 24.6 a flat string summed to, and
-`pitchPerShot` went 0.026 → 0.03 to pay for exactly that: **10.6° of climb and
-2.4° of drift**, against 11.0° and 1.6° when every round kicked the same.
-`yawPerShot` went 0.011 → 0.018 to buy the sideways, and `maxYaw` 0.06 → 0.09
-with it, because a ceiling is only meaningful as a number of rounds and the old
-one would have bound after four instead of eight. **All four figures are derived.
-Re-derive them rather than assuming they followed** whenever anything in
-`pattern`, `pitchPerShot`, `yawPerShot` or `firstShotMult` moves.
+**The pair no longer leaves the total walk alone, because the walk is what the
+reference match cut.** For the rifle's 24 rounds from the hip the per-shot
+pitch multipliers sum to 9.25 and the yaw multipliers to 21.27, so the permanent
+share is **0.71° of climb and 0.31° of drift**, against the 10.6° and 2.4° they
+were before. Most of that is `recoverFraction` going 0.7 → 0.93 rather than
+anything in `pattern`. `maxYaw` and `maxPitch` are untouched and
+neither binds on any weapon now; they are kept for what `addFlinch` queues onto
+the same axes. **All these figures are derived. Re-derive them rather than
+assuming they followed** whenever anything in `pattern`, `pitchPerShot`,
+`yawPerShot` or `firstShotMult` moves.
+
+### What the reference footage was, and what was taken from it
+
+Two 240 fps captures at 3440×1440 of another shooter's firing range — one of
+four isolated rounds, one of a 28-round burst, both ADS on a red dot, both with
+the shooter deliberately not compensating. World motion was recovered by
+cross-correlating 1D row and column projections of a crop that excludes the
+viewmodel and the HUD, which gives sub-pixel translation per frame; ROLL came
+from tracking the left and right thirds separately, since a roll to a camera is
+the two sides moving vertically against each other. The game itself rendered at
+120 fps, so the real resolution is 8.3 ms.
+
+| measured | value | what it set |
+| --- | --- | --- |
+| shot spacing | 106 ms, ±1 ms over 28 | rifle `fireRate` 9.43 |
+| isolated peak | 0.735° at 58 ms | `pitchPerShot`, `settle.gripAds` |
+| 50% recovered | 160 ms after peak | `settle.haulAds` |
+| residual at 300 ms | ~10% of peak | `recoverFraction` |
+| sustained string | flat **2.562°** from round 8 to 22 | `pattern.pitchSettled`, `patternShots` |
+| permanent climb after a string | 0.15° | `recoverFraction` |
+| lateral, 22 rd | **0.40° RIGHT**, building, springs back to ~0 | `yawPerShot` |
+| roll | rises from zero to **0.86° at 58 ms**, home by ~100 ms | `recoil.rollBeat` |
+
+**Two of those rows were measured WRONG first, and both mistakes were about the
+footage rather than the game.** A first pass read the lateral as zero (0.6 px
+across 28 rounds) because the only clip available aimed at a wall of horizontal
+panelling — a sideways drift measured against nothing. A clip aimed at a distant
+vertical edge shows 0.40° of rightward pull plainly. And the roll was first read
+as an instant 0.86° with a counter-swing, off four isolated rounds; averaging 19
+rounds of a burst instead shows it starting at ZERO and taking 58 ms to arrive —
+the same clock as the pitch, which is what one impulse resolved on two axes
+should do. The instant version was also 45 ms end to end, under three samples at
+60 Hz, so most of its amplitude was never drawn at all: **the authored 0.86° was
+reaching a 60 Hz display as 0.35°**, which is exactly what "we have much less
+roll than the reference" feels like.
+
+**Hip fire is measured but deliberately not fitted.** A hip clip of the same
+weapon shows 1.09° of screen-space climb against ADS's 2.56° — but ADS magnifies,
+so pixels are not comparable between the two, and the reference's ADS zoom is not
+recoverable from the footage. `settle.gripHip`/`haulHip` remain scaled from the
+aimed pair rather than measured. If the two stances ever need to be right
+relative to each other, that clip plus a known ADS magnification is the way in.
+
+**The amplitude figures depend on the reference's ADS field of view, which is
+not recoverable from the footage.** They are quoted at OUR aimed vertical FOV
+(48.1°), which matches what the recoil LOOKS like rather than what it costs in
+mouse travel; if the reference's FOV differs, every angle above scales with it.
+The timings, the roll and the shape do not — roll is an image-plane rotation and
+the rest are clocks.
 
 **Both string-shaped terms share one exclusion**, `Player.stringed` — whether the
 weapon HAS a cycle you can be in the middle of (`!semiAuto || burst > 1`). It has
@@ -1138,9 +1197,8 @@ all, so a body killed mid-burst would otherwise owe rounds to the next life.
 finger* rather than a cadence, and the error budget pays for it: a missed rifle
 round costs 0.125 s, a missed DMR round 0.333. The recoil is the second half of
 the bill, and since `recoilImpulse` was split out of `recoilMult` it is mostly
-paid in TIME rather than in angle: 2.32° of muzzle rise (it was 3.78°), of which
-only 70% settles out (`recoil.recoverFraction`), on a spring that is still
-moving 286 ms later — and then a hold opened to 1.72× and quickened 2.2-fold for
+paid in TIME rather than in angle: 1.49° of muzzle rise, of which 93% settles
+out (`recoil.recoverFraction`), on a spring that is still moving 367 ms later — and then a hold opened to 1.72× and quickened 2.2-fold for
 0.85 s while the shooter re-settles. That also makes a high `bloomMult` cheap:
 at any deliberate pace the bloom has bled off before the next round leaves.
 

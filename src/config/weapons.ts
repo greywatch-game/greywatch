@@ -109,8 +109,16 @@ export const weapons = {
     damageFar: 22,
     falloffNear: 25,
     falloffFar: 70,
-    /** Rounds per second. */
-    fireRate: 8,
+    /**
+     * Rounds per second. 9.43 is 566 rpm, matched to the reference footage
+     * `docs/weapons.md` records: 106 ms between rounds, measured off the shot
+     * onsets of a 240 fps capture and steady to within 1 ms across 28 rounds.
+     *
+     * **It carries an 18% DPS rise with it** (240 to 283 at `damageNear`) and
+     * `damage` was deliberately NOT dropped to pay for it — the cadence was
+     * matched on purpose and the damage is a separate decision.
+     */
+    fireRate: 9.43,
     /**
      * Whether the trigger has to be released between pulls. Held fire is
      * the default; see `Player.tryShot`, which owns the latch.

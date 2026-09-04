@@ -204,8 +204,10 @@ export class CameraSystem {
   private punchT = 0;
   /**
    * The direction this punch is throwing the view, drawn once per shot and
-   * held for its life. Unit-ish: pitch is up-biased, yaw and roll carry the
-   * shot's own drift with noise on top.
+   * held for its life. Unit-ish: pitch is up-biased and yaw carries the shot's
+   * own drift with noise on top. **The ROLL is deliberately not here** — it is
+   * a fixed torque on `rollT` rather than a drawn direction, for the reason
+   * `CONFIG.recoil.rollBeat` gives.
    *
    * It used to be `Math.random()` re-rolled every frame, and that is why the
    * amplitudes in `CONFIG.recoil` had to be almost invisible: white noise at
@@ -215,7 +217,26 @@ export class CameraSystem {
    */
   private punchPitch = 0;
   private punchYaw = 0;
-  private punchRoll = 0;
+  /**
+   * Seconds since the shot the ROLL is being spent on, counting up — its own
+   * clock rather than `punchT`'s, because the twist outlives the punch. The
+   * counter-swing lands at `rollBeat.counterAt` and dies `fall` after it,
+   * which is past `punchTime`, and because this is the one punch term that is
+   * a SHAPE rather than a decay it cannot ride a value that only falls.
+   *
+   * `Infinity` is "no shot yet": `impulse` reads any argument past its own
+   * window as zero, so the rest arithmetic is stateless and needs no flag.
+   */
+  private rollT = Infinity;
+  /**
+   * What this event's twist is worth, and which way. **1 for a weapon** — the
+   * torque is fixed, which is the whole of `rollBeat`'s argument — and the
+   * blast's own signed bearing for a blast, which is what a blast rolled by
+   * before this became a weapon fact. A blast is not a bore over a shoulder
+   * pocket and has no reason to twist the same way twice; it does have a
+   * direction, and this is where that survives.
+   */
+  private rollTwist = 1;
   /**
    * How hard THIS punch hits, scaling all five of its terms together — the
    * FOV spike, the shove and the three angles. Held for the punch's life like
@@ -495,12 +516,14 @@ export class CameraSystem {
     this.owedYaw = 0;
     this.shotShake = 0;
     this.punchT = 0;
-    // All three, not just the roll: `punchT` at 0 already makes them
-    // unreadable, so zeroing one of a set that is written together is a
-    // half-truth for whoever reads this next.
+    // Both, not just the one: `punchT` at 0 already makes them unreadable, so
+    // zeroing one of a set that is written together is a half-truth for
+    // whoever reads this next. The roll is parked on its own clock, which is
+    // the one term here `punchT` does not already silence.
     this.punchPitch = 0;
     this.punchYaw = 0;
-    this.punchRoll = 0;
+    this.rollT = Infinity;
+    this.rollTwist = 1;
     this.punchScale = 1;
     // The phase deliberately survives a respawn — it is a body breathing, not
     // a round starting, and restarting it would put every life's first aimed
@@ -583,9 +606,11 @@ export class CameraSystem {
    * pitch term is deliberately never negative: a weapon does not push the
    * shooter's head down.
    *
-   * The roll is drawn AGAINST the drift, opposing the roll the viewmodel takes
-   * (`recoil.kickRoll`). Rolled the same way the two cancel and the whole
-   * picture tips instead; opposed, the weapon reads as twisting in the hands.
+   * The roll is NOT drawn here: it is a fixed torque replayed on `rollT`,
+   * because a weapon twists the same way every round where the drift is random
+   * per round. `CONFIG.recoil.rollBeat` has the measurement and the argument.
+   * `twist` is the one way out of that — 1 for a weapon, and a BLAST's own
+   * signed bearing for a blast, which has a direction but no bore.
    *
    * `shock` scales all five terms together and is the weapon's own
    * `recoilImpulse`, compressed (`Player.punchShock`). It is PASSED rather
@@ -595,13 +620,14 @@ export class CameraSystem {
    * post-shot unsteadiness are held per weapon. Until it existed a bolt gun
    * and a submachine gun shook the frame identically.
    */
-  addPunch(drift = 0, shock = 1): void {
+  addPunch(drift = 0, shock = 1, twist = 1): void {
     this.punchT = 1;
     this.punchScale = shock;
     const d = Math.max(-1, Math.min(1, drift));
     this.punchPitch = 0.6 + Math.random() * 0.4;
     this.punchYaw = d * 0.5 + (Math.random() * 2 - 1) * 0.5;
-    this.punchRoll = -d * (0.7 + Math.random() * 0.3);
+    this.rollT = 0;
+    this.rollTwist = twist;
   }
 
   /**
@@ -812,6 +838,7 @@ export class CameraSystem {
 
     // --- view punch decays (cosmetic — safe to use a plain time decay) ---
     this.punchT = Math.max(0, this.punchT - dt / CONFIG.recoil.punchTime);
+    this.rollT += dt;
 
     // --- landing absorb settles (semi-implicit Euler on a damped spring) ---
     // Velocity first, then position off the NEW velocity. The other way round
@@ -979,7 +1006,25 @@ export class CameraSystem {
     // keeps of its own. It is still the only place anything writes it — two
     // contributors now, but one assignment, because a second write site is how
     // a roll ends up being whichever of them ran last.
-    this.camera.rotation.z = swing * l.roll + this.punchRoll * r.shakeRoll * punch;
+    // Two opposite-signed beats: the gun twisting under the charge, and the
+    // hands bringing it back. Scaled by the punch's own `shock` so a heavy
+    // round twists harder, but NOT by `punch` — that is a decay, and this is a
+    // shape with a sign change in it.
+    const rb = r.rollBeat;
+    // A RISE to the top and a fall from it, continuous at the handover because
+    // both halves are 1 there. It was two `impulse()` beats with an attack at
+    // the shot, and that was wrong twice over: the reference's roll starts at
+    // zero and takes 58 ms to arrive, and a 45 ms excursion is under three
+    // samples at 60 Hz — which is the frame rule this file's `settle` block
+    // states, applied to the one axis that was breaking it.
+    const twist =
+      (this.rollT < rb.peakAt
+        ? smoothstep(0, rb.peakAt, this.rollT)
+        : impulse(this.rollT, rb.peakAt, rb.fall)) *
+      rb.amp *
+      this.punchScale *
+      this.rollTwist;
+    this.camera.rotation.z = swing * l.roll + twist;
     this.camera.fov =
       c.fovHip + (this.sight.fovAds - c.fovHip) * t + r.fovPunch * punch;
   }
