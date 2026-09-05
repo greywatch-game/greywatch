@@ -1,0 +1,70 @@
+{
+  "_": [
+    "The audio pipeline's one table: what to cut, from what, to what.",
+    "`npm run audio` reads this, cuts each master with ffmpeg and writes the",
+    "encoded file beside it; `npm run build` refuses a stale or over-budget",
+    "one through scripts/check-audio.mjs. See docs/audio.md for the argument.",
+    "",
+    "EVERY NUMBER HERE IS THE INPUT, not a record of what happened. The cut",
+    "lives in `trim` rather than in a binary somebody has to open, so the",
+    "shipped file is reproducible from a committed master and a reviewable",
+    "diff. `sourceHash` and `decoded` are the only fields the generator",
+    "writes back, and they are what the build gate checks."
+  ],
+  "budget": {
+    "decodedSeconds": 44,
+    "_": [
+      "The ceiling, in the unit that actually binds. A decoded AudioBuffer is",
+      "duration * ctx.sampleRate * channels * 4 bytes and NOTHING else -- the",
+      "container, the bitrate and the file's own sample rate are invisible to",
+      "it (measured: a 22 kHz file decodes back up to 48 kHz for identical",
+      "RAM). So the budget is seconds of mono, not bytes on disk.",
+      "44 s = 8 MB at 48 kHz, ~5% of the 157 MB heap FINDINGS.md #1 measures.",
+      "A stereo row spends two seconds of it per second of audio."
+    ]
+  },
+  "defaults": {
+    "container": "webm",
+    "codec": "libopus",
+    "bitrate": "96k",
+    "channels": 1
+  },
+  "samples": [
+    {
+      "id": "assaultRifle",
+      "source": "src/assault-rifle.wav",
+      "out": "assault-rifle.webm",
+      "channels": 2,
+      "trim": {
+        "start": 0,
+        "end": 0.15,
+        "fadeOut": 0.015
+      },
+      "_": [
+        "Cut to the REPORT and nothing after it. The master carries ~865 ms of",
+        "baked room -- a flat -18 to -24 dB plateau to 385 ms and then a slow",
+        "decay to -68 -- and Sfx already answers every gunshot with a shared",
+        "ConvolverNode on a send. Shipping the baked tail would double-reverb",
+        "the shot, put one fixed room on six maps, defeat botShot's",
+        "distance-climbing send, and hold a voice for 865 ms instead of 150.",
+        "Measured before cutting: the report's energy is gone by 130 ms (-8 dB",
+        "at 125, -20 by 135), and the 130-400 ms band has a crest factor of",
+        "6 dB with no window 5 dB above it -- dense noise, no discrete",
+        "reflection and no mechanism, so there is nothing in there to lose.",
+        "",
+        "Stereo, which is the exception to the mono rule rather than a lapse:",
+        "the master carries real width (the side channel peaks 10.8 dB under",
+        "the mid, so it is not dual-mono), this is the one sample the player",
+        "hears UNPANNED as their own report, and at a 150 ms cut the second",
+        "channel costs 28 KB. The mono rule earns its keep on long sounds and",
+        "on anything only ever heard through a panner."
+      ],
+      "sourceHash": "459cc2156cabb070",
+      "decoded": {
+        "seconds": 0.15,
+        "channels": 2,
+        "kb": 56.3
+      }
+    }
+  ]
+}

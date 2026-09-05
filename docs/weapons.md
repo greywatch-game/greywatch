@@ -515,6 +515,31 @@ deviations are `ReportVoice`, eight scalars tabled per weapon in
   untouched by it — those four fractions are still keyed to the viewmodel's
   beats to the frame, per the section above.
 
+**There is a NINTH field now and it is not a scalar: `sample`, which names a
+RECORDING that stands in for the five layers.** The rifle is the only weapon
+that sets it — deliberately, because it is the reference row every other
+report is a deviation from, so one file is the widest A/B against the
+synthesis the table can buy. Four things about it are load-bearing:
+
+- **It replaces the REPORT and nothing else.** The reload's four clacks and
+  the bolt cycle are still `actionPitch`/`actionVol` off the eight scalars,
+  because the recording is of a shot rather than of a mechanism.
+- **Two of the eight still apply to it.** `pitch` becomes `playbackRate` and
+  `level` still levels it, so a second weapon could share one file and still
+  be told apart. The three the recording genuinely subsumes — `snap`,
+  `weight`, `length` — are simply not read while it is playing.
+- **It is a PREFERENCE and never a requirement.** The fetch is fire-and-forget
+  off `Sfx.unlock`, so a shot fired before the decode lands is the synthesized
+  report and nothing is told which it got. Deleting the field is a complete
+  revert; see [`docs/build.md`](build.md) for why that is the ground the one
+  authored asset in the tree is admitted on.
+- **`Sfx.botShot` puts the distance cues back by hand.** The synthesis carries
+  them in its own filters — the top end stripped off as the shot gets further
+  away — and a recording has none, so a lowpass sweeping from open to a thud
+  rides over it. The flight time and the climbing reverb send were already
+  outside the layers and are unchanged. A recording played louder and quieter
+  is not a rifle at two distances.
+
 **The player's own report is the one sound in the game exempt from the voice
 cap**, and it is the impact reserve's argument taken one step further. The cap
 is first-come-first-served, so a firefight loud enough to spend it is exactly

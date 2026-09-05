@@ -159,7 +159,14 @@ src/
                         #   and the clock that says which device is in hand
     CameraSystem.ts     # First-person cam at the eye; ADS zooms and slows by
                         #   the fitted optic, at the weapon's own rate
-    Sfx.ts              # Procedural WebAudio, spatialised, voice-capped
+    Sfx.ts              # Procedural WebAudio, spatialised, voice-capped —
+                        #   plus the one RECORDING, which stands in for the
+                        #   report and is a preference, never a requirement
+    samples.ts          # The recorded sounds: an id union and a url table,
+                        #   nothing else. A weapon names a row through
+                        #   ReportVoice.sample; every url here is the OUTPUT of
+                        #   `npm run audio`, and check-audio.mjs fails the build
+                        #   if this file and audio/manifest.json disagree
     prefs.ts            # Remembered difficulty, map and loadout: the
                         #   localStorage round trip only. Ids that index a table
                         #   are validated, never trusted

@@ -24,6 +24,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/deaths.md`](docs/deaths.md) | ragdolls, glass shards, Havok, the death cam |
 | [`docs/vehicles.md`](docs/vehicles.md) | a vehicle of either kind, a new kind, its hull collider, the chase camera, mounting, the respawn |
 | [`docs/antitank.md`](docs/antitank.md) | the third slot, the launcher, the mine, the rocket that flies, a bot with a tube |
+| [`docs/audio.md`](docs/audio.md) | a sound, a sample, `audio/`, the audio budget |
 | [`docs/pwa.md`](docs/pwa.md) | `public/`, `src/pwa/`, the service worker |
 | [`docs/multiplayer.md`](docs/multiplayer.md) | anything under `server/` or `src/net/`, the roster, the collision bake, the regions, the two images and the proxy in front of them |
 | [`docs/game.md`](docs/game.md) | extracting anything from `Game.ts`, `installMap`, what a frame owes |
@@ -77,11 +78,42 @@ tidy the boot.** The argument is on the line in `main.ts`, the measurement is
 risk is state changing between draws: if a rendering bug ever appears that shows
 only while something is MOVING, flip this first.
 
-**Zero audio files and zero model files** — every mesh is built from Babylon
-primitives at runtime, all sound is synthesized WebAudio (`src/core/Sfx.ts`). Do
-not add asset files unless explicitly asked. There are four exceptions, none
-authored by hand and each with a generator in `package.json`: the icons, Havok's
-`.wasm`, the water's foam mask, and each map's menu photograph.
+**Zero model files, and ONE audio file** — every mesh is built from Babylon
+primitives at runtime, and every sound is synthesized WebAudio
+(`src/core/Sfx.ts`) except the assault rifle's report. Do not add asset files
+unless explicitly asked. There are four generated exceptions, none authored by
+hand and each with a generator in `package.json`: the icons, Havok's `.wasm`,
+the water's foam mask, and each map's menu photograph.
+
+**The rifle's report is the fifth, and it is the only asset class here a person
+authored.** It passes the same test the other four do — `npm run audio` is the
+generator, the encoded file is committed, and the master it was cut from is
+committed beside it in `audio/src/` — plus one more that is its own, because a
+recording's master is a recording rather than a script: **the game is still
+whole with every file in `audio/` deleted.** The fetch is fire-and-forget off
+`Sfx.unlock`, so a shot fired before the decode lands, on a device where the
+fetch failed, or in a browser that cannot decode the container, is the
+SYNTHESIZED report and no caller is told the difference. **A sixth sound owes
+that same claim**; a sound the game needs does not belong in this pipeline.
+
+**Three rules from it reach outside `audio/`.** A decoded buffer costs
+`duration × ctx.sampleRate × channels × 4` and **nothing else** — the container,
+the bitrate and the file's own sample rate are invisible to it (measured: a
+22 kHz file decodes back up to 48 kHz for identical RAM), so **the budget is
+SECONDS of mono, not bytes**, and `npm run build` fails over it. **A sample
+replaces the REPORT and nothing else** — the reload, the bolt cycle and the
+action are still `ReportVoice`'s `actionPitch`/`actionVol`, and `Sfx.botShot`
+puts back by hand the distance cues the synthesis carries in its own filters,
+because a recording played louder and quieter is not a rifle at two distances.
+And **a sample is the DIRECT sound; the ROOM is the game's** — `Sfx` answers
+every gunshot with one shared `ConvolverNode` at no per-shot cost, so a baked
+tail double-reverbs the shot, puts one room on six maps and holds a voice for
+the length of it.
+
+→ **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
+binds, why one ambient loop costs ten times the whole sampled gun kit, the
+mono/round-robin/transient rules, the manifest and its two gates, the master
+conventions, the container measurements, and the rifle's trim in full.
 
 **Havok's `.wasm` (~2 MB) is the one binary that ships**, and it is never named
 by path — Vite emits it content-hashed from the ESM glue's own
@@ -124,6 +156,9 @@ npm run typecheck  # tsc --noEmit (strict, noUnusedLocals/Parameters)
 npm run build      # gates + typecheck + production build to dist/
 npm run preview    # serve the production build
 npm run icons      # regenerate public/icons (committed)
+npm run audio      # re-cut and re-encode audio/ from its masters (committed
+                   #   source). Needs ffmpeg + ffprobe on PATH; the BUILD does
+                   #   not, since the output is committed — docs/audio.md
 npm run shots      # re-photograph the maps for the menu backdrop (committed).
                    #   The ONE script here that needs a real GPU — docs/build.md
 npm run proving    # regenerate the DEV-ONLY proving ground (committed source).

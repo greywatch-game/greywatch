@@ -294,6 +294,40 @@ function serviceWorker(): Plugin {
 export default defineConfig({
   plugins: [layoutWriter(), serviceWorker()],
 
+  build: {
+    /**
+     * **Never inline a sound, however small it is.** Vite's default is to
+     * base64 anything under 4 kB into the importing chunk, and the rifle's
+     * encoded report is 3.4 kB — so it silently landed inside the 7.7 MB
+     * entry bundle as a `data:video/webm` string instead of being emitted as
+     * its own hashed asset.
+     *
+     * That is the wrong side of the one distinction `docs/pwa.md` measures.
+     * An asset that IMPORTS NOTHING keeps its content hash across a deploy
+     * and is copied out of the old cache rather than refetched — Havok's
+     * wasm, the foam mask and the map shots are the ~2.7 MB that reliably
+     * survives — while the entry re-hashes on nearly every deploy (two
+     * measured: one kept 50 of 52 asset names, the next kept 9). Inlined,
+     * every sound in the game is re-downloaded every time the game's code
+     * changes, and base64 charges 33% on top for the privilege. At one file
+     * that is 4.6 kB of nothing; at the forty a sound library becomes, it is
+     * half a megabyte moved from the cache-forever pile to the
+     * re-download-every-deploy pile, for no benefit at all.
+     *
+     * Audio only, by path: the small PNGs and the layout JSON that inline
+     * today are genuinely better off inlined, since they are imported BY the
+     * entry and re-hash with it regardless.
+     *
+     * Through `norm` because Vite hands this the PLATFORM's separators, and a
+     * test for "/audio/" against `C:\...\audio\shot.webm` matches nothing and
+     * silently inlines the file again — the same trap `norm`'s own note
+     * describes one caller up, with the same shape of failure: no error, just
+     * the behaviour quietly reverting.
+     */
+    assetsInlineLimit: (filePath) =>
+      (norm(filePath).includes("/audio/") ? false : undefined),
+  },
+
   optimizeDeps: {
     // Havok's glue loads its .wasm from a URL resolved against its OWN
     // module location. The dep optimizer rewrites that location — it copies

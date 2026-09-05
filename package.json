@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-collision.mjs && node scripts/check-deep-imports.mjs && npm run typecheck && vite build && node scripts/check-proving.mjs",
+    "build": "node scripts/check-collision.mjs && node scripts/check-deep-imports.mjs && node scripts/check-audio.mjs && npm run typecheck && vite build && node scripts/check-proving.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json",
     "collision": "node scripts/bake-collision.mjs",
@@ -20,7 +20,8 @@
     "icons": "node scripts/generate-icons.mjs",
     "proving": "node scripts/generate-proving-ground.mjs",
     "sarab": "node scripts/generate-sarab.mjs",
-    "cinderhaven": "node scripts/generate-cinderhaven.mjs"
+    "cinderhaven": "node scripts/generate-cinderhaven.mjs",
+    "audio": "node scripts/encode-audio.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.19.1",

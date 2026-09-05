@@ -320,6 +320,15 @@ export const weapons = {
     report: {
       pitch: 1, level: 1, snap: 1, weight: 1,
       length: 1, tail: 1, actionPitch: 1, actionVol: 1,
+      // The one recorded sound in the game, and the reason it is on THIS row
+      // is that this row is the reference: every other weapon states its
+      // report as a deviation from the rifle's, so a sample here is the
+      // widest possible A/B against the synthesis for one file. It replaces
+      // the report only — the action, the reload and the bolt cycle are still
+      // `actionPitch`/`actionVol` off the eight fields above, because the
+      // recording is of a shot and not of a mechanism. Delete the field and
+      // the synthesized rifle is back with nothing else to undo.
+      sample: "assaultRifle",
     },
   },
   /**

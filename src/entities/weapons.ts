@@ -13,6 +13,7 @@
  * you can see when you send it. Neither reads the other.
  */
 import { CONFIG } from "../config";
+import type { SampleId } from "../core/samples";
 import { EQUIPMENT_IDS, equipmentSetup, isEquipmentId, type EquipmentId } from "./equipment";
 
 /**
@@ -115,6 +116,20 @@ export interface ReportVoice {
   actionPitch: number;
   /** How much of the mechanism is heard against the shot — and the reload. */
   actionVol: number;
+  /**
+   * A RECORDING that stands in for the eight fields above, or absent — which
+   * is every weapon but the rifle, and is what this game is.
+   *
+   * It is on this interface rather than on `WeaponSetup` because it is the
+   * same kind of statement the rest of the row makes: what this weapon sounds
+   * like, said once, read only by `Sfx`. What it does NOT do is turn any of
+   * the eight off — `pitch` still pitches the sample and `level` still levels
+   * it, so a weapon could share one recording and still be told apart, and
+   * the fields the sample genuinely subsumes (`snap`, `weight`, `length`) are
+   * simply not read while it is playing. See `src/core/samples.ts` for why a
+   * sample is a preference and never a requirement.
+   */
+  sample?: SampleId;
 }
 
 /**

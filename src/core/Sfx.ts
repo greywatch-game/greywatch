@@ -1,9 +1,17 @@
 /**
- * Sfx.ts — All audio: synthesized WebAudio, zero asset files.
+ * Sfx.ts — All audio: synthesized WebAudio, and ONE recording laid over it.
  * Owns: the AudioContext, one cached noise buffer shared by every shot, one
  * shared convolution reverb every gunshot sends into, a master soft clip, the
  * voice cap (CONFIG.audio.maxVoices — over-cap sounds are skipped silently),
- * and positional panning relative to the listener.
+ * positional panning relative to the listener, and the decoded samples
+ * `src/core/samples.ts` tables.
+ * The samples are the one thing here that is not synthesized and they are held
+ * as a PREFERENCE: fetched fire-and-forget off `unlock`, substituted for the
+ * report inside `shoot` and `botShot` only when the decode has landed, and
+ * absent from every other sound in the file. A weapon with no `sample`, a
+ * decode that has not finished and a fetch that failed are one case with one
+ * answer — the synthesized report — which is what keeps the recording
+ * deletable. See `samples.ts` for why that is the whole of the bargain.
  * Invariants: never generate a fresh noise buffer or impulse response per
  * sound — both are built once on unlock. setListener() is called once per
  * frame by Game, after the camera update. Firefox needs the legacy
@@ -32,6 +40,7 @@
 import type { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { ReportVoice } from "../entities/weapons";
+import { SAMPLE_URLS, type SampleId } from "./samples";
 
 /**
  * How far past full scale the master soft clip stays roughly linear. 3 lets a
@@ -39,6 +48,94 @@ import type { ReportVoice } from "../entities/weapons";
  * enough to hear, and saturates rather than clipping past that.
  */
 const SOFT_CLIP_DRIVE = 3;
+
+/**
+ * A decoded recording, with the silence at each end already measured off.
+ *
+ * The trim is the whole reason this is a struct rather than a bare
+ * `AudioBuffer`. An encoder is free to pad — every MP3 opens with a frame of
+ * silence the decoder is only sometimes told to drop — and a file dropped in
+ * by hand carries whatever slack it was cut with. Both come out as LATENCY on
+ * a sound fired ten times a second, which is the one thing a gunshot cannot
+ * have; and the tail costs voices, because a buffer source is counted against
+ * `maxVoices` for as long as it is scheduled, silence included. So the buffer
+ * is measured ONCE on decode and every shot starts at `offset` and stops
+ * after `duration`, and nothing about the file's format has to be trusted.
+ */
+interface LoadedSample {
+  buffer: AudioBuffer;
+  /** Seconds into the buffer where the sound actually starts. */
+  offset: number;
+  /** Seconds of it worth playing. */
+  duration: number;
+}
+
+/**
+ * Below this the trim calls a sample silent.
+ *
+ * -54 dBFS, and it is deliberately well under the level a tail stops being
+ * AUDIBLE at rather than at it: what this decides is where a recording is cut,
+ * and the cost of the two mistakes is not symmetric. Slack left on the end is
+ * a few milliseconds of a voice, which the cap can afford; a floor raised
+ * until it starts eating decay takes the end off a gunshot, which is the half
+ * of the sound the room is supposed to answer. Measured on the rifle's own
+ * file, which is 0.68 s long: -46 dBFS cut it at 0.298 s and this cuts it at
+ * 0.455, so the tighter floor was throwing away 157 ms of real decay and this
+ * one is still handing 225 ms of dead air back to the voice cap.
+ */
+const SAMPLE_FLOOR = 0.002;
+
+/**
+ * What a recording plays at, against `ReportVoice.level` of 1.
+ *
+ * The one number to turn when a sample is too loud or too quiet beside the
+ * synthesized weapons around it, and it is here with `HULL_ENGINE_LEVEL`
+ * because it is a mix decision about this file's own graph rather than
+ * something a weapon should be restating.
+ *
+ * **It assumes a master that peaks near 0 dBFS, which is the pipeline's
+ * convention rather than an accident** — `audio/src/` holds normalized
+ * recordings, so one number levels all of them. 0.5 against a full-scale
+ * sample lands the shot at ~0.5, which is where the synthesized report's own
+ * transient sits (the soft clip's note below measures it at 0.45). A master
+ * cut quiet would need this raised and would then make every OTHER sample
+ * loud, so the fix for a quiet recording is the recording.
+ */
+const SAMPLE_LEVEL = 0.5;
+
+/**
+ * Measures the silence off both ends of a decoded recording — see
+ * `LoadedSample` for why it has to be measured rather than trusted.
+ *
+ * Runs once per file on decode and walks every channel, which is a few
+ * hundred thousand comparisons for a gunshot and happens off a fetch that has
+ * already cost a network round trip. The head backs off a millisecond before
+ * the first sample over the floor, because a transient that starts exactly AT
+ * the threshold starts mid-rise and clicks; the tail does not need the same
+ * courtesy, since a sound already under the floor cannot step to zero
+ * audibly.
+ *
+ * A file that is silent throughout comes back as the whole buffer rather than
+ * as nothing, so a bad recording is heard as a bad recording instead of
+ * disappearing into a fallback that would look like the sample never loaded.
+ */
+function trimSample(buffer: AudioBuffer): { offset: number; duration: number } {
+  let first = buffer.length;
+  let last = -1;
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const d = buffer.getChannelData(ch);
+    for (let i = 0; i < first; i++) {
+      if (Math.abs(d[i]) > SAMPLE_FLOOR) { first = i; break; }
+    }
+    for (let i = d.length - 1; i > last; i--) {
+      if (Math.abs(d[i]) > SAMPLE_FLOOR) { last = i; break; }
+    }
+  }
+  if (last < first) return { offset: 0, duration: buffer.duration };
+  const rate = buffer.sampleRate;
+  const offset = Math.max(0, first / rate - 0.001);
+  return { offset, duration: (last + 1) / rate - offset };
+}
 
 /**
  * What a shooter with no weapon of its own is heard as.
@@ -235,6 +332,15 @@ export class Sfx {
   private noiseBuffer: AudioBuffer | null = null;
   /** The shared environment reverb every gunshot sends into. */
   private reverb: ConvolverNode | null = null;
+  /**
+   * The decoded recordings, by id — see `src/core/samples.ts`. Empty until the
+   * fetches land and empty forever if they fail, which is not an error state:
+   * a weapon whose sample is missing is heard as the synthesized report, so
+   * this map being empty is the game as it shipped for its whole life.
+   */
+  private samples = new Map<SampleId, LoadedSample>();
+  /** So a second `unlock()` — every pointer gesture is one — refetches nothing. */
+  private samplesRequested = false;
   /** Currently-playing one-shots, for the voice cap. */
   private voices = 0;
   /** True while the game is paused and the context is suspended. */
@@ -287,6 +393,12 @@ export class Sfx {
         this.listener = this.ctx.listener;
         this.buildNoiseBuffer();
         this.buildImpulse();
+        // Fire-and-forget, and deliberately not awaited by anything: `unlock`
+        // is called from a pointer gesture and the first shot may well be
+        // fired before the decode lands. That shot is the synthesized report,
+        // which is what makes the sample a preference rather than a load-
+        // bearing asset — see `samples.ts`.
+        void this.loadSamples();
       } catch {
         this.ctx = null;
       }
@@ -405,6 +517,20 @@ export class Sfx {
     // Two rounds from the same weapon are never the same report, and eight a
     // second of one recording is the loudest tell that a gun is synthesized.
     const v = 0.92 + Math.random() * 0.16;
+    // A recording stands in for all five layers, and `v` is spent on it the
+    // same way — a sample fired eight times a second is the sentence above
+    // describing itself, so the per-shot wobble matters MORE here than it does
+    // to the synthesis, which varies its own noise slice as well. `keep` for
+    // the reason the five layers have it: this is the player's own report.
+    if (voice.sample && this.sample(voice.sample, {
+      vol: SAMPLE_LEVEL * voice.level, rate: v * voice.pitch,
+      // A plain send level like the five layers it replaces — the wet bus's
+      // own `reverbMix` is downstream of all of them. The five sum to ~3.25
+      // of these and this is 1.0, because those levels are set against layers
+      // a lowpass has already thrown most of the amplitude away from and this
+      // one is the file at full scale.
+      send: voice.tail, keep: true, delay: at,
+    })) return;
     const f = v * voice.pitch;
     const lvl = voice.level;
     // How long the report rings on. Scales the three layers that have a decay
@@ -966,6 +1092,30 @@ export class Sfx {
     const send = a.reverbMix * (0.4 + far * a.reverbDistanceSend);
     const v = 0.9 + Math.random() * 0.2;
     const p = voice.pitch;
+    // A recording replaces all three layers, and the two distance cues the
+    // synthesis carries in its own filters have to be put back around it by
+    // hand or a rifle at sixty metres is the rifle beside you turned down.
+    // The propagation delay and the climbing send are already `delay` and
+    // `send`; what is missing is AIR ABSORPTION, which is why there is a
+    // lowpass here and none in `shoot` — it sweeps from effectively open in
+    // your ear down to a thud at the edge of the map. The low roll's own
+    // `thumpRange` gate is not reproduced: the file already has whatever
+    // bottom end it was cut with, and the panner is what takes it away.
+    //
+    // **This is the one place a sample costs more than the synthesis and it
+    // is not obvious from the level.** A voice is counted for as long as it
+    // is SCHEDULED, and the rifle's file runs 0.455 s against three layers of
+    // 0.03, ~0.1 and 0.2 — so the same firefight holds two to three times as
+    // many voices open here, and the cap is what absorbs it, by dropping
+    // shots. Nothing is wrong when that happens (the impact reserve is
+    // untouched, and a dropped bot shot at range is the sound the cap exists
+    // to spend), but a recording is not free at sixteen shooters the way it
+    // is at one, and the lever if it ever needs one is a SHORTER file rather
+    // than a quieter graph.
+    if (voice.sample && this.sample(voice.sample, {
+      vol: SAMPLE_LEVEL * 0.8 * voice.level, rate: v * p, delay, out: panner,
+      send: send * voice.tail, lowpass: 16000 - 14800 * far,
+    })) return;
     this.burst({
       dur: 0.03, vol: 0.4 * v * voice.level * voice.snap * (1 - far * 0.8),
       type: "highpass", freq: (2400 - 1700 * far) * v * p, q: 0.6, delay,
@@ -1912,6 +2062,107 @@ export class Sfx {
   }
 
   // --- primitives ----------------------------------------------------------
+
+  /**
+   * Fetches and decodes every row of `SAMPLE_URLS`, once per session.
+   *
+   * Each row is independent — one file failing must not cost the others their
+   * sample — and a failure of any kind is swallowed for the reason every other
+   * `try` in this file is: audio is not allowed to take the game down, and the
+   * consequence of losing a row here is a weapon that sounds the way it always
+   * did.
+   *
+   * The buffers are held for the life of the process, exactly as the noise
+   * buffer and the impulse response are. There is no eviction and there should
+   * not be one: this is a handful of seconds of audio, and a shot that has to
+   * wait on a fetch is a shot that arrives after the round it belongs to.
+   */
+  private async loadSamples(): Promise<void> {
+    if (this.samplesRequested) return;
+    this.samplesRequested = true;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const ids = Object.keys(SAMPLE_URLS) as SampleId[];
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const res = await fetch(SAMPLE_URLS[id]);
+        if (!res.ok) return;
+        const buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+        this.samples.set(id, { buffer, ...trimSample(buffer) });
+      } catch {
+        // A weapon with no sample is a weapon with a synthesized report.
+      }
+    }));
+  }
+
+  /**
+   * Plays a recording, or reports that there is not one to play.
+   *
+   * **The return value is the whole of the fallback and it is deliberately not
+   * a boolean about SUCCESS.** `false` means "no such sample, synthesize the
+   * shot"; a sample that exists and is then refused by the voice cap returns
+   * `true`, because falling through to five synthesized layers at the exact
+   * moment the graph is out of voices would make a busy firefight LOUDER than
+   * a quiet one. A refusal is a refusal either way.
+   *
+   * Everything else here is `burst`'s bookkeeping with a real buffer in place
+   * of a noise slice: the same voice counting, the same reverb tap taken
+   * pre-panner, the same scheduling on the audio clock rather than a timeout.
+   * `rate` is `playbackRate` and therefore pitch AND length together, which is
+   * what a resampled recording is — it is not `ReportVoice.pitch`'s equal, and
+   * a weapon leaning on it hard enough to hear is a weapon that wants its own
+   * file.
+   */
+  private sample(id: SampleId, o: {
+    vol: number;
+    /** `playbackRate`: pitch and duration together. 1 is the file as cut. */
+    rate?: number;
+    /** Seconds from now, on the audio clock. */
+    delay?: number;
+    out?: AudioNode | null;
+    /** Level into the shared environment reverb, pre-panner. */
+    send?: number;
+    /** Exempt from the voice cap — still counted. See `shoot`. */
+    keep?: boolean;
+    /** An optional one-pole-ish air absorption filter over the whole thing. */
+    lowpass?: number;
+  }): boolean {
+    const s = this.samples.get(id);
+    if (!s) return false;
+    if (!this.ctx || !this.master) return true;
+    if (!o.keep && this.voices >= CONFIG.audio.maxVoices) return true;
+    try {
+      const t0 = this.ctx.currentTime + (o.delay ?? 0);
+      const rate = o.rate ?? 1;
+      const src = this.ctx.createBufferSource();
+      src.buffer = s.buffer;
+      src.playbackRate.value = rate;
+      const gain = this.ctx.createGain();
+      gain.gain.value = o.vol;
+      let head: AudioNode = src;
+      if (o.lowpass) {
+        const f = this.ctx.createBiquadFilter();
+        f.type = "lowpass";
+        f.frequency.value = o.lowpass;
+        f.Q.value = 0.7;
+        src.connect(f);
+        head = f;
+      }
+      head.connect(gain).connect(o.out ?? this.master);
+      this.send(gain, o.send);
+      this.voices += 1;
+      src.onended = () => {
+        this.voices -= 1;
+      };
+      // Both ends of the trim are spent here. Both arguments are in the
+      // BUFFER's own seconds rather than the output's — `playbackRate` then
+      // decides how long that takes to play — so neither is scaled by `rate`.
+      src.start(t0, s.offset, s.duration);
+    } catch {
+      // ignore
+    }
+    return true;
+  }
 
   private buildNoiseBuffer(): void {
     if (!this.ctx) return;
