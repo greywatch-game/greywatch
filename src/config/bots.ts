@@ -265,6 +265,49 @@ export const bots = {
      */
     friendlyHearMult: 0.45,
     /**
+     * How far down the shooter's own line a FRIENDLY cue is placed, in metres.
+     *
+     * The sentence above was the intent and the muzzle position was not it: a
+     * cue landing on the shooter points at the FRIEND, and the two things that
+     * read a cue are the facing (`Bot.update`) and the hunt destination
+     * (`hasCue`), so a squadmate opening fire turned everyone near him round to
+     * stare at him and then walked them over to where he was standing. At
+     * arm's length that is a man wheeling about onto whoever just fired, which
+     * is the opposite of what a soldier does.
+     *
+     * So a friendly cue is the FIGHT and not the FRIEND, placed down the line
+     * the shot was actually fired along — which every caller has, since it is
+     * the direction the round flew. It is FLATTENED into the ground plane
+     * (`hearGunshot`), because everything downstream reads a cue's x/z and a
+     * lead spent on a steep shot would put it in the air or under the floor.
+     *
+     * An enemy's cue is deliberately NOT led: a shot you were not part of tells
+     * you where the shooter is, and that is the thing worth looking at. This
+     * number is only ever spent on the side that already knows.
+     *
+     * 20 m is inside `engageRange` (55) and comfortably inside `hearRange`, so
+     * the point a squad turns toward is one they could plausibly fight over —
+     * and the bearing is what matters rather than the distance, since a
+     * listener a few metres off the shooter's shoulder reads nearly the same
+     * angle to a contact at any range past this one.
+     */
+    friendlyCueLead: 20,
+    /**
+     * Metres inside which a FRIENDLY's gunfire is not a cue at all.
+     *
+     * A bot standing next to the man firing learns nothing from the noise — it
+     * can see him, it can see which way he is pointed, and being told "the
+     * fight is that way" by a rifle going off two metres to the left is the
+     * cue that reads worst of all, because the listener is close enough for the
+     * lead above to swing his head a long way for a very small bearing change.
+     * Hearing is for what you cannot see.
+     *
+     * Comfortably outside `peripheralRange`'s ace (9), so it covers the band a
+     * bot notices regardless of facing, and it is the FRIENDLY floor only: an
+     * enemy firing from three metres is exactly the thing to react to.
+     */
+    friendlyHearMin: 12,
+    /**
      * Perpendicular distance within which a passing round counts as a near
      * miss. Roughly an arm's length: close enough to hear crack past.
      */

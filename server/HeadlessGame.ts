@@ -645,7 +645,7 @@ export class HeadlessGame {
       if (this.rocketAim.lengthSquared() < 1e-4) return false;
       this.rocketAim.normalize();
       if (!this.antiTank.launch(from, this.rocketAim, bot.team, bot)) return false;
-      this.battle.hearGunshot(from, bot.team);
+      this.battle.hearGunshot(from, bot.team, this.rocketAim);
       return true;
     };
     // Hostile by construction: the team passed is the ordnance's own and
@@ -784,7 +784,7 @@ export class HeadlessGame {
     // only place that can say so — `BattleSystem.botFire` calls the same method
     // for a bot's round, and a match without this line is one where half the
     // roster can shoot at a squad from behind and never be looked for.
-    this.battle.hearGunshot(origin, shooter.team);
+    this.battle.hearGunshot(origin, shooter.team, dir);
 
     const result = this.lag.resolve(renderTime, shooter, () =>
       this.combat.fire(
@@ -1084,7 +1084,7 @@ export class HeadlessGame {
     // Bots hear a tank gun the way they hear a rifle, and it is the TANK's
     // side rather than the crewman's — a hull the AI is driving is heard by
     // the other team exactly as one a person is driving is.
-    this.battle.hearGunshot(muzzle, tank.team);
+    this.battle.hearGunshot(muzzle, tank.team, dir);
     this.onCannon(tank);
     return true;
   }
@@ -1126,7 +1126,7 @@ export class HeadlessGame {
       this.creditKill(by, shot.target);
       if (shot.target instanceof Bot) this.onKill(shot.target, tank.team);
     }
-    this.battle.hearGunshot(muzzle, tank.team);
+    this.battle.hearGunshot(muzzle, tank.team, dir);
     return true;
   }
 
@@ -1167,7 +1167,7 @@ export class HeadlessGame {
     // Heard exactly as a rifle is, and by the same door: a rocket leaving is
     // the loudest thing on the map after a tank gun, and the side that fired
     // it has just told everybody where it is.
-    this.battle.hearGunshot(from, by.team);
+    this.battle.hearGunshot(from, by.team, dir);
     return true;
   }
 

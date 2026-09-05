@@ -340,6 +340,13 @@ export class BattleSystem {
    */
   private readonly hittableScratch: Combatant[][] = [[], []];
   private readonly candidateScratch: { c: Combatant; d: number }[] = [];
+  /**
+   * Where the shooter's own side is told the fight is — `hearGunshot`'s lead,
+   * built once per shot. Scratch rather than a fresh vector for `flashPool`'s
+   * reason: this is on the firing path, at ~90 shots a second, and
+   * `BotMemory.heardShot` copies out of it before the next caller writes it.
+   */
+  private readonly friendCue = new Vector3();
 
   /**
    * How many bodies a side the pool currently holds — `bots.length / 2`, and
@@ -700,7 +707,7 @@ export class BattleSystem {
   }
 
   /**
-   * A gun went off at `at`. Every bot near enough hears it.
+   * A gun went off at `at`, pointed down `dir`. Every bot near enough hears it.
    *
    * Push, not pull, and no rays: a squared-distance sweep over the roster, 16
    * compares against ~90 shots a second. The position is jittered, so bots
@@ -708,23 +715,52 @@ export class BattleSystem {
    * shooter — hearing that resolves to a precise position is indistinguishable
    * from a wallhack.
    *
-   * Called internally for bot fire and by `Game` for the player's.
+   * **The two sides are told different things, and `dir` is why the parameter
+   * exists.** To the side being shot at, the noise IS the shooter and the cue
+   * is the muzzle. To the shooter's own side it is a report that says which way
+   * the fight is, so the cue is placed `friendlyCueLead` metres down the line
+   * the round actually flew — the muzzle position was never that sentence, and
+   * a cue landing on a friend is a squad that turns to look at the man firing
+   * and then walks over to him. Flattened into the ground plane, since every
+   * reader of a cue takes its x/z; a shot with no ground bearing at all (fired
+   * at the sky or at the floor) leads nowhere and stays at the muzzle.
+   *
+   * `dir` need not be a unit vector — the lead normalises what it uses, which
+   * it owes anyway because one caller is `HeadlessGame.resolveShot`, where the
+   * direction came off the wire and `server/wire.ts` proves only that it is
+   * three finite numbers.
+   *
+   * Called internally for bot fire and by `Game`/`HeadlessGame` for a person's,
+   * a launcher's and a hull's two guns.
    */
-  hearGunshot(at: Vector3, shooter: Team): void {
+  hearGunshot(at: Vector3, shooter: Team, dir: Vector3): void {
     const p = CONFIG.bots.perception;
     const range2 = p.hearRange * p.hearRange;
+    const near2 = p.friendlyHearMin * p.friendlyHearMin;
+    // Once per shot rather than per listener: every friendly hears the same
+    // fight, and the jitter below is what separates their readings of it.
+    const flat = Math.hypot(dir.x, dir.z);
+    const lead = flat > 1e-4 ? p.friendlyCueLead / flat : 0;
+    this.friendCue.set(at.x + dir.x * lead, at.y, at.z + dir.z * lead);
     for (const bot of this.bots) {
       if (!bot.alive || this.aside(bot)) continue;
       const dx = bot.position.x - at.x;
       const dz = bot.position.z - at.z;
-      if (dx * dx + dz * dz > range2) continue;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > range2) continue;
+      const hostile = bot.team !== shooter;
+      // Close enough to a friendly that the noise tells it nothing its eyes
+      // have not already got — and close enough that the lead above would swing
+      // its head a long way for a bearing that barely moved. See
+      // `friendlyHearMin`.
+      if (!hostile && d2 < near2) continue;
       // Deterministic-ish jitter from the position itself rather than
       // Math.random(), so the same shot is heard the same way by everyone and
       // a replay of a fight is reproducible.
       const j = p.hearJitter;
       bot.memory.heardShot(
-        at,
-        bot.team !== shooter,
+        hostile ? at : this.friendCue,
+        hostile,
         Math.sin(at.x * 12.9898 + at.z * 78.233) * j,
         Math.cos(at.x * 39.3468 + at.z * 11.135) * j,
       );
@@ -1068,7 +1104,11 @@ export class BattleSystem {
     at.copyFrom(muzzle);
     this.muzzleFlashes.push(at);
     this.onBotFired(bot, at);
-    this.hearGunshot(at, bot.team);
+    // The AIM and not the bot's facing: a bot fires at a lagging aim point and
+    // faces where it is walking often enough that the two disagree. This shot's
+    // own spread is deliberately not in it — `fire` rolls that internally — and
+    // a cone a few degrees wide is nothing at a 20 m lead.
+    this.hearGunshot(at, bot.team, dir);
     // The victim is whoever the ray actually found, which is often not the bot
     // that was being aimed at — a squadmate walks into the line all the time,
     // and on a server half the roster is people.

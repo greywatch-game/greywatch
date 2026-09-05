@@ -114,6 +114,12 @@ export class BotMemory {
    * Heard a gunshot at `at`. `hostile` separates "someone is shooting at my
    * side over there" from "one of ours is in a fight over there" — the second
    * is a much weaker pull, and is what makes a squad drift toward contact.
+   *
+   * **`at` is not the same point for the two of them**, and this method is
+   * deliberately not the place that knows it: a hostile cue is the muzzle, and
+   * a friendly one is already led down the shooter's line by
+   * `BattleSystem.hearGunshot` before it gets here. What is weakened here is
+   * the WEIGHT of the cue; where it points was settled by the time of arrival.
    */
   heardShot(at: Vector3, hostile: boolean, jitterX: number, jitterZ: number): void {
     const p = CONFIG.bots.perception;

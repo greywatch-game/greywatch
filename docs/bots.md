@@ -264,6 +264,29 @@ budget is the one thing here that does not scale.
 - **Hearing** is a squared-distance sweep inside `BattleSystem.botFire`, with a
   jittered position so bots converge on the *sound*, not the shooter. `Game` calls
   `hearGunshot` for the player's own fire.
+- **A shot is heard differently by the two sides, and the difference is WHERE
+  the cue lands.** To the side being shot at, the noise IS the shooter: the cue
+  is the muzzle, which is the thing worth looking at. To the shooter's own side
+  it is a report saying which way the fight is, so the cue is placed
+  `friendlyCueLead` (20 m) down the line the round actually flew — which is why
+  `hearGunshot` takes a direction, and why every caller passes the one it fired.
+  `friendlyHearMult` had always *said* a friendly shot means "the fight is over
+  there"; the muzzle position was not that sentence. A cue is read in exactly
+  two places — the facing (`Bot.update`) and the hunt destination (`hasCue`) —
+  so one landing on a friend turned every squadmate in earshot round to stare at
+  the man firing and then walked them over to where he had been standing. The
+  lead is FLATTENED into the ground plane, because both readers take a cue's
+  x/z and a lead spent on a steep shot would put it in the air or under the
+  floor; a shot with no ground bearing at all leads nowhere and stays at the
+  muzzle. And it is normalised where it is spent rather than trusted, because
+  one caller is `HeadlessGame.resolveShot`, where the direction came off the
+  wire and `server/wire.ts` proves only that it is three finite numbers.
+- **A friendly shot inside `friendlyHearMin` (12 m) is not a cue at all.** A bot
+  standing next to the man firing learns nothing from the noise — it can see him
+  and it can see which way he is pointed — and it is the listener the lead above
+  serves worst, since at that range a large swing of the head buys a very small
+  change of bearing. It is the FRIENDLY floor only: an enemy firing from three
+  metres is exactly the thing to react to. Hearing is for what you cannot see.
 - **Near misses** ride the target loop `CombatSystem.fire` already runs: one extra
   sphere test at `hitRadius + suppressRadius`, reported via `onNearMiss`. It carries
   the round's point of closest approach as well, which is the same event the

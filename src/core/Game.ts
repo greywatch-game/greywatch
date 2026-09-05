@@ -1461,7 +1461,7 @@ export class Game {
       // Heard exactly as the player's launcher is, and by the same door: a
       // rocket leaving is the loudest thing on the map after a tank gun, and
       // the side that fired it has just told everybody where it is.
-      this.battle.hearGunshot(from, bot.team);
+      this.battle.hearGunshot(from, bot.team, this.rocketAim);
       this.sfx.launcher(from);
       return true;
     };
@@ -4320,7 +4320,7 @@ export class Game {
       // Bots hear the player's rifle the same way they hear each other's. This
       // is the only place the player's own gunfire enters the world, so it is
       // the only place that can say so.
-      this.battle.hearGunshot(muzzle, this.player.team);
+      this.battle.hearGunshot(muzzle, this.player.team, shot.dir);
       // Recoil: kick the aim up and off toward the weapon's own bias, softened
       // braced and stiffened on the move. It decays on its own, so the burst
       // climbs and settles.
@@ -4820,7 +4820,7 @@ export class Game {
     // Bots hear a launcher the way they hear a rifle. This is the only place
     // the player's own launcher enters the world as a noise, so it is the only
     // place that can say so.
-    this.battle.hearGunshot(this.ordnanceAt, this.player.team);
+    this.battle.hearGunshot(this.ordnanceAt, this.player.team, forward);
     this.sfx.launcher(this.ordnanceAt);
     // The next rocket going into the tube, laid out across the fire cooldown
     // the shot above has just set — which on a two-shot weapon IS the loader,
@@ -5012,7 +5012,7 @@ export class Game {
     // armour enters the world as a noise, so it is the only place that can say
     // so. The TANK's side, not the player's: a hull the AI is driving is heard
     // by the other team exactly as one the player is driving is.
-    this.battle.hearGunshot(muzzle, tank.team);
+    this.battle.hearGunshot(muzzle, tank.team, dir);
     const lc = CONFIG.lighting;
     this.lighting.pulse(
       muzzle,
@@ -5088,7 +5088,7 @@ export class Game {
     // Bots hear it exactly as they hear a rifle, and it is the TANK's side
     // that fired for `resolveShell`'s reason: a hull the AI is crewing is
     // heard by the other team exactly as one a person is crewing is.
-    this.battle.hearGunshot(muzzle, tank.team);
+    this.battle.hearGunshot(muzzle, tank.team, dir);
     const lc = CONFIG.lighting;
     this.lighting.pulse(
       muzzle,
