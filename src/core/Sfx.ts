@@ -393,8 +393,15 @@ export class Sfx {
    * deeper than the LMG's nine or the rifle's seven — against a cap of 24 with
    * 6 of those already reserved from impacts. They are still COUNTED, so
    * everything else still yields to them.
+   *
+   * **`at` is a scheduling offset in seconds, and every layer takes it** —
+   * including the action's own delay, which rides on top of it rather than
+   * replacing it. It is how the player's own report is put back where the
+   * round was DUE rather than on the frame boundary it could be fired on; the
+   * caller owns the number (`Player.reportDelay`) and the argument is 0 for
+   * every other shooter in the game, whose cadence nothing is listening to.
    */
-  shoot(voice: ReportVoice = FLAT_REPORT): void {
+  shoot(voice: ReportVoice = FLAT_REPORT, at = 0): void {
     // Two rounds from the same weapon are never the same report, and eight a
     // second of one recording is the loudest tell that a gun is synthesized.
     const v = 0.92 + Math.random() * 0.16;
@@ -410,14 +417,14 @@ export class Sfx {
     // body here AND the sharpest edge.
     this.burst({
       dur: 0.007, vol: 0.68 * v * lvl * voice.snap, type: "highpass",
-      freq: 3600 * f, q: 1, send: 0.2 * tail, keep: true,
+      freq: 3600 * f, q: 1, send: 0.2 * tail, keep: true, delay: at,
     });
     // The body of the report, sweeping down as the gas column collapses. A
     // lowpass throws away most of a noise slice's amplitude, so its gain is
     // set well above the level it actually plays at.
     this.burst({
       dur: 0.1 * len, vol: 0.74 * lvl, type: "lowpass", freq: 2600 * f,
-      freqEnd: 340 * voice.pitch, send: 0.9 * tail, keep: true,
+      freqEnd: 340 * voice.pitch, send: 0.9 * tail, keep: true, delay: at,
     });
     // The low roll: the gas leaving the muzzle, under a lowpass with enough
     // resonance to put a peak where a small speaker can still find it. Sent
@@ -426,12 +433,12 @@ export class Sfx {
     this.burst({
       dur: 0.26 * len, vol: 1.75 * lvl * voice.weight, type: "lowpass",
       freq: 360 * voice.pitch, freqEnd: 95 * voice.pitch, q: 3,
-      send: 1.2 * tail, keep: true,
+      send: 1.2 * tail, keep: true, delay: at,
     });
     // Chest thump: the low pressure wave, and the one part of a gunshot that
     // really is a single frequency. A sine's peak is its gain exactly.
     this.tone(150 * f, 0.16 * len, "sine", 0.32 * lvl * voice.weight, 0.34, null, {
-      send: 0.7 * tail, keep: true,
+      send: 0.7 * tail, keep: true, delay: at,
     });
     // The action riding home, behind the shot rather than under it — mechanism,
     // so it sits far below the blast. A light bolt comes back sooner as well as
@@ -440,7 +447,7 @@ export class Sfx {
     this.burst({
       dur: 0.04, vol: 0.18 * lvl * voice.actionVol, type: "bandpass",
       freq: 2900 * voice.actionPitch, q: 1.3,
-      delay: 0.045 / voice.actionPitch, send: 0.25 * tail, keep: true,
+      delay: at + 0.045 / voice.actionPitch, send: 0.25 * tail, keep: true,
     });
   }
 

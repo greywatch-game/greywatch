@@ -4344,7 +4344,9 @@ export class Game {
         lc.muzzleIntensity,
         lc.muzzleLife,
       );
-      this.sfx.shoot(this.player.report);
+      // Scheduled where the round was DUE rather than on the boundary it
+      // could be fired on — see `Player.reportDelay`, which owns the number.
+      this.sfx.shoot(this.player.report, this.player.reportDelay);
       // …and, on a bolt gun, the action being worked, laid out across the fire
       // cooldown this shot has just set — which on that weapon IS the cycle,
       // and which `ViewModel` is playing the gesture off at the same moment.

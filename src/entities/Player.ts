@@ -528,6 +528,14 @@ export class Player implements Combatant {
   private adsForKick = 0;
   /** Public because `Game` throws the view punch the same way (`addPunch`). */
   kickDrift = 0;
+  /**
+   * How far into the last frame the round `tryShot` just fired was actually
+   * DUE, 0..dt — the debt `tryShot` carries, kept a second time because the
+   * cooldown it was taken out of has already been reset by the time anything
+   * reads it. Drawn once per shot for the same reason `kickDrift` is: one
+   * round, one number, however many things spend it.
+   */
+  private shotOwed = 0;
   /** Muzzle flash star: shown for `gunfeel.flashTime` after each shot. */
   private flashRoot!: TransformNode;
   private flashT = 0;
@@ -1054,6 +1062,29 @@ export class Player implements Combatant {
     return this.weapon.report;
   }
 
+  /**
+   * How far ahead of NOW the report of the round just fired should be
+   * scheduled, in seconds — `Sfx.shoot`'s second argument.
+   *
+   * A round is due partway through a frame and can only be fired on the
+   * boundary. `tryShot` carries that debt so the simulated cadence is exact,
+   * but a sound cannot be scheduled in the past, so without this the report
+   * lands on the boundary and takes the frame's whole jitter with it. Every
+   * report is shifted by `audio.shotLookahead` and gives back the part of it
+   * the round had already spent, which leaves the shift constant across a
+   * string and therefore silent — see that field for the trade it makes.
+   *
+   * Clamped at 0: a frame longer than the lookahead gets less of the
+   * correction, never a report scheduled before the frame it belongs to.
+   *
+   * It is built here rather than at the call site for `recoilKick`'s reason —
+   * every number in it is the weapon's or the body's, and `Game` does no
+   * arithmetic on either.
+   */
+  get reportDelay(): number {
+    return Math.max(0, CONFIG.audio.shotLookahead - this.shotOwed);
+  }
+
   get reloadTime(): number {
     return this.weapon.reloadTime;
   }
@@ -1573,7 +1604,17 @@ export class Player implements Combatant {
     this.updateVitals(dt);
 
     // --- weapon timers ---
-    this.fireCooldown -= dt;
+    // The fire clock is spent PAST zero and holds what it overshot by, for
+    // exactly one frame. That overshoot is the fraction of the gap that had
+    // already elapsed when this frame began, and `tryShot` owes the next round
+    // a start that much earlier: without it every interval in the kit is
+    // rounded UP to a whole frame and no weapon fires at the rate its table
+    // states. Held for one frame and no longer — a debt still on the clock a
+    // frame later belongs to a trigger nobody pulled, and paying it would make
+    // the first round of a string come early, which is the same jitter one
+    // weapon further back.
+    if (this.fireCooldown > 0) this.fireCooldown -= dt;
+    else this.fireCooldown = 0;
     this.throwCooldown -= dt;
     // The throw clock counts UP, and it is parked rather than clamped: the
     // gesture has a release in the middle of it, so "how long ago" is the only
@@ -1818,6 +1859,23 @@ export class Player implements Combatant {
     }
     const r = CONFIG.recoil;
     this.ammo -= 1;
+    // What the last frame already owed this round, and the whole reason the
+    // clock above is allowed to go negative. The guard at the top of this
+    // method has refused every positive cooldown, so this is 0..dt — bounded
+    // by one frame by construction, and dropped by `update` after one frame,
+    // so a round can never bank credit toward a later one.
+    //
+    // Discarding it, as this did, rounded every gap in the game up to a whole
+    // frame: at 60 Hz the rifle's cadence — 106 ms, matched to reference
+    // footage and steady there to within 1 ms — was delivered as 116.7 (566
+    // rpm as 514), and the carbine's 50 ms burst as 66.7 (1200 rpm as 900).
+    // Worse than the error, it MOVED with the display: the same weapon fired
+    // at three different rates at 60, 120 and 144 Hz, and near a whole
+    // multiple of the frame (the carbine is three frames at 60 Hz to within
+    // floating-point dust) it alternated between two gaps shot to shot, which
+    // is a burst that never lands the same way twice.
+    const owed = -this.fireCooldown;
+    this.shotOwed = owed;
     // A burst opens on its first round and closes on its last: within it the
     // gap is the weapon's rate, and at the end it is `burstCycle` — the dwell
     // that is the entire cost of the mode.
@@ -1825,9 +1883,11 @@ export class Player implements Combatant {
       if (this.burstLeft <= 0) this.burstLeft = this.weapon.burst;
       this.burstLeft -= 1;
       this.fireCooldown =
-        this.burstLeft > 0 ? this.weapon.shotInterval : this.weapon.burstCycle;
+        (this.burstLeft > 0
+          ? this.weapon.shotInterval
+          : this.weapon.burstCycle) - owed;
     } else {
-      this.fireCooldown = this.weapon.shotInterval;
+      this.fireCooldown = this.weapon.shotInterval - owed;
     }
     // Weapon-side recoil: the spread bloom the next shot inherits, and the
     // punch the body rides out. The aim kick itself belongs to the camera.

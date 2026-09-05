@@ -23,6 +23,37 @@ export const audio = {
    */
   speedOfSound: 343,
   /**
+   * How far AHEAD of the frame the player's own report is scheduled, in
+   * seconds — one 60 Hz frame.
+   *
+   * A round is due partway through a frame and can only be FIRED on the
+   * boundary; `Player.tryShot` carries that sub-frame debt so the simulated
+   * cadence is exact, but a sound cannot be scheduled in the PAST, so the
+   * report still lands on the boundary and inherits the whole of the frame's
+   * jitter. At 566 rpm that is a nominal 106 ms gap arriving as anything from
+   * 95 to 122, which is ~12% of the interval against an ear that resolves
+   * irregularity in a click train at about 3%.
+   *
+   * So every report is shifted by this CONSTANT and each one gives back the
+   * part of it the round had already used (`Player.reportDelay`). A constant
+   * shift is inaudible — it moves the whole string, so no interval inside it
+   * changes — and what it buys is that the intervals become exactly what the
+   * weapon table says.
+   *
+   * **The cost is real and it is absolute latency**: the first round of a
+   * string cracks one frame after its own muzzle flash. That is the right way
+   * round — sound lags light in the world, and audiovisual simultaneity holds
+   * to far more than a frame — and it is dwarfed by WebAudio's own output
+   * latency, which is tens of milliseconds before this is added. The RELATIVE
+   * timing this protects is the half the ear actually resolves.
+   *
+   * Set to 0 to schedule every report on the frame boundary exactly as before.
+   * Raising it past a frame buys nothing: `reportDelay` is already clamped at
+   * 0, so a longer frame than this simply gets less of the correction rather
+   * than a report scheduled early.
+   */
+  shotLookahead: 0.017,
+  /**
    * The village answering a gunshot: one shared convolution reverb every shot
    * sends into. Length is the decay of the diffuse tail; a report outdoors is
    * a short transient followed by a few hundred milliseconds of stone and
