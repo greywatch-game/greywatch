@@ -468,10 +468,13 @@ export function buildWatchtower(
   }
   b.gableRoof(deck + 0.6, deck + 0.6, 1.1, 0, deckTop + 2.4, 0, PLANK, 0.4);
 
-  // Signal brazier, still lit.
+  // Signal brazier, still lit — and the first structure in the tree that is
+  // HEARD as well as seen. The three lines are one object: the iron, the light
+  // it throws and the noise it makes, all at the flame rather than at the bowl.
   b.cyl(0.9, 0.85, 0.7, 8, 1.4, deckTop + 0.45, 1.4, IRON);
   b.glow(0.55, 0.5, 0.55, 1.4, deckTop + 0.9, 1.4, EMBER);
   b.light(EMBER, 22, 2.0, 0.4, 1.4, deckTop + 0.95, 1.4);
+  b.sound("fire", 1.4, deckTop + 0.9, 1.4);
 
   return b;
 }

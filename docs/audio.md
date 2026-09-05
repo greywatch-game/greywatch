@@ -376,17 +376,37 @@ mechanism owes the same table, measured the same way.
 
 ### What a prop owes, and what a second kind would
 
-**A sound a prop makes is a row in a table keyed by prop kind** —
-`SCATTER_AMBIENCE` in `MapBuilder`, directly beside `SCATTER_LIGHTS` and the
-same shape, so a prop that makes a noise says so in one place and nothing about
-the placement, the seeding or the collider has to be told. `fireDrum` is the
-only row today.
+**Two things can carry a sound, and both say so beside the LIGHT they already
+carry.** A scatter prop names one in `SCATTER_AMBIENCE` — a table keyed by prop
+kind, directly beside `SCATTER_LIGHTS` and the same shape (`fireDrum` is its
+only row) — and a STRUCTURE names one with `Build.sound(...)`, `Build.light`'s
+twin, which puts a `LocalSound` on the structure exactly as `light` puts a
+`LocalLight`. `MapBuilder` walks `s.sounds` through the same rotation and the
+same origin as `s.lights`, because a placement can be turned and the brazier on
+the far side of a watchtower has to end up on the far side of it.
+
+**A sound is named by ID, never by reaching for the audio config.** `AmbienceId`
+is the union and `MapBuilder`'s `AMBIENCE_KINDS` is a `Record` over it — the
+`WEAPON_BUILDERS` pattern, so a second kind does not compile half-added — and
+it is the ONE place the world layer and `CONFIG.audio.ambience` meet. That is
+what lets a building kit write `b.sound("fire", x, y, z)` beside its `b.glow`
+and its `b.light` without knowing the audio config exists: **what is drawn as
+burning is heard burning, in three lines that are one object.** The watchtower's
+signal brazier is the first structure in the tree to take it.
 
 **The position is taken at BUILD time or not at all.** `MapBuilder` flattens a
 scatter prop's placement into its vertices and the merge then takes the mesh
 away entirely, so there is no per-prop node left at runtime to hang an emitter
 on — the registration is one line beside the light's, and an emitter not
-recorded there has no second chance to be.
+recorded there has no second chance to be. A `LocalSound` also reaches nothing
+else: the collision bake has never heard of it, because the server has no ears.
+
+**The RANKING is still not reachable on a shipped map**, and it is worth
+knowing that before trusting a listen. Hollowmere now carries seven emitters —
+four drums and three braziers — and the closest two are **56.8 m apart against
+a `range` of 24**, so in play the ranking has only ever been handed a list of
+one. What exercises the cap and the swap margin is the synthetic walk in the
+table above.
 
 **A second KIND is a row in `CONFIG.audio.ambience` and no code**, which is
 `EngineKind`'s bargain one subsystem over: a stream and a wind in a canopy are

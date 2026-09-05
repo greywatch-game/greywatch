@@ -397,6 +397,17 @@ interface EngineVoice {
 }
 
 /**
+ * Which ambience a place in the world makes.
+ *
+ * The world layer names a sound by ID rather than reaching for the audio
+ * config, which is what keeps a building kit describing what a thing IS and
+ * leaves what it SOUNDS like to a table — `MapBuilder`'s `AMBIENCE_KINDS`,
+ * which is a `Record` over this union for the reason `WEAPON_BUILDERS` and
+ * the optics table are: a second kind does not compile half-added.
+ */
+export type AmbienceId = "fire";
+
+/**
  * What a place in the world sounds like — the ambience equivalent of
  * `EngineKind`, and held as a spec for that field's reason: what a thing
  * sounds like is a ROW, so a second kind is a second row and never a branch.

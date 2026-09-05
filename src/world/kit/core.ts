@@ -44,6 +44,7 @@ import type {
   CelMaterialFactory,
   TranslucencySpec,
 } from "../../shaders/CelShader";
+import type { AmbienceId } from "../../core/Sfx";
 import type { LightSpec } from "../environment";
 import { partBox, partCylinder, partSurface } from "../parts";
 import type { TerrainField } from "../TerrainField";
@@ -297,11 +298,29 @@ export interface LocalLight extends Omit<LightSpec, "offset"> {
   z: number;
 }
 
+/**
+ * A place inside the structure that makes a noise on its own, in local space.
+ *
+ * `LocalLight`'s exact twin, one field shorter: a light states its colour and
+ * reach because those are art, and a sound states only WHICH sound because
+ * what it costs and how far it carries are the audio layer's
+ * (`CONFIG.audio.ambience`). Rotated and offset into the world by
+ * `MapBuilder` beside the lights, and read by nothing else — the collision
+ * bake has never heard of it, because the server has no ears.
+ */
+export interface LocalSound {
+  kind: AmbienceId;
+  x: number;
+  y: number;
+  z: number;
+}
+
 /** What every builder returns. */
 export interface Structure {
   meshes: Mesh[];
   colliders: BoxSpec[];
   lights: LocalLight[];
+  sounds: LocalSound[];
   /**
    * Glazing, kept apart from `meshes` for the whole of its life.
    *
@@ -525,6 +544,7 @@ export class Build implements Structure {
   meshes: Mesh[] = [];
   colliders: BoxSpec[] = [];
   lights: LocalLight[] = [];
+  sounds: LocalSound[] = [];
   paneMeshes: Mesh[] = [];
   panes: PaneSpec[] = [];
 
@@ -1075,6 +1095,18 @@ export class Build implements Structure {
     z: number,
   ): void {
     this.lights.push({ color, range, intensity, flicker, x, y, z });
+  }
+
+  /**
+   * A sustained sound at a point in the structure — `light`'s twin, and it
+   * belongs beside a `glow` for the same reason a `light` does: what is drawn
+   * as burning should be heard burning.
+   *
+   * The position is the SOURCE and not the object. A brazier's fire is the
+   * flame over the bowl rather than the bowl, exactly as its light is.
+   */
+  sound(kind: AmbienceId, x: number, y: number, z: number): void {
+    this.sounds.push({ kind, x, y, z });
   }
 
   /**

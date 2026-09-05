@@ -207,10 +207,16 @@ what stops it repeating**, in whole samples, because a one-second buffer at rate
 1 replays its whole pattern of pops every second. And **a config number that is
 not normalised is not a level** — a single-sample impulse leaves a bandpass at
 `alpha/(1+alpha)` of its height, so a stated 0.5 put the crackles 12 dB under
-the bed. **A sound a prop makes is a row in a table keyed by prop kind**
-(`SCATTER_AMBIENCE`, beside `SCATTER_LIGHTS`) and its position is taken at BUILD
-time or not at all — the merge takes the prop's mesh away, so there is nothing
-left at runtime to hang an emitter on.
+the bed. **Two things carry a sound and both say so beside the LIGHT they already
+carry**: a scatter prop through `SCATTER_AMBIENCE` (beside `SCATTER_LIGHTS`)
+and a STRUCTURE through `Build.sound`, `Build.light`'s twin, rotated into the
+world by the same line — **what is drawn as burning is heard burning**. It is
+named by ID and never by reaching for the audio config: `AmbienceId` plus
+`MapBuilder`'s `AMBIENCE_KINDS`, a `Record` over the union so a second kind
+does not compile half-added, and the one place the world layer and
+`CONFIG.audio.ambience` meet. **A position is taken at BUILD time or not at
+all** — the merge takes the prop's mesh away, so there is nothing left at
+runtime to hang an emitter on.
 
 → **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
 binds, why one ambient loop costs ten times the whole sampled gun kit and what

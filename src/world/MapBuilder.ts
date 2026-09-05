@@ -57,7 +57,7 @@ import { bakeVertexShading } from "./vertexShading";
 import { begin as beginProfile, record, since } from "./buildProfile";
 import type { LightingSystem } from "../systems/LightingSystem";
 import type { AmbienceSystem } from "../systems/AmbienceSystem";
-import type { AmbienceKind } from "../core/Sfx";
+import type { AmbienceId, AmbienceKind } from "../core/Sfx";
 import { BUILDERS, type BoxSpec, type Structure } from "./BuildingKit";
 import type { EnvironmentSpec } from "./environment";
 import { floorMaterial } from "./floorSurfaces";
@@ -595,9 +595,24 @@ const SCATTER_LIGHTS: Partial<
  * than the drum, which is 0.85 m of fire on a 1.2 m barrel.
  */
 const SCATTER_AMBIENCE: Partial<
-  Record<ScatterSpec["prop"], { kind: AmbienceKind; y: number }>
+  Record<ScatterSpec["prop"], { kind: AmbienceId; y: number }>
 > = {
-  fireDrum: { kind: CONFIG.audio.ambience.fire, y: 0.9 },
+  fireDrum: { kind: "fire", y: 0.9 },
+};
+
+/**
+ * What each ambience id actually sounds like — the ONE place the world layer
+ * and the audio config meet.
+ *
+ * A `Record` over the id union rather than a lookup that could miss, for the
+ * reason `ViewModel`'s `WEAPON_BUILDERS` and the optics table are: a second
+ * kind does not compile half-added. It is here rather than in `Sfx` because
+ * this is the file that already reads `CONFIG` on the world's behalf, and it
+ * is what lets a building kit say `b.sound("fire", …)` without knowing the
+ * audio config exists.
+ */
+const AMBIENCE_KINDS: Record<AmbienceId, AmbienceKind> = {
+  fire: CONFIG.audio.ambience.fire,
 };
 
 /** One scatter prop's measured body. See `PROP_BODIES`. */
@@ -1139,6 +1154,14 @@ export class MapBuilder {
         const at = rotateY(l.x, l.y, l.z, rotY).addInPlace(origin);
         this.lighting.add(at, l.color, l.range, l.intensity, l.flicker);
       }
+      // …and whatever the structure makes a noise about, through the same
+      // rotation and the same origin. A placement can be turned, so a sound
+      // hung off one is a LOCAL point exactly as a light is — the brazier on
+      // the far side of a watchtower has to end up on the far side of it.
+      for (const snd of s.sounds) {
+        const at = rotateY(snd.x, snd.y, snd.z, rotY).addInPlace(origin);
+        this.ambience.add(at.x, at.y, at.z, AMBIENCE_KINDS[snd.kind]);
+      }
     }
     this.item = null;
     since("placements", placementsStart);
@@ -1580,7 +1603,7 @@ export class MapBuilder {
           spot.x,
           origin.y + base + sound.y * scale,
           spot.z,
-          sound.kind,
+          AMBIENCE_KINDS[sound.kind],
         );
       }
       if (spec.blocking) {
