@@ -15,10 +15,11 @@ file is not the renderer's contract to carry.
 
 ## What is allowed into the tree
 
-**Zero model files, and EIGHT audio files — one report per weapon in the kit,
-plus the cupola gun all three hulls mount, and nothing else in the game is
-recorded at all** — every mesh is built from Babylon primitives at runtime, and
-every sound is synthesized WebAudio (`src/core/Sfx.ts`) but for those eight. Do not add asset files
+**Zero model files, and TEN audio files — one report per weapon in the kit, the
+cupola gun all three hulls mount, and the two halves of the player's own
+magazine change, and nothing else in the game is recorded at all** — every mesh
+is built from Babylon primitives at runtime, and every sound is synthesized
+WebAudio (`src/core/Sfx.ts`) but for those ten. Do not add asset files
 unless explicitly asked. Five exceptions, each with a generator in
 `package.json`:
 
@@ -61,8 +62,9 @@ unless explicitly asked. Five exceptions, each with a generator in
   precisely because it has a generator, so what that generator costs to run is
   part of the bargain and belongs written down here.
 
-- `audio/` (24.7 KB shipped, eight sounds) — one report per weapon in the kit
-  plus the hulls' mounted gun, and **the only asset class here whose input is a
+- `audio/` (34.0 KB shipped, ten sounds off nine masters) — one report per
+  weapon in the kit, the hulls' mounted gun, and the two halves of a magazine
+  change, and **the only asset class here whose input is a
   recording rather than a script**. It passes
   the common test all the same: `npm run audio` is the generator
   (`scripts/encode-audio.mjs`), the encoded `.webm` is committed, and the master
@@ -81,13 +83,18 @@ unless explicitly asked. Five exceptions, each with a generator in
   recording is laid over the top. **A sound that cannot make that claim does not
   belong in this pipeline**, whatever its size.
 
-  **The guns are where it stops, and that is a boundary rather than a pause.**
-  Eight reports is the whole of it: no footstep, no impact, no reload, no
-  ambience. The budget is the reason and it is counted in SECONDS of decoded
-  mono rather than in bytes on disk — the eight together spend 2.0 of 44, where
-  a single thirty-second ambient loop would spend 30. `docs/audio.md` has that
-  arithmetic; the short form is that guns are exactly what sampling is worth
-  paying for and ambience is exactly what the synthesis is already good at.
+  **What it refuses is a LIBRARY, and that is a boundary rather than a pause.**
+  Eight reports and one magazine change is the whole of it: no footstep, no
+  impact, no ambience, and no second take of anything. The budget is the reason
+  and it is counted in SECONDS of decoded mono rather than in bytes on disk —
+  the ten together spend 2.45 of 44, where thirty one-shots would spend 9 and a
+  single thirty-second ambient loop 30. `docs/audio.md` has that arithmetic; the
+  short form is that guns are exactly what sampling is worth paying for,
+  ambience is exactly what the synthesis is already good at, and what is
+  expensive in between is a CATALOGUE rather than any one sound. The reload is
+  the sound that tested that: two cuts off one master, no variants, the player's
+  own rather than every body's, and `Sfx.reload` is its four synthesized clacks
+  with the files deleted.
 
   Two gates hold it: `scripts/check-audio.mjs` on the front of `npm run build`
   refuses a master edited without re-encoding (which would ship the OLD sound

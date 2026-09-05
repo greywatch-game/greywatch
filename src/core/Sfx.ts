@@ -1,20 +1,23 @@
 /**
- * Sfx.ts — All audio: synthesized WebAudio, and EIGHT recorded reports laid
- * over it: one per weapon in the kit, plus the gun a hull's second seat lays.
+ * Sfx.ts — All audio: synthesized WebAudio, and TEN recordings laid over it:
+ * one report per weapon in the kit, the gun a hull's second seat lays, and the
+ * two halves of the player's own magazine change.
  * Owns: the AudioContext, one cached noise buffer shared by every shot, one
  * shared convolution reverb every gunshot sends into, a master soft clip, the
  * voice cap (CONFIG.audio.maxVoices — over-cap sounds are skipped silently),
  * positional panning relative to the listener, and the decoded samples
  * `src/core/samples.ts` tables.
- * The samples are the one thing here that is not synthesized — the guns, and
- * nothing else in the game — and they are held as a PREFERENCE:
- * fetched fire-and-forget off `unlock`, substituted for the report inside
- * `shoot` and `botShot` only when the decode has landed, and absent from every
- * other sound in the file. The reload, the bolt cycle and the action are still
- * `actionPitch`/`actionVol` on all eight, so a mechanism is voiced here and
- * never by a recording. A weapon with no `sample`, a decode that has not
+ * The samples are the one thing here that is not synthesized — the guns and
+ * one magazine change, and nothing else in the game — and they are held as a
+ * PREFERENCE: fetched fire-and-forget off `unlock`, substituted inside `shoot`,
+ * `botShot` and `reload` only when the decode has landed, and absent from every
+ * other sound in the file. The bolt cycle and the action are still
+ * `actionPitch`/`actionVol` on every weapon, and so are the reload's own catch
+ * and bolt beats — a mechanism is voiced here, and the two beats that are not
+ * are still PITCHED here, since one shared recording says nothing about which
+ * weapon it is going into. A weapon with no `sample`, a decode that has not
  * finished and a fetch that failed are one case with one answer — the
- * synthesized report — which is what keeps the recording deletable. See
+ * synthesized sound — which is what keeps the recording deletable. See
  * `samples.ts` for why that is the whole of the bargain.
  * Invariants: never generate a fresh noise buffer or impulse response per
  * sound — both are built once on unlock. setListener() is called once per
@@ -122,6 +125,46 @@ const SAMPLE_FLOOR = 0.002;
  * loud, so the fix for a quiet recording is the recording.
  */
 const SAMPLE_LEVEL = 0.5;
+
+/**
+ * What a recorded MECHANISM plays at, against `ReportVoice.actionVol` of 1.
+ *
+ * `SAMPLE_LEVEL`'s sibling, and a separate number for the same reason `clack`
+ * is not `burst` with different arguments: a magazine catch is not a gunshot,
+ * and the two families sit about 10 dB apart. The arithmetic at both ends of
+ * that — a report plays at ~0.5 and the synthesized transient it stands in for
+ * measures 0.45, while a `clack` at `vol` 1 asks `burst` for 0.28 and the
+ * bandpass takes roughly half of it back, landing near 0.14. So a full-scale
+ * recording of a mechanism belongs at about 0.3 of `SAMPLE_LEVEL`.
+ *
+ * **It matches the PEAK and will still read fuller than the click it
+ * replaces**, deliberately: 45 ms of filtered noise and a 148 ms recorded
+ * gesture with a slap in it are not the same amount of sound at the same peak.
+ * That is what the recording was added for. This is the one number to turn if
+ * a magazine change sits wrong beside the weapon it is being fed into.
+ */
+const MECHANISM_LEVEL = 0.15;
+
+/**
+ * Where the transient is inside each half of the magazine change, in the
+ * file's own seconds and measured from what `trimSample` hands back rather
+ * than from the head of the buffer.
+ *
+ * **These two are why `reload` schedules a sample by its PEAK where every
+ * other caller schedules one by its start.** A report's transient IS its
+ * start; a magazine going home is an ARRIVAL, with the fresh one rising and
+ * rocking into the well ahead of it, and `CONFIG.viewmodel.reload` draws
+ * exactly that approach between `insertFrom` and `magSeat`. Scheduled by the
+ * start, the slap would land 188 ms after the frame the weapon is drawn
+ * taking it.
+ *
+ * **They are measured off `audio/manifest.json`'s trims and are not free
+ * parameters.** Move a `trim.start` on either row and re-measure these, or the
+ * sound slides off the picture — which is the contract the four beats below
+ * already have with `CONFIG.viewmodel.reload`, one level down.
+ */
+const MAG_OUT_PEAK = 0.076;
+const MAG_IN_PEAK = 0.188;
 
 /**
  * Measures the silence off both ends of a decoded recording — see
@@ -671,10 +714,9 @@ export class Sfx {
 
   /**
    * Working the magazine: catch, magazine out, fresh magazine seated, bolt
-   * released. Four metallic clicks rather than two beeps, and spaced across
-   * the *actual* reload so the animation's end lands on the bolt rather than
-   * on silence — which is why the offsets are fractions of the config value
-   * and not absolute times.
+   * released. Four beats, spaced across the *actual* reload so the animation's
+   * end lands on the bolt rather than on silence — which is why the offsets
+   * are fractions of the config value and not absolute times.
    *
    * **The weapon's own mechanism voices them** (`ReportVoice.actionPitch` and
    * `actionVol`, the same pair that pitches the action inside `shoot`), so a
@@ -682,15 +724,78 @@ export class Sfx {
    * sound at two speeds. The TIMING is untouched by it: those four fractions
    * are keyed to `ViewModel`'s reload beats to the frame, and a change to one
    * is a change to the other — see `docs/weapons.md`.
+   *
+   * **The middle two beats are RECORDED and the outer two are not, and which
+   * is which was decided by the master rather than chosen.**
+   * `audio/src/reload.wav` holds a magazine stripped out of a well and a fresh
+   * one slapped home, 2.4 s apart with the fetch for it in between; the catch
+   * and the bolt are not cleanly in it and are still the clacks they always
+   * were. A sample that is missing — not fetched, not decoded, not supported
+   * by the browser — falls back to the clack it replaced, exactly as `shoot`
+   * falls back to its five synthesized layers, so this method is the same four
+   * beats either way.
+   *
+   * **`actionPitch` IS spent on these two, which inverts the rule `shoot`
+   * obeys and is the same argument read from the other end.** A report's file
+   * is a recording of THAT weapon and has already made the deviation, so
+   * bending it again applies it twice. One magazine recording is shared by
+   * every weapon in the kit and has said nothing at all about which one it is
+   * going into — so `actionPitch`, the field whose whole job is telling a belt
+   * from a pistol magazine, is what it still has to be told.
    */
   reload(duration: number, voice: ReportVoice = FLAT_REPORT): void {
     const t = duration;
     const p = voice.actionPitch;
     const g = voice.actionVol;
     this.clack(2600 * p, 0.9 * g, 0);
-    this.clack(1500 * p, 0.5 * g, t * 0.18);
-    this.clack(760 * p, 1 * g, t * 0.55);
+    if (!this.mechanism("magOut", MAG_OUT_PEAK, t * 0.18, p, g)) {
+      this.clack(1500 * p, 0.5 * g, t * 0.18);
+    }
+    if (!this.mechanism("magIn", MAG_IN_PEAK, t * 0.55, p, g)) {
+      this.clack(760 * p, 1 * g, t * 0.55);
+    }
     this.clack(3400 * p, 0.8 * g, t * 0.8);
+  }
+
+  /**
+   * A recorded piece of the weapon's mechanism, landed on a beat by its own
+   * transient — `clack`'s counterpart, and `sample`'s wrapper for the one
+   * caller that has to schedule backwards.
+   *
+   * `peak` is where the transient sits inside the file; `at` is when the
+   * player should HEAR it, which is the frame `ViewModel` draws that event on.
+   * `playbackRate` scales the file's whole timeline, so the approach in front
+   * of the transient lasts `peak / pitch` rather than `peak` — the LMG's 0.68
+   * stretches it half as long again, which is a slower hand and is the point.
+   *
+   * The clamp is not defensive about the numbers as they stand, which fit
+   * every weapon in the kit with room to spare (the tightest is the sidearm's
+   * seat at 578 ms against 150 ms of approach). It is defensive about
+   * `reloadTime`, which lives in a weapon's row and is exactly the kind of
+   * number that gets halved — and a delay that went negative would put the
+   * slap AFTER the beat rather than before it, which reads as a fault.
+   *
+   * Returns `sample`'s own answer, which is "there is a recording" and not
+   * "it played" — see that method for why a refusal at the voice cap must not
+   * fall through to the synthesis.
+   */
+  private mechanism(
+    id: SampleId,
+    peak: number,
+    at: number,
+    pitch: number,
+    vol: number,
+  ): boolean {
+    return this.sample(id, {
+      vol: MECHANISM_LEVEL * vol,
+      rate: pitch,
+      delay: Math.max(0, at - peak / pitch),
+      // The same send `clack` gives the four beats this stands among. The
+      // master is gated to digital silence between its gestures, so what is in
+      // the file is the direct sound and the room is the game's — the rule the
+      // eight reports are cut to, which this one arrived already obeying.
+      send: 0.2,
+    });
   }
 
   /**

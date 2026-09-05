@@ -11,11 +11,23 @@
  * **This file is the ONE exception to the project's zero-audio-assets rule and
  * it is deliberately narrow.** Every sound in the game is synthesized
  * (`Sfx.ts` argues for that at length, and the synthesis is what a shooter
- * with no sample still gets); what a row here buys is a recorded REPORT for
- * one weapon, and nothing else in the game is sampled at all. The table is
- * the kit and stops there — no footstep, no impact, no reload, no ambience —
- * and `docs/audio.md` is where the arithmetic for that boundary lives: one
- * thirty-second ambient bed would cost ten times this whole list.
+ * with no sample still gets); what a row here buys is one recorded EVENT, and
+ * nothing else in the game is sampled at all. Eight rows are a REPORT — one
+ * per weapon in the kit, plus the cupola gun three kinds of hull mount — and
+ * two are the player's own MAGAZINE CHANGE, which is the only mechanism in
+ * the game that is recorded and the only pair cut from a single master.
+ *
+ * **The boundary is still a decision and not a waiting list**, and the two
+ * mechanism rows are what makes it readable rather than theoretical: what
+ * `docs/audio.md` refuses is a LIBRARY — thirty one-shots at 0.3 s, five
+ * footsteps per surface, an ambient bed that alone costs ten times this whole
+ * list — not the idea of a sound that is not a gunshot. These two are 0.436
+ * mono-seconds off one master with no round robin behind them, they are the
+ * player's own and not every body's, and they pass the same admissibility
+ * test every row here does: delete `audio/` and `Sfx.reload` is the four
+ * clacks it always was. A footstep cannot make that second claim without
+ * bringing a surface table and a variant set with it, which is the whole
+ * argument and is unchanged.
  *
  * `SampleId` is a union rather than a string so a weapon naming a sample that
  * has no row does not compile, and a weapon naming nothing at all is
@@ -52,10 +64,13 @@ import sniperRifle from "../../audio/sniper-rifle.webm?url";
 import lmg from "../../audio/lmg.webm?url";
 import pistol from "../../audio/pistol.webm?url";
 import mountedGun from "../../audio/mounted-gun.webm?url";
+import magOut from "../../audio/mag-out.webm?url";
+import magIn from "../../audio/mag-in.webm?url";
 
 /**
- * Every recorded sound in the game: one report per weapon in the kit, plus the
- * cupola gun the second seat of a hull lays. Nothing else is sampled at all.
+ * Every recorded sound in the game: one report per weapon in the kit, the
+ * cupola gun the second seat of a hull lays, and the two halves of a magazine
+ * change. Nothing else is sampled at all.
  *
  * **An id here names the RECORDING, not the weapon**, which is why it is
  * `burstRifle` and `sniperRifle` rather than `carbine` and `sniper`: the row
@@ -69,8 +84,25 @@ import mountedGun from "../../audio/mounted-gun.webm?url";
  * table.** Three kinds of hull point at it — `CONFIG.vehicles.<kind>.mg.report`
  * — because the gun on a tank's cupola, a truck's remote station and a
  * gunship's chin turret is one gun, and a fourth kind gets it for free. It is
- * also the only MONO row here; see its note in the manifest for why that
+ * one of three MONO rows here; see its note in the manifest for why that
  * follows from where it is heard rather than from what it is.
+ *
+ * **`magOut` and `magIn` are the other two, and they are the proof that a
+ * sample belongs to a MOMENT rather than to a weapon at all.** They are the
+ * two halves of one magazine change — the old one stripped out of the well
+ * and the fresh one slapped home — cut from the single master
+ * `audio/src/reload.wav`, and every weapon in the kit plays the same pair.
+ * What tells a belt going into an LMG from a magazine going into a pistol is
+ * `ReportVoice.actionPitch`/`actionVol`, which is that field's whole job and
+ * is the exact INVERSE of the rule a report obeys: a report's file already IS
+ * that weapon, so `pitch` is not spent on it a second time; one shared
+ * recording has said nothing about which weapon it is, so the mechanism's
+ * deviation must still be applied. See `Sfx.reload`.
+ *
+ * They are also the only rows scheduled by their PEAK rather than their
+ * start — a magazine going home is an arrival with 188 ms of approach in
+ * front of it — and the two offsets that says are in `Sfx`, measured off
+ * these trims. Move a `trim.start` in the manifest and move them.
  */
 export type SampleId =
   | "assaultRifle"
@@ -80,7 +112,9 @@ export type SampleId =
   | "sniperRifle"
   | "lmg"
   | "pistol"
-  | "mountedGun";
+  | "mountedGun"
+  | "magOut"
+  | "magIn";
 
 /** Where each one is fetched from. */
 export const SAMPLE_URLS: Record<SampleId, string> = {
@@ -92,4 +126,6 @@ export const SAMPLE_URLS: Record<SampleId, string> = {
   lmg,
   pistol,
   mountedGun,
+  magOut,
+  magIn,
 };

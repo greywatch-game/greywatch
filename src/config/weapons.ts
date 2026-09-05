@@ -314,8 +314,11 @@ export const weapons = {
      *   comes back sooner) and how much of it you hear against the shot. It is
      *   the one place a small weapon is LOUDER than a big one — a blowback
      *   SMG's bolt is most of what an SMG sounds like — and the pair scales
-     *   the reload's clacks too, which is what makes a magazine change name
-     *   the weapon changing it.
+     *   the reload too, which is what makes a magazine change name the weapon
+     *   changing it. That is the pair's job in BOTH directions now: two of the
+     *   reload's four beats are one shared recording, and `actionPitch` is the
+     *   only thing that tells a belt going into an LMG from a magazine going
+     *   into a pistol, since the file itself has said nothing about either.
      */
     report: {
       pitch: 1, level: 1, snap: 1, weight: 1,
@@ -328,13 +331,16 @@ export const weapons = {
       // this one silences the sampled kit down to whatever else still names a
       // file.
       //
-      // A sample replaces the REPORT only. The action, the reload and the bolt
-      // cycle are still `actionPitch`/`actionVol` off the eight fields above,
-      // because a recording is of a shot and not of a mechanism — and the
-      // masters bear that out, since three of the six arrived with their own
-      // mechanism on the tape and `audio/manifest.json` cuts it off each of
-      // them for exactly this reason. Delete the field and the synthesized
-      // rifle is back with nothing else to undo.
+      // A sample here replaces the REPORT only. The action and the bolt cycle
+      // are still `actionPitch`/`actionVol` off the eight fields above,
+      // because a recording of a SHOT is not a recording of a mechanism — and
+      // the masters bear that out, since three of the eight arrived with their
+      // own mechanism on the tape and `audio/manifest.json` cuts it off each
+      // of them for exactly this reason. (The reload is the one mechanism that
+      // IS recorded, and it is not named here: `magOut`/`magIn` belong to the
+      // gesture rather than to any weapon, so `Sfx.reload` names them itself
+      // and voices them through the pair above.) Delete the field and the
+      // synthesized rifle is back with nothing else to undo.
       sample: "assaultRifle",
     },
   },

@@ -19,12 +19,22 @@ constraint anybody is working around — it is why a firefight of eighty rounds 
 second costs no memory, why every weapon is a row of eight scalars, and why the
 game shipped for its whole life with no audio assets at all.
 
-**Eight files sit on top of it: one report per weapon in the kit, plus the
-cupola gun all three hulls mount, and nothing else in the game is recorded at
-all.** 24.7 KB downloaded once, 2.0 of the 44 mono-seconds the budget below
-allows. **That boundary is a decision and not a waiting list** — a footstep, an
-impact, a reload or an ambient bed is a different argument, and the section on
-where the money should go is where it is made.
+**Ten files sit on top of it: one report per weapon in the kit, the cupola gun
+all three hulls mount, and the two halves of the player's own magazine change.
+Nothing else in the game is recorded at all.** 34.0 KB downloaded once, 2.45 of
+the 44 mono-seconds the budget below allows.
+
+**That boundary is a decision and not a waiting list**, and the two mechanism
+rows are what makes it readable rather than theoretical. What the arithmetic
+below refuses is a LIBRARY — thirty one-shots, five footstep variants per
+surface, an ambient bed that alone costs ten times this whole list — not the
+idea of a sound that is not a gunshot. `magOut` and `magIn` are 0.436
+mono-seconds cut from ONE master with no round robin behind them, they are the
+player's own rather than every body's, and they pass the admissibility test in
+full: delete `audio/` and `Sfx.reload` is the four clacks it always was. **A
+footstep still cannot make that second claim** without bringing a surface table
+and a variant set with it, which is the whole argument and is unchanged — and
+an ambient bed cannot make it at all.
 
 **A sample is a thing laid over that, and it is held as a PREFERENCE.** The
 fetch is fire-and-forget off `Sfx.unlock`; a round fired before the decode
@@ -89,7 +99,10 @@ Price the categories before choosing what to record:
 | thirty one-shots (steps, impacts, reloads) at 0.3 s mono | ~1.7 MB |
 | **one 30-second ambient loop, mono** | **5.5 MB** |
 
-**One ambient bed costs ten times the entire sampled gun kit**, and ambience is
+**One ambient bed costs ten times the entire sampled gun kit**, and the whole
+recorded magazine change is a quarter of one of those thirty one-shots. That
+gap is the shape of the boundary: what is expensive here is a CATALOGUE, and
+the cost of one more sound is almost never the reason to refuse it. Ambience is
 exactly where the synthesis is strongest — crickets, wind and fire crackle
 genuinely *are* filtered noise and oscillators, which is what `Sfx` is good at,
 and a loop point is a defect a one-shot cannot have. **Sample the guns, never
@@ -108,14 +121,24 @@ that holds the world.
    exception is a short sound the player hears UNPANNED — their own report —
    where the width is audible and the seconds are few.
 
-   **Seven of the eight rows take that exception and `mountedGun` is the one
-   that does not**, which is what makes the rule readable rather than
-   theoretical. The test is not what the sound IS, it is where it is heard:
+   **Seven of the ten rows take that exception and the three that do not fail
+   it two different ways**, which is what makes the rule readable rather than
+   theoretical. `mountedGun` fails it on WHERE, and the test there is not what
+   the sound IS but where it is heard:
    `Game.resolveMg` reaches `Sfx.botShot` and never `shoot`, deliberately and
    with the argument on the line — in a chase view the gun is twelve metres
    from the listener — so the player firing a hull's own machine gun hears it
    panned exactly as a bot's is. No unpanned path, no exception, mono. It
    costs 0.112 mono-seconds where the same cut in stereo would cost 0.224.
+
+   **`magOut` and `magIn` are heard exactly where the exception applies and are
+   mono anyway, because there is no width in the master to keep.** The side
+   channel peaks 21.6 dB under the mid on both cuts and its RMS 22 dB under,
+   against the assault rifle's 10.8 and the sniper's 3.8 — that is dual-mono
+   with a room mic's worth of drift on it, and a second channel would be double
+   the RAM for a difference nothing can hear. **The exception is for width that
+   EXISTS**, and measuring the side channel is how you find out, exactly as the
+   assault rifle's row measured it to claim the exception in the first place.
 2. **No round-robin files.** Libraries balloon on five footstep variants per
    surface. Variation here comes from the graph: `playbackRate` jitter (already
    in `Sfx.sample`), the shared noise buffer, and layering.
@@ -150,6 +173,28 @@ nobody can see, re-run or argue with — and the trims here are load-bearing.
 - an encoded file `samples.ts` does not import, or an import with no row behind
   it — either direction means a shipped sound with no generator, which is the
   problem the pipeline exists to retire.
+
+### The seek has to be an INPUT seek, and it shipped wrong
+
+`-ss` goes BEFORE `-i` in `encode-audio.mjs`, and that is load-bearing rather
+than a style. An output seek discards frames AFTER the filter graph has run, so
+the graph still sees the master's own timeline while `afade`'s `st` is measured
+from the start of the CUT — the fade therefore lands `start` seconds early and
+takes everything after it to **digital silence**.
+
+It shipped that way and the failure was invisible, because **a row starting at 0
+is unaffected**: five of the first eight rows start at 0 and were always
+correct, and the three with a lead were all truncated. The LMG lost the worst of
+it — its row above argues for the direct sound running to ~140 ms and a fade
+over the next 30, and the file was silent from 90, so 40 of its 130 ms were
+gone. The carbine lost its last 20 ms and the mounted gun its last 34. Nothing
+in the manifest, the budget or `check-audio.mjs` could see it: the numbers a
+reviewer reads are the INPUT, and a diff of the trims looked exactly right.
+
+Input seeking is exact on PCM — there are no keyframes in a WAV — so the fix
+costs nothing. **There is no gate on this**, which is the honest state of it: a
+filter chain that quietly eats part of a cut is caught today only by decoding
+the output and comparing it to the master, which the pipeline does not do.
 
 **`npm run audio` needs ffmpeg and ffprobe on PATH; the build does not.**
 `/tools/` is gitignored, so the binaries on one machine are not in the repo.
@@ -209,10 +254,12 @@ bought for.
 
 ## What each trim is, and why they are all that short
 
-Seven masters, every one of them 1.0 s of 48 kHz stereo as delivered, and the
-seven shipped cuts run 96 to 180 ms. **Between 82 and 90% of every master is
-discarded**, and the discarded part is almost always the same thing: a baked
-room this engine already has one of.
+Eight masters and ten cuts. Eight of the masters are 1.0 s of 48 kHz stereo as
+delivered and their cuts run 96 to 180 ms; the ninth file in `audio/src/` is
+`reload.wav`, 3.0 s, which two rows are cut from. **Between 82 and 95% of every
+master is discarded**, and the discarded part is almost always the same thing:
+a baked room this engine already has one of. `reload.wav` is the exception, and
+it is instructive rather than a lapse — see below.
 
 ### The assault rifle, which is the reference
 
@@ -256,6 +303,8 @@ rule rather than a detail of one file.
 | `lmg` | LMG | 40 – 170 ms | 13% | a 50 ms lead, then low roll the room was holding |
 | `pistol` | sidearm | 0 – 125 ms | 13% | a floor from 130, a late arrival at 220 |
 | `mountedGun` | all three hulls' `mg` | 34 – 146 ms | 11% | a 28 ms mechanical lead, then room |
+| `magOut` | every weapon's reload | 172 – 334 ms | 5% | **a second gesture 140 ms in front of it** |
+| `magIn` | every weapon's reload | 2712 – 2986 ms | 9% | nothing — the master was already dry |
 
 **1. A master of a BURST weapon is a burst.** `Sfx.shoot` is called once per
 ROUND — the carbine's three leave 50 ms apart and each one is its own call — so
@@ -312,6 +361,35 @@ SMG's 140 against 77 is the same ratio; the carbine's 96 ms is the shortest in
 the table because three of its rounds leave in 0.1 s, which is the same
 argument `report.length: 0.75` already makes for it in `config/weapons.ts`. A
 cut that runs past the next round is a burst you cannot count.
+
+**4. A master that is a PERFORMANCE is cut to the game's BEATS, and the thing
+being fought is not a room.** `reload.wav` is the only master here that is not
+one event, and it is the only one that arrived GATED — digital silence between
+its gestures, so there is no tail to hand to the convolver and both cuts are
+already the direct sound. What has to be discarded instead is 2.4 seconds of a
+hand FETCHING a magazine, which is real and is not the game's: `Sfx.reload`
+places four beats as FRACTIONS of a weapon's `reloadTime`, from a 1.05 s
+sidearm to a 3.4 s machine gun, and no take is the length of all seven.
+
+The same argument cuts inside the removal. That gesture is two events 140 ms
+apart with a −65 to −71 dB trough between them — the catch pressed and the
+magazine rocking loose at 24–135 ms, then it stripped clear at 175–330, ending
+on the master's loudest moment at 0 dBFS at 249. **Shipped together they would
+agree at exactly one reload speed**: the pair is a fixed 140 ms apart while the
+beats they answer to are 189 ms apart on the sidearm and 612 on the LMG. So the
+catch is cut and stays the clack it always was, and `magOut` is one beat's
+worth of sound — which is the burst rifle's rule (`what a sample may contain is
+one call's worth of sound`) read one level down.
+
+**And `magIn` is the one row scheduled by its PEAK rather than its start.** A
+magazine going home is an ARRIVAL, with 188 ms of it rising and rocking into
+the well ahead of the slap, and `CONFIG.viewmodel.reload` draws exactly that
+approach between `insertFrom` and `magSeat`. `Sfx` starts the file
+`MAG_IN_PEAK / actionPitch` before the beat so the recorded slap lands on the
+drawn one; scheduled by its start it would arrive 188 ms late. **Those two
+offsets are measured off the trims in this table**, which makes a `trim.start`
+here and a constant in `Sfx.ts` one decision in two files — the same contract
+the beats already have with `CONFIG.viewmodel.reload`.
 
 **`mountedGun` is where the rate DECIDED the cut rather than merely bounding
 it.** Its 112 ms is the tank cupola's own 111 ms gap at `fireRate: 9` to within

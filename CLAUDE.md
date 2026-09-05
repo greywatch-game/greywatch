@@ -78,16 +78,17 @@ tidy the boot.** The argument is on the line in `main.ts`, the measurement is
 risk is state changing between draws: if a rendering bug ever appears that shows
 only while something is MOVING, flip this first.
 
-**Zero model files, and EIGHT audio files — one report per weapon in the kit,
-plus the cupola gun all three hulls mount, and nothing else in the game is
-recorded at all** — every mesh is built from Babylon primitives at runtime, and
-every sound is synthesized WebAudio (`src/core/Sfx.ts`) but for those eight. Do not add asset files unless
+**Zero model files, and TEN audio files — one report per weapon in the kit, the
+cupola gun all three hulls mount, and the two halves of the player's own
+magazine change, and nothing else in the game is recorded at all** — every mesh
+is built from Babylon primitives at runtime, and every sound is synthesized
+WebAudio (`src/core/Sfx.ts`) but for those ten. Do not add asset files unless
 explicitly asked. There are four generated exceptions, none authored by hand
 and each with a generator in `package.json`: the icons, Havok's `.wasm`, the
 water's foam mask, and each map's menu photograph.
 
-**The guns' reports are the fifth, and they are the only asset class here a
-person authored.** They pass the same test the other four do — `npm run audio`
+**The recordings in `audio/` are the fifth, and they are the only asset class
+here a person authored.** They pass the same test the other four do — `npm run audio`
 is the generator, the encoded files are committed, and the masters they were
 cut from are committed beside them in `audio/src/` — plus one more that is
 their own, because a recording's master is a recording rather than a script:
@@ -95,45 +96,63 @@ their own, because a recording's master is a recording rather than a script:
 fire-and-forget off `Sfx.unlock`, so a shot fired before the decode lands, on a
 device where the fetch failed, or in a browser that cannot decode the
 container, is the SYNTHESIZED report and no caller is told the difference. **An
-EIGHTH sound owes that same claim**; a sound the game needs does not belong in
-this pipeline. **The GUNS are also where the pipeline STOPS** — a footstep, an
-impact, a reload or an ambient bed is not next in line but a different
-argument, and `docs/audio.md` has the arithmetic that says why (one
-thirty-second ambient loop costs ten times the whole sampled kit). **A sample
-belongs to a `ReportVoice` and not to a weapon**, which is why one file serves
-the tank's cupola, the truck's remote station and the gunship's chin turret:
-they are one gun on three mounts, and a fourth kind gets it by having an `mg`
-block at all.
+ELEVENTH sound owes that same claim**; a sound the game needs does not belong in
+this pipeline. **What the pipeline refuses is a LIBRARY, not a sound that is not
+a gunshot** — five footstep variants per surface, thirty one-shots, an ambient
+bed that alone costs ten times this whole list — and `docs/audio.md` has the
+arithmetic. The magazine change is the one mechanism that is recorded and it is
+what makes that boundary readable: two cuts off ONE master, no round robin, the
+player's own rather than every body's, and `Sfx.reload` is still its four clacks
+with `audio/` deleted. **A sample belongs to a `ReportVoice` and not to a
+weapon**, which is why one file serves the tank's cupola, the truck's remote
+station and the gunship's chin turret: they are one gun on three mounts, and a
+fourth kind gets it by having an `mg` block at all. **The reload's two go one
+step further and belong to a MOMENT** — every weapon in the kit plays the same
+pair, and what tells them apart is `actionPitch`/`actionVol`.
 
 **Three rules from it reach outside `audio/`.** A decoded buffer costs
 `duration × ctx.sampleRate × channels × 4` and **nothing else** — the container,
 the bitrate and the file's own sample rate are invisible to it (measured: a
 22 kHz file decodes back up to 48 kHz for identical RAM), so **the budget is
-SECONDS of mono, not bytes**, and `npm run build` fails over it. **A sample
-replaces the REPORT and nothing else** — the reload, the bolt cycle and the
-action are still `ReportVoice`'s `actionPitch`/`actionVol`, `report.pitch` is
-NOT spent on it (the eight scalars are deviations from the reference report and
-a recording of that weapon has already made the deviation), and `Sfx.botShot`
-puts back by hand the distance cues the synthesis carries in its own filters,
-because a recording played louder and quieter is not a rifle at two distances.
+SECONDS of mono, not bytes**, and `npm run build` fails over it. **A weapon's
+`report.pitch` is NOT spent on its own sample** — the eight scalars are
+deviations from the reference report and a recording of that weapon has already
+made the deviation — and `Sfx.botShot` puts back by hand the distance cues the
+synthesis carries in its own filters, because a recording played louder and
+quieter is not a rifle at two distances. **The magazine change inverts that and
+the inversion is the rule rather than an exception to it**: one shared recording
+has said nothing about which weapon it is going into, so `actionPitch` IS spent
+on it. A per-weapon file has already made the deviation; a shared one has not.
+The bolt cycle and the action are still `ReportVoice`'s scalars and are not
+sampled at all.
 And **a sample is the DIRECT sound; the ROOM is the game's** — `Sfx` answers
 every gunshot with one shared `ConvolverNode` at no per-shot cost, so a baked
 tail double-reverbs the shot, puts one room on six maps and holds a voice for
-the length of it. Every master delivered so far arrived with that room on it
-and each is cut back to between 96 and 180 ms; **the two rules that took the
-most off** are that a MECHANISM on the tape is cut whichever end it is on
+the length of it. Every SHOT master delivered so far arrived with that room on it
+and each of those is cut back to between 96 and 180 ms; **the two rules that
+took the most off** are that a MECHANISM on the tape is cut whichever end it is
+on
 (three of the eight lead with one — the carbine, the LMG and the mounted gun,
 by 32, 50 and 40 ms, which is that much latency between the trigger and the
 sound), and that a master with no cliff to cut on — the sniper's is one long
-boom — is cut with a FADE rather than left long. **And the MONO rule is about
-where a sound is HEARD, not what it is**: seven rows are stereo under the
-exception for a report the player hears unpanned, and `mountedGun` is not,
-because `Game.resolveMg` reaches `Sfx.botShot` and never `shoot`.
+boom — is cut with a FADE rather than left long. **A master that is a
+PERFORMANCE is cut to the game's BEATS instead**, because `Sfx.reload` places
+four of them as fractions of a `reloadTime` running 1.05 to 3.4 s and no take is
+the length of all seven — which is why the catch was cut off the front of
+`magOut` and 2.4 s of a hand fetching a magazine out of the middle. **And the
+MONO rule is about where a sound is HEARD, not what it is**: seven rows are
+stereo under the exception for a report the player hears unpanned, `mountedGun`
+is not because `Game.resolveMg` reaches `Sfx.botShot` and never `shoot`, and the
+reload's two are heard where the exception applies but have no width to keep
+(the side channel is 21.6 dB under the mid, against the rifle's 10.8) — **the
+exception is for width that EXISTS.**
 
 → **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
 binds, why one ambient loop costs ten times the whole sampled gun kit, the
 mono/round-robin/transient rules, the manifest and its two gates, the master
-conventions, the container measurements, and the rifle's trim in full.
+conventions, the container measurements, the INPUT seek that shipped as an
+output one and silently ate the tail of every row with a lead, and the rifle's
+and the reload's trims in full.
 
 **Havok's `.wasm` (~2 MB) is the one binary that ships**, and it is never named
 by path — Vite emits it content-hashed from the ESM glue's own

@@ -118,13 +118,25 @@ for (const row of manifest.samples) {
   const filters = [];
   if (channels === 1 && master.channels === 2) filters.push("pan=mono|c0=0.5*c0+0.5*c1");
   // The fade is measured from the END of the cut, so a change to `end` carries
-  // it along rather than stranding it mid-sound.
+  // it along rather than stranding it mid-sound. It is therefore stated in the
+  // CUT's own seconds, which is why the seek below has to be an INPUT one.
   if (fade > 0) filters.push(`afade=t=out:st=${+(seconds - fade).toFixed(6)}:d=${fade}`);
 
   run(tool("ffmpeg"), [
     "-v", "error", "-y",
+    // **`-ss` goes BEFORE `-i` and that is load-bearing, not a style.** An
+    // output seek discards frames AFTER the filter graph has run, so the graph
+    // still sees the master's own timeline while `afade`'s `st` is measured
+    // from the start of the CUT — and the fade therefore lands `start` seconds
+    // early, taking everything after it to DIGITAL SILENCE. It shipped that
+    // way: the three rows with a non-zero `start` were all truncated, worst on
+    // the LMG, whose row argues for a fade over 140–170 ms and whose file was
+    // silent from 90. A row starting at 0 is unaffected, which is why this
+    // survived seven files. Input seeking is exact on PCM — there are no
+    // keyframes in a WAV — so it costs nothing.
+    "-ss", String(start),
     "-i", src,
-    "-ss", String(start), "-t", String(seconds),
+    "-t", String(seconds),
     ...(filters.length ? ["-af", filters.join(",")] : []),
     "-ac", String(channels),
     "-c:a", row.codec ?? d.codec,

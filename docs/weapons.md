@@ -238,8 +238,8 @@ machine gun without a per-weapon number anywhere.
   magazine is changed under it, and is level again by `tiltOut`'s end, which is
   before the magazine refills: a weapon still coming level on the frame the
   round is available is a reload that lied about when it ended.
-- **The beats are `Sfx.reload`'s clacks and must move with them.** That sound is
-  four metallic events — catch, magazine out, magazine seated, bolt — and
+- **The beats are `Sfx.reload`'s and must move with them.** That sound is four
+  events — catch, magazine out, magazine seated, bolt — and
   `magOut`/`magSeat`/`bolt` are three of them to the frame. What makes the
   gesture legible is that what you see lands on what you hear; a magazine that
   falls half a beat off the clack releasing it is two unrelated things happening
@@ -249,6 +249,35 @@ machine gun without a per-weapon number anywhere.
   ways — the key, and the last round leaving the magazine inside `tryShot`. In a
   match that callback also announces the reload to the authority, so a second
   call site would be a reload fifteen other players never hear.
+- **The middle two of those four are RECORDED and the outer two are clacks**,
+  and that split was decided by the master rather than chosen: `magOut` and
+  `magIn` are the two halves of one magazine change cut from
+  `audio/src/reload.wav`, which holds a magazine stripped out of a well and a
+  fresh one slapped home 2.4 s apart with the fetch between them, and has no
+  clean catch or bolt release in it. A missing sample falls back to the clack it
+  replaced, so the gesture has the same four beats on a device that never got
+  the file. **This is the only mechanism in the game that is recorded**, and
+  [`docs/audio.md`](audio.md) is where the boundary that keeps it the only one
+  is argued.
+- **`magIn` is scheduled by its PEAK and not by its start, which is the one
+  thing a change here can silently break.** A magazine going home is an ARRIVAL:
+  188 ms of it rising and rocking into the well and then the slap, which is
+  exactly what `insertFrom`→`magSeat` draws. `Sfx` starts the file
+  `MAG_IN_PEAK / actionPitch` seconds BEFORE `magSeat` so the recorded slap
+  lands on the drawn one — measured across the whole kit at worst 1.5 ms off,
+  against a 16.7 ms frame. Those two offsets are measured off
+  `audio/manifest.json`'s trims, so **a change to a `trim.start` there is a
+  change to a constant in `Sfx.ts`**, exactly as a change to a fraction here is
+  a change to one there.
+- **`actionPitch` and `actionVol` still voice both of them**, and for these two
+  that is the opposite of the rule a report obeys rather than an inconsistency.
+  A report's file is a recording of THAT weapon and has already made the
+  deviation, so `report.pitch` is not spent on it a second time; one magazine
+  recording is shared by every weapon in the kit and has said nothing about
+  which one it is going into, so the field whose whole job is telling a belt
+  from a pistol magazine is what it still has to be told. It stretches the
+  approach as well as the pitch — the LMG's 0.68 makes it half as long again,
+  which is a slower hand.
 - **The magazine is the one part of a weapon that moves on its own**, and it can
   only move because the model merged it into a node of its own
   (`WeaponParts.magazine`, a second `merge` call exactly like an optic's).
