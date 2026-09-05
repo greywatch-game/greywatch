@@ -423,6 +423,192 @@
         "channels": 1,
         "kb": 51.4
       }
+    },
+    {
+      "id": "boltLift",
+      "source": "src/bolt-cycle.wav",
+      "out": "bolt-lift.webm",
+      "channels": 1,
+      "trim": {
+        "start": 0.056,
+        "end": 0.292,
+        "fadeOut": 0.025
+      },
+      "_": [
+        "The handle turned up out of its notch, and the FIRST OF FOUR ROWS CUT FROM",
+        "ONE MASTER -- `src/bolt-cycle.wav` is the second performance in this",
+        "directory and the first that is a whole GESTURE rather than two moments with",
+        "a fetch between them. `Sfx.boltCycle` places its beats as fractions of",
+        "`weapons.sniper.shotInterval`; the take holds four of them and each one is",
+        "its own row, for the reason `magOut` states: what a sample may contain is",
+        "ONE BEAT's worth of sound. Shipped whole, a 3.0 s recording of somebody",
+        "working a bolt agrees with the drawn gesture at exactly one rate and at no",
+        "other, and `fireRate: 0.8` is a number that gets tuned.",
+        "",
+        "The master is four gestures in two pairs: the handle lifted (12-292 ms) and",
+        "the bolt drawn to its stop (476-688), then 1.86 s of the action held OPEN,",
+        "then it driven home (2548-2750) and the handle turned down (2820-2960).",
+        "That is the game's `lift`, `back`, `home` and `lock` in the order it draws",
+        "them, which is why there are four rows and not one and not seven.",
+        "",
+        "This row is the first pair's first half. What is in it: a bed of the firing",
+        "hand arriving on the knob at -30 to -46 dB, the handle camming up at 79 and",
+        "99 ms, the lugs breaking free at 0 dBFS at 165, and the bolt taking its",
+        "first movement to the rear at 224. It runs 41% of the cut past its own peak",
+        "on purpose -- `[lift, back]` is drawn as the bolt being drawn, and the",
+        "recorded gesture spilling into it is the wait being made audible, which is",
+        "what the two synthesized SLIDES were for and what they hand over to here.",
+        "",
+        "**It is the tightest of the four in front, and that is what set its start.**",
+        "Every row here is scheduled by its PEAK (see `magIn` for why an arrival is),",
+        "so the approach in front of the transient has to fit inside the beat:",
+        "`peak / actionPitch` against `0.16 * shotInterval`, which is the SHORTEST",
+        "window in the gesture. Cut at the master's own 12 ms onset the approach is",
+        "153 ms against 200 available at the sniper's 0.68 and 0.8/s -- 9 ms of room,",
+        "and a fireRate raised at all would clamp it and put the lugs late. Cut here",
+        "it is 160 ms, which holds to 1.0/s. What is dropped is a discrete tick at",
+        "19 ms and 15 ms of the bed under it; the start is in the trough at 56 ms",
+        "(-46 dB, the deepest between that tick and the first hit) rather than hard",
+        "against an onset, which is the rule the three reports with a lead follow.",
+        "",
+        "MONO, for `magOut`'s reason rather than `mountedGun`'s: this is heard",
+        "exactly where the stereo exception applies -- unpanned, the player's own,",
+        "`Sfx.boltCycle` takes no panner -- and there is no width in the master to",
+        "keep. The side channel peaks 15.2 dB under the mid on this cut and its RMS",
+        "16.1 dB under (the four rows run 13.7 to 23.3 dB peak and 15.9 to 19.6 RMS),",
+        "against the assault rifle's 10.8 and the sniper report's 3.8. The exception",
+        "is for width that EXISTS, and four stereo rows would cost 1.616",
+        "mono-seconds instead of 0.808 for a difference nothing can hear."
+      ],
+      "sourceHash": "8a916c803e9959dd",
+      "decoded": {
+        "seconds": 0.236,
+        "channels": 1,
+        "kb": 44.3
+      }
+    },
+    {
+      "id": "boltBack",
+      "source": "src/bolt-cycle.wav",
+      "out": "bolt-back.webm",
+      "channels": 1,
+      "trim": {
+        "start": 0.476,
+        "end": 0.686,
+        "fadeOut": 0.03
+      },
+      "_": [
+        "The bolt drawn to the rear stop with the case coming clear -- the second",
+        "cut, and the one that carries TWO of the synthesis's beats rather than one.",
+        "",
+        "`Sfx.boltCycle` places the stop at 0.42 and the case at 0.47, 62 ms apart on",
+        "the sniper, because a synthesized stop cannot also be a piece of brass. On",
+        "the tape they are one event: 115 ms of the bolt travelling (-13 to -40 dB,",
+        "brightening as the action opens to the air) and then the stop at -0.2 dBFS",
+        "at 597, whose spectrum is 46% above 8 kHz against 18% at the bolt going home",
+        "and 30% either side of it here. That is the brass, and it is in the same",
+        "millisecond as the steel. So this row replaces the stop, the case AND the",
+        "opening slide, which is the SMG's rule (its `actionVol` of 1.55 is why that",
+        "master's own bolt was cut off the back) read the other way round: a",
+        "mechanism must not be played twice, whichever half of it is the recording.",
+        "",
+        "Start at 476 in the master's floor (-77 dB at the cut, the onset at 479);",
+        "end where the ring passes `Sfx`'s own SAMPLE_FLOOR -- monotone from -0.2 at",
+        "597 to -52 by 656 with no plateau anywhere in it, which is the test that",
+        "placed the eight reports and says this recording is DRY. The 30 ms fade",
+        "lands on that decay.",
+        "",
+        "**The master is NOT gated, which is the one way it differs from",
+        "`reload.wav`.** Its floor between gestures is a real preamp tone at -72 dB",
+        "RMS and -55 to -59 dB peak, where `reload.wav`'s is -90. It changes nothing:",
+        "the floor is under `trimSample`'s -54 dBFS, so the head of every one of",
+        "these four is measured off rather than played, and 55 to 63 dB of monotone",
+        "decay with no plateau is a dry recording with noise under it and not a room.",
+        "There is still nothing in here to hand to the convolver."
+      ],
+      "sourceHash": "8a916c803e9959dd",
+      "decoded": {
+        "seconds": 0.21,
+        "channels": 1,
+        "kb": 39.4
+      }
+    },
+    {
+      "id": "boltHome",
+      "source": "src/bolt-cycle.wav",
+      "out": "bolt-home.webm",
+      "channels": 1,
+      "trim": {
+        "start": 2.544,
+        "end": 2.758,
+        "fadeOut": 0.03
+      },
+      "_": [
+        "The bolt driven forward onto a round and closed -- the third cut, the far",
+        "side of the 1.86 s the action spends open, and the loudest arrival in the",
+        "take (0 dBFS at 2680).",
+        "",
+        "It carries the closing SLIDE with it for the same reason `boltBack` carries",
+        "the opening one: 133 ms of the bolt running forward over the magazine ahead",
+        "of the peak -- six discrete contacts at -4 to -20 dB, which is a round being",
+        "stripped and is not something a filtered noise sweep was ever going to say.",
+        "The pair of synthesized slides they replace swept in OPPOSITE directions on",
+        "purpose (see `Sfx.boltCycle`), and the recorded pair does the same thing for",
+        "free: the opening one brightens to 46% above 8 kHz at the stop and this one",
+        "arrives at a centroid of 5.1 kHz against that stop's 7.5, because it ends on",
+        "a locked breech and not on air.",
+        "",
+        "Cut at 2544 in the floor (-67 dB), 12 ms ahead of the onset at 2556, and",
+        "ended at 2758 where the decay has passed -60. 214 ms is the longest of the",
+        "four and the master earns it: at the sniper's `actionPitch` of 0.68 it plays",
+        "for 272 and covers 654-926 ms of a 1250 ms cycle, which with the other three",
+        "leaves ONE 22 ms gap in the whole gesture -- and that gap is the bolt sitting",
+        "at the rear stop, which is the one moment in a bolt cycle that is silent."
+      ],
+      "sourceHash": "8a916c803e9959dd",
+      "decoded": {
+        "seconds": 0.214,
+        "channels": 1,
+        "kb": 40.1
+      }
+    },
+    {
+      "id": "boltLock",
+      "source": "src/bolt-cycle.wav",
+      "out": "bolt-lock.webm",
+      "channels": 1,
+      "trim": {
+        "start": 2.814,
+        "end": 2.962,
+        "fadeOut": 0.03
+      },
+      "_": [
+        "The handle turned down into its notch: the sound that says the weapon is",
+        "live again, and the one the player has spent a second and a quarter waiting",
+        "on. The shortest of the four at 148 ms and the brightest thing in the master",
+        "-- 62% of its peak's energy above 8 kHz and a centroid of 9.9 kHz against",
+        "the closing bolt's 5.1 -- which is a wrist turning a small piece of steel",
+        "into a recess rather than a mass being stopped, and is why",
+        "`CONFIG.viewmodel.cycle` gives `lock` no impulse where `back` and `home`",
+        "each get one.",
+        "",
+        "Cut at 2814 in the floor (-79 dB) with the onset at 2820: 84 ms of the hand",
+        "coming down ahead of the click at 2903, then the ring out to -55 by 2950.",
+        "The 30 ms fade covers that ring rather than the master's own hard end at",
+        "3.000, and what is past it is floor.",
+        "",
+        "It is the LAST sound of the gesture and it has to be off before the trigger",
+        "is live: it plays 851-1034 ms of the sniper's 1250, against a",
+        "`cycle.tiltOut[1]` of 0.96 that finishes the picture at 1200. The rifle is",
+        "quiet, still and loaded for the last 216 ms of every cycle, which is the",
+        "claim the reload's fourth beat already makes at 0.8."
+      ],
+      "sourceHash": "8a916c803e9959dd",
+      "decoded": {
+        "seconds": 0.148,
+        "channels": 1,
+        "kb": 27.8
+      }
     }
   ]
 }

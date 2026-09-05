@@ -256,9 +256,10 @@ machine gun without a per-weapon number anywhere.
   fresh one slapped home 2.4 s apart with the fetch between them, and has no
   clean catch or bolt release in it. A missing sample falls back to the clack it
   replaced, so the gesture has the same four beats on a device that never got
-  the file. **This is the only mechanism in the game that is recorded**, and
-  [`docs/audio.md`](audio.md) is where the boundary that keeps it the only one
-  is argued.
+  the file. **It is one of the two mechanisms in the game that are recorded** —
+  the bolt cycle below is the other, and there is no third —
+  and [`docs/audio.md`](audio.md) is where the boundary that keeps it to two is
+  argued.
 - **`magIn` is scheduled by its PEAK and not by its start, which is the one
   thing a change here can silently break.** A magazine going home is an ARRIVAL:
   188 ms of it rising and rocking into the well and then the slap, which is
@@ -472,12 +473,41 @@ they say what the pattern is for.
   five events to the frame. It is raised beside `Sfx.shoot` off `Player
   .cycleTime` — `loadTime`'s twin — rather than from inside the gesture, because
   the shot and the cycle it starts are one event.
+- **All four of those beats are RECORDED, and this is the one gesture in the
+  game where the recording carries the TRAVEL as well as the arrivals.**
+  `audio/src/bolt-cycle.wav` is one performance of exactly this gesture —
+  handle up, bolt back, 1.86 s held open, bolt home, handle down — cut into
+  four rows, one per beat, because `Sfx.boltCycle` places its beats as
+  fractions of `shotInterval` and a recording's own timing is a fixed number of
+  milliseconds. Shipped as one file it would agree with what is drawn here at
+  exactly one `fireRate`; shipped as four it agrees at every one, which is the
+  rule `magOut` already obeys one gesture over. Each beat falls back on its own
+  to the clack it replaced, so the gesture is the same five events on a device
+  that never got the files.
+- **`boltBack` and `boltHome` are each scheduled by their PEAK and each carry a
+  SLIDE in front of it** — 115 ms of the bolt travelling ahead of the rear stop
+  and 133 ms of it running forward over the magazine — so the two synthesized
+  slides are inside those two arms rather than on lines of their own. A
+  recorded mechanism played over a synthesized one is the SMG's mistake in the
+  report section below, and `boltBack` takes the CASE with it for the same
+  reason: the two are separate beats here because filtered noise cannot be
+  steel and brass at once, and on the tape they are the same millisecond.
+- **`BOLT_LIFT_PEAK` is the tightest scheduling constraint in either gesture**,
+  and it is worth knowing before `fireRate` is tuned. `mechanism` starts a file
+  `peak / actionPitch` before the beat, `cycle.lift` is 0.16 and is the
+  shortest window in the game, and at the sniper's `actionPitch` of 0.68 that
+  approach holds up to a `fireRate` of 1.0/s against the 0.8 it ships. Past
+  that the clamp in `mechanism` puts the lugs LATE rather than crashing, which
+  is the quiet kind of wrong.
 - **It is the only sound in the game that is a WAIT rather than an event**, and
-  the two travelling noises inside it are why. Every other mechanism sound here
-  is a thing arriving, because every other gesture is over before the player has
-  finished reacting to what caused it; a cycle is a second and a quarter of not
-  being able to shoot, and without the slides it is four unrelated clicks with
-  silence between them, which sounds like a fault rather than like a rifle.
+  what fills that wait is why. Every other mechanism sound here is a thing
+  arriving, because every other gesture is over before the player has finished
+  reacting to what caused it; a cycle is a second and a quarter of not being
+  able to shoot, and four unrelated clicks with silence between them sound like
+  a fault rather than like a rifle. The four cuts cover 40–1034 ms of the
+  sniper's 1250 with one 22 ms gap in the middle of them, and that gap is the
+  bolt sitting at the rear stop — which is the one moment in a cycle that
+  genuinely is silent.
 
 ## The report: one shape, six deviations from it
 
@@ -557,10 +587,12 @@ tomorrow compiles with no `sample` on it and is heard as the synthesis, and
 each of the six can be deleted on its own. Four things about it are
 load-bearing:
 
-- **It replaces the REPORT and nothing else.** The reload's four clacks and
-  the bolt cycle are still `actionPitch`/`actionVol` off the eight scalars,
-  because the recording is of a shot rather than of a mechanism. **The masters
-  test this rather than merely permitting it**: three of the seven arrived with
+- **It replaces the REPORT and nothing else.** The MECHANISMS are recorded
+  separately or not at all — the reload's middle two beats and the bolt
+  cycle's four are their own rows in `samples.ts`, and everything else about
+  an action is still `actionPitch`/`actionVol` off the eight scalars — because
+  this field's recording is of a shot. **The masters test this rather than
+  merely permitting it**: three of the seven arrived with
   their own mechanism on the tape — the carbine and the LMG lead with 32 and
   50 ms of it, the SMG has a bolt-shaped arrival 12 ms after its report dies —
   and every one is cut off in `audio/manifest.json`. The SMG is the sharpest

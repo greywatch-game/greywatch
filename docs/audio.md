@@ -19,22 +19,35 @@ constraint anybody is working around — it is why a firefight of eighty rounds 
 second costs no memory, why every weapon is a row of eight scalars, and why the
 game shipped for its whole life with no audio assets at all.
 
-**Ten files sit on top of it: one report per weapon in the kit, the cupola gun
-all three hulls mount, and the two halves of the player's own magazine change.
-Nothing else in the game is recorded at all.** 34.0 KB downloaded once, 2.45 of
-the 44 mono-seconds the budget below allows.
+**Fourteen files sit on top of it: one report per weapon in the kit, the
+cupola gun all three hulls mount, the two halves of the player's own magazine
+change and the four beats of a bolt cycle. Nothing else in the game is recorded
+at all.** 53.2 KB downloaded once, 3.26 of the 44 mono-seconds the budget below
+allows.
 
-**That boundary is a decision and not a waiting list**, and the two mechanism
+**That boundary is a decision and not a waiting list**, and the six mechanism
 rows are what makes it readable rather than theoretical. What the arithmetic
 below refuses is a LIBRARY — thirty one-shots, five footstep variants per
 surface, an ambient bed that alone costs ten times this whole list — not the
-idea of a sound that is not a gunshot. `magOut` and `magIn` are 0.436
-mono-seconds cut from ONE master with no round robin behind them, they are the
-player's own rather than every body's, and they pass the admissibility test in
-full: delete `audio/` and `Sfx.reload` is the four clacks it always was. **A
-footstep still cannot make that second claim** without bringing a surface table
-and a variant set with it, which is the whole argument and is unchanged — and
-an ambient bed cannot make it at all.
+idea of a sound that is not a gunshot. The six are 1.244 mono-seconds cut from
+TWO masters with no round robin behind either, they are the player's own rather
+than every body's, and they pass the admissibility test in full: delete
+`audio/` and `Sfx.reload` is the four clacks it always was and `Sfx.boltCycle`
+the five clacks and two sweeps it always was. **A footstep still cannot make
+that second claim** without bringing a surface table and a variant set with it,
+which is the whole argument and is unchanged — and an ambient bed cannot make
+it at all.
+
+**And the two mechanisms together are what the boundary is actually made of,
+because the second one is where the money went.** The bolt cycle is four rows
+where the magazine change is two and it is the most expensive gesture in the
+directory, 0.808 mono-seconds against the eight reports' 2.014 between them —
+and it is admissible for the same three reasons every other row is, not for
+being cheap: one master, no variants, the player's own weapon rather than
+sixteen bodies', and a per-BEAT fallback that leaves the method sounding
+exactly as it did before the recording existed. **The thing that would break
+the boundary is a SECOND performance of the same gesture**, because that is a
+round robin with extra steps.
 
 **A sample is a thing laid over that, and it is held as a PREFERENCE.** The
 fetch is fire-and-forget off `Sfx.unlock`; a round fired before the decode
@@ -121,24 +134,27 @@ that holds the world.
    exception is a short sound the player hears UNPANNED — their own report —
    where the width is audible and the seconds are few.
 
-   **Seven of the ten rows take that exception and the three that do not fail
-   it two different ways**, which is what makes the rule readable rather than
-   theoretical. `mountedGun` fails it on WHERE, and the test there is not what
-   the sound IS but where it is heard:
+   **Seven of the fourteen rows take that exception and the seven that do not
+   fail it two different ways**, which is what makes the rule readable rather
+   than theoretical. `mountedGun` fails it on WHERE, and the test there is not
+   what the sound IS but where it is heard:
    `Game.resolveMg` reaches `Sfx.botShot` and never `shoot`, deliberately and
    with the argument on the line — in a chase view the gun is twelve metres
    from the listener — so the player firing a hull's own machine gun hears it
    panned exactly as a bot's is. No unpanned path, no exception, mono. It
    costs 0.112 mono-seconds where the same cut in stereo would cost 0.224.
 
-   **`magOut` and `magIn` are heard exactly where the exception applies and are
-   mono anyway, because there is no width in the master to keep.** The side
-   channel peaks 21.6 dB under the mid on both cuts and its RMS 22 dB under,
-   against the assault rifle's 10.8 and the sniper's 3.8 — that is dual-mono
-   with a room mic's worth of drift on it, and a second channel would be double
-   the RAM for a difference nothing can hear. **The exception is for width that
-   EXISTS**, and measuring the side channel is how you find out, exactly as the
-   assault rifle's row measured it to claim the exception in the first place.
+   **The six MECHANISM rows are heard exactly where the exception applies and
+   are mono anyway, because there is no width in either master to keep.** The
+   side channel peaks 21.6 dB under the mid on the magazine change and 13.7 to
+   23.3 dB under on the bolt cycle's four (RMS 22 and 15.9–19.6), against the
+   assault rifle's 10.8 and the sniper's 3.8 — that is dual-mono with a room
+   mic's worth of drift on it, and a second channel would be double the RAM for
+   a difference nothing can hear. **The exception is for width that EXISTS**,
+   and measuring the side channel is how you find out, exactly as the assault
+   rifle's row measured it to claim the exception in the first place. On the
+   bolt cycle it is also the difference between 0.808 mono-seconds and 1.616,
+   which is the largest single row-shape decision in this directory.
 2. **No round-robin files.** Libraries balloon on five footstep variants per
    surface. Variation here comes from the graph: `playbackRate` jitter (already
    in `Sfx.sample`), the shared noise buffer, and layering.
@@ -157,6 +173,11 @@ audio/
   manifest.json           what to cut, from what, to what — and the budget
 src/core/samples.ts       the id union and the url table the game imports
 ```
+
+**A master is not a file, it is a SOURCE**: nine masters carry fourteen rows,
+because `reload.wav` is cut twice and `bolt-cycle.wav` four times. `sourceHash`
+is per ROW rather than per file, so the two performances have the same hash
+repeated across their rows and editing either master restages every cut off it.
 
 **The CUT lives in the manifest, never in the master.** A master is the
 recording as delivered; what ships is a `trim` of start, end and fade stated as
@@ -254,12 +275,13 @@ bought for.
 
 ## What each trim is, and why they are all that short
 
-Eight masters and ten cuts. Eight of the masters are 1.0 s of 48 kHz stereo as
-delivered and their cuts run 96 to 180 ms; the ninth file in `audio/src/` is
-`reload.wav`, 3.0 s, which two rows are cut from. **Between 82 and 95% of every
-master is discarded**, and the discarded part is almost always the same thing:
-a baked room this engine already has one of. `reload.wav` is the exception, and
-it is instructive rather than a lapse — see below.
+Nine masters and fourteen cuts. Eight of the masters are 1.0 s of 48 kHz stereo
+as delivered and their cuts run 96 to 180 ms; the two 3.0 s files are
+`reload.wav`, which two rows are cut from, and `bolt-cycle.wav`, which four
+are. **Between 73 and 95% of every master is discarded**, and the discarded
+part is almost always the same thing: a baked room this engine already has one
+of. The two PERFORMANCES are the exception, and they are instructive rather
+than a lapse — see below.
 
 ### The assault rifle, which is the reference
 
@@ -305,6 +327,10 @@ rule rather than a detail of one file.
 | `mountedGun` | all three hulls' `mg` | 34 – 146 ms | 11% | a 28 ms mechanical lead, then room |
 | `magOut` | every weapon's reload | 172 – 334 ms | 5% | **a second gesture 140 ms in front of it** |
 | `magIn` | every weapon's reload | 2712 – 2986 ms | 9% | nothing — the master was already dry |
+| `boltLift` | the bolt gun's cycle | 56 – 292 ms | 8% | **the beat in front of it**, which is 0.16 of a shot |
+| `boltBack` | the bolt gun's cycle | 476 – 686 ms | 7% | nothing — it is one gesture, ends and all |
+| `boltHome` | the bolt gun's cycle | 2544 – 2758 ms | 7% | nothing |
+| `boltLock` | the bolt gun's cycle | 2814 – 2962 ms | 5% | nothing |
 
 **1. A master of a BURST weapon is a burst.** `Sfx.shoot` is called once per
 ROUND — the carbine's three leave 50 ms apart and each one is its own call — so
@@ -363,13 +389,18 @@ argument `report.length: 0.75` already makes for it in `config/weapons.ts`. A
 cut that runs past the next round is a burst you cannot count.
 
 **4. A master that is a PERFORMANCE is cut to the game's BEATS, and the thing
-being fought is not a room.** `reload.wav` is the only master here that is not
-one event, and it is the only one that arrived GATED — digital silence between
-its gestures, so there is no tail to hand to the convolver and both cuts are
-already the direct sound. What has to be discarded instead is 2.4 seconds of a
-hand FETCHING a magazine, which is real and is not the game's: `Sfx.reload`
-places four beats as FRACTIONS of a weapon's `reloadTime`, from a 1.05 s
-sidearm to a 3.4 s machine gun, and no take is the length of all seven.
+being fought is not a room.** `reload.wav` and `bolt-cycle.wav` are the two
+masters here that are not one event, and between them they carry six of the
+fourteen rows. Neither has a tail to hand to the convolver: the first arrived
+GATED to digital silence between its gestures, and the second decays 55 to
+63 dB monotonically with no plateau anywhere in it over a −72 dB preamp floor,
+which is the same test that placed the eight reports saying the same thing. So
+both are already the direct sound, and what has to be discarded is TIME.
+
+For the reload that is 2.4 seconds of a hand FETCHING a magazine, which is real
+and is not the game's: `Sfx.reload` places four beats as FRACTIONS of a
+weapon's `reloadTime`, from a 1.05 s sidearm to a 3.4 s machine gun, and no
+take is the length of all seven.
 
 The same argument cuts inside the removal. That gesture is two events 140 ms
 apart with a −65 to −71 dB trough between them — the catch pressed and the
@@ -381,15 +412,67 @@ catch is cut and stays the clack it always was, and `magOut` is one beat's
 worth of sound — which is the burst rifle's rule (`what a sample may contain is
 one call's worth of sound`) read one level down.
 
-**And `magIn` is the one row scheduled by its PEAK rather than its start.** A
-magazine going home is an ARRIVAL, with 188 ms of it rising and rocking into
+**And `magIn` is the row that made PEAK scheduling the rule for a mechanism.**
+A magazine going home is an ARRIVAL, with 188 ms of it rising and rocking into
 the well ahead of the slap, and `CONFIG.viewmodel.reload` draws exactly that
 approach between `insertFrom` and `magSeat`. `Sfx` starts the file
 `MAG_IN_PEAK / actionPitch` before the beat so the recorded slap lands on the
-drawn one; scheduled by its start it would arrive 188 ms late. **Those two
-offsets are measured off the trims in this table**, which makes a `trim.start`
-here and a constant in `Sfx.ts` one decision in two files — the same contract
-the beats already have with `CONFIG.viewmodel.reload`.
+drawn one; scheduled by its start it would arrive 188 ms late. **Those offsets
+are measured off the trims in this table**, which makes a `trim.start` here and
+a constant in `Sfx.ts` one decision in two files — the same contract the beats
+already have with `CONFIG.viewmodel.reload`.
+
+### The bolt cycle: one performance, four rows, and where the travel went
+
+`bolt-cycle.wav` is that same argument at four beats instead of two, and it is
+the one place a recording replaces a gesture's TRAVEL rather than only its
+arrivals. The take is four gestures in two pairs — the handle lifted
+(12–292 ms) and the bolt drawn to its stop (476–688), then **1.86 seconds of
+the action held open**, then it driven home (2548–2750) and the handle turned
+down (2820–2960) — which is `CONFIG.viewmodel.cycle`'s `lift`, `back`, `home`
+and `lock` in the order the viewmodel draws them. Four beats, four rows, 0.808
+mono-seconds.
+
+**Why four and not one** is `magOut`'s rule with more to lose. `Sfx.boltCycle`
+places its beats as fractions of `shotInterval`, and the take's own beats are a
+fixed number of milliseconds apart: shipped whole it would agree with the drawn
+gesture at exactly one `fireRate` and at no other, and its 1.86 s hold is not
+any weapon's. Cut into four it agrees at every rate, because each row is landed
+on its own beat by its own peak.
+
+**The two synthesized SLIDES retire into two of those rows rather than playing
+under them**, which is the SMG's rule read from the other end — a mechanism must
+not be played twice, whichever half of it is the recording. `boltBack` carries
+115 ms of the bolt travelling ahead of the rear stop and `boltHome` 133 ms of it
+running forward over the magazine, so each sweep now lives inside its beat's
+fallback arm. The recorded pair also does for free what the synthesized pair was
+shaped to do: the opening one brightens to 46% of its energy above 8 kHz at the
+stop, the closing one arrives at a 5.1 kHz centroid, because one ends on air and
+the other on a locked breech.
+
+**`boltBack` also swallows the CASE**, which is a fifth synthesized event and
+not a fourth beat. The synthesis puts the stop at 0.42 and the brass at 0.47
+because filtered noise cannot be steel and a cartridge case at once; on the tape
+they are the same millisecond, and that 46% above 8 kHz is what the brass is.
+
+**`BOLT_LIFT_PEAK` is the tightest scheduling constraint in the directory**, and
+it is what set that row's trim. `mechanism` starts a file `peak / actionPitch`
+before its beat, so a beat at `f × duration` fits only while
+`f × duration ≥ peak / actionPitch` — and `cycle.lift` is 0.16, the shortest
+window either gesture has. Cut at the master's own 12 ms onset the approach is
+153 ms against the 200 available at the sniper's 0.68 and 0.8/s: nine
+milliseconds of room, and any raise to `fireRate` would clamp it and put the
+lugs late. The trim starts 44 ms further in, at the −46 dB trough between the
+take's first tick and its first hit, which buys 40 ms and holds to a
+`fireRate` of 1.0/s. The other five mechanism rows have between two and eight
+times that room.
+
+**The four cover the wait, which is what `boltCycle` exists to do.** At the
+sniper's rate they play 40–361, 356–632, 654–926 and 852–1035 ms of a 1250 ms
+cycle: one 22 ms gap in the whole gesture, and that gap is the bolt sitting at
+the rear stop — the one moment in a cycle that genuinely is silent. Everything
+is off 165 ms before `cycle.tiltOut[1]` finishes the picture and 215 before the
+trigger is live again.
 
 **`mountedGun` is where the rate DECIDED the cut rather than merely bounding
 it.** Its 112 ms is the tank cupola's own 111 ms gap at `fireRate: 9` to within

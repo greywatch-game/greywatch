@@ -1,24 +1,27 @@
 /**
- * Sfx.ts — All audio: synthesized WebAudio, and TEN recordings laid over it:
- * one report per weapon in the kit, the gun a hull's second seat lays, and the
- * two halves of the player's own magazine change.
+ * Sfx.ts — All audio: synthesized WebAudio, and FOURTEEN recordings laid over
+ * it: one report per weapon in the kit, the gun a hull's second seat lays, the
+ * two halves of the player's own magazine change and the four beats of a bolt
+ * cycle.
  * Owns: the AudioContext, one cached noise buffer shared by every shot, one
  * shared convolution reverb every gunshot sends into, a master soft clip, the
  * voice cap (CONFIG.audio.maxVoices — over-cap sounds are skipped silently),
  * positional panning relative to the listener, and the decoded samples
  * `src/core/samples.ts` tables.
- * The samples are the one thing here that is not synthesized — the guns and
- * one magazine change, and nothing else in the game — and they are held as a
- * PREFERENCE: fetched fire-and-forget off `unlock`, substituted inside `shoot`,
- * `botShot` and `reload` only when the decode has landed, and absent from every
- * other sound in the file. The bolt cycle and the action are still
- * `actionPitch`/`actionVol` on every weapon, and so are the reload's own catch
- * and bolt beats — a mechanism is voiced here, and the two beats that are not
- * are still PITCHED here, since one shared recording says nothing about which
- * weapon it is going into. A weapon with no `sample`, a decode that has not
- * finished and a fetch that failed are one case with one answer — the
- * synthesized sound — which is what keeps the recording deletable. See
- * `samples.ts` for why that is the whole of the bargain.
+ * The samples are the one thing here that is not synthesized — the guns, one
+ * magazine change and one bolt cycle, and nothing else in the game — and they
+ * are held as a PREFERENCE: fetched fire-and-forget off `unlock`, substituted
+ * inside `shoot`, `botShot`, `reload` and `boltCycle` only when the decode has
+ * landed, and absent from every other sound in the file. The per-shot ACTION
+ * is still `actionPitch`/`actionVol` on every weapon, and so are the reload's
+ * own catch and bolt beats — a mechanism is voiced here, and the six beats
+ * that are recorded are still PITCHED here, since one shared recording says
+ * nothing about which weapon it is going into. A weapon with no `sample`, a
+ * decode that has not finished and a fetch that failed are one case with one
+ * answer — the synthesized sound — which is what keeps the recording
+ * deletable, and `reload` and `boltCycle` make that claim BEAT BY BEAT rather
+ * than for the gesture as a whole. See `samples.ts` for why that is the whole
+ * of the bargain.
  * Invariants: never generate a fresh noise buffer or impulse response per
  * sound — both are built once on unlock. setListener() is called once per
  * frame by Game, after the camera update. Firefox needs the legacy
@@ -146,25 +149,43 @@ const SAMPLE_LEVEL = 0.5;
 const MECHANISM_LEVEL = 0.15;
 
 /**
- * Where the transient is inside each half of the magazine change, in the
- * file's own seconds and measured from what `trimSample` hands back rather
- * than from the head of the buffer.
+ * Where the transient is inside each recorded MECHANISM, in the file's own
+ * seconds and measured from what `trimSample` hands back rather than from the
+ * head of the buffer.
  *
- * **These two are why `reload` schedules a sample by its PEAK where every
- * other caller schedules one by its start.** A report's transient IS its
- * start; a magazine going home is an ARRIVAL, with the fresh one rising and
- * rocking into the well ahead of it, and `CONFIG.viewmodel.reload` draws
+ * **These six are why `reload` and `boltCycle` schedule a sample by its PEAK
+ * where every other caller schedules one by its start.** A report's transient
+ * IS its start; a magazine going home is an ARRIVAL, with the fresh one rising
+ * and rocking into the well ahead of it, and `CONFIG.viewmodel.reload` draws
  * exactly that approach between `insertFrom` and `magSeat`. Scheduled by the
- * start, the slap would land 188 ms after the frame the weapon is drawn
- * taking it.
+ * start, the slap would land 188 ms after the frame the weapon is drawn taking
+ * it. The bolt's four are the same shape and more of it: every one of them is
+ * a mass arriving somewhere with the travel that put it there in front, which
+ * is why the two synthesized SLIDES retire into these rather than playing
+ * under them.
  *
  * **They are measured off `audio/manifest.json`'s trims and are not free
- * parameters.** Move a `trim.start` on either row and re-measure these, or the
- * sound slides off the picture — which is the contract the four beats below
- * already have with `CONFIG.viewmodel.reload`, one level down.
+ * parameters.** Move a `trim.start` on any of those rows and re-measure the
+ * constant here, or the sound slides off the picture — which is the contract
+ * the beats below already have with `CONFIG.viewmodel.reload` and
+ * `CONFIG.viewmodel.cycle`, one level down.
+ *
+ * **And a PEAK is a claim on the beat in front of it, which is what bounds a
+ * rate.** `mechanism` starts a file `peak / actionPitch` before the frame the
+ * gesture is drawn arriving, so a beat at `f * duration` fits only while
+ * `f * duration >= peak / actionPitch` — and `mechanism`'s clamp turns an
+ * overrun into a LATE transient rather than a crash. `BOLT_LIFT_PEAK` is the
+ * tight one, because `cycle.lift` is 0.16 and is the shortest window in
+ * either gesture: at the sniper's 0.68 it holds to a `fireRate` of 1.0/s
+ * against the 0.8 it ships, and its trim was moved 44 ms into the master to
+ * buy that. The other five have between two and eight times the room.
  */
 const MAG_OUT_PEAK = 0.076;
 const MAG_IN_PEAK = 0.188;
+const BOLT_LIFT_PEAK = 0.109;
+const BOLT_BACK_PEAK = 0.115;
+const BOLT_HOME_PEAK = 0.133;
+const BOLT_LOCK_PEAK = 0.084;
 
 /**
  * Measures the silence off both ends of a decoded recording — see
@@ -790,10 +811,13 @@ export class Sfx {
       vol: MECHANISM_LEVEL * vol,
       rate: pitch,
       delay: Math.max(0, at - peak / pitch),
-      // The same send `clack` gives the four beats this stands among. The
-      // master is gated to digital silence between its gestures, so what is in
-      // the file is the direct sound and the room is the game's — the rule the
-      // eight reports are cut to, which this one arrived already obeying.
+      // The same send `clack` gives the beats this stands among. Both
+      // mechanism masters are DRY — `reload.wav` gated to digital silence
+      // between its gestures and `bolt-cycle.wav` decaying 55 to 63 dB
+      // monotonically with no plateau over a -72 dB preamp floor — so what is
+      // in the file is the direct sound and the room is the game's, which is
+      // the rule the eight reports are cut to and the one these arrived
+      // already obeying.
       send: 0.2,
     });
   }
@@ -809,20 +833,45 @@ export class Sfx {
    * `actionVol`. Change a fraction here and change it there — the whole of what
    * makes a gesture legible is that what you SEE lands on what you HEAR.
    *
-   * **It is the only sound in the game that is a wait rather than an event**,
-   * and that is what the two SLIDES are for. Every other mechanism sound here
-   * is a thing arriving — a catch, a seat, a hammer — because every other
-   * gesture is over before the player has finished reacting to what caused it.
-   * A bolt cycle is a second and a quarter the player spends unable to shoot,
-   * and the two travelling noises are how long that is made audible: without
-   * them the cycle is four unrelated clicks with silence between them, which
-   * sounds like a fault rather than like a rifle being worked.
+   * **It is the only sound in the game that is a wait rather than an event.**
+   * Every other mechanism sound here is a thing arriving — a catch, a seat, a
+   * hammer — because every other gesture is over before the player has
+   * finished reacting to what caused it. A bolt cycle is a second and a
+   * quarter the player spends unable to shoot, and what has to be audible is
+   * how long that is: four unrelated clicks with silence between them sound
+   * like a fault rather than like a rifle being worked.
    *
-   * The two slides sweep in OPPOSITE directions and that pairing is the whole
-   * read. Drawing back opens out — a case coming free and the action opening
-   * to the air — and closing sweeps down and shuts, because it ends against a
-   * locked breech. A cycle with two identical slides in it reads as one motion
-   * done twice rather than as a thing opened and closed.
+   * **All four beats are RECORDED, and this is the first gesture in the game
+   * where a sample replaces the TRAVEL as well as the arrival.**
+   * `audio/src/bolt-cycle.wav` is one performance of exactly this gesture, cut
+   * into the four moments `CONFIG.viewmodel.cycle` draws — one row per beat,
+   * for the reason `magOut` leaves the catch behind and the carbine's report
+   * leaves two rounds behind: what a sample may contain is one beat's worth of
+   * sound, or it agrees with the picture at exactly one rate. Between them the
+   * four cover 40–1034 ms of the sniper's 1250 with a single 22 ms gap in the
+   * middle, and that gap is the bolt sitting at the rear stop, which is the
+   * one moment in a cycle that is silent.
+   *
+   * So the two synthesized SLIDES retire into the samples rather than playing
+   * under them. Each is inside its own arm here, not on a line of its own:
+   * `boltBack` carries 115 ms of the bolt travelling ahead of the stop and
+   * `boltHome` 133 ms of it running forward over the magazine, and a recorded
+   * mechanism played over a synthesized one is the SMG's mistake — that
+   * weapon's master was cut short of its own bolt precisely because
+   * `actionVol` was already voicing one. `boltBack` also takes the CASE with
+   * it: the two are 62 ms apart here because a filtered noise burst cannot be
+   * steel and brass at once, and on the tape they are the same millisecond
+   * (46% of that peak's energy sits above 8 kHz, against 18% at the bolt going
+   * home).
+   *
+   * **What is left when `audio/` is deleted is exactly the sound this method
+   * has always made**, beat by beat and arm by arm, which is the bargain every
+   * row in `samples.ts` makes. In that synthesis the two slides sweep in
+   * OPPOSITE directions and that pairing is the whole read: drawing back opens
+   * out — a case coming free and the action opening to the air — and closing
+   * sweeps down and shuts, because it ends against a locked breech. The
+   * recording says the same thing without being asked to, brightening to a
+   * 7.5 kHz centroid at the stop and arriving at 5.1 kHz on the breech.
    */
   boltCycle(duration: number, voice: ReportVoice = FLAT_REPORT): void {
     const t = duration;
@@ -831,31 +880,39 @@ export class Sfx {
     // The lugs turning out of their seats: high, short and dry. It is the
     // lightest event of the five and the first, which is what makes the rest
     // read as consequences of it.
-    this.clack(3100 * p, 0.55 * g, t * 0.16);
-    // Drawn back — the slide, opening upward — onto the rear stop, which is
-    // the hardest single event in the cycle because it is a mass stopped by a
-    // shoulder of steel rather than seated on one.
-    this.burst({
-      dur: 0.16 / p, vol: 0.1 * g, type: "bandpass", freq: 700 * p,
-      freqEnd: 1900 * p, q: 1.1, delay: t * 0.2, send: 0.22,
-    });
-    this.clack(1250 * p, 1 * g, t * 0.42);
-    // The case out: bright, small and OFF to the side of everything else in
-    // the mix, which is what a piece of brass leaving a rifle sounds like
-    // against the mechanism that put it there.
-    this.clack(4200 * p, 0.4 * g, t * 0.47);
-    // Driven home — the slide, closing downward — and the heaviest clack of
-    // the five, because this is the one with a round on the end of it.
-    this.burst({
-      dur: 0.15 / p, vol: 0.11 * g, type: "lowpass", freq: 1700 * p,
-      freqEnd: 420 * p, delay: t * 0.48, send: 0.26,
-    });
-    this.clack(620 * p, 1.1 * g, t * 0.68);
-    this.tone(190 * p, 0.08, "sine", 0.05, 0.6, null, { delay: t * 0.68 });
+    if (!this.mechanism("boltLift", BOLT_LIFT_PEAK, t * 0.16, p, g)) {
+      this.clack(3100 * p, 0.55 * g, t * 0.16);
+    }
+    if (!this.mechanism("boltBack", BOLT_BACK_PEAK, t * 0.42, p, g)) {
+      // Drawn back — the slide, opening upward — onto the rear stop, which is
+      // the hardest single event in the cycle because it is a mass stopped by
+      // a shoulder of steel rather than seated on one.
+      this.burst({
+        dur: 0.16 / p, vol: 0.1 * g, type: "bandpass", freq: 700 * p,
+        freqEnd: 1900 * p, q: 1.1, delay: t * 0.2, send: 0.22,
+      });
+      this.clack(1250 * p, 1 * g, t * 0.42);
+      // The case out: bright, small and OFF to the side of everything else in
+      // the mix, which is what a piece of brass leaving a rifle sounds like
+      // against the mechanism that put it there.
+      this.clack(4200 * p, 0.4 * g, t * 0.47);
+    }
+    if (!this.mechanism("boltHome", BOLT_HOME_PEAK, t * 0.68, p, g)) {
+      // Driven home — the slide, closing downward — and the heaviest clack of
+      // the five, because this is the one with a round on the end of it.
+      this.burst({
+        dur: 0.15 / p, vol: 0.11 * g, type: "lowpass", freq: 1700 * p,
+        freqEnd: 420 * p, delay: t * 0.48, send: 0.26,
+      });
+      this.clack(620 * p, 1.1 * g, t * 0.68);
+      this.tone(190 * p, 0.08, "sine", 0.05, 0.6, null, { delay: t * 0.68 });
+    }
     // The handle down into its notch — the sound that says the weapon is live
     // again, and the one the player is actually waiting on. Last, and pitched
     // clear of the seat above it so the two do not read as one event.
-    this.clack(2300 * p, 0.8 * g, t * 0.78);
+    if (!this.mechanism("boltLock", BOLT_LOCK_PEAK, t * 0.78, p, g)) {
+      this.clack(2300 * p, 0.8 * g, t * 0.78);
+    }
   }
 
   /**

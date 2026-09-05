@@ -14,20 +14,21 @@
  * with no sample still gets); what a row here buys is one recorded EVENT, and
  * nothing else in the game is sampled at all. Eight rows are a REPORT — one
  * per weapon in the kit, plus the cupola gun three kinds of hull mount — and
- * two are the player's own MAGAZINE CHANGE, which is the only mechanism in
- * the game that is recorded and the only pair cut from a single master.
+ * six are a MECHANISM the player works with their own hands: the two halves of
+ * a magazine change and the four beats of a bolt cycle, each pair cut from a
+ * single master.
  *
- * **The boundary is still a decision and not a waiting list**, and the two
+ * **The boundary is still a decision and not a waiting list**, and the six
  * mechanism rows are what makes it readable rather than theoretical: what
  * `docs/audio.md` refuses is a LIBRARY — thirty one-shots at 0.3 s, five
  * footsteps per surface, an ambient bed that alone costs ten times this whole
- * list — not the idea of a sound that is not a gunshot. These two are 0.436
- * mono-seconds off one master with no round robin behind them, they are the
- * player's own and not every body's, and they pass the same admissibility
- * test every row here does: delete `audio/` and `Sfx.reload` is the four
- * clacks it always was. A footstep cannot make that second claim without
- * bringing a surface table and a variant set with it, which is the whole
- * argument and is unchanged.
+ * list — not the idea of a sound that is not a gunshot. These six are 1.244
+ * mono-seconds off TWO masters with no round robin behind either, they are the
+ * player's own and not every body's, and they pass the same admissibility test
+ * every row here does: delete `audio/` and `Sfx.reload` is the four clacks it
+ * always was and `Sfx.boltCycle` the five clacks and two sweeps it always was.
+ * A footstep cannot make that second claim without bringing a surface table
+ * and a variant set with it, which is the whole argument and is unchanged.
  *
  * `SampleId` is a union rather than a string so a weapon naming a sample that
  * has no row does not compile, and a weapon naming nothing at all is
@@ -66,11 +67,15 @@ import pistol from "../../audio/pistol.webm?url";
 import mountedGun from "../../audio/mounted-gun.webm?url";
 import magOut from "../../audio/mag-out.webm?url";
 import magIn from "../../audio/mag-in.webm?url";
+import boltLift from "../../audio/bolt-lift.webm?url";
+import boltBack from "../../audio/bolt-back.webm?url";
+import boltHome from "../../audio/bolt-home.webm?url";
+import boltLock from "../../audio/bolt-lock.webm?url";
 
 /**
  * Every recorded sound in the game: one report per weapon in the kit, the
- * cupola gun the second seat of a hull lays, and the two halves of a magazine
- * change. Nothing else is sampled at all.
+ * cupola gun the second seat of a hull lays, the two halves of a magazine
+ * change and the four beats of a bolt cycle. Nothing else is sampled at all.
  *
  * **An id here names the RECORDING, not the weapon**, which is why it is
  * `burstRifle` and `sniperRifle` rather than `carbine` and `sniper`: the row
@@ -87,8 +92,8 @@ import magIn from "../../audio/mag-in.webm?url";
  * one of three MONO rows here; see its note in the manifest for why that
  * follows from where it is heard rather than from what it is.
  *
- * **`magOut` and `magIn` are the other two, and they are the proof that a
- * sample belongs to a MOMENT rather than to a weapon at all.** They are the
+ * **`magOut` and `magIn` are two of the other five, and they are the proof
+ * that a sample belongs to a MOMENT rather than to a weapon at all.** They are the
  * two halves of one magazine change — the old one stripped out of the well
  * and the fresh one slapped home — cut from the single master
  * `audio/src/reload.wav`, and every weapon in the kit plays the same pair.
@@ -99,10 +104,24 @@ import magIn from "../../audio/mag-in.webm?url";
  * recording has said nothing about which weapon it is, so the mechanism's
  * deviation must still be applied. See `Sfx.reload`.
  *
- * They are also the only rows scheduled by their PEAK rather than their
- * start — a magazine going home is an arrival with 188 ms of approach in
- * front of it — and the two offsets that says are in `Sfx`, measured off
- * these trims. Move a `trim.start` in the manifest and move them.
+ * **`boltLift`, `boltBack`, `boltHome` and `boltLock` are the last four, and
+ * they are that same argument run to the end of it: a sample belongs to a
+ * BEAT.** They are one performance — `audio/src/bolt-cycle.wav`, somebody
+ * working a bolt once — cut into the four moments `CONFIG.viewmodel.cycle`
+ * draws, because `Sfx.boltCycle` places those moments as fractions of a
+ * weapon's `shotInterval` and a recording's own timing is a fixed number of
+ * milliseconds. Shipped as one file it would agree with the drawn gesture at
+ * exactly one `fireRate` and at no other; shipped as four it agrees at every
+ * one, which is what `magOut` bought by leaving the catch behind and what the
+ * carbine's row bought by leaving two rounds behind. Every weapon that
+ * declares `boltCycle` plays all four, voiced by `actionPitch`/`actionVol` for
+ * the reason the magazine change is.
+ *
+ * The six mechanism rows are also the only ones scheduled by their PEAK rather
+ * than their start — a magazine going home and a bolt arriving on its stop are
+ * ARRIVALS, with the approach drawn in front of them — and the six offsets
+ * that says are in `Sfx`, measured off these trims. Move a `trim.start` in the
+ * manifest and move them.
  */
 export type SampleId =
   | "assaultRifle"
@@ -114,7 +133,11 @@ export type SampleId =
   | "pistol"
   | "mountedGun"
   | "magOut"
-  | "magIn";
+  | "magIn"
+  | "boltLift"
+  | "boltBack"
+  | "boltHome"
+  | "boltLock";
 
 /** Where each one is fetched from. */
 export const SAMPLE_URLS: Record<SampleId, string> = {
@@ -128,4 +151,8 @@ export const SAMPLE_URLS: Record<SampleId, string> = {
   mountedGun,
   magOut,
   magIn,
+  boltLift,
+  boltBack,
+  boltHome,
+  boltLock,
 };

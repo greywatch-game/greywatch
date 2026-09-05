@@ -383,6 +383,15 @@ export const viewmodel = {
    *   and a third jolt here would make the whole gesture read as rattling.
    * - `[lock, tiltOut[1]]` — the hand goes back to the grip and the rifle
    *   settles, finishing before the round it just chambered can be fired.
+   *
+   * **All four of those beats are RECORDED, and the four fractions below are
+   * therefore a contract with two files rather than one.** `Sfx.boltCycle`
+   * places `audio/src/bolt-cycle.wav`'s four cuts on `lift`, `back`, `home`
+   * and `lock` — the whole reason it is four cuts and not one performance is
+   * that these are fractions and a recording's timing is milliseconds — so a
+   * fraction moved here is moved there, exactly as the reload's already are.
+   * `back` is the one that carries TWO of the sound's events, because on the
+   * tape the stop and the case leaving are the same millisecond.
    */
   cyclePos: { x: -0.015, y: -0.012, z: -0.03 },
   cycleRot: { x: 0.09, y: -0.12, z: 0.38 },
