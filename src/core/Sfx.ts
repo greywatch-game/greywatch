@@ -149,6 +149,27 @@ const SAMPLE_LEVEL = 0.5;
 const MECHANISM_LEVEL = 0.15;
 
 /**
+ * What a recorded BLAST plays at, against a `power` of 1 and at the muzzle.
+ *
+ * The third of these, and the family it names is the loudest thing in the
+ * game rather than the quietest: a report stands in for five layers of which
+ * a lowpass has already taken most of the amplitude, and a blast stands in
+ * for four of which one is a SINE at 0.5 and another is a near-unfiltered
+ * crack at 0.7. Measured against the synthesis it replaces — the crack's
+ * highpass passes almost all of a noise slice, so it lands near 0.66; the
+ * body's lowpass at 900 Hz leaves about 0.11 RMS of its 1.0; the chest thump
+ * is a sine and peaks at its gain exactly — a close blast sums to roughly 0.5
+ * RMS at the crack, where a full-scale master measures 0.4 through its own
+ * loud half. So the recording sits just UNDER unity rather than at half like
+ * a report, and the master soft clip absorbs what an encoder overshoots.
+ *
+ * **`gain` is still spent on top of it**, because that is the game's claim
+ * about how much bigger a shell is than a grenade and not the recording's —
+ * the same split `ReportVoice.level` makes against a report's file.
+ */
+const BLAST_LEVEL = 0.9;
+
+/**
  * Where the transient is inside each recorded MECHANISM, in the file's own
  * seconds and measured from what `trimSample` hands back rather than from the
  * head of the buffer.
@@ -1362,6 +1383,15 @@ export class Sfx {
    * the levels barely move. That is what a bigger charge actually sounds like,
    * and it is also the only version that stays inside the mix — a shell voiced
    * as a grenade at twice the gain is a clip, not a bang.
+   *
+   * **A recording (`grenade`) stands in for all four layers when it has
+   * landed, and that one file is every explosion in the game** — the argument
+   * is on the arm below, and the shape is `shoot`'s: it is a PREFERENCE, so a
+   * blast before the decode arrives, or on a device that failed the fetch, is
+   * these four layers and nothing tells the caller which it got. The DEBRIS
+   * layer goes with them, which is the one thing this replacement takes that
+   * the report's does not — the file's own last 300 ms is what stands in for
+   * it, and `BlastDebrisSystem` still draws the rubble either way.
    */
   explosion(at: Vector3, power = 1): void {
     const a = CONFIG.audio;
@@ -1378,6 +1408,35 @@ export class Sfx {
     // an octave, which is where a tank gun sits against a frag.
     const drop = Math.sqrt(power);
     const gain = Math.min(1.35, 0.75 + 0.25 * power);
+    // A recording stands in for all four layers, and it is ONE recording for
+    // every blast in the game: there is one blast here (`blastAt`) and `power`
+    // is how much of it this one is, so a grenade's own report is the
+    // reference exactly as the rifle's is for a weapon.
+    //
+    // **`power` is therefore spent ON the file, which is the exact inverse of
+    // the rule `shoot` follows and is `magOut`'s inversion rather than a new
+    // one**: a per-weapon report has already made its deviation, and a shared
+    // recording has said nothing at all about which blast it is going into.
+    // It is spent as `rate` — playbackRate, so pitch and length together —
+    // divided by the same `drop` the synthesis divides its pitched layers by,
+    // which makes a shell a fifth lower and 36% longer than the grenade on the
+    // tape. That is what this file is asked for and no more: the levels barely
+    // move, because a blast twice the size is not twice as loud.
+    //
+    // The two distance cues the four layers carry in their own filters have to
+    // be put back around it by hand, as `botShot` puts them around a report.
+    // The panner is already the level and `delay` already the propagation, so
+    // what is missing is AIR ABSORPTION — and only that: the layer durations
+    // that grow with `far` are not reproduced, because stretching a recording
+    // is `rate`, and `rate` is already carrying `power`.
+    if (this.sample("grenade", {
+      vol: BLAST_LEVEL * gain, rate: v / drop, delay, out: panner,
+      // A plain send, for `shoot`'s reason: the four levels below sum to ~3.2
+      // of these across layers a filter has already emptied, and this is the
+      // file at full scale. Wetter than a gunshot's, because outdoors a blast
+      // is mostly the valley answering it.
+      send: 1.3, lowpass: 14000 - 12800 * far,
+    })) return;
     // The crack. Broadband, over in 40 ms, and the thing that says "sharp".
     this.burst({
       dur: 0.04 * drop, vol: 0.7 * v * gain * (1 - far * 0.7), type: "highpass",
@@ -1417,7 +1476,14 @@ export class Sfx {
    *
    * Spatialised like every other gun, and audible half again as far as one:
    * the whole point of a tank on the map is that everybody knows there is a
-   * tank on the map.
+   * tank on the map. **That is also why its recording is MONO** — there is no
+   * unpanned path to this sound even for the crew firing it, so it has no
+   * claim on the exception the carried weapons take, exactly as `mountedGun`
+   * has none.
+   *
+   * **A recording (`tankCannon`) stands in for all three layers when it has
+   * landed**, on `shoot`'s terms: a preference, never a requirement, and the
+   * synthesis below is what the game does without it.
    */
   cannon(at: Vector3): void {
     const a = CONFIG.audio;
@@ -1428,6 +1494,21 @@ export class Sfx {
     const far = Math.min(1, dist / (a.maxDistance * 1.4));
     const delay = dist / a.speedOfSound;
     const v = 0.94 + Math.random() * 0.12;
+    // A recording stands in for all three layers, and this is the one sample
+    // in the game that is a deviation from nothing: there is no row in
+    // `CONFIG.weapons` behind this sound, so there is no `pitch`, no `level`
+    // and no `power` to spend on it. `v` alone, for the reason every other
+    // sampled gun takes it, plus the air absorption the three layers below
+    // carry in their own filter frequencies.
+    //
+    // **The file keeps its low ROLL where the LMG's was cut off**, which is
+    // that row read the other way round rather than an inconsistency: the LMG
+    // hands its roll to `report.weight` and `length` and must not be paid
+    // twice, and nothing here is going to play this one.
+    if (this.sample("tankCannon", {
+      vol: BLAST_LEVEL, rate: v, delay, out: panner,
+      send: 1.4, lowpass: 14000 - 12800 * far,
+    })) return;
     // The muzzle blast: broadband and over in 60 ms. Twice a rifle's and half
     // the length of the roll behind it.
     this.burst({

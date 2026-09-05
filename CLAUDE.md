@@ -78,12 +78,12 @@ tidy the boot.** The argument is on the line in `main.ts`, the measurement is
 risk is state changing between draws: if a rendering bug ever appears that shows
 only while something is MOVING, flip this first.
 
-**Zero model files, and FOURTEEN audio files — one report per weapon in the
+**Zero model files, and SIXTEEN audio files — one report per weapon in the
 kit, the cupola gun all three hulls mount, the two halves of the player's own
-magazine change and the four beats of a bolt cycle, and nothing else in the game
-is recorded at all** — every mesh is built from Babylon primitives at runtime,
-and every sound is synthesized WebAudio (`src/core/Sfx.ts`) but for those
-fourteen. Do not add asset files unless
+magazine change, the four beats of a bolt cycle and the two blasts, and nothing
+else in the game is recorded at all** — every mesh is built from Babylon
+primitives at runtime, and every sound is synthesized WebAudio
+(`src/core/Sfx.ts`) but for those sixteen. Do not add asset files unless
 explicitly asked. There are four generated exceptions, none authored by hand
 and each with a generator in `package.json`: the icons, Havok's `.wasm`, the
 water's foam mask, and each map's menu photograph.
@@ -97,7 +97,7 @@ their own, because a recording's master is a recording rather than a script:
 fire-and-forget off `Sfx.unlock`, so a shot fired before the decode lands, on a
 device where the fetch failed, or in a browser that cannot decode the
 container, is the SYNTHESIZED report and no caller is told the difference. **A
-FIFTEENTH sound owes that same claim**; a sound the game needs does not belong
+SEVENTEENTH sound owes that same claim**; a sound the game needs does not belong
 in this pipeline. **What the pipeline refuses is a LIBRARY, not a sound that is
 not a gunshot** — five footstep variants per surface, thirty one-shots, an
 ambient bed that alone costs ten times this whole list — and `docs/audio.md` has
@@ -113,7 +113,12 @@ gun on three mounts, and a fourth kind gets it by having an `mg` block at all.
 in the kit plays the same pair, and what tells them apart is
 `actionPitch`/`actionVol` — **and the bolt cycle's four go one further still and
 belong to a BEAT**, because a gesture placed as fractions of a `shotInterval`
-cannot be one file.
+cannot be one file. **The last two are the two BLASTS, and `grenade` is that
+sentence once more: a sample belongs to a BLAST, of which this game has exactly
+ONE** — `blastAt` takes a `power`, so one recording is every explosion in the
+game and the tank shell is 1.85 of it. `tankCannon` is the inverse and the only
+row here that is a deviation from nothing: `Sfx.cannon` is the one report with
+no row in `CONFIG.weapons` behind it at all.
 
 **Three rules from it reach outside `audio/`.** A decoded buffer costs
 `duration × ctx.sampleRate × channels × 4` and **nothing else** — the container,
@@ -127,9 +132,10 @@ synthesis carries in its own filters, because a recording played louder and
 quieter is not a rifle at two distances. **The magazine change inverts that and
 the inversion is the rule rather than an exception to it**: one shared recording
 has said nothing about which weapon it is going into, so `actionPitch` IS spent
-on it. A per-weapon file has already made the deviation; a shared one has not,
-and the bolt cycle's four are the same inversion. The per-shot ACTION is still
-`ReportVoice`'s scalars and is not sampled at all.
+on it. A per-weapon file has already made the deviation; a shared one has not —
+the bolt cycle's four are the same inversion, and so is the grenade's, where
+`power` is spent as `rate` on the one recording every blast in the game plays.
+The per-shot ACTION is still `ReportVoice`'s scalars and is not sampled at all.
 And **a sample is the DIRECT sound; the ROOM is the game's** — `Sfx` answers
 every gunshot with one shared `ConvolverNode` at no per-shot cost, so a baked
 tail double-reverbs the shot, puts one room on six maps and holds a voice for
@@ -155,7 +161,14 @@ stereo under the exception for a report the player hears unpanned, `mountedGun`
 is not because `Game.resolveMg` reaches `Sfx.botShot` and never `shoot`, and the
 six MECHANISM rows are heard where the exception applies but have no width to
 keep (the side channel is 13.7 to 23.3 dB under the mid, against the rifle's
-10.8) — **the exception is for width that EXISTS.**
+10.8) — **the exception is for width that EXISTS.** The two BLASTS fail it on
+WHERE like the mounted gun (a shell the player fires from their own tank is
+spatialised like everybody else's), and `tankCannon` is the sharpest case of it
+in the directory because it is the WIDEST master there, side only 2.3 dB under
+mid. **Its downmix then set its own CUT**: past 230 ms its channels go
+negatively correlated, so the mono sum cancels rather than narrows — **a stereo
+master is measured for what the SUM does to it as well as for what the width is
+worth.**
 
 → **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
 binds, why one ambient loop costs ten times the whole sampled gun kit, the
@@ -397,8 +410,10 @@ fire is excluded by construction as in `CombatSystem.fire`.
 **There is ONE blast in the game and one set of numbers describing it.**
 `blastAt` takes a `power`, the grenade passes 1 and is the reference exactly as
 the rifle is for a weapon's `report`, and the tank shell is `blastPower` (1.85)
-of the same eight layers. **`power` scales SIZE and COUNT, never TIME**, because
-the order the layers arrive in is what the effect is. **What a blast throws is
+of the same eight layers — which is why ONE recording is every explosion in the
+game, with `power` spent on it as playback rate (`docs/audio.md`). **`power`
+scales SIZE and COUNT, never TIME**, because the order the layers arrive in is
+what the effect is. **What a blast throws is
 keyed on what it went off ON** — one downward ray reading the same
 `metadata.surface` a bullet's impact reads — and `drawBlast` is the one place a
 blast is DRAWN, public because the authority raises one with nothing but a
@@ -1265,11 +1280,13 @@ different kinds — a person driving off the wire while a bot lays the cupola
 gun. **All three kinds name ONE recording on `mg.report`** (`mountedGun`), for
 the same reason there is no `if` between the kinds anywhere else: it is one gun
 on three mounts, and what differs between the three rows is the eight scalars.
-The main gun is deliberately not sampled, and the mounted gun is the one sample
-in the tree that is MONO — `Game.resolveMg` reaches `Sfx.botShot` and never
-`shoot`, so it has no claim on the unpanned exception every carried weapon
-takes. **It is a `bullet` against `resist.bullet` of 0.05, so it cannot touch
-armour**, which is the trade rather than a limitation: what it answers is
+The MAIN gun names one too (`tankCannon`, on `Sfx.cannon`), and it is the only
+sample in the tree with no row of `CONFIG.weapons` behind it. Both are MONO for
+the same reason rather than for being a vehicle's: `Game.resolveMg` reaches
+`Sfx.botShot` and never `shoot`, and a shell is spatialised even for the crew
+firing it, so neither has any claim on the unpanned exception every carried
+weapon takes. **It is a `bullet` against `resist.bullet` of 0.05, so it cannot
+touch armour**, which is the trade rather than a limitation: what it answers is
 infantry inside the main gun's reload.
 
 **In a NETPLAY round a driver simulates their own hull and REPORTS it, exactly

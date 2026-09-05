@@ -19,11 +19,12 @@ constraint anybody is working around — it is why a firefight of eighty rounds 
 second costs no memory, why every weapon is a row of eight scalars, and why the
 game shipped for its whole life with no audio assets at all.
 
-**Fourteen files sit on top of it: one report per weapon in the kit, the
+**Sixteen files sit on top of it: one report per weapon in the kit, the
 cupola gun all three hulls mount, the two halves of the player's own magazine
-change and the four beats of a bolt cycle. Nothing else in the game is recorded
-at all.** 53.2 KB downloaded once, 3.26 of the 44 mono-seconds the budget below
-allows.
+change, the four beats of a bolt cycle and the two BLASTS — the one explosion
+this game has and the tank gun that is the same physics at the other end.
+Nothing else in the game is recorded at all.** 63.2 KB downloaded once, 3.99 of
+the 44 mono-seconds the budget below allows.
 
 **That boundary is a decision and not a waiting list**, and the six mechanism
 rows are what makes it readable rather than theoretical. What the arithmetic
@@ -37,6 +38,17 @@ the five clacks and two sweeps it always was. **A footstep still cannot make
 that second claim** without bringing a surface table and a variant set with it,
 which is the whole argument and is unchanged — and an ambient bed cannot make
 it at all.
+
+**The two BLAST rows are the cheapest answer that boundary has ever given to
+"one more sound", and they are cheap for a structural reason rather than a
+lucky one.** There is ONE blast in this game — `blastAt` takes a `power`, the
+grenade passes 1 and the tank shell 1.85 of the same eight layers — so one
+recording is every explosion in the game and there is no second one to want.
+The cannon is the other half of the same coin: `Sfx.cannon` is the one report
+here with no row in `CONFIG.weapons` behind it, so it is one file for a gun the
+weapon table has never held. Two rows, two masters, no round robin, and the
+admissibility test in full: delete `audio/` and `Sfx.explosion` is the four
+layers it always was and `Sfx.cannon` the three it always was.
 
 **And the two mechanisms together are what the boundary is actually made of,
 because the second one is where the money went.** The bolt cycle is four rows
@@ -134,7 +146,7 @@ that holds the world.
    exception is a short sound the player hears UNPANNED — their own report —
    where the width is audible and the seconds are few.
 
-   **Seven of the fourteen rows take that exception and the seven that do not
+   **Seven of the sixteen rows take that exception and the nine that do not
    fail it two different ways**, which is what makes the rule readable rather
    than theoretical. `mountedGun` fails it on WHERE, and the test there is not
    what the sound IS but where it is heard:
@@ -155,6 +167,28 @@ that holds the world.
    rifle's row measured it to claim the exception in the first place. On the
    bolt cycle it is also the difference between 0.808 mono-seconds and 1.616,
    which is the largest single row-shape decision in this directory.
+
+   **The two BLAST rows fail the exception on WHERE as well, and the tank gun
+   is the sharpest case of that test here.** Neither `Sfx.explosion` nor
+   `Sfx.cannon` has an unpanned path at all — the shell a player fires from
+   their own tank is spatialised exactly like everybody else's — so neither has
+   any claim, which is `mountedGun`'s argument twice more. `grenade` would have
+   been mono regardless: side 14.6 dB under the mid in RMS with the channels
+   0.88–0.99 correlated the whole way through, which is the mechanism rows'
+   measurement again. `tankCannon` would NOT — it is the WIDEST master in the
+   directory, its side channel only 2.3 dB under the mid against the sniper's
+   3.8 and the rifle's 10.8 — and it is mono anyway, because the exception is
+   for width heard UNPANNED rather than for width.
+
+   **And the downmix then found something no envelope in that file shows.**
+   Past 230 ms its two channels go NEGATIVELY correlated (r = −0.84 at 240), so
+   from there the mono sum does not narrow the master, it CANCELS it: anything
+   cut past that point would arrive thinner in the game than it measures on
+   disk. That is where the row's cut ends, and the general rule is that **a
+   stereo master is measured for what the SUM does to it as well as for what
+   the width is worth** — a second measurement that only matters to a row the
+   first one has already sent to mono, which is every row heard through a
+   panner.
 2. **No round-robin files.** Libraries balloon on five footstep variants per
    surface. Variation here comes from the graph: `playbackRate` jitter (already
    in `Sfx.sample`), the shared noise buffer, and layering.
@@ -174,7 +208,7 @@ audio/
 src/core/samples.ts       the id union and the url table the game imports
 ```
 
-**A master is not a file, it is a SOURCE**: nine masters carry fourteen rows,
+**A master is not a file, it is a SOURCE**: eleven masters carry sixteen rows,
 because `reload.wav` is cut twice and `bolt-cycle.wav` four times. `sourceHash`
 is per ROW rather than per file, so the two performances have the same hash
 repeated across their rows and editing either master restages every cut off it.
@@ -275,13 +309,14 @@ bought for.
 
 ## What each trim is, and why they are all that short
 
-Nine masters and fourteen cuts. Eight of the masters are 1.0 s of 48 kHz stereo
-as delivered and their cuts run 96 to 180 ms; the two 3.0 s files are
-`reload.wav`, which two rows are cut from, and `bolt-cycle.wav`, which four
-are. **Between 73 and 95% of every master is discarded**, and the discarded
-part is almost always the same thing: a baked room this engine already has one
-of. The two PERFORMANCES are the exception, and they are instructive rather
-than a lapse — see below.
+Eleven masters and sixteen cuts. Ten of the masters are 1.0 s of 48 kHz stereo
+as delivered: eight are reports and their cuts run 96 to 180 ms, and two are
+BLASTS, cut to 210 and 520 ms for a reason of their own below. The two 3.0 s
+files are `reload.wav`, which two rows are cut from, and `bolt-cycle.wav`,
+which four are. **Between 48 and 95% of every master is discarded**, and the
+discarded part is almost always the same thing: a baked room this engine
+already has one of. The two PERFORMANCES and the grenade are the exceptions,
+and all three are instructive rather than a lapse — see below.
 
 ### The assault rifle, which is the reference
 
@@ -331,6 +366,8 @@ rule rather than a detail of one file.
 | `boltBack` | the bolt gun's cycle | 476 – 686 ms | 7% | nothing — it is one gesture, ends and all |
 | `boltHome` | the bolt gun's cycle | 2544 – 2758 ms | 7% | nothing |
 | `boltLock` | the bolt gun's cycle | 2814 – 2962 ms | 5% | nothing |
+| `grenade` | **every blast there is** | 0 – 520 ms | 52% | nothing — a step at 520 |
+| `tankCannon` | the tank's main gun | 0 – 210 ms | 21% | **the MONO SUM**, and an arrival at 220 |
 
 **1. A master of a BURST weapon is a burst.** `Sfx.shoot` is called once per
 ROUND — the carbine's three leave 50 ms apart and each one is its own call — so
@@ -391,7 +428,7 @@ cut that runs past the next round is a burst you cannot count.
 **4. A master that is a PERFORMANCE is cut to the game's BEATS, and the thing
 being fought is not a room.** `reload.wav` and `bolt-cycle.wav` are the two
 masters here that are not one event, and between them they carry six of the
-fourteen rows. Neither has a tail to hand to the convolver: the first arrived
+sixteen rows. Neither has a tail to hand to the convolver: the first arrived
 GATED to digital silence between its gestures, and the second decays 55 to
 63 dB monotonically with no plateau anywhere in it over a −72 dB preamp floor,
 which is the same test that placed the eight reports saying the same thing. So
@@ -481,3 +518,77 @@ which is the claim `report.length: 0.72` already makes for that gun in
 `config/vehicles.ts` ("almost no ring, because the next one is 110 ms away").
 The truck's 133 ms gap and the gunship's 118 are looser still, so the tightest
 of the three sized it and the other two are free.
+
+### The two blasts: one file for every explosion, and the cut a downmix made
+
+`grenade.wav` and `tank-cannon.wav` are the last two masters and the first that
+are not a gun in anybody's hands. Both are 1.0 s of 48 kHz stereo like the
+eight reports, both are essentially instantaneous (onsets at 4–5 ms, peaks
+within 16 ms of the head), and both are cut from 0 — so neither has a lead to
+recover and neither meets the input-seek trap above.
+
+**`grenade` is the third reading of "a sample belongs to a ⟨thing⟩", and here
+the thing is a BLAST — of which this game has exactly one.** `blastAt` takes a
+`power`, the grenade passes 1 and is the reference exactly as the rifle is for
+a report, and the tank shell is 1.85 of the same eight layers. So one recording
+is every explosion in the game, and `power` is therefore spent ON the file —
+`Sfx.explosion` divides `rate` by `sqrt(power)`, which is playbackRate and so
+pitch and length together, and which is precisely what the synthesis does by
+hand to its own layers. That is `magOut`'s inversion for `magOut`'s reason: a
+per-weapon report has already made its deviation, and a shared recording has
+said nothing at all about which blast it is going into.
+
+**Its 520 ms is the longest cut in this directory by nearly double, and the
+reason is that a blast is not a transient.** The crack is over at 40 ms — the
+centroid falls 882 → 82 Hz and every band above 1.2 kHz drops 19 dB inside it —
+and what follows is a sustained roll: 20–120 Hz holding −14 to −22 dB all the
+way to 515 with the mid bands plateauing on top of it, then a 5 dB step down at
+520 into a slower tail that reaches −67 by 990. The cut ends on that step, with
+a 70 ms fade over live material because there is no cliff to cut on (the
+sniper's rule, spent on 13% of the file rather than 31% of it).
+
+**The plateau under it is NOT the baked room the eight reports were cut to
+escape, and the test that says so is the STEREO one rather than the high
+band's.** A room's late field DECORRELATES; this file's two channels stay
+0.88–0.99 correlated across the whole plateau, and its 50 ms crest factor sits
+at 5.7–8.9 dB with no discrete arrival anywhere in it. So there is nothing in
+there for the shared convolver to fight — what the convolver adds is the
+valley, at a send of 1.3 — and the roll is kept because it HAS to be: a sample
+stands in for all four layers of `Sfx.explosion` and there is no `ReportVoice`
+behind this sound to hand a roll back to, which is the one thing separating it
+from the LMG's row. The last 300 ms is also what stands in for the synthesized
+DEBRIS layer, which goes with the other three; `BlastDebrisSystem` still draws
+the rubble.
+
+**`tankCannon` is the other half of the same coin: `Sfx.cannon` is the one
+report in the game with no row in `CONFIG.weapons` behind it**, no magazine and
+no `ReportVoice`, so this is the one sample here that is a deviation from
+nothing at all. Its direct blast runs 0–120 ms with every band live at a
+centroid of 150–270 Hz; from 130 it is pure low roll (everything above 400 Hz
+falls 12–17 dB by 160 while 20–120 Hz holds −16 to −21 out to 210, centroid
+93–120); and at 220–235 there is a discrete arrival, the band above 3.5 kHz
+14 dB up on the trough in front of it with nothing under 120 Hz in it — a hard
+reflection off something about 37 m away, which is the room. Its roll is kept
+for the grenade's reason and cut at 210, in the trough 10 ms in front of that
+arrival, with a 35 ms fade. Nothing bounds it from the other end: the gun fires
+every few seconds, so the rate argument that sized `mountedGun` has no work to
+do here.
+
+**And the mono downmix is what actually set that end**, which is the rule this
+pair added to the directory. See the width note under rule 1 above: past 230 ms
+the master's channels go negatively correlated (r = −0.84 at 240), so the sum
+cancels rather than narrows, and a longer cut would have arrived thinner in the
+game than it measures on disk. **A stereo master is measured for what the SUM
+does to it as well as for what the width is worth.**
+
+**What levels them is `BLAST_LEVEL` (0.9) rather than `SAMPLE_LEVEL`**, and the
+third constant is there for `MECHANISM_LEVEL`'s reason: a blast is not a report
+and the two families do not sit at the same place. Measured against the
+synthesis these files replace — the crack's highpass passes nearly all of a
+noise slice and lands near 0.66, the body's lowpass at 900 Hz leaves about 0.11
+RMS of its 1.0, and the chest thump is a sine that peaks at its gain exactly —
+a close blast sums to roughly 0.5 RMS at the crack, where a full-scale master
+measures 0.4 through its own loud half. So a recorded blast sits just under
+unity where a recorded report sits at half. `explosion`'s own `gain` is still
+spent on top of it, because how much bigger a shell is than a grenade is the
+game's claim and not the recording's.

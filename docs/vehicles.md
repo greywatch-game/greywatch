@@ -2038,19 +2038,28 @@ MOUNT is not a gun — and they are still live, since the synthesis is what a
 hull is heard as before the decode lands and forever on a device that failed
 the fetch.
 
-**The main gun is deliberately not sampled.** It is a different weapon making a
-different argument (`gun` is the nullable block two of the three kinds have),
-and nothing about the cupola's recording belongs on it.
+**The main gun is sampled too, and by a file of its OWN** (`tankCannon`, on
+`Sfx.cannon`) — because it is a different weapon making a different argument
+(`gun` is the nullable block two of the three kinds have) and nothing about the
+cupola's recording belongs on it. It is also the one row in the directory that
+is a deviation from nothing at all: `Sfx.cannon` is the one report in the game
+with no row in `CONFIG.weapons` behind it, no magazine and no `ReportVoice`, so
+there is no `pitch` and no `level` to spend on the file and the synthesis is
+what a shell sounds like until the decode lands.
 
 **Two rules from the audio pipeline land here and both are about where the
 sound is HEARD.** `Game.resolveMg` reaches `Sfx.botShot` and never `Sfx.shoot`,
 with the argument on the line — in a chase view the gun is twelve metres from
 the listener — so **the player firing their own hull's machine gun hears it
 PANNED**, unlike their own rifle and unlike the engine of the hull they are
-sitting in. That makes it the one row in `audio/manifest.json` with no claim on
-the unpanned exception, and therefore **the only MONO one**: a `PannerNode`
+sitting in. That was the first row in `audio/manifest.json` with no claim on
+the unpanned exception, and therefore the first **MONO** one: a `PannerNode`
 makes the stereo, and a second channel through one is double the RAM for
-nothing. And the cut is 112 ms against this gun's own 111 ms gap at
+nothing. **The main gun's row fails the same test the same way** — a shell is
+spatialised even for the crew firing it — and it is the sharpest case of it in
+the directory, because that master is the WIDEST one there (side only 2.3 dB
+under mid) and goes mono regardless. The exception is for width heard UNPANNED,
+not for width. And the cut is 112 ms against this gun's own 111 ms gap at
 `fireRate: 9`, so no two rounds stack — which is the claim `report.length` of
 0.72 was already making in prose.
 

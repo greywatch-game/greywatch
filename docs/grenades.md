@@ -73,6 +73,15 @@ dust cloud, no second set of numbers to keep in step. `CONFIG.grenade`'s "The
 blast, as a picture" is the table; six of the layers are drawn from
 `GrenadeSystem` and two from `BlastDebrisSystem`.
 
+**The SOUND makes the same bargain, and one recording is every explosion in the
+game.** `Sfx.explosion` plays `audio/grenade.webm` — a grenade going off, so
+the reference at a `power` of 1 exactly as this table is — and spends `power`
+on it as `rate`, which is playback rate and therefore pitch and length
+together: a shell comes out a fifth lower and 36% longer, which is what the
+four synthesized layers underneath already did by hand. It is a preference like
+every sample here, so a blast before the decode lands is those four layers.
+See [`docs/audio.md`](audio.md).
+
 | layer | when | what it says | owner |
 | --- | --- | --- | --- |
 | `flash` | 0 – 0.14 s | something detonated HERE | `GrenadeSystem` |
