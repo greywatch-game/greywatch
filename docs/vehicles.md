@@ -2203,14 +2203,21 @@ through an `OfflineAudioContext` with the change stashed and unstashed agrees to
 so a hash is not the test here). Every line a rotor moves is either written only
 under `driveRotor` or reads `r ? … : <the old literal>`.
 
-**The rolloff is INVERSE, alone in `Sfx.ts`.** Every one-shot in that file is
-linear over `maxDistance`, which reaches exactly nothing at its own gate and
-needs no more thought. An engine has to carry four times as far, and linear over
-150 m is a machine as loud at fifty metres as at ten. Inverse is what a point
-source does, and it is what makes an engine GROW as the thing arrives. It also
-costs `HULL_ENGINE_LEVEL`: the rolloff bites from `refDistance` (8 m), so levels
-tuned for a graph sitting in your head with nothing in front of it come out as a
-tank you cannot hear.
+**The rolloff is INVERSE**, which it was alone in `Sfx.ts` in being until the
+one-shot panner was moved onto the same model for the same reason: linear over a
+long range is a source as loud at fifty metres as at ten, and inverse is what
+makes an engine GROW as the thing arrives. What is still the engine's own is the
+PLATEAU — `CONFIG.audio.engineRef` (8 m) against a one-shot's `refDistance` (3),
+because a hull is not a point source and there is no useful sense in which the
+listener is three metres from a seven-metre machine's engine. It carries
+`HULL_ENGINE_LEVEL` with it: the rolloff bites from that plateau, so levels tuned
+for a graph sitting in your head with nothing in front of it come out as a tank
+you cannot hear, and the two numbers move together or they do not move. The
+rolloff factor is a full 1 here and 0.7 for one-shots, which is the opposite
+compromise for the opposite reason — an engine is a continuous sound the player
+tracks by its growth and has `engineRange` (150 m) to grow across, where a
+gunshot is a transient whose far field is the only thing telling you where the
+fight is.
 
 **A frame that did not step the fleet owes `enginesOff`.** `Game.fleetStepped` is
 raised by `updateWorld` and by `updateNetWorld` and spent by `pushHullEngines`,

@@ -262,7 +262,8 @@ const FLAT_REPORT: ReportVoice = CONFIG.weapons.rifle.report;
  * A level rather than a distance, so it is here with the rest of this file's
  * levels rather than in `CONFIG.audio` with `engineRange`, which is a range.
  * What it pays for is the near field: the panner's rolloff starts biting at
- * `CONFIG.audio.refDistance` (8 m), so by the time a tank is across a street
+ * `CONFIG.audio.engineRef` (8 m — the engine's own plateau, not the one-shot
+ * `refDistance` beside it), so by the time a tank is across a street
  * it has already taken two thirds of the voice, and the numbers in
  * `driveEngine` were tuned for a graph with nothing at all in front of it.
  */
@@ -1297,9 +1298,11 @@ export class Sfx {
   botShot(at: Vector3, after = 0, voice: ReportVoice = FLAT_REPORT): void {
     const a = CONFIG.audio;
     const dist = this.distanceToListener(at);
-    // Beyond maxDistance the linear rolloff has already reached silence, so
-    // building the nodes only burns voices that could have carried an audible
-    // shot. Reject before the panner, not after.
+    // The gate, and it is a VOICE decision rather than a free one: under the
+    // inverse rolloff 70 m is ~24 dB down through an air-absorption lowpass
+    // that has taken the top off it, which is a shot nothing in a firefight
+    // could pick out — so building the nodes only burns voices that could
+    // have carried an audible one. Reject before the panner, not after.
     if (dist > a.maxDistance) return;
     const panner = this.panner(at);
     if (!panner) return;
@@ -2117,13 +2120,20 @@ export class Sfx {
    * answer to both. A stationary occupied hull idles, which is what a
    * stationary occupied hull does.
    *
-   * The rolloff is INVERSE and is alone in this file in being so — every
-   * one-shot here is linear over `maxDistance`, which reaches exactly nothing
-   * at its own gate and needs no further thought. This one has to carry four
-   * times as far (`CONFIG.audio.engineRange`), and linear over that distance
-   * is a machine as loud at fifty metres as at ten. Inverse is what a point
-   * source actually does, and it is what makes an engine GROW as the thing
-   * arrives.
+   * The rolloff is INVERSE, which it was alone in this file in being until
+   * the one-shot panner was moved onto the same model for the same reason —
+   * linear over a long range is a source as loud at fifty metres as at ten,
+   * and that is what makes an engine GROW as the thing arrives rather than
+   * simply exist until it doesn't.
+   *
+   * What is still its own is the PLATEAU: `CONFIG.audio.engineRef` (8 m)
+   * against a one-shot's 3, because a hull is not a point source — a tank is
+   * seven metres long, so there is no useful sense in which the listener is
+   * three metres from its engine. It carries `HULL_ENGINE_LEVEL` with it, so
+   * the two move together or a tank goes inaudible. The rolloff is a full 1
+   * here and 0.7 there for the opposite reason to the compromise made for
+   * one-shots: an engine is a continuous sound the player tracks by its
+   * growth, and it has `engineRange` (150 m) to grow across.
    */
   hullEngine(
     key: number,
@@ -2150,7 +2160,7 @@ export class Sfx {
       const panner = ctx.createPanner();
       panner.panningModel = "equalpower";
       panner.distanceModel = "inverse";
-      panner.refDistance = CONFIG.audio.refDistance;
+      panner.refDistance = CONFIG.audio.engineRef;
       panner.rolloffFactor = 1;
       panner.connect(master);
       const built = this.buildEngine(panner, kind);
@@ -2501,8 +2511,36 @@ export class Sfx {
   }
 
   /**
-   * A distance-attenuated output node, or null when the sound is too far away
-   * or the voice budget is spent.
+   * A distance-attenuated output node, or null when the voice budget is
+   * spent. **This one method is the near-field mix for every world sound in
+   * the game** — every gunshot but the player's own, every impact, footstep,
+   * blast, break and reload — so the curve on it is a design decision rather
+   * than a default.
+   *
+   * **It is INVERSE, and it was LINEAR, and that is the fix for a mix in
+   * which somebody else's rifle ten metres away arrived within 2 dB of your
+   * own.** A linear rolloff spreads its whole range evenly, so with a
+   * `refDistance` of 8 m over a `maxDistance` of 70 everything inside a room
+   * played at unity and a shot at 16 m was 1 dB down: there was no near field
+   * at all, and what a player heard in a firefight was every nearby shooter
+   * at the same level as the gun in their hands. Neither the world nor the
+   * genre does that — an SA80 measures 161 dB(C) at the shooter's ear and 128
+   * at 32 m, and the standing practice in this genre is a mix hierarchy that
+   * puts the player's own weapon on top of everything by design.
+   *
+   * `CONFIG.audio.rolloff` (0.7) is deliberately under the physical 1, for a
+   * reason the far field owns: 6 dB a doubling is right at the ear and
+   * useless as information, and this game's whole read on where a fight is
+   * comes through the far field. What makes the compromise cheap is that the
+   * reverb send is tapped PRE-panner (see `send`) and climbs with distance,
+   * so none of this touches the tail a distant shot is mostly made of.
+   *
+   * **`maxDistance` is not set on the node, because the inverse model does
+   * not use it.** It is a GATE the callers apply instead, and one consequence
+   * of the switch is that the callers whose own reach is longer than it — a
+   * blast gates at 1.6-2.2x — now actually sound out there. Under the linear
+   * model their nodes were built and then multiplied by exactly zero, so a
+   * grenade past 70 m was silent but for its tail.
    */
   private panner(at: Vector3): PannerNode | null {
     if (!this.ctx || !this.master) return null;
@@ -2510,10 +2548,9 @@ export class Sfx {
     if (this.voices >= a.maxVoices) return null;
     const node = this.ctx.createPanner();
     node.panningModel = "equalpower";
-    node.distanceModel = "linear";
+    node.distanceModel = "inverse";
     node.refDistance = a.refDistance;
-    node.maxDistance = a.maxDistance;
-    node.rolloffFactor = 1;
+    node.rolloffFactor = a.rolloff;
     node.positionX.value = at.x;
     node.positionY.value = at.y;
     node.positionZ.value = at.z;

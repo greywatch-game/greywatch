@@ -12,9 +12,54 @@ export const audio = {
    * up, so extras are dropped rather than queued.
    */
   maxVoices: 24,
-  /** Distance at which a world sound plays at full volume. */
-  refDistance: 8,
-  /** Distance at which it falls silent. Matched roughly to the fog. */
+  /**
+   * The plateau: how close a world one-shot has to be before getting closer
+   * stops making it louder. A point source's level is only defined outside
+   * its own size, and a rifle is a point — three metres is arm's length,
+   * which is where "beside me" genuinely stops being a distance.
+   *
+   * **It was 8 m under a LINEAR rolloff and between them that was the whole
+   * of the near-field mix**, which is to say there wasn't one: everything
+   * inside a room played at unity and linear over 62 m took a shot at 16 m
+   * down by 1 dB. So a bot firing ten metres away arrived within 2 dB of the
+   * player's own report, which is neither what a game wants nor what the
+   * world does — measured, an SA80 is 161 dB(C) at the shooter's ear and
+   * 128 at 32 m. See `rolloff`; the pair is one decision.
+   *
+   * A hull's engine has a plateau of its own (`engineRef`) because a tank is
+   * not a point.
+   */
+  refDistance: 3,
+  /**
+   * How hard a world one-shot falls off past that plateau, under an INVERSE
+   * model — `1` is the physical 6 dB per doubling of distance and this is
+   * deliberately under it.
+   *
+   * Physics alone is not playable here: 6 dB a doubling puts a rifle at ten
+   * metres 24 dB under your own, which is right at the ear and useless as
+   * situational awareness in a game where the whole read is where the fight
+   * is. 0.7 is about 4.2 dB a doubling — steep enough that the near field
+   * finally reads (a shot at 10 m lands ~10 dB under your own report, one at
+   * 20 m ~16), shallow enough that the far field survives.
+   *
+   * **What pays for the far field is that the reverb send is PRE-panner and
+   * climbs with distance** (`reverbDistanceSend`), so none of this touches
+   * it. A shot across the valley was always mostly tail; now it is mostly
+   * tail against a direct sound that has actually got out of its way.
+   */
+  rolloff: 0.7,
+  /**
+   * The GATE: past this a world one-shot is not built at all. Matched roughly
+   * to the fog.
+   *
+   * It was the far end of the linear rolloff as well, which meant it cost
+   * nothing to enforce — the curve was already at zero there. Under `rolloff`
+   * it is a budget decision again: 70 m is ~24 dB down and inaudible under a
+   * firefight, and what the gate buys is the voice. It also stops binding the
+   * few sounds whose own reach is longer (a blast gates at 1.6-2.2x this),
+   * which under the linear model were built and then multiplied by exactly
+   * zero.
+   */
   maxDistance: 70,
   /**
    * Metres per second. A shot across the map arrives ~0.2 s after its muzzle
@@ -142,6 +187,18 @@ export const audio = {
    * no cliff to hear, only a six-source graph not worth holding open.
    */
   engineRange: 150,
+
+  /**
+   * The engine voice's own plateau, and it is a separate number from
+   * `refDistance` because a hull is not a point source — a tank is seven
+   * metres long, so there is no useful sense in which you are "3 m from the
+   * engine". Eight metres is roughly the machine.
+   *
+   * It carries the engine's LEVEL as much as its curve (`HULL_ENGINE_LEVEL`
+   * is tuned against it), which is the reason it did not move when
+   * `refDistance` did.
+   */
+  engineRef: 8,
 
   /**
    * Footsteps. The player's are triggered by the camera's bob phase rather
