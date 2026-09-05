@@ -30,30 +30,78 @@
   place-items: center;
 }
 
-/* --- the menu's backdrop ---
+/* =====================================================================
+   THE MENU'S BACKDROP — the photograph, and a scrim shaped like the
+   layout that stands on it.
+   ---------------------------------------------------------------------
    A photograph of the chosen map, under the card. It is a root of its own
-   rather than markup inside `#overlay`, and `OverlayScreen.shotRoot` says why
-   at length: a child paints over its parent's BACKGROUND whatever its z-index,
-   and the veil is that background — so a picture inside the card would sit on
-   top of the scrim that makes the type over it readable.
+   rather than markup inside `#overlay`, and `OverlayScreen.shotRoot` says
+   why at length: a child paints over its parent's BACKGROUND whatever its
+   z-index, and the veil is that background — so a picture inside the card
+   would sit on top of the scrim that makes the type over it readable.
 
-   Which is what makes the two numbers below the whole of the styling this
-   feature needs on the card itself. `--veil-in`/`--veil-out` are the vignette's
-   alpha in the middle and at the edge, and the menu is now the one screen with
-   something behind it worth looking at: the shipped 0.84/0.98 is tuned for a
-   village glimpsed through a veil, and over a photograph it is a picture you
-   can just about tell is there.
+   **The scrim is DIRECTIONAL now, and that is the whole of what made this
+   card a front end rather than a form.** The shell's veil is an ellipse:
+   dense at the edges, lighter in the middle, and the same in every
+   direction — which is the right shape for a screen whose content is in
+   the middle of it, and the wrong one for a card whose content is a
+   column down one side. Tuned to hold small type over a bright sky it put
+   the whole photograph behind a wash; tuned to let the photograph through
+   it stopped holding the type. There is no single density that does both,
+   because the two demands are in different PLACES.
 
-   **One density has to hold two opposite pictures**, and that is what set it.
-   The night village is nearly black already, so every point of scrim is one it
-   cannot spare; the city at dusk is a bright grey sky behind small dim type, so
-   it is the one that runs out of contrast first. 0.34 is where the chapel still
-   reads as a chapel and Coldharbour's row labels — `--dim`, the faintest thing
-   on the screen — still hold against the towers. The EDGE stays dense, because
-   the wordmark, the rail and the foot hints all live out there. */
+   So the wash is raked across the frame instead. The column the rail
+   stands in is held down to nearly opaque, the right-hand two-thirds is
+   let through at close to full strength, and the head and the foot get a
+   band of their own top and bottom because both carry type over whatever
+   the picture happens to be doing up there — and a photograph's sky is
+   the brightest thing in it. The dossier is on the bright side and
+   therefore carries its own plate; see `.ov-detail` further down, which
+   is the one screen in this interface where `.ui-panel` is a box.
+
+   **One scrim still has to hold two opposite pictures**, and that has not
+   changed: the night village is nearly black already and cannot spare a
+   point of it, while the city at dusk is a bright grey sky behind the
+   faintest type on the screen. What HAS changed is that it only has to
+   hold them where the type is. */
 #overlay.card-menu {
+  /* The shell's two dials, left set to what they were. Nothing on this
+     card reads them any more — the background below is stated outright —
+     but they are `.ui-veil`'s contract, and a card that unset them would
+     silently take the shared 0.84/0.98 the moment anything here fell back
+     to it. */
   --veil-in: 0.34;
   --veil-out: 0.9;
+  background:
+    /* 1. the RAIL's own darkness, raked rather than centred. */
+    linear-gradient(
+      101deg,
+      rgba(3, 5, 11, 0.95) 0%,
+      rgba(3, 5, 11, 0.9) 21%,
+      rgba(3, 5, 11, 0.62) 39%,
+      rgba(4, 6, 12, 0.24) 57%,
+      rgba(4, 6, 12, 0.12) 78%,
+      rgba(3, 4, 9, 0.42) 100%
+    ),
+    /* 2. the head and the foot, both of which carry type. */
+    linear-gradient(
+      to bottom,
+      rgba(3, 5, 11, 0.82) 0%,
+      rgba(3, 5, 11, 0.26) 16%,
+      transparent 33%,
+      transparent 57%,
+      rgba(2, 3, 8, 0.72) 86%,
+      rgba(2, 3, 8, 0.94) 100%
+    ),
+    /* 3. the friend/foe pair the whole interface is lit by, kept from the
+       shell so this card is lit from the same two corners as every other
+       screen in the game. */
+    radial-gradient(120% 90% at 4% 110%, rgba(255, 230, 128, 0.12), transparent 56%),
+    radial-gradient(90% 72% at 97% -14%, rgba(53, 240, 255, 0.09), transparent 54%),
+    /* 4. and the scanlines, at half the shell's weight: over a village
+       glimpsed through a veil they are texture, and over a photograph at
+       full strength they are a screen door. */
+    repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.013) 0 1px, transparent 1px 3px);
 }
 #menu-shot {
   position: absolute;
@@ -66,7 +114,25 @@
   transition: opacity 0.4s ease;
   pointer-events: none;
 }
-#menu-shot.on { opacity: 1; }
+/* **The picture DRIFTS, and that is the cheapest life this screen can be
+   given.** A title screen standing on a still photograph reads as a
+   paused game; the same photograph moving a few percent over three
+   quarters of a minute reads as a place. It is on the CONTAINER rather
+   than on either picture layer, because the layers own their own
+   transform — the cross-fade's settle — and two animations on one
+   property is one of them not happening.
+
+   Scale is 1.06 at its smallest so that no amount of the translation can
+   pull an edge into frame, and it is a `transform`, so the whole thing is
+   a compositor layer and costs the main thread nothing at all. */
+#menu-shot.on {
+  opacity: 1;
+  animation: shot-drift 46s ease-in-out infinite alternate;
+}
+@keyframes shot-drift {
+  from { transform: scale(1.06) translate3d(-0.9%, 0.7%, 0); }
+  to { transform: scale(1.13) translate3d(1%, -0.8%, 0); }
+}
 /* The two picture layers. `cover` because the frame is a viewport and the shot
    is 16:9 — a phone in portrait crops it rather than letterboxing the menu.
    The scale is the cross-fade's other half: the incoming picture settles the
@@ -95,7 +161,10 @@
    screen at the scale a front end is looked at from across a room.
 
    The offset shadow pair is the cel look stated in type: a hard black drop and
-   a one-pixel cyan lift, no blur on either. */
+   a one-pixel cyan lift, no blur on either. Over a photograph it takes a soft
+   third layer underneath, which is the same separation every gauge in the HUD
+   carries and for the same reason — the hard drop is the STYLE and does
+   nothing to hold amber off a pale sky. */
 #overlay h1 {
   font-size: var(--ui-h1);
   font-weight: 900;
@@ -103,6 +172,19 @@
   line-height: 0.95;
   color: var(--hot);
   text-shadow: 4px 4px 0 #000, -2px -2px 0 #35f0ff;
+}
+#overlay.card-menu h1 {
+  text-shadow: 4px 4px 0 #000, -2px -2px 0 #35f0ff,
+    0 4px 26px rgba(0, 0, 0, 0.85);
+}
+/* The title block wears the accent down its left edge, which is what turns
+   an eyebrow, a wordmark and a line of prose into one lockup — and it is
+   the same 2px bar the selected row carries, so the mark that says "this
+   is the game" and the mark that says "this is where you are" are one
+   vocabulary rather than two. */
+#overlay.card-menu .ui-titles {
+  padding-left: clamp(10px, 1.4vw, 20px);
+  border-left: 2px solid var(--hot);
 }
 #overlay .tagline {
   margin-top: 6px;
@@ -121,31 +203,91 @@
   color: #35f0ff;
   animation: pulse 1.4s ease-in-out infinite;
 }
-
+/* The head and the foot stand on the picture rather than on a veil, so
+   everything in them carries its own separation — the same rule the
+   gameplay chrome states in `base.css`, arrived at here for the same
+   reason and applying to the same kind of thing: small type over a scene
+   that is not ours to choose. */
+#overlay.card-menu .ui-head .ui-eyebrow,
+#overlay.card-menu .tagline,
+#overlay.card-menu .ui-meta,
+#overlay.card-menu .ui-foot {
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+}
 /* =====================================================================
-   THE MENU'S RAIL — five decisions and the button that spends them.
+   THE MENU'S RAIL — two groups, five decisions, and the button that
+   spends them.
    ---------------------------------------------------------------------
    Every row is the same grid: a label, the control, and the accelerator
-   key that also reaches it. All three rows use the SAME track sizes, so
-   the labels line up down the rail and every control begins on one edge
-   — which is what the old `display: contents` grid bought, kept now that
+   key that also reaches it. All the rows use the SAME track sizes, so the
+   labels line up down the rail and every control begins on one edge —
+   which is what the old `display: contents` grid bought, kept now that
    each row is a box of its own because each row has to carry a
-   selection: a plate and an accent bar down its left side.
+   selection: a wash and an accent bar down its left side.
 
    The label column is a percentage rather than `max-content`, and that
    is what keeps the alignment: content-sized tracks are measured per
    row, so five rows would find five widths.
+
+   **The rail is CAPPED and the cap is what makes the picture the screen.**
+   Left to fill its 5fr track it is 700 px of rows on a 1920 window and a
+   Deploy button as wide as a paragraph, with the dossier stretched to
+   match on the other side and the photograph reduced to whatever showed
+   between them. At 600 the rail is a column of controls, the dossier is a
+   document, and what is between and behind them is the map — which is the
+   one thing on this card that says what the game looks like.
    ===================================================================== */
+#overlay.card-menu .ui-rail {
+  width: 100%;
+  max-width: min(100%, 600px);
+  gap: 0;
+}
+
+/* --- the two groups ---
+   Five equal rows are a form; three and then two is a menu. The first
+   group is what the round will be MADE of — the map, the enemy, the kit —
+   and the second is the two places you can go instead of starting one.
+   Nothing about the cursor's order moved: `MENU_ITEMS` still runs
+   parameters, destinations, action, top to bottom, and the tags are drawn
+   between rows the cursor was already walking in that order. */
+#overlay .ov-group {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2px, 0.5vh, 6px);
+}
+#overlay .ov-group + .ov-group { margin-top: clamp(10px, 2vh, 24px); }
+#overlay .ov-tag {
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 1vw, 14px);
+  margin-bottom: clamp(3px, 0.7vh, 8px);
+  padding-left: 2px;
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: rgba(255, 230, 128, 0.62);
+}
+/* The rule runs out of the tag to the far edge of the rail and fades,
+   which is what stops two of them reading as a table's headers. */
+#overlay .ov-tag::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--rule), transparent);
+}
+
 #overlay .ov-row {
+  position: relative;
   display: grid;
-  grid-template-columns: clamp(56px, 22%, 116px) minmax(0, 1fr) auto;
+  grid-template-columns: clamp(52px, 18%, 100px) minmax(0, 1fr) auto;
   align-items: center;
   gap: clamp(8px, 1vw, 16px);
   padding: clamp(5px, 0.8vh, 10px) clamp(8px, 0.9vw, 14px);
   /* The accent bar the cursor lights, reserved on every row so the row's
      contents do not shift by two pixels as the cursor passes over it. */
   border-left: 2px solid transparent;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.14s, border-color 0.14s;
 }
 #overlay .ov-row .label {
   position: relative;
@@ -154,19 +296,137 @@
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--dim);
-  transition: color 0.12s;
+  transition: color 0.14s;
 }
+/* The accelerator, and it is given a WIDTH rather than being left to
+   measure itself. The row's third track is `auto`, so a hint that shrink
+   -wraps sizes that track per row — `L / Y` is thirty pixels and `O` is
+   eight — and the control column beside it is `1fr` of what is left. The
+   labels lined up down the rail and the controls all STARTED on one edge,
+   and then every one of them ENDED on a different one, which is the
+   misalignment that shows: the plates are the biggest shapes on the
+   column. One width, right-aligned against the frame, and the rail closes
+   on a single edge. It collapses with the hint at `display: none`, which
+   is what keeps the narrow layout from reserving a lane for a chip that
+   is not being drawn. */
 #overlay .ov-row .hint {
+  display: inline-block;
+  width: clamp(28px, 2.8vw, 42px);
+  text-align: right;
   font-size: var(--ui-cap);
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.24);
   white-space: nowrap;
 }
-/* A row of mutually-exclusive buttons with the chosen one filled hot: the map
-   picker and the difficulty tiers. Named for the SHAPE rather than for either
-   of them, because both wear it and a class called `.difficulty` on the map
-   row is a name that has stopped meaning one thing. */
+
+/* =====================================================================
+   THE MAP ROW — a stepper and a ladder, not a strip of buttons.
+   ---------------------------------------------------------------------
+   Six maps ship and a dev build has seven, and a segmented row gives each
+   of them an equal share of one column: 96 px on a laptop, 42 on a phone.
+   Every shipped map read as `HOLLO…`, `GREYF…`, `COLDH…` — a picker whose
+   labels were all the same word, and the one control on this card that
+   was actually broken rather than merely plain.
+
+   A stepper names ONE map at whatever size the viewport can give it, and
+   the ladder under it carries what the strip of buttons was really for:
+   how many there are, and which of them this is. It costs nothing in
+   reach — left and right along this row was always what stepped it, the
+   arrows are what a pointer uses, and a ladder segment is how a pointer
+   gets to the sixth map without pressing an arrow five times.
+
+   The row is TWO grid lines for that reason: the ladder is placed in
+   column 2 of row 2, under the stepper rather than beside it, so it lines
+   up with the control it belongs to and is inside the row's own hover.
+   ===================================================================== */
+#overlay .ov-row.stepper {
+  grid-template-rows: auto auto;
+  row-gap: clamp(4px, 0.7vh, 9px);
+}
+#overlay .ov-row.stepper .ov-pips {
+  grid-column: 2;
+  grid-row: 2;
+}
+#overlay .ov-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  background: var(--plate);
+  transition: box-shadow 0.14s;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+/* The map's name, at the size the one thing this row is about deserves.
+   `text-indent` puts the tracking of the last letter back, or a centred
+   word set at 0.18em sits half a letter left of centre. */
+#overlay .ov-step .now {
+  min-width: 0;
+  padding: clamp(6px, 0.9vh, 11px) 4px;
+  text-align: center;
+  text-indent: 0.18em;
+  font-size: clamp(14px, 2.1vmin, 22px);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#overlay .ov-step button.step {
+  pointer-events: auto;
+  font: inherit;
+  font-size: clamp(16px, 2.4vmin, 26px);
+  font-weight: 700;
+  line-height: 1;
+  padding: clamp(6px, 0.9vh, 11px) clamp(11px, 1.3vw, 20px);
+  color: var(--hot);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+#overlay .ov-step button.step:hover { background: rgba(255, 230, 128, 0.18); }
+/* `onMap` clamps, so an arrow at either end of the list does nothing —
+   and an arrow that looks live and answers nothing is worse than one that
+   says it has run out of row. */
+#overlay .ov-step button.step.off {
+  color: rgba(255, 255, 255, 0.14);
+  cursor: default;
+}
+#overlay .ov-step button.step.off:hover { background: transparent; }
+
+/* The ladder. One segment per map, the chosen one hot — a bar rather than
+   a dot, because a row of dots at seven maps is a decoration and a row of
+   bars is a position along a list.
+
+   The hit area is the whole 14 px and the mark is the 4 px inside it,
+   which is `background-clip: content-box` over vertical padding. A 4 px
+   target is not one on glass, and a 14 px bar is not a hairline. */
+#overlay .ov-pips {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+#overlay button.pip {
+  pointer-events: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 14px;
+  padding: 5px 0;
+  border: 0;
+  background-color: rgba(255, 255, 255, 0.18);
+  background-clip: content-box;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+#overlay button.pip:hover { background-color: rgba(255, 230, 128, 0.6); }
+#overlay button.pip.on { background-color: var(--hot); }
+
+/* A row of mutually-exclusive buttons with the chosen one filled hot: the
+   difficulty tiers. Named for the SHAPE rather than for them, since the map
+   row wore it too until that row became a stepper — and a fourth thing that
+   is four short exclusive choices should wear it again. */
 #overlay .segmented .tiers { display: flex; gap: 5px; }
 #overlay .segmented button.tier {
   pointer-events: auto;
@@ -199,6 +459,59 @@
   background: var(--hot);
 }
 
+/* --- the three screen-openers ---
+   base.css draws them (two screens share the kit one), and what is added
+   here is the CHEVRON and the alignment it needs. Left to
+   `space-between`, a button with a name, a caption and a mark is three
+   things spread across a row and the caption floats in the middle of it;
+   pushed apart by the caption's own `margin-left: auto` it is a name on
+   the left edge and a caption and a mark on the right, which is the shape
+   every row on this rail already has.
+
+   The LOADOUT row carries no caption at all (see `showMenu`), so the gap
+   is pushed by the chevron instead — one auto margin either way, never
+   two, or the free space is split between them and the caption lands in
+   the middle of the plate again.
+
+   Both parts of the button may still ellipsise rather than overflow, for
+   a translation or a weapon name longer than anything in the kit today: a
+   caption that runs past the chevron takes the chevron off the plate,
+   which is a control that has stopped saying it is one. */
+#overlay.card-menu .ov-row.kit button {
+  justify-content: flex-start;
+  /* Tighter than base.css's, and the reason is arithmetic rather than taste:
+     the type scale is `vmin` and the rail's track is a share of the WIDTH, so
+     a window that is tall for how wide it is (1366x1024) sets `Multiplayer`
+     and `Browse matches` at nearly their largest inside a 511 px rail. The
+     label column, the accelerator's lane and this padding are the three
+     places that headroom comes from; none of them is content. */
+  padding-inline: clamp(10px, 1.1vw, 18px);
+}
+#overlay.card-menu .ov-row.kit button b,
+#overlay.card-menu .ov-row.kit button i {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#overlay.card-menu .ov-row.kit button i { margin-left: auto; }
+#overlay.card-menu .ov-row[data-menu="loadout"] button::after {
+  margin-left: auto;
+  padding-left: clamp(8px, 1vw, 16px);
+}
+#overlay.card-menu .ov-row.kit button::after {
+  content: "\203A";
+  margin-left: clamp(4px, 0.6vw, 10px);
+  font-size: 1.25em;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.26);
+  transition: color 0.14s, transform 0.14s;
+}
+#overlay.card-menu .ov-row.kit.sel button::after {
+  color: var(--hot);
+  transform: translateX(3px);
+}
+
 /* --- the deploy button, on the menu and on the round-over card ---
    The one control on either screen that is the action rather than a
    setting, so it is the only one painted in the hot colour filled in
@@ -207,11 +520,12 @@
    inputs, which is what it replaced — a line of prose telling a pad
    player to click.
 
-   On the menu it is the last thing in the rail with a margin over it,
-   which is the only separation on that column: the five rows above are
-   parameters and this is what spends them, and a gap says that without a
-   rule anybody has to look at. */
+   On the menu it is the last thing in the rail with air over it, which is
+   the only separation on that column that is not a hairline: the rows
+   above are parameters and this is what spends them, and a gap says that
+   without a rule anybody has to look at. */
 #overlay button.ov-start {
+  position: relative;
   font: inherit;
   pointer-events: auto;
   display: flex;
@@ -219,20 +533,20 @@
   align-items: center;
   gap: 2px;
   width: 100%;
-  margin-top: clamp(8px, 1.6vh, 20px);
-  padding: clamp(10px, 1.7vh, 18px) 24px;
+  margin-top: clamp(12px, 2.4vh, 30px);
+  padding: clamp(11px, 1.9vh, 20px) 24px;
   color: #12141a;
   background: var(--hot);
   border: 0;
   cursor: pointer;
-  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
   transition: background 0.12s, transform 0.12s;
 }
 #overlay button.ov-start b {
-  font-size: clamp(14px, 2vmin, 20px);
+  font-size: clamp(15px, 2.3vmin, 24px);
   font-weight: 800;
-  letter-spacing: 0.26em;
-  text-indent: 0.26em;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
   text-transform: uppercase;
 }
 #overlay button.ov-start i {
@@ -246,13 +560,51 @@
   background: #fff3c4;
   transform: translateY(-1px);
 }
+/* The sheen, and it is on the SELECTED state rather than on hover for the
+   same reason the ring below is: this is where the cursor opens, and the
+   one thing on a title screen that should be moving is the thing you are
+   being asked to press. It rides inside the button's own `clip-path`,
+   which clips a descendant along with the corner it cuts, so it needs no
+   `overflow` of its own — and it is a TRANSFORM, so it costs the
+   compositor a layer and the main thread nothing. */
+#overlay button.ov-start::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -34%;
+  width: 26%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 255, 255, 0.62),
+    transparent
+  );
+  opacity: 0;
+  pointer-events: none;
+}
+#overlay button.ov-start.sel::after {
+  opacity: 1;
+  animation: ov-sheen 3.4s ease-in-out infinite;
+}
+/* Held at the far end for the back half of the cycle: a sweep that
+   restarted the moment it left would be a strobe rather than a highlight. */
+@keyframes ov-sheen {
+  0% { transform: translateX(0); }
+  46%, 100% { transform: translateX(540%); }
+}
 
 /* --- the menu cursor ---
    The menu is a list a pad steps through, so exactly one row is "where
    you are" and it has to read as that from across the screen. Three
-   marks do it now that a row is a box: the row takes a plate and an
-   accent bar down its left edge, the label lights, and the row's CONTROL
-   takes a ring set off from it.
+   marks do it now that a row is a box: the row takes a directional wash
+   and an accent bar down its left edge, the label lights, and the row's
+   CONTROL takes a ring set off from it.
+
+   The wash is a GRADIENT off the accent bar rather than a flat plate,
+   which is what keeps it readable over a photograph: a flat 5% panel is
+   invisible against a lit street and legible against a night sky, and the
+   same row has to be obviously selected over both.
 
    The mark on the control cannot be a FILL: the tier buttons already use
    the hot fill for the selected difficulty and the Deploy button is
@@ -266,13 +618,21 @@
    vanishes on every button on this screen. Those take an INSET ring
    instead, which is inside the clip and survives it. */
 #overlay .ov-row.sel {
-  background: rgba(255, 255, 255, 0.05);
+  background: linear-gradient(
+    to right,
+    rgba(255, 230, 128, 0.16),
+    rgba(255, 230, 128, 0.04) 58%,
+    transparent
+  );
   border-left-color: var(--hot);
 }
 #overlay .ov-row.sel .label { color: var(--hot); }
 #overlay .segmented.sel .tiers {
   outline: 1px solid rgba(255, 230, 128, 0.5);
   outline-offset: 4px;
+}
+#overlay .stepper.sel .ov-step {
+  box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.55);
 }
 #overlay .ov-row.sel button.kit-open,
 #overlay .ov-row.sel button.settings-open,
@@ -286,20 +646,117 @@
   box-shadow: inset 0 0 0 2px rgba(18, 20, 26, 0.45);
 }
 
+/* --- the card arriving ---
+   Four blocks on a short stagger, and every one of them is opacity and a
+   transform so the whole entrance is the compositor's. `both` on the fill
+   is what holds each block at its FROM state until its delay is up:
+   without it the rail is painted whole, then hidden, then dealt, which is
+   a flash rather than an entrance.
+
+   `.enter` is put on the root by `setCardClass` and only on a RAISE — see
+   `showMenu`, which rewrites this card on every map step and would
+   otherwise re-deal the rail under the player's hand as they scrolled
+   along the map row. */
+@keyframes ov-rise {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ov-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+#overlay.card-menu.enter .ui-head,
+#overlay.card-menu.enter .ov-group,
+#overlay.card-menu.enter button.ov-start {
+  animation: ov-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+}
+#overlay.card-menu.enter .ov-group { animation-delay: 0.07s; }
+#overlay.card-menu.enter .ov-group + .ov-group { animation-delay: 0.13s; }
+#overlay.card-menu.enter button.ov-start { animation-delay: 0.19s; }
+/* The dossier FADES rather than rising, and the reason is a canvas: the
+   schematic is sized off the box it is painted into, and a panel that is
+   still travelling when `paintThumb` measures it is a thumbnail drawn to
+   the wrong backing store. A transform does not move a layout box — but a
+   fade cannot even raise the question, and there is nothing this block
+   gains from arriving in a different direction to the rail. */
+#overlay.card-menu.enter .ov-detail {
+  animation: ov-arrive 0.7s ease 0.24s both;
+}
+#overlay.card-menu.enter .ui-foot {
+  animation: ov-arrive 0.6s ease 0.32s both;
+}
 /* =====================================================================
-   THE DETAIL PANEL — what the cursor is standing on.
+   THE DOSSIER — what the cursor is standing on.
    ---------------------------------------------------------------------
    See `OverlayScreen.drawDetail` for why it exists at all. What is here
    is its four parts: a head, a map schematic, a paragraph, and a strip of
    figures. Every one of them is optional — the settings and multiplayer
    rows are a head and a paragraph — so the panel is a column with a gap
    and nothing in it is positioned against anything else.
+
+   **On the menu it is a PLATE and on every other screen it is an open
+   column, and the difference is what is behind it.** `.ui-panel` is a rule
+   down an edge because the settings screen and the lobby stand on a solid
+   veil, where a box would be a container drawn around nothing. This card
+   stands on a PHOTOGRAPH, deliberately let through at close to full
+   strength on exactly the side the dossier is on — so the panel has to
+   carry its own darkness or the map's name is set over whatever the sky
+   happened to be doing in that frame. A chamfered plate with a hairline
+   inside it is the same hull the gauges wear, and it reads as a document
+   laid on the picture rather than as a column of type floating over it.
+
+   It is CENTRED in its track rather than stretched, and capped, and pushed
+   to the outer edge. Full height it was a plate with four lines at the top
+   of it; capped and centred it is the size of what is in it, which is the
+   whole argument `.ui-panel` makes for being a rule and not a box, made
+   the other way round for the one screen that needs the box.
    ===================================================================== */
 #overlay .ov-detail { justify-content: center; }
+#overlay.card-menu .ov-detail {
+  --cham: clamp(14px, 2.2vmin, 22px);
+  align-self: center;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: min(100%, 620px);
+  margin-left: auto;
+  gap: clamp(9px, 1.5vh, 18px);
+  padding: clamp(14px, 2.2vmin, 28px);
+  border-left: 0;
+  background: linear-gradient(
+    170deg,
+    rgba(9, 12, 20, 0.9),
+    rgba(4, 6, 12, 0.84)
+  );
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  clip-path: polygon(
+    var(--cham) 0,
+    100% 0,
+    100% calc(100% - var(--cham)),
+    calc(100% - var(--cham)) 100%,
+    0 100%,
+    0 var(--cham)
+  );
+}
 #overlay .ov-detail-head {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+/* The head is ruled off on the menu, with a hot tick under it — the one
+   mark on the dossier that is the interface's own colour rather than the
+   picture's, and what makes a plate read as a document with a header
+   rather than as a box with a title in it. */
+#overlay.card-menu .ov-detail-head {
+  padding-bottom: clamp(7px, 1.1vh, 13px);
+  border-bottom: 1px solid var(--rule);
+}
+#overlay.card-menu .ov-detail-head::after {
+  content: "";
+  width: clamp(26px, 5vmin, 54px);
+  height: 2px;
+  margin-top: clamp(5px, 0.9vh, 10px);
+  margin-bottom: -1px;
+  background: var(--hot);
 }
 #overlay .ov-detail h3 {
   font-size: clamp(17px, 3vmin, 32px);
@@ -307,6 +764,11 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: #fff;
+}
+#overlay.card-menu .ov-detail h3 {
+  font-size: clamp(19px, 3.4vmin, 38px);
+  letter-spacing: 0.13em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
 }
 #overlay .ov-blurb {
   max-width: 56ch;
@@ -318,7 +780,11 @@
    the map is square and the canvas is sized off this box — a height in
    px would make the thumbnail a different shape on every viewport. It is
    allowed to give ground vertically on a short window, where the panel's
-   own height is what runs out first. */
+   own height is what runs out first.
+
+   The hairline is INSET for the reason every ring on this card is: the bay
+   is chamfered by a clip-path, which cuts an ordinary border off with the
+   corner it is cutting. */
 #overlay .ov-thumb {
   position: relative;
   align-self: center;
@@ -327,6 +793,7 @@
   aspect-ratio: 1;
   min-height: 0;
   background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
 }
 #overlay .ov-thumb canvas {
@@ -408,7 +875,6 @@
   text-transform: uppercase;
   color: #fff;
 }
-
 /* =====================================================================
    THE ROUND-OVER CARD
    ---------------------------------------------------------------------
@@ -664,14 +1130,37 @@
 }
 #overlay kbd.pad { color: var(--hot); box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.3); }
 
-/* --- one column ---
-   The rail keeps the whole width and the panel is dropped, which is
-   `.ui-optional` in base.css. What is left to do here is the tagline and
-   the per-row accelerator hint: both are reference material next to a
-   control that works without them, and both are what the rail can least
-   afford when it is the only thing on the screen. */
+/* =====================================================================
+   THE MENU AT EVERY VIEWPORT
+   ---------------------------------------------------------------------
+   Three shapes, and which one you get is decided by the two things that
+   actually differ: whether there is room for a column BESIDE the rail, and
+   whether there is height to stack one UNDER it instead.
+   ===================================================================== */
+
+/* --- one column, and this card asks for it EARLIER than the shell does ---
+   `.ui-optional` in base.css drops a panel at 900 px, which is the width
+   below which a rail and a panel stop fitting side by side on the settings
+   screen and the lobby. This card's rail is wider than either: it carries a
+   map's NAME at 22 px between two arrows, four tier buttons that must stay
+   readable words, and three openers with a caption on each. At 1024 px — a
+   tablet held upright — the shell's rule still says two columns and the rail
+   gets 383 px of them, which is `HOLLOWM…`, `RECR…`, `REGU…`, `VETE…`: the
+   ellipsis this card was rebuilt to remove, arriving from the layout instead
+   of from the picker.
+
+   So the menu takes its own threshold. It is the ONE screen with a number of
+   its own here, and the number is what its widest row measures rather than
+   anything about the device. */
+@media (max-width: 1100px), (max-height: 460px) {
+  #overlay.card-menu .ui-body { grid-template-columns: minmax(0, 1fr); }
+  #overlay.card-menu .ui-body > .ui-panel.ui-optional { display: none; }
+  #overlay.card-menu .ov-row .hint { display: none; }
+}
+/* The tagline is a line of prose under a wordmark and goes at the shell's own
+   threshold, not at this card's: it costs the rail nothing and there is no
+   reason a tablet with a thousand pixels of head should lose it. */
 @media (max-width: 900px), (max-height: 460px) {
-  #overlay .ov-row .hint,
   #overlay.card-menu .tagline { display: none; }
 }
 /* And the rail stops centring only when the window is SHORT, not merely
@@ -681,4 +1170,141 @@
    the Deploy button. */
 @media (max-height: 460px) {
   #overlay .ui-rail { justify-content: flex-start; }
+}
+
+/* --- a rail narrower than the captions on it ---
+   An opener is a NAME, a caption and a chevron on one line, and the name is
+   the one of the three that cannot go: the chevron says the row opens
+   something and the name says what. Below about 560 px of rail there is no
+   room for all three, and what an overflowing caption gives you is not a
+   smaller caption — it is `BROWSE MATCH` with the chevron pushed off the
+   plate. The ellipsis rules beside the openers further up are the belt on
+   top of this; the caption simply going is the braces. */
+@media (max-width: 560px) {
+  #overlay.card-menu .ov-row.kit button i { display: none; }
+}
+
+/* --- a phone held sideways ---
+   390 px of height carrying a head, five rows in two groups, a Deploy button
+   and a foot, and the frame does not scroll: everything here is height coming
+   back off something that can afford it.
+
+   The two group TAGS are the first to go and they are the right thing to go —
+   they are the only text on the rail that names nothing you can press, and
+   with two groups on screen the hairline between them says what the second
+   one said. The rest is padding, not content. */
+@media (max-height: 460px) {
+  #overlay.card-menu .ov-tag { display: none; }
+  #overlay.card-menu .ov-group + .ov-group {
+    margin-top: clamp(5px, 1.2vh, 10px);
+    padding-top: clamp(5px, 1.2vh, 10px);
+    border-top: 1px solid var(--rule);
+  }
+  #overlay.card-menu .ov-row { padding-top: 3px; padding-bottom: 3px; }
+  #overlay.card-menu .ov-row.stepper { row-gap: 3px; }
+  #overlay.card-menu .ov-step .now { padding-top: 5px; padding-bottom: 5px; }
+  #overlay.card-menu .ov-step button.step { padding-top: 5px; padding-bottom: 5px; }
+  #overlay.card-menu .segmented button.tier { padding-top: 5px; padding-bottom: 5px; }
+  #overlay.card-menu button.pip { height: 9px; padding: 3px 0; }
+  #overlay.card-menu button.ov-start {
+    margin-top: clamp(7px, 1.8vh, 14px);
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+}
+
+/* --- a phone or a tablet held UPRIGHT, which is the one shape that gets the
+   dossier back ---
+   The one-column rule above drops the panel because a NARROW window has no
+   room for a column beside the rail — and an upright one has no room beside
+   it and a great deal of room under it. What that rule left was a rail in the
+   top half and four hundred pixels of nothing below the Deploy button, on the
+   one device where the picture behind it is also the most cropped.
+
+   So the body becomes two ROWS here rather than two columns, and the panel is
+   the second.
+
+   Keyed on the ORIENTATION and a floor under the height, never on width
+   alone, because the dossier costs height and a short window is exactly where
+   there is none: a landscape phone matches `max-width: 1100px` too, and
+   putting a schematic under its rail is how the Deploy button leaves the
+   screen.
+
+   **The panel's row is BOUNDED and the panel is clipped to it, and both
+   halves of that are load-bearing.** Left to size itself the dossier is as
+   tall as whatever is in it — 399 px on a 390-wide phone and 608 on a
+   tablet — and a grid row of `auto` under a rail simply lets it run off the
+   bottom of the viewport and under the foot, which is the failure this rule
+   was written to produce twice before it was written to prevent it. Nothing
+   in this HUD scrolls, so `1fr` and `overflow: hidden` is what makes the
+   bottom edge real; what is INSIDE that budget is then chosen by the two
+   rules below rather than by whatever happens to fit. */
+@media (max-width: 1100px) and (orientation: portrait) and (min-height: 700px) {
+  #overlay.card-menu .ui-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: stretch;
+  }
+  #overlay.card-menu .ui-body > .ui-panel.ui-optional {
+    display: flex;
+    align-self: stretch;
+    justify-content: flex-start;
+    min-height: 0;
+    overflow: hidden;
+    max-width: min(100%, 560px);
+    margin-left: 0;
+  }
+  #overlay.card-menu .ui-rail {
+    max-width: min(100%, 560px);
+    justify-content: flex-start;
+  }
+  /* **THE SCHEMATIC IS THE FIRST THING OUT, not the last.** It is the best
+     thing on the dossier and it is also 220 px square on the phone that has
+     212 px to give the whole panel — so on a phone the dossier is a head, a
+     line and the figures, which is a caption on the map you have chosen, and
+     the schematic waits for a viewport that can hold it at a size worth
+     drawing. A 60 px map of Cinderhaven is not a smaller schematic; it is a
+     grey square where one used to be. */
+  #overlay.card-menu .ov-thumb { display: none; }
+  /* And the paragraph is clamped rather than dropped, because with the
+     schematic gone it is the only thing on the panel that says what the map
+     is LIKE. Three lines is what the head, the strip and the padding leave. */
+  #overlay.card-menu .ov-blurb {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+/* The schematic comes back where there is genuinely room to draw one: an
+   upright tablet, which is the viewport this whole stacked shape was worth
+   building for. 22vh rather than the desktop's 46 — the budget here is the
+   panel's own row and not half a window — and the paragraph gives up a line
+   to pay for it. */
+@media (max-width: 1100px) and (orientation: portrait) and (min-height: 1000px) {
+  #overlay.card-menu .ov-thumb {
+    display: block;
+    flex: 0 0 auto;
+    max-width: min(100%, 22vh);
+  }
+  #overlay.card-menu .ov-blurb { -webkit-line-clamp: 2; }
+}
+
+/* --- what a viewport that asked for less motion gets ---
+   The drift, the entrance and the Deploy button's sheen are all decoration
+   over a screen that works without any of them, so all three simply stop.
+   The backdrop's cross-fade is left alone: it is a TRANSITION rather than an
+   animation, it is what stops a map change being a jump cut, and it is a
+   quarter-second of opacity on a photograph. */
+@media (prefers-reduced-motion: reduce) {
+  #menu-shot.on,
+  #overlay.card-menu.enter .ui-head,
+  #overlay.card-menu.enter .ov-group,
+  #overlay.card-menu.enter button.ov-start,
+  #overlay.card-menu.enter .ov-detail,
+  #overlay.card-menu.enter .ui-foot,
+  #overlay button.ov-start.sel::after {
+    animation: none;
+  }
+  #overlay button.ov-start.sel::after { opacity: 0; }
 }

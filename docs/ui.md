@@ -61,6 +61,37 @@ than shrinking (`.ui-optional`), because half a panel says less than none and
 takes the rail's room to say it. `--ui-lean` is the same pair of queries as a
 custom property, for the screens that drop optional matter of their own.
 
+**The MENU has a threshold of its own, and it is the only screen that does.**
+900 px is the width below which a rail and a panel stop fitting on the settings
+screen and the lobby; the menu's rail is wider than either, carrying a map's
+name at 22 px between two arrows, four tier buttons that have to stay readable
+words, and three openers with a caption on each. At 1024 px — a tablet held
+upright — the shell's rule still says two columns and the rail gets 383 of
+them, which is `HOLLOWM…`, `RECR…`, `REGU…`, `VETE…`: the ellipsis the map
+stepper was built to remove, arriving from the layout instead of from the
+picker. So `#overlay.card-menu` drops to one column at **1100**, and the number
+is what its widest row measures rather than anything about a device. A screen
+that grows a wide row owes the same arithmetic; a screen that does not stays on
+the shell's.
+
+**And it is the one screen that puts its panel BACK on an upright viewport.**
+Dropping the panel is right because a narrow window has no room BESIDE the
+rail — and a phone or a tablet held upright has no room beside it and a great
+deal under it, which the shell's rule left as four hundred pixels of nothing
+below the Deploy button. Under `(orientation: portrait) and (min-height:
+700px)` the menu's body becomes two ROWS and the dossier is the second. Two
+rules make that safe rather than merely possible. **The panel's row is
+bounded** (`minmax(0, 1fr)`, `overflow: hidden`): sized `auto` under a rail the
+dossier is as tall as whatever is in it — 399 px on a 390-wide phone, 608 on a
+tablet — and runs off the bottom of the viewport and under the foot, since
+nothing in this HUD scrolls. And **the SCHEMATIC is the first thing out of that
+budget, not the last**: it is the best thing on the dossier and it is also
+220 px square on the phone that has 212 px to give the whole panel, so a phone
+gets a head, a clamped line and the figures, and the schematic waits for
+`min-height: 1000px` — an upright tablet — where it can be drawn at a size
+worth drawing. A 60 px map of Cinderhaven is not a smaller schematic; it is a
+grey square where one used to be.
+
 **A screen over another SCREEN is opaque; a screen over the SCENE is not.**
 `.ui-veil` is the backdrop — a warm glow off the lower-left corner and a cold one
 off the upper-right (the friend/foe pair the whole HUD is coloured by, and what
@@ -695,15 +726,46 @@ both halves of that are load-bearing.**
   inside the card would be a picture on top of the scrim that makes the type over
   it readable.
 
-So the backdrop needs no scrim of its own: it is the shared veil, at
-`#overlay.card-menu`'s own density. `--veil-in`/`--veil-out` are the vignette's
-alpha in the middle and at the edge, and they exist for precisely this question.
-**One density has to hold two opposite pictures**, and that is what set it: the
-night village is nearly black already and cannot spare a point of scrim, while
-the city at dusk is a bright grey sky behind the faintest type on the screen
-(`--dim`, the row labels). 0.34 in, 0.9 out, is where the chapel still reads as a
-chapel and Coldharbour's labels still hold against the towers. The edge stays
-dense, because the wordmark, the rail and the foot hints all live out there.
+So the backdrop needs no scrim of its own: the card in front of it is the
+scrim. **What the menu does NOT take is the shell's veil**, and that is the
+change that turned this card from a form into a front end.
+
+**The shell's veil is an ellipse, and an ellipse is the wrong shape for a
+screen whose content is a column down one side.** `.ui-veil` is dense at the
+edges and lighter in the middle, the same in every direction, which is right
+for a screen that puts its reading matter in the centre of the frame. The menu
+does not: the rail is the left third, the dossier the right, and the picture is
+what they are laid on. Tuned dense enough to hold `--dim` row labels over
+Coldharbour's dusk sky it put the whole photograph behind a wash, and every
+shipped map read as a dark rectangle; tuned light enough for the photograph it
+stopped holding the type. **There is no single density that does both, because
+the two demands are in different PLACES.**
+
+`#overlay.card-menu` therefore states its own `background` outright, and it is
+raked rather than centred: the column the rail stands in is held to ~0.95, the
+right-hand two-thirds comes through at 0.12–0.24, and the head and the foot get
+a horizontal band of their own because both carry type over whatever the picture
+is doing up there — and a photograph's sky is the brightest thing in it. The
+friend/foe glow pair and the scanlines are kept from the shell so the card is
+lit from the same two corners as every other screen; the scanlines are at half
+weight, because over a village glimpsed through a veil they are texture and over
+a photograph at full strength they are a screen door.
+
+**`--veil-in`/`--veil-out` are still set on the card and nothing on it reads
+them.** They are `.ui-veil`'s contract, and a card that unset them would take
+the shared 0.84/0.98 silently the moment anything here fell back to it.
+
+**The picture DRIFTS**, 46 seconds a length, alternating: a title screen on a
+still photograph reads as a paused game, and the same photograph moving a few
+percent reads as a place. The animation is on `#menu-shot` — the CONTAINER —
+because the two picture layers already own their own `transform`, which is the
+cross-fade's settle, and two animations on one property is one of them not
+happening. It never goes below `scale(1.06)`, so no amount of the translation
+can pull an edge into frame, and it is a transform, so it is a compositor layer
+and costs the main thread nothing. `prefers-reduced-motion` stops it, along with
+the card's entrance and the Deploy button's sheen; the cross-fade is left alone,
+being a transition rather than an animation and the thing that stops a map
+change being a jump cut.
 
 **The cross-fade waits for the image to DECODE.** Two layers, one showing and one
 being prepared, swapped on `img.decode()` — a fade into a layer the browser has
@@ -792,9 +854,59 @@ it is measured against.
   down the rail and every control begins on one edge — a label column sized to
   `max-content` is measured per row, and five rows would find five widths. Each
   row is a box of its own rather than `display: contents`, because each one now
-  carries a selection: a plate and an accent bar down its left side. The control
-  column is `minmax(0, 1fr)`, so the four difficulty tiers and the kit button
-  span the same width.
+  carries a selection: a directional wash and an accent bar down its left side.
+  The control column is `minmax(0, 1fr)`, so the four difficulty tiers and the
+  kit button span the same width. **The accelerator column is given a WIDTH
+  rather than being left to shrink-wrap**, and that is the half of the
+  alignment that was missing: the third track is `auto`, so a hint that
+  measures itself sizes that track per row — `L / Y` is thirty pixels and `O`
+  is eight — and every control on the rail started on one edge and then ended
+  on a different one, which on a column of plates is the misalignment that
+  shows. The width collapses with the hint at `display: none`, so the narrow
+  layout reserves no lane for a chip it is not drawing.
+- **The rail is CAPPED at 600 px, and the cap is what makes the picture the
+  screen.** Left to fill its `5fr` track it is 700 px of rows on a 1920 window
+  and a Deploy button as wide as a paragraph, with the dossier stretched to
+  match on the other side and the photograph reduced to whatever showed between
+  them. Capped, the rail is a column of controls, the dossier is a document,
+  and what is between and behind them is the map.
+- **The rows are GROUPED, because five equal rows are a form and three plus two
+  is a menu.** `Operation` is what the round will be made of — the map, the
+  enemy, the kit — and the two under the second tag are the places you can go
+  instead of starting one. Nothing about the cursor's order moved: `MENU_ITEMS`
+  still runs parameters, then destinations, then the action, and the tags are
+  drawn between rows the cursor was already walking in that order. On a
+  landscape phone the tags are the first thing dropped, because they are the
+  only text on the rail that names nothing you can press and the hairline
+  between the two groups says what the second one said.
+- **The map row is a STEPPER and a ladder, not a strip of buttons, and that is
+  a correctness fix rather than a style.** Six maps ship and a dev build has
+  seven; a segmented row gives each an equal share of one column, which is
+  96 px on a laptop and 42 on a phone, and every shipped map read as `HOLLO…`,
+  `GREYF…`, `COLDH…` — a picker whose labels were all the same word. The
+  stepper names ONE map at whatever size the viewport can give it and the
+  ladder under it carries what the strip of buttons was really for: how many
+  there are and which of them this is. It costs nothing in reach — left and
+  right along this row was always what stepped it, the arrows are what a
+  pointer uses, and a ladder rung is how a pointer reaches the sixth map
+  without pressing an arrow five times. **`Game.setMap` CLAMPS**, so an arrow
+  at either end is drawn `off`: an arrow that looks live and answers nothing is
+  worse than one that says it has run out of row.
+  The rung's hit area is 14 px with a 4 px mark inside it
+  (`background-clip: content-box` over vertical padding) — a 4 px target is not
+  one on glass, and a 14 px bar is not a hairline.
+  **The ladder is INSIDE the row** — a second grid line, placed in column 2 —
+  rather than a strip beneath it, so it lines up with the control it belongs to
+  and shares that row's hover. A pointer travelling down to it must not take
+  the cursor off the map row on its way to a control that is the map row's.
+- **The LOADOUT row is the one opener with no caption on it.** Its VALUE is the
+  long thing: `Marksman rifle · Scope` and `Change kit` together overran the
+  control column at every viewport where the type is at full size, so the row
+  that had something to say was the one being ellipsised — and what the caption
+  said, the row's own label and the chevron already say. The other two keep
+  theirs, and lose them below 560 px of rail, where there is no room for a
+  name, a caption and a mark on one line and the name is the one that cannot
+  go.
 - **The panel beside the rail is redrawn on every cursor move and the rows are
   not.** The rows carry the selection as a class on elements that already exist,
   for the reasons below; the panel has no listener, no transition and no hover
@@ -802,6 +914,27 @@ it is measured against.
   seen going wrong. `start` gets a DEPLOYMENT BRIEF rather than nothing, and
   that is where the cursor opens — the map, the enemy and the kit, which are
   the whole of what the button under it is about.
+- **On this card the panel is a PLATE, and it is the only place `.ui-panel` is
+  a box.** The panel is a rule down an edge everywhere else because the
+  settings screen and the lobby stand on a solid veil, where a box would be a
+  container drawn around nothing. This card stands on a photograph that the
+  scrim deliberately lets through at close to full strength on exactly the side
+  the panel is on, so it has to carry its own darkness or the map's name is set
+  over whatever the sky happened to be doing in that frame. It is centred in
+  its track rather than stretched, and capped: full height it was a plate with
+  four lines at the top of it, which is the argument `.ui-panel` makes for
+  being a rule, made the other way round for the one screen that needs the box.
+- **The card's entrance runs on a RAISE and never on a redraw.** `showMenu`
+  rewrites this card wholesale on every map step and on the way back from the
+  kit and settings screens, so an entrance keyed to the markup existing would
+  replay on each of them — the rail would re-deal itself every time the player
+  pressed Right along the map row, which is the one press it is most likely to
+  be seen on. `setCardClass` puts `.enter` on the root only when the card was
+  not already up, exactly as the cursor is only reset then, and it has to go on
+  before the markup is written because what animates are elements that do not
+  exist yet. The dossier FADES where the rail rises, and that is a canvas
+  rather than a taste: the schematic is sized off the box it is painted into,
+  and a fade cannot even raise the question a travelling panel would.
 - **The map row's schematic is drawn from the LAYOUT, never from a built map**
   ([`MapThumb.ts`](../src/ui/MapThumb.ts)). The deploy screen draws its map out
   of the finished collider set, which is the honest way to draw a map you are

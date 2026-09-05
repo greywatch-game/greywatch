@@ -707,10 +707,15 @@ src/
       overlay.css       #   the .overlaid class they raise, and #menu-shot, the
                         #   map photograph the menu stands on: a second root of
                         #   its own so it survives the card being rewritten and
-                        #   stays UNDER the veil. The menu is a
+                        #   stays UNDER the veil, drifting, behind a scrim
+                        #   raked across the frame rather than the shell's
+                        #   centred one. The menu is a
                         #   LIST: MENU_ITEMS is the cursor's whole world, drawn
-                        #   as a rail with a PANEL beside it describing the row
-                        #   the cursor is on. The pause is the one card that
+                        #   as a rail of two GROUPS — the map a stepper and a
+                        #   ladder, never a strip of buttons — with a DOSSIER
+                        #   beside it describing the row the cursor is on, the
+                        #   one .ui-panel in the tree that is a plate. The
+                        #   pause is the one card that
                         #   does not take the screen — left-anchored over a
                         #   round that is still worth seeing
     MapThumb.ts         # The menu panel's map schematic, drawn from a map's

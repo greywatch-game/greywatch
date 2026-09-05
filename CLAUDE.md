@@ -350,6 +350,17 @@ not**, and **the PAUSE is the one card that does not take the screen**.
 **The menu stands on a PHOTOGRAPH of the map**, and `#menu-shot` is a root of its
 OWN at z-index 9 rather than a child of `#overlay`, which would paint over the
 veil whatever its z-index. **A map with no row in `mapShots.ts` is not broken.**
+**Its scrim is the one in this interface that is DIRECTIONAL** — raked across
+the frame so the column the rail stands in is nearly opaque and the two-thirds
+of the picture the dossier is on comes through at close to full strength, which
+the shell's ellipse cannot do because the two demands are in different places.
+**The dossier is therefore the one `.ui-panel` that is a BOX**, and **the menu
+is the one screen with a one-column threshold of its own** (1100 px, which is
+what its widest row measures). **The map row is a STEPPER**: six maps in a
+segmented row of equal shares is `HOLLO…`, `GREYF…`, `COLDH…` at every viewport
+a player has. **The entrance animation is keyed to the card being RAISED**
+(`setCardClass`'s `raised`), never to its markup existing — `showMenu` rewrites
+this card on every map step.
 
 **The CHROME is sized by a UNIT, never by a transform** — a transform takes a
 10 px caption to six along with the 46 px numeral it was aimed at. `hud.css` and

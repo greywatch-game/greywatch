@@ -142,6 +142,22 @@ const MENU_ITEMS: readonly MenuItem[] = [
 const MENU_DEFAULT = MENU_ITEMS.indexOf("start");
 
 /**
+ * How long the menu card's entrance runs for, in milliseconds — the longest
+ * of the four staggered blocks, delay included (`.ui-foot`, 0.32 + 0.6 s),
+ * with a little over it.
+ *
+ * It is a WINDOW rather than a flag, and the reason is that a raise is not one
+ * call. `Game` builds the menu and then enters the `menu` state, and both of
+ * those redraw this card inside the same task at boot — so an entrance played
+ * only when `card !== "menu"` is an entrance the second call throws away
+ * before a frame has been painted, which is how it shipped and never once ran.
+ * Redraws inside the window keep the animation; the map steps and the returns
+ * from the kit and settings screens that this card is really rewritten by are
+ * all far outside it.
+ */
+const MENU_ENTER_MS = 950;
+
+/**
  * The panel's three shapes, as three functions rather than three copies of the
  * same markup in five branches of `drawDetail`.
  *
@@ -243,6 +259,13 @@ export class OverlayScreen {
    * place you cannot stay.
    */
   private card: "none" | "menu" | "roundover" | "pause" | "building" = "none";
+  /**
+   * When the menu card was last RAISED, which is what the entrance animation
+   * is measured from. See `MENU_ENTER_MS`: a raise is not one call to
+   * `showMenu`, so "was the card already up" is not a question that can be
+   * asked once.
+   */
+  private menuRaisedAt = -Infinity;
 
   /** Wired by Game: the player picked a difficulty tier from the menu. */
   onDifficulty: (tier: number) => void = () => {};
@@ -288,42 +311,82 @@ export class OverlayScreen {
   }
 
   /**
-   * The main menu: a rail of five decisions with the Deploy button under them,
-   * and the panel beside it saying what the cursor is standing on.
+   * The main menu: the operation on the left, the dossier on the right, and a
+   * photograph of the map behind both.
    *
-   * The kit itself is not edited here — it is two slots and a stat chart, which
-   * is a screen rather than a strip of buttons under a title. What sits here is
-   * the button that opens it and a reminder of what is currently in the
-   * player's hands.
+   * **It is a FRONT END and not a settings list, and that is the whole of what
+   * this card was rebuilt to be.** What stood here was five `label · control ·
+   * accelerator` rows in the middle-left of the window with a schematic beside
+   * them — correct, reachable, and indistinguishable from the settings screen
+   * two rows down it. A shooter's title screen has one job before it has any
+   * other: say what this game looks like. So the picture is the largest thing
+   * on the card now, the scrim that makes the type legible is a DIRECTIONAL
+   * one that darkens the column the rail stands in and lets the right-hand
+   * two-thirds of the photograph through at nearly full strength, and the rail
+   * is the shortest arrangement of the same six decisions that will fit under
+   * it.
    *
-   * The card is drawn in the shell (`.ui-screen` in `base.css`) and is ANCHORED
-   * to the viewport rather than centred in it. It was a 600px column down the
-   * middle of the window, which on a monitor is a quarter of the width in use
-   * and nothing within 500px of an edge — a dialog box over a game rather than
-   * the game's own front end. What that column's width bought was alignment,
-   * and the rail keeps it a different way: every row states the same three
-   * tracks, so the labels line up and every control begins on one edge.
+   * **The rows are GROUPED, because five equal rows are a form and three plus
+   * two is a menu.** `Operation` is what the round will be made of — the map,
+   * the enemy, the kit — and the two under the second tag are places you can
+   * go instead. The Deploy button is under both with air over it. Nothing
+   * about the ORDER moved: it is still `MENU_ITEMS`, still parameters then
+   * destinations then the action, and the cursor still walks it top to bottom.
    *
-   * Each row is a BOX now rather than `display: contents`, because each one
-   * carries a selection — a plate and an accent bar down its left side. The
-   * label column is a percentage rather than `max-content`, and that is what
-   * keeps the alignment: a content-sized track is measured per row, so five
-   * rows would find five widths.
+   * **The map row is a STEPPER and not a strip of buttons, and that is a
+   * correctness fix rather than a style.** Six shipped maps (seven in a dev
+   * build) in a segmented row of equal shares is 96 px a button on a laptop
+   * and 42 on a phone: every shipped map read as `HOLLO…`, `GREYF…`,
+   * `COLDH…`, which is a picker whose labels are all the same word. A stepper
+   * names ONE map at full size, at every viewport, and the pips under it say
+   * how many there are and which this is — and it costs nothing in reach,
+   * because left and right along this row was always what stepped it.
+   *
+   * The kit itself is not edited here — it is two slots and a stat chart,
+   * which is a screen rather than a strip of buttons under a title. What sits
+   * here is the button that opens it and a reminder of what is in the player's
+   * hands.
+   *
+   * The card is drawn in the shell (`.ui-screen` in `base.css`) and is
+   * ANCHORED to the viewport rather than centred in it. It was a 600px column
+   * down the middle of the window, which on a monitor is a quarter of the
+   * width in use and nothing within 500px of an edge — a dialog box over a
+   * game rather than the game's own front end. What that column's width
+   * bought was alignment, and the rail keeps it a different way: every row
+   * states the same three tracks, so the labels line up and every control
+   * begins on one edge.
    *
    * `#overlay` is inside a `pointer-events: none` HUD and does not opt back in
    * (only `#deploy` does), so the individual CONTROLS ask for pointer events —
-   * the tier buttons, the kit button and Deploy, never the rows around them.
-   * The labels, the hints and the grid's own gaps stay inert, and a click that
-   * lands on one of them now does NOTHING: the pointer's only way off this
-   * screen is the Deploy button. It used to be every pixel of it, which meant
-   * choosing a map or a difficulty deployed you the instant you chose one —
-   * those two fire on mouse-UP, and the confirm reads the mouse-DOWN before it.
+   * the stepper's arrows and pips, the tier buttons, the three openers and
+   * Deploy, never the rows around them. The labels, the hints and the grid's
+   * own gaps stay inert, and a click that lands on one of them does NOTHING:
+   * the pointer's only way off this screen is the Deploy button. It used to be
+   * every pixel of it, which meant choosing a map or a difficulty deployed you
+   * the instant you chose one — those two fire on mouse-UP, and the confirm
+   * reads the mouse-DOWN before it.
+   *
+   * **The entrance animation runs on a RAISE and never on a redraw.** This
+   * method rewrites the card wholesale on every map step and on the way back
+   * from the kit and the settings screens, so an entrance keyed to the markup
+   * existing would replay on each of them — the rail would re-deal itself
+   * every time the player pressed Right along the map row, which is the one
+   * press it is most likely to be seen on. `.enter` is put on the root only
+   * when the card was not already up, exactly as the cursor is only reset then.
    */
   showMenu(opts: MenuState): void {
     const { maps, selectedMap, difficulties, selected } = opts;
     this.setOverlaid(true);
-    // Raised anew, not redrawn — see `card`.
-    if (this.card !== "menu") this.menuIndex = MENU_DEFAULT;
+    // Raised anew, not redrawn — see `card`. The cursor and the entrance
+    // animation are the two things that key off this, and for the same reason.
+    const raised = this.card !== "menu";
+    if (raised) {
+      this.menuIndex = MENU_DEFAULT;
+      this.menuRaisedAt = performance.now();
+    }
+    // Still ARRIVING, which is not the same question as "was it raised by this
+    // call" — see `MENU_ENTER_MS`.
+    const entering = performance.now() - this.menuRaisedAt < MENU_ENTER_MS;
     this.card = "menu";
     this.kit = { weapon: opts.weapon, sight: opts.sight };
     this.maps = maps;
@@ -344,13 +407,22 @@ export class OverlayScreen {
           `<button class="tier${i === selected ? " on" : ""}" data-tier="${i}">${name}</button>`,
       )
       .join("");
-    const mapButtons = maps
+    // One rung per map, the chosen one lit — how many there are and which
+    // this is, which is the half of a segmented row a stepper would otherwise
+    // lose. Each is a button rather than a mark: on a row whose only other way
+    // along it is one map at a time, a rung is how a pointer reaches the sixth
+    // without pressing an arrow five times. It is INSIDE the row (a second
+    // grid line, under the stepper) rather than a strip beneath it, so it
+    // lines up with the control it belongs to and shares that row's hover —
+    // a pointer travelling down to it must not take the cursor off the map
+    // row on its way to a control that is the map row's.
+    const pips = maps
       .map(
         (m, i) =>
-          `<button class="tier${i === selectedMap ? " on" : ""}" data-map="${i}">${m.name}</button>`,
+          `<button class="pip${i === selectedMap ? " on" : ""}" data-map="${i}" title="${m.name}"></button>`,
       )
       .join("");
-    this.setCardClass("menu");
+    this.setCardClass("menu", entering);
     this.root.innerHTML = `
       <div class="ui-head">
         <div class="ui-titles">
@@ -359,37 +431,55 @@ export class OverlayScreen {
           <p class="tagline">Take and hold ${spellCount(flags)} points against ${CONFIG.teams[1].name}</p>
         </div>
         <div class="ui-meta">
-          <span>Deployment</span>
-          <b>${perSide} v ${perSide}</b>
-          <span>${CONFIG.teams[0].name}</span>
+          <span>Conquest &middot; ${perSide} v ${perSide}</span>
+          <b>${CONFIG.teams[0].name}</b>
+          <span>Single player</span>
         </div>
       </div>
       <div class="ui-body">
         <div class="ui-rail">
-          <div class="ov-row segmented" data-menu="map">
-            <span class="label">Map</span>
-            <div class="tiers">${mapButtons}</div>
-            <span class="hint">&larr; &rarr;</span>
+          <div class="ov-group">
+            <span class="ov-tag">Operation</span>
+            <div class="ov-row stepper" data-menu="map">
+              <span class="label">Map</span>
+              <div class="ov-step">
+                <button class="step${selectedMap <= 0 ? " off" : ""}" data-step="-1">&lsaquo;</button>
+                <span class="now">${map ? map.name : "&mdash;"}</span>
+                <button class="step${selectedMap >= maps.length - 1 ? " off" : ""}" data-step="1">&rsaquo;</button>
+              </div>
+              <span class="hint">&larr; &rarr;</span>
+              <div class="ov-pips">${pips}</div>
+            </div>
+            <div class="ov-row segmented" data-menu="difficulty">
+              <span class="label">Enemy</span>
+              <div class="tiers">${tiers}</div>
+              <span class="hint">&larr; &rarr;</span>
+            </div>
+            <!-- The one opener with no caption on it, and the reason is that
+                 its VALUE is the long thing. "Change kit" said what the row's
+                 own label and the chevron already say, and it said it in the
+                 space "Marksman rifle · Scope" needs: the two together
+                 overran the control column at every viewport where the type
+                 is at full size, so the row that had something to say was the
+                 one being ellipsised. -->
+            <div class="ov-row kit" data-menu="loadout">
+              <span class="label">Loadout</span>
+              <button class="kit-open"><b>${kitLabel(opts.weapon, opts.sight)}</b></button>
+              <span class="hint">L / Y</span>
+            </div>
           </div>
-          <div class="ov-row segmented" data-menu="difficulty">
-            <span class="label">Enemy</span>
-            <div class="tiers">${tiers}</div>
-            <span class="hint">&larr; &rarr;</span>
-          </div>
-          <div class="ov-row kit" data-menu="loadout">
-            <span class="label">Loadout</span>
-            <button class="kit-open"><b>${kitLabel(opts.weapon, opts.sight)}</b><i>Change kit</i></button>
-            <span class="hint">L / Y</span>
-          </div>
-          <div class="ov-row kit" data-menu="settings">
-            <span class="label">Options</span>
-            <button class="settings-open"><b>Settings</b><i>Controls &middot; display</i></button>
-            <span class="hint">O</span>
-          </div>
-          <div class="ov-row kit" data-menu="multiplayer">
-            <span class="label">Online</span>
-            <button class="mp-open"><b>Multiplayer</b><i>Browse matches</i></button>
-            <span class="hint">M</span>
+          <div class="ov-group">
+            <span class="ov-tag">Elsewhere</span>
+            <div class="ov-row kit" data-menu="settings">
+              <span class="label">Options</span>
+              <button class="settings-open"><b>Settings</b><i>Controls &middot; display</i></button>
+              <span class="hint">O</span>
+            </div>
+            <div class="ov-row kit" data-menu="multiplayer">
+              <span class="label">Online</span>
+              <button class="mp-open"><b>Multiplayer</b><i>Browse matches</i></button>
+              <span class="hint">M</span>
+            </div>
           </div>
           <button class="ov-start" data-menu="start"><b>Deploy</b><i>Enter &middot; A &middot; Start</i></button>
         </div>
@@ -407,6 +497,16 @@ export class OverlayScreen {
       .forEach((btn) => {
         btn.onclick = () => this.onDifficulty(Number(btn.dataset.tier));
       });
+    // The stepper's two arrows and the pips under them, both ordinary clicks
+    // on the way UP for the reason the tier buttons are: they step a choice
+    // and do not leave the screen. `onMap` CLAMPS, which is what the `off`
+    // class on an end arrow is drawn from — an arrow that looks live and does
+    // nothing is worse than one that says it is at the end of the row.
+    this.root
+      .querySelectorAll<HTMLElement>("button[data-step]")
+      .forEach((btn) => {
+        btn.onclick = () => this.onMap(this.mapIndex + Number(btn.dataset.step));
+      });
     this.root.querySelectorAll<HTMLElement>("button[data-map]").forEach((btn) => {
       btn.onclick = () => this.onMap(Number(btn.dataset.map));
     });
@@ -423,10 +523,11 @@ export class OverlayScreen {
     });
     this.applyMenuSelection();
     // POINTERDOWN, not click — kept now that the confirm no longer counts the
-    // mouse, because it is the edge these two have always changed state on and
-    // the deploy screen's twins still do it for a live reason. Every button on
-    // this card that leaves the screen it is on agrees on the down edge; the
-    // ones that only step a row (map, difficulty) are ordinary clicks.
+    // mouse, because it is the edge these three have always changed state on
+    // and the deploy screen's twins still do it for a live reason. Every
+    // button on this card that leaves the screen it is on agrees on the down
+    // edge; the ones that only step a row (the stepper, the pips, the tiers)
+    // are ordinary clicks.
     const kitBtn = this.root.querySelector<HTMLElement>("button.kit-open");
     if (kitBtn) kitBtn.onpointerdown = () => this.onOpenLoadout();
     const setBtn = this.root.querySelector<HTMLElement>("button.settings-open");
@@ -1031,12 +1132,24 @@ export class OverlayScreen {
    * scrimmed from that side only. Setting `className` outright rather than
    * toggling is what stops the previous card's modifier surviving into the
    * next one — every one of these rewrites the markup underneath it anyway.
+   *
+   * `raised` is the menu's entrance animation and nothing else: the class has
+   * to be on the ROOT before the markup is written, because what animates are
+   * elements that do not exist yet and a class added afterwards would restart
+   * them on the frame after they had already been painted at rest. It is off
+   * on a REDRAW for the reason the cursor is not reset on one — this card is
+   * rewritten on every map step, and a rail that re-deals itself under the
+   * player's hand as they scroll along the map row is the one place an
+   * entrance would be seen most and wanted least.
    */
   private setCardClass(
     card: "menu" | "roundover" | "building" | "pause",
+    raised = false,
   ): void {
     this.root.className =
-      card === "pause" ? "card-pause" : `ui-screen ui-veil card-${card}`;
+      card === "pause"
+        ? "card-pause"
+        : `ui-screen ui-veil card-${card}${raised ? " enter" : ""}`;
   }
 
   /** Takes whichever card is up back down. The single way off all three. */
