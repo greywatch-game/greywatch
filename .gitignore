@@ -5,6 +5,8 @@ dist-server-dev/
 tmp_shots/
 plans/webgpu-ref/gate.json
 plans/webgpu-ref/ref/
+/tools/
+/reference-media/
 
 # Frame-profiler captures. `ProfileChip.download` names every one
 # `greywatch-<kind>-<stamp>.json` and the browser drops it in the cwd, so these
