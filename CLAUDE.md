@@ -535,6 +535,12 @@ PROBE inverts it**: in a cube that channel is the bake's own coverage mask —
 what the glazing and the water read to tell the city from the sky — so
 `ReflectionSystem` flips `opaqueAlpha` to 1 for the length of a bake, and a
 shader that hardcodes either value breaks one of the two passes silently.
+**One blended mesh is the exception to the accumulation and it is the one that
+WRITES DEPTH**: the kit screen's backdrop is not in front of the surface a pixel
+records, it IS that surface, so it writes **0** coverage over the whole frustum
+(`ALPHA_REPLACE_COLOR` at a fragment alpha of 0) — on `ALPHA_COMBINE` it took
+the ink off the entire kit screen, the outline of the weapon it was hung behind
+included.
 
 **Water is a MIRROR with a dark body under it, and it is SAMPLED FROM NOTHING** —
 directional wave trains, no normal map, and re-adding one brings back four rules

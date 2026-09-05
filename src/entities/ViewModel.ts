@@ -156,8 +156,37 @@ const WEAPON_BUILDERS: Record<CarriedId, WeaponBuilder> = {
  * first and its BLENDED ones last, so a blended mesh in group 0 with the
  * highest `alphaIndex` in the scene is the last thing drawn before the
  * viewmodel and the first thing the viewmodel draws over. That is why the card
- * is a hair transparent (see `inspect.backdrop.alpha`) rather than flatly
- * opaque: opaque, it would be sorted in among the village.
+ * is BLENDED rather than flatly opaque: opaque, it would be sorted in among
+ * the village.
+ *
+ * **BLENDED IS A SORTING DEVICE HERE AND NOT A CLAIM OF TRANSLUCENCY, and the
+ * frame's alpha channel is where the difference is paid for.** That channel is
+ * TRANSLUCENT COVERAGE — "how much got between the pass and the depth this
+ * pixel records" — and `CelInk` scales its stroke by `1 - a`, so a plume takes
+ * the line work of what is behind it away. Every alpha-blended draw
+ * accumulates into it for free, because `ALPHA_COMBINE` blends alpha as
+ * (ONE, ONE), and this card is the one blended mesh in the game that must not:
+ * it WRITES DEPTH, so it is not in front of the surface this pixel records, it
+ * IS that surface, and it covered the whole frustum. Shipped on `ALPHA_COMBINE`
+ * at 0.985 it stamped 0.985 of coverage over every pixel of the kit screen and
+ * took the ink off the frame — the world's, which is under the card and no
+ * loss, and the WEAPON'S OUTLINE with it, which is the one thing the screen
+ * exists to show. (The weapon's own pixels write `opaqueAlpha` and were never
+ * the problem; a contour straddles the silhouette, and the half of every
+ * stroke lying on the card was erased.)
+ *
+ * **`ALPHA_REPLACE_COLOR` with a fragment alpha of 0 is the pair that says
+ * both things at once**, and it is the only blend mode in Babylon's table that
+ * can: colour is `SRC` with the destination factor at ZERO — the card replaces
+ * the world outright, which is what 0.985 was approximating — while alpha is
+ * `srcA + (1 - srcA) * dstA`, which at `srcA = 0` is the destination alpha
+ * untouched. So the card leaves the coverage channel exactly as the opaque
+ * world wrote it, and the ink reads the stage as what it is: a painted flat
+ * with a rifle in front of it. The 0 is doing a second job at the same time —
+ * `needAlphaBlending()` is `alpha < 1`, so it is also what keeps the card in
+ * the blended queue the slot above depends on. Neither job wants any other
+ * value, which is why it is stated here beside the two depth writes rather
+ * than offered as a tunable.
  *
  * The card is a painted flat, not geometry: nothing may collide with it, pick
  * it, shadow it or bloom it. The one thing it cannot cover is the GLOW LAYER,
@@ -165,7 +194,6 @@ const WEAPON_BUILDERS: Record<CarriedId, WeaponBuilder> = {
  * `Game`'s emissive selector is where that is dealt with.
  */
 function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
-  const b = CONFIG.viewmodel.inspect.backdrop;
   // Square, because the quad is scaled to the frustum every frame and the
   // gradient is a soft pool that reads the same however it is stretched.
   const tex = new DynamicTexture("kitBackdrop", { width: 256, height: 256 }, scene);
@@ -177,7 +205,12 @@ function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
   mat.diffuseColor = Color3.Black();
   mat.specularColor = Color3.Black();
   mat.emissiveTexture = tex;
-  mat.alpha = b.alpha;
+  // Blended for the draw slot, and contributing NOTHING to the frame's
+  // coverage channel. See the header: the mode makes the colour a straight
+  // replace and the 0 keeps the alpha channel the world's, which is what gives
+  // the weapon on the stage the same ink it wears in a round.
+  mat.alphaMode = Constants.ALPHA_REPLACE_COLOR;
+  mat.alpha = 0;
   // Depth is then bent both ways, and both are load-bearing. `ALWAYS` is what
   // lets the card ignore the world's depth, so a wall the deploy camera is
   // standing against cannot cut a hole in the bench. Writing depth is how it

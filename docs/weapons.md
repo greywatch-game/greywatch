@@ -1606,7 +1606,9 @@ persists to `localStorage` like the difficulty tier, so confirm just closes.
   because every point of DOM alpha over it is a point off the weapon — so the
   card hangs *behind* the weapon instead, sized to the frustum from the same fov
   and aspect that place the weapon. See [`rendering.md`](rendering.md) for the
-  draw-order rules that keep it between the two. Because it is cut to the WHOLE
+  draw-order rules that keep it between the two — and for why the card writes
+  **no coverage** into the frame's alpha channel, without which it takes the ink
+  off the very weapon it was hung behind. Because it is cut to the WHOLE
   frustum it also darkens the map behind the rest of the screen, which is what
   let the kit screen's own scrim go — see [`ui.md`](ui.md).
 - **Where the weapon STANDS is the kit screen's answer, not this config's.**

@@ -789,14 +789,21 @@ export const viewmodel = {
       /** Slop past the frustum's corners, so no edge can creep into shot. */
       margin: 1.04,
       /**
-       * A hair short of opaque, and the hair is not the point — being BLENDED
-       * is. A blended mesh is drawn in its rendering group's last pass, which
-       * is the only slot in the frame that comes after the world and before
-       * the weapon; an opaque card would be sorted in among the village
-       * instead. What is left of the map at this value is a value or two on a
-       * near-black card, which is to say nothing.
+       * **There is deliberately no `alpha` here any more, and the absence is
+       * the rule rather than a tidy-up.** The card is BLENDED — a blended mesh
+       * is drawn in its rendering group's last pass, which is the only slot in
+       * the frame that comes after the world and before the weapon, and an
+       * opaque one would be sorted in among the village — but its blending is
+       * a sorting device and not a claim of translucency. The frame's alpha
+       * channel is TRANSLUCENT COVERAGE and `CelInk` takes its stroke off by
+       * `1 - a`, so the 0.985 that used to live here stamped 0.985 of coverage
+       * over every pixel of the kit screen and took the ink off the weapon it
+       * was standing behind. `buildKitBackdrop` writes 0 and replaces the
+       * colour outright instead; the argument is on the material, and the one
+       * thing to know here is that the value it needs is not a tunable — 0 is
+       * what puts the card in the blended queue AND what keeps it out of the
+       * coverage channel, and nothing else is either.
        */
-      alpha: 0.985,
       /**
        * The pool of light behind the weapon and the dark it falls off to,
        * centred on the BAY the kit screen reported — the same point the weapon

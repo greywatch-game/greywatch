@@ -1696,6 +1696,27 @@ vantages come back to four decimal places.
   over it, and a **glow layer is composited over the finished frame and so cannot
   be covered at all** — `Game`'s emissive selector zeroes everything off the stage
   while the kit is up.
+- **…and it is therefore the one blended mesh that must write NO COVERAGE, which
+  is the alpha-channel rule read the other way round.** Every alpha-blended draw
+  accumulates into the frame's alpha for free and every one of them wants to —
+  except this card, which WRITES DEPTH. It is not in front of the surface a pixel
+  records, it IS that surface, and it covers the whole frustum: on `ALPHA_COMBINE`
+  at 0.985 it stamped 0.985 of coverage over the entire kit screen, and since
+  `CelInk` scales its stroke by `1 - a` the screen came up with **no line work on
+  it at all** — the world's, which is under the card and no loss, and the
+  **weapon's outline with it**, which is the one thing the screen exists to show.
+  The weapon's own pixels write `opaqueAlpha` and were never the problem; a
+  contour straddles the silhouette it draws, so the half of every stroke lying on
+  the card was erased and what was left read as an unshaded low-poly gun.
+  `ALPHA_REPLACE_COLOR` with a fragment alpha of **0** is the pair that says both
+  things at once, and it is the only mode in Babylon's table that can: colour is
+  `SRC` against a destination factor of ZERO (a straight replace — which is what
+  0.985 was approximating), alpha is `srcA + (1 - srcA) * dstA`, which at
+  `srcA = 0` is the destination untouched. The 0 is also `needAlphaBlending()`'s
+  `alpha < 1` and therefore what keeps the card in the blended queue the slot
+  above depends on, so neither job wants any other value and there is no
+  `backdrop.alpha` in `CONFIG` any more. **A second full-frustum flat would owe
+  the same pair.**
 - **The post-process chain has an order, and a display setting that switches an
   effect off REMOVES its pass** rather than zeroing its uniforms — an attached but idle
   pass still reads and writes the whole frame. The order is FXAA, shafts, motion blur,
