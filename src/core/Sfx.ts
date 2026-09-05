@@ -1,8 +1,8 @@
 /**
- * Sfx.ts — All audio: synthesized WebAudio, and FOURTEEN recordings laid over
+ * Sfx.ts — All audio: synthesized WebAudio, and SIXTEEN recordings laid over
  * it: one report per weapon in the kit, the gun a hull's second seat lays, the
- * two halves of the player's own magazine change and the four beats of a bolt
- * cycle.
+ * two halves of the player's own magazine change, the four beats of a bolt
+ * cycle and the two blasts.
  * Owns: the AudioContext, one cached noise buffer shared by every shot, one
  * shared convolution reverb every gunshot sends into, a master soft clip, the
  * voice cap (CONFIG.audio.maxVoices — over-cap sounds are skipped silently),
@@ -28,11 +28,25 @@
  * setPosition/setOrientation path — keep both. Nothing here schedules a
  * repeating sound: footsteps are one-shots fired by the caller's own gait
  * phase (the camera's bob, a bot's walk cycle), never by a timer in here.
- * The sustained voices are ENGINES, and they are not a counter-example: one is
- * a graph of six sources held open, not a timer firing one-shots — the only
- * thing in it that repeats is an oscillator, which is the audio clock's
- * business rather than the frame's, and it stops with that clock like
- * everything else. There are two KINDS and one graph. The hull the player is
+ * The sustained voices are ENGINES and AMBIENCE, and neither is a
+ * counter-example: each is a graph of sources held open, not a timer firing
+ * one-shots — the only things in them that repeat are an oscillator and a
+ * looping buffer, which are the audio clock's business rather than the
+ * frame's, and they stop with that clock like everything else. Nothing in
+ * either is a recording and nothing in either is going to be: see
+ * `docs/audio.md`, where one ambient bed prices out at ten times the whole
+ * sampled gun kit.
+ * The AMBIENCE half is a place in the world that makes a noise on its own —
+ * `ambience`/`ambienceOff`/`ambienceAllOff` over `buildAmbience`: a roar, a
+ * sizzle, a breath and one impulse-excited resonator per crackle row, so
+ * randomness costs no schedule. It was FITTED to a recording rather than
+ * tuned — `docs/audio.md` carries the table and the three silent failures
+ * the fit turned up. `systems/AmbienceSystem.ts` decides WHICH
+ * emitters are worth a voice and this file decides what one sounds like. Its
+ * one difference from the engines below is what a HELD world is owed: an
+ * engine is driven by a load a lid freezes and owes silence, a fire is driven
+ * by nothing and does not — see `ambienceAllOff`.
+ * The ENGINE half has two KINDS and one graph. The hull the player is
  * driving (`engineOn`/`engineDrive`/`engineOff`) is unpanned and uncapped for
  * the reason the player's own report is; every other occupied hull within
  * `CONFIG.audio.engineRange` gets a spatialised one (`hullEngine`/
@@ -383,6 +397,141 @@ interface EngineVoice {
 }
 
 /**
+ * What a place in the world sounds like — the ambience equivalent of
+ * `EngineKind`, and held as a spec for that field's reason: what a thing
+ * sounds like is a ROW, so a second kind is a second row and never a branch.
+ *
+ * The values live in `CONFIG.audio.ambience`, which is where every number in
+ * the game lives; this is only their shape. A stream and a wind in a canopy
+ * are the same three layers with the crackle gate wound shut — see
+ * `Sfx.buildAmbience`, which is one method for the same reason `buildEngine`
+ * is one method for a diesel and a turbine.
+ */
+export interface AmbienceKind {
+  /** Metres: past this the graph is not built. */
+  range: number;
+  /** Metres: the panner's plateau. */
+  refDistance: number;
+  /** The panner's inverse rolloff. */
+  rolloff: number;
+  /** Level at the plateau. */
+  level: number;
+  /** The low hump: lowpass corner in Hz, and its share of the mix. */
+  roarHz: number;
+  roarLevel: number;
+  /** The high hump: centre, width and share. Nothing fills the gap between. */
+  sizzleHz: number;
+  sizzleQ: number;
+  sizzleLevel: number;
+  /** The slow swell, deeper on the sizzle than on the roar. */
+  breathRate: number;
+  breathHz: number;
+  breathDepth: number;
+  breathRoarDepth: number;
+  /**
+   * The events, as a LIST — empty is a wind or a stream, and a third kind of
+   * crackle is a third row rather than a branch in `buildAmbience`.
+   */
+  sparks: readonly SparkSpec[];
+}
+
+/**
+ * One family of crackle: how often, and what it rings.
+ *
+ * `hz` is EVENTS A SECOND and is honoured as one — `sparkThreshold` turns it
+ * into a waveshaper threshold against the context's own sample rate, so the
+ * row means the same thing at 44.1 and 48 kHz. `rate` is what slice of the
+ * shared buffer this chain reads, and its only job is to be different from
+ * every other row's: two chains at the same rate fire on the same samples and
+ * are one louder chain with two filters on it.
+ */
+export interface SparkSpec {
+  /** Events a second. */
+  hz: number;
+  /**
+   * Playback rate, and **it MUST be a negative power of two** — 1, 0.5,
+   * 0.25, 0.125. Any other value is not a slower row, it is a SILENT one.
+   *
+   * A spark's threshold sits within a thousandth of full scale, so what it
+   * selects is isolated single samples. A read position that does not land
+   * exactly on the sample grid interpolates between an extreme sample and
+   * its ordinary neighbour, and that average is always under the threshold —
+   * so the row fires less often, or not at all. Measured, one row stated at
+   * 15 events a second delivered 107% of that at rate 1 and 110% at 0.5, and
+   * then **57% at 0.2, 44% at 1/7, 21% at 1/3 and NOTHING AT ALL at 0.37 or
+   * 0.61.** Only rates that are exact in binary keep the position on the
+   * grid; 1/3 is not 0.333… in a float and the position drifts off it.
+   *
+   * This shipped as 0.61 in the second cut of this graph, which meant the
+   * whole second row was silent and the fire was one pitch repeated — the
+   * exact failure the row list exists to prevent, hidden behind numbers that
+   * measured well because the surviving row was carrying them. `buildAmbience`
+   * warns about it in a DEV build.
+   */
+  rate: number;
+  /**
+   * Seconds of the shared buffer this row reads before it repeats, so its
+   * own cycle is `loop / rate` and no two rows share one.
+   *
+   * The buffer is one second long and a row at rate 1 therefore repeats its
+   * whole pattern of crackles every second, which is a rhythm, and the
+   * reason rate 1 is not used by any row. Rounded to a whole
+   * number of SAMPLES at build time: a fractional loop leaves the read
+   * position on a fraction after its first wrap, which is the silent failure
+   * above arriving by a different door.
+   */
+  loop: number;
+  /** The resonance an impulse rings, and how long it rings for. */
+  ringHz: number;
+  ringQ: number;
+  level: number;
+}
+
+/**
+ * Points in a spark's transfer table. See `Sfx.sparkShape`: a crackle's rate
+ * is a threshold near the very tip of the noise's range, so this is the
+ * resolution of that rate and the usual 1024 cannot express one.
+ */
+const SPARK_CURVE_POINTS = 32768;
+
+/**
+ * Events a second → the sample value a crackle has to exceed.
+ *
+ * White noise is uniform on [-1, 1], so the share of samples past a threshold
+ * `t` is `1 - t` on each tip and the chain fires at `sampleRate * rate *
+ * (1 - t)`. Inverting that is the whole function, and it is a function rather
+ * than a constant because the answer depends on a device's own sample rate:
+ * a threshold that gives fifteen crackles a second at 48 kHz gives sixteen
+ * and a half at 44.1, and hard-coding one would be a fire that burns at a
+ * different speed on different hardware.
+ *
+ * Clamped well short of 1 so a badly-stated row is a busy fire rather than a
+ * table with no events in it at all.
+ */
+function sparkThreshold(hz: number, sampleRate: number, rate: number): number {
+  const share = hz / Math.max(1, sampleRate * rate);
+  return Math.min(0.9999, Math.max(0, 1 - share));
+}
+
+/**
+ * One emitter's nodes — `EngineVoice`'s much shorter cousin, and short for a
+ * reason worth stating: everything an engine holds on that interface is
+ * something the throttle MOVES, and nothing moves here. A fire is not being
+ * worked, so the only things this has to keep are the three needed to take it
+ * away again.
+ *
+ * `sources` carries the same rule it carries there: everything started is on
+ * it, so stopping is a loop rather than a list somebody has to keep in step.
+ * The panner is on it in its own right because `out.disconnect()` would leave
+ * one wired to the master — silent, and never collected.
+ */
+interface AmbienceVoice {
+  sources: AudioScheduledSourceNode[];
+  out: GainNode;
+  panner: PannerNode;
+}
+
+/**
  * Procedural sound effects via WebAudio — no audio assets.
  *
  * Three things here exist because of the jump from a twelve-enemy arena to a
@@ -428,6 +577,25 @@ export class Sfx {
    * did not step the fleet at all owes.
    */
   private hullVoices = new Map<number, EngineVoice>();
+  /**
+   * The world's sustained emitters, keyed by whatever the caller uses to tell
+   * one from another — `AmbienceSystem` uses the emitter's index, which is
+   * stable for the life of a map, so a fire keeps its own voice as the
+   * ranking around it changes.
+   *
+   * Held open for as long as the caller keeps asking and the emitter stays
+   * inside its kind's `range`. See `ambience`, which is called every frame
+   * rather than when something is lit, and `ambienceAllOff`, which is owed by
+   * a map being torn down and — unlike `enginesOff` — by nothing else.
+   */
+  private ambienceVoices = new Map<number, AmbienceVoice>();
+  /**
+   * The gate's transfer curves by threshold, built on the first emitter of
+   * each kind and shared after that, for the reason `growlCurve` is. A map
+   * rather than a field because a second ambience kind is a second threshold,
+   * and the whole point of the spec is that adding one costs no code here.
+   */
+  private sparkCurves = new Map<number, Float32Array<ArrayBuffer>>();
   /**
    * The combustion shaper's curve: built on the first mount and shared by
    * every one after it, for the reason the noise buffer is.
@@ -2257,6 +2425,391 @@ export class Sfx {
       e.sources[0].onended = () => {
         e.out.disconnect();
         e.panner?.disconnect();
+      };
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * A place in the world that makes a noise on its own — a burning drum, and
+   * whatever is added beside it.
+   *
+   * **This is `hullEngine`'s shape with a different budget, and the two are
+   * meant to be read together**: a graph held open behind a panner, keyed by
+   * whatever the caller uses to tell one emitter from another, called EVERY
+   * FRAME rather than when something starts, with the range gate and its
+   * hysteresis in here rather than at the call site. What differs is only
+   * what is being tracked — not somebody lighting a fire, but a fire being
+   * within earshot.
+   *
+   * **The caller decides WHICH emitters get a voice and this decides whether
+   * one is close enough to be worth building.** `AmbienceSystem` owns the
+   * ranking, because how many fires a map may hold is a question about the
+   * map and not about the graph.
+   *
+   * The hysteresis is the engine's, for the engine's reason and not for a
+   * sound one: by the gate the rolloff has this voice below anything audible
+   * either way, so what an emitter sitting on the boundary would otherwise
+   * cost is a three-source graph torn down and stood back up every few
+   * frames.
+   */
+  ambience(key: number, at: Vector3, kind: AmbienceKind): void {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master) return;
+    let voice = this.ambienceVoices.get(key);
+    const dist = this.distanceToListener(at);
+    if (dist > kind.range * (voice ? 1.15 : 1)) {
+      this.ambienceOff(key);
+      return;
+    }
+    if (!voice) {
+      const panner = ctx.createPanner();
+      panner.panningModel = "equalpower";
+      panner.distanceModel = "inverse";
+      panner.refDistance = kind.refDistance;
+      panner.rolloffFactor = kind.rolloff;
+      panner.connect(master);
+      const built = this.buildAmbience(panner, kind);
+      if (!built) {
+        panner.disconnect();
+        return;
+      }
+      voice = built;
+      this.ambienceVoices.set(key, voice);
+      // Faded UP rather than switched on. A fire that arrives at full level on
+      // the frame it comes into range is the one moment the ranking behind it
+      // would be audible as a ranking.
+      voice.out.gain.setTargetAtTime(kind.level, ctx.currentTime, 0.25);
+    }
+    const p = voice.panner;
+    p.positionX.value = at.x;
+    p.positionY.value = at.y;
+    p.positionZ.value = at.z;
+  }
+
+  /** One emitter: out of range, or beaten to its slot. */
+  ambienceOff(key: number): void {
+    const voice = this.ambienceVoices.get(key);
+    if (!voice) return;
+    this.ambienceVoices.delete(key);
+    this.stopAmbience(voice);
+  }
+
+  /**
+   * Every one at once, and it is owed by exactly one caller: a map being torn
+   * down, which takes none of its keys with it, so the per-frame
+   * `ambienceOff` above would never be asked about them again.
+   *
+   * **Unlike `enginesOff` this is NOT owed by a frame that held the world**,
+   * and the difference between the two is the whole argument for where the
+   * push lives. An engine's voice is driven by a parameter a held world
+   * freezes — a stopped fleet is a hull droning at a load nobody is asking
+   * for — so a frame that did not step it owes those SILENCE. A fire is
+   * driven by nothing at all: it is a property of the map being installed and
+   * the listener being somewhere, which every state that renders has. A
+   * village does not go quiet because a kit screen is up.
+   *
+   * The suspended clock is the one held world neither of them answers, and
+   * for the same reason: the offline pause card stops the audio context,
+   * which is already holding this graph exactly as it holds the tail of the
+   * last shot.
+   */
+  ambienceAllOff(): void {
+    if (this.paused) return;
+    for (const voice of this.ambienceVoices.values()) this.stopAmbience(voice);
+    this.ambienceVoices.clear();
+  }
+
+  /**
+   * The ambience graph, and the same bargain the engine makes one subsystem
+   * over — see `buildEngine`, whose header rule is this one's too. Nothing
+   * here is scheduled. The only things that repeat are buffer sources
+   * looping, which is the audio clock's business rather than the frame's, and
+   * they stop with that clock like everything else.
+   *
+   * **A fire is a low ROAR, a high SIZZLE, and EVENTS — with a hole in the
+   * middle.** That last part is measured rather than designed: the reference
+   * recording's octave bands run 63 Hz -4.1 dB, 125 -5.2, 250 -10.2, then
+   * **500 -21.2 and 1k -19.5**, then back up to 4k -11.8 and 8k -11.5. Two
+   * humps and a fifteen-decibel hole between them. Nothing here fills that
+   * hole and nothing here should: a 12 dB/octave lowpass at `roarHz` and a
+   * bandpass whose skirt starts an octave and a half above it leave it there
+   * for free.
+   *
+   * | layer | what it is for |
+   * | --- | --- |
+   * | roar — lowpassed noise | the column of air the drum is moving |
+   * | sizzle — the SAME noise, a broad hump up top | sap, ash and small stuff |
+   * | breath — a slow modulator on the sizzle alone | a fire is not steady |
+   * | sparks — impulses ringing resonators | the crackles |
+   *
+   * **The roar and the sizzle are one source read through two filters**,
+   * which is where a source was saved: noise is broadband, so a second
+   * buffer player buys two filters' worth of independence and nothing an ear
+   * can find. The BREATH is a source of its own for the opposite reason —
+   * see `breathRate`: a modulator tapped off a
+   * one-second buffer read at 0.33 repeats every three seconds, and a
+   * three-second breathing pattern is exactly the kind of thing an ear
+   * catches.
+   *
+   * **A CRACKLE IS AN IMPULSE RINGING A RESONATOR**, and that is the whole
+   * of what makes this sound like a fire rather than like a firefight two
+   * streets away. The first version of this graph gated a continuous
+   * resonant band with a lowpassed noise, which cannot work and could not
+   * have been tuned into working: a gate built out of a band-limited signal
+   * opens as slowly as its own bandwidth, so every event had a soft attack,
+   * the same length, the same pitch and nearly the same level. Measured, it
+   * gave 9.4 events a second at 1500 Hz with millisecond attacks, against a
+   * real fire's 24.7 a second at 7 kHz attacking in 0.15 ms — and a
+   * soft-attacked mid-band transient at an even rate is not a near-miss for
+   * a crackle, it is a good imitation of a distant rifle.
+   *
+   * So `sparkShape` thresholds the shared noise buffer SAMPLE BY SAMPLE with
+   * no filter in front of it. A single sample survives as a single-sample
+   * impulse — the attack is exact by construction rather than tuned — and
+   * that train excites a bandpass whose ring is the decay. Three properties
+   * fall out for free rather than being dialled in: the attack, the impulse
+   * heights (uniform on (0, 1], which is the 14 dB of level spread the
+   * reference has), and the fact that nothing is scheduled.
+   *
+   * **The rows are a LIST because one pitch repeated is the other half of
+   * the gunfire read.** Two chains at different playback rates read
+   * different slices of the buffer, so their events neither coincide nor
+   * share a timbre. A third is a third row in `CONFIG.audio.ambience.fire`
+   * and no code here at all — and a kind with an empty list is a wind or a
+   * stream, which is `EngineKind.rotor`'s bargain made again: what a thing
+   * sounds like is a row, never a branch.
+   *
+   * It comes up SILENT — `ambience` fades it in, for the reason stated there.
+   */
+  private buildAmbience(
+    panner: PannerNode,
+    kind: AmbienceKind,
+  ): AmbienceVoice | null {
+    const ctx = this.ctx;
+    if (!ctx || !this.noiseBuffer) return null;
+    try {
+      const out = ctx.createGain();
+      out.gain.value = 0;
+      out.connect(panner);
+
+      // The one source the roar and the sizzle share. A third of speed for
+      // the same reason the engine's chug runs slow: the shared one-second
+      // buffer then loops every three, under filters that leave no seam an
+      // ear can find.
+      const base = ctx.createBufferSource();
+      base.buffer = this.noiseBuffer;
+      base.loop = true;
+      base.playbackRate.value = 0.33;
+
+      const roarTone = ctx.createBiquadFilter();
+      roarTone.type = "lowpass";
+      roarTone.frequency.value = kind.roarHz;
+      roarTone.Q.value = 0.7;
+      const roarLevel = ctx.createGain();
+      roarLevel.gain.value = kind.roarLevel;
+      base.connect(roarTone).connect(roarLevel).connect(out);
+
+      // The sizzle gets a source of ITS OWN, read at full speed, and the
+      // reason is bandwidth rather than decorrelation: a buffer played at
+      // 0.33 has no content above a third of Nyquist, so the roar's source
+      // is silent over about 8 kHz. Measured, that put the 16 kHz octave
+      // 11.4 dB under where the reference has it — a fire with the top cut
+      // off it, which is most of the difference between sizzling and
+      // rushing. It loops every second and nothing can hear that, because
+      // what is left after this bandpass is noise.
+      const sizzleSrc = ctx.createBufferSource();
+      sizzleSrc.buffer = this.noiseBuffer;
+      sizzleSrc.loop = true;
+      sizzleSrc.playbackRate.value = 1;
+      const sizzleTone = ctx.createBiquadFilter();
+      sizzleTone.type = "bandpass";
+      sizzleTone.frequency.value = kind.sizzleHz;
+      sizzleTone.Q.value = kind.sizzleQ;
+      // DRIVEN, and the base value is the floor rather than the level: an
+      // AudioParam sums its scheduled value with whatever is connected to
+      // it, so the breath below swings this about `sizzleLevel` rather than
+      // scaling it.
+      const sizzleLevel = ctx.createGain();
+      sizzleLevel.gain.value = kind.sizzleLevel;
+      sizzleSrc.connect(sizzleTone).connect(sizzleLevel).connect(out);
+
+      // The breath: slow noise, lowpassed to a wander and spent on the
+      // sizzle alone. Its own source — see `breathRate`.
+      const breath = ctx.createBufferSource();
+      breath.buffer = this.noiseBuffer;
+      breath.loop = true;
+      breath.playbackRate.value = kind.breathRate;
+      const breathTone = ctx.createBiquadFilter();
+      breathTone.type = "lowpass";
+      breathTone.frequency.value = kind.breathHz;
+      breathTone.Q.value = 0.5;
+      const breathDepth = ctx.createGain();
+      // NORMALISED, like the sparks and for the same reason: a share of the
+      // level it swings, so `breathDepth` is a depth rather than a magic
+      // number and moving `breathHz` or `breathRate` does not silently
+      // retune the mix.
+      //
+      // The makeup is large by arithmetic rather than by taste. A 1.2 Hz
+      // lowpass keeps about a thousandth of the power of a noise read at
+      // 0.05, so the raw modulator arrives at ~0.023 RMS and a depth stated
+      // as a plain multiplier swings the bed by about ONE PER CENT. That is
+      // what shipped in the second cut of this graph and it is invisible in
+      // a listen and invisible in a diff: rendered, `breathDepth` 0.55 and
+      // 1.0 gave a bed breathing 1.51x and 1.50x, which is to say the term
+      // was doing nothing at all. Dividing the RMS back out makes the number
+      // mean what it says.
+      const breathRms =
+        0.577 *
+        Math.sqrt(
+          ((kind.breathHz * Math.PI) / 2) /
+            Math.max(1, (kind.breathRate * ctx.sampleRate) / 2),
+        );
+      breathDepth.gain.value =
+        (kind.breathDepth * kind.sizzleLevel) / Math.max(1e-4, breathRms);
+      breath.connect(breathTone).connect(breathDepth).connect(sizzleLevel.gain);
+      // …and a SHALLOWER share of the same breath on the roar. One signal
+      // rather than two, because a fire's draught is one event: the flame and
+      // the column of air over it surge together. Two DEPTHS, because they do
+      // not surge by the same amount — the small stuff answers a gust and the
+      // column barely notices, and modulating both by the same fraction is
+      // what reads as somebody moving a volume knob rather than as weather.
+      const roarBreath = ctx.createGain();
+      roarBreath.gain.value =
+        (kind.breathRoarDepth * kind.roarLevel) / Math.max(1e-4, breathRms);
+      breathTone.connect(roarBreath).connect(roarLevel.gain);
+
+      const sources: AudioScheduledSourceNode[] = [base, sizzleSrc, breath];
+
+      // The crackles. One chain per row, and no row knows about any other.
+      for (const spark of kind.sparks) {
+        // The one thing about a row that fails SILENTLY, so it is checked
+        // rather than only written down — see `SparkSpec.rate`.
+        if (
+          import.meta.env.DEV &&
+          !Number.isInteger(Math.log2(spark.rate))
+        ) {
+          console.warn(
+            `ambience: spark rate ${spark.rate} is not a power of two — this row will be quiet or silent. See SparkSpec.rate.`,
+          );
+        }
+        const src = ctx.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        src.loop = true;
+        src.playbackRate.value = spark.rate;
+        // A whole number of samples, so a wrap cannot leave the read position
+        // on a fraction — see `SparkSpec.loop`.
+        src.loopStart = 0;
+        src.loopEnd = Math.round(spark.loop * ctx.sampleRate) / ctx.sampleRate;
+        const shaper = ctx.createWaveShaper();
+        // NO oversampling. It is the default, and it is stated because it is
+        // load-bearing here and nowhere else in this file: oversampling
+        // filters the signal on the way in and out, which would round off
+        // the single-sample impulse this whole layer is built on.
+        shaper.oversample = "none";
+        shaper.curve = this.sparkShape(
+          sparkThreshold(spark.hz, ctx.sampleRate, spark.rate),
+        );
+        const ring = ctx.createBiquadFilter();
+        ring.type = "bandpass";
+        ring.frequency.value = spark.ringHz;
+        ring.Q.value = spark.ringQ;
+        const level = ctx.createGain();
+        // NORMALISED, so `level` is a level rather than a magic number.
+        //
+        // A single-sample impulse into a bandpass does not come out at the
+        // height it went in at — the filter's own impulse response opens at
+        // `alpha / (1 + alpha)`, which at 7.2 kHz and Q 11 is about 0.036.
+        // So the first cut of this graph, at a stated level of 0.5, put its
+        // crackles 12 dB UNDER the bed and the rendered events stood 2.0 dB
+        // out of it against the reference's 9.8. Dividing it back out makes
+        // `spark.level` the peak of a full-height crackle, which is a number
+        // that can be reasoned about and compared between rows — and it
+        // tracks Q and the sample rate on its own, so retuning a resonance
+        // no longer silently retunes the mix.
+        const w0 = (2 * Math.PI * spark.ringHz) / ctx.sampleRate;
+        const alpha = Math.sin(w0) / (2 * spark.ringQ);
+        level.gain.value = spark.level * ((1 + alpha) / Math.max(1e-4, alpha));
+        src.connect(shaper).connect(ring).connect(level).connect(out);
+        sources.push(src);
+      }
+
+      // On the list before anything starts — `EngineVoice.sources`' rule, and
+      // it is the same rule for the same reason: a source started without a
+      // place on it is a voice running unheard for the rest of the session.
+      for (const src of sources) src.start();
+      return { sources, out, panner };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The spark's transfer curve: zero everywhere except the extreme tips,
+   * where it ramps to one. Cached per threshold for the reason the noise
+   * buffer and the combustion shaper are cached at all.
+   *
+   * **The table is enormous on purpose and that is the one detail here that
+   * is easy to get wrong.** A `WaveShaper` indexes its curve by the INPUT
+   * sample, so the resolution of the threshold is the resolution of the
+   * table: at the usual 1024 points the finest threshold expressible is
+   * about 0.998, which fires on two samples in a thousand — ninety-six
+   * events a second, an order of magnitude past a fire. `SPARK_CURVE_POINTS`
+   * (32768) resolves 6.1e-5, which puts a fifteen-a-second threshold four
+   * points inside the top of the table. It is 128 KB, built once per
+   * threshold and shared by every emitter after that.
+   *
+   * Rectifying is deliberate: the noise is signed and a fibre does not care
+   * which way it snaps, so both tips are events. Below the threshold the
+   * curve is FLAT ZERO rather than merely small, which is what makes the
+   * silence between crackles actually silent — the resonator downstream is
+   * excited by nothing at all until an impulse arrives, so its ring is the
+   * whole of what is heard.
+   */
+  private sparkShape(threshold: number): Float32Array<ArrayBuffer> {
+    const cached = this.sparkCurves.get(threshold);
+    if (cached) return cached;
+    const n = SPARK_CURVE_POINTS;
+    const curve = new Float32Array(n);
+    const span = Math.max(1e-6, 1 - threshold);
+    for (let i = 0; i < n; i++) {
+      const u = Math.abs((i / (n - 1)) * 2 - 1);
+      curve[i] = u <= threshold ? 0 : (u - threshold) / span;
+    }
+    this.sparkCurves.set(threshold, curve);
+    return curve;
+  }
+
+  /**
+   * The fade-out, and it is longer than it needs to be on purpose.
+   *
+   * A fire has no wind-down of its own — it is not a machine being switched
+   * off — so what this spends is not mechanism but CONCEALMENT: the moment it
+   * runs is a ranking decision, an emitter losing its slot or dropping out of
+   * range, and that is the one thing about the whole system the player must
+   * never be able to hear. Three quarters of a second of `setTargetAtTime`
+   * under a rolloff that already has it near the floor is inaudible; a cut is
+   * a click.
+   */
+  private stopAmbience(v: AmbienceVoice): void {
+    if (!this.ctx) return;
+    try {
+      const t = this.ctx.currentTime;
+      // Held where it actually is first: a voice stopped during its own
+      // fade-IN is still approaching a target, and ramping from a stale value
+      // would step. `stopEngine`'s first three lines, for its reason.
+      v.out.gain.cancelScheduledValues(t);
+      v.out.gain.setValueAtTime(v.out.gain.value, t);
+      v.out.gain.setTargetAtTime(0.0001, t, 0.2);
+      const stop = t + 0.75;
+      for (const src of v.sources) src.stop(stop);
+      // BOTH nodes: dropping only the gain leaves a panner wired to the master
+      // for the rest of the session — silent, and never collected.
+      v.sources[0].onended = () => {
+        v.out.disconnect();
+        v.panner.disconnect();
       };
     } catch {
       // ignore

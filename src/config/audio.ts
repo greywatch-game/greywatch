@@ -201,6 +201,221 @@ export const audio = {
   engineRef: 8,
 
   /**
+   * The world's SUSTAINED voices — a fire in a drum, and whatever is added
+   * beside it. Nothing here is a recording and nothing here ever will be:
+   * `docs/audio.md` prices one 30-second ambient loop at 5.5 MB decoded,
+   * which is ten times the entire sampled gun kit, and a fire crackle
+   * genuinely IS filtered noise. **Sample the guns, never the ambience.**
+   *
+   * What this costs instead is CPU and slots, which is what `maxVoices`
+   * below is for, and it is a completely separate budget from the one-shot
+   * cap: a held-open graph is not counted against `CONFIG.audio.maxVoices`,
+   * exactly as the engine's is not.
+   */
+  ambience: {
+    /**
+     * How many sustained emitters are held open at once, whatever the map
+     * placed.
+     *
+     * This is `LightingSystem`'s problem with a different budget and it gets
+     * `LightingSystem`'s answer: a village may hold twenty burning drums and
+     * the nearest few win, because past two or three overlapping crackles
+     * the ear reads one fire anyway. Three at ~3 sources each is nine held
+     * sources — beside the tank engine's six, and against a one-shot cap of
+     * 24 that none of them touch.
+     */
+    maxVoices: 3,
+    /**
+     * Metres a SLOT is worth defending by. An emitter already holding a slot
+     * is scored this much closer than it is, so two fires either side of a
+     * street do not trade the slot back and forth every few frames as the
+     * player walks the line between them — the same job `hullEngine`'s 1.15
+     * does for the range gate, asked of the RANKING instead.
+     */
+    swapMargin: 2.5,
+    /**
+     * The one kind so far.
+     *
+     * Held as a spec rather than as numbers in `Sfx` for the reason
+     * `EngineKind` is: what a thing sounds like is a row, and a second kind
+     * should be a second row and never a branch. A stream and a wind in a
+     * canopy are this same three-layer graph with the crackle gate wound
+     * shut — see `Sfx.buildAmbience`.
+     */
+    fire: {
+      /**
+       * Metres. Past this the graph is not built at all, with hysteresis on
+       * the way back out — `Sfx.ambience`.
+       *
+       * A burning barrel is not a landmark you navigate by; it is something
+       * you notice when you are in the street with it. 24 m is about that,
+       * and it is deliberately far short of `maxDistance` (70) so that a
+       * village's worth of drums cannot crowd the ranking from across the
+       * map.
+       */
+      range: 24,
+      /**
+       * The plateau, metres — `refDistance`'s question asked of a fire. A
+       * drum is a metre across and you can stand next to it, so this is
+       * smaller than the gunshot's 3 and much smaller than a hull's 8.
+       */
+      refDistance: 1.6,
+      /**
+       * Steeper than a gunshot's 0.7 on purpose. That number is bent under
+       * the physical 1 so a firefight stays readable across a valley, which
+       * is a claim about SITUATIONAL AWARENESS; a fire is the opposite kind
+       * of sound — it says "you are beside it" and nothing at all about
+       * where the fight is — so it gets the physical curve and a little
+       * over. At `refDistance` 1.6 this puts the far end of `range` about
+       * 26 dB down, which is under the wind.
+       */
+      rolloff: 1.2,
+      /**
+       * Overall level at the plateau, and **the one number in this block
+       * that is a mix decision rather than a fit.** Everything else here was
+       * measured against a reference recording; nothing can measure how loud
+       * a fire should be against a firefight.
+       *
+       * It is set for HEADROOM rather than presence, because this graph has
+       * a crest factor of 23 dB — the crackles peak far above the bed by
+       * design, which is most of what makes them crackles — so a level
+       * chosen by the bed's loudness puts the peaks near full scale on their
+       * own. At 0.09 the emitter renders at about 0.037 RMS and peaks near
+       * 0.54, which is present at arm's length, well under a report, and
+       * still inside the master soft clip when a firefight is stacked on top
+       * of it.
+       */
+      level: 0.09,
+
+      /**
+       * THE BED, and its shape is the single most surprising thing the
+       * reference recording said.
+       *
+       * A real drum fire's long-term spectrum is TWO HUMPS with a hole
+       * between them — measured in octave bands relative to total power:
+       * 63 Hz -4.1 dB, 125 -5.2, 250 -10.2, **500 -21.2, 1k -19.5**, 2k
+       * -14.8, 4k -11.8, 8k -11.5, 16k -17.3. So a fire is a low roar and a
+       * high sizzle with almost nothing in the middle, and the first version
+       * of this graph put its crackles at 1500 Hz — directly in the hole.
+       * That is most of why it read as distant gunfire rather than as fire:
+       * a soft-attacked mid-band transient is what DISTANCE does to a rifle
+       * report, so the graph was building the wrong thing twice over.
+       *
+       * The hole is not authored. Two filters with nothing between them —
+       * a 12 dB/octave lowpass at `roarHz` and a bandpass whose lower skirt
+       * starts well above it — leave it there for free, which is why there
+       * is no midrange term anywhere in this block.
+       *
+       * **The shipped roar is about 4 dB under the reference's** (63 Hz
+       * lands at -8 against its -4) and that is deliberate. Nearly four
+       * fifths of that recording's power is below 250 Hz, which is partly
+       * the fire and partly a close mic; the game plays this through a
+       * panner, at a distance, on laptop and phone speakers where 63 Hz does
+       * not exist at all. Matching it exactly ships a drum that is a boom on
+       * headphones and silence on a phone, and spends the headroom the
+       * crackles need.
+       */
+      roarHz: 150,
+      roarLevel: 3.2,
+      /**
+       * The sizzle: a BROAD hump, not a band — Q 0.35 is about two octaves
+       * either side of 5.2 kHz, which covers the reference's 2k/4k/8k
+       * plateau with one filter.
+       *
+       * **It is much quieter than the first fit made it, and the reason is
+       * the most useful thing this exercise turned up.** Trying to match the
+       * reference's 2k-8k energy with the BED gets the octave bands right
+       * and the crest factor badly wrong — rendered, that version measured
+       * 17.6 dB of crest against the reference's 23.5 — because in a real
+       * fire most of the mid-high energy is not a bed at all, it is the
+       * CRACKLES. Moving that energy out of this term and into `sparks`
+       * fixes both numbers at once, and it is the difference between a fire
+       * and a hiss with ticks over it.
+       */
+      sizzleHz: 5200,
+      sizzleQ: 0.35,
+      sizzleLevel: 0.13,
+      /**
+       * THE BREATH. A real fire's bed is not steady — measured on the
+       * reference, the 5 ms envelope's median is 2.49x its 10th percentile,
+       * so the bed itself swells and falls by about 8 dB. The shipped graph
+       * renders 2.22.
+       *
+       * It is a source of its own rather than a tap off the bed's noise,
+       * because the bed is read at 0.33 against a one-second buffer and a
+       * modulator taken from it would repeat every three seconds — which is
+       * the same trap `SparkSpec.loop` exists for. At 0.05 this cycles every
+       * twenty seconds instead.
+       *
+       * **Two depths, because one did not work.** Spent on the sizzle alone
+       * the whole mix would not move: rendered, taking `breathDepth` from
+       * 0.8 to 1.4 changed the bed's envelope ratio from 1.69 to 1.74. The
+       * roar carries most of the energy, so modulating only the sizzle
+       * cannot swing the sum however hard it is driven. They stay different
+       * numbers because they are different quantities — the small stuff
+       * answers a gust and the column of air barely notices, and moving both
+       * by the same fraction reads as somebody turning a volume knob.
+       */
+      breathRate: 0.05,
+      breathHz: 1.2,
+      breathDepth: 1.1,
+      breathRoarDepth: 0.32,
+
+      /**
+       * THE CRACKLES, and the mechanism is completely different from the
+       * first version — which is the fix rather than a tuning of it.
+       *
+       * That version gated a continuous resonant band with a lowpassed
+       * noise. A gate built out of a band-limited signal opens as slowly as
+       * its own bandwidth, so every event had a soft attack (milliseconds),
+       * the same duration, the same pitch and nearly the same level: 9.4
+       * events a second, all alike, at 1500 Hz. Measured against the
+       * reference that is wrong in every term — real crackles arrive at
+       * **24.7 a second, attack in 0.15 ms, decay to -20 dB in 3.9 ms**, and
+       * their peaks are spread over 13.9 dB.
+       *
+       * So a crackle is an IMPULSE RINGING A RESONATOR, which is what a
+       * snapping fibre physically is. The shared noise buffer is thresholded
+       * sample by sample by a waveshaper — no filter in front of it, so a
+       * single sample survives as a single-sample impulse with a
+       * sub-microsecond attack — and that impulse train excites a bandpass.
+       * The attack is then exact by construction rather than tuned, the
+       * decay is the resonator's own ring, and the height of each impulse is
+       * `(|sample| - threshold) / (1 - threshold)`, which is UNIFORM on
+       * (0, 1] and gives the level spread for free.
+       *
+       * **`hz` is events a second and means it**: the threshold is derived
+       * at build time from the context's own sample rate and this row's
+       * playback rate, so a row gives the same rate at 44.1 and 48 kHz
+       * rather than a threshold that quietly means something different on
+       * each. Rendered, a row stated at 15 delivers 16 to 18.
+       *
+       * **`rate` must be a negative power of two and `loop` is what stops
+       * the row repeating** — both are documented on `SparkSpec`, and both
+       * are silent failures rather than loud ones.
+       *
+       * **THREE rows, because one is a single pitch** and a single pitch
+       * repeated is the other half of why the first version sounded like
+       * gunfire. A fourth is a fourth entry here and no code at all.
+       */
+      sparks: [
+        /** The tick: most of the events, and where the reference's top end is. */
+        { hz: 11, rate: 0.5, loop: 0.97, ringHz: 8600, ringQ: 7, level: 3.36 },
+        /** The snap: fewer, lower, longer — the reference's p10 end. */
+        { hz: 7, rate: 0.25, loop: 0.89, ringHz: 3600, ringQ: 6, level: 2.9 },
+        /**
+         * The pop: rare, and the only thing here anywhere near the spectral
+         * hole. It is safe DOWN there for the reason the first version was
+         * not: a 0.08 ms attack at four a second among eighteen brighter
+         * ones is a log settling, where a soft-attacked 1500 Hz ring nine
+         * times a second on its own was a rifle two streets away.
+         */
+        { hz: 4, rate: 0.125, loop: 0.71, ringHz: 1900, ringQ: 5, level: 2.2 },
+      ],
+    },
+  },
+
+  /**
    * Footsteps. The player's are triggered by the camera's bob phase rather
    * than by a timer of their own — a step you hear off the beat of the dip
    * you see is worse than no step at all — so there is no interval here.

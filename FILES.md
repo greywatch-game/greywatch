@@ -163,7 +163,14 @@ src/
                         #   plus SIXTEEN RECORDINGS: eight standing in for a
                         #   report, six for a mechanism the player works with
                         #   their own hands, and two for a blast, all a
-                        #   preference and never a requirement
+                        #   preference and never a requirement. Two kinds of
+                        #   SUSTAINED voice hang off the same rules and neither
+                        #   is ever recorded: an engine (buildEngine, two
+                        #   powerplants) and a place that makes a noise on its
+                        #   own (buildAmbience: a roar, a sizzle, a breath and
+                        #   one impulse-excited resonator per crackle row —
+                        #   nothing scheduled, and FITTED to a recording rather
+                        #   than tuned; docs/audio.md has the table)
     samples.ts          # The recorded sounds: an id union and a url table,
                         #   nothing else. A weapon names a report row through
                         #   ReportVoice.sample, and so do all three hulls'
@@ -425,6 +432,13 @@ src/
     AimAssistSystem.ts  # Gamepad-only: outer bubble slows the stick, inner one
                         #   rotates. Bounded by the player's own turn rate
     LightingSystem.ts   # Dynamic point lights: fixtures, flashes, lamps
+    AmbienceSystem.ts   # Where the world makes a noise on its own: the emitter
+                        #   registry MapBuilder fills, and the nearest-first
+                        #   ranking that spends CONFIG.audio.ambience.maxVoices
+                        #   on it. LightingSystem's problem in a different
+                        #   currency. An emitter's INDEX is the key Sfx holds a
+                        #   graph on, so add() only appends and clear() is the
+                        #   only thing that renumbers
     ShadowSystem.ts     # Moon shadow map (stepped) + blob shadows
     ReflectionSystem.ts # The world as glass sees it: one cube per GLAZED
                         #   BLOCK, baked from the map's own geometry per

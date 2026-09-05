@@ -56,6 +56,8 @@ import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
 import { bakeVertexShading } from "./vertexShading";
 import { begin as beginProfile, record, since } from "./buildProfile";
 import type { LightingSystem } from "../systems/LightingSystem";
+import type { AmbienceSystem } from "../systems/AmbienceSystem";
+import type { AmbienceKind } from "../core/Sfx";
 import { BUILDERS, type BoxSpec, type Structure } from "./BuildingKit";
 import type { EnvironmentSpec } from "./environment";
 import { floorMaterial } from "./floorSurfaces";
@@ -577,6 +579,27 @@ const SCATTER_LIGHTS: Partial<
   fireDrum: { color: "#ff8a2a", range: 19, intensity: 2.0, y: 1.1, flicker: 0.4 },
 };
 
+/**
+ * Sustained SOUNDS carried by scatter props, and the twin of `SCATTER_LIGHTS`
+ * directly above it in every way that matters — a side table keyed by prop
+ * kind, so a prop that makes a noise says so in one place and nothing about
+ * the placement, the seeding or the collider has to be told.
+ *
+ * **Kept sparse for a different reason than the lights are.** A light costs a
+ * shader slot and the nearest sixteen win; a fire costs a held-open audio
+ * graph and the nearest THREE win (`CONFIG.audio.ambience.maxVoices`), so the
+ * budget is tighter and the ranking that spends it is `AmbienceSystem`'s. What
+ * a row here decides is only which props are CANDIDATES.
+ *
+ * `y` is metres above the prop's base, scaled with it: the drum's flame rather
+ * than the drum, which is 0.85 m of fire on a 1.2 m barrel.
+ */
+const SCATTER_AMBIENCE: Partial<
+  Record<ScatterSpec["prop"], { kind: AmbienceKind; y: number }>
+> = {
+  fireDrum: { kind: CONFIG.audio.ambience.fire, y: 0.9 },
+};
+
 /** One scatter prop's measured body. See `PROP_BODIES`. */
 interface PropBody {
   /** Collider footprint and height at scale 1 — the part that stops a bullet. */
@@ -758,6 +781,7 @@ export class MapBuilder {
     private scene: Scene,
     private mats: CelMaterialFactory,
     private lighting: LightingSystem,
+    private ambience: AmbienceSystem,
   ) {}
 
   /** World-space collider boxes, accumulated by `collider()` during a build. */
@@ -1334,6 +1358,7 @@ export class MapBuilder {
         for (const m of visuals) m.dispose();
         for (const m of colliders) m.dispose();
         this.lighting.clear();
+        this.ambience.clear();
       },
     };
   }
@@ -1477,6 +1502,7 @@ export class MapBuilder {
   ): void {
     const build = SCATTER_BUILDERS[spec.prop];
     const light = SCATTER_LIGHTS[spec.prop];
+    const sound = SCATTER_AMBIENCE[spec.prop];
     const [minS, maxS] = scatterScale(spec);
     const placed: { x: number; z: number; r: number }[] = [];
     const parts: Mesh[] = [];
@@ -1542,6 +1568,19 @@ export class MapBuilder {
           light.range * scale,
           light.intensity,
           light.flicker,
+        );
+      }
+      // Beside the light and on the same terms: the prop's own position, taken
+      // here because nothing downstream still has one. `flatten` above bakes
+      // this placement into the vertices and the merge then takes the mesh
+      // away entirely, so an emitter that is not recorded on this line has no
+      // second chance to be — see `AmbienceSystem`.
+      if (sound) {
+        this.ambience.add(
+          spot.x,
+          origin.y + base + sound.y * scale,
+          spot.z,
+          sound.kind,
         );
       }
       if (spec.blocking) {

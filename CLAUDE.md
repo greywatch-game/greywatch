@@ -170,8 +170,53 @@ negatively correlated, so the mono sum cancels rather than narrows — **a stere
 master is measured for what the SUM does to it as well as for what the width is
 worth.**
 
+**The world also makes a noise on its own, and that half is the one place the
+recording boundary was never even close.** A burning drum is a SUSTAINED voice
+(`Sfx.ambience`, `systems/AmbienceSystem.ts`), and `docs/audio.md` prices one
+30-second ambient loop at 5.5 MB decoded — **ten times the entire sampled gun
+kit** — against a crackle that genuinely IS filtered noise. **Sample the guns,
+never the ambience.** What it costs instead is CPU and SLOTS, which is a
+separate budget from the one-shot cap and gets `LightingSystem`'s answer to
+`LightingSystem`'s problem: a map may dress twenty drums, the nearest
+`CONFIG.audio.ambience.maxVoices` (3) win a voice each frame, and an incumbent
+is scored `swapMargin` closer than it is so two fires either side of a street
+cannot trade a slot back and forth. **An emitter's INDEX is its identity** — it
+is the key the held-open graph hangs on — so the registry is append-only within
+a map and a teardown owes `Sfx.ambienceAllOff` beside the `clear`. The graph
+itself is `hullEngine`'s shape (a panner, a `sources` list, the range gate and
+its hysteresis inside `Sfx`) with **the opposite conclusion about a held
+world**: an engine's voice is driven by a load a lid freezes, so those owe
+silence, and a fire is driven by nothing at all — a village does not go quiet
+because a kit screen is up, which is why this is pushed from `tick` in every
+state and `enginesOff` has a `fleetStepped` in front of it. **Nothing in it is
+scheduled**, `Sfx`'s own invariant: **a crackle is an IMPULSE RINGING A
+RESONATOR** — the shared noise buffer thresholded sample by sample, so a single
+sample survives as a single-sample impulse and randomness costs no timer.
+**That graph was FITTED to a recording rather than tuned by ear**
+(`reference-media/`, gitignored, never shipped — a measuring stick, not an
+asset), because the first version read as distant gunfire and the reason was in
+the octave bands: a fire is two humps with a fifteen-decibel hole at 500 Hz-1
+kHz, and that version put soft-attacked crackles of a single pitch straight
+into the hole, which is what DISTANCE does to a rifle. Three rules from the fit
+generalise. **A spark row's `rate` must be a negative power of two or the row
+is SILENT** — a threshold within a thousandth of full scale selects isolated
+samples, and any other rate interpolates them away (measured: 107% of stated at
+rate 1, 21% at 1/3, **nothing at 0.61**); a cut shipped that way and its numbers
+still looked good because the surviving row carried them. **A row's `loop` is
+what stops it repeating**, in whole samples, because a one-second buffer at rate
+1 replays its whole pattern of pops every second. And **a config number that is
+not normalised is not a level** — a single-sample impulse leaves a bandpass at
+`alpha/(1+alpha)` of its height, so a stated 0.5 put the crackles 12 dB under
+the bed. **A sound a prop makes is a row in a table keyed by prop kind**
+(`SCATTER_AMBIENCE`, beside `SCATTER_LIGHTS`) and its position is taken at BUILD
+time or not at all — the merge takes the prop's mesh away, so there is nothing
+left at runtime to hang an emitter on.
+
 → **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
-binds, why one ambient loop costs ten times the whole sampled gun kit, the
+binds, why one ambient loop costs ten times the whole sampled gun kit and what
+that rule bought instead (the ranking, the emitter's index, the fire's three
+layers, the gate's rendered pops-per-second and the loop point only a render
+found), the
 mono/round-robin/transient rules, the manifest and its two gates, the master
 conventions, the container measurements, the INPUT seek that shipped as an
 output one and silently ate the tail of every row with a lead, and the rifle's,
@@ -306,15 +351,21 @@ offline a pause genuinely holds the world, and in a netplay round it holds
 nothing, because the authority never heard the key.
 
 `Game.updateGameplay` has a load-bearing order at the end of the frame: camera
-update → carried-light updates → `lighting.update(dt, camera.position, mats)` →
-`sfx.setListener()`. Light slot selection and audio panning key off the camera
-position, so nothing may move the camera after them.
+update → carried-light updates → `lighting.update(dt, camera.position, mats)`.
+Light slot selection keys off the camera position, so nothing may move the
+camera after it.
 
-**Two things are pushed from `tick` instead, because they are owed by the states
-that simulate nothing**: `mats.updateCamera()` (the shader's eye, or every
-screen with a live view behind it is fogged against wherever the last live frame
-stood) and `Game.pushScoreboard` (the Tab board belongs to the ROUND, not to the
-states that simulate one).
+**Four things are pushed from `tick` instead, because they are owed by the
+states that simulate nothing**: `mats.updateCamera()` (the shader's eye, or
+every screen with a live view behind it is fogged against wherever the last live
+frame stood), `sfx.setListener()` (the EAR, and the same bug with a different
+symptom — a listener placed only by the frames that simulate sits at the origin
+until the first live one, so a fire in the village pans from the map's corner
+while the menu is up over it), `Game.pushAmbience` (below) and
+`Game.pushScoreboard` (the Tab board belongs to the ROUND, not to the states
+that simulate one). The eye and the ear still run after the camera update and
+after `lighting.update` — they are last in the FRAME rather than last in the
+world step, so what they were owed is if anything harder to break.
 
 `ConquestSystem.update` runs *before* `BattleSystem.update`, so a bot's think tick
 sees this frame's flag ownership rather than last frame's.

@@ -26,9 +26,11 @@
  * `Game.state` is a getter. `takeDown` is the one place that knows what putting
  * a screen away means, and every transition goes through it.
  * Load-bearing frame order at the end of updateGameplay: camera update ->
- * carried lights -> lighting.update() -> sfx.setListener(). The shader's eye
- * (mats.updateCamera) is NOT in that chain — it is pushed once per frame in
- * `tick`, because every state renders and only some of them simulate.
+ * carried lights -> lighting.update(). The shader's eye (mats.updateCamera)
+ * and the EAR (sfx.setListener) are NOT in that chain — both are pushed once
+ * per frame in `tick`, because every state renders and only some of them
+ * simulate, and a fogged frame or a panned fire is wrong in exactly the states
+ * that do not. Nothing may move the camera after any of them.
  * ConquestSystem.update runs before BattleSystem.update (bots see this frame's
  * flag ownership). Muzzle-flash light budget is spent here
  * (spendMuzzleLightBudget) — new per-bot transient lights need the same
@@ -136,6 +138,7 @@ import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
 import { ScoreBook, awardKill, awardZone } from "../systems/ScoreBook";
 import { LightingSystem } from "../systems/LightingSystem";
+import { AmbienceSystem } from "../systems/AmbienceSystem";
 import { ShadowSystem } from "../systems/ShadowSystem";
 import { Sky } from "../systems/Sky";
 import { WaterSystem } from "../systems/WaterSystem";
@@ -378,6 +381,16 @@ export class Game {
   /** The flags' in-world markers — rings, skirts and beacons. */
   private zones: CaptureZoneSystem;
   private lighting: LightingSystem;
+  /**
+   * The world's sustained sounds — the fires, and whatever is put beside them.
+   *
+   * `lighting`'s counterpart in every way: filled by `MapBuilder` while the
+   * map is built, cleared by that map's own `dispose`, and spent per frame by
+   * the nearest-first ranking in the system itself. Pushed from `tick` rather
+   * than from a world step, which is the one thing about it that differs from
+   * the hull engines beside it — see `pushAmbience`.
+   */
+  private ambience: AmbienceSystem;
   private shadows: ShadowSystem;
   /**
    * The world as the glazing reflects it — one cube, baked per map install.
@@ -1069,6 +1082,7 @@ export class Game {
     // `applySettings` below, which is what may arm it on a reload.
     this.profChip = new ProfileChip();
     this.lighting = new LightingSystem();
+    this.ambience = new AmbienceSystem();
     this.atmosphere = new Atmosphere(this.scene);
     // `mats` is not for building materials here — both systems own their own
     // shader. It is the publisher of the shadow map, its matrix and its params,
@@ -1086,7 +1100,12 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
-    this.mapBuilder = new MapBuilder(this.scene, this.mats, this.lighting);
+    this.mapBuilder = new MapBuilder(
+      this.scene,
+      this.mats,
+      this.lighting,
+      this.ambience,
+    );
     this.combat = new CombatSystem(this.scene, this.mats);
     this.grenades = new GrenadeSystem(this.scene, this.mats);
     // The one physics engine, and its three clients. `PhysicsWorld` is INJECTED
@@ -2737,7 +2756,23 @@ export class Game {
     // frame has already placed and the positions the fleet has already
     // reached.
     this.prof.begin(P.audio);
+    // The ear, and it is pushed from here rather than from the world step for
+    // the shader's-eye reason exactly: every state renders and only some of
+    // them simulate, so a listener placed only by the frames that simulate is
+    // one that sits wherever the last live frame stood — the ORIGIN, before
+    // there has ever been one. That is `mats.updateCamera`'s own bug with a
+    // different symptom: a fire in the village panned from a listener at the
+    // map's corner while the menu is up over it. It still runs after the
+    // camera update and after `lighting.update`, which is the whole of the
+    // order it was ever owed, and it is now last in the frame rather than last
+    // in the world step — so the rule that nothing may move the camera after
+    // it is if anything harder to break.
+    this.sfx.setListener(
+      this.cameraSys.camera.position,
+      this.cameraSys.forwardToRef(this.listenerForward),
+    );
     this.pushHullEngines();
+    this.pushAmbience();
     this.prof.end(P.audio);
     // In every state too, and AFTER the switch above rather than inside any of
     // its arms: what decides whether the board is up is the state this frame
@@ -3428,6 +3463,12 @@ export class Game {
     // Before a single thing is disposed: the seat, because the hull it belongs
     // to is about to stop existing. See the vehicle build at the bottom.
     this.clearVehicle();
+    // The graphs the OLD map's fires were holding open. `dispose` below clears
+    // the emitter registry, and the two have to happen together: an emitter's
+    // index is the key `Sfx` holds its voice on, so a registry emptied without
+    // this leaves a fire crackling at a coordinate on a map that no longer
+    // exists, under whatever the new one builds there.
+    this.sfx.ambienceAllOff();
     this.map?.dispose();
     this.combat.clearTransient();
     // A grenade whose fuse outlived the map it was thrown across would go off
@@ -5275,6 +5316,30 @@ export class Game {
    * steps the fleet, so the frame that rebuilds is a frame that has already
    * called `enginesOff`.
    */
+  /**
+   * The world's fires, ranked and voiced — `pushHullEngines`'s neighbour, and
+   * deliberately the OPPOSITE conclusion from the same premise.
+   *
+   * Every state renders and only some of them simulate. The engines take that
+   * to mean the states that do not owe SILENCE, because a hull's voice is
+   * driven by a load a held world freezes, and one left running under the
+   * deploy card is a tank droning in a street where nothing moves. A fire is
+   * driven by nothing at all — it is a property of the map being installed and
+   * the ear being somewhere, and both of those are true of a menu over a live
+   * view. So this one is owed by every state, and a village does not go quiet
+   * because a kit screen is up.
+   *
+   * The pause is the one held world that reaches it, and not from here: the
+   * offline pause card suspends the audio context, which holds this graph
+   * exactly as it holds the tail of the last shot.
+   *
+   * After the listener above, so the ranking and the panners agree with the
+   * ear the frame has already placed.
+   */
+  private pushAmbience(): void {
+    this.ambience.update(this.cameraSys.camera.position, this.sfx);
+  }
+
   private pushHullEngines(): void {
     const stepped = this.fleetStepped;
     this.fleetStepped = false;
@@ -6841,8 +6906,10 @@ export class Game {
    * position, so anything that moves the camera must run before them:
    * aim assist -> camera update -> shadows (window, blobs, outline thinning)
    * -> carried lights -> lighting.update() -> water.update() -> grass.update()
-   * -> mats.updateWind() -> sfx.setListener(), and then `tick` pushes the
-   * shader's eye for every state on the way into the render.
+   * -> mats.updateWind(), and then `tick` pushes the shader's EYE and the
+   * listener's EAR for every state on the way into the render — both of them
+   * out here rather than in this chain, because every state renders and only
+   * some of them simulate.
    * Nothing after this method may move the camera.
    */
   private updateCameraAndLighting(dt: number): void {
@@ -6962,11 +7029,6 @@ export class Game {
     // owed by none of them, and a canopy still moving over a frozen field under
     // the pause card would be the one thing the pause did not reach.
     this.mats.updateWind(dt);
-    // Same rule as the lights and the fog: this has to follow the camera.
-    this.sfx.setListener(
-      this.cameraSys.camera.position,
-      this.cameraSys.forwardToRef(this.listenerForward),
-    );
   }
 
   /**

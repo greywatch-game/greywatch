@@ -4,7 +4,9 @@ The audio pipeline: what a sound costs, what the budget is, and how a recording
 gets from a session file into the game. Split out of
 [`CLAUDE.md`](../CLAUDE.md), which carries the rules that reach other
 subsystems; this file is the contract for `audio/`, `scripts/encode-audio.mjs`,
-`scripts/check-audio.mjs` and `src/core/samples.ts`.
+`scripts/check-audio.mjs` and `src/core/samples.ts` — and, because the budget
+below is what decides it, for the world's SUSTAINED synthesized voices as well:
+`src/systems/AmbienceSystem.ts` and `Sfx.ambience`.
 
 **Read [`docs/weapons.md`](weapons.md) for what a sample means to a WEAPON**
 (`ReportVoice.sample`, the four rules about what it replaces, and why
@@ -137,7 +139,9 @@ most of the budget problem solved.
 If a sustained sound ever is sampled, the engine graph is the precedent for
 holding one: a `sources` list so teardown cannot leak a voice, and
 `Sfx.enginesOff` / `Game.fleetStepped` for the voice left running under a card
-that holds the world.
+that holds the world. **What the rule above actually bought is one section
+down** — the world's own noise is synthesized and held, and what it costs is
+slots rather than memory.
 
 ### Three rules that keep a library from ballooning
 
@@ -196,6 +200,207 @@ that holds the world.
    11 KB of RAM and the existing filtered-noise layers carry the tail *and* the
    per-shot variation for free. Recording a whole sound is paying RAM for
    variation you then have to buy back with more files.
+
+## The world's own noise, which is where that rule gets spent
+
+The paragraph above is a claim about a budget; `systems/AmbienceSystem.ts` and
+`Sfx.ambience` are what it buys. A burning drum is a SUSTAINED synthesized
+voice, there is no file behind it and there is not going to be one, and the
+whole design falls out of what the cost actually is once the RAM question is
+off the table.
+
+**The budget is not RAM and not the one-shot cap — it is SLOTS.** Synthesis
+costs no memory, and a held-open graph is not counted against
+`CONFIG.audio.maxVoices` for the same reason the engine's is not: that cap is
+about eighty gunshots a second competing for a scheduler, and a fire is not
+competing with anything. What a fire costs is three buffer sources, five
+filters and a shaper, held open for as long as it is in earshot — so the thing
+that has to be bounded is HOW MANY, and a range test does not bound it. Stand
+between four drums and a range test holds four graphs open; dress a burning
+quarter and it holds twenty.
+
+**So it is a RANKING, and it is `LightingSystem`'s answer to
+`LightingSystem`'s problem.** A shader has sixteen light slots and a village
+has more torches than that, so the nearest sixteen win each frame and the rest
+are dark; here the nearest `CONFIG.audio.ambience.maxVoices` (3) win a voice
+each frame and the rest are silent. What loses is already most of a rolloff
+away in both cases. The ceiling is then stated once, in config, and **a layout
+can never raise it** — which is the property worth having, because dressing is
+exactly the thing that grows without anybody deciding it should.
+
+**An emitter's INDEX is its identity**, because it is the key `Sfx` hangs the
+held-open graph on. Two rules follow and both are in the header of that file:
+`add` may only append within a map, and a map being torn down owes
+`Sfx.ambienceAllOff` *beside* `AmbienceSystem.clear` — a registry emptied
+without it leaves a fire crackling at a coordinate on a map that no longer
+exists, under whatever the next one builds there.
+
+**The hysteresis is on the RANKING and not on the range**, which is one number
+(`swapMargin`, 2.5 m) rather than two that have to agree. An emitter already
+holding a voice is scored that much closer than it is, so it is both harder to
+displace and kept a little past its own `range`; `Sfx.ambience`'s own 1.15 gate
+is deliberately wider and is the general guard for any other caller. Measured
+by injecting six emitters 6 m apart and walking 36 m along the line in 1.5 m
+steps: **the cap held at 3 at every step, and four voices were dropped over the
+whole walk** — one per genuine hand-off, no oscillation. That case is not
+reachable on a shipped map, which is the point of having measured it: every
+drum on Hollowmere, Sarab and Cinderhaven is more than one `range` from the
+next, so in play the ranking has only ever been handed a list of one.
+
+### It is the engine's graph, with the opposite conclusion about a held world
+
+`Sfx.ambience` is `hullEngine` line for line — a graph behind a panner, keyed by
+whatever the caller uses to tell one emitter from another, **called every frame
+rather than when something starts**, with the range gate and its hysteresis
+inside `Sfx` rather than at the call site. What is being tracked is not
+somebody lighting a fire; it is a fire being within earshot.
+
+**Where the two part company is what a held world is owed, and the difference
+is the whole argument for where the push lives.** `enginesOff` exists because a
+hull's voice is driven by a load that a lid freezes — a stopped fleet droning at
+a throttle nobody is holding — so `Game.fleetStepped` stands those down and a
+frame that did not step the fleet owes them silence. A fire is driven by
+nothing at all. It is a property of the map being installed and the ear being
+somewhere, and both of those are true of a menu or a deploy card over a live
+view. **A village does not go quiet because a kit screen is up**, so
+`Game.pushAmbience` runs in every state that renders and `ambienceAllOff` is
+owed by exactly one caller, the teardown. The offline pause is the one held
+world that reaches it, and not from here: that card suspends the audio context,
+which holds the graph exactly as it holds the tail of the last shot.
+
+**That is also what moved `sfx.setListener` out of the world step and into
+`tick`.** A listener placed only by the frames that simulate sits wherever the
+last live frame stood — the ORIGIN, before there has ever been one — which is
+`mats.updateCamera`'s own bug with a different symptom: a fire in the village
+panned from the map's corner while the menu is up over it. It still runs after
+the camera update and after `lighting.update`; it is now last in the FRAME
+rather than last in the world step.
+
+### The fire, and how it was fitted
+
+The first version of this graph sounded like **distant gunfire**, and it was
+measured before it was rebuilt. `reference-media/fire.wav` — a 3 s recording of
+a real drum fire, gitignored, never shipped, a measuring stick and not an asset
+— was analysed for the four things that decide whether a noise reads as fire,
+and the synth was rendered offline and put through the same analysis until the
+numbers met.
+
+| | reference | first version | shipped |
+| --- | --- | --- | --- |
+| crest factor | 23.5 dB | 11.1 | **23.0** |
+| events over the bed | 9.8 dB | 2.0 | **9.0** |
+| bed breathing (env p50/p10) | 2.49x | 1.10 | **2.21** |
+| onsets a second | 24.7 | 9.4 | **23.8** |
+| inter-onset CV | 0.62 | 0.43 | **0.66** |
+| attack, median | 0.15 ms | ~2 ms | **0.08 ms** |
+| decay to -20 dB | 3.9 ms | 40 ms | **4.4 ms** |
+| event centroid | 7026 Hz | 1500 Hz | **5943 Hz** |
+| peak spread p90/p10 | 5.0x | 1.2x | **5.1x** |
+
+**The diagnosis was in the octave bands, and it is the thing to know before
+touching any of this.** A fire's long-term spectrum is TWO HUMPS with a hole
+between them — 63 Hz -4.1 dB, 125 -5.2, 250 -10.2, **500 -21.2, 1k -19.5**, 2k
+-14.8, 4k -11.8, 8k -11.5, 16k -17.3 — and the first version put its crackles at
+1500 Hz, directly in the hole, with a soft attack and a fixed pitch at an even
+rate. **That is not a near-miss for a crackle; it is a good imitation of a rifle
+two streets away**, because a soft-attacked mid-band transient is exactly what
+distance does to a report. The graph was building the wrong thing twice over.
+
+| layer | what it is for |
+| --- | --- |
+| roar — lowpassed noise | the column of air the drum is moving |
+| sizzle — a broad hump up top, its own source | sap, ash and small stuff |
+| breath — a slow modulator on both, at different depths | a fire is not steady |
+| sparks — impulses ringing resonators | the crackles |
+
+**A CRACKLE IS AN IMPULSE RINGING A RESONATOR**, which is what a snapping fibre
+physically is, and replacing the gate with that is the fix rather than a tuning
+of it. The shared noise buffer is thresholded sample by sample with no filter in
+front of it, so a single sample survives as a single-sample impulse; that train
+excites a bandpass whose ring is the decay. The attack is then exact by
+construction, and the impulse heights are uniform on (0, 1], which is where the
+14 dB of level spread comes from without a term for it.
+
+#### Four things that were only found by rendering it
+
+1. **A spark row's `rate` must be a negative power of two, or the row is
+   SILENT.** A threshold within a thousandth of full scale selects isolated
+   single samples, and a read position that does not land on the sample grid
+   interpolates between an extreme sample and an ordinary neighbour — always
+   under the threshold. Measured, one row stated at 15 events a second gave
+   107% of that at rate 1 and 110% at 0.5, then 57% at 0.2, 44% at 1/7, 21% at
+   1/3, and **nothing at all at 0.37 or 0.61.** 1/3 is not exactly 0.333… in a
+   float, so the position drifts off the grid. A cut of this graph shipped with
+   its second row at 0.61 — that row was silent, the fire was one pitch
+   repeated, and the numbers still measured well because the surviving row was
+   carrying them. `buildAmbience` warns about it in a DEV build.
+2. **`loop` is what stops a row repeating.** The buffer is one second, so a row
+   at rate 1 replays its whole pattern of crackles every second, which is a
+   rhythm. Each row reads a different whole number of SAMPLES — a fractional
+   loop leaves the read position on a fraction after its first wrap, which is
+   failure 1 arriving by another door — so the rows cycle at 1.94, 3.56 and
+   5.68 s and the composite at about fourteen hours.
+3. **A modulator spent on one layer cannot move the mix.** The breath was on
+   the sizzle alone, and taking its depth from 0.8 to 1.4 moved the bed's
+   envelope ratio from 1.69 to 1.74 — the roar carries most of the energy, so
+   the sum barely noticed. It is spent on both now, at different depths,
+   because they are different quantities.
+4. **A number that is not normalised is not a level.** A single-sample impulse
+   into a bandpass comes out at `alpha / (1 + alpha)` of its height — about
+   0.036 at 7 kHz and Q 11 — so a stated level of 0.5 put the crackles 12 dB
+   UNDER the bed. Both the spark gain and the breath depth divide their own
+   transfer back out now, so the config numbers mean what they say and retuning
+   a resonance or a modulator's corner does not silently retune the mix.
+
+#### Two deliberate departures from the reference
+
+**The roar is about 4 dB under it** (63 Hz lands at -8 against -4). Nearly four
+fifths of that recording's power is below 250 Hz, which is partly the fire and
+partly a close mic, and the game plays this through a panner at a distance on
+laptop and phone speakers where 63 Hz does not exist. Matching it exactly ships
+a drum that is a boom on headphones and silence on a phone, and spends the
+headroom the crackles need.
+
+**And most of the mid-high energy is EVENTS rather than bed**, which is the
+most transferable thing here. Matching the reference's 2k-8k octaves with the
+sizzle gets the bands right and the crest badly wrong — that version rendered at
+17.6 dB against 23.5 — because in a real fire that energy is the crackles.
+Moving it out of the bed and into `sparks` fixes both numbers at once, and it is
+the difference between a fire and a hiss with ticks over it.
+
+**The tools are throwaway and the numbers are not.** The analysis, the offline
+render and the sweep harness were written to the scratchpad, not the repo; what
+is worth keeping is in the table above and in `CONFIG.audio.ambience.fire`,
+which carries the argument for every value beside it. A rebuild that changes the
+mechanism owes the same table, measured the same way.
+
+### What a prop owes, and what a second kind would
+
+**A sound a prop makes is a row in a table keyed by prop kind** —
+`SCATTER_AMBIENCE` in `MapBuilder`, directly beside `SCATTER_LIGHTS` and the
+same shape, so a prop that makes a noise says so in one place and nothing about
+the placement, the seeding or the collider has to be told. `fireDrum` is the
+only row today.
+
+**The position is taken at BUILD time or not at all.** `MapBuilder` flattens a
+scatter prop's placement into its vertices and the merge then takes the mesh
+away entirely, so there is no per-prop node left at runtime to hang an emitter
+on — the registration is one line beside the light's, and an emitter not
+recorded there has no second chance to be.
+
+**A second KIND is a row in `CONFIG.audio.ambience` and no code**, which is
+`EngineKind`'s bargain one subsystem over: a stream and a wind in a canopy are
+the same three layers with the crackle gate wound shut and the bands moved.
+`buildAmbience` is one method for a diesel-and-turbine reason — the moment it
+grows an `if` asking which kind it is holding, that is broken.
+
+**What does NOT belong here is the other shape of ambient sound: the random
+one-shot** — a frog, a dog, a creaking sign. Those are not a sustained voice and
+must not become one. They are one-shots fired by a countdown in the CALLER, the
+rule footsteps already obey (`Sfx`'s header: *"footsteps are one-shots fired by
+the caller's own gait phase… never by a timer in here"*), and the countdown has
+to be in seconds rather than a per-frame probability — a per-frame chance fires
+eight times as often at 240 Hz as at 30.
 
 ## The pipeline
 
