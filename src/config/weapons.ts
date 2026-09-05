@@ -546,7 +546,7 @@ export const weapons = {
      * the rate is heard against.
      */
     report: {
-      pitch: 1.42, level: 0.92, snap: 0.85, weight: 0.7,
+      pitch: 1.42, level: 0.65, snap: 0.85, weight: 0.7,
       length: 0.6, tail: 0.5, actionPitch: 1.4, actionVol: 1.55,
       // The sample is the report and `actionVol` above is still the bolt — and
       // on this weapon that division is doing more work than anywhere else in
@@ -992,7 +992,7 @@ export const weapons = {
      * of a wall.
      */
     report: {
-      pitch: 0.8, level: 1.15, snap: 1.05, weight: 1.5,
+      pitch: 0.8, level: 1.35, snap: 1.05, weight: 1.5,
       length: 1.05, tail: 1.35, actionPitch: 0.68, actionVol: 1.4,
       // Cut from 40 ms in: this master and the carbine's are the two that lead
       // with the mechanism, and 50 ms of it in front of the report is 50 ms of
