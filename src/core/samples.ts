@@ -51,10 +51,11 @@ import dmr from "../../audio/dmr.webm?url";
 import sniperRifle from "../../audio/sniper-rifle.webm?url";
 import lmg from "../../audio/lmg.webm?url";
 import pistol from "../../audio/pistol.webm?url";
+import mountedGun from "../../audio/mounted-gun.webm?url";
 
 /**
- * Every recorded sound in the game — one per weapon in the kit, and nothing
- * else in the game is sampled at all.
+ * Every recorded sound in the game: one report per weapon in the kit, plus the
+ * cupola gun the second seat of a hull lays. Nothing else is sampled at all.
  *
  * **An id here names the RECORDING, not the weapon**, which is why it is
  * `burstRifle` and `sniperRifle` rather than `carbine` and `sniper`: the row
@@ -62,6 +63,14 @@ import pistol from "../../audio/pistol.webm?url";
  * that `CONFIG.weapons.carbine` happens to be what points at it is a decision
  * that lives on that weapon's `report`. `assaultRifle` set that convention
  * when it was the only row.
+ *
+ * **`mountedGun` is the one row that is not a carried weapon's, and it is the
+ * proof that a `SampleId` belongs to a `ReportVoice` rather than to the weapon
+ * table.** Three kinds of hull point at it — `CONFIG.vehicles.<kind>.mg.report`
+ * — because the gun on a tank's cupola, a truck's remote station and a
+ * gunship's chin turret is one gun, and a fourth kind gets it for free. It is
+ * also the only MONO row here; see its note in the manifest for why that
+ * follows from where it is heard rather than from what it is.
  */
 export type SampleId =
   | "assaultRifle"
@@ -70,7 +79,8 @@ export type SampleId =
   | "dmr"
   | "sniperRifle"
   | "lmg"
-  | "pistol";
+  | "pistol"
+  | "mountedGun";
 
 /** Where each one is fetched from. */
 export const SAMPLE_URLS: Record<SampleId, string> = {
@@ -81,4 +91,5 @@ export const SAMPLE_URLS: Record<SampleId, string> = {
   sniperRifle,
   lmg,
   pistol,
+  mountedGun,
 };

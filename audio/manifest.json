@@ -265,6 +265,49 @@
         "channels": 2,
         "kb": 46.9
       }
+    },
+    {
+      "id": "mountedGun",
+      "source": "src/mounted-gun.wav",
+      "out": "mounted-gun.webm",
+      "channels": 1,
+      "trim": {
+        "start": 0.034,
+        "end": 0.146,
+        "fadeOut": 0.022
+      },
+      "_": [
+        "The cupola gun on all three hulls, and the FIRST MONO ROW in this table.",
+        "Every other row is stereo under the exception docs/audio.md grants a",
+        "short sound the player hears UNPANNED as their own report; this one has",
+        "no such claim. `Game.resolveMg` reaches `Sfx.botShot` and not `shoot`,",
+        "deliberately -- the gun is twelve metres from the listener in a chase",
+        "view -- so a PannerNode makes the stereo and a second channel would be",
+        "double the RAM for nothing. It costs 0.112 mono-seconds where a stereo",
+        "cut of the same length would cost 0.224.",
+        "",
+        "The THIRD master to lead with its mechanism, and the plainest of them: a",
+        "discrete clack at 8-16 ms (-6 dB in the band above 4 kHz), then near",
+        "silence to -61, then the report at 40. Cut at 34 ms, in that trough. The",
+        "clack is a feed or a bolt and `actionPitch`/`actionVol` on the three mg",
+        "rows are what voice it, as on every other row here.",
+        "",
+        "The end is the rate. The report is over at ~126 ms -- broadband -11 at",
+        "124 and -19 by 128, with the band above 4 kHz decaying from -21 -- and",
+        "what follows is low roll the room is holding, at -10 to -18 broadband",
+        "with that band 24 to 36 dB down, plus a discrete arrival at 148. The cut",
+        "is 112 ms, which is the tank's own 111 ms gap at fireRate 9 to within a",
+        "millisecond: one round is done when the next one leaves, no two stack,",
+        "and that is the same claim `report.length` of 0.72 already makes for this",
+        "gun (\"almost no ring, because the next one is 110 ms away\"). The truck's",
+        "133 ms and the helicopter's 118 are looser still."
+      ],
+      "sourceHash": "a5c698b7f8976b5c",
+      "decoded": {
+        "seconds": 0.112,
+        "channels": 1,
+        "kb": 21
+      }
     }
   ]
 }

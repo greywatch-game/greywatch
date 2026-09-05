@@ -214,6 +214,22 @@ export interface VehicleSpec {
       readonly tail: number;
       readonly actionPitch: number;
       readonly actionVol: number;
+      /**
+       * The RECORDING that stands in for the eight above — `SampleId`, and
+       * spelled out rather than imported for the reason the eight are.
+       * **`src/config/` imports nothing outside itself**, which is a stronger
+       * rule than the "may not import an entity" the line above states, and
+       * this is not the field to spend it on.
+       *
+       * Naming the ONE member rather than restating the union is what makes
+       * that safe rather than merely quiet: it is exactly true (a hull's gun
+       * is heard as the mounted gun or as the synthesis, and never as the
+       * DMR), and if the row ever leaves `src/core/samples.ts` this stops
+       * being assignable to `ReportVoice.sample` and the two `botShot` calls
+       * that carry it — `Game.resolveMg`'s and its twin — fail to compile.
+       * The guarantee `SampleId` exists for is kept; only the import is not.
+       */
+      readonly sample?: "mountedGun";
     };
   };
   readonly resist: {
@@ -1589,6 +1605,28 @@ export const vehicles = {
         tail: 0.9,
         actionPitch: 0.8,
         actionVol: 1.2,
+        /**
+         * All three kinds name the same file, and that is the point rather
+         * than an economy: the gun on this cupola, on the truck's remote
+         * station and in the gunship's chin turret is ONE GUN — every one of
+         * them is `mg`, and a fourth kind gets it by having a `mg` block at
+         * all. The three `report` rows still differ in the eight scalars
+         * because a mount is not a gun, but what is BEING mounted is the same
+         * thing and there is no honest reason to record it three times.
+         *
+         * **`pitch` is no longer spent on a sample** (see `Sfx.shoot`), so
+         * the three rows' 0.78 / 0.7 / 0.72 now shape the SYNTHESIS only —
+         * which is what a hull is heard as before the decode lands, and what
+         * it is heard as forever on a device that failed the fetch. Left as
+         * they are for exactly that reason: they are still the fallback, and
+         * a fallback nobody tuned is a hull that sounds wrong on the machines
+         * least able to afford it.
+         *
+         * The `length` of 0.72 above is the cut, too: the file is 112 ms
+         * against this gun's own 111 ms gap, so no two rounds stack. See the
+         * row in `audio/manifest.json`, which is the one MONO row in it.
+         */
+        sample: "mountedGun",
       },
     },
     /**
@@ -2059,6 +2097,8 @@ export const vehicles = {
         tail: 1.05,
         actionPitch: 0.72,
         actionVol: 1.3,
+        /** The same gun as the tank's cupola — see that row for why one file. */
+        sample: "mountedGun",
       },
     },
     /**
@@ -2424,6 +2464,8 @@ export const vehicles = {
         tail: 1.0,
         actionPitch: 0.76,
         actionVol: 1.25,
+        /** The same gun as the tank's cupola — see that row for why one file. */
+        sample: "mountedGun",
       },
     },
     /**

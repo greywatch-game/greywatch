@@ -1,17 +1,17 @@
 /**
- * Sfx.ts — All audio: synthesized WebAudio, and the gun kit's SEVEN recorded
- * reports laid over it.
+ * Sfx.ts — All audio: synthesized WebAudio, and EIGHT recorded reports laid
+ * over it: one per weapon in the kit, plus the gun a hull's second seat lays.
  * Owns: the AudioContext, one cached noise buffer shared by every shot, one
  * shared convolution reverb every gunshot sends into, a master soft clip, the
  * voice cap (CONFIG.audio.maxVoices — over-cap sounds are skipped silently),
  * positional panning relative to the listener, and the decoded samples
  * `src/core/samples.ts` tables.
- * The samples are the one thing here that is not synthesized — one report per
- * weapon and nothing else in the game — and they are held as a PREFERENCE:
+ * The samples are the one thing here that is not synthesized — the guns, and
+ * nothing else in the game — and they are held as a PREFERENCE:
  * fetched fire-and-forget off `unlock`, substituted for the report inside
  * `shoot` and `botShot` only when the decode has landed, and absent from every
  * other sound in the file. The reload, the bolt cycle and the action are still
- * `actionPitch`/`actionVol` on all seven, so a mechanism is voiced here and
+ * `actionPitch`/`actionVol` on all eight, so a mechanism is voiced here and
  * never by a recording. A weapon with no `sample`, a decode that has not
  * finished and a fetch that failed are one case with one answer — the
  * synthesized report — which is what keeps the recording deletable. See
@@ -86,19 +86,22 @@ interface LoadedSample {
  * 0.68 s master: -46 dBFS cut it at 0.298 s against this floor's 0.455, so
  * the tighter one was throwing away 157 ms of real decay.
  *
- * **It finds nothing to cut on any of the seven files that ship, and that is
- * the correct outcome rather than a sign it is dead code.** The CUT lives in
+ * **It finds all but a millisecond of every file that ships, and that is the
+ * correct outcome rather than a sign it is dead code.** The CUT lives in
  * `audio/manifest.json` where a reviewer can read it (see `docs/audio.md`);
- * measured in Chromium, all seven decode with `offset` 0 and the whole buffer
- * played. What this is, is the guarantee that nothing about a file's FORMAT
- * has to be trusted — a container that decoded with leading padding would be
- * absorbed here silently instead of putting latency on a trigger.
+ * measured in Chromium, seven of the eight decode with `offset` 0 and the
+ * whole buffer played, and `mountedGun` gives back 1.1 ms because its cut
+ * starts in a trough that is genuinely under this floor. What this is, is the
+ * guarantee that nothing about a file's FORMAT has to be trusted — a container
+ * that decoded with leading padding would be absorbed here silently instead of
+ * putting latency on a trigger.
  *
- * **What it cannot do is rescue a LEAD**, which is why two of the masters are
- * trimmed at the FRONT in the manifest rather than left to this: the carbine's
- * report starts 32 ms into its master and the LMG's 50 ms into its, and the
- * pre-noise in front of both sits at -23 to -27 dB — three dozen dB over this
- * floor, so it reads as sound and is played.
+ * **What it cannot do is rescue a LEAD**, which is why three of the masters
+ * are trimmed at the FRONT in the manifest rather than left to this: the
+ * carbine's report starts 32 ms into its master, the LMG's 50 ms into its and
+ * the mounted gun's 40 ms into its, and the pre-noise in front of them sits at
+ * -6 to -27 dB — dozens of dB over this floor, so it reads as sound and is
+ * played.
  */
 const SAMPLE_FLOOR = 0.002;
 

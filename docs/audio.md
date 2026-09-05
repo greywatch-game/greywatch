@@ -19,12 +19,12 @@ constraint anybody is working around — it is why a firefight of eighty rounds 
 second costs no memory, why every weapon is a row of eight scalars, and why the
 game shipped for its whole life with no audio assets at all.
 
-**Seven files sit on top of it: one report per weapon in the kit, and nothing
-else in the game is recorded at all.** 21.8 KB downloaded once, 1.9 of the 44
-mono-seconds the budget below allows. **That boundary is a decision and not a
-waiting list** — a footstep, an impact, a reload or an ambient bed is a
-different argument, and the section on where the money should go is where it is
-made.
+**Eight files sit on top of it: one report per weapon in the kit, plus the
+cupola gun all three hulls mount, and nothing else in the game is recorded at
+all.** 24.7 KB downloaded once, 2.0 of the 44 mono-seconds the budget below
+allows. **That boundary is a decision and not a waiting list** — a footstep, an
+impact, a reload or an ambient bed is a different argument, and the section on
+where the money should go is where it is made.
 
 **A sample is a thing laid over that, and it is held as a PREFERENCE.** The
 fetch is fire-and-forget off `Sfx.unlock`; a round fired before the decode
@@ -107,6 +107,15 @@ that holds the world.
    the stereo; a stereo source through one is double the RAM for nothing. The
    exception is a short sound the player hears UNPANNED — their own report —
    where the width is audible and the seconds are few.
+
+   **Seven of the eight rows take that exception and `mountedGun` is the one
+   that does not**, which is what makes the rule readable rather than
+   theoretical. The test is not what the sound IS, it is where it is heard:
+   `Game.resolveMg` reaches `Sfx.botShot` and never `shoot`, deliberately and
+   with the argument on the line — in a chase view the gun is twelve metres
+   from the listener — so the player firing a hull's own machine gun hears it
+   panned exactly as a bot's is. No unpanned path, no exception, mono. It
+   costs 0.112 mono-seconds where the same cut in stereo would cost 0.224.
 2. **No round-robin files.** Libraries balloon on five footstep variants per
    surface. Variation here comes from the graph: `playbackRate` jitter (already
    in `Sfx.sample`), the shared noise buffer, and layering.
@@ -246,6 +255,7 @@ rule rather than a detail of one file.
 | `sniperRifle` | sniper | 0 – 130 ms | 13% | **no cliff anywhere in the file** |
 | `lmg` | LMG | 40 – 170 ms | 13% | a 50 ms lead, then low roll the room was holding |
 | `pistol` | sidearm | 0 – 125 ms | 13% | a floor from 130, a late arrival at 220 |
+| `mountedGun` | all three hulls' `mg` | 34 – 146 ms | 11% | a 28 ms mechanical lead, then room |
 
 **1. A master of a BURST weapon is a burst.** `Sfx.shoot` is called once per
 ROUND — the carbine's three leave 50 ms apart and each one is its own call — so
@@ -256,8 +266,11 @@ the one rule here that is about CORRECTNESS rather than about a room, and it
 generalises: what a sample may contain is one call's worth of sound.
 
 **2. A mechanism on the tape is cut whichever end it is on, and the front end
-is the expensive one.** The carbine's report starts 32 ms into its master and
-the LMG's 50 ms into its; everything before is −23 to −57 dB of pre-noise.
+is the expensive one.** Three of the eight masters lead with one. The carbine's
+report starts 32 ms into its master, the LMG's 50 ms into its, and the mounted
+gun's 40 ms into its — that last is the plainest of the three, a discrete clack
+at 8–16 ms (−6 dB above 4 kHz) followed by near-silence to −61 before the
+report arrives. Everything before an onset is −23 to −61 dB of pre-noise.
 Shipped whole that is 32 and 50 ms of latency between the trigger and the
 sound — a third of the carbine's whole burst, half the LMG's cycle — and it
 cannot be recovered downstream, because `Sfx`'s own `trimSample` only skips
@@ -299,3 +312,11 @@ SMG's 140 against 77 is the same ratio; the carbine's 96 ms is the shortest in
 the table because three of its rounds leave in 0.1 s, which is the same
 argument `report.length: 0.75` already makes for it in `config/weapons.ts`. A
 cut that runs past the next round is a burst you cannot count.
+
+**`mountedGun` is where the rate DECIDED the cut rather than merely bounding
+it.** Its 112 ms is the tank cupola's own 111 ms gap at `fireRate: 9` to within
+a millisecond, so one round finishes as the next leaves and no two ever stack —
+which is the claim `report.length: 0.72` already makes for that gun in
+`config/vehicles.ts` ("almost no ring, because the next one is 110 ms away").
+The truck's 133 ms gap and the gunship's 118 are looser still, so the tightest
+of the three sized it and the other two are free.

@@ -2025,6 +2025,38 @@ The hull is POOLED: `Vehicle.placeAt` puts a destroyed one back rather than buil
 a new one, and `resetTankPose` is what guarantees nothing survives the round it
 died in. Nothing is disposed inside a round.
 
+## The mounted gun is one gun on three mounts, and it is one recording
+
+`VehicleSpec.mg.report` is a `ReportVoice` — the same eight scalars a carried
+weapon states — and all three kinds now name the same file on it,
+`mountedGun` (`src/core/samples.ts`, cut in `audio/manifest.json`). **That is
+the point rather than an economy**: the gun on a tank's cupola, on the truck's
+remote station and in the gunship's chin turret is the same gun, every one of
+them is the `mg` block, and a fourth kind gets the recording by having one at
+all. What still differs between the three rows is the eight scalars, because a
+MOUNT is not a gun — and they are still live, since the synthesis is what a
+hull is heard as before the decode lands and forever on a device that failed
+the fetch.
+
+**The main gun is deliberately not sampled.** It is a different weapon making a
+different argument (`gun` is the nullable block two of the three kinds have),
+and nothing about the cupola's recording belongs on it.
+
+**Two rules from the audio pipeline land here and both are about where the
+sound is HEARD.** `Game.resolveMg` reaches `Sfx.botShot` and never `Sfx.shoot`,
+with the argument on the line — in a chase view the gun is twelve metres from
+the listener — so **the player firing their own hull's machine gun hears it
+PANNED**, unlike their own rifle and unlike the engine of the hull they are
+sitting in. That makes it the one row in `audio/manifest.json` with no claim on
+the unpanned exception, and therefore **the only MONO one**: a `PannerNode`
+makes the stereo, and a second channel through one is double the RAM for
+nothing. And the cut is 112 ms against this gun's own 111 ms gap at
+`fireRate: 9`, so no two rounds stack — which is the claim `report.length` of
+0.72 was already making in prose.
+
+→ [`docs/audio.md`](audio.md) for the cut, the budget and the mono rule in
+full.
+
 ## The engine, and the two voices it is
 
 A hull makes a noise whoever is in it. There are **two kinds of voice and one

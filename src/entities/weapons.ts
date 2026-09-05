@@ -117,17 +117,31 @@ export interface ReportVoice {
   /** How much of the mechanism is heard against the shot — and the reload. */
   actionVol: number;
   /**
-   * A RECORDING that stands in for the eight fields above, or absent — which
-   * is every weapon but the rifle, and is what this game is.
+   * A RECORDING that stands in for the eight fields above, or absent.
    *
-   * It is on this interface rather than on `WeaponSetup` because it is the
-   * same kind of statement the rest of the row makes: what this weapon sounds
-   * like, said once, read only by `Sfx`. What it does NOT do is turn any of
-   * the eight off — `pitch` still pitches the sample and `level` still levels
-   * it, so a weapon could share one recording and still be told apart, and
-   * the fields the sample genuinely subsumes (`snap`, `weight`, `length`) are
-   * simply not read while it is playing. See `src/core/samples.ts` for why a
-   * sample is a preference and never a requirement.
+   * Every weapon in the kit names one, and so does the cupola gun on all three
+   * hulls (`CONFIG.vehicles.<kind>.mg.report`) — which is why the field is on
+   * THIS interface rather than on `WeaponSetup`: a `ReportVoice` is what a
+   * thing that shoots sounds like, and a hull's second seat is one of those
+   * without being a carried weapon at all. Said once, read only by `Sfx`.
+   *
+   * **It stays optional and that is not vestigial**: a weapon added tomorrow
+   * compiles without one and is heard as the synthesis, which is also what
+   * every one of these is heard as before the decode lands.
+   *
+   * **What it turns OFF is four of the eight, and `pitch` is the one to know
+   * about.** The eight are DEVIATIONS from the reference report — that is the
+   * whole shape of this interface, and why the rifle's row is all ones — so
+   * `pitch` says "this weapon's bore and charge, against the rifle's", and a
+   * recording OF that weapon has already said it. `Sfx` plays a sample at its
+   * per-shot wobble alone. `snap`, `weight` and `length` are the three the
+   * file genuinely subsumes and are simply not read while it plays; what
+   * still applies is `level` (a mix decision, not a claim about the weapon)
+   * and `tail` (how hard the shot drives the VILLAGE, which is the game's
+   * question and not the recording's). The eight are still live for the
+   * synthesis, which is what a caller gets whenever the sample has not
+   * arrived — see `src/core/samples.ts` for why that is a preference and
+   * never a requirement.
    */
   sample?: SampleId;
 }

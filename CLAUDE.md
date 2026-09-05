@@ -78,15 +78,15 @@ tidy the boot.** The argument is on the line in `main.ts`, the measurement is
 risk is state changing between draws: if a rendering bug ever appears that shows
 only while something is MOVING, flip this first.
 
-**Zero model files, and SEVEN audio files — one report per weapon in the kit,
-and nothing else in the game is recorded at all** — every mesh is built from
-Babylon primitives at runtime, and every sound is synthesized WebAudio
-(`src/core/Sfx.ts`) but for those seven. Do not add asset files unless
+**Zero model files, and EIGHT audio files — one report per weapon in the kit,
+plus the cupola gun all three hulls mount, and nothing else in the game is
+recorded at all** — every mesh is built from Babylon primitives at runtime, and
+every sound is synthesized WebAudio (`src/core/Sfx.ts`) but for those eight. Do not add asset files unless
 explicitly asked. There are four generated exceptions, none authored by hand
 and each with a generator in `package.json`: the icons, Havok's `.wasm`, the
 water's foam mask, and each map's menu photograph.
 
-**The gun kit's reports are the fifth, and they are the only asset class here a
+**The guns' reports are the fifth, and they are the only asset class here a
 person authored.** They pass the same test the other four do — `npm run audio`
 is the generator, the encoded files are committed, and the masters they were
 cut from are committed beside them in `audio/src/` — plus one more that is
@@ -96,10 +96,14 @@ fire-and-forget off `Sfx.unlock`, so a shot fired before the decode lands, on a
 device where the fetch failed, or in a browser that cannot decode the
 container, is the SYNTHESIZED report and no caller is told the difference. **An
 EIGHTH sound owes that same claim**; a sound the game needs does not belong in
-this pipeline. **The kit is also where the pipeline STOPS** — a footstep, an
+this pipeline. **The GUNS are also where the pipeline STOPS** — a footstep, an
 impact, a reload or an ambient bed is not next in line but a different
 argument, and `docs/audio.md` has the arithmetic that says why (one
-thirty-second ambient loop costs ten times the whole sampled kit).
+thirty-second ambient loop costs ten times the whole sampled kit). **A sample
+belongs to a `ReportVoice` and not to a weapon**, which is why one file serves
+the tank's cupola, the truck's remote station and the gunship's chin turret:
+they are one gun on three mounts, and a fourth kind gets it by having an `mg`
+block at all.
 
 **Three rules from it reach outside `audio/`.** A decoded buffer costs
 `duration × ctx.sampleRate × channels × 4` and **nothing else** — the container,
@@ -117,10 +121,14 @@ every gunshot with one shared `ConvolverNode` at no per-shot cost, so a baked
 tail double-reverbs the shot, puts one room on six maps and holds a voice for
 the length of it. Every master delivered so far arrived with that room on it
 and each is cut back to between 96 and 180 ms; **the two rules that took the
-most off** are that a MECHANISM on the tape is cut whichever end it is on (the
-carbine and the LMG lead with 32 and 50 ms of it, which is that much latency
-between the trigger and the sound), and that a master with no cliff to cut on —
-the sniper's is one long boom — is cut with a FADE rather than left long.
+most off** are that a MECHANISM on the tape is cut whichever end it is on
+(three of the eight lead with one — the carbine, the LMG and the mounted gun,
+by 32, 50 and 40 ms, which is that much latency between the trigger and the
+sound), and that a master with no cliff to cut on — the sniper's is one long
+boom — is cut with a FADE rather than left long. **And the MONO rule is about
+where a sound is HEARD, not what it is**: seven rows are stereo under the
+exception for a report the player hears unpanned, and `mountedGun` is not,
+because `Game.resolveMg` reaches `Sfx.botShot` and never `shoot`.
 
 → **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
 binds, why one ambient loop costs ten times the whole sampled gun kit, the
@@ -1219,7 +1227,13 @@ driver asked for. `Vehicle.aimMg` writes the difference onto the rig; a gun nobo
 is on inverts the rule and rides its ring. It is stepped from `VehicleSystem`
 rather than from `update`, because a hull's two guns can have two owners of
 different kinds — a person driving off the wire while a bot lays the cupola
-gun. **It is a `bullet` against `resist.bullet` of 0.05, so it cannot touch
+gun. **All three kinds name ONE recording on `mg.report`** (`mountedGun`), for
+the same reason there is no `if` between the kinds anywhere else: it is one gun
+on three mounts, and what differs between the three rows is the eight scalars.
+The main gun is deliberately not sampled, and the mounted gun is the one sample
+in the tree that is MONO — `Game.resolveMg` reaches `Sfx.botShot` and never
+`shoot`, so it has no claim on the unpanned exception every carried weapon
+takes. **It is a `bullet` against `resist.bullet` of 0.05, so it cannot touch
 armour**, which is the trade rather than a limitation: what it answers is
 infantry inside the main gun's reload.
 
@@ -1348,8 +1362,9 @@ world angle and its stowed inversion, the crew of two, the whisker fan and the
 two geometry bugs it found; the collider's three answers; the tracks' sweep, its
 three gates and its two skips; each model's mesh budget, its running gear and
 its whips, and the gunship's chin turret with the four clearances it owes; the
-two engine voices, the two powerplants under them and the measurements on both;
-the plank, the
+mounted gun as one gun on three mounts and the one recording all three name;
+the two engine voices, the two powerplants under them and the measurements on
+both; the plank, the
 rate limit and the leading-end sphere; the damage kinds, the four ways out of a
 seat, the shell, the two clocks a hardstanding runs, what a map owes — including
 what its GENERATOR owes — and what is not built.
