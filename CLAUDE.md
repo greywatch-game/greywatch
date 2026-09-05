@@ -345,7 +345,22 @@ its place by IDENTITY rather than by index** (the lobby is the one that can), an
 (`.ui-foot` / `.ui-back`). They are drawn in ONE FRAME anchored to the VIEWPORT,
 **sized in `clamp()` over `vmin` with `--ov-scale` a safety valve rather than the
 layout**. **A screen over another SCREEN is opaque and a screen over the SCENE is
-not**, and **the PAUSE is the one card that does not take the screen**.
+not**, and **the PAUSE is the one card that does not take the screen**. **A ROW
+OF PICKS IS A GRID OF EQUAL SHARES, NEVER A WRAPPING FLEX ROW** — a flex row
+cannot be squeezed below its own longest word, so where it breaks is a
+`flex-basis` tuned per viewport and a stranded button nothing but a screenshot
+can catch; N items in `grid-auto-flow: column` are N equal shares at every width,
+and a narrow viewport changes the COUNT rather than the break.
+
+**The KIT screen is the one whose layout used to be welded to a CONSTANT, and it
+is not any more.** Its middle is a hole the real viewmodel is drawn through, and
+the weapon was placed from `CONFIG.viewmodel.inspect.anchorX` — a number that had
+to agree with a `--panel: 46%` in a stylesheet, which meant one possible layout
+and everything else on the screen squeezed beside it. `LoadoutScreen.stageBay`
+MEASURES the hole every frame and `ViewModel` fits the weapon to what it is told,
+so the screen is free to be a strip and three columns on a desktop and a bay over
+a scrolling list on a phone. **Anything else that wants to place a 3D object
+against the interface owes the same shape**: the DOM measures, the scene follows.
 
 **The menu stands on a PHOTOGRAPH of the map**, and `#menu-shot` is a root of its
 OWN at z-index 9 rather than a child of `#overlay`, which would paint over the
@@ -377,8 +392,8 @@ itself**, redrawn at its box times the device ratio rather than resampled.
 
 → **[`docs/ui.md`](docs/ui.md)** — the shell, the four cards as one class, the
 menu's rail and the map schematic drawn from a LAYOUT, why **the pointer deploys
-only through the Deploy button**, the deploy map, the kit turntable, the settings
-panel, the lobby's row identity, the gauges' metric and the four ladders, the
+only through the Deploy button**, the deploy map, the kit screen's MEASURED bay
+and the layout that buys, the settings panel, the lobby's row identity, the gauges' metric and the four ladders, the
 short-viewport scaling, the portrait fallback, and the touch controls as a
 screen — with [`docs/pwa.md`](docs/pwa.md) for them as a phone.
 

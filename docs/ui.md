@@ -111,11 +111,12 @@ legible desktop menu rendered at 45%. Raising it back toward those numbers undoe
 the responsive layout wholesale.
 
 **The kit screen carries the head without the frame**, and it is the one
-exception. Its right half is a hole the 3D turntable is placed through, so a
-grid with a foot across the bottom would put a row of key chips over the weapon;
-it keeps its own two-column flex and takes `.ui-head` and `.ui-foot` bounded to
-its panel column. That is why the title rule is scoped to `.ui-head` rather than
-to `.ui-screen`.
+exception. Its middle is a hole the 3D turntable is placed through, so it
+declares a grid of its own — head band, weapon strip, three columns, foot band —
+and takes `.ui-head` and `.ui-foot` as full-bleed rows in it. Both bands are
+above the hole rather than across it, which is what `.ui-screen`'s own grid
+could not have arranged. That is why the title rule is scoped to `.ui-head`
+rather than to `.ui-screen`.
 
 **The boot screen is the one piece of interface that is not in this directory**,
 and the exception is what defines it: it covers the stretch before any module
@@ -183,7 +184,7 @@ the kit screen, and only the pair that works everywhere is on the button.
 
 **The four cards are one class because they are one element** — they share the
 shell, the title block and the Deploy button. The bar for a screen of its own is
-*state*: the deploy map has a selection and a canvas, the kit screen has three
+*state*: the deploy map has a selection and a canvas, the kit screen has four
 slots and a turntable; a card that is markup plus a button has not earned one.
 
 **Three of the four take the screen and the PAUSE does not.** `setCardClass` is
@@ -782,9 +783,9 @@ worth knowing about rather than re-deriving:
 
 - `#hud.kitting > *:not(#loadout):not(#hud-fps)` already hides every other child
   of `#hud` while the kit screen is up, and the backdrop is one. That rule is not
-  decoration: the weapon on the turntable is drawn by the SCENE through a hole in
-  the kit screen's scrim, so a full-bleed picture left standing at z-index 9
-  would be what you saw in the hole instead of the gun.
+  decoration: the weapon on the turntable is drawn by the SCENE through a hole
+  the kit screen leaves in the middle of itself, so a full-bleed picture left
+  standing at z-index 9 would be what you saw in the hole instead of the gun.
 - It is deliberately NOT in the `--ov-scale` list in `base.css` beside
   `#overlay`, `#deploy`, `#settings` and `#lobby`. That ladder draws a screen at
   the size it was authored for and scales it down; a photograph has no authored
@@ -1036,119 +1037,150 @@ takes a click. Pointerdown, like the map's markers: the same event goes on to ta
 the pointer lock, which it can only do once `spawnPlayer` has moved the state to
 `playing`. It greys itself (`.waiting`) while `confirm()` is still a no-op.
 
-**The right half of the kit screen is a turntable carrying the real viewmodel.** It
+**The MIDDLE of the kit screen is a turntable carrying the real viewmodel.** It
 is not a second model, not a render target and not a second camera: `ViewModel`
 simply has a pose that is not the carried one (`beginInspect` / `spinInspect` /
 `updateInspect` / `endInspect`), and the weapon is already parented to the camera
 and drawn in `VIEWMODEL_GROUP`.
 
-- **The stage is a hole in the screen's scrim.** Everything the kit screen draws is
-  DOM and DOM is above the canvas, so a backdrop over the stage would dim the weapon
-  along with the world. `#loadout`'s scrim stops at the panel column and the stage
-  gets a vignette instead; `show()` marks `#hud` so the CSS can hide the menu, the
-  deploy map and every gauge while the kit is up.
-- **What the weapon is read against is therefore in the SCENE, not in the
-  stylesheet**, and the vignette's first stop is fully transparent because of it.
-  It used to open at alpha 0.5 over the middle of the stage — where the weapon is
-  — so the frame was drawing the one thing the screen exists to show at half
-  strength, and the map behind it at half strength too, which is a contrast
-  problem the DOM cannot solve from the wrong side of the canvas. The dark card
-  now behind the weapon (`CONFIG.viewmodel.inspect.backdrop`,
-  [`weapons.md`](weapons.md)) is what holds the map down; the vignette is left
-  closing the corners of the bay and nothing else.
-- **The stage's geometry is shared with `CONFIG.viewmodel.inspect`.** The pose is
-  placed by back-projecting a SCREEN anchor, and the anchor works out to exactly the
-  CSS `--panel` fraction (the stage's centre is `(1+p)/2` across, which in NDC is
-  `p`). Both are fractions of the viewport, so a resize moves them together; the
-  distance additionally gives way on a viewport narrower than `aspectReference`,
-  because apparent size follows the vertical FOV while the room to fit in is a share
-  of the width.
+- **THE BAY IS MEASURED, and that one change is what the rest of this section is
+  downstream of.** The weapon is placed by back-projecting a SCREEN position, and
+  that position used to be a constant — `CONFIG.viewmodel.inspect.anchorX: 0.46`
+  — welded to a `--panel: 46%` in `#loadout`'s stylesheet, with a note in each
+  file saying to change the other. Two numbers that had to agree meant the screen
+  had exactly ONE possible layout: a full-height column beside a full-height
+  hole. Everything else on it was then squeezed into that column — ten buttons,
+  a chart and three paragraphs, with the footer under the bottom edge of a
+  1280x720 window — next to half a screen of empty bay. `LoadoutScreen.stageBay`
+  measures `.lo-well` every frame and hands the rect to `updateInspect` through
+  `InspectParams.bay`, so the weapon goes wherever the hole is: **move the
+  layout freely, in either orientation, and the weapon follows.**
+- **What is left in `CONFIG` is the weapon's own SIZE, and the fit takes the
+  worse of two axes.** `frameWidth`/`frameHeight` are the rifle's span as a
+  multiple of the frame's HEIGHT (the axis Babylon's FOV is fixed on, which is
+  why the old `aspectReference` could be retired with the anchor), `frameMargin`
+  is how much of the bay it may fill, and the weapon is pushed back until both
+  fit. The old form could only ever be told about the WIDTH; a measured bay can
+  be short as easily as narrow. **`frameNearest` is the floor**, and it exists
+  because the rule now runs the other way too: the bay on a monitor is roomier
+  than the framing was ever authored for, so the fit is allowed under 1 and the
+  spare room is spent on the weapon rather than on air around it.
+- **The bay is a hole, and it no longer needs a scrim.** Everything the kit
+  screen draws is DOM and DOM is above the canvas, so a backdrop over the bay
+  would dim the weapon along with the world. What the weapon is read against is
+  a card hung behind it IN THE SCENE (`CONFIG.viewmodel.inspect.backdrop`,
+  [`weapons.md`](weapons.md)) — and because that card is cut to the WHOLE
+  frustum, the map is already gone before a pixel of this stylesheet is drawn.
+  That is what lets the screen be plates with air between them rather than one
+  opaque column with a hard edge down the middle of the window; `.lo-scrim` was
+  doing a job something else had taken over. `show()` still marks `#hud` so the
+  CSS can hide the menu, the deploy map and every gauge while the kit is up.
+- **The card's pool of light follows the bay**, repainted (`paintKitPool`) when
+  the centre moves by more than a rounding error rather than baked once at
+  build. A pool left at the old anchor is a bright patch on an empty corner
+  with the weapon in the dark beside it, which is what a phone would have got.
 - **The turntable rotation is a quaternion, and the only thing allowed to write
   one.** The carried pose is Euler, composed in the weapon's own frame, so at a
-  side-on yaw the pitch a drag asks for arrives as a roll. `endInspect` dropping the
-  quaternion is what lets the Euler pose come back at all — while one is set Babylon
-  ignores `rotation` entirely.
-- **It rotates about a derived pivot, not the node's origin** (which on a rifle is
-  the receiver — a turntable about that would swing the weapon around the screen).
-  `applyFit` measures the pivot from the weapon's own muzzle landmark.
+  side-on yaw the pitch a drag asks for arrives as a roll. `endInspect` dropping
+  the quaternion is what lets the Euler pose come back at all — while one is set
+  Babylon ignores `rotation` entirely.
+- **It rotates about a derived pivot, not the node's origin** (which on a rifle
+  is the receiver — a turntable about that would swing the weapon around the
+  screen). `applyFit` measures the pivot from the weapon's own muzzle landmark.
 - **The hands let go.** A forearm cut off at the elbow reads fine on a carried
-  weapon and as a severed arm on a bench, so `ViewModel` hides the arm meshes for the
-  duration — one place writes mesh visibility.
-- **The FINISH row is the one pick on this screen that is not a trade, and the
-  one row that is not drawn like the others.** Every other choice here costs
+  weapon and as a severed arm on a bench, so `ViewModel` hides the arm meshes for
+  the duration — one place writes mesh visibility.
+
+**THE LAYOUT IS THREE ZONES AND A STRIP, split by what each thing IS rather than
+by what fits where.** Head and foot are full-bleed bands; between them, a WEAPON
+strip of six cards across the top (the decision the other three depend on, so it
+gets the width), a column of the things FITTED to it down the left (optic,
+anti-vehicle, finish), the BAY in the middle, and the CHART and the copy down the
+right — the only things on this screen that are read rather than pressed. The
+three columns share one top line under the strip (`justify-content: flex-start`,
+deliberately, because two left-aligned stacks starting at two different y is the
+misalignment the eye picks out of any layout), and both side columns SCROLL, which
+is the fix for the one failure the old screen had at every size: a column that ran
+out of room simply put its last row under the bottom edge with no way to reach it.
+
+- **A ROW OF PICKS IS A GRID OF EQUAL SHARES, NEVER A WRAPPING FLEX ROW.** This
+  is the rule that deleted the most from this section, and it is a correctness
+  rule rather than a style. A flex row cannot be squeezed below its own longest
+  word, so it breaks — and *where* it breaks was decided by a `flex-basis` tuned
+  per viewport across four media queries, with a standing instruction to MEASURE
+  the break by hand whenever a weapon or an optic was added, because a stranded
+  button (five on a line and one alone underneath at the column's full width) is
+  invisible to a typecheck, to a review of the diff, and to anyone not looking at
+  that viewport. Two regressions were found that way and neither would have been
+  found any other way. `grid-auto-flow: column` with `1fr` columns cannot strand:
+  six items are six equal shares at every width there is, and a narrow viewport
+  changes the COUNT of columns rather than the break. Nothing here needs
+  measuring when a weapon is added any more.
+- **Where a grid does wrap, it wraps into ALIGNED columns.** The portrait tier's
+  weapon strip is `repeat(auto-fit, minmax(118px, 1fr))`, so a seventh card sits
+  under the first at the same width — which is what a grid should look like when
+  a table stops being a round number, rather than one item alone at full width.
+- **Names WRAP; nothing is truncated.** Two names in this kit are long enough to
+  overrun a narrow column — "Submachine Gun" and "Anti-Vehicle Mines" — and
+  "ANTI-VEHICLE MI…" says less than the caption above it already does. Every list
+  here is a grid, so a row whose tallest cell has wrapped stretches the rest to
+  match and the column keeps its rhythm.
+- **The four picks are one control drawn four ways.** `.lo-block` is a `.frame`
+  hull with a caption over a list, and the ACTIVE block — the one the arrow keys
+  are stepping — says so by taking the hot colour as its `--frame-edge` and
+  lifting its `--frame-fill`. Two custom properties are the whole of the
+  selection treatment, which is why a fifth slot would need no new styling.
+- **The FINISH is the one pick on this screen that is not a trade, and the one
+  row that is not drawn like the others.** Every other choice here costs
   something — a magnification is a field of view, a burst is four tenths of a
   second — and a finish costs nothing, so it gets no bar on the chart and never
-  moves one. What it has instead is the stage: its COPY is written under the
-  weapon rather than beside the bars, because a finish is the one pick whose
-  whole effect is the thing already turning on the turntable.
+  moves one. What it has instead is the bay: its NAME and its description are
+  written under the weapon rather than beside the bars, because it is the one
+  pick whose whole effect is the thing already turning on the turntable.
 - **All sixteen finishes are offered on every gun, and sixteen is what took the
   NAMES off the buttons.** A finish says what it does with COLOUR because its
   name cannot — "Verdigris" and "Oxblood" are words you would otherwise try one
   at a time — so the button IS the swatch: three flat stops in the order the eye
   reads a weapon (furniture, receiver, fittings), in a grid of `.lo-swatch`
-  rather than a row of `.lo-opt`. Four named buttons fitted the row; sixteen
-  would be four LINES of them, which is more panel than the chart and the copy
-  together. **Eight columns rather than `auto-fit`**, because the table is
-  sixteen and eight is two full lines with nothing stranded on a short one, and
-  two lines of swatches measure within a couple of pixels of the one line of
-  named buttons they replaced — which is how the row holds four times the
-  choices without the panel growing.
-- **The name of the lit swatch is written in the ROW'S CAPTION**, in the hot
-  colour beside the dim "Finish" label, and described in full by the stage's
+  rather than a row of `.lo-opt`. **Eight columns rather than `auto-fit`**,
+  because the table is sixteen and eight is two full lines with nothing stranded
+  on a short one.
+- **The name of the lit swatch is written in the BLOCK'S CAPTION**, in the hot
+  colour beside the dim "Finish" label, and described in full by the bay's
   paragraph. Both, not either: the paragraph is the first thing a short viewport
-  drops, and a grid of unnamed colours with no name anywhere on the panel is
+  drops, and a grid of unnamed colours with no name anywhere on the screen is
   exactly the row-you-try-one-at-a-time the swatches exist to avoid. A `title`
-  covers the fourteen that are not lit, for the pointer that has one.
+  covers the fifteen that are not lit, for the pointer that has one.
 - **The selected swatch is RINGED rather than filled**, which is the one place
   `.on` changes its mind on this screen: every other button says it is chosen by
   taking the hot colour as its background, and a swatch that did that would
   paint over the only thing it has to say. The ring is inset (a `clip-path` cuts
   an outer shadow off) with a dark line inside it, which also keeps two pale
   schemes — `whitewash`, `frostbite` — from melting into each other and into the
-  panel's own wash.
-- **A third row of buttons is 45 px of panel, and the panel is what paid for
-  it.** Two pixels off each row's padding and each gap, a smaller flex BASIS for
-  the optic row, whose names are one short word each (68 against the weapon
-  row's, which is sized for "SUBMACHINE GUN"), and a row gap on the detail card
-  stated apart from its column gap — only one of the two is ever spent, and a
-  single number was charging the stacked case for a gutter it does not have.
-  Between them the screen fits 1280x720 again, and a landscape phone fits the
-  optics on one line where it used to break them 3 + 2.
-- **The two option rows have different BASES now, and the basis is what tells a
-  row where to break rather than whether it may.** The optics are one short word
-  each and six of them measure 84 px in the 532 px track a 1280 window leaves,
-  so they sit on one line at 96. The weapons are two-word names with a
-  min-content floor near 106, and six of those cannot: at 96 the row broke
-  **5 + 1**, which put one button alone on a line at the full width of the
-  column — the one break that reads as a mistake rather than as a layout. At
-  150 four cannot fit in that track and three always can. Measured: **3 + 3 at
-  1280 and 1440, 4 + 2 from 1920 on** — and the second half of that is not a
-  wide-window bonus, because the button track caps at 754 px and six never sit
-  on one line however big the window is.
-- **On a landscape phone the sixth optic could not be squeezed on at all**, and
-  that is arithmetic rather than tuning: 338 px of track, a floor near 58 px per
-  button at that type size, and 6 x 58 + 5 x 4 = 368. The basis cannot buy a
-  line that does not exist, so the narrow query stops trying — 90 puts the
-  optics on 3 + 3 rather than leaving them at 5 + 1, and the extra row costs
-  height rather than reachability now that `.lo-panel` scrolls at every height.
-- **MEASURE the break when a weapon or an optic is added.** The row cannot
-  overflow — it wraps — but it can strand, and a stranded button is invisible to
-  a typecheck, to a review of the diff, and to anyone not looking at that
-  viewport. Both regressions above were found that way and neither would have
-  been found any other way.
-- **`.lo-panel` scrolls at every height now, and centres SAFELY.** It used to do
-  both only below 560 px, so between there and a full desktop a window that ran
-  out of room simply put the footer under the bottom edge with no way to reach
-  it — and a column centred in a box it is taller than overflows equally at both
-  ends, which puts the head out of reach too. `justify-content: safe center`
-  drops to flex-start exactly when that would happen. A third row of buttons is
-  not the sort of thing that should be able to strand the way off a screen.
-- **On a landscape phone the whole HEAD goes**, and it is the same argument
-  that already took the prose. This is the one screen outside `--ov-scale`, so
-  it has to fit a 390 px-tall window on its own; the eyebrow says what kind of
-  screen this is, the slot opposite names the weapon carried, and the STAGE's
-  own caption already says the second under the weapon itself. Two lines of
-  head there is the Back button falling off the bottom.
+  plate behind them.
+- **It gives way in three tiers, and each is keyed on the thing that actually
+  runs out.** Below **1180 px** nothing changes — three columns hold, because
+  the side tracks' minimums are `clamp()`ed and a word set at a size that falls
+  with the viewport needs less room on the viewport where there is less. At
+  **`max-height: 620px`** — a phone held sideways — the side columns are given
+  MORE of the width and the lists go two-up as CARDS, a name over its figure
+  rather than beside it, which is what makes two columns fit in a track that
+  held one; the head and all the prose go, for the reason they always did. At
+  **`max-width: 720px`** the screen becomes one column: the bay is a band across
+  the top at `clamp(150px, 30vh, 300px)` and everything else scrolls underneath
+  it, with the weapon pinned in its band while the list moves — which works only
+  because the bay is measured rather than assumed.
+- **`.lo-choices` is `display: contents` at every width above that, and a real
+  scrolling box below it.** One element with two jobs: `display: contents` makes
+  `.lo-pick`, `.lo-fit` and `.lo-read` grid items of `#loadout` itself, placeable
+  anywhere in the frame; a phone turns the same element into the box that does
+  the scrolling. The alternative is a second copy of the markup for the narrow
+  case.
+- **`--ov-scale` still does not reach this screen, but the reason it could not
+  has gone.** The old note said a transform would move the hole and leave the
+  weapon behind it; a measured rect moves with the transform, so it would follow
+  now. It is left out because the layout fits the viewports it is given on its
+  own, which is the better answer.
 
 `Game.updateKitStage` drives it, because `loadout` is the one lid state showing live
 3D and owes by hand the per-frame pushes only `updateGameplay` makes. The camera

@@ -196,7 +196,8 @@ src/
     ViewModel.ts        # The first-person weapon: carried gun + gloved arms on
                         #   the camera, hip/ADS/sprint/reload/muzzle-load, sway,
                         #   bob, and
-                        #   the kit turntable with the dark card behind it.
+                        #   the kit turntable with the dark card behind it,
+                        #   fitted to the BAY the kit screen reports.
                         #   Builds every weapon, enables one
     weaponKit.ts        # The build accumulator every weapon model is written
                         #   in + WeaponParts and WeaponSights (rail, or fixed),
@@ -736,8 +737,12 @@ src/
       deploy.css        #   rather than under it. The offer is live, so the
                         #   highlight is held by IDENTITY; in a netplay round a
                         #   confirm is a REQUEST and says so
-    LoadoutScreen.ts    # Kit screen: two slots, a stat chart derived from
-      loadout.css       #   CONFIG.weapons, and the turntable stage
+    LoadoutScreen.ts    # Kit screen: four slots, a stat chart derived from
+      loadout.css       #   CONFIG.weapons, and the bay the turntable stands
+                        #   in — which it MEASURES and reports every frame
+                        #   (stageBay), so the layout is free and the weapon
+                        #   follows the hole. A strip, three columns, and a
+                        #   band across the top of a phone
     SettingsScreen.ts   # Controls built from a ROW TABLE, in PAGES — a button
       settings.css      #   group, or a slider where the ladder is too long for
                         #   one (the thumb picks an option INDEX, so both are

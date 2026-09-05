@@ -1487,12 +1487,21 @@ persists to `localStorage` like the difficulty tier, so confirm just closes.
   (`CONFIG.viewmodel.inspect.backdrop`, built by `buildKitBackdrop`). What used to
   fill the stage was the live map: off the menu that is empty sky and reads as a
   bench, off the deploy screen it is a lit village at the exact tone of a grey
-  receiver. It cannot be fixed in the stylesheet — the stage is a hole in the
-  scrim precisely because every point of DOM alpha over it is a point off the
-  weapon — so the card hangs *behind* the weapon instead, sized to the frustum
-  from the same fov and aspect that place the weapon. See
-  [`rendering.md`](rendering.md) for the draw-order rules that keep it between
-  the two.
+  receiver. It cannot be fixed in the stylesheet — the bay is a hole precisely
+  because every point of DOM alpha over it is a point off the weapon — so the
+  card hangs *behind* the weapon instead, sized to the frustum from the same fov
+  and aspect that place the weapon. See [`rendering.md`](rendering.md) for the
+  draw-order rules that keep it between the two. Because it is cut to the WHOLE
+  frustum it also darkens the map behind the rest of the screen, which is what
+  let the kit screen's own scrim go — see [`ui.md`](ui.md).
+- **Where the weapon STANDS is the kit screen's answer, not this config's.**
+  `LoadoutScreen.stageBay` measures the hole and hands it over every frame
+  (`InspectParams.bay`); what is left in `CONFIG.viewmodel.inspect` is the
+  weapon's own SPAN (`frameWidth`/`frameHeight`, as multiples of the frame's
+  height) and how much of a bay it may fill, and `updateInspect` pushes it back
+  until both axes fit — or brings it CLOSER than the authored distance, down to
+  `frameNearest`, when the bay is roomier than the framing was drawn for. The
+  card's pool of light is repainted to follow the same point.
 - **The stat bars are derived from the table**, each weapon's figure against the
   best any weapon has, so a third weapon re-scales the chart instead of dating it.
   Accuracy is the aimed spread *inverted* — a bar that grew with the number would rank

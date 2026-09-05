@@ -684,23 +684,53 @@ export const viewmodel = {
      */
     dist: 1.25,
     /**
-     * The aspect ratio `dist` frames the weapon for. Narrower than this and
-     * the weapon is pushed proportionally further back: its size follows the
-     * vertical FOV, but the room it has to fit in is the stage's share of the
-     * width, so a nearly square window would otherwise lay a rifle across
-     * the panel column. Wider is free — the stage only gets roomier.
+     * HOW BIG THE WEAPON IS, as a multiple of the frame's own HEIGHT at the
+     * authored framing — its width and its height, measured off the rifle on
+     * the bench. The pair replaces an NDC anchor and an aspect reference, and
+     * the swap is the whole reason the kit screen can be laid out at all.
+     *
+     * **Where the weapon stands is the DOM's answer now and no longer this
+     * file's.** The anchor used to be welded to a CSS percentage — the stage
+     * was the right 54% of the viewport, so its centre sat 0.46 across and
+     * `anchorX` said 0.46 in a second place that had to be changed with it.
+     * That pair is what made the screen unmovable: any arrangement other than
+     * a full-height column beside a full-height hole left the weapon behind
+     * the panel. The screen MEASURES its own hole and hands it over every
+     * frame (`LoadoutScreen.stageBay`, `InspectParams.bay`), so the layout is
+     * free to be three columns and a strip on a desktop and a bay over a
+     * scrolling list on a phone, and the weapon is in the middle of the bay
+     * either way.
+     *
+     * What is left here is the SIZE, and stating it as the weapon's own span
+     * is what lets one rule serve any bay: the weapon is pushed back until it
+     * fits, on EITHER axis, where the old form could only ever be told about
+     * the width. Both spans are against the frame's HEIGHT because that is the
+     * axis Babylon's FOV is fixed on — a width stated as a fraction of the
+     * frame's own width would have to carry the aspect it was measured at, and
+     * that is exactly the `aspectReference` this pair retires.
      */
-    aspectReference: 1.7,
+    frameWidth: 0.68,
+    frameHeight: 0.25,
     /**
-     * Where on the SCREEN the weapon is centred, in NDC (-1..1, +x right,
-     * +y up). This is the loadout screen's stage: its panel column takes the
-     * left 46% of the viewport (`--panel` in #loadout's CSS) and the stage
-     * the rest, so the stage's centre sits `(1 + 0.46) / 2` across — which in
-     * NDC is 0.46 again. Both sides are FRACTIONS of the viewport, which is
-     * what keeps the DOM and the weapon together at any window size.
+     * How much of the bay the weapon may fill before it is pushed back. The
+     * rest is the air that makes a bay read as a bay rather than as a box the
+     * rifle is jammed into, and it is the number to move if the weapon ever
+     * looks tight in a corner of some viewport nobody measured.
      */
-    anchorX: 0.46,
-    anchorY: 0.06,
+    frameMargin: 0.82,
+    /**
+     * The CLOSEST the weapon may be brought, as a fraction of `dist`.
+     *
+     * The fit is a "push it back until it fits" rule and its natural floor is
+     * 1 — the authored distance, on a bay exactly big enough. But the bay is
+     * the biggest thing on a redesigned kit screen and on a monitor it is
+     * roomier than the framing was ever authored for, which at a floor of 1 is
+     * a rifle sitting in the middle of a great deal of nothing. Letting the
+     * fit go UNDER 1 spends that room on the weapon, which is the one thing on
+     * this screen worth looking at; the floor is what stops an ultrawide
+     * putting the muzzle through the near plane.
+     */
+    frameNearest: 0.66,
     /**
      * The turntable spins about a point this far along the weapon's own
      * muzzle offset, so a shorter weapon centres itself instead of swinging
@@ -760,10 +790,13 @@ export const viewmodel = {
       alpha: 0.985,
       /**
        * The pool of light behind the weapon and the dark it falls off to,
-       * centred on `anchorX`/`anchorY` — the same point the weapon is placed
-       * at, so the brightest part of the card is always behind the receiver.
-       * Cool, and darker than any weapon in the kit at both ends: the card is
-       * what the weapon is read AGAINST, so nothing on it may compete.
+       * centred on the BAY the kit screen reported — the same point the weapon
+       * is placed at, so the brightest part of the card is always behind the
+       * receiver. It is repainted when the bay moves rather than baked once
+       * (`paintKitPool`), because the bay is the DOM's answer and a phone's is
+       * nowhere near a desktop's. Cool, and darker than any weapon in the kit
+       * at both ends: the card is what the weapon is read AGAINST, so nothing
+       * on it may compete.
        */
       near: "#171e2b",
       far: "#04060b",

@@ -1,48 +1,88 @@
 /**
  * LoadoutScreen.ts — The kit screen: pick a weapon, fit an optic, paint the
  * thing, turn it over in your hands, and read what the trade costs.
- * Owns: its own DOM under `#hud`, the three-slot selection model, the stat
- * table it derives from `CONFIG.weapons`, and the pointer drags over its
- * stage. It reports choices and redraws nothing on its own — `Game` applies a
- * pick and calls `setFit` back, so the highlighted button can never get ahead
- * of the weapon in the player's hands.
+ * Owns: its own DOM under `#hud`, the four-slot selection model, the stat
+ * table it derives from `CONFIG.weapons`, the pointer drags over its bay, and
+ * the MEASUREMENT of that bay. It reports choices and redraws nothing on its
+ * own — `Game` applies a pick and calls `setFit` back, so the highlighted
+ * button can never get ahead of the weapon in the player's hands.
  *
- * The weapon on the right is not a picture: it is the real viewmodel, the one
+ * The weapon in the middle is not a picture: it is the real viewmodel, the one
  * that will be in the player's hands, posed on a turntable by `ViewModel` and
- * drawn by the live scene behind this overlay. Two consequences run through
- * the file:
- * - **The stage is a hole in the scrim, not a panel.** The weapon is on the
- *   canvas and every part of this screen is above it, so the stage half carries
- *   no background of its own — only a vignette to frame it. Which is also why
- *   `show()` marks `#hud` and the CSS hides the menu and the deploy map while
- *   the kit is up: they are DOM too, and either would paint over the weapon.
- * - **The stage's geometry is shared with `CONFIG.viewmodel.inspect`.** The
- *   panel column's width is what puts the stage's centre 0.46 of the way
- *   across the viewport, which is the anchor the weapon is placed at. Both
- *   sides are fractions of the viewport, so a resize moves them together.
+ * drawn by the live scene behind this overlay.
  *
- * **The FINISH row is the one that is not a trade**, and it is the one row
- * that is not drawn like the others either. Every other choice on this screen
- * costs something — a magnification is a field of view, a weapon is a rate
- * against a magazine — and a finish costs nothing at all, so it has no bar on
- * the chart and never touches one. What it has instead is the STAGE: it is
- * the only pick here whose whole effect is the thing already turning on the
- * turntable, which is why its copy is written under the weapon rather than
- * beside the bars.
+ * **THE BAY IS MEASURED, AND THAT IS THE ONE THING TO UNDERSTAND BEFORE
+ * MOVING ANYTHING ON THIS SCREEN.** The weapon is placed by back-projecting a
+ * screen position, and that position used to be a constant in
+ * `CONFIG.viewmodel.inspect` welded to a CSS percentage: the panel was the
+ * left 46% of the viewport and the anchor said 0.46, in two files that had to
+ * be changed together. Which meant the screen had exactly one possible layout
+ * — a full-height column beside a full-height hole — and everything else on
+ * it was squeezed into that column until the column was a stack of ten
+ * buttons, a chart and three paragraphs with the footer under the bottom edge
+ * of the window, next to half a screen of empty bay. `stageBay` reports the
+ * hole instead, every frame, and the weapon goes wherever the hole is. Move
+ * the layout freely; the weapon follows.
+ *
+ * Two consequences still run through the file:
+ * - **The bay is a hole, not a panel.** The weapon is on the canvas and every
+ *   part of this screen is above it, so the bay carries no background of its
+ *   own. What the weapon is read against is a card hung behind it IN THE SCENE
+ *   (`CONFIG.viewmodel.inspect.backdrop`) — which, since it is cut to the
+ *   whole frustum, is also why the panels around the bay can be plates with
+ *   air between them rather than one opaque scrim: the map is already gone.
+ * - **`show()` marks `#hud`** so the CSS can hide the menu and the deploy map
+ *   while the kit is up: they are DOM too, and either would paint over the
+ *   weapon.
+ *
+ * **THE LAYOUT IS THREE ZONES AND A STRIP**, and the split is by what each
+ * kind of thing IS rather than by what fits where:
+ * - the WEAPON is the decision the other three depend on, so it is a strip of
+ *   six cards across the top, under the head — the widest thing on the screen
+ *   for the choice that changes what every other row means;
+ * - the OPTIC, the ANTI-VEHICLE item and the FINISH are what is fitted to it,
+ *   so they are the column down the left;
+ * - the BAY is the middle;
+ * - and the CHART and the copy are the right-hand column, because they are the
+ *   only things here that are read rather than pressed.
+ *
+ * The FINISH is a placeable block of its own rather than a third block inside
+ * that column, and it earns the extra element on a landscape PHONE: the
+ * fitting column there is six optics and two anti-tank items in about 215 px,
+ * so sixteen swatches under them fell below the fold on a screen with no
+ * obvious way to scroll — while the chart's column is six bars and nothing
+ * else. Given a grid area, the swatches move under the chart on exactly that
+ * viewport and stay in the left-hand column everywhere else. The stylesheet
+ * decides; nothing here knows which.
+ *
+ * **A ROW OF PICKS IS A GRID OF EQUAL SHARES, NEVER A WRAPPING FLEX ROW**, and
+ * that is a correctness rule rather than a style. A flex row cannot be squeezed
+ * below its own longest word, so it breaks — and where it breaks depended on a
+ * `flex-basis` tuned per viewport in four media queries, with a comment in the
+ * stylesheet telling the next person to MEASURE the break by hand whenever a
+ * weapon or an optic was added, because a stranded button is invisible to a
+ * typecheck and to a review of the diff. A grid of `1fr` columns cannot strand:
+ * six equal shares are six equal shares at every width, and a narrow viewport
+ * takes a different COUNT of columns rather than a different break. All of that
+ * tuning is gone with it.
+ *
+ * **The FINISH row is the one that is not a trade**, and it is the one row that
+ * is not drawn like the others either. Every other choice on this screen costs
+ * something — a magnification is a field of view, a weapon is a rate against a
+ * magazine — and a finish costs nothing at all, so it has no bar on the chart
+ * and never touches one. What it has instead is the BAY: its NAME and its
+ * description are written under the weapon rather than beside the bars,
+ * because it is the only pick here whose whole effect is the thing already
+ * turning on the turntable.
  *
  * **All sixteen are offered on every gun** (`FINISH_IDS` — the finish table
  * stopped being five lists of four), and sixteen is what makes the row a GRID
- * OF SWATCHES rather than sixteen more buttons with names on them. Four named
- * buttons fitted the row; sixteen would be four LINES of them, which is more
- * panel than the chart and the copy together, on the one screen whose footer
- * already falls off a landscape phone. So the name comes off the button and
- * goes where a name is worth reading anyway — **the row's own caption names
- * whatever is lit, and the stage's paragraph describes it** — and what is left
- * is the thing the eye was using in the first place: three flat colours in the
- * order they sit on the weapon. That is the same argument the swatch was
- * added under, taken one step further: "Verdigris" and "Oxblood" are words you
- * have to try one at a time, and the row exists precisely so you do not have
- * to.
+ * OF SWATCHES rather than sixteen more buttons with names on them. A finish
+ * says what it does with COLOUR, because its name cannot: "Verdigris" and
+ * "Oxblood" are words you have to try one at a time, and the row exists
+ * precisely so you do not have to. So the button IS the swatch — three flat
+ * colours in the order they sit on the weapon — and the name is the row's own
+ * caption, the paragraph under the weapon, and a `title` under the pointer.
  *
  * The grid is redrawn with everything else when a pick is made, and what moves
  * in it when the WEAPON row steps is only the highlight: the list is the same
@@ -80,6 +120,7 @@ import {
   type FinishId,
 } from "../entities/finishes";
 import { EQUIPMENT_IDS, type EquipmentId } from "../entities/equipment";
+import type { StageBay } from "../entities/ViewModel";
 import { SIGHT_IDS, type SightId } from "../entities/sights";
 import {
   carriedSetup,
@@ -310,23 +351,30 @@ export function kitLabel(weapon: CarriedId, sight: SightId): string {
 
 export class LoadoutScreen {
   private root: HTMLElement;
-  private body: HTMLElement;
-  /** The caption under the weapon on the stage. */
+  /**
+   * The rebuilt half: every list, every button and the chart. The head, the
+   * bay and the foot are written once and only ever have their text set.
+   */
+  private choices: HTMLElement;
+  /**
+   * The HOLE, and the element `stageBay` measures. It is the bay MINUS its
+   * plate: what is reported has to be the empty box the weapon can stand in,
+   * not the box with the caption written across the bottom of it.
+   */
+  private well: HTMLElement;
+  /** The caption under the weapon on the bay's plate. */
   private stageCap: HTMLElement;
   /**
-   * What the FINISH is, said under the weapon rather than in the panel.
+   * What the FINISH is, said under the weapon rather than in a column.
    *
-   * The other two picks are written up beside their bars because what they
+   * The other three picks are written up beside their bars because what they
    * cost is invisible — a magnification is a field of view, a burst is four
    * tenths of a second. A finish costs nothing and its whole effect is the
-   * thing on the turntable, so its copy belongs where the eye already is. It
-   * is also fifty pixels the panel does not spend on a third paragraph, which
-   * on a 1280x720 laptop is the difference between the footer being on the
-   * screen and being scrolled to.
+   * thing on the turntable, so its copy belongs where the eye already is.
    */
   private stageNote: HTMLElement;
-  /** The same caption in the panel's head. */
-  private carriedEl!: HTMLElement;
+  /** The same caption in the head's right-hand slot. */
+  private carriedEl: HTMLElement;
   /**
    * Drag accumulated since `Game` last read it. Pixels, not radians — how far
    * a pixel turns the weapon is the viewmodel's business, and this screen has
@@ -348,6 +396,13 @@ export class LoadoutScreen {
   private equipment: EquipmentId = EQUIPMENT_IDS[0];
   /** Whether this map has armour on it, and therefore whether the row exists. */
   private armour = false;
+  /**
+   * The bay handed back when there is nothing to measure — the screen hidden,
+   * or a frame before the first layout. A full-viewport bay is the answer that
+   * cannot put the weapon somewhere silly; it frames it as the middle of the
+   * window, which is where a turntable with no screen around it belongs.
+   */
+  private readonly wholeScreen: StageBay = { x: 0, y: 0, width: 1, height: 1 };
 
   /** Wired by Game. Each reports a choice; none of them redraws. */
   onWeapon: (id: PrimaryWeaponId) => void = () => {};
@@ -360,9 +415,22 @@ export class LoadoutScreen {
     this.root = document.createElement("div");
     this.root.id = "loadout";
     this.root.className = "hidden";
+    // Five grid items, and the middle one is a wrapper that is `display:
+    // contents` on a wide viewport — so `.lo-pick`, `.lo-fit`, `.lo-finish`
+    // and `.lo-read` are grid items of `#loadout` itself and can be placed
+    // anywhere in it, while on a phone the same wrapper becomes a real box
+    // that SCROLLS with the bay pinned above it. One element, two jobs, and no
+    // second copy of the markup for the narrow case.
+    //
+    // The FINISH block is a placeable item of its own rather than a third
+    // block inside `.lo-fit`, and that is what a landscape phone needed: the
+    // fitting column there holds six optics and two anti-tank items in about
+    // 215 px, so sixteen swatches under them were below the fold on a screen
+    // that does not obviously scroll. Given an area, they move under the CHART
+    // instead, which is the column with room to spare on exactly that
+    // viewport.
     this.root.innerHTML = `
-      <div class="lo-scrim"></div>
-      <div class="lo-panel">
+      <div class="lo-head">
         <div class="ui-head">
           <div class="ui-titles">
             <span class="ui-eyebrow">Kit</span>
@@ -373,30 +441,32 @@ export class LoadoutScreen {
             <b class="lo-carried"></b>
           </div>
         </div>
-        <div class="lo-body"></div>
-        <p class="lo-foot ui-foot">
-          <span><kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd class="pad">Stick</kbd> choose</span>
-          <span><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd class="pad">Stick</kbd> slot</span>
-          <button class="ui-back"><kbd>Esc</kbd><kbd class="pad">B</kbd> Back</button>
-        </p>
       </div>
-      <div class="lo-stage">
-        <span class="lo-stage-cap"></span>
-        <p class="lo-stage-note"></p>
-        <span class="lo-stage-hint">Drag &middot; right stick to turn</span>
+      <div class="lo-bay">
+        <div class="lo-well"></div>
+        <div class="lo-plate">
+          <span class="lo-stage-cap"></span>
+          <p class="lo-stage-note"></p>
+          <span class="lo-stage-hint">Drag &middot; right stick to turn</span>
+        </div>
       </div>
+      <div class="lo-choices"></div>
+      <p class="lo-foot ui-foot">
+        <span><kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd class="pad">Stick</kbd> choose</span>
+        <span><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd class="pad">Stick</kbd> slot</span>
+        <button class="ui-back"><kbd>Esc</kbd><kbd class="pad">B</kbd> Back</button>
+      </p>
     `;
     document.getElementById("hud")!.appendChild(this.root);
-    this.body = this.root.querySelector(".lo-body")!;
+    this.choices = this.root.querySelector(".lo-choices")!;
+    this.well = this.root.querySelector(".lo-well")!;
     this.stageCap = this.root.querySelector(".lo-stage-cap")!;
     this.stageNote = this.root.querySelector(".lo-stage-note")!;
-    // The head's right-hand slot names the same kit the stage's caption
-    // does, and is written by the same call — see `setCaption`. It is the
-    // panel's own read-back: the caption lives over the weapon on the far
-    // side of the screen, and the column making the choice should not send
-    // the eye across a bay to see what it has chosen.
+    // The head's right-hand slot names the same kit the bay's caption does,
+    // and is written by the same call — see `draw`. It is the screen's own
+    // read-back for the case where the bay is scrolled off a phone.
     this.carriedEl = this.root.querySelector(".lo-carried")!;
-    this.bindStage(this.root.querySelector<HTMLElement>(".lo-stage")!);
+    this.bindBay(this.root.querySelector<HTMLElement>(".lo-bay")!);
     // The pointer's way off this screen, in the footer every lid screen ends
     // with (`.ui-foot` / `.ui-back` in base.css). It reads "Back" and not
     // "Done" for the reason it is shared at all: a pick is applied the moment
@@ -415,23 +485,57 @@ export class LoadoutScreen {
   }
 
   /**
+   * The hole the weapon stands in, as the browser has just laid it out.
+   *
+   * Read once a frame from `Game.updateKitStage`, which is the whole of what
+   * makes this screen's layout free: any arrangement the stylesheet can
+   * express is one the weapon will be in the middle of, at any window size, in
+   * either orientation, and while a phone's list is being scrolled underneath
+   * it. Nothing here is cached — the read lands on a layout nothing has
+   * dirtied since the last frame (this screen writes DOM only when a pick is
+   * made), so it costs a lookup rather than a reflow, and a cache is a fifth
+   * thing that can disagree with where the hole actually is.
+   *
+   * Measured against the ROOT rather than against `window`, because the root
+   * is `inset: 0` over the canvas and is therefore the same box the aspect
+   * ratio is taken from — and because a screen ever drawn inside a transform
+   * would move both of them together.
+   */
+  stageBay(): StageBay {
+    const box = this.root.getBoundingClientRect();
+    const well = this.well.getBoundingClientRect();
+    if (box.width < 1 || box.height < 1 || well.width < 1 || well.height < 1)
+      return this.wholeScreen;
+    return {
+      x: ((well.left + well.width / 2 - box.left) / box.width) * 2 - 1,
+      y: 1 - ((well.top + well.height / 2 - box.top) / box.height) * 2,
+      width: well.width / box.width,
+      height: well.height / box.height,
+    };
+  }
+
+  /**
    * Turns the weapon under a mouse drag.
    *
-   * `setPointerCapture` is what makes a drag that leaves the stage — over the
-   * panel, off the window — keep turning the weapon instead of stopping dead
+   * `setPointerCapture` is what makes a drag that leaves the bay — over a
+   * column, off the window — keep turning the weapon instead of stopping dead
    * at the edge, which is the whole difference between a handle and a hotspot.
    * Deltas are taken from `clientX/Y` rather than `movementX/Y`: the pointer is
    * not locked here, and the movement fields are the ones this game reads only
    * when it is.
+   *
+   * The handle is the whole BAY and not just the well: the plate under the
+   * weapon carries a caption and a sentence, and a finger that lands on a word
+   * on its way to the gun should still turn the gun.
    */
-  private bindStage(stage: HTMLElement): void {
+  private bindBay(bay: HTMLElement): void {
     let last: { x: number; y: number } | null = null;
-    stage.addEventListener("pointerdown", (e) => {
+    bay.addEventListener("pointerdown", (e) => {
       last = { x: e.clientX, y: e.clientY };
-      stage.setPointerCapture(e.pointerId);
-      stage.classList.add("turning");
+      bay.setPointerCapture(e.pointerId);
+      bay.classList.add("turning");
     });
-    stage.addEventListener("pointermove", (e) => {
+    bay.addEventListener("pointermove", (e) => {
       if (!last) return;
       this.dragX += e.clientX - last.x;
       this.dragY += e.clientY - last.y;
@@ -439,10 +543,10 @@ export class LoadoutScreen {
     });
     const end = () => {
       last = null;
-      stage.classList.remove("turning");
+      bay.classList.remove("turning");
     };
-    stage.addEventListener("pointerup", end);
-    stage.addEventListener("pointercancel", end);
+    bay.addEventListener("pointerup", end);
+    bay.addEventListener("pointercancel", end);
   }
 
   /**
@@ -504,7 +608,7 @@ export class LoadoutScreen {
     this.slot = "weapon";
     this.root.classList.remove("hidden");
     // The screens this one covers are DOM, and the weapon it shows is not:
-    // either of them left up would paint over the stage. The CSS carries the
+    // either of them left up would paint over the bay. The CSS carries the
     // rule; this is the flag it reads.
     document.getElementById("hud")!.classList.add("kitting");
     this.draw();
@@ -557,33 +661,53 @@ export class LoadoutScreen {
     }
   }
 
+  /** The class a block wears when the arrow keys are on it. */
+  private mark(slot: Slot): string {
+    return this.slot === slot ? " active" : "";
+  }
+
   /**
-   * Rebuilds the whole body rather than patching it. It is two rows of
-   * buttons, a grid of swatches and six bars, redrawn only when something is
-   * picked — and the
-   * alternative is four places that have to agree on which button carries the
-   * highlight.
+   * Rebuilds the whole choices half rather than patching it. It is four lists
+   * and six bars, redrawn only when something is picked — and the alternative
+   * is five places that have to agree on which button carries the highlight.
    */
   private draw(): void {
+    // The weapon cards: the widest control on the screen, for the decision the
+    // other three depend on. A NAME, and under it the two figures that decide
+    // between them — what one round is worth and what the trigger does with
+    // it. Everything else about the weapon is on the chart, one column over.
     const weapons = PRIMARY_WEAPON_IDS.map((id) => {
       const w = CONFIG.weapons[id];
       return `
-        <button class="lo-opt${id === this.weapon ? " on" : ""}" data-weapon="${id}">
-          <b>${w.name}</b><i>${w.damage} dmg · ${fireMode(w)}</i>
+        <button class="lo-opt lo-card${id === this.weapon ? " on" : ""}" data-weapon="${id}">
+          <b>${w.name}</b><i>${w.damage} dmg &middot; ${fireMode(w)}</i>
         </button>`;
     }).join("");
+    // The optics, as a LIST rather than a row of six: one-word names with a
+    // figure at the right-hand end read down a column in one glance, and a
+    // list of six is six rows at every width there is.
     const sights = SIGHT_IDS.map(
       (id) => `
-        <button class="lo-opt lo-optic${id === this.sight ? " on" : ""}" data-sight="${id}">
+        <button class="lo-opt lo-line${id === this.sight ? " on" : ""}" data-sight="${id}">
           <b>${CONFIG.sights[id].name}</b><i>${magLabel(id)}</i>
         </button>`,
     ).join("");
+    // The AT row's two, in the same shape, and what each says at the right-hand
+    // end is the whole of what separates them: how many you get and what one is
+    // worth against a hull. Both figures are read off `CONFIG.equipment` rather
+    // than written here, the rule every other row on this screen follows.
+    const kit = EQUIPMENT_IDS.map((id) => {
+      const e = CONFIG.equipment[id];
+      return `
+        <button class="lo-opt lo-line${id === this.equipment ? " on" : ""}" data-equip="${id}">
+          <b>${e.name}</b><i>&times;${e.carried} &middot; ${e.damage}</i>
+        </button>`;
+    }).join("");
     // The finish grid: sixteen swatches and not one word between them. Each is
     // three custom properties the CSS lays down as flat bands in the order the
     // eye reads a weapon — furniture, receiver, fittings — and the NAME is the
-    // row's caption below, plus the paragraph under the weapon, plus a
-    // `title` for whichever the pointer is resting on. See the header for why
-    // the name came off the button.
+    // block's caption, plus the paragraph under the weapon, plus a `title` for
+    // whichever the pointer is resting on.
     //
     // The names are the finish table's own literals, so there is nothing to
     // escape here; the same is true of every other row on this screen.
@@ -594,17 +718,6 @@ export class LoadoutScreen {
         <button class="lo-swatch${id === this.finish ? " on" : ""}" data-finish="${id}"
                 title="${name}" aria-label="${name}"
                 style="--sw-a:${a};--sw-b:${b};--sw-c:${c}"></button>`;
-    }).join("");
-    // The AT row's two, and what each button says under the name is the whole
-    // of what separates them: how many you get and what sets one off. Both
-    // figures are read off `CONFIG.equipment` rather than written here, the
-    // rule every other row on this screen follows.
-    const kit = EQUIPMENT_IDS.map((id) => {
-      const e = CONFIG.equipment[id];
-      return `
-        <button class="lo-opt${id === this.equipment ? " on" : ""}" data-equip="${id}">
-          <b>${e.name}</b><i>${e.carried} carried · ${e.damage} vs armour</i>
-        </button>`;
     }).join("");
     const bars = weaponStats(this.weapon)
       .map(
@@ -617,10 +730,9 @@ export class LoadoutScreen {
       )
       .join("");
 
-    // The stage's own caption: what is actually on the turntable, named where
-    // the eye already is rather than only over on the buttons — and the same
-    // string in the panel's head, so the column doing the choosing says what
-    // it has chosen without the eye crossing the bay to check.
+    // The bay's own caption: what is actually on the turntable, named where
+    // the eye already is — and the same string in the head's slot, so a phone
+    // that has scrolled the bay away still says what is being carried.
     const carried = kitLabel(this.weapon, this.sight);
     this.stageCap.textContent = carried;
     this.carriedEl.textContent = carried;
@@ -631,31 +743,34 @@ export class LoadoutScreen {
     this.stageNote.innerHTML =
       `<b>${finishName(this.finish)}</b>${finishBlurb(this.finish)}`;
 
-    this.body.innerHTML = `
-      <div class="lo-slots">
-        <div class="lo-slot${this.slot === "weapon" ? " active" : ""}" data-slot="weapon">
-          <span class="lo-slot-name">Weapon</span>
-          <div class="lo-opts">${weapons}</div>
-        </div>
-        <div class="lo-slot${this.slot === "sight" ? " active" : ""}" data-slot="sight">
-          <span class="lo-slot-name">Optic</span>
-          <div class="lo-opts">${sights}</div>
-        </div>
+    this.choices.innerHTML = `
+      <section class="lo-block frame lo-pick${this.mark("weapon")}" data-slot="weapon">
+        <span class="lo-cap">Weapon</span>
+        <div class="lo-cards">${weapons}</div>
+      </section>
+      <div class="lo-fit">
+        <section class="lo-block frame${this.mark("sight")}" data-slot="sight">
+          <span class="lo-cap">Optic</span>
+          <div class="lo-list">${sights}</div>
+        </section>
         ${
           this.armour
-            ? `<div class="lo-slot${this.slot === "equipment" ? " active" : ""}" data-slot="equipment">
-          <span class="lo-slot-name">Anti-Vehicle</span>
-          <div class="lo-opts">${kit}</div>
-        </div>`
+            ? `<section class="lo-block frame${this.mark("equipment")}" data-slot="equipment">
+          <span class="lo-cap">Anti-Vehicle</span>
+          <div class="lo-list lo-kit">${kit}</div>
+        </section>`
             : ""
         }
-        <div class="lo-slot${this.slot === "finish" ? " active" : ""}" data-slot="finish">
-          <span class="lo-slot-name">Finish<em>${finishName(this.finish)}</em></span>
-          <div class="lo-swatches">${finishes}</div>
-        </div>
       </div>
-      <div class="lo-detail frame">
-        <div class="lo-stats">${bars}</div>
+      <section class="lo-block frame lo-finish${this.mark("finish")}" data-slot="finish">
+        <span class="lo-cap">Finish<em>${finishName(this.finish)}</em></span>
+        <div class="lo-swatches">${finishes}</div>
+      </section>
+      <div class="lo-read">
+        <section class="lo-block frame lo-perf">
+          <span class="lo-cap">Performance</span>
+          <div class="lo-stats">${bars}</div>
+        </section>
         <div class="lo-blurbs">
           <p class="lo-blurb">${WEAPON_BLURBS[this.weapon]}</p>
           <p class="lo-blurb dim">${SIGHT_BLURBS[this.sight]}</p>
@@ -672,7 +787,7 @@ export class LoadoutScreen {
     // differ in what they LOOK like and in nothing else, so they share the one
     // handler rather than the finish row growing a second way to be clicked.
     const picks = "button.lo-opt, button.lo-swatch";
-    this.body.querySelectorAll<HTMLElement>(picks).forEach((btn) => {
+    this.choices.querySelectorAll<HTMLElement>(picks).forEach((btn) => {
       btn.onclick = () => {
         const w = btn.dataset.weapon;
         const f = btn.dataset.finish;
@@ -683,17 +798,19 @@ export class LoadoutScreen {
         else this.onSight(btn.dataset.sight as SightId);
       };
     });
-    // Hovering a row moves the keyboard slot with it, so the highlighted row
-    // and the one the arrow keys are about to step can never disagree — the
-    // same rule the pause menu's list follows.
-    this.body.querySelectorAll<HTMLElement>(".lo-slot").forEach((row) => {
-      row.onmouseenter = () => {
-        const next = row.dataset.slot as Slot;
-        if (next !== this.slot) {
-          this.slot = next;
-          this.draw();
-        }
-      };
-    });
+    // Hovering a block moves the keyboard slot with it, so the highlighted
+    // block and the one the arrow keys are about to step can never disagree —
+    // the same rule the pause menu's list follows.
+    this.choices
+      .querySelectorAll<HTMLElement>(".lo-block[data-slot]")
+      .forEach((row) => {
+        row.onmouseenter = () => {
+          const next = row.dataset.slot as Slot;
+          if (next !== this.slot) {
+            this.slot = next;
+            this.draw();
+          }
+        };
+      });
   }
 }

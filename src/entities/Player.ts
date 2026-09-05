@@ -92,7 +92,12 @@ import {
   type WeaponId,
   type WeaponSetup,
 } from "./weapons";
-import { ViewModel, VIEWMODEL_GROUP, type ViewModelParams } from "./ViewModel";
+import {
+  ViewModel,
+  VIEWMODEL_GROUP,
+  type StageBay,
+  type ViewModelParams,
+} from "./ViewModel";
 import { narrowedMove, type CollisionField } from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import { TerrainField } from "../world/TerrainField";
@@ -2338,10 +2343,16 @@ export class Player implements Combatant {
    * loadout state, which is the only place that has a camera standing still
    * long enough for a turntable to mean anything.
    */
-  updateInspect(dYaw: number, dPitch: number, fovY: number, aspect: number): void {
+  updateInspect(
+    dYaw: number,
+    dPitch: number,
+    fovY: number,
+    aspect: number,
+    bay: StageBay,
+  ): void {
     if (!this.inspecting) return;
     this.view.spinInspect(dYaw, dPitch);
-    this.view.updateInspect({ fovY, aspect });
+    this.view.updateInspect({ fovY, aspect, bay });
   }
 
   private applyVisibility(): void {

@@ -2306,6 +2306,11 @@ export class Game {
       -(drag.y * i.dragRate + this.input.stickLookY * i.stickRate * dt),
       camera.fov,
       this.engine.getAspectRatio(camera),
+      // The hole the SCREEN says it has left, measured this frame. It used to
+      // be a constant in `CONFIG.viewmodel.inspect` welded to a CSS
+      // percentage, and moving it here is what let the kit screen be laid out
+      // at all — see `LoadoutScreen.stageBay`.
+      this.loadoutScreen.stageBay(),
     );
     const eye = camera.position;
     // Into scratches: this is a per-frame path, so the plain getters would

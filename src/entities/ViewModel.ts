@@ -164,25 +164,11 @@ const WEAPON_BUILDERS: Record<CarriedId, WeaponBuilder> = {
  * which is composited over the finished frame rather than drawn into it —
  * `Game`'s emissive selector is where that is dealt with.
  */
-function buildKitBackdrop(scene: Scene): Mesh {
-  const i = CONFIG.viewmodel.inspect;
-  const b = i.backdrop;
+function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
+  const b = CONFIG.viewmodel.inspect.backdrop;
   // Square, because the quad is scaled to the frustum every frame and the
   // gradient is a soft pool that reads the same however it is stretched.
   const tex = new DynamicTexture("kitBackdrop", { width: 256, height: 256 }, scene);
-  const ctx = tex.getContext();
-  // The pool is centred where the WEAPON is: the anchor is in NDC, and the
-  // canvas is y-down, which is the one place those two disagree.
-  const cx = ((i.anchorX + 1) / 2) * 256;
-  const cy = ((1 - i.anchorY) / 2) * 256;
-  const pool = ctx.createRadialGradient(cx, cy, 0, cx, cy, 256 * b.poolRadius);
-  pool.addColorStop(0, b.near);
-  pool.addColorStop(1, b.far);
-  ctx.fillStyle = b.far;
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.fillStyle = pool;
-  ctx.fillRect(0, 0, 256, 256);
-  tex.update();
 
   const mat = new StandardMaterial("kitBackdrop", scene);
   // Unlit: the card is a painted value, and a lit one would take the bench
@@ -224,7 +210,35 @@ function buildKitBackdrop(scene: Scene): Mesh {
   // otherwise bloom, and a bloomed backdrop is a bright wash over the weapon.
   card.metadata = { noGlow: true, noInk: true, noShadowCaster: true };
   card.setEnabled(false);
-  return card;
+  return { card, tex };
+}
+
+/**
+ * Moves the card's pool of light to wherever the weapon is standing.
+ *
+ * It used to be painted once, from the anchor `CONFIG` stated, because that
+ * anchor could not move. The bay is the DOM's answer now — three columns on a
+ * desktop and a bay over a list on a phone put the weapon in two different
+ * places — and a pool left at the old anchor is a bright patch on an empty
+ * corner of the card with the weapon in the dark beside it. Repainting is one
+ * 256-square canvas fill, and the caller only asks when the bay has actually
+ * moved.
+ */
+function paintKitPool(tex: DynamicTexture, x: number, y: number): void {
+  const b = CONFIG.viewmodel.inspect.backdrop;
+  const ctx = tex.getContext();
+  // The bay's centre is in NDC and the canvas is y-down, which is the one
+  // place those two disagree.
+  const cx = ((x + 1) / 2) * 256;
+  const cy = ((1 - y) / 2) * 256;
+  const pool = ctx.createRadialGradient(cx, cy, 0, cx, cy, 256 * b.poolRadius);
+  pool.addColorStop(0, b.near);
+  pool.addColorStop(1, b.far);
+  ctx.fillStyle = b.far;
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = pool;
+  ctx.fillRect(0, 0, 256, 256);
+  tex.update();
 }
 
 /** What the weapon needs to know about the player, per frame. */
@@ -382,9 +396,27 @@ const ramp = (a: number, b: number, x: number) =>
   hermite(clamp((x - a) / (b - a), 0, 1));
 
 /**
+ * The hole in the kit screen the weapon stands in, as the DOM measured it.
+ *
+ * **The screen is the authority on this and the config is not.** The centre is
+ * NDC (-1..1, +x right, +y up) and the two spans are fractions of the
+ * viewport, which between them say where the bay is and how much room it has —
+ * everything `CONFIG.viewmodel.inspect` used to state as a constant welded to
+ * a CSS percentage. `LoadoutScreen.stageBay` is the one place it is built.
+ */
+export interface StageBay {
+  /** The bay's centre, in NDC. */
+  x: number;
+  y: number;
+  /** Its width and height, as fractions of the viewport's. */
+  width: number;
+  height: number;
+}
+
+/**
  * What the turntable needs from the camera it is parented to. The weapon is
  * placed by SCREEN position, so it has to know how the camera projects: the
- * anchor is back-projected through these, which is also what makes the pose
+ * bay is back-projected through these, which is also what makes the pose
  * survive a resize or a camera left zoomed by the last round.
  */
 export interface InspectParams {
@@ -392,6 +424,8 @@ export interface InspectParams {
   fovY: number;
   /** Render width / height. */
   aspect: number;
+  /** Where the kit screen has put its hole this frame. */
+  bay: StageBay;
 }
 
 /** One built weapon and the arms holding it — enabled only while carried. */
@@ -467,6 +501,15 @@ export class ViewModel {
    * about the screen that raised it.
    */
   private readonly backdrop: Mesh;
+  /**
+   * The card's own texture, and the bay centre its pool was last painted at.
+   * A sentinel that is outside NDC on both axes, so the first frame of a kit
+   * screen always paints — there is no anchor to inherit from a build any
+   * more.
+   */
+  private readonly backdropTex: DynamicTexture;
+  private poolX = 9;
+  private poolY = 9;
   private readonly rigs = {} as Record<CarriedId, WeaponRig>;
   /**
    * The material factory, kept for the one thing here that mints materials
@@ -591,7 +634,9 @@ export class ViewModel {
     this.weapon.parent = camera;
     this.weapon.scaling.setAll(v.scale);
 
-    this.backdrop = buildKitBackdrop(scene);
+    const kit = buildKitBackdrop(scene);
+    this.backdrop = kit.card;
+    this.backdropTex = kit.tex;
     this.backdrop.parent = camera;
 
     // Every weapon is built up front. The cost is a set of merged colour
@@ -973,16 +1018,22 @@ export class ViewModel {
    *
    * Two things are derived rather than authored, and both are what make the
    * stage hold still:
-   * - The position is the stage's screen anchor BACK-PROJECTED to the inspect
-   *   distance, so the weapon sits where the DOM says the stage is at any
-   *   window size, and the distance is scaled by the live FOV against the
-   *   hip-fire one so a camera left zoomed by the last round frames it the
-   *   same. (Babylon holds the vertical FOV, hence the aspect on x alone.)
+   * - The position is the BAY'S CENTRE back-projected to the inspect distance,
+   *   so the weapon sits where the DOM says the hole is at any window size,
+   *   and the distance is scaled by the live FOV against the hip-fire one so a
+   *   camera left zoomed by the last round frames it the same. (Babylon holds
+   *   the vertical FOV, hence the aspect on x alone.)
    * - The pivot correction. The node rotates about its own origin, which on a
    *   rifle is the receiver and nowhere near the middle of the model, so a
    *   turntable about it would swing the weapon around the screen. Placing the
-   *   ROTATED pivot on the anchor instead keeps the weapon's own centre
-   *   nailed to the stage while it turns.
+   *   ROTATED pivot on the centre instead keeps the weapon's own centre nailed
+   *   to the bay while it turns.
+   *
+   * **The BAY is measured and this method only fits the weapon into it**, which
+   * is the split that lets the kit screen be laid out three ways. The old form
+   * knew the stage was the right 54% of a full-height window and could only be
+   * told about the WIDTH; a measured bay can be short as easily as narrow, so
+   * the fit takes the worse of the two axes.
    */
   updateInspect(p: InspectParams): void {
     const v = CONFIG.viewmodel;
@@ -996,11 +1047,20 @@ export class ViewModel {
     this.spinYaw.multiplyToRef(this.spinPitch, this.spin);
     Quaternion.FromRotationMatrixToRef(this.spin, this.spinQ);
 
-    // The distance also gives way to a viewport narrower than the one the
-    // framing was authored for: apparent size follows the VERTICAL fov, while
-    // the room the weapon has to fit in is the stage's share of the WIDTH, so
-    // on a nearly square window a rifle framed for 16:9 lies across the panel.
-    const fit = Math.max(1, i.aspectReference / p.aspect);
+    // The weapon is pushed back until it fits the bay, and the bay's two axes
+    // are asked separately because either can be the tight one: a desktop's
+    // bay is wide and short, a phone's is the shape of the phone. Both spans
+    // are measured against the frame's HEIGHT — the axis the FOV is fixed on —
+    // so the width term carries the aspect and the height term does not. The
+    // floor is `frameNearest` rather than 1, so a roomy bay is spent on the
+    // weapon instead of on air around it.
+    const bay = p.bay;
+    const room = i.frameMargin;
+    const fit = Math.max(
+      i.frameNearest,
+      i.frameWidth / room / Math.max(1e-3, bay.width * p.aspect),
+      i.frameHeight / room / Math.max(1e-3, bay.height),
+    );
     // Written as "hold the visible half-height at the weapon" rather than as a
     // distance, because that IS the framing: how much of the world fits beside
     // the weapon is what decides how big it looks, and holding it fixed is what
@@ -1010,10 +1070,20 @@ export class ViewModel {
     this.pos.copyFrom(this.pivot).scaleInPlace(v.scale);
     Vector3.TransformCoordinatesToRef(this.pos, this.spin, this.pos);
     this.pos.set(
-      i.anchorX * halfH * p.aspect - this.pos.x,
-      i.anchorY * halfH - this.pos.y,
+      bay.x * halfH * p.aspect - this.pos.x,
+      bay.y * halfH - this.pos.y,
       dist - this.pos.z,
     );
+
+    // The card's pool of light follows the bay, and only when it has actually
+    // moved — a resize, a rotation into portrait, the anti-tank row arriving
+    // and taking a line off the column beside the hole. Everything else is a
+    // frame that repaints nothing.
+    if (Math.abs(bay.x - this.poolX) > 0.005 || Math.abs(bay.y - this.poolY) > 0.005) {
+      this.poolX = bay.x;
+      this.poolY = bay.y;
+      paintKitPool(this.backdropTex, bay.x, bay.y);
+    }
 
     this.weapon.position.copyFrom(this.pos);
     this.weapon.scaling.setAll(v.scale);
