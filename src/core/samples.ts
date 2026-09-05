@@ -11,11 +11,17 @@
  * **This file is the ONE exception to the project's zero-audio-assets rule and
  * it is deliberately narrow.** Every sound in the game is synthesized
  * (`Sfx.ts` argues for that at length, and the synthesis is what a shooter
- * with no sample still gets); what a row here buys is an A/B against that, on
- * one weapon at a time. `SampleId` is a union rather than a string so a
- * weapon naming a sample that has no row does not compile, and a weapon
- * naming nothing at all is unaffected — `ReportVoice.sample` is optional and
- * absent everywhere but the rifle.
+ * with no sample still gets); what a row here buys is a recorded REPORT for
+ * one weapon, and nothing else in the game is sampled at all. The table is
+ * the kit and stops there — no footstep, no impact, no reload, no ambience —
+ * and `docs/audio.md` is where the arithmetic for that boundary lives: one
+ * thirty-second ambient bed would cost ten times this whole list.
+ *
+ * `SampleId` is a union rather than a string so a weapon naming a sample that
+ * has no row does not compile, and a weapon naming nothing at all is
+ * unaffected — `ReportVoice.sample` is optional, and the bots' flat round
+ * (which is the rifle's row, see `Sfx`'s `FLAT_REPORT`) is the reason the
+ * assault rifle's is the one that must never be removed casually.
  *
  * **A row here is not a file somebody dropped in.** Every url below is the
  * OUTPUT of `npm run audio`, cut from a committed master in `audio/src/` by
@@ -39,11 +45,40 @@
  * free (see `docs/pwa.md` — `immutable` is everything under that prefix).
  */
 import assaultRifle from "../../audio/assault-rifle.webm?url";
+import burstRifle from "../../audio/burst-rifle.webm?url";
+import smg from "../../audio/smg.webm?url";
+import dmr from "../../audio/dmr.webm?url";
+import sniperRifle from "../../audio/sniper-rifle.webm?url";
+import lmg from "../../audio/lmg.webm?url";
+import pistol from "../../audio/pistol.webm?url";
 
-/** Every recorded sound in the game. */
-export type SampleId = "assaultRifle";
+/**
+ * Every recorded sound in the game — one per weapon in the kit, and nothing
+ * else in the game is sampled at all.
+ *
+ * **An id here names the RECORDING, not the weapon**, which is why it is
+ * `burstRifle` and `sniperRifle` rather than `carbine` and `sniper`: the row
+ * is a file cut from a master, `audio/manifest.json` names it, and the fact
+ * that `CONFIG.weapons.carbine` happens to be what points at it is a decision
+ * that lives on that weapon's `report`. `assaultRifle` set that convention
+ * when it was the only row.
+ */
+export type SampleId =
+  | "assaultRifle"
+  | "burstRifle"
+  | "smg"
+  | "dmr"
+  | "sniperRifle"
+  | "lmg"
+  | "pistol";
 
 /** Where each one is fetched from. */
 export const SAMPLE_URLS: Record<SampleId, string> = {
   assaultRifle,
+  burstRifle,
+  smg,
+  dmr,
+  sniperRifle,
+  lmg,
+  pistol,
 };

@@ -15,9 +15,10 @@ file is not the renderer's contract to carry.
 
 ## What is allowed into the tree
 
-**Zero model files, and ONE audio file** — every mesh is built from Babylon
-primitives at runtime, and every sound is synthesized WebAudio
-(`src/core/Sfx.ts`) except the assault rifle's report. Do not add asset files
+**Zero model files, and SEVEN audio files — one report per weapon in the kit,
+and nothing else in the game is recorded at all** — every mesh is built from
+Babylon primitives at runtime, and every sound is synthesized WebAudio
+(`src/core/Sfx.ts`) but for those seven. Do not add asset files
 unless explicitly asked. Five exceptions, each with a generator in
 `package.json`:
 
@@ -60,8 +61,9 @@ unless explicitly asked. Five exceptions, each with a generator in
   precisely because it has a generator, so what that generator costs to run is
   part of the bargain and belongs written down here.
 
-- `audio/` (3.4 KB shipped, one sound) — the weapon reports, and **the only
-  asset class here whose input is a recording rather than a script**. It passes
+- `audio/` (21.8 KB shipped, seven sounds) — one report per weapon in the kit,
+  and **the only asset class here whose input is a recording rather than a
+  script**. It passes
   the common test all the same: `npm run audio` is the generator
   (`scripts/encode-audio.mjs`), the encoded `.webm` is committed, and the master
   it was cut from is committed beside it in `audio/src/`. The CUT is a `trim` in
@@ -78,6 +80,14 @@ unless explicitly asked. Five exceptions, each with a generator in
   fallback kept alive for this asset's sake; it is what the game does, and the
   recording is laid over the top. **A sound that cannot make that claim does not
   belong in this pipeline**, whatever its size.
+
+  **The kit is where it stops, and that is a boundary rather than a pause.**
+  Seven reports is the whole of it: no footstep, no impact, no reload, no
+  ambience. The budget is the reason and it is counted in SECONDS of decoded
+  mono rather than in bytes on disk — the seven together spend 1.9 of 44, where
+  a single thirty-second ambient loop would spend 30. `docs/audio.md` has that
+  arithmetic; the short form is that guns are exactly what sampling is worth
+  paying for and ambience is exactly what the synthesis is already good at.
 
   Two gates hold it: `scripts/check-audio.mjs` on the front of `npm run build`
   refuses a master edited without re-encoding (which would ship the OLD sound

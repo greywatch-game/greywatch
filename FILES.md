@@ -160,8 +160,9 @@ src/
     CameraSystem.ts     # First-person cam at the eye; ADS zooms and slows by
                         #   the fitted optic, at the weapon's own rate
     Sfx.ts              # Procedural WebAudio, spatialised, voice-capped —
-                        #   plus the one RECORDING, which stands in for the
-                        #   report and is a preference, never a requirement
+                        #   plus the kit's SEVEN RECORDINGS, which stand in
+                        #   for the report and are a preference, never a
+                        #   requirement
     samples.ts          # The recorded sounds: an id union and a url table,
                         #   nothing else. A weapon names a row through
                         #   ReportVoice.sample; every url here is the OUTPUT of

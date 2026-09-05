@@ -7,8 +7,9 @@ subsystems; this file is the contract for `audio/`, `scripts/encode-audio.mjs`,
 `scripts/check-audio.mjs` and `src/core/samples.ts`.
 
 **Read [`docs/weapons.md`](weapons.md) for what a sample means to a WEAPON**
-(`ReportVoice.sample`, and the four rules about what it replaces), and
-[`docs/build.md`](build.md) for the test every asset in the tree has to pass.
+(`ReportVoice.sample`, the four rules about what it replaces, and why
+`report.pitch` is not spent on one), and [`docs/build.md`](build.md) for the
+test every asset in the tree has to pass.
 
 ## Everything is synthesized, and a recording is laid over the top
 
@@ -17,6 +18,13 @@ a handful of filters and one shared convolution reverb. That is not a
 constraint anybody is working around — it is why a firefight of eighty rounds a
 second costs no memory, why every weapon is a row of eight scalars, and why the
 game shipped for its whole life with no audio assets at all.
+
+**Seven files sit on top of it: one report per weapon in the kit, and nothing
+else in the game is recorded at all.** 21.8 KB downloaded once, 1.9 of the 44
+mono-seconds the budget below allows. **That boundary is a decision and not a
+waiting list** — a footstep, an impact, a reload or an ambient bed is a
+different argument, and the section on where the money should go is where it is
+made.
 
 **A sample is a thing laid over that, and it is held as a PREFERENCE.** The
 fetch is fire-and-forget off `Sfx.unlock`; a round fired before the decode
@@ -149,7 +157,7 @@ a `data:video/webm` string instead of being emitted as its own hashed file.
 
 That is the wrong side of the distinction the download budget above rests on.
 Inlined, every sound is re-downloaded whenever the game's code changes, and
-base64 charges 33% on top. At one file that is 4.6 kB of nothing; at forty it is
+base64 charges 33% on top. At seven files that is 29 kB of nothing; at forty it is
 half a megabyte moved from the cache-forever pile to the
 re-download-every-deploy pile, for no benefit at all.
 
@@ -190,7 +198,14 @@ third, and the synthesis (which tops out near 5.2 kHz) would not notice — but 
 recorded gunshot's crack lives at 15–20 kHz, which is the thing samples are
 bought for.
 
-## What the rifle's trim is, and why it is that short
+## What each trim is, and why they are all that short
+
+Seven masters, every one of them 1.0 s of 48 kHz stereo as delivered, and the
+seven shipped cuts run 96 to 180 ms. **Between 82 and 90% of every master is
+discarded**, and the discarded part is almost always the same thing: a baked
+room this engine already has one of.
+
+### The assault rifle, which is the reference
 
 The master is 1.0 s. **The shipped cut is 150 ms**, and the 850 ms discarded is
 a baked room, not the shot:
@@ -214,3 +229,73 @@ reverb send climbing with distance, which is what makes a shot across the valley
 shots a second.
 
 **The general rule: a sample is the DIRECT sound. The room is the game's.**
+
+### The other six, and the three rules they added
+
+The rifle's cut needed one test — where does the report end — because its
+master handed one over: a 15 dB cliff at 130 ms with a flat plateau after it.
+The six that followed each broke that in a different way, and each break is a
+rule rather than a detail of one file.
+
+| id | weapon | cut | of master | what the trim is fighting |
+| --- | --- | --- | --- | --- |
+| `assaultRifle` | rifle | 0 – 150 ms | 15% | a baked room after a clean cliff |
+| `burstRifle` | carbine | 24 – 120 ms | 10% | **a second and third ROUND**, and a 32 ms lead |
+| `smg` | SMG | 0 – 140 ms | 14% | a discrete arrival at 152 ms |
+| `dmr` | DMR | 0 – 180 ms | 18% | an early field from 160, a late arrival at 224 |
+| `sniperRifle` | sniper | 0 – 130 ms | 13% | **no cliff anywhere in the file** |
+| `lmg` | LMG | 40 – 170 ms | 13% | a 50 ms lead, then low roll the room was holding |
+| `pistol` | sidearm | 0 – 125 ms | 13% | a floor from 130, a late arrival at 220 |
+
+**1. A master of a BURST weapon is a burst.** `Sfx.shoot` is called once per
+ROUND — the carbine's three leave 50 ms apart and each one is its own call — so
+a sample carrying the burst fires nine shots for every three. The carbine's
+second round is on its master at 216 ms at −4 dB and a third rides the tail out
+past 330; the cut ends at 120 and none of that is a matter of taste. This is
+the one rule here that is about CORRECTNESS rather than about a room, and it
+generalises: what a sample may contain is one call's worth of sound.
+
+**2. A mechanism on the tape is cut whichever end it is on, and the front end
+is the expensive one.** The carbine's report starts 32 ms into its master and
+the LMG's 50 ms into its; everything before is −23 to −57 dB of pre-noise.
+Shipped whole that is 32 and 50 ms of latency between the trigger and the
+sound — a third of the carbine's whole burst, half the LMG's cycle — and it
+cannot be recovered downstream, because `Sfx`'s own `trimSample` only skips
+what is under −54 dBFS and this is far louder than that. **Both start points
+sit in a TROUGH rather than hard against the onset** (−41 dB at 24 ms, −50 at
+40), which is what lets the pipeline stay a start/end/fade with no fade-in in
+it: a cut made at a trough cannot click, and the transient keeps a foot.
+
+The back end is the same rule and is cheaper to get wrong. The SMG's master has
+a bolt-shaped event at 152 ms, 40 dB up on the trough in front of it; that
+weapon's `actionVol` is **1.55, the highest in the kit**, precisely because a
+blowback SMG is mostly the sound of its own bolt — so shipping the recorded one
+plays the mechanism twice. Cut at 140.
+
+**3. A master with no cliff is cut with a FADE, and the fade is measured off
+the HIGH BAND.** The sniper's file is one long boom: still only 6 dB down at
+296 ms, with no step anywhere and no straight-line decay until ~400. There is
+no moment to cut on, so the cut has to be made, and its `fadeOut` is 40 ms —
+nearly a third of its length, against the 15–25 ms every other row uses.
+
+**Where to put it is a question the broadband envelope cannot answer and the
+band above 4 kHz can.** A shot's high band DECAYS; a room's early field
+PLATEAUS. Measured on the seven, that single test placed every cut in this
+table:
+
+- the sniper's band is over by ~90 ms and then sits at −21 dB ±2 for the next
+  hundred milliseconds — dense early field, so the shot is 0–90 and the fade
+  spends 90–130 handing it to the convolver;
+- the DMR's stays live between −9 and −20 dB all the way to 156 ms before
+  dropping to −26 and going flat, so that report genuinely IS the longest here
+  and 180 ms is the master earning it rather than the weapon being indulged;
+- the LMG's falls cleanly from −7 dB at 116 ms to −55 by 180 while the
+  broadband is still −13, because what is left is low roll — which is
+  `report.weight` and `length`'s job, and the shot is not owed it twice.
+
+**The corollary is that a long cut has to be read against the weapon's RATE.**
+The rifle ships 150 ms against a 106 ms gap, so two rounds always overlap; the
+SMG's 140 against 77 is the same ratio; the carbine's 96 ms is the shortest in
+the table because three of its rounds leave in 0.1 s, which is the same
+argument `report.length: 0.75` already makes for it in `config/weapons.ts`. A
+cut that runs past the next round is a burst you cannot count.

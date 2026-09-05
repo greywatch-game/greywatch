@@ -320,14 +320,21 @@ export const weapons = {
     report: {
       pitch: 1, level: 1, snap: 1, weight: 1,
       length: 1, tail: 1, actionPitch: 1, actionVol: 1,
-      // The one recorded sound in the game, and the reason it is on THIS row
-      // is that this row is the reference: every other weapon states its
-      // report as a deviation from the rifle's, so a sample here is the
-      // widest possible A/B against the synthesis for one file. It replaces
-      // the report only — the action, the reload and the bolt cycle are still
-      // `actionPitch`/`actionVol` off the eight fields above, because the
-      // recording is of a shot and not of a mechanism. Delete the field and
-      // the synthesized rifle is back with nothing else to undo.
+      // Every row in this table names a sample now, and this one is still the
+      // load-bearing one: it is the reference the other six are deviations
+      // from, and it is also what a shooter with no weapon of its own is heard
+      // as — `Sfx`'s `FLAT_REPORT` is this row, so every bot on the map fires
+      // this recording. The other six can be deleted one at a time; deleting
+      // this one silences the sampled kit down to whatever else still names a
+      // file.
+      //
+      // A sample replaces the REPORT only. The action, the reload and the bolt
+      // cycle are still `actionPitch`/`actionVol` off the eight fields above,
+      // because a recording is of a shot and not of a mechanism — and the
+      // masters bear that out, since three of the six arrived with their own
+      // mechanism on the tape and `audio/manifest.json` cuts it off each of
+      // them for exactly this reason. Delete the field and the synthesized
+      // rifle is back with nothing else to undo.
       sample: "assaultRifle",
     },
   },
@@ -448,6 +455,13 @@ export const weapons = {
     report: {
       pitch: 1.14, level: 0.95, snap: 1.3, weight: 0.95,
       length: 0.75, tail: 0.85, actionPitch: 1.35, actionVol: 1.25,
+      // Cut to the FIRST round of the burst. The master is a burst — the
+      // second round is on it at 216 ms — and `Sfx.shoot` is called once per
+      // ROUND, so shipping the master whole would fire nine shots for every
+      // three. It is also the shortest cut in `audio/manifest.json` at 96 ms,
+      // which is `length: 0.75` above made of a recording instead of a filter,
+      // and for the same reason: three of these leave in 0.1 s.
+      sample: "burstRifle",
     },
   },
   /**
@@ -528,6 +542,13 @@ export const weapons = {
     report: {
       pitch: 1.42, level: 0.92, snap: 0.85, weight: 0.7,
       length: 0.6, tail: 0.5, actionPitch: 1.4, actionVol: 1.55,
+      // The sample is the report and `actionVol` above is still the bolt — and
+      // on this weapon that division is doing more work than anywhere else in
+      // the table, because 1.55 is the highest figure in the column and a
+      // blowback SMG is mostly the sound of its own bolt. The master carries a
+      // bolt-shaped event of its own at 152 ms; the cut ends at 140 for that
+      // reason, so the mechanism is played once and it is this one.
+      sample: "smg",
     },
   },
   /**
@@ -664,6 +685,12 @@ export const weapons = {
     report: {
       pitch: 0.7, level: 1.2, snap: 1.5, weight: 1.65,
       length: 1.75, tail: 1.8, actionPitch: 0.8, actionVol: 1.15,
+      // The longest cut in `audio/manifest.json` at 180 ms, and the only one
+      // whose master rings that long in its own right rather than in a room:
+      // the high band is still live at 156 ms and only then goes flat. Which
+      // is `length: 1.75` above arriving from the recording — and at three
+      // rounds a second there is room for it, exactly as this entry says.
+      sample: "dmr",
     },
   },
   /**
@@ -832,6 +859,14 @@ export const weapons = {
     report: {
       pitch: 0.6, level: 1.35, snap: 1.9, weight: 2,
       length: 2.1, tail: 2, actionPitch: 0.68, actionVol: 1.35,
+      // The hardest master to cut and the shortest result relative to it: it
+      // is one long boom with no cliff anywhere in it, so the trim's fade is a
+      // third of its length instead of the 15 ms every other row needs. What
+      // is left is 90 ms of direct crack, and `length: 2.1` and `tail: 2`
+      // above are what put the rest of it back — the game's valley rather than
+      // the recording's room, which is the whole rule. `actionVol` 1.35 is
+      // still the bolt, and `boltCycle` still plays it as a gesture.
+      sample: "sniperRifle",
     },
   },
   /**
@@ -953,6 +988,13 @@ export const weapons = {
     report: {
       pitch: 0.8, level: 1.15, snap: 1.05, weight: 1.5,
       length: 1.05, tail: 1.35, actionPitch: 0.68, actionVol: 1.4,
+      // Cut from 40 ms in: this master and the carbine's are the two that lead
+      // with the mechanism, and 50 ms of it in front of the report is 50 ms of
+      // latency on a weapon that fires every 100. What the trim throws off the
+      // END is the low roll the room was holding after the crack had decayed,
+      // which is `weight: 1.5` and `length: 1.05` above — those two are the
+      // roll, and the shot is not owed it twice.
+      sample: "lmg",
     },
   },
   /**
@@ -1045,6 +1087,14 @@ export const weapons = {
     report: {
       pitch: 1.28, level: 0.98, snap: 1.15, weight: 0.8,
       length: 0.65, tail: 0.65, actionPitch: 1.25, actionVol: 1.3,
+      // The one master that needed nothing but its own cliff found: a report
+      // to 100 ms and then 20 dB gone over the next 25, which is the assault
+      // rifle's shape at a smaller scale. The slide is audible inside the cut
+      // at 84 ms and is kept, for the reason the rifle keeps the same event at
+      // 126; `actionVol` 1.3 above is still what makes the slide the loud part
+      // this entry's note claims it is, and still what the reload is pitched
+      // from.
+      sample: "pistol",
     },
   },
 } as const;

@@ -78,23 +78,28 @@ tidy the boot.** The argument is on the line in `main.ts`, the measurement is
 risk is state changing between draws: if a rendering bug ever appears that shows
 only while something is MOVING, flip this first.
 
-**Zero model files, and ONE audio file** — every mesh is built from Babylon
-primitives at runtime, and every sound is synthesized WebAudio
-(`src/core/Sfx.ts`) except the assault rifle's report. Do not add asset files
-unless explicitly asked. There are four generated exceptions, none authored by
-hand and each with a generator in `package.json`: the icons, Havok's `.wasm`,
-the water's foam mask, and each map's menu photograph.
+**Zero model files, and SEVEN audio files — one report per weapon in the kit,
+and nothing else in the game is recorded at all** — every mesh is built from
+Babylon primitives at runtime, and every sound is synthesized WebAudio
+(`src/core/Sfx.ts`) but for those seven. Do not add asset files unless
+explicitly asked. There are four generated exceptions, none authored by hand
+and each with a generator in `package.json`: the icons, Havok's `.wasm`, the
+water's foam mask, and each map's menu photograph.
 
-**The rifle's report is the fifth, and it is the only asset class here a person
-authored.** It passes the same test the other four do — `npm run audio` is the
-generator, the encoded file is committed, and the master it was cut from is
-committed beside it in `audio/src/` — plus one more that is its own, because a
-recording's master is a recording rather than a script: **the game is still
-whole with every file in `audio/` deleted.** The fetch is fire-and-forget off
-`Sfx.unlock`, so a shot fired before the decode lands, on a device where the
-fetch failed, or in a browser that cannot decode the container, is the
-SYNTHESIZED report and no caller is told the difference. **A sixth sound owes
-that same claim**; a sound the game needs does not belong in this pipeline.
+**The gun kit's reports are the fifth, and they are the only asset class here a
+person authored.** They pass the same test the other four do — `npm run audio`
+is the generator, the encoded files are committed, and the masters they were
+cut from are committed beside them in `audio/src/` — plus one more that is
+their own, because a recording's master is a recording rather than a script:
+**the game is still whole with every file in `audio/` deleted.** The fetch is
+fire-and-forget off `Sfx.unlock`, so a shot fired before the decode lands, on a
+device where the fetch failed, or in a browser that cannot decode the
+container, is the SYNTHESIZED report and no caller is told the difference. **An
+EIGHTH sound owes that same claim**; a sound the game needs does not belong in
+this pipeline. **The kit is also where the pipeline STOPS** — a footstep, an
+impact, a reload or an ambient bed is not next in line but a different
+argument, and `docs/audio.md` has the arithmetic that says why (one
+thirty-second ambient loop costs ten times the whole sampled kit).
 
 **Three rules from it reach outside `audio/`.** A decoded buffer costs
 `duration × ctx.sampleRate × channels × 4` and **nothing else** — the container,
@@ -102,13 +107,20 @@ the bitrate and the file's own sample rate are invisible to it (measured: a
 22 kHz file decodes back up to 48 kHz for identical RAM), so **the budget is
 SECONDS of mono, not bytes**, and `npm run build` fails over it. **A sample
 replaces the REPORT and nothing else** — the reload, the bolt cycle and the
-action are still `ReportVoice`'s `actionPitch`/`actionVol`, and `Sfx.botShot`
+action are still `ReportVoice`'s `actionPitch`/`actionVol`, `report.pitch` is
+NOT spent on it (the eight scalars are deviations from the reference report and
+a recording of that weapon has already made the deviation), and `Sfx.botShot`
 puts back by hand the distance cues the synthesis carries in its own filters,
 because a recording played louder and quieter is not a rifle at two distances.
 And **a sample is the DIRECT sound; the ROOM is the game's** — `Sfx` answers
 every gunshot with one shared `ConvolverNode` at no per-shot cost, so a baked
 tail double-reverbs the shot, puts one room on six maps and holds a voice for
-the length of it.
+the length of it. Every master delivered so far arrived with that room on it
+and each is cut back to between 96 and 180 ms; **the two rules that took the
+most off** are that a MECHANISM on the tape is cut whichever end it is on (the
+carbine and the LMG lead with 32 and 50 ms of it, which is that much latency
+between the trigger and the sound), and that a master with no cliff to cut on —
+the sniper's is one long boom — is cut with a FADE rather than left long.
 
 → **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
 binds, why one ambient loop costs ten times the whole sampled gun kit, the

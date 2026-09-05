@@ -65,6 +65,206 @@
         "channels": 2,
         "kb": 56.3
       }
+    },
+    {
+      "id": "burstRifle",
+      "source": "src/burst-rifle.wav",
+      "out": "burst-rifle.webm",
+      "channels": 2,
+      "trim": {
+        "start": 0.024,
+        "end": 0.12,
+        "fadeOut": 0.02
+      },
+      "_": [
+        "The only master here that is not one shot. A BURST weapon was recorded",
+        "as a burst: the second round arrives at 216 ms at -4 dB and a third",
+        "rides its tail out to ~330. `Sfx.shoot` is called once per ROUND, so a",
+        "sample carrying the burst would fire nine shots for every three -- this",
+        "is cut to the FIRST round and the rest is discarded as a matter of",
+        "correctness rather than of taste.",
+        "",
+        "It is also the only master with a LEAD. The report's onset is at 32 ms",
+        "and everything before it is -23 to -41 dB of pre-noise; shipped whole",
+        "that is 32 ms of latency between the trigger and the sound, which on a",
+        "weapon whose three rounds leave 50 ms apart is a third of the burst.",
+        "The start sits in the trough at 24 ms (-41 dB) rather than hard against",
+        "the onset, so the cut needs no fade in to keep from clicking and the",
+        "transient keeps a foot.",
+        "",
+        "96 ms, the shortest cut in the table, and the rate is why: `report.",
+        "length` is 0.75 for the same reason (\"three of these leave in 0.1 s,",
+        "and at the rifle's own length they would run together into a single",
+        "ugly shout\"). The direct sound is over at 98 ms anyway -- broadband",
+        "-9 dB at 96 and -19 by 100."
+      ],
+      "sourceHash": "159d0e641c86a3ba",
+      "decoded": {
+        "seconds": 0.096,
+        "channels": 2,
+        "kb": 36
+      }
+    },
+    {
+      "id": "smg",
+      "source": "src/smg.wav",
+      "out": "smg.webm",
+      "channels": 2,
+      "trim": {
+        "start": 0,
+        "end": 0.14,
+        "fadeOut": 0.018
+      },
+      "_": [
+        "Cut in the trough between the shot and a discrete second arrival. The",
+        "report's high band decays from 124 ms and is 40 dB down by 144; then at",
+        "152-172 ms something HF-rich comes back at -8 dB in the band and -15",
+        "broadband, which is either a hard slapback or the bolt, and neither",
+        "belongs in a sample. `Sfx` answers the first with its own convolver and",
+        "the second with `actionPitch`/`actionVol` -- and this weapon's",
+        "`actionVol` is 1.55, the highest in the kit, because a blowback SMG is",
+        "mostly the sound of its own bolt. Shipping the recorded one would play",
+        "that mechanism twice.",
+        "",
+        "140 ms against a 77 ms gap at 13 rounds a second, so two rounds always",
+        "overlap -- the same ratio the rifle already ships (150 ms on a 106 ms",
+        "gap), and the fade lands on the cliff rather than on the next round."
+      ],
+      "sourceHash": "ab6f263d34baad5e",
+      "decoded": {
+        "seconds": 0.14,
+        "channels": 2,
+        "kb": 52.5
+      }
+    },
+    {
+      "id": "dmr",
+      "source": "src/dmr.wav",
+      "out": "dmr.webm",
+      "channels": 2,
+      "trim": {
+        "start": 0,
+        "end": 0.18,
+        "fadeOut": 0.02
+      },
+      "_": [
+        "The longest cut in the table, and the master earns it rather than the",
+        "weapon being indulged: the high band stays live -- between -9 and -20 dB",
+        "-- all the way to 156 ms, drops to -26 at 160 and PLATEAUS there for the",
+        "next 60. A plateau in the high band is a room's early field; a decay is",
+        "a shot. So the direct sound genuinely runs to ~158 and the fade covers",
+        "the handover exactly.",
+        "",
+        "What is discarded past it is that plateau out to 220 ms and then a",
+        "discrete late arrival at 224-232 (-10 dB broadband, 30 dB down in the",
+        "high band) -- a reflection off something a good way off, and the single",
+        "clearest case in these six of a room that is not this game's. At 3",
+        "rounds a second 180 ms is barely half the gap, so nothing here is",
+        "spent against the next round."
+      ],
+      "sourceHash": "7ab5ec20f03ae4ae",
+      "decoded": {
+        "seconds": 0.18,
+        "channels": 2,
+        "kb": 67.5
+      }
+    },
+    {
+      "id": "sniperRifle",
+      "source": "src/sniper-rifle.wav",
+      "out": "sniper-rifle.webm",
+      "channels": 2,
+      "trim": {
+        "start": 0,
+        "end": 0.13,
+        "fadeOut": 0.04
+      },
+      "_": [
+        "The one master with NO cliff in it, which is why this row's fade is",
+        "nearly a third of its length instead of the 15 ms every other row uses.",
+        "The rifle's cut could land on a 15 dB step at 130 ms and hide there;",
+        "this file is still only 6 dB down at 296 ms and its decay does not",
+        "become a straight line in dB until ~400. There is no moment to cut on,",
+        "so the cut has to be MADE, and a fade is the honest way to make one.",
+        "",
+        "Where it goes is the high band. The crack is over by ~90 ms; from 95 ms",
+        "the band sits at -21 dB +/-2 for the next hundred milliseconds, which is",
+        "a dense early field rather than anything the weapon did, and at 200-212",
+        "a discrete arrival comes back at -9. So the shot is 0-90 and the fade",
+        "spends 90-130 handing it to `Sfx`'s convolver.",
+        "",
+        "It is also the widest master in the set -- the side channel peaks only",
+        "3.8 dB under the mid, against the assault rifle's 10.8 -- which is the",
+        "room again, and another reason not to ship much of it: one recorded",
+        "room heard in stereo is the same fixed room on six maps that the",
+        "assault rifle's row argues against, only more audibly."
+      ],
+      "sourceHash": "f74be08c59c3bbfa",
+      "decoded": {
+        "seconds": 0.13,
+        "channels": 2,
+        "kb": 48.8
+      }
+    },
+    {
+      "id": "lmg",
+      "source": "src/lmg.wav",
+      "out": "lmg.webm",
+      "channels": 2,
+      "trim": {
+        "start": 0.04,
+        "end": 0.17,
+        "fadeOut": 0.03
+      },
+      "_": [
+        "The second master with a lead, and the longest: 50 ms of it, -27 to",
+        "-57 dB, before the report starts at 52. Same rule as the burst rifle --",
+        "shipped whole it is 50 ms of trigger latency on a weapon that fires",
+        "every 100 -- and the same placement, in the trough at 40 ms (-50 dB)",
+        "rather than hard against the onset.",
+        "",
+        "The end is where the high band stops decaying and the low band does",
+        "not. Above 4 kHz the shot falls from -7 dB at 116 ms to -33 at 140 and",
+        "-55 by 180, a clean exponential decay; broadband it is still -13 at 180",
+        "because what is left is low roll, and the 300-500 ms band measures a",
+        "crest factor of 2.6 to 3.8 dB, which is undiluted noise. That low roll",
+        "is exactly what `report.weight` and `length` are for, so the cut takes",
+        "the direct sound to ~140 and fades the rest out over the next 30."
+      ],
+      "sourceHash": "a3d378c667e80155",
+      "decoded": {
+        "seconds": 0.13,
+        "channels": 2,
+        "kb": 48.8
+      }
+    },
+    {
+      "id": "pistol",
+      "source": "src/pistol.wav",
+      "out": "pistol.webm",
+      "channels": 2,
+      "trim": {
+        "start": 0,
+        "end": 0.125,
+        "fadeOut": 0.025
+      },
+      "_": [
+        "The cleanest of the six and the closest in shape to the assault rifle's:",
+        "a report to ~100 ms and then a 20 dB collapse over the next 25. The one",
+        "thing inside it worth naming is the high-band spike at 84-92 ms, which",
+        "is the slide -- kept, because it is inside the report and the assault",
+        "rifle's own cut keeps the same event at 126 ms, and because the fade is",
+        "already running by the time it would have to be argued about.",
+        "",
+        "What is dropped is a floor at -28 to -38 dB from 130 ms and then a late",
+        "arrival at 220-240 that climbs back to -21, which is the room."
+      ],
+      "sourceHash": "e6b4b1749e9e3671",
+      "decoded": {
+        "seconds": 0.125,
+        "channels": 2,
+        "kb": 46.9
+      }
     }
   ]
 }

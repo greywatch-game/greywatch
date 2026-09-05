@@ -515,24 +515,53 @@ deviations are `ReportVoice`, eight scalars tabled per weapon in
   untouched by it — those four fractions are still keyed to the viewmodel's
   beats to the frame, per the section above.
 
-**There is a NINTH field now and it is not a scalar: `sample`, which names a
-RECORDING that stands in for the five layers.** The rifle is the only weapon
-that sets it — deliberately, because it is the reference row every other
-report is a deviation from, so one file is the widest A/B against the
-synthesis the table can buy. Four things about it are load-bearing:
+**There is a NINTH field and it is not a scalar: `sample`, which names a
+RECORDING that stands in for the five layers.** Every weapon in the kit sets it
+now — seven rows, seven files, and nothing else in the game is recorded at all
+(see [`docs/audio.md`](audio.md) for where that boundary is and what it costs).
+The rifle's is still the load-bearing one, because `Sfx`'s `FLAT_REPORT` is
+that row: every bot on the map fires the rifle, so removing that one file is
+not the same size of decision as removing any of the other six.
+
+**The field is still OPTIONAL, and that is not vestigial.** A weapon added
+tomorrow compiles with no `sample` on it and is heard as the synthesis, and
+each of the six can be deleted on its own. Four things about it are
+load-bearing:
 
 - **It replaces the REPORT and nothing else.** The reload's four clacks and
   the bolt cycle are still `actionPitch`/`actionVol` off the eight scalars,
-  because the recording is of a shot rather than of a mechanism.
-- **Two of the eight still apply to it.** `pitch` becomes `playbackRate` and
-  `level` still levels it, so a second weapon could share one file and still
-  be told apart. The three the recording genuinely subsumes — `snap`,
-  `weight`, `length` — are simply not read while it is playing.
+  because the recording is of a shot rather than of a mechanism. **The masters
+  test this rather than merely permitting it**: three of the seven arrived with
+  their own mechanism on the tape — the carbine and the LMG lead with 32 and
+  50 ms of it, the SMG has a bolt-shaped arrival 12 ms after its report dies —
+  and every one is cut off in `audio/manifest.json`. The SMG is the sharpest
+  case, because its `actionVol` of 1.55 is the highest in the table precisely
+  because a blowback SMG is mostly its own bolt; shipping the recorded one
+  would play that mechanism twice.
+- **Two of the eight still apply to it, and `pitch` is emphatically NOT one
+  of them.** The eight scalars are DEVIATIONS from the reference report —
+  that is the whole shape of `ReportVoice`, and why the rifle's row is all
+  ones — so `pitch` says "this weapon's bore and charge, against the
+  rifle's", and a recording of that weapon has already said it. **`Sfx` plays
+  a sample at the per-shot wobble alone.** This was `v * voice.pitch` while
+  the rifle was the only row and there was nothing to notice: its `pitch` is
+  1. At seven rows the double-count is loud — the SMG's 1.42 would play its
+  own file a fourth high and 41 ms short, the sniper's 0.6 would stretch a
+  130 ms boom to 217 — so the affordance that one file could be pitched into
+  a second weapon is gone, and it was only ever there because there was one
+  file.
+
+  What still applies is `level`, because a level is a mix decision rather
+  than a claim about the weapon, and `tail`, because how hard a shot drives
+  the VILLAGE is the game's question and not the recording's. The three the
+  recording genuinely subsumes — `snap`, `weight`, `length` — are simply not
+  read while it is playing, which is why those three still carry the whole
+  argument for a weapon in `config/weapons.ts` and are not dead.
 - **It is a PREFERENCE and never a requirement.** The fetch is fire-and-forget
   off `Sfx.unlock`, so a shot fired before the decode lands is the synthesized
   report and nothing is told which it got. Deleting the field is a complete
   revert; see [`docs/build.md`](build.md) for why that is the ground the one
-  authored asset in the tree is admitted on.
+  authored asset CLASS in the tree is admitted on.
 - **`Sfx.botShot` puts the distance cues back by hand.** The synthesis carries
   them in its own filters — the top end stripped off as the shot gets further
   away — and a recording has none, so a lowpass sweeping from open to a thud

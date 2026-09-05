@@ -1,17 +1,21 @@
 /**
- * Sfx.ts — All audio: synthesized WebAudio, and ONE recording laid over it.
+ * Sfx.ts — All audio: synthesized WebAudio, and the gun kit's SEVEN recorded
+ * reports laid over it.
  * Owns: the AudioContext, one cached noise buffer shared by every shot, one
  * shared convolution reverb every gunshot sends into, a master soft clip, the
  * voice cap (CONFIG.audio.maxVoices — over-cap sounds are skipped silently),
  * positional panning relative to the listener, and the decoded samples
  * `src/core/samples.ts` tables.
- * The samples are the one thing here that is not synthesized and they are held
- * as a PREFERENCE: fetched fire-and-forget off `unlock`, substituted for the
- * report inside `shoot` and `botShot` only when the decode has landed, and
- * absent from every other sound in the file. A weapon with no `sample`, a
- * decode that has not finished and a fetch that failed are one case with one
- * answer — the synthesized report — which is what keeps the recording
- * deletable. See `samples.ts` for why that is the whole of the bargain.
+ * The samples are the one thing here that is not synthesized — one report per
+ * weapon and nothing else in the game — and they are held as a PREFERENCE:
+ * fetched fire-and-forget off `unlock`, substituted for the report inside
+ * `shoot` and `botShot` only when the decode has landed, and absent from every
+ * other sound in the file. The reload, the bolt cycle and the action are still
+ * `actionPitch`/`actionVol` on all seven, so a mechanism is voiced here and
+ * never by a recording. A weapon with no `sample`, a decode that has not
+ * finished and a fetch that failed are one case with one answer — the
+ * synthesized report — which is what keeps the recording deletable. See
+ * `samples.ts` for why that is the whole of the bargain.
  * Invariants: never generate a fresh noise buffer or impulse response per
  * sound — both are built once on unlock. setListener() is called once per
  * frame by Game, after the camera update. Firefox needs the legacy
@@ -78,10 +82,23 @@ interface LoadedSample {
  * and the cost of the two mistakes is not symmetric. Slack left on the end is
  * a few milliseconds of a voice, which the cap can afford; a floor raised
  * until it starts eating decay takes the end off a gunshot, which is the half
- * of the sound the room is supposed to answer. Measured on the rifle's own
- * file, which is 0.68 s long: -46 dBFS cut it at 0.298 s and this cuts it at
- * 0.455, so the tighter floor was throwing away 157 ms of real decay and this
- * one is still handing 225 ms of dead air back to the voice cap.
+ * of the sound the room is supposed to answer. Measured on an untrimmed
+ * 0.68 s master: -46 dBFS cut it at 0.298 s against this floor's 0.455, so
+ * the tighter one was throwing away 157 ms of real decay.
+ *
+ * **It finds nothing to cut on any of the seven files that ship, and that is
+ * the correct outcome rather than a sign it is dead code.** The CUT lives in
+ * `audio/manifest.json` where a reviewer can read it (see `docs/audio.md`);
+ * measured in Chromium, all seven decode with `offset` 0 and the whole buffer
+ * played. What this is, is the guarantee that nothing about a file's FORMAT
+ * has to be trusted — a container that decoded with leading padding would be
+ * absorbed here silently instead of putting latency on a trigger.
+ *
+ * **What it cannot do is rescue a LEAD**, which is why two of the masters are
+ * trimmed at the FRONT in the manifest rather than left to this: the carbine's
+ * report starts 32 ms into its master and the LMG's 50 ms into its, and the
+ * pre-noise in front of both sits at -23 to -27 dB — three dozen dB over this
+ * floor, so it reads as sound and is played.
  */
 const SAMPLE_FLOOR = 0.002;
 
@@ -522,8 +539,21 @@ export class Sfx {
     // describing itself, so the per-shot wobble matters MORE here than it does
     // to the synthesis, which varies its own noise slice as well. `keep` for
     // the reason the five layers have it: this is the player's own report.
+    //
+    // **`pitch` is deliberately NOT spent on it, and `v` alone is.** The eight
+    // scalars are DEVIATIONS from the reference report — that is the whole
+    // shape of `ReportVoice`, and why the rifle's row is all ones — so `pitch`
+    // says "this weapon's bore and charge, against the rifle's". A recording
+    // of that weapon has already said it. Bending it again is the deviation
+    // applied twice, and at this table's spread it is not subtle: the SMG's
+    // 1.42 would play its own file a fourth high and 41 ms short, the sniper's
+    // 0.6 would stretch a 130 ms boom to 217. `level` still applies, because
+    // a level is a mix decision rather than a claim about the weapon, and
+    // `tail` still applies, because how hard a shot drives the VILLAGE is the
+    // game's question and not the recording's. `snap`, `weight` and `length`
+    // are the three the file genuinely subsumes and are simply not read.
     if (voice.sample && this.sample(voice.sample, {
-      vol: SAMPLE_LEVEL * voice.level, rate: v * voice.pitch,
+      vol: SAMPLE_LEVEL * voice.level, rate: v,
       // A plain send level like the five layers it replaces — the wet bus's
       // own `reverbMix` is downstream of all of them. The five sum to ~3.25
       // of these and this is 1.0, because those levels are set against layers
@@ -1104,16 +1134,20 @@ export class Sfx {
     //
     // **This is the one place a sample costs more than the synthesis and it
     // is not obvious from the level.** A voice is counted for as long as it
-    // is SCHEDULED, and the rifle's file runs 0.455 s against three layers of
-    // 0.03, ~0.1 and 0.2 — so the same firefight holds two to three times as
-    // many voices open here, and the cap is what absorbs it, by dropping
+    // is SCHEDULED, and a file is held for the whole of it — 96 to 180 ms
+    // across the kit — where the three layers it replaces run 0.03, ~0.1 and
+    // 0.2 scaled by `length` and release in that order. So the same firefight
+    // holds more voices open here, and the cap is what absorbs it, by dropping
     // shots. Nothing is wrong when that happens (the impact reserve is
     // untouched, and a dropped bot shot at range is the sound the cap exists
     // to spend), but a recording is not free at sixteen shooters the way it
-    // is at one, and the lever if it ever needs one is a SHORTER file rather
-    // than a quieter graph.
+    // is at one, and the lever if it ever needs one is a SHORTER file — a
+    // `trim.end` in `audio/manifest.json` — rather than a quieter graph.
+    // `rate` is `v` and not `v * p`, for the reason `shoot` argues at length:
+    // a recording of this weapon has already said what `pitch` says. `p` below
+    // is the synthesis's, and every use of it there is a filter frequency.
     if (voice.sample && this.sample(voice.sample, {
-      vol: SAMPLE_LEVEL * 0.8 * voice.level, rate: v * p, delay, out: panner,
+      vol: SAMPLE_LEVEL * 0.8 * voice.level, rate: v, delay, out: panner,
       send: send * voice.tail, lowpass: 16000 - 14800 * far,
     })) return;
     this.burst({
