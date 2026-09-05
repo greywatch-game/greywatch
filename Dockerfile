@@ -38,13 +38,28 @@ COPY tsconfig.json vite.config.ts vite.server.config.ts index.html main.ts ./
 COPY src ./src
 COPY server ./server
 COPY scripts ./scripts
-# textures/ and shots/ are BUNDLED, not served: both are imported with Vite's
-# `?url` (`WaterSystem`, `ui/mapShots.ts`), so rollup resolves them out of the
-# build context and a directory missing here fails the bundle rather than the
-# COPY — with an error that names the importing module and not this file. Any
-# future `?url` import from outside src/ owes a line beside these two.
+# textures/, shots/ and audio/ are BUNDLED, not served: all three are imported
+# with Vite's `?url` (`WaterSystem`, `ui/mapShots.ts`, `core/samples.ts`), so
+# rollup resolves them out of the build context and a directory missing here
+# fails the bundle rather than the COPY — with an error that names the
+# importing module and not this file. Any future `?url` import from outside
+# src/ owes a line beside these three.
 COPY textures ./textures
 COPY shots ./shots
+# **audio/ is the future import that line predicted, and it arrived without
+# one** — the image build has been broken since the first sample shipped. It is
+# copied WHOLE, `src/` and all, because it is read TWICE: rollup takes the
+# fourteen encoded `.webm`s, and `check-audio.mjs` on the front of `npm run
+# build` hashes the committed MASTERS against the manifest to refuse a sound
+# whose generator was never re-run. That gate needs no ffmpeg precisely so it
+# can run on a clean checkout, which is what this stage is; copying only the
+# encoded output would leave it failing as "master missing". 2.8 MB, against
+# the 7 MB of unreferenced models/ deliberately left out above.
+#
+# It also fails EARLIER and more kindly than the comment above predicts: the
+# gate runs before the bundle and names `/app/audio/manifest.json`, which is a
+# path in this file rather than a module in src/.
+COPY audio ./audio
 # public/ is copied to dist/ verbatim: the web app manifest and the install
 # icons, which must keep the exact URLs the manifest and index.html name.
 COPY public ./public
