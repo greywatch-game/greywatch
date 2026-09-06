@@ -219,7 +219,7 @@ frame                       the whole tick, wall to wall
 │  └─ hud                   what a gameplay frame pushes at the chrome
 ├─ hudDraw                  HUD.update — every state owes it
 ├─ post                     the post chain, the sky, the shafts
-├─ culling                  the cull cells, the motes, the shader's eye
+├─ culling                  the cull cells, the motes, the rotors' dust, the shader's eye
 ├─ audio                    pushHullEngines
 └─ render                   scene.render()
    ├─ shadowPass            the depth map, on the frames that re-render it

@@ -2234,6 +2234,147 @@ rebuild safe without knowing anything about one — the key is the hull's index 
 the fleet, and `installMap` runs from `loading` and from the editor, neither of
 which steps a fleet.
 
+## The dust under a rotor
+
+**A machine that holds itself up by moving air moves the ground when it gets
+near it**, and `RotorWash` is the whole of that: one standing GPU emitter per
+rotor on the field, a ring of puffs the width of the disc, sitting on whatever
+is underneath the machine.
+
+**It is `BlastDust`'s FOUNTAIN twin, and that is the shape of the file rather
+than a remark about it.** `GrenadeSystem`'s clouds pin `emitRate` at zero and
+spend `manualEmitCount` puffs at a detonation, because a rate is exactly what
+would leave a fountain standing wherever the last grenade went off. A downwash
+IS that fountain — the one dust in this game with no event behind it — so the
+systems here are started once, never stopped, and a machine that is high, dead,
+spooled down or has no rotor at all is one whose emitter is running at a rate of
+zero. Nothing is spawned and nothing is scheduled, which is `Sfx`'s rule for the
+held-open ambience voices arriving in the other half of the frame.
+
+### The hull answers, exactly as it does for the voice
+
+`Vehicle.washTo(out)` hands back 0..1 and leaves `out` on the ground the wash
+lands on, and it is asked OF THE HULL for `powerplant`'s reason: not one of the
+three things a downwash is made of is visible from outside. `rotor` is private;
+the skyline under the machine is two lookups into a terrain field and an
+obstacle field the hull holds and nothing else does; and the disc's width is
+`drive.collideRadius`, which the world already reads off this drawing. A caller
+working any of it out for itself would be describing the machine from its
+picture again.
+
+Three things about the number:
+
+- **It is `rotorPower`, not `rotor`** — the same distinction the voice makes. A
+  disc below `liftFloor` is spinning and audible and moving nothing, and a
+  machine raising dust while it was still spooling would be one whose picture
+  disagreed with whether it could fly.
+- **The height is the SKID clearance against `skylineAt`**, which is `aloftAt`'s
+  own `belly` measured against the same two lookups. So a machine three metres
+  over a roof works the ROOF and one in the street beside it works the street.
+- **The fall-off is squared inside `flight.washHeight`** (14 m, 2.7 rotor
+  diameters), so half the reach is a quarter of the dust. Measured on Sarab:
+  1.00 on the skids, 0.86 at 1 m, 0.74 at 2, 0.51 at 4, 0.25 at 7, 0.08 at 10
+  and 0 at 14 — nearly all of it in the last few metres of a landing, which is
+  where a landing is.
+
+`flight.washHeight` is the only thing a KIND says about this. What a cloud of
+dust costs, how fast it spreads and how it fades is `CONFIG.vehicles.wash`, one
+block for the fleet — `Build.sound`'s split, where a structure names a sound and
+the audio config owns what it costs.
+
+### Water gets nothing, and that is half an answer on purpose
+
+A rotor over the bay ought to tear a hole in it and throw SPRAY, which is a
+different sprite, a different colour and a different fade. What is here is the
+honest half: dust comes off dry ground, so a wash whose landing point is inside
+a `WaterRect` and BELOW that rect's surface emits nothing. The height half is
+what makes it a test rather than a footprint — a jetty, a quay wall or a beached
+hull inside a rect stands above the surface, and a machine over one of those is
+over something dry. Cinderhaven is the map that made it a rule rather than a
+nicety, being the one with a harbour and a helicopter on it; Sarab's birkat is
+where it was checked (strength 0.797 three metres over the water, rate 0).
+
+### A puff fades IN as well as out, and that is a colour gradient
+
+A GPU particle's `color1`/`color2` are what it is AT BIRTH, and the only fade
+they buy is linear from there to `colorDead` — so every puff arrives at full
+opacity. On a BURST that is invisible: `BlastDust` puts a whole cloud in the air
+on one frame and what a viewer reads is the cloud. On a FOUNTAIN it is the
+texture of the whole effect, because ninety puffs a second are each switching on
+in front of you, and it read as the dust popping in. `wash.fadeIn` (0.2 of a
+life, ~0.3 s) is the up-ramp, and it costs a little density — the alpha is now
+under its peak at both ends of a life instead of one, so `opacity` went 0.65 to
+0.72 to put the cloud back where the sweep had left it.
+
+**`BlastDust` says a colour gradient on a GPU system takes the whole scene's
+rendering down, and it is right about what it measured — but the rule underneath
+is narrower, and it is the rule that lets this file have the curve that one
+cannot.** A gradient texture changes the VERTEX BUFFER LAYOUT: with one, the
+per-particle `color` attribute is gone and the shader samples the gradient
+instead (`gpuParticleSystem.pure.js` — `_GetAttributeNamesOrOptions`, and the
+`!this._colorGradientsTexture` guards around the buffer build). Those buffers are
+built by `_initialize()` on a system's FIRST RENDER and never again, while the
+gradient texture is created whenever the update effect is next recreated. So a
+gradient added to a system that has already drawn leaves the buffers and the
+effect disagreeing about the vertex format, which on WebGPU is not a wrong
+colour but a dead scene.
+
+**So the rule is "before the first render", not "never"** — and the whole of how
+this class is wired is that rule. Gradients are added in `buildRing`, before
+`start()` and before the ring has been offered to a frame; the environment
+therefore arrives on `build` rather than through a `setEnvironment` of its own;
+and a map whose dust is a different colour gets NEW rings rather than a repaint,
+which is the only thing that ever disposes one inside a session. `BlastDust`
+re-tints per install on systems that have been drawing since the `Game` was
+constructed, so for that class the conclusion stands unchanged.
+
+Verified on the live client rather than inferred: the ring's gradient texture
+comes back 256 x **2** — two rows, so the light and dark halves of the pair are
+still lerped per puff by its own seed and the two-tone body survives the ramp —
+with stops at alpha 0, 0.72 at a fifth of a life, and 0, and the scene went on
+rendering (frame 430 to 541 over the second after).
+
+### The tint is the FLOOR where a blast's cloud is the MIST
+
+`BlastDust` colours itself from `mistColor` because a blast's cloud is read at a
+distance, hanging over a crater, and by then the air is most of what it is. A
+wash is the ground itself, four metres from the eye, on its way back down — so
+it is `floorColor` lifted toward the key light, which is the call
+`BlastDebrisSystem` already makes for the rubble a blast tears out. It is
+resolved on `build`, for the section above's reason. It was
+measured rather than argued: on Sarab the mist lifted toward the key light is
+`#e5d7ba` against a lit desert of about `#d8c9a0`, so the first version was a
+cloud PALER than the sand it came off and read as haze standing over the pad.
+No opacity would have fixed a tint that was already the sky's.
+
+**Three of the numbers moved for the same reason and all three were caught by a
+picture rather than by arithmetic.** Dust off the ground is very nearly the
+colour of the ground, so the overlap a continuous emitter buys is not buying
+contrast the way a fireball's cloud does against a night street: the first fit
+went out at the blast's own speed, rose at twice it and ran at a third of its
+alpha, and what that renders is a bank of fog over a pad. It goes out more
+slowly than a blast now (3.2 against 3.4), rises far more slowly (0.5 against
+0.8) and is nearly as opaque (0.65 against 0.7) — and the darker half of the
+colour pair is doing as much of the work as the alpha is.
+
+### What it costs, and where it is pushed from
+
+135 particle slots per rotor, fixed at construction, so the whole feature is 270
+on the two maps that field a helicopter — and one question per machine per
+frame. The emitter pool GROWS and never shrinks across map installs, which is
+the opposite of `Atmosphere.fit`'s rebuild and opposite for its reason: there
+the capacity was the map's, and here it is a constant.
+
+It is pushed from `tick` beside the mote field and inside the same profiler
+span, and it is gated on `Game.fleetStepped` for `pushHullEngines`'s reason
+rather than by analogy with it: a held world is a machine frozen over a street,
+and one still boiling that street is the droning-engine lie with a picture
+instead of a sound. What is already ALOFT keeps drifting on the GPU's own clock,
+which is the honest half — dust that has left the ring is no longer being pushed
+by anything. That flag is read ONCE now, at the end of `tick`, because a
+one-shot flag with two consumers is one whose second reader gets whatever the
+first left.
+
 ## What a map owes
 
 `MapLayout.vehicles` is absent on Hollowmere and Greyfen, and a map that says

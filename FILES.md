@@ -400,6 +400,24 @@ src/
     glassFracture.ts    # The crack pattern itself: radials out of the hole,
                         #   concentrics across them, clipped to the frame. Pure
                         #   arithmetic — no Babylon, no state
+    puffTexture.ts      # The one puff in the game, drawn at runtime: three
+                        #   overlapping gradients, no image file. Shared by the
+                        #   blast's two clouds and the rotor's ring — what tells
+                        #   those apart is size, colour and count, never the
+                        #   sprite. Needs a canvas, so nothing on the server
+                        #   reaches it
+    RotorWash.ts        # The dust a helicopter throws up when it comes down:
+                        #   one standing GPU emitter per rotor on the field,
+                        #   `emitRate` driven off `Vehicle.washTo` — which is
+                        #   the disc's power against its skid clearance, and 0
+                        #   for anything that does not fly. BlastDust's fountain
+                        #   twin: nothing is spawned, nothing is scheduled, and
+                        #   a machine that is high, dead or over WATER is one
+                        #   emitting at a rate of zero. A puff fades IN as well
+                        #   as out, which is a colour GRADIENT and is why a ring
+                        #   is coloured when it is BUILT — see `paint` for the
+                        #   before-the-first-render rule that makes that safe
+                        #   here and not in BlastDust. Client only
     DeathCam.ts         # The player's own death; the only occlusion pick
                         #   outside combat
     VehicleSystem.ts    # The armour on the field: one hull per hardstanding, the

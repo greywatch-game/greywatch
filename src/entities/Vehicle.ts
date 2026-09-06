@@ -1439,6 +1439,58 @@ export class Vehicle implements Combatant, RayHull {
     ];
   }
 
+  /**
+   * How hard this hull is working the ground under it, 0..1, with `out` left
+   * at the point that ground is — the centre of the ring of dust a rotor
+   * standing over a dry street throws up.
+   *
+   * **Asked OF THE HULL for `powerplant`'s reason, and it is the same
+   * bargain.** What a downwash is made of is a rotor's power, the machine's
+   * height over what is actually beneath it and the width of its disc, and not
+   * one of those three is visible from outside: `rotor` is private, the
+   * skyline is two lookups into a terrain field and an obstacle field this
+   * hull holds and nothing else does, and a caller working any of it out for
+   * itself would be describing the machine from the picture again. So the
+   * client's `RotorWash` asks this and places an emitter, and nothing about a
+   * vehicle leaves this file to do it.
+   *
+   * Zero — and `out` untouched — for a hull with no rotor, which is how the
+   * two ground kinds are answered with no branch anywhere above: `flight` is
+   * null, there is no `washHeight` to read, and a fleet of tanks is a system
+   * that emits nothing rather than a system that has to know what a tank is.
+   * Zero for a WRECK too, for `running`'s reason inverted: a dead hull is not
+   * stepped at all, so its `rotor` is frozen wherever the shot left it and
+   * would go on blowing dust across the street for the rest of the round.
+   *
+   * Three things about the number itself:
+   *
+   * - **It is `rotorPower` and not `rotor`**, the same distinction the voice
+   *   makes: a disc turning below `liftFloor` is spinning and audible and
+   *   moving nothing, and a machine that raised dust while it was still
+   *   spooling would be one whose picture disagreed with whether it could fly.
+   * - **The height is the SKID clearance**, `aloftAt`'s own `belly`, measured
+   *   against `skylineAt` — so a machine three metres over a roof works the
+   *   ROOF, and one in a street beside it works the street. Clamped at zero
+   *   rather than allowed to go negative: a hull sitting on its skids and one
+   *   settling the last inch onto them are the same wash.
+   * - **The fall-off is SQUARED**, which is `washHeight`'s note: half the
+   *   reach is a quarter of the dust, so what a viewer reads is the last few
+   *   metres of a landing rather than a cloud that switches on at a height.
+   */
+  washTo(out: Vector3): number {
+    const f = this.spec.flight;
+    if (!f || !this.alive) return 0;
+    const power = this.rotorPower(f);
+    if (power <= 0) return 0;
+    const p = this.body.position;
+    const ground = this.skylineAt(p.x, p.z);
+    const clear = p.y - this.spec.hull.height / 2 - ground;
+    if (clear >= f.washHeight) return 0;
+    const near = 1 - Math.max(0, clear) / f.washHeight;
+    out.set(p.x, ground, p.z);
+    return power * near * near;
+  }
+
   /** Where the gun actually points, in the world. NOT where the player is looking. */
   gunDirToRef(out: Vector3): Vector3 {
     const cp = Math.cos(this.gunPitch);

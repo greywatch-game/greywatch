@@ -72,6 +72,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 import { TerrainField } from "../world/TerrainField";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
+import { buildPuffTexture } from "./puffTexture";
 import type { DamageKind, Hittable } from "./CombatSystem";
 
 /** One grenade in flight (or resting with its fuse running). */
@@ -1203,7 +1204,7 @@ class BlastDust {
     name: string,
     private readonly d: CloudSpec,
   ) {
-    this.texture = buildPuffTexture(scene);
+    this.texture = buildPuffTexture(scene, name);
 
     for (let i = 0; i < d.clouds; i++) {
       const system = new GPUParticleSystem(
@@ -1284,13 +1285,23 @@ class BlastDust {
       // life, and that is the whole fade — there is no curve on it.
       //
       // A colour gradient is what would buy one (hold, then go), and it is not
-      // usable: `addColorGradient` on a GPU system in Babylon 9.19.1 throws on
-      // the next render and takes the entire scene's rendering down with it,
-      // black frame and all, rather than failing to the ungraded colours.
-      // Size and velocity gradients on the same system are fine. So the fade
-      // is bought with the numbers instead: `opacity` is set for how the cloud
-      // reads at half life rather than at birth, and `life` for where linear
-      // decay puts the tail.
+      // usable HERE: `addColorGradient` on a GPU system in Babylon 9.19.1
+      // throws on the next render and takes the entire scene's rendering down
+      // with it, black frame and all, rather than failing to the ungraded
+      // colours. Size and velocity gradients on the same system are fine. So
+      // the fade is bought with the numbers instead: `opacity` is set for how
+      // the cloud reads at half life rather than at birth, and `life` for
+      // where linear decay puts the tail.
+      //
+      // **The rule under that is narrower than it looks, and `RotorWash.paint`
+      // is the file that spends the difference.** A gradient texture changes
+      // the vertex buffer LAYOUT, and those buffers are built on a system's
+      // FIRST RENDER and never again — so what is fatal is adding one to a
+      // system that has already drawn, which is every system in this pool by
+      // the time an environment arrives. These are built in the `Game`'s
+      // constructor and re-tinted per map install; a class that colours its
+      // systems before they have ever been offered to a frame can have the
+      // curve this comment says is unavailable.
       cloud.system.colorDead = new Color4(tint.r, tint.g, tint.b, 0);
     }
   }
@@ -1358,38 +1369,4 @@ class BlastDust {
       cloud.t = 0;
     }
   }
-}
-
-/**
- * The puff: a soft blob with a lumpy edge, generated so the game still ships
- * no image files. Three overlapping gradients at FIXED offsets rather than
- * random ones — one texture is shared by every puff in every cloud, so the
- * variety has to come from rotation and size, and a texture that differed
- * between page loads would only make a screenshot diff lie.
- */
-function buildPuffTexture(scene: Scene): DynamicTexture {
-  const size = 128;
-  const texture = new DynamicTexture(
-    "blastDust",
-    { width: size, height: size },
-    scene,
-    false,
-  );
-  const ctx = texture.getContext();
-  const lobes: [number, number, number][] = [
-    [64, 64, 46],
-    [46, 52, 30],
-    [82, 74, 26],
-  ];
-  for (const [x, y, r] of lobes) {
-    const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
-    gradient.addColorStop(0, "rgba(255,255,255,0.95)");
-    gradient.addColorStop(0.5, "rgba(255,255,255,0.45)");
-    gradient.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, size, size);
-  }
-  texture.update();
-  texture.hasAlpha = true;
-  return texture;
 }

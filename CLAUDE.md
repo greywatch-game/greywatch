@@ -1528,6 +1528,41 @@ loading on a rotor, road speed and a stick on anything geared to its wheels. A
 voice driven off `travel` **hovered in silence**, which is a machine flying with
 its engine off.
 
+**AND A MACHINE THAT HOLDS ITSELF UP BY MOVING AIR MOVES THE GROUND WHEN IT GETS
+NEAR IT.** `RotorWash` is `BlastDust`'s FOUNTAIN twin — one standing GPU emitter
+per rotor on the field, a ring the width of the disc sitting on whatever is
+under the machine — and the twinning is the whole shape of it: a blast pins
+`emitRate` at zero and bursts, because a rate is what would leave a fountain
+standing where the last grenade went off, and a downwash IS that fountain.
+Nothing is spawned and nothing is scheduled; a machine that is high, dead,
+spooled down or has no rotor at all is one emitting at a rate of ZERO. **The
+hull answers, exactly as it does for the voice** (`Vehicle.washTo`): the disc's
+`rotorPower` — never `rotor`, since a spooling disc lifts nothing — against the
+SKID clearance over `skylineAt`, squared inside `flight.washHeight`, so a
+machine over a roof works the roof and nearly all the dust is in the last few
+metres of a landing. **That one number is all a KIND says**; what a cloud costs
+is `CONFIG.vehicles.wash`, one block for the fleet, which is `Build.sound`'s
+split again. Three rules came out of rendering it. **A puff FADES IN as well as
+out** — a birth at full alpha is invisible on a burst, where a cloud arrives on
+one frame, and is the whole texture of a FOUNTAIN, where ninety a second switch
+on in front of you — which needs a colour GRADIENT, and `BlastDust` says a
+gradient on a GPU system kills the scene. **The rule under that is narrower: a
+gradient changes the VERTEX BUFFER LAYOUT, and the buffers are built on a
+system's FIRST RENDER**, so what is fatal is adding one to a system that has
+already drawn. A ring is therefore coloured when it is BUILT — the environment
+arrives on `build`, and a map whose dust is a different colour gets new rings
+rather than a repaint. **The tint is the map's FLOOR
+where a blast's cloud is its MIST** — a wash is the ground itself four metres
+from the eye, which is `BlastDebrisSystem`'s own call for rubble, and the mist
+version rendered a cloud PALER than the sand it came off. And **water gets
+nothing**, which is half an answer on purpose: spray is a different sprite, so
+dust comes off dry ground and a landing point below a `WaterRect`'s surface
+emits none. It is pushed from `tick` beside the mote field, gated on
+`fleetStepped` for the engines' reason — a held world is a machine frozen over a
+street, and one still boiling that street is the droning tank with a picture
+instead of a sound — and **that flag is now read ONCE**, because a one-shot flag
+with two consumers is one whose second reader gets whatever the first left.
+
 → **[`docs/vehicles.md`](docs/vehicles.md)** — the three kinds and the two
 capabilities that stand in for a branch between them, the truck's trade and the
 helicopter's fragility; the two seats and the swap, the cupola gun's
@@ -1538,7 +1573,8 @@ three gates and its two skips; each model's mesh budget, its running gear and
 its whips, and the gunship's chin turret with the four clearances it owes; the
 mounted gun as one gun on three mounts and the one recording all three name;
 the two engine voices, the two powerplants under them and the measurements on
-both; the plank, the
+both; the rotor's dust, what the hull answers about it and the three numbers a
+picture moved; the plank, the
 rate limit and the leading-end sphere; the damage kinds, the four ways out of a
 seat, the shell, the two clocks a hardstanding runs, what a map owes — including
 what its GENERATOR owes — and what is not built.

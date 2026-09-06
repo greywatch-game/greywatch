@@ -190,6 +190,32 @@ export interface VehicleSpec {
     /** The arrival the skids will take, and what each m/s over it costs. */
     readonly crashJolt: number;
     readonly crashDamage: number;
+    /**
+     * Metres of skid clearance at which the ground stops answering the disc —
+     * the whole of what a KIND says about its downwash, and the one number
+     * here the picture is not free to choose.
+     *
+     * What a wash LOOKS like is `CONFIG.vehicles.wash`, one block for the
+     * fleet, for `Build.sound`'s reason: a machine states which ground it is
+     * working and how far down that reach goes, because those are facts about
+     * the rotor, and what a cloud of dust costs and how it fades belongs in
+     * one place rather than to each kind. The WIDTH is not here either — it is
+     * `drive.collideRadius`, the disc itself, which is `steerAtRest`'s rule
+     * again: a number the machine already states.
+     *
+     * Non-nullable inside `flight`, which is the claim that there is no rotor
+     * holding a machine up that does not move the air under it. A kind with no
+     * `flight` block states nothing and `Vehicle.washTo` answers 0 for it, so
+     * the two ground kinds need no field and the system needs no branch — a
+     * tracked hull's dust plume is a different effect off a different part of
+     * the machine, and this is not it.
+     *
+     * ~2.7 rotor diameters, and the fall-off inside it is SQUARED, so half of
+     * it is a quarter of the wash: a hover-taxi boils the street, a pass at
+     * twenty metres leaves it alone, and the transition is somewhere a pilot
+     * can feel rather than a line the dust switches on at.
+     */
+    readonly washHeight: number;
   } | null;
   /**
    * The machine gun the SECOND seat lays. Every kind has one, because that is
@@ -385,6 +411,112 @@ export const vehicles = {
    * `respawnDelay`, or a team would field two hulls at once.
    */
   wreckTime: 16,
+  /**
+   * What a ROTOR does to the ground it is over: one block for the fleet, read
+   * by nothing but the client's `RotorWash`.
+   *
+   * **It is here rather than on the kind for `Build.sound`'s reason.** A
+   * machine states what its rotor reaches (`flight.washHeight`) and how wide
+   * its disc is (`drive.collideRadius`) because those are facts about the
+   * machine; what a cloud of dust costs, how fast it spreads and how it fades
+   * are a picture, and a picture stated once cannot drift between two kinds
+   * that are both throwing up the same street.
+   *
+   * The numbers started as `CONFIG.grenade.dust`'s and every one of them that
+   * moved, moved for the same reason: this is a cloud pinned to the GROUND
+   * under a machine that is still pushing it, where that one is a cloud thrown
+   * up once and left to drift. So the ring is born the width of the disc
+   * instead of in a crater, and it goes OUT more slowly (3.2 against 3.4) and
+   * UP much more slowly (0.5 against 0.8) — measured against pictures rather
+   * than argued: at the blast's own numbers the wash climbed two metres over
+   * its life and expanded to twice the disc, which is a bank of fog standing
+   * over a pad and not dust being blown off one.
+   *
+   * Colour is not here, for that block's reason: this dust is the GROUND it
+   * came off, so it is the map's `floorColor` lifted toward the key light —
+   * see `RotorWash.setEnvironment`, which carries why that is the FLOOR where
+   * a blast's cloud takes the mist.
+   */
+  wash: {
+    /**
+     * How far past the disc the ring is born, as a multiple of
+     * `drive.collideRadius`. Slightly over 1: the air leaves the disc's edge
+     * and the dust is what is already moving outward by the time it is lit.
+     */
+    spread: 1.1,
+    /**
+     * Puffs a second under a machine sitting on its skids at full rotor, and
+     * how long one lives. The product is the emitter's whole capacity — 135
+     * slots, fixed at construction and never resized — and it is the one pair
+     * here that costs anything: a map fields at most one machine a side, so
+     * the whole feature is 270 particle slots on the two maps that have one.
+     */
+    rate: 90,
+    life: 1.5,
+    /**
+     * How fast a puff leaves the ring (m/s) and the fraction of it left at the
+     * end of its life. A puff covers about 4 m over its life, which against a
+     * 5.7 m ring is a cloud that stays around the machine — at the blast's
+     * speed the ring had doubled its own diameter by the time it faded and the
+     * dust nearest the skids was the thinnest part of it, which is backwards.
+     */
+    speed: 3.2,
+    settle: 0.12,
+    /**
+     * Upward acceleration (m/s^2). Small, and smaller than the blast's: a
+     * downwash is air going DOWN, and what rises is only what the outflow
+     * curls back up at its edge. Half a metre over a puff's life, which is
+     * what keeps this a cloud at the skids rather than a band at head height —
+     * the first fit put it at 1.6 and the dust read as weather.
+     */
+    rise: 0.5,
+    /** Puff diameter (m) at birth and at the end, and the spread over both. */
+    sizeStart: 1.4,
+    sizeEnd: 3.4,
+    sizeSpread: 0.5,
+    /**
+     * How far above the ground the ring is born. A puff is a billboard metres
+     * across, so one centred on the surface has half of itself under it — the
+     * blast dust's `lift`, and the same arithmetic.
+     */
+    lift: 0.4,
+    /**
+     * Alpha of one puff at the top of its ramp, `fadeIn` of the way through
+     * its life, going to nothing at either end of that.
+     *
+     * **Nearly the blast cloud's, and the reasoning that said it should be a
+     * third of it was wrong in a way only a picture caught.** The argument was
+     * overlap — 34 puffs once against 90 a second — and what it left out is
+     * that dust off the ground is very nearly the colour of the ground, so the
+     * overlap is not buying contrast the way a fireball's cloud does against a
+     * night street. At 0.24 on Sarab the whole ring read as heat haze over the
+     * pad; the sweep that settled this ran 0.42, 0.62 and 0.75 against the
+     * same frame, and only past about 0.6 does it read as dust at all. The
+     * darker half of the pair (`RotorWash.paint`, half the tint) is doing as
+     * much of that work as the alpha is.
+     */
+    opacity: 0.72,
+    /**
+     * How much of a puff's life is spent arriving, 0..1 — the up-ramp on the
+     * alpha above, against the down-ramp that is all the rest of it.
+     *
+     * **A fountain needs this and a burst does not**, which is why the blast's
+     * clouds have no such number. `BlastDust` puts every puff in the air on
+     * one frame, so what a viewer reads is the cloud arriving and no single
+     * quad is legible; this emits ninety a second for as long as a machine is
+     * low, and at a hard-edged birth each one of them SWITCHES ON in front of
+     * you. Two tenths of 1.5 s is about 0.3 s of welling up — long enough that
+     * no puff is caught appearing, short enough that the ring still looks like
+     * it is being driven rather than breathed.
+     *
+     * It costs a little density, because the alpha is now under its peak at
+     * both ends of a life rather than only at one: `opacity` went 0.65 to 0.72
+     * to put the cloud back where the sweep had left it.
+     */
+    fadeIn: 0.2,
+    /** How far the tint is lifted from the map's FLOOR toward its key light. */
+    lit: 0.15,
+  },
   /**
    * What the AI does with a hull, and the whole of what it is allowed to do
    * with one.
@@ -2452,6 +2584,14 @@ export const vehicles = {
        */
       crashJolt: 7,
       crashDamage: 130,
+      /**
+       * 14 m of skid clearance, which is 2.7 rotor diameters and about twice
+       * the height the machine can hover-taxi at without being an easy shot.
+       * Squared inside it, so the last few metres of a landing are where
+       * nearly all of the dust is — and a pilot who wants to arrive without
+       * announcing himself has to come down somewhere without any.
+       */
+      washHeight: 14,
     },
     /**
      * The CHIN gun — and on this vehicle it is the ONLY gun, which is what

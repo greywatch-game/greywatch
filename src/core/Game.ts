@@ -136,6 +136,7 @@ import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
+import { RotorWash } from "../systems/RotorWash";
 import { ScoreBook, awardKill, awardZone } from "../systems/ScoreBook";
 import { LightingSystem } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
@@ -432,6 +433,11 @@ export class Game {
    */
   private culling: WorldCulling;
   private atmosphere: Atmosphere;
+  /**
+   * The dust under the rotors. A picture and nothing else: it reads the fleet
+   * and writes nothing back, exactly as the mote field reads the eye.
+   */
+  private rotorWash: RotorWash;
   private sky: Sky;
   private water: WaterSystem;
   private grass: GrassSystem;
@@ -750,7 +756,9 @@ export class Game {
 
   /**
    * Did anything actually STEP the fleet this frame? Raised by the two places
-   * that do and spent by `pushHullEngines`, which is the only reader.
+   * that do, and read and cleared ONCE at the end of `tick` — the engines and
+   * the rotor wash are both owed it, and a one-shot flag consumed by whichever
+   * of two readers ran first is one the other silently never sees.
    *
    * A flag rather than a test on the state, because the question is not which
    * screen is up: offline the world is held under the deploy card and the
@@ -1101,6 +1109,10 @@ export class Game {
     this.lighting = new LightingSystem();
     this.ambience = new AmbienceSystem();
     this.atmosphere = new Atmosphere(this.scene);
+    // Beside the mote field because it is the same kind of thing — a standing
+    // GPU emitter driven off where something is — and NOT beside the fleet,
+    // which it never touches. The server builds no such class at all.
+    this.rotorWash = new RotorWash(this.scene);
     // `mats` is not for building materials here — both systems own their own
     // shader. It is the publisher of the shadow map, its matrix and its params,
     // which both now sample (see `celShadow`).
@@ -2760,6 +2772,14 @@ export class Game {
     // authoring tool.
     this.motionBlur.update(this.cameraSys.aimYaw, this.cameraSys.aimPitch);
     this.prof.end(P.post);
+    // **Read ONCE, here, and spent twice below.** Two of the pushes at the end
+    // of a frame are owed the same fact — did anything actually MOVE the fleet
+    // this frame — and a one-shot flag with two consumers is a flag whose
+    // second reader gets whatever the first left. The dust is told inside the
+    // cull span and the engines inside the audio one, which is the order the
+    // frame already has and not a new one.
+    const fleetStepped = this.fleetStepped;
+    this.fleetStepped = false;
     this.prof.begin(P.culling);
     // The eye the cel shader fogs and rims against, last of all and in EVERY
     // state, because every state renders and only some of them simulate. It
@@ -2786,6 +2806,13 @@ export class Game {
     // the eye rather than over the whole square (`ParticleSpec.volume`). A
     // no-op for every map that states none, which is all of them but one.
     this.atmosphere.update(this.cameraSys.camera.position);
+    // The dust under the rotors, on the fleet's terms rather than the eye's: a
+    // held world is a machine frozen over a street, and one still boiling that
+    // street is the droning-engine lie with a picture instead of a sound. In
+    // the cull span rather than a span of its own because that is what it is —
+    // a per-frame push at a standing GPU emitter, the mote field's own shape,
+    // and at most one question per machine on the field.
+    this.rotorWash.update(fleetStepped);
     this.prof.end(P.culling);
     // The engines of the hulls the player is NOT sitting in, pushed from here
     // for the shader's-eye reason and with the opposite conclusion: every
@@ -2811,7 +2838,7 @@ export class Game {
       this.cameraSys.camera.position,
       this.cameraSys.forwardToRef(this.listenerForward),
     );
-    this.pushHullEngines();
+    this.pushHullEngines(fleetStepped);
     this.pushAmbience();
     this.prof.end(P.audio);
     // In every state too, and AFTER the switch above rather than inside any of
@@ -3700,6 +3727,25 @@ export class Game {
     // no AI at all, and a local `VehicleCrew` would be a second brain steering a
     // hull that is being posed from the wire.
     this.crew.setMap(!this.net && !this.vehicles.empty ? map : null);
+    // And the dust under whatever of that fleet has a rotor — after the build,
+    // because it is handed the hulls themselves and there are none until the
+    // line above. It is a PICTURE and the editor gets it too: an editor build
+    // fields no fleet, so this is the empty list and every ring goes quiet,
+    // which is the same call doing the same thing rather than a second path.
+    // The environment goes in on the same call rather than through a
+    // `setEnvironment` of its own, which is the one place this differs from
+    // the grenades' two lines above. A ring's colour is a GRADIENT — the fade
+    // in as well as the fade out — and a gradient may only be set before a GPU
+    // particle system's first render, so a ring is COLOURED WHEN IT IS BUILT
+    // and a map whose dust is a different colour gets new rings. See
+    // `RotorWash.paint`, which carries why that is safe here and is not safe
+    // on the clouds `BlastDust` has been holding since the `Game` was made.
+    this.rotorWash.build(
+      this.vehicles.hulls,
+      map.water,
+      map.terrain,
+      environment,
+    );
     return map;
   }
 
@@ -5380,9 +5426,7 @@ export class Game {
     this.ambience.update(this.cameraSys.camera.position, this.sfx);
   }
 
-  private pushHullEngines(): void {
-    const stepped = this.fleetStepped;
-    this.fleetStepped = false;
+  private pushHullEngines(stepped: boolean): void {
     if (!stepped) {
       this.sfx.enginesOff();
       return;

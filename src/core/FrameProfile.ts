@@ -139,7 +139,7 @@ export const PHASES = [
   "hudDraw",
   /** The post chain, the sky and the shafts. */
   "post",
-  /** The cull cells, the mote field and the shader's eye. */
+  /** The cull cells, the mote field, the rotors' dust and the shader's eye. */
   "culling",
   /** `pushHullEngines` — the fleet's voices. */
   "audio",
