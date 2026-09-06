@@ -207,22 +207,64 @@ what stops it repeating**, in whole samples, because a one-second buffer at rate
 1 replays its whole pattern of pops every second. And **a config number that is
 not normalised is not a level** — a single-sample impulse leaves a bandpass at
 `alpha/(1+alpha)` of its height, so a stated 0.5 put the crackles 12 dB under
-the bed. **Two things carry a sound and both say so beside the LIGHT they already
-carry**: a scatter prop through `SCATTER_AMBIENCE` (beside `SCATTER_LIGHTS`)
-and a STRUCTURE through `Build.sound`, `Build.light`'s twin, rotated into the
-world by the same line — **what is drawn as burning is heard burning**. It is
-named by ID and never by reaching for the audio config: `AmbienceId` plus
-`MapBuilder`'s `AMBIENCE_KINDS`, a `Record` over the union so a second kind
-does not compile half-added, and the one place the world layer and
-`CONFIG.audio.ambience` meet. **A position is taken at BUILD time or not at
-all** — the merge takes the prop's mesh away, so there is nothing left at
-runtime to hang an emitter on.
+the bed. **THREE things carry a sound and two of them say so beside the LIGHT
+they already carry**: a scatter prop through `SCATTER_AMBIENCE` (beside
+`SCATTER_LIGHTS`), a STRUCTURE through `Build.sound`, `Build.light`'s twin,
+rotated into the world by the same line — **what is drawn as burning is heard
+burning** — and a `WaterRect`. It is named by ID and never by reaching for the
+audio config: `AmbienceId` plus `MapBuilder`'s `AMBIENCE_KINDS`, a `Record`
+over the union so a second kind does not compile half-added, and the one place
+the world layer and `CONFIG.audio.ambience` meet. **A position is taken at
+BUILD time or not at all** — the merge takes the prop's mesh away, so there is
+nothing left at runtime to hang an emitter on.
+
+**WATER IS THE FIRE'S SPECTRUM TURNED INSIDE OUT, and the second reference
+recording is what proved the graph general.** A fire is two humps with a
+fifteen-decibel hole at 500 Hz–1 kHz; running water is ONE hump sitting exactly
+in that hole (1 kHz -2.9 dB against the fire's -17.9), so the two ambiences in
+this game occupy complementary octaves and a brazier on a quay cannot mask the
+sea beside it. Four rules generalise. **41.6% of that recording's power is
+below 20 Hz and none of it is water** — a mic in the open air — so octave
+figures are normalised over the AUDIBLE band and the subsonic is deliberately
+not reproduced, which is the fire's own "4 dB under the roar" departure made
+again. **A second KIND is a row and a second HUMP is a row too**: the bed is
+`AmbienceKind.bands` now, because a brook's high shelf cannot be carried on
+event rows (an impulse train dense enough to read as a bed is no longer
+impulses — measured, the top three octaves came in 4 to 8 dB under a fit whose
+arithmetic said they were right) and its skirts are asymmetric, which a single
+biquad cannot be at any Q (`stages` fits at 0.88 / 0.31 / 0.27 dB rms for one,
+two, three). **Water INVERTS the fire's headline finding**: a fire's mid-high
+energy is EVENTS and water's is BED — 9.3 dB of event over bed at a crest of
+17.4 against 14.7 at 23.5 — and carrying it the fire's way renders a brook that
+ticks. And **the SHORE is derived rather than fitted and says so**: there is
+one water master and it is running water, so still water is that spectrum moved
+down 0.85 of an octave (Minnaert: a wave entrains bigger air than a brook) plus
+a SWASH, which is `breathHz` at 0.28 and the two breath depths within a third
+of each other where a fire's differ by 3.4x — **how far apart a kind's breath
+depths are is itself a claim about the sound.**
+
+**AND A LAKE MAKES NO NOISE IN THE MIDDLE OF ITSELF**, so a `WaterRect` names
+WHAT it sounds like and never where. `MapBuilder.waterAmbience` marches the
+FLOOR for the waterline — `docs/world.md`'s "a waterfront is derived from the
+floor" one subsystem over — and three rules hold it up, each found by getting
+it wrong: FLOODED is asked of the whole rect LIST (asked of the terrain alone a
+pool on flat moor has no edge at all; asked of one rect's bounds the seam
+between two rects of one sea reads as a shore), nothing past the play square
+plus its borderland is a shore, and **a BODY of water is a connected group of
+rects rather than a rect** — a sea is partitioned for bed textures and probes,
+not because it is eight seas, and left as eight it is RANKED as eight.
+`AmbienceSystem`'s emitter is then a RUN of points that scores itself on the
+nearest one: **a fire is a place and a shore is a line.** `WaterRect.sound` is
+the one optional field on a layout whose default is not "unaffected" — absent
+means `shore`, because silent water is a bug — and it is declared rather than
+derived because FLOW IS NOT A SHAPE.
 
 → **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
 binds, why one ambient loop costs ten times the whole sampled gun kit and what
-that rule bought instead (the ranking, the emitter's index, the fire's three
-layers, the gate's rendered pops-per-second and the loop point only a render
-found), the
+that rule bought instead (the ranking and what the maps now measure against it,
+the emitter's index, the fire's layers, the gate's rendered pops-per-second and
+the loop point only a render found), both water fits and the tables behind
+them, what the waterline derivation costs on the biggest map, the
 mono/round-robin/transient rules, the manifest and its two gates, the master
 conventions, the container measurements, the INPUT seek that shipped as an
 output one and silently ate the tail of every row with a lead, and the rifle's,

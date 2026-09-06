@@ -57,7 +57,7 @@ import { bakeVertexShading } from "./vertexShading";
 import { begin as beginProfile, record, since } from "./buildProfile";
 import type { LightingSystem } from "../systems/LightingSystem";
 import type { AmbienceSystem } from "../systems/AmbienceSystem";
-import type { AmbienceId, AmbienceKind } from "../core/Sfx";
+import type { AmbienceId, AmbienceKind, WaterAmbienceId } from "../core/Sfx";
 import { BUILDERS, type BoxSpec, type Structure } from "./BuildingKit";
 import type { EnvironmentSpec } from "./environment";
 import { floorMaterial } from "./floorSurfaces";
@@ -77,7 +77,7 @@ import {
 } from "./boxIndex";
 import { ridgeSegments } from "./Ridge";
 import { onRoad, type RoadRect, roadRects, roadTopAt } from "./roads";
-import { TerrainField, terrainPatches } from "./TerrainField";
+import { TerrainField, terrainPatches, waterY } from "./TerrainField";
 import { NavGrid } from "./NavGrid";
 import { RayWorld } from "./RayWorld";
 import { CollisionField } from "./CollisionField";
@@ -177,6 +177,25 @@ export interface WaterRect {
   depth: number;
   /** Surface height; defaults to CONFIG.water.surfaceY. */
   y?: number;
+  /**
+   * What it SOUNDS like, and the third thing in the game to carry a sound by
+   * ID beside `Build.sound` and `SCATTER_AMBIENCE`.
+   *
+   * **Defaults to `"shore"`, which is the one place in this interface a
+   * default is not "unaffected".** Every other optional field on a layout
+   * means a map that says nothing gets what it always had; here that would
+   * mean silence, and silent water is a bug rather than a neutral choice. A
+   * map states `"stream"` for water that RUNS — Hollowmere's creek, a mill
+   * race — because that is the half of the distinction geometry cannot make:
+   * the creek is 6.6 m wide and Sarab's birkat is 54, but the wadi's pools are
+   * 75 m of standing water and a mountain beck would be narrower than either.
+   * Flow is not a shape.
+   *
+   * Where it is HEARD is not stated here at all and could not usefully be:
+   * see `MapBuilder.waterEmitters`, which marches the finished floor to find
+   * where this rect actually meets the land.
+   */
+  sound?: WaterAmbienceId;
 }
 
 /**
@@ -613,6 +632,8 @@ const SCATTER_AMBIENCE: Partial<
  */
 const AMBIENCE_KINDS: Record<AmbienceId, AmbienceKind> = {
   fire: CONFIG.audio.ambience.fire,
+  stream: CONFIG.audio.ambience.stream,
+  shore: CONFIG.audio.ambience.shore,
 };
 
 /** One scatter prop's measured body. See `PROP_BODIES`. */
@@ -1216,6 +1237,14 @@ export class MapBuilder {
     );
     this.pendingCluster = [];
 
+    // What the water sounds like, and where from. Off the FLOOR rather than
+    // off the rect, and after everything else because it consumes no RNG and
+    // touches nothing — see `waterAmbience`. The reach handed to it is all the
+    // ground there is: the play square plus whatever borderland continues it.
+    record("waterAmbience", () =>
+      this.waterAmbience(layout.water ?? [], terrain, size / 2 + terrain.margin),
+    );
+
     // One more merge across neighbouring structures — see BlockMerge. This is
     // the ONE merge that paletteises, which is also what exempts the editor for
     // free: an editor build files its meshes on the item instead and never
@@ -1514,6 +1543,145 @@ export class MapBuilder {
    * longer than the 78 m fog wall into a few rectangles rather than authoring
    * one that spans the map.
    */
+  /**
+   * Registers what every body of water on the map sounds like, and WHERE FROM.
+   *
+   * **A lake makes no noise in the middle of itself.** What is audible is its
+   * edge, so an emitter at a rect's centre is wrong in a way that gets worse
+   * the bigger the rect is: Cinderhaven's bay rect is 1,380 m across and its
+   * centre is four hundred metres of open water from any beach, while the rect
+   * CONTAINS the island, so a listener standing in the middle of the town
+   * would be at zero distance from it. Both failures are the same failure — a
+   * `WaterRect` is an EXTENT and the edge is not in it anywhere.
+   *
+   * **So the waterline is derived from the FLOOR, which is the rule
+   * Cinderhaven's own generator already runs on** (`docs/world.md`: a
+   * waterfront is derived from the floor rather than authored against it).
+   * Each rect is marched on a `CONFIG.audio.ambience.shorelineStep` grid, and
+   * a flooded cell with an unflooded four-neighbour is a point on the line.
+   * The consequences all fall out rather than being coded: a 6.6 m creek is
+   * waterline along its whole length because every cell of it is within a step
+   * of a bank, a basin dug in flat ground gives its rim, and a sheet laid on
+   * flat moor gives the rectangle it actually stops at.
+   *
+   * **FLOODED IS ASKED OF THE WHOLE LIST AND NOT OF ONE RECT, and both halves
+   * of that were found by getting it wrong.** Asked of the terrain alone, a
+   * pool whose surrounding moor lies below its own surface has no edge
+   * anywhere and falls silent — Hollowmere's mire did. Asked of one rect's
+   * bounds, the SEAM between two rects of one sea reads as a shore, and
+   * Cinderhaven's water is a pinwheel of eight whose inner four meet in open
+   * water. Water is the UNION of the rects, and its edge is where that union
+   * ends — whether because the bed rises out of it or because the sheet
+   * simply stops.
+   *
+   * **And past the floor there is no edge, only the end of the world.** Beyond
+   * `reach` — the play square plus its borderland, which is all the ground
+   * there is — an unflooded neighbour is not a shore, it is a query
+   * `TerrainField` answered by clamping. Without that rule Cinderhaven's outer
+   * ring of ocean, which exists only to put a horizon past the fog, would
+   * contribute some 1,300 points of waterline at 2,300 m from anything that
+   * can hear, to be scanned every frame for the life of the map.
+   *
+   * **A BODY of water is one emitter, and a body is a CONNECTED GROUP of
+   * rects rather than a rect.** How water is drawn and what it is are
+   * different questions: Cinderhaven's sea is eight rects because a rect's bed
+   * map is 512 texels a side however big it is and because each one stands a
+   * reflection probe, and none of that makes it eight seas. Left as eight it
+   * would also spend the budget as eight — two or three of them win the
+   * ranking together anywhere near the island's west coast, where their edges
+   * meet, and a brazier on the quay behind you loses its slot to a second copy
+   * of the same water. Rects are joined when they touch AND agree about what
+   * they sound like, so a mill race running into a pond stays two things you
+   * can hear at once while a partitioned sea is one.
+   *
+   * A point sits at the water's SURFACE rather than on the bed, because that
+   * is where the noise is made: a wadi pool six metres down is heard from six
+   * metres down.
+   *
+   * It runs after everything else in `build`, takes no RNG and writes nothing
+   * but the registry, so it cannot move a prop or a collider by existing —
+   * which is what keeps it out of `npm run collision`'s business.
+   */
+  private waterAmbience(
+    rects: readonly WaterRect[],
+    terrain: TerrainField,
+    reach: number,
+  ): void {
+    const step = CONFIG.audio.ambience.shorelineStep;
+    // Each rect's surface height, resolved once: `waterY` is a `heightAt` and
+    // the predicate below runs five times per sampled cell.
+    const surfaces = rects.map((r) => waterY(r, terrain));
+    const flooded = (x: number, z: number): boolean => {
+      if (Math.abs(x) > reach || Math.abs(z) > reach) return true;
+      for (let i = 0; i < rects.length; i++) {
+        const o = rects[i];
+        if (Math.abs(x - o.x) > o.width / 2) continue;
+        if (Math.abs(z - o.z) > o.depth / 2) continue;
+        if (terrain.heightAt(x, z) < surfaces[i]) return true;
+      }
+      return false;
+    };
+    // Which body each rect belongs to, by union-find over "touches, and
+    // agrees about what it sounds like". `step` of slack because Cinderhaven's
+    // rects abut exactly and a float comparison on a shared edge is a coin
+    // toss.
+    const body = rects.map((_, i) => i);
+    const find = (i: number): number => {
+      while (body[i] !== i) i = body[i] = body[body[i]];
+      return i;
+    };
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const a = rects[i];
+        const b = rects[j];
+        if ((a.sound ?? "shore") !== (b.sound ?? "shore")) continue;
+        if (Math.abs(a.x - b.x) > (a.width + b.width) / 2 + step) continue;
+        if (Math.abs(a.z - b.z) > (a.depth + b.depth) / 2 + step) continue;
+        const ra = find(i);
+        const rb = find(j);
+        if (ra !== rb) body[rb] = ra;
+      }
+    }
+
+    const lines = new Map<number, number[]>();
+    for (let k = 0; k < rects.length; k++) {
+      const r = rects[k];
+      const surface = surfaces[k];
+      const root = find(k);
+      let line = lines.get(root);
+      if (!line) lines.set(root, (line = []));
+      // Cell CENTRES, so a rect narrower than one step still gets its middle
+      // line sampled rather than nothing — Hollowmere's creek is 6.6 m wide.
+      const nx = Math.max(1, Math.round(r.width / step));
+      const nz = Math.max(1, Math.round(r.depth / step));
+      for (let i = 0; i < nx; i++) {
+        const x = r.x - r.width / 2 + ((i + 0.5) * r.width) / nx;
+        if (Math.abs(x) > reach) continue;
+        for (let j = 0; j < nz; j++) {
+          const z = r.z - r.depth / 2 + ((j + 0.5) * r.depth) / nz;
+          if (Math.abs(z) > reach) continue;
+          if (terrain.heightAt(x, z) >= surface) continue;
+          if (
+            flooded(x - step, z) &&
+            flooded(x + step, z) &&
+            flooded(x, z - step) &&
+            flooded(x, z + step)
+          ) {
+            continue;
+          }
+          line.push(x, surface, z);
+        }
+      }
+    }
+    // In the layout's own order, so an emitter's INDEX — which is the key
+    // `Sfx` holds a graph on — is a property of the file rather than of a Map's
+    // iteration.
+    for (let k = 0; k < rects.length; k++) {
+      if (find(k) !== k) continue;
+      this.ambience.addRun(lines.get(k) ?? [], AMBIENCE_KINDS[rects[k].sound ?? "shore"]);
+    }
+  }
+
   private scatterRegion(
     spec: ScatterSpec,
     terrain: TerrainField,

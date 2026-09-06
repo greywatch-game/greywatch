@@ -167,10 +167,14 @@ src/
                         #   SUSTAINED voice hang off the same rules and neither
                         #   is ever recorded: an engine (buildEngine, two
                         #   powerplants) and a place that makes a noise on its
-                        #   own (buildAmbience: a roar, a sizzle, a breath and
-                        #   one impulse-excited resonator per crackle row —
-                        #   nothing scheduled, and FITTED to a recording rather
-                        #   than tuned; docs/audio.md has the table)
+                        #   own (buildAmbience: a roar, a LIST of humps, a
+                        #   breath and one impulse-excited resonator per event
+                        #   row — nothing scheduled, THREE kinds and no branch,
+                        #   and each FITTED to a recording rather than tuned.
+                        #   A fire is one hump with the events carrying the
+                        #   top; water is two humps in the octaves the fire
+                        #   leaves empty, with the events a garnish.
+                        #   docs/audio.md has both tables)
     samples.ts          # The recorded sounds: an id union and a url table,
                         #   nothing else. A weapon names a report row through
                         #   ReportVoice.sample, and so do all three hulls'
@@ -436,9 +440,11 @@ src/
                         #   registry MapBuilder fills, and the nearest-first
                         #   ranking that spends CONFIG.audio.ambience.maxVoices
                         #   on it. LightingSystem's problem in a different
-                        #   currency. An emitter's INDEX is the key Sfx holds a
-                        #   graph on, so add() only appends and clear() is the
-                        #   only thing that renumbers
+                        #   currency. An emitter is a PLACE or a RUN of them
+                        #   scored on whichever is nearest — a fire is a point
+                        #   and a shore is a line — and its INDEX is the key
+                        #   Sfx holds a graph on, so add()/addRun() only append
+                        #   and clear() is the only thing that renumbers
     ShadowSystem.ts     # Moon shadow map (stepped) + blob shadows
     ReflectionSystem.ts # The world as glass sees it: one cube per GLAZED
                         #   BLOCK, baked from the map's own geometry per

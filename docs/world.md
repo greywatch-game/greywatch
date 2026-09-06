@@ -605,6 +605,24 @@ S7 for the measurement and `src/world/maps.ts` for the shape.
   drawn as large as is convenient, since the bed decides what is water; and
   **anything that reshapes the bed owes a water rebuild**, which `installMap` already
   does — the map dies with the terrain it was baked against.
+- **…and it is not a shore for the EAR either, which is the one place a rect
+  states what it is without stating where it is.** `WaterRect.sound` names an
+  ambience (`"stream"` for water that runs, defaulting to `"shore"`), and
+  `MapBuilder.waterAmbience` derives the waterline from the FLOOR exactly as
+  `bakeDepth` derives the shoreline from it — same reason, one subsystem over.
+  Three rules fall out of that and each was found by getting it wrong: FLOODED
+  is asked of the whole rect list, or a pool on flat moor has no edge and a
+  seam between two rects of one sea reads as one; nothing past the play square
+  plus its borderland is a shore, because there is no floor out there to have
+  an edge against; and **a BODY of water is a connected group of rects rather
+  than a rect** — the partition above is how a sea is DRAWN and has nothing to
+  do with how many things are in it, so touching rects that agree what they
+  sound like are heard as one. `docs/audio.md` carries the measurements.
+  **`sound` is the only optional field on a layout whose default is not
+  "unaffected"**: absent means `shore`, because silent water is a bug rather
+  than a neutral choice, and which of the two a body is cannot be read off its
+  shape — Hollowmere's creek is 6.6 m wide and Sarab's wadi pools are 75 m of
+  standing water.
 - **A rect may be drawn as large as is convenient and its RECTS MAY NOT
   OVERLAP, and the second half is the reflection probe rather than the
   drawing.** Two coplanar planes at one height are a per-pixel tie whose winner

@@ -542,7 +542,11 @@ const vehicles: VehicleSpawnDef[] = [
  * the only ways across.
  */
 const water: WaterRect[] = [
-  { x: 0, z: 57, width: 404, depth: 100, y: -0.3 },
+  // A rect this wide is mostly dry bank, which is the whole construction —
+  // and it is what makes the sound work too, because the emitter is derived
+  // from where the floor actually crosses -0.3 rather than from these four
+  // numbers. `MapBuilder.waterEmitters`.
+  { x: 0, z: 57, width: 404, depth: 100, y: -0.3, sound: "stream" },
 ];
 
 /**

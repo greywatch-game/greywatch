@@ -506,7 +506,10 @@ const water: WaterRect[] = [
   // The creek: fills the sunken lane between the two embankments, running
   // under both footbridges and the mill's waterwheel. A touch wider than the
   // lane so the edges tuck under the retaining walls instead of showing a seam.
-  { x: -85, z: -10, width: 6.6, depth: 76, y: -0.246 },
+  // It RUNS, which is why it is the one body on this map that says so: it
+  // comes down the lane and turns a waterwheel. The bog and the mire below
+  // take the default and are heard at their edges. See `WaterRect.sound`.
+  { x: -85, z: -10, width: 6.6, depth: 76, y: -0.246, sound: "stream" },
   // The bog: the pool the boathouse and jetties stand in. Stops short of the
   // boathouse ramp foot in the north and the Redline road in the east.
   { x: 37, z: -95, width: 55, depth: 50 },

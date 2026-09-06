@@ -38,14 +38,18 @@
  * sampled gun kit.
  * The AMBIENCE half is a place in the world that makes a noise on its own —
  * `ambience`/`ambienceOff`/`ambienceAllOff` over `buildAmbience`: a roar, a
- * sizzle, a breath and one impulse-excited resonator per crackle row, so
- * randomness costs no schedule. It was FITTED to a recording rather than
- * tuned — `docs/audio.md` carries the table and the three silent failures
- * the fit turned up. `systems/AmbienceSystem.ts` decides WHICH
- * emitters are worth a voice and this file decides what one sounds like. Its
- * one difference from the engines below is what a HELD world is owed: an
- * engine is driven by a load a lid freezes and owes silence, a fire is driven
- * by nothing and does not — see `ambienceAllOff`.
+ * LIST of humps, a breath and one impulse-excited resonator per event row, so
+ * randomness costs no schedule. Both halves are lists for the same reason and
+ * it is the reason there are three kinds and no branch: a fire is one hump
+ * over a roar with the events carrying the top, and running water is TWO
+ * humps with the events a garnish, so **a second hump is a second row**. Both
+ * were FITTED to recordings rather than tuned — `docs/audio.md` carries the
+ * tables, the three silent failures the fire's fit turned up and the fourth
+ * the water's did. `systems/AmbienceSystem.ts` decides WHICH emitters are
+ * worth a voice and this file decides what one sounds like. Its one
+ * difference from the engines below is what a HELD world is owed: an engine
+ * is driven by a load a lid freezes and owes silence, a fire is driven by
+ * nothing and does not — see `ambienceAllOff`.
  * The ENGINE half has two KINDS and one graph. The hull the player is
  * driving (`engineOn`/`engineDrive`/`engineOff`) is unpanned and uncapped for
  * the reason the player's own report is; every other occupied hull within
@@ -405,7 +409,23 @@ interface EngineVoice {
  * which is a `Record` over this union for the reason `WEAPON_BUILDERS` and
  * the optics table are: a second kind does not compile half-added.
  */
-export type AmbienceId = "fire";
+export type AmbienceId = "fire" | "stream" | "shore";
+
+/**
+ * The two ways a body of WATER is heard, and the reason there are two of them
+ * is that they are different sounds rather than the same sound louder.
+ *
+ * Running water is turbulence over a bed: a steady rush whose bubbles ring
+ * around a kilohertz, with a gurgle a few times a second and no bass at all.
+ * Still water is heard only where it meets the land, and what is heard there
+ * is the SWASH — a slow deep swell an octave lower, because a wave entrains
+ * bigger air than a brook does and a bubble's note is `3.26 / r`. `docs/audio.md`
+ * has both fits; `MapBuilder` is where a `WaterRect` names one.
+ *
+ * Derived from `AmbienceId` rather than declared beside it, so a member that
+ * is renamed there stops compiling here instead of quietly meaning nothing.
+ */
+export type WaterAmbienceId = Extract<AmbienceId, "stream" | "shore">;
 
 /**
  * What a place in the world sounds like — the ambience equivalent of
@@ -413,10 +433,19 @@ export type AmbienceId = "fire";
  * sounds like is a ROW, so a second kind is a second row and never a branch.
  *
  * The values live in `CONFIG.audio.ambience`, which is where every number in
- * the game lives; this is only their shape. A stream and a wind in a canopy
- * are the same three layers with the crackle gate wound shut — see
- * `Sfx.buildAmbience`, which is one method for the same reason `buildEngine`
- * is one method for a diesel and a turbine.
+ * the game lives; this is only their shape. Three kinds are built out of it
+ * and no branch anywhere tells them apart — see `Sfx.buildAmbience`, which is
+ * one method for the same reason `buildEngine` is one method for a diesel and
+ * a turbine.
+ *
+ * **The BED is a list and the EVENTS are a list, and between them that is the
+ * whole of the difference between a fire and running water.** A fire is a low
+ * roar, ONE broad hump up top, and crackles carrying most of the mid-high
+ * energy; a brook is TWO humps with only a garnish of gurgle over them.
+ * Trying to build a brook's second hump out of event rows is what proved the
+ * split necessary rather than tidy: an impulse train dense enough to read as
+ * a bed stops being impulses, and measured, the top three octaves came in
+ * 4 to 8 dB under a fit that had them right on paper (`docs/audio.md`).
  */
 export interface AmbienceKind {
   /** Metres: past this the graph is not built. */
@@ -427,23 +456,64 @@ export interface AmbienceKind {
   rolloff: number;
   /** Level at the plateau. */
   level: number;
-  /** The low hump: lowpass corner in Hz, and its share of the mix. */
+  /**
+   * The BOTTOM, and the one bed term that is not a hump: a lowpass corner in
+   * Hz and its share. It is flat to DC, which no bandpass is, and that is
+   * what it is for — the fire's column of air and the shore's surf rumble.
+   */
   roarHz: number;
   roarLevel: number;
-  /** The high hump: centre, width and share. Nothing fills the gap between. */
-  sizzleHz: number;
-  sizzleQ: number;
-  sizzleLevel: number;
-  /** The slow swell, deeper on the sizzle than on the roar. */
+  /**
+   * The humps, as a LIST. One is a fire, two is running water, and the gaps
+   * between them are left by the filters rather than authored.
+   */
+  bands: readonly BandSpec[];
+  /**
+   * The slow swell. `breathHz` is how FAST it wanders and `breathRate` only
+   * how long it takes to repeat — see `CONFIG.audio.ambience`, where the two
+   * are pulled apart, and note that the shore spends them on the wave itself.
+   */
   breathRate: number;
   breathHz: number;
-  breathDepth: number;
+  /** How deeply the breath swings the bottom. Each hump carries its own. */
   breathRoarDepth: number;
   /**
-   * The events, as a LIST — empty is a wind or a stream, and a third kind of
-   * crackle is a third row rather than a branch in `buildAmbience`.
+   * The events, as a LIST — empty is a wind in a canopy, and a further kind
+   * of crackle, gurgle or plop is a further row rather than a branch in
+   * `buildAmbience`.
    */
   sparks: readonly SparkSpec[];
+}
+
+/**
+ * One hump in the bed: a bandpass on the shared noise, and how much of it.
+ *
+ * `stages` is how many of that bandpass are put in SERIES, and it buys skirt
+ * steepness rather than narrowness — which is a thing a single biquad cannot
+ * trade for. A brook's spectrum falls about 18 dB an octave below 500 Hz and
+ * only 7 above 2 kHz, and fitted against the recording at third-octave
+ * resolution one stage lands 0.88 dB rms out, two 0.31 and three 0.27: two is
+ * the knee, and the ripple the single stage leaves is a Q of 2.9 poking a
+ * tone through the middle of the plateau. Raising Q instead does not help —
+ * a one-pole skirt is 6 dB an octave however sharp its peak.
+ *
+ * `breath` is this hump's own share of the swell, normalised the way
+ * `SparkSpec.level` is, so it means a depth rather than a magic number. Two
+ * humps do not surge alike: a fire's draught moves the small stuff and the
+ * column barely notices (1.1 against 0.32), where a wave moves the whole body
+ * of water at once and the shore's two are within a third of each other.
+ */
+export interface BandSpec {
+  /** Centre, in Hz. */
+  hz: number;
+  /** Width. Under 1 is broader than an octave. */
+  q: number;
+  /** How many of that bandpass in series. See above: this is SKIRT, not width. */
+  stages: number;
+  /** Share of the mix, and the floor the breath swings about. */
+  level: number;
+  /** This hump's share of the breath, as a fraction of its own level. */
+  breath: number;
 }
 
 /**
@@ -2540,7 +2610,7 @@ export class Sfx {
    * looping, which is the audio clock's business rather than the frame's, and
    * they stop with that clock like everything else.
    *
-   * **A fire is a low ROAR, a high SIZZLE, and EVENTS — with a hole in the
+   * **A fire is a low ROAR, a high hump, and EVENTS — with a hole in the
    * middle.** That last part is measured rather than designed: the reference
    * recording's octave bands run 63 Hz -4.1 dB, 125 -5.2, 250 -10.2, then
    * **500 -21.2 and 1k -19.5**, then back up to 4k -11.8 and 8k -11.5. Two
@@ -2549,14 +2619,21 @@ export class Sfx {
    * bandpass whose skirt starts an octave and a half above it leave it there
    * for free.
    *
-   * | layer | what it is for |
-   * | --- | --- |
-   * | roar — lowpassed noise | the column of air the drum is moving |
-   * | sizzle — the SAME noise, a broad hump up top | sap, ash and small stuff |
-   * | breath — a slow modulator on the sizzle alone | a fire is not steady |
-   * | sparks — impulses ringing resonators | the crackles |
+   * **AND RUNNING WATER IS EXACTLY THAT HOLE.** The water reference peaks at
+   * 1 kHz — dead centre of the two octaves the fire has almost nothing in —
+   * and falls away hard on both sides, which is why the second kind built out
+   * of this method needed no term the first did not have and needed its terms
+   * pointed somewhere else entirely. It is also why a burning drum on a
+   * quayside does not mask the sea beside it.
    *
-   * **The roar and the sizzle are one source read through two filters**,
+   * | layer | a fire | water |
+   * | --- | --- | --- |
+   * | roar — lowpassed noise | the column of air the drum is moving | the shore's surf rumble; a brook has none |
+   * | bands — the SAME noise through humps | one: sap, ash and small stuff | two: the rush, and the spray over it |
+   * | breath — a slow modulator on all of them | a fire is not steady | the WAVE, on a shore |
+   * | sparks — impulses ringing resonators | the crackles | the gurgles and plops |
+   *
+   * **The roar and every hump are one source read through several filters**,
    * which is where a source was saved: noise is broadband, so a second
    * buffer player buys two filters' worth of independence and nothing an ear
    * can find. The BREATH is a source of its own for the opposite reason —
@@ -2564,6 +2641,17 @@ export class Sfx {
    * one-second buffer read at 0.33 repeats every three seconds, and a
    * three-second breathing pattern is exactly the kind of thing an ear
    * catches.
+   *
+   * **A HUMP IS A ROW, AND THAT IS NOT TIDINESS — IT IS THE ONE THING THE
+   * EVENT ROWS CANNOT STAND IN FOR.** The first fit of the brook tried to
+   * carry its 2.5–16 kHz shelf on dense spark rows, which is the fire's own
+   * lesson applied in the wrong direction. It does not work and it cannot:
+   * an impulse train dense enough to read as a bed is no longer isolated
+   * impulses, the threshold that selects them widens into clusters, and the
+   * source those clusters are cut from is band-limited by its own playback
+   * rate. Measured, the top three octaves came in 4 to 8 dB under a fit whose
+   * arithmetic said they were right. The fix was a second `BandSpec`, and it
+   * took the brook's third-octave error from 2.9 dB rms to 1.1.
    *
    * **A CRACKLE IS AN IMPULSE RINGING A RESONATOR**, and that is the whole
    * of what makes this sound like a fire rather than like a firefight two
@@ -2589,9 +2677,14 @@ export class Sfx {
    * the gunfire read.** Two chains at different playback rates read
    * different slices of the buffer, so their events neither coincide nor
    * share a timbre. A third is a third row in `CONFIG.audio.ambience.fire`
-   * and no code here at all — and a kind with an empty list is a wind or a
-   * stream, which is `EngineKind.rotor`'s bargain made again: what a thing
-   * sounds like is a row, never a branch.
+   * and no code here at all — and a kind with an empty list is a wind in a
+   * canopy, which is `EngineKind.rotor`'s bargain made again: what a thing
+   * sounds like is a row, never a branch. **A gurgle is the same mechanism
+   * spent on a different physics**: a bubble in water is a resonator struck
+   * once and left to ring, exactly as a snapping fibre is, so the brook's
+   * rows differ from the fire's in nothing but where they ring and how often
+   * — 560 Hz at Q 14 for a plop, which is an 18 ms ringdown and about what
+   * the Minnaert relation gives for a bubble that size.
    *
    * It comes up SILENT — `ambience` fades it in, for the reason stated there.
    */
@@ -2623,32 +2716,47 @@ export class Sfx {
       roarLevel.gain.value = kind.roarLevel;
       base.connect(roarTone).connect(roarLevel).connect(out);
 
-      // The sizzle gets a source of ITS OWN, read at full speed, and the
+      // The humps get a source of THEIR OWN, read at full speed, and the
       // reason is bandwidth rather than decorrelation: a buffer played at
       // 0.33 has no content above a third of Nyquist, so the roar's source
       // is silent over about 8 kHz. Measured, that put the 16 kHz octave
-      // 11.4 dB under where the reference has it — a fire with the top cut
-      // off it, which is most of the difference between sizzling and
+      // 11.4 dB under where the fire reference has it — a fire with the top
+      // cut off it, which is most of the difference between sizzling and
       // rushing. It loops every second and nothing can hear that, because
-      // what is left after this bandpass is noise.
-      const sizzleSrc = ctx.createBufferSource();
-      sizzleSrc.buffer = this.noiseBuffer;
-      sizzleSrc.loop = true;
-      sizzleSrc.playbackRate.value = 1;
-      const sizzleTone = ctx.createBiquadFilter();
-      sizzleTone.type = "bandpass";
-      sizzleTone.frequency.value = kind.sizzleHz;
-      sizzleTone.Q.value = kind.sizzleQ;
-      // DRIVEN, and the base value is the floor rather than the level: an
-      // AudioParam sums its scheduled value with whatever is connected to
-      // it, so the breath below swings this about `sizzleLevel` rather than
-      // scaling it.
-      const sizzleLevel = ctx.createGain();
-      sizzleLevel.gain.value = kind.sizzleLevel;
-      sizzleSrc.connect(sizzleTone).connect(sizzleLevel).connect(out);
+      // what is left after these bandpasses is noise.
+      //
+      // ONE source for every hump, for the reason the roar shares it: noise
+      // is broadband, so a second buffer player buys two filters' worth of
+      // independence and nothing an ear can find.
+      const bandSrc = ctx.createBufferSource();
+      bandSrc.buffer = this.noiseBuffer;
+      bandSrc.loop = true;
+      bandSrc.playbackRate.value = 1;
+      const bandLevels: GainNode[] = [];
+      for (const band of kind.bands) {
+        // In SERIES, and the count is the row's — see `BandSpec.stages`. Two
+        // of a wide bandpass is a steep-skirted plateau, which is what a
+        // brook's spectrum is and what no single biquad can be.
+        let tone: AudioNode = bandSrc;
+        for (let s = 0; s < band.stages; s++) {
+          const f = ctx.createBiquadFilter();
+          f.type = "bandpass";
+          f.frequency.value = band.hz;
+          f.Q.value = band.q;
+          tone = tone.connect(f);
+        }
+        // DRIVEN, and the base value is the floor rather than the level: an
+        // AudioParam sums its scheduled value with whatever is connected to
+        // it, so the breath below swings this about `band.level` rather than
+        // scaling it.
+        const level = ctx.createGain();
+        level.gain.value = band.level;
+        tone.connect(level).connect(out);
+        bandLevels.push(level);
+      }
 
-      // The breath: slow noise, lowpassed to a wander and spent on the
-      // sizzle alone. Its own source — see `breathRate`.
+      // The breath: slow noise, lowpassed to a wander and spent on the humps
+      // and the bottom together. Its own source — see `breathRate`.
       const breath = ctx.createBufferSource();
       breath.buffer = this.noiseBuffer;
       breath.loop = true;
@@ -2657,9 +2765,8 @@ export class Sfx {
       breathTone.type = "lowpass";
       breathTone.frequency.value = kind.breathHz;
       breathTone.Q.value = 0.5;
-      const breathDepth = ctx.createGain();
       // NORMALISED, like the sparks and for the same reason: a share of the
-      // level it swings, so `breathDepth` is a depth rather than a magic
+      // level it swings, so `BandSpec.breath` is a depth rather than a magic
       // number and moving `breathHz` or `breathRate` does not silently
       // retune the mix.
       //
@@ -2668,31 +2775,39 @@ export class Sfx {
       // 0.05, so the raw modulator arrives at ~0.023 RMS and a depth stated
       // as a plain multiplier swings the bed by about ONE PER CENT. That is
       // what shipped in the second cut of this graph and it is invisible in
-      // a listen and invisible in a diff: rendered, `breathDepth` 0.55 and
-      // 1.0 gave a bed breathing 1.51x and 1.50x, which is to say the term
-      // was doing nothing at all. Dividing the RMS back out makes the number
-      // mean what it says.
+      // a listen and invisible in a diff: rendered, the fire's hump depth at
+      // 0.55 and at 1.0 gave a bed breathing 1.51x and 1.50x, which is to say
+      // the term was doing nothing at all. Dividing the RMS back out makes the
+      // number mean what it says — and it is what lets the shore state a depth
+      // of 1.0 at a `breathHz` an octave and a half lower and get a swell.
       const breathRms =
         0.577 *
         Math.sqrt(
           ((kind.breathHz * Math.PI) / 2) /
             Math.max(1, (kind.breathRate * ctx.sampleRate) / 2),
         );
-      breathDepth.gain.value =
-        (kind.breathDepth * kind.sizzleLevel) / Math.max(1e-4, breathRms);
-      breath.connect(breathTone).connect(breathDepth).connect(sizzleLevel.gain);
-      // …and a SHALLOWER share of the same breath on the roar. One signal
-      // rather than two, because a fire's draught is one event: the flame and
-      // the column of air over it surge together. Two DEPTHS, because they do
-      // not surge by the same amount — the small stuff answers a gust and the
-      // column barely notices, and modulating both by the same fraction is
-      // what reads as somebody moving a volume knob rather than as weather.
+      breath.connect(breathTone);
+      kind.bands.forEach((band, i) => {
+        const depth = ctx.createGain();
+        depth.gain.value = (band.breath * band.level) / Math.max(1e-4, breathRms);
+        breathTone.connect(depth).connect(bandLevels[i].gain);
+      });
+      // …and a share of the SAME breath on the bottom. One signal rather than
+      // one per term, because a draught is one event: the flame and the
+      // column of air over it surge together, and so do a wave and the foam
+      // on it. A depth PER TERM, because they do not surge by the same
+      // amount, and moving them all by one fraction is what reads as somebody
+      // turning a volume knob rather than as weather. How far apart they are
+      // is itself a claim about the sound: a fire's differ by 3.4x, because
+      // its draught moves the small stuff and the column barely notices, and
+      // the shore's are within a third of each other, because a wave moves
+      // the whole body of water at once.
       const roarBreath = ctx.createGain();
       roarBreath.gain.value =
         (kind.breathRoarDepth * kind.roarLevel) / Math.max(1e-4, breathRms);
       breathTone.connect(roarBreath).connect(roarLevel.gain);
 
-      const sources: AudioScheduledSourceNode[] = [base, sizzleSrc, breath];
+      const sources: AudioScheduledSourceNode[] = [base, bandSrc, breath];
 
       // The crackles. One chain per row, and no row knows about any other.
       for (const spark of kind.sparks) {

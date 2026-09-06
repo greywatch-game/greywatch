@@ -234,13 +234,29 @@ export const audio = {
      */
     swapMargin: 2.5,
     /**
-     * The one kind so far.
+     * Metres between the points a body of water's WATERLINE is sampled at.
+     *
+     * An audio number rather than a world one, because what it decides is how
+     * closely one emitter can follow a shore — see `AmbienceSystem`, where a
+     * run of points is one emitter that moves rather than many that compete.
+     * At 6 m the nearest sampled point is at worst 3 m along the shore from
+     * the true one, which at any distance the sound is audible from is a
+     * fraction of a decibel; halving it doubles a coastline's per-frame cost
+     * for nothing. `MapBuilder.waterEmitters` is what spends it, once, at
+     * build time.
+     */
+    shorelineStep: 6,
+    /**
+     * A BURNING DRUM. The first of three kinds, and still the reference the
+     * other two were fitted against — they are its graph with its terms
+     * pointed somewhere else, and there is no branch between them anywhere.
      *
      * Held as a spec rather than as numbers in `Sfx` for the reason
      * `EngineKind` is: what a thing sounds like is a row, and a second kind
-     * should be a second row and never a branch. A stream and a wind in a
-     * canopy are this same three-layer graph with the crackle gate wound
-     * shut — see `Sfx.buildAmbience`.
+     * should be a second row and never a branch. What the water rows below
+     * then proved is where the LIMIT of that is — a second kind is a second
+     * row, but a second HUMP had to become a row of its own too, which is
+     * what `AmbienceKind.bands` is.
      */
     fire: {
       /**
@@ -318,9 +334,13 @@ export const audio = {
       roarHz: 150,
       roarLevel: 3.2,
       /**
-       * The sizzle: a BROAD hump, not a band — Q 0.35 is about two octaves
-       * either side of 5.2 kHz, which covers the reference's 2k/4k/8k
-       * plateau with one filter.
+       * The sizzle, and a fire is the one kind here that needs only ONE hump.
+       *
+       * A BROAD one, not a band — Q 0.35 is about two octaves either side of
+       * 5.2 kHz, which covers the reference's 2k/4k/8k plateau with one
+       * filter, and `stages: 1` because nothing about a fire's spectrum wants
+       * a steep skirt: what is below this is the hole, and the hole is the
+       * feature.
        *
        * **It is much quieter than the first fit made it, and the reason is
        * the most useful thing this exercise turned up.** Trying to match the
@@ -330,11 +350,11 @@ export const audio = {
        * fire most of the mid-high energy is not a bed at all, it is the
        * CRACKLES. Moving that energy out of this term and into `sparks`
        * fixes both numbers at once, and it is the difference between a fire
-       * and a hiss with ticks over it.
+       * and a hiss with ticks over it. **Water inverts that exactly**, which
+       * is why `stream` below spends most of its energy on `bands` and only
+       * a garnish on events.
        */
-      sizzleHz: 5200,
-      sizzleQ: 0.35,
-      sizzleLevel: 0.13,
+      bands: [{ hz: 5200, q: 0.35, stages: 1, level: 0.13, breath: 1.1 }],
       /**
        * THE BREATH. A real fire's bed is not steady — measured on the
        * reference, the 5 ms envelope's median is 2.49x its 10th percentile,
@@ -347,18 +367,29 @@ export const audio = {
        * the same trap `SparkSpec.loop` exists for. At 0.05 this cycles every
        * twenty seconds instead.
        *
-       * **Two depths, because one did not work.** Spent on the sizzle alone
-       * the whole mix would not move: rendered, taking `breathDepth` from
-       * 0.8 to 1.4 changed the bed's envelope ratio from 1.69 to 1.74. The
-       * roar carries most of the energy, so modulating only the sizzle
-       * cannot swing the sum however hard it is driven. They stay different
-       * numbers because they are different quantities — the small stuff
-       * answers a gust and the column of air barely notices, and moving both
-       * by the same fraction reads as somebody turning a volume knob.
+       * **`breathRate` and `breathHz` are not the same question and reading
+       * them as one is how a swell gets tuned by accident.** `breathHz` is
+       * how FAST the modulator wanders, and it is the only one that reaches
+       * the sound: the shore below sets it to 0.28 and swells every two and
+       * a half seconds, the brook to 1.8 and shimmers. `breathRate` is only
+       * how long the modulator takes to REPEAT — one second of buffer at
+       * 0.05 is twenty — and every kind here holds it there, because there
+       * is no reason for any of them to loop sooner and every reason not to.
+       *
+       * **A depth per term, because one did not work.** Spent on the sizzle
+       * alone the whole mix would not move: rendered, taking the fire's hump
+       * depth from 0.8 to 1.4 changed the bed's envelope ratio from 1.69 to
+       * 1.74. The roar carries most of the energy, so modulating only the
+       * hump cannot swing the sum however hard it is driven. They stay
+       * different numbers because they are different quantities — the small
+       * stuff answers a gust and the column of air barely notices, and
+       * moving both by the same fraction reads as somebody turning a volume
+       * knob. **How far apart they are is itself a claim about the sound**:
+       * the fire's differ by 3.4x, and the shore's below are within a third
+       * of each other, because a wave moves the whole body of water at once.
        */
       breathRate: 0.05,
       breathHz: 1.2,
-      breathDepth: 1.1,
       breathRoarDepth: 0.32,
 
       /**
@@ -411,6 +442,236 @@ export const audio = {
          * times a second on its own was a rifle two streets away.
          */
         { hz: 4, rate: 0.125, loop: 0.71, ringHz: 1900, ringQ: 5, level: 2.2 },
+      ],
+    },
+
+    /**
+     * RUNNING WATER, and the first thing its reference recording said is that
+     * it is the fire's spectrum turned inside out.
+     *
+     * A fire is two humps with a fifteen-decibel hole at 500 Hz–1 kHz. A brook
+     * measures **63 Hz -25.3 dB, 125 -33.2, 250 -28.1, 500 -10.5, 1k -2.9,
+     * 2k -5.3, 4k -12.9, 8k -15.4, 16k -16.9** — one hump, sitting exactly in
+     * that hole, with nothing at either end. So the two ambiences in this file
+     * occupy complementary octaves, a burning drum on a quay does not mask the
+     * water beside it, and the trap the fire's crackles fell into (a mid-band
+     * transient reads as a rifle two streets away) simply does not exist here,
+     * because for water that band is the whole point.
+     *
+     * **Those figures are normalised over the AUDIBLE band and that is not a
+     * detail.** 41.6% of the recording's power is below 20 Hz and none of it
+     * is water — it is a mic in the open air. Normalising against it puts
+     * every band 2.4 dB under where a fit has to land, and reproducing it
+     * would spend the whole emitter's headroom on a rumble no laptop speaker
+     * can make. `roarLevel` here is therefore nearly nothing, and it is the
+     * one place a brook and a shore genuinely disagree about the bottom.
+     *
+     * Rendered against the recording: **third-octave 1.15 dB rms from 198 Hz
+     * to 16 kHz** (worst +2.3 at 315 Hz), crest 18.3 dB against 17.4, the
+     * 5 ms envelope swelling 1.49x against 1.48, and 11.3 events a second
+     * standing 9.2 dB over the bed with 2.7 dB of spread, against 12.5 at
+     * 9.3 and 3.1.
+     */
+    stream: {
+      /**
+       * Metres. A brook is not a landmark either, but it carries further than
+       * a burning barrel and it is a LINE rather than a point — see `rolloff`.
+       */
+      range: 34,
+      /**
+       * The plateau. Bigger than the fire's 1.6 because the emitter stands
+       * in for a stretch of water rather than for an object: the nearest
+       * point of a waterline is never the whole of what you are hearing, so
+       * a plateau shorter than the run itself is a lie about where it is.
+       */
+      refDistance: 3,
+      /**
+       * **Deliberately under the physical 1, and for a different reason than
+       * the gunshot's 0.7 is.** That number is bent for READABILITY — a
+       * firefight has to stay legible across a valley. This one is bent
+       * because the source is the wrong SHAPE: a point source falls 6 dB a
+       * doubling and a line source falls 3, and what is behind this panner is
+       * a run of water some tens of metres long. 0.75 splits the difference
+       * and still has `range` about 21 dB down, which is under the wind.
+       */
+      rolloff: 0.75,
+      /**
+       * Renders 0.0201 rms and peaks 0.189, against the fire's 0.036 and
+       * 0.543 — and like the fire's, this is the one number here that is a
+       * MIX decision rather than a fit, because nothing can measure how loud
+       * a stream should be against a firefight.
+       *
+       * It is set about 5 dB under the fire in rms and 9 under it in peak,
+       * which is further under than a brook stands next to a burning barrel
+       * in life. Two reasons, both about this game rather than about water. A
+       * fire is a LANDMARK you notice and walk past; water is a bed that is
+       * there the whole time you are near it, and the ear integrates a steady
+       * bed far more readily than it does crackles. And a coastal map can put
+       * three water emitters inside the ranking at once, which is 4.8 dB on
+       * top of whatever one of them costs.
+       */
+      level: 0.4,
+      /**
+       * Barely anything, and that is the measurement rather than taste: a
+       * brook has NO BASS. Once the recording's subsonic rumble is taken out
+       * (see above) its 125 Hz octave sits 30 dB under its 1 kHz one. What
+       * this term is doing is putting a floor under the hump's low skirt, not
+       * giving the water a body — the body is the shore's, one row down.
+       */
+      roarHz: 175,
+      roarLevel: 0.0125,
+      /**
+       * **THE RUSH AND THE SPRAY**, and two rows rather than one is the whole
+       * reason `AmbienceKind.bands` is a list.
+       *
+       * The rush is `stages: 2` because a brook's spectrum is ASYMMETRIC —
+       * about 18 dB an octave below 500 Hz and only 7 above 2 kHz — and a
+       * single biquad's skirt is 6 dB an octave whatever its Q. Fitted at
+       * third-octave resolution, one stage lands 0.88 dB rms out, two 0.31
+       * and three 0.27: two is the knee, and what the single stage buys its
+       * accuracy with is a Q of 2.9 poking an audible tone through the middle
+       * of the plateau.
+       *
+       * The spray is one wide stage carrying 2.5–16 kHz, and it exists
+       * because the FIRST fit tried to carry that shelf on dense spark rows
+       * instead. That is the fire's own lesson applied backwards and it
+       * cannot work: an impulse train dense enough to read as a bed is no
+       * longer isolated impulses. Measured, the top three octaves came in 4
+       * to 8 dB under a fit whose arithmetic said they were right, and adding
+       * this row took the whole curve from 2.9 dB rms error to 1.1.
+       */
+      bands: [
+        { hz: 1090, q: 0.9, stages: 2, level: 0.4, breath: 0.21 },
+        { hz: 6000, q: 0.56, stages: 1, level: 0.037, breath: 0.18 },
+      ],
+      /**
+       * A brook is STEADY — the reference's 5 ms envelope swells only 1.49x
+       * against a fire's 2.48 — so the depths here are a quarter of the
+       * fire's and `breathHz` is set from the measured envelope, whose
+       * modulation spectrum peaks around 2 Hz with a long tail. This is a
+       * shimmer, not a swell; the swell is the shore's.
+       */
+      breathRate: 0.05,
+      breathHz: 1.8,
+      breathRoarDepth: 0.23,
+      /**
+       * **THE GURGLES, and they are the fire's crackles' mechanism spent on
+       * different physics.** A bubble in water is a resonator struck once and
+       * left to ring, exactly as a snapping fibre is, so these rows differ
+       * from the fire's in nothing but where they ring and how often. The
+       * ringdowns are Minnaert's: a bubble's note is about `3.26 / r`, so
+       * 560 Hz is a 6 mm bubble and its Q of 14 is an 18 ms ring.
+       *
+       * **They are a GARNISH here where the fire's are the main event**, and
+       * that inversion is the measurement: a fire's events stand 14.7 dB over
+       * its bed and water's only 9.3, at a crest of 17.4 dB against 23.5. So
+       * these carry a tenth of what the fire's rows do, and what would happen
+       * if they carried more is known — the first cut put the events 15.8 dB
+       * over the bed at a crest of 25.3, which is a brook that ticks.
+       */
+      sparks: [
+        /** The spatter: the fine, fast stuff breaking on the bed. */
+        { hz: 80, rate: 0.5, loop: 0.97, ringHz: 4350, ringQ: 4.8, level: 0.076 },
+        /** The chuckle: the audible one, and what says this is water and not rain. */
+        { hz: 23, rate: 0.25, loop: 0.89, ringHz: 2600, ringQ: 4.1, level: 0.21 },
+        /** The plop: rare, deep, and rung long — one big bubble letting go. */
+        { hz: 9, rate: 0.125, loop: 0.71, ringHz: 560, ringQ: 14, level: 0.072 },
+      ],
+    },
+
+    /**
+     * STILL WATER, heard where it meets the land — a lake's edge, a millpond,
+     * a harbour, an ocean.
+     *
+     * **It has no recording behind it and that is stated rather than hidden.**
+     * There is one water master in `reference-media/` and it is running water;
+     * everything here is DERIVED from it by an argument about bubbles, plus a
+     * time structure that is designed rather than measured. What the numbers
+     * are worth is exactly what that argument is worth, so here it is.
+     *
+     * **The spectrum is the brook's moved down 0.85 of an octave.** A bubble's
+     * note is `3.26 / r` (Minnaert), a brook entrains air around 3 mm across
+     * and a wave folding onto a shore entrains a great deal more, so the whole
+     * population shifts down together and the hump lands near 600 Hz. Fitted
+     * against that shifted curve the graph lands **1.56 dB rms from 198 Hz
+     * up**, and the two departures are named: +3.9 dB at 198 Hz, which is the
+     * surf rumble below, and -3.1 at 6.35 kHz.
+     *
+     * **The time structure is where it actually differs, and it is the SWASH.**
+     * A brook is steady; a shore arrives. So `breathHz` drops to 0.28 — a
+     * swell every two and a half seconds — the depths go up threefold, and
+     * the two of them come within a third of each other, because a wave moves
+     * the whole body of water at once where a fire's draught moves the small
+     * stuff and the column barely notices. Rendered: crest 20.4 dB against
+     * the brook's 18.3, the 5 ms envelope swelling 2.54x against 1.49, and
+     * the modulation spectrum peaking at 0.39 Hz against 0.78.
+     *
+     * **And unlike the brook it has a BOTTOM.** `roarLevel` is 2.4x the
+     * stream's, because a wave is a mass of water moving and a brook is only
+     * its own surface — which is the one thing in this pair that is a claim
+     * about mechanics rather than about bubbles.
+     */
+    shore: {
+      /**
+       * Further than the brook's, because there is more of it: a harbour or a
+       * lake edge is a line hundreds of metres long, and `AmbienceSystem` is
+       * standing one emitter in for the whole of it. Still well inside
+       * `maxDistance` (70) so a coast cannot crowd the ranking from inland.
+       */
+      range: 46,
+      /** The plateau — longer than the brook's for the same reason again. */
+      refDistance: 4,
+      /**
+       * Flatter than the brook's for the LINE-SOURCE reason given there, and
+       * flatter still because this line is longer. At `refDistance` 4 it puts
+       * `range` about 20 dB down.
+       */
+      rolloff: 0.7,
+      /**
+       * Renders 0.0205 rms and peaks 0.268 — the same bed loudness as the
+       * brook, with more peak, which is the swash arriving. A mix decision
+       * like the brook's and set beside it deliberately: nothing in the game
+       * should make a player think a lake is louder than a river.
+       */
+      level: 0.35,
+      /** The surf rumble. See the header: this is the half a brook has not got. */
+      roarHz: 95,
+      roarLevel: 0.03,
+      /**
+       * The swash and the foam over it. The same two-row shape as the brook's
+       * with both rows moved down — 600 Hz for the water folding over, 2250
+       * for the sheet of foam running up the shingle — and the foam's `breath`
+       * is nearly double the swash's, because between waves the foam is what
+       * actually stops.
+       */
+      bands: [
+        { hz: 600, q: 0.62, stages: 2, level: 0.46, breath: 0.63 },
+        { hz: 2250, q: 0.7, stages: 1, level: 0.054, breath: 1.0 },
+      ],
+      /**
+       * THE WAVE. `breathHz` is the whole of what makes this a shore rather
+       * than a quiet brook, and 0.28 is a swell every two and a half seconds.
+       * `breathRate` stays at the fire's 0.05 for the fire's reason — it is
+       * the LOOP, not the rate, and twenty seconds of it is long enough that
+       * nothing hears the pattern come round.
+       */
+      breathRate: 0.05,
+      breathHz: 0.28,
+      breathRoarDepth: 0.57,
+      /**
+       * Sparse and low, which is the other half of the difference. A brook
+       * gurgles continuously; a shore knocks now and then — a stone turning,
+       * a bubble under a jetty — and the fizz of the foam is carried by the
+       * band above rather than by a row here, because foam is continuous
+       * while a wave is on it.
+       */
+      sparks: [
+        /** The fizz that is discrete enough to be an event. */
+        { hz: 14, rate: 0.5, loop: 0.97, ringHz: 2200, ringQ: 5, level: 0.125 },
+        /** The knock: water folding on itself under the swash. */
+        { hz: 5, rate: 0.25, loop: 0.89, ringHz: 1150, ringQ: 4.1, level: 0.4 },
+        /** The deep one — the big slow bubble a lake makes and a brook cannot. */
+        { hz: 2, rate: 0.125, loop: 0.71, ringHz: 355, ringQ: 14, level: 0.14 },
       ],
     },
   },

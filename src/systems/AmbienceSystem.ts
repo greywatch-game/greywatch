@@ -5,10 +5,11 @@
  * Owns: the emitter registry a map fills at build time, and the per-frame
  * ranking that spends `CONFIG.audio.ambience.maxVoices` on it.
  * Invariants: an emitter's INDEX is its identity for the life of a map —
- * `Sfx` keys a held-open graph on it, so `add` may only ever append and
- * `clear` is the only thing that renumbers. update() is called in EVERY state
- * that renders, not only the ones that simulate (see `Sfx.ambienceAllOff` for
- * why this and the engines differ on that), and allocates nothing per frame.
+ * `Sfx` keys a held-open graph on it, so `add`/`addRun` may only ever append
+ * and `clear` is the only thing that renumbers. update() is called in EVERY
+ * state that renders, not only the ones that simulate (see `Sfx.ambienceAllOff`
+ * for why this and the engines differ on that), and allocates nothing per
+ * frame.
  * Never plays anything itself: what a fire SOUNDS like is `Sfx`'s, and how
  * many fires a map may hold is this file's.
  */
@@ -16,11 +17,18 @@ import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { AmbienceKind, Sfx } from "../core/Sfx";
 
-/** One place on the map that makes a noise, in world space. */
+/**
+ * One thing on the map that makes a noise: a slice of `points` (world-space
+ * x/y/z triples), and what it sounds like.
+ *
+ * **A fire is a PLACE and a shore is a RUN of them**, which is the one idea
+ * this file gained when water arrived. See `addRun`.
+ */
 interface Emitter {
-  x: number;
-  y: number;
-  z: number;
+  /** First triple, as an index into `points` (so `start * 3` is the x). */
+  start: number;
+  /** How many triples. One is an ordinary point emitter. */
+  count: number;
   kind: AmbienceKind;
 }
 
@@ -41,9 +49,34 @@ interface Emitter {
  * and you hold four graphs open, and a map that dressed a burning quarter
  * would quietly cost twenty. Ranking first and gating second means the ceiling
  * is stated here, once, and a layout can never raise it.
+ *
+ * **A BODY OF WATER IS ONE EMITTER THAT MOVES, and that is what stops a
+ * coastline eating the budget.** A fire is a point and a shore is a line, and
+ * the honest way to hear a line is from whichever part of it is nearest — so
+ * a water emitter carries its whole waterline as a run of points, scores
+ * itself on the nearest one, and hands `Sfx` that point. Laid out instead as
+ * one emitter per sampled point, Cinderhaven's bay alone would put several
+ * hundred candidates into a budget of three and win every slot on the map: a
+ * player standing at a brazier on the quay would hear no fire. As one emitter
+ * it competes with a drum on even terms, holds one graph rather than three,
+ * and is a better model of a diffuse line into the bargain.
+ *
+ * **The nearest point can JUMP, and the place it can is the one place that
+ * costs nothing.** Two points can only trade the lead where they are exactly
+ * equidistant, so the level is continuous across the swap and only the BEARING
+ * moves — which for a noise bed is what walking round a headland sounds like
+ * anyway. Everywhere else the nearest point slides, because the waterline is
+ * sampled every `shorelineStep` metres.
  */
 export class AmbienceSystem {
   private emitters: Emitter[] = [];
+  /**
+   * Every emitter's points, flat and shared. Flat because an emitter's
+   * position is read in the inner loop of a per-frame scan over a coastline
+   * that can run to hundreds of points, and an array of `Vector3` there is
+   * three pointer hops and a cache miss per candidate.
+   */
+  private points: number[] = [];
   /**
    * Which emitter indices currently hold a voice, `count` of them valid.
    *
@@ -59,13 +92,29 @@ export class AmbienceSystem {
   private count = 0;
 
   /**
-   * Registers an emitter for the current map. Called from `MapBuilder` beside
+   * Registers a PLACE that makes a noise. Called from `MapBuilder` beside
    * `LightingSystem.add`, and from nowhere else.
    *
    * Append-only within a map: see the header's rule about the index.
    */
   add(x: number, y: number, z: number, kind: AmbienceKind): void {
-    this.emitters.push({ x, y, z, kind });
+    this.emitters.push({ start: this.points.length / 3, count: 1, kind });
+    this.points.push(x, y, z);
+  }
+
+  /**
+   * Registers a RUN of places that are one thing making one noise — a
+   * waterline. `xyz` is flat triples and is copied, not kept.
+   *
+   * An empty run registers nothing rather than an emitter with nowhere to be:
+   * a `WaterRect` laid entirely over deep water has no shore in it, and
+   * Cinderhaven has four of those.
+   */
+  addRun(xyz: readonly number[], kind: AmbienceKind): void {
+    const count = Math.floor(xyz.length / 3);
+    if (count === 0) return;
+    this.emitters.push({ start: this.points.length / 3, count, kind });
+    for (let i = 0; i < count * 3; i++) this.points.push(xyz[i]);
   }
 
   /**
@@ -75,6 +124,7 @@ export class AmbienceSystem {
    */
   clear(): void {
     this.emitters.length = 0;
+    this.points.length = 0;
     this.count = 0;
     this.held.length = 0;
   }
@@ -92,6 +142,13 @@ export class AmbienceSystem {
    * The selection is an insertion into a `maxVoices`-long list rather than a
    * sort, because `maxVoices` is three and the emitter list is the map's: at
    * that ratio a full sort is both slower and an allocation.
+   *
+   * **The whole scan is in SQUARED metres and the root is taken once per
+   * emitter that survives the reach test**, which is what makes a coastline
+   * affordable: the inner loop over a run's points is three subtractions and
+   * three multiplies, and an emitter out of reach never pays for a root at
+   * all. It matters because this runs in every state that renders, menus
+   * included, on a map whose bay can hold several hundred sampled points.
    */
   update(listener: Vector3, sfx: Sfx): void {
     const cap = CONFIG.audio.ambience.maxVoices;
@@ -103,22 +160,27 @@ export class AmbienceSystem {
     let n = 0;
     const pick: number[] = this.pickBuf;
     const score: number[] = this.scoreBuf;
+    const at: number[] = this.atBuf;
+    const pts = this.points;
     for (let i = 0; i < this.emitters.length; i++) {
       const e = this.emitters[i];
-      const dx = e.x - listener.x;
-      const dy = e.y - listener.y;
-      const dz = e.z - listener.z;
-      let d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      // The incumbency bonus, and it is applied BEFORE the range test rather
-      // than only before the ranking — which is what makes `swapMargin` the
-      // one piece of hysteresis in the system instead of two that have to
-      // agree. An emitter already holding a voice is both harder to displace
-      // and kept until it is `range + margin` away; `Sfx.ambience`'s own 1.15
-      // gate is the general guard for any other caller and is deliberately
-      // wider than this, so it never fires first from here.
-      //
-      // Clamped at zero: an incumbent the listener is standing on must not
-      // score negatively and sort itself above something closer still.
+      // The nearest of this emitter's places, in squared metres. One place is
+      // the ordinary case and costs exactly what it always did.
+      let best = Infinity;
+      let bestP = e.start;
+      for (let p = e.start; p < e.start + e.count; p++) {
+        const dx = pts[p * 3] - listener.x;
+        const dy = pts[p * 3 + 1] - listener.y;
+        const dz = pts[p * 3 + 2] - listener.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < best) {
+          best = d2;
+          bestP = p;
+        }
+      }
+      // The reach test before the root: an incumbent is kept out to
+      // `range + margin` and everything else to `range`, which is exactly
+      // what the margin below would have decided anyway.
       let incumbent = false;
       for (let h = 0; h < prevCount; h++) {
         if (wasHeld[h] === i) {
@@ -126,8 +188,15 @@ export class AmbienceSystem {
           break;
         }
       }
+      const reach = e.kind.range + (incumbent ? margin : 0);
+      if (best > reach * reach) continue;
+      let d = Math.sqrt(best);
+      // The incumbency bonus itself. Clamped at zero: an incumbent the
+      // listener is standing on must not score negatively and sort itself
+      // above something closer still. `Sfx.ambience`'s own 1.15 gate is the
+      // general guard for any other caller and is deliberately wider than
+      // this, so it never fires first from here.
       if (incumbent) d = Math.max(0, d - margin);
-      if (d > e.kind.range) continue;
       // Insertion sort into the top-`cap`.
       let slot = n < cap ? n : cap;
       while (slot > 0 && score[slot - 1] > d) slot--;
@@ -135,9 +204,11 @@ export class AmbienceSystem {
       for (let j = Math.min(n, cap - 1); j > slot; j--) {
         pick[j] = pick[j - 1];
         score[j] = score[j - 1];
+        at[j] = at[j - 1];
       }
       pick[slot] = i;
       score[slot] = d;
+      at[slot] = bestP;
       if (n < cap) n++;
     }
 
@@ -158,11 +229,11 @@ export class AmbienceSystem {
 
     for (let j = 0; j < n; j++) {
       const i = pick[j];
-      const e = this.emitters[i];
-      this.at.x = e.x;
-      this.at.y = e.y;
-      this.at.z = e.z;
-      sfx.ambience(i, this.at, e.kind);
+      const p = at[j];
+      this.at.x = pts[p * 3];
+      this.at.y = pts[p * 3 + 1];
+      this.at.z = pts[p * 3 + 2];
+      sfx.ambience(i, this.at, this.emitters[i].kind);
       this.held[j] = i;
     }
     this.count = n;
@@ -171,6 +242,8 @@ export class AmbienceSystem {
   /** Selection scratch, sized once. See `held`. */
   private pickBuf: number[] = [];
   private scoreBuf: number[] = [];
+  /** Which of a winner's points won it — an index into `points`. */
+  private atBuf: number[] = [];
   /**
    * The position handed to `Sfx.ambience`, built once and rewritten. Every
    * world sound in `Sfx` takes a `Vector3`, and one per emitter per frame is

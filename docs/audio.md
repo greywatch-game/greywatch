@@ -213,11 +213,12 @@ off the table.
 costs no memory, and a held-open graph is not counted against
 `CONFIG.audio.maxVoices` for the same reason the engine's is not: that cap is
 about eighty gunshots a second competing for a scheduler, and a fire is not
-competing with anything. What a fire costs is three buffer sources, five
-filters and a shaper, held open for as long as it is in earshot — so the thing
-that has to be bounded is HOW MANY, and a range test does not bound it. Stand
-between four drums and a range test holds four graphs open; dress a burning
-quarter and it holds twenty.
+competing with anything. What a fire costs is six buffer sources and about a
+dozen filters and gains, held open for as long as it is in earshot, and the two
+water kinds cost the same to within a filter — so the thing that has to be
+bounded is HOW MANY, and a range test does not bound it. Stand between four
+drums and a range test holds four graphs open; dress a burning quarter and it
+holds twenty.
 
 **So it is a RANKING, and it is `LightingSystem`'s answer to
 `LightingSystem`'s problem.** A shader has sixteen light slots and a village
@@ -309,8 +310,8 @@ distance does to a report. The graph was building the wrong thing twice over.
 | layer | what it is for |
 | --- | --- |
 | roar — lowpassed noise | the column of air the drum is moving |
-| sizzle — a broad hump up top, its own source | sap, ash and small stuff |
-| breath — a slow modulator on both, at different depths | a fire is not steady |
+| bands — humps on their own source; a fire needs ONE | sap, ash and small stuff |
+| breath — a slow modulator on all of them, at their own depths | a fire is not steady |
 | sparks — impulses ringing resonators | the crackles |
 
 **A CRACKLE IS AN IMPULSE RINGING A RESONATOR**, which is what a snapping fibre
@@ -374,16 +375,218 @@ is worth keeping is in the table above and in `CONFIG.audio.ambience.fire`,
 which carries the argument for every value beside it. A rebuild that changes the
 mechanism owes the same table, measured the same way.
 
+### Water, which is the fire's spectrum turned inside out
+
+`reference-media/water.wav` is 2 s of running water and the same measuring
+stick — gitignored, never shipped — and the first thing it said was that the
+two ambiences in this game occupy **complementary octaves**.
+
+| octave | 63 | 125 | 250 | 500 | 1k | 2k | 4k | 8k | 16k |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fire | -4.8 | -5.4 | -9.9 | **-20.2** | **-17.9** | -13.4 | -10.6 | -10.3 | -16.1 |
+| water | -25.3 | -33.2 | -28.1 | -10.5 | **-2.9** | -5.3 | -12.9 | -15.4 | -16.9 |
+
+A fire is two humps with a fifteen-decibel hole at 500 Hz–1 kHz. **Water is one
+hump sitting exactly in that hole**, with nothing at either end. So a burning
+drum on a quayside does not mask the sea beside it; and the trap that made the
+first fire read as a rifle — a soft mid-band transient at an even rate — is not
+available to water at all, because for water that band is the whole point.
+
+**Those figures are normalised over the AUDIBLE band, and doing that is not
+tidying.** **41.6% of the water reference's power is below 20 Hz** and none of
+it is water — it is a microphone in the open air. Normalised against total
+power every band reads 2.4 dB lower, which is 2.4 dB of systematic error handed
+to a fit that has nothing subsonic in it to compare. The synth reproduces none
+of that rumble, deliberately, for the reason the fire's roar is 4 dB under its
+own reference: it would spend the emitter's whole headroom on something a
+laptop speaker cannot make. (The fire's reference has 43.5% below 20 Hz too,
+and its octave figures above are re-normalised the same way — they are the
+numbers in `CONFIG.audio.ambience.fire`'s prose shifted by that constant, not a
+retuning.)
+
+#### A HUMP IS A ROW, and that is what the second kind actually cost
+
+The graph needed no new layer for water and one new piece of STRUCTURE:
+`AmbienceKind.bands` is a list where `sizzleHz`/`sizzleQ`/`sizzleLevel` used to
+be three fields. The fire is one row and unchanged — proved by rendering the
+old graph and the new one over the same noise buffer, **worst sample difference
+6e-8, 139 dB below peak**, which is float32 addition order and not a sound.
+
+**Two things forced the list, and both were measured rather than foreseen.**
+
+1. **A brook has two humps.** Its rush is at 1 kHz and there is a second, much
+   flatter shelf running 2.5–16 kHz that a single bandpass cannot reach from
+   there. The first fit tried to carry that shelf on dense SPARK rows instead,
+   which is the fire's own lesson ("most of the mid-high energy is events")
+   applied in the wrong direction. It cannot work: an impulse train dense
+   enough to read as a bed is no longer isolated impulses — the threshold that
+   selects them widens into clusters, and the buffer those clusters are cut
+   from is band-limited by its own playback rate. Rendered, the top three
+   octaves came in **4 to 8 dB under** a fit whose arithmetic said they were
+   right. Adding a second `BandSpec` took the whole curve from **2.9 dB rms
+   error to 1.1**.
+2. **A brook's skirts are ASYMMETRIC**, about 18 dB an octave below 500 Hz and
+   7 above 2 kHz, and a single biquad's is 6 dB an octave whatever its Q — Q
+   buys a narrow PEAK, never a steep skirt. So a band states `stages`, how many
+   of itself in series. Fitted at third-octave resolution: **one stage 0.88 dB
+   rms out, two 0.31, three 0.27.** Two is the knee, and what the single stage
+   buys its accuracy with is a Q of 2.9 poking an audible tone through the
+   middle of the plateau.
+
+**Water inverts the fire's own headline finding, and the pair is the useful
+part.** In a fire most of the mid-high energy is EVENTS: crackles stand 14.7 dB
+over the bed at a crest of 23.5. In water it is almost all BED: gurgles stand
+9.3 dB over at a crest of 17.4, which is barely above modulated noise. Carrying
+water's energy the fire's way rendered events **15.8 dB over the bed at a crest
+of 25.3** — a brook that ticks. The mechanism is identical either way; what
+differs is which side of it the energy sits on, and the reference says which.
+
+#### The brook, fitted
+
+| | reference | shipped |
+| --- | --- | --- |
+| third-octave, 198 Hz–16 kHz | — | **1.15 dB rms** (worst +2.3 at 315 Hz) |
+| crest factor (2 s windows) | 17.4 dB | **18.3** |
+| bed breathing (env p50/p10) | 1.48x | **1.49** |
+| events a second (2.5x bed) | 12.5 | **11.3** |
+| events over the bed | 9.3 dB | **9.2** |
+| event spread p10..p90 | 3.1 dB | **2.7** |
+
+**Its gurgles are the fire's crackles' mechanism spent on different physics.**
+A bubble in water is a resonator struck once and left to ring, exactly as a
+snapping fibre is, so the rows differ from the fire's in nothing but where they
+ring and how often. The ringdowns are Minnaert's — a bubble's note is about
+`3.26 / r` — so the plop row at 560 Hz and Q 14 is a 6 mm bubble ringing for
+18 ms.
+
+**One deliberate departure, and it is the fire's departure again in a different
+octave.** The top two thirds are about 2 dB under the reference, because that
+recording is a close mic on a brook and the game plays this at five to thirty
+metres through a panner with no air-absorption term anywhere. 16 kHz loses a
+decibel or two over that distance in real air.
+
+#### The shore, which is DERIVED and says so
+
+There is one water master and it is running water, so the still-water kind has
+no recording behind it. What it has instead is an argument, stated here so what
+the numbers are worth is the same as what the argument is worth.
+
+**The spectrum is the brook's moved down 0.85 of an octave.** Minnaert again: a
+brook entrains air around 3 mm across and a wave folding onto a shore entrains
+a great deal more, so the whole bubble population shifts down together and the
+hump lands near 600 Hz. Fitted against that shifted curve the graph lands
+**1.56 dB rms from 198 Hz up**, with the two departures named — +3.9 dB at
+198 Hz, which is the surf rumble below, and -3.1 at 6.35 kHz.
+
+**The time structure is where it actually differs, and it is the SWASH.** A
+brook is steady; a shore ARRIVES.
+
+| | brook | shore |
+| --- | --- | --- |
+| hump | 1090 Hz | 600 Hz |
+| crest factor | 18.3 dB | **20.4** |
+| bed breathing | 1.49x | **2.86** |
+| breath peaks at | 0.78 Hz | **0.39 Hz** (a swell every 2.6 s) |
+| bottom (`roarLevel`) | 0.0125 | **0.030** |
+
+Three of those are one decision. `breathHz` drops to 0.28, the depths roughly
+triple, and — the part worth carrying elsewhere — **the two depths come within
+a third of each other where the fire's differ by 3.4x**, because a wave moves
+the whole body of water at once while a fire's draught moves the small stuff
+and the column of air barely notices. **How far apart a kind's breath depths
+are is itself a claim about what the sound is.** And unlike the brook a shore
+has a BOTTOM, which is the one number here that is about mechanics rather than
+bubbles: a wave is a mass of water moving and a brook is only its own surface.
+
+**`breathRate` and `breathHz` are not one question**, and reading them as one is
+how a swell gets tuned by accident. `breathHz` is how fast the modulator
+wanders and is the only one that reaches the sound; `breathRate` is only how
+long it takes to REPEAT — one second of buffer at 0.05 is twenty — and all
+three kinds hold it at 0.05, because nothing wants to loop sooner.
+
+#### Where water is HEARD, which is not where the rect is
+
+**A lake makes no noise in the middle of itself**, so a `WaterRect` cannot hang
+an emitter at its own centre. On Cinderhaven that is wrong twice over: the bay
+rect is 1,380 m across, its centre is four hundred metres of open water from
+any beach, and it CONTAINS the island — so a listener in the middle of the town
+would be at zero distance from the sea. Both failures are one failure: a rect is
+an EXTENT and the edge is not in it anywhere.
+
+**So `MapBuilder.waterAmbience` derives the waterline from the FLOOR**, which
+is the rule `docs/world.md` already states for Cinderhaven's own generator. It
+marches each rect on a `shorelineStep` (6 m) grid and keeps a flooded cell with
+an unflooded four-neighbour. Three rules, and each was found by getting it
+wrong:
+
+- **Flooded is asked of the whole LIST, not of one rect.** Asked of the terrain
+  alone, a pool whose surrounding moor lies below its own surface has no edge
+  anywhere and falls silent — Hollowmere's mire did. Asked of one rect's
+  bounds, the seam between two rects of one sea reads as a shore, and
+  Cinderhaven's water is a pinwheel of eight whose inner four meet in open
+  water. Water is the UNION of the rects.
+- **Past the floor there is no edge, only the end of the world.** Beyond the
+  play square plus its borderland an unflooded neighbour is not a shore, it is
+  a query `TerrainField` answered by clamping. Without that rule Cinderhaven's
+  outer ring of ocean — which exists only to put a horizon past the fog —
+  contributes ~1,300 points of waterline at 2,300 m from anything that can
+  hear, to be scanned every frame for the life of the map.
+- **A BODY of water is a connected group of rects, not a rect.** How water is
+  drawn and what it IS are different questions: the sea is eight rects because
+  a rect's bed map is 512 texels a side however big it is and because each one
+  stands a reflection probe. Left as eight it would also be RANKED as eight —
+  two or three of them win slots together near the island's west coast, where
+  their edges meet, and a brazier on the quay behind you loses to a second copy
+  of the same water. Rects join when they touch *and* agree what they sound
+  like, so a mill race running into a pond stays two things you can hear at
+  once.
+
+**Then a body is ONE emitter that MOVES.** `AmbienceSystem`'s emitter is a run
+of points rather than a place, it scores itself on the nearest one and hands
+`Sfx` that point — a fire is a place and a shore is a line, and the honest way
+to hear a line is from whichever part of it is nearest. The nearest point can
+jump, and the only place it can is where two points are exactly equidistant, so
+the level is continuous across the swap and only the bearing moves.
+
+What the maps actually carry, and what it costs:
+
+| map | bodies | waterline points | `AmbienceSystem.update` | build |
+| --- | --- | --- | --- | --- |
+| Hollowmere | 3 (creek, bog, mire) | 47 | 0.70 us | — |
+| Harrowmead | 1 (the stream) | 147 | 1.60 us | — |
+| Sarab | 4 (three wadi pools, the birkat) | 81 | 1.40 us | 0.5 ms |
+| Cinderhaven | 1 (the sea) | 1,161 | 2.25 us | 18.2 ms of a 2,230 ms build |
+
+The whole scan is in squared metres with the root taken once per emitter that
+survives the reach test, which is what makes 1,161 candidates cost two
+microseconds in a frame that also runs in every menu.
+
+**Which of the two a map gets is DECLARED, because flow is not a shape.**
+`WaterRect.sound` defaults to `"shore"` — the one optional field on a layout
+whose default is not "unaffected", since silent water is a bug and not a
+neutral choice — and a map states `"stream"` for water that runs. Geometry
+cannot decide it: Hollowmere's creek is 6.6 m wide and Sarab's birkat is 54,
+but Sarab's wadi pools are 75 m of standing water and a mountain beck would be
+narrower than either. Hollowmere's creek and Harrowmead's stream are the two
+that say so.
+
 ### What a prop owes, and what a second kind would
 
-**Two things can carry a sound, and both say so beside the LIGHT they already
-carry.** A scatter prop names one in `SCATTER_AMBIENCE` — a table keyed by prop
-kind, directly beside `SCATTER_LIGHTS` and the same shape (`fireDrum` is its
-only row) — and a STRUCTURE names one with `Build.sound(...)`, `Build.light`'s
-twin, which puts a `LocalSound` on the structure exactly as `light` puts a
-`LocalLight`. `MapBuilder` walks `s.sounds` through the same rotation and the
-same origin as `s.lights`, because a placement can be turned and the brazier on
-the far side of a watchtower has to end up on the far side of it.
+**Three things can carry a sound, and two of them say so beside the LIGHT they
+already carry.** A scatter prop names one in `SCATTER_AMBIENCE` — a table keyed
+by prop kind, directly beside `SCATTER_LIGHTS` and the same shape (`fireDrum`
+is its only row) — and a STRUCTURE names one with `Build.sound(...)`,
+`Build.light`'s twin, which puts a `LocalSound` on the structure exactly as
+`light` puts a `LocalLight`. `MapBuilder` walks `s.sounds` through the same
+rotation and the same origin as `s.lights`, because a placement can be turned
+and the brazier on the far side of a watchtower has to end up on the far side
+of it.
+
+**The third is a `WaterRect`, and it is the one that names WHAT without naming
+WHERE.** Every other carrier is a thing at a point, so stating the id is the
+whole of it; a body of water is an area whose audible part is its edge, and
+where that edge runs is a question only the floor can answer. So `sound` is on
+the rect and the position is not — see below.
 
 **A sound is named by ID, never by reaching for the audio config.** `AmbienceId`
 is the union and `MapBuilder`'s `AMBIENCE_KINDS` is a `Record` over it — the
@@ -401,18 +604,38 @@ on — the registration is one line beside the light's, and an emitter not
 recorded there has no second chance to be. A `LocalSound` also reaches nothing
 else: the collision bake has never heard of it, because the server has no ears.
 
-**The RANKING is still not reachable on a shipped map**, and it is worth
-knowing that before trusting a listen. Hollowmere now carries seven emitters —
-four drums and three braziers — and the closest two are **56.8 m apart against
-a `range` of 24**, so in play the ranking has only ever been handed a list of
-one. What exercises the cap and the swap margin is the synthetic walk in the
-table above.
+**THE RANKING IS REACHED NOW AND STILL NEVER EXCEEDED, and water is what
+changed that.** With drums alone it was never handed a list of one: Hollowmere's
+closest two emitters were 56.8 m apart against a `range` of 24. Water is a much
+bigger object with a longer reach, so it competes for real. Sampled every 4 m
+over each map's playable ground, counting emitters in range at once:
 
-**A second KIND is a row in `CONFIG.audio.ambience` and no code**, which is
-`EngineKind`'s bargain one subsystem over: a stream and a wind in a canopy are
-the same three layers with the crackle gate wound shut and the bands moved.
-`buildAmbience` is one method for a diesel-and-turbine reason — the moment it
-grows an `if` asking which kind it is holding, that is broken.
+| map | ground within earshot | most at once | share at the cap |
+| --- | --- | --- | --- |
+| Hollowmere | 56.5% | **3** | 0.75% |
+| Greyfen | 65.9% | 1 | — |
+| Harrowmead | 23.1% | 2 | — |
+| Sarab | 6.7% | 1 | — |
+| Cinderhaven | 30.0% | 2 | 0.33% at two |
+
+So the cap of three is TOUCHED on one map and exceeded on none, which is the
+answer worth having in both directions: the ranking is exercised in play rather
+than only by the synthetic walk above, and no shipped map is losing a sound to
+it. The number to watch if a map dresses more water is that Hollowmere column —
+and the reason it is 3 rather than 5 is `waterAmbience` joining touching rects
+into one body, without which Cinderhaven's sea alone would put two or three
+copies of itself in every one of those counts.
+
+**A second KIND is a row in `CONFIG.audio.ambience` and no code, and water
+found where the LIMIT of that is.** The kind is still a row — `stream` and
+`shore` add no branch anywhere, and `buildAmbience` is one method for a
+diesel-and-turbine reason, so the moment it grows an `if` asking which kind it
+is holding, that is broken. What the old version of this paragraph got wrong is
+what a row can be made of. It said a stream was "the same three layers with the
+crackle gate wound shut", and both halves are false: a stream's gurgles are the
+crackle mechanism working exactly as designed, and its second hump is a thing
+three fixed fields could not express. A second KIND is a row; a second HUMP had
+to become a row too.
 
 **What does NOT belong here is the other shape of ambient sound: the random
 one-shot** — a frog, a dog, a creaking sign. Those are not a sustained voice and

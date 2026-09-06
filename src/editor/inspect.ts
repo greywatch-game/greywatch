@@ -13,6 +13,7 @@
  * and leaving them unset is what keeps the layout line short.
  */
 import { CONFIG } from "../config";
+import type { WaterAmbienceId } from "../core/Sfx";
 import type { EnvironmentSpec } from "../world/environment";
 import {
   DEFAULT_FLOOR_SURFACE,
@@ -54,6 +55,13 @@ const EMPTY: Inspection = { title: "", fields: [], deletable: false };
 
 const options = (values: readonly string[]): ChoiceOption[] =>
   values.map((v) => ({ value: v, label: v }));
+
+/**
+ * The two things a body of water can sound like. Typed against
+ * `WaterAmbienceId` so a third one does not compile until it is listed here —
+ * the same guard `MapBuilder`'s `AMBIENCE_KINDS` is.
+ */
+const WATER_SOUNDS: readonly WaterAmbienceId[] = ["shore", "stream"];
 
 /** x / y / z, shared by everything that sits somewhere. */
 function place(
@@ -232,7 +240,20 @@ export function inspect(
     case "water": {
       const r = layout.water?.[ref.index];
       if (!r) break;
-      return { title: `water rect #${ref.index}`, fields: rect(reach, r), deletable: true };
+      return {
+        title: `water rect #${ref.index}`,
+        deletable: true,
+        fields: [
+          ...rect(reach, r),
+          // What it sounds like. Shown rather than left to the file because
+          // this is the one thing about a water rect a screenshot cannot
+          // check: running and standing water are the same translucent sheet,
+          // and the difference between them is a decision about the place.
+          // The default shows as itself rather than as blank — see
+          // `WaterRect.sound`, where absent means `shore` and not silence.
+          choice("sound", "sound", r.sound ?? "shore", options(WATER_SOUNDS)),
+        ],
+      };
     }
 
     case "grass": {
