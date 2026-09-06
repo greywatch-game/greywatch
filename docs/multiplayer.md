@@ -1311,13 +1311,69 @@ gate for each is the CHAIR rather than the weapon.
 **`validateDrive` is the speed bound that knows what a player is sitting in.**
 Running a tank through `validateMove` would reject every honest driver at a
 stroke: the bound there is a sprint and a hull at road speed covers three times
-it. What it keeps is the speed and the map's extent; what it drops is the
-ground test (the authority stands the reported hull on its own ten track
-contacts, so a claimed height is never taken) and the solid test (a hull
-legitimately stands inside `map.obstacles` — it drives OVER what a body walks
-around). A refused step is not corrected, either: a `correct` message moves the
-local BODY, and a client told to put its feet somewhere while nothing is said
-about its tank is worse off than one whose report was simply not applied.
+it. What it keeps is the speed, the climb, the map's extent and a flying hull's
+ceiling; what it drops is the ground test (the authority stands the reported
+hull on its own ten track contacts, so a claimed height is never taken) and the
+solid test (a hull legitimately stands inside `map.obstacles` — it drives OVER
+what a body walks around).
+
+**THOSE FOUR ARE NOT ONE KIND OF CHECK, and reading them as one cost a round.**
+Speed and climb are things no legitimate client can produce, so they are
+REFUSED. The extent and the ceiling are rules of the world the client enforces
+too and presses against on purpose — a pilot holding the stick out over the sea,
+a pilot at the top of the envelope — so they are LIDS: the step is accepted AT
+THE BOUNDARY, `applyDrive` is handed the verdict's position rather than the
+message's, and the client is told where it actually ended up. `DriveVerdict`
+carries the split, and `Match` is where the policy lives, because
+`server/validate.ts` returns a verdict and decides nothing.
+
+**THE CEILING IS A RATE AND NOT A HEIGHT**, which is the specific thing the
+first version got wrong. `flyStep` fades the commanded climb to nothing as a
+machine approaches `flight.ceiling`; it never pulls the machine down. So a
+helicopter cruising at the top of its envelope and crossing ground that falls
+away — a ridge, a caldera wall, a coastline — is legitimately far higher over
+the floor than its ceiling and has done nothing whatever to get there. The rule
+that IS true of the model is that a machine over its ceiling cannot GAIN height,
+which is terrain-independent: over flat ground it pins the machine at its
+ceiling and over falling ground it lets the gap open as fast as the ground
+drops. It is asked at the last ACCEPTED position, it freezes the height rather
+than pulling it toward the lid, and it carries a three-metre allowance for the
+overshoot the arrest itself produces.
+
+**And every outcome that is not "applied exactly as sent" is ANSWERED, with
+`hullcorrect`.** This is `correct`'s twin and deliberately not the same message:
+a `correct` places the local BODY, and a driver's body is written off the hull
+every frame by the authority's own step loop, so it says nothing at all about
+the only object that client is simulating.
+
+**Without it, one disagreement was permanent.** The one hull a client does not
+pose from the wire is the one under its own driver — `Game.vehicleOrders`
+answers `remoteFor` null for it, which IS the prediction — so nothing pulled a
+refused driver back into step. The authority's hull stopped where it was, every
+later sample was measured against that stale position and failed the speed bound
+by construction, and the pilot flew a machine nobody else could see: the flag
+they were standing on never counted them (the HUD's "capturing" is a local
+`pointAt` test and the meter is the authority's), `dismount` was refused in
+silence because `dismountable` was asked of a hull frozen in mid-air, and the
+whole divergence was finally paid off as a cross-map teleport at whatever
+unrelated moment took them out of the driver's chair — a seat swap hands the
+hull straight back to `remoteFor`, and `updateRemote` resyncs it. Measured on a
+live authority: with the answer, a 200 m jump is corrected on the next sample
+and the machine climbs 22.6 m with the authority tracking it to within a
+centimetre; without it, no message is sent at all and the authority climbs 0.
+
+`Vehicle.correctTo` is what a client does about one — the third way a hull's
+position is written and neither of the other two. It is emphatically not
+`placeAt`, which is a hull ARRIVING and resurrects the wreck, refills the
+health and zeroes every spring; a correction is a machine that is mid-flight and
+stays mid-flight. It ARRESTS the motion it corrected, per axis, which is what
+makes a lid feel like a wall rather than a stutter: the map's edge and the
+ceiling are both places a pilot arrives at with the stick still held into them,
+and a hull left with its velocity re-crosses the line on the very next frame.
+
+No `PROTOCOL_VERSION` bump: the message is additive and server-to-client, so an
+old client falls through the switch and behaves exactly as it did before the
+field existed — `Join.map`'s own precedent.
 
 **Getting in and getting out are asks the authority answers.** `mount` names a
 hardstanding and — optionally — a SEAT, and `HeadlessGame.seatOffered` and

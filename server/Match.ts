@@ -1824,17 +1824,31 @@ export class Match {
   /**
    * One reported HULL sample, from the person driving it.
    *
-   * `onMove`'s twin, and every line it does not have is a decision:
+   * `onMove`'s twin, and the two places it differs are decisions:
    *
    *   - **`validateDrive`, not `validateMove`.** The speed bound is the tank's
    *     — see `server/validate.ts` for why the ground and solid checks are
-   *     wrong for a hull rather than merely skipped.
-   *   - **No correction on a refusal.** A `correct` message moves the local
-   *     BODY, and a client that received one while driving would be told to
-   *     put its feet somewhere without being told anything about its tank.
-   *     What a refused step costs instead is simply that it is not applied:
-   *     the authority's hull stays where it was, the next snapshot says so,
-   *     and `Vehicle.updateRemote`'s resync pulls the driver's own copy back.
+   *     wrong for a hull rather than merely skipped, and for why two of its
+   *     four terms are lids rather than refusals.
+   *   - **`hullcorrect`, not `correct`.** A `correct` moves the local BODY, and
+   *     a client that received one while driving would be told to put its feet
+   *     somewhere without being told anything about its tank — which is why
+   *     this used to answer a refusal with SILENCE.
+   *
+   *     **That silence was unrecoverable and it is the reason this method is
+   *     written the way it is.** The one hull a client never poses from the
+   *     wire is the one under its own driver (`Game.vehicleOrders.remoteFor`
+   *     answers null for it), so nothing ever pulled a refused driver back:
+   *     the authority's hull stopped where it was, every later sample was
+   *     measured against that stale position and failed the speed bound by
+   *     construction, and the pilot flew a copy nobody else could see. It
+   *     presented as a helicopter that captured nothing, could not be got out
+   *     of, and teleported across the map on the first seat change.
+   *
+   *     So EVERY outcome that is not "applied exactly as sent" is answered.
+   *     A refusal sends the authority's own hull; a clamp sends the position
+   *     that was actually taken. Both are the same message, because a client
+   *     has the same thing to do about either.
    *   - **No seat is granted here.** A `drive` naming a hull this player is
    *     not in is dropped, not obeyed. Getting into a tank is `onMount`'s, and
    *     it is one door for the reason spawning is one door.
@@ -1855,17 +1869,28 @@ export class Match {
     const tank = this.game.hullOf(player);
     if (!tank) return;
     const [x, y, z] = msg.pos;
-    if (
-      !validateDrive(
-        this.game.map,
-        tank.position,
-        { x, y, z },
-        dt,
-        tank.spec.drive.maxSpeed,
-        tank.climbRate,
-        tank.spec.flight?.ceiling ?? null,
-      ).ok
-    ) {
+    const verdict = validateDrive(
+      this.game.map,
+      tank.position,
+      { x, y, z },
+      dt,
+      tank.spec.drive.maxSpeed,
+      tank.climbRate,
+      tank.spec.flight?.ceiling ?? null,
+    );
+    // Refused: the authority's hull is unchanged and the client is told to come
+    // back to it, exactly as `onMove` answers a rejected body. The sequence
+    // sent is the last one ACCEPTED, so the client knows which of its samples
+    // survived. Read off `tank.position` and not off the verdict, because on
+    // this branch the verdict's position is the one being thrown away.
+    if (!verdict.ok) {
+      this.send(peer, {
+        t: "hullcorrect",
+        tank: msg.tank,
+        pos: [tank.position.x, tank.position.y, tank.position.z],
+        seq: player.seq,
+        reason: verdict.reason!,
+      });
       return;
     }
 
@@ -1877,7 +1902,31 @@ export class Match {
     // sends the hull's angles, and a driver's own body is not on screen.
     player.yaw = msg.aimYaw;
     player.pitch = msg.aimPitch;
-    this.game.applyDrive(player, x, y, z, msg.yaw, msg.tyaw, msg.gun);
+    // The VERDICT's position and never the message's: a lid is accepted at the
+    // boundary rather than where the client asked to be, and applying the claim
+    // here would make the clamp a fiction the correction below then contradicts.
+    this.game.applyDrive(
+      player,
+      verdict.x,
+      verdict.y,
+      verdict.z,
+      msg.yaw,
+      msg.tyaw,
+      msg.gun,
+    );
+    // Accepted, but not where they said. The step counts — `seq` has already
+    // advanced — and the client is told where it actually ended up, which is
+    // what makes a lid a wall the pilot can feel instead of a divergence that
+    // grows for as long as they hold the stick against it.
+    if (verdict.clamped) {
+      this.send(peer, {
+        t: "hullcorrect",
+        tank: msg.tank,
+        pos: [verdict.x, verdict.y, verdict.z],
+        seq: msg.seq,
+        reason: verdict.reason!,
+      });
+    }
   }
 
   /**

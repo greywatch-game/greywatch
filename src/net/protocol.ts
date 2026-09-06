@@ -920,6 +920,53 @@ export interface Correction {
   reason: "speed" | "ground" | "solid";
 }
 
+/**
+ * The server moving a DRIVER's hull, and `Correction`'s twin one object out.
+ *
+ * A separate message rather than a field on `correct`, because the two move
+ * different things and a client holding one must not act on the other: a
+ * `correct` places the local BODY, and a driver's body is written off the hull
+ * every frame by the authority's own step loop, so a body correction sent to
+ * somebody in a seat says nothing about the only object they are simulating.
+ *
+ * **It is the whole of what makes a driver's prediction recoverable.** The one
+ * hull a client does not pose from the wire is the one under its own driver —
+ * `Game.vehicleOrders.remoteFor` answers null for it, which is the prediction —
+ * so a hull the authority disagrees with has no other route back into step.
+ * Without this, one disagreement was permanent: the two copies drifted apart
+ * for the rest of the life, the pilot fought and captured from a position
+ * nobody else could see, and the divergence was only ever paid off as a
+ * cross-map teleport at whatever unrelated moment took them out of the chair.
+ *
+ * **Two things arrive as one message on purpose.** A REFUSAL carries the
+ * authority's own hull; a LID carries the position that was actually taken at
+ * the map's edge or the machine's ceiling. They are told apart by `reason` and
+ * by how far the correction moves the hull, and a client has the same thing to
+ * do about either — see `server/validate.ts`, where the split is made.
+ */
+export interface HullCorrection {
+  t: "hullcorrect";
+  /**
+   * Which hull, by hardstanding index — the same index the `drive` this answers
+   * named. Sent rather than assumed for `DriveMessage.tank`'s own reason: a
+   * client that has since left the seat, or crossed to the gun, must be able to
+   * tell that this is about a hull it is no longer simulating and drop it.
+   */
+  tank: number;
+  /** Where the hull actually is, as FEET — `DriveMessage.pos`'s convention. */
+  pos: Vec3;
+  /** The last input sequence the server accepted. */
+  seq: number;
+  /**
+   * Which of the four bounds answered, and it is a claim about the PLAYER as
+   * well as about the step: `speed` and `climb` are refusals of something no
+   * legitimate client produces, `bounds` and `ceiling` are lids an honest pilot
+   * presses against. A client may reasonably say nothing at all about the
+   * second pair.
+   */
+  reason: "speed" | "climb" | "ceiling" | "bounds";
+}
+
 export interface EventsMessage {
   t: "events";
   events: ServerEvent[];
@@ -1047,6 +1094,7 @@ export type ServerMessage =
   | PingsMessage
   | MinesMessage
   | Correction
+  | HullCorrection
   | Rejected;
 
 // --- client -> server -----------------------------------------------------

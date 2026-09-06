@@ -5834,6 +5834,30 @@ export class Game {
       }
     };
 
+    // The same answer about the HULL, and the only thing that puts a predicted
+    // hull back where the authority has it — see `Vehicle.correctTo`, and
+    // `HullCorrection` for why one refused sample used to be permanent.
+    //
+    // **Gated on still driving that hull**, which is the whole of what this
+    // callback has to decide. The message is a round trip old and the seat may
+    // be gone: crossing to the gun or getting out hands the hull straight back
+    // to `remoteFor`, and writing a stale position into a hull the wire is now
+    // posing would fight the interpolator on somebody else's machine.
+    net.onHullCorrection = (tank, pos, reason) => {
+      const hull = this.vehicles.hulls[tank];
+      if (!hull || hull !== this.driving || this.drivingSeat !== DRIVER) return;
+      const off = Vector3.Distance(hull.position, pos);
+      hull.correctTo(pos.x, pos.y, pos.z);
+      // Said out loud only when it was a JUMP. The two lids — the map's edge
+      // and the machine's ceiling — correct by centimetres every frame a pilot
+      // holds the stick into them, and a toast a frame is worse than the thing
+      // it is reporting. The same threshold the body's correction reads, for
+      // the same reason: below it, the move is the one nobody can see.
+      if (off > CONFIG.net.correctionSnap) {
+        this.hud.toast(`hull resynced (${reason})`);
+      }
+    };
+
     // The side the authority put us on, arriving after the round was booked.
     // The build below is optimistic about everything, and about this it was
     // wrong for the second person into a match: `Roster.claim` fills the

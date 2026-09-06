@@ -166,6 +166,20 @@ export class NetSession {
   onSpawn: (pos: Vector3, yaw: number) => void = () => {};
   /** Wired by Game: the server rejected our position and this is the truth. */
   onCorrection: (pos: Vector3, reason: string) => void = () => {};
+  /**
+   * Wired by Game: the server did not take our HULL where we put it.
+   *
+   * `onCorrection`'s twin and deliberately not the same callback — see
+   * `HullCorrection`. `tank` is the hardstanding index, which the receiver must
+   * check against the hull it is actually driving: this can arrive a round trip
+   * after the seat was given up, and applying it then would fight the wire's
+   * own pose of a hull somebody else now has.
+   *
+   * `pos` is the shared scratch vector, so it is valid for the length of the
+   * call and no longer — `onSpawn`'s rule.
+   */
+  onHullCorrection: (tank: number, pos: Vector3, reason: string) => void =
+    () => {};
   /** Wired by Game: an event worth showing — a kill, a capture, a round ending. */
   onEvent: (event: ServerEvent) => void = () => {};
   /** Wired by Game: the connection came up or went away. */
@@ -664,6 +678,15 @@ export class NetSession {
       case "correct":
         this.scratch.set(msg.pos[0], msg.pos[1], msg.pos[2]);
         this.onCorrection(this.scratch, msg.reason);
+        break;
+
+      // The same message about the thing a driver is actually simulating. It is
+      // routed separately for the reason the message exists at all: a hull is
+      // not a body, and the only hull this client predicts is the one under its
+      // own driver.
+      case "hullcorrect":
+        this.scratch.set(msg.pos[0], msg.pos[1], msg.pos[2]);
+        this.onHullCorrection(msg.tank, this.scratch, msg.reason);
         break;
 
       // The handshake was refused — a full match, a match that has retired, or

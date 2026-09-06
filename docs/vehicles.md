@@ -3169,6 +3169,32 @@ contacts on the authority's side, so a claimed height is never taken; and there
 is no solid test because a hull legitimately stands inside `map.obstacles` — it
 drives OVER the things a body walks around, which is what `climbHeight` is for.
 
+**A REFUSED STEP HAS TO BE ANSWERED, and `Vehicle.correctTo` is the third way a
+hull's position is written.** `update` simulates it, `updateRemote` poses it off
+the wire, and the hull under a client's own driver takes NEITHER — `predicted`
+means `Game.vehicleOrders.remoteFor` answers null for it — so before this there
+was no route back into step with the authority at all. One refused sample was
+therefore permanent: the authority's hull stopped, every later sample was
+measured against it and failed the speed bound by construction, and the pilot
+flew a machine nobody else could see. What that looked like from the seat is
+worth knowing, because none of it names a vehicle: a flag that says CAPTURING
+and never fills (the prompt is a local `pointAt` and the meter is the
+authority's), a dismount refused in silence (`dismountable` asked of a hull
+frozen in mid-air), and a teleport across the map on the first seat change — a
+swap hands the hull back to `remoteFor`, and `updateRemote` resyncs it.
+
+**It is not `placeAt` and the difference is the whole method.** `placeAt` is a
+hull ARRIVING: it resurrects the wreck, refills the health, re-centres the
+turret and zeroes every spring, which spent on a correction would drop a flying
+machine out of the sky and hand a burning one back whole. A correction is a
+machine that is mid-flight and stays mid-flight, and everything about it except
+where it is is still true. It ARRESTS the motion it corrected, per axis:
+`validateDrive`'s two lids — the map's extent and a flying hull's ceiling — are
+places a pilot arrives at with the stick still held into them, and a hull left
+with its velocity re-crosses the line on the very next frame and is corrected
+again twenty times a second. Zeroing the component that moved is what makes a
+lid a wall.
+
 **A driver is never leashed**, which is the rule armour already followed
 offline and one with teeth on Harrowmead, the single map with both an open
 boundary and a hardstanding. Without it the first driver to take the long way

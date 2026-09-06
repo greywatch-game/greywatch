@@ -1913,6 +1913,27 @@ when the SET moves. **A driver reports a HULL instead of a body** —
 and **a GUNNER reports one BEARING**, because a man on the cupola gun moves
 nothing at all and there is therefore nothing to validate.
 
+**`validateDrive`'s four bounds are TWO KINDS OF CHECK and every one of them is
+ANSWERED.** Speed and climb are things no legitimate client produces, so they
+are REFUSED; the map's extent and a flying hull's ceiling are rules the client
+enforces too and presses against on purpose, so they are LIDS — the step is
+taken at the boundary and the client is told where it ended up. **The ceiling is
+a RATE and not a HEIGHT**: `flyStep` fades the commanded climb and never pulls a
+machine down, so a helicopter crossing ground that falls away is legitimately
+far over its ceiling, and what the authority may bound is only that it cannot
+GAIN height up there. **And a refusal may never be SILENT**, which is the half
+that cost a round: the one hull a client does not pose from the wire is the one
+under its own driver (`Game.vehicleOrders.remoteFor` answers null for it — that
+IS the prediction), so nothing pulled a refused driver back and the next sample
+was measured against a stale authority hull that could only fail. One refusal
+latched for the life, and the pilot flew a machine nobody else could see —
+capturing nothing, refused a dismount in silence, and snapped across the map by
+the first thing that took them out of the chair. `hullcorrect` is the answer and
+`Vehicle.correctTo` is what a client does about one: **it is not `placeAt`**,
+which is a hull ARRIVING and would resurrect a wreck and drop a flying machine
+out of the sky, and **it ARRESTS the motion it corrected** so a lid reads as a
+wall rather than a stutter.
+
 **`decode` proves only that a frame is JSON with a `t` on it, so a
 `ClientMessage` is a CLAIM and never a fact**: `server/wire.ts` is the one door
 that makes it one, nothing else on the server may read a frame, and a new client

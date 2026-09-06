@@ -2604,6 +2604,56 @@ export class Vehicle implements Combatant, RayHull {
    * that is being shoved sideways by the interpolator still runs its belts,
    * which is right — that is what a track slipping looks like.
    */
+  /**
+   * The authority did not take this hull where its own driver put it. Move it.
+   *
+   * **Third of the three ways a hull's position is written, and it is neither
+   * of the other two.** `update` simulates it, `updateRemote` poses it off the
+   * wire — and the hull under a client's own driver takes neither, because it
+   * is PREDICTED (`Game.vehicleOrders.remoteFor` answers null for it). That
+   * left it with no route back into step with the authority at all, which is
+   * what made a single refused drive sample permanent: the two copies drifted
+   * for the rest of the life and the pilot flew a machine nobody else could
+   * see. This is the route. See `HullCorrection`.
+   *
+   * **It is emphatically not `placeAt`.** That method is a hull ARRIVING — it
+   * resurrects the wreck, refills the health, re-centres the turret and zeroes
+   * every spring in the model — and spending it on a correction would drop a
+   * flying machine out of the sky and hand a burning one back at full health. A
+   * correction is a machine that is mid-flight and stays mid-flight; everything
+   * about it except where it is is still true.
+   *
+   * `x`/`y`/`z` are FEET, which is the wire's convention for a hull throughout
+   * — `DriveMessage.pos` reports them and `updateRemote` takes them.
+   *
+   * **A correction ARRESTS the motion it corrected**, per axis, and that is
+   * what makes a lid feel like a wall instead of a stutter. The map's edge and
+   * the machine's ceiling are both places a pilot arrives at with the stick
+   * still held into them: left with its velocity, the hull re-crosses the line
+   * on the very next frame and is corrected again, twenty times a second, for
+   * as long as the stick is held. Zeroing the component that was moved means
+   * the machine simply stops against the boundary, which is the truth about
+   * what happened to it.
+   */
+  correctTo(x: number, y: number, z: number): void {
+    const p = this.body.position;
+    const wantY = y + this.spec.hull.height / 2;
+    // A hair over float noise in a position that has been through a socket, and
+    // well under anything a correction is ever sent for.
+    const eps = 1e-3;
+    if (Math.abs(x - p.x) > eps) this.vel.x = 0;
+    if (Math.abs(z - p.z) > eps) this.vel.z = 0;
+    if (Math.abs(wantY - p.y) > eps) this.velY = 0;
+    p.set(x, wantY, z);
+    // The leading-end sphere rides the hull and is aimed off its own position,
+    // so it follows the box rather than being left where the box used to be —
+    // `update` re-aims it on any frame the hull actually moved, and this is one.
+    this.aimCollider();
+    // The three exported points, which every ray, every bot and the conquest
+    // count read. Last, and through the one method that writes them.
+    this.sync();
+  }
+
   updateRemote(
     dt: number,
     x: number,

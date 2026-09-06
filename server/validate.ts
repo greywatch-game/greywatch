@@ -1,8 +1,10 @@
 /**
  * server/validate.ts — Is the position a client just reported physically
  * possible?
- * Owns: the speed, ground and solid checks, and nothing else. It returns a
- * verdict; `Match` decides what to do about it.
+ * Owns: the speed, ground and solid checks a BODY takes, the four a HULL takes,
+ * and nothing else. It returns a verdict; `Match` decides what to do about it —
+ * including which verdicts are refusals and which are lids, a distinction
+ * `DriveVerdict` carries and `Verdict` has no need of.
  * Invariants: pure and allocation-free — it runs once per player per input tick
  * and must not become a place that touches sockets, rosters or rounds.
  *
@@ -168,6 +170,53 @@ export function validateMove(
 
 
 /**
+ * Why a hull's reported step was not taken as sent.
+ *
+ * Two of them are REFUSALS — nothing a legitimate client runs can produce
+ * either — and two are LIDS an honest pilot presses against every round. That
+ * split is the whole of `validateDrive`'s policy, and it is stated in the type
+ * because `Match` has to tell a liar from a pilot and the verdict is the only
+ * thing that knows.
+ */
+export type DriveReason = "speed" | "climb" | "ceiling" | "bounds";
+
+/**
+ * What to do with one reported hull step.
+ *
+ * Three outcomes and not two, which is the whole difference between this and
+ * `Verdict`: a hull step can be ACCEPTED AT A POSITION THAT IS NOT THE ONE
+ * REPORTED. `ok` false is a refusal, `ok` true with `clamped` is "you may be
+ * here and no further", and `ok` true without it is the ordinary case.
+ *
+ * **`x`/`y`/`z` are the position to APPLY** and are filled in on every outcome,
+ * so no caller has to work out which of the three it is holding.
+ */
+export interface DriveVerdict {
+  ok: boolean;
+  /** Set on a refusal AND on a clamp; undefined only when nothing was wrong. */
+  reason?: DriveReason;
+  /** True when the position below is not the one that was reported. */
+  clamped: boolean;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
+ * How far over its ceiling a machine may be before it is refused any more
+ * height, in metres.
+ *
+ * The flight model does not CLAMP altitude, it fades the commanded climb RATE
+ * to nothing across `ceilingBand` — so a machine arriving at the lid under
+ * power overshoots it slightly while the arrest runs. The collective is a
+ * first-order lag on a proportional approach and settles about ten centimetres
+ * past the lid at full stick; this is thirty times that, which leaves room for
+ * the float in a position that has been through a socket and for the two sides
+ * sampling the terrain one step apart.
+ */
+const CEILING_ALLOWANCE = 3;
+
+/**
  * Checks one reported HULL step, from the person driving it.
  *
  * **The speed bound that knows what a player is sitting in.** A driver reports
@@ -176,9 +225,9 @@ export function validateMove(
  * game at a stroke: the bound there is a sprint, and a tank at road speed
  * covers three times it.
  *
- * What is checked is the speed and the map's extent, and that is deliberately
- * all — the other two tests a body takes are wrong for a hull rather than
- * merely expensive:
+ * What is checked is the speed, the climb, the map's extent and the ceiling,
+ * and that is deliberately all — the other two tests a body takes are wrong for
+ * a hull rather than merely expensive:
  *
  *   - **No ground test.** `Vehicle.updateRemote` stands the reported hull on its
  *     own ten track contacts on THIS side, against the same colliders the
@@ -189,10 +238,31 @@ export function validateMove(
  *     around, which is what `climbHeight` is for. `resolve` would push it out
  *     of every one of them and read the push as a player standing in a wall.
  *
+ * **THE FOUR CHECKS ARE NOT ONE KIND OF CHECK, and reading them as one cost a
+ * round.** Speed and climb are things no legitimate client can produce, so they
+ * are REFUSED. The extent and the ceiling are rules of the world the client
+ * enforces too and presses against on purpose — a pilot holding the stick out
+ * over the sea, a pilot at the top of the envelope — so they are LIDS: the step
+ * is accepted at the boundary and `Match` tells the client where it actually
+ * is.
+ *
+ * Refusing those two was the bug, and what made it unrecoverable is that a
+ * refusal used to be SILENT. The driver's own hull is the one thing on a client
+ * that is never posed from the wire — `Game.vehicleOrders.remoteFor` answers
+ * null for it, which is the prediction — so nothing pulled the two copies back
+ * together, and the next sample was measured against an authority hull that had
+ * stopped moving. One refusal therefore latched: every later step failed the
+ * speed bound by construction, and the pilot flew a ghost the authority had
+ * parked, captured nothing, could not dismount, and was snapped across the map
+ * by the first thing that took them out of the driver's chair.
+ *
  * What that leaves uncovered is a driver who cheats within the tolerance, and
  * it is the same acceptance the body's check makes for the same reason — with
  * one thing in its favour here: a hull is the most conspicuous object on the
  * map, and it cannot go anywhere fifteen other people are not watching.
+ *
+ * **The verdict is a SHARED object** — `SCRATCH`'s rule one line down and for
+ * the same reason. Read what you need from it before calling again.
  */
 export function validateDrive(
   map: GameMap,
@@ -223,24 +293,41 @@ export function validateDrive(
    */
   maxClimb: number,
   /**
-   * How far over the heightfield this hull may ever be, or **null for one that
+   * How far over the heightfield this hull may CLIMB, or **null for one that
    * cannot leave the ground** — where the answer is "as high as the map goes",
    * and a map is full of legitimate high ground the field knows nothing about.
    * `validateMove`'s own note on its air allowance is the argument.
+   *
+   * **It bounds a climb and not an altitude**, which is the correction the
+   * ceiling term below is written around.
    */
   ceiling: number | null,
-): Verdict {
+): DriveVerdict {
+  const v = DRIVE;
+  v.ok = true;
+  v.reason = undefined;
+  v.clamped = false;
+  v.x = to.x;
+  v.y = to.y;
+  v.z = to.z;
+
+  // --- speed: a REFUSAL ---
+  // Nothing running the drive model covers this much ground in one step, so a
+  // sample that does is a claim rather than a mistake.
   const dx = to.x - from.x;
   const dz = to.z - from.z;
   if (Math.hypot(dx, dz) > maxSpeed * SPEED_TOLERANCE * dt) {
-    return { ok: false, reason: "speed" };
+    v.ok = false;
+    v.reason = "speed";
+    return v;
   }
-  // **The vertical, which until there was something that could fly nothing
-  // bounded at all.** A tracked hull's climb is what riding a grade up gives it
-  // plus what it may carry off the crest, and the tolerance leaves it 65% of
-  // headroom over the fastest rise the limiter in `standOnGround` can actually
-  // produce — so this has never been able to refuse a legitimate tank, and it
-  // is stated for every kind rather than for the one that needed it.
+
+  // --- the climb: a REFUSAL, and the same statement one axis up ---
+  // A tracked hull's climb is what riding a grade up gives it plus what it may
+  // carry off the crest, and the tolerance leaves it 65% of headroom over the
+  // fastest rise the limiter in `standOnGround` can actually produce — so this
+  // has never been able to refuse a legitimate tank, and it is stated for every
+  // kind rather than for the one that needed it.
   //
   // **The DESCENT is deliberately not bounded**, which is the same acceptance
   // the body's own check makes on the same axis: falling is gravity's, a client
@@ -248,30 +335,87 @@ export function validateDrive(
   // have fallen is claiming to be somewhere lower than it was — which is not a
   // thing anybody cheats to do.
   if (to.y - from.y > maxClimb * SPEED_TOLERANCE * dt) {
-    return { ok: false, reason: "speed" };
+    v.ok = false;
+    v.reason = "climb";
+    return v;
   }
-  // The same extent a body is held to, and for the same reason: past the
+
+  // --- the extent: a LID ---
+  // The same reach a body is held to and for the same reason: past the
   // borderland there is no floor, no nav cell and four boundary colliders in
   // the way. A tank is not leashed — the nav graph and the hardstandings are
   // both inside the play square — but nothing here needs to know that, because
-  // "there is nothing out there" is true whatever is claiming to be standing
-  // in it.
+  // "there is nothing out there" is true whatever claims to be standing in it.
+  //
+  // Clamped rather than refused because a HELICOPTER reaches it in ordinary
+  // flight: an island map runs its sea the better part of a kilometre past this
+  // line, and the only thing that has ever stopped a pilot crossing it is the
+  // leash, which is a countdown rather than a wall. This is the wall, and the
+  // pilot is told about it on the sample they touch it rather than by being
+  // quietly detached from the round.
   const half = map.size / 2 + map.margin;
-  if (Math.abs(to.x) > half || Math.abs(to.z) > half) {
-    return { ok: false, reason: "solid" };
+  if (Math.abs(v.x) > half) {
+    v.x = Math.sign(v.x) * half;
+    v.clamped = true;
+    v.reason = "bounds";
   }
-  // …and the CEILING, for a hull that has one. Null on a kind that cannot leave
-  // the ground, where the honest answer to "how high may this be" is "as high
-  // as the map goes" — the field knows nothing about the legitimate high ground
-  // a hull can be parked on, which is `validateMove`'s own argument for its air
-  // allowance. Measured over the heightfield rather than over the origin, the
-  // way the flight model measures it, or the same number means a different
-  // altitude at each end of a map that runs from -6 to +7.
-  if (ceiling !== null && to.y > map.terrain.surfaceAt(to.x, to.z) + ceiling) {
-    return { ok: false, reason: "ground" };
+  if (Math.abs(v.z) > half) {
+    v.z = Math.sign(v.z) * half;
+    v.clamped = true;
+    v.reason = "bounds";
   }
-  return OK;
+
+  // --- the ceiling: a LID, and the one that has to be read carefully ---
+  //
+  // **`flight.ceiling` bounds a RATE and not a HEIGHT**, which is what an
+  // altitude test gets wrong about it. The model fades the commanded climb to
+  // nothing as the machine approaches its ceiling and never pulls the machine
+  // down, so a helicopter cruising at the top of its envelope and crossing
+  // ground that falls away — a ridge, a caldera wall, a coastline — is
+  // legitimately far higher over the floor than `ceiling` and has done nothing
+  // at all to get there. "No higher than `ceiling` over the heightfield" calls
+  // that a cheat, and on a map whose floor runs from a volcanic apron down to a
+  // sea bed it calls it a cheat within seconds of taking off.
+  //
+  // What IS true of the model is that a machine over its ceiling cannot GAIN
+  // height, because the fade is zero up there. That is terrain-INDEPENDENT,
+  // which is exactly what the altitude form was not: over flat ground it pins a
+  // machine at its ceiling, and over falling ground it lets the gap open as
+  // fast as the ground drops without ever refusing anything.
+  //
+  // Asked at `from` — the last place this hull actually WAS — so the rule is
+  // asked about somewhere the authority agrees exists rather than about the
+  // position being claimed. And it FREEZES the height rather than pulling it
+  // down to the lid: a machine that is over its ceiling because the seabed went
+  // past underneath it would be yanked out of the sky by a clamp toward the
+  // floor, which is the failure this whole term exists to avoid.
+  if (
+    ceiling !== null &&
+    v.y > from.y &&
+    from.y - map.terrain.surfaceAt(from.x, from.z) > ceiling + CEILING_ALLOWANCE
+  ) {
+    v.y = from.y;
+    v.clamped = true;
+    v.reason = "ceiling";
+  }
+
+  return v;
 }
+
+/**
+ * The verdict `validateDrive` hands back, reused so the path that runs at
+ * `INPUT_HZ` per driver allocates nothing — `SCRATCH`'s rule below, and
+ * `HeadlessGame.applyDrive`'s, which writes into the object `remoteFor` has
+ * already handed out for the same reason.
+ */
+const DRIVE: DriveVerdict = {
+  ok: true,
+  reason: undefined,
+  clamped: false,
+  x: 0,
+  y: 0,
+  z: 0,
+};
 
 /**
  * Reused so validation allocates nothing per player per tick.
