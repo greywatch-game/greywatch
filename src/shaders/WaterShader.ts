@@ -230,6 +230,23 @@ uniform foamLap: f32;    // metres the waterline breathes with the swell
 uniform crestFoam: f32;  // whitecaps over a shoal
 uniform fleckStrength: f32; // scum drifting out on the open water
 
+// --- the rotor wash: what a machine hovering over this water is doing to it ---
+// One site per rotor working the surface, published by 'RotorWash' because it
+// is already asking each machine the only question this needs. xy = where the
+// ring is standing, z = its radius (the DISC's, so the rim of the hole and the
+// ring of spray particles are the same circle), w = 0..1, how hard.
+uniform washSite: array<vec4f, ${CONFIG.water.wash.sites}>;
+uniform washCount: f32;
+uniform washReach: f32;   // multiples of the radius the rings run out to
+uniform washFlatten: f32; // how much of the wind's field is pressed out
+uniform washBlur: f32;    // roughness added to the mirror inside the disc
+uniform washFoam: f32;    // whitewater across it
+// The rings themselves, and it is deliberately the same three numbers a wave
+// train states, because that is what they are — one train bent into a circle.
+uniform washHeight: f32;
+uniform washLength: f32;
+uniform washSpeed: f32;
+
 uniform pointPos: array<vec3f, ${MAX_POINT_LIGHTS}>;
 uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by intensity
 uniform pointRange: array<f32, ${MAX_POINT_LIGHTS}>;
@@ -244,6 +261,7 @@ uniform pointCount: f32;
 // source. GrassShader settled this; see docs/rendering.md.
 const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
 const WAVE_TRAINS: i32 = ${CONFIG.water.waveTrains};
+const ROTOR_WASH: i32 = ${CONFIG.water.wash.sites};
 const TAU: f32 = 6.2831853;
 
 #include<celBand>
@@ -321,6 +339,92 @@ fn waveField(p: vec2f, footprint: f32) -> Surface {
   return field;
 }
 
+// What a rotor is doing to one patch of water. See rotorWash.
+struct Wash {
+  churn: f32,   // 0..1 — this water is being atomised rather than waved
+  foam: f32,    // 0..1 — whitewater, into the shoreline foam's own mix
+  slope: vec2f, // metres of relief per world metre, from the rings running out
+}
+
+/**
+ * What the rotors over this water are doing to it, summed over the sites.
+ *
+ * ## A downwash is a HOLE, not a wave
+ *
+ * The obvious reach is a ring of concentric waves spreading from a point, and
+ * that is a raindrop rather than a helicopter: what a rotor puts on water is a
+ * dark, matted disc with a white rim, and the rings are only the wake running
+ * out from under it. So the disc is drawn FIRST and the rings start at its rim
+ * — there is no surface left under the disc for a ring to be a ring on.
+ *
+ * The disc itself is three of the numbers the surface already has, spent the
+ * other way, and none of them is a new kind of shading:
+ *
+ * - **the ordered swell is pressed out** ('washFlatten'), because a rotor does
+ *   not calm water and trains rolling on through a patch that is visibly being
+ *   shredded is what tells you the two effects are drawn by different things;
+ * - **the mirror is roughened** ('washBlur'), which is the term that actually
+ *   reads as a hole. A water surface is mostly its reflection, so the fastest
+ *   way to say "this is not a mirror any more" is to blur what it returns —
+ *   and it is the wave field's own sentence, that ripples too fine to draw are
+ *   roughness;
+ * - **and it foams** ('washFoam'), into the same mix as the shoreline's rather
+ *   than as a colour of its own, so the drifting mask breaks it up and what is
+ *   drawn is froth instead of a white circle painted on the bay.
+ *
+ * The rings get the sampling test the wave trains get, for exactly their
+ * reason: 'washLength' is metres and a machine can be watched across a bay, so
+ * at range the rings are finer than the pixel they are drawn in and are not
+ * detail but aliasing. The DISC gets no such test — it is smooth, and a smooth
+ * thing has nothing to alias.
+ *
+ * Sites are WORLD positions and every body's material is handed the same list,
+ * which is what makes a wash sitting on the seam between two rects draw as one
+ * hole in one sea rather than stopping dead at the partition.
+ */
+fn rotorWash(p: vec2f, footprint: f32) -> Wash {
+  var w: Wash;
+  w.churn = 0.0;
+  w.foam = 0.0;
+  w.slope = vec2f(0.0);
+  let k = TAU / max(uniforms.washLength, 0.05);
+  // The rings' own visibility, and it is one test for all of them: they share
+  // a wavelength, so unlike the wave field there is nothing to fade term by
+  // term.
+  let vis = smoothstep(1.0, uniforms.waveDetail,
+    uniforms.washLength / max(footprint, 1e-4));
+  for (var i = 0; i < ROTOR_WASH; i++) {
+    if (f32(i) < uniforms.washCount) {
+      let site = uniforms.washSite[i];
+      let radius = max(site.z, 0.001);
+      let to = p - site.xy;
+      let d = length(to);
+      let reach = radius * uniforms.washReach;
+      // The hole, and it is TWO shapes rather than one. Everything inside the
+      // disc is being shredded, so the churn is the disc; the froth is not,
+      // and drawn as the disc it is a white circle painted on the bay — which
+      // is what it rendered as. A downwash pushes the surface OUT, so the
+      // whitewater piles into an annulus at the rim where the outflow lands
+      // and the middle stays the dark, flattened hole a photograph of one is.
+      let core = site.w * (1.0 - smoothstep(radius * 0.5, radius * 1.25, d));
+      w.churn = max(w.churn, core);
+      let rim = smoothstep(0.0, radius * 0.75, d);
+      w.foam = max(w.foam, core * uniforms.washFoam * mix(0.3, 1.0, rim));
+      // The wake. 'exp(sin - 1)' for waveField's reason — crests pile and
+      // troughs lie flat, and the slope is the derivative of the same term.
+      // It needs no reach test of its own: both envelopes are zero past it.
+      let out = max(d - radius, 0.0);
+      let phase = k * (out - uniforms.time * uniforms.washSpeed);
+      let h = exp(sin(phase) - 1.0);
+      let amp = uniforms.washHeight * site.w * vis
+        * smoothstep(0.0, radius * 0.35, out)
+        * (1.0 - smoothstep(0.0, max(reach - radius, 0.001), out));
+      w.slope += (to / max(d, 1e-4)) * (h * cos(phase) * k) * amp;
+    }
+  }
+  return w;
+}
+
 /**
  * The map's own sky, at an elevation, and it is the SAME gradient 'Sky'
  * paints onto the dome — the four stops down to the horizon, read off
@@ -393,9 +497,18 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // is no longer that a flat patch glints as a sheet (it returns the sky now)
   // but that a hard edge in the relief would draw the depth map's own contour
   // across open water.
-  let relief = uniforms.waveHeight * mix(0.8, 1.0, 1.0 - shoal);
-  // y = h(x, z) has normal (-dh/dx, 1, -dh/dz).
-  let n = normalize(vec3f(-surf.slope.x * relief, 1.0, -surf.slope.y * relief));
+  var relief = uniforms.waveHeight * mix(0.8, 1.0, 1.0 - shoal);
+  // What a rotor over this patch is doing to it — nothing at all on every map
+  // and every frame with no machine low over the water, since 'washCount' is
+  // then zero and the loop does not run.
+  let wash = rotorWash(posW.xz, footprint);
+  // The ordered swell does not survive a downwash; the wake it throws does.
+  relief *= 1.0 - wash.churn * uniforms.washFlatten;
+  // y = h(x, z) has normal (-dh/dx, 1, -dh/dz). The wash's slope is already in
+  // metres per metre — it carries its own relief rather than borrowing the
+  // field's, because it is not one of the trains being faded out.
+  let slope = surf.slope * relief + wash.slope;
+  let n = normalize(vec3f(-slope.x, 1.0, -slope.y));
 
   // --- the key light over the body colour ---
   // Gated by the same shadow map as the bank it laps against — a mill standing
@@ -478,8 +591,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // glazing does NOT make explicit, and the two are right for the same reason:
   // an implicit LOD is correct exactly when the hardware's own derivative is
   // the filtering you wanted.
+  //
+  // The wash's churn is added to the unresolved half here rather than getting
+  // a blur of its own, and that is the whole of why it reads as a hole: the
+  // two are the same claim about the surface — relief this pass cannot draw is
+  // roughness, whether it went missing because it is finer than a pixel or
+  // because a rotor tore it up.
+  let rough = clamp(1.0 - surf.resolved + wash.churn * uniforms.washBlur,
+    0.0, 1.0);
   let cube = textureSampleLevel(reflectionCube, reflectionCubeSampler,
-    probeCubeDir(mirrored), (1.0 - surf.resolved) * uniforms.mirrorBlur);
+    probeCubeDir(mirrored), rough * uniforms.mirrorBlur);
   let mirror = mix(sky, cube.rgb / max(cube.a, 0.001),
     cube.a * uniforms.reflectProbe.w);
 
@@ -561,8 +682,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     * uniforms.fleckStrength * (1.0 - foamBand);
   // Never all the way to the foam colour: a shoal broad enough to foam across
   // its whole width goes solid white at 1.0 and reads as snow, not froth.
+  // The wash's whitewater lands in the same mix and is broken up by the same
+  // drifting mask — never added flat, which is a white circle painted on the
+  // bay rather than froth being torn off it.
   col = mix(col, uniforms.foamColor * light,
-    clamp(foam * 0.85 + caps + flecks, 0.0, 1.0));
+    clamp(foam * 0.85 + caps + flecks + wash.foam * (0.55 + 0.45 * mask),
+      0.0, 1.0));
 
   // --- atmosphere: identical to the cel shader ---
   let mist = uniforms.mistParams.y
@@ -630,6 +755,15 @@ const WATER_UNIFORMS = [
   "foamLap",
   "crestFoam",
   "fleckStrength",
+  "washSite",
+  "washCount",
+  "washReach",
+  "washFlatten",
+  "washBlur",
+  "washFoam",
+  "washHeight",
+  "washLength",
+  "washSpeed",
   "pointPos",
   "pointColor",
   "pointRange",
@@ -710,6 +844,18 @@ export function createWaterMaterial(
   mat.setFloat("foamLap", w.foamLap);
   mat.setFloat("crestFoam", w.crestFoam);
   mat.setFloat("fleckStrength", w.fleckStrength);
+  mat.setFloat("washReach", w.wash.reach);
+  mat.setFloat("washFlatten", w.wash.flatten);
+  mat.setFloat("washBlur", w.wash.blur);
+  mat.setFloat("washFoam", w.wash.foam);
+  mat.setFloat("washHeight", w.wash.height);
+  mat.setFloat("washLength", w.wash.length);
+  mat.setFloat("washSpeed", w.wash.speed);
+  // A body born with no rotor over it, which is every body on every map until
+  // one flies out there — `WaterSystem.setWash` is what moves it, and a
+  // material that never hears from it draws exactly what it always did.
+  mat.setArray4("washSite", new Array(w.wash.sites * 4).fill(0));
+  mat.setFloat("washCount", 0);
   mat.setFloat("time", 0);
   mat.setVector3("camPos", Vector3.Zero());
   mat.setArray3("pointPos", new Array(MAX_POINT_LIGHTS * 3).fill(0));

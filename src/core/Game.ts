@@ -2813,6 +2813,20 @@ export class Game {
     // a per-frame push at a standing GPU emitter, the mote field's own shape,
     // and at most one question per machine on the field.
     this.rotorWash.update(fleetStepped);
+    // …and the WATER's half of the same wash, straight off the sites that call
+    // just worked out. It is here rather than beside `water.update` in the
+    // camera tail for two reasons that both come out of WHERE each one runs.
+    // The tail is only reached by the states that simulate, so a hole in the
+    // bay pushed from there would be one frame stale — the wash is worked out
+    // after the world step and the water is drawn before it. And it is gated
+    // on the same flag as the dust, which is what FREEZES the hole rather than
+    // closing it: a held world is a machine hanging motionless over the water,
+    // `RotorWash` answers 0 for it, and healing the surface under a deploy
+    // card while the swell around it stands stopped mid-crest is the droning
+    // engine again with the picture the wrong way round.
+    if (fleetStepped) {
+      this.water.setWash(this.rotorWash.sites, this.rotorWash.siteCount);
+    }
     this.prof.end(P.culling);
     // The engines of the hulls the player is NOT sitting in, pushed from here
     // for the shader's-eye reason and with the opposite conclusion: every

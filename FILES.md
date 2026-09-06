@@ -406,18 +406,26 @@ src/
                         #   those apart is size, colour and count, never the
                         #   sprite. Needs a canvas, so nothing on the server
                         #   reaches it
-    RotorWash.ts        # The dust a helicopter throws up when it comes down:
-                        #   one standing GPU emitter per rotor on the field,
-                        #   `emitRate` driven off `Vehicle.washTo` — which is
-                        #   the disc's power against its skid clearance, and 0
-                        #   for anything that does not fly. BlastDust's fountain
-                        #   twin: nothing is spawned, nothing is scheduled, and
-                        #   a machine that is high, dead or over WATER is one
-                        #   emitting at a rate of zero. A puff fades IN as well
-                        #   as out, which is a colour GRADIENT and is why a ring
-                        #   is coloured when it is BUILT — see `paint` for the
-                        #   before-the-first-render rule that makes that safe
-                        #   here and not in BlastDust. Client only
+    RotorWash.ts        # What a helicopter does to the surface when it comes
+                        #   down: TWO standing GPU emitters per rotor on the
+                        #   field — dust and SPRAY — with `emitRate` driven off
+                        #   `Vehicle.washTo`, the disc's power against its skid
+                        #   clearance, and 0 for anything that does not fly.
+                        #   BlastDust's fountain twin: nothing is spawned,
+                        #   nothing is scheduled, and a machine that is high,
+                        #   dead or spooled down is one emitting at a rate of
+                        #   zero. WATER picks which ring runs rather than
+                        #   silencing both, and `washTo` is asked a SECOND time
+                        #   with the surface as its floor, because the skyline
+                        #   under a machine over a bay is the bed. It also
+                        #   publishes the wash SITES the water's own shader
+                        #   draws the hole and the rings from. A puff fades IN
+                        #   as well as out, which is a colour GRADIENT and is
+                        #   why a ring is coloured when it is BUILT — see
+                        #   `paint` for the before-the-first-render rule that
+                        #   makes that safe here and not in BlastDust, and for
+                        #   why the spray's pair is LIT on the way in and the
+                        #   dust's is not. Client only
     DeathCam.ts         # The player's own death; the only occlusion pick
                         #   outside combat
     VehicleSystem.ts    # The armour on the field: one hull per hardstanding, the
@@ -484,7 +492,9 @@ src/
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
                         #   always is
-    WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
+    WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth.
+                        #   `setWash` is the rotor sites, pushed from `tick` and
+                        #   not from the camera tail — see it for why
     GrassSystem.ts      # Grass fields as one thin-instanced draw; tufts inside a
                         #   collider are rejected at scatter time
   editor/               # Dev-only map editor (F2). Dynamically imported —
@@ -924,7 +934,7 @@ src/
                         #   at import, so a consumer imports it for the side
                         #   effect
     WaterShader.ts      # Water ShaderMaterial: analytic wave trains, Fresnel
-                        #   mirror. WGSL
+                        #   mirror, and the hole a rotor tears in it. WGSL
     GrassShader.ts      # The blade bend: wind, and combatants pushing through.
                         #   WGSL
     GodRays.ts          # Moon shafts: screen-space radial blur. WGSL

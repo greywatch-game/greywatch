@@ -658,7 +658,12 @@ included.
 
 **Water is a MIRROR with a dark body under it, and it is SAMPLED FROM NOTHING** —
 directional wave trains, no normal map, and re-adding one brings back four rules
-that existed only to hide its lattice.
+that existed only to hide its lattice. The one thing that DISTURBS it is a
+rotor: `washSite` is a short uniform array `RotorWash` fills and every body's
+material is handed, so a hole straddling the seam between two rects is one hole
+in one sea. Its roughness goes into the wave field's own unresolved half — relief
+this pass cannot draw is roughness whether it went missing to a pixel or to a
+downwash — and its ripples take the trains' own sampling test.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
@@ -1554,10 +1559,24 @@ arrives on `build`, and a map whose dust is a different colour gets new rings
 rather than a repaint. **The tint is the map's FLOOR
 where a blast's cloud is its MIST** — a wash is the ground itself four metres
 from the eye, which is `BlastDebrisSystem`'s own call for rubble, and the mist
-version rendered a cloud PALER than the sand it came off. And **water gets
-nothing**, which is half an answer on purpose: spray is a different sprite, so
-dust comes off dry ground and a landing point below a `WaterRect`'s surface
-emits none. It is pushed from `tick` beside the mote field, gated on
+version rendered a cloud PALER than the sand it came off. And **WATER PICKS THE
+OTHER RING rather than silencing both**: spray is a different material, so a
+machine gets a dust ring and a spray ring built on the same map install and
+`surfaceOver` says which is emitting — with `washTo` asked a SECOND time using
+the surface as its `floor`, because water is in neither the terrain field nor
+the obstacle field and the skyline under a machine over a bay is the BED (0.500
+against 0.797 at three metres over Cinderhaven's water). **The spray's colour
+pair is LIT on the way in and the dust's is not**, which is a fact about foam: a
+particle is unlit, `floorColor` carries a map's own darkness with it and
+`foamColor` is near-white on every map by construction, so raw it threw daylight
+spray onto a night harbour. **And the RIPPLE is the water's** — one uniform
+array of sites `RotorWash` publishes and `WaterShader` draws the hole and the
+wake from, out of the same normal, mirror and foam mix the surface already has,
+because a number that must agree with `waveHeight` belongs beside it
+(`CONFIG.water.wash`). A downwash is a HOLE and not a wave — concentric rings
+from a point is a raindrop — so the disc is drawn first, the froth is an ANNULUS
+at the rim, and the rings start there. It is pushed from `tick` beside the mote
+field, gated on
 `fleetStepped` for the engines' reason — a held world is a machine frozen over a
 street, and one still boiling that street is the droning tank with a picture
 instead of a sound — and **that flag is now read ONCE**, because a one-shot flag

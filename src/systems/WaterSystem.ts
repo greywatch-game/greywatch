@@ -84,6 +84,12 @@ export class WaterSystem {
   private bodies: WaterBody[] = [];
   private foam: Texture | null = null;
   private time = 0;
+  /**
+   * How many wash sites the bodies are currently holding. Held only so a map
+   * with no machine over its water costs nothing per frame — see `setWash`.
+   * Reset on `build`, because the materials it is describing are gone.
+   */
+  private washCount = 0;
 
   // Packed point-light uniforms, reused every frame to avoid allocation.
   private pointPos = new Float32Array(MAX_POINT_LIGHTS * 3);
@@ -305,6 +311,38 @@ export class WaterSystem {
   }
 
   /**
+   * The rotors currently working this map's water, packed as the shader wants
+   * them: four floats a site — x, z, the ring's radius and how hard, 0..1.
+   *
+   * **It is a push of its own rather than an argument to `update`, and the
+   * reason is WHERE each of the two is called from.** `update` runs in the
+   * frame's camera tail, which only the states that simulate reach; this is
+   * pushed from `tick` beside the dust the same sites are driving, where
+   * `RotorWash` has just asked every machine on the field. Handed to `update`
+   * it would be one frame stale, because the wash is worked out after the
+   * world step and the water is drawn before it.
+   *
+   * **`Game` gates it on `fleetStepped`, and that gate is what freezes the
+   * hole rather than closing it.** A held world is a machine hanging
+   * motionless over the bay: `RotorWash` answers 0 for it (nothing is being
+   * pushed), and pushing that 0 would heal the water under a deploy card while
+   * the swell around it stays stopped mid-crest — the surface's own `time` is
+   * not advancing either. Not pushing leaves the whole picture stopped
+   * together, which is what a lid means.
+   */
+  setWash(sites: Float32Array, count: number): void {
+    // Nothing on the water and nothing on it last frame either: every material
+    // is already holding a zero count, so this is the ordinary frame on the
+    // five maps out of six with no helicopter over a harbour.
+    if (count === 0 && this.washCount === 0) return;
+    this.washCount = count;
+    for (const { mat } of this.bodies) {
+      mat.setArray4("washSite", sites as unknown as number[]);
+      mat.setFloat("washCount", count);
+    }
+  }
+
+  /**
    * Advances the animation and uploads camera/lights. Same frame-order rule
    * as the cel materials: call after the camera and LightingSystem update.
    */
@@ -335,6 +373,10 @@ export class WaterSystem {
   }
 
   dispose(): void {
+    // The count describes materials that are about to stop existing; the next
+    // build's are born holding zero, so leaving it set would let `setWash`
+    // skip the first push that actually had something to say.
+    this.washCount = 0;
     for (const { mesh, mat, depth } of this.bodies) {
       // Before the dispose, not after: the factory would otherwise keep writing
       // three uniforms a frame into a dead material for the rest of the session.

@@ -2282,17 +2282,103 @@ dust costs, how fast it spreads and how it fades is `CONFIG.vehicles.wash`, one
 block for the fleet — `Build.sound`'s split, where a structure names a sound and
 the audio config owns what it costs.
 
-### Water gets nothing, and that is half an answer on purpose
+### Water is a SECOND ring, and the surface picks which one is running
 
-A rotor over the bay ought to tear a hole in it and throw SPRAY, which is a
-different sprite, a different colour and a different fade. What is here is the
-honest half: dust comes off dry ground, so a wash whose landing point is inside
-a `WaterRect` and BELOW that rect's surface emits nothing. The height half is
-what makes it a test rather than a footprint — a jetty, a quay wall or a beached
-hull inside a rect stands above the surface, and a machine over one of those is
-over something dry. Cinderhaven is the map that made it a rule rather than a
-nicety, being the one with a harbour and a helicopter on it; Sarab's birkat is
-where it was checked (strength 0.797 three metres over the water, rate 0).
+A rotor over the bay tears a hole in it and throws SPRAY, which is a different
+material and therefore a different sprite's worth of numbers. So a machine gets
+TWO rings built on the same map install, exactly one of them is ever emitting,
+and which one is the SURFACE's answer rather than a decision:
+`RotorWash.surfaceOver` asks the map's `WaterRect`s where the landing point is
+and hands back the water's height or NaN. The height half is what makes it a
+test rather than a footprint — a jetty, a quay wall or a beached hull inside a
+rect stands above the surface, and a machine over one of those is over something
+dry and gets the dust. Cinderhaven is the map it was built for, being the one
+with a harbour and a helicopter on it; Sarab's birkat is the other.
+
+**The wet arm asks `washTo` a SECOND time, with the surface as its floor, and
+that is not a tidy-up.** Water is not in the terrain field and not in the
+obstacle field — it is a plane the client draws over a hole in the floor — so
+`skylineAt` under a machine hovering over a bay answers with the BED. Measured
+on Cinderhaven at three metres over 2.6 m of water: **0.500 against the water's
+own 0.797**, a hover reading as the far side of the fall-off curve.
+`Vehicle.washTo(out, floor)` takes `Math.max(skyline, floor)`, so the caller
+that knows where a surface is raises the floor and asks again, and the power,
+the squared fall-off and the skid clearance all stay inside `Vehicle` where the
+rest of the machine is. It is the one thing about the ground a hull cannot see.
+
+**What the spray states is only what DIFFERS**, and what it leaves out is the
+shape of a rotor ring: `spread`, `settle`, `sizeSpread`, `lift` and `fadeIn` are
+facts about a disc pushing air at a surface and are the same whatever the
+surface is made of. The six that are here are facts about the stuff being
+thrown, and all six move the same way because water is heavier than dust and
+there is more of it — 140 a second against 90, 0.9 s of life against 1.5, out at
+4.6 m/s against 3.2, 0.9 m to 2.2 against 1.4 to 3.4 (dust BILLOWS because air
+mixes into it and a sheet of water does not), 0.85 alpha against 0.72, and a
+vertical acceleration of **-1 against +0.5** — the one number in the pair with
+the opposite SIGN, because dust is fine enough for the outflow's curl to carry
+it and water is thrown and then falls.
+
+**And the spray's colour pair is LIT on the way in where the dust's is not,
+which is a fact about foam rather than an inconsistency.** A particle is unlit,
+so whatever colour it is handed is the colour it is on screen, and a colour off
+an `EnvironmentSpec` is an ALBEDO the cel shader would have multiplied by the
+map's light. The dust gets away with ignoring that because `floorColor` carries
+most of a map's darkness with it — a night map's ground is authored dark and its
+dust comes out dark. **`foamColor` is near-white on every map by construction**,
+because that is what froth is, so it carries none of it: raw, a rotor over
+Cinderhaven's bay at night threw a ring of daylight-white spray onto a surface
+whose own foam was being drawn at about half that. `RotorWash.surfaceLight` is
+the correction and it is `WaterShader`'s own three terms taken at the value a
+flat surface gets — the ambient whole, the sky fill whole (that shader's note:
+water is the most up-facing surface on any map), and the key by how far above
+the horizon it is. The bands themselves are deliberately not reproduced: a
+quantised step is a thing a lit SURFACE does and a puff of spray is not one.
+
+### The ripple is the WATER's, and the wash only says where
+
+The other half of a downwash on water is not a particle at all — it is the
+surface going matte, foaming and throwing a wake — so it is drawn by
+`WaterShader`, out of the same normal, the same mirror and the same foam mix the
+surface already has. `RotorWash` publishes the SITES (x, z, the ring's radius,
+0..1) because it is already asking each machine the only question the shader
+needs, and `Game` hands them to `WaterSystem.setWash` on the line under
+`rotorWash.update`.
+
+**That push is from `tick` and not from the camera tail beside `water.update`,
+and both halves of the reason are about WHERE each one runs.** The tail is only
+reached by the states that simulate, and the wash is worked out after the world
+step while the water is drawn before it — so a site handed to `update` is one
+frame stale. And it is gated on the same `fleetStepped` as the dust, which is
+what FREEZES the hole rather than closing it: a held world is a machine hanging
+motionless over the bay, `RotorWash` answers 0 for it, and healing the surface
+under a deploy card while the swell around it stands stopped mid-crest is the
+droning-engine lie with the picture the wrong way round.
+
+**A downwash is a HOLE, not a wave**, which is the shape the shader draws and
+the thing the obvious version gets wrong. Concentric rings spreading from a
+point is a RAINDROP; what a rotor puts on water is a dark matted disc with a
+white rim, and the rings are only the wake running out from under it. So the
+disc is drawn first and the rings start at its RIM — there is nothing left under
+the disc for a ring to be a ring on — and the disc itself is three of the
+numbers the surface already has, spent the other way: the ordered swell is
+pressed out (`washFlatten`), the mirror is roughened (`washBlur`, added straight
+into the wave field's own unresolved half, since relief this pass cannot draw is
+roughness whether it went missing to a pixel or to a rotor), and it foams
+(`washFoam`, into the shoreline foam's own mix so the drifting mask breaks it
+up). The froth is an ANNULUS and not the disc: drawn as the disc it rendered as
+a white circle painted on the bay, and a downwash pushes the surface OUT, so the
+whitewater piles at the rim and the middle stays the dark flattened hole.
+
+**The number that decides whether the rings read is the SLOPE, and it is
+amplitude over wavelength rather than either one.** Fitted first on the night
+map at 0.09 m over 2.2 m — four times the steepest thing the wind's own field
+produces — and on Sarab in daylight that rendered as a set of hard white arcs,
+because the crests were tipped far enough to catch `specStrength` through its own
+`smoothstep` and what a viewer read was a stencil of rings rather than water
+moving. **Judge these on a BRIGHT map**, where the glint and the mirror are both
+live; a night harbour cannot fail that test, and at 0.085 over 3.4 m the rings
+are legible on Sarab's birkat and faint on Cinderhaven's bay, which is what a
+dark mirror honestly does to a slope.
 
 ### A puff fades IN as well as out, and that is a colour gradient
 
@@ -2359,9 +2445,15 @@ colour pair is doing as much of the work as the alpha is.
 
 ### What it costs, and where it is pushed from
 
-135 particle slots per rotor, fixed at construction, so the whole feature is 270
-on the two maps that field a helicopter — and one question per machine per
-frame. The emitter pool GROWS and never shrinks across map installs, which is
+135 particle slots for the dust ring per rotor and 126 for the spray ring, fixed
+at construction — 261 a rotor, so the whole feature is 522 on the two maps that
+field a helicopter, and one question per machine per frame (two on the frames a
+machine is over water, which is the second `washTo`). A map with no
+`WaterEnvSpec` builds no spray rings at all rather than building them silent.
+The water's own half costs one uniform array and a loop over
+`CONFIG.water.wash.sites` (4) per water pixel, and on every map and every frame
+with no machine low over the water `washCount` is zero and the loop does not
+run. The emitter pool GROWS and never shrinks across map installs, which is
 the opposite of `Atmosphere.fit`'s rebuild and opposite for its reason: there
 the capacity was the map's, and here it is a constant.
 

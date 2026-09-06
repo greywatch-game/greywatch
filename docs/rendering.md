@@ -1225,6 +1225,52 @@ paints the whole flat white. The same mistake in a second place is
 0.14 in the shader and a thresholded copy of the foam mask over every water
 pixel is, once again, a texture on the water.
 
+### The one thing that disturbs it: a rotor
+
+**A downwash is a HOLE and not a wave, and that is the whole shape of the
+term.** Concentric rings spreading from a point is what a RAINDROP does; what a
+rotor puts on water is a dark matted disc with a white rim, and the rings are
+only the wake running out from under it. So the disc is drawn first, the rings
+start at its RIM — there is nothing left under the disc for a ring to be a ring
+on — and the disc reuses three things the surface already has rather than adding
+a fourth kind of shading. The ordered swell is pressed out of it
+(`washFlatten`), because trains rolling on through a patch that is visibly being
+shredded is what tells a viewer the two effects are drawn by different things.
+The mirror is roughened (`washBlur`), which is the term that actually reads as a
+hole: a water surface is mostly its reflection, so the fastest way to say "this
+is not a mirror any more" is to blur what it returns — and it goes into the wave
+field's own `1 - resolved` rather than into a blur of its own, because the two
+are the same claim, that **relief this pass cannot draw is roughness**, whether
+it went missing to a pixel or to a rotor. And it foams (`washFoam`), into the
+shoreline foam's own mix so the drifting mask breaks it up: laid on flat it is a
+white circle painted on the bay, and the froth is an ANNULUS anyway, since a
+downwash pushes the surface OUT and the middle stays the dark flattened hole.
+
+**The sites are a uniform ARRAY and every body's material is handed the same
+one**, which is what makes a wash sitting on the seam between two rects draw as
+one hole in one sea rather than stopping dead at the partition — the pinwheel
+partition rule above, paid back. `RotorWash` fills it (x, z, the ring's radius —
+the DISC's, so the rim of the hole and the ring of spray particles are one
+circle — and 0..1), `Game` pushes it through `WaterSystem.setWash`, and on every
+map and every frame with no machine low over the water the count is zero and the
+loop does not run.
+
+**The rings take the wave trains' own sampling test and the disc does not.**
+`washLength` is metres and a machine can be watched across a bay, so at range
+the rings are finer than the pixel they are drawn in and are not detail but
+aliasing; the disc is smooth and a smooth thing has nothing to alias.
+
+**What decides whether the rings READ is the slope — amplitude over wavelength,
+not either one — and it must be judged on a BRIGHT map.** Fitted first on the
+night map at 0.09 m over 2.2 m, four times the steepest thing the wind's own
+field produces, and on Sarab in daylight that rendered as a set of hard white
+arcs: the crests were tipped far enough to catch `specStrength` through its own
+`smoothstep`, so what a viewer read was a stencil of rings rather than water
+moving. A night harbour cannot fail that test, because a dark mirror returns
+almost nothing at any slope. At 0.085 over 3.4 m the rings are legible on
+Sarab's birkat and faint on Cinderhaven's bay, which is what a dark mirror
+honestly does.
+
 ### Two traps that cost time
 
 **A trailing `//` comment in a GLSL string may not contain a semicolon.**

@@ -299,6 +299,99 @@ export const water = {
    * the water, which is the complaint this whole rewrite started from.
    */
   fleckStrength: 0.05,
+  /**
+   * What a ROTOR does to the surface it is hovering over: the hole a downwash
+   * tears in the water, the white ring at the edge of the disc, and the rings
+   * running out from under it.
+   *
+   * **It is here and the SPRAY is on the vehicle, and that split is the same
+   * one `CONFIG.vehicles.wash` already makes with `flight.washHeight`.** What
+   * a machine states is what its rotor reaches; what a picture costs is one
+   * block. Spray is a picture of the MACHINE — a ring of particles emitted by
+   * a rotor, priced and coloured beside the dust it replaces — and the ripple
+   * is a picture of the WATER, drawn by the water's own shader and owing
+   * agreement with the numbers above it: its relief is spent against the same
+   * normal as `waveHeight`, its foam lands in the same mix as `crestFoam`, and
+   * its roughness is added to the same `resolved` the mirror's LOD reads. A
+   * number that has to agree with `waveHeight` belongs beside `waveHeight`.
+   *
+   * `RotorWash` is what publishes the sites, because it is already asking each
+   * machine the one question this needs — see `WaterSystem.setWash`.
+   */
+  wash: {
+    /**
+     * How many rotors may be working the water at once. The shipped maps field
+     * one machine a side, so two is the real number and four is the headroom;
+     * it is the uniform ARRAY's bound, interpolated into the shader as a
+     * literal for the reason `waveTrains` is, so raising it recompiles.
+     */
+    sites: 4,
+    /**
+     * How far the disturbance runs out, as a multiple of the ring's own radius
+     * — which is the disc's, so on the gunship's 5.7 m ring this is about 23 m
+     * of bay. It is where the rings have died, not where they are strongest:
+     * everything up to the ring is the hole and everything past it is the
+     * wake.
+     */
+    reach: 3.5,
+    /**
+     * How much of the wind's own wave field is pressed OUT under the disc.
+     *
+     * Near 1 rather than 1: a rotor does not calm water, it atomises it, so
+     * what goes away is the ordered swell and what replaces it is `blur` — the
+     * ordered trains would otherwise go on rolling through a patch of water
+     * that is visibly being shredded, which is the tell that the two effects
+     * are drawn by different things.
+     */
+    flatten: 0.8,
+    /**
+     * Roughness added to the mirror inside the disc, in the same units the
+     * wave field's unresolved half is measured in (`1 - resolved`, mip levels
+     * through `mirrorBlur`).
+     *
+     * **This is what actually reads as a hole in the water**, and it is the
+     * term to reach for before any of the others. A water surface is mostly
+     * its reflection, so the fastest way to say "this is not a mirror any
+     * more" is to blur what it returns — and it is physically the same
+     * sentence the wave field makes, that ripples too fine to draw are
+     * roughness.
+     */
+    blur: 0.6,
+    /**
+     * Whitewater across the disc, into the same mix as the shoreline foam and
+     * the whitecaps — so it is modulated by the same drifting mask rather than
+     * laid on as a flat disc, which is the difference between froth and a
+     * white circle painted on the bay.
+     */
+    foam: 0.85,
+    /**
+     * The rings running out from the rim: relief (m), wavelength (m) and the
+     * speed they travel at (m/s) — deliberately the same three numbers a wave
+     * train states above, because that is what this is.
+     *
+     * **The number that matters is the SLOPE, and it is amplitude over
+     * wavelength rather than either one.** These two were first fitted on a
+     * night map, where a mirror returns a dark sky and almost nothing shows —
+     * 0.09 m over 2.2 m, which is four times the steepest thing the wind's own
+     * field produces. On Sarab in daylight that rendered as a set of hard
+     * white arcs: the crests were tipped far enough to catch `specStrength`
+     * through its own `smoothstep`, so what a viewer read was a stencil of
+     * rings rather than water moving. **Judge these on a BRIGHT map**, where
+     * the glint and the mirror are both live; a night harbour cannot fail this
+     * test.
+     *
+     * The relief must also stay inside `waveHeight`'s own bound and for its
+     * reason: this surface has no vertex displacement, so past about a quarter
+     * of a metre of implied relief the slope aims the reflected ray under the
+     * horizon and the water returns the ground behind the player. What buys
+     * the effect is not amplitude anyway — it is that these rings are
+     * CONCENTRIC, the one shape nothing else on the surface has, since every
+     * train in the field is directional.
+     */
+    height: 0.085,
+    length: 3.4,
+    speed: 4.5,
+  },
 } as const;
 
 /**

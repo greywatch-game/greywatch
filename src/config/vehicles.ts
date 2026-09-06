@@ -412,8 +412,11 @@ export const vehicles = {
    */
   wreckTime: 16,
   /**
-   * What a ROTOR does to the ground it is over: one block for the fleet, read
-   * by nothing but the client's `RotorWash`.
+   * What a ROTOR does to the surface it is over: one block for the fleet, read
+   * by nothing but the client's `RotorWash`. Dust here, and `spray` below for
+   * the same ring over water — but NOT the water's own ripple, which is
+   * `CONFIG.water.wash`: a number that has to agree with `waveHeight` belongs
+   * beside `waveHeight`, and that file carries the split.
    *
    * **It is here rather than on the kind for `Build.sound`'s reason.** A
    * machine states what its rotor reaches (`flight.washHeight`) and how wide
@@ -434,7 +437,7 @@ export const vehicles = {
    *
    * Colour is not here, for that block's reason: this dust is the GROUND it
    * came off, so it is the map's `floorColor` lifted toward the key light —
-   * see `RotorWash.setEnvironment`, which carries why that is the FLOOR where
+   * see `RotorWash.paletteFor`, which carries why that is the FLOOR where
    * a blast's cloud takes the mist.
    */
   wash: {
@@ -516,6 +519,71 @@ export const vehicles = {
     fadeIn: 0.2,
     /** How far the tint is lifted from the map's FLOOR toward its key light. */
     lit: 0.15,
+    /**
+     * The same ring over WATER, which is a different material and therefore a
+     * different sound: SPRAY.
+     *
+     * **It states only what differs, and what it leaves out is the shape of a
+     * rotor ring.** `spread`, `settle`, `sizeSpread`, `lift` and `fadeIn` are
+     * facts about a disc pushing air at a surface and are the same whatever
+     * the surface is made of; these six are facts about the stuff being
+     * thrown, and every one of them moves in the same direction because water
+     * is HEAVIER than dust and there is more of it available. It goes out
+     * harder and comes down instead of hanging, and the ring collapses back
+     * into the surface rather than drifting off it.
+     *
+     * Colour is not here for the dust block's own reason, and the answer is
+     * the same shape one map layer over: spray is the WATER it came off, so
+     * the pair is the map's `foamColor` over its `shallowColor`
+     * (`RotorWash.paint`) — whitewater with the body of the bay under it,
+     * where the dust is the floor lifted toward the key light.
+     */
+    spray: {
+      /**
+       * Puffs a second, and how long one lives. Denser and shorter than the
+       * dust's 90 and 1.5: a rotor over water has an unlimited supply of it
+       * and none of it stays up. The product is this ring's own capacity —
+       * 126 slots against the dust ring's 135, and both are allocated per
+       * machine, so a map with a harbour and a helicopter pays 261 a rotor.
+       */
+      rate: 140,
+      life: 0.9,
+      /**
+       * How fast a puff leaves the ring (m/s). Harder than the dust's 3.2,
+       * because there is no ground under it to lift off — the outflow is
+       * already at the surface it is tearing at, so the sheet goes out at
+       * something near the speed of the air rather than being kicked up into
+       * it.
+       */
+      speed: 4.6,
+      /**
+       * Vertical acceleration (m/s^2), and it is the one number here with the
+       * opposite SIGN to the dust's. Dust rises because it is fine enough for
+       * the outflow's curl to carry it; water is thrown and then falls, and a
+       * spray ring that drifted upward would be steam. A metre of fall over a
+       * life, which is what makes the ring read as collapsing back into the
+       * bay rather than standing over it.
+       */
+      rise: -1,
+      /**
+       * Puff diameter (m) at birth and at the end. Smaller than the dust's 1.4
+       * and 3.4 at both ends, and the END is where the difference is: dust
+       * BILLOWS, because what expands a cloud is air mixing into it, and a
+       * sheet of water does not mix with anything. It grows about half as much
+       * over its life.
+       */
+      sizeStart: 0.9,
+      sizeEnd: 2.2,
+      /**
+       * Alpha at the top of the ramp. Higher than the dust's 0.72, and for the
+       * reason the dust's argument about overlap turned out to be wrong in the
+       * other direction: dust is very nearly the colour of the ground it came
+       * off, and whitewater is emphatically not the colour of a bay — the
+       * contrast is already there, so the alpha is free to say the sheet is
+       * dense rather than having to make it visible.
+       */
+      opacity: 0.85,
+    },
   },
   /**
    * What the AI does with a hull, and the whole of what it is allowed to do

@@ -1476,14 +1476,26 @@ export class Vehicle implements Combatant, RayHull {
    * - **The fall-off is SQUARED**, which is `washHeight`'s note: half the
    *   reach is a quarter of the dust, so what a viewer reads is the last few
    *   metres of a landing rather than a cloud that switches on at a height.
+   *
+   * **`floor` is the one thing about the ground a hull cannot see**, and it is
+   * an argument for exactly that reason rather than as a convenience. WATER is
+   * not in the terrain field and not in the obstacle field — it is a plane the
+   * client draws over a hole in the floor — so `skylineAt` under a machine
+   * hovering over the bay answers with the BED, and a metre over the water
+   * reads as four metres over the mud. The caller that knows where a surface
+   * is (`RotorWash`, which holds the rects) raises the floor to it and asks
+   * again; everything else about the number — the power, the squared fall-off,
+   * the skid clearance — stays in here, which is the whole point of the hull
+   * answering at all. Absent, it is the skyline, which is every kind of ground
+   * this game has but one.
    */
-  washTo(out: Vector3): number {
+  washTo(out: Vector3, floor = -Infinity): number {
     const f = this.spec.flight;
     if (!f || !this.alive) return 0;
     const power = this.rotorPower(f);
     if (power <= 0) return 0;
     const p = this.body.position;
-    const ground = this.skylineAt(p.x, p.z);
+    const ground = Math.max(this.skylineAt(p.x, p.z), floor);
     const clear = p.y - this.spec.hull.height / 2 - ground;
     if (clear >= f.washHeight) return 0;
     const near = 1 - Math.max(0, clear) / f.washHeight;
