@@ -676,6 +676,34 @@ export const vehicles = {
      */
     airHold: 4,
     /**
+     * How much of the pedal authority the airframe HAS a pilot actually uses,
+     * as a fraction of `VehicleSpec.drive.turnRate` — 0.75 rad/s here, a
+     * forty-three-degree-a-second turn against an airframe that can do
+     * seventy-seven.
+     *
+     * **It is a filter and a manner at the same time, and it is a rate limit
+     * rather than a smoothing because of the first.** `VehicleCrew.holdYaw`
+     * carries the measurement; the short of it is that a flow field is sampled
+     * per frame, a helicopter crosses a nav cell every fifth frame, and the
+     * bearing that comes back reverses its direction of change about twelve
+     * times a second. Handed over raw it was full pedal each way, so the
+     * machine wagged its nose two and a half times a second and banked with
+     * every wag. What a rate limit does to that is arithmetic and independent
+     * of how wild the excursions are: the held bearing can only move
+     * `airTurn * turnRate` per second, so noise reversing every 1/24 s moves it
+     * about a degree.
+     *
+     * **High rather than low, and that is deliberate.** The filtering does not
+     * need it to be slow — a degree of residual wag is already invisible — so
+     * what the number is actually choosing is how a REAL turn looks: 0.75 rad/s
+     * puts a ninety-degree turn onto a new street in 2.1 s and a full reversal
+     * in 4.2, which is inside `detourTime`'s own three seconds of commitment.
+     * Take it much lower and the pilot stops being able to follow a detour it
+     * has just committed to; take it to 1 and the pedal is back to being the
+     * route's to slam.
+     */
+    airTurn: 0.55,
+    /**
      * The SECOND crewman's numbers, and there are only three of them because
      * everything else about him is the driver's already: the same think clock,
      * the same one ray per acquisition, the same held target.

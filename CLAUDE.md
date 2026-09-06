@@ -1464,12 +1464,34 @@ on a bearing (the same flow field) and a HEIGHT — `Vehicle.aloftAt`, which is
 `rideableAt`'s question asked of the air, off the same two halves of the world.
 So `VehicleCrew.fly` is `steer` with two substitutions, the fan hands back the
 altitude with the bearing, and **the answer to something in the way is UP, a
-bearing being what is left when going over has been refused.** Two rules it
-must keep: **the climb allowance is against the CLOSING speed and never a fixed
-gradient** (a gradient refuses every bearing to a machine still on its skids),
-and **a bearing is not lost by flying over ground nobody could stand on** —
-gated on `NavGrid.surfaceAt` returning -1, because the other way a route runs
-out is having ARRIVED and reading that as lost flies a machine out of the map.
+bearing being what is left when going over has been refused.** Three rules it
+must keep. **The climb allowance is against the CLOSING speed and never a fixed
+gradient** (a gradient refuses every bearing to a machine still on its skids).
+**A bearing is not lost by flying over ground nobody could stand on** — gated on
+`NavGrid.surfaceAt` returning -1, because the other way a route runs out is
+having ARRIVED and reading that as lost flies a machine out of the map. And
+**A FLOW FIELD'S BEARING IS NOT AN ORDER A PILOT CAN FLY**, which is the one
+that made bot helicopters unwatchable: `steerAhead` blends the next cell centre
+with the lookahead one, and the near half of that blend is a sub-cell correction
+written for something WALKING on the grid — so a machine crossing a 1.5 m cell
+every fifth frame was handed a bearing whose direction of change reversed 12.0
+times a second at a median rate of 1.88 rad/s, against an airframe that yaws at
+1.35. No lookahead cures it, because the near term is half the blend by
+construction. So the bearing a pilot flies is HELD (`VehicleCrew.holdYaw`,
+eased at `crew.airTurn` of the hull's own `turnRate`) and the route only nudges
+it — **a rate limit rather than a smoothing, because what it states is that a
+pilot turns at the rate he has chosen to turn at**, and the whiskers run on the
+held bearing so what is cleared is what is flown. Sarab, five rounds: yaw
+acceleration rms 5.00 rad/s^2 to 1.72, roll rate rms 0.329 to 0.153, turn
+reversals 0.411/s to 0.000 — **and mean ground speed 7.10 m/s to 9.20**, because
+`flyOn`'s heading fall-off means a nose that never settles is choking its own
+throttle. The HEIGHT is deliberately not held the same way and that was measured
+too: the airframe's own dynamics already low-pass the collective, and a rationed
+descent moved climb-to-sink reversals 0.57/s to 0.57/s. **The weave was in the
+yaw.** A pilot also reads its route off the STREET (`VehicleCrew.column`) rather
+than off whichever surface is nearest its altitude, which is a roof twelve
+metres over a town — a correctness fix and explicitly NOT the cure for the
+weave.
 
 **And `moveWithCollisions` opens with `getAbsolutePosition()`, which nothing on
 the AUTHORITY had ever computed** — a client's render walk writes it once a
@@ -1510,7 +1532,8 @@ its engine off.
 capabilities that stand in for a branch between them, the truck's trade and the
 helicopter's fragility; the two seats and the swap, the cupola gun's
 world angle and its stowed inversion, the crew of two, the whisker fan and the
-two geometry bugs it found; the collider's three answers; the tracks' sweep, its
+two geometry bugs it found, and the pilot's held bearing with the five-round
+measurement behind it; the collider's three answers; the tracks' sweep, its
 three gates and its two skips; each model's mesh budget, its running gear and
 its whips, and the gunship's chin turret with the four clearances it owes; the
 mounted gun as one gun on three mounts and the one recording all three name;

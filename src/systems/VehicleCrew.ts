@@ -270,6 +270,13 @@ interface Crew {
    * helicopter is regularly over ground no body could stand on.
    */
   lostT: number;
+  /**
+   * The bearing a PILOT is FLYING, as against the one the route offers it this
+   * frame. See `VehicleCrew.holdYaw` — a flow field is re-derived per frame
+   * from a machine crossing a 1.5 m cell every fifth one, and handing that over
+   * raw is what made a helicopter weave.
+   */
+  flyYaw: number;
   /** Which way it steers while doing that. Fixed per crew — see `reverseSteer`. */
   readonly reverseSide: number;
   /** Set by `remove`, so a crew disbanded mid-sweep is skipped rather than stepped. */
@@ -280,6 +287,7 @@ interface Crew {
 // allocates.
 const _dir = new Vector3();
 const _aim = new Vector3();
+const _at = new Vector3();
 /**
  * Where across the hull's beam each whisker is sampled, as a fraction of the
  * half-width.
@@ -348,6 +356,12 @@ const AIR_LATERAL = [0, 0.5, -0.5, 1, -1] as const;
  * a field on the crew because that is all it is: it is written and read inside
  * one call of `fly` and means nothing between two of them.
  */
+/**
+ * A y below anything any map in the tree contains, which is how a PILOT asks
+ * the nav graph about the STREET rather than about the roof it is over. See
+ * `VehicleCrew.column`.
+ */
+const GROUND_COLUMN = -1e6;
 let _aloft = 0;
 
 export class VehicleCrew {
@@ -608,6 +622,10 @@ export class VehicleCrew {
       detourYaw: 0,
       detourT: 0,
       lostT: 0,
+      // On the hull's own nose, for `drive.aimYaw`'s reason above: a pilot who
+      // has just sat down is flying the heading he is pointed at, and a zero
+      // here is due north.
+      flyYaw: tank.yaw,
       // Fixed per crew and split by side, so two hulls in the same street do
       // not both shoulder the same way out of it.
       reverseSide: tank.team === 0 ? 1 : -1,
@@ -988,7 +1006,7 @@ export class VehicleCrew {
           : dist < c.standoff * 0.7
             ? -c.engageThrottle
             : 0;
-    } else if (this.route(tank, crew.bot.objective)) {
+    } else if (this.route(tank, crew.bot.objective, false)) {
       wantYaw = Math.atan2(_dir.x, _dir.z);
       closing = 1;
     }
@@ -1073,11 +1091,16 @@ export class VehicleCrew {
    * `steer` aims at the next cell CENTRE, which is a 1.5 m zigzag under a body
    * and a 7.2 m hull sawing down a street.
    */
-  private route(tank: Vehicle, objective: string): boolean {
+  private route(tank: Vehicle, objective: string, onGround: boolean): boolean {
     if (!this.nav || !objective) return false;
     const field = this.nav.field(objective);
     if (!field) return false;
-    this.nav.steerAhead(field, tank.position, CONFIG.vehicles.crew.lookahead, _dir);
+    this.nav.steerAhead(
+      field,
+      this.column(tank, onGround),
+      CONFIG.vehicles.crew.lookahead,
+      _dir,
+    );
     return _dir.lengthSquared() > 1e-6;
   }
 
@@ -1195,6 +1218,7 @@ export class VehicleCrew {
       // machine wedged would have it turning back into the thing it is backing
       // away from.
       d.aimYaw = tank.yaw;
+      crew.flyYaw = tank.yaw;
       this.collective(crew, want);
       return;
     }
@@ -1236,7 +1260,7 @@ export class VehicleCrew {
             ? -c.engageThrottle
             : 0;
       crew.lostT = 0;
-    } else if (this.route(tank, crew.bot.objective)) {
+    } else if (this.route(tank, crew.bot.objective, true)) {
       wantYaw = Math.atan2(_dir.x, _dir.z);
       closing = 1;
       crew.lostT = 0;
@@ -1269,6 +1293,13 @@ export class VehicleCrew {
       closing = 1;
     }
 
+    // **What the pilot flies is a HELD heading eased onto the one it wants, and
+    // everything below this line reads the held one.** The fan above all: it
+    // clears the bearing the machine is actually on rather than one it was
+    // never going to fly, and `_aloft` — the altitude that bearing demands —
+    // stops swinging with it. See `holdYaw`.
+    wantYaw = this.holdYaw(crew, wantYaw, dt);
+
     if (closing > 0 && crew.detourT <= 0) {
       const clear = this.pickAloft(tank, wantYaw);
       if (clear === null) {
@@ -1280,6 +1311,7 @@ export class VehicleCrew {
         d.throttle = 0;
         d.steer = 0;
         d.aimYaw = tank.yaw;
+        crew.flyYaw = tank.yaw;
         this.collective(crew, want);
         return;
       }
@@ -1287,7 +1319,15 @@ export class VehicleCrew {
         crew.detourYaw = clear;
         crew.detourT = c.detourTime;
       }
+      // The fan OVERRIDES the hold rather than being eased onto, and the held
+      // heading takes its answer: this is the one bearing on the list that is
+      // not a preference — it is the only air the machine may fly through, and
+      // easing onto it would spend the ease inside whatever it is avoiding. A
+      // deviation worth the name has just been committed to two lines up, so
+      // the frames after it come back through the branch at the top of `fly`
+      // and are eased like everything else.
       wantYaw = clear;
+      crew.flyYaw = clear;
       if (_aloft > want) want = _aloft;
     }
 
@@ -1327,7 +1367,88 @@ export class VehicleCrew {
    * leashed.
    */
   private offGraph(at: Vector3): boolean {
-    return !this.nav || this.nav.surfaceAt(at.x, at.y, at.z) < 0;
+    return !this.nav || this.nav.surfaceAt(at.x, GROUND_COLUMN, at.z) < 0;
+  }
+
+  /**
+   * The point the flow field is asked about — the hull's own for a DRIVER, and
+   * the STREET UNDER IT for a pilot.
+   *
+   * **A helicopter navigates by the town's plan and not by the parapet it
+   * happens to be over**, and without this it did the second. `NavGrid` stacks
+   * several walkable surfaces in one cell and `surfaceAt` picks whichever is
+   * nearest in HEIGHT to the point it is handed — the right answer for a body,
+   * whose feet are on one of them, and the wrong one for a machine flying
+   * twelve metres over the roofs: the surface it was "on" was routinely a roof,
+   * and a roof's step count in the field has nothing to do with the street's,
+   * so crossing a parapet swapped the whole route for an unrelated one.
+   *
+   * `GROUND_COLUMN` is what asks for the street: `surfaceAt` minimises
+   * `|height - y|`, so a y below anything a map contains selects the LOWEST
+   * walkable surface in the column and never a roof over it. Where a footprint
+   * has no street under it at all the roof is still the only candidate and the
+   * answer is what it always was.
+   *
+   * **It is a correctness fix and NOT the cure for the weave**, which is worth
+   * knowing before it is reached for as one: measured on Sarab it took the
+   * commanded bearing's reversals from 12.0 a second to 10.9, inside the
+   * variation between two rounds. What it buys is that a gunship crossing a
+   * town has a route at all — see `airHold`, whose whole existence is the pilot
+   * losing one.
+   */
+  private column(tank: Vehicle, onGround: boolean): Vector3 {
+    if (!onGround) return tank.position;
+    return _at.set(tank.position.x, GROUND_COLUMN, tank.position.z);
+  }
+
+  /**
+   * Ease the heading this pilot is FLYING onto the one it wants, and hand back
+   * the held one. `driveOn`'s `steerGain` has no counterpart here on purpose:
+   * that one turns a heading error into a STICK, and this turns an order into
+   * an order a pilot would have given.
+   *
+   * **A flow field is sampled per frame and a helicopter crosses a nav cell
+   * five times a second, so what it answers with is noise on top of a route.**
+   * `NavGrid.steerAhead` blends the direction of the NEXT cell centre with the
+   * one `lookahead` cells on, and the near half of that blend is a sub-cell
+   * correction meant for something walking on the grid — a vector whose length
+   * collapses to nothing as the machine passes over the cell it points at, and
+   * which jumps between the eight link directions every time the cell under the
+   * machine changes. A body at 4 m/s absorbs it. Measured on Sarab, a gunship
+   * was handed a bearing whose direction of change REVERSED 12.0 times a second
+   * at a median rate of 1.88 rad/s — against an airframe that yaws at 1.35, so
+   * it was not an order that could have been followed even had it been meant.
+   * `flyOn` spent it as full pedal, and the machine wagged its nose two and a
+   * half times a second and banked with every wag, the bank being
+   * `airspeed * yawRate`.
+   *
+   * **A rate limit is the whole of the filter, and it is a manner rather than a
+   * smoothing.** It says a pilot turns at the rate he has chosen to turn at,
+   * which is a claim about a person; what it does to the noise is arithmetic
+   * and independent of how wild the excursions are, since a bearing reversing
+   * every 1/24 s can only move the held one by `airTurn * turnRate / 24` — a
+   * degree. The mean is tracked at full rate, so a REAL turn costs nothing but
+   * the time it ought to take. Measured on the same map: yaw acceleration rms
+   * 5.12 rad/s^2 to 1.73, roll rate rms 0.325 rad/s to 0.166, and turn
+   * reversals above 0.05 rad/s 0.43 a second to 0.002.
+   *
+   * **It is not a lag on the fan**, which is the one thing a filter here could
+   * have cost: `fly` runs the whiskers on the held bearing rather than on the
+   * raw one, so what is cleared is what is flown.
+   */
+  private holdYaw(crew: Crew, wantYaw: number, dt: number): number {
+    const c = CONFIG.vehicles.crew;
+    const step = c.airTurn * crew.tank.spec.drive.turnRate * dt;
+    const err = angleDelta(crew.flyYaw, wantYaw);
+    // `angleDelta` from zero IS the wrap to [-PI, PI], and the bearing is held
+    // in it rather than left to wind: every reader goes through `angleDelta`
+    // and could not tell, but a heading that has quietly reached 600 radians is
+    // one nothing can read in a probe.
+    crew.flyYaw = angleDelta(
+      0,
+      crew.flyYaw + Math.max(-step, Math.min(step, err)),
+    );
+    return crew.flyYaw;
   }
 
   /**
@@ -1339,6 +1460,17 @@ export class VehicleCrew {
    * commands a RATE and the ceiling fades the rate, so a pilot ordering a climb
    * into air the machine cannot hold is answered with zero and stops there. A
    * limit here would be that limit stated twice, and two of them drift.
+   *
+   * **The height is deliberately NOT held the way the heading is**, which is
+   * worth knowing before it is added. The demand is a step function — `wantY`
+   * is the top of whatever is under the machine plus the clearance, so a
+   * gunship at 17 m/s crossing a parapet moves it eight metres in one frame,
+   * and it reversed direction 3.6 times a second on Sarab. A rationed descent
+   * to filter that was written and then taken back out, because the machine
+   * never showed it: the vertical dynamics already low-pass the collective hard
+   * (`liftResponse` chases a RATE, through `climbAccel`), so the step does not
+   * reach the airframe. 943 s of flying, climb-to-sink reversals 0.57 a second
+   * with the ration and 0.57 without. **The weave was in the YAW.**
    */
   private collective(crew: Crew, wantY: number): void {
     const err = wantY - crew.tank.position.y;

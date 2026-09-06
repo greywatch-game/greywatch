@@ -2566,13 +2566,118 @@ machine sits on its pad through the spool, goes straight up, and only then
 leaves the yard, which is exactly the departure the pad's own clearance
 argument is written around.
 
+### A flow field's bearing is not an order a pilot can fly
+
+Everything above hands `flyOn` a bearing derived fresh from the world this
+frame, and for a tank that is fine. For a helicopter it was the single worst
+thing about how one flew, and it is worth having the measurement rather than the
+story: on Sarab a bot-flown gunship was handed a bearing whose **direction of
+change reversed 12.0 times a second**, at a median rate of **1.88 rad/s against
+an airframe that yaws at 1.35**. It was not merely noisy — it was an order that
+could not have been obeyed even if it had been meant.
+
+The source is not a bug in `NavGrid` and cannot be tuned out of it.
+`steerAhead` blends the direction of the NEXT cell centre with the direction of
+the one `lookahead` cells on, and the near half of that blend is a sub-cell
+correction written for something WALKING on the grid: a vector from the body's
+exact position to an adjacent cell centre, whose length collapses to nothing as
+the body passes over that centre and which jumps between the eight link
+directions each time the cell underneath changes. At 4 m/s and 2.4 rad/s of body
+yaw a bot absorbs it, and `crew.lookahead` is already the tank's answer to the
+same shape at 7 m of hull. **Neither helps here, because the near term is half
+the blend by construction** — a longer lookahead moves the other half and
+nothing else. The machine crosses a 1.5 m cell every fifth frame at cruise.
+
+`flyOn` then spent that as full pedal, since `flyStep` saturates the pedal
+outside `yawBand`. The visible result was a machine wagging its nose two and a
+half times a second, and BANKING with every wag — the bank is
+`airspeed * yawRate`, so the noise reached the picture twice.
+
+**So the bearing a pilot flies is HELD, and the route only ever nudges it.**
+`VehicleCrew.holdYaw` eases `crew.flyYaw` onto the wanted bearing at
+`crew.airTurn` of the hull's own `turnRate`, and everything downstream reads the
+held one. Three things make that the right shape rather than a filter bolted on:
+
+- **It is a rate limit and not a smoothing**, which means it is a claim about a
+  PERSON — a pilot turns at the rate he has chosen to turn at — rather than a
+  claim about a signal. What it does to the noise is arithmetic and independent
+  of how wild the excursions are: a bearing reversing every 1/24 s can move the
+  held one by `airTurn * turnRate / 24`, about a degree. The MEAN is tracked at
+  full rate, so a real turn costs nothing but the time it ought to take.
+- **The fan runs on the held bearing**, not on the raw one. That is the one
+  thing a filter here could have cost — a pilot easing onto a heading nobody had
+  cleared — and putting `holdYaw` in front of `pickAloft` settles it by
+  construction: what is cleared is what is flown. The fan's own answer then
+  OVERRIDES the hold and writes `crew.flyYaw` directly, because it is the one
+  bearing on the list that is not a preference, and easing onto it would spend
+  the ease inside whatever it is avoiding.
+- **The number is high rather than low**, and deliberately: 0.55 of 1.35 rad/s
+  is a 43 deg/s turn. The filtering does not need it slow — a degree of residual
+  wag is already invisible — so what the number chooses is how a REAL turn
+  looks. It puts 90 degrees onto a new street in 2.1 s and a full reversal in
+  4.2, inside `detourTime`'s own three seconds of commitment. Much lower and a
+  pilot cannot follow a detour it has just committed to.
+
+Measured over five rounds on Sarab, ~2,000-2,500 s of flying each way, and one
+round on Cinderhaven:
+
+| | Sarab before | Sarab after | Cinderhaven before | after |
+| --- | --- | --- | --- | --- |
+| yaw acceleration rms | 5.00 rad/s^2 | **1.72** | 5.69 | **2.10** |
+| yaw rate rms | 0.713 rad/s | **0.490** | 0.707 | **0.443** |
+| roll rate rms | 0.329 rad/s | **0.153** | 0.388 | **0.194** |
+| turn reversals over 0.05 rad/s | 0.411/s | **0.000** | 0.622/s | **0.013** |
+| median time held on one turn | 0.133 s | **0.300** | 0.100 s | **0.267** |
+
+**And it made them FASTER, which was not the aim and is the part worth
+remembering.** `flyOn`'s heading fall-off cuts the cyclic as the heading error
+grows, so a nose that never settled was choking its own throttle: mean ground
+speed over the same five rounds went **7.10 m/s to 9.20**, and the share of
+airborne time spent under 3 m/s went **33.0% to 12.8%**. A machine that is not
+fighting itself gets where it is going.
+
+**The height is deliberately NOT held the same way**, and that was measured too
+rather than assumed. The wanted altitude is a step function — the top of
+whatever is under the machine plus `airClearance`, so crossing a parapet at
+17 m/s moves it eight metres in one frame — and it reversed direction 3.6 times
+a second. A rationed descent to filter it was written and then taken back out,
+because the machine never showed it: the vertical dynamics already low-pass the
+collective hard (`liftResponse` chases a RATE through `climbAccel`), so the step
+does not reach the airframe. 943 s of flying, climb-to-sink reversals 0.57/s
+with the ration and 0.57/s without. The weave was in the yaw.
+
+### A pilot reads the route off the STREET
+
+`VehicleCrew.column` is one line and it is a correctness fix rather than part of
+the above: **a helicopter navigates by the town's plan, not by the parapet it
+happens to be over.** `NavGrid` stacks several walkable surfaces in one cell and
+`surfaceAt` picks whichever is nearest in HEIGHT to the point it is handed —
+right for a body, whose feet are on one of them, and wrong for a machine flying
+twelve metres over the roofs, whose nearest surface was routinely a roof. A
+roof's step count in the field has nothing to do with the street's, so crossing
+a parapet swapped the whole route for an unrelated one and then swapped it back.
+
+The fix is to ask about a y below anything a map contains, since `surfaceAt`
+minimises `|height - y|` and therefore selects the LOWEST walkable surface in
+the column. Where a footprint has no street under it the roof is still the only
+candidate and the answer is what it always was. `offGraph` asks the same way,
+for the same reason.
+
+**It is not the cure for the weave and should not be reached for as one**: on
+its own it took the commanded bearing's reversals from 12.0 a second to 10.9,
+inside the variation between two rounds. What it buys is that a gunship crossing
+a town HAS a route — which is the section below, whose whole existence is a
+pilot losing one.
+
 ### A bearing is not lost by flying over ground nobody could stand on
 
 `route` runs out for two different reasons and a pilot has to tell them apart,
-which a tank never has to. The flow field answers off the walkable surface
-nearest the column, so a machine over deep water, over a roof, or over anything
-else the graph was never grown across gets no route at all — and for a
-helicopter that is not a failure, it is the vehicle doing what it is for.
+which a tank never has to. The flow field answers off a walkable surface, so a
+machine over deep water — or over anything else the graph was never grown across
+— gets no route at all, and for a helicopter that is not a failure, it is the
+vehicle doing what it is for. (A ROOF used to be on that list and is not any
+more: see `column` above. It never belonged there, because a street the machine
+is directly over is a route and not a gap in one.)
 Holding the heading for `crew.airHold` carries it across and the route comes
 back on the far side.
 
