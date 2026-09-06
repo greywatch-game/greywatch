@@ -1,5 +1,5 @@
 /**
- * lobby.css — The match browser: the list of matches and the two picker rows
+ * lobby.css — The match browser: the list of matches and the three picker rows
  * under it.
  * Owns #lobby and nothing else. Drawn in the shell (`.ui-screen` / `.ui-veil`
  * / `.ui-solid` in base.css) — the head carries the title and the status line,
@@ -245,9 +245,11 @@
 #lobby .lb-action .lb-id { color: #aeb6c2; }
 #lobby .lb-action.sel .lb-id { color: var(--hot); }
 
-/* The two picker rows — the map a new match starts on, and the region it
-   starts in — one button per choice in the middle column the states and
-   hints share. Their own strip rather than the overlay's `.tier` — those
+/* The three picker rows — the map a new match starts on, the region it starts
+   in, and whether it fields bots — one button per choice in the middle column
+   the states and hints share. The third needed no rule of its own, which is the
+   strip working: a picker is a row of choices whatever it is choosing between,
+   and two buttons is a list of two. Their own strip rather than the overlay's `.tier` — those
    rules are scoped to #overlay, and a shared class between two screens that
    are never on together would be a shared constraint for nothing. */
 #lobby .lb-picks {

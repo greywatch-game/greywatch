@@ -1811,6 +1811,26 @@ and never as a flag on `Bot`, **every loop over `bots` there must skip it**
 (through `aside`, which also covers a tank's crew), and **a slot index IS a bot
 index**.
 
+**…AND A MATCH MAY BE CREATED WITH NO BOTS AT ALL, which is `MapLayout.perTeam`
+reaching a round as ZERO rather than a new kind of absence.** `Join.bots` is
+`Join.map`'s twin — a REQUEST spent only on a match the join actually builds,
+dropped when it lands in one that exists, additive, and stated as a NEGATIVE
+read as `!== false` so a field nobody sent falls through to the game everybody
+had. `HeadlessGame.startRound` fields none, `BattleSystem.setFielded` sets every
+bot **aside**, and nothing downstream had to be told: the target lists, the
+squads, the tickets, the board and the crews a hull would be handed are already
+written against `aside`. **The SEATS are untouched** — sixteen still fit and the
+match fills by the same roster — which is why this is the one place the wire's
+"how many slots hold a BODY" and the simulation's "how many bots are in the
+fight" stop being one number (`Match.fieldedSlots`, the seats). **An empty slot
+is STATED and not read**: an aside bot's death clock is frozen, a client hides a
+body at `dead >= 1`, so an aside-and-not-alive slot goes out as `dead: 1` or a
+leaver's last standing frame is in the street for the round. A CREWED bot is
+aside and ALIVE and is deliberately not that. **A row has to SAY it**
+(`MatchSummary.bots`), because `3 / 16` looks identical either way and "Bots
+only" — the empty label that means a fight is already happening — is the one
+flatly false thing that could be on that screen.
+
 **Four things arrive from the authority and may only be written through their one
 funnel**, because a client that decides any of them for itself is playing a
 different game in the same window: the local player's **team**

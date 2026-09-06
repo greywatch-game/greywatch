@@ -50,7 +50,7 @@ import {
 import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/Vehicle";
 import { MAPS } from "../src/world/maps";
 import { HeadlessGame } from "./HeadlessGame";
-import { Roster } from "./Roster";
+import { HUMANS_PER_TEAM, Roster } from "./Roster";
 import { validateDrive, validateMove } from "./validate";
 import { readClientMessage } from "./wire";
 
@@ -335,6 +335,18 @@ export class Match {
    * `rotate` is the only thing that moves it afterwards.
    */
   private mapId: string;
+  /**
+   * Whether this match fields bots — `Join.bots` off the join that created it,
+   * and a fact about the MATCH rather than about the round.
+   *
+   * `readonly` in effect and deliberately not moved by anything: a rotation
+   * changes the map and re-decides how many bodies it fields, and a player
+   * arriving in a botless round joined one for that reason. There is no way to
+   * turn bots on in a running match and there should not be one — the roster is
+   * how a match fills, and a round that grew sixteen bodies under the four
+   * people playing it would be a different game than the row they picked.
+   */
+  private readonly withBots: boolean;
   private ticks = 0;
 
   /**
@@ -466,8 +478,9 @@ export class Match {
    * map instead of standing up a match naming a world that does not exist here.
    * Nothing downstream re-checks it, which is why this is the one door.
    */
-  constructor(readonly id: string, wantedMap?: string) {
+  constructor(readonly id: string, wantedMap?: string, bots = true) {
     this.mapId = MAPS.find((m) => m.id === wantedMap)?.id ?? MAPS[0].id;
+    this.withBots = bots;
     // A bot went down, however it was done. The bearing, the size and the KIND
     // of the killing blow ride along because a client throws its corpse with
     // them — `Bot.takeDamage` captured all three before this fired, which is
@@ -650,6 +663,7 @@ export class Match {
       // smallest map in the rotation, so that a rotation never has to evict
       // anybody. See `Roster.capacity`.
       slots: this.roster.capacity,
+      bots: this.withBots,
       state: this.rotating ? "rotating" : this.timer ? "live" : "empty",
     };
   }
@@ -933,16 +947,47 @@ export class Match {
     return this.starting;
   }
 
+  /**
+   * How many slots a side this round puts on the WIRE — which is not how many
+   * bots it fields, and in a botless match is not the same number.
+   *
+   * The two questions have always been distinct and only ever had one answer
+   * before this: "how many bots are in the fight" (`HeadlessGame.perTeam`,
+   * spent on `BattleSystem.setFielded`) and "how many slots hold a body a
+   * client must pool, draw and be shot by" (`Roster.setFielded`). On an
+   * ordinary match every fielded slot is a bot until a person takes it, so the
+   * two are one number and taking it from the simulation is what stopped them
+   * drifting.
+   *
+   * A botless match separates them, and the separation is the honest one: the
+   * simulation fields no bots, and the wire still carries the SEATS, because a
+   * seat is where a person goes and a person is a body whatever the round
+   * fields. `HUMANS_PER_TEAM` and not `perTeam` for two reasons that agree — it
+   * is exactly the set of slots a botless round can ever hold a body in
+   * (`Roster.claim` seats nobody outside it), and it is the smallest roster any
+   * map fields, so it is inside the pool every client built off its own map and
+   * a rotation can never take it out of range.
+   *
+   * What that buys is the case nobody sees coming: a person leaving a botless
+   * match. Their slot goes back to a bot that is set aside — dead, disabled —
+   * and the snapshot keeps carrying it as such, so every client puts the body
+   * away. Sent as nothing at all instead, the last frame a leaver was alive in
+   * would stand in the street for the rest of the round.
+   */
+  private fieldedSlots(): number {
+    return this.withBots ? this.game.perTeam : HUMANS_PER_TEAM;
+  }
+
   private async start(): Promise<void> {
     if (!this.game.map) {
       const def = MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
-      await this.game.startRound(def, 1);
+      await this.game.startRound(def, 1, this.withBots);
     }
     // What this map fields, onto the table. The simulation has already been
-    // told (`HeadlessGame.startRound`); this is the same number reaching the
-    // one thing that decides what goes out on the wire, taken from the
+    // told (`HeadlessGame.startRound`); this is the same decision reaching the
+    // one thing that decides what goes out on the wire, derived from the
     // simulation rather than resolved a second time so the two cannot drift.
-    this.roster.setFielded(this.game.perTeam);
+    this.roster.setFielded(this.fieldedSlots());
     // Wall-clock accumulator rather than one step per timer fire: `setInterval`
     // drifts and coalesces under load, and a simulation that took its `dt` from
     // whenever the timer happened to run would speed up and slow down with the
@@ -1049,11 +1094,11 @@ export class Match {
     this.mapId = next;
     const def = MAPS.find((m) => m.id === next) ?? MAPS[0];
 
-    await this.game.startRound(def, 1);
+    await this.game.startRound(def, 1, this.withBots);
     // The new map's roster, onto the table — see `start`. FIRST, because
     // everything below it either re-benches over the top of what
     // `setFielded` decided or sends a list this filters.
-    this.roster.setFielded(this.game.perTeam);
+    this.roster.setFielded(this.fieldedSlots());
     for (const player of this.game.players.values()) {
       player.retire();
       player.respawnT = 0;
@@ -1133,6 +1178,31 @@ export class Match {
         continue;
       }
       const bot = bots[i];
+      // **A fielded slot with NOTHING in it**, which is what every seat in a
+      // botless match is until somebody sits down in it, and what a seat goes
+      // back to when they leave. A bot that is set aside without being ALIVE is
+      // benched or unfielded — off the field until something puts it back — and
+      // its `deathProgress` is frozen wherever its last death left it, which is
+      // 0 for one that has never died. So the state is stated rather than read:
+      // a client puts a body away at `dead >= 1` and would otherwise hold a
+      // leaver's last standing frame in the street for the rest of the round.
+      //
+      // A CREWED bot is aside and alive, and is deliberately not this: it is a
+      // body inside a hull, its position is the hull's, and `VehicleState.by`
+      // is what stops it being drawn standing beside one.
+      if (!bot.alive && this.game.battle.aside(bot)) {
+        this.entityScratch.push({
+          i,
+          p: [bot.position.x, bot.position.y, bot.position.z],
+          yaw: bot.lookYaw,
+          bodyYaw: bot.feetYaw,
+          pitch: bot.aimAngle,
+          moving: 0,
+          alive: false,
+          dead: 1,
+        });
+        continue;
+      }
       const state: EntityState = {
         i,
         p: [bot.position.x, bot.position.y, bot.position.z],

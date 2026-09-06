@@ -129,13 +129,15 @@ export class HeadlessGame {
   map: GameMap | null = null;
 
   /**
-   * How many bodies a side the STANDING map fields — its own `perTeamOf`,
-   * resolved once per round by `startRound`.
+   * How many BOTS a side the STANDING round fields — the standing map's own
+   * `perTeamOf`, resolved once per round by `startRound`, and ZERO in a match
+   * created without bots.
    *
-   * Read by `Match`, which owes it to two places: the roster it broadcasts and
-   * the snapshot it builds, both of which must mention the bodies in the round
-   * and no others. `CONFIG.bots.perTeam` before there is a map, which is what a
-   * map stating nothing fields.
+   * Read by `Match`, which spends it on the simulation's half of the round and
+   * deliberately not on the wire's: what goes out is the slots that can hold a
+   * BODY, and in a botless match those are the seats rather than this. See
+   * `Match.fieldedSlots`. `CONFIG.bots.perTeam` before there is a map, which is
+   * what a map stating nothing fields.
    */
   perTeam: number = CONFIG.bots.perTeam;
 
@@ -260,7 +262,7 @@ export class HeadlessGame {
    * and conquest starts. The rig pool is never disposed, so this is the only
    * place the roster's difficulty can change — exactly as on the client.
    */
-  async startRound(def: MapDef, difficulty: number): Promise<void> {
+  async startRound(def: MapDef, difficulty: number, bots = true): Promise<void> {
     this.battle.setDifficulty(difficulty);
     this.map?.dispose();
     this.map = await buildServerWorld(this.scene, def);
@@ -277,7 +279,23 @@ export class HeadlessGame {
     // humans over the top of it. Bots the map does not field are set aside
     // exactly as a benched one is, so nothing downstream — the target lists,
     // the tickets, the squads, the board — has to be told twice.
-    this.perTeam = perTeamOf(def.layout);
+    //
+    // **A BOTLESS MATCH FIELDS ZERO OF IT, AND THAT IS THE WHOLE OF THE
+    // FEATURE.** `bots: false` on the join that created this match arrives here
+    // as a roster of nothing, and every bot in the pool is set aside by the
+    // line below — dead, off the field, thought for by nobody, shootable by
+    // nobody, holding neither a ticket nor a place in a squad. It is the same
+    // sentence a map that fields eight out of a pool of twenty-four already
+    // says, with the number taken to its end, which is why nothing downstream
+    // had to be told: the target lists, the squads, the tickets, the crews a
+    // hull would otherwise be handed and the board are all already written
+    // against `aside`.
+    //
+    // What it does NOT touch is the SEATS. A botless match is one people fill
+    // rather than one nobody can join — `Roster` is untouched, sixteen still
+    // fit, and `Match` fields the seatable block on the wire so a slot a person
+    // walks out of goes back to being a body nobody is drawing.
+    this.perTeam = bots ? perTeamOf(def.layout) : 0;
     this.battle.setFielded(this.perTeam);
     // Where this map's edge is, for everybody already seated. A rotation can
     // put a rim-closed map up after an open one and back, and `setMap` is what

@@ -55,6 +55,11 @@ export interface JoinOptions {
    * the join lands in a match that already exists — see `Join.map`.
    */
   map?: string;
+  /**
+   * Whether a match created by this join should field bots. `map`'s twin, and
+   * ignored in the same case for the same reason — see `Join.bots`.
+   */
+  bots?: boolean;
 }
 
 export class Connection {
@@ -139,6 +144,7 @@ export class Connection {
         matchId: this.join.matchId,
         create: this.join.create,
         map: this.join.map,
+        bots: this.join.bots,
         weapon: this.join.weapon,
         equipment: this.join.equipment,
       });

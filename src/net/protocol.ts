@@ -158,6 +158,20 @@ export interface MatchSummary {
   humans: number;
   slots: number;
   /**
+   * Whether this match fields bots at all — see `Join.bots`.
+   *
+   * On the summary rather than derivable from the numbers beside it, because
+   * nothing else here can say it: a botless match with three people in it lists
+   * as `3 / 16` exactly as an ordinary one does, and the difference between the
+   * two is thirteen bodies that will never arrive. It is the one fact about a
+   * row a player cannot find out by joining and looking, since an empty street
+   * is also what a round between two people looks like from a spawn.
+   *
+   * Optional and absent means YES, which is what every server that predates
+   * this field ran and what every match on one of them is.
+   */
+  bots?: boolean;
+  /**
    * `empty` — built, nobody in it, the world may already be disposed.
    * `live` — a round is being simulated.
    * `rotating` — the round ended and the next map is being built.
@@ -1089,6 +1103,31 @@ export interface Join {
    * default map, which is what every client got before this existed.
    */
   map?: string;
+  /**
+   * Whether a match this join CREATES should field bots.
+   *
+   * `map`'s twin in every respect and read the same way: a request spent only
+   * on a match this call builds, ignored entirely when the join lands in one
+   * that already exists — how many bodies are in a round is a fact about the
+   * round, and sixteen people are already fighting it. Additive, and a server
+   * that has never heard of the field fields bots, which is what every match
+   * before this one did.
+   *
+   * `false` is the whole of the message; anything else — including the junk an
+   * unchecked boolean can be — means bots, which is why `wire.ts` does not
+   * validate it any more than it validates `create`. It is stated as a NEGATIVE
+   * for that reason: the safe reading of a field nobody sent, or of one that
+   * arrived mangled, is the game everybody already had.
+   *
+   * What it does on the authority is field ZERO bodies a side out of the bot
+   * pool (`HeadlessGame.startRound`), which is `MapLayout.perTeam` reaching a
+   * match through the number that was already there rather than a new kind of
+   * absence — a bot in a botless match is set aside exactly as a bot on a map
+   * that does not field its slot is. The SEATS are untouched: sixteen people
+   * still fit, and the match fills and empties by the same roster it always
+   * did.
+   */
+  bots?: boolean;
   /**
    * The primary weapon this client wants to carry.
    *

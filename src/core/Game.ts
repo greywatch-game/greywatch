@@ -499,6 +499,23 @@ export class Game {
   private mapDef: MapDef = readMap();
 
   /**
+   * Whether a match this client CREATES should field bots — the lobby's Bots
+   * row, spent by `joinMatch` and by nothing else.
+   *
+   * `mapDef`'s neighbour on that screen and deliberately not its twin. The map
+   * is a PREFERENCE and is remembered across sessions (`writeMap`), because it
+   * is what the menu offers you again afterwards; this is a parameter of one
+   * new match and is not remembered at all. What decides it is that a wrong map
+   * is on screen before anything is spent and a wrong answer here is invisible
+   * until sixteen bodies fail to turn up — a player who took bots off once, six
+   * weeks ago, and opens the lobby expecting a fight has no way to see what is
+   * about to happen. It is also not a claim about a match this client JOINS: a
+   * row's match runs whatever it was built with, and `MatchSummary.bots` is
+   * what the row says about that.
+   */
+  private lobbyBots = true;
+
+  /**
    * The standing map's FLOOR — the third half of `mapDef`, held beside it
    * because it does not arrive with it.
    *
@@ -1789,12 +1806,14 @@ export class Game {
     // server this client last spoke to.
     this.lobbyScreen.onJoin = (regionId, matchId, mapId) =>
       this.joinMatch({ regionId, matchId, mapId });
-    // A new match is the one join that DOES take this client's map and its
-    // chosen region — the two picker rows on that screen — and `joinMatch`
-    // sends the map for the server to spend on the match it builds.
+    // A new match is the one join that DOES take this client's map, its chosen
+    // region and its answer about bots — the three picker rows on that screen —
+    // and `joinMatch` sends the two parameters for the server to spend on the
+    // match it builds.
     this.lobbyScreen.onCreate = () => this.joinMatch({ create: true });
     this.lobbyScreen.onPickRegion = (index) => this.setRegion(index);
     this.lobbyScreen.onPickMap = (index) => this.setMap(index);
+    this.lobbyScreen.onPickBots = (bots) => this.setLobbyBots(bots);
     this.lobbyScreen.onRefresh = () => void this.refreshLobby();
     this.lobbyScreen.onClose = () => this.closeLobby();
     this.overlayScreen.onPauseAction = (action) => {
@@ -2059,6 +2078,11 @@ export class Game {
     // handed the standing one rather than keeping a second copy that could
     // disagree with it.
     this.lobbyScreen.setMapChoice(MAPS.indexOf(this.mapDef));
+    // The other parameter of a new match. Unlike the map there is nowhere else
+    // it is shown, so this is the only push it gets — and it is pushed on every
+    // open for `setMapChoice`'s reason rather than out of symmetry: the screen
+    // draws what it is handed and holds no state of its own.
+    this.lobbyScreen.setBotsChoice(this.lobbyBots);
     this.lobbyScreen.show();
     void this.refreshLobby();
   }
@@ -2540,6 +2564,22 @@ export class Game {
     // row — and the menu underneath it is redrawn by `closeLobby` anyway.
     if (this.state === "lobby") this.lobbyScreen.setMapChoice(next);
     else this.showMenu();
+  }
+
+  /**
+   * The player PICKING whether a new match fields bots: the lobby's Bots row.
+   *
+   * `setMap`'s shape one field along — the screen asks for the value to move
+   * and is told what it became, so the row and the value a join spends cannot
+   * disagree — minus the persistence, for the reason on `lobbyBots`. Lobby-only
+   * where the map is also the menu's: there is exactly one place this is asked
+   * and one place it is spent, and a keypress that arrives after the lid came
+   * down is not a pick.
+   */
+  private setLobbyBots(bots: boolean): void {
+    if (this.state !== "lobby" || bots === this.lobbyBots) return;
+    this.lobbyBots = bots;
+    this.lobbyScreen.setBotsChoice(bots);
   }
 
   /**
@@ -5897,6 +5937,11 @@ export class Game {
       // somewhere" can end in a fresh match too — the server spends this only
       // when it actually builds one, and ignores it otherwise.
       map: this.mapDef.id,
+      // The other parameter of a new match, on every join for the same reason
+      // and spent in the same one place. `undefined` where it is the default,
+      // so an ordinary join carries no field at all rather than a `true` that
+      // says nothing.
+      bots: this.lobbyBots ? undefined : false,
     });
   }
 

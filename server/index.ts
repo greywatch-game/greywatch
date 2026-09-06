@@ -238,8 +238,8 @@ let nextMatchId = 1;
  * `Match`, which resolves it against the real map table — nothing here trusts
  * it, and nothing here needs to know what maps exist.
  */
-function createMatch(mapId?: string): Match {
-  const match = new Match(`m${nextMatchId++}`, mapId);
+function createMatch(mapId?: string, bots = true): Match {
+  const match = new Match(`m${nextMatchId++}`, mapId, bots);
   match.onRetired = () => matches.delete(match.id);
   matches.set(match.id, match);
   return match;
@@ -268,11 +268,20 @@ function createMatch(mapId?: string): Match {
  * room. A peer landing in an existing match gets that match's map and is told so
  * in the welcome; a preference cannot move a round sixteen people are already
  * standing in.
+ *
+ * **`bots` is that same sentence** and is passed beside it on both paths for
+ * the same reason: how many bodies are in a round is a fact about the round,
+ * so it is spent on the one this call builds and dropped when the peer lands
+ * somewhere that already exists. A player who wants no bots and is seated in a
+ * running match gets that match's bots, exactly as they get its map — and the
+ * lobby is where that choice is made visible, because the row says which kind
+ * each match is.
  */
 function routeJoin(
   matchId?: string,
   create?: boolean,
   map?: string,
+  bots = true,
 ): { match: Match } | { refuse: string } {
   if (matchId !== undefined) {
     const match = matches.get(matchId);
@@ -287,7 +296,7 @@ function routeJoin(
     if (matches.size >= MAX_MATCHES) {
       return { refuse: "this server is already running as many matches as it can" };
     }
-    return { match: createMatch(map) };
+    return { match: createMatch(map, bots) };
   }
   for (const match of matches.values()) {
     if (match.hasBotSlot()) return { match };
@@ -295,7 +304,7 @@ function routeJoin(
   if (matches.size >= MAX_MATCHES) {
     return { refuse: "every match on this server is full" };
   }
-  return { match: createMatch(map) };
+  return { match: createMatch(map, bots) };
 }
 
 /** The lobby's view of this process. */
@@ -548,7 +557,11 @@ wss.on("connection", (socket: WebSocket, req: IncomingMessage) => {
         `protocol ${msg.version} but this server speaks ${PROTOCOL_VERSION}`,
       );
     }
-    const route = routeJoin(msg.matchId, msg.create, msg.map);
+    // `bots !== false` and not `!!msg.bots`: the field is a NEGATIVE and the
+    // safe reading of one nobody sent — an older client, or a value `wire.ts`
+    // does not check any more than it checks `create` — is the game everybody
+    // already had. See `Join.bots`.
+    const route = routeJoin(msg.matchId, msg.create, msg.map, msg.bots !== false);
     // Refused BEFORE `joined` is set, so a client that named a match which
     // has since filled can pick another row and try again on the same socket
     // rather than reconnecting. `refuse` closes it anyway today; leaving the

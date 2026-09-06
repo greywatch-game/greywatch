@@ -95,7 +95,11 @@ sand.
 `server/Roster.ts` holds **forty-eight slots, built once, never resized or
 reordered.** A slot is never created or destroyed — only who feeds it changes.
 
-- A match starts as soon as one person is present. Every unfilled slot is a bot.
+- A match starts as soon as one person is present. Every unfilled slot is a bot
+  — unless the match was created without them, which fields none and is the one
+  thing on this page that makes an unfilled slot mean "empty" (see "A match may
+  field no bots at all"). Nothing in this file knows about that: it is a number
+  the ROUND fields, and the slot table is the same forty-eight either way.
 - A human joining takes the lowest-numbered SEATABLE bot slot on the thinner
   team; the bot there is **benched**.
 - A human leaving un-benches it, and the bot rejoins through the ordinary
@@ -1571,6 +1575,93 @@ naming a world the server does not have. Additive on the wire: a client that
 sends no `map` gets the default, which is what every client got before the field
 existed. The lobby's own Map row is where a player sets it, and it is the same
 pick the menu shows — one choice, two places it is on screen.
+
+### A match may field no bots at all
+
+**`Join.bots` is `Join.map`'s twin, in every respect above.** It is a REQUEST
+spent only on a match the join actually builds — both create paths in
+`routeJoin`, the explicit one and the fallthrough where nothing had room — and
+dropped entirely when the peer lands in a match that already exists, because how
+many bodies are in a round is a fact about the round and not a preference a
+seventeenth arrival gets to impose on it. It is additive: a client that sends
+nothing gets bots, which is what every match before the field existed ran.
+
+**It is stated as a NEGATIVE and read as `!== false`**, which is the whole of
+what `wire.ts` does about it — the same nothing it does about `create`. A field
+nobody sent, or one that arrived as junk, has to fall through to the game
+everybody already had, and a positive `bots: true` would make the safe reading
+the one a mangled frame is least likely to produce.
+
+**What it does on the authority is field ZERO bodies a side**, and that is the
+point of it: `HeadlessGame.startRound` takes `bots` and sets `perTeam` to 0
+instead of the map's `perTeamOf`, which `BattleSystem.setFielded` spends exactly
+as it spends a map that fields eight out of a pool of twenty-four. Every bot in
+the pool is set aside — dead, off the field, thought for by nobody, shootable by
+nobody, holding neither a ticket nor a place in a squad's formation, and refused
+a seat in any hull by the `aside` test `VehicleCrew` already asks. **Nothing
+downstream had to be told**, and that is the reason this is a number and not a
+new kind of absence: the target lists, the squads, the tickets, the crews and
+the board are all already written against `aside`, and the third member of it
+was added the same way (`unfielded`).
+
+**The SEATS are untouched, and a botless match is one people fill.**
+`Roster` never hears about any of this: sixteen still fit, `hasBotSlot` still
+answers, `claim` still takes the thinner side, and a person joining still
+benches the bot in their slot — a bot that was already set aside, so the bench
+is a no-op that costs nothing and needs no exception. What a botless match is,
+exactly, is a match whose empty slots stay empty.
+
+**The one place the two questions had to be separated is what goes on the
+WIRE.** "How many bots are in the fight" and "how many slots hold a body a
+client must pool, draw and be shot by" have always been the same number, and
+`Match.start` took it from the simulation precisely so the two could not drift.
+They are not the same number here: the simulation fields none and the wire
+carries the SEATS, `Match.fieldedSlots` is the one line that says so, and
+`HUMANS_PER_TEAM` is the right number for two reasons that agree — it is exactly
+the set of slots a botless round can ever hold a body in, and it is the smallest
+roster any map fields, so it is inside the pool every client built off its own
+map and no rotation can take it out of range.
+
+**A LEAVER is the case that pays for it.** Their slot goes back to a bot that is
+set aside, and an aside bot's `deathProgress` is frozen wherever its last death
+left it — 0 for one that has never died. A client hides a body at `dead >= 1`,
+so a slot sent that way would leave the last frame a leaver was alive in
+standing in the street for the rest of the round. `broadcastSnapshot` therefore
+STATES the empty slot rather than reading it: a bot that is aside and not alive
+goes out as `alive: false, dead: 1`. A CREWED bot is aside and **alive**, and is
+deliberately not this — it is a body inside a hull, and `VehicleState.by` is
+what stops it being drawn beside one. Measured on a live server: a peer seated
+at a real spawn reads `alive: true` while it holds the slot and
+`alive: false, dead: 1` on the first snapshot after it closes the socket.
+
+**The lobby is where it is chosen and where it is READ BACK.** The Bots row is
+the third picker on that screen, beside the map and the region and under both —
+the rows are the sentence the New match button spends, WHERE then WHAT then WHO
+— and the create row's hint names both parameters, because a row that named only
+the map would be silent about the one choice whose wrong answer is invisible
+until the round is standing. It is deliberately NOT remembered across sessions
+where the map is: the map is a preference and is what the menu offers you again
+afterwards, and this is a parameter of one new match. A player who took bots off
+once, six weeks ago, and opens the lobby expecting a fight has no way to see
+what is about to happen.
+
+**And `MatchSummary.bots` is what a ROW says**, which is the other half. A
+botless match with three people in it lists as `3 / 16` exactly as an ordinary
+one does, and the difference between the two is thirteen bodies that will never
+arrive — the one fact about a row a player cannot find out by joining and
+looking, since an empty street is also what a round between two people looks
+like from a spawn. `stateLabel` puts it in the state cell, and it INVERTS that
+cell's oldest line on the way: `empty` reads "Bots only" because a match with
+nobody in it is a fight already happening and joining it is taking a bot's
+place, and of a botless match that is the one flatly false thing on the screen.
+It reads "Empty" there instead, and every other label carries `· no bots` after
+it.
+
+**There is no way to turn bots on in a running match and there should not be
+one.** `Match.withBots` is set by the constructor and moved by nothing, a
+rotation included: the roster is how a match fills, and a round that grew
+sixteen bodies under the four people playing it would not be the row they
+picked.
 
 ## A match builds one world, and every guard for it sits behind an await
 

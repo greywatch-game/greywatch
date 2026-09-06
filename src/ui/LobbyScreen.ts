@@ -4,8 +4,9 @@
  * Owns `#lobby`, its row cursor, and the rendering of one `LobbyResult` per
  * region. Owns no networking — it never fetches and never connects. `Game`
  * hands it a region list and each region's answer as it lands, and takes
- * `onJoin`/`onCreate`/`onPickRegion`/`onPickMap`/`onRefresh`/`onClose` back, the
- * same render-what-you-are-given shape `SettingsScreen` follows.
+ * `onJoin`/`onCreate`/`onPickRegion`/`onPickMap`/`onPickBots`/`onRefresh`/
+ * `onClose` back, the same render-what-you-are-given shape `SettingsScreen`
+ * follows.
  * Invariants: the rows are DERIVED from the results (`buildRows`), never
  * authored as markup, because the match rows are as many as the servers say and
  * the keyboard navigation has to know about every one of them. Every string that
@@ -19,6 +20,14 @@
  * different rounds on two different continents, and would send a join to
  * whichever server the game happened to be pointed at. Every row carries its
  * region, `onJoin` passes it on, and `sameRow` compares it.
+ *
+ * **The three picker rows are what a NEW match would be built with, and none of
+ * them says anything about the rows above them.** Region, map, and whether it
+ * fields bots: a match is joined where it is running, played on the map it is
+ * running, and fought with the bodies it was built with, whatever these rows
+ * say. What a listed match runs is on the row itself — `MatchSummary.bots`
+ * through `stateLabel`, which is the only way a player can tell a botless round
+ * from a quiet one, since `3 / 16` looks identical either way.
  *
  * **The region column exists only when there is more than one region.** A
  * single-server deployment — which is what an untouched `public/regions.json`
@@ -70,6 +79,18 @@ type LobbyRow =
    * then the button that spends it.
    */
   | { kind: "map" }
+  /**
+   * Whether a NEW match should field bots — the second parameter of the button
+   * below, and the only one of the three that is not also asked somewhere else.
+   *
+   * Under the map for the reason the map is under the region: the rows read
+   * down as the sentence the button spends, WHERE then WHAT then WHO. It says
+   * nothing about the match rows above it, exactly as its neighbours do not —
+   * a match is played with the bodies it was built with, and what a row's own
+   * match runs is `MatchSummary.bots`, which `stateLabel` puts in its state
+   * cell.
+   */
+  | { kind: "bots" }
   | { kind: "create" }
   | { kind: "refresh" };
 /**
@@ -143,14 +164,24 @@ function mapName(id: string): string {
  * is what is actually true, and it is an invitation rather than a warning.
  */
 function stateLabel(match: MatchSummary): string {
-  switch (match.state) {
-    case "rotating":
-      return "Changing map";
-    case "empty":
-      return "Bots only";
-    case "live":
-      return match.humans >= match.slots ? "Full" : "In progress";
-  }
+  // **A match with no bots in it inverts the paragraph above**, which is why
+  // this is read first rather than appended as a decoration. "Bots only" of an
+  // empty botless match would be the one flatly false thing on this screen —
+  // there is nothing in it at all — and every other label needs the words too,
+  // because a row that says `2 / 16 · In progress` describes two very different
+  // rounds depending on whether thirty bodies are missing from it.
+  const botless = match.bots === false;
+  const state =
+    match.state === "rotating"
+      ? "Changing map"
+      : match.state === "empty"
+        ? botless
+          ? "Empty"
+          : "Bots only"
+        : match.humans >= match.slots
+          ? "Full"
+          : "In progress";
+  return botless ? `${state} · no bots` : state;
 }
 
 export class LobbyScreen {
@@ -201,6 +232,16 @@ export class LobbyScreen {
   onPickRegion: (index: number) => void = () => {};
   /** Wired by Game: the map row moved, to this index into `MAPS`. */
   onPickMap: (index: number) => void = () => {};
+  /**
+   * Wired by Game: the bots row moved, to this value.
+   *
+   * The VALUE and not an index, where its two neighbours pass indices, because
+   * this pick has two states rather than a list of them — an index into a pair
+   * would be a number whose meaning lives in the order two buttons happen to be
+   * written in. `Game` still owns it and pushes it back through
+   * `setBotsChoice`, which is the shape every picker here keeps.
+   */
+  onPickBots: (bots: boolean) => void = () => {};
   /** Wired by Game: fetch every region's list again. */
   onRefresh: () => void = () => {};
   /** Wired by Game: leave the screen. */
@@ -309,6 +350,27 @@ export class LobbyScreen {
   /** The map row's selection. Index into `MAPS`; `Game` owns the value. */
   private mapChoice = 0;
 
+  /**
+   * The bots row's selection: whether a new match would field them.
+   *
+   * True until `Game` says otherwise, which is what an untouched client wants
+   * and what every match before this row existed was. This is a copy to DRAW —
+   * `Game` owns the value, exactly as it owns the map and the region.
+   */
+  private botsChoice = true;
+
+  /**
+   * Whether a new match would field bots.
+   *
+   * Pushed in by `Game` when the screen opens and after every pick, the same
+   * one-way shape `setMapChoice` has.
+   */
+  setBotsChoice(bots: boolean): void {
+    if (bots === this.botsChoice) return;
+    this.botsChoice = bots;
+    this.render();
+  }
+
   moveRow(delta: number): void {
     if (this.rows.length === 0) return;
     const n = this.rows.length;
@@ -339,7 +401,7 @@ export class LobbyScreen {
       // want next — Refresh, or starting one — are rows of their own.
       case "note":
         break;
-      // The two PICKERS wrap on the confirm, where left/right clamps — the
+      // The three PICKERS wrap on the confirm, where left/right clamps — the
       // same split the menu's map row keeps. A confirm that answers nothing is
       // the thing a list screen is rebuilt to remove, so the button always
       // moves the choice on.
@@ -350,6 +412,11 @@ export class LobbyScreen {
         break;
       case "map":
         if (MAPS.length > 0) this.onPickMap((this.mapChoice + 1) % MAPS.length);
+        break;
+      // A two-state picker, so the wrap the other two need to be able to reach
+      // every choice on a confirm is simply the toggle.
+      case "bots":
+        this.onPickBots(!this.botsChoice);
         break;
       case "create":
         this.onCreate();
@@ -363,10 +430,10 @@ export class LobbyScreen {
   /**
    * Left/right on the cursor's row.
    *
-   * Only the two picker rows have anything to step, and they CLAMP where the
+   * Only the three picker rows have anything to step, and they CLAMP where the
    * confirm wraps. Every other row does one thing on Enter and deliberately
-   * nothing on a horizontal nudge: a match row's map and region are that
-   * match's, so there is nothing here for left and right to change.
+   * nothing on a horizontal nudge: a match row's map, region and bodies are
+   * that match's, so there is nothing here for left and right to change.
    */
   stepRow(delta: number): void {
     // A join in flight swallows this for the reason `activate` states — the
@@ -375,6 +442,10 @@ export class LobbyScreen {
     const kind = this.rows[this.index]?.kind;
     if (kind === "map") this.onPickMap(this.mapChoice + delta);
     else if (kind === "region") this.onPickRegion(this.regionChoice + delta);
+    // Left is the first button and right is the second, which is the clamp the
+    // other two rows make out of a list — with two choices there is nothing
+    // between the ends for a step to land on.
+    else if (kind === "bots") this.onPickBots(delta < 0);
   }
 
   /** Is the region column worth drawing at all? */
@@ -386,10 +457,10 @@ export class LobbyScreen {
    * The rows this list currently has.
    *
    * The actions are always present, even when every fetch failed — a server
-   * that did not answer is the case where Refresh matters most. The two picker
-   * rows are among them for the same reason: they are what a new match would
-   * be started with, and creating one is exactly what a player does when the
-   * list is empty. Leaving is not among them; that is the footer's, and the
+   * that did not answer is the case where Refresh matters most. The three
+   * picker rows are among them for the same reason: they are what a new match
+   * would be started with, and creating one is exactly what a player does when
+   * the list is empty. Leaving is not among them; that is the footer's, and the
    * reason is at the top of this file.
    *
    * Matches are grouped BY REGION in the order the file names them, rather than
@@ -428,7 +499,12 @@ export class LobbyScreen {
       }
     }
     if (multi) rows.push({ kind: "region" });
-    rows.push({ kind: "map" }, { kind: "create" }, { kind: "refresh" });
+    rows.push(
+      { kind: "map" },
+      { kind: "bots" },
+      { kind: "create" },
+      { kind: "refresh" },
+    );
     return rows;
   }
 
@@ -509,7 +585,7 @@ export class LobbyScreen {
         // up, which lands in the right place by luck and flickers getting
         // there.
         const kind = this.rows[i]?.kind;
-        if (kind !== "map" && kind !== "region") this.activate();
+        if (kind !== "map" && kind !== "region" && kind !== "bots") this.activate();
       };
     });
     // Bound after the rows, so a click on a picker button is not also the
@@ -520,6 +596,9 @@ export class LobbyScreen {
     });
     this.root.querySelectorAll<HTMLElement>("button[data-region]").forEach((btn) => {
       btn.onclick = () => this.onPickRegion(Number(btn.dataset.region));
+    });
+    this.root.querySelectorAll<HTMLElement>("button[data-bots]").forEach((btn) => {
+      btn.onclick = () => this.onPickBots(btn.dataset.bots === "1");
     });
     // The way out, in the footer rather than in the list — see the note on
     // `LobbyRow`. Rebound on every render because this screen rebuilds its
@@ -536,11 +615,16 @@ export class LobbyScreen {
   private fillRow(el: HTMLElement, row: LobbyRow): void {
     const name = el.querySelector<HTMLElement>(".lb-id");
     if (!name) return;
-    // The two picker rows' middle cell is their buttons. The map's were written
-    // by `rowMarkup` from this build's own table, but a REGION's name came out
-    // of a file over HTTP, so it is filled in here like every other such string.
+    // The three picker rows' middle cell is their buttons. The map's and the
+    // bots' were written by `rowMarkup` from this build's own constants, but a
+    // REGION's name came out of a file over HTTP, so it is filled in here like
+    // every other such string.
     if (row.kind === "map") {
       name.textContent = "Map";
+      return;
+    }
+    if (row.kind === "bots") {
+      name.textContent = "Bots";
       return;
     }
     if (row.kind === "region") {
@@ -581,7 +665,14 @@ export class LobbyScreen {
     // `MAPS` is this build's own table, but it reaches the DOM through
     // `textContent` like every other cell here.
     const map = MAPS[this.mapChoice];
-    state.textContent = row.kind === "create" && map ? `${hint} on ${map.name}` : hint;
+    // Both parameters, in the order the rows above ask them, because what this
+    // sentence is FOR is reading back what the button would spend — and a row
+    // that named only the map would be silent about the one choice whose wrong
+    // answer is invisible until the round is standing.
+    state.textContent =
+      row.kind === "create" && map
+        ? `${hint} on ${map.name}${this.botsChoice ? "" : ", no bots"}`
+        : hint;
     // WHICH SERVER it would start it on goes in the region column rather than
     // into that sentence, because the column already means exactly that and a
     // hint carrying both names is a line long enough to wrap the row onto two.
@@ -675,14 +766,23 @@ export class LobbyScreen {
     // build's own constants — the rule at the top of the file is about strings
     // that arrived over a network, and both a match's map id and a region's
     // name are filled in by `fillRow` like every other one.
-    if (row.kind === "map" || row.kind === "region") {
+    if (row.kind === "map" || row.kind === "region" || row.kind === "bots") {
       const buttons =
         row.kind === "map"
           ? MAPS.map(
               (m, n) =>
                 `<button class="lb-pick${n === this.mapChoice ? " on" : ""}" data-map="${n}">${m.name}</button>`,
             ).join("")
-          : this.regions
+          : row.kind === "bots"
+            ? // Two constants of this build's own, so they are interpolated
+              // like the map names beside them — the rule at the top of the
+              // file is about strings that arrived over a network. The OFF
+              // button says what the round is rather than what is missing from
+              // it: "Players only" is the thing being chosen, where "No bots"
+              // is what the match rows above have to be told apart BY.
+              `<button class="lb-pick${this.botsChoice ? " on" : ""}" data-bots="1">Bots</button>` +
+              `<button class="lb-pick${this.botsChoice ? "" : " on"}" data-bots="0">Players only</button>`
+            : this.regions
               .map(
                 (_r, n) =>
                   `<button class="lb-pick${n === this.regionChoice ? " on" : ""}" data-region="${n}"><span class="lb-rn"></span><span class="lb-lat"></span></button>`,
