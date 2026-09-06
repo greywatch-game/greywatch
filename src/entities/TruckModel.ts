@@ -751,6 +751,22 @@ export function buildTruck(
   // place.
   mgMuzzle.position.set(0, 0.02, 1.46);
 
+  // **The gunner's eye, in front of the optic head on the near cheek** — the
+  // pale metal box with the dark face let into it, drawn two segments up for
+  // exactly this: it is the only thing above this roof line that says where the
+  // station is looking, and now it is where the station looks FROM.
+  //
+  // On `mgGun` rather than on the mount it is drawn on (`VehicleRig.mgSight`
+  // says why), so the head's own mount-space 0.30 comes down to 0.12 here.
+  // **The `z` is the clearance that matters**: the shield and its port wing
+  // stand out to 0.285 in mount space — 0.225 in this one — and an eye behind
+  // that is an eye looking at the back of its own plate. 0.4 puts it 0.175
+  // clear, which is well past the near plane on a station that depresses only
+  // 0.16 rad and can therefore never swing this into anything.
+  const mgSight = new TransformNode("truck-mg-sight", scene);
+  mgSight.parent = mgGun;
+  mgSight.position.set(-0.36, 0.12, 0.4);
+
   // --- one whip, off the front wing ----------------------------------------
   //
   // ONE and not the tank's two, and the difference is what a mast is for on
@@ -798,6 +814,7 @@ export function buildTruck(
     mgMount,
     mgGun,
     mgMuzzle,
+    mgSight,
     antennae,
     meshes,
     livery,

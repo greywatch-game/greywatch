@@ -1,9 +1,11 @@
 /**
- * VehicleCamera.ts — The view from outside a tank you are driving: where the
- * eye goes, where it looks, and the angle the turret is being ASKED for.
- * Owns: the chase camera's own yaw and pitch, its occlusion pull-in, and the
- * gun's report kick. Owns no camera — like `DeathCam`, it produces an `eye` and
- * a `look` and `Game` hands both to `CameraSystem.place`.
+ * VehicleCamera.ts — The view from outside a tank you are driving, and the view
+ * down the GUNNER's sight from inside it: where the eye goes, where it looks,
+ * and the angle the turret is being ASKED for.
+ * Owns: the chase camera's own yaw and pitch, its occlusion pull-in, the gun's
+ * report kick, and the sight picture the second seat may put up over all of it.
+ * Owns no camera — like `DeathCam`, it produces an `eye`, a `look` and a `fov`,
+ * and `Game` hands all three to `CameraSystem.place`.
  *
  * ## Why this is a second camera and not a mode on the first
  *
@@ -36,6 +38,43 @@
  * at 11 m/s is a fifth of a metre of lag in a shot that is nothing but a
  * vehicle in the middle of it.
  *
+ * ## The SIGHT, and why it is the same file rather than a third camera
+ *
+ * A chase camera FRAMES THE VEHICLE, and a gunner does not want the vehicle
+ * framed. The anchor sits at the exact middle of the picture, so whatever this
+ * hull's second gun is laid on is behind the hull — which on a tank is a
+ * problem you can drive around, and on a gunship is the whole engagement: the
+ * chin gun's hemisphere is DOWN and FORWARD, and an eleven-metre fuselage under
+ * a five-metre disc is between a fourteen-metre boom and every target it has.
+ *
+ * So the second seat may put a sight up (`Game`'s ADS, held), and the eye goes
+ * to the optic head on the gun. Three things fall out of that and each is worth
+ * more than the occlusion it was built to fix:
+ *
+ * - **The reticle stops needing a marker.** Everything below keeps the promise
+ *   from the far end — the camera is an ORDER and `#gun-marker` is drawn where
+ *   the barrel actually is. Through the sight the picture IS the axis, so the
+ *   marker converges on the middle of the screen and stays there. Nothing in
+ *   `Game.pushGunMarker` knows about any of this and nothing had to.
+ * - **It does not ROLL**, on the one machine in the fleet that banks 26
+ *   degrees. `mgYaw`/`mgPitch` are held in the WORLD — the decision the second
+ *   seat already rested on, so that a traversing turret cannot drag a laid gun
+ *   round — and a view built from two world angles has no airframe attitude in
+ *   it at all. `CameraSystem.place` zeroing the roll is the other half.
+ * - **The dead band at the elevation stops goes away.** `aim` clamps the ORDER
+ *   to the GUN's limits while the sight is up rather than to the camera's, so
+ *   the view stops exactly where the weapon does. Wound down against the
+ *   camera's wider band the player would push the order into ground the gun
+ *   cannot reach and then have to wind it back before anything moved.
+ *
+ * **It SNAPS, both ways, and that is a decision rather than a shortcut.** The
+ * two views point in different directions — the chase camera along the ORDER,
+ * the sight along the GUN — so a blend would spend its whole length pointing at
+ * neither, with the reticle lying for exactly as long as it ran. What is
+ * continuous is the thing that matters: the order is untouched by the
+ * transition, the gun has been tracking it all along, and putting the sight
+ * down leaves the chase camera looking where it was looking.
+ *
  * ## The pull-in
  *
  * One ray, cast from the anchor OUTWARD, the same shape and for the same reason
@@ -48,10 +87,43 @@
  */
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { VehicleSpec } from "../config/vehicles";
+import type { AxisSpec, VehicleSpec } from "../config/vehicles";
 import type { Vehicle } from "../entities/Vehicle";
 import type { InputManager } from "../core/InputManager";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
+
+/**
+ * The sight picture, resolved once at module load from the one number that
+ * states it — `entities/sights.ts`'s derivation, made again for a mount.
+ *
+ * Magnification is a ratio of TANGENTS and not of angles, which is the trap
+ * that file calls out and the reason this is not written down as a field: at
+ * 2.2x, halving the radians would be a different instrument.
+ */
+const SIGHT_FOV =
+  2 *
+  Math.atan(
+    Math.tan(CONFIG.camera.fovHip / 2) / CONFIG.vehicles.sight.magnification,
+  );
+/**
+ * What the look input is worth through it. The chase camera's own `lookMult`
+ * is deliberately NOT one of the terms: that number exists because the eye is
+ * twelve metres back and the same wrist sweeps far more world than it does
+ * from inside a head, and through the sight the eye is on the gun. What
+ * applies instead is the ADS pair, wound down by the magnification exactly as
+ * a fitted optic winds a rifle's down.
+ */
+const SIGHT_LOOK_MOUSE =
+  CONFIG.camera.adsLookMouse / CONFIG.vehicles.sight.magnification;
+const SIGHT_LOOK_STICK =
+  CONFIG.camera.adsLookStick / CONFIG.vehicles.sight.magnification;
+/**
+ * How far down the bore the sight's look point is put. Any positive distance
+ * gives the same picture — `CameraSystem.place` takes a TARGET and keeps only
+ * the direction to it — so this is chosen to be a sane world magnitude and
+ * means nothing else.
+ */
+const SIGHT_REACH = 100;
 
 export class VehicleCamera {
   /** Where the driver is asking the gun to point. `Vehicle` walks to these. */
@@ -67,10 +139,22 @@ export class VehicleCamera {
    * what a session that has never been in a vehicle uses and never reads.
    */
   private view: VehicleSpec["camera"] = CONFIG.vehicles.tank.camera;
+  /**
+   * …and the second seat's gun, held for the same reason and taken at the same
+   * moment. Only its two STOPS are read: `aim` clamps the order to the weapon's
+   * own elevation band while the sight is up, so the picture stops where the
+   * gun stops and there is no band of order the view will not follow.
+   */
+  private mount: AxisSpec = CONFIG.vehicles.tank.mg;
 
-  /** This frame's camera pose. `Game` hands both to `CameraSystem.place`. */
+  /** This frame's camera pose. `Game` hands all three to `CameraSystem.place`. */
   readonly eye = new Vector3();
   readonly look = new Vector3();
+  /**
+   * …and the field it is seen through. Written on every `place`, so the frame a
+   * sight goes down is a frame that has already put the wide field back.
+   */
+  fov: number = CONFIG.camera.fovHip;
 
   /**
    * The gun's report, as an angle on the camera and nothing else. It is not on
@@ -128,11 +212,15 @@ export class VehicleCamera {
    */
   take(tank: Vehicle): void {
     this.view = tank.spec.camera;
+    this.mount = tank.spec.mg;
     this.yaw = tank.yaw;
     this.pitch = this.view.restPitch;
     this.kick = 0;
     this.kickVel = 0;
-    this.place(tank);
+    // Opened in the CHASE view whichever seat this is, which is the paragraph
+    // above carried through: a sight put up on the frame somebody sits down is
+    // one that has told them nothing about the machine they are now in.
+    this.place(tank, false);
   }
 
   /** The gun went off. Cosmetic, and entirely on the eye. */
@@ -140,24 +228,39 @@ export class VehicleCamera {
     this.kickVel -= radians * 12;
   }
 
-  aim(dt: number, input: InputManager): void {
+  /**
+   * `optic` is whether the GUNNER has his sight up this frame — `Game` decides
+   * it, because whether there is a sight to put up is a question about the
+   * SEAT and this file has never been told which one is holding it.
+   */
+  aim(dt: number, input: InputManager, optic: boolean): void {
     const c = CONFIG.camera;
     const v = this.view;
 
     // The same three look sources `CameraSystem` folds, times this view's own
     // multiplier: the eye is twelve metres back, so the same wrist sweeps far
-    // more world than it does from inside a head.
-    this.yaw += input.mouseLookX * c.sensX * this.mouseScale * v.lookMult;
-    this.pitch -= input.mouseLookY * c.sensY * this.mouseScale * v.lookMult;
+    // more world than it does from inside a head. Through the sight it is on
+    // the gun instead and the ADS pair applies — see `SIGHT_LOOK_MOUSE`. The
+    // touch drag takes the mouse's of the two, being the same kind of device:
+    // a hand moving a picture directly rather than a stick asking for a rate.
+    const mouse = optic ? SIGHT_LOOK_MOUSE : v.lookMult;
+    const stick = optic ? SIGHT_LOOK_STICK : v.lookMult;
+    this.yaw += input.mouseLookX * c.sensX * this.mouseScale * mouse;
+    this.pitch -= input.mouseLookY * c.sensY * this.mouseScale * mouse;
+    this.yaw += input.stickLookX * c.stickSensX * this.stickScale * stick * dt;
+    this.pitch -= input.stickLookY * c.stickSensY * this.stickScale * stick * dt;
     this.yaw +=
-      input.stickLookX * c.stickSensX * this.stickScale * v.lookMult * dt;
+      input.touchLookX * CONFIG.touch.lookSensX * this.touchScale * mouse;
     this.pitch -=
-      input.stickLookY * c.stickSensY * this.stickScale * v.lookMult * dt;
-    this.yaw +=
-      input.touchLookX * CONFIG.touch.lookSensX * this.touchScale * v.lookMult;
-    this.pitch -=
-      input.touchLookY * CONFIG.touch.lookSensY * this.touchScale * v.lookMult;
-    this.pitch = Math.max(v.pitchMin, Math.min(v.pitchMax, this.pitch));
+      input.touchLookY * CONFIG.touch.lookSensY * this.touchScale * mouse;
+    // The GUN's stops while its sight is up and the CAMERA's otherwise. The
+    // gun's band is the narrower of the two on every kind in the fleet, so
+    // raising the sight can pull the order up to meet a gun already sitting at
+    // full depression — which is the right snap and the only one there is: the
+    // view arrives where the weapon actually is.
+    const lo = optic ? this.mount.pitchMin : v.pitchMin;
+    const hi = optic ? this.mount.pitchMax : v.pitchMax;
+    this.pitch = Math.max(lo, Math.min(hi, this.pitch));
 
     // The report settles on a damped spring, semi-implicit Euler — the same
     // integrator and the same ordering (velocity first, then position off the
@@ -175,30 +278,91 @@ export class VehicleCamera {
   }
 
   /**
-   * Places the eye behind and above the hull and points it at the anchor.
+   * Places the eye behind and above the hull, or at the gunner's sight when he
+   * has one up.
    *
    * The anchor is above the hull's collider box on purpose: the pull-in's ray
    * starts there, and an origin inside the box would be an origin inside a
    * solid mesh — the one thing `DeathCam.pullIn`'s note says makes the answer
    * meaningless.
+   *
+   * **The look point is off the eye's own ray, and it has to be.** This used to
+   * take a point 90% of the boom's length past the anchor and call it framing,
+   * which was exactly nothing: eye, anchor and look were COLLINEAR, and
+   * `CameraSystem.place` keeps only the direction to a target — a point on a
+   * ray projects to the pixel that ray already went through. So the hull sat
+   * dead centre at every angle, which is where the thing being shot at should
+   * be. The look DIRECTION is pitched up by `CONFIG.vehicles.frameLift`
+   * instead, faded out as the camera looks down; that field carries both
+   * halves of why.
    */
-  place(tank: Vehicle): void {
+  place(tank: Vehicle, optic: boolean): void {
+    if (optic) return this.sight(tank);
     const v = tank.spec.camera;
+    this.fov = CONFIG.camera.fovHip;
     this.anchor
       .copyFrom(tank.center)
       .addInPlaceFromFloats(0, v.anchorHeight, 0);
     const pitch = this.pitch + this.kick;
     const cp = Math.cos(pitch);
-    this.dir.set(cp * Math.sin(this.yaw), Math.sin(pitch), cp * Math.cos(this.yaw));
-    // Look a little PAST the tank rather than at it, so the hull sits in the
-    // lower third of the frame and the street ahead gets the rest. Aiming at
-    // the anchor itself puts the vehicle in the middle of the screen, which is
-    // where the thing you are shooting at should be.
-    this.look
+    const sy = Math.sin(this.yaw);
+    const cy = Math.cos(this.yaw);
+    this.dir.set(cp * sy, Math.sin(pitch), cp * cy);
+    this.eye
       .copyFrom(this.anchor)
-      .addInPlace(this.dir.scale(v.distance * 0.9));
-    this.eye.copyFrom(this.anchor).subtractInPlace(this.dir.scale(v.distance));
+      .subtractInPlace(this.dir.scaleInPlace(v.distance));
+    // Full at the view's own rest angle and above, gone at the bottom of its
+    // travel. Read off the two numbers the kind already states rather than a
+    // third, so a camera that is given more depression is one whose lift fades
+    // over the whole of it.
+    const span = v.restPitch - v.pitchMin;
+    const t =
+      span > 1e-4
+        ? Math.max(0, Math.min(1, (pitch - v.pitchMin) / span))
+        : 1;
+    const lp = pitch + CONFIG.vehicles.frameLift * t;
+    const clp = Math.cos(lp);
+    // Off the EYE rather than off the anchor, so the pull-in below carries the
+    // look with it: a boom that shortens against a wall must not swing the
+    // view round as it goes.
+    this.look.set(
+      this.eye.x + clp * sy * v.distance,
+      this.eye.y + Math.sin(lp) * v.distance,
+      this.eye.z + clp * cy * v.distance,
+    );
     this.pullIn(tank);
+  }
+
+  /**
+   * The GUNNER's sight: the eye at the optic head on his gun, looking down the
+   * bore. No anchor, no boom and therefore no pull-in — there is nothing
+   * between an eye bolted to a weapon and what that weapon is pointing at, and
+   * a query that walked this eye toward a wall would be walking it into the
+   * hull it is mounted on.
+   *
+   * The report is the one thing that moves it. `kick` is spent on the SIGHT and
+   * never on `mgYaw`/`mgPitch`, which is the same split the chase view makes
+   * with the same argument behind it: what a shot shakes is the picture, and a
+   * gun whose ORDERS were shoved would walk off target every time it fired.
+   * `#gun-marker` is drawn from the gun's true axis, so through a shaken sight
+   * the reticle visibly steps off the middle of the screen and settles back —
+   * which is the honest picture rather than a decorated one.
+   *
+   * **It is NEGATED against the chase view's, and that is not a slip.** The two
+   * spend the same number on opposite geometry: out on the boom `kick` is added
+   * to a pitch that also swings the eye, so a shot takes the camera up and over
+   * and the scene rides UP the screen; through a sight there is no boom and the
+   * only thing left is where the instrument points, where every other weapon in
+   * this game answers a report by CLIMBING. A sight that dipped on firing would
+   * be the one recoil in the tree that reads backwards.
+   */
+  private sight(tank: Vehicle): void {
+    this.fov = SIGHT_FOV;
+    tank.mgSightToRef(this.eye);
+    tank.mgDirToRef(this.dir, -this.kick);
+    this.look
+      .copyFrom(this.eye)
+      .addInPlace(this.dir.scaleInPlace(SIGHT_REACH));
   }
 
   /** Walks the eye in until it is on the same side of the wall as the tank. */

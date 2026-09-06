@@ -4734,6 +4734,30 @@ export class Game {
   }
 
   /**
+   * Has the GUNNER got his sight up?
+   *
+   * **The one thing this file decides about the vehicle sight, and it is a
+   * question about the SEAT rather than about the kind.** Both other things a
+   * mounted view needs — where the eye goes and what the picture is — belong to
+   * the rig and to `CONFIG.vehicles.sight`, so nothing here and nothing in
+   * `VehicleCamera` asks what it is holding. What is asked is who is holding
+   * it: a driver is steering, and a sight is the second seat's whole job.
+   *
+   * The verb is the player's own ADS, which is FREE in a hull — nothing in a
+   * drive has ever read it — so a gunner raises a sight with the button he
+   * already raises one with, and holds it for the same reason he holds that
+   * one. There is no toggle anywhere in this game and this is not the place to
+   * introduce one.
+   *
+   * Derived rather than stored, which is what makes it correct on both sides of
+   * the world step: `updateDriver` and `frameVehicleCamera` each ask it when
+   * they run, and a seat crossed between them answers honestly for each.
+   */
+  private get opticUp(): boolean {
+    return this.driving !== null && this.drivingSeat === GUNNER && this.input.ads;
+  }
+
+  /**
    * The half of a gameplay frame that is about a body IN A HULL: the look, the
    * throttle, the trigger, and the one key that gets back out.
    *
@@ -4767,7 +4791,7 @@ export class Game {
     // The look, into the ORDERS one of the two guns walks toward. Never into
     // either gun itself — see `VehicleCamera`, which is one camera whichever
     // seat is holding it because there is only ever one pair of eyes here.
-    this.vehicleCam.aim(dt, this.input);
+    this.vehicleCam.aim(dt, this.input, this.opticUp);
     const driving = this.drivingSeat === DRIVER;
     if (driving) {
       this.drive.throttle = this.input.moveY;
@@ -5355,8 +5379,17 @@ export class Game {
    * null for.
    */
   private frameVehicleCamera(dt: number, tank: Vehicle): void {
-    this.vehicleCam.place(tank);
-    this.cameraSys.place(this.vehicleCam.eye, this.vehicleCam.look);
+    // Asked AGAIN rather than carried over from `updateDriver`, and for this
+    // method's own reason: the two halves of this camera are split across the
+    // world step, and the seat can change inside it — `swapSeat` runs after
+    // the aim and a driver who crossed over holding the button must not be
+    // framed through a sight he no longer has.
+    this.vehicleCam.place(tank, this.opticUp);
+    this.cameraSys.place(
+      this.vehicleCam.eye,
+      this.vehicleCam.look,
+      this.vehicleCam.fov,
+    );
     // Around the HULL rather than the eye, and with no forward bias: the tank
     // is the thing the frame is about and it is already twelve metres inside
     // the window, so pushing the window further along the view would walk the

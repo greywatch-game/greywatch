@@ -412,6 +412,52 @@ export const vehicles = {
    */
   wreckTime: 16,
   /**
+   * The GUNNER's sight: one block for the fleet, and `wash`'s split made again
+   * one seat up.
+   *
+   * **Where the eye goes is a fact about the MACHINE and is not here** — it is
+   * `VehicleRig.mgSight`, a node each model puts at the optic head it already
+   * draws, because a sight is a fitting and a fitting is part of the drawing.
+   * What a sight PICTURE is — how much it magnifies, and therefore how far the
+   * look input is wound down to hold it steady — is a picture, and a picture
+   * stated once cannot drift between three kinds all looking through the same
+   * instrument.
+   *
+   * 2.2x is chosen against the KIT rather than against the guns: it sits
+   * between the 1.6 of the smallest magnifier a rifle may be fitted with and
+   * the 2.5 of the next one up, so a gunner dropping into this is looking
+   * through something he has already used. Raising it costs him awareness
+   * twice over — a narrower field AND a slower look — on the one seat in the
+   * game whose whole difficulty is that somebody else is flying.
+   */
+  sight: { magnification: 2.2 },
+  /**
+   * How far the CHASE camera looks ABOVE the hull it is framing, in radians —
+   * the one number that stops a vehicle sitting in the middle of its own
+   * picture.
+   *
+   * **The eye, the anchor and the look point used to be COLLINEAR**, which
+   * made this exactly zero however the framing was written: `place` looked at a
+   * point further along its own view ray, and a point on a ray projects to the
+   * pixel that ray already went through. So the hull sat at the dead centre of
+   * the frame at every angle, which is where whatever you are shooting at
+   * should be. The look DIRECTION is tilted up by this instead, which is the
+   * only form that says "lower in the frame" rather than "further away".
+   *
+   * 0.15 rad against a 0.95 rad field puts the anchor about a third of the
+   * frame below its middle. It is an ANGLE, so it means the same fraction of
+   * the picture whatever the boom's length and whatever the field.
+   *
+   * **It FADES OUT as the camera looks down, and that half is not a
+   * refinement.** What the lift buys is the ground BEYOND the vehicle, and a
+   * camera pitched at its own floor has nothing beyond the vehicle to buy —
+   * pushing the hull down the frame there only takes away the ground
+   * underneath it, which on a machine hovering over a landing zone is the
+   * entire view that matters. So it is full at `restPitch` and above and zero
+   * at `pitchMin`, and each kind's own two numbers are what say where that is.
+   */
+  frameLift: 0.15,
+  /**
    * What a ROTOR does to the surface it is over: one block for the fleet, read
    * by nothing but the client's `RotorWash`. Dust here, and `spray` below for
    * the same ring over water — but NOT the water's own ripple, which is

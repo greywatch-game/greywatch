@@ -1966,6 +1966,167 @@ because `Vector3.Project` will happily return a mirrored point for one.
 moves in `updateWorld`; framing this frame's camera against last frame's tank is
 a fifth of a metre of lag at road speed, in a shot that is nothing but a vehicle.
 
+## The GUNNER's sight, and the framing bug it found
+
+A chase camera FRAMES THE VEHICLE, and a gunner does not want the vehicle
+framed. `place` anchors the view on the hull, so whatever the second gun is laid
+on is behind the hull — which on a tank is a problem you can drive around and on
+the gunship is the whole engagement. The chin gun's hemisphere is DOWN and
+FORWARD (`mg.pitchMin` -0.85 against the camera's -1.1), so an 11.4 m fuselage
+under a 5.2 m disc sits between a fourteen-metre boom and every target the
+weapon has. The report was a gunner who could not see what he was shooting at.
+
+**Two things were wrong and only one of them was the helicopter's**, so they are
+fixed separately and neither fix knows a kind.
+
+### The eye, the anchor and the look point were COLLINEAR
+
+`place` took `look = anchor + dir * distance * 0.9` and `eye = anchor - dir *
+distance`, with a comment saying that looked "a little PAST the tank rather than
+at it, so the hull sits in the lower third of the frame". It did nothing of the
+sort, and could not: those three points are on one line, `CameraSystem.place`
+takes a TARGET and keeps only the direction to it, and a point on a ray projects
+to the pixel that ray already went through. The hull sat at the exact centre of
+the frame at every angle on every kind, which is where the thing being shot at
+should be. **A framing offset has to be an ANGLE**, and
+`CONFIG.vehicles.frameLift` (0.15 rad against a 0.95 rad field, so about a third
+of the frame) is the look DIRECTION pitched up off the eye's own.
+
+**It fades out as the camera looks down**, full at `restPitch` and zero at
+`pitchMin`, and that half is not a refinement. What a lift buys is the ground
+BEYOND the vehicle; a camera pitched at its own floor has none, and pushing the
+hull down the frame there only takes away the ground underneath it — which on a
+machine hovering over a landing zone is the entire view that matters. Applied
+flat it would have made the gunship's own complaint worse.
+
+The look point is now built off the EYE rather than off the anchor, which the
+pull-in needs: a boom that shortens against a wall must carry its look with it,
+where the old collinear form kept the direction only by accident.
+
+### The sight is the second seat's, and it is `Game.opticUp` and nothing else
+
+Held on the player's own ADS — a verb that is FREE in a hull, nothing in a drive
+having ever read it — the gunner's eye goes to the optic head on his gun and the
+view is slaved to `mgYaw`/`mgPitch`. `Game` decides only WHO may put one up,
+because that is a question about the SEAT: a driver is steering, and a sight is
+the second seat's whole job. Nothing anywhere in the path asks what kind of hull
+it is holding, and the three that exist all got it at once.
+
+Three things fall out of it and each is worth more than the occlusion it was
+built to fix.
+
+**The reticle stops needing a marker.** The promise everywhere else on this
+vehicle is kept from the far end — the camera is an ORDER, the gun walks toward
+it, and `#gun-marker` is drawn where the barrel actually is. Through the sight
+the picture IS the axis, so the marker converges on the middle of the screen and
+stays there. `Game.pushGunMarker` was not touched and did not need to be: it
+projects a point on the gun's own ray, and an eye near that ray projects it near
+the centre by construction.
+
+**It does not ROLL**, on the one machine in the fleet that banks 26 degrees.
+`mgYaw`/`mgPitch` are held in the WORLD — the decision the second seat already
+rested on, so a traversing turret cannot drag a laid gun round — so a view built
+from those two angles has no airframe attitude in it at all.
+`CameraSystem.place` zeroing `rotation.z` on every call is the other half, and
+it was already there for the death cam.
+
+**The dead band at the elevation stops goes away.** `aim` clamps the ORDER to
+the GUN's limits while the sight is up rather than to the camera's. The gun's
+band is the narrower of the two on every kind, so raising the sight can pull the
+order up to meet a gun already sitting at full depression — which is the right
+snap and the only one there is: the view arrives where the weapon actually is.
+Wound down against the camera's wider band instead, the player would push the
+order into ground the gun cannot reach and then have to wind it back before
+anything moved.
+
+**It SNAPS, both ways, and that is a decision rather than a shortcut.** The two
+views point in different directions — the chase camera along the order, the
+sight along the gun — so a blend would spend its whole length pointing at
+neither, with the reticle lying for exactly as long as it ran. What is
+continuous is the thing that matters: the order is untouched by the transition,
+the gun has been tracking it all along, and putting the sight down leaves the
+chase camera looking where it was looking.
+
+### Where the eye goes is the DRAWING's answer, and the picture is one block
+
+`VehicleRig.mgSight` is a node each model puts at the optic head it already
+draws, which is the split `CONFIG.vehicles.wash` makes one level down: a fitting
+is part of the machine, and what a sight PICTURE is (`CONFIG.vehicles.sight`,
+2.2x, one block for the fleet) is a picture, and a picture stated once cannot
+drift between three kinds looking through the same instrument. The magnification
+buys the field (`2*atan(tan(fovHip/2)/mag)` — `entities/sights.ts`'s derivation,
+because magnification is a ratio of TANGENTS) and the look scale (the ADS pair
+over the magnification, and NOT the chase camera's `lookMult`, which exists only
+because that eye is twelve metres back).
+
+Two of the three heads were already drawn and already described as exactly this.
+The truck's is "the optic head on the near cheek… the only pale thing above the
+roof line, so the eye finds it — and finding it is what tells a player where this
+gun is looking"; the gunship's is "the OPTIC, on the port cheek and in METAL,
+which is the pale thing that says where the gun is looking". They now tell the
+gunner the same thing from in front of them. **The tank's cupola gun is the one
+that draws no such head and gets no new mesh either**: a pintle gun with spade
+grips carries no optic because the man holding it is the sight, there is no man
+to draw in this game, and the node simply stands where his head would be. It is
+also the only one of the three with no lateral offset at all — with no head to
+sit behind, the only offset the picture needs is UP, and a sight with no lateral
+offset has no lateral parallax to explain.
+
+**The node hangs off `mgGun` and not off `mgMount`**, which is what makes the
+picture a sight picture. On the mount it would not elevate with the weapon, so
+the barrel would swing up through the frame as the gun came up and the parallax
+between eye and bore would change with every degree. On the gun the two are
+PARALLEL at every lay: the barrel keeps one place in the picture, and the offset
+means the same thing at every angle.
+
+**Two clearances bound each of the three and both have already cost a
+re-measurement elsewhere in this tree.** It must clear the 0.05 near plane
+against its own vehicle through the whole of `pitchMin`..`pitchMax`, and on a
+hull whose gun looks steeply down it must still be over the pad with the machine
+sitting on it — the same ground `MG_REACH` is measured against. On the gunship
+the second is the tight one and the figures are the model's own: the barbette is
+welded to the airframe and stands 0.26 forward of the trunnion, so `x` at -0.32
+passes 0.08 clear of its half-width at `pitchMax` and the corner it goes by is 58
+degrees off the sight line; at `pitchMin` the eye stands 0.460 over a pad the
+skids put at 0, beside a muzzle at 0.074.
+
+**Nothing on the wire moved.** A gunner's own gun is laid LOCALLY even in a
+match — `gunFor` answers with `this.gunOrder` and `remoteGunFor` carves the same
+hull out — so the sight is as smooth online as off, and the hull under it
+interpolates exactly as the chase camera's anchor already did.
+
+### Measured on a live client, and the one bearing it does not fix
+
+Driven on Sarab from the gunner's seat of a machine at 13–27 m, at every corner
+of the traverse:
+
+- The eye is AT the sight node to the millimetre and the view is EXACTLY down
+  the bore (`dot` of the camera's forward against `mgDirToRef` is 1.00000 at
+  every bearing tried), so `#gun-marker` settles at **50.17% / 50.25%** of the
+  frame. The 0.17% is not error: it is the 0.32 m lateral offset at the marker's
+  own 210 m, which is 0.19% of the width — the parallax, arriving exactly as
+  predicted. During a slew the marker legitimately TRAILS the middle, because it
+  is drawn where the gun is and the gun is still catching up.
+- The field is 0.4593 rad against the chase view's 0.95, which is
+  `2*atan(tan(0.475)/2.2)` to four places, and the roll is 0.0000 in every shot.
+- The order clamps to **-0.85** when pushed to -1.5 and to **0.45** when pushed
+  to 1.5 — the gun's own stops, not the camera's.
+- **A DRIVER holding the same button gets a byte-identical frame**: same eye,
+  same field, same marker. The seat is the whole gate.
+- The framing half, on the same aircraft: the anchor sits at **0.647** of the
+  frame at `restPitch`, **0.581** at -0.6 and **0.500** at `pitchMin` — full
+  lift, the fade, and nothing at the bottom of the travel. It was 0.500 at all
+  three before.
+
+**What it does not fix is a level look AFT, and that is the airframe rather than
+the sight.** The belly runs 0.75 over the hull's own floor and the trunnion 0.60,
+so a gun laid astern at zero elevation is looking along the underside of its own
+aircraft and the keel takes the top of the picture. It is the same 15 cm that
+lets the BARREL make that traverse in clear air, the clearance the chin turret
+was designed around, and the horizon and everything below it stay open. A gunner
+shooting astern is shooting DOWN, which is clear at every angle from about ten
+degrees of depression.
+
 ## The shell
 
 Hitscan, like every other round in the game — the grenade remains the one

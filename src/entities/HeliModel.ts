@@ -749,6 +749,32 @@ export function buildHeli(
   // muzzle reaches IS what the barrel sweeps.
   mgMuzzle.position.set(0, 0, MG_REACH);
 
+  // **The gunner's eye, at the outer face of the optic head drawn on the port
+  // cheek above** — the pale metal box two segments up, which exists to tell a
+  // player from outside where this gun is looking and now tells the gunner the
+  // same thing from in front of it.
+  //
+  // It is on `mgGun` rather than on the mount the head is drawn on, for the
+  // reason `VehicleRig.mgSight` gives, and the three figures are the two
+  // clearances that bound it:
+  //
+  // - **`z` clears the BARBETTE**, which is welded to the airframe and stands
+  //   0.26 forward of the trunnion at its own front face. At `mg.pitchMax` the
+  //   eye swings back to 0.213 and up to 0.848 over the pad, which is inside
+  //   the barbette's own 0.71..1.01 band — so what keeps it out is `x`, at 0.08
+  //   clear of that fitting's half-width, and the corner it passes is 58 deg
+  //   off the sight line and never in the picture.
+  // - **`y` is the optic head's own centre and `x` its outer face**, so the
+  //   barrel hangs below and to starboard exactly as it is drawn to.
+  // - **And it is over the PAD at full depression**, which is the same
+  //   clearance `MG_REACH` is measured against one line up: at `mg.pitchMin`
+  //   this stands 0.460 over a pad the skids put at 0, where the muzzle beside
+  //   it stands 0.074. Re-measure both if `MG_Y`, `MG_Z` or either pitch limit
+  //   moves.
+  const mgSight = new TransformNode("heli-mg-sight", scene);
+  mgSight.parent = mgGun;
+  mgSight.position.set(-0.32, 0.13, 0.3);
+
   // --- the aerial -----------------------------------------------------------
   //
   // A blade aerial rather than a whip, and SHORT, because the main disc is
@@ -788,6 +814,7 @@ export function buildHeli(
     mgMount,
     mgGun,
     mgMuzzle,
+    mgSight,
     antennae,
     meshes,
     livery,

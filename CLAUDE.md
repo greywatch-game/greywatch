@@ -997,76 +997,80 @@ anywhere** — the moment a system asks which kind it is holding, that is broken
 **TWO capabilities stand in for that branch**, each one nullable block in the
 spec resolved once into one boolean, and the boolean is what every reader puts
 instead: **`Vehicle.armed`** (the trigger, the HUD's loader row — ABSENT, not
-dimmed — the gun marker, an AI driver's lay-and-fire, the authority's rate gate)
-and **`Vehicle.flies`**, which ten readers ask, from the wire's altitude to the
-leash to the shadow focus.
+dimmed — the gun marker, the authority's rate gate) and **`Vehicle.flies`**,
+which ten readers ask, from the wire's altitude to the shadow focus.
 
 **There is no player model in this game, so nothing on a vehicle may promise a
-body standing at it** — the truck's station is REMOTE and the gunship's gun is
-in a CHIN TURRET for that reason, and nothing may stand on either roof inside
-its sweep. **The two seats are `DRIVER` (sticks + main gun) and `GUNNER` (the
-cupola gun and nothing else), and the first man aboard DRIVES**. **The verbs are
-`E` to board and `F` to cross** (the pad's d-pad north and Y, and two buttons
-that APPEAR on glass, which `Game.offerUse` is the one door to name); **both
-turn a BOT out of the chair they reach and neither ever moves a PERSON**. **A
-driver's frame is not a body's**: `Player.update` is not called, so the hull's
-ground REPLACES the probe.
+body standing at it**, and nothing may stand on a roof inside a gun's sweep.
+**The two seats are `DRIVER` (sticks + main gun) and `GUNNER` (the cupola gun
+and nothing else), and the first man aboard DRIVES**. **The verbs are `E` to
+board and `F` to cross** (and two buttons that APPEAR on glass, which
+`Game.offerUse` is the one door to name); **both turn a BOT out of the chair
+they reach and neither ever moves a PERSON**. **A driver's frame is not a
+body's**: `Player.update` is not called, so the hull's ground REPLACES the
+probe.
 
 **A hull is the one MOVING `solid` mesh in the game**: in both pick predicates
 and carrying `checkCollisions`, but emitting **no `WorldBox`** — so the nav
 graph, the cover bake, the obstacle field and the collision bake have never
 heard of it, and **bots walk through a parked tank as they walk through a
-corpse**. Its box covers the TURRET, and **anything picking a hull out of its
-own way owes two property writes rather than a predicate** (`world/solid.ts`
-forbids minting one). **It is also the one TARGET answered by its collider
-rather than by a hit sphere** — `RayHit.hull` says which hull a cast stopped on,
+corpse**. **Anything picking a hull out of its own way owes two property writes
+rather than a predicate** (`world/solid.ts` forbids minting one). **It is also
+the one TARGET answered by its collider rather than by a hit sphere** —
+`RayHit.hull` says which hull a cast stopped on,
 and **nothing reads `Vehicle.hitRadius` any more** — **which is why a hull's own
 ROUNDS leave that collider out too** (`ShotOptions.fromHull`, stated on the GUN
-rather than at the trigger, there being two triggers in two processes).
+rather than at the trigger).
 
 **A hull drives over PEOPLE**, which is what `Game.crushSweep` is
 (`HeadlessGame`'s is the authority's twin, and both run right after
-`VehicleSystem.update`): a tank is in no baked structure, so
-`moveWithCollisions` sweeps the HULL out of the world rather than a body out of
-its way. **What a hit is worth is a `DamageKind`** — the third parameter on
+`VehicleSystem.update`): a tank is in no baked structure, so `moveWithCollisions`
+sweeps the HULL out of the world rather than a body out of its way. **What a hit
+is worth is a `DamageKind`** — the third parameter on
 `Hittable.takeDamage`, which only a tank reads, against
 `CONFIG.vehicles.tank.resist` — and `"crush"` is one no round carries. **The
 reticle still cannot lie**: the look is an ORDER the turret walks toward, the
 shell goes down the GUN's axis, and **everything else on the hull that moves is
 a PICTURE** — the collider never tilts and nothing on it is pickable.
 
+**A GUNNER may put a SIGHT up, and it is the one thing in a hull that reads the
+player's ADS** (`Game.opticUp`): the eye goes to the optic head the model
+already draws (`VehicleRig.mgSight`) and the view is slaved to the gun, so the
+marker becomes the reticle. It is a question about the SEAT and never about the
+kind, and `CameraSystem.place` takes the FIELD as a third argument for it. **A
+chase camera's look point may never sit on its own eye ray** — those three were
+collinear, so every hull sat dead centre whatever the framing claimed;
+`CONFIG.vehicles.frameLift` is an ANGLE that fades out as the view looks down.
+
 **BOTS CREW BOTH CHAIRS, and a crewman is not a bot with a vehicle attached.** A
 crewed bot leaves `Bot`'s FSM entirely — **`BattleSystem.aside` is the one skip
 test every loop over `bots` owes**, never `benched.has` — while keeping its
-LIFE, its POSITION slaved to the hull and its SQUAD'S ORDER. **A tank is never a
-DESTINATION**, and **a crew never denies the player their own armour**. **BOTS
-FLY IT** too, on a bearing and a HEIGHT, and **a flow field's bearing is not an
-order a pilot can fly**: the bearing is HELD and the route only nudges it.
+LIFE, its POSITION slaved to the hull and its SQUAD'S ORDER. **BOTS FLY IT**
+too, on a bearing and a HEIGHT, and **a flow field's bearing is not an order a
+pilot can fly**.
 
 **ANY world position read off a node on the AUTHORITY owes a forced world
 matrix, and the failure is invisible on a client**, whose render walk writes one
 every frame. A node that is merely MOVED does not report itself out of sync, so
-its FIRST read is what it returns for the life of the process — it cost every
-hull on the server its sweep origin, the tank's gun its muzzle, and the bots
-their ears.
+its FIRST read is what it returns for the life of the process.
 
 **A hull is HEARD whoever is in it**, pushed per FRAME by `Game.pushHullEngines`
 rather than opened on a mount, and **what drives the voice is asked of the HULL**
 (`Vehicle.powerplant`), so the second powerplant needs no branch either. **A
 MACHINE THAT HOLDS ITSELF UP BY MOVING AIR MOVES THE GROUND WHEN IT GETS NEAR
-IT**: `RotorWash` is one standing GPU emitter per rotor, nothing spawned and
-nothing scheduled, and **the hull answers what it is doing to the ground**
-(`Vehicle.washTo`) exactly as it does for the voice. **A colour GRADIENT changes
-a particle system's VERTEX BUFFER LAYOUT, so one may only be added before that
-system's FIRST RENDER.** **A frame that did not STEP the fleet owes
-`Sfx.enginesOff` and a wash of zero** (`Game.fleetStepped`, **read ONCE**,
-because a one-shot flag with two consumers is one whose second reader gets
-whatever the first left).
+IT**: `RotorWash` spawns and schedules nothing, and **the hull answers what it
+is doing to the ground** (`Vehicle.washTo`) exactly as it does for the voice.
+**A colour GRADIENT changes a particle system's VERTEX BUFFER LAYOUT, so one may
+only be added before that system's FIRST RENDER.** **A frame that did not STEP
+the fleet owes `Sfx.enginesOff` and a wash of zero** (`Game.fleetStepped`,
+**read ONCE**: a one-shot flag with two consumers is one whose second reader
+gets nothing).
 
 → **[`docs/vehicles.md`](docs/vehicles.md)** — the three kinds and the two
 capabilities between them, each trade and each model; the seats, the swap and
 the crew of two; the pilot's held bearing and the flight model under it; the
-collider's three answers; the crush's gates and skips; the two engine voices and
+collider's three answers; the crush's gates and skips; the gunner's sight, where
+its eye comes from and the framing bug it found; the two engine voices and
 the rotor's dust, spray and ripple; the plank, the climb and the leading-end
 sphere; the damage kinds, the shell, what a map and its GENERATOR owe, and what
 is not built.

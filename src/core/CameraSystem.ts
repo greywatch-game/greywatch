@@ -731,12 +731,25 @@ export class CameraSystem {
    * The roll and the FOV are written explicitly rather than left alone: both
    * are this system's own state, and a camera handed over mid-landing would
    * otherwise watch the body through a tilted, zoomed frame for four seconds.
+   *
+   * **`fov` defaults rather than being asked for**, and the one caller that
+   * passes it is the vehicle gunner's sight: an optic is a narrower field and
+   * nothing else about this hand-off changes for it. It is written on EVERY
+   * call, so putting the sight down restores the frame with no state to unwind
+   * — which is what makes it safe for a camera nobody blends.
+   *
+   * The ROLL is written on every call for the same reason and it is what makes
+   * that sight usable at all: a gun sight on a machine that banks 26 degrees
+   * would otherwise roll with the airframe, and a gimballed mount does not.
    */
-  place(eye: Vector3, target: Vector3): void {
+  // Annotated, not inferred: `CONFIG` is `as const`, so a bare default here
+  // would give the parameter the LITERAL type of `fovHip` and refuse every
+  // other field of view.
+  place(eye: Vector3, target: Vector3, fov: number = CONFIG.camera.fovHip): void {
     this.camera.position.copyFrom(eye);
     this.camera.setTarget(target);
     this.camera.rotation.z = 0;
-    this.camera.fov = CONFIG.camera.fovHip;
+    this.camera.fov = fov;
   }
 
   /**

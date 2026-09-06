@@ -611,6 +611,24 @@ export function buildTank(
   // from here starts outside the turret's own geometry.
   mgMuzzle.position.set(0, 0.02, 1.1);
 
+  // **The commander's eye over the receiver, and this is the one of the three
+  // that the drawing does NOT already answer.** The truck's station and the
+  // gunship's chin turret both carry an optic head in pale metal — a fitting on
+  // a powered mount, drawn so that the eye can find where the gun is looking —
+  // and a pintle gun with spade grips has no such thing on it, because the man
+  // holding it is the sight. There is no man to draw, so nothing is added here
+  // either: the node stands where his head would be and no mesh comes with it.
+  //
+  // On the bore's own vertical plane rather than off to one side, which is what
+  // the other two cannot have and this can: with no head to sit behind, the
+  // only offset the picture needs is UP, and a sight with no lateral offset has
+  // no lateral parallax to explain. 0.20 over the bore puts the barrel's far
+  // end 15.3 deg below the sight line at 2.2x — the very bottom edge of the
+  // picture, so the weapon frames the shot without standing in it.
+  const mgSight = new TransformNode("tank-mg-sight", scene);
+  mgSight.parent = mgGun;
+  mgSight.position.set(0, 0.22, 0.3);
+
   // --- the antennae: the only parts of this vehicle that BEND ---------------
   //
   // Four meshes for two masts, and they are the one place this model's budget
@@ -694,7 +712,7 @@ export function buildTank(
 
   const rig: VehicleRig = {
     root, hull, sprung, turret, gun, muzzle,
-    mgMount, mgGun, mgMuzzle,
+    mgMount, mgGun, mgMuzzle, mgSight,
     antennae, meshes, livery,
     // The three extents `Vehicle` cannot get anywhere else — see
     // `VehicleRig.gauge`. All three are drawing decisions made in this file,

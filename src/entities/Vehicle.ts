@@ -1545,12 +1545,24 @@ export class Vehicle implements Combatant, RayHull {
     return out.copyFrom(muzzle.getAbsolutePosition());
   }
 
-  /** Where the COMMANDER's gun points, in the world. Never where the turret does. */
-  mgDirToRef(out: Vector3): Vector3 {
-    const cp = Math.cos(this.mgPitch);
+  /**
+   * Where the COMMANDER's gun points, in the world. Never where the turret does.
+   *
+   * **`pitchOffset` is for the SIGHT bolted to this gun and for nothing else**,
+   * and it defaults to zero so every round, every flash and every marker asks
+   * the same question it always did. `VehicleCamera` spends it on the report
+   * kick: a gun sight is shaken by the weapon under it while the weapon itself
+   * is unmoved — the kick is emphatically not on `mgYaw`/`mgPitch`, which are
+   * where the gun IS. Taking it as a parameter here rather than re-deriving the
+   * axis at the camera is what keeps this the one place a lay becomes a
+   * direction.
+   */
+  mgDirToRef(out: Vector3, pitchOffset = 0): Vector3 {
+    const pitch = this.mgPitch + pitchOffset;
+    const cp = Math.cos(pitch);
     return out.set(
       cp * Math.sin(this.mgYaw),
-      Math.sin(this.mgPitch),
+      Math.sin(pitch),
       cp * Math.cos(this.mgYaw),
     );
   }
@@ -1563,6 +1575,23 @@ export class Vehicle implements Combatant, RayHull {
   mgMuzzleToRef(out: Vector3): Vector3 {
     this.rig.mgMuzzle.computeWorldMatrix(true);
     return out.copyFrom(this.rig.mgMuzzle.getAbsolutePosition());
+  }
+
+  /**
+   * Where the gunner's eye goes when he puts the sight up: the optic head this
+   * hull draws, in world space. `mgMuzzleToRef`'s twin one fitting along, and
+   * forced for the same reason — `VehicleCamera` is a client, but a node that
+   * is merely MOVED never reports itself out of sync and the cost is a compose
+   * the frame was about to do anyway.
+   *
+   * **It is the RIG's answer and not a number the camera holds**, which is the
+   * whole of why the three kinds need no branch between them: a sight is a
+   * fitting, the model that draws the fitting is what says where it is, and
+   * `VehicleRig.mgSight` carries the two clearances it has to keep.
+   */
+  mgSightToRef(out: Vector3): Vector3 {
+    this.rig.mgSight.computeWorldMatrix(true);
+    return out.copyFrom(this.rig.mgSight.getAbsolutePosition());
   }
 
   /** Is the belt-fed gun's own rate limit spent? `fireMg`'s gate, asked outside. */

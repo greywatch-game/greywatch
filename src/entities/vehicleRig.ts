@@ -213,6 +213,28 @@ export interface VehicleRig {
   mgGun: TransformNode;
   /** Where a machine-gun round leaves, and where its flash is lit. */
   mgMuzzle: TransformNode;
+  /**
+   * Where the GUNNER's eye goes when he puts the sight up: the optic head this
+   * model already draws, at its outer face.
+   *
+   * **On `mgGun` and not on `mgMount`, which is what makes the picture a sight
+   * picture.** Hung off the mount it would not elevate with the weapon, so the
+   * barrel would swing up through the frame as the gun came up and the
+   * parallax between the eye and the bore would change with every degree of
+   * elevation. On the gun the two are PARALLEL at every lay: the barrel keeps
+   * one place in the picture and the offset means the same thing at every
+   * angle.
+   *
+   * It is a fact about the DRAWING and every one of the three is measured
+   * against its own geometry — what a sight picture IS lives in
+   * `CONFIG.vehicles.sight`, one block for the fleet. Two things bound it and
+   * both have already cost a re-measurement somewhere in this tree: it must
+   * clear the near plane (`CONFIG.camera` 0.05) against every part of its own
+   * vehicle through the whole of `mg.pitchMin`..`pitchMax`, and on a hull whose
+   * gun looks steeply DOWN it must still be over the pad with the machine
+   * sitting on it — the same ground the muzzle is measured against.
+   */
+  mgSight: TransformNode;
   /** The masts, longest first — the order `rate` is measured against. May be empty. */
   antennae: readonly Whip[];
   /** Every drawn mesh, for the repaint and for whoever needs the list. */
