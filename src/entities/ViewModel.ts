@@ -243,6 +243,23 @@ function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
   // otherwise bloom, and a bloomed backdrop is a bright wash over the weapon.
   card.metadata = { noGlow: true, noInk: true, noShadowCaster: true };
   card.setEnabled(false);
+
+  // **Painted once HERE, and it is not for the look — the pool this lays down
+  // is never seen.** `updateInspect` repaints from the measured bay before the
+  // card is ever enabled (`poolX`/`poolY` open at a sentinel outside NDC, so
+  // the first kit frame always repaints), and outside that screen nothing
+  // draws this at all. What the upload buys is READINESS: a `DynamicTexture`
+  // is not ready until something calls `update()` on it, so an emissive map
+  // that has never been uploaded makes `StandardMaterial.isReadyForSubMesh`
+  // return false before it builds an effect — and a scene holding one mesh
+  // like that answers `scene.isReady()` FALSE for the life of the process.
+  //
+  // Nothing in `src/` asks, which is why this went unnoticed: what it broke
+  // was `npm run shots`, whose whole gate is that question and which failed on
+  // every map for two minutes at a time saying only "scene never became
+  // ready". Every other `DynamicTexture` in the tree is already uploaded where
+  // it is built; this is that convention, and `VERIFYING.md` has the hunt.
+  paintKitPool(tex, 0, 0);
   return { card, tex };
 }
 

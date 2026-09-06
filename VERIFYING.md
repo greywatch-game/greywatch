@@ -151,6 +151,26 @@ you are on before you believe anything else in this section.
   was three wall-clock seconds on the Chromebook and 45 ms here, and running
   `npm run shots` would have overwritten Hollowmere's and Harrowmead's
   committed backdrops with blank frames.
+- **…and ONE unuploaded texture anywhere in the scene turns that answer off
+  for the whole process**, which is the trap rather than the rule above. A
+  `DynamicTexture` is not READY until something calls `update()` on it, so a
+  material carrying one that has never been uploaded makes
+  `StandardMaterial.isReadyForSubMesh` return false before it ever builds an
+  effect — and `scene.isReady()` walks every mesh in the scene, drawn or not.
+  It cost two runs and a broken `npm run shots`: `89f592c` moved the kit
+  backdrop's paint into `paintKitPool`, which only runs when the kit BAY moves,
+  so a session that never opened the loadout screen left `viewmodel_kitBackdrop`
+  unready and the scene unready with it — on EVERY map, with the picture
+  perfectly correct and nothing in `src/` the wiser, because nothing in `src/`
+  asks. Fixed by painting once where the card is built (every other
+  `DynamicTexture` in the tree already does); `npm run shots -- harrowmead`
+  went from failing after 120 s to a picture in 2.8 s, and Sarab in 5.9 s.
+  **What generalises is the diagnosis**: when `scene.isReady()` will not flip,
+  list the meshes where `!mesh.isReady(true)` — it is usually ONE, and it is
+  usually a texture rather than a shader. Material-less meshes (colliders, the
+  effect pools) show up in that list on the FIRST call and clear themselves on
+  later ones, because asking is what compiles them; ask every frame before
+  believing the list.
 - **Do not touch `src/` while a dev-server-backed script is running.** Vite's
   HMR full-reloads the page on a change under the module graph, and what that
   looks like from Playwright is `page.evaluate: Execution context was

@@ -1895,6 +1895,18 @@ cloud**, below which nothing is painted at all. `Ridge.ts`'s `MIN_SLOPE` is the 
 half of the contract; lowering the rim without moving these cutoffs uncovers a band
 of empty dome.
 
+- **A `DynamicTexture` must be uploaded WHERE IT IS BUILT, and the cost of not
+  doing it is invisible in the picture.** `update()` is what makes one READY,
+  and an un-uploaded texture on a material makes
+  `StandardMaterial.isReadyForSubMesh` return false before it builds an effect
+  — so `scene.isReady()`, which walks every mesh in the scene whether it draws
+  or not, answers FALSE for the life of the process. Nothing in `src/` asks
+  that question, which is exactly why it goes unnoticed: what it breaks is the
+  TOOLING that does. The kit backdrop's paint spent a day inside the
+  bay-follows-the-DOM repaint and took `npm run shots` down on every map with
+  it (`VERIFYING.md` has the hunt). Every `DynamicTexture` in the tree is
+  uploaded in its own constructor now; a repaint later is a repaint, never the
+  first one.
 - **Sky textures are uploaded with `update(false)`.** `DynamicTexture.update()`
   flips Y by default, which maps canvas row 0 to `v = 1` — the *nadir* on Babylon's
   sphere, whose UVs run `v = acos(y)/PI` down from the zenith. A sky painted top-down
