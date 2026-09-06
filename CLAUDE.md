@@ -44,15 +44,29 @@ lines, split it into `docs/<topic>.md`: move the prose **verbatim** — this
 material is argued rather than stated, and a paraphrase loses the argument along
 with the reason the rule exists — demote its headings one level, and leave behind
 a summary carrying whatever a reader must not violate even if they never open the
-file, plus the pointer and a row in the table above. **Keep this file under ~850
-lines the same way**, and when it drifts over, the thing to cut is the ARGUMENT
-in a companion-backed summary — never a rule, because the companion already holds
-the argument verbatim and nothing else holds the rule. What must **not** move out
-is anything two subsystems both depend on; that is what this file is for. Four
-sections stay long whatever their companion holds, because what is in them is
-what crosses subsystems: the wiring, the two rules the world layer cannot bend
-(the collider proxy and the metadata contract), and the conventions — ~260 lines
-between them.
+file, plus the pointer and a row in the table above.
+
+**That split is a MOVE, and the summary left behind owes a TRIM the move does
+not do for it.** A companion-backed section here STATES rules and does not argue
+them: the companion holds the argument verbatim, and a spine that argues too is
+one where every subsystem's whole case is written down twice. So a measurement,
+a worked number, the history of what was tried first and the symptom a bug
+presented as all belong in the companion or in `FINDINGS.md` — never here.
+
+**Keep this file under ~1,500 lines, and the PER-SECTION CAP is what holds it
+there**, the total being a consequence rather than a thing to trim toward: a
+companion-backed section is **~85 lines**, and the few that carry a reference
+table or a contract two subsystems both read may run to **~135**. When a section
+is over, cut the argument first by the rule above; if it is still over, cut the
+RULES that only that subsystem's own author can break. **The test is whether
+somebody who is NOT editing this subsystem could break it** — anyone who IS has
+already been sent to the companion by the table above, so a rule about the
+flight model or a puff's colour belongs there, and one about what a hull is to
+the ray queries belongs here. What must **not** move out is anything two
+subsystems both depend on; that is what this file is for. Four sections stay
+long whatever their companion holds, because what is in them is what crosses
+subsystems: the wiring, the two rules the world layer cannot bend (the collider
+proxy and the metadata contract), and the conventions — ~340 lines between them.
 
 **Every source file has a contract header** stating what it owns, its invariants,
 and what it must never do. Read it before editing that file.
@@ -69,14 +83,12 @@ and Firefox on Linux/macOS plus older Android and iOS no longer boot at all.
 Both phones are PWA install targets, so this is a product fact, not a detail.
 
 **The engine is built with `compatibilityMode = false`, and that is load-bearing
-rather than a tuning flag.** This frame is DRAW-CALL bound — Coldharbour renders
-at a sixteenth of the pixels for the same milliseconds — and Babylon's WebGPU
+rather than a tuning flag.** This frame is DRAW-CALL bound and Babylon's WebGPU
 backend charges CPU on every draw, so the render-bundle submission path is worth
-~26% on the two big maps and ~15% on the two small ones. **Do not delete it to
-tidy the boot.** The argument is on the line in `main.ts`, the measurement is
-`FINDINGS.md` #17, and the one thing to know without reading either is that its
-risk is state changing between draws: if a rendering bug ever appears that shows
-only while something is MOVING, flip this first.
+~26% on the two big maps and ~15% on the two small ones (`FINDINGS.md` #17).
+**Do not delete it to tidy the boot.** The one thing to know without reading the
+measurement is that its risk is state changing between draws: if a rendering bug
+ever appears that shows only while something is MOVING, flip this first.
 
 **Zero model files, and SIXTEEN audio files — one report per weapon in the
 kit, the cupola gun all three hulls mount, the two halves of the player's own
@@ -89,193 +101,89 @@ and each with a generator in `package.json`: the icons, Havok's `.wasm`, the
 water's foam mask, and each map's menu photograph.
 
 **The recordings in `audio/` are the fifth, and they are the only asset class
-here a person authored.** They pass the same test the other four do — `npm run audio`
-is the generator, the encoded files are committed, and the masters they were
-cut from are committed beside them in `audio/src/` — plus one more that is
-their own, because a recording's master is a recording rather than a script:
-**the game is still whole with every file in `audio/` deleted.** The fetch is
-fire-and-forget off `Sfx.unlock`, so a shot fired before the decode lands, on a
-device where the fetch failed, or in a browser that cannot decode the
-container, is the SYNTHESIZED report and no caller is told the difference. **A
-SEVENTEENTH sound owes that same claim**; a sound the game needs does not belong
-in this pipeline. **What the pipeline refuses is a LIBRARY, not a sound that is
-not a gunshot** — five footstep variants per surface, thirty one-shots, an
-ambient bed that alone costs ten times this whole list — and `docs/audio.md` has
-the arithmetic. **The two recorded MECHANISMS are what makes that boundary
-readable**: six cuts off TWO masters, no round robin, the player's own rather
-than every body's, and with `audio/` deleted `Sfx.reload` is still its four
-clacks and `Sfx.boltCycle` its five clacks and two sweeps — a claim each of them
-makes BEAT BY BEAT rather than for the gesture. **A sample belongs to a
-`ReportVoice` and not to a weapon**, which is why one file serves the tank's
-cupola, the truck's remote station and the gunship's chin turret: they are one
-gun on three mounts, and a fourth kind gets it by having an `mg` block at all.
-**The reload's two go one step further and belong to a MOMENT** — every weapon
-in the kit plays the same pair, and what tells them apart is
-`actionPitch`/`actionVol` — **and the bolt cycle's four go one further still and
-belong to a BEAT**, because a gesture placed as fractions of a `shotInterval`
-cannot be one file. **The last two are the two BLASTS, and `grenade` is that
-sentence once more: a sample belongs to a BLAST, of which this game has exactly
-ONE** — `blastAt` takes a `power`, so one recording is every explosion in the
-game and the tank shell is 1.85 of it. `tankCannon` is the inverse and the only
-row here that is a deviation from nothing: `Sfx.cannon` is the one report with
-no row in `CONFIG.weapons` behind it at all.
+here a person authored.** They pass the same test the other four do — `npm run
+audio` is the generator, the encoded files are committed, and the masters are
+committed beside them in `audio/src/` — plus one that is their own: **the game
+is still whole with every file in `audio/` deleted**, the fetch being
+fire-and-forget off `Sfx.unlock`, so a shot fired before the decode lands or on
+a device where it failed is the SYNTHESIZED report and no caller is told the
+difference. **A SEVENTEENTH sound owes that same claim**, and **what the
+pipeline refuses is a LIBRARY, not a sound that is not a gunshot** — five
+footstep variants per surface, thirty one-shots, an ambient bed that alone costs
+ten times this whole list.
+
+**A sample belongs to a VOICE, never to a weapon**, which is what keeps sixteen
+files serving everything that makes a noise: to a `ReportVoice` (one file is the
+tank's cupola, the truck's remote station and the gunship's chin turret — one
+gun on three mounts), to a MOMENT (every weapon in the kit plays the same
+magazine change, told apart by `actionPitch`/`actionVol`), to a BEAT (a gesture
+placed as fractions of a `shotInterval` cannot be one file), or to a BLAST, of
+which this game has exactly ONE — `blastAt` takes a `power`, so one recording is
+every explosion in the game.
 
 **Three rules from it reach outside `audio/`.** A decoded buffer costs
 `duration × ctx.sampleRate × channels × 4` and **nothing else** — the container,
-the bitrate and the file's own sample rate are invisible to it (measured: a
-22 kHz file decodes back up to 48 kHz for identical RAM), so **the budget is
-SECONDS of mono, not bytes**, and `npm run build` fails over it. **A weapon's
-`report.pitch` is NOT spent on its own sample** — the eight scalars are
-deviations from the reference report and a recording of that weapon has already
-made the deviation — and `Sfx.botShot` puts back by hand the distance cues the
-synthesis carries in its own filters, because a recording played louder and
-quieter is not a rifle at two distances. **The magazine change inverts that and
-the inversion is the rule rather than an exception to it**: one shared recording
-has said nothing about which weapon it is going into, so `actionPitch` IS spent
-on it. A per-weapon file has already made the deviation; a shared one has not —
-the bolt cycle's four are the same inversion, and so is the grenade's, where
-`power` is spent as `rate` on the one recording every blast in the game plays.
-The per-shot ACTION is still `ReportVoice`'s scalars and is not sampled at all.
+the bitrate and the file's own sample rate are invisible to it — so **the budget
+is SECONDS of mono, not bytes**, and `npm run build` fails over it. **A weapon's
+`report.pitch` is NOT spent on its own sample**, the eight scalars being
+deviations from the reference report that a recording of that weapon has already
+made — **and a SHARED recording inverts that**, which is the rule rather than an
+exception to it: the magazine change, the bolt's four and the grenade's one have
+said nothing about what they are going into, so the scalars ARE spent on them.
 And **a sample is the DIRECT sound; the ROOM is the game's** — `Sfx` answers
-every gunshot with one shared `ConvolverNode` at no per-shot cost, so a baked
-tail double-reverbs the shot, puts one room on six maps and holds a voice for
-the length of it. Every SHOT master delivered so far arrived with that room on it
-and each of those is cut back to between 96 and 180 ms; **the two rules that
-took the most off** are that a MECHANISM on the tape is cut whichever end it is
-on
-(three of the eight lead with one — the carbine, the LMG and the mounted gun,
-by 32, 50 and 40 ms, which is that much latency between the trigger and the
-sound), and that a master with no cliff to cut on — the sniper's is one long
-boom — is cut with a FADE rather than left long. **A master that is a
-PERFORMANCE is cut to the game's BEATS instead, one row per beat**, because
-`Sfx.reload` and `Sfx.boltCycle` place theirs as FRACTIONS of a duration and a
-recording's own timing is a fixed number of milliseconds: shipped whole, a take
-agrees with what is drawn at exactly one rate and at no other. That is why the
-catch was cut off the front of `magOut` and 2.4 s of a hand fetching a magazine
-out of the middle, and why one performance of a bolt being worked is four files.
-**The bolt's four are also the one place a recording replaces the TRAVEL** —
-each is scheduled by its PEAK with the slide that put it there in front, so the
-synthesized sweeps are inside those arms rather than played over them. **And the
-MONO rule is about where a sound is HEARD, not what it is**: seven rows are
-stereo under the exception for a report the player hears unpanned, `mountedGun`
-is not because `Game.resolveMg` reaches `Sfx.botShot` and never `shoot`, and the
-six MECHANISM rows are heard where the exception applies but have no width to
-keep (the side channel is 13.7 to 23.3 dB under the mid, against the rifle's
-10.8) — **the exception is for width that EXISTS.** The two BLASTS fail it on
-WHERE like the mounted gun (a shell the player fires from their own tank is
-spatialised like everybody else's), and `tankCannon` is the sharpest case of it
-in the directory because it is the WIDEST master there, side only 2.3 dB under
-mid. **Its downmix then set its own CUT**: past 230 ms its channels go
-negatively correlated, so the mono sum cancels rather than narrows — **a stereo
-master is measured for what the SUM does to it as well as for what the width is
-worth.**
+every gunshot with one shared `ConvolverNode`, so a baked tail double-reverbs
+the shot, puts one room on six maps and holds a voice for the length of it.
 
 **The world also makes a noise on its own, and that half is the one place the
 recording boundary was never even close.** A burning drum is a SUSTAINED voice
-(`Sfx.ambience`, `systems/AmbienceSystem.ts`), and `docs/audio.md` prices one
-30-second ambient loop at 5.5 MB decoded — **ten times the entire sampled gun
-kit** — against a crackle that genuinely IS filtered noise. **Sample the guns,
-never the ambience.** What it costs instead is CPU and SLOTS, which is a
-separate budget from the one-shot cap and gets `LightingSystem`'s answer to
-`LightingSystem`'s problem: a map may dress twenty drums, the nearest
-`CONFIG.audio.ambience.maxVoices` (3) win a voice each frame, and an incumbent
-is scored `swapMargin` closer than it is so two fires either side of a street
-cannot trade a slot back and forth. **An emitter's INDEX is its identity** — it
-is the key the held-open graph hangs on — so the registry is append-only within
-a map and a teardown owes `Sfx.ambienceAllOff` beside the `clear`. The graph
-itself is `hullEngine`'s shape (a panner, a `sources` list, the range gate and
-its hysteresis inside `Sfx`) with **the opposite conclusion about a held
-world**: an engine's voice is driven by a load a lid freezes, so those owe
-silence, and a fire is driven by nothing at all — a village does not go quiet
-because a kit screen is up, which is why this is pushed from `tick` in every
-state and `enginesOff` has a `fleetStepped` in front of it. **Nothing in it is
-scheduled**, `Sfx`'s own invariant: **a crackle is an IMPULSE RINGING A
-RESONATOR** — the shared noise buffer thresholded sample by sample, so a single
-sample survives as a single-sample impulse and randomness costs no timer.
-**That graph was FITTED to a recording rather than tuned by ear**
-(`reference-media/`, gitignored, never shipped — a measuring stick, not an
-asset), because the first version read as distant gunfire and the reason was in
-the octave bands: a fire is two humps with a fifteen-decibel hole at 500 Hz-1
-kHz, and that version put soft-attacked crackles of a single pitch straight
-into the hole, which is what DISTANCE does to a rifle. Three rules from the fit
-generalise. **A spark row's `rate` must be a negative power of two or the row
-is SILENT** — a threshold within a thousandth of full scale selects isolated
-samples, and any other rate interpolates them away (measured: 107% of stated at
-rate 1, 21% at 1/3, **nothing at 0.61**); a cut shipped that way and its numbers
-still looked good because the surviving row carried them. **A row's `loop` is
-what stops it repeating**, in whole samples, because a one-second buffer at rate
-1 replays its whole pattern of pops every second. And **a config number that is
-not normalised is not a level** — a single-sample impulse leaves a bandpass at
-`alpha/(1+alpha)` of its height, so a stated 0.5 put the crackles 12 dB under
-the bed. **THREE things carry a sound and two of them say so beside the LIGHT
-they already carry**: a scatter prop through `SCATTER_AMBIENCE` (beside
-`SCATTER_LIGHTS`), a STRUCTURE through `Build.sound`, `Build.light`'s twin,
+(`Sfx.ambience`, `systems/AmbienceSystem.ts`), and one 30-second ambient loop
+costs 5.5 MB decoded — **ten times the entire sampled gun kit** — against a
+crackle that genuinely IS filtered noise. **Sample the guns, never the
+ambience.** What it costs instead is CPU and SLOTS: the nearest
+`CONFIG.audio.ambience.maxVoices` win a voice each frame, and an incumbent is
+scored `swapMargin` closer so two fires either side of a street cannot trade a
+slot. **An emitter's INDEX is its identity** — the key the held-open graph hangs
+on — so the registry is append-only within a map and a teardown owes
+`Sfx.ambienceAllOff` beside the `clear`. **Nothing in it is scheduled**, `Sfx`'s
+own invariant. It is pushed from `tick` in **every** state, the OPPOSITE
+conclusion to the engine voices' `fleetStepped`: an engine is driven by a load a
+lid freezes, and a fire is driven by nothing at all — a village does not go
+quiet because a kit screen is up.
+
+**THREE things carry a sound and two of them say so beside the LIGHT they
+already carry**: a scatter prop through `SCATTER_AMBIENCE` (beside
+`SCATTER_LIGHTS`), a STRUCTURE through `Build.sound`, `Build.light`'s twin
 rotated into the world by the same line — **what is drawn as burning is heard
 burning** — and a `WaterRect`. It is named by ID and never by reaching for the
-audio config: `AmbienceId` plus `MapBuilder`'s `AMBIENCE_KINDS`, a `Record`
-over the union so a second kind does not compile half-added, and the one place
-the world layer and `CONFIG.audio.ambience` meet. **A position is taken at
-BUILD time or not at all** — the merge takes the prop's mesh away, so there is
-nothing left at runtime to hang an emitter on.
-
-**WATER IS THE FIRE'S SPECTRUM TURNED INSIDE OUT, and the second reference
-recording is what proved the graph general.** A fire is two humps with a
-fifteen-decibel hole at 500 Hz–1 kHz; running water is ONE hump sitting exactly
-in that hole (1 kHz -2.9 dB against the fire's -17.9), so the two ambiences in
-this game occupy complementary octaves and a brazier on a quay cannot mask the
-sea beside it. Four rules generalise. **41.6% of that recording's power is
-below 20 Hz and none of it is water** — a mic in the open air — so octave
-figures are normalised over the AUDIBLE band and the subsonic is deliberately
-not reproduced, which is the fire's own "4 dB under the roar" departure made
-again. **A second KIND is a row and a second HUMP is a row too**: the bed is
-`AmbienceKind.bands` now, because a brook's high shelf cannot be carried on
-event rows (an impulse train dense enough to read as a bed is no longer
-impulses — measured, the top three octaves came in 4 to 8 dB under a fit whose
-arithmetic said they were right) and its skirts are asymmetric, which a single
-biquad cannot be at any Q (`stages` fits at 0.88 / 0.31 / 0.27 dB rms for one,
-two, three). **Water INVERTS the fire's headline finding**: a fire's mid-high
-energy is EVENTS and water's is BED — 9.3 dB of event over bed at a crest of
-17.4 against 14.7 at 23.5 — and carrying it the fire's way renders a brook that
-ticks. And **the SHORE is derived rather than fitted and says so**: there is
-one water master and it is running water, so still water is that spectrum moved
-down 0.85 of an octave (Minnaert: a wave entrains bigger air than a brook) plus
-a SWASH, which is `breathHz` at 0.28 and the two breath depths within a third
-of each other where a fire's differ by 3.4x — **how far apart a kind's breath
-depths are is itself a claim about the sound.**
-
-**AND A LAKE MAKES NO NOISE IN THE MIDDLE OF ITSELF**, so a `WaterRect` names
-WHAT it sounds like and never where. `MapBuilder.waterAmbience` marches the
-FLOOR for the waterline — `docs/world.md`'s "a waterfront is derived from the
-floor" one subsystem over — and three rules hold it up, each found by getting
-it wrong: FLOODED is asked of the whole rect LIST (asked of the terrain alone a
-pool on flat moor has no edge at all; asked of one rect's bounds the seam
-between two rects of one sea reads as a shore), nothing past the play square
-plus its borderland is a shore, and **a BODY of water is a connected group of
-rects rather than a rect** — a sea is partitioned for bed textures and probes,
-not because it is eight seas, and left as eight it is RANKED as eight.
-`AmbienceSystem`'s emitter is then a RUN of points that scores itself on the
-nearest one: **a fire is a place and a shore is a line.** `WaterRect.sound` is
-the one optional field on a layout whose default is not "unaffected" — absent
-means `shore`, because silent water is a bug — and it is declared rather than
-derived because FLOW IS NOT A SHAPE.
+audio config (`AmbienceId` plus `MapBuilder`'s `AMBIENCE_KINDS`, a `Record` over
+the union so a second kind does not compile half-added), and **a position is
+taken at BUILD time or not at all**, the merge having taken the prop's mesh
+away. **A LAKE MAKES NO NOISE IN THE MIDDLE OF ITSELF**, so a `WaterRect` names
+WHAT it sounds like and never where: **a BODY of water is a connected group of
+rects rather than a rect**, the emitter scores itself on the nearest point of a
+RUN — **a fire is a place and a shore is a line** — and `WaterRect.sound` is the
+one optional field on a layout whose default is not "unaffected", absent meaning
+`shore` because silent water is a bug.
 
 → **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
 binds, why one ambient loop costs ten times the whole sampled gun kit and what
-that rule bought instead (the ranking and what the maps now measure against it,
-the emitter's index, the fire's layers, the gate's rendered pops-per-second and
-the loop point only a render found), both water fits and the tables behind
-them, what the waterline derivation costs on the biggest map, the
-mono/round-robin/transient rules, the manifest and its two gates, the master
-conventions, the container measurements, the INPUT seek that shipped as an
-output one and silently ate the tail of every row with a lead, and the rifle's,
-the reload's and the bolt cycle's trims in full.
+that rule bought instead (the ranking, the emitter's index, the fire's layers
+and the gate's rendered pops-per-second), both water fits and the tables behind
+them, the waterline derivation and what it costs on the biggest map, the
+mono/round-robin/transient rules and the width measurements under them, the
+manifest and its two gates, the master conventions and every trim in full.
 
 **Havok's `.wasm` (~2 MB) is the one binary that ships**, and it is never named
 by path — Vite emits it content-hashed from the ESM glue's own
 `import.meta.url`. Do **not** also hand-place a copy in `public/`: that precaches
 2 MB twice. **It is REQUIRED, and the boot screen enforces that**: `main.ts`
 awaits `loadHavok()` before it constructs `Game`, so nothing downstream asks
-whether physics has arrived. Do not reintroduce a fallback.
+whether physics has arrived. Do not reintroduce a fallback. **Two more WASMs
+exist and the rule is that neither ever ships**: `WebGPUEngine` lazily fetches
+glslang and twgsl off `cdn.babylonjs.com` the moment a shader reaching the
+backend is GLSL rather than WGSL, which would break `docs/pwa.md`'s offline
+promise silently. Nothing in `src/` is GLSL, and the tripwire holding that is
+TWO halves because an aborted route silences the other one.
 
 **Never add a deep static import into `@babylonjs/core`, and never drop
 `optimizeDeps.exclude` from `vite.config.ts`.** Both break a DEV session only,
@@ -283,13 +191,6 @@ both blame a subsystem that is not at fault, and both hide themselves on a
 restart — the first silently unshaded the glow layer and every `StandardMaterial`
 in the game. `src/` now holds **zero** of them and `npm run build` fails on a
 new one (`scripts/check-deep-imports.mjs`); `server/` is outside that scope.
-
-**Two more WASMs exist and the rule is that neither ever ships.**
-`WebGPUEngine` lazily fetches glslang and twgsl off `cdn.babylonjs.com` — four
-files, on first draw — the moment a shader reaching the backend is GLSL rather
-than WGSL, which would break `docs/pwa.md`'s offline promise silently. Nothing
-in `src/` is GLSL, and the tripwire holding that is TWO halves because an
-aborted route silences the other one.
 
 **There is no rigged character asset in the tree.** `GlbSoldier.ts`,
 `entities/soldier/` and `@babylonjs/loaders` were deleted when first person
@@ -301,7 +202,6 @@ weapons.
 fifth would have to pass (one of them now needs a GPU to regenerate), Havok's
 path, the dev-only 404 that names the wrong thing twice, the two WASMs that must
 never ship, and the deep-import trap in full.
-
 ## Commands
 
 ```bash
@@ -375,13 +275,10 @@ apart once and the failure is silent rather than loud. **Anything new that
 consumes a `GameMap` or an `EnvironmentSpec` goes in `installMap`.**
 
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
-deploy`, with `roundover` when a side runs out of tickets. The 3D scene renders
-in **every** state, which is what lets the deploy screen and the menu sit over a
-live view. `loading` (the map being built, and then the reflection bake
-draining behind the same card — `Game.bakeWait`) and `dying` (the death cam) are
-**STEPS, not lids**; `updateWorld` runs in full under the death cam and nothing
-may simulate under the building card, which is now up for as long as the bake
-takes rather than for one frame.
+deploy`, with `roundover` when a side runs out of tickets. **The 3D scene renders
+in every state**, which is what lets the deploy screen and the menu sit over a
+live view, and `loading` and `dying` are **STEPS, not lids**: `updateWorld` runs
+in full under the death cam, and nothing may simulate under the building card.
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is
@@ -401,29 +298,23 @@ nothing, because the authority never heard the key.
 `Game.updateGameplay` has a load-bearing order at the end of the frame: camera
 update → carried-light updates → `lighting.update(dt, camera.position, mats)`.
 Light slot selection keys off the camera position, so nothing may move the
-camera after it.
-
-**Four things are pushed from `tick` instead, because they are owed by the
-states that simulate nothing**: `mats.updateCamera()` (the shader's eye, or
-every screen with a live view behind it is fogged against wherever the last live
-frame stood), `sfx.setListener()` (the EAR, and the same bug with a different
-symptom — a listener placed only by the frames that simulate sits at the origin
-until the first live one, so a fire in the village pans from the map's corner
-while the menu is up over it), `Game.pushAmbience` (below) and
-`Game.pushScoreboard` (the Tab board belongs to the ROUND, not to the states
-that simulate one). The eye and the ear still run after the camera update and
-after `lighting.update` — they are last in the FRAME rather than last in the
-world step, so what they were owed is if anything harder to break.
-
-`ConquestSystem.update` runs *before* `BattleSystem.update`, so a bot's think tick
-sees this frame's flag ownership rather than last frame's.
+camera after it. **Four things are pushed from `tick` instead, because they are
+owed by the states that simulate nothing**: `mats.updateCamera()` (the shader's
+EYE, or every screen with a live view behind it is fogged against wherever the
+last live frame stood), `sfx.setListener()` (the EAR, the same bug with a
+different symptom — a listener placed only by the frames that simulate sits at
+the origin, so a fire in the village pans from the map's corner while the menu
+is up), `Game.pushAmbience` and `Game.pushScoreboard` (the Tab board belongs to
+the ROUND, not to the states that simulate one). `ConquestSystem.update` runs
+*before* `BattleSystem.update`, so a bot's think tick sees this frame's flag
+ownership rather than last frame's.
 
 → **[`docs/game.md`](docs/game.md)** — the mechanical test for what may leave
-`Game.ts`, what `installMap` hands to which system, and the two pushes from
-`tick`. **[`docs/states.md`](docs/states.md)** — the full cycle, the four spec
-fields, the stranded-screen bug behind them, pausing and the netplay inversion of
-it, and the pointer-lock trigger.
-
+`Game.ts`, what `installMap` hands to which system, and the pushes from `tick`.
+**[`docs/states.md`](docs/states.md)** — the full cycle, the four spec fields,
+the stranded-screen bug behind them, the reflection bake draining behind the
+loading card, pausing and the netplay inversion of it, and the pointer-lock
+trigger.
 ### First person, the weapon on the camera, and the loadout
 
 The camera sits **at `Player.eyePos`** — the same point `CONFIG.camera.eyeHeight`
@@ -468,35 +359,29 @@ trigger, so neither can be stranded or disagree with what the weapon may do. **A
 new gesture over a wait belongs on that clock, not on a new one.** The reload and
 the load take the aim away with them (`aimBreak`); **the bolt cycle is the one
 that KEEPS THE SIGHT PICTURE, and it is where a gesture over an aimed weapon
-must go.** A bolt is worked with the butt in the shoulder and the scope on the
-eye — but `applyFit` puts the fitted sight's reticle on the camera axis, so an
-aimed weapon that moves is a reticle that lies, and half a roll is half a lie.
-So the gesture has **two expressions over one clock, crossed on the ADS blend**:
-at the hip the ROLL (`cyclePos`/`cycleRot`, `ViewModel`), and aimed
-`cycle.wobble` — the same disturbance spent on where the rifle POINTS, as an
-OFFSET on `aimPitch`/`aimYaw` that is a pure function of the phase and exactly
-zero at both ends of it. The reticle stays on the axis, the world swings behind
-it, and what the wait costs is watching the man you missed rather than the
-picture you watch him through. **The aimed roll is zero including its travel
-along the bore** — which the per-shot kick keeps and this may not, because
-`cyclePos.z` held for the better part of a second is EYE RELIEF and would pull
-the 6x eyepiece through the near plane. Take `wobble` to 0 and the weapon is a
-slow DMR, which is what `aimBreak` was for; only where the wait is spent moved.
+must go** — because `applyFit` puts the fitted sight's reticle on the camera
+axis, so an aimed weapon that MOVES is a reticle that lies. It therefore has
+**two expressions over one clock, crossed on the ADS blend**: at the hip a ROLL,
+and aimed `cycle.wobble`, the same disturbance spent on where the rifle POINTS
+as an offset that is a pure function of the phase and exactly zero at both ends
+of it. **The aimed roll is zero including its travel along the bore**, which the
+per-shot kick keeps and this may not: held for the better part of a second that
+is EYE RELIEF, and it would pull the 6x eyepiece through the near plane.
 
 **An optic's `eyeRelief` has to RISE with its magnification**, and the failure is
-silent. The aimed stand-off is `eyeRelief * zoomComp` and `zoomComp` falls as the
-magnification rises, so the 3.5x scope's 0.17 buys 7.8 cm of eye and the same
-number at 6x would buy 4.5 — inside `CameraSystem`'s 0.05 near plane, which clips
-the eyepiece open and turns the tube into a hole in the air. The same number
-sizes the optic (`optics.ts` measures every dimension against `eyeDistance`), so
-the biggest glass in the kit is the one held furthest from the eye, which is the
-honest way round.
+silent: the aimed stand-off is `eyeRelief * zoomComp`, `zoomComp` falls as the
+magnification rises, and a number that buys 7.8 cm of eye at 3.5x buys 4.5 at 6x
+— inside `CameraSystem`'s 0.05 near plane, which clips the eyepiece open and
+turns the tube into a hole in the air. The same number sizes the optic
+(`optics.ts` measures every dimension against `eyeDistance`), so the biggest
+glass in the kit is the one held furthest from the eye, which is the honest way
+round.
 
 → **[`docs/weapons.md`](docs/weapons.md)** — the report's five layers, the crouch
 latch, the gloss ladder, the viewmodel's rendering group and pose stack, the
-reload's four beats, the kick spring, the recoil pattern's two envelopes, the two
-slots, the head zone, eye relief, and the procedural-model rules.
-
+reload's four beats, the kick spring, the recoil pattern's two envelopes, the
+bolt cycle's two expressions in full, the two slots, the head zone, eye relief,
+and the procedural-model rules.
 ### Grenades
 
 Everyone carries two and there is no resupply, so the pouch is refilled by death
@@ -531,11 +416,9 @@ appends it to `#hud`, so construction order matters exactly once: `HUD` writes
 `#hud.innerHTML` and is built first. **A class on `#hud` belongs to whoever
 raises it.** **One stylesheet per module that writes markup, imported by that
 module**, and `index.html` gets no interface CSS beyond the black background and
-the boot screen.
-
-**A phone gets a sixth thing on `#hud`, and it is a DEVICE rather than a
-screen**: `TouchControls` is polled by `InputManager` once a frame exactly as a
-gamepad is, so nothing in gameplay has heard of it.
+the boot screen. **A phone gets a sixth thing on `#hud`, and it is a DEVICE
+rather than a screen**: `TouchControls` is polled by `InputManager` once a frame
+exactly as a gamepad is, so nothing in gameplay has heard of it.
 
 **Every screen is a LIST, and a list whose rows can change under the cursor keeps
 its place by IDENTITY rather than by index** (the lobby is the one that can), and
@@ -550,51 +433,46 @@ cannot be squeezed below its own longest word, so where it breaks is a
 can catch; N items in `grid-auto-flow: column` are N equal shares at every width,
 and a narrow viewport changes the COUNT rather than the break.
 
-**The KIT screen is the one whose layout used to be welded to a CONSTANT, and it
-is not any more.** Its middle is a hole the real viewmodel is drawn through, and
-the weapon was placed from `CONFIG.viewmodel.inspect.anchorX` — a number that had
-to agree with a `--panel: 46%` in a stylesheet, which meant one possible layout
-and everything else on the screen squeezed beside it. `LoadoutScreen.stageBay`
-MEASURES the hole every frame and `ViewModel` fits the weapon to what it is told,
-so the screen is free to be a strip and three columns on a desktop and a bay over
-a scrolling list on a phone. **Anything else that wants to place a 3D object
-against the interface owes the same shape**: the DOM measures, the scene follows.
+**The KIT screen's middle is a hole the real viewmodel is drawn through, and the
+DOM MEASURES while the scene follows**: `LoadoutScreen.stageBay` measures that
+hole every frame and `ViewModel` fits the weapon to what it is told, where the
+weapon used to be placed from a constant that had to agree with a percentage in
+a stylesheet — one possible layout, everything else squeezed beside it.
+**Anything else that wants to place a 3D object against the interface owes the
+same shape.**
 
 **The menu stands on a PHOTOGRAPH of the map**, and `#menu-shot` is a root of its
 OWN at z-index 9 rather than a child of `#overlay`, which would paint over the
 veil whatever its z-index. **A map with no row in `mapShots.ts` is not broken.**
-**Its scrim is the one in this interface that is DIRECTIONAL** — raked across
-the frame so the column the rail stands in is nearly opaque and the two-thirds
-of the picture the dossier is on comes through at close to full strength, which
-the shell's ellipse cannot do because the two demands are in different places.
-**The dossier is therefore the one `.ui-panel` that is a BOX**, and **the menu
-is the one screen with a one-column threshold of its own** (1100 px, which is
-what its widest row measures). **The map row is a STEPPER**: six maps in a
-segmented row of equal shares is `HOLLO…`, `GREYF…`, `COLDH…` at every viewport
-a player has. **The entrance animation is keyed to the card being RAISED**
-(`setCardClass`'s `raised`), never to its markup existing — `showMenu` rewrites
-this card on every map step.
+**Its scrim is the one in this interface that is DIRECTIONAL**, which the
+shell's ellipse cannot be because the two demands are in different places; **the
+dossier is therefore the one `.ui-panel` that is a BOX**, and **the menu is the
+one screen with a one-column threshold of its own**. **The map row is a
+STEPPER**, six maps in a segmented row of equal shares being `HOLLO…`, `GREYF…`,
+`COLDH…` at every viewport a player has. **The entrance animation is keyed to
+the card being RAISED** (`setCardClass`'s `raised`), never to its markup
+existing — `showMenu` rewrites this card on every map step.
 
 **The CHROME is sized by a UNIT, never by a transform** — a transform takes a
 10 px caption to six along with the 46 px numeral it was aimed at. `hud.css` and
-`minimap.css` are still authored in a 720p window's pixels and state every size
-as a multiple of a ladder in `base.css`: `--hud-u` for shapes,
-`--hud-cap`/`--hud-mid`/`--hud-num` for the three bands of type, `--hud-map` for
-the minimap, all `clamp()`ed over `vmin` so a desktop is untouched. **A new size
-is a multiple, never a bare pixel**; **an INSTRUMENT is exempt**, and the test is
-whether its size is a claim about the SCREEN (the crosshair is the live spread,
-the gun marker is where the barrel points); **`#hud.touching` is a TRIM on that
-ladder**, keyed on the controls rather than the viewport, which is the only
-thing that gets a TABLET right; and **the minimap is the one canvas that resizes
-itself**, redrawn at its box times the device ratio rather than resampled.
+`minimap.css` are authored in a 720p window's pixels and state every size as a
+multiple of a ladder in `base.css` (`--hud-u` for shapes, three bands of type,
+`--hud-map` for the minimap), all `clamp()`ed over `vmin` so a desktop is
+untouched. **A new size is a multiple, never a bare pixel**; **an INSTRUMENT is
+exempt**, and the test is whether its size is a claim about the SCREEN (the
+crosshair is the live spread, the gun marker is where the barrel points);
+**`#hud.touching` is a TRIM on that ladder**, keyed on the controls rather than
+the viewport, which is the only thing that gets a TABLET right; and **the
+minimap is the one canvas that resizes itself**, redrawn at its box times the
+device ratio rather than resampled.
 
 → **[`docs/ui.md`](docs/ui.md)** — the shell, the four cards as one class, the
 menu's rail and the map schematic drawn from a LAYOUT, why **the pointer deploys
 only through the Deploy button**, the deploy map, the kit screen's MEASURED bay
-and the layout that buys, the settings panel, the lobby's row identity, the gauges' metric and the four ladders, the
-short-viewport scaling, the portrait fallback, and the touch controls as a
-screen — with [`docs/pwa.md`](docs/pwa.md) for them as a phone.
-
+and the layout that buys, the settings panel, the lobby's row identity, the
+gauges' metric and the four ladders, the short-viewport scaling, the portrait
+fallback, and the touch controls as a screen — with
+[`docs/pwa.md`](docs/pwa.md) for them as a phone.
 ### The scene has (almost) no Babylon lights
 
 **Every shader in the tree is hand-written WGSL**, and `shaderLanguage` on a
@@ -625,16 +503,11 @@ and another does not.
 **There is ONE wind and everything that leans in it leans the same way** —
 `CONFIG.wind`, clocked by `CelMaterialFactory.updateWind` beside the grass
 field's clock rather than the shader's eye, because a pause that holds the world
-must hold the canopy. **Anything a collider stands in for may never sway**. A swaying group used to
-need an ink TWIN because Babylon's hull could not follow the wind; the ink is a
-screen-space pass now and gets sway for free.
-
-**The ink's line WEIGHT is a function of distance and is not the same reading
-as its fade** — a thin black line comes forward and a thick pale one does not,
-so `ink.width` takes the stroke's weight down with range while `fadeBand` takes
-its darkness. Its near end is `ink.near`'s viewmodel argument spent on width.
-Width is a second sample ring, both rings divided by their own radius so one
-pair of thresholds serves both.
+must hold the canopy. **Anything a collider stands in for may never sway.**
+**The ink's line WEIGHT is a function of distance and is not the same reading as
+its fade**: `ink.width` takes the stroke's weight down with range while
+`fadeBand` takes its darkness, a thin black line coming forward where a thick
+pale one does not.
 
 **The frame's ALPHA CHANNEL is TRANSLUCENT COVERAGE, and every shader in the
 tree owes it.** The ink comes off DEPTH, and nothing alpha-blended writes depth
@@ -644,26 +517,20 @@ them. Everything opaque writes **0** into that channel (`CelShader`'s
 `opaqueAlpha`, a literal 0 in the grass and the water, and the clear in
 `applyEnvironment`), every alpha-blended draw accumulates into it for free
 (`ALPHA_COMBINE` blends alpha as ONE, ONE), and `CelInk` scales its edge by
-`1 - a` and writes 1 back out. It costs no pass and no target. **A REFLECTION
-PROBE inverts it**: in a cube that channel is the bake's own coverage mask —
-what the glazing and the water read to tell the city from the sky — so
-`ReflectionSystem` flips `opaqueAlpha` to 1 for the length of a bake, and a
-shader that hardcodes either value breaks one of the two passes silently.
-**One blended mesh is the exception to the accumulation and it is the one that
-WRITES DEPTH**: the kit screen's backdrop is not in front of the surface a pixel
-records, it IS that surface, so it writes **0** coverage over the whole frustum
-(`ALPHA_REPLACE_COLOR` at a fragment alpha of 0) — on `ALPHA_COMBINE` it took
-the ink off the entire kit screen, the outline of the weapon it was hung behind
-included.
+`1 - a` and writes 1 back out. **A REFLECTION PROBE inverts it**: in a cube that
+channel is the bake's own coverage mask, so `ReflectionSystem` flips
+`opaqueAlpha` to 1 for the length of a bake, and **a shader that hardcodes
+either value breaks one of the two passes silently**. **One blended mesh is the
+exception and it is the one that WRITES DEPTH** — the kit screen's backdrop IS
+the surface a pixel records, so it writes 0 coverage over the whole frustum
+(`ALPHA_REPLACE_COLOR` at a fragment alpha of 0).
 
 **Water is a MIRROR with a dark body under it, and it is SAMPLED FROM NOTHING** —
 directional wave trains, no normal map, and re-adding one brings back four rules
 that existed only to hide its lattice. The one thing that DISTURBS it is a
 rotor: `washSite` is a short uniform array `RotorWash` fills and every body's
 material is handed, so a hole straddling the seam between two rects is one hole
-in one sea. Its roughness goes into the wave field's own unresolved half — relief
-this pass cannot draw is roughness whether it went missing to a pixel or to a
-downwash — and its ripples take the trains' own sampling test.
+in one sea.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
@@ -671,75 +538,45 @@ GLAZED BLOCK** — not one for the map, not one per material. Glass you cannot i
 `Build.pane({ backed })`, which composites the mass behind it arithmetically and
 therefore writes DEPTH; **it pays only if the pane is drawn first**, which is why
 `Game`'s constructor sorts the opaque queue FRONT TO BACK, and **`backed` is a
-claim about the WORLD that nothing throws over**. **No pane of either kind is a shadow
-caster**, and see-through glazing writes no depth, so the ink does not find it
-either — a `backed` pane does write depth and is inked like the mass it stands
-for.
+claim about the WORLD that nothing throws over**. **No pane of either kind is a
+shadow caster**, and see-through glazing writes no depth, so the ink does not
+find it either.
 
 **The frame WALKS the scene, and the scene is the map** — Babylon evaluates
 every mesh in it every frame before it has decided anything, at ~1 us each, so
-the cost is the map's AREA rather than what is on screen. `WorldCulling` is what
-holds that down, and it works by **replacing `scene.getActiveMeshCandidates`
-and writing nothing onto any mesh**: it never disables, never hides, never
-unpickles. That is the load-bearing part rather than an implementation detail —
-a disabled mesh leaves the shadow map's render list, a cube probe's bake and
-Babylon's own default pick filter, and a candidate list leaves all three
-untouched. **A collider is never a candidate at any distance** (invisible by
-construction, so it cannot draw), **a mesh carrying `metadata.block` is one only
+the cost is the map's AREA rather than what is on screen. `WorldCulling` holds
+that down by **replacing `scene.getActiveMeshCandidates` and writing nothing
+onto any mesh**: it never disables, never hides, never unpickles. That is the
+load-bearing part rather than an implementation detail — a disabled mesh leaves
+the shadow map's render list, a cube probe's bake and Babylon's own default pick
+filter, and a candidate list leaves all three untouched. **A collider is never a
+candidate at any distance**, **a mesh carrying `metadata.block` is one only
 while the camera is inside the map's `fogEnd`**, **a body's RIG is one only
 while the root the roster switches is enabled**, and **everything else always
 is** — which is why the terrain, the roads and the rim carry no block: they are
-what the SKY is behind, and a hole cut in them is a hole onto a gradient.
-**Nothing pooled may ever be block-keyed.**
+what the SKY is behind. **Nothing pooled may ever be block-keyed**, and the rigs
+are **filed mesh by mesh and never by ancestry**, because `RagdollSystem`
+reparents a corpse's joints onto Havok proxies and an ancestry test would drop
+every body in the game the moment it started falling.
 
-**The rigs are the fourth class and a ROSTER is why** — `MapLayout.perTeam` is
-the one number a layout may triple, so a pool is 336 rig nodes or Sarab's
-**1,008**, every one offered to the walk whether the body was in the round or not.
-`Game.installBodyPools` files BOTH pools (in a match that includes
-`BattleSystem`'s sixteen, built and never enabled) and the switch is polled per
-BODY. **It is filed mesh by mesh and never by ancestry**, because
-`RagdollSystem` reparents a corpse's joints onto Havok proxies and an ancestry
-test would drop every body in the game the moment it started falling. Sarab:
-**candidates −26.5%, the walk −11.9%, the frame −4.4%, draw calls and active
-meshes identical** — it takes the WALK and never the draw.
+**The GLOW layer draws the EMISSIVE meshes and nothing else, and what makes that
+safe is that its occlusion is the FRAME's own depth buffer** (`GlowDepth`'s
+`shareDepth`) rather than a whole-scene redraw in opaque black. **Do not put the
+whole-scene render list back** — three attempts to narrow it by asking which
+geometry matters to a bloom all failed (`FINDINGS.md` 3), the only honest answer
+being a per-pixel depth test — and **read `GlowDepth`'s header before touching
+the layer**: the schedule, the clear, the framebuffer rebind, the texture's
+resolution and the REBUILD are five separate things that each fail SILENTLY, the
+last of them on every `engine.resize()`. The hooks are re-installed by IDENTITY
+every frame for that reason, and the depth share is keyed on BOTH of its ends.
 
-**The GLOW layer draws the EMISSIVE meshes and nothing else, and what makes
-that safe is that its occlusion is the FRAME's own depth buffer.** It used to
-redraw the whole visible scene into its own texture as opaque BLACK — 586
-meshes of which 57 were emissive on Coldharbour — because that black is what
-made the buffer depth-occlude, so a brazier behind a cottage did not bloom
-through the wall. `src/core/GlowDepth.ts` takes the depth the main pass has
-already written instead (`shareDepth`), which is the same answer exact to the
-pixel, and the render list collapses to the emissive meshes. **Worth ~20% of
-the frame on all three big maps** — Coldharbour 9.45 -> 7.60 ms, Harrowmead
-10.55 -> 8.25, Sarab 13.40 -> 10.55 — with 36 frozen vantages across three maps
-inside **0.026/255**. Three earlier attempts tried to narrow that list by
-asking WHICH GEOMETRY MATTERS to a bloom (by distance from the light, by
-excluding the rigs, by a screen-space overlap test) and all three failed;
-`FINDINGS.md` 3 has them, and the reason they had to fail is that the only
-honest answer to that question is a per-pixel depth test. **Do not put the
-whole-scene render list back**, and read `GlowDepth`'s header before touching
-the layer: the schedule, the clear, the framebuffer rebind, the texture's
-resolution and the REBUILD are five separate things that each fail SILENTLY.
-**The rebuild is the one that shipped as a bug**: the layer throws its main
-texture away and builds another on every `engine.resize()`, and the new one
-takes Babylon's own depth-clearing clear back while KEEPING the emissive-only
-render list, which lives on the object renderer rather than on the texture.
-Reverting both halves would only have cost the measurement; reverting one left
-the pass occluding against nothing, so a window dragged to another size — or a
-zoom, a second monitor, the render-scale setting, a phone turned on its side —
-bloomed every lamp in the map through its own wall until the page was reloaded.
-The hooks are re-installed by IDENTITY every frame for that reason, and the
-depth share is keyed on BOTH of its ends.
-
-→ **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and mirror
-and the three ways a cube probe goes flat, the four light terms and the colour
-buffer's three further rules, the ink's tint and the NIB it varies with
-distance, the wind's two bounds, the
-muzzle-flash budget, the fog split, the shadow window, the reflection bake's
-seven load-bearing details, the four classes the candidate list sorts the scene
-into, the painted sky, and the WGSL dialect's own traps.
-
+→ **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and
+mirror and the three ways a cube probe goes flat, the four light terms and the
+colour buffer's three further rules, the ink's tint and the NIB it varies with
+distance, the wind's two bounds, the muzzle-flash budget, the fog split, the
+shadow window, the reflection bake's seven load-bearing details, the four
+classes the candidate list sorts the scene into and what the cull measured, the
+glow's own measurement, the painted sky, and the WGSL dialect's own traps.
 ### The map is data, not code
 
 `src/world/hollowmere/layout.ts` is the entire level — placements, scatter
@@ -769,33 +606,26 @@ so that a map saying nothing is unaffected:
 
 | the map's | default | what a map that raises it owes |
 | --- | --- | --- |
-| `MapLayout.size` — how big it is | `CONFIG.map.size`, 240 | its heightfield's `size * cell` must equal it (asserted in DEV, since `MapDef.heights` is a different file), and the rim's boundary boxes must stay over 200 m so the seven sites keying on `w > 200 \|\| d > 200` still can |
+| `MapLayout.size` — how big it is | `CONFIG.map.size`, 240 | its heightfield's `size * cell` must equal it (asserted in DEV), and the rim's boundary boxes must stay over 200 m so the seven sites keying on `w > 200 \|\| d > 200` still can |
 | `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is the reach `WorldCulling` walks to and the default for the row below; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
-| `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | it is resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `BattleSystem`, `NetRoster` and `RagdollSystem` together, which is what keeps `bots.lodDisableDistance` and `bots.death.maxDistance` one distance; a body it drops POPS, and the WALK's reach deliberately stays the fog. **A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in the world**, which is the trap Cinderhaven found: a fog wall chosen for the cull budget put that map's volcano — the thing every road and the whole sky is arranged around — in flat `fogColor` from everywhere anybody played, and the honest fix was to buy the fog back and take the saving out of this row instead |
+| `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `BattleSystem`, `NetRoster` and `RagdollSystem` together, which is what keeps `bots.lodDisableDistance` and `bots.death.maxDistance` one distance; a body it drops POPS. **A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in the world** — a fog wall chosen for the cull budget put Cinderhaven's volcano in flat `fogColor` from everywhere anybody played, and the fix was to buy the fog back and take the saving out of this row |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
-| `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — `BattleSystem.setRoster` rebuilds a CLIENT's pool when it moves rather than sizing it to the ceiling, because a disabled mesh is skipped cheaply and not skipped. The squads, the squads' launchers and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too, and what it moves there is the BOTS**: the authority's slot table is the ceiling and `setFielded` says how many of it a round fights, while the SEATS stay at sixteen on every map |
-| `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** — those want more buckets on a big map, not fewer |
+| `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — `BattleSystem.setRoster` rebuilds a CLIENT's pool when it moves. The squads and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too**: the authority's slot table is the ceiling, `setFielded` says how many a round fights, and the SEATS stay at sixteen |
+| `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** |
 | `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in all three callers of `terrainPatches` — `buildValley`, the server's `terrainColliders` and the editor's brush — or the two sides tessellate different floors |
-| `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` is FULLY LIT outside the window — the last `CONFIG.graphics.shadows.edgeFade` of the volume ramps back to it, so the boundary is a gradient rather than a line, but the ramp only softens the transition and never MOVES it. An undersized one still puts that transition on ground the player can see, and an OVERSIZED one moves it not at all (the depth volume binds along the sun) while costing texel density, which `ShadowSystem` now DEV-warns about |
+| `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` is FULLY LIT outside the window, the last `edgeFade` of the volume ramping back to it — so an undersized one puts that transition on ground the player can see, and an OVERSIZED one moves it not at all while costing texel density (`ShadowSystem` DEV-warns) |
 
 **A map is CLOSED one of two ways, and the second has no wall at all.** The rim
-is four boxes at `±size/2` under `Ridge`'s escarpment, and is what three of the
-four are. `MapLayout.borderland` is the other: the floor carries on for a
-`margin` past the play square — `TerrainField` continues the field, so nav, the
-roads, the grass and **`server/validate.ts`** agree for free — and what stops you
-leaving is `src/world/leash.ts`, a countdown rather than a shape. **It is sized
-by the leash, it kills on the AUTHORITY and only draws on a client, and bots are
-never leashed** — the nav graph stops at the play square.
-
-**What a boundary is closed BY and what it is closed WITH are two questions**,
-and `RidgeSpec.form` has a third value for maps that answer the second some
-other way: `none` builds no landform at all. What earns it is having laid
-something out there already, because the sky dome is flat `fogColor` below the
-horizon and `Sky` culls its stars out of the lowest 7.2 deg — so a boundary with
-nothing over it and nothing beyond it is a dead band of sky under a starless
-one, which is the picture the other two forms were paying for. Cinderhaven is
-the map it was added for and the only one that takes it: an ISLAND states its
-horizon in water instead.
+is four boxes at `±size/2` under `Ridge`'s escarpment. `MapLayout.borderland` is
+the other: the floor carries on for a `margin` past the play square —
+`TerrainField` continues the field, so nav, the roads, the grass and
+**`server/validate.ts`** agree for free — and what stops you leaving is
+`src/world/leash.ts`, a countdown rather than a shape. **It is sized by the
+leash, it kills on the AUTHORITY and only draws on a client, and bots are never
+leashed**, the nav graph stopping at the play square. **What a boundary is
+closed BY and what it is closed WITH are two questions**: `RidgeSpec.form` takes
+`none` for a map that has laid something out there already, an ISLAND stating
+its horizon in water instead.
 
 **The shipped maps are Hollowmere** (a night village), **Greyfen** (a jungle
 valley), **Coldharbour** (a business district — what the first three overrides
@@ -803,169 +633,81 @@ exist for), **Harrowmead** (`size: 400`, no wall around it), **Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
 `ENGINE_UPGRADE.md` exists for) **and Cinderhaven** (`size: 1500` inside 2000 m
 of ground and 4,600 m of sea — a harbour town on a volcanic island, at night,
-the biggest map in the tree and the only one with no rim on it at all). **The last four are the four with vehicles on them**, and they are
-the four biggest; **Sarab and Cinderhaven are the two with all THREE KINDS**, a
-tank, a gun truck and a helicopter a side, **and the two that are not 8v8** —
-both field 24 a side, online and off, which is `MapLayout.perTeam` and the row
-above.
+the biggest map in the tree and the only one with no rim at all). **The last
+four are the four with vehicles on them**; **Sarab and Cinderhaven are the two
+with all THREE KINDS and the two that are not 8v8**, both fielding 24 a side
+online and off. Both were **SEEDED by a generator** (`npm run sarab`,
+`npm run cinderhaven`) rather than typed, and the emitted `layout.ts` is an
+ordinary layout file the editor opens, patches and saves like any other —
+re-running the generator discards editor edits. **Sarab is the map that SPENDS
+the levers**, stating six of the eight rows above, and the first to state a
+`ParticleSpec.volume` — the mote field emitted around the EYE, without which
+`count` is a density that scales with a map's AREA.
 
-**Sarab is the map that SPENDS the levers**, and it is the only one that states
-most of them: `blockSize` and `terrainBlock` at 96 (S6), a `fogEnd` (560) inside
-its own 1,273 m diagonal, which is the first time block visibility has had
-anything to cull (S1 and S8), a `bodyDrawDistance` (300) inside THAT, which no
-other map states, `surfaces: 5`, and a `perTeam` of 24 — S10's third lever, and
-the one thing on this list that is bodies rather than metres. It is also the first to state a
-`ParticleSpec.volume` — the mote field emitted around the EYE rather than over
-the whole square, without which `count` is a density that scales with a map's
-AREA and a 900 m one is air nobody can see. Its layout was **SEEDED by
-`npm run sarab`** rather than typed — a 900 m town is some hundreds of buildings
-and its floor is fifty thousand numbers — and the emitted `layout.ts` is an
-ordinary layout file the editor opens, patches and saves like any other.
-Re-running the generator discards editor edits, which is the warning every
-`heights.ts` already carries.
-
-**Cinderhaven spends them again at 1,500 m and adds eight rules of its own**,
-each general rather than a detail of this map. **Its TOWN IS A NETWORK and the
-houses are arranged against it** — a quarter is blocks cut by its own streets,
-the streets are `road` placements that CLAIM their ground before anything is
-built, and every house is laid on the frontage line facing the carriageway,
-which works only because everything in the kit with a front faces its own local
--Z (the shophouse and the depot are the two that face +Z). **Its FLOOR IS THE
-LEVEL** —
-what is land, where the sea goes and which slopes sever their own nav links are
-one continuous function, so `heightAt` in its generator is the map and the town
-is what stands on the answer. **And a WATERFRONT IS DERIVED FROM THE FLOOR
-rather than authored against it**: the generator MARCHES the finished ground
-outward from the middle of Cinder Bay, finds where it actually crosses the sea
-on each bearing, and places the Strand, the bay road, every jetty, boat shed,
-quay wall and lamp a stated distance inland of THAT — so what is authored is an
-arc and a setback, and the shore may move (a radius, a foreshore slope, a
-district's level) without a coordinate going quietly wrong. **A `WaterRect`'s
-reflection probe stands at the depth-weighted centroid of its WET cells**, so
-one rect over an island bakes a cube probe inside a mountain — and the second
-half of that rule is that a SEAM between two rects is where the mirror CHANGES,
-so a partition must not put one where anybody looks across it. Its sea is a
-PINWHEEL of four: the bay, its mouth and the whole eastern sea are one rect
-with one probe standing in the throat, and the three carrying the open sea meet
-only out past the coast. **An ISLAND'S HORIZON IS THE SEA, and it is priced in
-QUADS rather than in ground** — a second pinwheel of four rects runs the water
-to 2,300 m, which is `fogEnd` past the furthest point anything in the
-simulation can reach, so the rim came off (`ridge: { form: "none" }`) and what
-closes the map is the fog over open water. **The floor does NOT go with it**:
-water is a quad with a texture for a bed and is opaque past
-`CONFIG.water.depthMax`, so the ground still stops at the `borderland`'s
-margin and nothing is drawn under the ocean at all. Two rules fall out and both
-are general. The ring is not the inner four made bigger — **a rect's bed map is
+**Cinderhaven's rules are general rather than details of that map.** **Its FLOOR
+IS THE LEVEL** — what is land, where the sea goes and which slopes sever their
+own nav links are one continuous function — and **a WATERFRONT IS DERIVED FROM
+THE FLOOR rather than authored against it**, the generator marching the finished
+ground outward to find where it actually crosses the sea and placing the quay a
+stated setback inland of THAT, so the shore may move without a coordinate going
+quietly wrong. **A `WaterRect`'s reflection probe stands at the depth-weighted
+centroid of its WET cells** (one rect over an island bakes a probe inside a
+mountain), and **a SEAM between two rects is where the mirror CHANGES**, so a
+partition must not put one where anybody looks across it; **a rect's bed map is
 512 texels a side however big the rect is**, so widening one that carries a
-shoreline spends that coastline's own resolution on empty sea. And **the FLOOR'S
-outer ring is what the ocean is drawn over**, because `TerrainField` clamps
-every query outside the heightfield to its edge: two 60 m stretches of foreshore
-reached the boundary at 0.9 m above the water, which was a spit while the sea
-stopped at the margin and a kilometre and a half of dead-straight sandbar
-afterwards, so the generator now pulls that last band under — deep enough that
-`borderRoll` cannot lift it back into the shallows. And **there is no swimming
-in this game**, so its
-whole bay is 2.6 m at the deepest and walkable — a shelf you step off into
-eight metres of water is a pit with a back-face-culled lid on it — which is
-what lets its middle flag stand on an island and still be reached on foot,
-while everything that must NOT be walked is made steep enough to sever instead.
-
-**A MAP FEELS LIKE A PLACE BECAUSE OF WHICH BUILDINGS ARE ON IT, NOT HOW MANY**,
-which is what `src/world/kit/harbour.ts` is: the first kit in the tree written
-for a map that had already shipped. The island was built out of the village set
-and read as Hollowmere with more water in it; the volcanic-coast set is seven
-pieces (`smelter`, `lighthouse`, `crane`, `fishRack`, `careenedHull`,
-`netLoft`, `saltPan`) made of three materials — the basalt the island IS,
-tarred timber that came by sea, and iron a week after it landed. **`smelter` is
-the tree's LANDMARK and the rule it carries is that a landmark needs an
-INSIDE**: Sarab's minaret is legible at 800 m and explicitly refuses to be
-entered, and what lets the Cinderworks do both is that its height is a CHIMNEY
-rather than a room — forty metres of stack over a hall you fight in costs three
-collider boxes and gives away no ground, because there is nothing at the top of
-it to hold.
-
-**AND A ROAD NETWORK IS MEASURED, NEVER REVIEWED.** `npm run cinderhaven --
---roads` prints how far every square of dry, in-play ground is from a
-carriageway, and the answer on the shipped map was that a quarter of the land
-— the whole western third and the outside of the north arm — was over 150 m
-from any road. **That failure has no symptom in a screenshot**: a quarter laid
-off the network still builds, still reads as a town from above, and is still
-somewhere a player crosses four hundred metres of open moor to reach wondering
-what it is for. The generator now refuses to write a DWELLING that far off the
-network, tests the same distance before it sows a croft, and refuses a
-carriageway laid in the sea or up a slope the nav graph severs — a road is a
-picture and it draws over water as happily as over ground.
-
-**It is also where three rules about WATER were found**, all of them general: a
-body of water is a hole in the FLOOR with a plane over it — nothing but
-`TerrainField` decides its depth, its shore or where its probe stands; what it
-LOOKS like is whatever that probe can see, which on a bright map with nothing
-round the pool is pale sky and reads as a salt pan; and **a FORESHORE has to be
-as long as the ground behind it is high**, because a fixed beach that links on
-a 10 m shelf is a 0.47 gradient and a severed shoreline where the same water
-meets a 26 m volcanic apron.
+shoreline spends that coastline's resolution on empty sea. **There is no
+swimming in this game**, so water anybody must cross is walkable and everything
+else is made steep enough to sever. **A FORESHORE has to be as long as the
+ground behind it is high**, or the same beach that links on a 10 m shelf is a
+severed shoreline against a 26 m apron. **A MAP FEELS LIKE A PLACE BECAUSE OF
+WHICH BUILDINGS ARE ON IT, NOT HOW MANY** (`src/world/kit/harbour.ts`), and **a
+landmark needs an INSIDE** — what lets the Cinderworks be both is that its
+height is a CHIMNEY rather than a room. **AND A ROAD NETWORK IS MEASURED, NEVER
+REVIEWED** (`npm run cinderhaven -- --roads`): a quarter laid off the network
+still builds and still reads as a town from above, so **that failure has no
+symptom in a screenshot**.
 
 **A ROAD is visual-only and rejects exactly one thing, which is anything that
 GROWS** (`world/roads.ts`, `GameMap.roads`): `MapBuilder` sows no
 `PropBody.rooted` prop on a carriageway and `GrassSystem` no tuft. It is a
 per-PROP fact rather than a per-region flag, because a street is where rubble,
 cones and litter belong — and **what is sown there stands on the ROAD** rather
-than on the floor under it (`roadTopAt`), or the litter is half buried in it.
-**Any change to a placement rule re-rolls the seeded dressing field**, so it
-owes `npm run collision` and `npm run parity` — the staleness guard hashes the
-LAYOUT and this kind of change is in the BUILDER.
+than on the floor under it (`roadTopAt`). **Any change to a placement rule
+re-rolls the seeded dressing field**, so it owes `npm run collision` and `npm run
+parity` — the staleness guard hashes the LAYOUT and this kind of change is in
+the BUILDER.
 
 **Where two roads CROSS, the SURFACE decides which one is the ground, and it
-decides by HEIGHT**: `ROAD_RANK` (dirt < cobble < asphalt — the order the ground
-was built in) lifts a carriageway two millimetres per rank, because coplanar
-sheets in two meshes are a per-pixel tie whose winner changes as the camera
-moves. **The rungs are tiny because a road is a sheet OVER the floor and almost
-nothing else knows it is there** — a bullet's dust disc clears the ground by
-20 mm and is the tightest of them — so the ladder stays inside the 10 mm a road
-already stood proud by; what a map SOWS on a street is put on the street instead
-(`roadTopAt`). Do not give two surfaces one rank.
-
-**A road is still not inked, and it is now UNINKABLE rather than forbidden** —
-which is the one rule in this family the screen-space ink retired outright.
-Under the hull, ink was geometry: an inverted shell stamping depth 5 cm above
-the sheet it wrapped, which painted every mixed junction black in whichever of
-the two road meshes the sort drew second, and no lift could beat it because the
-shell rode with the slab. `CelInk` finds an edge by asking whether depth STEPS
-or BENDS, and two coplanar sheets do neither, so a carriageway laid across
-another produces no line at all and needs no rule to stop it. The ladder above
-survives untouched because it is not about ink: it settles a per-pixel depth
-tie between two coplanar meshes, which is still exactly as real.
-
-**That ladder settles a CROSSING and cannot settle the FLOOR**: 10 mm of
-geometry is spent by ~100 m against a depth buffer whose step at the far end of
-a big map is tens of centimetres, and past that a road is eaten by the ground it
-lies on — measured from a helicopter over Sarab, **the far half of a 900 m
-street drawn as detached bands of asphalt on bare sand**. `ROAD_DEPTH_UNITS`
-(-8) is a polygon offset in the buffer's OWN units, carried by the BUILDER
-(`Build`'s `depthUnits`) so a slab and the paint on it move together, and part
-of the material CACHE KEY — one hex at two biases is two materials, or a car's
-underbody rides off the ground.
+decides by HEIGHT**: `ROAD_RANK` (dirt < cobble < asphalt) lifts a carriageway
+two millimetres per rank, because coplanar sheets in two meshes are a per-pixel
+tie whose winner changes as the camera moves. **The rungs are tiny because a
+road is a sheet OVER the floor and almost nothing else knows it is there** — a
+bullet's dust disc clears the ground by 20 mm and is the tightest of them. Do
+not give two surfaces one rank. **That ladder settles a CROSSING and cannot
+settle the FLOOR**, being spent by ~100 m against the depth buffer's own step:
+`ROAD_DEPTH_UNITS` (-8) is a polygon offset in the buffer's OWN units, carried
+by the BUILDER (`Build`'s `depthUnits`) so a slab and the paint on it move
+together, and **part of the material CACHE KEY** — one hex at two biases is two
+materials, or a car's underbody rides off the ground. **A road is not inked and
+needs no rule to stop it**: `CelInk` finds an edge where depth STEPS or BENDS,
+and two coplanar sheets do neither.
 
 **There is a sixth entry in `MAPS` and it is DEV-ONLY and not a level.**
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
-against — a city block grid several times Harrowmead's size, written by
-`npm run proving`. **`MAPS` is an `import.meta.env.DEV` ternary and must stay
-one**: that fold is the only thing keeping 900 kB of it out of both bundles, and
-a `push`, a `filter` or a `const dev = import.meta.env.DEV` one line up would
-silently stop working. `scripts/check-proving.mjs` is what enforces that, on the
-end of `npm run build`, over `dist/` and `dist-server/` both — one grepped
-sentinel per generated module, since a comment naming the directory does not
-survive a build and a string literal does.
+against, written by `npm run proving`. **`MAPS` is an `import.meta.env.DEV`
+ternary and must stay one**: that fold is the only thing keeping 900 kB of it
+out of both bundles, and a `push`, a `filter` or a `const dev =
+import.meta.env.DEV` one line up would silently stop working.
+`scripts/check-proving.mjs` enforces that on the end of `npm run build`, over
+`dist/` and `dist-server/` both. **It has a collision bake, so the AUTHORITY
+runs on it too** — `DEV_MAPS` in `scripts/collision-hash.mjs`, kept out of the
+`MAPS` beside it because `npm run parity`'s server half is a production build,
+and reached through `npm run simulate:dev`.
 
-**It has a collision bake, so the AUTHORITY runs on it too** (S9). That is
-`DEV_MAPS` in `scripts/collision-hash.mjs` — baked and staleness-checked like
-the five levels, kept out of the `MAPS` beside it because `npm run parity`'s
-server half is a production build — reached through `npm run simulate:dev`,
-where `--mode development` alone does not turn the flag over.
-
-→ **[`docs/world.md`](docs/world.md)** — the six overrides in full, the
-heightfield and the road slabs cut against it, the one thing a road rejects and
-the pad it uses, the winding trap that makes a floor vanish, the builder and two-pass merge rules, the layout gotchas that have
+→ **[`docs/world.md`](docs/world.md)** — the eight overrides in full, the
+heightfield and the road slabs cut against it, the winding trap that makes a
+floor vanish, the builder and two-pass merge rules, the harbour kit and the
+island's floor, the road ladder's arithmetic, the layout gotchas that have
 already cost time, the valley rim's contract with the sky, and the borderland,
 the two rim forms and the leash.
 
@@ -1013,11 +755,11 @@ other path is invisible to navigation.
 two of everything below and not one.** *Where may a body be?* is
 `RayWorld.castBody` — the death cam's pull-in, a tank's chase camera, the
 dismount's floor test — and `SOLID_ONLY`, the mesh predicate the same question
-still wears for the editor's centre-screen pick.
-*What stops a round or a look?* is `RayWorld.castRound` and its any-hit twin
-`blocked` — the hitscan and its wall cap, the bots' and the aim assist's LOS,
-the grenade's step ray and its blast check, the rocket. So a collider is one of
-three things, and a builder picks which by how it declares the box:
+still wears for the editor's centre-screen pick. *What stops a round or a look?*
+is `RayWorld.castRound` and its any-hit twin `blocked` — the hitscan and its
+wall cap, the bots' and the aim assist's LOS, the grenade's step ray and its
+blast check, the rocket. So a collider is one of three things, and a builder
+picks which by how it declares the box:
 
 | collider | body | round | in the nav/cover/AO boxes |
 | --- | --- | --- | --- |
@@ -1044,50 +786,42 @@ merely pass a round through it: `CoverMap`, the AO bake, and the collision bake.
 
 **NO RAY IN THE GAME PICKS A MESH ANY MORE, and that is the load-bearing part
 rather than an optimisation.** `scene.pickWithRay` filters `scene.meshes`, so it
-was priced on how big the MAP is rather than on how far the ray goes — 222 us a
-ray on Coldharbour and **2,438 on a 1500 m proving ground, 30.7% of a frame with
-sixteen bots in contact** (`FINDINGS.md` 22). All eight sites are answered
-analytically now, by [`src/world/RayWorld.ts`](src/world/RayWorld.ts), off
-`colliderBoxes`, the strut groups and `TerrainField` — the same geometry the
-colliders were built from, and exactly the substitution that retired
-`Player.probeGround`. **`map.rays` is where a system gets it**, beside `nav`,
-`cover` and `obstacles`, and the authority builds one off the bake. A NEW RAY
-GOES THERE; nothing may reach for the scene.
+was priced on how big the MAP is rather than on how far the ray goes
+(`FINDINGS.md` 22). All eight sites are answered analytically now, by
+[`src/world/RayWorld.ts`](src/world/RayWorld.ts), off `colliderBoxes`, the strut
+groups and `TerrainField` — the same geometry the colliders were built from, and
+exactly the substitution that retired `Player.probeGround`. **`map.rays` is
+where a system gets it**, beside `nav`, `cover` and `obstacles`, and the
+authority builds one off the bake. A NEW RAY GOES THERE; nothing may reach for
+the scene.
 
 **…and the ONE whole-scene walk that survived that is `moveWithCollisions`,
 which is narrowed rather than replaced.** It MOVES a body instead of answering a
 question about one, so no analytic query stands in for it — and Babylon walks
 `scene.meshes` for every call **and again for every retry**, which priced a body
-on the map's size exactly as a pick did, and priced it worst at the moment it is
-pressed against something. **There are exactly TWO sweeps in the game and both
-go through `narrowedMove`**: `Vehicle.update` for a hull and `Player.update` for
-a body on foot. Measured on Sarab: the fleet cost **2.30 ms a frame and 2.21 ms
-of it was that one call**, and the player's own sweep cost **2.21 ms a frame**
-again — between them more than a third of the frame. `map.collidables`
+on the map's size exactly as a pick did, and worst at the moment it is pressed
+against something. **There are exactly TWO sweeps in the game and both go
+through `narrowedMove`**: `Vehicle.update` for a hull and `Player.update` for a
+body on foot. `map.collidables`
 ([`src/world/CollisionField.ts`](src/world/CollisionField.ts)) is `rays`'
 counterpart — the same collider set bucketed as MESHES — and a body hands the
-answer to Babylon's own `surroundingMeshes`, which is the list its coordinator
-walks instead. **The saving is only sound while the list is a SUPERSET of what
-the sweep can reach**, so the reach is the sphere's radius plus the whole step
-plus a margin, the centre is `getAbsolutePosition()`, the order is the scene's,
-and `narrowedMove` CHECKS the promise and re-runs the whole walk when a sweep
-outran it. Proved identical at 6,000-8,000 blocked-and-unblocked samples per
-body on every map: **the fleet 0.12 ms a frame, the player 0.036, Sarab's median
-frame 14.6 ms to 8.7, and the authority's Sarab tick p50 0.691 ms to 0.053.**
-**A THIRD sweep goes through `narrowedMove` too, or it is a body walking the
-whole map** — and the mechanism is now general rather than the vehicles'.
+answer to Babylon's own `surroundingMeshes`. **The saving is only sound while
+that list is a SUPERSET of what the sweep can reach**, so the reach is the
+sphere's radius plus the whole step plus a margin, the centre is
+`getAbsolutePosition()`, the order is the scene's, and `narrowedMove` CHECKS the
+promise and re-runs the whole walk when a sweep outran it. **A THIRD sweep goes
+through `narrowedMove` too, or it is a body walking the whole map.**
 
 **Colliders are still MERGED, and the grouping is now data rather than a
 performance trick**: nothing in gameplay picks a mesh, but the bake carries the
 grouping to the server and `rayGroups` is how the struts reach the queries at
-all. A pick costs per MESH long before it costs per triangle: `MapBuilder.struts` merges a placement's struts into one mesh (161
-loose post-and-rail boxes cost *every* ray in the game ~17%); every BLOCKING
-SCATTER collider is merged by LOCALITY instead (`MapBuilder.clusterColliders`),
-one mesh per 12 m square over the whole scatter pass at once, because a scattered
-field has no placement to merge by and the regions overlap. The boxes stay in
-`colliderBoxes` one per prop, so nothing derived from geometry can tell; **only
-plain `solid` boxes may be grouped**, and the grouping rides to the server as
-`MapCollision.boxGroups`.
+all. `MapBuilder.struts` merges a placement's struts into one mesh; every
+BLOCKING SCATTER collider is merged by LOCALITY instead
+(`MapBuilder.clusterColliders`), one mesh per 12 m square over the whole scatter
+pass at once, because a scattered field has no placement to merge by and the
+regions overlap. The boxes stay in `colliderBoxes` one per prop, so nothing
+derived from geometry can tell; **only plain `solid` boxes may be grouped**, and
+the grouping rides to the server as `MapCollision.boxGroups`.
 
 **A blocking scatter prop may not stand on a control point or a spawn**, and
 `MapBuilder.keepClear` refuses it rather than the layout dodging by hand — a
@@ -1101,7 +835,6 @@ separate meshes, only the clone marked `solid`. It emits no `WorldBox` and
 `NavGrid` reads `TerrainField` directly. It is also the only `solid` mesh with
 `checkCollisions = false`: `moveWithCollisions` is horizontal-only, vertical
 placement is the ground probe's job, and bots never touch the collidable list.
-
 ### Mesh metadata is a contract
 
 Seven flags and two values, all read elsewhere; new geometry that omits them
@@ -1184,35 +917,30 @@ makes a BUILDER's collider order part of the design — walked surfaces first,
 cover next, roofs last. **A surface ID is `cellBase[cell]` plus the slot, never
 `cell * maxSurfaces + slot`** — `CoverMap` and the editor index the graph's own
 arrays with it, and re-deriving the retired stride form addresses the wrong spot
-in silence. One flow field per objective is precomputed and nothing
-is recomputed: **bots read `nav.steer()`, never run their own pathfinding, and
+in silence. One flow field per objective is precomputed and nothing is
+recomputed: **bots read `nav.steer()`, never run their own pathfinding, and
 never use `moveWithCollisions`**. `ObstacleField` is the sub-cell half, and its
 push-out is a preference, never a veto.
 
-Three things carry the frame budget and undoing any costs ~10x draw calls or a
-permanent hitch: the rig pool is built once per roster size and never disposed
+**Three things carry the frame budget and undoing any costs ~10x draw calls or a
+permanent hitch**: the rig pool is built once per roster size and never disposed
 inside a round, a rig is nineteen merged meshes, and AI is staggered round-robin
-at `CONFIG.bots.thinkRate`.
-**Everything a bot notices without seeing it is ray-free by construction** —
-cover is baked, never probed, and skill is one scalar drawn **per squad** from a
-seeded generator.
+at `CONFIG.bots.thinkRate`. **Everything a bot notices without seeing it is
+ray-free by construction** — cover is baked, never probed, and skill is one
+scalar drawn **per squad** from a seeded generator.
 
-**Cover is baked as three nested masks and a query answers with a KIND.** Each
-height is a hit SPHERE's top and never an eye height. **A bot's crouch is one
+**Cover is baked as three nested masks and a query answers with a KIND**, each
+height being a hit SPHERE's top and never an eye height. **A bot's crouch is one
 decision re-made every frame and one eased blend read by everything else**, and
 the eye and the hit sphere come down together or the stance makes a body easier
-to kill.
-
-**A team's bots tell each other two things, and both are CUES that may never
-enter `BotMemory`** (`entities/SquadRadio.ts`, one board per team): a squad-only
-contact CALL, deliberately not a destination, and a HAZARD mark where the team's
-own bodies fall — everything in `BotMemory` feeds `hasCue`, so a cue there is a
-SEARCH.
-
-**A squad walks as a line, not a column.** `movement.spacing` (5 m) is the
-formation and `bots.separation` (1.5 m) is de-penetration; both come out of one
-pairwise pass, and a cover anchor is CLAIMED so a baked lookup cannot hand four
-bots the same corner.
+to kill. **A team's bots tell each other two things, and both are CUES that may
+never enter `BotMemory`** (`entities/SquadRadio.ts`, one board per team): a
+squad-only contact CALL, deliberately not a destination, and a HAZARD mark where
+the team's own bodies fall — everything in `BotMemory` feeds `hasCue`, so a cue
+there is a SEARCH. **A squad walks as a line, not a column**: `movement.spacing`
+(5 m) is the formation and `bots.separation` (1.5 m) is de-penetration, both out
+of one pairwise pass, and a cover anchor is CLAIMED so a baked lookup cannot
+hand four bots the same corner.
 
 **A bot inside a TANK is out of all of this** (see the vehicles section), and so
 is a bot the round does not field; what it costs this layer is one rule:
@@ -1223,7 +951,6 @@ is a bot the round does not field; what it costs this layer is one rule:
 cone and target hysteresis, the four states that take the stance, the radio's two
 cues, the three sources of herding, squad planning and postures, a crewed bot's
 three exemptions, and the yaw/bodyYaw split.
-
 ### Deaths, glass, and the one physics engine
 
 A killed bot falls under **Havok**, the only physics engine in the tree; so do
@@ -1262,341 +989,87 @@ death cam's camera hand-off.
 ### Vehicles: three kinds, one hull, and the exceptions it is
 
 **A vehicle is a `Combatant` you get INSIDE, and TWO people fit.**
-`MapLayout.vehicles` is one hardstanding per vehicle — absent on two of the five
+`MapLayout.vehicles` is one hardstanding per vehicle — absent on two of the six
 maps — and `Game.driving` plus `Game.drivingSeat` are the two facts the feature
-turns on.
+turns on. **There are THREE KINDS and no code that knows it**: a fourth is a row
+in `VEHICLE_KINDS`, a block of numbers and a model file, and **no `if`
+anywhere** — the moment a system asks which kind it is holding, that is broken.
+**TWO capabilities stand in for that branch**, each one nullable block in the
+spec resolved once into one boolean, and the boolean is what every reader puts
+instead: **`Vehicle.armed`** (the trigger, the HUD's loader row — ABSENT, not
+dimmed — the gun marker, an AI driver's lay-and-fire, the authority's rate gate)
+and **`Vehicle.flies`**, which ten readers ask, from the wire's altitude to the
+leash to the shadow focus.
 
-**There are THREE KINDS and no code that knows it.** `Vehicle` is handed a
-`VehicleSpec` (`config/vehicles.ts`) and a rig BUILDER by `VehicleSystem` and
-never learns which it is; a fourth kind is a row in `VEHICLE_KINDS`
-(`entities/vehicleKinds.ts`), a block of numbers and a model file, and **no
-`if` anywhere** — the moment a system asks which kind it is holding, that is
-broken. `VehicleSpawnDef.kind` is what a map states and defaults to `"tank"`,
-in one place. **The rig is CLOSED over its own model** (`setRun`, `reset`,
-`paint` are closures a builder hands back), because no interface over two belts
-of scrolling links and four wheels that steer is honest in both directions.
+**There is no player model in this game, so nothing on a vehicle may promise a
+body standing at it** — the truck's station is REMOTE and the gunship's gun is
+in a CHIN TURRET for that reason, and nothing may stand on either roof inside
+its sweep. **The two seats are `DRIVER` (sticks + main gun) and `GUNNER` (the
+cupola gun and nothing else), and the first man aboard DRIVES**. **The verbs are
+`E` to board and `F` to cross** (the pad's d-pad north and Y, and two buttons
+that APPEAR on glass, which `Game.offerUse` is the one door to name); **both
+turn a BOT out of the chair they reach and neither ever moves a PERSON**. **A
+driver's frame is not a body's**: `Player.update` is not called, so the hull's
+ground REPLACES the probe.
 
-**TWO things a kind differs by, and neither is asked as a kind.** Each is one
-nullable block in the spec resolved once into one boolean, and the boolean is
-what every reader puts instead. `VehicleSpec.gun` is null on a gunless kind and
-**`Vehicle.armed`** is what the trigger, the HUD's loader row (ABSENT, not
-dimmed), the gun marker, an AI driver's lay-and-fire and the authority's rate
-gate on a claimed shell all ask. **An unarmed hull keeps `turretYaw` equal to
-its own yaw**, so a welded ring draws at a permanent local zero and `aimMg`
-needs no branch of its own.
+**A hull is the one MOVING `solid` mesh in the game**: in both pick predicates
+and carrying `checkCollisions`, but emitting **no `WorldBox`** — so the nav
+graph, the cover bake, the obstacle field and the collision bake have never
+heard of it, and **bots walk through a parked tank as they walk through a
+corpse**. Its box covers the TURRET, and **anything picking a hull out of its
+own way owes two property writes rather than a predicate** (`world/solid.ts`
+forbids minting one). **It is also the one TARGET answered by its collider
+rather than by a hit sphere** — `RayHit.hull` says which hull a cast stopped on,
+and **nothing reads `Vehicle.hitRadius` any more** — **which is why a hull's own
+ROUNDS leave that collider out too** (`ShotOptions.fromHull`, stated on the GUN
+rather than at the trigger, there being two triggers in two processes).
 
-**`VehicleSpec.flight` is the second, and `Vehicle.flies` is what ten readers
-ask** — the drive block, the attitude, the wire's altitude, whether a bot may
-take the chair, the leash, the shadow focus, the touch collective and the
-authority's two bounds. **`standOnGround` is deliberately not one of them.**
-That method has never heard of `flies`: what a flying hull does to the ground
-model is `Vehicle.lift`, the acceleration its own powerplant is producing, which
-is **zero on anything that cannot fly** and turns the free-fall term into
-`velY + (lift - gravity) * dt` — bit-identical arithmetic on both older kinds. A
-hover is then an EQUALITY rather than a decision, the plank is a landing floor,
-and `jolt` is the arrival the skids spend. Gravity was never the only vertical
-acceleration; it was only the only one anything had ever produced.
-
-**`Vehicle.gearLoad` makes that bargain a second time, for the SUSPENSION**: 1
-wherever `spec.flight` is null, so it scales `flexSuspension`'s drive to nothing
-in flight and to nothing at all on a tank. **`flexHeave` is deliberately not
-scaled** — a landing is an impulse, not a static load.
-
-**A flying hull is steered by the LOOK and a driving one by the stick, and that
-one difference of scheme costs no branch outside `flyStep`** — both halves are
-`DriveInput` fields `Game.updateDriver` writes for every kind without knowing
-which it is feeding, as it already does for `lift`. **`aimYaw` points the TURRET
-on a hull that drives and the HULL on one that flies** (there is no turret to
-spend it on), and **`steer` is hull yaw on the one and LATERAL TRANSLATION on
-the other**. What `flyStep` derives from the look is a PEDAL and not a heading,
-so `steerTo`, `steerAuthority` and the bank are the lines they always were.
-**Two rules a change here must not undo**: the yaw chase is gated on
-`seats[DRIVER]`, because `IDLE.aimYaw` is 0 and 0 is a bearing rather than a
-centred stick; and only the COMMANDED half of the roll has thrust behind it,
-because the coordinated half is made of the pilot's view and a bank that pushed
-would mean turning your head translates the aircraft.
-
-**The HELICOPTER is the third trade and it is bought with FRAGILITY**: 32 m/s
-in a straight line over anything, for 340 points at fourteen times the tank's
-small-arms damage, no cannon at all, and a 10.4 m rotor disc
-(`drive.collideRadius`) that closes every alley a truck opens. Its ceiling is
-40 m and that is COUNTERPLAY rather than a limit — bots acquire at 55 m in three
-dimensions and their cone has no elevation term, so a machine that could climb
-out of that bubble is one nothing in the game can answer. **It is drawn as a tandem-seat
-GUNSHIP with its gun in a CHIN TURRET**, which is the truck's "nothing on a
-vehicle may promise a body" rule paying out a second time: the sill station it
-replaces obeyed the letter of that rule and still failed it, because a DOORWAY
-with a gun on its lip is that promise however remote the mount is. Its stub
-wings stop exactly at `hull.width / 2` — a span outside the collider is mass a
-round passes through, and the rotor disc is the one thing here exempt, by
-MOVING. **BOTS FLY IT**, a lone pilot is a taxi because that chin cannon is the
-second seat's, and a dismount at height is REFUSED rather than punished — there
-is no fall damage in this game, so `dismountable` is a height rule every kind
-obeys.
-
-**The TANK is armour and the TRUCK is the trade**: 18 m/s against 11 through a
-3.2 m gap against 4.4, for 520 points against 1200 at nine times the small-arms
-damage and no cannon at all. It is drawn as a closed armoured 4x4 with a
-**REMOTE** weapon station on its roof, and that is a rule rather than a style:
-**there is no player model in this game, so nothing on a vehicle may promise a
-body standing at it** — the pintle, the shield and the spade grips of the
-open-bedded version it replaced were three such promises over an empty bed, and
-what is on the roof now needs nobody. Nothing may stand on that roof inside the
-station's sweep, exactly as nothing may stand on the tank's deck inside the
-turret's. **Two numbers keep a fast vehicle honest and
-neither is a branch**: `climbHeight` (0.55 against 1.25, so the parked car a
-tank drives over is one a truck goes round) and **`steerAtRest`, which is how
-much of `turnRate` a hull has standing still** — 1 is a neutral-steer pivot and
-the tank's, 0 is the truck's, and between them `steerRollSpeed` ramps the
-authority up in the hull's own **signed** velocity, so a truck cannot spin on
-the spot and steers inverted backing up. `Vehicle.steerAuthority` is the one
-place either end is read, the drive and the remote pose both go through it, and
-a hull that cannot pivot is why the AI driver's throttle bottoms out at
-`crew.turnCrawl` scaled by `1 - steerAtRest` rather than at nothing. Sarab is
-the only map with both. **`mount` and `clearVehicle` are exact inverses and must be read as a
-pair.** **A driver's frame is not a body's**: `Player.update` is not called, so
-the hull's ground REPLACES the probe. **The verb is `E`, the pad's d-pad north
-and a button that APPEARS on glass** — one `usePressed`, and `Game.offerUse` is
-the one door that names it, because a phone has nothing to press until
-something is drawn under it.
-
-**The two seats are `DRIVER` (sticks + main gun) and `GUNNER` (the cupola
-machine gun and nothing else), and the first man aboard DRIVES** —
-`VehicleSystem.seatOn` states that once for both processes. A hull with one
-chair left is `enterable`; only a FULL one is an eviction, so the player climbs
-on beside a bot crew rather than turning it out. **Crossing is a third verb
-(`InputManager.seatPressed` — `F`, the pad's Y, the touch swap button), and it
-turns a BOT out of the chair it crosses into exactly as boarding does** —
-without that the sweep fills the free chair seconds after a mount and the
-second seat is unreachable by every route the game has. A PERSON is never
-moved. `Game.canSwapSeat` is the one place that decides, so the key and the
-HUD's prompt cannot disagree, and **the HUD draws the CREW rather than only
-your own chair**: a chair held by somebody else used to be drawn as nothing at
-all, which reads as a vehicle with one seat.
-
-**The CUPOLA gun's bearing is a WORLD angle exactly as the turret's is, and
-that one decision is the whole of the independence**: the mount is parented to
-the turret, so a relative angle would be dragged round by every traverse the
-driver asked for. `Vehicle.aimMg` writes the difference onto the rig; a gun nobody
-is on inverts the rule and rides its ring. It is stepped from `VehicleSystem`
-rather than from `update`, because a hull's two guns can have two owners of
-different kinds — a person driving off the wire while a bot lays the cupola
-gun. **All three kinds name ONE recording on `mg.report`** (`mountedGun`), for
-the same reason there is no `if` between the kinds anywhere else: it is one gun
-on three mounts, and what differs between the three rows is the eight scalars.
-The MAIN gun names one too (`tankCannon`, on `Sfx.cannon`), and it is the only
-sample in the tree with no row of `CONFIG.weapons` behind it. Both are MONO for
-the same reason rather than for being a vehicle's: `Game.resolveMg` reaches
-`Sfx.botShot` and never `shoot`, and a shell is spatialised even for the crew
-firing it, so neither has any claim on the unpanned exception every carried
-weapon takes. **It is a `bullet` against `resist.bullet` of 0.05, so it cannot
-touch armour**, which is the trade rather than a limitation: what it answers is
-infantry inside the main gun's reload.
-
-**In a NETPLAY round a driver simulates their own hull and REPORTS it, exactly
-as they do their own legs; every other hull is posed from the wire** by
-`Vehicle.updateRemote`. `Vehicle.predicted` says which — it refuses local damage as
-`NetSoldier` does and stands both hardstanding clocks down. **Getting in and out
-are ASKS the authority answers**, and **occupancy is stated once, on the hull**.
-
-**A hull is the one MOVING `solid` mesh in the game, and that is the RAGDOLL's
-rule rather than an exception to the world layer's**: it is in both pick
-predicates and has `checkCollisions`, but emits **no `WorldBox`** — so the nav
-graph, the cover bake, the obstacle field and the collision bake have never heard
-of it, and **bots walk through a parked tank as they walk through a corpse**. Its
-box covers the TURRET, and **anything picking a hull out of its own way owes two
-property writes rather than a predicate** — `world/solid.ts` forbids minting one.
-
-**A hull is also the one TARGET answered by its collider rather than by a hit
-sphere**, and that is a rule the two subsystems share rather than a vehicle
-detail. `CombatSystem.fire` rejects a target sphere farther than the first
-opaque hit — a body behind a wall is not shootable — so a sphere smaller than
-the collider in front of it always loses: at `hitRadius` 3.2 against a
-half-length of 3.6 a hull swallowed every round arriving within ~32 deg of its
-own nose or tail, its own gun's included. `RayHit.hull` says which hull a cast
-stopped on, armour is out of the sphere sweep, and **nothing reads
-`Vehicle.hitRadius` any more.**
-
-**…which is why a hull's own ROUNDS have to be taken out of that same
-collider.** A vehicle's guns are drawn ON it, so a muzzle regularly sits inside
-the box, and a ray starting inside a box is handed its far face — so a round
-left the muzzle and stopped on the thing that fired it. `ShotOptions.fromHull`
-is the skip and it is stated on the GUN rather than at the trigger, because
-there are two triggers in two processes; it is the third query to leave the
-hull out of its own answer, after the chase camera's and the crew's sightline.
-
-**A tank DRIVES OVER things, and `climbHeight` is the one number deciding what is
-ground and what is a wall** — the collision ellipsoid's floor AND the ceiling of
-the band a track contact accepts a surface from, two uses that must never drift.
-
-**…and it drives over PEOPLE, which is the one thing armour does that is not a
-weapon.** `Game.crushSweep` (the authority's twin is `HeadlessGame`'s) runs
-right after `VehicleSystem.update` and puts down every enemy body a MOVING
-hull's collider is standing in. It is owed to the rule above it: a tank is in no
-baked structure, so bots walk through one as they walk through a corpse, and
+**A hull drives over PEOPLE**, which is what `Game.crushSweep` is
+(`HeadlessGame`'s is the authority's twin, and both run right after
+`VehicleSystem.update`): a tank is in no baked structure, so
 `moveWithCollisions` sweeps the HULL out of the world rather than a body out of
-the hull's way. **`Vehicle.crushes` asks the two heights different questions** —
-horizontally the body's hit SPHERE, vertically the FEET, because a man
-crouching on the deck has his chest inside a 2.9 m box and **riding on a hull is
-the one thing a crush must not take away**. Three gates (a live hull,
-`crush.minSpeed`, a DRIVER to credit it to) and a list that is the hull's own
-side's enemies with armour and anyone riding inside one skipped, for the reason
-`blastAt` skips them. `"crush"` is a `DamageKind` no round carries: it decides
-only that the body is THROWN clear rather than dropped.
+its way. **What a hit is worth is a `DamageKind`** — the third parameter on
+`Hittable.takeDamage`, which only a tank reads, against
+`CONFIG.vehicles.tank.resist` — and `"crush"` is one no round carries. **The
+reticle still cannot lie**: the look is an ORDER the turret walks toward, the
+shell goes down the GUN's axis, and **everything else on the hull that moves is
+a PICTURE** — the collider never tilts and nothing on it is pickable.
 
-**What a hit is worth is a `DamageKind`** — the third parameter on
-`Hittable.takeDamage`, which only a tank reads, and `CONFIG.vehicles.tank.resist`
-is where what each kind is worth against armour is written down. **The reticle
-still cannot lie**: the look is an ORDER the turret walks toward, the shell goes
-down the GUN's axis, and `#gun-marker` draws where the barrel points.
-**Everything else on the hull that moves is a PICTURE** — the collider never
-tilts, nothing is pickable, and the gun is aimed in WORLD angles.
+**BOTS CREW BOTH CHAIRS, and a crewman is not a bot with a vehicle attached.** A
+crewed bot leaves `Bot`'s FSM entirely — **`BattleSystem.aside` is the one skip
+test every loop over `bots` owes**, never `benched.has` — while keeping its
+LIFE, its POSITION slaved to the hull and its SQUAD'S ORDER. **A tank is never a
+DESTINATION**, and **a crew never denies the player their own armour**. **BOTS
+FLY IT** too, on a bearing and a HEIGHT, and **a flow field's bearing is not an
+order a pilot can fly**: the bearing is HELD and the route only nudges it.
 
-**BOTS CREW BOTH CHAIRS, and a crewman is not a bot with a vehicle attached.**
-The gunner is a second body with a second brain and a different set of targets
-— infantry only, in BURSTS, because a machine gun cannot hurt a hull. A crewed
-bot leaves `Bot`'s FSM entirely — `BattleSystem.crewed` is the BENCH's twin and
-**`BattleSystem.aside` is the one skip test every loop over `bots` owes**, never
-`benched.has` — while keeping its LIFE, its POSITION slaved to the hull and its
-SQUAD'S ORDER, which is what it steers on. **A tank is never a DESTINATION**, and
-**a crew never denies the player their own armour**: `TAKE OVER TANK` evicts and
-mounts on one frame. `resolveShell` is the ONE round out of a tank gun (`Game`'s
-offline, `HeadlessGame`'s in a match), and a driver needs no route graph — a
-BEARING and `Vehicle.rideableAt` are all of it.
+**ANY world position read off a node on the AUTHORITY owes a forced world
+matrix, and the failure is invisible on a client**, whose render walk writes one
+every frame. A node that is merely MOVED does not report itself out of sync, so
+its FIRST read is what it returns for the life of the process — it cost every
+hull on the server its sweep origin, the tank's gun its muzzle, and the bots
+their ears.
 
-**…AND A PILOT IS THAT SAME SENTENCE ONE AXIS UP.** A bot flies the helicopter
-on a bearing (the same flow field) and a HEIGHT — `Vehicle.aloftAt`, which is
-`rideableAt`'s question asked of the air, off the same two halves of the world.
-So `VehicleCrew.fly` is `steer` with two substitutions, the fan hands back the
-altitude with the bearing, and **the answer to something in the way is UP, a
-bearing being what is left when going over has been refused.** Three rules it
-must keep. **The climb allowance is against the CLOSING speed and never a fixed
-gradient** (a gradient refuses every bearing to a machine still on its skids).
-**A bearing is not lost by flying over ground nobody could stand on** — gated on
-`NavGrid.surfaceAt` returning -1, because the other way a route runs out is
-having ARRIVED and reading that as lost flies a machine out of the map. And
-**A FLOW FIELD'S BEARING IS NOT AN ORDER A PILOT CAN FLY**, which is the one
-that made bot helicopters unwatchable: `steerAhead` blends the next cell centre
-with the lookahead one, and the near half of that blend is a sub-cell correction
-written for something WALKING on the grid — so a machine crossing a 1.5 m cell
-every fifth frame was handed a bearing whose direction of change reversed 12.0
-times a second at a median rate of 1.88 rad/s, against an airframe that yaws at
-1.35. No lookahead cures it, because the near term is half the blend by
-construction. So the bearing a pilot flies is HELD (`VehicleCrew.holdYaw`,
-eased at `crew.airTurn` of the hull's own `turnRate`) and the route only nudges
-it — **a rate limit rather than a smoothing, because what it states is that a
-pilot turns at the rate he has chosen to turn at**, and the whiskers run on the
-held bearing so what is cleared is what is flown. Sarab, five rounds: yaw
-acceleration rms 5.00 rad/s^2 to 1.72, roll rate rms 0.329 to 0.153, turn
-reversals 0.411/s to 0.000 — **and mean ground speed 7.10 m/s to 9.20**, because
-`flyOn`'s heading fall-off means a nose that never settles is choking its own
-throttle. The HEIGHT is deliberately not held the same way and that was measured
-too: the airframe's own dynamics already low-pass the collective, and a rationed
-descent moved climb-to-sink reversals 0.57/s to 0.57/s. **The weave was in the
-yaw.** A pilot also reads its route off the STREET (`VehicleCrew.column`) rather
-than off whichever surface is nearest its altitude, which is a roof twelve
-metres over a town — a correctness fix and explicitly NOT the cure for the
-weave.
-
-**And `moveWithCollisions` opens with `getAbsolutePosition()`, which nothing on
-the AUTHORITY had ever computed** — a client's render walk writes it once a
-frame and the server does not render, so every hull on it swept from the origin
-its box was built at. `narrowedMove` forces the matrix now, and **the rule is
-not about sweeps: ANY world position read off a node owes the same forced line,
-and the failure is invisible on a client.** `getAbsolutePosition` computes the
-matrix itself but only when the node reports itself out of sync, and nothing
-about MOVING a node makes it say so — Babylon's `Vector3` carries no dirty flag,
-so what invalidates a rig joint is its PARENT having been recomputed by the
-render walk. With no render there is no invalidation and no second answer: a
-node's FIRST read is what it returns for the life of the process. It cost the
-tank's gun and the bots' ears — `Vehicle.muzzleToRef`, `mgMuzzleToRef` and
-`Bot.muzzleWorld` all force it now, which is where a fourth reader should look.
-
-**A hull is HEARD whoever is in it, and that is two voices over one graph.** The
-one the player is sitting in is unpanned for the reason their own report is;
-every other OCCUPIED hull gets a spatialised copy of the same six sources,
-driven per FRAME by `Game.pushHullEngines` rather than opened on a mount —
-because what is being tracked is not somebody getting in, it is a tank being
-within earshot. **A frame that did not STEP the fleet owes `Sfx.enginesOff`**
-(`Game.fleetStepped`, raised by the two world steps): a held world is a fleet
-whose speeds are frozen, and a voice left running under the deploy card is a
-tank droning in a street where nothing moves.
-
-**There are TWO POWERPLANTS in that graph and no code that asks which kind it is
-holding.** `EngineKind.rotor` is a nullable block — `spec.flight`'s bargain made
-again one layer down — turning the same five layers from a piston engine into a
-turbine hung off a disc. **What it changes is not levels: a GOVERNED rotor does
-not change note with what the machine is doing**, so the whistle answers the
-spool alone and what the load moves is how hard the disc CHOPS. **And what
-drives it is asked of the HULL** (`Vehicle.powerplant`): the spool and the disc
-loading on a rotor, road speed and a stick on anything geared to its wheels. A
-voice driven off `travel` **hovered in silence**, which is a machine flying with
-its engine off.
-
-**AND A MACHINE THAT HOLDS ITSELF UP BY MOVING AIR MOVES THE GROUND WHEN IT GETS
-NEAR IT.** `RotorWash` is `BlastDust`'s FOUNTAIN twin — one standing GPU emitter
-per rotor on the field, a ring the width of the disc sitting on whatever is
-under the machine — and the twinning is the whole shape of it: a blast pins
-`emitRate` at zero and bursts, because a rate is what would leave a fountain
-standing where the last grenade went off, and a downwash IS that fountain.
-Nothing is spawned and nothing is scheduled; a machine that is high, dead,
-spooled down or has no rotor at all is one emitting at a rate of ZERO. **The
-hull answers, exactly as it does for the voice** (`Vehicle.washTo`): the disc's
-`rotorPower` — never `rotor`, since a spooling disc lifts nothing — against the
-SKID clearance over `skylineAt`, squared inside `flight.washHeight`, so a
-machine over a roof works the roof and nearly all the dust is in the last few
-metres of a landing. **That one number is all a KIND says**; what a cloud costs
-is `CONFIG.vehicles.wash`, one block for the fleet, which is `Build.sound`'s
-split again. Three rules came out of rendering it. **A puff FADES IN as well as
-out** — a birth at full alpha is invisible on a burst, where a cloud arrives on
-one frame, and is the whole texture of a FOUNTAIN, where ninety a second switch
-on in front of you — which needs a colour GRADIENT, and `BlastDust` says a
-gradient on a GPU system kills the scene. **The rule under that is narrower: a
-gradient changes the VERTEX BUFFER LAYOUT, and the buffers are built on a
-system's FIRST RENDER**, so what is fatal is adding one to a system that has
-already drawn. A ring is therefore coloured when it is BUILT — the environment
-arrives on `build`, and a map whose dust is a different colour gets new rings
-rather than a repaint. **The tint is the map's FLOOR
-where a blast's cloud is its MIST** — a wash is the ground itself four metres
-from the eye, which is `BlastDebrisSystem`'s own call for rubble, and the mist
-version rendered a cloud PALER than the sand it came off. And **WATER PICKS THE
-OTHER RING rather than silencing both**: spray is a different material, so a
-machine gets a dust ring and a spray ring built on the same map install and
-`surfaceOver` says which is emitting — with `washTo` asked a SECOND time using
-the surface as its `floor`, because water is in neither the terrain field nor
-the obstacle field and the skyline under a machine over a bay is the BED (0.500
-against 0.797 at three metres over Cinderhaven's water). **The spray's colour
-pair is LIT on the way in and the dust's is not**, which is a fact about foam: a
-particle is unlit, `floorColor` carries a map's own darkness with it and
-`foamColor` is near-white on every map by construction, so raw it threw daylight
-spray onto a night harbour. **And the RIPPLE is the water's** — one uniform
-array of sites `RotorWash` publishes and `WaterShader` draws the hole and the
-wake from, out of the same normal, mirror and foam mix the surface already has,
-because a number that must agree with `waveHeight` belongs beside it
-(`CONFIG.water.wash`). A downwash is a HOLE and not a wave — concentric rings
-from a point is a raindrop — so the disc is drawn first, the froth is an ANNULUS
-at the rim, and the rings start there. It is pushed from `tick` beside the mote
-field, gated on
-`fleetStepped` for the engines' reason — a held world is a machine frozen over a
-street, and one still boiling that street is the droning tank with a picture
-instead of a sound — and **that flag is now read ONCE**, because a one-shot flag
-with two consumers is one whose second reader gets whatever the first left.
+**A hull is HEARD whoever is in it**, pushed per FRAME by `Game.pushHullEngines`
+rather than opened on a mount, and **what drives the voice is asked of the HULL**
+(`Vehicle.powerplant`), so the second powerplant needs no branch either. **A
+MACHINE THAT HOLDS ITSELF UP BY MOVING AIR MOVES THE GROUND WHEN IT GETS NEAR
+IT**: `RotorWash` is one standing GPU emitter per rotor, nothing spawned and
+nothing scheduled, and **the hull answers what it is doing to the ground**
+(`Vehicle.washTo`) exactly as it does for the voice. **A colour GRADIENT changes
+a particle system's VERTEX BUFFER LAYOUT, so one may only be added before that
+system's FIRST RENDER.** **A frame that did not STEP the fleet owes
+`Sfx.enginesOff` and a wash of zero** (`Game.fleetStepped`, **read ONCE**,
+because a one-shot flag with two consumers is one whose second reader gets
+whatever the first left).
 
 → **[`docs/vehicles.md`](docs/vehicles.md)** — the three kinds and the two
-capabilities that stand in for a branch between them, the truck's trade and the
-helicopter's fragility; the two seats and the swap, the cupola gun's
-world angle and its stowed inversion, the crew of two, the whisker fan and the
-two geometry bugs it found, and the pilot's held bearing with the five-round
-measurement behind it; the collider's three answers; the tracks' sweep, its
-three gates and its two skips; each model's mesh budget, its running gear and
-its whips, and the gunship's chin turret with the four clearances it owes; the
-mounted gun as one gun on three mounts and the one recording all three name;
-the two engine voices, the two powerplants under them and the measurements on
-both; the rotor's dust, what the hull answers about it and the three numbers a
-picture moved; the plank, the
-rate limit and the leading-end sphere; the damage kinds, the four ways out of a
-seat, the shell, the two clocks a hardstanding runs, what a map owes — including
-what its GENERATOR owes — and what is not built.
+capabilities between them, each trade and each model; the seats, the swap and
+the crew of two; the pilot's held bearing and the flight model under it; the
+collider's three answers; the crush's gates and skips; the two engine voices and
+the rotor's dust, spray and ripple; the plank, the climb and the leading-end
+sphere; the damage kinds, the shell, what a map and its GENERATOR owe, and what
+is not built.
 
 ### Anti-tank: the third slot, and the only thing a hull is afraid of
 
@@ -1705,116 +1178,63 @@ and the markers that fade themselves out, and
 ### Measuring a frame
 
 **The frame profiler SHIPS, and that is the whole feature rather than a
-compromise.** The frame is draw-call bound on hardware nobody here owns, and
-the devices worth measuring — a phone on a home screen, a tablet, somebody
-else's laptop — are exactly the ones that will never run a dev server or open a
+compromise.** The frame is draw-call bound on hardware nobody here owns, and the
+devices worth measuring — a phone on a home screen, a tablet, somebody else's
+laptop — are exactly the ones that will never run a dev server or open a
 DevTools window. `FrameProfile` is therefore armed by a **setting**
 (`Settings.profiler`) or by **`?profile`**, never by `import.meta.env.DEV`;
 disarmed, every entry point returns on its first line and the ring is not
-allocated. Measured cost while armed, three paired runs: **under 1.5% of frame
-rate**, of which the span calls are ~5 us a frame (0.22 us a pair, ~22 pairs —
-and ~4 more since, for the spans inside `render`) and the rest is
-`SceneInstrumentation`'s observers. The probes that say so run on
-the DEVICE and land in every capture.
+allocated. Armed, it costs under 1.5% of frame rate, and the probes that say so
+run on the DEVICE and land in every capture.
 
-**It records CONTINUOUSLY and the capture reaches BACKWARDS.** You cannot watch
-a graph while playing a first-person shooter with two thumbs, so the ring holds
-`CONFIG.profiling.frames` (3,000 — 50 s at 60 Hz, 12.5 at 240) and the gesture
-is pressed AFTER the hitch: `F3` on a keyboard, the chip's buttons on glass.
-**Nothing allocates PER FRAME while it is recording** — no per-frame object, no
-label string, no closure — because `FINDINGS.md` §1's leading suspect for the
-hitch this exists to find is GC, and a profiler that allocates per frame
-manufactures the bug it was built to catch. The one exception is per
-COLLECTION: the sentinel below.
-
-**What a hitch IS is relative, because a fixed bar degenerates on the device
-this was built for.** A phone holding 30 fps spends 33 ms in every frame, so at
-`CONFIG.profiling.hitchMs` (24) alone every frame is a hitch, the list floods
-and a capture's headline reaches back three seconds instead of fifty. The bar
-is that floor or `hitchFactor` (2.5) times what the device has lately been
-managing, whichever is larger, and both it and the floor are in every report.
-Measured under a 6x CPU throttle applied mid-session: **292 of 687 frames filed
-at a fixed 24 ms against 25 on the relative bar**, all 25 in the ~1.5 s the
-floor takes to follow the step.
-
-**It watches the COLLECTOR, which is what §1 has always suspected and nothing
-could see.** A `FinalizationRegistry` sentinel — one object per GC event, none
-per frame, no flag needed — puts a count on every frame, so a hitch whose spans
-do not add up to its wall clock is read against it: collections on it is the GC
-pause, none is the browser. **The heap itself is usually FROZEN** (Chrome
-rate-limits the bucketised `performance.memory` to one update every twenty
-minutes) and `probeHeapLive` says so on arming rather than letting a flat line
-read as an idle heap; `--enable-precise-memory-info` is what makes it live, and
-where it is, `memory.allocMbPerSec` is the number to watch — **27.4 MB/s at 2.2
-collections a second on Hollowmere**, the first real figure behind §1's oldest
-guess.
+**It records CONTINUOUSLY and the capture reaches BACKWARDS**, because you
+cannot watch a graph while playing a first-person shooter with two thumbs: the
+ring holds `CONFIG.profiling.frames` and the gesture is pressed AFTER the hitch
+(`F3`, or the chip's buttons on glass). **Nothing allocates PER FRAME while it
+is recording** — no per-frame object, no label string, no closure — because
+`FINDINGS.md` §1's leading suspect for the hitch this exists to find is GC, and
+a profiler that allocates per frame manufactures the bug it was built to catch.
+**What a hitch IS is relative**, a fixed bar degenerating on the device this was
+built for; the bar and its floor are in every report, as is the GC count the
+`FinalizationRegistry` sentinel puts on every frame.
 
 **The brackets live in `Game.ts` and nowhere else, with one exception that is
-INSIDE the render.** `tick`, `updateGameplay`, `updateNetWorld` and
-`updateWorld` are where the frame's order is already declared, with the argument
-for it written down, so **the phase list IS that order** and no system had to be
-taught the profiler exists. A phase is a name in `PHASES`, a parent in
-`PARENT_OF` and a `begin`/`end` pair; the ring, the report and the trace are
-all sized and labelled off that list. The spans NEST and do not partition — read
-a report as an attribution, exactly as `buildProfile`'s does for the build.
-
-**`render` is four spans deep now, and they are the exception because there is
-nowhere in `Game.ts` to put a bracket inside `scene.render()`.**
-`FrameProfile.hookRender` hangs `shadowPass`, `glow`, `drawWorld` (rendering
-group 0 — the map and the bodies) and `drawOverlay` (the groups above it —
-the sky shell, the moon, the viewmodel) off the SCENE's own observables when the
-profiler arms and takes them off when it disarms, finding the shadow map through
-`scene.lights` and the glow through `scene.effectLayers`, so no system knows
-about them either. **They cannot overlap and the method carries the proof**:
-Babylon runs the render targets before it opens the draw phase, the camera's
-pass inside it, and the glow's compose after it closes — which is also why the
-group spans are gated on that draw phase, since a render target's own rendering
-manager fires the same scene observable. **What they measure is CPU**, and under
-`compatibilityMode = false` that is the recording of a render BUNDLE rather than
-the work the GPU then does.
-
-**The `TRACE` export CENTRES its window on the worst frame in the ring**, not on
-the present moment — a 600-frame tail is seven seconds against a thirty-five
-second ring, so the frame you reacted to was routinely not in the file and
-nothing in the file said so. It is clamped to what the ring holds, and it names
-its own window in the Perfetto track title and marks the worst frame with an
-instant.
-
-**Three limits, and each is recorded into every capture rather than left to
-prose.** The clock is quantised to **100 us** (Chrome, absent cross-origin
-isolation, which `docker/default.conf.template` does not set) while most phases
-cost under 120 us — so a mean over a window converges but a small phase's
-PERCENTILE is quantisation noise, and `clock.belowGrain` names the rows that
-applies to. And the frame is draw-call bound, so the JS spans attribute the
-third that was never the problem: `SceneInstrumentation`'s draw count, mesh walk
-and render-target time are carried beside them for the rest. And the heap is
-frozen on a stock browser, which is the paragraph above. **GPU time is not
-here** — Babylon can read it, but only if `timestamp-query` is requested at
-device creation and `main.ts` calls `initAsync()` with no descriptor.
+INSIDE the render.** `tick`, `updateGameplay`, `updateNetWorld` and `updateWorld`
+are where the frame's order is already declared, with the argument for it
+written down, so **the phase list IS that order** and no system had to be taught
+the profiler exists. A phase is a name in `PHASES`, a parent in `PARENT_OF` and
+a `begin`/`end` pair; the ring, the report and the trace are all sized and
+labelled off that list. **The spans NEST and do not partition** — read a report
+as an attribution. The exception is `render`, where there is nowhere in
+`Game.ts` to put a bracket inside `scene.render()`:
+`FrameProfile.hookRender` hangs four spans off the SCENE's own observables when
+the profiler arms and takes them off when it disarms, so no system knows about
+those either. **What they measure is CPU**, and under `compatibilityMode =
+false` that is the recording of a render BUNDLE rather than the work the GPU
+then does. **GPU time is not here** — Babylon can read it, but only if
+`timestamp-query` is requested at device creation, and `main.ts` calls
+`initAsync()` with no descriptor.
 
 **A capture is READ at `/profile_viewer.html`**, one import-free, network-free
-page in `public/` served from the game's own origin — because the loop has to
-close on the device that is slow, and a viewer you must mail a file to is one
-nobody uses. **The chip's `VIEW` button hands the full report straight over
-through `localStorage`** and opens the page: same origin, so no clipboard, no
-paste, no file, and nothing leaves the device. That path is spelled in THREE
-places — the file in `public/`, `sw.js`'s `DOCS`, and `ProfileChip`'s
-`VIEWER_PATH` — and every way of missing one fails silently. It draws the verdict, the attribution ladder, the timelines and a
-flame chart, and **the capture states its own phase tree** (`ProfileReport.tree`
-from `PARENT_OF`, typed so a new phase does not compile until it names its
-parent) so the reader is never guessing this build's nesting. It is the SECOND
-navigable document, so **its path is in `sw.js`'s `DOCS`** — without that it
-works online and silently becomes the game offline, which is the one case it
-exists for.
+page in `public/` served from the game's own origin, because the loop has to
+close on the device that is slow. The chip's `VIEW` button hands the report over
+through `localStorage` and opens the page: same origin, so no clipboard, no
+file, and nothing leaves the device. **That path is spelled in THREE places** —
+the file in `public/`, `sw.js`'s `DOCS`, and `ProfileChip`'s `VIEWER_PATH` — and
+**every way of missing one fails silently**; it is the SECOND navigable
+document, so a path missing from `DOCS` works online and silently becomes the
+game offline, which is the one case it exists for. **The capture states its own
+phase tree** (`ProfileReport.tree` from `PARENT_OF`, typed so a new phase does
+not compile until it names its parent), so the reader is never guessing this
+build's nesting.
 
 → **[`docs/profiling.md`](docs/profiling.md)** — the phases and what each one
 covers, how to take and read a capture, the viewer and the three rules for
-editing it, the relative hitch bar and what it was
-measured against, the sentinel and the heap probe and how to read a hitch
-against them, the trace export and Perfetto, what `frame`'s own share means, the
-three-rung clipboard ladder, and the levers (cross-origin isolation,
-`timestamp-query`) that are deliberately not in it.
-
+editing it, the relative hitch bar and what it was measured against, the
+sentinel and the heap probe and how to read a hitch against them, the three
+limits recorded into every capture, the trace export and Perfetto, what
+`frame`'s own share means, the three-rung clipboard ladder, and the levers
+(cross-origin isolation, `timestamp-query`) that are deliberately not in it.
 ### The installable app
 
 The build installs to a home screen and launches fullscreen, landscape and
@@ -1853,38 +1273,27 @@ arrival; everything else a client steps is DRESSING.
 
 **The slot table is forty-eight slots, built once, never resized or reordered**
 — `CONFIG.bots.maxPerTeam` a side, on every map, because a match rotates maps
-under ONE table and a table sized per map would renumber every player on team 1
-at every rotation. **What the map decides is the ROUND**: `MapLayout.perTeam`
+under ONE table. **What the map decides is the ROUND**: `MapLayout.perTeam`
 reaches the authority through `setFielded`, so Sarab is 24v24 online as well as
-off and the wire mentions only the slots a round fields. **What the map may
-never decide is the SEATS**, which stay at sixteen — the smallest roster in the
-rotation, so that a rotation takes bots off the field and never a person out of
-a seat. Every slot nobody is sitting in is a bot: a human joining BENCHES the
-bot in their slot and leaving un-benches it. **Benching is not killing** — joining and leaving must never
-charge a team a reinforcement — the bench lives in `BattleSystem` as a `Set<Bot>`
-and never as a flag on `Bot`, **every loop over `bots` there must skip it**
-(through `aside`, which also covers a tank's crew), and **a slot index IS a bot
-index**.
+off. **What the map may never decide is the SEATS**, which stay at sixteen — the
+smallest roster in the rotation, so a rotation takes bots off the field and
+never a person out of a seat. Every slot nobody is sitting in is a bot: a human
+joining BENCHES the bot in their slot and leaving un-benches it. **Benching is
+not killing** — joining and leaving must never charge a team a reinforcement —
+the bench lives in `BattleSystem` as a `Set<Bot>` and never as a flag on `Bot`,
+**every loop over `bots` there must skip it** (through `aside`, which also
+covers a tank's crew), and **a slot index IS a bot index**.
 
-**…AND A MATCH MAY BE CREATED WITH NO BOTS AT ALL, which is `MapLayout.perTeam`
-reaching a round as ZERO rather than a new kind of absence.** `Join.bots` is
-`Join.map`'s twin — a REQUEST spent only on a match the join actually builds,
-dropped when it lands in one that exists, additive, and stated as a NEGATIVE
-read as `!== false` so a field nobody sent falls through to the game everybody
-had. `HeadlessGame.startRound` fields none, `BattleSystem.setFielded` sets every
-bot **aside**, and nothing downstream had to be told: the target lists, the
-squads, the tickets, the board and the crews a hull would be handed are already
-written against `aside`. **The SEATS are untouched** — sixteen still fit and the
-match fills by the same roster — which is why this is the one place the wire's
-"how many slots hold a BODY" and the simulation's "how many bots are in the
-fight" stop being one number (`Match.fieldedSlots`, the seats). **An empty slot
-is STATED and not read**: an aside bot's death clock is frozen, a client hides a
-body at `dead >= 1`, so an aside-and-not-alive slot goes out as `dead: 1` or a
-leaver's last standing frame is in the street for the round. A CREWED bot is
-aside and ALIVE and is deliberately not that. **A row has to SAY it**
-(`MatchSummary.bots`), because `3 / 16` looks identical either way and "Bots
-only" — the empty label that means a fight is already happening — is the one
-flatly false thing that could be on that screen.
+**…AND A MATCH MAY BE CREATED WITH NO BOTS AT ALL**, which is `MapLayout.perTeam`
+reaching a round as ZERO rather than a new kind of absence: `Join.bots` is
+`Join.map`'s twin — additive, and stated as a NEGATIVE read as `!== false` so a
+field nobody sent falls through to the game everybody had — and nothing
+downstream had to be told, the target lists, the squads, the tickets, the board
+and a hull's crews being already written against `aside`. **The SEATS are
+untouched**, which is why this is the one place the wire's "how many slots hold
+a BODY" and the simulation's "how many bots are in the fight" stop being one
+number (`Match.fieldedSlots`). **An empty slot is STATED and not read** — it
+goes out as `dead: 1`, or a leaver's last standing frame is in the street.
 
 **Four things arrive from the authority and may only be written through their one
 funnel**, because a client that decides any of them for itself is playing a
@@ -1913,26 +1322,18 @@ when the SET moves. **A driver reports a HULL instead of a body** —
 and **a GUNNER reports one BEARING**, because a man on the cupola gun moves
 nothing at all and there is therefore nothing to validate.
 
-**`validateDrive`'s four bounds are TWO KINDS OF CHECK and every one of them is
+**`validateDrive`'s bounds are TWO KINDS OF CHECK and every one of them is
 ANSWERED.** Speed and climb are things no legitimate client produces, so they
 are REFUSED; the map's extent and a flying hull's ceiling are rules the client
 enforces too and presses against on purpose, so they are LIDS — the step is
 taken at the boundary and the client is told where it ended up. **The ceiling is
-a RATE and not a HEIGHT**: `flyStep` fades the commanded climb and never pulls a
-machine down, so a helicopter crossing ground that falls away is legitimately
-far over its ceiling, and what the authority may bound is only that it cannot
-GAIN height up there. **And a refusal may never be SILENT**, which is the half
-that cost a round: the one hull a client does not pose from the wire is the one
-under its own driver (`Game.vehicleOrders.remoteFor` answers null for it — that
-IS the prediction), so nothing pulled a refused driver back and the next sample
-was measured against a stale authority hull that could only fail. One refusal
-latched for the life, and the pilot flew a machine nobody else could see —
-capturing nothing, refused a dismount in silence, and snapped across the map by
-the first thing that took them out of the chair. `hullcorrect` is the answer and
-`Vehicle.correctTo` is what a client does about one: **it is not `placeAt`**,
-which is a hull ARRIVING and would resurrect a wreck and drop a flying machine
-out of the sky, and **it ARRESTS the motion it corrected** so a lid reads as a
-wall rather than a stutter.
+a RATE and not a HEIGHT**, a machine crossing ground that falls away being
+legitimately far over it. **And a refusal may never be SILENT**: the one hull a
+client does not pose from the wire is the one under its own driver, so nothing
+else can pull a refused one back and one refusal latches for the round.
+`hullcorrect` is the answer and `Vehicle.correctTo` is what a client does about
+one — **it is not `placeAt`**, which is a hull ARRIVING, and **it ARRESTS the
+motion it corrected** so a lid reads as a wall rather than a stutter.
 
 **`decode` proves only that a frame is JSON with a `t` on it, so a
 `ClientMessage` is a CLAIM and never a fact**: `server/wire.ts` is the one door
@@ -1940,16 +1341,16 @@ that makes it one, nothing else on the server may read a frame, and a new client
 message type owes an arm in its switch.
 
 **There is more than one match server, the CLIENT holds the list, and none of
-them knows another exists.** A `Region` carries BOTH its urls, resolved together,
-and **a match id is minted per process, so every region has an `m1`** — every
-row, join and identity is qualified by REGION as well as id, and **two processes
-behind one hostname is forbidden**.
+them knows another exists.** A `Region` carries BOTH its urls, and **a match id
+is minted per process, so every region has an `m1`** — every row, join and
+identity is qualified by REGION as well as id, and **two processes behind one
+hostname is forbidden**.
 
 → **[`docs/multiplayer.md`](docs/multiplayer.md)** — the authority model and what
-it does not defend against, the roster and the bench, the deploy ask, what a
-death owes each side, the interpolation clock and its easy sign error, the
-rewind, the lobby and the regions' two headers, and what is not built.
-
+it does not defend against, the roster and the bench, the botless match and the
+row that says so, the deploy ask, what a death owes each side, the interpolation
+clock and its easy sign error, the rewind, the drive verdict and the correction
+under it, the lobby and the regions' two headers, and what is not built.
 ## Conventions
 
 - **All tunables live in `src/config/`** (`CONFIG`, `as const`). No gameplay magic
@@ -1976,86 +1377,45 @@ rewind, the lobby and the regions' two headers, and what is not built.
   tips, and the only thing that reaches `pitchPerShot`. `recoilImpulse` is the
   SHOVE, and it reaches no angle at all: the settle spring's constants, the
   post-shot unsteadiness, the view punch's amplitude and the viewmodel's own
-  travel. They are physically different quantities (muzzle rise is a bore-axis
-  moment arm; the shove is the cartridge) and in this table they are frequently
-  inverted — the pistol flips at 1.15 on a shove of 0.55 and the LMG shoves 0.9
-  and flips 0.7. **A weapon that sets one of them from the other has not said
-  anything.**
+  travel. They are physically different quantities and in this table they are
+  frequently inverted — the pistol flips at 1.15 on a shove of 0.55, the LMG
+  shoves 0.9 and flips 0.7. **A weapon that sets one of them from the other has
+  not said anything.**
 - **Recoil is an ARREST and a HAUL and must never become a spring again** —
-  [`src/core/recoilCurve.ts`](src/core/recoilCurve.ts), run by both the aim
-  (`CONFIG.recoil.settle`) and the weapon on screen (`CONFIG.recoil.kick`). It
-  has been a first-order decay (no rise: the kick landed in one frame) and a
-  damped spring, and **the spring is the instructive failure** — symmetric about
-  its peak and smooth through it, so the excursion read as ANIMATION rather than
-  impact. Nothing about a gun wants to be where it started: the charge hands it
-  a velocity, the grip ARRESTS that, and the shooter HAULS it back at a rate,
-  after a reaction. **The CORNER between the arrest and the haul is the
-  feature.** `riseTurns` is what keeps the peak linear in the impulse — under
-  ~2.5 the kick a weapon states stops being the kick it delivers — and
-  `haulRamp` eases the haul in about the handover, because a corner in the
-  POSITION must not be a step in the VELOCITY: switching the haul on put its
-  whole rate into one frame, which is an unbounded acceleration and reads as a
-  dropped frame.
-- **Recoil is tuned against the FRAME as well as against the gun.** A 60 Hz
-  display samples every 16.7 ms, and nothing that completes in two samples can
-  read as motion however right its curve is — it reads as a strobe. The first
-  tuning of the model above put an aimed rifle's whole excursion inside 41 ms
-  (2.5 frames) and the action's two opposite-signed beats 1.7 frames apart,
-  where they alias into jitter rather than resolving as two events. Both were
-  slowed to span ~5 frames or more. **A change that takes an excursion back
-  under that has made recoil jerkier whatever it did to the arithmetic**, and
-  the action's beats are deliberately LEGIBLE rather than literal for the same
-  reason — a mechanism the frame cannot resolve is noise, and noise is not more
-  faithful for having the right timing.
-- **The STANCE changes recoil's TIMING, not just its amplitude** (a three-point
-  lock and two arms are two mechanical systems): the rifle is 59 ms up and 254
-  down aimed against 112 and 471 at the hip. **The aimed pair is measured off
-  reference footage and the hip pair is scaled from it** — see
-  `CONFIG.recoil.settle`. **`CONFIG.recoil.kick.action` is the
-  carrier** — two opposite-signed `impulse()` beats on `Player.sinceShot`, which
-  is what makes a self-loader read as a machine; it costs no state, never
-  touches the aim, and **a `boltCycle` weapon is exempt** because
-  `CONFIG.viewmodel.cycle` already plays its action as a gesture.
+  [`src/core/recoilCurve.ts`](src/core/recoilCurve.ts), run by both the aim and
+  the weapon on screen. It has been a first-order decay and a damped spring, and
+  the spring is the instructive failure: symmetric about its peak and smooth
+  through it, so the excursion read as ANIMATION rather than impact. Nothing
+  about a gun wants to be where it started — the charge hands it a velocity, the
+  grip ARRESTS that, and the shooter HAULS it back at a rate, after a reaction —
+  and **the CORNER between the arrest and the haul is the feature**. **The
+  STANCE changes its TIMING, not just its amplitude** (a three-point lock and
+  two arms are two mechanical systems). **It is tuned against the FRAME as well
+  as against the gun**: nothing that completes in two samples of a 60 Hz display
+  can read as motion however right its curve is, so **an excursion taken back
+  under ~5 frames has made recoil jerkier whatever it did to the arithmetic**.
 - **Spend recoil's visual budget on the MODEL, not the aim.** `kickPitch` and
-  `kick.adsMult` move as a PAIR: their product is what an aimed weapon takes —
-  a rotation while aimed takes the fitted sight's reticle off the axis the
-  rounds fly down — and the bare `kickPitch` is what hip fire takes, where there
-  is no sight on the eye and the flip is free. **`kickWeight` reaches the model
-  ONCE**: `Player` strikes the kick with it and `ViewModel` must not multiply by
-  it again — it did, which SQUARED the weight while `kick.adsClearance`'s `fit`
-  applies it once, so the bound under-predicted its own travel and the bolt
-  gun's 6x eyepiece reached 1.59 cm inside a 5 cm near plane. **`stackPeak` is
-  MEASURED through a held trigger, never derived**: what a string stacks to
-  depends on the haul, and a `haul` slowed for smoothness once took the SMG's
-  hip stack to 5.15x.
-  `CONFIG.recoil.shake` is the other half of a heavy round's bill and is spent
-  on the hold SWAY rather than as an offset of its own (the reason the bolt
-  cycle's wobble is), so a heavy round costs the follow-up rather than a fixed
-  pull-down.
-- Recoil only partly springs back: `CONFIG.recoil.recoverFraction` (0.93) returns
-  93% and pushes 7% permanently into the player's own `pitch`/`yaw`. **This was
-  0.7, and 0.7 was an explicit product decision that a fully-recovering recoil is
-  decoration** — it was moved to match measured reference footage, where an
-  isolated round is ~90% recovered 300 ms later and a 28-round string leaves
-  0.37° behind. It is the first number to move back if the rifle proves too easy
-  to hold. **That share is HANDED OVER at the haul's own rate
-  rather than applied at the shot** (`CameraSystem.owedPitch`): applied whole it
-  is a step function underneath a rise, which is what the rise exists to remove.
-  The total is unchanged. **`CameraSystem.addFlinch` is the one aim kick that is
-  100% springy and must stay that way**: a hit *taken* is not a choice the
-  player made, so a permanent share would ratchet the view skyward over one
-  exchange — now stated as "it queues nothing", since the owed buckets are the
-  only route into `pitch`/`yaw`. It shares the recoil axes rather than owning
-  its own, for the reason the bob phase has a single integrator.
-- **A string of shots has a SHAPE, and the shape is two envelopes over one
-  counter.** `CONFIG.recoil.pattern` tapers the vertical toward `pitchSettled`
-  and ramps the horizontal up from `yawStart` across `patternShots`, both keyed
-  to `Player.stringShots`, so the kick's *direction* rotates as a string runs.
-  The pair no longer leaves the total walk alone — the walk is what the
-  reference match cut, to 0.71 deg of climb and 0.31 of drift over the rifle's
-  magazine from the hip (from 10.6 and 2.4) — and **those two figures are derived —
-  re-derive them rather than assuming they followed** whenever `pattern`,
-  `pitchPerShot`, `yawPerShot` or `firstShotMult` moves.
+  `kick.adsMult` move as a PAIR — their product is what an aimed weapon takes,
+  a rotation while aimed taking the fitted sight's reticle off the axis the
+  rounds fly down — and the bare `kickPitch` is what hip fire takes. **`kickWeight`
+  reaches the model ONCE**: `Player` strikes the kick with it and `ViewModel`
+  must not multiply by it again, which SQUARED the weight and put the bolt gun's
+  6x eyepiece inside the near plane. **`stackPeak` is MEASURED through a held
+  trigger, never derived**, and so are the pattern's total walk figures —
+  **re-derive them rather than assuming they followed** whenever
+  `CONFIG.recoil.pattern`, `pitchPerShot`, `yawPerShot` or `firstShotMult`
+  moves.
+- Recoil only partly springs back: `CONFIG.recoil.recoverFraction` (0.93)
+  returns 93% and pushes 7% permanently into the player's own `pitch`/`yaw`.
+  **It is the first number to move back if the rifle proves too easy to hold**,
+  0.7 having been an explicit product decision that a fully-recovering recoil is
+  decoration. **That share is HANDED OVER at the haul's own rate rather than
+  applied at the shot** (`CameraSystem.owedPitch`), applied whole being a step
+  function underneath a rise. **`CameraSystem.addFlinch` is the one aim kick
+  that is 100% springy and must stay that way**: a hit *taken* is not a choice
+  the player made, so a permanent share would ratchet the view skyward over one
+  exchange — it queues nothing, the owed buckets being the only route into
+  `pitch`/`yaw`.
 - **The recoil vector is built in `Player.recoilKick`, never at the call site.**
   Every number in it is the weapon's or the body's, and the horizontal is drawn
   ONCE per shot into `Player.kickDrift` so the aim, the viewmodel's lean and the
