@@ -706,6 +706,11 @@ export class Sfx {
   private lz = 0;
   /** Audio-clock time of the last impact, for that method's own rate limit. */
   private lastImpact = 0;
+  /**
+   * Audio-clock time of the last FULL near miss — see `nearMiss`, whose rate
+   * limit drops its three supporting layers and never its snap.
+   */
+  private lastNearMiss = 0;
 
   unlock(): void {
     if (!this.ctx) {
@@ -976,23 +981,114 @@ export class Sfx {
    * A round cracking past the player's head. Not a hit and not a hit sound —
    * the supersonic N-wave, which arrives *before* the report of the rifle that
    * fired it and is the only thing that tells you you are being shot at rather
-   * than shot near. Wired from `CombatSystem.onNearMiss` for the player only.
+   * than shot near. Wired from `CombatSystem.onNearMiss` for the player only
+   * offline, and from the authority's `nearmiss` event in a match — ONE method
+   * for both, so the two simulations cannot make different noises about the
+   * same round.
+   *
+   * **FIVE LAYERS MODELLED ON A RECORDED FLYBY**, and the shape they make
+   * between them is the whole of why this is no longer one bandpassed burst.
+   * The recording is four stages rather than a click: a whistle SWELLING for
+   * ~55 ms, a snap whose energy sits at 500–1300 Hz under a bright shelf that
+   * runs flat out to 13 kHz, a low body around 320 Hz over the 60 ms after it,
+   * and a hiss departing over a further ~200 ms. The old single burst was
+   * centred at 3400 Hz with neither the approach nor the tail, which is the
+   * difference between a round going past and a twig snapping — what the ear
+   * reads as a projectile is the swell and the departure, and a bright
+   * transient on its own is just a transient.
+   *
+   * **The layers OVERLAP rather than abut, and that is the constraint the
+   * numbers were fitted under.** `burst`'s decay is percussive by design — it
+   * is 57 dB down by the end of its own `dur` — so laying these end to end
+   * left audible holes between the stages and the cue read as three separate
+   * events. Each layer now starts inside the one before it, and the summed
+   * envelope falls monotonically from the snap to silence, within 2–4 dB of
+   * the recording the whole way down.
+   *
+   * **The SWELL is the one thing here that looks like added latency and is
+   * not.** It sits in front of the snap, but its own onset is still this frame
+   * and 15 dB down, so what it delays is the loudest moment rather than the
+   * cue — and the snap still lands well before the report of the rifle that
+   * sent it, which is the ordering that matters. A shock front physically has
+   * no approach; this is the recorded convention, and the recording is the
+   * model that was asked for.
+   *
+   * **The pan is STATIC even though the recording passes right to left**, and
+   * that is a decision rather than a shortfall. `at` is the point of closest
+   * approach and nothing here knows which way the round was travelling, so a
+   * sweep would be wrong half the time — and WHICH SIDE is the only part of
+   * this cue a player can act on. A blurred bearing costs more than a missing
+   * Doppler.
    */
   nearMiss(at: Vector3): void {
+    if (!this.ctx) return;
     const v = 0.9 + Math.random() * 0.2;
     // Panned from the point of closest approach, so the crack says WHICH SIDE
     // as well as "you are being shot at" — which is the difference between a
     // cue you can act on and one that only raises your pulse. It was mono for
     // as long as it existed, and it is the most urgent sound in the game.
     const panner = this.panner(at);
+    // **The SNAP is never rate-limited and the other three always are**, which
+    // is the opposite way round from `impact` and is why the gate sits here
+    // rather than at the top of the method. A burst walked onto the player is
+    // a string of these, and at five layers over 300 ms a second of that would
+    // hold more voices than the whole budget — the snap included, since
+    // `burst` refuses at the cap. Overlapping swells and tails are mud anyway;
+    // what the ear separates in a string is the snaps, so those are what
+    // survive.
+    const now = this.ctx.currentTime;
+    const full = now - this.lastNearMiss >= CONFIG.audio.nearMissInterval;
+    if (full) this.lastNearMiss = now;
+
+    // 1. THE APPROACH. Noise swelling into the snap and sliding DOWN through
+    //    it — the recording's whistle peaks at 1009 Hz before the pass and its
+    //    snap at 635, and that fall is the Doppler. It is what says the thing
+    //    was MOVING rather than merely loud, and it is the reason `burst` has
+    //    a `rise` at all.
+    if (full) {
+      this.burst({
+        dur: 0.082, rise: 0.052, vol: 0.32, type: "bandpass",
+        freq: 1500 * v, freqEnd: 820, q: 1.4, out: panner,
+      });
+    }
+    // 2. THE SNAP, and it is LOW. The loudest moment in the recording is at
+    //    635 Hz, not the 3400 this used to be built at, which is most of what
+    //    was wrong with the one-layer version. It runs long and sweeps to 300
+    //    so its own second stage becomes the low ring the tail sits on.
     this.burst({
-      dur: 0.02, vol: 0.5, type: "bandpass", freq: 3400 * v, freqEnd: 1100,
-      // No propagation delay, and that is the entire point of the N-wave: it
-      // arrives BEFORE the report of the rifle that sent it. The point is
-      // inside 1.9 m (`hitRadius` + `suppressRadius`) anyway, where the delay
-      // would be five milliseconds. Send is small for the same reason — a
-      // crack past your head is direct sound, not the valley answering.
-      q: 0.9, send: 0.15, out: panner,
+      dur: 0.115, vol: 0.32, type: "bandpass", freq: 760 * v, freqEnd: 300,
+      // No propagation delay beyond the swell's own, and that is the entire
+      // point of the N-wave: it arrives BEFORE the report of the rifle that
+      // sent it. The point is inside 1.9 m (`hitRadius` + `suppressRadius`)
+      // anyway, where the delay would be five milliseconds. Send is small for
+      // the same reason — a crack past your head is direct sound, not the
+      // valley answering.
+      q: 1.1, send: 0.15, out: panner, delay: 0.052,
+    });
+    // 3. THE SNAP'S BRIGHT EDGE, and it has to be its own layer: the
+    //    recording's shelf is flat from 4 to 13 kHz through the snap, and no
+    //    single bandpass wide enough to hold 635 Hz also delivers that.
+    //    Shorter than the body of the snap, because the top goes first.
+    this.burst({
+      dur: 0.03, vol: 0.065, type: "highpass", freq: 3600 * v, q: 0.7,
+      out: panner, delay: 0.052,
+    });
+    if (!full) return;
+    // 4. THE BODY. 320 Hz is the recording's dominant band for the 60 ms after
+    //    the snap, and this layer is what holds the middle of the decay up —
+    //    without it the cue falls 13 dB below the recording by 100 ms and
+    //    stops sounding like anything with mass in it.
+    this.burst({
+      dur: 0.26, vol: 0.165, type: "bandpass", freq: 360 * v, freqEnd: 230,
+      q: 1.6, send: 0.1, out: panner, delay: 0.058,
+    });
+    // 5. THE DEPARTURE. The recording's last 200 ms peak at 10 kHz — that is
+    //    air leaving, not shock — so this is hiss and nothing else, and unsent
+    //    because a tail into the shared reverb would be the valley answering a
+    //    round that never touched it.
+    this.burst({
+      dur: 0.3, vol: 0.055, type: "highpass", freq: 7000 * v, q: 0.7,
+      out: panner, delay: 0.062,
     });
   }
 
@@ -3286,6 +3382,9 @@ export class Sfx {
    * its length and then trails. That envelope, applied to filtered noise, is
    * what the ear reads as "something struck", and it is doing more work here
    * than any of the frequency choices above it.
+   *
+   * **`rise` is the escape hatch from exactly that**, and the only shape this
+   * helper makes that is not percussive — see the field.
    */
   private burst(b: {
     dur: number;
@@ -3295,6 +3394,18 @@ export class Sfx {
     freq?: number;
     /** Swept to, over the layer's duration. */
     freqEnd?: number;
+    /**
+     * Seconds of SWELL in front of the two-stage decay, inside `dur` rather
+     * than in front of it — the layer still starts now, still ends at `dur`,
+     * and still sweeps its filter across the whole of it.
+     *
+     * **It is the one shape this helper could not make, and the one thing
+     * that reads as APPROACH.** The decay below is what says "something was
+     * struck"; a source coming towards the ear says the opposite, and no
+     * choice of frequency or duration substitutes for it. `nearMiss` is the
+     * only caller, and a second one should be something that ARRIVES.
+     */
+    rise?: number;
     q?: number;
     /** Seconds from now, on the audio clock — not a setTimeout. */
     delay?: number;
@@ -3315,8 +3426,19 @@ export class Sfx {
       const src = this.ctx.createBufferSource();
       src.buffer = this.noiseBuffer;
       const gain = this.ctx.createGain();
-      gain.gain.setValueAtTime(b.vol, t0);
-      gain.gain.exponentialRampToValueAtTime(b.vol * 0.18, t0 + b.dur * 0.15);
+      // The swell, when there is one. Clamped short of `dur` so the two
+      // stages below always have something to fall over — a `rise` at or past
+      // the whole length would put the second ramp at or before the first and
+      // leave the layer stuck at full gain until it stopped.
+      const rise = Math.min(b.rise ?? 0, b.dur * 0.8);
+      if (rise > 0) {
+        gain.gain.setValueAtTime(b.vol * 0.03, t0);
+        gain.gain.exponentialRampToValueAtTime(b.vol, t0 + rise);
+      } else {
+        gain.gain.setValueAtTime(b.vol, t0);
+      }
+      const decay = b.dur - rise;
+      gain.gain.exponentialRampToValueAtTime(b.vol * 0.18, t0 + rise + decay * 0.15);
       gain.gain.exponentialRampToValueAtTime(0.0001, t0 + b.dur);
       let head: AudioNode = src;
       if (b.type && b.freq) {

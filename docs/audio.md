@@ -41,6 +41,25 @@ that second claim** without bringing a surface table and a variant set with it,
 which is the whole argument and is unchanged — and an ambient bed cannot make
 it at all.
 
+**A RECORDING CAN ALSO BE A MODEL RATHER THAN A ROW, and `Sfx.nearMiss` is
+the case that says so.** Its five layers were fitted against a recorded flyby
+— an untracked reference, so the measurement rather than the file is what is
+written down in that method: a whistle swelling for ~55 ms, a snap at 500–1300
+Hz under a shelf flat out to 13 kHz, a body around 320 Hz for the 60 ms after
+it, and a hiss departing over a further ~200 ms. The summed envelope tracks
+that recording within 2–4 dB from the snap to silence, and NOTHING WAS ADDED
+TO `audio/` — no seventeenth file, no budget spent, no fallback to argue about.
+**Reach for this before reaching for a row**: a cue whose problem is its SHAPE
+is a cue synthesis can still answer, and the boundary above only has to be
+tested by a sound whose problem is its TIMBRE.
+
+**What it did cost is VOICES, which is the other budget**, and that is why
+`audio.nearMissInterval` exists. Five layers over 300 ms is a fifth of
+`maxVoices` per round, and a burst walked onto the player is a string of them
+— so past that interval the swell, the body and the departure are dropped and
+the SNAP always plays. A cue that gets LONGER owes this question; one that
+only gets a different filter does not.
+
 **The two BLAST rows are the cheapest answer that boundary has ever given to
 "one more sound", and they are cheap for a structural reason rather than a
 lucky one.** There is ONE blast in this game — `blastAt` takes a `power`, the

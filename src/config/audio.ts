@@ -137,6 +137,23 @@ export const audio = {
   impactRange: 30,
   impactInterval: 0.045,
   impactReserve: 6,
+  /**
+   * The floor between two FULL near misses, and it is the same argument as
+   * `impactInterval` with the priorities inverted.
+   *
+   * A near miss is five layers over 300 ms now that it is modelled on a
+   * recorded flyby (`Sfx.nearMiss`), and a burst walked across the player is a
+   * string of them — at eight a second that is more held voices than
+   * `maxVoices`, and `burst` refuses at the cap, so the crack itself would be
+   * the thing that went missing. Past this the swell, the body and the
+   * departure are dropped and the SNAP always plays: overlapping approaches
+   * and tails are mud, and the snaps are what the ear separates in a string
+   * anyway.
+   *
+   * Longer than `impactInterval` by four times because the cue is four times
+   * longer, not because it matters less. Roughly five full flybys a second.
+   */
+  nearMissInterval: 0.2,
 
   /**
    * How close somebody else's weapon has to be for its low roll to be built at
