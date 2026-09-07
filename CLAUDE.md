@@ -745,6 +745,22 @@ FLOOR as well as to navigation, and anything SOLID that MOVES owes the probe
 a query of its own, because the boxes are baked once at map load —
 `Vehicle.deckAt`, and only that.
 
+**That probe is a POINT and a body is not, so a body can come to REST inside a
+collider — and no sweep gets it out again.** Gravity is added to `y` and never
+swept, so a body coming down beside a 0.16 m guard rail arrives in the timber,
+and `moveWithCollisions` from an embedded start is an EJECTION rather than a
+sweep: measured in a round, a body standing in a rail left it at a seventh of
+walking pace and pressing AWAY from the rail moved it the other way. **Every
+body in this game therefore owes a push-out, and there is one primitive for it
+with three callers** — `ObstacleField.resolve`, which keeps a bot out of a
+tree, a hull out of a shopfront (`Vehicle.freeFromWalls`) and now a player out
+of a railing (`Player.freeFromProps`), each at its OWN radius and its own
+band, and a body's is the sweep's own so the push can never ask for room the
+sweep does not already hold it out to. The authority agrees by construction:
+`server/validate.ts` runs the same query and calls a position deeper than
+`nav.bodyRadius` a noclip, so a body welded in a prop is one being corrected
+back into it every input tick.
+
 | Kind         | visible | pickable | collides | `solid` | merged | frozen |
 | ------------ | ------- | -------- | -------- | ------- | ------ | ------ |
 | **Visual**   | yes     | **no**   | **no**   | —       | yes    | yes    |

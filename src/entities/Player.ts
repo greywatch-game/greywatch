@@ -606,6 +606,8 @@ export class Player implements Combatant {
    * the first one's feet.
    */
   private readonly nearby: AbstractMesh[] = [];
+  /** Where the push-out would put the body. See `freeFromProps`. */
+  private readonly clear = new Vector3();
   /**
    * The map's floor, and the probe's floor of last resort. Flat until a map is
    * built. Held rather than reached for through the scene because it is the one
@@ -1444,6 +1446,94 @@ export class Player implements Combatant {
   }
 
   /**
+   * Pushes the body back out of anything it has ended up INSIDE, and it is the
+   * only thing in a frame that moves a body without the player asking.
+   *
+   * ## How a body gets inside a prop in the first place
+   *
+   * The sweep is HORIZONTAL and the ground probe is a POINT. Nothing sweeps
+   * the vertical — gravity is a number added to `y` — so a body coming down
+   * beside something whose top face is above its feet arrives INSIDE it, and
+   * the probe cannot notice, because it is one column at `root.position` and
+   * the capsule around that column is 0.9 m wide. A guard rail is 0.16 m of
+   * it. Jumping at one and letting go of the stick over it is the everyday
+   * way in: the apex of a jump is 1.64 m and `GUARD_HEIGHT` is 1.1, so the
+   * body clears the top, the sweep stops being able to see the rail at all
+   * while it is up there, and gravity puts it down half inside the timber.
+   *
+   * ## …and why the sweep cannot get it out again
+   *
+   * `moveWithCollisions` from an embedded start is not a sweep but an
+   * EJECTION, and it is a bad one: `_getResponse` scales the step by a
+   * nearest distance of ~0, slides what is left along the plane through the
+   * contact point, and spends the retry budget doing it. What comes out is a
+   * fixed CRAWL of about 4.5 mm per call — per CALL, so it is worse the slower
+   * the machine — against the 4.6 m/s the stick is asking for. Measured in a
+   * round on Hollowmere's boardwalk, a body standing in one of its rails and
+   * walking straight out of it covered **0.07 m in fifteen frames** where it
+   * covers 0.53 with this; and pressing AWAY from the rail moved it the other
+   * way, because the ejection direction is the collider's opinion rather than
+   * the stick's. That is the whole of getting hung on a railing, and it is the
+   * bug `Vehicle.freeFromWalls` already exists for one body-size up: a hull
+   * sat in a wall through 1.5 s of full throttle and moved 0.02 m.
+   *
+   * ## What it asks
+   *
+   * `ObstacleField.resolve` — the same bucketed push-out that keeps a bot out
+   * of a tree and a hull out of a shopfront — in the BODY's own band: a top
+   * face within `stepHeight` is a step to walk up rather than something to be
+   * ejected from, and an underside above the capsule is a doorway to walk
+   * under. The radius is the sweep's own `ellipsoid.x` and not a number of its
+   * own, which is what keeps the two from arguing: the push can never ask for
+   * room the sweep does not already hold a body out to, so on every frame the
+   * sweep did its job this costs one bucket lookup and moves nothing. That is
+   * measured rather than argued — walking eight ways off the spawns on
+   * Hollowmere, Coldharbour and Harrowmead, indoors and out, it fired on **0
+   * of 26,000 frames**, which is what a push that only ever answers a broken
+   * state looks like from the inside.
+   *
+   * It also settles what the AUTHORITY thinks. `server/validate.ts` runs this
+   * same `resolve` over every reported position and calls one deeper than
+   * `nav.bodyRadius` a noclip — so a body welded inside a rail is a body being
+   * corrected back into it on every input tick, which is why this reads as far
+   * worse in a match than offline.
+   *
+   * **It is a rate and never a snap**, for `freeFromWalls`'s reason: what
+   * arrived gradually can leave gradually, and a body that has sunk into
+   * something much larger than itself is not owed a jump across the room.
+   * Nothing here touches `velY` — being inside a prop is a position that
+   * should never have been reached, not a fall that has been interrupted.
+   */
+  private freeFromProps(dt: number): void {
+    const obstacles = this.obstacles;
+    if (!obstacles) return;
+    const p = CONFIG.player;
+    const pos = this.root.position;
+    const e = this.root.ellipsoid;
+    const feet = pos.y - this.groundY;
+    if (
+      !obstacles.resolve(
+        pos.x,
+        feet,
+        pos.z,
+        e.x,
+        this.clear,
+        feet + p.stepHeight,
+        feet + this.groundY + e.y,
+      )
+    ) {
+      return;
+    }
+    const dx = this.clear.x - pos.x;
+    const dz = this.clear.z - pos.z;
+    const want = Math.hypot(dx, dz);
+    if (want < 1e-4) return;
+    const step = Math.min(want, p.freeRate * dt);
+    pos.x += (dx / want) * step;
+    pos.z += (dz / want) * step;
+  }
+
+  /**
    * Hands the player the world it stands on: the heightfield, the collider
    * boxes bucketed over it, whatever moves, and the same colliders as MESHES
    * for the sweep.
@@ -1596,6 +1686,13 @@ export class Player implements Combatant {
     } else {
       this.grounded = false;
     }
+
+    // Last word on where the body is. It runs after the snap rather than
+    // beside the sweep because the band it asks in is measured from the FEET,
+    // and the feet are not settled until the floor has been found — and
+    // because a frame that ended anywhere else would end with the body
+    // somewhere this had already rejected.
+    this.freeFromProps(dt);
 
     // --- the capsule still faces the camera yaw ---
     // Nothing renders off it any more, but the blob shadow underfoot is

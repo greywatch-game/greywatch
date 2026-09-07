@@ -134,6 +134,23 @@ export const player = {
   groundProbeLength: 3.0,
   /** Largest rise the probe will snap up onto without a jump. */
   stepHeight: 0.6,
+  /**
+   * How fast a body is pushed back out of something it has ended up inside,
+   * m/s. See `Player.freeFromProps`.
+   *
+   * Fast enough that the state is over inside a tenth of a second — a body
+   * half inside a rail is a bug being corrected, not a movement the player
+   * made, and every frame of it is a frame they are welded in place. Slow
+   * enough that the correction reads as being shoved off the thing rather
+   * than teleporting: at 8 m/s the deepest overlap a body-width prop can
+   * produce takes four frames at 60 Hz, and a body that has sunk into
+   * something much bigger slides out instead of jumping across the room.
+   *
+   * `vehicles.*.drive.freeRate` is the same number for a hull, and the two
+   * are deliberately separate: a seven-metre tank moved sideways at a body's
+   * rate is a teleport.
+   */
+  freeRate: 8,
 
   /**
    * The death cam: what happens between the round that killed you and the
