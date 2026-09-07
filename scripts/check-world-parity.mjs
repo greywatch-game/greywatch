@@ -74,8 +74,52 @@ function serverFingerprints() {
   return { ...dev, ...prod };
 }
 
-/** The browser's fingerprint for one map, from a real `MapBuilder` build. */
-async function clientFingerprint(browser, url, id) {
+/**
+ * How long a map gets to finish compiling before the readiness check gives up.
+ *
+ * Generous on purpose: the whole point is to fail on a scene that can NEVER be
+ * ready rather than on a slow one, and the failure path is the only one that
+ * spends this. Measured on the Windows box, every shipped map is ready inside
+ * a couple of seconds of the round appearing.
+ */
+const READY_TIMEOUT_MS = 30_000;
+
+/**
+ * What a browser has to say about one map: the nav-graph fingerprint, and
+ * whether the scene ever finished compiling.
+ *
+ * **The second question is a rider on this script rather than a script of its
+ * own, and the reason is that a browser is the expensive part.** `npm run
+ * build` must never need a GPU — `npm run shots` is deliberately the only thing
+ * here that does — so the build cannot ask, and this is the one gate that is
+ * run as a matter of routine AND already boots a real client and builds every
+ * map in the registry, dev maps included. Asking costs a few hundred
+ * milliseconds on top of a page that is open anyway.
+ *
+ * **What it is guarding is `scene.isReady()`, which is load-bearing for
+ * TOOLING and for nothing else.** Nothing in `src/` asks it; what does is
+ * `capture-map-shots.mjs`, because WebGPU compiles pipelines lazily and a
+ * settled frame count cannot tell a compiled map from a blank canvas. So a
+ * scene that can never be ready is a `npm run shots` that can never succeed —
+ * and it has happened, silently, for a day: an emissive `DynamicTexture` that
+ * nothing had ever `update()`d kept `StandardMaterial.isReadyForSubMesh`
+ * returning false on ONE disabled mesh, on every map, with the picture
+ * perfectly correct throughout. `VERIFYING.md` has the hunt.
+ *
+ * **Be honest about its reach**: this fires for anyone who runs parity, and
+ * `CLAUDE.md` asks for that after a change to the WORLD layer — which the
+ * change that broke it was not. It is a net rather than a proof, and it is
+ * worth having because the alternative net is somebody running `npm run shots`
+ * a month later and waiting two minutes for a message that names nothing.
+ *
+ * **It ASKS EVERY FRAME rather than once, and that is not politeness.**
+ * `Scene.isReady` walks every mesh, and asking is what starts a material
+ * compiling — the colliders and the effect pools carry no material of their
+ * own, so they answer false on the first call and clear themselves on later
+ * ones. A single call names hundreds of innocent meshes; the poll names the
+ * one that is actually stuck, which is what the failure report prints.
+ */
+async function inspectClient(browser, url, id) {
   const page = await browser.newPage();
   page.on("pageerror", (e) => console.error(`  [page] ${e.message}`));
   await page.addInitScript(
@@ -85,7 +129,7 @@ async function clientFingerprint(browser, url, id) {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
 
-  const fp = await page.evaluate(async () => {
+  const fingerprint = await page.evaluate(async () => {
     const g = window.__celshock;
     g.startRound();
     await new Promise((resolve) => {
@@ -99,8 +143,42 @@ async function clientFingerprint(browser, url, id) {
     return worldFingerprint(g.map);
   });
 
+  const readiness = await page.evaluate(
+    (deadlineMs) =>
+      new Promise((resolve) => {
+        const s = window.__celshock.scene;
+        const until = performance.now() + deadlineMs;
+        let frames = 0;
+        const seen = s.onAfterRenderObservable.add(() => {
+          frames++;
+          if (s.isReady()) {
+            s.onAfterRenderObservable.remove(seen);
+            resolve({ ready: true, frames });
+            return;
+          }
+          if (performance.now() < until) return;
+          s.onAfterRenderObservable.remove(seen);
+          // Name the offenders, with the material each one's first submesh
+          // actually resolves to — a mesh carrying none answers with the
+          // scene's default, and which of the two it is decides where to look.
+          resolve({
+            ready: false,
+            frames,
+            blocking: s.meshes
+              .filter((m) => m.subMeshes && m.subMeshes.length && !m.isReady(true))
+              .slice(0, 8)
+              .map((m) => {
+                const mat = m.subMeshes[0].getMaterial();
+                return `${m.name} [${m.material ? mat.name : `default: ${mat?.name}`}]`;
+              }),
+          });
+        });
+      }),
+    READY_TIMEOUT_MS,
+  );
+
   await page.close();
-  return fp;
+  return { fingerprint, readiness };
 }
 
 // ---------------------------------------------------------------------------
@@ -111,11 +189,16 @@ const vite = await startDevServer(root);
 
 let browser;
 let failures = 0;
+let unready = 0;
 try {
   browser = await launchClient();
 
   for (const { id } of [...MAPS, ...DEV_MAPS]) {
-    const client = await clientFingerprint(browser, vite.url, id);
+    const { fingerprint: client, readiness } = await inspectClient(
+      browser,
+      vite.url,
+      id,
+    );
     const mine = server[id];
     const keys = Object.keys(client);
     const bad = keys.filter((k) => String(client[k]) !== String(mine?.[k]));
@@ -132,6 +215,20 @@ try {
         console.error(`        ${k}: client ${client[k]} vs server ${mine?.[k]}`);
       }
     }
+
+    // Counted separately from the parity verdict, because they are separate
+    // claims about the same page: one is whether the SERVER agrees about this
+    // world, the other whether the CLIENT ever finished compiling it.
+    if (readiness.ready) {
+      console.log(`      scene ready after ${readiness.frames} frames`);
+    } else {
+      unready++;
+      console.error(
+        `FAIL  ${id}: scene never became ready (${readiness.frames} frames, ` +
+          `${READY_TIMEOUT_MS / 1000} s)`,
+      );
+      for (const m of readiness.blocking) console.error(`        ${m}`);
+    }
   }
 } finally {
   await browser?.close();
@@ -144,6 +241,15 @@ if (failures > 0) {
       "Usually this means the bake is stale (`npm run collision`) or that\n" +
       "`server/world.ts` has drifted from `MapBuilder`'s collider half.\n",
   );
-  process.exit(1);
 }
-console.log("\nserver and client agree on every map\n");
+if (unready > 0) {
+  console.error(
+    "\nA scene that never becomes ready breaks `npm run shots`, which has no\n" +
+      "other way to tell a compiled map from a blank canvas — and nothing in\n" +
+      "`src/` asks it, so there is no symptom in the game at all. The usual\n" +
+      "cause is a `DynamicTexture` on a material nothing has ever `update()`d;\n" +
+      "the meshes named above are where to look, and VERIFYING.md has the hunt.\n",
+  );
+}
+if (failures > 0 || unready > 0) process.exit(1);
+console.log("\nserver and client agree on every map, and every scene compiles\n");

@@ -1086,6 +1086,24 @@ compares neighbours against `stepHeight`, so *any* perturbation flips whatever
 was sitting exactly on a boundary. The bake emits full precision for that reason;
 do not "tidy" it.
 
+**It carries a RIDER that is nothing to do with the server**, and the reason is
+that a browser is the expensive part: this is the one gate run as a matter of
+routine that already boots a real client and builds every map in the registry,
+so it also asks each of them whether `scene.isReady()` ever becomes true, and
+prints the frame count it took (2-3 on every shipped map). Nothing in `src/`
+asks that question — what does is `capture-map-shots.mjs`, which has no other
+way to tell a compiled map from a blank canvas — so a scene that can never be
+ready is a `npm run shots` that can never succeed, with no symptom in the game
+at all, and that has already happened for a day. `npm run build` cannot take
+the check, because the build must never need a GPU.
+
+**It asks EVERY FRAME rather than once**, which is what makes the failure report
+name the one mesh that is stuck rather than every collider on the map: asking is
+what starts a material compiling, so a mesh carrying no material of its own
+answers false on the first call and clears itself on later ones. Proved both
+ways — with the kit backdrop's paint taken back out, all seven maps fail and
+each names `viewmodel_kitBackdrop [kitBackdrop]` and nothing else.
+
 `npm run build` refuses to proceed when a bake is older than the layout it came
 from. A stale bake is a server whose walls stand somewhere else from its
 clients', and it is invisible until somebody is shot through a house.

@@ -170,7 +170,10 @@ you are on before you believe anything else in this section.
   usually a texture rather than a shader. Material-less meshes (colliders, the
   effect pools) show up in that list on the FIRST call and clear themselves on
   later ones, because asking is what compiles them; ask every frame before
-  believing the list.
+  believing the list. **`npm run parity` asks this of every map now**, prints the
+  frame count each one took, and fails the run naming the meshes that are stuck
+  — which is the guard the shots script could not be, because nobody runs a
+  photographer as a check.
 - **Do not touch `src/` while a dev-server-backed script is running.** Vite's
   HMR full-reloads the page on a change under the module graph, and what that
   looks like from Playwright is `page.evaluate: Execution context was
