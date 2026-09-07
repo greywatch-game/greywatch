@@ -69,17 +69,36 @@ export const graphics = {
     /** Rotation in one frame (radians) below which the pass is skipped. */
     minRotation: 0.0015,
     /**
-     * Radial falloff, sharp at the crosshair and full past the outer edge.
-     * The viewmodel is fixed in screen space and must not smear with the
-     * world behind it, and there is no depth in this pass to tell them
-     * apart — so the centre of the frame, where the weapon sits and where
-     * the eye is tracking, keeps its edges. Widening the sharp core is the
-     * second subtlety lever after `strength`, and the better-behaved one:
-     * it takes the blur off exactly the pixels the player is reading and
-     * leaves it where peripheral motion belongs.
+     * THE WEAPON, IN METRES: held sharp inside `nearSharp`, smearing with
+     * the world by `nearFull`. The viewmodel is fixed in screen space and
+     * must not smear with the world behind it, and depth is what names it —
+     * `ink.near`'s argument spent a second time. Measured, hip pose, every
+     * gun in the kit: the viewmodel occupies 0.05 m to 1.39 m of the lens
+     * (the sniper's muzzle is the deepest), so the sharp side has to clear
+     * 1.4 or a whip pan smears the front half of the barrel and not the
+     * back. What the band costs is that world geometry inside `nearFull`
+     * stays sharp too — a wall being hugged, a floor at a crouch — which is
+     * the trade a pass with no velocity buffer has to make somewhere, and
+     * the far cheaper half of it to be wrong about.
      */
-    maskInner: 0.35,
-    maskOuter: 0.85,
+    nearSharp: 1.5,
+    nearFull: 2.4,
+    /**
+     * Radial falloff, sharp at the crosshair and full past the outer edge.
+     * It is about the EYE alone now: it tracks the crosshair, so that is
+     * where a smear is read AS a smear rather than felt as speed, and it is
+     * the second subtlety lever after `strength`.
+     *
+     * **It used to be the weapon's mask as well, and at that job it was
+     * backwards** — the gun sits low and RIGHT, which is where a radial mask
+     * blurs hardest, so the most smeared thing in the frame was the one thing
+     * that never moves in it. The core it bought was spent on the middle
+     * distance instead, where the smear is the whole effect. The band above
+     * took that job, so this is a good deal narrower than the 0.35/0.85 it
+     * was; those two numbers are the revert if a smaller frame is wanted.
+     */
+    maskInner: 0.2,
+    maskOuter: 0.75,
   },
   /**
    * Hard-edged directional shadows from the key light (the moon), plus a

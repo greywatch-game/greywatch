@@ -10,6 +10,10 @@
  * is teleported, or the jump reads as one blurred frame. Turning it off is a
  * DETACH (`pass` + `setEnabled`, sequenced by Game.setMotionBlurEnabled), not a
  * zeroed strength: the shader's early-out is still a full-screen copy.
+ * It SAMPLES the frame's depth (`FrameDepth`, shared with `CelInk`) for one
+ * question only: is this pixel the WEAPON, which is the one thing on screen
+ * this pass must not touch. That image belongs to the FIRST pass in the
+ * camera's chain, so this one has to stay downstream of it.
  * Its shader is hand-written WGSL, and `shaderLanguage` on the PostProcess is
  * load-bearing rather than declarative: the constructor defaults to GLSL and
  * would look this pass up in a store nothing writes any more. See
@@ -24,6 +28,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { FrameDepth } from "./FrameDepth";
 
 /**
  * Motion blur for the look, and only for the look.
@@ -40,26 +45,83 @@ import { CONFIG } from "../config";
  * rest would mean a `GeometryBufferRenderer` re-rendering the map — which the
  * cel materials would also have to survive, the same wall `GodRays` hit.
  *
+ * THE WEAPON DOES NOT MOVE IN SCREEN SPACE AND THEREFORE MUST NOT SMEAR, and
+ * it is the one place the argument above breaks down. The viewmodel is
+ * parented to the camera: a rotation moves every world pixel and moves the gun
+ * by exactly nothing, so the shift this pass computes is right for the whole
+ * frame EXCEPT the object filling the bottom third of it. Smeared, it reads as
+ * a dirty lens rather than as motion.
+ *
+ * It used to be answered with a RADIAL mask — sharp at the crosshair, full at
+ * the edges — and that was backwards for the object it was aimed at. The
+ * weapon sits LOW AND RIGHT, which is exactly where that mask blurred hardest,
+ * so the gun was the most smeared thing in the frame; what the sharp core
+ * bought instead was the middle distance, which is where the smear is the
+ * whole effect. Depth names the weapon exactly, which is `ink.near`'s argument
+ * spent a second time: the viewmodel is drawn between 0.05 m and 1.4 m of the
+ * lens (MEASURED, hip pose, every gun in the kit — the sniper's muzzle is the
+ * deepest at 1.39 m), and a body cannot get its eye much inside half a metre
+ * of world geometry. So a band in metres tells them apart with no per-mesh
+ * data, no velocity buffer and no second pass over the scene.
+ *
+ * IT IS TWO USES OF THAT BAND AND THE SECOND IS WHAT ACTUALLY FINISHES THE
+ * JOB. Masking the shift keeps the weapon's own pixels sharp; it says nothing
+ * about the world pixels BESIDE it, which gather backwards along the smear,
+ * land on the gun, and drag its colour out across the scene — the same
+ * complaint one pixel over. So every tap is weighted by the same band and the
+ * accumulation normalised by the weight it actually kept: the smear gathers
+ * from the WORLD only, and the gun cannot appear in a streak it is not part
+ * of. The centre tap is unconditional, so a run of rejected taps degrades to
+ * the sharp pixel rather than to a hole.
+ *
  * `strength` carries the early-out: at zero the shader returns a straight
  * copy, and because it is a uniform the branch costs nothing. It is zero
- * whenever the view is near enough to still, which is most of a round.
+ * whenever the view is near enough to still, which is most of a round. The
+ * band carries a SECOND early-out, and that one is a SAVING rather than a
+ * cost: a pixel whose shift the masks have taken under half a texel has
+ * nothing to gather, so the weapon — a large, always-present part of the frame
+ * — skips the sample loop outright, and so does the sharp core.
  */
 ShaderStore.ShadersStoreWGSL["motionBlurFragmentShader"] = `
 varying vUV: vec2f;
 var textureSamplerSampler: sampler;
 var textureSampler: texture_2d<f32>;
 
+// The frame's own depth, out of the shared FrameDepth — the same image the ink
+// draws its edges off, and read here for one question: is this pixel the
+// weapon? Declared as a depth texture so Babylon's WGSL processor gives the
+// binding sampleType "depth", which is what lets every read be a textureLoad
+// and this pass declare no sampler for it.
+var depthTexture: texture_depth_2d;
+
 uniform reproject: mat3x3f;   // current camera space -> previous camera space
 uniform tanHalfFov: vec2f;    // half-extents of the near plane, at z = 1
 uniform strength: f32;        // 0 = pass through
 uniform maxShift: f32;
 uniform mask: vec2f;          // radial falloff: x = inner (sharp), y = outer (full)
+uniform nearFar: vec2f;       // the camera's clip planes, for the linearise
+uniform nearBand: vec2f;      // x = metres held sharp (the weapon), y = full smear
 
 // See GodRays for why this is a const and not the #define it was.
 const SAMPLES: i32 = ${CONFIG.graphics.motionBlur.samples};
 
 fn hash(p: vec2f) -> f32 {
   return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453123);
+}
+
+// Buffer depth -> metres. The same inverse CelInk takes and for the same
+// reasons: Babylon is left-handed, WebGPU's NDC z is [0, 1], and nothing in the
+// tree turns on a reverse depth buffer.
+fn linearise(d: f32, nf: vec2f) -> f32 {
+  return (nf.x * nf.y) / (nf.y - d * (nf.y - nf.x));
+}
+
+// HOW MUCH OF THE SMEAR A PIXEL IS ENTITLED TO — 0 on the viewmodel, 1 on the
+// world, and a band between them where the two could be confused. The sky loads
+// the far plane and reads 1, which is what it wants.
+fn worldness(uv: vec2f, dims: vec2f, nf: vec2f, band: vec2f) -> f32 {
+  let p = clamp(vec2i(uv * dims), vec2i(0), vec2i(dims) - vec2i(1));
+  return smoothstep(band.x, band.y, linearise(textureLoad(depthTexture, p, 0), nf));
 }
 
 @fragment
@@ -93,26 +155,49 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let len = length(shift);
   if (len > uniforms.maxShift) { shift *= uniforms.maxShift / len; }
 
-  // The weapon is parented to the camera, so it is motionless in screen space
-  // while the world behind it sweeps — blurring it reads as a dirty lens, not
-  // as motion. There is no depth here to separate the two, so the smear fades
-  // out toward the crosshair, which is where the eye tracks and where blur is
-  // least wanted anyway. Same radial language as HorrorPost's aberration.
+  // THE WEAPON, NAMED BY DEPTH. It is parented to the camera, so it is
+  // motionless in screen space while the world behind it sweeps, and it is the
+  // one thing in the frame the reprojection above is wrong about. The class
+  // comment has why this is a depth band and not the radial mask it replaced.
+  let dims = vec2f(textureDimensions(depthTexture, 0));
+  let here = worldness(input.vUV, dims, uniforms.nearFar, uniforms.nearBand);
+  shift *= here;
+
+  // The radial falloff, which is now about the EYE alone: it tracks the
+  // crosshair, so that is where a smear is read AS a smear rather than felt as
+  // speed. Same radial language as HorrorPost's aberration, and deliberately
+  // gentler than it was — it used to be carrying the weapon as well.
   let r = length(input.vUV - 0.5) * 2.0;
   shift *= smoothstep(uniforms.mask.x, uniforms.mask.y, r);
+
+  // Nothing left to gather: under half a texel of travel every tap lands back
+  // in this pixel. The weapon is the big winner — its shift is exactly zero —
+  // and so is the sharp core, which is what makes this a saving.
+  if (length(shift * dims) < 0.5) {
+    fragmentOutputs.color = vec4f(scene, 1.0);
+    return fragmentOutputs;
+  }
 
   // Taps walk back toward where the pixel came from — a trailing smear, which
   // is what a shutter integrates, rather than a centred one that would lead
   // the motion. The jitter breaks the even spacing into noise: at these
   // sample counts a long smear otherwise arrives as distinct ghosts.
+  //
+  // EVERY TAP CARRIES THE SAME BAND, which is the half a mask on the shift
+  // cannot do: a world pixel beside the gun gathers backwards, lands on the
+  // gun and drags its colour out across the scene. Normalising by the weight
+  // actually kept is what leaves the smear gathering from the WORLD only.
   let jitter = hash(input.vUV) - 0.5;
   var accum = scene;
+  var total = 1.0;
   for (var i: i32 = 1; i < SAMPLES; i++) {
-    let uv = input.vUV + shift * ((f32(i) + jitter) / f32(SAMPLES - 1));
-    accum += textureSampleLevel(textureSampler, textureSamplerSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0).rgb;
+    let uv = clamp(input.vUV + shift * ((f32(i) + jitter) / f32(SAMPLES - 1)), vec2f(0.0), vec2f(1.0));
+    let w = worldness(uv, dims, uniforms.nearFar, uniforms.nearBand);
+    accum += textureSampleLevel(textureSampler, textureSamplerSampler, uv, 0.0).rgb * w;
+    total += w;
   }
 
-  fragmentOutputs.color = vec4f(accum / f32(SAMPLES), 1.0);
+  fragmentOutputs.color = vec4f(accum / total, 1.0);
 }
 `;
 
@@ -164,11 +249,29 @@ export class MotionBlur {
    */
   private enabled = true;
 
-  constructor(scene: Scene, camera: Camera) {
+  constructor(
+    scene: Scene,
+    camera: Camera,
+    /**
+     * The frame's own depth image, shared with the ink. It is what names the
+     * viewmodel — see the class comment — and it is the reason this pass has
+     * to stay downstream of whichever pass the scene draws into.
+     */
+    private readonly depth: FrameDepth,
+  ) {
     const c = CONFIG.graphics.motionBlur;
     this.camera = camera;
     this.post = new PostProcess("motionBlur", "motionBlur", {
-      uniforms: ["reproject", "tanHalfFov", "strength", "maxShift", "mask"],
+      uniforms: [
+        "reproject",
+        "tanHalfFov",
+        "strength",
+        "maxShift",
+        "mask",
+        "nearFar",
+        "nearBand",
+      ],
+      samplers: ["depthTexture"],
       size: 1.0,
       camera,
       engine: scene.getEngine(),
@@ -186,6 +289,17 @@ export class MotionBlur {
       effect.setFloat("strength", this.strength);
       effect.setFloat("maxShift", c.maxShift);
       effect.setFloat2("mask", c.maskInner, c.maskOuter);
+      // The clip planes are the camera's own and move with the ADS zoom's
+      // fov not at all, but `minZ` is written once by CameraSystem and read
+      // here rather than copied, for the reason CelInk reads it the same way.
+      effect.setFloat2("nearFar", this.camera.minZ, this.camera.maxZ);
+      effect.setFloat2("nearBand", c.nearSharp, c.nearFull);
+      // A DECLARED sampler must be BOUND or the bind group fails to build and
+      // the draw is silently lost. It cannot be null by the time this runs —
+      // the capture is on the draw phase of the same `scene.render()` — but
+      // nothing here rests on that.
+      const depth = this.depth.texture;
+      if (depth) effect.setTexture("depthTexture", depth);
     };
   }
 

@@ -74,6 +74,7 @@ import {
 import { GodRays } from "../shaders/GodRays";
 import { HorrorPost } from "../shaders/HorrorPost";
 import { CelInk } from "../shaders/CelInk";
+import { FrameDepth } from "../shaders/FrameDepth";
 import { MotionBlur } from "../shaders/MotionBlur";
 import { Bot } from "../entities/Bot";
 import { difficultyNames } from "../entities/BotSkill";
@@ -458,6 +459,11 @@ export class Game {
    * `shaders/CelInk.ts` owns the argument and the measurements.
    */
   private celInk: CelInk;
+  /**
+   * The frame's depth, wrapped once for the two passes that sample it. Held
+   * only so the pair are handed the same object — nothing here reads it.
+   */
+  private frameDepth: FrameDepth;
   /** The environment the sky is currently painted for — see applySky(). */
   private skyEnv: EnvironmentSpec | null = null;
   private player: Player;
@@ -993,7 +999,17 @@ export class Game {
     // `_afterCameraDrawStage` rather than through the camera's post-process
     // list, so moving it up the constructor changes no ordering the chain below
     // depends on.
-    this.celInk = new CelInk(this.scene, this.cameraSys.camera, glow);
+    // The frame's own depth image, captured ONCE and read by two passes — the
+    // ink's edges and the blur's weapon mask. It has to exist before either of
+    // them, since a declared sampler that is still null at apply time loses the
+    // draw silently; `FrameDepth` argues the rest.
+    this.frameDepth = new FrameDepth(this.scene, this.cameraSys.camera);
+    this.celInk = new CelInk(
+      this.scene,
+      this.cameraSys.camera,
+      glow,
+      this.frameDepth,
+    );
     const pipeline = new DefaultRenderingPipeline("post", false, this.scene, [
       this.cameraSys.camera,
     ]);
@@ -1089,7 +1105,11 @@ export class Game {
     );
     // Then the look smears, with the shafts already in the frame — they belong
     // to the same instant as the geometry, so they have to blur with it.
-    this.motionBlur = new MotionBlur(this.scene, this.cameraSys.camera);
+    this.motionBlur = new MotionBlur(
+      this.scene,
+      this.cameraSys.camera,
+      this.frameDepth,
+    );
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
     this.post = new HorrorPost(this.scene, this.cameraSys.camera);

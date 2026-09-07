@@ -920,6 +920,10 @@ src/
                         #   frame already wrote. Replaced Babylon's outline
                         #   hull AND MapBuilder's ink twins — Coldharbour
                         #   +32%, Harrowmead +51%. Only ever DARKENS
+    FrameDepth.ts       # The frame's own depth attachment, captured once and
+                        #   wrapped for the two passes that sample it (the ink's
+                        #   edges, the blur's weapon mask). Renders and copies
+                        #   nothing; owns no pass
     EmissiveFog.ts      # The same fog as a material plugin on every unlit
                         #   emissive material — windows, flames, tracers. WGSL
                         #   only, which is what isCompatible states
@@ -939,6 +943,9 @@ src/
                         #   WGSL
     GodRays.ts          # Moon shafts: screen-space radial blur. WGSL
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
-                        #   angles. WGSL
+                        #   angles. The viewmodel is held out of it by DEPTH —
+                        #   masked shift AND weighted taps — because a gun
+                        #   parented to the camera never moves in screen space.
+                        #   WGSL
     HorrorPost.ts       # Vignette / grain / aberration / damage flash. WGSL
 ```

@@ -33,27 +33,14 @@
  * +34.7% and +32.6%**, against control drifts of 3.0% and 5.6%. Hollowmere was
  * discarded: 57.7% drift, the round had walked somewhere else.
  *
- * WHAT MAKES IT POSSIBLE, all three checked in the tree rather than assumed:
- *
- * 1. **The frame's depth at the end of the draw phase is the WORLD's.** Babylon
- *    clears depth between rendering groups — the classic viewmodel trick — but
- *    `Sky.ts` turns that clear OFF for group 1 so the moon cannot draw through
- *    a wall. So group 1 shares group 0's buffer and there is ONE coherent
- *    depth image holding the village, the sky shell and the gun. That line is
- *    also what makes `GlowDepth`'s occlusion work, and breaking it breaks both.
- * 2. **It is sampleable.** Babylon's WebGPU backend creates depth textures with
- *    `TEXTURE_BINDING`, and `FINDINGS.md` 4 put the engine at sample count 1
- *    with `depth32float` and no stencil, so no MSAA resolve stands in the way.
- * 3. **No sampler is needed and therefore none can be wrong.** The declaration
- *    below is `texture_depth_2d`, off which Babylon's WGSL processor infers
- *    `sampleType: "depth"`, and every read is a `textureLoad`. An edge wants
- *    exact texels rather than filtered ones anyway.
- *
- * NO ORIENTATION FLAG, AND THAT IS DELIBERATE. Which way round a render target
- * is stored is the sort of question that costs an hour and it is not asked:
- * the colour is sampled at `vUV` and the depth is loaded at `vUV *
- * textureDimensions(depth)`, and those index the same screen point in the same
- * convention whatever the storage is.
+ * WHAT MAKES IT POSSIBLE is that the frame's own depth image is sampleable,
+ * which `FrameDepth` owns and argues in full — this pass was where that
+ * capture used to live, and it moved out when `MotionBlur` became its second
+ * reader. What is left here is the one fact that is this shader's: **no
+ * sampler is needed and therefore none can be wrong.** The declaration below
+ * is `texture_depth_2d`, off which Babylon's WGSL processor infers
+ * `sampleType: "depth"`, and every read is a `textureLoad`. An edge wants
+ * exact texels rather than filtered ones anyway.
  *
  * THE NIB HAS A WIDTH AND THE WIDTH IS A DISTANCE, which is the second thing
  * this pass spends depth on and the one the fog fade could not give. A line one
@@ -135,18 +122,18 @@ import {
   Scene,
   ShaderLanguage,
   ShaderStore,
-  ThinTexture,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { fogBand } from "./CelShader";
+import { FrameDepth } from "./FrameDepth";
 
 ShaderStore.ShadersStoreWGSL["celInkFragmentShader"] = `
 varying vUV: vec2f;
 var textureSamplerSampler: sampler;
 var textureSampler: texture_2d<f32>;
 
-// The MAIN pass's depth attachment, handed over by CelInk each frame. Declared
-// as a depth texture so Babylon's WGSL processor gives the binding sampleType
+// The MAIN pass's depth attachment, out of the shared FrameDepth. Declared as a
+// depth texture so Babylon's WGSL processor gives the binding sampleType
 // "depth"; every read below is a textureLoad, so this pass declares no sampler
 // for it and there is none to get wrong.
 var depthTexture: texture_depth_2d;
@@ -369,32 +356,20 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 }
 `;
 
-/** What a render-target wrapper carries that this needs, cast in one place. */
-type DepthOwner = {
-  _depthStencilTexture?: object | null;
-};
-
-/** The engine internal `GlowDepth` already depends on, named the same way. */
-type EngineInternals = {
-  _currentRenderTarget?: DepthOwner | null;
-};
-
 export class CelInk {
   readonly pass: PostProcess;
-
-  /** The main pass's depth, re-wrapped whenever the underlying texture moves. */
-  private depth: ThinTexture | null = null;
-  private source: object | null = null;
 
   /** The map's fog band, re-read on every environment change. */
   private fadeStart = 0;
   private fadeEnd = 1;
 
   constructor(
-    private readonly scene: Scene,
+    scene: Scene,
     private readonly camera: Camera,
     /** Read for its main texture ALONE — the emissive mask. Never mutated. */
     private readonly glow: GlowLayer,
+    /** The frame's own depth image. Shared — see `FrameDepth`. */
+    private readonly depth: FrameDepth,
   ) {
     const ink = CONFIG.graphics.ink;
     this.pass = new PostProcess("celInk", "celInk", {
@@ -433,14 +408,14 @@ export class CelInk {
       // the capture below is on the draw phase, which is earlier in the same
       // scene.render() — but `applyEnvironment` keeps the pass off the camera
       // until the first frame has handed one over, rather than resting on it.
-      if (this.depth) effect.setTexture("depthTexture", this.depth);
+      const depth = this.depth.texture;
+      if (depth) effect.setTexture("depthTexture", depth);
       // Same rule, and this one cannot be null: the layer owns its main texture
       // from construction and `Game` builds the layer before this pass.
       effect.setTexture("emissiveSampler", this.glow.mainTexture);
     };
 
     this.applyEnvironment();
-    this.capture();
   }
 
   /**
@@ -454,28 +429,6 @@ export class CelInk {
     const band = fogBand();
     this.fadeStart = band.start;
     this.fadeEnd = band.end;
-  }
-
-  /**
-   * Takes the frame's depth attachment at the end of the draw phase — the same
-   * hook and the same guard as `GlowDepth`, and deliberately AFTER it in the
-   * observer list, since that one re-binds the framebuffer and this must not
-   * disturb what it left.
-   *
-   * Nothing is copied and nothing is rendered: one identity test a frame, and
-   * on the frames the target actually moves (a resize) one wrapper.
-   */
-  private capture(): void {
-    const engine = this.scene.getEngine() as unknown as EngineInternals;
-    this.scene.onAfterDrawPhaseObservable.add(() => {
-      // Render targets drive this observable too — a reflection probe's bake
-      // is the one that matters — and a probe's depth is not the frame's.
-      if (this.scene.activeCamera !== this.camera) return;
-      const tex = engine._currentRenderTarget?._depthStencilTexture;
-      if (!tex || tex === this.source) return;
-      this.source = tex;
-      this.depth = new ThinTexture(tex as never);
-    });
   }
 
   dispose(): void {

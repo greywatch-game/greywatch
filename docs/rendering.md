@@ -307,6 +307,68 @@ blade is a silhouette; what it reads as is denser, darker grass. A judgement,
 not an accident — and `noInk` is deliberately absent from those meshes so the
 flag does not claim otherwise.
 
+## The smear, and the one thing in the frame that must not take it
+
+`shaders/MotionBlur.ts` owns the argument; this is what a reader of this file
+must not violate.
+
+**The pass is a ROTATION reprojection and that is exact at every depth**, which
+is what buys a camera blur with no velocity buffer and no second pass over the
+map: a look that turns moves a pixel's ray the same way whatever it hit, so
+where a pixel was last frame is a function of its screen position alone.
+Translation is depth-dependent and is therefore simply absent — strafing past a
+wall does not smear it.
+
+**THE WEAPON IS THE ONE PLACE THAT BREAKS DOWN, AND IT IS NOT A CORNER CASE —
+IT IS A THIRD OF THE FRAME.** The viewmodel is parented to the camera, so a
+rotation moves every world pixel and moves the gun by exactly nothing; the
+shift the pass computes is right for everything except the object filling the
+bottom of the screen, and a smeared gun reads as a dirty lens rather than as
+motion.
+
+**It is named by DEPTH, which is `ink.near`'s argument spent a second time.**
+The viewmodel is drawn between 0.05 m and 1.39 m of the lens — measured, hip
+pose, every gun in the kit, the sniper's muzzle the deepest — and a body cannot
+get its eye much inside half a metre of world geometry, so a band in metres
+(`motionBlur.nearSharp`/`nearFull`) separates them with no per-mesh data at
+all. What that band costs is stated rather than hidden: world geometry inside
+`nearFull` is held sharp too, which at an ordinary horizon view is a strip at
+the very bottom of the frame that the weapon is standing in anyway, and at a
+steep look down reads as focus rather than as a fault.
+
+**It is TWO uses of that band and the second is what finishes the job.** Masking
+the shift keeps the weapon's own pixels sharp and says nothing about the world
+pixels BESIDE it, which gather backwards along the smear, land on the gun, and
+drag its colour out across the scene — the same complaint one pixel over. So
+every tap carries the same weight and the accumulation is normalised by what it
+kept. The centre tap is unconditional, so a run of rejected taps degrades to
+the sharp pixel rather than to a hole.
+
+**The RADIAL mask that used to do this job was backwards for it**, and that is
+worth knowing before anyone widens it again: the weapon sits low and to the
+RIGHT, which is where a radial falloff blurs hardest, so the most smeared thing
+in the frame was the one thing in it that never moves — while the sharp core it
+bought was spent on the middle distance, which is where the smear is the whole
+effect. It is still there and still about the EYE, which tracks the crosshair;
+it is simply narrower now (0.2/0.75, from 0.35/0.85).
+
+**Measured**: at 1280x720 the whole pass does not separate from a straight copy
+on a 4070 Ti SUPER, so the arms were run at a hardware scaling of 0.3 —
+4266x2400, nine times the pixels — with a `readPixels` sync closing each block
+and the arms interleaved A B A B. Settled blocks: **masked 3.96 / 3.80 / 3.80
+ms, radial 3.81 / 3.72 / 3.73 ms, no blur at all 3.76 ms** — about 0.07 ms of
+difference over ten megapixels, which is ~0.007 ms at 720p, against a first
+block that came in 1.3 ms high. The structural reason it is that small is that
+the band pays for itself: it adds one depth load per pixel and one per tap, and
+it takes the sample loop away entirely from the weapon and from the sharp core,
+whose shift it has already driven under half a texel.
+
+**The depth image is SHARED and its owner is `shaders/FrameDepth.ts`** — one
+capture, one wrapper, read by the ink and by this pass. It is the attachment
+belonging to the FIRST pass in the camera's chain, so **anything inserted ahead
+of the ink takes the depth with it**, and a pass that samples it must stay
+downstream of whatever the scene draws into.
+
 ## The wind, and the one thing in the world that moves
 
 The world is merged and frozen because it is static, and that is exactly what
