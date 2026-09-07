@@ -37,6 +37,7 @@ import {
   DEFAULT_WEAPON,
   isPrimaryWeaponId,
   SIDEARM,
+  SIDEARM_SLOT,
   weaponSetup,
   WEAPON_IDS,
   type WeaponSetup,
@@ -198,6 +199,44 @@ const FASTEST_FIRE_HZ = Math.max(
  * silent, and the symptom would look like anything but a constant in this file.
  */
 const SIDEARM_RELOAD = CONFIG.weapons[SIDEARM].reloadTime;
+
+/**
+ * The sidearm's own numbers, resolved once.
+ *
+ * The second half of what a person is carrying. The kit chooses the primary
+ * and everybody has this one whatever else is in the kit, so there is nothing
+ * per-peer about it and nothing to store per slot: `onShot` picks between this
+ * and the peer's own `loadouts` entry on the slot the round says it left.
+ */
+const SIDEARM_SETUP = weaponSetup(SIDEARM);
+
+/**
+ * How far ahead of its own rate a client's fire may bank, in ms.
+ *
+ * **The rate gate measures ARRIVALS, and a client does not control when its
+ * rounds arrive.** It was a minimum SPACING — no accepted round within 90% of
+ * the weapon's `shotInterval` of the last one — and 10% of an interval is
+ * five milliseconds on the carbine, eight on the SMG and ten on the LMG, which
+ * is less than the jitter of an ordinary wireless connection. A burst fired at
+ * exactly the right cadence and delivered a few milliseconds tight lost rounds
+ * SILENTLY: no correction, no event, nothing on either screen except a body
+ * that did not fall. Three carbine rounds are a kill and two are 68, so the
+ * symptom is the weapon quietly not doing what the table says it does.
+ *
+ * A bucket bounds the same thing without reading the network's timing as the
+ * player's: credit accrues in real time, a round spends one interval of it,
+ * and the cap is one interval plus this — so the SUSTAINED rate is exactly the
+ * weapon's, and what a stall may hand back is 150 ms of rounds and no more.
+ * On the carbine that is a burst arriving in one packet, which is the case it
+ * is for; on the sniper it is one round 150 ms early after a pause, on an
+ * interval of 1250.
+ *
+ * It leans toward letting a laggy honest player through, exactly as the
+ * movement tolerance does and for the same reason — see
+ * `docs/multiplayer.md`. A cheat worth 150 ms of banked fire, once per pause,
+ * is worth less than the honest rounds the tight rule was eating.
+ */
+const SHOT_SLACK = 150;
 
 /**
  * Inbound messages one peer may send per second, sustained.
@@ -404,8 +443,30 @@ export class Match {
    */
   private readonly equipment = new Map<number, EquipmentId>();
 
-  /** When each slot last fired, for the rate limit. */
-  private readonly lastShot: number[] = [];
+  /**
+   * The rate limit's state per roster slot, built on that peer's first round.
+   *
+   * A BUCKET rather than the timestamp of the last accepted round, because the
+   * thing being bounded is a rate and what arrives is a schedule the network
+   * has already had its way with — see `SHOT_SLACK` and `onShot`.
+   *
+   * One record rather than four parallel arrays: every field is spent in the
+   * same eight lines of one method, and a per-slot array that some other gate
+   * forgets to clear is the shape of bug `drop` exists to not have.
+   */
+  private readonly fireGate: (
+    | {
+        /** Firing credit banked, in ms. */
+        credit: number;
+        /** When `credit` was last brought up to date — every round, refused or not. */
+        at: number;
+        /** When a round was last ACCEPTED, which is what a draw is measured from. */
+        fired: number;
+        /** Whether the last round claimed the sidearm, so a change of hands shows. */
+        sidearm: boolean;
+      }
+    | undefined
+  )[] = [];
 
   /** …and last announced a reload, for that message's own gate. */
   private readonly lastReload: number[] = [];
@@ -413,7 +474,9 @@ export class Match {
   /**
    * …and last spent an AT item, and last fired a tank gun.
    *
-   * Two more of `lastShot`'s clock, and both are needed for its reason: a
+   * Two more clocks of the shot gate's kind, and both are needed for its
+   * reason — plain last-fired timestamps, because neither is a schedule a
+   * client is trying to keep to the millisecond: a
    * client asking for a rocket or a shell is asking the authority to put an
    * object in the world, and without a gate the rate at which it may do so
    * would be a client-side opinion. The gun's own reload already refuses a
@@ -763,36 +826,19 @@ export class Match {
     if (!this.peers.has(id)) return;
 
     // The bot in this slot comes off the field and a person takes its place.
-    const player = this.game.addPlayer(slot.index, slot.team);
+    // The body is not kept here: `setKit` below looks it up by slot, because
+    // it is called from the deploy door too, where there is no fresh one to
+    // hold.
+    this.game.addPlayer(slot.index, slot.team);
     // A slot changing hands must not inherit the last occupant's travel. The
     // walk cycle is derived from how far a body moved between snapshots, so a
     // stale entry here makes the new arrival's first frame a sprint from
     // wherever the previous player was standing.
     delete this.lastSeen[slot.index];
-    // Resolved from the weapon table HERE, not taken from the client. An
-    // unknown id, or the sidearm (which the kit screen never offers), falls
-    // back to the default rather than being refused — a client on a newer
-    // build naming a weapon this server has not heard of should still play.
-    this.loadouts.set(
-      slot.index,
-      weaponSetup(weapon && isPrimaryWeaponId(weapon) ? weapon : DEFAULT_WEAPON),
-    );
-    // The third slot, resolved the same way and for the same reason: what a
-    // rocket is worth and how many mines a person may have on the field are
-    // this side's numbers. An id this build has never heard of falls back to
-    // the launcher rather than being refused, exactly as an unknown weapon
-    // falls back to the rifle.
-    //
-    // It is resolved on every map, including the two that offer no third slot
-    // at all: the kit is the MAP's question and `armourOffered` is where a
-    // client answers it, so what happens on a map with no armour is simply
-    // that no `ordnance` message ever arrives to spend this on. Resolving it
-    // conditionally would mean a rotation onto a map WITH armour leaving this
-    // player carrying nothing.
-    const kit = equipment && isEquipmentId(equipment) ? equipment : DEFAULT_EQUIPMENT;
-    this.equipment.set(slot.index, kit);
-    player.ordnanceCarried = equipmentSetup(kit).magSize;
-    player.ordnance = player.ordnanceCarried;
+    // The kit this person named at the handshake, resolved out of this side's
+    // own tables. It is the FIRST of two doors: a player picks a kit more than
+    // once in a match, and the second is `onDeploy`.
+    this.setKit(slot.index, weapon, equipment);
     // Not spawned here: a fresh player is dead with a zero timer, which is
     // exactly the state the reinforcement pass in `HeadlessGame.step` picks up.
     // Joining and redeploying are the same act and go through the same door.
@@ -831,6 +877,53 @@ export class Match {
   }
 
   /**
+   * Resolves what a person is carrying, out of THIS side's tables.
+   *
+   * The one place the two kit maps are written, and it exists because a kit is
+   * chosen more than once in a match: the handshake names one and every deploy
+   * after it may name another, and the two doors must resolve the pick the
+   * same way or the loadout the authority pays a round out of depends on which
+   * screen the player chose it from.
+   *
+   * **Ids in, numbers here.** A client names a weapon and the damage, range
+   * and fall-off are looked up on this side — a client that could state its
+   * own damage would state whatever it liked. An id this build has never heard
+   * of falls back to the default rather than being refused, on both halves: a
+   * client on a newer build naming a gun this server does not have should
+   * still play, and the sidearm (which the kit screen never offers as a
+   * primary) falls through the same door.
+   *
+   * The third slot is resolved on every map, including the two that offer no
+   * third slot at all. The kit is the MAP's question and `Game.armourOffered`
+   * is where a client answers it, so on a map with no armour what happens is
+   * simply that no `ordnance` message ever arrives to spend this on; resolving
+   * it conditionally would leave a player carrying nothing through a rotation
+   * onto a map that has armour on it.
+   *
+   * **Both callers reach this with the player DEAD** — the handshake seats a
+   * body that is dead with a zero timer, and the kit screen is reachable from
+   * the deploy screen and nowhere else — which is what lets the pouch be
+   * written straight: `NetPlayer.spawn` refills `ordnance` from
+   * `ordnanceCarried`, so the body that comes back is the first one that
+   * carries this. It is also what keeps `fire`'s `w` and `onReload`'s gate
+   * honest, both of which read the loadout of a player who is shooting and
+   * rest on it not changing under them.
+   */
+  private setKit(slot: number, weapon?: string, equipment?: string): void {
+    this.loadouts.set(
+      slot,
+      weaponSetup(weapon && isPrimaryWeaponId(weapon) ? weapon : DEFAULT_WEAPON),
+    );
+    const kit = equipment && isEquipmentId(equipment) ? equipment : DEFAULT_EQUIPMENT;
+    this.equipment.set(slot, kit);
+    const player = this.game.players.get(slot);
+    if (player) {
+      player.ordnanceCarried = equipmentSetup(kit).magSize;
+      player.ordnance = player.ordnanceCarried;
+    }
+  }
+
+  /**
    * A peer left. Its slot goes back to being a bot, and the bot walks on.
    *
    * The same handover as `admit`, run backwards, and it is why the roster is a
@@ -843,7 +936,7 @@ export class Match {
     this.game.removePlayer(peer.slot);
     this.loadouts.delete(peer.slot);
     this.equipment.delete(peer.slot);
-    delete this.lastShot[peer.slot];
+    delete this.fireGate[peer.slot];
     delete this.lastOrdnance[peer.slot];
     delete this.lastShell[peer.slot];
     delete this.lastMg[peer.slot];
@@ -1527,12 +1620,16 @@ export class Match {
   }
 
   /**
-   * A player asking to come back in, and where.
+   * A player asking to come back in, where, and CARRYING WHAT.
    *
-   * All this does is RECORD the ask. The simulation spends it — see the
-   * reinforcement pass in `HeadlessGame.step` — because when a person may
-   * deploy is the reinforcement clock's answer and where they land is
-   * conquest's, and neither of those questions is a transport's business.
+   * All this does about the spawn is RECORD the ask. The simulation spends it
+   * — see the reinforcement pass in `HeadlessGame.step` — because when a
+   * person may deploy is the reinforcement clock's answer and where they land
+   * is conquest's, and neither of those questions is a transport's business.
+   *
+   * The KIT is different, and is resolved here and now: it is this side's own
+   * lookup rather than a rule the simulation owns, and it must be in place
+   * before the body it describes exists. See `setKit`.
    *
    * The index is checked for shape here and for MEANING there: `decode` returns
    * parsed JSON asserted to a `ClientMessage`, so the static type is a claim
@@ -1549,6 +1646,25 @@ export class Match {
     const player = this.game.players.get(peer.slot);
     if (!player || player.alive) return;
     if (!Number.isInteger(msg.spawn)) return;
+    // The kit the player confirmed this spawn with — the SECOND of the two
+    // doors, and the one that catches every pick after the handshake. The kit
+    // screen is reachable from the deploy screen, so a player who switches to
+    // the sniper on their third death was carrying it locally while this side
+    // went on resolving their rounds against the gun they joined with: a
+    // sniper round that does not kill, and an LMG round paying the marksman
+    // rifle's fifty.
+    //
+    // Absent means UNCHANGED rather than default, which is what a client that
+    // predates the fields means and what keeps them additive — hence the
+    // fallback to what this slot already carries rather than a second call to
+    // the tables. It is spent here, on a player who is by definition dead
+    // (checked above), rather than at the spawn: `setKit` writes the pouch and
+    // `NetPlayer.spawn` is what fills it.
+    this.setKit(
+      peer.slot,
+      msg.weapon ?? this.loadouts.get(peer.slot)?.id,
+      msg.equipment ?? this.equipment.get(peer.slot),
+    );
     player.deployRequest = msg.spawn;
   }
 
@@ -1659,8 +1775,16 @@ export class Match {
    * Three gates before the ray is even run, in ascending cost:
    *
    *   1. **Rate.** A client cannot fire faster than its weapon's own
-   *      `shotInterval`. Without this, "hold the trigger" is a client-side
-   *      opinion and a modified one empties a magazine in a frame.
+   *      `shotInterval`, SUSTAINED — the gate is a credit bucket rather than a
+   *      minimum spacing, because what it can measure is when rounds arrived
+   *      and that is the network's schedule and not the shooter's. See
+   *      `SHOT_SLACK`. Without a gate of some kind, "hold the trigger" is a
+   *      client-side opinion and a modified one empties a magazine in a frame.
+   *
+   *      **Which weapon's interval is a question in itself**: everyone carries
+   *      two, and the round says which one it left. That is the same field the
+   *      damage is read off, so a slot the authority ignored got both wrong at
+   *      once.
    *   2. **Direction.** The round must leave within a cone of where the shooter
    *      last said it was looking. This is what stops a claimed shot fired
    *      backwards, through the floor, or at somebody the shooter is not facing.
@@ -1683,15 +1807,59 @@ export class Match {
     // that nothing can shoot back at.
     if (player.seat >= 0) return;
 
-    const weapon = this.loadouts.get(peer.slot);
-    if (!weapon) return;
+    const primary = this.loadouts.get(peer.slot);
+    if (!primary) return;
+    // WHICH of the two, because they are not worth the same. A pistol round
+    // paid out of the primary's table is a sniper's hundred from a sidearm at
+    // one end and a nerfed pistol at the other, and the rate gate below is
+    // wrong by the same amount. A claim like every other field on the message
+    // — see `ShotMessage.slot` — so anything that is not the sidearm's index
+    // resolves to the primary, which costs a lying client its own sidearm and
+    // buys it nothing.
+    const weapon = msg.slot === SIDEARM_SLOT ? SIDEARM_SETUP : primary;
 
-    // 1. rate
+    // 1. rate. Credit accrues in real time and a round spends an interval of
+    // it; the cap is what a stall may hand back. See `SHOT_SLACK`.
     const now = Date.now();
-    if (now - (this.lastShot[peer.slot] ?? 0) < weapon.shotInterval * 1000 * 0.9) {
-      return;
-    }
-    this.lastShot[peer.slot] = now;
+    const interval = weapon.shotInterval * 1000;
+    const cap = interval + SHOT_SLACK;
+    const sidearm = msg.slot === SIDEARM_SLOT;
+    const gate = this.fireGate[peer.slot];
+    // **A WEAPON JUST DRAWN HAS NO COOLDOWN**, which is the client's own rule
+    // — `Player.completeSwap` drops the fire cooldown with the weapon that
+    // earned it, because the swap has already cost more time than either. A
+    // bucket that did not know this ate the first round out of every gun whose
+    // interval is longer than its own draw, and there is exactly one:
+    // the sniper draws in 1.0 s and cycles in 1.25, so "swap and shoot" —
+    // which is what the second slot is FOR — silently lost the round.
+    //
+    // A swap is inferred rather than reported: the hands changed if this round
+    // claims the other slot, and it cost at least the drawn weapon's own
+    // `drawTime`, during which nothing can have fired. That second half is
+    // what stops the refill being a cheat — a client alternating its claims to
+    // farm full buckets must go a whole draw without firing to earn each one,
+    // which bounds it at one round per 0.34 s, slower than any weapon in the
+    // kit.
+    const drawn =
+      gate !== undefined &&
+      gate.sidearm !== sidearm &&
+      now - gate.fired >= weapon.drawTime * 1000 * 0.9;
+    // A slot that has not fired before starts full, so nobody's first round is
+    // refused for arriving too soon after a match they were not in.
+    const credit =
+      gate === undefined || drawn
+        ? cap
+        : Math.min(cap, gate.credit + (now - gate.at));
+    const spent = credit >= interval;
+    // Banked either way: a refused round still leaves what it could not spend,
+    // or a client firing into a closed gate would never accumulate anything.
+    this.fireGate[peer.slot] = {
+      credit: spent ? credit - interval : credit,
+      at: now,
+      fired: spent ? now : (gate?.fired ?? now),
+      sidearm,
+    };
+    if (!spent) return;
 
     // 2. direction
     const [dx, dy, dz] = msg.dir;

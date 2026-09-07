@@ -84,6 +84,8 @@ import type { FinishId } from "./finishes";
 import type { SightId } from "./sights";
 import {
   DEFAULT_WEAPON,
+  EQUIP_SLOT,
+  PRIMARY_SLOT,
   SIDEARM,
   weaponSetup,
   type PrimaryWeaponId,
@@ -158,25 +160,6 @@ function equipHolster(id: EquipmentId): Holster {
   const setup = equipmentSetup(id);
   return { setup, ammo: setup.magSize };
 }
-
-/**
- * The two slots, by index — which is not an implementation detail: it is
- * exactly what the `1` and `2` keys name, so the number on the key and the
- * number here are the same fact and there is no table in between them to
- * disagree.
- */
-export const PRIMARY_SLOT = 0;
-export const SIDEARM_SLOT = 1;
-/**
- * The anti-tank slot — `3`, and the one slot that may not be there at all.
- *
- * A kit carries it only on a map with armour on it (`Game.applyLoadout`), so
- * `slots` is two long or three and every reader of it has to cope with both.
- * That is why `drawSlot` bounds-checks rather than switching on a constant,
- * and why the wheel swaps between the first two: a slot that exists on one map
- * and not the next cannot be half of "the other weapon".
- */
-export const EQUIP_SLOT = 2;
 
 /** Run-scoped stat modifiers granted by loot. */
 export interface PlayerMods {
@@ -724,6 +707,20 @@ export class Player implements Combatant {
   /** Which weapon is in the hands — for the camera's fit and the HUD's caption. */
   get carriedWeapon(): CarriedId {
     return this.weapon.id;
+  }
+
+  /**
+   * WHICH SLOT is in the hands — the index, not the id.
+   *
+   * The one reader is the wire: a round reports the slot it left rather than
+   * the weapon it left, because the authority resolves damage out of its own
+   * table and a client that named a weapon would name whatever it liked (see
+   * `ShotMessage.slot`). The primary's id is already the loadout's and the
+   * sidearm's is a constant, so an index is the whole of what the server is
+   * missing.
+   */
+  get carriedSlot(): number {
+    return this.slot;
   }
 
   /**

@@ -404,9 +404,14 @@ export class NetSession {
    * the button, and a request dropped on the floor leaves them looking at a
    * screen that answered once and then wanted pressing again for no reason they
    * could see.
+   *
+   * The KIT rides with it — see `DeployMessage.weapon`. A player picks one
+   * more than once in a match and the join only ever said it once, so this is
+   * where the authority is told what the body coming back is carrying, and
+   * therefore what its rounds are worth.
    */
-  sendDeploy(spawn: number): void {
-    this.pendingDeploy = spawn;
+  sendDeploy(spawn: number, weapon: string, equipment: string): void {
+    this.pendingDeploy = { spawn, weapon, equipment };
     this.flushDeploy();
   }
 
@@ -416,12 +421,21 @@ export class NetSession {
    * Cleared by the `spawn` event rather than by the send, which is what makes
    * it a standing request rather than a fire-and-forget: an unanswered one is
    * re-sent on the next welcome.
+   *
+   * The KIT is held with it rather than read at the flush, because a standing
+   * request outlives the screen that made it: what the authority must resolve
+   * is the loadout the player confirmed this spawn with, not whatever the kit
+   * screen happens to be showing by the time a reconnect re-sends the ask.
    */
-  private pendingDeploy: number | null = null;
+  private pendingDeploy: {
+    spawn: number;
+    weapon: string;
+    equipment: string;
+  } | null = null;
 
   private flushDeploy(): void {
     if (!this.seated || this.pendingDeploy === null) return;
-    this.conn.send({ t: "deploy", spawn: this.pendingDeploy });
+    this.conn.send({ t: "deploy", ...this.pendingDeploy });
   }
 
   /**

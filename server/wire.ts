@@ -195,7 +195,16 @@ export function readClientMessage(raw: string): ClientMessage | null {
       // An INDEX, so integer rather than merely finite. `onDeploy` asks the
       // same question again and is right to: this is the shape gate for the
       // wire, and that one is the guard on the field it is about to write.
-      return Number.isInteger(m.spawn) ? msg : null;
+      //
+      // The two kit ids are optional and are checked exactly as the join's
+      // are, for the same reason and to the same depth: what they MEAN is
+      // resolved against the real tables in `onDeploy`, and all this asks is
+      // that a field a lookup is about to be handed is a string at all.
+      return Number.isInteger(m.spawn) &&
+        optionalString(m.weapon) &&
+        optionalString(m.equipment)
+        ? msg
+        : null;
 
     default:
       return null;

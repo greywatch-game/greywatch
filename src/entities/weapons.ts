@@ -43,6 +43,32 @@ export function isWeaponId(value: string): value is WeaponId {
  */
 export const SIDEARM = "pistol" as const;
 
+/**
+ * The two slots, by index — which is not an implementation detail: it is
+ * exactly what the `1` and `2` keys name, so the number on the key and the
+ * number here are the same fact and there is no table in between them to
+ * disagree.
+ *
+ * They live beside `SIDEARM` rather than in `Player` because the AUTHORITY
+ * names them too: a round reports the slot it left (`ShotMessage.slot`) and
+ * `Match.onShot` reads this side's damage off it, and `server/` cannot import
+ * `Player` — it would drag the viewmodel, the materials and the flash mesh
+ * into a process with no canvas. A second literal on that side would be
+ * exactly the table in between that the paragraph above says there is not.
+ */
+export const PRIMARY_SLOT = 0;
+export const SIDEARM_SLOT = 1;
+/**
+ * The anti-tank slot — `3`, and the one slot that may not be there at all.
+ *
+ * A kit carries it only on a map with armour on it (`Game.applyLoadout`), so
+ * `Player.slots` is two long or three and every reader of it has to cope with
+ * both. That is why `drawSlot` bounds-checks rather than switching on a
+ * constant, and why the wheel swaps between the first two: a slot that exists
+ * on one map and not the next cannot be half of "the other weapon".
+ */
+export const EQUIP_SLOT = 2;
+
 /** A weapon the loadout screen can actually offer — anything but the sidearm. */
 export type PrimaryWeaponId = Exclude<WeaponId, typeof SIDEARM>;
 

@@ -307,6 +307,115 @@ body that is dead until it asks. The server holds an EARLY ask rather than
 refusing it, for the mirror reason: the client's countdown is the one the player
 watches and it legitimately reaches zero a trip ahead of the server's.
 
+### The KIT rides the deploy, because it is chosen more than once
+
+**A player picks a loadout at the menu and then picks it again on every death,
+and the join only ever says it once.** The kit screen is reachable from the
+deploy screen — that is the one moment inside a round when the weapon is
+already put away — so a person who switches to the sniper on their third death
+has been carrying it locally ever since. `Match.admit` resolved
+`Join.weapon` into `loadouts` at the handshake and nothing ever wrote that map
+again, and since the authority is what pays a round out
+(`HeadlessGame.resolveShot` reads `weapon.damage` and the fall-off off that
+entry), every round the player fired for the rest of the match was worth
+whatever they had joined with.
+
+**The failure had no symptom anybody could see.** The client resolves its own
+shot for the tracer and the hitmarker, so the gun on screen behaved exactly as
+the table says; what disagreed was the only opinion that counts. It reads as
+the weapons themselves being wrong — a sniper round that does not kill, an LMG
+round paying the marksman rifle's fifty — which is a bug report about the
+balance table and not about the wire.
+
+So `DeployMessage` carries the two kit ids beside the spawn, and `Match.onDeploy`
+resolves them through the same `setKit` the handshake uses. Four things make
+that the right door rather than a message of its own:
+
+- **It is the one door every body comes through.** A person enters the world
+  only by asking (above), so a kit that rides the ask cannot be missed by a
+  path that forgot to send it.
+- **The change is only ever made while dead**, which is what `onDeploy` has
+  already checked by the time it writes. A living player's loadout still cannot
+  change under them, and two things rest on that: `fire`'s `w`, which is read at
+  the snapshot rather than remembered at the trigger, and `onReload`'s gate.
+- **Ids in, numbers here.** Both are resolved against this side's own tables,
+  exactly as the join's are and for the identical reason — a client that could
+  state its own damage would state whatever it liked. An id this build has never
+  heard of falls back to the default rather than being refused.
+- **Absent means unchanged**, so the fields are additive: a client that predates
+  them keeps what it joined with, which is what every build before them meant.
+
+**No `PROTOCOL_VERSION` bump, and it does not earn one.** Both fields are
+additive in both directions: an older client sends neither and keeps what it
+joined with, and an older server reads a `deploy` it does not recognise the
+fields of as the spawn ask it always was — `readClientMessage` checks that the
+fields a handler will read are there, never that nothing else is.
+
+**`NetSession` holds the kit WITH the standing request** rather than reading it
+at the flush, for the reason the request stands at all: a re-send after a
+reconnect must carry the loadout the player confirmed that spawn with, not
+whatever a kit screen happens to be showing a minute later.
+
+### A round says WHICH of the two weapons it left
+
+`ShotMessage.slot` is `Player`'s own slot index — the numbers the `1` and `2`
+keys name, which is why they live in `entities/weapons.ts` beside `SIDEARM`
+rather than in `Player`: `server/` names them too and cannot import that file.
+
+Everybody carries the sidearm whatever else is in the kit, and its numbers are
+not the primary's. The field was on the wire and read by nothing: the client
+sent a literal `0` and `onShot` resolved every round out of `loadouts`, so a
+pistol round was paid at the primary's damage and fall-off and gated at the
+primary's rate — a sniper's hundred out of a sidearm at one end, and a nerfed
+pistol at the other. It is a CLAIM like every other field on that message and is
+treated as one: anything that is not the sidearm's index resolves to the
+primary, which costs a lying client its own sidearm and buys it nothing.
+
+**What still reads the primary is the `fire` event's `w`**, and that is the
+sound and the minimap reveal rather than the round. A swap takes a third of a
+second and the event is coalesced per slot per snapshot interval, so one weapon
+id per slot per interval is the shape the message has; a player who fires the
+pistol is heard firing their primary. Worth knowing before it is read as this
+bug again — it costs a cue and no damage.
+
+### The rate gate is a BUCKET, because arrivals are not a cadence
+
+**A client cannot fire faster than its weapon's `shotInterval` — sustained.**
+It used to be a minimum SPACING, and that measures the wrong thing: what the
+server can see is when rounds arrived, and when they arrived is the network's
+schedule and not the shooter's. Ten per cent of an interval is 5 ms on the
+carbine, 8 on the SMG and 10 on the LMG, all of them under the jitter of an
+ordinary wireless connection — and a burst delivered a few milliseconds tight
+lost rounds SILENTLY. No correction, no event, nothing on either screen except
+a body that did not fall. Three carbine rounds are a kill and two are 68, so
+the symptom is again the weapon quietly not doing what the table says.
+
+Credit accrues in real time, a round spends one interval of it, and the cap is
+one interval plus `SHOT_SLACK` (150 ms). The sustained rate is therefore exactly
+the weapon's, and what a stall may hand back is 150 ms of rounds and no more —
+on the carbine a burst arriving in one packet, which is the case it is for; on
+the sniper one round 150 ms early against an interval of 1250. A refused round
+still banks what it could not spend, or a client firing into a closed gate would
+never accumulate anything. It leans toward letting a laggy honest player
+through, exactly as the movement tolerance above does and for the same reason.
+
+**A weapon just DRAWN has no cooldown, and the gate has to know that** —
+`Player.completeSwap` drops the fire cooldown with the weapon that earned it,
+because the swap has already cost more time than either. A bucket that did not
+know it ate the first round out of every gun whose interval is longer than its
+own draw, and there is exactly one: the sniper draws in 1.0 s and cycles in
+1.25, so "swap and shoot" — which is what the second slot is FOR — lost the
+round silently. The swap is INFERRED rather than reported: the hands changed if
+this round claims the other slot, and it cost at least the drawn weapon's own
+`drawTime`, during which nothing can have fired. That second half is what stops
+the refill being a cheat — a client alternating its claims to farm full buckets
+must go a whole draw without firing to earn each one, which bounds it at one
+round per 0.34 s, slower than any weapon in the kit.
+
+**A reload announcement and the two ordnance clocks are still plain
+timestamps**, and should stay that way: neither is a schedule anybody is trying
+to keep to the millisecond.
+
 **A reconnect puts the deploy screen back up, over whatever was on it.**
 `Game`'s `onSeated` does that from `playing` and `dying` — the client's old slot
 is gone, its new one is dead, and every movement sample it sends is dropped as

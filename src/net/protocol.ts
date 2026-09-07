@@ -1254,7 +1254,19 @@ export interface ShotMessage {
    * backwards or through its own feet.
    */
   dir: Vec3;
-  /** Which of the two carried weapons, so the server reads the right damage. */
+  /**
+   * Which of the two carried weapons this round left, as `Player`'s own slot
+   * index — `PRIMARY_SLOT` or `SIDEARM_SLOT`, the same numbers the `1` and `2`
+   * keys name.
+   *
+   * The server reads the DAMAGE off it, and that is the whole of why it is
+   * here: the primary is the kit's and the sidearm is everybody's, so a slot
+   * the authority did not read left every pistol round in the game paying the
+   * primary's damage and fall-off. It is a CLAIM like every other field on
+   * this message and is treated as one — anything that is not the sidearm's
+   * index resolves to the primary, so a junk value costs a client its own
+   * sidearm rather than buying it anything.
+   */
   slot: number;
 }
 
@@ -1287,6 +1299,35 @@ export interface DeployMessage {
   t: "deploy";
   /** Index into `GameMap.spawns` — see above; not an index into the offer. */
   spawn: number;
+  /**
+   * The kit this body comes back with — `Join.weapon` and `Join.equipment`
+   * again, and resolved on the authority by the same two lookups.
+   *
+   * **A kit is chosen more than once in a match, and the join says it once.**
+   * The kit screen is reachable from the deploy screen — that is the one
+   * moment inside a round when the weapon is already put away — so a player
+   * who switches to the sniper on their third death has been carrying it
+   * locally ever since while the authority went on resolving every round of it
+   * against whatever they joined with. The damage a shot deals is the
+   * authority's (`Match.onShot`), so the symptom is not a mismatch anybody can
+   * see: it is a sniper round that does not kill and an LMG round that pays
+   * the marksman rifle's fifty.
+   *
+   * It rides the DEPLOY rather than a message of its own because this is the
+   * one door every body in the game comes through, and because the change is
+   * only ever made while dead: the ids that arrive here are the kit the player
+   * confirmed the spawn with, and the authority writes them a tick before it
+   * puts the body in the world. A living player's loadout therefore still
+   * cannot change under them, which is what `fire`'s `w` and the reload gate
+   * both rest on.
+   *
+   * Both are OPTIONAL and additive, exactly as they are on the join: a client
+   * that sends neither keeps the kit it joined with, which is what every build
+   * before this field meant.
+   */
+  weapon?: string;
+  /** The third slot, on `weapon`'s terms exactly. See `Join.equipment`. */
+  equipment?: string;
 }
 
 /**

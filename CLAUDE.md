@@ -1355,6 +1355,17 @@ motion it corrected** so a lid reads as a wall rather than a stutter.
 that makes it one, nothing else on the server may read a frame, and a new client
 message type owes an arm in its switch.
 
+**A KIT IS CHOSEN MORE THAN ONCE, so it rides the DEPLOY** — the join says it
+once and the kit screen is one key off the deploy screen, so anything that
+changes what a person carries owes the authority a `deploy`, or it goes on
+paying that player's rounds at the gun they joined with while the client's own
+tracer and hitmarker stay right. **A round also says WHICH of the two carried
+weapons it left** (`ShotMessage.slot`, which is why `PRIMARY_SLOT` and
+`SIDEARM_SLOT` live in `entities/weapons.ts`: the authority names them and
+cannot import `Player`). **And the fire-rate gate is a BUCKET rather than a
+minimum spacing**, because it measures ARRIVALS — 10% of an interval is 5 ms on
+the carbine, so a spacing rule ate honest rounds silently.
+
 **There is more than one match server, the CLIENT holds the list, and none of
 them knows another exists.** A `Region` carries BOTH its urls, and **a match id
 is minted per process, so every region has an `m1`** — every row, join and
@@ -1363,9 +1374,10 @@ hostname is forbidden**.
 
 → **[`docs/multiplayer.md`](docs/multiplayer.md)** — the authority model and what
 it does not defend against, the roster and the bench, the botless match and the
-row that says so, the deploy ask, what a death owes each side, the interpolation
-clock and its easy sign error, the rewind, the drive verdict and the correction
-under it, the lobby and the regions' two headers, and what is not built.
+row that says so, the deploy ask and the kit that rides it, the two weapons and
+the rate bucket, what a death owes each side, the interpolation clock and its
+easy sign error, the rewind, the drive verdict and the correction under it, the
+lobby and the regions' two headers, and what is not built.
 ## Conventions
 
 - **All tunables live in `src/config/`** (`CONFIG`, `as const`). No gameplay magic

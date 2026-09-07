@@ -1545,7 +1545,12 @@ making the draw as slow as a reload, removes the feature's reason to exist.
 - **The two slots are an ARRAY, indexed by exactly the number on the key.**
   `PRIMARY_SLOT` is 0, `SIDEARM_SLOT` is 1, so what `1`/`2` name and what
   `Player.slot` holds are one fact with no table between. `drawSlot` is the single
-  entry point; `swapWeapon` is "the other index".
+  entry point; `swapWeapon` is "the other index". They are declared in
+  `entities/weapons.ts` beside `SIDEARM` rather than here, because the AUTHORITY
+  names them too — a round reports the slot it left and `Match.onShot` reads this
+  side's damage and rate off it — and `server/` cannot import `Player` without
+  dragging the viewmodel into a process with no canvas. A second literal over
+  there would be exactly the table this bullet says there is not.
 - **Each slot keeps its own magazine, in a `Holster`.** A weapon put away half-empty
   comes back half-empty. `Player.ammo` is an accessor onto the carried holster rather
   than a field, so no mirrored count needs keeping in step. Both are refilled by

@@ -1891,7 +1891,17 @@ export class Game {
       // the outcome it would decide is the one thing on this screen the server
       // cannot afford to have a second opinion about: where somebody is.
       if (this.net) {
-        this.net.sendDeploy(this.conquest.spawnIndex(spawn));
+        // The kit goes with the ask. It is chosen on this screen — the kit
+        // screen is one key away from it — and the authority resolves every
+        // round this body fires out of what it is told here, so a deploy that
+        // carried only a spawn is one where a player who switched weapons
+        // since joining goes on dealing the damage of the gun they left in the
+        // menu. See `DeployMessage.weapon`.
+        this.net.sendDeploy(
+          this.conquest.spawnIndex(spawn),
+          this.weapon,
+          this.equipment,
+        );
         this.deployScreen.setPending();
         return;
       }
@@ -4503,7 +4513,13 @@ export class Game {
       // `shot.dir` and not `cameraSys.forward`: the spread was rolled inside
       // `fire`, and the server has to re-resolve this bullet rather than a
       // differently-jittered one.
-      this.net?.sendShot(this.cameraSys.camera.position, shot.dir, 0);
+      // The SLOT and not a constant: the authority reads this round's damage
+      // off it, and the sidearm is not the primary — see `ShotMessage.slot`.
+      this.net?.sendShot(
+        this.cameraSys.camera.position,
+        shot.dir,
+        this.player.carriedSlot,
+      );
 
       // Bots hear the player's rifle the same way they hear each other's. This
       // is the only place the player's own gunfire enters the world, so it is
