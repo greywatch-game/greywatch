@@ -30,6 +30,7 @@ import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
 import { NetSoldier } from "../entities/NetSoldier";
 import type { Combatant, Team } from "../entities/Combatant";
+import { viewerTeam } from "../core/teamView";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Hittable } from "../systems/CombatSystem";
 import type { ControlPoint } from "../systems/ConquestSystem";
@@ -152,6 +153,13 @@ export class NetRoster {
   }
 
   /**
+   * The side these rigs were painted for — see `setFielded`. The pool is built
+   * in the constructor, so this starts as whatever the viewer is then, which on
+   * a join is very often not the side the welcome is about to name.
+   */
+  private paintedFor: Team = viewerTeam();
+
+  /**
    * How many bodies a side the standing map fields, from `Game.buildRound`.
    *
    * **The exact counterpart of `BattleSystem.setRoster`, down to being the one
@@ -166,13 +174,25 @@ export class NetRoster {
    * `Roster.fielded` is what it sends and this is the same count arriving by
    * the map rather than by the wire, because the map never crosses the wire.
    *
-   * A no-op at the same size, which is every round on every map but the first
-   * one after a change of roster. Anything holding a body — the ragdoll pool
-   * above all — must have been reset before this is called, exactly as for
-   * `setRoster`.
+   * A no-op at the same size AND the same side. Anything holding a body — the
+   * ragdoll pool above all — must have been reset before this is called,
+   * exactly as for `setRoster`.
+   *
+   * **The side is the second half of the pool's identity, and this pool is the
+   * one that needed it.** These rigs are built in the CONSTRUCTOR, which runs
+   * when the session opens — before the authority has said which side it seated
+   * this client on, and therefore before `core/teamView.ts` knows which way
+   * round to paint anybody. A body is not repainted afterwards, the two kits
+   * differing in silhouette as well as in hue, so `Game.buildRound` sets the
+   * viewer above this call and this is where the pool notices. Without it a
+   * player seated on team 1 fights a whole match in which their own squad wears
+   * the enemy's crimson.
    */
   setFielded(perTeam: number): void {
-    if (perTeam * 2 === this.soldiers.length) return;
+    if (perTeam * 2 === this.soldiers.length && this.paintedFor === viewerTeam()) {
+      return;
+    }
+    this.paintedFor = viewerTeam();
     for (const soldier of this.soldiers) soldier.dispose();
     this.soldiers.length = 0;
     this.bySlot.length = 0;

@@ -1334,6 +1334,20 @@ hardcoded 0 turns every mine/theirs question backwards), the match's **map**
 (`Game.applyMatchMap`; `Game.setMap` is the *player* choosing, never written from
 the wire), a **body coming into the world** (an ASK), and the **scoreboard**.
 
+**A TEAM INDEX IS THE AUTHORITY'S AND A SIDE'S COLOURS ARE THE VIEWER'S**, and
+they stopped being one thing: [`src/core/teamView.ts`](src/core/teamView.ts)
+sits between them, so every player looks out at amber Valeguard against red
+Redline whichever slot balance seated them in. It is PRESENTATION and nothing
+else — a name, a palette and a kit — and combat, conquest, the score, the spawn
+rules and the wire all stay on the authority's index. **A side is chosen when a
+rig is BUILT** rather than worn over one, the two kits differing in silhouette
+as well as in hue, so `buildRound` sets the viewer before `installMap` and the
+pools, and a welcome that disagrees rebuilds the round instead of repainting it.
+**The side is therefore half of each rig POOL's identity** beside its size:
+`BattleSystem.setRoster` and `NetRoster.setFielded` both compare it, without
+which that rebuild reaches neither pool. **Nothing outside `teamLook` may index
+`CONFIG.teams` with a live team.**
+
 **The server cannot run `MapBuilder`**: it has no canvas, so `DynamicTexture`
 throws. It rebuilds the solid world from the generated
 `src/world/<map>/collision.ts`, including each box's `porous` flag, so **`npm run
@@ -1472,7 +1486,10 @@ lobby and the regions' two headers, and what is not built.
   three ways on purpose, each covering where the last fails: **hue** (the only
   one that survives a body three pixels wide), **accent** (that team colour,
   placed so some of it faces every direction), and **silhouette** (a helmet shape
-  per side, which is what is left when there is no colour at all).
+  per side, which is what is left when there is no colour at all). **WHICH side
+  wears which is the VIEWER's**, not the authority's — see the multiplayer
+  section — so a kit table is indexed through `viewTeam` and a name or a colour
+  through `teamLook`.
 - **Every ROUND is hitscan** — player and bots share `CombatSystem.fire()`, which
   takes the shooter's target list (so friendly fire is excluded by construction rather
   than by a team check inside) and the shooter's own `range`, which bounds the wall pick

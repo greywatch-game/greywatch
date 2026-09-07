@@ -177,14 +177,39 @@ else.** That balance rule puts the SECOND person into a match on team 1, so a
 client holding a hardcoded 0 reads every mine/theirs question in the game
 backwards at once — the ticket strip, the flag colours, the minimap, the spawns
 the deploy screen offers, the killfeed's "was that us", and the colours its own
-body falls in. `Game.applyPlayerTeam` is the single funnel, and it is called
-from **both ends of the race the welcome is in**: `joinMatch` books the local
-round before the socket is open, so `buildRound` reads `NetSession.team` when
-the welcome was early and `NetSession.onSeated` applies it when it was late.
-What the funnel is for is the short list of things painted ONCE in a side's
-colours — the death cam's stand-in body, the minimap backdrop, the HUD strip
-outside `playing`, the deploy screen's spawn list. Everything else reads
-`player.team` live every frame and needs nothing.
+body falls in. `Game.applyPlayerTeam` is the single funnel, and `buildRound` is
+the single caller: `joinMatch` books the local round before the socket is open,
+so the value is read off `NetSession.team` on the way through. What the funnel
+is for is the short list of things painted ONCE in a side's colours — the death
+cam's stand-in body, the minimap backdrop, the HUD strip outside `playing`, the
+deploy screen's spawn list. Everything else reads `player.team` live every frame
+and needs nothing.
+
+**A welcome that lands AFTER the build no longer repaints anything: it rebuilds
+the round.** The reason is that the index the authority seats you at and the
+side you LOOK at are now two questions (`src/core/teamView.ts`): every player
+sees their own side as amber Valeguard and the other as red Redline, so a match
+that seats you on team 1 has to paint every body in it the other way round. That
+is a decision taken when a rig is BUILT rather than a coat over one — the two
+kits differ in silhouette as well as in hue — so `buildRound` sets the viewer
+before `installMap` and the rig pools, and `onSeated` answers a side that
+disagrees exactly as it answers a map that disagrees, with `startRound`.
+
+**The two rig POOLS outlive a round, so the side is half of each one's
+identity.** `BattleSystem.setRoster` and `NetRoster.setFielded` are already
+no-ops at an unchanged size, and both now also compare the side they were
+painted for — without which the rebuild above reaches nothing, since neither
+pool's size moved. `NetRoster`'s is the one that made it necessary: its bodies
+are built in the CONSTRUCTOR, which runs when the session opens and therefore
+before the welcome that says which way round to paint them.
+
+**Everything the two clients disagree about is presentation and stops there.**
+The team INDEX on the wire, in the target lists, in the score and in the spawn
+rules is the authority's on both machines; `teamLook` is only reached by a name,
+a palette and a kit. The two absolute readers left are naming the presentation
+PAIR rather than a side — the menu's dossier, which is drawn before there is an
+authority to seat anybody, and the round-over card's `mine`/`theirs` slots,
+which `Game` now fills in the viewer's order.
 
 ## On the client, a bot and a person are the same thing
 

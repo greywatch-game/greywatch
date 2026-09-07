@@ -923,12 +923,19 @@ export class OverlayScreen {
    * facing each other across a bar, each in its own side's colour, with the
    * reinforcements each has left — which is the number the round was actually
    * decided by, and was a 24 px pair in a strip 600 px wide before this.
+   *
+   * The two ticket counts arrive in the VIEWER's order — the player's own side
+   * first — because the two slots on this card are `mine` and `theirs`, and
+   * every player's own side is the amber `CONFIG.teams[0]` whichever slot the
+   * authority seated them in. That is why the two names below are indexed
+   * literally rather than through `teamLook`: they are the presentation pair,
+   * not a team. See `core/teamView.ts`.
    */
   showRoundOver(
     winnerName: string,
     playerWon: boolean,
-    tickets0: number,
-    tickets1: number,
+    ticketsMine: number,
+    ticketsTheirs: number,
     mapName: string,
   ): void {
     this.setCardClass("roundover");
@@ -942,7 +949,7 @@ export class OverlayScreen {
     // ticket pool they started from: a round that ends 142-0 and one that ends
     // 12-0 are not the same round, and the pool is the same number on both
     // sides so the share IS the margin.
-    const total = Math.max(1, tickets0 + tickets1);
+    const total = Math.max(1, ticketsMine + ticketsTheirs);
     this.root.innerHTML = `
       <div class="ui-head">
         <div class="ui-titles">
@@ -960,14 +967,14 @@ export class OverlayScreen {
             <span class="lbl">Reinforcements remaining</span>
             <div class="ov-sides">
               <div class="side mine">
-                <span>${CONFIG.teams[0].name}</span><b>${tickets0}</b>
+                <span>${CONFIG.teams[0].name}</span><b>${ticketsMine}</b>
               </div>
               <div class="ov-split">
-                <i class="mine" style="flex:${tickets0 / total}"></i>
-                <i class="theirs" style="flex:${tickets1 / total}"></i>
+                <i class="mine" style="flex:${ticketsMine / total}"></i>
+                <i class="theirs" style="flex:${ticketsTheirs / total}"></i>
               </div>
               <div class="side theirs">
-                <span>${CONFIG.teams[1].name}</span><b>${tickets1}</b>
+                <span>${CONFIG.teams[1].name}</span><b>${ticketsTheirs}</b>
               </div>
             </div>
           </div>

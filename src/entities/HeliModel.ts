@@ -186,6 +186,7 @@ import { Scene, TransformNode } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
+import { viewTeam } from "../core/teamView";
 import {
   type Box,
   type Cyl,
@@ -221,6 +222,9 @@ interface HeliKit {
  * wide. The marking stands proud of the panel it sits on rather than flush with
  * it — a flash inside its own plate's 2 cm ink hull is no marking at all, which
  * is what the gun truck's flank cost before it was photographed.
+ *
+ * Indexed by the VIEW rather than by `Team`, as every other kit table in the
+ * game is — see `core/teamView.ts`.
  */
 const KITS: readonly HeliKit[] = [
   {
@@ -337,7 +341,10 @@ export function buildHeli(
   mats: CelMaterialFactory,
   team: Team,
 ): VehicleRig {
-  const kit = KITS[team];
+  // The kit is the VIEWER's read of this side rather than the authority's
+  // index for it: the local player's own side wears amber whichever slot a
+  // match seated them in. See `core/teamView.ts`.
+  const kit = KITS[viewTeam(team)];
   const t = CONFIG.vehicles.heli;
   // Built to the collider's own extents rather than to numbers of its own, so
   // the shape a round stops on and the shape a player aims at cannot drift.

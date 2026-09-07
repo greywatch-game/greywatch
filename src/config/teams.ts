@@ -4,7 +4,15 @@
  * WORN in, and the emissive its visor takes, and nothing else. A fourth
  * colour lived here unread for as long as this file has existed; a palette
  * nothing looks at is a palette that drifts from the one that is drawn.
- * Gotcha: index 0 is the player's team everywhere in the codebase.
+ * Gotcha: index 0 is the player's team everywhere a colour or a name is
+ * DRAWN, and that is now true of every player rather than only of a team-0
+ * one: `core/teamView.ts` sits between an authority's team INDEX and this
+ * table, so a match seats you where it likes and you are amber regardless.
+ * A LIVE team index therefore belongs in `teamLook` and nowhere else. The
+ * places that index this table literally are naming the presentation PAIR
+ * rather than a side — the menu's dossier and the round-over card's two
+ * slots, both of which mean "yours" and "theirs" — and are correct as they
+ * are.
  */
 
 /**

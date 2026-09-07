@@ -57,6 +57,7 @@ import { CONFIG, FOG_WALL } from "../config";
 import { Bot, type BattleCtx, type BotZone } from "../entities/Bot";
 import { assignSkills } from "../entities/BotSkill";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
+import { viewerTeam } from "../core/teamView";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { CoverMap } from "../world/CoverMap";
 import type { FlowField, NavGrid } from "../world/NavGrid";
@@ -369,6 +370,19 @@ export class BattleSystem {
    * server, so a slot index is still a bot index there. See `setRoster`.
    */
   private perTeam: number = CONFIG.bots.perTeam;
+  /**
+   * The SIDE the rigs in the pool were painted for — `teamView`'s viewer at the
+   * moment `buildPool` ran, and the pool's identity every bit as much as its
+   * size is.
+   *
+   * A body is not repainted between rounds: the two kits differ in silhouette
+   * as well as in hue, so a side is chosen when nineteen meshes are merged and
+   * cannot be argued with afterwards. A client that books a round before the
+   * authority has seated it builds this pool for team 0 and then learns it is
+   * on team 1, and without this the round would be fought by bodies wearing
+   * the wrong colours for the rest of the match. See `core/teamView.ts`.
+   */
+  private paintedFor: Team = viewerTeam();
 
   constructor(
     // Fields, since a map may state a roster of its own and the pool is then
@@ -557,12 +571,14 @@ export class BattleSystem {
    * may be about to dispose, and before `setDifficulty`, which draws a skill
    * for every bot in the pool it is handed.
    *
-   * A no-op at the same size, which is every round on every map but the first
-   * one after a change of roster — so the ordinary case is one comparison.
+   * A no-op at the same size AND the same side, which is every round on every
+   * map but the first one after a change of roster or a change of seat — so the
+   * ordinary case is two comparisons. See `paintedFor` for the second one.
    */
   setRoster(perTeam: number): void {
-    if (perTeam === this.perTeam) return;
+    if (perTeam === this.perTeam && this.paintedFor === viewerTeam()) return;
     this.perTeam = perTeam;
+    this.paintedFor = viewerTeam();
     // Nothing may be holding a body across this. The two sets are the only
     // things in this file that do, and `seated` is an index into a pool that
     // is about to be a different length — `Game.buildRound` seats the player

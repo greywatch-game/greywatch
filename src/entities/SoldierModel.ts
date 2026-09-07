@@ -22,6 +22,7 @@ import { CONFIG } from "../config";
 import { clamp } from "../core/math";
 import { type CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
+import { viewTeam } from "../core/teamView";
 // Type-only, so no runtime edge is created — the same import `Vehicle` takes
 // for the same reason. `DamageKind` lives with the shot that carries it.
 import type { DamageKind } from "../systems/CombatSystem";
@@ -108,7 +109,12 @@ interface SoldierKit {
   face: "brim" | "respirator";
 }
 
-/** One kit per team, indexed by `Team`. */
+/**
+ * One kit per SIDE, indexed by the VIEW rather than by `Team` — 0 is whoever
+ * is looking and 1 is whoever they are fighting, so a player's own side wears
+ * the amber brim whichever slot a match seated them in. See
+ * `core/teamView.ts`.
+ */
 const KITS: readonly SoldierKit[] = [
   {
     armor: "#474436",
@@ -580,7 +586,10 @@ export function buildSoldier(
   mats: CelMaterialFactory,
   team: Team,
 ): SoldierRig {
-  const kit = KITS[team];
+  // The kit is the VIEWER's read of this side rather than the authority's
+  // index for it: the local player's own side wears amber whichever slot a
+  // match seated them in. See `core/teamView.ts`.
+  const kit = KITS[viewTeam(team)];
   const centerHeight = 0.9;
   const root = MeshBuilder.CreateCapsule(
     "bot",

@@ -489,6 +489,11 @@ function drawGrid(
 /**
  * The two home spawn lines, in the colours the sides are WORN in.
  *
+ * Indexed ABSOLUTELY and deliberately, where a body in the world goes through
+ * `core/teamView.ts`: this card is a map rather than a round, drawn before
+ * there is an authority to seat anybody, and the player it is drawn for is the
+ * amber side of every match they will ever join.
+ *
  * Home spawns only — the ones with a team. Every control point carries a spawn
  * of its own, and drawing those puts a second mark inside each flag ring
  * saying nothing the ring does not.

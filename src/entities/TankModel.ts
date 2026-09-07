@@ -73,6 +73,7 @@ import { Scene, TransformNode } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
+import { viewTeam } from "../core/teamView";
 import {
   paintRig,
   segmentOf,
@@ -124,7 +125,11 @@ interface TankKit {
   accent: string;
 }
 
-/** One kit per team, indexed by `Team`. Warm against cold, as the soldiers are. */
+/**
+ * One kit per SIDE, indexed by the VIEW and not by `Team` — see
+ * `core/teamView.ts`, and `SoldierModel`'s `KITS`. Warm against cold, as the
+ * soldiers are.
+ */
 const KITS: readonly TankKit[] = [
   {
     armor: "#5a5844",
@@ -265,7 +270,10 @@ export function buildTank(
   mats: CelMaterialFactory,
   team: Team,
 ): VehicleRig {
-  const kit = KITS[team];
+  // The kit is the VIEWER's read of this side rather than the authority's
+  // index for it: the local player's own side wears amber whichever slot a
+  // match seated them in. See `core/teamView.ts`.
+  const kit = KITS[viewTeam(team)];
   const t = CONFIG.vehicles.tank;
   // The drawn hull is built to the collider's own extents rather than to
   // numbers of its own, so the shape a round stops on and the shape a player

@@ -12,8 +12,8 @@
  * sends a request and `setPending` is how this screen says so.
  */
 import "./deploy.css";
-import { CONFIG } from "../config";
-import type { Team } from "../entities/Combatant";
+import { OTHER_TEAM, type Team } from "../entities/Combatant";
+import { teamLook } from "../core/teamView";
 import type { ConquestSystem } from "../systems/ConquestSystem";
 import type { GameMap, SpawnPointDef } from "../world/MapBuilder";
 
@@ -272,7 +272,7 @@ export class DeployScreen {
 
   private spawnLabel(spawn: SpawnPointDef | undefined): string {
     if (!spawn) return "NO POSITION";
-    if (!spawn.controlPoint) return CONFIG.teams[this.team].name.toUpperCase();
+    if (!spawn.controlPoint) return teamLook(this.team).name.toUpperCase();
     const p = this.conquest?.pointById(spawn.controlPoint);
     return (p?.def.name ?? spawn.controlPoint).toUpperCase();
   }
@@ -326,8 +326,12 @@ export class DeployScreen {
     }
 
     this.hotspots.length = 0;
-    const mine = CONFIG.teams[this.team].color;
-    const theirs = CONFIG.teams[1 - this.team].color;
+    // Through the view rather than the index, so `mine` is the amber every
+    // player's own side is drawn in whichever slot the authority seated them
+    // in — the same read the bodies out in the world are wearing. See
+    // `core/teamView.ts`.
+    const mine = teamLook(this.team).color;
+    const theirs = teamLook(OTHER_TEAM[this.team]).color;
 
     // Flags.
     for (const p of conquest.points) {

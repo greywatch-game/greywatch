@@ -196,6 +196,7 @@ import {
 } from "./ScreenStack";
 import { readSettings, writeSettings, type Settings } from "./settings";
 import { Sfx } from "./Sfx";
+import { setViewerTeam, teamLook } from "./teamView";
 
 /** Grass bends around combatants; in the editor there are none. */
 const EMPTY_PUSHERS: readonly Combatant[] = [];
@@ -1638,7 +1639,7 @@ export class Game {
       this.awardZone(point, by, "capture");
       if (by === this.player.team) this.sfx.capture();
       else this.sfx.flagLost();
-      const who = CONFIG.teams[by].name.toUpperCase();
+      const who = teamLook(by).name.toUpperCase();
       this.hud.showMessage(`${point.def.name.toUpperCase()} CAPTURED BY ${who}`, 2.5);
     };
     this.conquest.onNeutralised = (point, by) => {
@@ -3962,6 +3963,21 @@ export class Game {
         break;
       }
     }
+    // The side, resolved ONCE and before a single body is built, because it is
+    // what every one of them is PAINTED from: from behind the player's own eyes
+    // their team is amber Valeguard against red Redline, whichever slot
+    // `Roster.claim` seated them in. See `core/teamView.ts`.
+    //
+    // It cannot wait for `applyPlayerTeam` below, which needs a map and a
+    // started conquest to repaint: a side is chosen when a rig is BUILT rather
+    // than worn over one — the two differ in silhouette as well as in hue — and
+    // `installMap`'s vehicles and `setRoster`'s pool are both under this line.
+    // A side that changes AFTER a build rebuilds the round; see `net.onSeated`.
+    //
+    // Read on this side of the await above for `applyMatchMap`'s reason: a
+    // welcome that landed inside the heightfield fetch is news this line owes.
+    const team: Team = this.net?.seated ? this.net.team : 0;
+    setViewerTeam(team);
     // The environment goes on before the build: the sky is painted from it,
     // and the cel materials the map's meshes are created against read their
     // fog and key light off the uniforms this writes.
@@ -4044,9 +4060,11 @@ export class Game {
     this.player.setEquipment(this.armourOffered ? this.equipment : null);
     // Offline the player is team 0 for the life of the process. In a netplay
     // round the side is the authority's, and the session has it whenever the
-    // welcome beat this build; when it did not, the welcome applies it itself.
-    // Either way it goes in through the one funnel — see `applyPlayerTeam`.
-    this.applyPlayerTeam(this.net?.seated ? this.net.team : 0, map);
+    // welcome beat this build; when it did not, the welcome rebuilds the round
+    // rather than repainting it. Either way it goes in through the one funnel —
+    // see `applyPlayerTeam`, and `setViewerTeam` above for why the value itself
+    // was resolved further up.
+    this.applyPlayerTeam(team, map);
     // …and the glass as the authority left it, for the same "either side of the
     // build" reason: a joiner mid-round has missed every break in it, and the
     // welcome may have landed before this map existed to apply them to. See
@@ -4221,11 +4239,11 @@ export class Game {
    * Offline the answer is always team 0. In a netplay round it is the
    * authority's — `Roster.claim` seats the second human on team 1 — and it
    * arrives in the welcome, which can land on EITHER side of the local build
-   * because `joinMatch` books the round before the socket is open. So this is
-   * called from both ends: `buildRound` deals whatever the session already
-   * has, and `NetSession.onSeated` deals it again when it turns out to
-   * disagree. That is why nothing here may assume it is running on a fresh
-   * round.
+   * because `joinMatch` books the round before the socket is open. `buildRound`
+   * is the ONE caller, and a welcome that turns out to disagree no longer
+   * arrives here at all: since a side is what every body in the round is
+   * PAINTED from, `NetSession.onSeated` rebuilds the round instead and comes
+   * back through this method on the way — see `setViewerTeam` in `buildRound`.
    *
    * Almost everything downstream reads `player.team` live, every frame, and
    * needs nothing from this. What it collects is the things that take a COPY
@@ -4243,7 +4261,7 @@ export class Game {
     this.deathCam.prepare(team);
     this.minimap.setMap(map, team);
     this.hud.setTickets(
-      [CONFIG.teams[0].name, CONFIG.teams[1].name],
+      [teamLook(0).name, teamLook(1).name],
       this.conquest.tickets,
       team,
     );
@@ -6015,7 +6033,23 @@ export class Game {
           this.startRound();
           return;
       }
-      if (team !== this.player.team) this.applyPlayerTeam(team, this.map);
+      // A side that changed is the map-changed case above with a different
+      // cause, and it takes the same answer for the same reason: every body in
+      // the round was PAINTED for the side this client thought it was on, and a
+      // side is not a coat of paint. The two kits differ in silhouette as well
+      // as in hue, so a rig is built for one of them and nineteen merged meshes
+      // cannot be talked out of it afterwards — see `core/teamView.ts`. The
+      // rebuild reads the welcome that is now on the session and paints the
+      // whole round, the glass below included, from the right eye.
+      //
+      // It is the second joiner's case and it is rare on top of that: the
+      // welcome usually lands while `loading` is still up, where `buildPending`
+      // defers to `buildRound` — which sets the viewer before it builds
+      // anything, so nothing is painted the wrong way round to begin with.
+      if (team !== this.player.team) {
+        this.startRound();
+        return;
+      }
       // The welcome landed AFTER the build, so the glass it named has to be
       // applied here. `buildRound` covers the other order and `catchUp` is
       // idempotent, so exactly one of the two does the work and neither has to
@@ -6178,7 +6212,7 @@ export class Game {
         if (event.by === this.player.team) this.sfx.capture();
         else this.sfx.flagLost();
         this.hud.showMessage(
-          `${event.point.toUpperCase()} CAPTURED BY ${CONFIG.teams[event.by].name.toUpperCase()}`,
+          `${event.point.toUpperCase()} CAPTURED BY ${teamLook(event.by).name.toUpperCase()}`,
           2.5,
         );
         break;
@@ -6346,7 +6380,7 @@ export class Game {
    * `killer` is -1 for a death with no killer, which is the leash and only the
    * leash — see `ServerEvent`'s `kill`. Guarded rather than assumed: it indexes
    * a two-row table, and the alternative to that line is reading
-   * `CONFIG.teams[-1].name` off the end of it.
+   * `teamLook(-1).name` off the end of it.
    *
    * The corpse is ARMED here and thrown later, by `NetRoster` when the
    * interpolated death arrives. This event is real time and the body is drawn
@@ -6361,9 +6395,9 @@ export class Game {
    */
   private onNetKill(event: NetEvent<"kill">): void {
     const killer =
-      event.killer >= 0 ? CONFIG.teams[event.killer].name : LEASH_KILLER;
+      event.killer >= 0 ? teamLook(event.killer as Team).name : LEASH_KILLER;
     const victimSlot = this.net?.roster.at(event.victim);
-    const victim = victimSlot ? CONFIG.teams[victimSlot.team].name : "";
+    const victim = victimSlot ? teamLook(victimSlot.team).name : "";
     this.hud.addKill(killer, victim, event.killer === this.player.team);
     if (victimSlot) {
       victimSlot.deathFrom.set(event.from[0], event.from[1], event.from[2]);
@@ -6963,7 +6997,7 @@ export class Game {
     if (!this.net) return;
     this.updateNetWorld(dt);
     this.hud.setTickets(
-      [CONFIG.teams[0].name, CONFIG.teams[1].name],
+      [teamLook(0).name, teamLook(1).name],
       this.conquest.tickets,
       this.player.team,
     );
@@ -7495,7 +7529,7 @@ export class Game {
     // re-projected onto the screen — pushed here like every other HUD input.
     this.hud.setViewYaw(this.aimViewYaw(dying));
     this.hud.setTickets(
-      [CONFIG.teams[0].name, CONFIG.teams[1].name],
+      [teamLook(0).name, teamLook(1).name],
       this.conquest.tickets,
       this.player.team,
     );
@@ -7702,7 +7736,7 @@ export class Game {
     // `updateGameplay` stops running here, so push the final state once more —
     // otherwise the ticket bar sits frozen a frame behind the result text.
     this.hud.setTickets(
-      [CONFIG.teams[0].name, CONFIG.teams[1].name],
+      [teamLook(0).name, teamLook(1).name],
       this.conquest.tickets,
       this.player.team,
     );
@@ -7712,11 +7746,15 @@ export class Game {
     this.battle.reset();
     document.exitPointerLock();
     const won = winner === this.player.team;
+    // The card's two sides are `mine` and `theirs`, so the tickets go in the
+    // VIEWER's order rather than the authority's: a player seated on team 1 was
+    // reading their own reinforcements out of the enemy's slot, in the enemy's
+    // colour, before the side became a thing the whole round is painted from.
     this.overlayScreen.showRoundOver(
-      CONFIG.teams[winner].name,
+      teamLook(winner).name,
       won,
-      this.conquest.tickets[0],
-      this.conquest.tickets[1],
+      this.conquest.tickets[this.player.team],
+      this.conquest.tickets[OTHER_TEAM[this.player.team]],
       this.mapDef.name,
     );
   }
@@ -7780,7 +7818,7 @@ export class Game {
       // is thrown by. A new way to die owes this line an origin unless nobody
       // caused it.
       this.hud.addKill(
-        from ? CONFIG.teams[1 - this.player.team].name : LEASH_KILLER,
+        from ? teamLook(OTHER_TEAM[this.player.team]).name : LEASH_KILLER,
         "YOU",
         true,
       );
@@ -7876,8 +7914,8 @@ export class Game {
     this.conquest.registerDeath(bot.team);
     this.scores.registerDeath(this.battle.bots.indexOf(bot));
     this.hud.addKill(
-      byPlayer ? "YOU" : CONFIG.teams[killer].name,
-      CONFIG.teams[bot.team].name,
+      byPlayer ? "YOU" : teamLook(killer).name,
+      teamLook(bot.team).name,
       byPlayer,
     );
   }
@@ -7982,7 +8020,7 @@ export class Game {
     }
     this.hud.setScoreboard(true, {
       map: this.mapDef.name,
-      teams: [CONFIG.teams[0].name, CONFIG.teams[1].name],
+      teams: [teamLook(0).name, teamLook(1).name],
       tickets: this.conquest.tickets,
       flags: [this.conquest.flagsHeld(0), this.conquest.flagsHeld(1)],
       kills,

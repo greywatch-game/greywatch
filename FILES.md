@@ -190,6 +190,14 @@ src/
     settings.ts         # Settings shape, defaults, localStorage. Applies
                         #   nothing — that is Game.applySettings, the ONLY
                         #   place a setting reaches whatever owns it
+    teamView.ts         # Which side the player is LOOKING from: the one remap
+                        #   between the authority's team INDEX and the team a
+                        #   body is DRAWN and NAMED as, so every player sees
+                        #   their own side as amber Valeguard. PRESENTATION
+                        #   only — combat, conquest, the score and the wire
+                        #   never ask. Written by Game.buildRound BEFORE
+                        #   anything is built, because a kit is chosen when a
+                        #   rig is merged and cannot be repainted after
     FrameProfile.ts     # Where a frame's milliseconds went, recorded
                         #   CONTINUOUSLY into a ring and captured BACKWARDS —
                         #   you feel the hitch, then press the button. SHIPS,
