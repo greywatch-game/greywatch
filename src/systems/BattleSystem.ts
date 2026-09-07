@@ -14,10 +14,13 @@
  * BotMemory and may never hand anybody a target.
  * LOS runs `RayWorld.blocked`, so a bot sees through what it could shoot
  * through (fence rails) and not through what it could not.
- * Cover is a baked lookup (world/CoverMap), never a probe. Bot muzzle flashes are
- * NOT pulsed from here — this system only records flash positions and Game
- * spends CONFIG.lighting.muzzleBudgetPerFrame on the nearest few (16 shader
- * light slots are absolute). Runs AFTER ConquestSystem.update each frame.
+ * Cover is a baked lookup (world/CoverMap), never a probe. So is the floor:
+ * `groundHeight` is `clearObstacles`' sibling, answering off the map's terrain
+ * and collider boxes — the same geometry Player.probeGround reads, so a bot's
+ * feet and a player's stand on one floor rather than on two descriptions of it.
+ * Bot muzzle flashes are NOT pulsed from here — this system only records flash
+ * positions and Game spends CONFIG.lighting.muzzleBudgetPerFrame on the nearest
+ * few (16 shader light slots are absolute). Runs AFTER ConquestSystem.update each frame.
  * Cross-system effects go out via onBotKill/onBotFired callbacks wired in
  * Game — never import other systems. A bot's grenade leaves the same way
  * (throwGrenadeFor): the ballistics and the pool are GrenadeSystem's, and this
@@ -59,6 +62,7 @@ import type { CoverMap } from "../world/CoverMap";
 import type { FlowField, NavGrid } from "../world/NavGrid";
 import type { GameMap } from "../world/MapBuilder";
 import type { ObstacleField } from "../world/ObstacleField";
+import type { TerrainField } from "../world/TerrainField";
 import type { RayWorld } from "../world/RayWorld";
 import type { CombatSystem, Hittable, ShotOptions } from "./CombatSystem";
 import { SquadRadio } from "../entities/SquadRadio";
@@ -224,6 +228,13 @@ export class BattleSystem {
   private nav: NavGrid | null = null;
   private cover: CoverMap | null = null;
   private obstacles: ObstacleField | null = null;
+  /**
+   * The map's floor, for `groundHeight` — the one surface with no collider box
+   * standing in for it, exactly as `Player.probeGround` has always had to say.
+   * Null until a map is installed, and a bot with none stands at whatever
+   * height the nav graph gives it, which is the whole of the old behaviour.
+   */
+  private terrain: TerrainField | null = null;
   /**
    * Combatants in the fight that are not bots: the local player offline, and
    * every connected human on the multiplayer server.
@@ -436,7 +447,41 @@ export class BattleSystem {
         this.obstacles
           ? this.obstacles.resolve(x, y, z, CONFIG.nav.bodyRadius, out)
           : (out.set(x, y, z), false),
+      groundHeight: (x, z, near) => this.groundHeight(x, z, near),
     };
+  }
+
+  /**
+   * Where the floor actually is at `(x, z)`, on the surface the nav graph has
+   * already picked out at `near`.
+   *
+   * `clearObstacles`' sibling, and the same argument: the graph answers in
+   * SURFACES, which are sampled one per cell CENTRE, so its height is a
+   * 1.5 m-wide stair tread. That is right for deciding whether a step is legal
+   * and wrong for standing a body on a hillside — a 20 degrees slope rises half
+   * a metre across one cell, and a bot walking up it popped that half metre
+   * every time it crossed a boundary. `Player.probeGround` has never had that
+   * problem because it asks the geometry rather than the graph, and this asks
+   * the same geometry the same way: the drawn floor (`surfaceAt`, not the
+   * smooth field the floor is cut from) and the collider boxes, highest wins.
+   *
+   * **Banded to `stepHeight` either side of the graph's own answer**, which is
+   * what keeps this a REFINEMENT rather than a second opinion: a bot on a
+   * bridge must not be handed the creek floor under it because the creek is
+   * lower, and one beside a stack of crates must not be handed their top face.
+   * Nothing in the band means nothing better was found, and the graph's height
+   * stands.
+   */
+  private groundHeight(x: number, z: number, near: number): number {
+    const band = CONFIG.nav.stepHeight;
+    let best: number | null = null;
+    const ground = this.terrain?.surfaceAt(x, z) ?? null;
+    if (ground !== null && ground >= near - band && ground <= near + band) {
+      best = ground;
+    }
+    const box = this.obstacles?.groundAt(x, z, near + band, near - band) ?? null;
+    if (box !== null && (best === null || box > best)) best = box;
+    return best ?? near;
   }
 
   /**
@@ -580,6 +625,7 @@ export class BattleSystem {
     this.nav = map.nav;
     this.cover = map.cover;
     this.obstacles = map.obstacles;
+    this.terrain = map.terrain;
     this.rays = map.rays;
   }
 

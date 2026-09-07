@@ -736,8 +736,12 @@ visual geometry must stay out of both.
 
 **The ground under a body's feet is the one question no longer asked with a
 ray**: `Player.probeGround` reads the `WorldBox` list through
-`ObstacleField.groundAt`. So a collider that skips `collider()` is invisible to
-the FLOOR as well as to navigation, and anything SOLID that MOVES owes the probe
+`ObstacleField.groundAt`, and **a BOT's feet now read the same answer** — the
+nav graph says which SURFACE a bot is on and `BattleCtx.groundHeight` says where
+that surface is at the exact point, because a graph sampled per cell centre is a
+1.5 m stair tread and bots climbed hills as a flight of stairs
+(`docs/bots.md`). So a collider that skips `collider()` is invisible to the
+FLOOR as well as to navigation, and anything SOLID that MOVES owes the probe
 a query of its own, because the boxes are baked once at map load —
 `Vehicle.deckAt`, and only that.
 

@@ -3,9 +3,14 @@
  * capture/dead), movement, perception, aiming, firing. Rig visuals come from
  * SoldierModel.
  * Invariants: NEVER uses moveWithCollisions and never runs its own pathfinding —
- * movement steers on NavGrid flow fields + ObstacleField push-out. Think ticks
- * (target acquisition, FSM transitions) are rate-limited and staggered by
- * BattleSystem; update() (movement/animation) runs every frame. Bots hold a
+ * movement steers on NavGrid flow fields + ObstacleField push-out. The graph
+ * picks the SURFACE and the geometry places the FEET (`settle`): a surface is
+ * sampled per cell CENTRE, so writing its height straight into `position.y` is
+ * what made bots climb a slope as a flight of stairs, and everything hanging
+ * off that point — the eye, the hit sphere, the LOS target — stood at the same
+ * wrong height with it.
+ * Think ticks (target acquisition, FSM transitions) are rate-limited and
+ * staggered by BattleSystem; update() (movement/animation) runs every frame. Bots hold a
  * target until it dies/breaks LOS/leaves range — removing that hysteresis
  * makes bots never fire, which is also why `aimT` resets ONLY on a genuine
  * target change and a remembered enemy is re-acquired at `reacquireDelay`
@@ -198,6 +203,18 @@ export interface BattleCtx {
    * spot was already clear.
    */
   clearObstacles(x: number, y: number, z: number, out: Vector3): boolean;
+  /**
+   * Where the floor actually is at `(x, z)`, given the height the nav graph
+   * already picked out there.
+   *
+   * The graph samples one column per cell CENTRE, so `NavGrid.heightOf` is a
+   * 1.5 m stair tread: right for deciding whether a step is legal, wrong for
+   * standing a body on a hillside. This answers off the same geometry
+   * `Player.probeGround` reads — the drawn floor and the collider boxes — and
+   * is banded to a step either side of what it was handed, so it refines the
+   * graph's answer and never overrules it.
+   */
+  groundHeight(x: number, z: number, near: number): number;
 }
 
 /** Shortest signed angle for `a`, in -PI..PI. */
@@ -1178,13 +1195,31 @@ export class Bot implements Combatant {
     return this.settle(ctx, tx, tz);
   }
 
-  /** Stands at `(x, z)` if the nav graph has a surface there within a step. */
+  /**
+   * Stands at `(x, z)` if the nav graph has a surface there within a step.
+   *
+   * **The graph picks the SURFACE and the geometry places the FEET**, and
+   * keeping those two apart is what stopped bots climbing hills as a flight of
+   * stairs. A surface is sampled one column per cell centre, so its height is
+   * flat across the whole 1.5 m cell and a bot walking a slope popped the
+   * cell's whole rise — half a metre at 20 degrees — every time it crossed a
+   * boundary. Which surface a body is on is still entirely the graph's answer,
+   * and so is whether the move is legal; `groundHeight` only says where that
+   * surface is at this exact point, off the geometry `Player.probeGround`
+   * already reads.
+   *
+   * **The step test is then taken between two precise heights**, which matters
+   * on a slope and is not merely tidier: comparing a refined `position.y` at
+   * the low edge of a cell against the CENTRE height of the cell uphill adds
+   * most of a cell's rise to a step the body is not actually taking, and on
+   * anything steep that refuses moves the graph itself allows.
+   */
   private settle(ctx: BattleCtx, x: number, z: number): boolean {
     const surface = ctx.nav.surfaceAt(x, this.position.y, z);
     if (surface < 0) return false;
     // The graph only links surfaces within a step of each other; hold the same
     // rule here or a bot can drop off the bridge into the creek in one frame.
-    const height = ctx.nav.heightOf(surface);
+    const height = ctx.groundHeight(x, z, ctx.nav.heightOf(surface));
     if (Math.abs(height - this.position.y) > CONFIG.nav.stepHeight) return false;
     this.position.set(x, height, z);
     return true;

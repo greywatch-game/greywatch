@@ -158,6 +158,43 @@ graph rejects, the bot takes the overlapping one — frozen is worse than clippi
 and two fruitless sidesteps in a row set `squeezeT`, which drops the push-out for a
 second so a bot wedged in a gap narrower than its own body gets out.
 
+**The graph picks the SURFACE and the geometry places the FEET, and that split is
+the same coarseness read on the other axis.** A surface is one column sampled at a
+cell CENTRE, so `NavGrid.heightOf` is flat across the whole 1.5 m cell — which is
+right for the questions the graph is asked (which storey is this, is that step
+legal) and wrong for standing a body on a hillside. `Bot.settle` used to write that
+tread straight into `position.y`, so a bot climbing a slope held its height across a
+cell and then took the cell's whole rise in one frame: half a metre at 20 degrees, a
+stair flight up a hill nobody had built stairs on. It also put the hit sphere, the
+eye and the LOS target at the same wrong height, because everything about a bot's
+body hangs off that one point.
+
+The fix is that `settle` still asks the graph which surface the bot is on and still
+holds the graph's own step rule, and then asks `BattleCtx.groundHeight` where that
+surface actually is at the exact point — the drawn floor (`TerrainField.surfaceAt`,
+not the smooth field it is cut from) and the collider boxes, highest wins. It is
+`clearObstacles`' sibling in every respect: the same two structures, the same
+bucket walk, no ray, and the same geometry `Player.probeGround` has always read —
+which is what puts a bot's feet and a player's on one floor rather than on two
+descriptions of it. **It is banded to `stepHeight` either side of the graph's
+answer**, and that band is what keeps it a refinement rather than a second opinion:
+a bot on a bridge must not be handed the creek under it, and one beside a stack of
+crates must not be handed their top face. Nothing in the band means nothing better
+was found and the graph's height stands, which is the old behaviour exactly.
+
+**The step test is then taken between two precise heights, and that half is not
+merely tidier.** Comparing a refined `position.y` at the low edge of a cell against
+the CENTRE height of the cell uphill charges a step with most of a cell's rise that
+the body is not taking, which on anything steep refuses moves the graph itself
+allows. Measured over twelve seconds of a live round, counting frames that moved a
+bot more than 10 cm vertically while covering under 5 cm of ground: **Harrowmead 258
+such frames against 0, worst single frame 0.54 m against 0.03 m; Sarab 253 against
+0, worst 0.24 m against 0.011 m**, with the total climb over the run unchanged
+(105.8 m against 108.9 m on Harrowmead) — the bots walk the same hills, they just
+arrive up them continuously. Flat maps have nothing to gain and lose nothing:
+Cinderhaven's quays and Greyfen's valley floor read within a few centimetres either
+way. A crewed bot is outside all of this, its position being the hull's.
+
 This is why bots stuck in props were also unshootable: `CombatSystem.fire` caps a
 shot at the first `solid` hit and only counts a target sphere closer than that, so
 the prop ate every round aimed at the body inside it. The two symptoms are one bug.
