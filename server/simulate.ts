@@ -36,7 +36,7 @@ import { PerformanceObserver } from "node:perf_hooks";
 import { TICK_HZ } from "../src/net/protocol";
 import { CONFIG } from "../src/config";
 import { MAPS } from "../src/world/maps";
-import { HeadlessGame } from "./HeadlessGame";
+import { HeadlessGame, type DeathCause } from "./HeadlessGame";
 
 /** Give up rather than spin forever if a round somehow cannot end. */
 const MAX_SIM_MINUTES = 45;
@@ -125,6 +125,20 @@ async function runRound(mapId: string, difficulty: number) {
   const awards: Record<string, number> = {};
   game.scores.onAward = (_slot, kind) => {
     awards[kind] = (awards[kind] ?? 0) + 1;
+  };
+  // Every death, filed by the door it came through and by whether anybody was
+  // paid for it. The two checks under `reconcile` are what this is for; the
+  // per-cause breakdown is what makes a failure readable rather than merely
+  // detected.
+  const deaths: Partial<Record<DeathCause, number>> = {};
+  const uncredited: Partial<Record<DeathCause, number>> = {};
+  let bodies = 0;
+  let creditedBodies = 0;
+  game.onDeath = (_slot, cause, credited) => {
+    bodies++;
+    deaths[cause] = (deaths[cause] ?? 0) + 1;
+    if (credited) creditedBodies++;
+    else uncredited[cause] = (uncredited[cause] ?? 0) + 1;
   };
 
   // **Nothing sets the roster here any more, and that is the fix rather than
@@ -274,6 +288,49 @@ async function runRound(mapId: string, difficulty: number) {
     points: [game.teamScore(0).points, game.teamScore(1).points] as [number, number],
     /** Every award paid this round, by kind — what the points above are made of. */
     awards,
+    /**
+     * The board checked against itself: does every kill award land on a row a
+     * team can see, does every death, and is every body either paid for or
+     * explained.
+     *
+     * **The third is the one with teeth and the first two are couplings**, and
+     * saying which is which is the difference between a check and a comfort.
+     *
+     * The third is two INDEPENDENT streams meeting: the credit door says how
+     * many blows found somebody to pay, and the ledger says how many kills
+     * were written down. They can only agree if every creditable blow reached
+     * a real row, so it catches both halves of the thing that goes wrong here
+     * — a door that claims a credit it never got, and a credit that was made
+     * and then dropped on the floor. Both were injected and both were caught.
+     * It holds exactly while nobody is in the fight: a person's kill is
+     * awarded at the killer's door while their death is counted at their own,
+     * so the two streams stop being one number the moment a match has people
+     * in it, which is why this lives here and not in `Match`.
+     *
+     * The first two cannot fire as the authority is wired today, and they are
+     * here anyway because what they check is a COUPLING that is currently
+     * true rather than a law. `startRound` sizes the board with
+     * `scores.reset(battle.bots.length)` and `teamScore` walks that same pool,
+     * so every in-range slot is owned by a side by construction — and
+     * `ScoreBook.award` drops an out-of-range one BEFORE raising `onAward`, so
+     * a bad slot takes both sides of the comparison to zero together rather
+     * than splitting them. What breaks that is a pool resized under a live
+     * board, which is not hypothetical: `BattleSystem.setRoster` does exactly
+     * that on a client, and `setFielded` already gives the authority two
+     * different numbers for "how many bots". The day either reaches this
+     * board, these two lines are what says so.
+     */
+    reconcile: {
+      killAwards: awards.kill ?? 0,
+      ledgerKills: game.teamScore(0).kills + game.teamScore(1).kills,
+      ledgerDeaths: game.teamScore(0).deaths + game.teamScore(1).deaths,
+      bodies,
+      creditedBodies,
+      /** Every death by the door it came through. */
+      deaths,
+      /** …and the subset nobody was paid for, which is what wants explaining. */
+      uncredited,
+    },
     captures: captures.length,
     blasts,
     flagsHeld: [game.conquest.flagsHeld(0), game.conquest.flagsHeld(1)] as [number, number],
@@ -282,11 +339,54 @@ async function runRound(mapId: string, difficulty: number) {
   return result;
 }
 
+/**
+ * The board's three identities, checked rather than printed and hoped over.
+ *
+ * Returns the failures in words, empty when the round balances. Words rather
+ * than a boolean because the whole value of a check like this is in what it
+ * says when it breaks: "345 kill awards against 344 on the board" names the
+ * shape of the bug — one award paid to a row no team owns — where a bare
+ * `false` sends the reader back to the code to work out which of the three
+ * identities even failed.
+ *
+ * Read the arithmetic as: every kill award landed somewhere countable, every
+ * death did, and the number of blows that found somebody to pay is the number
+ * of kills written down. See `result.reconcile` for why none of the three is
+ * the tautology it resembles.
+ */
+function reconcileProblems(r: Awaited<ReturnType<typeof runRound>>): string[] {
+  const c = r.reconcile;
+  const out: string[] = [];
+  if (c.killAwards !== c.ledgerKills) {
+    out.push(
+      `${c.killAwards} kill awards paid but ${c.ledgerKills} on the board — ` +
+        `an award landed on a row no team owns (ScoreBook.award drops a slot outside the roster)`,
+    );
+  }
+  if (c.bodies !== c.ledgerDeaths) {
+    out.push(
+      `${c.bodies} bodies went down but ${c.ledgerDeaths} deaths on the board — ` +
+        `a death was registered to a row no team owns`,
+    );
+  }
+  if (c.creditedBodies !== c.killAwards) {
+    out.push(
+      `${c.creditedBodies} blows found somebody to pay but ${c.killAwards} kills were written down — ` +
+        `a creditable kill did not reach a row`,
+    );
+  }
+  return out;
+}
+
 const [mapId = "hollowmere", difficulty = "1", rounds = "1"] = process.argv.slice(2);
 
 for (let i = 0; i < Number(rounds); i++) {
   const r = await runRound(mapId, Number(difficulty));
   const mins = (r.simSeconds / 60).toFixed(1);
+  const problems = reconcileProblems(r);
+  // Sorted heaviest first: on a vehicle map the crews are most of it, and a
+  // cause that has appeared for the first time is what a reader is looking for.
+  const unpaid = Object.entries(r.reconcile.uncredited).sort((a, b) => b[1] - a[1]);
   console.log(
     [
       `${r.map} (difficulty ${r.difficulty})`,
@@ -317,9 +417,25 @@ for (let i = 0; i < Number(rounds); i++) {
       `  awards:  ${Object.entries(r.awards)
         .map(([kind, n]) => `${kind} ${n}`)
         .join(", ")}`,
+      `  deaths:  ${r.reconcile.bodies} bodies, ${r.reconcile.creditedBodies} paid for — ` +
+        `${Object.entries(r.reconcile.deaths)
+          .map(([cause, n]) => `${cause} ${n}`)
+          .join(", ")}`,
+      // The line the whole block exists for. "(none)" is the healthy answer on
+      // a map with no armour on it; on one with armour it is the tank crews,
+      // and a cause appearing here that is not `crew` is a kill leaking.
+      `           uncredited: ${unpaid.map(([cause, n]) => `${cause} ${n}`).join(", ") || "(none)"}`,
+      problems.length === 0
+        ? "           board balances: kill awards, deaths and credits all agree"
+        : problems.map((p) => `           *** ${p}`).join("\n"),
       `  flags held at the end: ${r.flagsHeld[0]} / ${r.flagsHeld[1]}`,
       `  flag captures during the round: ${r.captures}`,
       `  grenades detonated: ${r.blasts}`,
     ].join("\n"),
   );
+  // **A failed reconciliation is an EXIT CODE and not just a line**, so this
+  // can be run as a gate rather than only read. Set rather than thrown: the
+  // remaining rounds still run and still print, because a scoring bug that
+  // shows up on one round in five is worth seeing all five of.
+  if (problems.length > 0) process.exitCode = 1;
 }

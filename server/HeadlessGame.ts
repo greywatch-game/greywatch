@@ -84,6 +84,33 @@ import { LagComp } from "./lagComp";
 import { NetPlayer } from "./NetPlayer";
 import { buildServerWorld } from "./world";
 
+/**
+ * What put a body down, named by the DOOR the death came through rather than
+ * by what the wound was.
+ *
+ * It exists for one question, which is why it is a vocabulary of doors: a
+ * round of this simulation ends with more deaths on the board than kills, and
+ * without this the difference is an unexplained number in a report. Six of the
+ * seven doors credit a killer and one — `crew`, a body going down with the
+ * hull it was riding — cannot, so telling them apart is what turns "six
+ * deaths nobody was paid for" into "six tank crews", which is a round working
+ * rather than a rule leaking. See `simulate.ts`, the only reader.
+ *
+ * `other` is the honest answer at the one door that does not know: a PERSON's
+ * death arrives through `NetPlayer.onDamaged`, where whatever killed them was
+ * credited at its own door and this side cannot see which. `simulate` never
+ * reaches it — there are no people in a headless round — so it is a gap only a
+ * tool that grows synthetic players would have to close.
+ */
+export type DeathCause =
+  | "round"
+  | "blast"
+  | "tracks"
+  | "shell"
+  | "mg"
+  | "crew"
+  | "other";
+
 export class HeadlessGame {
   readonly engine = new NullEngine();
   readonly scene: Scene;
@@ -571,8 +598,8 @@ export class HeadlessGame {
     // its own door (`NetPlayer.onDamaged`, wired in `addPlayer`), which is
     // where it is charged and announced.
     this.battle.onBotKill = (victim, by) => {
-      this.creditKill(by, victim);
-      if (victim instanceof Bot) this.onKill(victim, by.team);
+      const credited = this.creditKill(by, victim);
+      if (victim instanceof Bot) this.onKill(victim, by.team, "round", credited);
     };
     // A round that went past somebody without connecting, which is two
     // different pieces of news and neither of them reaches anyone otherwise.
@@ -652,12 +679,12 @@ export class HeadlessGame {
       // rifle path above follows, and the reason a bot's grenade is worth
       // something on the board rather than being the one kill in the game
       // nobody is credited with.
-      this.creditKill(by, victim);
+      const credited = this.creditKill(by, victim);
       // A person's damage already left through `NetPlayer.onDamaged`, which
       // `takeDamage` raised before this callback ran — the same split the
       // client makes, where `onPlayerDamaged` has already handled the player by
       // the time this fires. Only bots are this handler's business.
-      if (victim instanceof Bot) this.onKill(victim, thrower);
+      if (victim instanceof Bot) this.onKill(victim, thrower, "blast", credited);
     };
     // A launcher bot's rocket, wired exactly as `Game` wires it: the ask is a
     // POINT and a rocket flies straight, so there is no solve to refuse and the
@@ -713,7 +740,12 @@ export class HeadlessGame {
     this.crew.onLeft = (bot) => this.battle.setCrewed(bot, false);
     this.crew.onCrewLost = (bot, tank) => {
       if (bot.takeDamage(bot.hp, tank.center, "shell")) {
-        this.onKill(bot, OTHER_TEAM[bot.team]);
+        // The ONE door that credits nobody, and the reason `DeathCause`
+        // exists: a hull brewing up is not anybody's kill at this door — the
+        // rocket or the shell that destroyed it was paid at its own, against
+        // the HULL, which `paysKiller` refuses. So the crew go down explained
+        // rather than unaccounted for.
+        this.onKill(bot, OTHER_TEAM[bot.team], "crew", false);
       }
     };
   }
@@ -755,8 +787,8 @@ export class HeadlessGame {
         // A HULL is not a row on the scoreboard and cannot be one here — the
         // list is filtered above — so this is the credit half of
         // `resolveShell`'s pair with the guard already spent.
-        this.creditKill(by, target);
-        if (target instanceof Bot) this.onKill(target, tank.team);
+        const credited = this.creditKill(by, target);
+        if (target instanceof Bot) this.onKill(target, tank.team, "tracks", credited);
       }
     }
   }
@@ -850,9 +882,9 @@ export class HeadlessGame {
       // The shooter's row first, whoever fell — a person killing a person
       // reaches this line and nothing else on the server would ever credit it,
       // since the victim's own door only knows it was the other side.
-      this.creditKill(shooter, result.target, result.headshot);
+      const credited = this.creditKill(shooter, result.target, result.headshot);
       if (result.target instanceof Bot) {
-        this.onKill(result.target, shooter.team, result.headshot);
+        this.onKill(result.target, shooter.team, "round", credited, result.headshot);
       }
     }
     return result;
@@ -1101,8 +1133,10 @@ export class HeadlessGame {
     // disagreeing forms; it is `paysKiller` now, applied inside `creditKill`,
     // so both sides refuse the same bodies and this site says only WHEN.
     if (shot.killed) {
-      this.creditKill(by, shot.target);
-      if (shot.target instanceof Bot) this.onKill(shot.target, tank.team);
+      const credited = this.creditKill(by, shot.target);
+      if (shot.target instanceof Bot) {
+        this.onKill(shot.target, tank.team, "shell", credited);
+      }
     }
     // Bots hear a tank gun the way they hear a rifle, and it is the TANK's
     // side rather than the crewman's — a hull the AI is driving is heard by
@@ -1146,8 +1180,10 @@ export class HeadlessGame {
       tank.mgShot,
     );
     if (shot.killed) {
-      this.creditKill(by, shot.target);
-      if (shot.target instanceof Bot) this.onKill(shot.target, tank.team);
+      const credited = this.creditKill(by, shot.target);
+      if (shot.target instanceof Bot) {
+        this.onKill(shot.target, tank.team, "mg", credited);
+      }
     }
     this.battle.hearGunshot(muzzle, tank.team, dir);
     return true;
@@ -1225,6 +1261,16 @@ export class HeadlessGame {
         // The victim's door for a person, and the counterpart of the line in
         // `onKill` that counts a bot's. Whoever killed them was credited at
         // their own door, wherever the round or the blast came from.
+        //
+        // Which is exactly why the audit is left at its default here: this
+        // door is handed a body and a number and cannot see which door dealt
+        // the blow, so `other` is a refusal to answer rather than a cause, and
+        // a reader must not read it as an uncredited death. Claiming
+        // `credited` would be worse than not knowing — it is true of every
+        // person's death but one, the body that went up with the hull it was
+        // riding, and a number that is right most of the time is the kind that
+        // gets believed. `simulate` fields nobody, so this stays at zero
+        // there; a tool that grows synthetic players owes this line a cause.
         this.registerDeath(player.slot);
       }
       this.onPlayerDamaged(player, amount, from, killed, kind);
@@ -1276,10 +1322,23 @@ export class HeadlessGame {
    * The DEATH is counted here and the kill is not — see `creditKill`. This is
    * the victim's door and there is exactly one of it per bot death, which is
    * the same "exactly once" the ticket above has always rested on.
+   *
+   * `cause` and `credited` are what the caller knows and this door cannot
+   * work out: which door the blow came through, and whether `creditKill`
+   * found anybody to pay for it. They decide nothing — the ticket, the feed
+   * and the row are all unchanged by them — and exist so `simulate` can
+   * reconcile a round's deaths against its kills instead of printing two
+   * numbers that do not add up and leaving the reader to guess why.
    */
-  private onKill(bot: Bot, killer: Team, headshot = false): void {
+  private onKill(
+    bot: Bot,
+    killer: Team,
+    cause: DeathCause,
+    credited: boolean,
+    headshot = false,
+  ): void {
     this.conquest.registerDeath(bot.team);
-    this.registerDeath(this.battle.bots.indexOf(bot));
+    this.registerDeath(this.battle.bots.indexOf(bot), cause, credited);
     this.onKillEvent(bot, killer, headshot);
   }
 
@@ -1300,18 +1359,26 @@ export class HeadlessGame {
    * body that is not on the roster are both "nobody's kill" rather than an
    * error: the death is counted regardless, so the board still balances at the
    * team level even when a row cannot be found for the credit.
+   *
+   * Returns whether the blow was CREDITABLE — it had a killer and the victim
+   * pays one. Not whether the award landed on a row a team can see, which is a
+   * different question and `slotOf`'s: an award paid to a slot outside the pool
+   * is dropped by `ScoreBook.award` on purpose, and what catches THAT is
+   * `simulate`'s first assertion rather than a return value here. The caller
+   * that wants this is the death door one line down, which files an
+   * uncredited death under the cause that produced it.
    */
   private creditKill(
     by: Combatant | null,
     victim: Hittable | null,
     headshot = false,
-  ): void {
+  ): boolean {
     // WHETHER it pays at all is `paysKiller`'s — a hull is not a row on the
     // scoreboard — and it is applied here rather than at the four doors below
     // so this side and the client refuse the same bodies. Guarded by hand at
     // each site, the two reached for two different tests and disagreed about
     // the player; see `paysKiller`.
-    if (!by || !paysKiller(victim)) return;
+    if (!by || !paysKiller(victim)) return false;
     // What the kill is WORTH is `awardKill`'s, and it is shared with the
     // client rather than restated here: the flag the victim fell on decides
     // whether this was an attack or a defence, and a server that answered that
@@ -1325,6 +1392,7 @@ export class HeadlessGame {
       victim ? this.conquest.pointAt(victim.eyePos) : null,
       headshot,
     );
+    return true;
   }
 
   /**
@@ -1382,9 +1450,19 @@ export class HeadlessGame {
     return { kills, deaths, points };
   }
 
-  /** One death on `slot`'s row. Called once per body that goes down. */
-  registerDeath(slot: number): void {
+  /**
+   * One death on `slot`'s row. Called once per body that goes down, and the
+   * one funnel both doors take — a bot's through `onKill`, a person's through
+   * `NetPlayer.onDamaged`.
+   *
+   * `onDeath` is raised from here rather than from the two doors for that
+   * reason: it is the place where "exactly once per body" is already true, so
+   * an audit hung on it counts what the board counts by construction instead
+   * of by two callers agreeing to fire it.
+   */
+  registerDeath(slot: number, cause: DeathCause = "other", credited = false): void {
     this.scores.registerDeath(slot);
+    this.onDeath(slot, cause, credited);
   }
 
   /**
@@ -1408,6 +1486,21 @@ export class HeadlessGame {
    * rather than a missing one, and a blast has no such zone to hit.
    */
   onKillEvent: (bot: Bot, killer: Team, headshot: boolean) => void = () => {};
+
+  /**
+   * Every death on the board, with the door it came through and whether
+   * anybody was credited for it. An AUDIT hook: `Match` does not wire it and
+   * nothing on the wire is derived from it.
+   *
+   * It is here rather than reconstructed by the reader because the two facts
+   * are only knowable at the moment the blow lands. A tool watching from
+   * outside sees a stream of kill awards and a stream of deaths and can
+   * subtract them, which gives a COUNT of the unexplained; what it cannot do
+   * is say which of the seven doors produced them, and that is the whole
+   * difference between "six deaths went uncredited" and "six tank crews went
+   * down with their hulls, which is what is supposed to happen".
+   */
+  onDeath: (slot: number, cause: DeathCause, credited: boolean) => void = () => {};
 
   /**
    * Wired by `Match`: a flag was taken, or driven to neutral, for the clients
