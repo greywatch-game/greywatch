@@ -78,6 +78,26 @@ import { SAMPLE_URLS, type SampleId } from "./samples";
 const SOFT_CLIP_DRIVE = 3;
 
 /**
+ * The ambience breath's own sample rate, its length, and the wander it is
+ * smoothed to — see `buildBreathBuffer`. 3000 Hz is the lowest a WebAudio
+ * buffer may state, and this signal has nothing in it over a few hertz.
+ *
+ * The length and the reference are ONE decision: a kind's breath plays this
+ * buffer at `breathHz / BREATH_WANDER_HZ`, so 24 seconds at 1 Hz gives the
+ * fire's 1.2 the twenty-second loop it has always had, and a SLOWER breath
+ * gets a proportionally longer one for free — the shore's 0.28 loops every
+ * 86 s. That is the right way round: a slow swell is exactly the one an ear
+ * could catch coming round.
+ *
+ * It costs 288 KB, once, beside the noise buffer's 192 — and it is a fixed
+ * cost rather than a per-kind one, because the rate is a playback rate and
+ * a fourth kind is a fourth `breathHz` reading this same buffer.
+ */
+const BREATH_BUFFER_RATE = 3000;
+const BREATH_SECONDS = 24;
+const BREATH_WANDER_HZ = 1;
+
+/**
  * A decoded recording, with the silence at each end already measured off.
  *
  * The trim is the whole reason this is a struct rather than a bare
@@ -469,11 +489,12 @@ export interface AmbienceKind {
    */
   bands: readonly BandSpec[];
   /**
-   * The slow swell. `breathHz` is how FAST it wanders and `breathRate` only
-   * how long it takes to repeat — see `CONFIG.audio.ambience`, where the two
-   * are pulled apart, and note that the shore spends them on the wave itself.
+   * The slow swell: how fast the breath wanders, in Hz. It is the ONE number
+   * behind it now — the loop is `BREATH_SECONDS` of buffer read at
+   * `breathHz / BREATH_WANDER_HZ`, so a slower swell repeats proportionally
+   * later and there is nothing left to state. The shore spends this on the
+   * wave itself, at 0.28.
    */
-  breathRate: number;
   breathHz: number;
   /** How deeply the breath swings the bottom. Each hump carries its own. */
   breathRoarDepth: number;
@@ -685,6 +706,12 @@ export class Sfx {
   private listener: AudioListener | null = null;
   /** Reused by every `burst()` call; built once on unlock. */
   private noiseBuffer: AudioBuffer | null = null;
+  /**
+   * The ambience BREATH's wander, pre-smoothed and built once — see
+   * `buildBreathBuffer`, which is where the argument for holding it as a
+   * buffer rather than filtering noise live is written down.
+   */
+  private breathBuffer: AudioBuffer | null = null;
   /** The shared environment reverb every gunshot sends into. */
   private reverb: ConvolverNode | null = null;
   /**
@@ -752,6 +779,7 @@ export class Sfx {
         this.reverb.connect(wet).connect(pre);
         this.listener = this.ctx.listener;
         this.buildNoiseBuffer();
+        this.buildBreathBuffer();
         this.buildImpulse();
         // Fire-and-forget, and deliberately not awaited by anything: `unlock`
         // is called from a pointer gesture and the first shot may well be
@@ -2732,11 +2760,12 @@ export class Sfx {
    * **The roar and every hump are one source read through several filters**,
    * which is where a source was saved: noise is broadband, so a second
    * buffer player buys two filters' worth of independence and nothing an ear
-   * can find. The BREATH is a source of its own for the opposite reason —
-   * see `breathRate`: a modulator tapped off a
-   * one-second buffer read at 0.33 repeats every three seconds, and a
-   * three-second breathing pattern is exactly the kind of thing an ear
-   * catches.
+   * can find. The BREATH is a source of its own for the opposite reason, and
+   * a BUFFER of its own as well: a modulator tapped off the one-second noise
+   * read at 0.33 repeats every three seconds, and a three-second breathing
+   * pattern is exactly the kind of thing an ear catches — while a modulator
+   * FILTERED to a sub-hertz wander is a recursion that measurably runs away
+   * (`buildBreathBuffer`).
    *
    * **A HUMP IS A ROW, AND THAT IS NOT TIDINESS — IT IS THE ONE THING THE
    * EVENT ROWS CANNOT STAND IN FOR.** The first fit of the brook tried to
@@ -2789,7 +2818,7 @@ export class Sfx {
     kind: AmbienceKind,
   ): AmbienceVoice | null {
     const ctx = this.ctx;
-    if (!ctx || !this.noiseBuffer) return null;
+    if (!ctx || !this.noiseBuffer || !this.breathBuffer) return null;
     try {
       const out = ctx.createGain();
       out.gain.value = 0;
@@ -2851,42 +2880,36 @@ export class Sfx {
         bandLevels.push(level);
       }
 
-      // The breath: slow noise, lowpassed to a wander and spent on the humps
-      // and the bottom together. Its own source — see `breathRate`.
-      const breath = ctx.createBufferSource();
-      breath.buffer = this.noiseBuffer;
-      breath.loop = true;
-      breath.playbackRate.value = kind.breathRate;
-      const breathTone = ctx.createBiquadFilter();
-      breathTone.type = "lowpass";
-      breathTone.frequency.value = kind.breathHz;
-      breathTone.Q.value = 0.5;
-      // NORMALISED, like the sparks and for the same reason: a share of the
-      // level it swings, so `BandSpec.breath` is a depth rather than a magic
-      // number and moving `breathHz` or `breathRate` does not silently
-      // retune the mix.
+      // The breath: one loop of slow wander spent on the humps and the bottom
+      // together, at its own rate.
       //
-      // The makeup is large by arithmetic rather than by taste. A 1.2 Hz
-      // lowpass keeps about a thousandth of the power of a noise read at
-      // 0.05, so the raw modulator arrives at ~0.023 RMS and a depth stated
-      // as a plain multiplier swings the bed by about ONE PER CENT. That is
-      // what shipped in the second cut of this graph and it is invisible in
-      // a listen and invisible in a diff: rendered, the fire's hump depth at
-      // 0.55 and at 1.0 gave a bed breathing 1.51x and 1.50x, which is to say
-      // the term was doing nothing at all. Dividing the RMS back out makes the
-      // number mean what it says — and it is what lets the shore state a depth
-      // of 1.0 at a `breathHz` an octave and a half lower and get a swell.
-      const breathRms =
-        0.577 *
-        Math.sqrt(
-          ((kind.breathHz * Math.PI) / 2) /
-            Math.max(1, (kind.breathRate * ctx.sampleRate) / 2),
-        );
-      breath.connect(breathTone);
+      // **The wander is BAKED and the rate is a playback rate**, which is the
+      // trick the bed above already plays on the shared noise buffer — and it
+      // is load-bearing rather than tidy: asked of a live `BiquadFilterNode`,
+      // the shore's 0.28 Hz corner is a float32 double integrator that
+      // measurably runs away, and the emitter it runs away in is the one that
+      // never gets torn down. `buildBreathBuffer` carries the measurement.
+      const breath = ctx.createBufferSource();
+      breath.buffer = this.breathBuffer;
+      breath.loop = true;
+      breath.playbackRate.value = kind.breathHz / BREATH_WANDER_HZ;
+      // A depth is a SHARE of the level it swings, like `SparkSpec.level`, so
+      // `BandSpec.breath` is a number that can be reasoned about rather than
+      // a magic one — and here that is simply the depth, because the buffer
+      // is unit RMS by construction.
+      //
+      // It is worth knowing WHY that matters, because the term once did
+      // nothing at all: a modulator arriving at ~0.023 RMS swings a bed by
+      // about one per cent, and a depth stated as a plain multiplier is
+      // invisible in a listen and invisible in a diff — rendered, the fire's
+      // hump depth at 0.55 and at 1.0 gave a bed breathing 1.51x and 1.50x.
+      // What used to divide it back out was an ESTIMATE of the filter's own
+      // noise bandwidth, 4 to 10% out where it was measured; normalising the
+      // buffer instead makes it exact.
       kind.bands.forEach((band, i) => {
         const depth = ctx.createGain();
-        depth.gain.value = (band.breath * band.level) / Math.max(1e-4, breathRms);
-        breathTone.connect(depth).connect(bandLevels[i].gain);
+        depth.gain.value = band.breath * band.level;
+        breath.connect(depth).connect(bandLevels[i].gain);
       });
       // …and a share of the SAME breath on the bottom. One signal rather than
       // one per term, because a draught is one event: the flame and the
@@ -2899,9 +2922,8 @@ export class Sfx {
       // the shore's are within a third of each other, because a wave moves
       // the whole body of water at once.
       const roarBreath = ctx.createGain();
-      roarBreath.gain.value =
-        (kind.breathRoarDepth * kind.roarLevel) / Math.max(1e-4, breathRms);
-      breathTone.connect(roarBreath).connect(roarLevel.gain);
+      roarBreath.gain.value = kind.breathRoarDepth * kind.roarLevel;
+      breath.connect(roarBreath).connect(roarLevel.gain);
 
       const sources: AudioScheduledSourceNode[] = [base, bandSrc, breath];
 
@@ -3236,6 +3258,82 @@ export class Sfx {
     const data = buffer.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
     this.noiseBuffer = buffer;
+  }
+
+  /**
+   * The ambience BREATH: one loop of slow wander, smoothed here rather than
+   * by a filter in the live graph, and normalised to unit RMS.
+   *
+   * **It was a `BiquadFilterNode` lowpass on the shared noise, and at the
+   * shore's 0.28 Hz that filter RUNS AWAY.** A two-pole lowpass at
+   * `fc / fs = 5.8e-6` has both poles within 3.7e-5 of z = 1, which is a
+   * double integrator with a rounding error going into it: the state is
+   * float32, the residue is integrated twice, and the walk has no restoring
+   * force worth the name. Measured over 300-second renders of that filter
+   * alone, THREE of six diverged — a DC offset that appears after ten or
+   * fifteen seconds and then climbs without bound, past ±4 by the end.
+   * Nothing about it is audio; it is the recursion drifting.
+   *
+   * What that cost is the whole point of the fix. The breath is spent on the
+   * band and roar gains through a makeup of `depth / rms` — 26x on the
+   * shore's swash — so a DC of 4 arrives as a band gain of 105 against a
+   * nominal 0.46, and the water comes up some 40 dB hot and still rising. It
+   * is the one voice in the game that can do this, for the one reason that
+   * matters: an emitter that never loses its slot is never torn down, so the
+   * filter state is never reset, and a marsh map's waterline holds its slot
+   * for a whole match. Rebuilt every few minutes, as a fire is when you walk
+   * past it, it would never have shown.
+   *
+   * So the same shape is built ONCE, in doubles, where there is no recursion
+   * left to drift: two one-pole passes, which is EXACTLY what the biquad was
+   * (a lowpass at Q 0.5 is two coincident real poles at the corner), run
+   * CYCLICALLY so the loop has no seam. The rate is then the source's
+   * `playbackRate` rather than a filter corner, which is the trick the bed
+   * already plays on the shared noise buffer — and 0.28 Hz is nothing
+   * special to a buffer read slowly.
+   *
+   * **Normalised to unit RMS, which retires the estimate the makeup used to
+   * divide by.** That estimate (`0.577 * sqrt(...)`) was the noise-bandwidth
+   * arithmetic for the filter it no longer has, and it was 4 to 10% out
+   * where it was measured — so `BandSpec.breath` and `breathRoarDepth` are
+   * now exactly the fraction of their own level that they say they are.
+   */
+  private buildBreathBuffer(): void {
+    if (!this.ctx) return;
+    const n = Math.round(BREATH_SECONDS * BREATH_BUFFER_RATE);
+    const buffer = this.ctx.createBuffer(1, n, BREATH_BUFFER_RATE);
+    // In doubles, and only the last wrap is kept: the first two are what put
+    // the filter in its steady state at the buffer's START, which is what
+    // makes the loop seamless — a smoothed buffer whose ends do not meet is
+    // a step on a gain param once a loop, and this one loops for the length
+    // of a match.
+    const work = new Float64Array(n);
+    for (let i = 0; i < n; i++) work[i] = Math.random() * 2 - 1;
+    const a = Math.exp((-2 * Math.PI * BREATH_WANDER_HZ) / BREATH_BUFFER_RATE);
+    for (let pass = 0; pass < 2; pass++) {
+      let y = 0;
+      for (let wrap = 0; wrap < 3; wrap++) {
+        for (let i = 0; i < n; i++) {
+          y = y * a + work[i] * (1 - a);
+          if (wrap === 2) work[i] = y;
+        }
+      }
+    }
+    // Centred and scaled to unit RMS, so a depth is a depth. The mean matters
+    // in its own right: this signal is SUMMED into a gain param, so a DC
+    // offset here is a term's level quietly moved.
+    let mean = 0;
+    for (let i = 0; i < n; i++) mean += work[i];
+    mean /= n;
+    let sq = 0;
+    for (let i = 0; i < n; i++) {
+      work[i] -= mean;
+      sq += work[i] * work[i];
+    }
+    const rms = Math.sqrt(sq / n) || 1;
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < n; i++) data[i] = work[i] / rms;
+    this.breathBuffer = buffer;
   }
 
   /**

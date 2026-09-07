@@ -378,20 +378,22 @@ export const audio = {
        * so the bed itself swells and falls by about 8 dB. The shipped graph
        * renders 2.22.
        *
-       * It is a source of its own rather than a tap off the bed's noise,
+       * It is a source of its own — and a BUFFER of its own, built once by
+       * `Sfx.buildBreathBuffer` — rather than a tap off the bed's noise,
        * because the bed is read at 0.33 against a one-second buffer and a
-       * modulator taken from it would repeat every three seconds — which is
-       * the same trap `SparkSpec.loop` exists for. At 0.05 this cycles every
-       * twenty seconds instead.
+       * modulator taken from it would repeat every three seconds, which is
+       * the same trap `SparkSpec.loop` exists for. This one is 24 seconds of
+       * pre-smoothed wander read at `breathHz`, so the fire's 1.2 loops every
+       * twenty seconds and a slower breath loops proportionally later.
        *
-       * **`breathRate` and `breathHz` are not the same question and reading
-       * them as one is how a swell gets tuned by accident.** `breathHz` is
-       * how FAST the modulator wanders, and it is the only one that reaches
-       * the sound: the shore below sets it to 0.28 and swells every two and
-       * a half seconds, the brook to 1.8 and shimmers. `breathRate` is only
-       * how long the modulator takes to REPEAT — one second of buffer at
-       * 0.05 is twenty — and every kind here holds it there, because there
-       * is no reason for any of them to loop sooner and every reason not to.
+       * **It is ONE number now, and the number it lost is a warning worth
+       * keeping.** There used to be a `breathRate` beside it — the source's
+       * playback rate, which set only the LOOP — because the wander itself
+       * came from a live lowpass at `breathHz`. Asked for the shore's 0.28 Hz
+       * that filter is a float32 double integrator and it measurably runs
+       * away, which is what took the water 40 dB hot in a long match. The
+       * wander is baked now and this is its playback rate, so the loop is a
+       * consequence rather than a second knob.
        *
        * **A depth per term, because one did not work.** Spent on the sizzle
        * alone the whole mix would not move: rendered, taking the fire's hump
@@ -405,7 +407,6 @@ export const audio = {
        * the fire's differ by 3.4x, and the shore's below are within a third
        * of each other, because a wave moves the whole body of water at once.
        */
-      breathRate: 0.05,
       breathHz: 1.2,
       breathRoarDepth: 0.32,
 
@@ -568,7 +569,6 @@ export const audio = {
        * modulation spectrum peaks around 2 Hz with a long tail. This is a
        * shimmer, not a swell; the swell is the shore's.
        */
-      breathRate: 0.05,
       breathHz: 1.8,
       breathRoarDepth: 0.23,
       /**
@@ -645,8 +645,11 @@ export const audio = {
        */
       rolloff: 0.7,
       /**
-       * Renders 0.0205 rms and peaks 0.268 — the same bed loudness as the
-       * brook, with more peak, which is the swash arriving. A mix decision
+       * Renders 0.022 rms and peaks near 0.30 — the same bed loudness as the
+       * brook, with more peak, which is the swash arriving. (0.0205 and 0.268
+       * before the breath was baked: the makeup used to divide by an ESTIMATE
+       * of the old filter's noise bandwidth and now divides by nothing, which
+       * is 0.7 dB on this row and under a third of that on the other two.) A mix decision
        * like the brook's and set beside it deliberately: nothing in the game
        * should make a player think a lake is louder than a river.
        */
@@ -668,11 +671,12 @@ export const audio = {
       /**
        * THE WAVE. `breathHz` is the whole of what makes this a shore rather
        * than a quiet brook, and 0.28 is a swell every two and a half seconds.
-       * `breathRate` stays at the fire's 0.05 for the fire's reason — it is
-       * the LOOP, not the rate, and twenty seconds of it is long enough that
-       * nothing hears the pattern come round.
+       * It is also the number that broke the graph: a live lowpass at 0.28 Hz
+       * is a recursion with both poles 3.7e-5 from z = 1, and three of six
+       * 300-second renders of it ran away into a climbing DC offset. Nothing
+       * about the swell was wrong — see `Sfx.buildBreathBuffer`, which is why
+       * this row can go on asking for a wander this slow.
        */
-      breathRate: 0.05,
       breathHz: 0.28,
       breathRoarDepth: 0.57,
       /**

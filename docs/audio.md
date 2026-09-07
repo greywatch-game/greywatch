@@ -527,11 +527,45 @@ are is itself a claim about what the sound is.** And unlike the brook a shore
 has a BOTTOM, which is the one number here that is about mechanics rather than
 bubbles: a wave is a mass of water moving and a brook is only its own surface.
 
-**`breathRate` and `breathHz` are not one question**, and reading them as one is
-how a swell gets tuned by accident. `breathHz` is how fast the modulator
-wanders and is the only one that reaches the sound; `breathRate` is only how
-long it takes to REPEAT — one second of buffer at 0.05 is twenty — and all
-three kinds hold it at 0.05, because nothing wants to loop sooner.
+#### And the swell is BAKED, because 0.28 Hz is past what a biquad can hold
+
+**The shore's `breathHz` is the number that broke this graph in a shipped
+build, and the failure was numerical rather than musical.** The breath was a
+`BiquadFilterNode` lowpass on the shared noise, one per voice, running at the
+context's own rate. At 0.28 Hz against 48 kHz both poles sit within 3.7e-5 of
+z = 1 — a double integrator with float32 rounding going into it — so the state
+performs a random walk with almost no restoring force. Measured over
+300-second renders of that filter ALONE, **three of six diverged**: a DC
+offset that appears after ten or fifteen seconds and then climbs without
+bound, past ±4 by the end. Neither the fire's 1.2 Hz nor the brook's 1.8 did
+it in six renders each, and 0.6 Hz was already clear.
+
+**What it cost is the makeup gain, which is the whole reason a DC offset here
+is not a small thing.** The breath is spent on the band and roar gains as
+`depth / rms`, 26x on the shore's swash, so a DC of 4 arrives as a band gain
+of 105 against a nominal 0.46: the water comes up some 40 dB hot and goes on
+rising for as long as the voice is held. **And this is the ONE voice in the
+game that can hold long enough**, which is why it took a match to see it — a
+fire is torn down and rebuilt as you walk past it, resetting the filter, while
+a waterline emitter on a marsh map never loses its slot. Measured on Greyfen,
+**67% of the play square is inside `shore`'s 46 m range and 9% is at its
+plateau**, against 15–30% and 1–2% on every other map with water.
+
+So the wander is built ONCE, in doubles, and read as a BUFFER
+(`Sfx.buildBreathBuffer`): two one-pole passes, which is exactly what the
+biquad was (a lowpass at Q 0.5 is two coincident real poles), run cyclically
+so the loop has no seam. `breathHz` is the source's playback rate now — the
+same trick the bed plays on the shared noise buffer — and a rate is nothing a
+buffer can be unstable about. Twelve 300-second renders of the shipped code at
+48 and 44.1 kHz hold their level end to end.
+
+Two things fell out of it and both are improvements. **`breathRate` is gone**:
+the loop is `BREATH_SECONDS / (breathHz / BREATH_WANDER_HZ)`, so the fire's
+1.2 keeps its twenty seconds and a slower swell repeats proportionally later,
+which is the right way round. And the makeup no longer divides by an ESTIMATE
+of the filter's noise bandwidth (4–10% out where it was measured) — the buffer
+is normalised to unit RMS, so `BandSpec.breath` and `breathRoarDepth` are
+exactly the fraction of their own level that they claim to be.
 
 #### Where water is HEARD, which is not where the rect is
 
