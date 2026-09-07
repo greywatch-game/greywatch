@@ -1,8 +1,9 @@
 /**
  * ScoreBook.ts — the round's board: kills, deaths and POINTS, one row per
  * roster slot, and the two rules that decide what a payout is worth.
- * Owns: the three arrays and the version stamp over them, plus `awardKill` and
- * `awardZone` — the one statement each of what a kill and what a flag pay.
+ * Owns: the three arrays and the version stamp over them, plus `awardKill`,
+ * `awardZone` and `paysKiller` — the one statement each of what a kill pays,
+ * what a flag pays, and which bodies pay anything at all.
  * The class is a ledger, not a system: it has no update, reaches nothing, and
  * imports nothing at runtime but the point table (the `Combatant` import is
  * type-only, and erased).
@@ -143,6 +144,50 @@ export class ScoreBook {
  */
 export interface ZoneOwnership {
   owner: Team | null;
+}
+
+/**
+ * As much of a victim as deciding whether its death pays anybody needs.
+ *
+ * Structural for `ZoneOwnership`'s reason — it keeps this file free of
+ * `CombatSystem`, and every `Hittable` and every `Combatant` satisfies it by
+ * construction, which is what lets both simulations hand in whatever they have
+ * in their hand at the door.
+ */
+export interface KillVictim {
+  readonly armoured?: boolean;
+}
+
+/**
+ * Whether this body's death pays the thing that killed it.
+ *
+ * **A HULL IS NOT A ROW ON THE SCOREBOARD**, and that is the whole of the rule.
+ * A destroyed tank already pays its CREW — the driver and the gunner each die
+ * their own death at their own door — so crediting the chassis on top would
+ * price one shell at two kills. It became a question that has to be ASKED
+ * rather than one the target lists answered when armour started being resolved
+ * by its collider instead of by a hit sphere it always lost: `shot.target` can
+ * be a hull now, on both sides of the wire.
+ *
+ * **Stated here because it was stated at six doors and had already drifted at
+ * three of them.** Every site guarded its own credit by hand, and the two
+ * simulations reached for two different tests — `instanceof Bot` on the client,
+ * `!armoured` on the authority — which are not the same question: the first
+ * also excludes a PERSON, so a bot crew running the player over or putting a
+ * shell into them scored on the authority and scored nothing offline. That is
+ * the failure `awardKill` exists to prevent, arriving one level up from it:
+ * not a crash, but a player learning in practice a scoring rule the match they
+ * take it into does not run. It is applied inside `Game.creditKill` and
+ * `HeadlessGame.creditKill` rather than at the call sites, so a new door onto
+ * a kill inherits it instead of having to remember it.
+ *
+ * A `null` victim pays the kill and no zone bonus, which is what the authority
+ * has always done with one: every path that resolves a kill has a body in hand
+ * and the null is defensive, so refusing it here would silently drop a credit
+ * rather than catch a bug.
+ */
+export function paysKiller(victim: KillVictim | null | undefined): boolean {
+  return !victim?.armoured;
 }
 
 /**

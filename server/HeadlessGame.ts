@@ -56,7 +56,12 @@ import {
 import { GlassSystem } from "../src/systems/GlassSystem";
 import { GrenadeSystem } from "../src/systems/GrenadeSystem";
 import { AntiTankSystem, type OrdnanceHit } from "../src/systems/AntiTankSystem";
-import { ScoreBook, awardKill, awardZone } from "../src/systems/ScoreBook";
+import {
+  ScoreBook,
+  awardKill,
+  awardZone,
+  paysKiller,
+} from "../src/systems/ScoreBook";
 import { VehicleCrew } from "../src/systems/VehicleCrew";
 import {
   VehicleSystem,
@@ -1088,14 +1093,14 @@ export class HeadlessGame {
     // The direct hit's own bookkeeping. The splash's victims come through
     // `onBlastHit`, which `wire` already handles.
     //
-    // **A HULL is not a row on the scoreboard**, and it can be `shot.target`
-    // now that armour is answered by its collider rather than by a sphere it
-    // lost to — see `CombatSystem.fire`. What a burning tank pays is its
-    // CREW, through `onCrewLost` and the driver's own death, exactly as it
-    // does when a rocket takes it; paying the gunner again for the chassis
-    // would price one shell at two kills on this side of the wire and one on
-    // `Game`'s, which guards the same case with its `instanceof Bot`.
-    if (shot.killed && !shot.target?.armoured) {
+    // **A HULL is not a row on the scoreboard** — `shot.target` can be one now
+    // that armour is answered by its collider rather than by a sphere it lost
+    // to (`CombatSystem.fire`), and what a burning tank pays is its CREW,
+    // through `onCrewLost` and the driver's own death. That guard used to be
+    // written out on this line and on the client's, in two different and
+    // disagreeing forms; it is `paysKiller` now, applied inside `creditKill`,
+    // so both sides refuse the same bodies and this site says only WHEN.
+    if (shot.killed) {
       this.creditKill(by, shot.target);
       if (shot.target instanceof Bot) this.onKill(shot.target, tank.team);
     }
@@ -1121,9 +1126,9 @@ export class HeadlessGame {
    * holding the trigger down rather than taking one shot at a head.
    *
    * **A HULL is not a row on the scoreboard**, and a machine gun could not
-   * kill one anyway (`resist.bullet` is 0.05) — the guard is `resolveShell`'s
-   * and is kept for the same reason its is: `shot.target` can be a tank now
-   * that armour is answered by its collider.
+   * kill one anyway (`resist.bullet` is 0.05). That is `paysKiller`'s now,
+   * refused inside `creditKill` on both sides rather than restated at each
+   * gun — see `resolveShell`, whose guard this one drifted against.
    */
   resolveMg(tank: Vehicle, by: Combatant): boolean {
     if (!tank.fireMg()) return false;
@@ -1140,7 +1145,7 @@ export class HeadlessGame {
       m.range,
       tank.mgShot,
     );
-    if (shot.killed && !shot.target?.armoured) {
+    if (shot.killed) {
       this.creditKill(by, shot.target);
       if (shot.target instanceof Bot) this.onKill(shot.target, tank.team);
     }
@@ -1301,7 +1306,12 @@ export class HeadlessGame {
     victim: Hittable | null,
     headshot = false,
   ): void {
-    if (!by) return;
+    // WHETHER it pays at all is `paysKiller`'s — a hull is not a row on the
+    // scoreboard — and it is applied here rather than at the four doors below
+    // so this side and the client refuse the same bodies. Guarded by hand at
+    // each site, the two reached for two different tests and disagreed about
+    // the player; see `paysKiller`.
+    if (!by || !paysKiller(victim)) return;
     // What the kill is WORTH is `awardKill`'s, and it is shared with the
     // client rather than restated here: the flag the victim fell on decides
     // whether this was an attack or a defence, and a server that answered that

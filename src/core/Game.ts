@@ -138,7 +138,7 @@ import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
 import { RotorWash } from "../systems/RotorWash";
-import { ScoreBook, awardKill, awardZone } from "../systems/ScoreBook";
+import { ScoreBook, awardKill, awardZone, paysKiller } from "../systems/ScoreBook";
 import { LightingSystem } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
 import { ShadowSystem } from "../systems/ShadowSystem";
@@ -4525,13 +4525,18 @@ export class Game {
       const haptic = CONFIG.rumble;
       this.input.rumble(haptic.shotStrong, haptic.shotWeak, haptic.shotMs);
       if (shot.target) {
-        const killed = shot.killed && shot.target instanceof Bot;
+        // A BODY went down, which is what the marker and the rumble are about
+        // — the two cues that say "stop shooting". Not what the BOARD pays:
+        // that is `creditKill`'s to refuse through `paysKiller`, one door for
+        // every kill in the game, and the two questions are kept apart here
+        // for the reason `resolveShell` gives at length.
+        const killedBody = shot.killed && shot.target instanceof Bot;
         // Resolved before the marker so a kill gets the red one — the cue to
         // stop putting rounds into a body that is already going down. A
         // headshot is the second axis and loses to a kill on the marker,
         // because "stop shooting" is the more urgent thing to say; it keeps
         // its own sound either way, which is where the read actually lands.
-        this.hud.flashHitmarker(killed, shot.headshot);
+        this.hud.flashHitmarker(killedBody, shot.headshot);
         if (shot.headshot) this.sfx.headshot();
         else this.sfx.hit();
         // Netplay: this marker is a guess, and remembering that it was made is
@@ -4539,16 +4544,18 @@ export class Game {
         // later. See `HitCredits`.
         if (this.net) this.hitCredits.note(shot.headshot);
         this.input.rumble(
-          killed ? haptic.killStrong : haptic.hitStrong,
-          killed ? haptic.killWeak : haptic.hitWeak,
-          killed ? haptic.killMs : haptic.hitMs,
+          killedBody ? haptic.killStrong : haptic.hitStrong,
+          killedBody ? haptic.killWeak : haptic.hitWeak,
+          killedBody ? haptic.killMs : haptic.hitMs,
         );
-        if (killed && shot.target instanceof Bot) {
+        if (shot.killed) {
           // Both doors, one line apart: our row, and the body's. Offline only
-          // — in a netplay round `killed` is false above, because the roster's
+          // — in a netplay round `shot.killed` is false, because the roster's
           // bodies refuse local damage and the authority scores this round.
           this.creditKill(this.player, shot.target, shot.headshot);
-          this.registerBotKill(shot.target, this.player.team, true);
+          if (shot.target instanceof Bot) {
+            this.registerBotKill(shot.target, this.player.team, true);
+          }
         }
       }
       // Nothing here for the reload the last round in the magazine just
@@ -5183,14 +5190,23 @@ export class Game {
     // by `onBlastHit` like any other blast's, so this covers only the body the
     // ray itself found.
     if (shot.target) {
-      const killed = shot.killed && shot.target instanceof Bot;
+      // What the MARKER says and what the BOARD pays are two questions, and
+      // only the second one is a rule. A hull going up is not a red hitmarker
+      // — that cue means "stop putting rounds into a body that is already
+      // going down", and a burning tank is not a body — while the credit is
+      // `creditKill`'s to refuse, through `paysKiller`, for every door at
+      // once. Conflating them is what put `instanceof Bot` on this line and
+      // quietly took the player off the board as a victim.
+      const killedBody = shot.killed && shot.target instanceof Bot;
       if (byPlayer) {
-        this.hud.flashHitmarker(killed, false);
+        this.hud.flashHitmarker(killedBody, false);
         this.sfx.hit();
       }
-      if (killed && shot.target instanceof Bot) {
+      if (shot.killed) {
         this.creditKill(by, shot.target, false);
-        this.registerBotKill(shot.target, tank.team, byPlayer);
+        if (shot.target instanceof Bot) {
+          this.registerBotKill(shot.target, tank.team, byPlayer);
+        }
       }
     }
     // Bots hear a tank gun the way they hear a rifle — this is the only place
@@ -5260,14 +5276,21 @@ export class Game {
       tank.mgShot,
     );
     if (shot.target) {
-      const killed = shot.killed && shot.target instanceof Bot;
+      // The marker and the board, split for `resolveShell`'s reason — see the
+      // note there. A cupola gun could not kill a hull anyway
+      // (`resist.bullet` is 0.05); the guard is kept in step with the shell's
+      // because the two paths are read as a pair and one of them drifting is
+      // how this started.
+      const killedBody = shot.killed && shot.target instanceof Bot;
       if (byPlayer) {
-        this.hud.flashHitmarker(killed, false);
+        this.hud.flashHitmarker(killedBody, false);
         this.sfx.hit();
       }
-      if (killed && shot.target instanceof Bot) {
+      if (shot.killed) {
         this.creditKill(by, shot.target, false);
-        this.registerBotKill(shot.target, tank.team, byPlayer);
+        if (shot.target instanceof Bot) {
+          this.registerBotKill(shot.target, tank.team, byPlayer);
+        }
       }
     }
     // Bots hear it exactly as they hear a rifle, and it is the TANK's side
@@ -5367,8 +5390,14 @@ export class Game {
           this.hud.flashHitmarker(true, false);
           this.sfx.hit();
         }
+        // The driver's row, whoever went under the tracks — the same two
+        // halves `wireSystems` takes a bot's round in, and the authority's
+        // `crushSweep` its twin. It was `instanceof Bot` for both halves,
+        // which is right for the second and was silently wrong for the first:
+        // the player is in this list too, so a bot crew running them down was
+        // the one kill on an offline board nobody was credited with.
+        this.creditKill(by, target);
         if (target instanceof Bot) {
-          this.creditKill(by, target);
           this.registerBotKill(target, tank.team, byPlayer);
         }
       }
@@ -7894,7 +7923,15 @@ export class Game {
     victim: Hittable,
     headshot = false,
   ): void {
-    if (!by) return;
+    // WHETHER this body pays at all is `paysKiller`'s, and it is here rather
+    // than at the five doors below for the reason that function gives at
+    // length: guarded by hand at each of them, this side reached for
+    // `instanceof Bot` where the authority reached for `!armoured`, and the
+    // two are not the same question — the first also excludes a PERSON, so a
+    // bot crew crushing or shelling the player scored in a match and scored
+    // nothing offline. Every caller inherits the rule now instead of restating
+    // it, which is what stops the sixth door drifting too.
+    if (!by || !paysKiller(victim)) return;
     // The flag the VICTIM fell on decides whether this was an attack or a
     // defence, and `awardKill` is where that rule lives — shared with the
     // authority, so the two boards pay a kill the same way. A body that fell
