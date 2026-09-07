@@ -236,6 +236,23 @@ interface Seat {
 }
 
 /**
+ * One slot's `fire` event, waiting for the frame that will draw it.
+ *
+ * The SLOT and not the body, because where a round leaves from is read at draw
+ * time off the pose that frame puts on screen — see `Game.queueNetShot`, which
+ * is also where the queue itself is argued for.
+ */
+interface PendingShot {
+  slot: number;
+  /** Rounds that slot spent inside the snapshot interval, at least one. */
+  rounds: number;
+  /** Seconds between them, the interval laid back out — see `Game.onNetFire`. */
+  spacing: number;
+  /** How far they reach: the named weapon's, or a bot's flat round. */
+  range: number;
+}
+
+/**
  * How far a laid mine's centre sits above the surface it is laid on.
  *
  * Half the plate's own height, so the thing rests ON the road rather than
@@ -2757,6 +2774,16 @@ export class Game {
         this.updateEditor(dt);
         break;
     }
+
+    // Whatever the wire queued for a netplay frame that this state did not
+    // run. It is DROPPED rather than carried: a `fire` event is a moment, and
+    // a state with no frame under it — the menu, the round-over card, the
+    // build — is one whose rounds nobody is standing in the world to see. Held
+    // instead, the menu's worth of them would all leave the barrel at once on
+    // the frame the next round starts. `drawNetShots` empties it the same way
+    // when the frame DID run, and this is the backstop for every state that
+    // does not have one.
+    this.netShotCount = 0;
 
     // A pause stops the HUD's clock too: the killfeed, the toasts and the
     // damage vignette are all part of the frozen frame, and a fight fading off
@@ -6439,7 +6466,112 @@ export class Game {
     for (let i = 0; i < rounds; i++) {
       this.sfx.botShot(shooter.eyePos, i * spacing, voice);
     }
+    this.queueNetShot(event.slot, rounds, spacing, event.w);
     if (shooter.team !== this.player.team) this.minimap.reveal(shooter);
+  }
+
+  /**
+   * The PICTURE of that same burst, PUT IN A QUEUE rather than drawn here.
+   *
+   * Offline a tracer is `CombatSystem.fire` throwing one off as it resolves
+   * the round, because this machine resolves every round in the village. In a
+   * match it resolves exactly one shooter's — its own — so every other body
+   * fired a round that made a noise, moved a minimap blip and left the barrel
+   * as nothing at all: the tell that says WHERE fire is coming from, which is
+   * most of what a tracer is for, was the local player's alone.
+   *
+   * **It is a queue because an event is not a frame.** Server messages are
+   * dispatched off the socket, so this runs whenever a packet lands and in
+   * whatever state the game is in — and a tracer is a streak `CombatSystem.update`
+   * flies out of the barrel and hides again. Spawned in a state that does not
+   * step it, it is not a missing effect but a HAUNTING: a lit dot hanging in
+   * the air where the muzzle was, one per shot, for the rest of the round (see
+   * `docs/multiplayer.md`). A sound can be fired from anywhere and this cannot,
+   * so it waits for `drawNetShots`, which runs inside the netplay frame — and
+   * `tick` drops whatever a frame that never ran left behind.
+   *
+   * The SLOT is queued rather than the body: where a round leaves from is read
+   * at draw time, off the pose that frame actually puts on screen.
+   */
+  private queueNetShot(
+    slot: number,
+    rounds: number,
+    spacing: number,
+    weapon: string | undefined,
+  ): void {
+    // A frame's worth is what this holds, and a frame that did not run drops
+    // its own. The cap is what makes that true of a frame that ran late as
+    // well: it is the roster's own ceiling, so a snapshot in which literally
+    // everybody fired still fits and nothing beyond one can accumulate.
+    if (this.netShotCount >= CONFIG.bots.maxPerTeam * 2) return;
+    // Pooled for `BattleSystem.flashPool`'s reason — this is emptied every
+    // frame, so the high-water mark is the busiest interval's shooter count
+    // and nothing on the event path allocates.
+    const shot = (this.netShots[this.netShotCount++] ??= {
+      slot: 0,
+      rounds: 0,
+      spacing: 0,
+      range: 0,
+    });
+    shot.slot = slot;
+    shot.rounds = rounds;
+    shot.spacing = spacing;
+    // The weapon the authority named, resolved exactly as the report's voice
+    // is. A slot with none is a bot, and a bot fires the flat round with the
+    // flat reach — the same fall-through `netVoice` makes, and the same number
+    // `BattleSystem.botFire` gives it.
+    shot.range =
+      weapon !== undefined && isWeaponId(weapon)
+        ? CONFIG.weapons[weapon].range
+        : CONFIG.bots.range;
+  }
+
+  /**
+   * …and the frame that draws them: a streak out of the barrel per round, and
+   * one muzzle flash per shooter.
+   *
+   * Everything here is dressing and decides nothing, which is what lets it sit
+   * in `updateNetWorld` at all: `drawRounds` walks no target list, breaks no
+   * glass and raises no near miss, all three being the authority's and already
+   * arriving as events of their own.
+   *
+   * Each round is cast from the body's EYE along the aim it is DRAWN with and
+   * flown from its MUZZLE, which is the split `BattleSystem.botFire` makes
+   * offline. Both come off the interpolated pose rather than off the event,
+   * for the reason `NetSoldier.aimYaw` gives: the event is real time and the
+   * body is drawn `interpDelay` behind it, so the authority's aim at the
+   * instant the trigger went belongs to a pose this client has not put on
+   * screen yet — spent, it draws a streak leaving from beside the gun.
+   *
+   * The rounds of a burst are laid back across the snapshot interval exactly
+   * as their reports are, on the tracer's own clock: a burst drawn on one
+   * instant is one streak, and the rate is as much of the read by eye as it is
+   * by ear.
+   */
+  private drawNetShots(): void {
+    for (let i = 0; i < this.netShotCount; i++) {
+      const shot = this.netShots[i];
+      const shooter = this.net?.roster.at(shot.slot);
+      // A body that died between the trigger and this frame draws nothing: its
+      // rig has stopped being posed, so the muzzle is wherever it fell over.
+      if (!shooter || !shooter.alive) continue;
+      const muzzle = this.netMuzzle.copyFrom(shooter.muzzleWorld());
+      shooter.aimDirToRef(this.netShotDir);
+      this.combat.drawRounds(
+        shooter.eyePos,
+        this.netShotDir,
+        muzzle,
+        shot.range,
+        shot.rounds,
+        shot.spacing,
+      );
+      const at = (this.netFlashPool[this.netFlashes.length] ??= new Vector3());
+      at.copyFrom(muzzle);
+      this.netFlashes.push(at);
+    }
+    this.netShotCount = 0;
+    this.spendMuzzleLightBudget(this.netFlashes);
+    this.netFlashes.length = 0;
   }
 
   /**
@@ -6598,6 +6730,25 @@ export class Game {
    */
   private netDamageKind: DamageKind = "bullet";
 
+  /** Scratch for a drawn net round's muzzle and axis. See `drawNetShots`. */
+  private readonly netMuzzle = new Vector3();
+  /** The same, for the direction that round is drawn flying. */
+  private readonly netShotDir = new Vector3();
+  /**
+   * The `fire` events waiting for a frame to draw them, and how many of the
+   * pool are in use. See `queueNetShot` for why an event cannot draw its own.
+   */
+  private readonly netShots: PendingShot[] = [];
+  private netShotCount = 0;
+  /**
+   * The muzzle flashes those shots are owed — `BattleSystem.muzzleFlashes` and
+   * its `flashPool` exactly, because they feed the same budget. Filled and
+   * emptied inside `drawNetShots`, which is what makes the pool safe to reuse
+   * from the start again.
+   */
+  private readonly netFlashes: Vector3[] = [];
+  private readonly netFlashPool: Vector3[] = [];
+
   /**
    * The networked half of a frame.
    *
@@ -6680,6 +6831,12 @@ export class Game {
     this.prof.begin(P.net);
     this.updateNet(dt);
     this.prof.end(P.net);
+    // The rounds somebody else fired, drawn here and only here: this is the
+    // netplay counterpart of the muzzle-flash budget `updateWorld` spends the
+    // moment the bots have finished pulling their triggers, and it is the one
+    // place in the frame where a streak spawned is a streak that will be
+    // flown — `stepShots` below is what flies it.
+    this.drawNetShots();
     this.stepShots(dt);
     // The armour. It is here rather than in the simulation below for the
     // reason everything else in this method is: none of it decides anything.
@@ -6923,7 +7080,7 @@ export class Game {
     // --- bots ---
     this.prof.begin(P.bots);
     this.battle.update(dt, this.cameraSys.camera.position);
-    this.spendMuzzleLightBudget();
+    this.spendMuzzleLightBudget(this.battle.muzzleFlashes);
     this.prof.end(P.bots);
     // After the bots, so a grenade thrown on this frame's think tick flies on
     // this frame rather than sitting in the thrower's hand until the next one.
@@ -8085,11 +8242,17 @@ export class Game {
    * Muzzle flashes are transient lights, and transients always win a shader
    * slot. Sixteen bots firing would take all sixteen and black out the
    * village's own lanterns, so only the nearest few close-range flashes get one.
+   *
+   * The list is a parameter because there are two of them and never both at
+   * once: offline it is `BattleSystem.muzzleFlashes`, filled as the bots pull
+   * their triggers, and in a match it is `netFlashes`, filled by the `fire`
+   * events of a frame. One budget over either, so a match cannot spend more
+   * light than a round of bots can — which matters more there, not less, since
+   * the authority's roster is three times the size.
    */
-  private spendMuzzleLightBudget(): void {
+  private spendMuzzleLightBudget(flashes: Vector3[]): void {
     const lc = CONFIG.lighting;
     const camera = this.cameraSys.camera.position;
-    const flashes = this.battle.muzzleFlashes;
     if (flashes.length === 0) return;
     if (flashes.length > lc.muzzleBudgetPerFrame) {
       flashes.sort(

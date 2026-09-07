@@ -102,6 +102,22 @@ export class NetSoldier implements Combatant, RagdollSubject {
   ragdolling = false;
 
   /**
+   * Where this body is drawn looking, INTERPOLATED — the same pair `update`
+   * poses the rig from, kept so that a round drawn out of this gun goes where
+   * the gun visibly points.
+   *
+   * That is the whole reason they are read off the interpolated pose rather
+   * than off the `fire` event that spawns the tracer, and it is `onDeath`'s
+   * argument in a second place: the event is real time and this body is drawn
+   * `interpDelay` behind it, so the authority's own aim at the instant the
+   * trigger went belongs to a pose this client will not draw for another
+   * tenth of a second. Spent, it would put the streak beside the barrel.
+   */
+  aimYaw = 0;
+  /** See `aimYaw`. The AIM pitch — `EntityState.pitch`, positive up. */
+  aimPitch = 0;
+
+  /**
    * Wired by `NetRoster`: a boot went down.
    *
    * DERIVED here rather than sent, and that is the point: the walk cycle is
@@ -216,6 +232,8 @@ export class NetSoldier implements Combatant, RagdollSubject {
     const yaw = lerpAngle(a.yaw, b.yaw, blend);
     const bodyYaw = lerpAngle(a.bodyYaw, b.bodyYaw, blend);
     const pitch = a.pitch + (b.pitch - a.pitch) * blend;
+    this.aimYaw = yaw;
+    this.aimPitch = pitch;
     const moving = a.moving + (b.moving - a.moving) * blend;
     const dead = a.dead + (b.dead - a.dead) * blend;
     // Interpolated like everything else here rather than eased locally: this is
@@ -331,6 +349,35 @@ export class NetSoldier implements Combatant, RagdollSubject {
       }
     }
     return [last, last, 0];
+  }
+
+  /**
+   * The aim as a direction — `CameraSystem.forwardToRef`'s arithmetic, because
+   * this is the same pair of angles the local player reports about itself
+   * (`Game.updateNet` fills `LocalState` from `CameraSystem.aimYaw`/`aimPitch`)
+   * and a bot's own `aimPitch` answers in the same sign.
+   */
+  aimDirToRef(out: Vector3): Vector3 {
+    const cp = Math.cos(this.aimPitch);
+    return out.set(
+      cp * Math.sin(this.aimYaw),
+      Math.sin(this.aimPitch),
+      cp * Math.cos(this.aimYaw),
+    );
+  }
+
+  /**
+   * The rifle's muzzle in world space: where a drawn round's streak starts.
+   *
+   * `Bot.muzzleWorld` to the letter, forcing included. A rig joint is only
+   * invalidated by its parent being recomputed and the render walk is what
+   * does that — so an unforced read here is LAST frame's pose, which on a body
+   * that has not been drawn yet this round is the pool's build position at the
+   * origin.
+   */
+  muzzleWorld(): Vector3 {
+    this.rig.muzzle.computeWorldMatrix(true);
+    return this.rig.muzzle.getAbsolutePosition();
   }
 
   setEnabled(on: boolean): void {

@@ -26,6 +26,10 @@
  * `RayHit.surface` chooses the impact; "hard" is what everything but the floor
  * answers, exactly as `metadata.surface` was absent on everything but the
  * terrain collider's clone.
+ * `drawRounds` is the PICTURE without the shot: no target list, no near miss
+ * and no `onShotPath`, so it deals no damage and breaks no glass. It exists for
+ * the rounds this client did not resolve — everybody else's, in a match, where
+ * the authority sends the trigger and nothing else (`docs/multiplayer.md`).
  * A tracer is a short streak flown from muzzle to impact over several frames,
  * NOT a muzzle-to-impact beam — the hit is resolved instantly regardless, so
  * the flight is presentation only and must never gate damage. The impact spark
@@ -562,6 +566,62 @@ export class CombatSystem {
     return { target: hitTarget, killed, hitWall, headshot, dir, hitPoint };
   }
 
+  /**
+   * Rounds SOMEBODY ELSE fired, DRAWN and nothing else — `drawBlast`'s
+   * counterpart, public for the same reason: in a match the authority raises
+   * them with nothing on the wire but who fired, and this client owes the
+   * picture.
+   *
+   * Offline every tracer in the village comes out of `fire`, because this
+   * machine resolves every round in it. In a netplay round it resolves exactly
+   * one shooter's — its own — so without this the rest of the roster fired
+   * invisible rounds: the report and the minimap reveal arrived and nothing
+   * left the barrel. See `Game.drawNetShots`.
+   *
+   * Three things `fire` does are deliberately NOT done here, and each one is
+   * an outcome rather than a picture. No target list is walked, so nothing
+   * takes damage and no near miss is raised — the authority sends `hit`,
+   * `damage` and `nearmiss` itself, and a second opinion here would double
+   * every cue it carries. And `onShotPath` is not raised, so this breaks no
+   * glass: a pane is the authority's (`docs/multiplayer.md`), and a client
+   * breaking one off a drawn round would put a hole in a window nobody shot
+   * through on any other screen.
+   *
+   * What is left is the wall query — the same `castRound` `fire` pays for, so
+   * the streak stops where the round did and the dust comes off the surface it
+   * stopped on. `origin` is the shooter's EYE and `muzzle` is where the streak
+   * is flown from, which is the split `BattleSystem.botFire` already makes.
+   *
+   * **The BURST is one call and one ray**, which is the whole reason the count
+   * is a parameter rather than the caller looping: a snapshot's worth of
+   * rounds off one slot share an origin and an axis by construction — the
+   * client has one pose for them — so the second cast could only ever return
+   * what the first did. What differs is WHEN each one leaves the barrel, and
+   * that is `spacing`, laid back across the interval exactly as the reports
+   * are.
+   */
+  drawRounds(
+    origin: Vector3,
+    dir: Vector3,
+    muzzle: Vector3,
+    range: number,
+    rounds: number,
+    spacing: number,
+  ): void {
+    const hitWall =
+      this.rays !== null && this.rays.castRound(origin, dir, range, this.wall);
+    const dist = hitWall ? this.wall.distance : range;
+    // Scratch, and handed straight to `spawnTracer`, which copies it — see
+    // `fire`, which spends the same vector the same way.
+    dir.scaleToRef(dist, SCRATCH);
+    SCRATCH.addInPlace(origin);
+    const kind = hitWall ? this.wall.surface : null;
+    const normal = hitWall ? this.wall.normal : null;
+    for (let i = 0; i < rounds; i++) {
+      this.spawnTracer(muzzle, SCRATCH, kind, normal, i * spacing);
+    }
+  }
+
   update(dt: number): void {
     // Tracers: a fixed-length streak flying from the muzzle to the impact
     // point. The head runs out to `dist` and stops there; the tail keeps going
@@ -571,6 +631,11 @@ export class CombatSystem {
     for (const tr of this.tracers) {
       if (!tr.alive) continue;
       tr.head += fx.tracerSpeed * dt;
+      // Still behind the barrel — see `spawnTracer`. It holds a pool slot,
+      // which is the point: a queued round that lost its slot to the next
+      // shot would be one that never left.
+      if (tr.head < 0) continue;
+      tr.mesh.isVisible = true;
       if (tr.impactKind !== null && tr.head >= tr.dist) {
         this.spawnImpact(tr.impact, tr.impactNormal, tr.impactKind);
         // Nulled so it fires once, and it is also what makes the sound and
@@ -650,6 +715,7 @@ export class CombatSystem {
     to: Vector3,
     kind: ImpactKind | null,
     normal: Vector3 | null,
+    delay = 0,
   ): void {
     const tr = this.tracers.find((t) => !t.alive) ?? this.tracers[0];
     const delta = to.subtract(from);
@@ -658,7 +724,11 @@ export class CombatSystem {
     tr.from.copyFrom(from);
     tr.dir.copyFrom(delta);
     tr.dist = dist;
-    tr.head = 0;
+    // A round still waiting its turn starts with its head BEHIND the muzzle —
+    // the delay expressed as the metres it has yet to fly rather than as a
+    // clock of its own, so `update` needs no second timer and the pool stays a
+    // pool. See `drawRounds`, the one caller that passes one.
+    tr.head = -delay * CONFIG.effects.tracerSpeed;
     tr.alive = true;
     tr.impact.copyFrom(to);
     tr.impactKind = kind;
@@ -675,7 +745,7 @@ export class CombatSystem {
     );
     tr.mesh.position.copyFrom(from);
     tr.mesh.scaling.set(1, 0.01, 1);
-    tr.mesh.isVisible = true;
+    tr.mesh.isVisible = tr.head >= 0;
   }
 
   /**

@@ -675,6 +675,69 @@ line, both are what the client's `wireBattle` has always done, and both are
 invisible until you go looking for them — a bot that does not flinch reads as a
 bot that is good.
 
+## The sight of somebody else's rounds
+
+**The `fire` event carried a report, a reveal and no bullet, and that is the
+half a shooter's screen is actually missing.** Offline every tracer in the
+village is `CombatSystem.fire` throwing one off as a side effect of resolving
+the round, because that machine resolves every round in it. A client resolves
+exactly one shooter's — its own — so in a match the other forty-seven fired
+rounds that made a noise, moved a minimap blip and left the barrel as nothing
+at all. What that costs is the cue a tracer mostly IS: not that somebody is
+shooting, which the report says, but WHERE FROM and WHICH WAY, which is what
+tells you whether the fire two streets over is meant for you.
+
+`CombatSystem.drawRounds` is the answer and it is `drawBlast`'s counterpart
+exactly — public for the same reason, that the authority raises the thing with
+almost nothing on it and this client owes the picture. It does the wall query
+and nothing else: **no target list is walked, no near miss is raised and
+`onShotPath` is not called**, so it deals no damage and breaks no glass. All
+three of those are the authority's and arrive as `hit`, `damage`, `nearmiss`
+and `glass`, and a second opinion here would either double a cue or put a hole
+in a window that is intact on every other screen.
+
+**Where a round leaves from is read off the INTERPOLATED pose, never off the
+event**, which is `onDeath`'s argument in a second place. The event is real
+time and the body is drawn `interpDelay` behind it, so the authority's own aim
+at the instant the trigger went belongs to a pose this client will not put on
+screen for another tenth of a second — spent, it draws a streak leaving from
+beside the gun rather than out of it. So `NetSoldier` keeps the interpolated
+`aimYaw`/`aimPitch` it just posed the rig from, the round is cast from that
+body's EYE along that aim and the streak is flown from its `muzzleWorld()`,
+which is the split `BattleSystem.botFire` already makes offline.
+
+**An event is not a frame, and this is the difference between a missing effect
+and a haunting.** Server messages are dispatched off the socket, so a `fire`
+handler runs whenever a packet lands and in whatever state the game is in —
+including the menu, the round-over card and the build, none of which step
+`CombatSystem`. A tracer is a streak `update` flies out of the barrel and hides
+again; spawned where nothing flies it, it is a lit dot hanging in the air where
+the muzzle was, one per shot, forever. So `Game.onNetFire` QUEUES a slot and
+`drawNetShots` draws it inside `updateNetWorld`, one line above the `stepShots`
+that will fly it; the queue is capped at the roster's own ceiling and `tick`
+drops whatever a frame that never ran left behind, so it can hold at most one
+frame's worth and a menu's worth can never all leave the barrel at once on the
+frame a round starts.
+
+**A burst is one call and one ray.** A snapshot's worth of rounds off one slot
+share an origin and an axis by construction — this client has one pose for them
+— so the second cast could only return what the first did. What differs is when
+each leaves the barrel, and `spawnTracer` takes that as a delay expressed as
+metres the round has yet to fly (a negative head) rather than as a clock of its
+own, so the pool stays a pool. It is the same interval the reports are laid back
+across, for the same reason: three streaks drawn on one instant are one streak,
+and the rate is as much of the read by eye as it is by ear.
+
+**The muzzle flash is the same budget offline spends.** Transient lights always
+win a shader slot, so `spendMuzzleLightBudget` takes the list as a parameter and
+there are two of them, never both at once: `BattleSystem.muzzleFlashes` offline,
+`Game.netFlashes` in a match. One budget over either, which matters more here
+rather than less — the authority's roster is three times a village's. It is one
+flash per SHOOTER where offline it is one per shot, and that is the coalescing
+showing through rather than a saving: a light is a position and a lifetime, the
+three rounds of a burst go off at one muzzle inside 50 ms, and `pulse` takes no
+delay to stagger them with. What the burst is read by is the streaks.
+
 ## Interpolation, and the clock underneath it
 
 Remote bodies are drawn `CONFIG.net.interpDelay` behind the newest snapshot, so
