@@ -266,6 +266,54 @@ a mean over a window does not care which end a one-row shift is at, so `frame`,
 `phases` and `memory` compare across the boundary — but every per-frame
 verdict in it is one row out.
 
+### The residue splits in two, and the browser is what splits it
+
+The three-way decomposition above is honest and it stops one question short:
+the residue is "the rAF wait, the compositor and the panel", and from inside the
+page those cannot be told apart. **`long-animation-frame` tells two of them
+from the third**, because it is the browser's own account of the same frame
+rather than ours. A long animation frame covers every task from the end of the
+last frame's rendering to the end of this one's, it is reported when that runs
+over 50 ms, and it names the scripts inside it.
+
+So the reading a hitch now gets is:
+
+| a hitch with… | means | and then |
+| --- | --- | --- |
+| a long animation frame over it | **the main thread was busy** outside `Game.tick` | `loaf.worst` names the script |
+| **none**, where `loaf.supported` | **the main thread was IDLE** | the time is not the page's — compositor, driver, panel |
+| none, where it is not supported | nothing | re-take it on Chrome 123+ |
+
+**The ABSENCE is the finding, which is why `loaf.supported` ships in every
+capture** — the same rule as `memory.heapLive`. On a browser that never reports
+these, every hitch looks like an idle main thread, and a report that let that be
+read as a result would be worse than one that said nothing. Nothing but Chromium
+reports them at the time of writing.
+
+Three details that are not obvious:
+
+- **A long window MARKS SEVERAL ROWS, on purpose.** The browser's frame and this
+  instrument's row are different intervals — a long animation frame runs render
+  to render, a row owns its own start to the next row's start — so one window
+  straddles two rows by construction. Trying to pick one gets the common case
+  backwards: filing against the row the window ENDED on put a planted 120 ms
+  `setTimeout` on the 4 ms frame that recovered from it, and every hitch in the
+  test read `loaf: 0` while the entry explaining it sat one row away. That is
+  `endFrame`'s pairing bug one layer up. Every overlapped row is marked instead,
+  and `loaf.entries` counts ROWS rather than entries.
+- **`buffered` is false**, so a capture does not inherit every long frame since
+  the page loaded. The longest of those is always the map install, which is not
+  a hitch and would take every slot in `loaf.worst` before a round had drawn.
+- **It is allowed to allocate**, the second exemption from the no-allocation
+  rule after the GC sentinel, because it fires only on frames the browser has
+  already called slow. The bound for a device where that is every frame is in
+  `keepLoaf`: once `CONFIG.profiling.loafKept` records are held, an entry that
+  would not displace the smallest builds no object at all.
+
+Report **version 5**. `series.loafMs` is the per-row series and reads best laid
+against `frameMs`: where the two rise together the main thread was busy, and
+where `frameMs` rises alone it was not.
+
 **The last four are not brackets in `Game.ts` and cannot be**, because the
 boundaries they want are inside `scene.render()`. `FrameProfile.hookRender`
 hangs them off the scene's own observables at `arm` and takes them off again at

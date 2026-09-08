@@ -1283,7 +1283,12 @@ wait, the compositor, the panel — and naming it would be claiming to know whic
 **It is only a subtraction if a row's wall clock is the interval its OWN spans
 fill**, which until report **version 4** it was not — so a NEGATIVE residue
 means that pairing is broken again, and a pre-v4 capture's per-frame verdicts
-are one row out (its aggregates are fine).
+are one row out (its aggregates are fine). **What the residue cannot name, the
+BROWSER can**: `long-animation-frame` (version 5) says whether the main thread
+was busy through a hitch and what ran, and **its ABSENCE is the reading** — no
+long frame over a hitch means an idle main thread and time that was never the
+page's. So `loaf.supported` ships beside it, because on a browser that reports
+none, every hitch looks idle.
 
 **What all of them measure is CPU**, and under `compatibilityMode = false` that
 is the recording of a render BUNDLE rather than the work the GPU then does.

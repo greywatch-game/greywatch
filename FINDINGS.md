@@ -176,16 +176,65 @@ reading it. Verified in a real round under an 8x CPU throttle: minimum residue
 +0.30 ms over 884 frames, and 7 of the top 8 hitches now attributed to their
 own tick, which is what a CPU throttle should produce.
 
-### What is left, restated
+### What is left, and the instrument that now splits it
 
-**Unknown, and honestly so.** The residue may still be real — a page cannot
-tell the rAF wait, the compositor and the panel apart, and that argument is
-untouched. What is gone is the *evidence* that it was ever large. The next step
-is not a new theory: it is **re-taking the vsync-ON captures on the fixed
-instrument** and seeing whether the shortfall survives. If it does not, this
-finding becomes a `drawWorld` question and joins finding 40. If it does, the
-cheap discriminator still stands — play in a window a quarter the size, and if
-the hitches go it is presentation rather than scheduling.
+**The residue is real and it is no longer un-nameable.** A page cannot tell the
+rAF wait, the compositor and the panel apart — that argument stands — but
+`long-animation-frame` tells all three from the fourth possibility nobody could
+previously exclude: **the main thread busy with something outside `Game.tick`**.
+The probe is in (report version 5, `docs/profiling.md`), and its ABSENCE is the
+reading: a hitch with no long frame over it is a hitch the main thread was idle
+through.
+
+Verified two-sided before it was believed — a planted 120 ms `setTimeout`
+outside the tick comes back as `tick 2.2 | loaf 124 | block 74` naming
+`TimerHandler:setTimeout`, and a clean round reports nothing but the map
+install.
+
+**The vsync-ON capture that this section was waiting for has now been taken**,
+and it is the first per-frame reading of this finding that can be trusted:
+
+| | |
+| --- | --- |
+| the lock | 96.0% of frames within 18% of a 7.00 ms median — vsync on at ~143 Hz |
+| the tick | 4.61 ms mean, 19.5 ms max, sd 1.07 — **healthy throughout** |
+| `present` | **0.0 on every hitch frame** (0.017 mean, 0.2 max over 2,999) |
+| the hitches | 18 intervals over the 24 ms bar, **0 explained by their own tick** |
+| the worst | 120.6 ms wall, 7.4 ms tick, 113.2 ms of WAIT, `gc: 0` |
+| the workload | draws 506/496/514 and meshes 428/423/439 before/during/after — **flat** |
+
+So it is neither the tick nor the submit, and `drawWorld` is clean (max 9.6 ms)
+— which also takes finding 40's pipeline hypothesis off this particular
+episode. **The next capture is the same one with the probe in it**, and it can
+only come back two ways: a long animation frame over those hitches, which names
+the script, or none, which puts 113 ms of a 120 ms frame outside the page and
+makes this a compositor question at last.
+
+### …and the collector is EXONERATED by the same capture
+
+The collection rate steps **20x at the hitch and stays there**, which looks
+exactly like a cause until the tail is read:
+
+| frames | gc/frame | mean wall |
+| --- | --- | --- |
+| 0–2100 | 0.010 | 6.95 ms |
+| 2100–2400 | 0.087 | **10.79 ms** |
+| 2400–2700 | **0.207** | **6.95 ms** |
+| last 300 | 0.173 | 6.97 ms |
+
+Six hundred frames run at 17–20x the collection rate at a flawless 144 Hz lock.
+Per second it is 1–2 collections for sixteen seconds, 12–14 through the hitch,
+then 29/31/29/22 — and those four seconds are the smoothest in the capture. **If
+0.2 collections a frame cost 14 ms, the tail would be the worst part of the
+capture instead of the best.**
+
+So one event at frame 2291 had two consequences and the GC is the harmless one:
+a permanent step in allocation, and ~2 s of stalls outside the tick. The stalls
+stopped; the allocation did not. **What the event WAS is not in the capture** —
+the player barely moves through it, from (-88.6, 7.9, 316.2) to (-86.6, 7.9,
+316.3), with 32 bots alive. `heapLive` was false on that run, so there is no
+MB/s to size the step; the next capture wants
+`--enable-precise-memory-info`.
 
 ### The instrument trap, because it cost a run and will cost the next one
 

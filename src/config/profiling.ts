@@ -102,6 +102,22 @@ export const profiling = {
   hitchesKept: 24,
 
   /**
+   * How many LONG ANIMATION FRAMES a capture carries whole, worst first.
+   *
+   * **These are the only records here that carry a STRING**, so the cap is a
+   * clipboard budget as well as a memory one: each one names the script the
+   * browser blamed, which is the whole reason the probe exists. Twelve is
+   * enough to see whether a hitch episode has one cause or several, and small
+   * enough that a full list is a few hundred bytes.
+   *
+   * It is also the bound on the probe's allocation. `FrameProfile` may not
+   * allocate per frame, and on a device slow enough that EVERY frame is a long
+   * one the observer would fire every frame — so once this list is full,
+   * nothing is built for an entry that would not displace the smallest in it.
+   */
+  loafKept: 12,
+
+  /**
    * How many `performance.now()` reads the clock-grain probe takes on arming.
    *
    * **The probe is not optional and its answer belongs in every capture.**

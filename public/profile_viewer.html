@@ -262,6 +262,7 @@ textarea {
 .verdict { border-left: 3px solid var(--ink-4); }
 .verdict.is-gc      { border-left-color: var(--collector); }
 .verdict.is-outside { border-left-color: var(--signal); }
+.verdict.is-mainthread { border-left-color: var(--fault); }
 .verdict.is-tick    { border-left-color: var(--fault); }
 .verdict.is-clean   { border-left-color: var(--good); }
 .verdict .lede { font-size: 18px; line-height: 1.45; letter-spacing: -0.01em; max-width: 62ch; }
@@ -753,15 +754,37 @@ function load(text, name) {
    separates the two investigations. Best-effort by construction — the
    sentinel's callback runs after the collection, so a count lands on the frame
    it interrupted or the one after. */
+/* Whether THIS capture's browser reports long animation frames. Set by
+   `renderReport`, because the reading below turns on it: where the browser
+   reports none, "no long animation frame" means nothing at all. */
+let LOAF_SUPPORTED = false;
+
 function readHitch(h) {
   const wall = h.frameMs;
   const tick = h.phases && h.phases.frame != null ? h.phases.frame : null;
   const outside = tick == null ? null : Math.max(0, wall - tick);
   const outShare = outside == null ? null : outside / wall;
+  const loaf = h.loafMs || 0;
   let kind = "tick", why = "";
   if (outShare != null && outShare > 0.5) {
-    if (h.gc > 0) { kind = "gc"; why = "a collection landed on this frame and the tick did not spend the time"; }
-    else { kind = "outside"; why = "the time went outside the tick with no collection on it"; }
+    /* The long animation frame first, because it is the only one of the three
+       that says WHICH SIDE OF THE PAGE the time went. A collection count is
+       best-effort and a residue is a subtraction; this is the browser's own
+       account of the same frame. */
+    if (loaf > 0) {
+      kind = "mainthread";
+      why = "the main thread was busy outside the tick — the browser reported a " +
+        fmt(loaf, 1) + " ms long animation frame over it" +
+        (h.loafBlockMs ? ", " + fmt(h.loafBlockMs, 1) + " ms of it blocking" : "");
+    } else if (LOAF_SUPPORTED) {
+      kind = "outside";
+      why = "the browser reported NO long animation frame here, so the main thread was " +
+        "idle: the time went to the compositor, the driver or the panel";
+    } else if (h.gc > 0) {
+      kind = "gc"; why = "a collection landed on this frame and the tick did not spend the time";
+    } else {
+      kind = "outside"; why = "the time went outside the tick with no collection on it";
+    }
   } else {
     let top = null, topMs = 0;
     for (const k of (KIDS.frame || [])) {
@@ -771,7 +794,7 @@ function readHitch(h) {
     why = top ? "the tick spent it, mostly in " + top : "the tick spent it";
     kind = "tick";
   }
-  return { wall, tick, outside, outShare, kind, why };
+  return { wall, tick, outside, outShare, kind, why, loaf };
 }
 
 /* ── report ────────────────────────────────────────────────────────────── */
@@ -782,6 +805,7 @@ function renderReport(r) {
     r.roots && r.roots.length ? r.roots : FALLBACK_ROOTS,
   );
   const mem = r.memory || null;
+  LOAF_SUPPORTED = !!(r.loaf && r.loaf.supported);
   const clock = r.clock || {};
   const below = new Set(clock.belowGrain || []);
 
@@ -847,18 +871,32 @@ function renderReport(r) {
       ));
       const k = el("span", "k", pct(worst.outShare) + " outside the tick");
       lede.appendChild(k);
-      lede.appendChild(document.createTextNode(worst.kind === "gc"
-        ? ", with a collection on that frame."
+      lede.appendChild(document.createTextNode(
+        worst.kind === "mainthread" ? ", and the main thread was busy through it."
+        : worst.kind === "gc" ? ", with a collection on that frame."
+        : worst.kind === "outside" && LOAF_SUPPORTED ? ", and the main thread was IDLE through it."
         : worst.kind === "outside" ? ", with no collection on it." : "."));
     }
+    const nMain = reads.filter((x) => x.kind === "mainthread").length;
     const tally = [];
-    if (nOut) tally.push(nOut + " outside the tick");
+    if (nMain) tally.push(nMain + " with the main thread busy");
+    if (nOut) tally.push(nOut + (LOAF_SUPPORTED ? " with it idle" : " outside the tick"));
     if (nGc) tally.push(nGc + " with a collection");
     if (nTick) tally.push(nTick + " inside the tick");
-    sub.textContent = tally.join(" · ") +
-      ". Time outside the tick is the browser — vsync wait, present, compositing, a shader " +
-      "compile — and a collection count is best-effort: the sentinel reports after the fact, " +
-      "so it lands on the frame it interrupted or the one after.";
+    let note = ". Time outside the tick is the browser — vsync wait, present, compositing, a " +
+      "shader compile — and a collection count is best-effort: the sentinel reports after the " +
+      "fact, so it lands on the frame it interrupted or the one after.";
+    if (r.loaf && r.loaf.supported) {
+      const top = (r.loaf.worst || [])[0];
+      note += " This browser reports long animation frames, so the split is the browser's own " +
+        "rather than a subtraction: a hitch WITH one was the main thread, a hitch without one " +
+        "was not the page at all." +
+        (top ? " The longest is " + fmt(top.durationMs, 1) + " ms in " + top.top + "." : "");
+    } else {
+      note += " This capture's browser does not report long animation frames, so nothing here " +
+        "can say whether the main thread was busy or idle through a hitch.";
+    }
+    sub.textContent = tally.join(" · ") + note;
   }
 
   /* stats */

@@ -271,6 +271,73 @@ export const ROOTS: readonly Phase[] = PHASES.filter(
   (name) => !(name in PARENT_OF),
 );
 
+/**
+ * The entry type that answers the one question the phases cannot.
+ *
+ * **The residue — wall clock minus `frame` minus `present` — is the rAF wait,
+ * the compositor and the panel, and from inside the page those three cannot be
+ * told apart. `long-animation-frame` splits it in two anyway**, because it is
+ * the BROWSER's account of the same frame rather than ours: a long animation
+ * frame is reported when the browser's own window — every task from the end of
+ * the last frame's rendering to the end of this one's — runs over 50 ms, and
+ * it names the scripts inside it.
+ *
+ * So a hitch with a long animation frame over it is the MAIN THREAD, busy with
+ * something outside `Game.tick`, and `scripts` says what. A hitch with NONE
+ * is a main thread that was idle, which puts the time outside the page
+ * altogether — the compositor, the driver, the panel — and that is a real
+ * answer rather than a gap. **The absence is the finding**, which is why
+ * `loaf.supported` ships in every capture: on a browser that never reports
+ * these, "no entry" must not be read as "the main thread was idle".
+ */
+const LOAF_TYPE = "long-animation-frame";
+
+/**
+ * `PerformanceLongAnimationFrameTiming` and its script records, declared here
+ * because TypeScript's DOM lib does not carry them yet.
+ *
+ * Only the fields this file reads. Everything is optional-safe at runtime:
+ * these are the browser's objects and an older Chrome may hand back fewer, so
+ * every read below has a fallback rather than trusting the shape.
+ */
+interface LoafScript {
+  readonly name?: string;
+  readonly duration?: number;
+  readonly invoker?: string;
+  readonly invokerType?: string;
+  readonly sourceURL?: string;
+  readonly sourceFunctionName?: string;
+}
+
+interface LoafEntry {
+  readonly startTime: number;
+  readonly duration: number;
+  readonly blockingDuration?: number;
+  readonly scripts?: readonly LoafScript[];
+}
+
+/** How long a name from a long animation frame may be, in characters. */
+const LOAF_NAME_CAP = 120;
+
+/**
+ * The shortest true thing that can be said about which script the browser
+ * blamed.
+ *
+ * Four fallbacks deep because the fields are populated unevenly — a handler
+ * has an `invoker` and often no `sourceFunctionName`, a module's top level
+ * has the reverse — and a record that came back "undefined" would be the one
+ * kind of answer worse than no record at all. The URL is reduced to its last
+ * segment: this build's files are content-hashed and the whole path is a
+ * hundred characters of nothing.
+ */
+function describeScript(s: LoafScript): string {
+  const who =
+    s.sourceFunctionName || s.invoker || s.name || s.invokerType || "?";
+  const file = s.sourceURL ? s.sourceURL.replace(/[?#].*$/, "").replace(/^.*[/]/, "") : "";
+  const out = file ? `${who} @ ${file}` : who;
+  return out.length > LOAF_NAME_CAP ? out.slice(0, LOAF_NAME_CAP - 1) + "…" : out;
+}
+
 /** One phase's line in a report. Milliseconds throughout. */
 export interface PhaseStat {
   name: Phase;
@@ -283,6 +350,33 @@ export interface PhaseStat {
   max: number;
   /** Mean as a share of the mean `frame`, 0..1. Attribution, not a partition. */
   share: number;
+}
+
+/**
+ * One long animation frame, whole — the browser's account of a frame it
+ * considered slow, filed against the ring row it ended on.
+ *
+ * Read it BESIDE the hitch list rather than instead of it. A hitch that has one
+ * of these on it is the main thread; a hitch that has none, in a capture where
+ * `loaf.supported` is true, is not.
+ */
+export interface LoafFrame {
+  /** Seconds before the newest frame in the ring. */
+  ago: number;
+  /** The wall clock of the ring row this landed on, for the pairing. */
+  frameMs: number;
+  /** The browser's own window, end of the last frame's render to the end of this one's. */
+  durationMs: number;
+  /**
+   * How much of it was work that would have blocked an input, which is the
+   * browser's own answer to "how much of this did a user feel". 0 where the
+   * field is absent.
+   */
+  blockingMs: number;
+  /** Summed duration of the scripts inside it. Zero means the time was not JS. */
+  scriptMs: number;
+  /** The biggest script in it, as function and file. Empty when there were none. */
+  top: string;
 }
 
 /** One frame worth keeping whole, because it was slow. */
@@ -319,6 +413,15 @@ export interface HitchFrame {
    */
   gc: number;
   heapMb: number;
+  /**
+   * The long animation frame covering this hitch, and how much of it blocked.
+   * **Zero means the browser reported none** — so in a capture where
+   * `loaf.supported` is true, a hitch with `loafMs: 0` is one the main thread
+   * was IDLE for, and its time went to the compositor or the panel. That is the
+   * split the residue alone could never make. See `LOAF_TYPE`.
+   */
+  loafMs: number;
+  loafBlockMs: number;
   drawCalls: number;
   activeMeshes: number;
   meshWalkMs: number;
@@ -439,6 +542,28 @@ export interface ProfileReport {
     /** The GPU clouds and the mote field, which no phase covers. */
     particlesMs: number;
   };
+  /**
+   * What the BROWSER said about the same frames, which is the only thing in
+   * this report that is not this instrument's own measurement.
+   *
+   * `supported` first and always, because the useful reading here is an
+   * ABSENCE: no entries over a window full of hitches means the main thread was
+   * idle through them. That inference is only available where the browser
+   * reports these at all (Chrome 123+; nothing in Safari or Firefox at the time
+   * of writing), and on a browser that does not, an empty list means nothing
+   * whatsoever. See `LOAF_TYPE`.
+   */
+  loaf: {
+    supported: boolean;
+    /** How many landed on the rows in this window. */
+    entries: number;
+    /** Their summed duration, blocking share and script share, over the window. */
+    totalMs: number;
+    blockingMs: number;
+    scriptMs: number;
+    /** The biggest few, whole, with the script the browser blamed. */
+    worst: LoafFrame[];
+  };
   phases: PhaseStat[];
   hitches: HitchFrame[];
   /** The whole ring, one array per phase. Present only in a FULL report. */
@@ -465,6 +590,13 @@ export interface ProfileReport {
      */
     drawCalls: number[];
     activeMeshes: number[];
+    /**
+     * The long animation frame on each row, 0 where there was none — see
+     * `ProfileReport.loaf`. Laid against `frameMs` it is the whole reading:
+     * where the two rise together the main thread was busy, and where
+     * `frameMs` rises alone it was not.
+     */
+    loafMs: number[];
     phases: Partial<Record<Phase, number[]>>;
   };
 }
@@ -507,6 +639,46 @@ export class FrameProfile {
    */
   private heapMb: Float32Array | null = null;
   private gcAt: Uint8Array | null = null;
+
+  /**
+   * The browser's own account of each frame — see `LOAF_TYPE`.
+   *
+   * Three parallel arrays and not a list, for the reason everything else here
+   * is one: a row's reading has to be free to write from a callback that may
+   * fire on any frame. The STRINGS cannot go in a typed array and are kept
+   * separately, bounded, in `loafWorst`.
+   */
+  private loafMs: Float32Array | null = null;
+  private loafBlockMs: Float32Array | null = null;
+  private loafScriptMs: Float32Array | null = null;
+
+  /**
+   * Whether this browser reports long animation frames at all.
+   *
+   * **It ships in every capture and it is not a detail.** The reading this
+   * probe exists for is an absence — a hitch with no long frame over it is a
+   * hitch the main thread was idle through — and on a browser that reports
+   * none, every hitch looks like that. Probed once on arming, exactly as
+   * `heapLive` is and for the same reason.
+   */
+  private loafSupported = false;
+
+  /**
+   * The worst long animation frames, with the script each one blamed.
+   *
+   * `at`/`when` is the ring row and the stamp that was in it, the same pair
+   * `hitchAt`/`hitchWhen` carries and for the same reason: a ring index is an
+   * identity only until the ring laps, and a stale record would put a real
+   * script's name under a frame that never ran it.
+   */
+  private loafWorst: {
+    at: number;
+    when: number;
+    durationMs: number;
+    blockingMs: number;
+    scriptMs: number;
+    top: string;
+  }[] = [];
 
   private heapLive = false;
   /**
@@ -675,6 +847,10 @@ export class FrameProfile {
     this.rttMs = new Float32Array(n);
     this.particlesMs = new Float32Array(n);
     this.gcAt = new Uint8Array(n);
+    this.loafMs = new Float32Array(n);
+    this.loafBlockMs = new Float32Array(n);
+    this.loafScriptMs = new Float32Array(n);
+    this.loafWorst = [];
     this.cursor = 0;
     this.filled = 0;
     this.hitchAt = [];
@@ -712,6 +888,9 @@ export class FrameProfile {
     this.heapLive = probeHeapLive();
     this.heapMb = this.heapLive ? new Float32Array(n) : null;
     this.watchGc();
+    // The fourth probe, and the only one that asks the BROWSER rather than the
+    // device. Registered after `on` because its callback returns on that flag.
+    this.watchLoaf();
     // The probes wrote into slot 0 of the ring. Start clean.
     this.durMs.fill(0);
     this.entered.fill(0);
@@ -749,6 +928,11 @@ export class FrameProfile {
     this.particlesMs = null;
     this.heapMb = null;
     this.gcAt = null;
+    this.loafMs = null;
+    this.loafBlockMs = null;
+    this.loafScriptMs = null;
+    this.loafWorst = [];
+    this.loafSupported = false;
     this.hitchAt = [];
     this.hitchWhen = [];
     // The registry is dropped rather than unregistered: a sentinel already in
@@ -1205,6 +1389,7 @@ export class FrameProfile {
       heapMb: [],
       drawCalls: [],
       activeMeshes: [],
+      loafMs: [],
       phases: {},
     };
     if (full) {
@@ -1215,6 +1400,7 @@ export class FrameProfile {
         series.heapMb.push(this.heapMb ? round(this.heapMb[i], 2) : 0);
         series.drawCalls.push(this.drawCalls![i]);
         series.activeMeshes.push(this.activeMeshes![i]);
+        series.loafMs.push(round(this.loafMs![i]));
       }
     }
 
@@ -1249,6 +1435,10 @@ export class FrameProfile {
     phases.sort((a, b) => b.mean - a.mean);
 
     return {
+      // 5: `loaf` — the browser's own account of the frames this instrument
+      // could only call "residue", and the per-hitch `loafMs` that says which
+      // side of the page a hitch's time went. Its ABSENCE is a reading, so
+      // `loaf.supported` rides with it.
       // 4: `frameMs` — in the series and on every hitch — is the interval the
       // frame's OWN spans fill, where a v3 capture carried the interval BEFORE
       // it. The aggregates are unaffected (a mean over a window does not care
@@ -1257,7 +1447,7 @@ export class FrameProfile {
       // wall clock and its phases are one row apart.
       // 3: `present`, the first phase outside `frame`, and the `roots` that
       // let a reader tell a second root from a phase it has not heard of.
-      version: 4,
+      version: 5,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
@@ -1283,6 +1473,7 @@ export class FrameProfile {
         baselineMs: round(this.baselineMs),
       },
       memory: this.memoryFacts(first, n, cap, spanMs),
+      loaf: this.loafFacts(first, n, cap),
       counters: this.counterMeans(first, n, cap),
       phases,
       hitches: this.worstHitches(),
@@ -1357,6 +1548,71 @@ export class FrameProfile {
     };
   }
 
+  /**
+   * What the browser said about this window — see `ProfileReport.loaf`.
+   *
+   * Summed over the ROWS of the window rather than counted as they arrived, for
+   * the reason `memoryFacts` sums `gcAt`: a running total outlives its own
+   * ring and reports a rate the session never ran at.
+   */
+  private loafFacts(
+    first: number,
+    n: number,
+    cap: number,
+  ): ProfileReport["loaf"] {
+    let entries = 0;
+    let total = 0;
+    let blocking = 0;
+    let script = 0;
+    if (this.loafMs) {
+      for (let k = 0; k < n; k++) {
+        const i = (first + k) % cap;
+        const ms = this.loafMs[i];
+        if (ms <= 0) continue;
+        entries++;
+        total += ms;
+        blocking += this.loafBlockMs![i];
+        script += this.loafScriptMs![i];
+      }
+    }
+    return {
+      supported: this.loafSupported,
+      entries,
+      totalMs: round(total),
+      blockingMs: round(blocking),
+      scriptMs: round(script),
+      worst: this.worstLoaf(),
+    };
+  }
+
+  /**
+   * The kept long animation frames, worst first, with the stale ones dropped.
+   *
+   * Stale is the same test the hitch list makes and for the same reason: a ring
+   * index is an identity only until the ring laps, and a record whose row has
+   * been overwritten would put a real script's name under a frame that never
+   * ran it.
+   */
+  private worstLoaf(): LoafFrame[] {
+    if (!this.frameAt || this.filled === 0) return [];
+    const cap = this.capacity;
+    const newest = this.frameAt[(this.cursor - 1 + cap) % cap];
+    const out: LoafFrame[] = [];
+    for (const r of this.loafWorst) {
+      if (this.frameAt[r.at] !== r.when) continue;
+      out.push({
+        ago: round((newest - r.when) / 1000, 2),
+        frameMs: round(this.frameMs![r.at]),
+        durationMs: round(r.durationMs),
+        blockingMs: round(r.blockingMs),
+        scriptMs: round(r.scriptMs),
+        top: r.top,
+      });
+    }
+    out.sort((a, b) => b.durationMs - a.durationMs);
+    return out;
+  }
+
   /** The worst frames in the ring, whole. Sorted by cost, not by time. */
   private worstHitches(): HitchFrame[] {
     const cap = this.capacity;
@@ -1381,6 +1637,8 @@ export class FrameProfile {
         botsAlive: this.botsAlive![i],
         gc: this.gcAt![i],
         heapMb: this.heapMb ? round(this.heapMb[i], 2) : 0,
+        loafMs: round(this.loafMs![i]),
+        loafBlockMs: round(this.loafBlockMs![i]),
         drawCalls: this.drawCalls![i],
         activeMeshes: this.activeMeshes![i],
         meshWalkMs: round(this.meshWalkMs![i]),
@@ -1570,6 +1828,158 @@ export class FrameProfile {
    * this frame", which against a hitch whose phases do not add up is the whole
    * of the question §1 asks.
    */
+  /**
+   * Subscribes to the browser's own account of a slow frame — see `LOAF_TYPE`.
+   *
+   * **`buffered` is deliberately false.** A buffered replay would hand back
+   * every long frame since the page loaded, and the longest of those is always
+   * the map INSTALL, which is not a hitch and would take every slot in
+   * `loafWorst` before a round had drawn a frame.
+   *
+   * The support test is `supportedEntryTypes` rather than a try/catch alone,
+   * because a browser that does not know the type throws on `observe` in some
+   * versions and silently reports nothing in others — and silence is the one
+   * answer this probe must never invent. Both are handled: the list decides,
+   * and a throw takes support back down.
+   */
+  private watchLoaf(): void {
+    if (typeof PerformanceObserver === "undefined") return;
+    const types = PerformanceObserver.supportedEntryTypes;
+    if (!types || types.indexOf(LOAF_TYPE) < 0) return;
+    let obs: PerformanceObserver;
+    try {
+      obs = new PerformanceObserver((list) =>
+        this.recordLoaf(list.getEntries() as unknown as LoafEntry[]),
+      );
+      obs.observe({ type: LOAF_TYPE, buffered: false });
+    } catch {
+      return;
+    }
+    this.loafSupported = true;
+    // The observer is held by this closure and by nothing else, which is what
+    // takes it off the browser at `disarm` along with every other hook here —
+    // a field beside it would be a second reference to keep in step.
+    this.unhook.push(() => obs.disconnect());
+  }
+
+  /**
+   * Files each long animation frame against the ring row it ended on.
+   *
+   * **This is the one callback here that runs on a task rather than in a
+   * frame**, and it is allowed to allocate for the reason `watchGc`'s sentinel
+   * is: it fires only on frames the browser has ALREADY called slow, so on a
+   * healthy device it never runs at all. The bound for the unhealthy one is in
+   * `keepLoaf` — see `CONFIG.profiling.loafKept`.
+   */
+  private recordLoaf(entries: readonly LoafEntry[]): void {
+    if (!this.on || !this.frameAt || !this.loafMs) return;
+    for (const e of entries) {
+      let scriptMs = 0;
+      let topMs = -1;
+      let top = "";
+      for (const s of e.scripts ?? []) {
+        const d = s.duration ?? 0;
+        scriptMs += d;
+        if (d > topMs) {
+          topMs = d;
+          top = describeScript(s);
+        }
+      }
+      this.markLoaf(e, scriptMs, top);
+    }
+  }
+
+  /**
+   * Marks every ring row a long animation frame OVERLAPS, and keeps the record
+   * against the first of them.
+   *
+   * **It is an overlap and not a lookup, because the browser's frame and this
+   * instrument's row are not the same interval and cannot be made to be.** A
+   * long animation frame runs from the end of the previous frame's rendering to
+   * the end of this one's; a row owns the time from its own start to the next
+   * row's start. So one window straddles two rows by construction, and which of
+   * them is "the" row depends on where the time actually went — the gap BEFORE
+   * a frame is charged to the row before it, while a slow tick is charged to
+   * its own.
+   *
+   * Trying to pick one gets the common case backwards, which is how this was
+   * found: filing against the row the window ENDED on put a planted 120 ms
+   * `setTimeout` on the 4 ms frame that recovered from it, and every hitch in
+   * the test read `loaf: 0` while the entry that explained it sat one row
+   * away. That is the same shape as the pairing bug in `endFrame`, one layer
+   * up.
+   *
+   * So every overlapped row is marked and the question a reader asks becomes
+   * the honest one: **was the main thread busy at any point during this row?**
+   * A long window marks several rows, which is correct rather than
+   * double-counting — `loafFacts` sums per ROW and says so.
+   *
+   * The walk is backwards because `frameAt` descends from the cursor, and it
+   * stops at the first row that ended before the window opened. A row's own end
+   * is `frameAt + frameMs`; the newest row has no `frameMs` yet (see
+   * `endFrame`) and is treated as still open, which it is.
+   */
+  private markLoaf(e: LoafEntry, scriptMs: number, top: string): void {
+    const cap = this.capacity;
+    const startMs = e.startTime;
+    const endMs = startMs + e.duration;
+    const blocking = e.blockingDuration ?? 0;
+    let first = -1;
+    for (let k = 1; k <= this.filled; k++) {
+      const row = (this.cursor - k + cap) % cap;
+      const t0 = this.frameAt![row];
+      // Not reached yet: this row begins after the window closed.
+      if (t0 >= endMs) continue;
+      const span = this.frameMs![row];
+      const t1 = span > 0 ? t0 + span : Infinity;
+      // Walked past it: this row was over before the window opened, and every
+      // row behind it is older still.
+      if (t1 <= startMs) break;
+      if (e.duration > this.loafMs![row]) {
+        this.loafMs![row] = e.duration;
+        this.loafBlockMs![row] = blocking;
+        this.loafScriptMs![row] = scriptMs;
+      }
+      first = row;
+    }
+    if (first >= 0) this.keepLoaf(first, e.duration, blocking, scriptMs, top);
+  }
+
+  /**
+   * Keeps the worst few whole, and allocates for nothing else.
+   *
+   * The list is small and unsorted, so the smallest is found by a walk — twelve
+   * comparisons on a callback that fires only when a frame was already slow.
+   * **Once it is full, an entry that would not displace the smallest builds no
+   * object at all**, which is what keeps the header's promise on a device where
+   * every frame is a long one.
+   */
+  private keepLoaf(
+    at: number,
+    durationMs: number,
+    blockingMs: number,
+    scriptMs: number,
+    top: string,
+  ): void {
+    const list = this.loafWorst;
+    if (list.length >= CONFIG.profiling.loafKept) {
+      let least = 0;
+      for (let i = 1; i < list.length; i++) {
+        if (list[i].durationMs < list[least].durationMs) least = i;
+      }
+      if (list[least].durationMs >= durationMs) return;
+      list.splice(least, 1);
+    }
+    list.push({
+      at,
+      when: this.frameAt![at],
+      durationMs,
+      blockingMs,
+      scriptMs,
+      top,
+    });
+  }
+
   private watchGc(): void {
     if (typeof FinalizationRegistry === "undefined") return;
     this.gcReg = new FinalizationRegistry<number>(() => {
