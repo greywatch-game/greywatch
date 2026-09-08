@@ -276,13 +276,28 @@ rather than ours. A long animation frame covers every task from the end of the
 last frame's rendering to the end of this one's, it is reported when that runs
 over 50 ms, and it names the scripts inside it.
 
-So the reading a hitch now gets is:
+So the reading a hitch gets is:
 
 | a hitch with… | means | and then |
 | --- | --- | --- |
-| a long animation frame over it | **the main thread was busy** outside `Game.tick` | `loaf.worst` names the script |
-| **none**, where `loaf.supported` | **the main thread was IDLE** | the time is not the page's — compositor, driver, panel |
-| none, where it is not supported | nothing | re-take it on Chrome 123+ |
+| a long frame, most of it `scriptMs` (or any `blockingMs`) | **the main thread was busy** outside `Game.tick` | `loaf.worst` names the script |
+| a long frame, most of it `renderMs` | the browser's own **rendering** took it | on a page that is one canvas, that is compositing or the way to the screen |
+| a long frame that is **neither** | the frame began and then **WAITED** | a scheduling answer, and not a cost at all |
+| **none**, over `loaf.floorMs` | the main thread was **IDLE** | the time is not the page's — compositor, driver, panel |
+| none, UNDER `loaf.floorMs` | **nothing** | the browser does not watch frames that short |
+| none, where it is not supported | **nothing** | re-take it on Chrome 123+ |
+
+**A long frame is not by itself a busy main thread, and reading it that way is
+the trap.** The first capture that mattered carried a **263.5 ms window over
+8.7 ms of script with zero blocking** — which the viewer confidently called "the
+main thread was busy through it" and which was nothing of the kind. The three
+shares are three different verdicts and the duration alone is none of them.
+
+**And an absence only means something above the floor.** The specification
+reports at 50 ms, so a 44.9 ms hitch is invisible to this probe by design — six
+frames between 24 and 50 ms in that same capture were filed as "the main thread
+was idle" when the truth is that nobody looked. `loaf.floorMs` ships so a
+reader never has to know the number.
 
 **The ABSENCE is the finding, which is why `loaf.supported` ships in every
 capture** — the same rule as `memory.heapLive`. On a browser that never reports
@@ -304,6 +319,12 @@ Three details that are not obvious:
 - **`buffered` is false**, so a capture does not inherit every long frame since
   the page loaded. The longest of those is always the map install, which is not
   a hitch and would take every slot in `loaf.worst` before a round had drawn.
+- **Stale records are pruned as they are KEPT, not merely as they are
+  reported**, or the list starves for the same reason. An install's long frames
+  are never displaced by anything a round produces, and once the ring has lapped
+  past them `worstLoaf` drops them — so the list reports almost nothing while
+  refusing everything worth keeping. Measured on a real capture before the fix:
+  **three records survived of twelve held**.
 - **It is allowed to allocate**, the second exemption from the no-allocation
   rule after the GC sentinel, because it fires only on frames the browser has
   already called slow. The bound for a device where that is every frame is in

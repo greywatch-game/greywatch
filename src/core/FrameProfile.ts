@@ -313,11 +313,36 @@ interface LoafEntry {
   readonly startTime: number;
   readonly duration: number;
   readonly blockingDuration?: number;
+  /**
+   * When the browser began the RENDERING half of the frame — style, layout,
+   * paint, commit. Absent or 0 on a frame that never rendered.
+   *
+   * **This is the field that says which kind of long frame it was**, and
+   * leaving it out cost a capture: a 263.5 ms window carrying 8.7 ms of script
+   * and zero blocking is not a busy main thread, and without this there is no
+   * way to tell a frame that WAITED to be rendered from one whose rendering
+   * took a quarter of a second.
+   */
+  readonly renderStart?: number;
   readonly scripts?: readonly LoafScript[];
 }
 
 /** How long a name from a long animation frame may be, in characters. */
 const LOAF_NAME_CAP = 120;
+
+/**
+ * The duration a frame has to reach before the browser reports it at all.
+ *
+ * **Fixed by the specification at 50 ms, and it is the one number that decides
+ * what an ABSENCE means.** Over it, no entry is a real finding: the browser
+ * watched that frame and had nothing to report, so the main thread was idle.
+ * UNDER it, no entry means nothing whatsoever — a 44.9 ms hitch is invisible to
+ * this probe by design. A reader that misses the distinction turns a threshold
+ * into a diagnosis, which is exactly what happened the first time this was
+ * read: six frames between 24 and 50 ms were filed as "the main thread was
+ * idle" when the truth is that nobody looked.
+ */
+const LOAF_FLOOR_MS = 50;
 
 /**
  * The shortest true thing that can be said about which script the browser
@@ -375,6 +400,18 @@ export interface LoafFrame {
   blockingMs: number;
   /** Summed duration of the scripts inside it. Zero means the time was not JS. */
   scriptMs: number;
+  /**
+   * The RENDERING half — style, layout, paint, commit — as the remainder after
+   * the browser's `renderStart`.
+   *
+   * **Read it against `scriptMs` and `blockingMs`, because those three are
+   * three different verdicts.** Script high: the main thread was busy with JS.
+   * Render high with script near zero: the browser's own rendering took the
+   * time, which on a page that is one canvas means compositing or the way to
+   * the screen. All three near zero under a long `durationMs`: the frame began
+   * and then WAITED, which is a scheduling answer and not a cost at all.
+   */
+  renderMs: number;
   /** The biggest script in it, as function and file. Empty when there were none. */
   top: string;
 }
@@ -422,6 +459,15 @@ export interface HitchFrame {
    */
   loafMs: number;
   loafBlockMs: number;
+  /**
+   * How much of that long frame was script, and how much was the browser's own
+   * rendering. **A long frame is not by itself a busy main thread** — a real
+   * capture carried 263.5 ms of long frame over 8.7 ms of script and zero
+   * blocking — so these two are what separate "the page did it" from "the page
+   * was waiting for the browser". See `LoafFrame.renderMs`.
+   */
+  loafScriptMs: number;
+  loafRenderMs: number;
   drawCalls: number;
   activeMeshes: number;
   meshWalkMs: number;
@@ -555,12 +601,25 @@ export interface ProfileReport {
    */
   loaf: {
     supported: boolean;
-    /** How many landed on the rows in this window. */
+    /**
+     * The duration a frame must reach before the browser reports it, fixed at
+     * 50 ms by the specification. **It is what makes an absence readable**: a
+     * hitch OVER this with no entry had an idle main thread, and a hitch under
+     * it simply was not watched. Shipped so a reader never has to know the
+     * number to use the field.
+     */
+    floorMs: number;
+    /** How many ROWS a long frame landed on — one window can mark several. */
     entries: number;
-    /** Their summed duration, blocking share and script share, over the window. */
+    /**
+     * Their summed duration over those rows, and the three shares that say
+     * what the duration WAS: blocking (a task nobody could interrupt), script
+     * (JS), and render (the browser's own style/layout/paint/commit).
+     */
     totalMs: number;
     blockingMs: number;
     scriptMs: number;
+    renderMs: number;
     /** The biggest few, whole, with the script the browser blamed. */
     worst: LoafFrame[];
   };
@@ -651,6 +710,7 @@ export class FrameProfile {
   private loafMs: Float32Array | null = null;
   private loafBlockMs: Float32Array | null = null;
   private loafScriptMs: Float32Array | null = null;
+  private loafRenderMs: Float32Array | null = null;
 
   /**
    * Whether this browser reports long animation frames at all.
@@ -677,6 +737,7 @@ export class FrameProfile {
     durationMs: number;
     blockingMs: number;
     scriptMs: number;
+    renderMs: number;
     top: string;
   }[] = [];
 
@@ -850,6 +911,7 @@ export class FrameProfile {
     this.loafMs = new Float32Array(n);
     this.loafBlockMs = new Float32Array(n);
     this.loafScriptMs = new Float32Array(n);
+    this.loafRenderMs = new Float32Array(n);
     this.loafWorst = [];
     this.cursor = 0;
     this.filled = 0;
@@ -931,6 +993,7 @@ export class FrameProfile {
     this.loafMs = null;
     this.loafBlockMs = null;
     this.loafScriptMs = null;
+    this.loafRenderMs = null;
     this.loafWorst = [];
     this.loafSupported = false;
     this.hitchAt = [];
@@ -1435,6 +1498,12 @@ export class FrameProfile {
     phases.sort((a, b) => b.mean - a.mean);
 
     return {
+      // 6: the three SHARES of a long frame — `scriptMs`, `renderMs` and
+      // `blockingMs`, on the summary, on every kept record and on every hitch
+      // — plus `loaf.floorMs`. A v5 capture says a long frame HAPPENED and
+      // cannot say whether it was the page's: the first real one carried
+      // 263.5 ms of window over 8.7 ms of script, which reads as a busy main
+      // thread and was not one.
       // 5: `loaf` — the browser's own account of the frames this instrument
       // could only call "residue", and the per-hitch `loafMs` that says which
       // side of the page a hitch's time went. Its ABSENCE is a reading, so
@@ -1447,7 +1516,7 @@ export class FrameProfile {
       // wall clock and its phases are one row apart.
       // 3: `present`, the first phase outside `frame`, and the `roots` that
       // let a reader tell a second root from a phase it has not heard of.
-      version: 5,
+      version: 6,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
@@ -1564,6 +1633,7 @@ export class FrameProfile {
     let total = 0;
     let blocking = 0;
     let script = 0;
+    let render = 0;
     if (this.loafMs) {
       for (let k = 0; k < n; k++) {
         const i = (first + k) % cap;
@@ -1573,14 +1643,17 @@ export class FrameProfile {
         total += ms;
         blocking += this.loafBlockMs![i];
         script += this.loafScriptMs![i];
+        render += this.loafRenderMs![i];
       }
     }
     return {
       supported: this.loafSupported,
+      floorMs: LOAF_FLOOR_MS,
       entries,
       totalMs: round(total),
       blockingMs: round(blocking),
       scriptMs: round(script),
+      renderMs: round(render),
       worst: this.worstLoaf(),
     };
   }
@@ -1606,6 +1679,7 @@ export class FrameProfile {
         durationMs: round(r.durationMs),
         blockingMs: round(r.blockingMs),
         scriptMs: round(r.scriptMs),
+        renderMs: round(r.renderMs),
         top: r.top,
       });
     }
@@ -1639,6 +1713,8 @@ export class FrameProfile {
         heapMb: this.heapMb ? round(this.heapMb[i], 2) : 0,
         loafMs: round(this.loafMs![i]),
         loafBlockMs: round(this.loafBlockMs![i]),
+        loafScriptMs: round(this.loafScriptMs![i]),
+        loafRenderMs: round(this.loafRenderMs![i]),
         drawCalls: this.drawCalls![i],
         activeMeshes: this.activeMeshes![i],
         meshWalkMs: round(this.meshWalkMs![i]),
@@ -1885,7 +1961,12 @@ export class FrameProfile {
           top = describeScript(s);
         }
       }
-      this.markLoaf(e, scriptMs, top);
+      // The RENDERING half — style, layout, paint, commit — as the remainder
+      // after `renderStart`. Zero where the browser did not report one, which
+      // is a frame that never rendered rather than one that rendered instantly.
+      const rs = e.renderStart ?? 0;
+      const renderMs = rs > 0 ? Math.max(0, e.startTime + e.duration - rs) : 0;
+      this.markLoaf(e, scriptMs, renderMs, top);
     }
   }
 
@@ -1919,7 +2000,12 @@ export class FrameProfile {
    * is `frameAt + frameMs`; the newest row has no `frameMs` yet (see
    * `endFrame`) and is treated as still open, which it is.
    */
-  private markLoaf(e: LoafEntry, scriptMs: number, top: string): void {
+  private markLoaf(
+    e: LoafEntry,
+    scriptMs: number,
+    renderMs: number,
+    top: string,
+  ): void {
     const cap = this.capacity;
     const startMs = e.startTime;
     const endMs = startMs + e.duration;
@@ -1939,10 +2025,13 @@ export class FrameProfile {
         this.loafMs![row] = e.duration;
         this.loafBlockMs![row] = blocking;
         this.loafScriptMs![row] = scriptMs;
+        this.loafRenderMs![row] = renderMs;
       }
       first = row;
     }
-    if (first >= 0) this.keepLoaf(first, e.duration, blocking, scriptMs, top);
+    if (first >= 0) {
+      this.keepLoaf(first, e.duration, blocking, scriptMs, renderMs, top);
+    }
   }
 
   /**
@@ -1959,9 +2048,21 @@ export class FrameProfile {
     durationMs: number,
     blockingMs: number,
     scriptMs: number,
+    renderMs: number,
     top: string,
   ): void {
     const list = this.loafWorst;
+    // **Stale records are dropped BEFORE the displacement test, not merely at
+    // report time, or the list starves.** The biggest long frames of any
+    // session are the map INSTALL's, they are never displaced by anything a
+    // round produces, and once the ring has lapped past them they are dropped
+    // by `worstLoaf` — so a list full of them reports almost nothing while
+    // refusing every entry that would have been worth keeping. Caught on a real
+    // capture: three records survived of twelve held, and the nine missing were
+    // install frames from minutes earlier.
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (this.frameAt![list[i].at] !== list[i].when) list.splice(i, 1);
+    }
     if (list.length >= CONFIG.profiling.loafKept) {
       let least = 0;
       for (let i = 1; i < list.length; i++) {
@@ -1976,6 +2077,7 @@ export class FrameProfile {
       durationMs,
       blockingMs,
       scriptMs,
+      renderMs,
       top,
     });
   }

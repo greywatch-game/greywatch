@@ -205,10 +205,53 @@ and it is the first per-frame reading of this finding that can be trusted:
 
 So it is neither the tick nor the submit, and `drawWorld` is clean (max 9.6 ms)
 — which also takes finding 40's pipeline hypothesis off this particular
-episode. **The next capture is the same one with the probe in it**, and it can
-only come back two ways: a long animation frame over those hitches, which names
-the script, or none, which puts 113 ms of a 120 ms frame outside the page and
-makes this a compositor question at last.
+episode.
+
+### …and the probe has now answered: it is NOT THE MAIN THREAD EITHER
+
+Cinderhaven at 3440x1440, 43 bots alive, the player standing still at
+(34, -0.2, 204.4), 2,999 frames on the v5 instrument. Eight hitches, and the
+browser's own account of every one of them:
+
+| wall | tick | `present` | long frame | of which script | blocking |
+| --- | --- | --- | --- | --- | --- |
+| **262.1 ms** | 7.2 | 0.1 | 263.5 | **8.7** | **0** |
+| 163.0 | 6.9 | 0 | 165.1 | ~9 | **0** |
+| 120.7 | 7.6 | 0 | 121.5 | 8.4 | **0** |
+| 84.4 | 9.0 | 0 | 84.2 | — | **0** |
+
+**A 263.5 ms animation frame carrying 8.7 ms of script and no blocking task at
+all.** The browser watched the frame, agrees it took a quarter of a second, and
+reports that essentially none of it was JavaScript. Draw calls are flat at
+497–509 and meshes at 427–429 across the whole episode; `allocMbPerSec` is
+50.28 and `gcPerSec` 2.77, both ordinary. The shape is a stall and then a
+catch-up — 262.1 then 13.5, 163 then 40.9, 84.4 then 20.4.
+
+So the elimination list is now: **not the tick, not the submit, not the
+collector, not `drawWorld`, and not the main thread.** What is left is the
+browser's own rendering or the way to the screen, and those two are what report
+version 6's `renderMs` separates — a share that is mostly rendering is
+compositing on a page that is one canvas, and a long frame that is NEITHER
+script nor rendering is a frame that began and then waited, which is a
+scheduling answer rather than a cost.
+
+**The capture that closes this is the same one re-taken on v6.** Nothing else
+about it needs to change.
+
+### Two instrument bugs this capture found, both fixed
+
+Recorded because the second is the kind that produces a confident wrong answer
+rather than a missing one, which is this section's whole history:
+
+- **A long frame is not a busy main thread.** The viewer read any long frame as
+  "the main thread was busy through it" and said so of the 263.5 ms one above.
+  The three shares — script, blocking, render — are three different verdicts.
+- **An absence under 50 ms is not an absence.** The spec reports at 50 ms, so
+  six frames between 24 and 50 in that capture were filed as "the main thread
+  was idle" when nothing had watched them. `loaf.floorMs` ships now.
+- And `loaf.worst` was **starving**: an install's long frames are never
+  displaced by anything a round produces and are dropped only at report time, so
+  three records survived of twelve held. Stale ones are pruned as they are kept.
 
 ### …and the collector is EXONERATED by the same capture
 
