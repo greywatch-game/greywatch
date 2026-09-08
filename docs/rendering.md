@@ -1748,6 +1748,60 @@ exact in eight bits. Two of Hollowmere's four banked vantages moved by 0.0004
 and 0.0012 mean/255 that way. In scene order fourteen of the fifteen banked
 vantages come back to four decimal places.
 
+### The size gate: what is too small to be worth drawing
+
+`WorldCulling.offer` runs once a frame and drops two kinds of candidate. The
+first is anything switched off — `!isVisible` or `!isEnabled()`, the two
+rejections `_evaluateActiveMeshes` makes anyway, made before the expensive part
+rather than after. The second is anything too SMALL to see.
+
+**The threshold is a size on the SCREEN, not a distance in the world.**
+`CONFIG.graphics.culling.minPixels` is the projected DIAMETER of a mesh's
+bounding sphere, in pixels: `2r / dist * (renderHeight / fov)`. One number is
+therefore right at every resolution and every field of view, and it tightens by
+itself when a sight goes up, because narrowing the FOV is exactly what makes a
+far thing bigger. It is compared SQUARED — a `sqrt` per candidate measured as a
+net LOSS at the thresholds that drop little.
+
+**What it is FOR is geometry with no level of detail of its own.** Three of the
+four big populations on a 1500 m map are already governed: a body by
+`bodyDrawDistance`, a merged block by the cull cells, the terrain by the
+frustum. A VEHICLE is governed by nothing — every hull draws every part at any
+range, and on Cinderhaven that means a 16 cm helicopter antenna and a 14 cm gun
+ring at 1.4 km. Shipped at 3 px it is worth **-0.51 ms a frame** there, and
+close to nothing on the small maps, which is the honest shape of it.
+
+**Three classes are exempt, and each one is exempt because a picture said so
+rather than because it seemed wise.**
+
+- **A pooled body.** A rig is nineteen meshes and a per-mesh size test is not a
+  level of detail, it is a dismemberment: the first run dropped `bot-head-m`
+  x16 and `bot-legL` x16 while keeping the torsos. A body is already taken off
+  whole, by distance, through `bodyDrawDistanceOf`. `poolOf` is how this file
+  knows, and it does not have to learn what a soldier is.
+- **Anything emissive.** The glow carries a sub-pixel emitter far past its own
+  geometry, and this game's biggest map is a harbour town at night. The test is
+  exact rather than a guess at a name: `CelMaterialFactory.getEmissive` is the
+  only source of a `StandardMaterial` in the tree, and every lit surface wears a
+  `ShaderMaterial`, which has no `emissiveColor` property to read at all.
+- **Anything outside rendering group 0**, plus `infiniteDistance`. This is the
+  one that was found the expensive way. `offer` runs inside `Game.tick`, BEFORE
+  `scene.render()` bakes world matrices, and the viewmodel hangs off the camera
+  — so the rifle's world bounding sphere is still sitting at the ORIGIN when
+  this reads it. Asked how big it was, the gun answered **1.8 px at 726 m**,
+  which is the distance from the world origin to the player, and the gate
+  deleted the weapon out of his hands. Group 0 is where the world is; everything
+  above it is drawn against the eye and has no business being distance-gated.
+
+**`bank.mjs` cannot see any of this.** `placeVantage` disables the bots and
+disposes the zones, so the banked vantages hold none of what a culling change
+touches — the broken version above came back byte-identical on all 21. The test
+that works is a screenshot pair in a live round at one frozen camera, with a
+CONTROL pair under the same condition so the noise floor is measured: fixed, the
+lever reads mean **0.066/255** against a control of 0.037. See `VERIFYING.md`
+and `FINDINGS.md` 39, which also carries the two larger levers this deliberately
+does not take, both being look decisions rather than bugs.
+
 ## Rendering constraints that look like bugs if you undo them
 
 - `pipeline.imageProcessingEnabled` must stay `false`: the cel shader outputs

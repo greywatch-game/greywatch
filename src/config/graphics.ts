@@ -493,6 +493,32 @@ export const graphics = {
      * a boundary rebuilds the candidate list on every step it takes.
      */
     hysteresis: 12,
+    /**
+     * The smallest a mesh may draw before it stops being offered at all:
+     * its bounding sphere's projected DIAMETER, in pixels.
+     *
+     * **It is a size on the SCREEN rather than a distance in the world**, so
+     * one number is right at every resolution and every field of view — and it
+     * tightens by itself when a sight goes up, because narrowing the FOV is
+     * what makes a far thing bigger.
+     *
+     * **What it is for is detail with no LOD of its own.** A helicopter's
+     * antenna is 16 cm and its gun ring 14 cm, and both were being drawn at
+     * 880 m on Cinderhaven, where they are half a pixel: vehicles have no
+     * distance tier at all, unlike a body, which `bodyDrawDistance` already
+     * takes off whole. Measured at 3440x1440 it is worth **0.49 ms a frame at
+     * 2 px and 0.94 ms at 3** (`FINDINGS.md` 39).
+     *
+     * **Two classes are exempt and both are exempt for a reason a screenshot
+     * shows** — see `WorldCulling.offer`: a POOLED BODY, because a rig is many
+     * meshes and dropping them one at a time decapitates a soldier rather than
+     * removing him; and anything EMISSIVE, because bloom makes a sub-pixel
+     * emitter visible far past its own size and this game has a night map full
+     * of lit windows.
+     *
+     * 0 disables it.
+     */
+    minPixels: 3,
   },
   /**
    * The cubes behind the glazing: what `ReflectionSystem` bakes per map

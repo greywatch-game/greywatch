@@ -4873,3 +4873,115 @@ this box for no reason at all.
   pool that told `WorldCulling` when it went live would cost nothing per frame,
   but it cannot use `setPools`' transition-marks-dirty route, because
   `rebuildList` is a full scene walk and effect pools toggle many times a frame.
+
+---
+
+## 39. Cinderhaven does not fit in a 144 Hz frame, and the only geometry with no LOD at all is a vehicle's — **the size gate is LANDED; the big levers are look decisions and are not**
+
+**Status:** the gate is in (`WorldCulling.offer`, `CONFIG.graphics.culling.minPixels`).
+The rest is measured and deliberately left to whoever owns the look.
+
+### What the problem actually is
+
+Two captures off the real machine, Chrome 152, Cinderhaven, at 3440x1440 and
+1718x858. Both are vsync-locked at ~144 Hz — 2,655 of 3,000 frames sit within
+18% of a single 6.9 ms interval — and the frame does not fit inside it:
+
+| | tick | residue | total | budget |
+| --- | --- | --- | --- | --- |
+| 3440x1440 | 5.96 ms | 1.42 | **7.38** | 6.94 |
+| 1718x858 | 6.40 ms | 1.44 | **7.84** | 6.94 |
+
+So frames spill into a second interval and render at 72 fps: **1.90% of them on
+the big window and 4.73% on the small one**, which is 1.6 and 5.4 doubled frames
+a second. That is not a hitch, it is continuous judder, and it is separate from
+the bursts finding 1 is about.
+
+**The window size is not what prices it** — the BIGGER window measured FASTER
+(135.2 fps against 127.2), and a `setHardwareScalingLevel` sweep across an
+eightfold cut in pixels moved nothing. The frame is bound by how many meshes are
+in it, not how many pixels.
+
+### Where the meshes are
+
+The candidate list on Cinderhaven is 969 offered for ~850 active, and the active
+list is **rigs ~212, blocks ~203, terrain ~153, vehicles ~122**. Three of those
+are governed: a body by `bodyDrawDistance` (420 here), a block by the cull cells,
+the terrain by the frustum. **A vehicle is governed by nothing at all.** Every
+hull draws every part at any range — measured with the running gear and the
+fittings at 1,360-1,420 m, where `heli-whip` (16 cm), `heli-mg-ring` (14 cm) and
+`truck-mg-ring` (17 cm) are well under a pixel.
+
+### What landed, and what it is worth
+
+A projected-size gate in `offer`: a mesh is not offered when its bounding
+sphere's projected DIAMETER falls under `CONFIG.graphics.culling.minPixels`.
+A size on the SCREEN rather than a distance in the world, so one number holds at
+every resolution and field of view, and it tightens by itself when a sight goes
+up.
+
+Paired and alternating in one session at 3440x1440, against the same list with
+the gate off:
+
+| threshold | cinderhaven |
+| --- | --- |
+| 2 px | +1.4% fps, -0.11 ms |
+| 3 px | +6.2% fps, **-0.51 ms** (6 reps) |
+| 4 px | +6.3% fps, -0.51 ms |
+
+**3 px is shipped**, because -0.51 ms is what the 0.44 ms deficit above needs.
+Sarab reads +0.8% / -0.03 ms and the small maps read nothing — this is a
+big-map, many-distant-hulls lever and does not pretend otherwise.
+
+**Two classes are exempt and each was found by looking at what a naive gate
+removed**, not by reasoning first. A POOLED BODY, because a rig is nineteen
+meshes and a per-mesh test dropped `bot-head-m` x16 and `bot-legL` x16 while
+keeping the torsos — headless soldiers at 300 m. And anything EMISSIVE, because
+bloom carries a sub-pixel emitter far past its own geometry and this is a night
+map full of lit windows; the test is exact rather than a name guess, since
+`getEmissive` is the only source of a `StandardMaterial` in the tree and every
+lit surface wears a `ShaderMaterial` with no `emissiveColor` to read.
+
+### The bug this had, which the pixel bank could not catch
+
+**The first version deleted the weapon out of the player's hands**, and the bank
+passed anyway. `offer` runs in `Game.tick`, BEFORE `scene.render()` bakes world
+matrices, and the viewmodel hangs off the camera — so its world bounding info is
+still sitting at the ORIGIN when this reads it. Asked for its size, the rifle
+answered **"1.8 px at 726 m"**, which is the distance from the world origin to
+the player, and the gate dropped all fourteen of its meshes.
+
+`bank.mjs --check` came back byte-identical on all 21 vantages **through both
+the broken and the fixed version**, because `placeVantage` disables the bots and
+the zones and the vantages hold none of what this touches. **The bank is
+necessary and not sufficient for a change to the candidate list.** What caught
+it was a screenshot pair taken in a live round at one frozen camera, with a
+CONTROL pair taken under the same condition so the noise floor was measured
+rather than assumed: the lever read 8.58% of pixels at mean 1.11/255 against a
+control of 2.02% at 0.07. Fixed — group 0 only, and `infiniteDistance` skipped
+for the sky — it reads 2.46% at **mean 0.066/255 against a control of 1.47% at
+0.037**, which is the trim at 1.4 km and nothing else.
+
+### The levers that are NOT taken, because they are look decisions
+
+Both are larger than what landed, and both change what a player sees:
+
+- **`bodyDrawDistance` 420 -> 300 on Cinderhaven: +21.4% fps.** One number in
+  `environment.ts`. Bodies pop 120 m closer.
+- **A vehicle draw distance at 420 m: +15.4% fps.** Hulls would vanish where
+  bodies do. By SIZE that is the wrong number — a hull is ~4x a body, which
+  puts it past `fogEnd` — so a hull's distance is its own question and nobody
+  has answered it.
+
+### What is open
+
+- **A vehicle DETAIL tier**, keeping the silhouette and dropping the running
+  gear, measured at +6.5% / -0.55 ms at 300 m. Not taken because the detail set
+  is an art judgement: the naive set included `tank-link` (3.26 m) and
+  `tank-wheel` (3.02 m), and `TankModel`'s own comment says the road wheels
+  filling the track hole ARE the silhouette.
+- **The gate is `O(eligible)` with a bounding-sphere read per candidate.** At
+  2 px it does not repay that on any map measured; it is only worth having
+  because 3 px does on the biggest one.
+- **A `sqrt` per candidate measured as a LOSS** — comparing squared is what
+  made the low thresholds stop costing more than they saved.

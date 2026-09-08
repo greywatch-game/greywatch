@@ -570,7 +570,18 @@ they are what the SKY is behind. **Eligibility is not the same as being
 offered**: one pass a frame (`WorldCulling.offer`) drops whatever is switched
 off right now — `!isVisible` or `!isEnabled()`, the two rejections that walk
 makes anyway — which is what finally reaches the EFFECT POOLS, several hundred
-meshes built once and idled invisible. **Nothing pooled may ever be block-keyed**, and the rigs
+meshes built once and idled invisible. **It also drops what is too SMALL to
+see** (`CONFIG.graphics.culling.minPixels`, a projected diameter in pixels, so
+one number holds at every resolution and FOV): a hull is the one thing in the
+game with no distance tier of its own, and its 14 cm gun rings were drawn at
+1.4 km. **Three classes are exempt and each is exempt because a screenshot said
+so** — a POOLED BODY (a per-mesh test decapitates a rig; a body is already
+gated whole by `bodyDrawDistance`), anything EMISSIVE (bloom carries a
+sub-pixel emitter far past its geometry), and **anything outside rendering
+group 0**, because `offer` runs before `scene.render()` bakes world matrices
+and the VIEWMODEL — which hangs off the camera — reports itself at the distance
+from the world origin. It answered "1.8 px at 726 m" and the gate deleted the
+player's weapon. **Nothing pooled may ever be block-keyed**, and the rigs
 are **filed mesh by mesh and never by ancestry**, because `RagdollSystem`
 reparents a corpse's joints onto Havok proxies and an ancestry test would drop
 every body in the game the moment it started falling.

@@ -139,6 +139,21 @@ interface Pool {
   on: boolean;
 }
 
+/**
+ * Whether a mesh's paint EMITS light, which is the one thing a size gate must
+ * never drop.
+ *
+ * Exact rather than a name test: `CelMaterialFactory.getEmissive` is the only
+ * source of a `StandardMaterial` in this tree and it is the only material with
+ * an `emissiveColor` — every lit surface wears a `ShaderMaterial`, which has no
+ * such property to read.
+ */
+function glows(mesh: AbstractMesh): boolean {
+  const mat = mesh.material as { emissiveColor?: { r: number; g: number; b: number } } | null;
+  const e = mat?.emissiveColor;
+  return e !== undefined && e.r + e.g + e.b > 0.01;
+}
+
 export class WorldCulling {
   /**
    * The list Babylon is handed. An `ISmartArrayLike`, which is `{ data, length
@@ -162,6 +177,25 @@ export class WorldCulling {
    * is the wrong trade in the other direction — see `offer`.
    */
   private eligible: AbstractMesh[] = [];
+
+  /**
+   * The meshes `offer`'s size gate may NOT drop, decided once when the list is
+   * built rather than per frame.
+   *
+   * Two classes, and each was found by looking at what a naive gate removed.
+   * A POOLED BODY, because a rig is nineteen meshes and a per-mesh size test
+   * takes the head off a soldier at 300 m while leaving his torso — the body is
+   * already gated whole, by distance, through `bodyDrawDistanceOf`. And
+   * anything EMISSIVE, because the glow makes a sub-pixel emitter visible well
+   * past its own geometry, and dropping one puts a lit window out on a night
+   * map.
+   *
+   * The emissive test is exact rather than a guess at a name:
+   * `CelMaterialFactory.getEmissive` is the only thing in the tree that makes a
+   * `StandardMaterial`, every lit cel material is a `ShaderMaterial`, and only
+   * the first kind HAS an `emissiveColor` at all.
+   */
+  private sizeExempt = new Set<AbstractMesh>();
 
   /** The map's collider proxies: never candidates, at any distance. */
   private hidden = new Set<AbstractMesh>();
@@ -388,7 +422,7 @@ export class WorldCulling {
       this.listDirty = true;
     }
     if (this.listDirty) this.rebuildList();
-    this.offer();
+    this.offer(eye);
   }
 
   /**
@@ -454,6 +488,10 @@ export class WorldCulling {
       loose++;
       data.push(mesh);
     }
+    this.sizeExempt = new Set();
+    for (const mesh of data) {
+      if (this.poolOf.has(mesh) || glows(mesh)) this.sizeExempt.add(mesh);
+    }
     this.listDirty = false;
     let cellsOn = 0;
     for (const cell of this.cells) if (cell.on) cellsOn++;
@@ -498,14 +536,51 @@ export class WorldCulling {
    * The order is a subsequence of `eligible`, which is scene order, so
    * `rebuildList`'s argument about `_activeMeshes` ordering survives intact.
    */
-  private offer(): void {
+  private offer(eye: Vector3): void {
     const src = this.eligible;
     const out = this.candidates.data;
     const n = src.length;
+    // Pixels per radian, from the camera's own field of view and the height it
+    // is rendering at — so the threshold is a size on the SCREEN and needs no
+    // per-map tuning. Read once a frame: the FOV moves when a sight goes up.
+    const cam = this.scene.activeCamera;
+    const minPx = CONFIG.graphics.culling.minPixels;
+    const gate = minPx > 0 && cam !== null;
+    const perRad = gate ? this.scene.getEngine().getRenderHeight() / (cam!.fov || 1) : 0;
+    const px2 = minPx * minPx;
     let k = 0;
     for (let i = 0; i < n; i++) {
       const mesh = src[i];
-      if (mesh.isVisible && mesh.isEnabled()) out[k++] = mesh;
+      if (!mesh.isVisible || !mesh.isEnabled()) continue;
+      // **The gate is about WORLD geometry and only rendering group 0 holds
+      // any.** Everything above it is drawn against the EYE rather than
+      // standing in the map — the viewmodel, the sky shell, the moon — and
+      // their world bounding info is not what this reads: the viewmodel hangs
+      // off the camera and Babylon bakes its matrix inside the render, so at
+      // this point in the frame the gun's bounds are still sitting at the
+      // ORIGIN. Asked for its size, it answered "1.8 px at 726 m" — the
+      // distance from the origin to the player — and the gate deleted the
+      // weapon out of the player's hands. `infiniteDistance` is the same
+      // argument for the sky, which is nowhere at all.
+      if (
+        gate &&
+        mesh.renderingGroupId === 0 &&
+        !mesh.infiniteDistance &&
+        !this.sizeExempt.has(mesh)
+      ) {
+        const sphere = mesh.getBoundingInfo().boundingSphere;
+        const c = sphere.centerWorld;
+        const dx = c.x - eye.x;
+        const dy = c.y - eye.y;
+        const dz = c.z - eye.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        // Projected diameter is `2r / dist * perRad`; compared SQUARED, so the
+        // per-candidate cost is multiplies and no square root. Taking the root
+        // instead measured as a LOSS at the thresholds that drop little.
+        const w = 2 * sphere.radiusWorld * perRad;
+        if (d2 > 1 && w * w < px2 * d2) continue;
+      }
+      out[k++] = mesh;
     }
     // Length rather than truncation: the backing array is reused every frame
     // and Babylon reads `length`, so shrinking `data` would be a free-list

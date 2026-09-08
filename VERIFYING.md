@@ -70,6 +70,18 @@ you are on before you believe anything else in this section.
   bracket around hundreds of steps, never one per step (the same clamping the
   ray-timing note below is about).
 
+- **The reference bank is NECESSARY AND NOT SUFFICIENT for a change to the
+  candidate list, and it fails silently in the direction that matters.**
+  `placeVantage` disables every bot and disposes the capture zones before it
+  shoots, so a vantage holds no body, no blob shadow and often no hull —
+  exactly the things a culling change touches. A gate that deleted the player's
+  own VIEWMODEL passed `bank.mjs --check` byte-identical on all 21 vantages
+  (`FINDINGS.md` 39). What catches it is a screenshot pair taken in a LIVE
+  round at one frozen camera, and **the pair needs a CONTROL** — two shots under
+  the SAME condition — because `freeze` does not quite still everything and the
+  residual reads as 1-2% of pixels before the lever has done anything. Compare
+  the two MEANS, not the percentages.
+
 ### On the Windows box, which is the one with a GPU
 
 - **The BINARY decides whether headless works, and the flag does not.**
