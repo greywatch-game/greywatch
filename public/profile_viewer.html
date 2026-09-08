@@ -622,6 +622,14 @@ const FALLBACK_TREE = {
   shadowPass: "render", glow: "render", drawWorld: "render", drawOverlay: "render",
 };
 
+/* The phases nothing contains. `present` is deliberately ABSENT from the tree
+   above rather than parented to `frame`: it is what the engine does AFTER the
+   tick returns, so drawing it inside `frame` would draw a containment that does
+   not exist. A capture carries its own `roots` (report version 3 and later);
+   this is the fallback for older ones and for a TRACE, which has nowhere to
+   state either. */
+const FALLBACK_ROOTS = ["frame", "present"];
+
 let PARENT = {}, KIDS = {}, DEPTH = {}, ORDER = [];
 
 /**
@@ -631,7 +639,7 @@ let PARENT = {}, KIDS = {}, DEPTH = {}, ORDER = [];
  * declared in and therefore the order a frame runs them — the only order the
  * ladder should be read in.
  */
-function useTree(parentMap) {
+function useTree(parentMap, rootList) {
   PARENT = Object.assign({}, parentMap);
   KIDS = {};
   const names = new Set();
@@ -639,7 +647,17 @@ function useTree(parentMap) {
     names.add(child); names.add(par);
     (KIDS[par] = KIDS[par] || []).push(child);
   }
-  const roots = [...names].filter((n) => !PARENT[n]);
+  // A root appears in the tree only if something is nested under it, so a root
+  // with no children — which `present` is — has to be named or it reads as a
+  // phase the tree has never heard of and is drawn as a stranger. Declared
+  // ones first, in their own order, then anything else the map implies.
+  const declared = (rootList && rootList.length ? rootList : ["frame"]).filter(
+    (n) => !PARENT[n],
+  );
+  declared.forEach((n) => names.add(n));
+  const roots = declared.concat(
+    [...names].filter((n) => !PARENT[n] && declared.indexOf(n) === -1),
+  );
   DEPTH = {}; ORDER = [];
   const walk = (n, d) => {
     if (DEPTH[n] != null) return;          // a malformed cycle must not hang the page
@@ -648,7 +666,7 @@ function useTree(parentMap) {
   };
   roots.forEach((r) => walk(r, 0));
 }
-useTree(FALLBACK_TREE);
+useTree(FALLBACK_TREE, FALLBACK_ROOTS);
 
 /* The canvas font stack, spelled once. Canvas takes a CSS font shorthand, so a
    family list works here exactly as it does in the stylesheet. */
@@ -759,7 +777,10 @@ function readHitch(h) {
 /* ── report ────────────────────────────────────────────────────────────── */
 function renderReport(r) {
   // The capture states its own shape where it can. See `useTree`.
-  useTree(r.tree && Object.keys(r.tree).length ? r.tree : FALLBACK_TREE);
+  useTree(
+    r.tree && Object.keys(r.tree).length ? r.tree : FALLBACK_TREE,
+    r.roots && r.roots.length ? r.roots : FALLBACK_ROOTS,
+  );
   const mem = r.memory || null;
   const clock = r.clock || {};
   const below = new Set(clock.belowGrain || []);
@@ -1411,7 +1432,7 @@ function renderTrace(t) {
   // A trace carries no tree — it is Chrome's format, not this instrument's — so
   // the flame chart's depth comes from the fallback. A phase added after this
   // page was written lands at depth 0 and is drawn, not dropped.
-  useTree(FALLBACK_TREE);
+  useTree(FALLBACK_TREE, FALLBACK_ROOTS);
   const evs = t.traceEvents;
   const spans = evs.filter((e) => e.ph === "X");
   const counters = evs.filter((e) => e.ph === "C" && e.name === "draws");

@@ -2,6 +2,12 @@
  * WorldCulling.ts — What the frame's own mesh walk is allowed to see.
  * Owns: `Scene.getActiveMeshCandidates`, the map's meshes filed into cull
  * cells, and the list handed back to Babylon each frame.
+ * There are TWO lists and they run on different clocks: `eligible` is the
+ * structural answer, rebuilt only when a cell, a pool or the scene's
+ * membership moves, and `candidates` is that list minus whatever is switched
+ * off THIS frame (`offer`, run every frame). The second exists because an
+ * effect pool idles with `isVisible = false` several times a second and a
+ * rebuild is `O(scene)`.
  * Invariants: it NEVER writes `setEnabled`, `isVisible`, `isPickable` or any
  * other property on a mesh — the whole of what it does is decide which meshes
  * Babylon is offered as candidates for the ACTIVE-MESH pass, and nothing else
@@ -53,11 +59,14 @@
  *   thing on a map that a LAYOUT may triple (`MapLayout.perTeam`, 24 on Sarab
  *   against the shipped 8), which turns 336 of these nodes into **1,008**. See
  *   `setPools`.
- * - **Loose** — everything else in the scene, always offered: the terrain, the
- *   roads, the rim, the other pools (tracers, shards, ragdolls, grenades,
- *   rubble), the sky, the water, the grass, the viewmodel, the hulls, and every
- *   visual an EDITOR build makes, which is keyed per placement and carries no
- *   block at all.
+ * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
+ *   the other pools (tracers, shards, ragdolls, grenades, rubble), the sky, the
+ *   water, the grass, the viewmodel, the hulls, and every visual an EDITOR
+ *   build makes, which is keyed per placement and carries no block at all.
+ *   Always ELIGIBLE — but `offer` still drops the ones that are switched off,
+ *   which is what reaches the effect pools: they are built once and idled with
+ *   `isVisible = false`, and were most of a candidate list the frame could not
+ *   draw from.
  *
  * **The landform is deliberately loose and that is not an oversight.** A
  * structure past the fog wall draws exactly `fogColor` and stands in front of
@@ -141,6 +150,19 @@ export class WorldCulling {
     length: 0,
   };
 
+  /**
+   * What the list would be if nothing in it were switched off — the structural
+   * answer, rebuilt only when a cell, a pool or the scene's membership moves.
+   *
+   * `candidates` is this list minus whatever is switched off THIS frame, and
+   * the two are separate because they change on completely different clocks: a
+   * cell crosses its threshold when the camera has walked twenty metres, and a
+   * tracer goes out four frames after it was fired. Marking the list dirty for
+   * the second would mean a full `O(scene)` rebuild many times a frame, which
+   * is the wrong trade in the other direction — see `offer`.
+   */
+  private eligible: AbstractMesh[] = [];
+
   /** The map's collider proxies: never candidates, at any distance. */
   private hidden = new Set<AbstractMesh>();
   /** Every drawn map mesh that carries a block, and the cell it was filed in. */
@@ -184,7 +206,11 @@ export class WorldCulling {
     cells: 0,
     cellsOn: 0,
     poolsOn: 0,
+    /** The eligible list: what a rebuild produced. */
     candidates: 0,
+    /** What Babylon was actually handed this frame — `candidates` minus the
+     * meshes that are switched off right now. See `offer`. */
+    offered: 0,
   };
 
   constructor(private scene: Scene) {
@@ -362,6 +388,7 @@ export class WorldCulling {
       this.listDirty = true;
     }
     if (this.listDirty) this.rebuildList();
+    this.offer();
   }
 
   /**
@@ -409,7 +436,7 @@ export class WorldCulling {
    * out of the round, or a mesh entering or leaving the scene.
    */
   private rebuildList(): void {
-    const data = this.candidates.data;
+    const data = this.eligible;
     data.length = 0;
     let loose = 0;
     for (const mesh of this.scene.meshes) {
@@ -427,7 +454,6 @@ export class WorldCulling {
       loose++;
       data.push(mesh);
     }
-    this.candidates.length = data.length;
     this.listDirty = false;
     let cellsOn = 0;
     for (const cell of this.cells) if (cell.on) cellsOn++;
@@ -438,5 +464,54 @@ export class WorldCulling {
     this.stats.cellsOn = cellsOn;
     this.stats.poolsOn = poolsOn;
     this.stats.candidates = data.length;
+  }
+
+  /**
+   * This frame's list: the eligible meshes minus the ones that are switched
+   * off right now.
+   *
+   * **It drops exactly what `_evaluateActiveMeshes` would drop, and it drops it
+   * before the expensive part rather than after.** That walk rejects a mesh on
+   * `!isReady() || !isEnabled() || scaling.hasAZeroComponent` with a bare
+   * `continue`, and it reaches the activation test only if `isVisible &&
+   * visibility > 0` — where `alwaysSelectAsActiveMesh` bypasses the FRUSTUM
+   * test and not this one. So neither of the two asked here can be a mesh
+   * Babylon would have drawn, whatever else is true of it. That is the same
+   * claim `hidden` already rests on for the collider proxies; this is it made
+   * per frame instead of once per map, which is what reaches a POOL.
+   *
+   * **The pools are why it is worth a pass.** Every effect pool in the game is
+   * built once and idled with `isVisible = false` — 96 tracers, 54 embers, 48
+   * sparks, 48 shards, 40 impacts, 30 blast chunks, 40 grenade parts, 48 mine
+   * parts, 49 blob shadows — and `rebuildList` files all of them as `loose`,
+   * so the frame was being offered a few hundred meshes it could not draw.
+   * Measured on Sarab at a real viewport and a real roster, this halves the
+   * list (1,525 → 729) and is worth **+8.9%** of frame rate; the mesh walk is
+   * a third of the tick there, so that is most of what the halving predicts.
+   * See `FINDINGS.md` 38, which measured it at the WRONG viewport first and
+   * very nearly threw it away.
+   *
+   * `isEnabled()` walks ancestors and `isVisible` does not, which is the right
+   * way round: a rig part is switched by its ROOT, and `setPools` only files
+   * the bodies it is handed.
+   *
+   * The order is a subsequence of `eligible`, which is scene order, so
+   * `rebuildList`'s argument about `_activeMeshes` ordering survives intact.
+   */
+  private offer(): void {
+    const src = this.eligible;
+    const out = this.candidates.data;
+    const n = src.length;
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      const mesh = src[i];
+      if (mesh.isVisible && mesh.isEnabled()) out[k++] = mesh;
+    }
+    // Length rather than truncation: the backing array is reused every frame
+    // and Babylon reads `length`, so shrinking `data` would be a free-list
+    // churn this is trying to avoid.
+    out.length = k > out.length ? k : out.length;
+    this.candidates.length = k;
+    this.stats.offered = k;
   }
 }

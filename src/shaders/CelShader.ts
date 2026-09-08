@@ -23,7 +23,15 @@
  * to the mesh, so `dispose(false, true)` on any rig built through here disposes
  * the world's own materials with it. Nothing removes the dead entry from the
  * cache, and the released effect is shared, so what follows is most of the map
- * silently not drawn (see Vehicle.dispose). A NEW material is seeded with
+ * silently not drawn (see Vehicle.dispose). A new material reaches the cache
+ * only through `remember`, which files it FROZEN: `ShaderMaterial.isReady`
+ * otherwise rebuilds the whole define set for every submesh of every pass and
+ * throws it away, a fifth of everything the game allocates, and `isFrozen`
+ * skips exactly that while leaving the uniform push alone. That is only safe
+ * while no material is worn by two meshes that DISAGREE about a vertex colour
+ * buffer, instancing, bones or morph targets — the four things those defines
+ * vary with — so WIDENING A CACHE KEY owes that check again (docs/rendering.md,
+ * FINDINGS 36). A NEW material is seeded with
  * every piece of shared state on the spot (applyCamera/applyEnvironment/
  * applyPointLights/applyShadow): the per-frame walks are guarded on change and
  * skip a still frame entirely, so what a material is born with is what it keeps
@@ -1444,6 +1452,48 @@ export class CelMaterialFactory {
   }
 
   /**
+   * Files a freshly built material in the cache, FROZEN — the one door into
+   * `cache`, so that no creation path can file an unfrozen one by omission.
+   *
+   * **What freezing buys is not readiness, it is the WORK OF ASKING.**
+   * `ShaderMaterial.isReady` runs for every submesh of every draw, in the main
+   * pass and again in the shadow pass, and before it can answer it rebuilds the
+   * whole define set from scratch: two arrays, a `#define` string per entry and
+   * a `join` over them — all of it thrown away after being compared to the
+   * string already on the draw wrapper. Measured on the shipped maps that walk
+   * is **a fifth of everything this game allocates** (`FINDINGS.md` 36), and it
+   * is pure churn: the answer is the same string every frame for the life of
+   * the material.
+   *
+   * **`isFrozen` short-circuits exactly that and nothing else.** It is read in
+   * one place that matters here — the top of `isReady`, which returns the
+   * cached verdict when the wrapper already has a ready effect — while what
+   * gates the UNIFORM push is `_mustRebind`, which does not consult it. So the
+   * light array, the fog, the eye, the wind and the palette all keep flowing;
+   * `updateWind` and `updateCamera` above walk this same cache every frame and
+   * are unaffected.
+   *
+   * **It is safe because a define set here is a property of the MATERIAL and
+   * not of the mesh wearing it.** The defines `isReady` would rebuild vary with
+   * the mesh on exactly four counts — a vertex COLOUR buffer, instancing, bones
+   * and morph targets — and this cache is keyed finely enough that no material
+   * is ever shared across a disagreement about any of them: measured over every
+   * `ShaderMaterial` in the scene on all four of the big maps, **0 of 35/113/
+   * 95/83 were mixed**. Re-run that check before widening a cache key, because
+   * the failure it guards against is silent — a mesh drawn with the effect
+   * another mesh compiled.
+   *
+   * Freezing at CREATION rather than once the effect is ready is deliberate and
+   * costs nothing: the fast path also requires the wrapper to have been ready
+   * once, so a material frozen before its first compile simply falls through to
+   * the full path until it has one.
+   */
+  private remember(key: string, mat: ShaderMaterial): void {
+    mat.freeze();
+    this.cache.set(key, mat);
+  }
+
+  /**
    * Pushes the palette onto one material.
    *
    * Unconditional, and that is deliberate rather than lazy: a `setArray3` for a
@@ -1501,7 +1551,7 @@ export class CelMaterialFactory {
       this.applySpec(mat, null);
       this.applyTranslucency(mat, null);
       this.applyPalette(mat);
-      this.cache.set(key, mat);
+      this.remember(key, mat);
     }
     return mat;
   }
@@ -1547,7 +1597,7 @@ export class CelMaterialFactory {
       this.applySpec(mat, null);
       this.applyTranslucency(mat, null);
       mat.zOffsetUnits = depthUnits;
-      this.cache.set(cacheKey, mat);
+      this.remember(cacheKey, mat);
     }
     return mat;
   }
@@ -1593,7 +1643,7 @@ export class CelMaterialFactory {
       this.applyShadow(mat);
       this.applySpec(mat, spec);
       this.applyTranslucency(mat, null);
-      this.cache.set(cacheKey, mat);
+      this.remember(cacheKey, mat);
     }
     return mat;
   }
@@ -1636,7 +1686,7 @@ export class CelMaterialFactory {
       this.applyShadow(mat);
       this.applySpec(mat, null);
       this.applyTranslucency(mat, trans);
-      this.cache.set(cacheKey, mat);
+      this.remember(cacheKey, mat);
     }
     return mat;
   }
@@ -1744,7 +1794,7 @@ export class CelMaterialFactory {
       this.applyGlass(mat, glass);
       this.applyReflection(mat);
       this.glassRecipes.set(mat, { hex, glass, backed });
-      this.cache.set(cacheKey, mat);
+      this.remember(cacheKey, mat);
     }
     return mat;
   }
@@ -1843,7 +1893,7 @@ export class CelMaterialFactory {
       this.applySpec(mat, spec ? this.groundSpec : null);
       this.applyTranslucency(mat, null);
       mat.zOffsetUnits = depthUnits;
-      this.cache.set(cacheKey, mat);
+      this.remember(cacheKey, mat);
     }
     return mat;
   }

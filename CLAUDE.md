@@ -482,6 +482,18 @@ writes any more. **A sampler a material DECLARES must be BOUND, used or not** �
 the bind group fails to build and the draw is silently lost — and uniforms are
 the exact opposite, where unwritten reads as zeros.
 
+**Every cel material is FROZEN, and `CelMaterialFactory.remember` is the one
+door into the cache so that none can be filed otherwise.** `ShaderMaterial
+.isReady` rebuilds the whole define set — two arrays and a `join` — for every
+submesh of every pass and throws it away, which measured as a FIFTH of
+everything this game allocates; `isFrozen` skips exactly that and does not
+touch the uniform push, which `_mustRebind` gates instead. **What makes it safe
+is that the cache is keyed so no material is ever worn by two meshes that
+disagree about a vertex COLOUR buffer, instancing, bones or morph targets** —
+the four things those defines vary with. **Widening a cache key owes that check
+again** (`FINDINGS.md` 36): the failure is a mesh silently drawn with the
+effect another mesh compiled.
+
 Cel materials carry their own light as uniforms — key, ambient, sky fill and a
 packed array of up to `MAX_POINT_LIGHTS` (16) point lights — and `LightingSystem`
 is the sole owner of dynamic light. **Adding a `PointLight` or `HemisphericLight`
@@ -552,9 +564,13 @@ the shadow map's render list, a cube probe's bake and Babylon's own default pick
 filter, and a candidate list leaves all three untouched. **A collider is never a
 candidate at any distance**, **a mesh carrying `metadata.block` is one only
 while the camera is inside the map's `fogEnd`**, **a body's RIG is one only
-while the root the roster switches is enabled**, and **everything else always
-is** — which is why the terrain, the roads and the rim carry no block: they are
-what the SKY is behind. **Nothing pooled may ever be block-keyed**, and the rigs
+while the root the roster switches is enabled**, and **everything else is
+ELIGIBLE** — which is why the terrain, the roads and the rim carry no block:
+they are what the SKY is behind. **Eligibility is not the same as being
+offered**: one pass a frame (`WorldCulling.offer`) drops whatever is switched
+off right now — `!isVisible` or `!isEnabled()`, the two rejections that walk
+makes anyway — which is what finally reaches the EFFECT POOLS, several hundred
+meshes built once and idled invisible. **Nothing pooled may ever be block-keyed**, and the rigs
 are **filed mesh by mesh and never by ancestry**, because `RagdollSystem`
 reparents a corpse's joints onto Havok proxies and an ancestry test would drop
 every body in the game the moment it started falling.
@@ -1229,22 +1245,36 @@ a profiler that allocates per frame manufactures the bug it was built to catch.
 built for; the bar and its floor are in every report, as is the GC count the
 `FinalizationRegistry` sentinel puts on every frame.
 
-**The brackets live in `Game.ts` and nowhere else, with one exception that is
-INSIDE the render.** `tick`, `updateGameplay`, `updateNetWorld` and `updateWorld`
-are where the frame's order is already declared, with the argument for it
-written down, so **the phase list IS that order** and no system had to be taught
-the profiler exists. A phase is a name in `PHASES`, a parent in `PARENT_OF` and
-a `begin`/`end` pair; the ring, the report and the trace are all sized and
-labelled off that list. **The spans NEST and do not partition** — read a report
-as an attribution. The exception is `render`, where there is nowhere in
-`Game.ts` to put a bracket inside `scene.render()`:
+**The brackets live in `Game.ts` and nowhere else, with two exceptions, one
+INSIDE the render and one AFTER it.** `tick`, `updateGameplay`, `updateNetWorld`
+and `updateWorld` are where the frame's order is already declared, with the
+argument for it written down, so **the phase list IS that order** and no system
+had to be taught the profiler exists. A phase is a name in `PHASES`, a parent in
+`PARENT_OF` and a `begin`/`end` pair; the ring, the report and the trace are all
+sized and labelled off that list. **The spans NEST and do not partition** — read
+a report as an attribution. The first exception is `render`, where there is
+nowhere in `Game.ts` to put a bracket inside `scene.render()`:
 `FrameProfile.hookRender` hangs four spans off the SCENE's own observables when
 the profiler arms and takes them off when it disarms, so no system knows about
-those either. **What they measure is CPU**, and under `compatibilityMode =
-false` that is the recording of a render BUNDLE rather than the work the GPU
-then does. **GPU time is not here** — Babylon can read it, but only if
-`timestamp-query` is requested at device creation, and `main.ts` calls
-`initAsync()` with no descriptor.
+those either.
+
+**The second is `present`, and it is the one phase that is NOT inside `frame`.**
+`Game.tick` is the tick; the engine's `endFrame` — closing the render pass and
+`queue.submit` — runs after `tick` has RETURNED, so no line in `Game.ts` could
+hold it and `hookEngine` hangs it off the engine's own end-of-frame
+notification. **There are therefore TWO ROOTS** (`ROOTS`, derived from `PHASES`
+minus `PARENT_OF` so it cannot drift, and shipped in every capture as
+`ProfileReport.roots`): a reader given only a child→parent map cannot tell a
+root from a phase it has never heard of, and those two want opposite drawings.
+**What is left over is the answer, not a gap**: `frame` + `present` short of the
+wall clock is the time between the submit and the next frame opening — the rAF
+wait, the compositor, the panel — and naming it would be claiming to know which.
+
+**What all of them measure is CPU**, and under `compatibilityMode = false` that
+is the recording of a render BUNDLE rather than the work the GPU then does.
+**GPU time is not here** — Babylon can read it, but only if `timestamp-query` is
+requested at device creation, and `main.ts` calls `initAsync()` with no
+descriptor.
 
 **A capture is READ at `/profile_viewer.html`**, one import-free, network-free
 page in `public/` served from the game's own origin, because the loop has to

@@ -13,9 +13,20 @@ spends an afternoon re-deriving it.
 
 ---
 
-## 1. Frame pacing: the mean says 60, the tail says 28
+## 1. Frame pacing: the mean says 60, the tail says 28 — **the game's own tick is RULED OUT, and so is the submit**
 
-**Status:** measured, cause unknown.
+**Status:** still open, but much narrower. Two of the three answers this
+section's own triage listed have been eliminated on the machine that actually
+hitches, and a `present` phase now splits what is left.
+
+**A collector reading taken HEADLESS AND UNCAPPED nearly closed this wrongly.**
+At 220-700 fps the game allocates the same ~200 kB a FRAME and therefore two to
+seven times as much per SECOND as a real session does, which wakes the
+collector at 1.5-1.8/s and makes GC frames 1.7x-4.5x the cost of a clean one —
+a tidy, wrong answer. On the real machine, playing normally at 95 fps, the same
+instrument reports **2 collections in 31.4 seconds (0.06/s), and every hitch in
+the capture has `gc: 0`.** **Do not measure allocation pressure uncapped**; the
+rate per second is what the collector responds to, and uncapping fabricates it.
 
 ### What was measured
 
@@ -55,7 +66,103 @@ it is running at half the panel's cap with alternating pacing. Not yet
 confirmed: the AC reading above is from memory rather than from a capture,
 and the frame time beside it was not recorded.
 
-### Candidates, none investigated
+### What the capture said, which settles it
+
+**Taken at last, on the Windows box, on the current tree, with a REAL round
+under it** — walking, sweeping the view, firing in bursts — through the shipped
+profiler (`?profile`, `window.__profile.capture("x", true)`), 3,000 frames a
+map. The full series carries `gc[]` and `frameMs[]` per frame, so the question
+this section could not answer for two milestones is one filter over a capture:
+**split the frames by whether a collection landed on them.**
+
+| map | no-GC mean | GC-frame mean | GC-frame max | frames with a GC |
+| --- | --- | --- | --- | --- |
+| hollowmere | 1.42 ms | **6.33** | **27.6** | 7 of 3000 |
+| coldharbour | 2.13 ms | **5.11** | 8.3 | 11 of 3000 |
+| sarab | 3.81 ms | **6.97** | 11.9 | 20 of 3000 |
+| cinderhaven | 4.48 ms | **7.85** | 17.6 | 21 of 3000 |
+
+**A frame with a collection on it costs 1.7x to 4.5x a frame without one, on
+every map in the tree**, and the frame AFTER one is still elevated (cinderhaven
+6.44 against 4.48, sarab 6.29 against 3.81) — a collection spills past its own
+frame. The rate is **1.44–1.83 collections a second on every map**, which is
+this section's own "a visible hitch roughly every 1.7 seconds" arriving from
+the other end.
+
+Hollowmere's worst frame is the one to read, because it is the shape this
+section predicted in "How to settle it" and then had to wait for: **27.6 ms of
+wall clock whose phases add up to 2.4, with `gc` on it.** That is the second
+bullet of the three, word for word — the time is outside the game's own
+brackets and the collector is standing next to it.
+
+**The allocation rate is ~50 MB/s and it is the same 50 on every map**, which
+is the tell that it is not the world: hollowmere 52.5, coldharbour 54.0, sarab
+54.5, cinderhaven 49.2, over frame rates from 222 to 700. Finding 36 is where
+that number is taken apart.
+
+### What the real machine says, and what it eliminates
+
+A capture off the actual display (3432x1432, sarab, 31.4 s, 602 draw calls and
+532 active meshes — a busier frame than any headless run had been reproducing):
+
+| | wall clock | `frame` span | unaccounted | gc |
+| --- | --- | --- | --- | --- |
+| hitch 1 | 42.2 ms | 15.1 | **27.1** | 0 |
+| hitch 2 | 30.8 ms | 13.4 | **17.4** | 0 |
+| hitch 3 | 24.9 ms | 10.5 | **14.4** | 0 |
+
+That is this section's own third bullet — "the same shortfall with `gc` at 0
+puts the time outside the game altogether" — and three further suspects have
+since been measured and dropped:
+
+- **Not the GPU, and not fill.** `setHardwareScalingLevel` across an **8x**
+  reduction in pixels (4,915 -> 613 kpixels) moved the frame rate not at all:
+  97.0 / 96.0 / 95.0 / 97.2 fps, with the wall-to-tick gap ~0 at every step.
+  The frame is CPU-bound even at that resolution. That sweep also reproduces
+  the real session closely (97 fps against 95.5, 10.29 ms against 10.48), so it
+  is the workload to measure on.
+- **Not pipeline compilation.** Hooking `createRenderPipeline` and
+  `createShaderModule`: 29 pipelines and 73 modules during warmup, then **6
+  pipelines and 2 modules across 40 s of play**. Finding 16 is a first-seconds
+  cost and not a steady-state one.
+- **Not the submit.** The `present` phase added for this reads **0.027 ms mean**
+  and 0.3% of the wall clock. The decomposition now closes exactly — `frame`
+  77.9% + `present` 0.3% + residue 21.8% = 100.0% — and a 27.9 ms hitch of the
+  same shape reproduced headless reads `frame=9.5, present=0, gc=0`, leaving
+  **18.4 ms in the residue**.
+
+**What is left is the residue: the gap between the submit and the next frame
+opening** — the rAF wait, the browser's compositor, the panel. The instrument
+can now say that much and deliberately says no more, because the page cannot
+tell those three apart. What would settle it is outside the page: a Chrome
+trace with the compositor categories on, or the cheap version — play in a
+window a quarter the size, and if the hitches go it is presentation rather than
+scheduling.
+
+### The instrument trap, because it cost a run and will cost the next one
+
+**Chrome's sampling heap profiler answers a DIFFERENT question by default and
+its answer looks like good news.** `HeapProfiler.startSampling` at a 2 kB
+interval over the same round reported **0.2 MB/s** — 260x under what the frame
+profiler was reporting, and low enough to close this finding by mistake. V8
+drops a sample when the object it sampled has been collected, so what comes
+back is what SURVIVED: it measures retention, not churn, and churn is the whole
+of this finding. `includeObjectsCollectedByMajorGC` and
+`includeObjectsCollectedByMinorGC` are the two experimental flags that fix it,
+and with both on the same run reports **51.6 MB/s**, agreeing with
+`memory.allocMbPerSec` to 5%. **Ask for those flags or do not believe the
+number.**
+
+**And per-SITE attribution out of it is not to be trusted on our own files
+without an A/B.** Two of its top twenty named a function that allocates nothing
+— `eyeDistanceSq` (see finding 37) and `Sfx.buildBreathBuffer`, which is called
+once at init — because V8 attributes a sampled allocation to the JS frame on
+top at the time, and a function called 22,000 times a frame collects
+attribution that belongs to its callees. The FILE-level split is sound; a
+single line is a hypothesis, and finding 37 is what happens when one is taken
+at face value.
+
+### Candidates, as they stood before the capture
 
 - **GC.** A collection every second or two matches the cadence closely — and
   that guess has since been measured rather than left as one. The frame
@@ -4547,3 +4654,222 @@ the bucket grid behind the list; see its header for the rules.
   the only collidable thing that moves is a hull and hulls are in `movers` — but
   it is an invariant nothing enforces, and a future collidable that moves and is
   not registered would be walked through silently.
+
+---
+
+## 36. A fifth of everything this game allocates is Babylon asking a question it already knows the answer to — **FIXED**
+
+**Status:** measured, fixed, and proved not to move a pixel.
+
+### What it is
+
+Every shader in this tree is a hand-written `ShaderMaterial`, and
+`ShaderMaterial.isReady` runs for **every submesh of every draw, in the main
+pass and again in the shadow pass**. Before it can answer, it rebuilds the
+material's whole define set from scratch: a `defines` array, an `attribs`
+array, a `#define ...` string per entry — several built with template literals
+— and then a `join` over them. It compares that string to the one already on
+the draw wrapper, finds them equal, and throws all of it away.
+
+The answer is the same string every frame for the life of the material. The
+work is pure churn, and it is the largest single allocator in the game.
+
+### What it costs, and what the fix is worth
+
+The allocation profile (with the two `includeObjectsCollectedBy*GC` flags
+finding 1 explains) puts `join` at **9.0% of all allocation, 19 kB a frame**,
+with `isReady` itself another 7.5% on top. `Material.isFrozen` short-circuits
+exactly this: the top of `isReady` returns the cached verdict when the wrapper
+already holds a ready effect.
+
+A/B'd in ONE session, alternating frozen and unfrozen every six seconds, three
+paired windows a map:
+
+| map | allocation, unfrozen -> FROZEN |
+| --- | --- |
+| cinderhaven | 67.2 -> 50.4 MB/s — **-25.0%** |
+| sarab | 80.1 -> 59.8 MB/s — **-25.3%** |
+| coldharbour | 91.4 -> 72.2 MB/s — **-21.0%** |
+| hollowmere | 79.7 -> 65.2 MB/s — **-18.3%** |
+
+**The frame-rate half of that A/B was inside the noise floor, and no frame-rate
+claim is made for this change at all.** An earlier draft of this finding quoted
+a cross-session `gate.mjs` comparison — "cinderhaven 104.5 -> 125.8 fps" — and
+that number was worthless. See the warning below, which is the more valuable
+half of this entry.
+
+Re-measured properly, paired and alternating inside one page at 3432x1432 on
+Sarab with a real roster, frozen against unfrozen over five reps: **-0.8%**,
+ahead in three reps and behind in two. The freeze buys ALLOCATION and does not
+measurably buy frame rate. It is kept for that, and because the picture is
+byte-identical.
+
+### The measurement warning, which cost this finding its first set of numbers
+
+**Cross-session comparison on this box is worthless and the protocol's +/-8%
+noise floor is far too generous for it.** The same tree, the same script,
+minutes apart: sarab 112.5 then 155.5 fps, cinderhaven 111.3 then 144.0,
+hollowmere 611.6 then 889.8 — a swing of up to 45%. `installMs` moves with it
+(sarab 4824 then 3813) and is untouched by any render change, so it is a free
+control for whether a run is comparable at all: **if the install times differ,
+the frame rates are not comparable.**
+
+Anything claimed about frame rate here must be PAIRED and ALTERNATING inside
+one page. `gate.mjs` is an excellent pass/fail gate and a bad A/B.
+
+### Why it is safe, which is the part to re-check rather than re-derive
+
+**Freezing pins the DEFINES and nothing else.** What gates the uniform push is
+`_mustRebind`, which does not read `isFrozen` — so the light array, the fog,
+the eye, the wind and the palette all keep flowing, and
+`CelMaterialFactory.updateWind`/`updateCamera` still walk the same cache every
+frame. The only other `isFrozen` read on this path guards morph targets and
+baked vertex animation, neither of which exists here.
+
+**The defines vary with the MESH on four counts** — a vertex `color` buffer,
+instancing, bones and morph targets — so a material shared across a
+disagreement about any of them would be pinned to whichever mesh compiled
+first and would render the others with the wrong effect, silently. Measured
+over every `ShaderMaterial` in the scene on the four big maps: **0 of 35 / 113
+/ 95 / 83 were mixed.** The cache is keyed finely enough that this cannot
+happen today; **re-run that check before widening a cache key**, because
+nothing enforces it.
+
+Freezing at CREATION rather than at first-ready costs nothing, and is why
+`remember` is the one door into the cache: the fast path also requires the
+wrapper to have been ready once, so a material frozen before its first compile
+falls straight through to the full path until it has an effect.
+
+### The proof it moved no pixel
+
+`bank.mjs` taken on the unmodified tree and `--check`ed with the change in:
+**21 vantages across all six maps, 0% of pixels differing, mean 0/255, worst
+0/255** — byte-identical, against a reproducibility floor the bank measured at
+0.000%. `gate.mjs --uncap` passes all six maps and the typecheck is clean.
+
+### What is open
+
+- **The other four fifths.** Babylon and the builtins it calls are ~64% of what
+  is left and our own code ~36%, and our share is spread over forty sites with
+  the largest at 4% — a thousand cuts rather than an actor. Nothing here has
+  costed the WebGPU backend's own per-frame objects (`getBindGroups`,
+  `_startRenderTargetRenderPass`), which are the next largest block.
+- **What this is WORTH is no longer clear, and that is honest rather than
+  coy.** It was taken to make collections rarer, on a headless reading of
+  1.5-1.8 collections a second — and a capture off the real machine at a real
+  frame rate reports **0.06/s**, because the allocation that matters is per
+  SECOND and uncapping inflates it (finding 1). So this removes a fifth of a
+  pressure that may not have been costing anything on the hardware in question.
+  It is kept because it is free, provably identical in the picture, and the
+  right thing on a device that IS collector-bound — a phone holding 30 fps has
+  the frame budget this was measured against, inverted. **Do not cite it as a
+  hitch fix.**
+- **Grass and water are frozen on the same argument but bought little** — one
+  material each, few submeshes. They are in for consistency, not for a number.
+
+---
+
+## 37. The front-to-back sort is not an allocator, and memoising it buys nothing — **DISPROVED, DO NOT RE-RUN**
+
+**Status:** hypothesis measured and dead. Recorded so the next person does not
+spend the afternoon this cost.
+
+The allocation profile named `eyeDistanceSq` (4.19% of all allocation) and the
+comparator beside it (2.05%) as the top two sites in our own code — together
+6.2%, in one mechanism. The reasoning looked sound: `Game`'s opaque comparator
+calls `eyeDistanceSq` twice per COMPARISON, so a sort over ~600 submeshes reads
+~11,000 bounding spheres a frame where 600 reads would do.
+
+**Memoising it — one bounding-sphere read per submesh per frame, stamped on the
+frame id and the eye — changes nothing.** A/B'd in one session, three paired
+windows a map:
+
+| map | fps, shipped -> memoised | allocation |
+| --- | --- | --- |
+| cinderhaven | 110.5 -> 108.6 (-1.7%) | 68.9 -> 69.1 MB/s |
+| sarab | 117.1 -> 114.8 (-2.0%) | 71.6 -> 70.1 MB/s |
+| coldharbour | 167.1 -> 164.6 (-1.5%) | 79.8 -> 80.8 MB/s |
+
+Every figure is inside the noise floor and the allocation does not move at all.
+`SubMesh.getBoundingInfo()` is a field read and allocates nothing; the
+attribution was V8 smearing across a function called 22,000 times a frame — see
+finding 1's instrument note, which this is the worked example for. **The
+comment in `Game`'s constructor was right**: two bounding-sphere reads per
+comparison is microseconds against the fill it buys back.
+
+---
+
+## 38. Half the frame's mesh walk is meshes it will reject — **TAKEN**, after the first measurement of it was taken at the wrong viewport and nearly threw it away
+
+**Status:** fixed (`WorldCulling.offer`). The first pass at this measured it as
+worthless; that measurement was wrong in three separate ways and the entry is
+kept whole because each of them is a trap.
+
+### What it is
+
+`meshWalk` (Babylon's `activeMeshesEvaluationTimeCounter`) is **a third to a
+half of the game's own tick** on the big maps — 4.27 ms of a 9.76 ms tick in a
+capture off a real machine. After S1's candidate list the frame was still being
+offered 1,745 candidates on cinderhaven and 1,657 on sarab to produce ~800
+active meshes, and the surplus is the EFFECT POOLS: 96 tracers, 54 embers, 48
+sparks, 48 shards, 40 impacts, 30 blast chunks, 40 grenade parts, 48 mine
+parts, 49 blob shadows, all built once, all idled with `isVisible = false`, and
+all filed `loose` and therefore offered every frame forever.
+
+`_evaluateActiveMeshes` rejects them — but late, after `isBlocked`, the LOD
+map get, `computeWorldMatrix` and `isReady()`. `WorldCulling.offer` makes the
+same two rejections first: `!isEnabled()` is an unconditional `continue` in
+that walk, and `!isVisible` skips activation whatever else is true (
+`alwaysSelectAsActiveMesh` bypasses the FRUSTUM test, not this one), so neither
+can ever be a mesh Babylon would have drawn. It is the claim `hidden` already
+rests on for the collider proxies, made per frame instead of once per map.
+
+### What it is worth
+
+Paired and alternating inside one page, uncapped, at 3432x1432 with a real
+roster — `eligible` handed straight to Babylon against the shipped `offer`:
+
+| map | fps, no offer -> offer | per rep |
+| --- | --- | --- |
+| sarab | 143.2 -> 168.3 — **+17.6%** | +4.3, +6.0, +6.6, +27.9, +18.7, +33.5 |
+| cinderhaven | 111.8 -> 116.9 — **+4.6%** | +3.1, +5.1, +5.2, -4.9, +5.8, +13.8 |
+
+Candidates halve (sarab 1,657 -> 877, cinderhaven 1,744 -> 969) with the active
+count unchanged, which is the proof nothing that draws was dropped. **The gain
+is smallest when the round is busiest** — the reps at ~800 active meshes read
++3 to +6.6% and the thin ones read +18 to +33 — so a crowded fight is where to
+quote it from, not the mean.
+
+`meshWalk` itself moves much less than the list does (sarab 1.82 -> 1.67 ms,
+cinderhaven 2.09 -> 2.07) while the frame rate moves more, so the saving is not
+all in the counter this finding is named after. Not chased.
+
+### The three ways the first measurement of this was wrong
+
+Kept in full, because each one is cheap to repeat.
+
+1. **The wrong viewport.** It was measured at 1920x1080; the real display is
+   3432x1432, and the workload is not the same scene at two sizes.
+2. **The wrong PLACE.** The scripted walk held `KeyW` and drove the player out
+   of the town into the borderland — it ended at (-324, -301) with **103 active
+   meshes** where a real round has 530-900. A lever priced against an empty
+   desert prices as nothing.
+3. **The frame-rate CAP.** Half the reps of one run sat pinned at 143.9 fps,
+   which is a ceiling and not a cost, so those reps could not show a difference
+   in either direction and dragged the mean to nothing. `--disable-frame-rate-
+   limit` is not cosmetic in an A/B.
+
+On top of all three, the conclusion was cross-checked against `gate.mjs` runs
+taken in different sessions, which finding 36 now shows can differ by 45% on
+this box for no reason at all.
+
+### What is open
+
+- **Who the ~420 disabled candidates ARE has still not been counted.**
+  `setPools` already keeps an idle rig out of the list by its root, so a
+  disabled mesh still being offered is either a pool never filed or a part
+  disabled under an enabled root.
+- **`offer` is `O(eligible)` every frame** and `isEnabled()` walks ancestors. A
+  pool that told `WorldCulling` when it went live would cost nothing per frame,
+  but it cannot use `setPools`' transition-marks-dirty route, because
+  `rebuildList` is a full scene walk and effect pools toggle many times a frame.

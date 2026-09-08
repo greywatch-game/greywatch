@@ -154,6 +154,24 @@ export const PHASES = [
   "glow",
   "drawWorld",
   "drawOverlay",
+  /**
+   * The engine's own END of the frame: everything `endFrame` does after `tick`
+   * has returned, which on WebGPU is closing the render pass and
+   * `queue.submit`.
+   *
+   * **It is the one phase in this list that is NOT inside `frame`**, and it is
+   * here because the residue outside the tick was the whole of an unexplained
+   * hitch: a real capture read 42.2 ms of wall clock against a 15.1 ms tick
+   * with no collection on it, and nothing in the instrument could say which
+   * side of the submit the missing 27 ms was on. See `recordPresent`, and
+   * `PARENT_OF`, where being a root is declared.
+   *
+   * What is still outside everything, after this, is the gap from the submit to
+   * the next frame opening: the rAF wait, the compositor, the panel. A report
+   * where `frame` + `present` falls well short of `frame.mean` is saying the
+   * time is THERE, and that is a real answer rather than a gap in the tree.
+   */
+  "present",
 ] as const;
 
 export type Phase = (typeof PHASES)[number];
@@ -185,12 +203,23 @@ export const P = Object.fromEntries(
  * every capture** (`ProfileReport.tree`) — a report states its own shape for
  * the same reason it states its own clock grain and its own overhead.
  *
- * `Exclude<Phase, "frame">` is what makes it safe: every phase but the root
- * must name a parent, so **a phase added to `PHASES` does not compile until it
- * has said where it sits** — the arrangement `ScreenStack`'s `SCREENS` uses to
- * stop a new screen shipping without answering its four questions.
+ * `Exclude<Phase, "frame" | "present">` is what makes it safe: every phase but
+ * the two ROOTS must name a parent, so **a phase added to `PHASES` does not
+ * compile until it has said where it sits** — the arrangement `ScreenStack`'s
+ * `SCREENS` uses to stop a new screen shipping without answering its four
+ * questions.
+ *
+ * **There are two roots because the frame has two parts and only one of them
+ * is the tick.** `frame` is `Game.tick`, wall to wall; `present` is what the
+ * engine does after it returns. Neither contains the other, they cannot
+ * overlap, and a reader that drew `present` inside `frame` would be drawing a
+ * containment that does not exist — which is exactly what the fallback tree in
+ * `public/profile_viewer.html` does to any phase it has not been told about, so
+ * that copy must gain this one too.
  */
-export const PARENT_OF: Readonly<Record<Exclude<Phase, "frame">, Phase>> = {
+export const PARENT_OF: Readonly<
+  Record<Exclude<Phase, "frame" | "present">, Phase>
+> = {
   input: "frame",
   roundBehind: "frame",
   gameplay: "frame",
@@ -218,6 +247,21 @@ export const PARENT_OF: Readonly<Record<Exclude<Phase, "frame">, Phase>> = {
   drawWorld: "render",
   drawOverlay: "render",
 };
+
+/**
+ * The phases nothing contains: `frame` (the tick) and `present` (what the
+ * engine does after it).
+ *
+ * DERIVED from the two tables above rather than written out, so it cannot go
+ * stale the way a hand-kept list would, and SHIPPED in every capture — because
+ * a reader given only a child→parent map cannot tell a root from a phase the
+ * map has not heard of, and those two want opposite renderings: a root is a
+ * top-level bar, and an unknown phase is a warning that the reader is stale.
+ * `public/profile_viewer.html` drew the second for both until this existed.
+ */
+export const ROOTS: readonly Phase[] = PHASES.filter(
+  (name) => !(name in PARENT_OF),
+);
 
 /** One phase's line in a report. Milliseconds throughout. */
 export interface PhaseStat {
@@ -286,6 +330,11 @@ export interface ProfileReport {
    * phase list — see `PARENT_OF`. A phase absent from here is a root.
    */
   tree: Record<string, string>;
+  /**
+   * The phases nothing contains — see `ROOTS`. Absent from a capture taken
+   * before this field, where `["frame"]` is the right assumption.
+   */
+  roots: string[];
   /** What the instrument knows about itself. See the header. */
   clock: {
     /** The smallest non-zero `performance.now()` step observed, in ms. */
@@ -491,6 +540,19 @@ export class FrameProfile {
   private frameT0 = 0;
 
   /**
+   * When `endFrame` finished, and the ring row it had just written — the two
+   * facts `recordPresent` needs and cannot get for itself.
+   *
+   * `lastSlot` exists because `endFrame` ADVANCES `cursor`, and the engine's
+   * end-of-frame notification arrives after that: by then `cursor` names the
+   * frame about to start, and writing `present` there would file it one frame
+   * late, forever. -1 until a frame has closed, which is the state an arm in
+   * the middle of a frame leaves behind.
+   */
+  private tickEndAt = 0;
+  private lastSlot = -1;
+
+  /**
    * Frames over `CONFIG.profiling.hitchMs`, oldest first, as a ring INDEX and
    * the stamp that was in it.
    *
@@ -612,6 +674,7 @@ export class FrameProfile {
     // goes through `begin`/`endAdd` and returns on the same first line as the
     // rest of this class.
     this.hookRender(scene);
+    this.hookEngine(scene);
 
     this.on = true;
     this.grainMs = probeGrain();
@@ -638,6 +701,8 @@ export class FrameProfile {
     this.glowIn = null;
     this.glowOut = null;
     this.inDraw = false;
+    this.tickEndAt = 0;
+    this.lastSlot = -1;
     this.instr?.dispose();
     this.instr = null;
     this.scene = null;
@@ -781,6 +846,30 @@ export class FrameProfile {
    * they were added — ours is added at `arm`, which is always later — so the
    * blurs are inside the span rather than after it.
    */
+  /**
+   * Hangs `present` off the ENGINE's end-of-frame notification.
+   *
+   * **The second place a bracket lives outside `Game.ts`, and for the opposite
+   * reason to `hookRender`'s.** Those four are boundaries INSIDE
+   * `scene.render()`; this one is a boundary `Game` never sees at all, because
+   * `endFrame` is called by Babylon's render loop after `tick` has returned.
+   * There is no line in `Game.ts` that could hold it.
+   *
+   * `onEndFrameObservable` fires at the END of `WebGPUEngine.endFrame`, after
+   * `flushFramebuffer` has run `queue.submit` — so the span this closes covers
+   * the render pass being closed and the command buffers being submitted, which
+   * is where a stall on the way to the screen would land. What it deliberately
+   * does NOT cover is the wait for the next frame to start; that stays as the
+   * residue between `frame` + `present` and the wall clock, and naming it would
+   * mean claiming to know which of the compositor, the driver and the panel it
+   * belonged to.
+   */
+  private hookEngine(scene: Scene): void {
+    const engine = scene.getEngine();
+    const done = engine.onEndFrameObservable.add(() => this.recordPresent());
+    this.unhook.push(() => engine.onEndFrameObservable.remove(done));
+  }
+
   private hookRender(scene: Scene): void {
     const off = this.unhook;
 
@@ -979,6 +1068,40 @@ export class FrameProfile {
       this.hitchAt.shift();
       this.hitchWhen.shift();
     }
+    // The handover to `recordPresent`, and it is the LAST line for a reason:
+    // everything above is this instrument's own bookkeeping, and charging that
+    // to the submit would be the profiler measuring itself.
+    this.lastSlot = i;
+    this.tickEndAt = performance.now();
+  }
+
+  /**
+   * Closes `present` on the frame that has just been submitted.
+   *
+   * **Written straight into the ring rather than through `end`, because the
+   * cursor has already moved on.** `endFrame` is the last line of `tick` and
+   * advances `cursor`; the engine notifies after `tick` returns, so the row
+   * this belongs to is `lastSlot` and not `cursor`. `endFrame` clears the
+   * NEXT row's `entered` flags, never the one just written, so stamping it
+   * here is safe.
+   *
+   * `tickEndAt` is zeroed on the way through so a second notification inside
+   * one frame cannot write twice — there is exactly one `endFrame` per render
+   * loop today, and this costs one comparison to not depend on that.
+   */
+  private recordPresent(): void {
+    if (!this.on) return;
+    const t0 = this.tickEndAt;
+    if (t0 === 0) return;
+    this.tickEndAt = 0;
+    const i = this.lastSlot;
+    if (i < 0) return;
+    const at = i * SLOTS + P.present;
+    // Relative to that frame's own start, exactly as `end` does it, so the
+    // trace export can lay this bar down beside `frame` rather than inside it.
+    this.startMs![at] = t0 - this.frameAt![i];
+    this.durMs![at] = performance.now() - t0;
+    this.entered![at] = 1;
   }
 
   /**
@@ -1063,12 +1186,14 @@ export class FrameProfile {
     phases.sort((a, b) => b.mean - a.mean);
 
     return {
-      // 2: the four spans inside `render` and the particle counter.
-      version: 2,
+      // 3: `present`, the first phase outside `frame`, and the `roots` that
+      // let a reader tell a second root from a phase it has not heard of.
+      version: 3,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
       tree: PARENT_OF,
+      roots: [...ROOTS],
       device: this.deviceFacts(),
       clock: {
         grainMs: round(this.grainMs, 4),

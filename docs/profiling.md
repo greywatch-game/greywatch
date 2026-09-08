@@ -196,7 +196,8 @@ this and not `__celshock`, because none of it is anything to do with the game.
 
 `PHASES` in `FrameProfile.ts` is the list, and **an index into it is a slot id**,
 which is what keeps the recording loop free of strings. The brackets are in
-`Game.ts` and nowhere else **except the four inside `render`**: `tick`,
+`Game.ts` and nowhere else **except the four inside `render` and `present`
+after it**: `tick`,
 `updateGameplay`, `updateNetWorld` and `updateWorld` are where the frame's
 order is already declared with the argument for it written down, so **the phase
 list IS that order** and no system had to be taught the profiler exists.
@@ -227,6 +228,13 @@ frame                       the whole tick, wall to wall
    │                        and its compose two stages later
    ├─ drawWorld             rendering group 0 — the map and the bodies
    └─ drawOverlay           groups above it — the sky shell, the moon, the gun
+
+present                     the engine's endFrame AFTER tick returns: the
+                            render pass closed and queue.submit. A ROOT, not a
+                            child of frame — see below.
+
+  (residue)                 wall clock minus frame minus present: the rAF wait,
+                            the compositor, the panel. Deliberately unnamed.
 ```
 
 **The last four are not brackets in `Game.ts` and cannot be**, because the
@@ -285,7 +293,58 @@ interesting frame of a session would be the wrong kind of missing.
 
 **Adding a phase** is a name in `PHASES`, a parent in `PARENT_OF` (it will not
 compile without one) and a `begin`/`end` pair — or, inside `render`, a
-`begin`/`endAdd` pair on an observable in `hookRender`. Nothing else moves.
+`begin`/`endAdd` pair on an observable in `hookRender`. Nothing else moves,
+unless it is a new ROOT, for which see `present` below.
+
+### `present`, and the two roots
+
+**`present` is the one phase that is not inside `frame`.** `frame` is
+`Game.tick`, wall to wall. `present` is what Babylon's render loop does *after*
+`tick` returns: `WebGPUEngine.endFrame` closes the current render pass, runs
+`flushFramebuffer` — which is `queue.submit` — and then fires
+`onEndFrameObservable`. `FrameProfile.hookEngine` hangs the close off that
+notification, because there is no line in `Game.ts` that could hold it.
+
+It cannot go through `begin`/`end` like everything else, and the reason is the
+ring rather than the clock: `endFrame` is the last line of `tick` and ADVANCES
+`cursor`, so by the time the engine notifies, `cursor` names the frame about to
+start. `recordPresent` writes into `lastSlot` instead — the row `endFrame` just
+finished — and stamps `tickEndAt` as the last thing it does, so the profiler's
+own bookkeeping is not charged to the submit.
+
+**So a report now decomposes the wall clock into three parts, and the third is
+an answer rather than a gap:**
+
+```
+wall (frame.mean)  =  frame  +  present  +  residue
+                      ^tick     ^submit    ^everything between the submit and
+                                            the next frame opening
+```
+
+The residue is the rAF wait, the browser's compositor and the panel. **It is
+deliberately not a phase**: the page cannot tell those three apart, and a name
+would be a claim. What the split buys is the ability to say which side of the
+submit a missing millisecond is on — measured on Sarab at 3432x1432, `frame`
+77.9%, `present` 0.3%, residue 21.8%, summing to 100.0%.
+
+**`present` is normally almost free** — 0.027 ms mean on that run, well under
+the clock grain, so read its MEAN and never its percentiles (it is in
+`clock.belowGrain` for that reason). A `present` that grows is submission
+backpressure; a residue that grows is not the game's at all.
+
+**There are therefore TWO ROOTS**, and the report says so. `ROOTS` is derived
+as `PHASES` minus the keys of `PARENT_OF`, so it cannot drift from either, and
+it ships as `ProfileReport.roots` (report **version 3**). That field exists
+because a reader handed only a child→parent map cannot distinguish a root from
+a phase it has never heard of, and the two want opposite drawings: a root is a
+top-level bar, an unknown phase is a warning that the reader is stale.
+`profile_viewer.html` drew the second for both until `roots` existed, and its
+`FALLBACK_ROOTS` is the copy that covers a version-2 capture and a TRACE.
+
+**A phase that is a new ROOT is the one case where adding it to `PARENT_OF` is
+wrong.** Add it to `PHASES`, widen the `Exclude` in `PARENT_OF`'s type so it
+still refuses every non-root, and add it to `FALLBACK_ROOTS` in the viewer.
+
 
 ---
 
@@ -480,8 +539,9 @@ the containment of the build that produced the capture rather than of the build
 it was written against. `PARENT_OF` is typed `Record<Exclude<Phase, "frame">,
 Phase>`, so **a phase added to `PHASES` does not compile until it says where it
 sits**, and adding one is still a name, a `begin`/`end` pair, and now its parent.
-The viewer keeps a `FALLBACK_TREE` for captures older than the field; that copy
-is the only thing in the page that can go stale. **A TRACE always uses it** —
+The viewer keeps a `FALLBACK_TREE` — and, since the frame grew a second root, a
+`FALLBACK_ROOTS` beside it — for captures older than those fields; those two
+copies are the only things in the page that can go stale. **A TRACE always uses it** —
 Chrome's format carries no tree, so a `TRACE` export has nowhere to state one —
 which makes the fallback load-bearing rather than a legacy path: a phase missing
 from it lands at depth 0 and is drawn as a top-level bar over `frame`, silently

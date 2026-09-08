@@ -164,6 +164,86 @@ arriving as one flat tone. It is keyed on position rather than on anything
 per-object because that survives the merge for free — and it is gated because a
 world-keyed term on a *moving* mesh makes it shimmer as it walks.
 
+### Frozen materials: the define set is the material's, not the mesh's
+
+**Every material `CelMaterialFactory` hands out is frozen, and `remember` is
+the one door into the cache** — the six creation paths all file through it, so
+no future seventh can leave one unfrozen by omission. `createGrassMaterial` and
+the water's factory freeze on the same argument at their single return.
+
+**What freezing skips is the ASKING, not the answer.**
+`ShaderMaterial.isReady` is called for every submesh of every draw — in the
+main pass, and again in the shadow pass — and before it can answer it rebuilds
+the material's whole define set from scratch: a `defines` array, an `attribs`
+array, a `#define ...` string per entry (several of them built with template
+literals) and a `join` over the lot. It then compares that string to the one
+already sitting on the draw wrapper, finds them equal, and discards all of it.
+For a material whose defines are fixed at construction — which is every
+material in this tree — the answer is the same string every frame for the life
+of the material. Measured with Chrome's sampling heap profiler, that walk is
+**a fifth of everything this game allocates**: the `join` alone is 9.0% at 19 kB
+a frame, with `isReady`'s own body another 7.5% on top.
+
+`Material.isFrozen` is read at the top of `isReady` and returns the cached
+verdict when the draw wrapper already holds a ready effect. That is the whole
+mechanism.
+
+**It does not stop uniforms, and that is the thing to check rather than
+assume.** What gates the uniform push in `ShaderMaterial.bind` is
+`_mustRebind`, which is `subMesh._drawWrapper._forceRebindOnNextCall ||
+scene.isCachedMaterialInvalid(...)` and does not consult `isFrozen` anywhere.
+So the light array, the fog, the eye, the palette and the wind keep flowing
+exactly as before — `updateWind` and `updateCamera` walk this same cache every
+frame and were unaffected. The only other `isFrozen` read on the bind path
+guards morph-target influences and baked vertex animation, and this game has
+neither: the soldier rig is `TransformNode` joints driving separate meshes, not
+GPU skinning.
+
+**Why it cannot pin the wrong effect, and what would break that.** The defines
+`isReady` rebuilds are not constant across meshes — they vary on exactly four
+counts, all of them read off the mesh rather than the material:
+
+| what varies | the define it adds |
+| --- | --- |
+| a vertex `color` buffer on the mesh | `VERTEXCOLOR` |
+| instancing / thin instances | `INSTANCES`, `THIN_INSTANCES`, `INSTANCESCOLOR` |
+| bones (`useBones && computeBonesUsingShaders && skeleton`) | `NUM_BONE_INFLUENCERS`, `BONETEXTURE` / `BonesPerMesh` |
+| morph targets | the influencer count |
+
+These materials do **not** store their effect per submesh, so one draw wrapper
+serves every mesh wearing the material. A material worn by two meshes that
+disagreed about any row above would, frozen, hand the second mesh the effect
+the first compiled — a silently wrong draw rather than a crash. It is safe here
+because the cache key is already fine enough that this never happens: measured
+over every `ShaderMaterial` in the scene on the four big maps, **0 of 35 / 113
+/ 95 / 83 were worn across a disagreement**. That is a property of the KEYING
+and nothing enforces it, so **widening a cache key owes that measurement
+again.** The vertex-colour row is the live one — the world carries a colour
+buffer and the rigs, the viewmodel and the effect meshes carry none, so a key
+that let a world material reach a rig would break it.
+
+**Freezing at creation is deliberate.** The fast path also requires the wrapper
+to have been ready at least once, so a material frozen before its first compile
+simply falls through to the full path until it has an effect — which means
+there is no "freeze once warm" moment to find, and no state to get wrong. It
+also means a pass this material has never been drawn in (a probe's first bake,
+the shadow map's first frame) compiles normally.
+
+**What it bought is ALLOCATION and not frame rate**, and the distinction is
+worth keeping straight: A/B'd in one session with the freeze toggled every six
+seconds, allocation fell 18–25% on every map, while frame rate over the same
+paired windows stayed inside the noise (Sarab, re-measured at the real viewport
+with a real roster: −0.8% over five paired reps). **Do not quote a frame-rate
+number for this from `gate.mjs`** — cross-session runs on this box differ by up
+to 45% for no reason, and an earlier version of this paragraph did exactly that
+and was wrong (`FINDINGS.md` 36 carries the warning and `installMs` is the
+control that catches it). **The picture is byte-identical** — `bank.mjs
+--check` over 21 vantages on all six maps, 0% of pixels differing, against a
+reproducibility floor of 0.000%.
+
+`FINDINGS.md` 36 carries the numbers and 1 carries what the allocation was
+costing in the first place.
+
 ## The ink: one pass, over depth the frame already wrote
 
 `shaders/CelInk.ts` owns the argument, the mechanism and the measurements; this

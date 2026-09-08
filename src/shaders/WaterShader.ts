@@ -862,5 +862,11 @@ export function createWaterMaterial(
   mat.setArray3("pointColor", new Array(MAX_POINT_LIGHTS * 3).fill(0));
   mat.setFloats("pointRange", new Array(MAX_POINT_LIGHTS).fill(0));
   mat.setFloat("pointCount", 0);
+  // FROZEN for `CelMaterialFactory.remember`'s reason, which is the same here:
+  // `ShaderMaterial.isReady` rebuilds this material's whole define set for
+  // every submesh of every pass and throws it away, and `isFrozen` is what
+  // stops it. The uniforms below keep flowing — what gates those is
+  // `_mustRebind`, which does not read `isFrozen`.
+  mat.freeze();
   return mat;
 }
