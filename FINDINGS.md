@@ -15,9 +15,15 @@ spends an afternoon re-deriving it.
 
 ## 1. Frame pacing: the mean says 60, the tail says 28 — **the game's own tick is RULED OUT, and so is the submit**
 
-**Status:** still open, but much narrower. Two of the three answers this
-section's own triage listed have been eliminated on the machine that actually
-hitches, and a `present` phase now splits what is left.
+**Status:** still open, and its central conclusion is now KNOWN UNRELIABLE
+rather than merely unproven. **The instrument was pairing each frame's wall
+clock with the NEXT frame's spans** — see "The pairing bug" below — which is
+the direct manufacturer of this section's signature reading, "the phases fall
+well short of the wall clock with `gc` at 0, so the time is outside the game".
+The eliminations below still stand (they are aggregates, which a one-row shift
+does not move). The *leftover* does not. **Every per-frame number in this
+section needs re-taking on the fixed instrument before it is argued from
+again.**
 
 **A collector reading taken HEADLESS AND UNCAPPED nearly closed this wrongly.**
 At 220-700 fps the game allocates the same ~200 kB a FRAME and therefore two to
@@ -111,9 +117,16 @@ A capture off the actual display (3432x1432, sarab, 31.4 s, 602 draw calls and
 | hitch 2 | 30.8 ms | 13.4 | **17.4** | 0 |
 | hitch 3 | 24.9 ms | 10.5 | **14.4** | 0 |
 
-That is this section's own third bullet — "the same shortfall with `gc` at 0
-puts the time outside the game altogether" — and three further suspects have
-since been measured and dropped:
+**DO NOT ARGUE FROM THAT TABLE.** Its three "unaccounted" figures are the
+pairing bug below, at least in part: the `frame` span in each row is the
+RECOVERY frame's, not the span that filled the interval beside it. The capture
+it came from is a v3 and cannot be re-read — only re-taken.
+
+What it seemed to say was this section's own third bullet — "the same shortfall
+with `gc` at 0 puts the time outside the game altogether" — and three further
+suspects were measured and dropped on the strength of it. **Those three
+eliminations survive**, because each rests on an aggregate or on a controlled
+A/B rather than on a single frame's decomposition:
 
 - **Not the GPU, and not fill.** `setHardwareScalingLevel` across an **8x**
   reduction in pixels (4,915 -> 613 kpixels) moved the frame rate not at all:
@@ -131,13 +144,48 @@ since been measured and dropped:
   same shape reproduced headless reads `frame=9.5, present=0, gc=0`, leaving
   **18.4 ms in the residue**.
 
-**What is left is the residue: the gap between the submit and the next frame
-opening** — the rAF wait, the browser's compositor, the panel. The instrument
-can now say that much and deliberately says no more, because the page cannot
-tell those three apart. What would settle it is outside the page: a Chrome
-trace with the compositor categories on, or the cheap version — play in a
-window a quarter the size, and if the hitches go it is presentation rather than
-scheduling.
+### The pairing bug, which is where the leftover was coming from
+
+**`Game.tick` reads `getDeltaTime()` on its FIRST line and hands it to
+`endFrame` on its last**, so what the ring stored in row `i` was
+`start(i) - start(i-1)` — the interval the frame BEFORE it filled — while
+`phases[i]` were row `i`'s own spans. Every per-frame subtraction in this
+section was therefore between two different frames, and it fails in one
+direction: a long tick shows up as the NEXT row's wall clock, whose own tick is
+the healthy recovery frame, so the difference reads as time nobody spent.
+
+Proven three ways, over the 9,000 frames of the three captures in finding 40:
+
+| | as filed (v3) | shifted one row |
+| --- | --- | --- |
+| minimum residue | **-60.5 / -35.2 / -20.2 ms** | +0.1 / +0.1 / +0.1 |
+| negative residues | 133 / 133 / 87 | **0 / 0 / 0** |
+
+A negative residue is impossible — it says the tick outran the interval
+containing it — and the shifted pairing produces none. The worked example is
+cinderhaven frame 2424: a **90.6 ms tick, 86.6 of it `drawWorld`**, arriving
+as a 91.5 ms wall clock on row 2425, whose own tick was 9.5 ms. Filed as
+"82 ms outside the game, gc 0". Under the correct pairing, **18 of 21 hitches
+on that capture and 8 of 9 on one of the sarabs are the previous frame's tick**.
+
+**Fixed** — `endFrame` writes the delta into `lastSlot`, as `recordPresent`
+already did, and files a hitch against the frame that filled the interval.
+Report **version 4**; `docs/profiling.md` carries the contract and
+`public/profile_viewer.html` marks an older capture as stale rather than
+reading it. Verified in a real round under an 8x CPU throttle: minimum residue
++0.30 ms over 884 frames, and 7 of the top 8 hitches now attributed to their
+own tick, which is what a CPU throttle should produce.
+
+### What is left, restated
+
+**Unknown, and honestly so.** The residue may still be real — a page cannot
+tell the rAF wait, the compositor and the panel apart, and that argument is
+untouched. What is gone is the *evidence* that it was ever large. The next step
+is not a new theory: it is **re-taking the vsync-ON captures on the fixed
+instrument** and seeing whether the shortfall survives. If it does not, this
+finding becomes a `drawWorld` question and joins finding 40. If it does, the
+cheap discriminator still stands — play in a window a quarter the size, and if
+the hitches go it is presentation rather than scheduling.
 
 ### The instrument trap, because it cost a run and will cost the next one
 
@@ -4985,3 +5033,87 @@ Both are larger than what landed, and both change what a player sees:
   because 3 px does on the biggest one.
 - **A `sqrt` per candidate measured as a LOSS** — comparing squared is what
   made the low thresholds stop costing more than they saved.
+
+---
+
+## 40. Uncapping the display makes it WORSE, and it is `drawWorld` that stalls — the flags are measured and dead, VRR is answered
+
+**Status:** measured and closed as a *fix*; the `drawWorld` stall it exposed is
+open and is where finding 1 should go next. Three captures, Chrome 152, the
+Windows box at 3440x1440, **G-Sync on and the window fullscreen**, launched with
+`--disable-gpu-vsync --disable-frame-rate-limit --enable-precise-memory-info`.
+Two sarab, one cinderhaven, 3,000 frames each.
+
+### The flags do exactly what they say, and it buys nothing
+
+| | vsync on (finding 39) | vsync off |
+| --- | --- | --- |
+| residue (rAF wait + compositor) | 1.42 ms | **0.56 / 0.90 / 0.66 ms** |
+| tick share of the wall clock | ~78% | **86.6 / 92.1 / 90.3%** |
+| mean frame | 6.94 ms budget | 6.92 / 7.40 / 6.94 ms |
+| fps | ~144, 1.9% doubled | 144.6 / 135.2 / 144.1 |
+
+The wait is genuinely gone. The frame rate does not move, because the tick is
+5.99–6.81 ms and **the tick was already the binding constraint** — finding 39's
+whole point. Uncapping removed a ceiling nothing was touching.
+
+### What it costs: vsync was quantising the workload's own variance away
+
+| | vsync on | vsync off |
+| --- | --- | --- |
+| frames within 18% of one 6.94 ms interval | **88.5%** | 53.7 / 62.4 / 65.8% |
+| sd of the interval | ~0 by construction | 3.14 / 2.38 / 3.48 ms |
+| frame-to-frame \|Δdt\|, mean | ~0 | 0.88 / 0.67 / 0.98 ms |
+| frame-to-frame \|Δdt\|, p95 | ~0 | **4.30 / 1.90 / 4.80 ms** |
+| frames faster than a 144 Hz interval | 0% | 28.9 / 15.3 / 22.1% |
+
+`drawWorld`'s own sd is 1.29–2.74 ms, so the tick genuinely swings by ±2–3 ms
+with what is on screen. **With vsync on, every tick under 6.94 ms presents at
+6.94** and none of that reaches the eye. Without it, all of it does. The trade
+is 1.9% of frames held an extra interval against **100% of frames arriving
+unevenly** — and it is worse, reported as such from the chair before any of this
+was computed.
+
+There is a second-order version. `dt` is `getDeltaTime()`, the interval BEFORE
+the frame, but the frame is displayed for the interval AFTER it — so each frame
+advances the world by ~0.9 ms (p95: 4.8) more or less than the time it is shown
+for. Vsync was hiding that too. **If a frame pacer is ever built, it owes a dt
+that is smoothed or predicted**, not the raw lagging one.
+
+The tell that VARIANCE is the villain rather than cost: the slowest capture
+(135.2 fps, tick 6.81 ms) has by far the lowest jitter (p95 1.90 ms), because it
+is consistently over budget rather than swinging.
+
+### And it introduces a stall that vsync was preventing
+
+Cinderhaven frames 2415–2432, draw calls and active meshes dead flat at 691/560
+throughout:
+
+```
+tick   4.5  3.5 11.9  4.4 22.3 37.8  4.4 25.8 86.6  4.9  3.7 32.2
+```
+
+86.6 ms of `drawWorld` recording the same number of draws as the 4.4 ms frame
+two rows earlier. **That is a stall, not work**, and the cheap/expensive
+sawtooth is the shape of a producer blocking on a full queue: with the limiter
+off the CPU runs ahead and Dawn applies backpressure. **18 of 21 hitches on
+cinderhaven and 8 of 9 on one sarab are this.** It does not happen with vsync on,
+because the present paces the CPU for free.
+
+**Whether a smaller version of the same stall exists WITH vsync on is the open
+question**, and it is finding 1's next step rather than this one's — the
+instrument could not have seen it until the pairing was fixed.
+
+### VRR is answered, and the answer is no
+
+This is the run that would have shown it: G-Sync on, fullscreen, vsync off, which
+is the configuration native games use to engage VRR. It still stuttered, and the
+reason is in the numbers above — **a 30–90 ms frame is far below any VRR floor**
+(a 144 Hz panel's range bottoms out around 48 Hz, 20.8 ms), so the display falls
+back to frame doubling exactly where it is needed most. VRR handles a frame that
+arrives late by a millisecond, not one that arrives late by 80.
+
+**So do not ship these flags, and do not wrap the game in Electron or NW.js to
+get them.** A wrapper is Chromium either way; what it would buy is the command
+line, and the command line is what was just measured. The fix for judder remains
+finding 39's: make the frame fit the interval.

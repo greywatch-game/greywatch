@@ -1280,6 +1280,10 @@ root from a phase it has never heard of, and those two want opposite drawings.
 **What is left over is the answer, not a gap**: `frame` + `present` short of the
 wall clock is the time between the submit and the next frame opening — the rAF
 wait, the compositor, the panel — and naming it would be claiming to know which.
+**It is only a subtraction if a row's wall clock is the interval its OWN spans
+fill**, which until report **version 4** it was not — so a NEGATIVE residue
+means that pairing is broken again, and a pre-v4 capture's per-frame verdicts
+are one row out (its aggregates are fine).
 
 **What all of them measure is CPU**, and under `compatibilityMode = false` that
 is the recording of a render BUNDLE rather than the work the GPU then does.

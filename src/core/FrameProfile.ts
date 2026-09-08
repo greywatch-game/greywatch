@@ -11,6 +11,14 @@
  *  - **It MEASURES and never decides.** No caller may read a phase back to
  *    change what it does — the rule `world/buildProfile.ts` states for the
  *    build's timer, and the reason both are safe to leave switched on.
+ *  - **A row's WALL CLOCK is the interval its own spans fill.** `frameMs[i]`,
+ *    `phases[i]` and `present[i]` all describe the frame that started at
+ *    `frameAt[i]` — which costs a write into the PREVIOUS row, because a
+ *    frame's own interval is not known until the next one opens. See
+ *    `endFrame`, where getting this wrong cost `FINDINGS.md` §1 two
+ *    milestones. Anything added here that is measured ACROSS a frame boundary
+ *    owes the same care, and the failure mode is the bad one: not a crash, a
+ *    confident wrong attribution.
  *  - **It SHIPS.** This is not behind `import.meta.env.DEV`, and that is the
  *    whole point of it: the frame is draw-call bound on hardware nobody here
  *    owns, and the devices worth measuring — a phone, a tablet, somebody
@@ -281,6 +289,15 @@ export interface PhaseStat {
 export interface HitchFrame {
   /** Seconds before the newest frame in the ring. */
   ago: number;
+  /**
+   * The wall clock this frame's own spans fill: its start to the start of the
+   * one after it.
+   *
+   * **Aligned with `phases` since report version 4**, and before that it was
+   * the interval BEFORE the frame — which paired a hitch's cost with the
+   * following frame's spans and reported the recovery frame's healthy tick
+   * under it. See `endFrame`.
+   */
   frameMs: number;
   x: number;
   y: number;
@@ -294,6 +311,11 @@ export interface HitchFrame {
    * hitch whose `phases` do not add up to its `frameMs`, with `gc` on it, is
    * a collection; the same shortfall with `gc` at 0 is the browser — vsync,
    * present, compositing — and those are two different investigations.
+   *
+   * **That subtraction is only between two facts about the SAME frame from
+   * report version 4 onward**, and a v3 capture's shortfall is mostly the
+   * pairing bug `endFrame` describes rather than a browser. Do not read an
+   * old capture's "outside the tick" verdict; re-take it.
    */
   gc: number;
   heapMb: number;
@@ -421,6 +443,11 @@ export interface ProfileReport {
   hitches: HitchFrame[];
   /** The whole ring, one array per phase. Present only in a FULL report. */
   series?: {
+    /**
+     * Wall clock per frame, aligned with `phases` — see `HitchFrame.frameMs`.
+     * One shorter than the ring: the newest row's interval is not known until
+     * the frame after it closes.
+     */
     frameMs: number[];
     /** Collections per frame, and the used heap in MB. See `memory`. */
     gc: number[];
@@ -988,7 +1015,28 @@ export class FrameProfile {
     this.end(0);
     const i = this.cursor;
     this.frameAt![i] = this.frameT0;
-    this.frameMs![i] = realDeltaMs;
+    // **The interval that has just elapsed belongs to the row BEFORE this
+    // one.** `Game.tick` reads `getDeltaTime()` on its FIRST line, so
+    // `realDeltaMs` is `start(i) - start(i-1)` — the gap the PREVIOUS frame
+    // filled with its tick and its submit. Written into row `i` it is read
+    // against the spans of the frame only now beginning, and that is a
+    // confident wrong answer rather than a missing one: measured on a real
+    // capture, a 90.6 ms tick whose 86.6 ms was `drawWorld` arrived as a
+    // 91.5 ms wall clock on the NEXT row, whose own tick was a healthy 9.5 —
+    // so the instrument reported 82 ms "outside the game, no collection on
+    // it", which is `FINDINGS.md` §1's signature exactly. Across those same
+    // 3,000 frames the shift takes the residue's minimum from -60.5 ms to
+    // +0.1 and its negative count from 133 to 0, and a negative residue is
+    // impossible.
+    //
+    // `present` needed no such move and never had this bug: `recordPresent`
+    // already writes into `lastSlot`, for the same reason stated there.
+    const prev = this.lastSlot;
+    if (prev >= 0) this.frameMs![prev] = realDeltaMs;
+    // This frame's own interval is not known until the next one closes, and
+    // the row may still hold the previous lap's. `buildReport` drops the
+    // newest row rather than reading this zero as an instant frame.
+    this.frameMs![i] = 0;
     const instr = this.instr;
     if (instr && this.scene) {
       this.drawCalls![i] = instr.drawCallsCounter.current;
@@ -1019,9 +1067,12 @@ export class FrameProfile {
     // Tested against the bar the frames BEFORE this one set, then the baseline
     // is moved: a hitch is a frame that cost much more than its neighbours, and
     // letting it vote on its own threshold first is the wrong question.
-    if (realDeltaMs >= this.hitchBarMs) {
-      this.hitchAt.push(i);
-      this.hitchWhen.push(this.frameT0);
+    if (prev >= 0 && realDeltaMs >= this.hitchBarMs) {
+      // Against the frame that FILLED the interval — the row the delta was
+      // just written into, not the one starting now. A list that named `i`
+      // was naming the RECOVERY frame, which is the healthy one.
+      this.hitchAt.push(prev);
+      this.hitchWhen.push(this.frameAt![prev]);
       // Bounded, and it drops the OLDEST.
       if (this.hitchAt.length > CONFIG.profiling.hitchesKept * 4) {
         this.hitchAt.shift();
@@ -1113,7 +1164,9 @@ export class FrameProfile {
    * phone's clipboard.
    */
   capture(reason: string, full = false): ProfileReport | null {
-    if (!this.on || this.filled === 0) return null;
+    // TWO frames, not one: a row's wall clock is written by the frame AFTER
+    // it, so a ring holding one frame holds no COMPLETED frame at all.
+    if (!this.on || this.filled < 2) return null;
     const report = this.buildReport(reason, full);
     this.lastReport = report;
     return report;
@@ -1125,9 +1178,19 @@ export class FrameProfile {
   }
 
   private buildReport(reason: string, full: boolean): ProfileReport {
-    const n = this.filled;
     const cap = this.capacity;
-    const first = (this.cursor - n + cap) % cap;
+    // **The window is every row whose interval is KNOWN, which is all of them
+    // but the newest.** A row's wall clock is written by the frame after it
+    // (see `endFrame`), so the row the cursor has just left is still waiting
+    // for its own, and a zero in the series would read as an instant frame.
+    //
+    // It buys an invariant worth having: `spanMs` is `frameAt` of the newest
+    // row minus `frameAt` of the oldest, which telescopes to exactly the sum
+    // of the intervals in the window — so `window.seconds` and
+    // `series.frameMs` now describe the same stretch of time, which they did
+    // not before.
+    const n = this.filled - 1;
+    const first = (this.cursor - this.filled + cap) % cap;
     const frames = new Float64Array(n);
     for (let k = 0; k < n; k++) frames[k] = this.frameMs![(first + k) % cap];
     const frameStats = stats(frames, n);
@@ -1186,9 +1249,15 @@ export class FrameProfile {
     phases.sort((a, b) => b.mean - a.mean);
 
     return {
+      // 4: `frameMs` — in the series and on every hitch — is the interval the
+      // frame's OWN spans fill, where a v3 capture carried the interval BEFORE
+      // it. The aggregates are unaffected (a mean over a window does not care
+      // which end a shift is at), so `frame`, `phases` and `memory` are
+      // comparable across the boundary; a v3 hitch record is NOT, because its
+      // wall clock and its phases are one row apart.
       // 3: `present`, the first phase outside `frame`, and the `roots` that
       // let a reader tell a second root from a phase it has not heard of.
-      version: 3,
+      version: 4,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
@@ -1354,7 +1423,8 @@ export class FrameProfile {
    * only confusing for want of a label.
    */
   trace(maxFrames = 600): string {
-    if (!this.on || this.filled === 0) return "{}";
+    // `< 2` for `capture`'s reason: the newest row has no wall clock yet.
+    if (!this.on || this.filled < 2) return "{}";
     const cap = this.capacity;
     const n = Math.min(this.filled, maxFrames);
     const oldest = (this.cursor - this.filled + cap) % cap;
@@ -1364,7 +1434,7 @@ export class FrameProfile {
     // is the interesting one.
     let worstAt = 0;
     let worstMs = -1;
-    for (let k = 0; k < this.filled; k++) {
+    for (let k = 0; k < this.filled - 1; k++) {
       const ms = this.frameMs![(oldest + k) % cap];
       if (ms > worstMs) {
         worstMs = ms;

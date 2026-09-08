@@ -799,6 +799,23 @@ function renderReport(r) {
     d.appendChild(document.createTextNode(v));
     meta.appendChild(d);
   }
+  /* A capture before report version 4 filed each frame's wall clock against the
+     NEXT frame's spans, so every per-frame difference — which is the whole of
+     what this page does that a JSON dump does not — is one row out. The
+     aggregates are still sound; the verdict and the hitch list are not, and
+     they fail toward "the time went outside the tick". Said here rather than
+     silently corrected, because the shift is not undoable from the report: the
+     row a hitch belongs to may not have been kept. */
+  if (!(r.version >= 4)) {
+    const warn = el("div");
+    warn.style.color = "var(--signal)";
+    warn.appendChild(el("b", null, "stale "));
+    warn.appendChild(document.createTextNode(
+      "v" + (r.version || "?") + " capture — per-frame wall clock is one row out; " +
+      "read the summary, not the verdict, and re-take it"
+    ));
+    meta.appendChild(warn);
+  }
 
   /* verdict */
   const reads = (r.hitches || []).map(readHitch);

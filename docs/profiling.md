@@ -237,6 +237,35 @@ present                     the engine's endFrame AFTER tick returns: the
                             the compositor, the panel. Deliberately unnamed.
 ```
 
+**That subtraction only means anything because a row's wall clock is the
+interval its OWN spans fill, and until report version 4 it was not.**
+`Game.tick` reads `getDeltaTime()` on its first line, so what `endFrame`
+receives is the gap that has just CLOSED — `start(i) - start(i-1)`, filled by
+the frame BEFORE this one. Filed against row `i` it was read against the spans
+of the frame only now beginning, which is a confident wrong answer rather than a
+missing one: a 90.6 ms tick, 86.6 of it `drawWorld`, arrived as a 91.5 ms wall
+clock on the next row, whose own tick was a healthy 9.5 — reported as **82 ms
+outside the game with no collection on it**, which is exactly the shape
+`FINDINGS.md` §1 spent two milestones chasing. `endFrame` writes the delta
+into `lastSlot` now, as `recordPresent` already did, and files a hitch against
+the frame that FILLED the interval rather than the one recovering from it.
+
+Two consequences worth knowing when reading a capture:
+
+- **A residue can no longer be negative**, and one that is says the pairing has
+  been broken again. Measured over the three captures that found this, the
+  minimum went from **-60.5 ms to +0.1** and the count of negative residues from
+  **133 in 3,000 to zero**.
+- **A report's window is one frame shorter than its ring.** The newest row's
+  interval is not known until the frame after it closes, so `buildReport` drops
+  it — which makes `window.seconds` exactly the sum of `series.frameMs`, an
+  identity that did not hold before.
+
+**A v3 capture cannot be re-read, only re-taken.** Its aggregates are sound —
+a mean over a window does not care which end a one-row shift is at, so `frame`,
+`phases` and `memory` compare across the boundary — but every per-frame
+verdict in it is one row out.
+
 **The last four are not brackets in `Game.ts` and cannot be**, because the
 boundaries they want are inside `scene.render()`. `FrameProfile.hookRender`
 hangs them off the scene's own observables at `arm` and takes them off again at
@@ -471,9 +500,13 @@ not the game.
 phases rather than on their own.** Add up a hitch's spans: if they account for
 its `frameMs`, the phase list has already named the problem. If they fall well
 short, the time was spent outside the tick, and `gc` is what says whether it was
-the collector. That block above predates both fields — it was taken before the
-memory readings existed, and the numbers in it have not been re-taken, because a
-capture re-printed from a later run is a capture of something else.
+the collector. **From report version 4 that subtraction is between two facts
+about the same frame** — before it a shortfall was mostly the pairing bug
+above, so do not read an old capture's "outside the tick" verdict.
+
+That block above predates both fields — it was taken before the memory readings
+existed, and the numbers in it have not been re-taken, because a capture
+re-printed from a later run is a capture of something else.
 
 ---
 
