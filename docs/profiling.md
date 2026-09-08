@@ -305,9 +305,18 @@ these, every hitch looks like an idle main thread, and a report that let that be
 read as a result would be worse than one that said nothing. Nothing but Chromium
 reports them at the time of writing.
 
-Three details that are not obvious:
+Four details that are not obvious:
 
-- **A long window MARKS SEVERAL ROWS, on purpose.** The browser's frame and this
+- **A long window MARKS SEVERAL ROWS, on purpose — so the marks cannot be added
+  up.** `loaf.rows` is how many rows carry a mark and `loaf.entries` how many
+  long frames put them there; **every total is over ENTRIES**, because summing
+  the marks counts one window once per row it touched. That was wrong in v6 and
+  the number it produced was not merely inflated but meaningless: 26 entries
+  over 50 rows came back as 11,246 ms of long frames inside a 22,150 ms window,
+  or 51% of the wall clock. Entries never overlap each other, so the earliest
+  row each one touches identifies it and `loafHead` marks that row.
+
+  The marking itself is not negotiable: the browser's frame and this
   instrument's row are different intervals — a long animation frame runs render
   to render, a row owns its own start to the next row's start — so one window
   straddles two rows by construction. Trying to pick one gets the common case

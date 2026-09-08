@@ -227,16 +227,56 @@ reports that essentially none of it was JavaScript. Draw calls are flat at
 50.28 and `gcPerSec` 2.77, both ordinary. The shape is a stall and then a
 catch-up — 262.1 then 13.5, 163 then 40.9, 84.4 then 20.4.
 
-So the elimination list is now: **not the tick, not the submit, not the
-collector, not `drawWorld`, and not the main thread.** What is left is the
-browser's own rendering or the way to the screen, and those two are what report
-version 6's `renderMs` separates — a share that is mostly rendering is
-compositing on a page that is one canvas, and a long frame that is NEITHER
-script nor rendering is a frame that began and then waited, which is a
-scheduling answer rather than a cost.
+So the elimination list was: not the tick, not the submit, not the collector,
+not `drawWorld`, and not the main thread.
 
-**The capture that closes this is the same one re-taken on v6.** Nothing else
-about it needs to change.
+### ANSWERED: the browser is not giving the page a frame
+
+Two v6 captures, Cinderhaven at 3440x1440, 32-36 bots alive, 2,999 frames each.
+Every hitch in both, split by `renderStart`:
+
+| wall | tick | `present` | long frame | script | render | **before the render began** |
+| --- | --- | --- | --- | --- | --- | --- |
+| **243.4** | 6.2 | 0 | 244.0 | 7.0 | 7.3 | **236.7** |
+| 124.7 | 4.7 | 0 | 125.9 | 6.1 | 6.3 | **119.6** |
+| 96.8 | 5.4 | 0.1 | 97.6 | 6.6 | 6.9 | **90.7** |
+| 107.6 | 7.1 | 0 | 108.0 | 8.1 | 8.3 | **99.7** |
+| 77.1 | 5.7 | 0 | 77.5 | 6.4 | 6.4 | **71.1** |
+| 68.1 | 7.1 | 0 | 68.4 | 7.8 | 7.9 | **60.5** |
+
+**`renderMs` is `scriptMs` plus about 0.3 ms on every row in both captures.**
+The rendering steps ARE the rAF callback — `Game.tick` — plus a third of a
+millisecond of style, layout and paint, which is what a page that is one canvas
+should cost. So the whole of every hitch sits BEFORE the rendering steps began,
+with **no script in it at all**.
+
+The browser opened the frame, ran nothing for up to 236.7 ms, then ran our 7 ms
+tick and painted. `gc` is 0 on every one, `allocMbPerSec` is 38.0 and 41.5 and
+`gcPerSec` 1.49 and 1.62 — ordinary on both. Draw calls are flat within each
+episode. The shape is a stall and then a catch-up.
+
+**So the time is not the page's in any sense the page can reach.** Not the tick,
+not the submit, not the collector, not the main thread, and not the browser's
+rendering work either — **the frame was simply not scheduled**. Six of this
+section's seven suspects are dead and the seventh was never on the list.
+
+### What is left, and the last instrument that is not built
+
+**A rendering opportunity that does not arrive for 237 ms on a 144 Hz panel is
+the compositor declining to issue one**, and the leading reason for that is the
+GPU being behind: `present` returns instantly because `queue.submit` queues
+rather than blocks, so a saturated GPU is invisible to every span in this file.
+
+**And that is exactly the lever `FrameProfile`'s own header lists as
+deliberately absent.** What all of its phases measure is CPU; Babylon can read
+`gpuTimeInFrameForMainPass`, but only if `timestamp-query` is requested at
+DEVICE CREATION, and `main.ts` calls `initAsync()` with no descriptor. It
+cannot be armed by a setting for that reason and would cost a reload.
+
+That is now the only unmeasured thing between the tick and the screen, and it is
+where this finding goes next. Note what it would cost: a device feature
+requested at boot for every player, needing a fallback on an adapter that does
+not support it. That is a product decision rather than an instrument one.
 
 ### Two instrument bugs this capture found, both fixed
 

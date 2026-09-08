@@ -609,8 +609,16 @@ export interface ProfileReport {
      * number to use the field.
      */
     floorMs: number;
-    /** How many ROWS a long frame landed on — one window can mark several. */
+    /**
+     * How many long frames landed in this window, and how many ROWS they
+     * marked between them — one window covers several, so `rows` is always
+     * the larger and the two are not interchangeable. **Every total below is
+     * over `entries`**, because summing over rows counts the same
+     * milliseconds once per row and turned 26 entries into 51% of the wall
+     * clock. See `loafHead`.
+     */
     entries: number;
+    rows: number;
     /**
      * Their summed duration over those rows, and the three shares that say
      * what the duration WAS: blocking (a task nobody could interrupt), script
@@ -711,6 +719,18 @@ export class FrameProfile {
   private loafBlockMs: Float32Array | null = null;
   private loafScriptMs: Float32Array | null = null;
   private loafRenderMs: Float32Array | null = null;
+  /**
+   * Which rows are the HEAD of a long frame rather than merely covered by one.
+   *
+   * **A window marks every row it overlaps, so the marks cannot be added up.**
+   * Summing `loafMs` over marked rows counts one 244 ms window once per row it
+   * touched: measured on a real capture, 26 entries spread over 50 rows were
+   * reported as 11,246 ms of long frames inside a 22,150 ms window — 51% of the
+   * wall clock, which is not a number, it is the same milliseconds counted
+   * twice. Entries do not overlap each other, so the earliest row each one
+   * touches identifies it, and `loafFacts` sums over THOSE.
+   */
+  private loafHead: Uint8Array | null = null;
 
   /**
    * Whether this browser reports long animation frames at all.
@@ -912,6 +932,7 @@ export class FrameProfile {
     this.loafBlockMs = new Float32Array(n);
     this.loafScriptMs = new Float32Array(n);
     this.loafRenderMs = new Float32Array(n);
+    this.loafHead = new Uint8Array(n);
     this.loafWorst = [];
     this.cursor = 0;
     this.filled = 0;
@@ -994,6 +1015,7 @@ export class FrameProfile {
     this.loafBlockMs = null;
     this.loafScriptMs = null;
     this.loafRenderMs = null;
+    this.loafHead = null;
     this.loafWorst = [];
     this.loafSupported = false;
     this.hitchAt = [];
@@ -1498,6 +1520,11 @@ export class FrameProfile {
     phases.sort((a, b) => b.mean - a.mean);
 
     return {
+      // 7: `loaf.totalMs` and its three shares are summed over ENTRIES rather
+      // than over the rows they marked, and `loaf.rows` carries the other
+      // count. A v6 capture's totals are inflated by however many rows each
+      // window covered — measured at 1.9x on the capture that found it — while
+      // its per-hitch and per-record figures were always right.
       // 6: the three SHARES of a long frame — `scriptMs`, `renderMs` and
       // `blockingMs`, on the summary, on every kept record and on every hitch
       // — plus `loaf.floorMs`. A v5 capture says a long frame HAPPENED and
@@ -1516,7 +1543,7 @@ export class FrameProfile {
       // wall clock and its phases are one row apart.
       // 3: `present`, the first phase outside `frame`, and the `roots` that
       // let a reader tell a second root from a phase it has not heard of.
-      version: 6,
+      version: 7,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
@@ -1630,6 +1657,7 @@ export class FrameProfile {
     cap: number,
   ): ProfileReport["loaf"] {
     let entries = 0;
+    let rows = 0;
     let total = 0;
     let blocking = 0;
     let script = 0;
@@ -1639,6 +1667,10 @@ export class FrameProfile {
         const i = (first + k) % cap;
         const ms = this.loafMs[i];
         if (ms <= 0) continue;
+        rows++;
+        // Only a HEAD row's numbers are added, or one window is counted once
+        // per row it covers — see `loafHead`.
+        if (this.loafHead![i] !== 1) continue;
         entries++;
         total += ms;
         blocking += this.loafBlockMs![i];
@@ -1650,6 +1682,7 @@ export class FrameProfile {
       supported: this.loafSupported,
       floorMs: LOAF_FLOOR_MS,
       entries,
+      rows,
       totalMs: round(total),
       blockingMs: round(blocking),
       scriptMs: round(script),
@@ -2030,6 +2063,7 @@ export class FrameProfile {
       first = row;
     }
     if (first >= 0) {
+      this.loafHead![first] = 1;
       this.keepLoaf(first, e.duration, blocking, scriptMs, renderMs, top);
     }
   }
