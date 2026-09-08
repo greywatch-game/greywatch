@@ -725,22 +725,55 @@ format, not this instrument's — so for anything but the shape of a frame,
 
 ---
 
+## GPU time, and why it is a BOOT FLAG
+
+Everything else here is CPU, and under `compatibilityMode = false` that is the
+recording of a render bundle rather than the work the GPU then does. **`?gpu`
+adds the other half**, and it is the one thing in this instrument that a setting
+could never turn on: `timestamp-query` is a device FEATURE, a device's features
+are fixed when it is created, and a required feature the adapter does not have
+makes `requestDevice` **reject**. So `main.ts` asks the adapter first and boots
+normally when the answer is no — a diagnostic flag must never become a boot
+failure — and a capture carries `gpu.requested` and `gpu.available` as two
+separate questions, because "nobody asked" and "the adapter refused" are
+different facts and neither is "the GPU took no time".
+
+**Read `gpu.frame`, not `gpu.mainPass`.** Babylon's
+`gpuTimeInFrameForMainPass` is the pass that targets the default framebuffer —
+and in this pipeline the world renders into post-process targets, so the only
+thing drawn there is the final full-screen quad. It measured **27 microseconds**
+on Hollowmere, which is right for one quad and would be a catastrophic
+misreading of "the GPU is idle". `gpu.frame` brackets the whole command
+encoder.
+
+The two are attributed differently and the report says so:
+
+| | attribution | coverage |
+| --- | --- | --- |
+| `gpu.mainPass`, `series.gpuMs` | **exact** — Babylon stamps the frame id and the row is derived from it | nearly every frame |
+| `gpu.frame`, `series.gpuFrameMs` | **exact**, by watching the measure's own state machine | **about half** the frames — only one measurement is in flight at a time |
+
+`gpu.frame.samples` is the denominator and the mean is over those rows, never
+over the window: a row with no reading is a missing measurement, not a fast
+frame, and a zero in either series means the same thing it means in `loafMs`.
+
+**Three Babylon internals hold it up** — `_gpuTimeInFrameId`,
+`_timestampQuery` and `_measureDurationState` — because neither counter is
+attributable from the public surface, and filing a GPU reading against the frame
+that happened to read it would be this file's pairing bug for the third time.
+Every read is guarded and the failure is `available: false` rather than a
+throw. **After upgrading Babylon, take a `?gpu` capture and check
+`gpu.frame.samples` is not zero.**
+
+Measured cost: **130.0 fps with the flag against 129.9 without**, and on
+Cinderhaven at 1718x858 the GPU reads 1.372 ms mean and 2.729 p95 against a
+6.746 ms tick — which is finding 17 from the other side, a frame bound by
+submission and not by the GPU.
+
 ## What is deliberately not in it
 
 Both of these are real levers and both have a blast radius bigger than the
 instrument, so neither was folded into it.
-
-**GPU time.** Babylon reads it — `EngineInstrumentation.captureGPUFrameTime`
-over `WebGPUTimestampQuery`, and per render target as
-`WebGPURenderTargetWrapper.gpuTimeInFrame`, which would put a GPU figure beside
-`shadowPass` and `glow` — but only if `timestamp-query` is requested at device
-creation, and `main.ts` calls `initAsync()` with no descriptor at all. Adding
-one means an adapter-support check on every boot, and whether Android's Chrome
-exposes the feature is a question for the handset rather than for this file.
-**It is also the one lever here that could not be a SETTING**: a device feature
-is asked for when the device is created, so arming it would have to be read at
-boot and cost a reload. On a draw-call-bound frame it is the single most
-valuable thing missing.
 
 **A precise heap without a flag.** `performance.measureUserAgentSpecificMemory()`
 is the standard, unrate-limited answer and it requires cross-origin isolation,

@@ -198,10 +198,50 @@ window.addEventListener("DOMContentLoaded", async () => {
   // exists to prevent. Calling the two halves by hand is the same code path
   // and rejects properly. If a future Babylon fixes the wrapper, this can go
   // back to one line — check for the missing `reject` before assuming it did.
+  //
+  // **`?gpu` is the one thing about this engine that a SETTING could never
+  // turn on**, which is why it is a boot flag and not a row in the settings
+  // screen. Every phase the frame profiler records is CPU: under
+  // `compatibilityMode = false` they time the RECORDING of a render bundle,
+  // and `queue.submit` queues rather than blocks, so a GPU that is behind is
+  // invisible to all of them — which is exactly where `FINDINGS.md` §1 ended
+  // up after everything on the CPU side had been eliminated. Babylon can read
+  // it (`gpuTimeInFrameForMainPass`), but only if `timestamp-query` is a
+  // REQUIRED FEATURE of the device, and a device's features are fixed when it
+  // is created. So this costs a reload, and it is off for everybody who has
+  // not asked.
+  //
+  // **The adapter is asked FIRST, because a required feature it does not have
+  // makes `requestDevice` REJECT** — and that would turn a diagnostic flag
+  // into a boot failure on exactly the machines least able to spare one. When
+  // the adapter says no the game boots normally and the capture says
+  // `gpu.requested` with `gpu.available` false, which is the honest answer
+  // rather than a silent zero.
+  const wantGpuTiming = new URLSearchParams(location.search).has("gpu");
+  let gpuTimingOk = false;
+  if (wantGpuTiming) {
+    try {
+      const probe = await navigator.gpu?.requestAdapter();
+      gpuTimingOk = !!probe?.features.has("timestamp-query");
+    } catch {
+      gpuTimingOk = false;
+    }
+  }
+
   let engine;
   try {
-    engine = new WebGPUEngine(canvas, { antialias: false, stencil: false });
+    engine = new WebGPUEngine(canvas, {
+      antialias: false,
+      stencil: false,
+      ...(gpuTimingOk
+        ? { deviceDescriptor: { requiredFeatures: ["timestamp-query"] } }
+        : {}),
+    });
     await engine.initAsync();
+    // Two halves, and the feature above is only the first: Babylon allocates
+    // the query set and the counter on this setter, so without it the feature
+    // is on the device and nothing measures anything.
+    if (gpuTimingOk) engine.enableGPUTimingMeasurements = true;
     // **This frame is DRAW-CALL bound, and this line is worth ~26% of it on
     // the two big maps. Do not delete it as a stray flag.** `FINDINGS.md` #17
     // has the measurement in full; the short version is that Coldharbour

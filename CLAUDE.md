@@ -1292,9 +1292,13 @@ none, every hitch looks idle.
 
 **What all of them measure is CPU**, and under `compatibilityMode = false` that
 is the recording of a render BUNDLE rather than the work the GPU then does.
-**GPU time is not here** — Babylon can read it, but only if `timestamp-query` is
-requested at device creation, and `main.ts` calls `initAsync()` with no
-descriptor.
+**GPU time is the one thing here that is a BOOT FLAG rather than a setting**
+(`?gpu`): `timestamp-query` is a device feature, a device's features are fixed
+when it is created, and a required feature the adapter lacks makes
+`requestDevice` REJECT — so `main.ts` asks the adapter first and boots normally
+when the answer is no. Read `gpu.frame` and never `gpu.mainPass`: this pipeline
+draws the world into post-process targets, so the "main pass" is the final
+full-screen quad and reads in tens of microseconds.
 
 **A capture is READ at `/profile_viewer.html`**, one import-free, network-free
 page in `public/` served from the game's own origin, because the loop has to
@@ -1314,8 +1318,9 @@ covers, how to take and read a capture, the viewer and the three rules for
 editing it, the relative hitch bar and what it was measured against, the
 sentinel and the heap probe and how to read a hitch against them, the three
 limits recorded into every capture, the trace export and Perfetto, what
-`frame`'s own share means, the three-rung clipboard ladder, and the levers
-(cross-origin isolation, `timestamp-query`) that are deliberately not in it.
+`frame`'s own share means, the three-rung clipboard ladder, `?gpu` and the two
+ways its two counters are attributed, and the levers (cross-origin isolation, a
+precise heap) that are deliberately not in it.
 ### The installable app
 
 The build installs to a home screen and launches fullscreen, landscape and

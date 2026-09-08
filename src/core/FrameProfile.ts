@@ -74,13 +74,15 @@
  *    That is still the right thing to be watching — the whole of §17 is that
  *    this frame is bound by the submission and not by the pixels — but a group
  *    whose bundle Babylon reuses reads cheap while the GPU is saturated, and
- *    nothing here would say so. GPU time is NOT here: Babylon can read it
- *    (`gpuTimeInFrameForMainPass`, and `gpuTimeInFrame` per render target),
- *    but only if `timestamp-query` is requested at DEVICE CREATION, and
- *    `main.ts` calls `initAsync()` with no descriptor. That is what keeps it
- *    out of this cut rather than the blast radius: a feature asked for at
- *    device creation cannot be armed by a SETTING the way everything else here
- *    is, so it would have to be read at boot and cost a reload to turn on.
+ *    nothing here would say so. **GPU time is here now, and only when the boot
+ *    asked for it** (`?gpu` — see `main.ts`, which is the only place it can
+ *    act, because a device's features are fixed when the device is created and
+ *    a required feature the adapter lacks makes `requestDevice` REJECT). That
+ *    is why it is a boot flag rather than a setting, and why it costs a reload.
+ *    Read `gpu.frame` and not `gpu.mainPass`: this pipeline draws the world
+ *    into post-process targets, so the "main pass" is the final full-screen
+ *    quad and reads in the tens of microseconds. Measured cost of the flag:
+ *    130.0 fps against 129.9 disarmed, which is nothing.
  *  - **The heap is usually FROZEN and the GC is only ever INFERRED.** Chrome
  *    rate-limits the bucketised `performance.memory` to one update every twenty
  *    minutes on purpose, so on a stock browser its reading does not move and a
@@ -327,6 +329,21 @@ interface LoafEntry {
   readonly scripts?: readonly LoafScript[];
 }
 
+/**
+ * Whether a boot flag is on the URL.
+ *
+ * The profiler already arms itself from `?profile` for the reason this exists:
+ * a fresh browser profile and every smoke script start without the setting, and
+ * some of what this instrument does cannot be turned on after boot at all.
+ */
+function hasFlag(name: string): boolean {
+  try {
+    return new URLSearchParams(location.search).has(name);
+  } catch {
+    return false;
+  }
+}
+
 /** How long a name from a long animation frame may be, in characters. */
 const LOAF_NAME_CAP = 120;
 
@@ -361,6 +378,64 @@ function describeScript(s: LoafScript): string {
   const file = s.sourceURL ? s.sourceURL.replace(/[?#].*$/, "").replace(/^.*[/]/, "") : "";
   const out = file ? `${who} @ ${file}` : who;
   return out.length > LOAF_NAME_CAP ? out.slice(0, LOAF_NAME_CAP - 1) + "…" : out;
+}
+
+/**
+ * Babylon's GPU counter, and the one private field this file reads.
+ *
+ * **The frame id is not optional and taking the value without it would be this
+ * session's pairing bug for the third time.** `WebGPUTimestampQuery.endPass`
+ * stamps `engine.frameId` when the pass closes and resolves the duration in a
+ * `.then()` a map-async round trip later — so the number sitting in the
+ * counter belongs to a frame one to three rows BACK, and filing it against the
+ * row that happened to read it would attribute a hitch's GPU cost to the frame
+ * after it. `_gpuTimeInFrameId` is which frame the counter currently holds.
+ * It is private in Babylon and there is no public equivalent; the precedent for
+ * reaching in anyway is `PhysicsWorld`'s two handles onto the plugin, and the
+ * justification is the same — the alternative is not a simpler instrument but a
+ * wrong one.
+ */
+interface GpuCounter {
+  readonly counter: { readonly current: number };
+  readonly _gpuTimeInFrameId: number;
+}
+
+/**
+ * Babylon's WHOLE-FRAME GPU counter, which is the one that answers the
+ * question, and the two internal fields it takes to attribute.
+ *
+ * **The main-pass counter is not the scene in this pipeline.** Every pass of
+ * the world renders into a post-process target and the only thing drawn to the
+ * default framebuffer is the final full-screen quad (`main.ts` says so about
+ * the MSAA it therefore does not ask for), so
+ * `gpuTimeInFrameForMainPass` times that quad: measured at **27 microseconds**
+ * on Hollowmere, which is correct for one quad and would be a catastrophic
+ * misreading of "the GPU is idle". `gpuFrameTimeCounter` brackets the whole
+ * command encoder instead.
+ *
+ * It carries no frame id, so it is attributed by watching the state machine
+ * that produces it. `_measureDurationState` is 0 while nothing is in flight
+ * and 1 from the frame a measurement STARTS (at the engine's `beginFrame`,
+ * before `Game.tick`) — so the row that sees the transition is the row being
+ * measured, and `counter.count` says when its result has landed. Only one
+ * measurement is in flight at a time, which is why this samples a subset of
+ * frames rather than all of them and why `gpu.frame.samples` ships beside the
+ * mean.
+ *
+ * **All three fields are Babylon internals and a version bump can take them
+ * away.** Every read is guarded and the failure is `available: false` rather
+ * than a throw; after upgrading Babylon, take a `?gpu` capture and check that
+ * `gpu.frame.samples` is not zero.
+ */
+interface GpuTimestampQuery {
+  readonly gpuFrameTimeCounter?: { readonly current: number; readonly count: number };
+  readonly _measureDurationState?: number;
+}
+
+interface GpuEngine {
+  readonly frameId: number;
+  readonly gpuTimeInFrameForMainPass?: GpuCounter;
+  readonly _timestampQuery?: GpuTimestampQuery;
 }
 
 /** One phase's line in a report. Milliseconds throughout. */
@@ -468,6 +543,18 @@ export interface HitchFrame {
    */
   loafScriptMs: number;
   loafRenderMs: number;
+  /**
+   * GPU time for the main pass on this frame, **0 where none resolved** — see
+   * `ProfileReport.gpu`. A hitch whose wall clock is a quarter of a second
+   * over a GPU time of a few milliseconds is not waiting on the GPU.
+   */
+  gpuMs: number;
+  /**
+   * Whole-frame GPU time on this frame, **0 where this frame was not one of
+   * the sampled ones** — which is most of them. Where it is non-zero it is the
+   * number that matters: a 240 ms wall clock over 3 ms of GPU is not the GPU.
+   */
+  gpuFrameMs: number;
   drawCalls: number;
   activeMeshes: number;
   meshWalkMs: number;
@@ -631,6 +718,40 @@ export interface ProfileReport {
     /** The biggest few, whole, with the script the browser blamed. */
     worst: LoafFrame[];
   };
+  /**
+   * What the GPU spent on the main pass, where the boot asked for it.
+   *
+   * **`requested` and `available` are two questions and a capture answers
+   * both**, the rule `loaf.supported` and `memory.heapLive` already state:
+   * nobody asked, or somebody asked and the adapter refused, are different
+   * facts and neither is "the GPU took no time". `?gpu` is what asks — see
+   * `main.ts`, which is the only place it can act, because a device's features
+   * are fixed when it is created.
+   *
+   * **It is the MAIN PASS only.** Shadow maps, the glow's targets and the
+   * reflection bake are render targets with counters of their own that this
+   * does not read, so a frame whose GPU cost is in a target reads low here.
+   */
+  gpu: {
+    requested: boolean;
+    available: boolean;
+    /**
+     * The WHOLE frame's GPU time, which is the one to read. Sampled rather than
+     * continuous — only one measurement is in flight at a time — so `samples`
+     * is the denominator and the mean is over those rows, never over the
+     * window.
+     */
+    frame: { samples: number; meanMs: number; p95Ms: number; maxMs: number };
+    /**
+     * The MAIN PASS only, which in this pipeline is **the final full-screen
+     * quad** and not the scene: the world renders into post-process targets, so
+     * this reads in the tens of MICROSECONDS and is not a claim about the GPU
+     * being idle. Kept because it is measured per frame and attributed exactly,
+     * which `frame` above cannot be, so it is the cross-check rather than the
+     * answer.
+     */
+    mainPass: { frames: number; meanMs: number; p95Ms: number; maxMs: number };
+  };
   phases: PhaseStat[];
   hitches: HitchFrame[];
   /** The whole ring, one array per phase. Present only in a FULL report. */
@@ -664,6 +785,18 @@ export interface ProfileReport {
      * `frameMs` rises alone it was not.
      */
     loafMs: number[];
+    /**
+     * GPU time for the main pass per row, **0 where no reading resolved for
+     * that frame** rather than where the GPU was idle. Lay it against
+     * `frameMs`: a wall clock that rises while this stays flat is not the GPU.
+     */
+    gpuMs: number[];
+    /**
+     * Whole-frame GPU time on the rows that were measured, **0 on the rest —
+     * which is most of them**, because only one measurement is in flight at a
+     * time. Not a curve; a scatter. See `ProfileReport.gpu`.
+     */
+    gpuFrameMs: number[];
     phases: Partial<Record<Phase, number[]>>;
   };
 }
@@ -731,6 +864,28 @@ export class FrameProfile {
    * touches identifies it, and `loafFacts` sums over THOSE.
    */
   private loafHead: Uint8Array | null = null;
+
+  /**
+   * GPU time for the main pass, per row, in milliseconds — and the engine frame
+   * id each row carried, which is what files it correctly.
+   *
+   * **Zero means NOT RESOLVED and never "the GPU was instant"**, the same rule
+   * `loafMs` and `heapLive` obey. A reading arrives one to three frames after
+   * the frame it describes and only the newest is held, so a row whose result
+   * was overtaken keeps its zero. `gpu.frames` says how many rows in the
+   * window actually got one.
+   */
+  private gpuMs: Float32Array | null = null;
+  /** Whole-frame GPU time, on the rows that were actually measured. */
+  private gpuFrameMs: Float32Array | null = null;
+  private frameIdAt: Uint32Array | null = null;
+  /** The row a whole-frame measurement is in flight for, and the count when it began. */
+  private gpuPendingRow = -1;
+  private gpuLastCount = -1;
+  /** The frame id whose GPU time has already been filed, so it is filed once. */
+  private gpuFiledId = -1;
+  /** Set from `?gpu` on arming — see `main.ts`, which is where it has to act. */
+  private gpuRequested = false;
 
   /**
    * Whether this browser reports long animation frames at all.
@@ -933,6 +1088,16 @@ export class FrameProfile {
     this.loafScriptMs = new Float32Array(n);
     this.loafRenderMs = new Float32Array(n);
     this.loafHead = new Uint8Array(n);
+    this.gpuMs = new Float32Array(n);
+    this.gpuFrameMs = new Float32Array(n);
+    this.frameIdAt = new Uint32Array(n);
+    this.gpuFiledId = -1;
+    this.gpuPendingRow = -1;
+    this.gpuLastCount = -1;
+    // Read here rather than passed in: `main.ts` acts on this flag at device
+    // creation and cannot reach an instrument that is armed later, and a
+    // capture has to be able to tell "nobody asked" from "the adapter said no".
+    this.gpuRequested = hasFlag("gpu");
     this.loafWorst = [];
     this.cursor = 0;
     this.filled = 0;
@@ -1016,6 +1181,13 @@ export class FrameProfile {
     this.loafScriptMs = null;
     this.loafRenderMs = null;
     this.loafHead = null;
+    this.gpuMs = null;
+    this.gpuFrameMs = null;
+    this.frameIdAt = null;
+    this.gpuFiledId = -1;
+    this.gpuPendingRow = -1;
+    this.gpuLastCount = -1;
+    this.gpuRequested = false;
     this.loafWorst = [];
     this.loafSupported = false;
     this.hitchAt = [];
@@ -1325,6 +1497,7 @@ export class FrameProfile {
     const gc = this.gcPending;
     this.gcPending = 0;
     this.gcAt![i] = gc > 255 ? 255 : gc;
+    this.pollGpu(i);
     if (this.heapMb) this.heapMb[i] = usedHeapMb();
 
     // **The bar is RELATIVE, and this is the whole of why.** A fixed 24 ms is
@@ -1475,6 +1648,8 @@ export class FrameProfile {
       drawCalls: [],
       activeMeshes: [],
       loafMs: [],
+      gpuMs: [],
+      gpuFrameMs: [],
       phases: {},
     };
     if (full) {
@@ -1486,6 +1661,8 @@ export class FrameProfile {
         series.drawCalls.push(this.drawCalls![i]);
         series.activeMeshes.push(this.activeMeshes![i]);
         series.loafMs.push(round(this.loafMs![i]));
+        series.gpuMs.push(round(this.gpuMs![i], 3));
+        series.gpuFrameMs.push(round(this.gpuFrameMs![i], 3));
       }
     }
 
@@ -1520,6 +1697,9 @@ export class FrameProfile {
     phases.sort((a, b) => b.mean - a.mean);
 
     return {
+      // 8: `gpu` — the main pass's GPU time, per frame and filed against the
+      // frame it belongs to rather than the one that read it. Off unless the
+      // boot asked (`?gpu`), and `requested`/`available` are two questions.
       // 7: `loaf.totalMs` and its three shares are summed over ENTRIES rather
       // than over the rows they marked, and `loaf.rows` carries the other
       // count. A v6 capture's totals are inflated by however many rows each
@@ -1543,7 +1723,7 @@ export class FrameProfile {
       // wall clock and its phases are one row apart.
       // 3: `present`, the first phase outside `frame`, and the `roots` that
       // let a reader tell a second root from a phase it has not heard of.
-      version: 7,
+      version: 8,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
@@ -1570,6 +1750,7 @@ export class FrameProfile {
       },
       memory: this.memoryFacts(first, n, cap, spanMs),
       loaf: this.loafFacts(first, n, cap),
+      gpu: this.gpuFacts(first, n, cap),
       counters: this.counterMeans(first, n, cap),
       phases,
       hitches: this.worstHitches(),
@@ -1641,6 +1822,61 @@ export class FrameProfile {
       meshWalkMs: round(walk / n),
       renderTargetsMs: round(rtt / n),
       particlesMs: round(particles / n),
+    };
+  }
+
+  /**
+   * What the GPU spent, over the rows that got a reading.
+   *
+   * **Averaged over THOSE rows and not over the window**, because a row with no
+   * reading is a missing measurement rather than a fast frame, and dividing by
+   * the window would report a number several times under the truth with nothing
+   * saying so. `frames` is the denominator, shipped beside the mean.
+   */
+  private gpuFacts(
+    first: number,
+    n: number,
+    cap: number,
+  ): ProfileReport["gpu"] {
+    const engine = this.scene?.getEngine() as unknown as GpuEngine | undefined;
+    const available = !!engine?.gpuTimeInFrameForMainPass;
+    const over = (src: Float32Array | null) => {
+      let count = 0;
+      if (src) {
+        const scratch = new Float64Array(n);
+        for (let k = 0; k < n; k++) {
+          const ms = src[(first + k) % cap];
+          if (ms > 0) scratch[count++] = ms;
+        }
+        if (count > 0) {
+          const s = stats(scratch, count);
+          return {
+            n: count,
+            meanMs: round(s.mean, 3),
+            p95Ms: round(s.p95, 3),
+            maxMs: round(s.max, 3),
+          };
+        }
+      }
+      return { n: 0, meanMs: 0, p95Ms: 0, maxMs: 0 };
+    };
+    const whole = over(this.gpuFrameMs);
+    const main = over(this.gpuMs);
+    return {
+      requested: this.gpuRequested,
+      available,
+      frame: {
+        samples: whole.n,
+        meanMs: whole.meanMs,
+        p95Ms: whole.p95Ms,
+        maxMs: whole.maxMs,
+      },
+      mainPass: {
+        frames: main.n,
+        meanMs: main.meanMs,
+        p95Ms: main.p95Ms,
+        maxMs: main.maxMs,
+      },
     };
   }
 
@@ -1748,6 +1984,8 @@ export class FrameProfile {
         loafBlockMs: round(this.loafBlockMs![i]),
         loafScriptMs: round(this.loafScriptMs![i]),
         loafRenderMs: round(this.loafRenderMs![i]),
+        gpuMs: round(this.gpuMs![i], 3),
+        gpuFrameMs: round(this.gpuFrameMs![i], 3),
         drawCalls: this.drawCalls![i],
         activeMeshes: this.activeMeshes![i],
         meshWalkMs: round(this.meshWalkMs![i]),
@@ -2114,6 +2352,68 @@ export class FrameProfile {
       renderMs,
       top,
     });
+  }
+
+  /**
+   * Files whatever GPU time has resolved since the last frame against the ROW
+   * IT BELONGS TO, which is not this one.
+   *
+   * The engine's frame id advances once per frame exactly as the ring does, so
+   * the row is `i` minus however many frames back the reading is — an
+   * arithmetic step rather than a search, and `frameIdAt` is then checked
+   * rather than trusted, because a ring that has lapped past the frame in
+   * question must drop the reading instead of writing it somewhere plausible.
+   *
+   * Nothing is allocated and the whole thing is four reads on a healthy frame.
+   * With `?gpu` absent `gpuTimeInFrameForMainPass` is undefined and this
+   * returns on its second line.
+   */
+  private pollGpu(i: number): void {
+    const engine = this.scene?.getEngine() as unknown as GpuEngine | undefined;
+    if (!engine) return;
+    this.frameIdAt![i] = engine.frameId;
+    this.pollGpuFrame(i, engine);
+
+    const perf = engine.gpuTimeInFrameForMainPass;
+    if (!perf) return;
+    const id = perf._gpuTimeInFrameId;
+    if (id < 0 || id === this.gpuFiledId) return;
+    this.gpuFiledId = id;
+    const back = engine.frameId - id;
+    if (back < 0 || back >= this.filled + 1) return;
+    const row = (i - back + this.capacity) % this.capacity;
+    // The check that makes the arithmetic safe rather than merely quick.
+    if (this.frameIdAt![row] !== id) return;
+    // Babylon reports NANOSECONDS.
+    this.gpuMs![row] = perf.counter.current / 1e6;
+  }
+
+  /**
+   * The whole frame's GPU time, filed against the row it was measured on.
+   *
+   * Two transitions and nothing else — see `GpuTimestampQuery` for why they
+   * are the attribution. A measurement STARTS at the engine's `beginFrame`,
+   * which is before `Game.tick`, so a row that finds the state non-zero with
+   * nothing already pending is the row being measured; the result LANDS later
+   * and `count` moving is what says so.
+   */
+  private pollGpuFrame(i: number, engine: GpuEngine): void {
+    const q = engine._timestampQuery;
+    const counter = q?.gpuFrameTimeCounter;
+    if (!counter) return;
+    const count = counter.count;
+    if (this.gpuLastCount < 0) this.gpuLastCount = count;
+    else if (count !== this.gpuLastCount) {
+      this.gpuLastCount = count;
+      if (this.gpuPendingRow >= 0) {
+        this.gpuFrameMs![this.gpuPendingRow] = counter.current / 1e6;
+        this.gpuPendingRow = -1;
+      }
+    }
+    // A fresh measurement is in flight and nothing is claimed for it yet.
+    if (this.gpuPendingRow < 0 && (q?._measureDurationState ?? 0) !== 0) {
+      this.gpuPendingRow = i;
+    }
   }
 
   private watchGc(): void {
