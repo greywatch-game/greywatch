@@ -5100,9 +5100,67 @@ off the CPU runs ahead and Dawn applies backpressure. **18 of 21 hitches on
 cinderhaven and 8 of 9 on one sarab are this.** It does not happen with vsync on,
 because the present paces the CPU for free.
 
-**Whether a smaller version of the same stall exists WITH vsync on is the open
-question**, and it is finding 1's next step rather than this one's — the
-instrument could not have seen it until the pairing was fixed.
+### The A/B that was supposed to settle it, and what it settled instead
+
+Four captures on the Windows box, Cinderhaven, one script, 3,000 frames each on
+the FIXED instrument — headless and headed, capped and uncapped, everything but
+the flags held constant. **The paced runs are clean**, and the headed one is at
+a workload that matches the real session closely (537 active meshes and 615
+draws against 549 and 634):
+
+| | wall sd | cv | jitter p95 | `drawWorld` max | frames over the 24 ms bar |
+| --- | --- | --- | --- | --- | --- |
+| headed, capped | 0.76 ms | 0.11 | 1.20 ms | 9.5 ms | **0** |
+| headed, uncapped | 1.11 ms | 0.19 | 1.50 ms | 8.2 ms | **0** |
+| headless, capped | 0.53 ms | 0.07 | 0.80 ms | 8.7 ms | **0** |
+| headless, uncapped | 1.82 ms | 0.44 | 1.00 ms | 8.4 ms | **0** |
+
+Two things come out of it, and the second is the one that matters.
+
+**The variance story reproduces exactly.** A capped run is 92–96% of frames
+within 18% of a 7.00 ms median — a vsync lock at ~143 Hz, arriving at almost
+the same interval as the real panel's 6.94 — and uncapping takes that to 23–67%
+and the coefficient of variation from 0.07–0.11 to 0.19–0.44. That is this
+finding's headline, confirmed on a second display path.
+
+**The `drawWorld` stall does NOT reproduce, in any of the four.** Not capped,
+not uncapped, not headless, not headed, not at a matched mesh count — the worst
+`drawWorld` in 12,000 frames is 9.5 ms against the real session's 86.6, and
+not one frame in any run cleared the hitch bar. So the stall is **not an
+intrinsic consequence of uncapping**, which is what the backpressure reading
+above assumed, and that reading is now a hypothesis with a failed reproduction
+against it.
+
+What the four runs do NOT hold constant against the real session: **3440x1440
+fullscreen on a G-Sync panel**, and **a person actually playing** — firing,
+moving through the map, setting off blasts. The script sweeps the view and does
+neither.
+
+### The better hypothesis, which is a first-use PIPELINE stall
+
+**Dawn compiles behind the call and the stall lands on first USE**
+(`VERIFYING.md`), so a pipeline created cheaply is an 80 ms bill payable at an
+arbitrary later frame — inside `drawWorld`, with the draw count flat, with
+`gc` at 0, and clustered, which is every property the real hitches have. The
+real session's hitches cluster at frames 2415–2432 and 320; `ProfileReport`'s
+own series header calls a draw count that ramps across a second "a batch of
+pipelines coming into view".
+
+**This is not the thing finding 1 already eliminated.** That measurement counted
+CREATIONS — 29 pipelines and 73 modules in warmup, then 6 pipelines and 2
+modules across 40 s of play — and concluded steady-state compilation was
+negligible. Six pipelines across 40 s of play is six opportunities for a
+first-use stall, and counting creations cannot see one.
+
+**How to settle it:** hook `createRenderPipeline` and `createShaderModule` as
+before, but record the frame INDEX of each against the profiler's ring, and
+look at whether the hitch frames are 1–2 frames downstream of a creation. Fire
+every weapon and set off a blast during the run, which the A/B script did not.
+
+**And the capture that is still owed is on the real machine**: vsync ON,
+fullscreen, 3440x1440, a real round with combat in it, on the v4 instrument —
+`?profile`, play, `F3`. That is the reading finding 1 has been missing, and
+until the pairing was fixed it could not have been taken at all.
 
 ### VRR is answered, and the answer is no
 
