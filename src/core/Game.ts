@@ -4020,10 +4020,6 @@ export class Game {
     const perTeam = perTeamOf(this.mapDef.layout);
     this.battle.setRoster(this.net ? CONFIG.bots.perTeam : perTeam);
     this.net?.roster.setFielded(perTeam);
-    // …and both pools' rigs to the mesh walk, which would otherwise pay for a
-    // body that is not in the round. After the two lines above, which are what
-    // decide how many rigs there ARE.
-    this.installBodyPools();
     // Re-draw skills for the chosen tier. The pool is rebuilt only when a map
     // changes the size of the roster, so this is the only place the roster's
     // difficulty can change.
@@ -4065,6 +4061,13 @@ export class Game {
     // see `applyPlayerTeam`, and `setViewerTeam` above for why the value itself
     // was resolved further up.
     this.applyPlayerTeam(team, map);
+    // …and every rig in the round to the mesh walk, which would otherwise pay
+    // for a body that is not in it. AFTER the roster lines above, which decide
+    // how many rigs there ARE, and after `applyPlayerTeam`, which is the one
+    // caller that can DISPOSE a rig and build another — the death cam's, on a
+    // change of side. Filing before it would leave the pool pointing at freed
+    // meshes for the rest of the round, and nothing in between reads the pools.
+    this.installBodyPools();
     // …and the glass as the authority left it, for the same "either side of the
     // build" reason: a joiner mid-round has missed every break in it, and the
     // welcome may have landed before this map existed to apply them to. See
@@ -4126,6 +4129,14 @@ export class Game {
     for (const soldier of this.net?.roster.soldiers ?? []) {
       bodies.push(soldier.rig);
     }
+    // …and the THIRD rig, which is not in either pool and is the one the
+    // player watches from four metres away. `DeathCam` builds its own
+    // stand-in, switches it by the same `root.setEnabled` the two rosters
+    // write, and is idle for all but a few seconds of a round — so it is a
+    // pooled body by every test this makes, and was loose only because
+    // nothing had handed it over. See `DeathCam.body` for what that cost.
+    const corpse = this.deathCam.body;
+    if (corpse) bodies.push(corpse);
     this.culling.setPools(bodies);
   }
 

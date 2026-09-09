@@ -144,6 +144,37 @@ export class DeathCam {
   }
 
   /**
+   * The stand-in's rig, for `Game.installBodyPools` — which files it with
+   * `WorldCulling` exactly as it files a bot's and a net soldier's, because
+   * this is the third rig in the game and was for a long time the only one the
+   * mesh walk saw LOOSE.
+   *
+   * That mattered for one reason and it is the size gate: `WorldCulling.offer`
+   * drops a candidate whose projected diameter is under
+   * `CONFIG.graphics.culling.minPixels`, and a POOLED body is exempt from it
+   * because a per-mesh test on a rig takes the head off a soldier while leaving
+   * his torso. This rig was not exempt, and the failure was worse than that
+   * threshold suggests: nothing had ever DRAWN it, so its meshes' world
+   * bounding spheres still sat at the world ORIGIN — Babylon computes a world
+   * matrix inside `_evaluateActiveMeshes` and only for candidates, and neither
+   * `start`'s pose nor `RagdollSystem` touches a drawn mesh's matrix (both
+   * compute JOINTS). So the gate measured every part of the corpse from the
+   * middle of the map, dropped the small ones, and by dropping them made sure
+   * their matrices were never computed either — a latch that held for the whole
+   * death cam. The head merges smallest and went first.
+   *
+   * `SoldierRig` already IS `PooledBody` structurally, which is why this is a
+   * getter and not a conversion. Null before `prepare` has built one.
+   *
+   * **It is only ever read after `prepare`**, because a change of side disposes
+   * this rig and builds another — see there, and see `Game.buildRound`, where
+   * the pools are filed after `applyPlayerTeam` for exactly that reason.
+   */
+  get body(): SoldierRig | null {
+    return this.corpse?.rig ?? null;
+  }
+
+  /**
    * The body, for the blob shadow's sake — `Game` hands it to the same
    * `RagdollSystem.shadowFor` a bot's corpse goes through, so the player's
    * shadow ends up under the body rather than under the spot they were standing

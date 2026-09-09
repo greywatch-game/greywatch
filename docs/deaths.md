@@ -471,6 +471,16 @@ without that subtract turns feedback into a punishment.
   `RAGDOLL_BONES` is measured against. It is built at `startRound`, not at the moment
   of death — nineteen merged meshes and their GL buffers is not a cost to pay on
   the frame the player is killed on.
+- **It is the third rig in the game and it is filed with the CULL like the other
+  two.** `buildSoldier` has three callers — `Bot`, `NetSoldier` and this — and this
+  one is not in either roster, so `Game.installBodyPools` has to name it
+  explicitly (`DeathCam.body`). It was left out for a long time, and what that
+  cost was the player's own corpse ragdolling with its head missing: nothing had
+  ever drawn the rig, so `WorldCulling`'s size gate measured every part of it from
+  the world ORIGIN rather than from the camera four metres away, dropped the small
+  parts, and by dropping them made sure their world matrices were never computed
+  either. `docs/rendering.md` has the measurement and the general rule under it.
+  **A fourth rig would owe the same line**, and the failure is silent.
 - **It is a stand-in, not the player.** `Player` has no rig and never grows one: it
   is a capsule, a viewmodel and an eye. The corpse is a separate object stood up at
   `Player.floorY` (the FEET — `Player.position` is the middle of the collider capsule)

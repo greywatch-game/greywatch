@@ -1682,9 +1682,21 @@ was offered to the walk whether the
 body was in the round or not — a bot past `bodyDrawDistance`, a bot benched for
 a human, a bot crewing a tank, and on a netplay round the whole of
 `BattleSystem`'s sixteen, which are built and never enabled at all.
-`Game.installBodyPools` files both pools and `WorldCulling.update` polls each
+`Game.installBodyPools` files them and `WorldCulling.update` polls each
 rig ROOT once a frame, marking the list dirty only on a transition — 48 property
 reads against the 1,008 nodes a rebuild answers for.
+
+**THREE rigs are filed and not two, and the third is the one the player looks
+at.** `buildSoldier` has exactly three callers — `Bot`, `NetSoldier` and
+`DeathCam`, which builds the stand-in body the player watches their own death
+over — and for a long time only the two ROSTERS were handed over. The third was
+loose, four metres from the camera, and what that cost is under the size gate
+below. It is filed on the same terms the other two are: `SoldierRig` already IS
+`PooledBody`, and `DeathCam` switches it by the same `root.setEnabled` a roster
+writes. **`installBodyPools` therefore runs AFTER `applyPlayerTeam` in
+`buildRound`** — that is the one call that can DISPOSE a rig and build another,
+on a change of side, and filing before it would leave the pool pointing at freed
+meshes for the rest of the round.
 
 **It is filed MESH BY MESH and never by ancestry, and that is load-bearing
 rather than incidental.** `RagdollSystem` reparents a corpse's joints onto Havok
@@ -1779,6 +1791,22 @@ rather than because it seemed wise.**
   x16 and `bot-legL` x16 while keeping the torsos. A body is already taken off
   whole, by distance, through `bodyDrawDistanceOf`. `poolOf` is how this file
   knows, and it does not have to learn what a soldier is.
+
+  **The exemption is only worth what the LIST of pooled bodies is worth, and
+  the death cam's rig was missing from it.** The symptom was the player's own
+  corpse ragdolling with its head gone, most of the time, on every map — and it
+  was NOT the distance the gate is about. Nothing had ever drawn that rig, so
+  its meshes' world bounding spheres were still sitting at the world ORIGIN, and
+  the gate measured every part of the corpse from the middle of the map instead
+  of from four metres away. Measured on Hollowmere with a death at 146 m from
+  the origin, twelve of the twenty rig meshes were dropped on the first frame
+  and **six never came back**: two of the head's four merged parts, one arm each
+  side and one part of each leg. On Harrowmead at 219 m it was **twelve**,
+  including all four head parts and all six leg parts. It is the small parts
+  that go, the merge is per COLOUR so a head is four of them, and what survives
+  is whatever is big enough to pass at that range — the torso, the rifle, and
+  the visor, which is emissive and exempt already. Filing the rig fixes it at
+  the root: 0 of 20 dropped on both maps.
 - **Anything emissive.** The glow carries a sub-pixel emitter far past its own
   geometry, and this game's biggest map is a harbour town at night. The test is
   exact rather than a guess at a name: `CelMaterialFactory.getEmissive` is the
@@ -1792,6 +1820,17 @@ rather than because it seemed wise.**
   which is the distance from the world origin to the player, and the gate
   deleted the weapon out of his hands. Group 0 is where the world is; everything
   above it is drawn against the eye and has no business being distance-gated.
+
+**A WRONG DROP LATCHES, which is why both of the failures above were total
+rather than intermittent.** Babylon computes a mesh's world matrix inside
+`_evaluateActiveMeshes` and only for CANDIDATES, and `_afterComputeWorldMatrix`
+is what refreshes the world bounding sphere this gate reads. So a mesh dropped
+on stale bounds is never given the matrix that would correct them, and it goes
+on being dropped for as long as it lives. Nothing else writes them: a rig's
+drawn meshes are not touched by `resetSoldierPose`, by `animateSoldier`, or by
+`RagdollSystem`, which computes JOINTS. **Read a mesh's world bounds here as
+LAST FRAME's at best and as never-computed at worst**, and exempt anything whose
+bounds this pass could be the first to need.
 
 **`bank.mjs` cannot see any of this.** `placeVantage` disables the bots and
 disposes the zones, so the banked vantages hold none of what a culling change
