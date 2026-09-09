@@ -319,11 +319,6 @@ export class HeadlessGame {
    * place the roster's difficulty can change — exactly as on the client.
    */
   async startRound(def: MapDef, difficulty: number, bots = true): Promise<void> {
-    // Back onto the wall clock. Building a map takes seconds of real time that
-    // the simulation does not step, and a clock left behind by that much is one
-    // every client would spend the next five seconds of its offset window
-    // disbelieving — see `now` and `drop`.
-    this.now = Date.now();
     this.battle.setDifficulty(difficulty);
     this.map?.dispose();
     this.map = await buildServerWorld(this.scene, def);
@@ -423,6 +418,26 @@ export class HeadlessGame {
     // still seated — a rotation that left last round's kills on sixteen
     // screens is exactly the kind of stale state a client cannot detect.
     this.scores.reset(this.battle.bots.length);
+    // Back onto the wall clock, and LAST rather than first. Everything above
+    // is real time the simulation does not step — seconds of it, nearly all of
+    // it inside `buildServerWorld` — so an anchor taken before the build leaves
+    // this clock exactly the build behind the wall, which is the one thing the
+    // line exists to prevent. Taken here it absorbs the dispose, the build and
+    // the reset together, and the round's first tick is stamped on the wall.
+    //
+    // Which DIRECTION it is out by is what makes the placement load-bearing
+    // rather than tidy. A client estimates the offset to this clock as the
+    // MAXIMUM of a five-second window, so a clock that jumped FORWARD is
+    // adopted on the next snapshot it stamps, while one that quietly fell
+    // BEHIND is disbelieved for the whole of that window with every body
+    // dragged to the end of its buffer. Anchoring first put the build on the
+    // wrong side of that, and was only ever safe because `ROUND_OVER_MS` is
+    // longer than a map takes to build — a coincidence between two unrelated
+    // numbers, and the map that builds slowest is the biggest in the tree.
+    //
+    // See `now` for what this clock is, and `drop` for the driver's half of
+    // the same anchor.
+    this.now = Date.now();
   }
 
   /**

@@ -931,8 +931,10 @@ socket it is 50.0 ms at every percentile, min to max, and rendered speed is
 Two rules hold it up. **It is anchored to the wall clock and not free-running**,
 because the offset estimate on the far side is a maximum over five seconds: a
 clock that quietly fell behind would hold a stale maximum for the whole window
-and drag every body to the end of its buffer. `startRound` re-anchors (building
-a map is seconds of real time the world is not stepped through) and
+and drag every body to the end of its buffer. `startRound` re-anchors, and does
+it at the END of the build rather than the start (a map is seconds of real time
+the world is not stepped through, so an anchor taken before it leaves the clock
+exactly the build behind the wall — the thing the anchor exists to prevent), and
 `HeadlessGame.drop` takes the backlog the loop discards on a long stall — one
 honest jump on the tick the world jumped anyway. **And every stamped message
 uses it**, because a client samples the offset from all of them and keeps the

@@ -137,7 +137,12 @@ you are on before you believe anything else in this section.
   `docs/profiling.md`. Boot with `?profile&gpu` and read `gpu.frame`, which
   is the whole command encoder; `gpu.mainPass` is the final full-screen quad in
   this pipeline and reads in tens of microseconds, so a script that asserts on
-  it is asserting on a composite.
+  it is asserting on a composite. `gpu.frame` samples about HALF the frames —
+  only one measurement is in flight at a time — so `gpu.frame.samples` is the
+  denominator, and a 0 in `series.gpuFrameMs` is an unmeasured frame rather
+  than a fast one. Measured on this box: 130.0 fps with `?gpu` against 129.9
+  without, and Cinderhaven at 1718x858 reads 1.372 ms mean GPU against a
+  6.746 ms tick.
   **`?gpu` is necessary and not sufficient: the whole-frame counter also needs
   `--enable-unsafe-webgpu`**, which `launchClient` passes and a browser started
   by hand does not. Without it the capture reads `available: true` and
@@ -145,12 +150,8 @@ you are on before you believe anything else in this section.
   absent one — while `gpu.mainPass` keeps working and makes the report look
   healthy. `gpu.frameMeasurable` (report v9) is the field that tells the two
   apart; check it before believing a zero. Verified both ways on this box:
-  1549 samples with the flag, 0 without, same build and same map. It samples about HALF the frames — only one
-  measurement is in flight at a time — so `gpu.frame.samples` is the
-  denominator, and a 0 in `series.gpuFrameMs` is an unmeasured frame rather
-  than a fast one. Measured on this box: 130.0 fps with the flag against 129.9
-  without, and Cinderhaven at 1718x858 reads 1.372 ms mean GPU against a
-  6.746 ms tick.
+  1549 samples with `--enable-unsafe-webgpu`, 0 without, same build and same
+  map.
 - **The profiler's HEAP columns need `--enable-precise-memory-info` and its GC
   count needs nothing.** Chrome rate-limits the bucketised `performance.memory`
   to one update every twenty minutes on purpose, so without that flag a capture
