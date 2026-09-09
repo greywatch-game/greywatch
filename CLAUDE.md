@@ -1296,7 +1296,11 @@ is the recording of a render BUNDLE rather than the work the GPU then does.
 (`?gpu`): `timestamp-query` is a device feature, a device's features are fixed
 when it is created, and a required feature the adapter lacks makes
 `requestDevice` REJECT — so `main.ts` asks the adapter first and boots normally
-when the answer is no. Read `gpu.frame` and never `gpu.mainPass`: this pipeline
+when the answer is no. **`?gpu` is necessary and not sufficient: the
+whole-frame counter also needs `--enable-unsafe-webgpu` on the BROWSER's
+command line**, and without it a capture reads `available: true` with
+`frame.samples: 0`, which is a real measurement of zero rather than an absent
+one — `gpu.frameMeasurable` is the field that tells those apart. Read `gpu.frame` and never `gpu.mainPass`: this pipeline
 draws the world into post-process targets, so the "main pass" is the final
 full-screen quad and reads in tens of microseconds.
 

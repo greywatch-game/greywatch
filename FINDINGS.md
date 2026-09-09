@@ -13,7 +13,7 @@ spends an afternoon re-deriving it.
 
 ---
 
-## 1. Frame pacing: the mean says 60, the tail says 28 — **the game's own tick is RULED OUT, and so is the submit**
+## 1. Frame pacing: the mean says 60, the tail says 28 — **the STALLS are not the page at all, and there is a SECOND population that is**
 
 **Status:** still open, and its central conclusion is now KNOWN UNRELIABLE
 rather than merely unproven. **The instrument was pairing each frame's wall
@@ -228,7 +228,8 @@ reports that essentially none of it was JavaScript. Draw calls are flat at
 catch-up — 262.1 then 13.5, 163 then 40.9, 84.4 then 20.4.
 
 So the elimination list was: not the tick, not the submit, not the collector,
-not `drawWorld`, and not the main thread.
+not `drawWorld`, and not the main thread — and not the GPU either, two sections
+below.
 
 ### ANSWERED: the browser is not giving the page a frame
 
@@ -258,25 +259,84 @@ episode. The shape is a stall and then a catch-up.
 **So the time is not the page's in any sense the page can reach.** Not the tick,
 not the submit, not the collector, not the main thread, and not the browser's
 rendering work either — **the frame was simply not scheduled**. Six of this
-section's seven suspects are dead and the seventh was never on the list.
+section's seven suspects are dead and the seventh was never on the list. **The
+seventh — the GPU — is dead too as of the section after next**, measured rather
+than argued, which leaves this finding with no suspect inside the process at
+all.
 
-### What is left, and the last instrument that is not built
+### ANSWERED: IT IS NOT THE GPU EITHER, and the instrument that says so nearly lied
 
 **A rendering opportunity that does not arrive for 237 ms on a 144 Hz panel is
-the compositor declining to issue one**, and the leading reason for that is the
+the compositor declining to issue one**, and the leading reason for that was the
 GPU being behind: `present` returns instantly because `queue.submit` queues
-rather than blocks, so a saturated GPU is invisible to every span in this file.
+rather than blocks, so a saturated GPU is invisible to every CPU span in this
+file. `?gpu` was built for exactly this question and the answer is **no**.
 
-**And that is exactly the lever `FrameProfile`'s own header lists as
-deliberately absent.** What all of its phases measure is CPU; Babylon can read
-`gpuTimeInFrameForMainPass`, but only if `timestamp-query` is requested at
-DEVICE CREATION, and `main.ts` calls `initAsync()` with no descriptor. It
-cannot be armed by a setting for that reason and would cost a reload.
+Four v8/v9 captures of Cinderhaven at 3440x1440 on the real display, with the
+whole-frame counter armed:
 
-That is now the only unmeasured thing between the tick and the screen, and it is
-where this finding goes next. Note what it would cost: a device feature
-requested at boot for every player, needing a fallback on an adapter that does
-not support it. That is a product decision rather than an instrument one.
+| capture | GPU mean | GPU p95 | **GPU max** | tick mean | wall budget |
+| --- | --- | --- | --- | --- | --- |
+| 21-35-38 | 1.977 | 2.449 | **3.672** | 4.48 | ~7.0 |
+| 21-36-13 | 2.065 | 2.548 | **3.677** | 6.41 | ~7.0 |
+| headless 3440x1440 | 2.325 | 2.821 | 15.079 | 6.05 | ~7.0 |
+
+**The GPU never comes near the budget, and on the hitch frames themselves it is
+1.6–2.7 ms** — including a **160.7 ms frame on which the GPU did 1.703 ms of
+work**, and a 150.7 ms one on which it did 1.779. Whatever is holding the frame
+open, the GPU is idle through it. That was the seventh suspect and the last one
+this instrument could reach.
+
+**The reading was nearly zero for the wrong reason, and that is the part worth
+keeping.** The first `?gpu` capture came back `requested: true, available: true,
+frame.samples: 0` — which reads as "the GPU took no time" and is instead "this
+browser cannot express the answer". Babylon brackets the whole command encoder
+with `GPUCommandEncoder.writeTimestamp`, removed from the WebGPU spec and kept
+by Chrome behind **`--enable-unsafe-webgpu`**; the feature itself and the
+`timestampWrites` descriptor `gpu.mainPass` uses need no flag, so the main-pass
+counter went on working and made the capture look healthy. `stop()` returns a
+literal 0, `endFrame` accepts it on `duration >= 0`, and the counter records a
+real measurement of zero — **747 of them, against 626 genuine samples with the
+flag**. `plans/webgpu-ref/harness.mjs` passes the flag, which is why every
+headless GPU number in `VERIFYING.md` existed while a stock browser got nothing.
+Fixed as `gpu.frameMeasurable` (report **version 9**).
+
+### …and a SECOND population appeared, which IS the tick and DOES name a phase
+
+Every hitch in this finding's history until now was "not the page". Five
+captures from one session contain four that are, each one the game's own tick,
+each corroborated by the browser's own script total, and **each in a DIFFERENT
+phase**:
+
+| capture | wall | `frame` | the phase | that phase's p99 | browser: script / blocking |
+| --- | --- | --- | --- | --- | --- |
+| 21-35-38 | 150.7 | 149.9 | **`vehicles` 139.1** | 0.3 | 149.9 / 100.4 |
+| 20-50-28 | 136.7 | 124.2 | **`drawWorld` 119.9** | 4.3 | 124.4 / 75.1 |
+| 21-36-13 | 62.9 | 60.6 | **`hud` 47.3** | 0.6 | 60.8 / 11.5 |
+| 21-00-50 | 54.9 | 54.1 | **`bots` 45.0** | 0.3 | 54.2 / 4.7 |
+
+Each is 30x to 460x its own p99, each happens once, and no two are in the same
+subsystem. **Four unrelated subsystems do not independently spike once each**,
+so the shape to suspect is one stall the tick absorbs wherever the frame happens
+to be standing — and the bracket that catches it is then a bystander rather than
+a culprit. Not yet established; what would settle it is more captures, since the
+phase should keep moving if that is right and should not if `hud` or
+`vehicles` has a real fault.
+
+**The heap is the strongest correlate found so far.** On 21-35-38 it climbs to
+**1070 MB**, then falls to 682 across the two buckets that carry the hitches
+while collections step from 2–3 per bucket to 23 and 42; 20-50-28 does the same
+thing 569 → 390 with GC stepping 2–4 → 43. **But it is not necessary**: 21-36-13
+holds a flat 690–704 MB with GC flat at 4–10 per bucket and still produced a
+105.1 ms stall, and 21-00-50 produced the worst frame in the whole set —
+**254.6 ms** — with GC flat at 3–4 and `gc: 0` on the frame itself. So the
+collection burst is a correlate of the BURSTS and not the cause of the stalls.
+
+**The stalls also have a shape nobody had looked for.** They arrive in a single
+self-limiting burst, periodic and escalating, then stop for good — 21-00-50 is
+every third frame at 27.7 → 37.8 → 59.1 → 114.3 → 115.4 → 254.6 ms, followed by
+448 clean frames at 6.9. Draw calls and active meshes FALL through each burst
+rather than rising.
 
 ### Two instrument bugs this capture found, both fixed
 

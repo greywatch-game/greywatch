@@ -92,8 +92,14 @@ you are on before you believe anything else in this section.
   `--enable-unsafe-webgpu`, without it, and under every ANGLE override tried.
   `channel: "chromium"` is what asks for the full binary, and with it headless
   presents perfectly well: 240 swap-chain frames, no device loss. So the flag
-  is dead weight on this machine and the channel is the whole game, which is
+  buys no ADAPTER on this machine and the channel is the whole game, which is
   the exact inverse of the Chromebook below.
+  **It is not dead weight, though, and this file said it was for a
+  milestone.** `--enable-unsafe-webgpu` is also what exposes
+  `GPUCommandEncoder.writeTimestamp`, which is the whole of the profiler's
+  whole-frame GPU counter — so `launchClient` passing it is why every
+  `gpu.frame` reading in this file exists, and a stock Chrome reading the same
+  build gets `samples: 0`. See the `?gpu` bullet below.
 - **`--use-angle=d3d11` is a trap.** It gets an adapter and then fails
   `requestDevice` with `DynamicLib.Open: dxil.dll Windows Error: 87`. No ANGLE
   override is needed or wanted here.
@@ -131,7 +137,15 @@ you are on before you believe anything else in this section.
   `docs/profiling.md`. Boot with `?profile&gpu` and read `gpu.frame`, which
   is the whole command encoder; `gpu.mainPass` is the final full-screen quad in
   this pipeline and reads in tens of microseconds, so a script that asserts on
-  it is asserting on a composite. It samples about HALF the frames — only one
+  it is asserting on a composite.
+  **`?gpu` is necessary and not sufficient: the whole-frame counter also needs
+  `--enable-unsafe-webgpu`**, which `launchClient` passes and a browser started
+  by hand does not. Without it the capture reads `available: true` and
+  `frame.samples: 0` — a real measurement of zero taken 747 times, not an
+  absent one — while `gpu.mainPass` keeps working and makes the report look
+  healthy. `gpu.frameMeasurable` (report v9) is the field that tells the two
+  apart; check it before believing a zero. Verified both ways on this box:
+  1549 samples with the flag, 0 without, same build and same map. It samples about HALF the frames — only one
   measurement is in flight at a time — so `gpu.frame.samples` is the
   denominator, and a 0 in `series.gpuFrameMs` is an unmeasured frame rather
   than a fast one. Measured on this box: 130.0 fps with the flag against 129.9

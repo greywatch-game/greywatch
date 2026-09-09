@@ -70,6 +70,8 @@
   --fault-soft:  #C42C4A1A;
   --heap:        #5D4EA8;
   --heap-soft:   #5D4EA81F;
+  --gpu:         #3F7A2E;
+  --gpu-soft:    #3F7A2E1F;
 
   --good:        #2F6B4F;
   --focus:       #0087A3;
@@ -99,6 +101,8 @@
     --fault-soft:  #D45A7526;
     --heap:        #9166D6;
     --heap-soft:   #9166D62E;
+    --gpu:         #7BB863;
+    --gpu-soft:    #7BB8632E;
 
     --good:      #5FA982;
     --focus:     #1E9BB8;
@@ -127,6 +131,8 @@
   --fault-soft:  #D45A7526;
   --heap:        #9166D6;
   --heap-soft:   #9166D62E;
+  --gpu:         #7BB863;
+  --gpu-soft:    #7BB8632E;
 
   --good:      #5FA982;
   --focus:     #1E9BB8;
@@ -292,6 +298,7 @@ textarea {
 .stat.acc-fault  .v { color: var(--fault); }
 .stat.acc-coll   .v { color: var(--collector); }
 .stat.acc-heap   .v { color: var(--heap); }
+.stat.acc-gpu    .v { color: var(--gpu); }
 .stat .f {
   font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 10.5px; color: var(--ink-4); margin-top: 2px;
 }
@@ -536,6 +543,20 @@ table.lad tr.rest td { color: var(--ink-3); font-style: italic; }
       </div>
     </div>
 
+    <div class="panel" id="p-gpu">
+      <header>
+        <h2>GPU time</h2>
+        <div class="note" id="n-gpu-head"></div>
+      </header>
+      <div class="body flush">
+        <div class="chart">
+          <canvas id="c-gpu" height="140"></canvas>
+          <div class="tip" id="t-gpu"></div>
+        </div>
+        <div class="scale-note" id="n-gpu"></div>
+      </div>
+    </div>
+
     <div class="panel">
       <header>
         <h2>Attribution</h2>
@@ -761,6 +782,70 @@ function load(text, name) {
    reports none, "no long animation frame" means nothing at all. */
 let LOAF_SUPPORTED = false;
 let LOAF_FLOOR = 50;
+/* Whether a per-frame GPU reading on THIS capture means anything — see
+   `gpuRead`. A hitch carries `gpuFrameMs: 0` both when the GPU was not
+   measured on that frame (most of them: only one measurement is in flight at a
+   time) and when the whole capture could not measure, so the reasoning below
+   speaks only where a real sample landed on the frame in hand. */
+let GPU_OK = false;
+
+/* Whether this capture's whole-frame GPU counter said anything, which is THREE
+   questions and not one — `requested` (did the boot ask), `available` (did the
+   adapter have it) and `frameMeasurable` (can this browser express the answer
+   at all). The third arrived in report version 9; before it, a `samples: 0`
+   cannot be told from "the GPU did nothing", so this returns null for "cannot
+   say" rather than guessing, and every caller prints the reason instead of a
+   number. See `docs/profiling.md`. */
+function gpuRead(r) {
+  const g = r.gpu;
+  if (!g) return { state: "absent", why: "this capture predates the GPU counter" };
+  if (!g.requested) return { state: "unasked", why: "the boot did not ask (`?gpu`)" };
+  if (!g.available) return { state: "refused", why: "the adapter has no timestamp-query" };
+  const samples = (g.frame && g.frame.samples) || 0;
+  if (samples > 0) return { state: "ok", why: "", frame: g.frame, mainPass: g.mainPass };
+  // Armed, and nothing came back. Version 9 knows which of the two this is.
+  if (g.frameMeasurable === false) {
+    return {
+      state: "unmeasurable",
+      why: "this browser cannot measure a whole frame — Chrome keeps " +
+        "GPUCommandEncoder.writeTimestamp behind --enable-unsafe-webgpu, so the counter " +
+        "recorded a real zero on every frame rather than no reading at all",
+    };
+  }
+  if (g.frameMeasurable === true) {
+    return { state: "empty", why: "the counter is measurable here but resolved nothing — check the Babylon internals it rides on" };
+  }
+  return {
+    state: "ambiguous",
+    why: "0 samples on a capture older than report v9, which cannot distinguish " +
+      "\"the GPU took no time\" from \"this browser could not measure it\" — re-take it",
+  };
+}
+
+/* The window's long-animation-frame totals, which are only readable from
+   report version 9. Before it the ring never cleared a row's LoAF numbers when
+   it lapped, so the totals carry every long frame the PROCESS ever saw — the
+   map install's above all — rather than the window's, and they read as several
+   seconds of blocking inside a window whose every hitch reported none. The
+   per-hitch fields, `loaf.worst` and `series.loafMs` were always right, so
+   only the aggregate is withheld. */
+function loafTotals(r) {
+  if (!r.loaf || !r.loaf.supported) return null;
+  if (!(r.version >= 9)) return null;
+  return r.loaf;
+}
+
+/* What the GPU did on one frame, said only where a sample actually landed on
+   it. **This is the sentence `?gpu` exists to make**: a frame the main thread
+   was idle through is the compositor declining to issue a rendering
+   opportunity, and a GPU that is behind is the leading reason for one — but
+   `present` returns instantly because `queue.submit` queues rather than
+   blocks, so nothing else in a capture can see it. A small number here on a
+   long frame says the GPU was idle through it too. */
+function gpuClause(h) {
+  if (!GPU_OK || !(h.gpuFrameMs > 0)) return "";
+  return ", and the GPU did " + fmt(h.gpuFrameMs, 2) + " ms of work on this frame";
+}
 
 function readHitch(h) {
   const wall = h.frameMs;
@@ -792,13 +877,14 @@ function readHitch(h) {
           "was script (" + fmt(script, 1) + " ms" + (block ? "" : ", nothing blocking") + ") — " +
           (render > 0.4 * loaf
             ? fmt(render, 1) + " ms of it was the browser's rendering"
-            : "and it was not the browser's rendering either, so the frame began and then waited");
+            : "and it was not the browser's rendering either, so the frame began and then waited") +
+          gpuClause(h);
       }
     } else if (LOAF_SUPPORTED && wall >= (LOAF_FLOOR || 50)) {
       kind = "outside";
       why = "the browser reported NO long animation frame over a frame long enough to " +
         "qualify, so the main thread was idle: the time went to the compositor, the " +
-        "driver or the panel";
+        "driver or the panel" + gpuClause(h);
     } else if (LOAF_SUPPORTED) {
       /* The trap: under the spec's 50 ms floor the browser reports nothing, and
          "no entry" is not a finding. Six frames between 24 and 50 ms were read
@@ -833,6 +919,8 @@ function renderReport(r) {
   const mem = r.memory || null;
   LOAF_SUPPORTED = !!(r.loaf && r.loaf.supported);
   LOAF_FLOOR = (r.loaf && r.loaf.floorMs) || 50;
+  const gpu = gpuRead(r);
+  GPU_OK = gpu.state === "ok";
   const clock = r.clock || {};
   const below = new Set(clock.belowGrain || []);
 
@@ -960,6 +1048,30 @@ function renderReport(r) {
   if (mem && mem.heapLive) {
     stats.appendChild(tile("Allocation", fmt(mem.allocMbPerSec, 1), " MB/s", "peak " + fmt(mem.heapPeakMb, 0) + " MB", "heap"));
   }
+  /* The GPU tile is the only one that prints a REASON where it has no number,
+     because every one of its silences is a different fact and one of them —
+     "this browser cannot measure it" — looks exactly like "the GPU was idle",
+     which is the answer the whole flag exists to rule out. */
+  if (gpu.state === "ok") {
+    stats.appendChild(tile(
+      "GPU frame", fmt(gpu.frame.meanMs, 2), " ms",
+      "p95 " + fmt(gpu.frame.p95Ms, 2) + " · max " + fmt(gpu.frame.maxMs, 2) +
+        " · " + gpu.frame.samples + " sampled",
+      "gpu"));
+  } else if (gpu.state !== "absent") {
+    stats.appendChild(tile("GPU frame", "—", "",
+      gpu.state === "unasked" ? "not asked for" :
+      gpu.state === "refused" ? "adapter refused" :
+      gpu.state === "unmeasurable" ? "browser cannot" : "0 samples",
+      gpu.state === "unmeasurable" || gpu.state === "ambiguous" ? "fault" : null));
+  }
+  const lt = loafTotals(r);
+  if (lt) {
+    stats.appendChild(tile(
+      "Long frames", String(lt.entries), "",
+      fmt(lt.totalMs, 0) + " ms total · " + fmt(lt.blockingMs, 0) + " ms blocking",
+      lt.blockingMs > 0 ? "fault" : null));
+  }
   const c = r.counters || {};
   stats.appendChild(tile("Draw calls", String(c.drawCalls != null ? c.drawCalls : "—"), "", (c.activeMeshes != null ? c.activeMeshes + " meshes" : "")));
   // Particles are only on a capture from a build that measures them, and the
@@ -974,10 +1086,14 @@ function renderReport(r) {
   // Older captures have a series without the counters; the panel is absent
   // rather than empty, the way the heap one is.
   $("p-draws").hidden = !(series && series.drawCalls && series.drawCalls.length);
+  const gpuSeries = series && series.gpuFrameMs && series.gpuFrameMs.length
+    && series.gpuFrameMs.some((v) => v > 0);
+  $("p-gpu").hidden = !gpuSeries;
   $("p-heap").hidden = !(series || (mem && !mem.heapLive));
   if (series) {
     drawFrames(r);
     if (series.drawCalls && series.drawCalls.length) drawSeriesCounters(r);
+    if (gpuSeries) drawGpu(r, gpu);
     if (mem && mem.heapLive) {
       $("heap-frozen").hidden = true;
       $("c-heap").parentElement.hidden = false;
@@ -1014,6 +1130,16 @@ function renderReport(r) {
   kv("Span overhead", fmt(clock.overheadUs, 3) + " µs per pair");
   kv("Hitch bar", f.hitchThresholdMs != null ? fmt(f.hitchThresholdMs, 1) + " ms  (floor " + fmt(f.baselineMs, 2) + " ms)" : "24 ms (fixed)");
   kv("Heap readable", mem ? (mem.heapLive ? "yes" : "no — rate-limited") : "not recorded");
+  kv("GPU timing", gpu.state === "ok"
+    ? "yes — " + gpu.frame.samples + " frames sampled of " + r.window.frames
+    : "no — " + gpu.why);
+  kv("Long frames", !LOAF_SUPPORTED
+    ? "this browser reports none"
+    : lt
+      ? lt.entries + " over " + LOAF_FLOOR + " ms · " + fmt(lt.totalMs, 0) + " ms, of which " +
+        fmt(lt.scriptMs, 0) + " script / " + fmt(lt.renderMs, 0) + " rendering / " +
+        fmt(lt.blockingMs, 0) + " blocking"
+      : "totals withheld — a capture before report v9 carries the whole session's, not the window's");
   kv("Viewport", (dev.window || "?") + "  →  " + (dev.backingStore || "?"));
   kv("Pixel ratio", String(dev.devicePixelRatio != null ? dev.devicePixelRatio : "?"));
   kv("Cores / memory", (dev.hardwareConcurrency || "?") + " ×  " + (dev.deviceMemoryGb != null ? dev.deviceMemoryGb + " GB" : "?"));
@@ -1208,6 +1334,7 @@ function hitchRow(h, read, below) {
   w("walk", fmt(h.meshWalkMs, 2) + " ms");
   w("rtt", fmt(h.renderTargetsMs, 2) + " ms");
   if (h.particlesMs != null) w("particles", fmt(h.particlesMs, 2) + " ms");
+  if (GPU_OK && h.gpuFrameMs > 0) w("gpu", fmt(h.gpuFrameMs, 2) + " ms");
   if (h.heapMb) w("heap", fmt(h.heapMb, 1) + " MB");
   det.appendChild(where);
 
@@ -1494,6 +1621,64 @@ function drawHeap(r) {
 
   hover(canvas, $("t-heap"), n, X, (i) =>
     "<b>" + fmt(hp[i], 1) + " MB</b>" + (gc[i] > 0 ? "<br><span class=\"dim\">" + gc[i] + " collection" + (gc[i] === 1 ? "" : "s") + "</span>" : ""));
+}
+
+/* ── GPU chart ─────────────────────────────────────────────────────────── */
+/* **A SCATTER AND NOT A CURVE.** Only one whole-frame measurement is in flight
+   at a time, so about half the rows carry a reading and the rest carry 0 — and
+   joining those into a line would draw the gaps as the GPU dropping to idle
+   between every sample, which is the exact misreading this panel exists to
+   prevent. Dots on the rows that were measured, and nothing on the rows that
+   were not.
+
+   The reference is the frame's own budget rather than a fixed 16.7: what makes
+   a GPU reading interesting is whether it fits inside the interval the display
+   is actually handing out, and on the machine this was built for that is 7 ms
+   rather than a nominal 60 Hz. */
+function drawGpu(r, gpu) {
+  const canvas = $("c-gpu");
+  canvas._cssH = 140;
+  const { ctx, w, h } = prep(canvas);
+  const g = r.series.gpuFrameMs, fm = r.series.frameMs, n = g.length;
+  if (!n) return;
+  const budget = r.frame && r.frame.baselineMs > 0 ? r.frame.baselineMs : 16.7;
+  let hi = 0;
+  for (let i = 0; i < n; i++) if (g[i] > hi) hi = g[i];
+  const yMax = Math.max(hi, budget) * 1.15 || 1;
+  const plotW = w - PAD.l - PAD.r;
+  const X = (i) => PAD.l + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+  const Y = (v) => h - PAD.b - Math.min(1, v / yMax) * (h - PAD.t - PAD.b);
+  axes(ctx, w, h, yMax, "ms", 3);
+  ref(ctx, w, h, yMax, budget, "frame budget " + fmt(budget, 1) + " ms", css("--fault"), [4, 3]);
+
+  ctx.fillStyle = css("--gpu");
+  let over = 0, sum = 0, count = 0;
+  for (let i = 0; i < n; i++) {
+    if (!(g[i] > 0)) continue;
+    count++; sum += g[i];
+    if (g[i] > budget) over++;
+    ctx.fillRect(Math.round(X(i)) - 1, Math.round(Y(g[i])) - 1, 2, 2);
+  }
+
+  $("n-gpu-head").textContent = gpu.state === "ok"
+    ? fmt(gpu.frame.meanMs, 2) + " ms mean · " + fmt(gpu.frame.p95Ms, 2) + " p95 · " +
+      fmt(gpu.frame.maxMs, 2) + " max"
+    : "";
+  $("n-gpu").textContent =
+    count + " of " + n + " frames measured — only one measurement is in flight at a time, so " +
+    "a row with no dot is an unmeasured frame and not an idle GPU. Mean over the measured " +
+    "rows " + fmt(sum / Math.max(1, count), 2) + " ms; " + over + " of them over the " +
+    fmt(budget, 1) + " ms budget." +
+    (r.gpu && r.gpu.mainPass && r.gpu.mainPass.frames
+      ? " The main pass alone is " + fmt(r.gpu.mainPass.meanMs, 3) +
+        " ms — in this pipeline that is the final full-screen quad, not the scene."
+      : "");
+
+  hover(canvas, $("t-gpu"), n, X, (i) =>
+    (g[i] > 0
+      ? "<b>" + fmt(g[i], 2) + " ms</b> <span class=\"dim\">GPU</span>"
+      : "<span class=\"dim\">not measured</span>") +
+    "<br><b>" + fmt(fm[i], 1) + " ms</b> <span class=\"dim\">wall · frame " + (i + 1) + "</span>");
 }
 
 /* ── shared crosshair ──────────────────────────────────────────────────── */
@@ -1916,6 +2101,9 @@ function redraw() {
   if (REPORT && REPORT.series) {
     drawFrames(REPORT);
     if (REPORT.series.drawCalls && REPORT.series.drawCalls.length) drawSeriesCounters(REPORT);
+    if (REPORT.series.gpuFrameMs && REPORT.series.gpuFrameMs.some((v) => v > 0)) {
+      drawGpu(REPORT, gpuRead(REPORT));
+    }
     if (REPORT.memory && REPORT.memory.heapLive) drawHeap(REPORT);
   }
   if (flame) { drawFlame(); }

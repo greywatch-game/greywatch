@@ -438,6 +438,47 @@ interface GpuEngine {
   readonly _timestampQuery?: GpuTimestampQuery;
 }
 
+/**
+ * Whether this browser can measure a WHOLE FRAME's GPU time at all, which is a
+ * different question from whether the adapter has `timestamp-query`.
+ *
+ * **Babylon brackets the whole command encoder with
+ * `GPUCommandEncoder.writeTimestamp`, and Chrome exposes that method only
+ * behind `--enable-unsafe-webgpu`** — while the FEATURE itself, and the
+ * `timestampWrites` pass descriptor the MAIN PASS counter is written with, need
+ * no flag at all. So on a stock browser the adapter reports the feature,
+ * `enableGPUTimingMeasurements` takes, `gpuTimeInFrameForMainPass` appears and
+ * `available` is therefore TRUE — while `WebGPUDurationMeasure.stop` returns a
+ * literal 0, which `endFrame` accepts because `duration >= 0`. The counter then
+ * records a real measurement of ZERO on every frame: 747 of them over one
+ * measured session, against 626 genuine samples with the flag. `over` filters
+ * every one of them out on `> 0` and the report says `samples: 0`.
+ *
+ * **Which is indistinguishable from "the GPU took no time", and that is the
+ * whole reason this exists.** It is the third fact in the row `loaf.supported`
+ * and `memory.heapLive` already state — "nobody asked", "the adapter refused"
+ * and "this browser cannot express the answer" are three different things and
+ * none of them is a reading. It cost a capture taken to settle `FINDINGS.md`
+ * #1: `?gpu` armed, the feature present, `available` true, and the one
+ * question the flag exists to answer came back empty.
+ *
+ * The METHOD is absent from `@webgpu/types` — it was removed from the spec,
+ * which is why Chrome keeps it behind a flag — so the prototype is cast rather
+ * than typed. **It is reached through `globalThis` rather than named**, which
+ * is not style: `server/tsconfig.json` narrows `types` to `["node"]` and still
+ * includes `../src`, so the bare identifier is undeclared in the authority's
+ * typecheck even though it is declared in the client's — and it is undefined
+ * at RUNTIME there too, under `NullEngine`.
+ */
+function gpuFrameMeasurable(): boolean {
+  const ctor = (
+    globalThis as unknown as {
+      GPUCommandEncoder?: { prototype?: { writeTimestamp?: unknown } };
+    }
+  ).GPUCommandEncoder;
+  return typeof ctor?.prototype?.writeTimestamp === "function";
+}
+
 /** One phase's line in a report. Milliseconds throughout. */
 export interface PhaseStat {
   name: Phase;
@@ -736,10 +777,18 @@ export interface ProfileReport {
     requested: boolean;
     available: boolean;
     /**
+     * Whether this browser can express a whole-frame answer — see
+     * `gpuFrameMeasurable`. **False with `frame.samples: 0` means the reading
+     * was impossible, not that the GPU was idle**, and on Chrome that is the
+     * ordinary case: it needs `--enable-unsafe-webgpu` on the command line,
+     * which `available` does not. `mainPass` is unaffected either way.
+     */
+    frameMeasurable: boolean;
+    /**
      * The WHOLE frame's GPU time, which is the one to read. Sampled rather than
      * continuous — only one measurement is in flight at a time — so `samples`
      * is the denominator and the mean is over those rows, never over the
-     * window.
+     * window. **Read it against `frameMeasurable` and never alone.**
      */
     frame: { samples: number; meanMs: number; p95Ms: number; maxMs: number };
     /**
@@ -1552,6 +1601,27 @@ export class FrameProfile {
     // frame skips would otherwise still be flying the previous lap's flag.
     const next = this.cursor * SLOTS;
     this.entered!.fill(0, next, next + SLOTS);
+    // **A long frame's numbers are cleared off the reused row for the same
+    // reason, and leaving them was worse than leaving a span behind.**
+    // `recordLoaf` writes a window's duration into every row it spans and only
+    // when it BEATS what is already there, so a value left over from a previous
+    // lap both survives for the life of the session and REFUSES the real
+    // reading that should have displaced it. The install's long frames are the
+    // biggest of any session and are never displaced by anything a round
+    // produces, which is exactly the starvation `keepLoaf` already guards
+    // `loaf.worst` against — but the ring had no such guard, so `loafFacts`
+    // summed them into every capture the process ever took. Measured on three
+    // captures minutes apart from one page load: an identical
+    // `loaf.blockingMs` of 6406.9 in all three, inside windows whose every
+    // recorded hitch reported `loafBlockMs: 0`, and a `totalMs` of 9.3 s in a
+    // 22.1 s window. Both halves of that are wrong in the confident direction —
+    // a window that never happened, and a genuine long frame suppressed by it,
+    // which reads as "the main thread was idle" on a hitch where it was not.
+    this.loafMs![this.cursor] = 0;
+    this.loafBlockMs![this.cursor] = 0;
+    this.loafScriptMs![this.cursor] = 0;
+    this.loafRenderMs![this.cursor] = 0;
+    this.loafHead![this.cursor] = 0;
     // …and the hitch this lap is about to overwrite stops being a hitch. The
     // list is in ring order, so the stale ones are always at the FRONT and this
     // is one comparison on nearly every frame. Without it the chip counts
@@ -1697,6 +1767,14 @@ export class FrameProfile {
     phases.sort((a, b) => b.mean - a.mean);
 
     return {
+      // 9: `gpu.frameMeasurable`, and the LoAF row is cleared when the ring
+      // laps it. A v8 capture's `gpu.frame.samples: 0` cannot be read — it is
+      // "the browser could not measure" and "the GPU did nothing" collapsed
+      // into one number — and its `loaf` TOTALS carry every long frame the
+      // process ever saw rather than the window's, so `loaf.totalMs`,
+      // `blockingMs`, `scriptMs`, `renderMs`, `entries` and `rows` are
+      // unreadable before v9. `loaf.worst`, the per-hitch `loaf*` fields and
+      // `series.loafMs` were always right, and `gpu.mainPass` is unaffected.
       // 8: `gpu` — the main pass's GPU time, per frame and filed against the
       // frame it belongs to rather than the one that read it. Off unless the
       // boot asked (`?gpu`), and `requested`/`available` are two questions.
@@ -1723,7 +1801,7 @@ export class FrameProfile {
       // wall clock and its phases are one row apart.
       // 3: `present`, the first phase outside `frame`, and the `roots` that
       // let a reader tell a second root from a phase it has not heard of.
-      version: 8,
+      version: 9,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
@@ -1865,6 +1943,7 @@ export class FrameProfile {
     return {
       requested: this.gpuRequested,
       available,
+      frameMeasurable: gpuFrameMeasurable(),
       frame: {
         samples: whole.n,
         meanMs: whole.meanMs,

@@ -629,6 +629,25 @@ What it draws:
   against one number for the whole window that is invisible — it had to be
   inferred from five disconnected hitch records the first time it came up. A
   capture taken before the fields existed simply has no panel.
+- **GPU time, as a SCATTER and never a curve**, against the frame's own budget
+  (`frame.baselineMs`) rather than a nominal 60 Hz — what makes a GPU reading
+  interesting is whether it fits the interval the display is actually handing
+  out. Only about half the rows carry a reading, so joining them into a line
+  would draw every gap as the GPU dropping to idle, which is the misreading the
+  panel exists to prevent: a row with no dot is an unmeasured frame. **And the
+  reading reaches the VERDICT** — a hitch the main thread was idle through now
+  says what the GPU did on that frame, which is the sentence `?gpu` was armed
+  to make ("the frame began and then waited, and the GPU did 1.75 ms of work on
+  this frame"). The tile prints a REASON where it has no number, because
+  `gpuRead`'s five silences are five different facts and one of them —
+  `unmeasurable` — looks exactly like an idle GPU.
+- **The long-frame totals for the window**, as a tile and a row — but **only
+  from report version 9**. Before it the ring never cleared a row's LoAF
+  numbers when it lapped, so those totals carry every long frame the PROCESS
+  ever saw rather than the window's; the viewer withholds them and says so
+  rather than printing a confident wrong number. The per-hitch fields,
+  `loaf.worst` and `series.loafMs` were always right and are shown for any
+  version.
 - **The flame chart** for a trace, with GC instants — and it stacks its rows
   two ways, because one shape cannot answer both questions. **DEPTH** is the
   flame chart proper: a row per level of the phase tree, siblings packed onto
@@ -738,6 +757,30 @@ failure — and a capture carries `gpu.requested` and `gpu.available` as two
 separate questions, because "nobody asked" and "the adapter refused" are
 different facts and neither is "the GPU took no time".
 
+**AND THERE IS A THIRD QUESTION, WHICH IS THE ONE THAT ACTUALLY BITES:
+`gpu.frameMeasurable`.** `?gpu` is necessary and not sufficient — on Chrome
+the whole-frame counter ALSO needs **`--enable-unsafe-webgpu` on the command
+line**, and without it the report comes back `requested: true, available: true,
+frame.samples: 0`, which reads exactly like a GPU that did no work. Babylon
+brackets the whole command encoder with `GPUCommandEncoder.writeTimestamp`,
+which was removed from the WebGPU spec and which Chrome therefore keeps behind
+that flag; the FEATURE and the `timestampWrites` pass descriptor `gpu.mainPass`
+is written with need no flag at all, which is why the main-pass counter keeps
+working and lends the report its false air of health. `WebGPUDurationMeasure
+.stop` then returns a literal 0, `endFrame` accepts it because `duration >= 0`,
+and the counter records a real measurement of ZERO on every frame — **747 of
+them over one measured session, against 626 genuine samples with the flag** —
+all of which the `> 0` filter removes.
+
+**This cost a capture and would have cost the next one.** A `?gpu` run taken to
+settle `FINDINGS.md` #1 came back empty with every other field looking right.
+So: `frameMeasurable: false` with `samples: 0` means the reading was
+impossible, and only `frameMeasurable: true` with `samples: 0` would mean
+something is wrong with the wiring. `plans/webgpu-ref/harness.mjs` passes the
+flag already (`launchClient`), which is why every headless number below was
+taken with it — **a reading from the harness does not prove a stock browser can
+take one**.
+
 **Read `gpu.frame`, not `gpu.mainPass`.** Babylon's
 `gpuTimeInFrameForMainPass` is the pass that targets the default framebuffer —
 and in this pipeline the world renders into post-process targets, so the only
@@ -763,12 +806,19 @@ attributable from the public surface, and filing a GPU reading against the frame
 that happened to read it would be this file's pairing bug for the third time.
 Every read is guarded and the failure is `available: false` rather than a
 throw. **After upgrading Babylon, take a `?gpu` capture and check
-`gpu.frame.samples` is not zero.**
+`gpu.frame.samples` is not zero** — with `--enable-unsafe-webgpu`, or the
+check tests the flag rather than the internals.
 
 Measured cost: **130.0 fps with the flag against 129.9 without**, and on
 Cinderhaven at 1718x858 the GPU reads 1.372 ms mean and 2.729 p95 against a
 6.746 ms tick — which is finding 17 from the other side, a frame bound by
 submission and not by the GPU.
+
+**On the real display, at 3440x1440 on Cinderhaven, it reads 1.977–2.325 ms
+mean, 2.4–2.8 p95 and a MAX of 3.7 ms** across four captures, against a 7 ms
+vsync budget and a tick of 4.5–6.4 — and on the hitch frames themselves it is
+1.6–2.7 ms, including a **160.7 ms frame on which the GPU did 1.7 ms of work**.
+That is what retired the last suspect in `FINDINGS.md` #1.
 
 ## What is deliberately not in it
 
