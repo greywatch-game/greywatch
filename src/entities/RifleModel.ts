@@ -10,7 +10,7 @@
  */
 import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { buildOptics, type OpticMount } from "./optics";
+import { buildOptics, ironRiseClearing, type OpticMount } from "./optics";
 import {
   BODY,
   METAL,
@@ -23,6 +23,38 @@ import {
 
 /** Top face of the receiver's rail — what every sight base stands on. */
 const RAIL_TOP = 0.084;
+
+/** The rear iron station, which is also the eye reference the irons are aimed
+ *  through — so it is the apex of the cone the stock below has to stay under. */
+const IRON_REAR_Z = -0.185;
+
+/**
+ * The cheek riser, authored here rather than at the build site because the
+ * irons are solved against it.
+ *
+ * This is a side-folding stock with the comb MOULDED INTO IT — there is no
+ * adjustment, so the way out the DMR, the LMG and the sniper take (drop the
+ * comb to `ironSightFloor`) is not available: dropping this one drops the
+ * whole stock, and a face on the rifle would be a face on the receiver. The
+ * riser stays where the stock wants it and the SIGHTS clear it instead.
+ *
+ * `CHEEK_TOP` is the riser's widest point, and `CHEEK_FRONT_Z` its front edge,
+ * which is where the aperture's cone is lowest over it — spreading with
+ * distance, the cone is at its tightest nearest the eye. Taking the rear
+ * diameter at the front edge is worth a millimetre of margin on a part that
+ * tapers the other way, and that is a millimetre well spent.
+ */
+const CHEEK_Y = 0.092;
+const CHEEK_Z = -0.395;
+const CHEEK_LEN = 0.15;
+const CHEEK_DIA_REAR = 0.048;
+const CHEEK_DIA_FRONT = 0.046;
+const CHEEK_TOP = CHEEK_Y + CHEEK_DIA_REAR / 2;
+const CHEEK_FRONT_Z = CHEEK_Z + CHEEK_LEN / 2;
+
+/** Daylight left under the sight picture, over the comb. The DMR's number,
+ *  solved from the other side. */
+const CHEEK_GAP = 0.006;
 
 /**
  * The magazine's rake, which is also the line it drops out along, and it is
@@ -44,8 +76,24 @@ const MAG_RAKE = -0.14;
 const MOUNT: OpticMount = {
   railTop: RAIL_TOP,
   mountZ: 0.02,
-  ironRearZ: -0.185,
+  ironRearZ: IRON_REAR_Z,
   ironFrontZ: 0.53,
+  /**
+   * Raised off the shared rise, and DERIVED rather than authored: the cheek
+   * riser stands into the shared cone by 13 mm, which reads as an aperture
+   * with the bottom third bitten out of it. This is the rise that puts the
+   * cone's lower edge `CHEEK_GAP` over the riser's front edge instead — the
+   * inverse of what `DmrModel` does with the same line. Move the riser and the
+   * sights follow it; the front post, the hood and both bases come with them,
+   * and `ViewModel.applyFit` re-derives the aimed pose off `sightCenter`, so
+   * nothing has to be told twice.
+   */
+  ironRise: ironRiseClearing(
+    { railTop: RAIL_TOP, ironRearZ: IRON_REAR_Z },
+    CHEEK_FRONT_Z,
+    CHEEK_TOP,
+    CHEEK_GAP,
+  ),
 };
 
 /** Where each hand grips, in rifle-local units. */
@@ -93,7 +141,7 @@ export function buildRifle(
   }
   // Takedown pins, through the receiver and proud of it on both sides.
   b.pin("pinFront", METAL, 0.015, 0.088, 0, 0.014, 0.115);
-  b.pin("pinRear", METAL, 0.015, 0.088, 0, 0.014, -0.185);
+  b.pin("pinRear", METAL, 0.015, 0.088, 0, 0.014, IRON_REAR_Z);
   b.box("ejectPort", METAL, 0.01, 0.032, 0.11, 0.045, 0.042, 0.06);
   // Dust cover hanging under the port, and the brass deflector behind it.
   b.box("portCover", METAL, 0.008, 0.026, 0.104, 0.047, 0.018, 0.058);
@@ -154,8 +202,17 @@ export function buildRifle(
   b.box("stockTop", POLYMER, 0.058, 0.045, 0.22, 0, 0.055, -0.4);
   // Rounded cheek riser — the one part of the weapon a face actually rests on,
   // and the last place a square edge belongs.
-  b.box("cheekBase", POLYMER, 0.05, 0.018, 0.15, 0, 0.079, -0.395);
-  b.tube("cheekRiser", POLYMER, 0.046, 0.048, 0.15, 0, 0.092, -0.395);
+  b.box("cheekBase", POLYMER, 0.05, 0.018, CHEEK_LEN, 0, 0.079, CHEEK_Z);
+  b.tube(
+    "cheekRiser",
+    POLYMER,
+    CHEEK_DIA_FRONT,
+    CHEEK_DIA_REAR,
+    CHEEK_LEN,
+    0,
+    CHEEK_Y,
+    CHEEK_Z,
+  );
   b.box("stockBottom", POLYMER, 0.055, 0.035, 0.2, 0, -0.055, -0.39);
   b.box("stockRear", POLYMER, 0.07, 0.2, 0.045, 0, 0.005, -0.495);
   b.box("slingRear", METAL, 0.026, 0.03, 0.014, -0.04, -0.03, -0.472);

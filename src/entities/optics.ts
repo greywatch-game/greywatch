@@ -39,7 +39,8 @@ import {
 
 /**
  * Where a weapon offers its rail, and where along it a sight sits. Everything
- * an optic builds is measured from these four numbers.
+ * an optic builds is measured from these four numbers, and from the fifth when
+ * a weapon states it.
  */
 export interface OpticMount {
   /** Top face of the receiver's rail — what every sight base stands on. */
@@ -49,6 +50,13 @@ export interface OpticMount {
   /** The rear and front back-up iron stations. */
   ironRearZ: number;
   ironFrontZ: number;
+  /**
+   * How high this weapon carries its irons above the rail, when `IRON_RISE` is
+   * not enough — see that constant, and `ironRiseClearing`, which is how the
+   * one weapon that states it works the number out rather than authoring it.
+   * Absent is the shared rise, so a weapon saying nothing is unaffected.
+   */
+  ironRise?: number;
 }
 
 /**
@@ -79,7 +87,8 @@ export const eyeDistance = (id: SightId): number =>
  * runs onto the weapon's own top deck — the rifle's rail runs out to 0.53 with
  * a folded iron leaf standing on the end of it. A sight lower than this puts
  * the gun in its own picture. The irons have no such floor, because what you
- * see under the front post through a rear aperture IS the weapon.
+ * see under the front post through a rear aperture IS the weapon — theirs is
+ * BEHIND them instead, and it is the one a weapon may override (`ironRiseOf`).
  *
  * These are therefore not free to be "realistic", and they are what is left of
  * the old bulk: the optics themselves came down by a third to a half, the
@@ -98,6 +107,19 @@ const PRISM_RISE = 0.096;
  * solving. The cone clears the rail with 0.023 to spare as a side effect.
  */
 const LONG_RISE = 0.098;
+
+/**
+ * The irons' rise, which is the one a weapon may raise for itself. Their floor
+ * is not the rail ahead of them but the STOCK behind them: the aperture's cone
+ * runs back over the comb, and a comb standing into it fills the picture
+ * (`ironSightFloor`). There are exactly two ways out of that and both are in
+ * the tree — bring the comb DOWN, which is what the DMR, the LMG and the
+ * sniper do, a comb being adjustable and this being it at the bottom of its
+ * travel; or carry the SIGHTS up, which is what is left for a weapon whose
+ * riser is moulded into the stock. The rifle is the only one of the second
+ * kind, and `ironRiseClearing` is how it works the number out.
+ */
+const ironRiseOf = (mount: OpticMount): number => mount.ironRise ?? IRON_RISE;
 
 /**
  * The far end of the longest rail any weapon here offers, as a depth past the
@@ -340,7 +362,33 @@ export function ironSightFloor(mount: OpticMount, z: number): number {
   const eyeBack = eyeDistance("iron");
   return (
     mount.railTop +
-    IRON_RISE -
+    ironRiseOf(mount) -
+    (IRON_BORE / 2) * ((z - mount.ironRearZ + eyeBack) / eyeBack)
+  );
+}
+
+/**
+ * The inverse, and the other answer to the same problem: the `ironRise` that
+ * puts the cone's lower edge `gap` above a part whose top is `top` at depth
+ * `z`. Solve it at the part's FRONT edge, which is where the cone is lowest
+ * over it.
+ *
+ * It takes the mount's two relevant numbers rather than the mount itself
+ * because a weapon that needs this is computing a FIELD of that mount, and the
+ * whole point is that the answer does not depend on the rise it is producing —
+ * the cone's edge is `railTop + rise - <spread at z>`, linear in the rise.
+ */
+export function ironRiseClearing(
+  mount: Pick<OpticMount, "railTop" | "ironRearZ">,
+  z: number,
+  top: number,
+  gap: number,
+): number {
+  const eyeBack = eyeDistance("iron");
+  return (
+    top +
+    gap -
+    mount.railTop +
     (IRON_BORE / 2) * ((z - mount.ironRearZ + eyeBack) / eyeBack)
   );
 }
@@ -358,7 +406,7 @@ export function buildOptics(
   prefix: string,
 ): { sights: Record<SightId, SightAssembly>; meshes: Mesh[] } {
   const b = build;
-  const ironY = mount.railTop + IRON_RISE;
+  const ironY = mount.railTop + ironRiseOf(mount);
   const winY = mount.railTop + WIN_RISE;
   const scopeY = mount.railTop + SCOPE_RISE;
   const reflexY = mount.railTop + REFLEX_RISE;

@@ -1517,6 +1517,20 @@ with; a comb is adjustable precisely because irons and glass want different heig
 and this is it at the bottom of its travel. Forward of the rear station the cone
 runs onto the rail and the front sight's base, and that is correct.
 
+**There are TWO answers to that constraint and the second is the rifle's, because a
+moulded riser cannot be adjusted down.** The DMR, the LMG and the sniper drop the
+comb to `ironSightFloor`; the rifle's comb is a rounded riser cast into a
+side-folding stock, so dropping it drops the whole stock and puts the shooter's face
+on the receiver. It carries the SIGHTS up instead — `OpticMount.ironRise`, absent on
+every other weapon and therefore the shared `IRON_RISE` there, and DERIVED on the
+rifle rather than authored: `ironRiseClearing` is `ironSightFloor` solved the other
+way round, and the rifle asks it for the rise that puts the cone's lower edge 6 mm
+over the riser's FRONT edge, which is where the cone is lowest over it. Measured
+through VERIFYING.md's cone of rays: 38 of 193 looked at the riser at the shared
+rise, and 0 of 193 do now, with every other weapon unmoved at 0. Nothing downstream
+had to be told — the bases, the hood and the post are all built off the rise, and
+`ViewModel.applyFit` re-derives the aimed pose from `sightCenter`.
+
 ### The sidearm
 
 **Every loadout carries a pistol, reachable two ways.** The mouse WHEEL swaps to
