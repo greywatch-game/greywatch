@@ -1447,9 +1447,28 @@ half-added.
 every weapon and every optic is built in `Game`'s constructor. Two readings are
 worth taking after touching either table, and both were taken for the 6x: every
 `sightCenter` must sit on its weapon's own x axis (36 of 36 did), and a disc of
-rays down each optic's cone must find none of the weapon under it (0 of 72
-blocked, on all six weapons). `VERIFYING.md` has the method, including the trap
-that makes twenty-three of twenty-five combinations read wrong.
+rays down each optic's cone must find nothing but the reticle in it.
+`VERIFYING.md` has the method, including the trap that makes twenty-three of
+twenty-five combinations read wrong.
+
+**That second reading was recorded here as "0 of 72 blocked" and 72 rays is not
+enough to mean it**, which is worth more than the correction: the 6x's own
+throw lever sat 6 mm inside the clear bore for as long as the lever has
+existed — a block of metal in the top right of the one sight picture in the
+kit with no field to spare — and a 72-ray disc never touched it. **What a
+coarse disc misses is not a small fault but a small SOLID ANGLE**, and a part
+bolted to the tube is exactly that shape: the lever subtended a 45° wedge of
+the outer fifth of the radius, so it is invisible to any disc that samples the
+rim and the middle and nothing between. At 16 rings x 64 azimuths (1024) it
+reads **13 blocked on `longScope_metal` at the ocular**, and 0 once the lever
+is sized off `outerAt` like everything else on that tube. **Take this at 1024
+and read the MESH NAMES, never the count**: the honest floor is not zero —
+1024 rays find the reticle (52 on the 6x, 44 on the 3.5x, which is what
+thinning the reticle moved and is the only place that shows up as a number) and
+6 rays of the outermost ring find the tube itself, because a stepped tube
+circumscribes its own cone and touches it at every step's far rim. A count
+compared against a remembered number would have called both of those a
+regression and the lever nothing at all.
 
 **The mount is not free, and the DMR is where that shows.** Two of the four numbers
 are bounded by the optics rather than the receiver: the scope's cone reaches the

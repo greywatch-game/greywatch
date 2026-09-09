@@ -1112,7 +1112,26 @@ is one machine's:
   in the way (the sight's own housing, the weapon under it, the reticle), and
   the hit point transformed back through the root's inverse world matrix says
   WHERE along the weapon it stands, which is how a bracket at z = 0.4 is told
-  apart from a heat shield at z = 0.6. The launcher's optic read 0 clear of 313
+  apart from a heat shield at z = 0.6.
+  **`own` has to EXCLUDE the other five sight assemblies, and left in they do
+  not merely add noise — they bury the answer.** Every optic a weapon can wear
+  is built at map load and stacked on the same rail, with only the fitted one
+  enabled; `isEnabled()` is not a pick filter, and `root.getChildMeshes(false)`
+  is all six. Measured that way the 6x reads **658 of 672 blocked**, almost all
+  of it `reflexGlass` and `holo_polymer` sitting in front of the tube, and the
+  one real fault is a dozen rays inside a wall of them. Filtered to the weapon
+  plus the sight under test — subtract the meshes under each other
+  `view_<weapon>_sight_<id>` node — the same scene reads 58, and the fault is
+  legible.
+  **And 72 rays is not a disc.** A part bolted to the tube subtends a narrow
+  WEDGE of the outer radius rather than a patch of the middle, which is the one
+  shape a coarse disc steps over: the 6x's throw lever stood 6 mm inside the
+  clear bore and a 72-ray disc found none of it, against 13 rays at 16 rings x
+  64 azimuths. Take it at 1024, and **read the mesh names rather than the
+  count** — the floor is not zero. The reticle is meant to be in the picture
+  (52 rays on the 6x, 44 on the 3.5x) and 6 rays of the outermost ring land on
+  the tube, because a stepped tube circumscribes its own cone and meets it at
+  every step's far rim. Only a name that is neither of those is a fault. The launcher's optic read 0 clear of 313
   as a solid body and 270 of 313 as a tube; a `Ray` constructor with no import
   is `scene.createPickingRay(0, 0, null, scene.activeCamera).constructor`. A
   screenshot at `adsBlend === 1` is worth taking afterwards, and it is the

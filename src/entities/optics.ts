@@ -341,6 +341,34 @@ const longBore = (dz: number): number =>
   2 * LONG_CONE * (eyeDistance("longScope") + dz - LONG_OCULAR_DZ);
 
 /**
+ * The 6x reticle's line weight and the floating dot's diameter.
+ *
+ * **A reticle's thickness is a SUBTENSE and has to be priced as one**, which
+ * is the whole of why these are constants with an argument rather than two
+ * literals in the builder. A bar is drawn 0.6 weapon units from the eye inside
+ * a cone that is 0.84 of the screen's half-height, and the aimed half-angle at
+ * 6x is `atan(tan(fovHip / 2) / 6)` = 0.0855 rad — so a length here converts
+ * straight into how much of the WORLD it hides, and it was never converted.
+ * The arms were 0.0012 and the dot 0.0022, which is 2.0 and 3.7 mrad: the dot
+ * alone COVERED a half-metre torso at 137 m and the crosshair did at 251 m,
+ * which is inside the band the one weapon wearing this optic exists for. A
+ * shooter cannot hold on what the mark is standing on top of, and at 6x that
+ * is not a fine reticle drawn slightly heavy — it is the target.
+ *
+ * 0.83 and 1.50 mrad is a torso at 600 m and at 334 m, and the dot stays 1.8x
+ * the line so it still reads as a floating dot rather than as a junction.
+ *
+ * The floor under them is the SCREEN and not the arithmetic: 5 px and 9 px on
+ * a 1080-line display, and this mesh is emissive, so the glow layer carries
+ * what is left of the weight the geometry has given up. Thinner than this is a
+ * reticle that shimmers on a bright map rather than one that is finer — the
+ * 3.5x's own arms are deliberately left at 0.0017, because a duplex is meant
+ * to be seen and its picture is 1.7x as wide to spend it in.
+ */
+const LONG_RET_ARM = 0.0005;
+const LONG_RET_DOT = 0.0009;
+
+/**
  * The height a weapon's own geometry must stay UNDER at depth `z`, if it is not
  * to eat into the iron sight picture.
  *
@@ -1035,9 +1063,19 @@ export function buildOptics(
     b.pin("longElevCap", METAL, 0.022, 0.007, 0, longY + rTurret + 0.0295, turretZ, "y");
     b.pin("longWind", METAL, 0.03, 0.026, rTurret + 0.013, longY, turretZ, "x");
     b.pin("longFocus", METAL, 0.034, 0.016, -(rTurret + 0.008), longY, turretZ, "x");
-    // A throw lever on the ocular: the magnification ring is the one control on
-    // this sight a shooter reaches for with the weapon still shouldered.
-    b.box("longLever", METAL, 0.012, 0.03, 0.014, 0.028, longY + 0.018, ocularZ + 0.028);
+    // A throw lever on the magnification ring — the one control on this sight a
+    // shooter reaches for with the weapon still shouldered. Sized OUTWARD from
+    // the ocular section's own outer radius, exactly as the turrets and the
+    // sunshade are, and for the reason those say so out loud: authored at a
+    // fixed x it stood at r = 0.0222 against a clear bore of 0.0332 and a view
+    // cone of 0.0276, so its inner corner hung THROUGH the tube wall and into
+    // the sight picture — a block of metal jutting in from the right, on the
+    // one optic whose whole job is an uncluttered field. Its inner face is now
+    // 2 mm inside the wall, which is a lever bolted to the ring rather than a
+    // lever floating beside it, and 6 mm clear of the bore.
+    const leverZ = ocularZ + 0.028;
+    const rLever = outerAt(LONG_OCULAR_DZ + 0.028);
+    b.box("longLever", METAL, 0.014, 0.026, 0.014, rLever + 0.005, longY + 0.006, leverZ);
     b.merge("longScope", node);
 
     // The reticle: a fine full crosshair, a floating centre dot, and two
@@ -1047,9 +1085,8 @@ export function buildOptics(
     // meant to frame a target COVER it, because at 2.5x a body across the
     // square is a few pixels; here a body at 300 m subtends what one at 50 m
     // does through the irons, so there is room around it for the marks to mean
-    // something. The arms are thinner than the scope's for the same reason —
-    // magnification scales the reticle along with everything else, and a
-    // duplex's weight at 6x is a fence across the picture.
+    // something — which is a claim about the reticle's WEIGHT and not only
+    // about its shape, and `LONG_RET_ARM` is where that is priced.
     const retZ = objectiveZ - 0.075;
     const clearR = LONG_CONE * (eyeDistance("longScope") + retZ - ocularZ);
     const armIn = 0.005;
@@ -1060,14 +1097,14 @@ export function buildOptics(
     for (const side of [-1, 1] as const) {
       const v = MeshBuilder.CreateBox(
         `${prefix}_longRetV`,
-        { width: 0.0012, height: armLen, depth: 0.0012 },
+        { width: LONG_RET_ARM, height: armLen, depth: LONG_RET_ARM },
         b.scene,
       );
       v.position.set(0, longY + side * armMid, retZ);
       bars.push(v);
       const h = MeshBuilder.CreateBox(
         `${prefix}_longRetH`,
-        { width: armLen, height: 0.0012, depth: 0.0012 },
+        { width: armLen, height: LONG_RET_ARM, depth: LONG_RET_ARM },
         b.scene,
       );
       h.position.set(side * armMid, longY, retZ);
@@ -1080,7 +1117,7 @@ export function buildOptics(
     for (let i = 1; i <= 2; i++) {
       const tick = MeshBuilder.CreateBox(
         `${prefix}_longRetTick`,
-        { width: clearR * 0.13, height: 0.0012, depth: 0.0012 },
+        { width: clearR * 0.13, height: LONG_RET_ARM, depth: LONG_RET_ARM },
         b.scene,
       );
       tick.position.set(0, longY - clearR * 0.3 * i, retZ);
@@ -1088,7 +1125,7 @@ export function buildOptics(
     }
     const centre = MeshBuilder.CreateSphere(
       `${prefix}_longRetDot`,
-      { diameter: 0.0022, segments: 6 },
+      { diameter: LONG_RET_DOT, segments: 6 },
       b.scene,
     );
     centre.position.set(0, longY, retZ);
