@@ -9,9 +9,12 @@
  * to whoever wired `onMessage`.
  *
  * **The clock offset is the load-bearing part.** Every snapshot is stamped with
- * the server's `Date.now()`, and interpolation needs to place those stamps on
- * the local timeline — two machines' wall clocks can differ by minutes, so the
- * stamps are useless raw.
+ * the server's own clock, and interpolation needs to place those stamps on the
+ * local timeline — two machines' wall clocks can differ by minutes, so the
+ * stamps are useless raw. (What that clock IS is the server's business and
+ * deliberately not this file's: it is the SIMULATION's, advancing by exactly
+ * one step per tick, because a stamp is only ever read against the position it
+ * arrived with — `HeadlessGame.now`.)
  *
  * One sample is `serverNow - localNow` measured when the message is HANDLED,
  * which is `trueOffset - delay` for a delay made of transit plus however long
@@ -22,11 +25,55 @@
  * deliberately picks the worst-delayed sample in the window and drags render
  * time that much further behind. It showed up as a 342 ms apparent skew between
  * a server and a client on the same machine.
+ *
+ * **What that estimate is, and how fast it is OBEYED, are two questions.** The
+ * maximum answers the first and says nothing about the second, and the second
+ * is what a player sees: `renderTime` is where every remote body is drawn, so
+ * a step in the offset is a step in the instant the whole world is posed at.
+ * Applied raw it steps twice for one reason — up the moment a luckier packet
+ * arrives, and back DOWN five seconds later when that packet ages out of the
+ * window and a lesser sample becomes the maximum. The second is the sharp one:
+ * render time going backwards is every body in the match rewinding together,
+ * once per window on any link whose best case wanders, and worth the better
+ * part of a metre on something moving at gunship speed.
+ *
+ * So the estimate is SLEWED rather than assigned — `offset` chases `target` at
+ * `SLEW`, a share of real time small enough that the resulting 2% error in the
+ * rate remote motion plays at is not a thing anybody can see, where the jump it
+ * replaces plainly is. A disagreement too big to be jitter is not drift and is
+ * taken whole: see `SNAP_MS`.
  */
 import { CONFIG } from "../config";
 import { decode, encode, PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from "./protocol";
 
 export type ConnectionState = "idle" | "connecting" | "open" | "closed";
+
+/**
+ * How fast the applied clock offset is allowed to chase the estimate, as a
+ * share of real time.
+ *
+ * It is a RATE and not a step, which is the whole point — see the header. At
+ * 0.02 a 40 ms shift in a link's latency floor is absorbed over two seconds,
+ * during which remote bodies play at 0.98x or 1.02x. Both figures are the trade
+ * being made: fast enough that a genuine change in the route is tracked well
+ * inside the five-second window that produced it, slow enough that the price is
+ * a speed error two orders of magnitude below what the stamps themselves used
+ * to cost.
+ */
+const SLEW = 0.02;
+
+/**
+ * How far the estimate may be from the applied offset before it is taken whole
+ * instead of chased, in ms.
+ *
+ * A quarter of a second is not jitter and is not drift: it is a reconnect, a
+ * match rotation, or the first sample of a session, and the honest answer to
+ * all three is one visible correction now rather than twelve seconds of
+ * everything being drawn at the wrong instant. It is comfortably above the
+ * worst spread any of the three tolerable causes produces, which is what stops
+ * it firing on the case it exists to smooth over.
+ */
+const SNAP_MS = 250;
 
 /**
  * Everything the handshake needs, as one object.
@@ -81,11 +128,56 @@ export class Connection {
    * seconds' worth of snapshots.
    */
   private readonly offsets: number[] = [];
+  /** The estimate: the maximum of the window. See the header. */
+  private target = 0;
+  /** What is actually applied, chasing `target` at `SLEW`. */
   private offset = 0;
+  /** Local time the slew was last advanced, so it is a rate and not a step. */
+  private slewAt = 0;
 
   /** Best estimate of the server's clock, in ms. */
   now(): number {
-    return Date.now() + this.offset;
+    const local = Date.now();
+    this.slew(local);
+    return local + this.offset;
+  }
+
+  /**
+   * Moves the applied offset toward the estimate, by however much real time has
+   * passed since this last ran.
+   *
+   * Driven from the READ rather than from the frame or from the socket, because
+   * this is the only place that has to be right: `now` and `renderTime` are
+   * what the world is posed against, they are asked several times a frame
+   * (`NetSession.update`), and the first ask of a frame is what fixes the
+   * instant for all of them. A frame hook would be a second thing to keep in
+   * step with them for no gain, and stepping this on message ARRIVAL would make
+   * the rate a function of the jitter it exists to absorb.
+   */
+  private slew(local: number): void {
+    // Clamped, and read BEFORE the early returns so a stretch spent already on
+    // target cannot bank real time and spend it as a step on the first frame
+    // the estimate moves. The upper bound is a tab that was backgrounded: rAF
+    // stops, and the frame that arrives when it resumes would otherwise carry a
+    // minute of credit, which is the whole budget at once.
+    const elapsed = Math.min(Math.max(local - this.slewAt, 0), 1000);
+    this.slewAt = local;
+
+    const gap = this.target - this.offset;
+    if (gap === 0) return;
+    // Not drift. A reconnect, a rotation, or the first sample of a session —
+    // and a session's first sample is the case that makes this an `abs` rather
+    // than a test on the far side only: `offset` starts at 0, which is a
+    // decades-wide disagreement in whichever direction the two clocks lie.
+    if (Math.abs(gap) > SNAP_MS) {
+      this.offset = this.target;
+      return;
+    }
+    // A bounded RATE, never overshooting: `renderTime` therefore advances at
+    // between 0.98x and 1.02x of real time while a correction is being spent,
+    // and at exactly 1x the rest of the time.
+    const step = Math.min(Math.abs(gap), SLEW * elapsed);
+    this.offset += gap > 0 ? step : -step;
   }
 
   /**
@@ -99,6 +191,16 @@ export class Connection {
   connect(opts: JoinOptions): void {
     this.join = opts;
     this.closedByUs = false;
+    // A new join is a new clock. `retry` reaches `open` directly and keeps the
+    // window, which is right — it is the same server and the same offset — but
+    // this is the door a region switch comes through, and a window of samples
+    // from the machine that was being played on a moment ago is a maximum that
+    // holds render time in the wrong place for the whole of a new match's first
+    // five seconds.
+    this.offsets.length = 0;
+    this.target = 0;
+    this.offset = 0;
+    this.slewAt = 0;
     // Annotated `string`, not inferred: `CONFIG` is `as const`, so taking the
     // default inline would narrow it to the literal `"/ws"` and refuse every
     // caller that passes a real URL. The documented gotcha in CLAUDE.md.
@@ -195,7 +297,9 @@ export class Connection {
     // largest one in the window is the closest to the truth.
     let best = this.offsets[0];
     for (const o of this.offsets) if (o > best) best = o;
-    this.offset = best;
+    // The ESTIMATE. What is applied chases it — assigning here is the step the
+    // header describes, and it steps down as well as up, once per window.
+    this.target = best;
   }
 
   send(msg: ClientMessage): void {

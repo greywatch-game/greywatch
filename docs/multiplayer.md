@@ -888,9 +888,66 @@ Taking the minimum picks the worst-delayed sample and drags render time that
 much further behind; it read as a 342 ms skew between a server and a client on
 the same machine.
 
+**What that estimate is, and how fast it is obeyed, are two questions, and
+`Connection` answers them separately.** The maximum settles the first and says
+nothing about the second. Applied raw it steps twice for one reason: up the
+instant a less-delayed packet arrives, and back down five seconds later when
+that packet ages out of the window and a lesser sample becomes the maximum.
+`renderTime` is the instant the whole world is posed at, so each step is every
+remote body moving together — and on a link whose best case wanders it happens
+about once a window, forever. Measured against a wifi-shaped arrival train (a
+latency floor re-drawn every seven seconds, ordinary jitter over it, one lucky
+packet in a hundred), render time advanced at **0.42x to 1.74x** of real time
+on the frames either side of a step. So the applied offset **slews** toward the
+estimate at `SLEW` — 2% of real time, never overshooting — which bounds the
+same measurement to **0.98x–1.02x** and costs nothing in buffer depth. A
+disagreement over `SNAP_MS` is not drift and is taken whole: a reconnect, a
+rotation, or the first sample of a session.
+
+## The stamp on a snapshot is the SIMULATION's clock, never `Date.now()`
+
 `TICK_HZ` must be divisible by `SNAPSHOT_HZ`. A fractional ratio makes the
 broadcast alternate between two spacings and a client interpolating on an even
 cadence renders it as a limp.
+
+**That is the ratio's half of it, and the timer has a half of its own that the
+ratio being whole does not fix.** The loop is a fixed-step accumulator, so
+`TICKS_PER_SNAPSHOT` steps advance the world by exactly 50 ms of simulated
+time — but `setInterval` drifts and coalesces, so a wake-up runs 0, 1 or 2 of
+them, and `Date.now()` read where the snapshot is built moves by however much
+wall time the host's scheduler happened to spend. Measured on an idle box:
+**31 to 79 ms of stamp for the same 50 ms of motion**. A client interpolates
+position against those stamps, so the spread is rendered directly as SPEED —
+**0.63x to 1.61x, changing every snapshot**. It is the limp above, reached
+through the timer instead of the ratio, and it is invisible in the arithmetic
+because every individual number in it is correct.
+
+`HeadlessGame.now` is the answer: a clock advanced by exactly `dt` per step,
+which `Match` stamps every `snap`, `welcome` and `roundstart` with, and which
+`LagComp` records and clamps its window against. Remeasured through a real
+socket it is 50.0 ms at every percentile, min to max, and rendered speed is
+1.00x.
+
+Two rules hold it up. **It is anchored to the wall clock and not free-running**,
+because the offset estimate on the far side is a maximum over five seconds: a
+clock that quietly fell behind would hold a stale maximum for the whole window
+and drag every body to the end of its buffer. `startRound` re-anchors (building
+a map is seconds of real time the world is not stepped through) and
+`HeadlessGame.drop` takes the backlog the loop discards on a long stall — one
+honest jump on the tick the world jumped anyway. **And every stamped message
+uses it**, because a client samples the offset from all of them and keeps the
+maximum, so one message on a clock running even slightly ahead of the
+snapshots' wins the window and drags render time past the samples that have
+arrived.
+
+`POLL_MS` is the same story one layer down. The accumulator decides how many
+steps a wake-up runs; how often it LOOKS decides how near the wall instant a
+tick is executed, and therefore when a snapshot is SENT. Polled at `STEP_MS`
+the twenty sends a second land 31–80 ms apart, and a send that is early
+shortens the client's interpolation buffer by exactly its earliness — half the
+spread came off the budget meant for the network, on a link with none. At 4 ms
+the same measurement is 40–66 and the worst-case buffer goes from 36 ms to
+51 ms. 2 ms and 1 ms measured no better.
 
 ## Lag compensation
 

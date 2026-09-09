@@ -111,6 +111,30 @@ const ALL_PEERS = -1;
 const STEP_MS = 1000 / TICK_HZ;
 
 /**
+ * How often the loop LOOKS to see whether a step is due, in ms.
+ *
+ * Not the step: the accumulator below is what decides how many ticks a wake-up
+ * runs, and it is fixed at `STEP_MS` whatever this is. This is only the
+ * granularity with which a tick is executed near the wall instant it belongs
+ * to — and therefore the granularity with which a snapshot is SENT.
+ *
+ * Polled at `STEP_MS` a wake-up is late as often as not, so the tick a snapshot
+ * rides on runs anywhere in a 16 ms window and the twenty sends a second land
+ * 31 to 80 ms apart. That spread is not rendered as speed any more (the stamps
+ * are the simulation's own clock — `HeadlessGame.now`), but it is still spent:
+ * a client draws bodies `INTERP_DELAY_MS` behind the newest sample it holds,
+ * and a send that is early shortens that buffer by exactly its earliness. Half
+ * the spread came off the budget meant for the NETWORK's jitter, on a link with
+ * none.
+ *
+ * At 4 ms the same measurement is 47 to 66 — the early cluster is gone
+ * entirely, which is the half that costs. 2 ms and 1 ms measured no better
+ * (the host's timer floor), so this is the knee rather than a budget: 250
+ * wake-ups a second that almost always find nothing due.
+ */
+const POLL_MS = 4;
+
+/**
  * The largest client-reported gap a single movement sample may claim, in
  * seconds. Longer stalls are legitimate — a backgrounded tab, a GC pause — but
  * the ground they would buy is not, so the step is validated against this and
@@ -850,7 +874,12 @@ export class Match {
       slot: slot.index,
       team: slot.team,
       mapId: this.mapId,
-      now: Date.now(),
+      // The same clock the snapshots carry, and that is the load-bearing part:
+      // a client samples the offset from EVERY stamped message and keeps the
+      // maximum, so one message on a clock that runs even slightly ahead of the
+      // snapshots' would win the window and drag render time past the samples
+      // that have arrived.
+      now: this.game.now,
       // The glass as it stands, to this peer alone, for the same reason the
       // board below goes with it: a joiner has missed every `glass` event in
       // the round, so without this they see a street of intact windows the
@@ -1095,12 +1124,20 @@ export class Match {
       // Bounded so a long stall (a GC pause, a suspended container) is dropped
       // rather than replayed as a burst of catch-up ticks that would teleport
       // every body on every client at once.
-      if (carried > 250) carried = 250;
+      //
+      // What is dropped is real time the world will never be stepped through,
+      // and the simulation's own clock is told so — that clock is what every
+      // snapshot is stamped with, and one left quietly behind the wall is one
+      // no client can follow. See `HeadlessGame.drop`.
+      if (carried > 250) {
+        this.game.drop(carried - 250);
+        carried = 250;
+      }
       while (carried >= STEP_MS) {
         carried -= STEP_MS;
         this.step();
       }
-    }, STEP_MS);
+    }, POLL_MS);
     console.log(`[${this.id}] round started on ${this.mapId}`);
   }
 
@@ -1215,7 +1252,9 @@ export class Match {
     // cleared the field, and a rotation that left the last map's list standing
     // would draw sixteen mines over a street that is not there.
     this.sentMineVersion = -1;
-    this.broadcast({ t: "roundstart", mapId: this.mapId, now: Date.now() });
+    // `game.now` and not the wall clock, for `welcome`'s reason: one stamp on a
+    // different clock poisons the offset window every body is drawn against.
+    this.broadcast({ t: "roundstart", mapId: this.mapId, now: this.game.now });
     this.broadcastRoster();
     console.log(`[${this.id}] rotated to ${this.mapId}`);
   }
@@ -1388,7 +1427,18 @@ export class Match {
     const snap: Snapshot = {
       t: "snap",
       tick: this.ticks,
-      now: Date.now(),
+      // The SIMULATION's clock, not the wall's. Between two snapshots the world
+      // advanced by exactly `TICKS_PER_SNAPSHOT` steps; `Date.now()` read here
+      // advanced by however many times the host's timer happened to fire in
+      // between, which on an idle box is 31 to 79 ms for the same 50 ms of
+      // motion. A client interpolates position against these stamps, so that
+      // spread is rendered directly as speed — measured at 0.63x to 1.61x,
+      // changing every snapshot. It is the limp `docs/multiplayer.md` describes
+      // for a `SNAPSHOT_HZ` that does not divide `TICK_HZ`, reached through the
+      // timer instead of the ratio, and it is worst on the fastest thing in the
+      // game: a gunship moves a metre and a half a snapshot, so ±60% of it is
+      // the picture shaking for the man on its gun. See `HeadlessGame.now`.
+      now: this.game.now,
       entities: this.entityScratch,
       points,
       tickets: [this.game.conquest.tickets[0], this.game.conquest.tickets[1]],

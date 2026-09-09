@@ -182,6 +182,30 @@ export class HeadlessGame {
   /** Server tick count since the round started. */
   tick = 0;
 
+  /**
+   * The instant the last completed tick ended, in `Date.now()`'s units.
+   *
+   * **The simulation's own clock, and it is not `Date.now()`** — that is the
+   * whole point of it. A step advances the world by exactly `dt`, so the
+   * simulated interval between two ticks is exact; `Date.now()` read inside
+   * one is instead a picture of when the host's timer happened to fire, which
+   * under a fixed-step accumulator is 0, 1 or 2 ticks' worth of wall time.
+   * Every consumer of a server time is comparing it against a POSITION, and a
+   * position that moved by an exact 50 ms stamped with a wall clock that moved
+   * by 32 or 64 is a body whose speed changes with the host's scheduler. It is
+   * what a client renders as a limp — the same failure `SNAPSHOT_HZ` not
+   * dividing `TICK_HZ` produces, arriving through the timer instead of the
+   * ratio (`src/net/Connection.ts` and `docs/multiplayer.md` for the client's
+   * half).
+   *
+   * It is nonetheless anchored to the wall clock rather than free-running,
+   * because a client estimates the offset to it as the MAXIMUM of a five-
+   * second window of samples: a clock that silently fell behind would hold
+   * that stale maximum for the whole window and drag every body to the end of
+   * its buffer. `drop` is what keeps the anchor — see it.
+   */
+  now = Date.now();
+
   private readonly mats: CelMaterialFactory;
   private readonly combatants: Combatant[] = [];
 
@@ -295,6 +319,11 @@ export class HeadlessGame {
    * place the roster's difficulty can change — exactly as on the client.
    */
   async startRound(def: MapDef, difficulty: number, bots = true): Promise<void> {
+    // Back onto the wall clock. Building a map takes seconds of real time that
+    // the simulation does not step, and a clock left behind by that much is one
+    // every client would spend the next five seconds of its offset window
+    // disbelieving — see `now` and `drop`.
+    this.now = Date.now();
     this.battle.setDifficulty(difficulty);
     this.map?.dispose();
     this.map = await buildServerWorld(this.scene, def);
@@ -406,6 +435,9 @@ export class HeadlessGame {
   step(dt: number): boolean {
     if (!this.map) return false;
     this.tick++;
+    // The clock moves with the world and by the same amount, which is the
+    // whole of what makes a snapshot's stamp mean anything — see `now`.
+    this.now += dt * 1000;
 
     // Reinforcements for people. Bots have their own inside `BattleSystem`;
     // this is the human half, and it runs before conquest counts occupancy so a
@@ -544,8 +576,24 @@ export class HeadlessGame {
     // the middle of one. Recording first would put every body's history half a
     // tick ahead of the positions the snapshot on that tick reports, and a
     // rewind would land between two states that never coexisted.
-    this.lag.record(Date.now());
+    this.lag.record(this.now);
     return true;
+  }
+
+  /**
+   * Wall time that passed without the world being stepped through it.
+   *
+   * The driver's half of `now`'s anchor. A fixed-step loop that has fallen
+   * far enough behind DROPS the backlog rather than replaying it as a burst of
+   * catch-up ticks, and that dropped time is real: the world did not move
+   * through it and no client will ever be sent it. Telling them so is one
+   * honest jump on the tick it happened — which they are getting anyway,
+   * because the world jumped — instead of a clock quietly five seconds adrift
+   * of the wall, which is the one thing the maximum filter on the far side
+   * cannot ride out.
+   */
+  drop(ms: number): void {
+    this.now += ms;
   }
 
   dispose(): void {
@@ -841,7 +889,7 @@ export class HeadlessGame {
     // roster can shoot at a squad from behind and never be looked for.
     this.battle.hearGunshot(origin, shooter.team, dir);
 
-    const result = this.lag.resolve(renderTime, shooter, () =>
+    const result = this.lag.resolve(renderTime, this.now, shooter, () =>
       this.combat.fire(
         origin,
         dir,

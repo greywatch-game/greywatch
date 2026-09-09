@@ -103,9 +103,15 @@ export class LagComp {
    * `except` is the shooter, who is never rewound: they are resolving their own
    * shot from where they say they are now, and moving them would put the ray's
    * origin somewhere they never stood.
+   *
+   * `now` is the SIMULATION's clock and never `Date.now()`, because the window
+   * it bounds is measured against the stamps `record` filed — see
+   * `HeadlessGame.now`. Reading the wall clock here would clamp a history
+   * written on one clock against another, and the difference between them is
+   * exactly the fixed-step accumulator's residue: up to a tick, oscillating,
+   * and worth two thirds of a metre on something moving at gunship speed.
    */
-  resolve<T>(t: number, except: Hittable | null, fn: () => T): T {
-    const now = Date.now();
+  resolve<T>(t: number, now: number, except: Hittable | null, fn: () => T): T {
     // Clamped, not trusted. An unbounded rewind is a licence to shoot at where
     // somebody stood a second ago.
     const at = Math.max(t, now - REWIND_WINDOW_MS);

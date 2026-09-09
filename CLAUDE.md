@@ -1410,6 +1410,18 @@ parity` should be run after anything touching the world layer**. `npm run build`
 refuses a bake older than its layout, but that guard hashes the LAYOUT — a flag
 changed in a builder needs `npm run collision` by hand.
 
+**A SERVER TIME IS THE SIMULATION'S CLOCK AND NEVER `Date.now()`**
+(`HeadlessGame.now`), because every stamp is read against the POSITION it
+arrived with: a fixed-step loop advances the world by exactly 50 ms between
+snapshots and a wall clock read there advances by whatever the host's scheduler
+spent, which a client renders directly as SPEED. It is anchored rather than
+free-running (`startRound`, `HeadlessGame.drop`), **every stamped message uses
+it** — one on another clock wins the client's maximum filter and drags render
+time past the samples that have arrived — and `LagComp` records and clamps
+against it too. **What a client does with the estimate is a second question**:
+`Connection` SLEWS the offset toward it rather than assigning it, or the whole
+world steps together each time the window's maximum moves.
+
 **A STANCE is state and what travels is the authority's own blend**, and **each
 sound cue comes from whichever side actually knows** — including the crack of a
 round going past, which is ADDRESSED to the one player it happened to rather than
