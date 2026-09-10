@@ -12,12 +12,13 @@
  * it is deliberately narrow.** Every sound in the game is synthesized
  * (`Sfx.ts` argues for that at length, and the synthesis is what a shooter
  * with no sample still gets); what a row here buys is one recorded EVENT, and
- * nothing else in the game is sampled at all. Eight rows are a REPORT — one
- * per weapon in the kit, plus the cupola gun three kinds of hull mount — six
- * are a MECHANISM the player works with their own hands (the two halves of a
- * magazine change and the four beats of a bolt cycle, each cut from a single
- * master), and two are a BLAST: the one explosion this game has, and the tank
- * gun that is the same physics at the other end.
+ * nothing else in the game is sampled at all. Nine rows are a REPORT — one per
+ * weapon in the kit, the cupola gun three kinds of hull mount, and the shoulder
+ * tube the third slot carries on a map with armour on it — six are a MECHANISM
+ * the player works with their own hands (the two halves of a magazine change
+ * and the four beats of a bolt cycle, each cut from a single master), and two
+ * are a BLAST: the one explosion this game has, and the tank gun that is the
+ * same physics at the other end.
  *
  * **The boundary is still a decision and not a waiting list**, and the six
  * mechanism rows are what makes it readable rather than theoretical: what
@@ -33,8 +34,8 @@
  *
  * **The two BLAST rows pass it the same way and are the cheapest answer to
  * "one more sound" this directory has**: one file is EVERY explosion in the
- * game, because there is one blast and `power` scales it, and the other is the
- * one gun the weapon table has never held. Two rows, two masters, no round
+ * game, because there is one blast and `power` scales it, and the other is a
+ * gun the weapon table has never held. Two rows, two masters, no round
  * robin, and with `audio/` deleted `Sfx.explosion` is the four layers it
  * always was and `Sfx.cannon` the three it always was.
  *
@@ -73,20 +74,21 @@ import sniperRifle from "../../audio/sniper-rifle.webm?url";
 import lmg from "../../audio/lmg.webm?url";
 import pistol from "../../audio/pistol.webm?url";
 import mountedGun from "../../audio/mounted-gun.webm?url";
+import rocketLauncher from "../../audio/rocket-launcher.webm?url";
 import magOut from "../../audio/mag-out.webm?url";
 import magIn from "../../audio/mag-in.webm?url";
 import boltLift from "../../audio/bolt-lift.webm?url";
 import boltBack from "../../audio/bolt-back.webm?url";
 import boltHome from "../../audio/bolt-home.webm?url";
 import boltLock from "../../audio/bolt-lock.webm?url";
-import grenade from "../../audio/grenade.webm?url";
+import explosion from "../../audio/explosion.webm?url";
 import tankCannon from "../../audio/tank-cannon.webm?url";
 
 /**
  * Every recorded sound in the game: one report per weapon in the kit, the
- * cupola gun the second seat of a hull lays, the two halves of a magazine
- * change, the four beats of a bolt cycle and the two blasts. Nothing else is
- * sampled at all.
+ * cupola gun the second seat of a hull lays, the shoulder tube the third slot
+ * carries, the two halves of a magazine change, the four beats of a bolt cycle
+ * and the two blasts. Nothing else is sampled at all.
  *
  * **An id here names the RECORDING, not the weapon**, which is why it is
  * `burstRifle` and `sniperRifle` rather than `carbine` and `sniper`: the row
@@ -100,8 +102,18 @@ import tankCannon from "../../audio/tank-cannon.webm?url";
  * table.** Three kinds of hull point at it — `CONFIG.vehicles.<kind>.mg.report`
  * — because the gun on a tank's cupola, a truck's remote station and a
  * gunship's chin turret is one gun, and a fourth kind gets it for free. It is
- * one of three MONO rows here; see its note in the manifest for why that
+ * one of the eleven MONO rows here; see its note in the manifest for why that
  * follows from where it is heard rather than from what it is.
+ *
+ * **`rocketLauncher` is the row that says the same thing from the other side:
+ * a weapon somebody carries, with no `ReportVoice` behind it either.** An AT
+ * item is `equipmentSetup`'s plain `WeaponSetup` with every field that would
+ * make it a gun set to a constant saying it is not (`docs/antitank.md`), so
+ * the launcher is voiced by `Sfx.launcher` rather than by `shoot` and there is
+ * no row in `CONFIG.weapons` for this file to be a deviation from — which it
+ * shares with `tankCannon` and with nothing else here. MONO for `mountedGun`'s
+ * reason: `Sfx.launcher` builds a panner for every caller, the player's own
+ * tube included.
  *
  * **`magOut` and `magIn` are two of the other five, and they are the proof
  * that a sample belongs to a MOMENT rather than to a weapon at all.** They are the
@@ -128,20 +140,26 @@ import tankCannon from "../../audio/tank-cannon.webm?url";
  * declares `boltCycle` plays all four, voiced by `actionPitch`/`actionVol` for
  * the reason the magazine change is.
  *
- * **`grenade` and `tankCannon` are the last two, and the first that are not a
- * gun in anybody's hands.** `grenade` is the third reading of the same
+ * **`explosion` and `tankCannon` are the last two, and the only ones that are
+ * not a gun in anybody's hands.** `explosion` is the third reading of the same
  * sentence: a sample belongs to a `ReportVoice`, then to a MOMENT, then to a
  * BEAT — and here to a BLAST, of which this game has exactly one. `blastAt`
  * takes a `power`, the grenade passes 1 and is the reference exactly as the
- * rifle is for a report, and the tank shell is 1.85 of the same eight layers,
- * so ONE recording is every explosion in the game and `Sfx.explosion` spends
- * `power` on it as `rate` — `magOut`'s inversion again, for `magOut`'s reason.
- * `tankCannon` is the odd one in the other direction: `Sfx.cannon` is the one
- * report in the game with no row in `CONFIG.weapons` behind it, so this is the
- * one sample here that is a deviation from nothing at all. Both are MONO for
- * `mountedGun`'s reason — neither is ever heard except through a panner — and
- * on the cannon that decided the CUT as well as the channel count; the
- * manifest's note has the measurement.
+ * rifle is for a report, the tank shell is 1.85 of the same eight layers and
+ * the rocket and the mine each carry their own, so ONE recording is every
+ * explosion in the game — a grenade, a shell, a rocket and a mine — and
+ * `Sfx.explosion` spends `power` on it as `rate`, which is `magOut`'s
+ * inversion again and for `magOut`'s reason. **The id names the RECORDING and
+ * that is why this row is no longer called `grenade`**: it was cut from
+ * `audio/src/grenade.wav` while a grenade was the only thing anybody had
+ * recorded going off, and it is cut from `audio/src/explosion.wav` now — a
+ * bigger take of the same event, which the manifest's note measures against
+ * the one it replaced. `tankCannon` is the odd one in the other direction: a
+ * report with no row in `CONFIG.weapons` behind it, so it is a deviation from
+ * nothing at all, which it shares with `rocketLauncher` above. Both blasts are
+ * MONO for `mountedGun`'s reason — neither is ever heard except through a
+ * panner — and on the cannon that decided the CUT as well as the channel
+ * count; the manifest's notes have the measurements.
  *
  * The six mechanism rows are also the only ones scheduled by their PEAK rather
  * than their start — a magazine going home and a bolt arriving on its stop are
@@ -158,13 +176,14 @@ export type SampleId =
   | "lmg"
   | "pistol"
   | "mountedGun"
+  | "rocketLauncher"
   | "magOut"
   | "magIn"
   | "boltLift"
   | "boltBack"
   | "boltHome"
   | "boltLock"
-  | "grenade"
+  | "explosion"
   | "tankCannon";
 
 /** Where each one is fetched from. */
@@ -177,12 +196,13 @@ export const SAMPLE_URLS: Record<SampleId, string> = {
   lmg,
   pistol,
   mountedGun,
+  rocketLauncher,
   magOut,
   magIn,
   boltLift,
   boltBack,
   boltHome,
   boltLock,
-  grenade,
+  explosion,
   tankCannon,
 };

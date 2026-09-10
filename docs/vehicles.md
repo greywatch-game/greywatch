@@ -2202,11 +2202,14 @@ the fetch.
 **The main gun is sampled too, and by a file of its OWN** (`tankCannon`, on
 `Sfx.cannon`) — because it is a different weapon making a different argument
 (`gun` is the nullable block two of the three kinds have) and nothing about the
-cupola's recording belongs on it. It is also the one row in the directory that
-is a deviation from nothing at all: `Sfx.cannon` is the one report in the game
+cupola's recording belongs on it. It is also one of the two rows in the
+directory that are a deviation from nothing at all: `Sfx.cannon` is a report
 with no row in `CONFIG.weapons` behind it, no magazine and no `ReportVoice`, so
 there is no `pitch` and no `level` to spend on the file and the synthesis is
-what a shell sounds like until the decode lands.
+what a shell sounds like until the decode lands. The other is the AT launcher
+that shoots back at this hull (`rocketLauncher`, on `Sfx.launcher`), which is
+carried as a weapon and voiced as nothing like one for the same reason —
+[`docs/antitank.md`](antitank.md).
 
 **Two rules from the audio pipeline land here and both are about where the
 sound is HEARD.** `Game.resolveMg` reaches `Sfx.botShot` and never `Sfx.shoot`,

@@ -208,6 +208,26 @@ const MECHANISM_LEVEL = 0.15;
 const BLAST_LEVEL = 0.9;
 
 /**
+ * What a recorded LAUNCH plays at, at the muzzle of the tube.
+ *
+ * The fourth of these, and it sits where the sound does: between a report's
+ * 0.5 and a blast's 0.9, because a shoulder tube is neither a rifle nor a
+ * hundred and twenty millimetres. Reasoned from the four layers it stands in
+ * for, exactly as the other three were — the ignition is a highpass over a
+ * noise slice at 0.7 and a highpass passes nearly all of one, so the synthesis
+ * peaks near 0.66, where a blast's crack lands at that same 0.66 but on top of
+ * a body and a chest thump that are each half again as loud. So the recording
+ * sits just under 0.7 where a blast's sits just under unity, and the master's
+ * own cut measures 0.35 RMS at a peak of 0 dBFS.
+ *
+ * **`Sfx.launcher` has no `ReportVoice` to divide this by**, which it shares
+ * with `cannon` and with nothing else in this file: an AT item is carried as a
+ * weapon and voiced as nothing like one (`docs/antitank.md`), so there is no
+ * `level` and no `pitch` to spend on the file and `v` alone varies it.
+ */
+const LAUNCH_LEVEL = 0.7;
+
+/**
  * Where the transient is inside each recorded MECHANISM, in the file's own
  * seconds and measured from what `trimSample` hands back rather than from the
  * head of the buffer.
@@ -1356,6 +1376,13 @@ export class Sfx {
    *
    * Spatialised like every other weapon, and audible as far as a cannon is:
    * the point of a launcher on the map is that the crew knows there is one.
+   *
+   * **A recording (`rocketLauncher`) stands in for all four layers when it has
+   * landed**, on `shoot`'s terms: a preference, never a requirement, and the
+   * synthesis below is what the game does without it. The file is cut at the
+   * moment the launch stops and the room takes over, which is what leaves the
+   * MOTOR in it — the layer the fourth burst below exists for — and leaves the
+   * tail to the shared convolver.
    */
   launcher(at: Vector3): void {
     const a = CONFIG.audio;
@@ -1366,6 +1393,19 @@ export class Sfx {
     const far = Math.min(1, dist / (a.maxDistance * 1.4));
     const delay = dist / a.speedOfSound;
     const v = 0.94 + Math.random() * 0.12;
+    // A recording stands in for all four layers, and like `tankCannon` it is a
+    // deviation from nothing: there is no row in `CONFIG.weapons` behind an AT
+    // launcher, so there is no `pitch` and no `level` to spend on it. `v`
+    // alone, plus the air absorption the four layers below carry in their own
+    // filter frequencies — the panner is already the level and `delay` already
+    // the propagation, so that is the only distance cue left to put back.
+    if (this.sample("rocketLauncher", {
+      vol: LAUNCH_LEVEL, rate: v, delay, out: panner,
+      // The same fraction of its own layers' sends that `explosion` and
+      // `cannon` each take of theirs: the four below sum to 3.2 across layers
+      // a filter has already emptied, and this is the file at full scale.
+      send: 1.3, lowpass: 14000 - 12800 * far,
+    })) return;
     // The ignition: broadband, and softer at the front than a gun's, because
     // nothing here is a sealed breech letting go.
     this.burst({
@@ -1760,7 +1800,7 @@ export class Sfx {
    * and it is also the only version that stays inside the mix — a shell voiced
    * as a grenade at twice the gain is a clip, not a bang.
    *
-   * **A recording (`grenade`) stands in for all four layers when it has
+   * **A recording (`explosion`) stands in for all four layers when it has
    * landed, and that one file is every explosion in the game** — the argument
    * is on the arm below, and the shape is `shoot`'s: it is a PREFERENCE, so a
    * blast before the decode arrives, or on a device that failed the fetch, is
@@ -1805,7 +1845,7 @@ export class Sfx {
     // what is missing is AIR ABSORPTION — and only that: the layer durations
     // that grow with `far` are not reproduced, because stretching a recording
     // is `rate`, and `rate` is already carrying `power`.
-    if (this.sample("grenade", {
+    if (this.sample("explosion", {
       vol: BLAST_LEVEL * gain, rate: v / drop, delay, out: panner,
       // A plain send, for `shoot`'s reason: the four levels below sum to ~3.2
       // of these across layers a filter has already emptied, and this is the

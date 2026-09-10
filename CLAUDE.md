@@ -90,12 +90,12 @@ backend charges CPU on every draw, so the render-bundle submission path is worth
 measurement is that its risk is state changing between draws: if a rendering bug
 ever appears that shows only while something is MOVING, flip this first.
 
-**Zero model files, and SIXTEEN audio files — one report per weapon in the
-kit, the cupola gun all three hulls mount, the two halves of the player's own
-magazine change, the four beats of a bolt cycle and the two blasts, and nothing
-else in the game is recorded at all** — every mesh is built from Babylon
-primitives at runtime, and every sound is synthesized WebAudio
-(`src/core/Sfx.ts`) but for those sixteen. Do not add asset files unless
+**Zero model files, and SEVENTEEN audio files — one report per weapon in the
+kit, the cupola gun all three hulls mount, the shoulder tube the third slot
+carries, the two halves of the player's own magazine change, the four beats of
+a bolt cycle and the two blasts, and nothing else in the game is recorded at
+all** — every mesh is built from Babylon primitives at runtime, and every sound
+is synthesized WebAudio (`src/core/Sfx.ts`) but for those seventeen. Do not add asset files unless
 explicitly asked. There are four generated exceptions, none authored by hand
 and each with a generator in `package.json`: the icons, Havok's `.wasm`, the
 water's foam mask, and each map's menu photograph.
@@ -107,19 +107,19 @@ committed beside them in `audio/src/` — plus one that is their own: **the game
 is still whole with every file in `audio/` deleted**, the fetch being
 fire-and-forget off `Sfx.unlock`, so a shot fired before the decode lands or on
 a device where it failed is the SYNTHESIZED report and no caller is told the
-difference. **A SEVENTEENTH sound owes that same claim**, and **what the
+difference. **AN EIGHTEENTH sound owes that same claim**, and **what the
 pipeline refuses is a LIBRARY, not a sound that is not a gunshot** — five
 footstep variants per surface, thirty one-shots, an ambient bed that alone costs
 ten times this whole list.
 
-**A sample belongs to a VOICE, never to a weapon**, which is what keeps sixteen
-files serving everything that makes a noise: to a `ReportVoice` (one file is the
+**A sample belongs to a VOICE, never to a weapon**, which is what keeps
+seventeen files serving everything that makes a noise: to a `ReportVoice` (one file is the
 tank's cupola, the truck's remote station and the gunship's chin turret — one
 gun on three mounts), to a MOMENT (every weapon in the kit plays the same
 magazine change, told apart by `actionPitch`/`actionVol`), to a BEAT (a gesture
 placed as fractions of a `shotInterval` cannot be one file), or to a BLAST, of
 which this game has exactly ONE — `blastAt` takes a `power`, so one recording is
-every explosion in the game.
+every explosion in the game: a grenade, a tank shell, a rocket and a mine.
 
 **Three rules from it reach outside `audio/`.** A decoded buffer costs
 `duration × ctx.sampleRate × channels × 4` and **nothing else** — the container,

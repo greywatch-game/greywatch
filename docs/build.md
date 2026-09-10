@@ -62,9 +62,10 @@ unless explicitly asked. Five exceptions, each with a generator in
   precisely because it has a generator, so what that generator costs to run is
   part of the bargain and belongs written down here.
 
-- `audio/` (63.2 KB shipped, sixteen sounds off eleven masters) — one report
-  per weapon in the kit, the hulls' mounted gun, the two halves of a magazine
-  change, the four beats of a bolt cycle and the two blasts, and **the only
+- `audio/` (70.8 KB shipped, seventeen sounds off thirteen masters) — one
+  report per weapon in the kit, the hulls' mounted gun, the AT launcher, the two
+  halves of a magazine change, the four beats of a bolt cycle and the two
+  blasts, and **the only
   asset class here whose input is a recording rather than a script**. It passes
   the common test all the same: `npm run audio` is the generator
   (`scripts/encode-audio.mjs`), the encoded `.webm` is committed, and the master
