@@ -86,7 +86,12 @@ import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { HitCredits } from "../net/HitCredits";
 import { RegionBook } from "../net/RegionBook";
-import { SNAPSHOT_HZ, TICK_HZ, type ServerEvent } from "../net/protocol";
+import {
+  SNAPSHOT_HZ,
+  TICK_HZ,
+  type MapVoteMessage,
+  type ServerEvent,
+} from "../net/protocol";
 import { type FinishId } from "../entities/finishes";
 import { Player } from "../entities/Player";
 import {
@@ -163,7 +168,7 @@ import {
   type ScoreRow,
   type VehicleChair,
 } from "../ui/HUD";
-import { OverlayScreen } from "../ui/OverlayScreen";
+import { OverlayScreen, type VoteView } from "../ui/OverlayScreen";
 import { kitLabel, LoadoutScreen } from "../ui/LoadoutScreen";
 import { SettingsScreen } from "../ui/SettingsScreen";
 import { LobbyScreen } from "../ui/LobbyScreen";
@@ -1871,6 +1876,13 @@ export class Game {
       if (this.net) return;
       if (this.state === "menu" || this.state === "roundover") this.startRound();
     };
+    // The round-over card's ballot. An ASK and nothing more — the authority
+    // holds the tally and answers with the next `mapvote`, so nothing here
+    // lights a button or counts anything. Guarded on the session rather than
+    // the state for `onStart`'s reason turned around: this button exists only
+    // on a card the wire raised, and `sendVote` refuses a press with no ballot
+    // standing behind it.
+    this.overlayScreen.onVote = (index) => this.net?.sendVote(index);
     this.deployScreen.onOpenLoadout = () => this.openLoadout();
     this.loadoutScreen.onWeapon = (id) => this.setWeapon(id);
     this.loadoutScreen.onSight = (id) => this.setSight(id);
@@ -3090,6 +3102,27 @@ export class Game {
       if (this.input.multiplayerPressed) {
         this.openLobby();
         return;
+      }
+    }
+    // The ballot, which is the one control a round-over card has in a match:
+    // left and right along the row, confirm to cast. It is the same three
+    // presses the menu's own list takes, and the confirm BREAKS for the menu's
+    // reason — the tail below would otherwise spend the same key on a round
+    // this client is not the one starting.
+    if (this.state === "roundover" && this.net?.mapVote) {
+      if (this.input.menuLeftPressed) this.overlayScreen.moveVoteSelection(-1);
+      if (this.input.menuRightPressed) this.overlayScreen.moveVoteSelection(1);
+      if (this.input.menuConfirmPressed && this.overlayT > 0.5) {
+        if (this.overlayScreen.activateVote()) return;
+      }
+      // The readout, stepped here rather than on a timer of its own: this is
+      // the method the card is already being driven from, and a whole second
+      // is the only resolution it is drawn at — so the DOM is written once a
+      // second and not once a frame.
+      const left = Math.max(0, Math.ceil((this.voteEndsAt - performance.now()) / 1000));
+      if (left !== this.voteSeconds) {
+        this.voteSeconds = left;
+        this.overlayScreen.setVoteClock(left);
       }
     }
     // What is left of the confirm is Enter, pad A and Start — no pointer
@@ -6345,6 +6378,20 @@ export class Game {
     // rejects the far ones, which is where that decision belongs.
     net.roster.onStep = (soldier) => this.sfx.botStep(soldier.position);
 
+    // The ballot for the next map, and the countdown that goes with it. Both
+    // halves land here because the card may or may not be up yet: the first
+    // one arrives a message ahead of the `roundover` that raises it (which
+    // reads `NetSession.mapVote` directly), and every one after it lands on a
+    // card that is already standing.
+    net.onMapVote = (vote) => {
+      // The window's end, on the LOCAL clock. The message carries what is left
+      // rather than a deadline on the server's clock precisely so that this is
+      // a subtraction and not an offset — see `MapVoteMessage.ms`.
+      this.voteEndsAt = performance.now() + vote.ms;
+      this.voteSeconds = -1;
+      this.overlayScreen.setVote(this.voteView(vote));
+    };
+
     // A new round on a new map, same seat. The world is rebuilt LOCALLY from
     // the same layout the server is using — the map never crosses the wire —
     // and the server's spawn event puts the body back afterwards.
@@ -7938,6 +7985,37 @@ export class Game {
     document.exitPointerLock();
   }
 
+  /**
+   * When the standing ballot shuts, on this machine's own clock, and the whole
+   * second the card was last told about.
+   *
+   * The countdown is the one thing on the round-over card this client works
+   * out for itself, and it is allowed to because it decides nothing: the
+   * window's end is the authority's (`Match.rotate` is what actually shuts
+   * it), and this is a readout that says roughly how long is left. Anything
+   * that acted on it would be a client deciding the rotation.
+   */
+  private voteEndsAt = 0;
+  private voteSeconds = -1;
+
+  /**
+   * The wire's ballot as the card draws one.
+   *
+   * The NAMING is the whole of this method: `MAPS` is the client's table and a
+   * map id is what crosses the wire, exactly as it does in the welcome and the
+   * round start. A candidate this build has never heard of is drawn as its id
+   * — the honest answer, and the same one `leaveUnknownMap` gives when a round
+   * actually starts on it.
+   */
+  private voteView(vote: MapVoteMessage): VoteView {
+    return {
+      maps: vote.maps.map((id) => MAPS.find((m) => m.id === id)?.name ?? id),
+      tally: vote.tally,
+      choice: vote.choice,
+      seconds: Math.max(0, Math.ceil(vote.ms / 1000)),
+    };
+  }
+
   private endRound(winner: Team): void {
     // Ends under a lid for the same reason a death does: the authority's
     // `roundover` does not wait for the player to close their settings.
@@ -7974,17 +8052,24 @@ export class Game {
     // VIEWER's order rather than the authority's: a player seated on team 1 was
     // reading their own reinforcements out of the enemy's slot, in the enemy's
     // colour, before the side became a thing the whole round is painted from.
-    this.overlayScreen.showRoundOver(
-      teamLook(winner).name,
-      won,
-      this.conquest.tickets[this.player.team],
-      this.conquest.tickets[OTHER_TEAM[this.player.team]],
-      this.mapDef.name,
+    const vote = this.net?.mapVote ?? null;
+    this.overlayScreen.showRoundOver({
+      winnerName: teamLook(winner).name,
+      playerWon: won,
+      ticketsMine: this.conquest.tickets[this.player.team],
+      ticketsTheirs: this.conquest.tickets[OTHER_TEAM[this.player.team]],
+      mapName: this.mapDef.name,
       // Whether this card is a MENU or a WAIT. Offline the next round is the
       // player's to ask for; in a match it is the authority's rotation, and
       // the card says so instead of offering a button that must not work.
-      !this.net,
-    );
+      solo: !this.net,
+      // Read off the session rather than waited for: the authority sends the
+      // ballot immediately BEFORE the `roundover` that lands here, so by the
+      // time this runs it has already arrived. A match with no ballot — an
+      // older server — draws the wait line this card had before there was a
+      // vote, which is still exactly what is happening on it.
+      vote: vote ? this.voteView(vote) : null,
+    });
   }
 
   /** Called from `Player.takeDamage`, whoever pulled the trigger. */

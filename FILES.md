@@ -17,6 +17,11 @@ server/               # The authoritative match server. Node, NullEngine, no
   Match.ts            #   One match: fixed-step loop, snapshots, the gates on
                       #   what a client may claim, round rotation
   Roster.ts           #   The 48 slots, 16 seats, team balance, human<->bot handover
+  MapVote.ts          #   The ballot for the next map: the candidates, the
+                      #   per-slot tally, the tie-break. Its first candidate is
+                      #   what the rotation would have picked, which is also
+                      #   what an empty ballot and a tie resolve to. Owns no
+                      #   transport and no timer
   HeadlessGame.ts     #   The simulation: the server's answer to core/Game.ts,
                       #   wired by the same rules. Owns the armour too — the
                       #   fleet, the bot crews and the AT kit — plus `seat`,

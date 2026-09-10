@@ -191,6 +191,13 @@ export function readClientMessage(raw: string): ClientMessage | null {
     case "dismount":
       return msg;
 
+    // An INDEX into a ballot, so integer rather than merely finite, exactly as
+    // `deploy`'s spawn is. What it MEANS is asked again on the far side, where
+    // the ballot it indexes actually is: this file has never heard of a vote
+    // being open, and `MapVote.vote` refuses anything off the end of one.
+    case "vote":
+      return Number.isInteger(m.map) ? msg : null;
+
     case "deploy":
       // An INDEX, so integer rather than merely finite. `onDeploy` asks the
       // same question again and is right to: this is the shape gate for the

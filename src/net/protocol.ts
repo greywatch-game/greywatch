@@ -1084,10 +1084,59 @@ export interface MinesMessage {
   mines: MineState[];
 }
 
+/**
+ * The ballot for the next map, and where the vote has got to.
+ *
+ * **Addressed rather than broadcast**, which is the whole reason it is one
+ * message and not two: `choice` is what THIS client's slot is currently voting
+ * for, and a client that had to remember its own pick would be the one thing on
+ * this screen the authority had not stated. A vote that was dropped by the
+ * socket, refused for naming a candidate off the ballot, or cleared because the
+ * peer was re-seated would leave a button lit under a tally that does not count
+ * it — which is the same disagreement `ScoresMessage` exists to avoid, on a
+ * control the player is actively pressing.
+ *
+ * **Sent only when the tally moves**, and at most once a snapshot interval —
+ * see `Match.flushVote`. A ballot is the one thing on this wire a client can
+ * make the server re-send at will (a peer alternating between two candidates
+ * changes the tally on every message), so the coalescing is a bound on
+ * amplification rather than a saving.
+ *
+ * `maps` are map IDS and never names: naming is the client's, off its own
+ * `MAPS` table, exactly as `Welcome.mapId` and `RoundStart.mapId` are. A
+ * candidate this build has never heard of is still drawn and still votable —
+ * the round it wins is one this client cannot build, and `Game.applyMatchMap`
+ * already answers that at the `roundstart` rather than here.
+ *
+ * `ms` is what is LEFT of the window at the moment this was sent, and it is a
+ * duration rather than a deadline on the server's clock for one reason: a
+ * countdown is a status readout and not a simulation, so it owes the offset
+ * machinery in `Connection` nothing. A client counts it down locally from
+ * receipt.
+ *
+ * Additive, like `scores`, `pings` and `reload`, and so no version bump: an
+ * older client ignores a message type it has no case for and simply waits out
+ * the rotation as it always did, and a newer client against an older server
+ * never sees a ballot and shows the same wait line. Either way the authority
+ * says which map is next with a `roundstart`, which both builds already act on.
+ */
+export interface MapVoteMessage {
+  t: "mapvote";
+  /** Candidate map ids, in ballot order. The first is what an empty vote picks. */
+  maps: string[];
+  /** How many votes each candidate holds, indexed alike. */
+  tally: number[];
+  /** What this client's slot is voting for, or -1 for a slot that has not. */
+  choice: number;
+  /** Milliseconds left in the window, as of this message. */
+  ms: number;
+}
+
 export type ServerMessage =
   | Welcome
   | RoundStart
   | RosterMessage
+  | MapVoteMessage
   | Snapshot
   | EventsMessage
   | ScoresMessage
@@ -1569,8 +1618,37 @@ export interface ReloadMessage {
   t: "reload";
 }
 
+/**
+ * This client naming which of the offered maps it wants next.
+ *
+ * An ASK in `DeployMessage`'s sense and a weaker one than that: the authority
+ * owns the ballot, the tally and the rotation, and all this states is a
+ * preference between candidates the server itself offered. `map` is an index
+ * into the `maps` of the last `MapVoteMessage` and never a map id — an index
+ * cannot name a map that is not on the ballot, and a client that has fallen
+ * behind the window names a candidate that has already gone rather than a
+ * world the server would have to resolve.
+ *
+ * Re-sendable: a player changing their mind sends another one, and the last
+ * one to arrive is the one that counts. It is fire-and-forget rather than
+ * standing — a vote dropped by a socket is a preference, and the card is on
+ * screen with the tally on it for the length of the window, so the player can
+ * see it did not land and press again.
+ *
+ * Additive in both directions and so no version bump, on `reload`'s terms: an
+ * older server refuses an unknown `t` in `readClientMessage` and drops the
+ * frame, which is exactly what "this server does not run a vote" should look
+ * like from the far side, and an older client never sends one.
+ */
+export interface VoteMessage {
+  t: "vote";
+  /** An index into the ballot this vote is answering. */
+  map: number;
+}
+
 export type ClientMessage =
   | Join
+  | VoteMessage
   | MoveMessage
   | ShotMessage
   | GrenadeMessage

@@ -958,6 +958,139 @@
   color: var(--dim);
 }
 
+/* --- the ballot, where the wait line used to be alone ---
+   The next map is the players' in a match, so the block under the result is a
+   row of candidates rather than a sentence about somebody else choosing. It
+   keeps the wait line's width and its place, because a card that changed shape
+   between a server that runs a vote and one that does not would move the
+   result plate above it for no reason a player could name. */
+#overlay .ov-outcome .ov-next {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1vh, 12px);
+  width: min(760px, 100%);
+}
+#overlay .ov-vote .vote-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+#overlay .ov-vote .vote-head .lbl {
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+/* The countdown. Tabular figures and a fixed box, or the row beside it steps
+   sideways every time the number narrows from 8 to 7 — it is redrawn once a
+   second, which is exactly the cadence at which a shifting label is read as a
+   fault. */
+#overlay .ov-vote .vote-clock {
+  min-width: 1.6em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ui-row);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--hot);
+}
+/* A ROW OF PICKS IS A GRID OF EQUAL SHARES, NEVER A WRAPPING FLEX ROW — see
+   `docs/ui.md`. Three candidates are three equal columns at every width the
+   card is drawn at, and the narrow rule at the bottom of this file changes the
+   COUNT (to one) rather than letting a long map name decide where the row
+   breaks. */
+#overlay .ov-vote .vote-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: clamp(6px, 1vw, 12px);
+}
+/* One candidate: what it is, how it is doing, and how many said so. The plate
+   is the tier button's, cut with the same chamfer as everything else on this
+   card, and the whole button is the hit area — the bar inside it is a readout
+   and not a control. */
+#overlay .ov-vote button.cand {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-areas: "name count" "bar bar";
+  align-items: center;
+  gap: 6px clamp(6px, 1vw, 12px);
+  font: inherit;
+  padding: clamp(8px, 1.2vh, 14px) clamp(10px, 1.4vw, 18px);
+  background: var(--plate);
+  border: 0;
+  cursor: pointer;
+  clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+  transition: background 0.12s, color 0.12s;
+}
+#overlay .ov-vote button.cand .nm {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: var(--ui-cap);
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #cdd6e6;
+}
+#overlay .ov-vote button.cand .ct {
+  grid-area: count;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ui-cap);
+  font-weight: 800;
+  color: var(--dimmer);
+}
+/* The share of the votes cast, on the same 6 px rail the result's margin bar
+   above it uses — one reading of "who is ahead" per card, drawn one way. */
+#overlay .ov-vote button.cand .bar {
+  grid-area: bar;
+  display: block;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+#overlay .ov-vote button.cand .bar b {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.34);
+  transition: width 0.2s;
+}
+#overlay .ov-vote button.cand:hover { background: rgba(255, 255, 255, 0.11); }
+/* WHERE THE CURSOR IS, WHAT THIS PLAYER VOTED FOR, AND WHAT IS WINNING ARE
+   THREE DIFFERENT FACTS AND THEY ARE DRAWN THREE DIFFERENT WAYS — a player
+   whose own vote is losing has to be able to see both at once, and a single
+   highlight would say one of the three and imply the other two.
+   `sel` is the cursor: a hot rule down the leading edge, the same mark the
+   menu's rows take. */
+#overlay .ov-vote button.cand.sel {
+  box-shadow: inset 2px 0 0 var(--hot);
+}
+#overlay .ov-vote button.cand.sel .nm { color: #fff; }
+/* `lead` is what will actually be built if nothing else moves, and it is the
+   quietest of the three on purpose: it is a fact about the tally rather than
+   anything the player has done, and the tally is already drawn in the bar
+   under it. It is stated BEFORE `on` below rather than after it, which is the
+   whole of what makes the two composable: a player whose own vote is also the
+   leader should read as the player's, and the two rules carry the same weight
+   so the later one is what wins. A tie and an empty ballot both lead with the
+   first candidate, which is the map the rotation would have picked anyway — see
+   `server/MapVote.ts`. */
+#overlay .ov-vote button.cand.lead .ct { color: #fff; }
+/* `on` is this player's own vote — filled, because it is the one thing on the
+   row this player did. */
+#overlay .ov-vote button.cand.on {
+  background: rgba(255, 230, 128, 0.16);
+}
+#overlay .ov-vote button.cand.on .nm,
+#overlay .ov-vote button.cand.on .ct { color: var(--hot); }
+#overlay .ov-vote button.cand.on .bar b { background: var(--hot); }
+
 /* =====================================================================
    THE BUILDING CARD
    ===================================================================== */
@@ -1199,6 +1332,9 @@
    top of this; the caption simply going is the braces. */
 @media (max-width: 560px) {
   #overlay.card-menu .ov-row.kit button i { display: none; }
+  /* The ballot's COUNT, not its break: three names across 560 px of glass is
+     three ellipses, and a map you cannot read is not one you can vote for. */
+  #overlay .ov-vote .vote-row { grid-auto-flow: row; }
 }
 
 /* --- a phone held sideways ---

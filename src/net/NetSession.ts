@@ -29,6 +29,7 @@ import { NetRoster } from "./NetRoster";
 import { NetVehicles } from "./NetVehicles";
 import {
   INPUT_HZ,
+  type MapVoteMessage,
   type ServerEvent,
   type ServerMessage,
   type SlotState,
@@ -188,6 +189,15 @@ export class NetSession {
   onRejected: (reason: string) => void = () => {};
   /** Wired by Game: a new round has begun on this map. */
   onRoundStart: (mapId: string) => void = () => {};
+  /**
+   * Wired by Game: the ballot for the next map moved.
+   *
+   * Raised as well as stored for `onSeated`'s reason turned the other way
+   * round: the first ballot arrives immediately before the `roundover` event
+   * that raises the card, so `Game.endRound` reads the FIELD, and every tally
+   * after it lands on a card that is already up and reaches it through this.
+   */
+  onMapVote: (vote: MapVoteMessage) => void = () => {};
 
   /**
    * Wired by Game: the welcome landed, and this is the side we are on.
@@ -203,6 +213,18 @@ export class NetSession {
    * welcome was early; this is how it hears about it when it was late.
    */
   onSeated: (team: Team) => void = () => {};
+
+  /**
+   * The ballot for the next map as the authority last stated it, or null
+   * outside the round-over window.
+   *
+   * Mirrored rather than tracked, on `slotKills`'s terms and for the sharper
+   * half of its reason: `choice` is what the AUTHORITY has this client voting
+   * for, so a press that was dropped by the socket or refused for naming a
+   * candidate off the ballot leaves the button unlit rather than lit against a
+   * tally that does not count it.
+   */
+  mapVote: MapVoteMessage | null = null;
 
   /**
    * The panes already broken when this client was seated.
@@ -439,6 +461,24 @@ export class NetSession {
     equipment: string;
   } | null = null;
 
+  /**
+   * Names one of the offered maps as this client's pick for the next round.
+   *
+   * `index` is an index into the standing ballot's `maps` and is checked
+   * against it here as well as on the authority — not because the server
+   * trusts this one, but because a press with no ballot open is a key arriving
+   * after the window shut and there is nothing to send it about.
+   *
+   * Fire-and-forget: the answer is the next `mapvote`, which restates the
+   * tally and this client's own place in it, and the card is on screen with
+   * both on it for the length of the window.
+   */
+  sendVote(index: number): void {
+    if (!this.seated || !this.mapVote) return;
+    if (index < 0 || index >= this.mapVote.maps.length) return;
+    this.conn.send({ t: "vote", map: index });
+  }
+
   private flushDeploy(): void {
     if (!this.seated || this.pendingDeploy === null) return;
     this.conn.send({ t: "deploy", ...this.pendingDeploy });
@@ -623,7 +663,19 @@ export class NetSession {
         // landing in whatever state this client's rebuild happens to be in.
         // A request is about a ROUND, and this is a different round.
         this.pendingDeploy = null;
+        // The ballot this round-start is the ANSWER to. It closed on the
+        // authority before the map was built, and a client holding one past
+        // that would draw a vote over a round that is already being played.
+        this.mapVote = null;
         this.onRoundStart(msg.mapId);
+        break;
+
+      // The next map's ballot — see `MapVoteMessage`. Both halves, because the
+      // card may not be up yet: the first of these arrives a message ahead of
+      // the `roundover` event that raises it.
+      case "mapvote":
+        this.mapVote = msg;
+        this.onMapVote(msg);
         break;
 
       case "roster":

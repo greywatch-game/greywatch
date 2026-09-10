@@ -51,6 +51,7 @@ import {
 import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/Vehicle";
 import { MAPS } from "../src/world/maps";
 import { HeadlessGame } from "./HeadlessGame";
+import { MapVote } from "./MapVote";
 import { HUMANS_PER_TEAM, Roster } from "./Roster";
 import { validateDrive, validateMove } from "./validate";
 import { readClientMessage } from "./wire";
@@ -557,6 +558,44 @@ export class Match {
   private sentScoreVersion = -1;
 
   /**
+   * The ballot for the next map, open only between a round ending and the next
+   * one being built — which is exactly the span `rotating` is true for.
+   *
+   * Null the rest of the time, and that is the test every path here asks
+   * rather than a second flag: a vote that arrives outside the window has no
+   * ballot to index and is dropped, and a rotation reads the winner off this
+   * and then drops it, so nothing can carry a preference into a round it was
+   * not cast in. See `server/MapVote.ts` for the rules it holds.
+   */
+  private mapVote: MapVote | null = null;
+  /**
+   * When the window shuts, on the WALL clock — the one place on this server
+   * that is right rather than a lapse from `HeadlessGame.now`.
+   *
+   * The simulation is not stepped while `rotating`, so its clock is frozen for
+   * the whole of the window and a countdown measured against it would read the
+   * same eight seconds forever. The wall clock is also what the rotation
+   * itself is on (`setTimeout`), so this and the moment the vote actually
+   * closes are the same clock by construction. It is not a stamp anything is
+   * read AGAINST — see `MapVoteMessage.ms` — which is what the rule about
+   * `Date.now()` is for.
+   */
+  private voteEndsAt = 0;
+  /** Ticks since the ballot opened, for the flush cadence below. */
+  private voteTicks = 0;
+  /**
+   * Whether the tally has moved since it was last sent.
+   *
+   * The ballot is the one message on this wire a client can ask for at will —
+   * a peer alternating between two candidates moves the tally on every message
+   * it sends — so it is sent on a CADENCE the peers do not control rather than
+   * on the change itself. `scores` and `mines` are the same trade made against
+   * a simulation that cannot be provoked; this one is made against peers who
+   * can.
+   */
+  private voteDirty = false;
+
+  /**
    * `wantedMap` is the map id the peer whose join created this match asked for.
    *
    * RESOLVED against the real table rather than taken as sent, exactly as the
@@ -896,6 +935,11 @@ export class Match {
     // zeros until somebody happens to die — and in a quiet minute that is a
     // screen confidently reporting that nothing has happened all round.
     this.send(peer, this.scores());
+    // …and the ballot, if this peer arrived inside the round-over window. A
+    // joiner lands on the card everybody else is looking at, so without this
+    // they would be the one person in the match with a wait line on it — and
+    // they hold a seat, so their vote counts exactly as much as anybody's.
+    if (this.mapVote) this.send(peer, this.voteMessage(slot.index));
     // Started now rather than on the next sweep, so this peer's own row has a
     // real number on it by the time the first table reaches them — a second of
     // "—" against your own name reads as a connection that is not working.
@@ -962,6 +1006,10 @@ export class Match {
    */
   private drop(peer: Peer): void {
     if (!this.peers.delete(peer.id)) return;
+    // A vote cast by somebody who has left is a vote by nobody. Marked dirty
+    // rather than flushed here, so a match emptying out sends one tally on the
+    // next cadence instead of one per departure.
+    if (this.mapVote?.clear(peer.slot)) this.voteDirty = true;
     this.game.removePlayer(peer.slot);
     this.loadouts.delete(peer.slot);
     this.equipment.delete(peer.slot);
@@ -1016,6 +1064,7 @@ export class Match {
    */
   private abandon(reason: string): void {
     this.rotating = false;
+    this.mapVote = null;
     this.stop();
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
@@ -1166,7 +1215,18 @@ export class Match {
     //
     // The tick the round ends on is not affected: `rotating` is set BELOW,
     // after that tick has already run and broadcast its `roundover`.
-    if (this.rotating) return;
+    if (this.rotating) {
+      // …but the window the round-over card is up for is this one, and the
+      // ballot on it is live. This is the only thing that happens between a
+      // round ending and the next map being built, and it is deliberately not
+      // a timer of its own: the loop is already running at `TICK_HZ` across
+      // the whole pause, so the cadence costs nothing and dies with the match.
+      this.voteTicks++;
+      if (this.voteDirty && this.voteTicks % TICKS_PER_SNAPSHOT === 0) {
+        this.flushVote();
+      }
+      return;
+    }
 
     const live = this.game.step(1 / TICK_HZ);
     this.ticks++;
@@ -1181,6 +1241,12 @@ export class Match {
       // — a server that stopped here would leave sixteen people looking at a
       // frozen world with no way out but reconnecting.
       this.rotating = true;
+      // The ballot goes out BEFORE the result does. The `roundover` event is
+      // still in the queue that `broadcastSnapshot` flushes below, so opening
+      // here means a client holds the candidates by the time the card it draws
+      // them on is raised — rather than putting up a wait line and replacing it
+      // a beat later with a vote.
+      this.openVote();
       this.broadcastSnapshot();
       setTimeout(() => {
         // A rotation is the one place a failure would now be permanent. It is
@@ -1220,7 +1286,17 @@ export class Match {
    */
   private async rotate(): Promise<void> {
     const order = MAPS.map((m) => m.id);
-    const next = order[(order.indexOf(this.mapId) + 1) % order.length];
+    // What the vote came to, and the fallback beside it is the SAME map on a
+    // ballot nobody answered — `MapVote`'s first candidate is this expression.
+    // The fallback is only reachable at all if a rotation ran without a window
+    // in front of it, which nothing does today; it is here because a rotation
+    // that could not name a map would abandon the match.
+    const next =
+      this.mapVote?.winner() ?? order[(order.indexOf(this.mapId) + 1) % order.length];
+    // Closed before anything is built, so a vote arriving inside the build —
+    // a peer whose last press was in flight — is dropped rather than counted
+    // toward a ballot whose result has already been spent.
+    this.mapVote = null;
     this.mapId = next;
     const def = MAPS.find((m) => m.id === next) ?? MAPS[0];
 
@@ -1666,7 +1742,85 @@ export class Match {
       case "deploy":
         this.onDeploy(peer, msg);
         break;
+      // The one message that is only meaningful while `rotating`, which is why
+      // it is not in the block above and why `onVote` tests for a ballot
+      // instead: everything there belongs to a round in progress and this
+      // belongs to the gap between two.
+      case "vote":
+        this.onVote(peer, msg);
+        break;
     }
+  }
+
+  /**
+   * A player naming which of the offered maps they want next.
+   *
+   * An ASK in the deploy's sense, and everything that makes it safe is on the
+   * far side of it: `MapVote.vote` refuses an index that is not on the ballot,
+   * a slot may hold exactly one vote however many it sends, and the tally only
+   * ever leaves here on the cadence `step` flushes it at. So a peer that votes
+   * as fast as its allowance permits moves one row in a map sixteen times and
+   * costs everybody else one message per snapshot interval.
+   *
+   * A vote with no ballot open — the window has shut, or a client that has
+   * been sending them all round — is dropped in silence. There is nothing to
+   * tell the player: the card is already down, and the map they asked for is
+   * either being built or was never on offer.
+   */
+  private onVote(peer: Peer, msg: Extract<ClientMessage, { t: "vote" }>): void {
+    if (!this.mapVote) return;
+    if (this.mapVote.vote(peer.slot, msg.map)) this.voteDirty = true;
+  }
+
+  /**
+   * Opens a ballot over the round-over pause and states it to everyone.
+   *
+   * The candidates are drawn out of `MAPS` — the same table the rotation walks
+   * — so a build with one map offers one candidate and a dev build offers the
+   * proving ground exactly as its rotation already does. Nothing here decides
+   * WHEN the window shuts: the round-over timer already does, and this only
+   * records what that will be so the card can count it down.
+   */
+  private openVote(): void {
+    this.mapVote = new MapVote(
+      MAPS.map((m) => m.id),
+      this.mapId,
+    );
+    this.voteEndsAt = Date.now() + ROUND_OVER_MS;
+    this.voteTicks = 0;
+    this.voteDirty = false;
+    this.flushVote();
+  }
+
+  /**
+   * The ballot as it stands, to every peer — one message each, because
+   * `choice` is the one field on it that is about the reader.
+   *
+   * Sixteen small encodes at twenty a second for eight seconds, which is the
+   * shape `flushEvents` already takes for an addressed event and a fraction of
+   * what a single snapshot costs. The alternative is a broadcast tally plus a
+   * client that remembers its own pick, and a client remembering something the
+   * authority holds is exactly the disagreement this side of the wire is built
+   * not to have.
+   */
+  private flushVote(): void {
+    if (!this.mapVote) return;
+    this.voteDirty = false;
+    for (const peer of this.peers.values()) {
+      this.send(peer, this.voteMessage(peer.slot));
+    }
+  }
+
+  /** The ballot as one slot reads it. */
+  private voteMessage(slot: number): ServerMessage {
+    const vote = this.mapVote!;
+    return {
+      t: "mapvote",
+      maps: [...vote.maps],
+      tally: vote.tally(),
+      choice: vote.choiceOf(slot),
+      ms: Math.max(0, this.voteEndsAt - Date.now()),
+    };
   }
 
   /**

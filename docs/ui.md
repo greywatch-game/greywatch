@@ -1039,6 +1039,48 @@ was theirs. It now carries the mouse and the finger by itself. It is also where 
 menu's cursor starts, keeping Enter and A meaning "start the round" the moment the
 title appears.
 
+**In a MATCH that button is a BALLOT instead**, and the block it stands in
+(`.ov-next`) is the only part of the round-over card that differs between an
+offline round and a networked one. Offline the next round is the player's to
+ask for; in a match the next MAP is the players' and the round is the
+authority's, so what is drawn there is three candidates, a tally and a
+countdown — and against a server that runs no vote, the wait line that was
+there before ("the server is choosing"), which is still exactly what is
+happening. The block keeps the button's width and its place in all three, so
+the result plate above it does not move depending on who you are playing
+against.
+
+- **The ballot is a GRID OF EQUAL SHARES**, which is this file's rule about a
+  row of picks, and the narrow rule changes the COUNT rather than the break —
+  under 560 px it is one column, because three map names across a phone is
+  three ellipses and a map you cannot read is not one you can vote for.
+- **WHERE THE CURSOR IS, WHAT YOU VOTED FOR AND WHAT IS WINNING ARE THREE
+  FACTS AND THEY ARE DRAWN THREE WAYS.** `.sel` is the cursor (a hot rule down
+  the leading edge, the menu's own mark), `.on` is this player's vote (filled,
+  because it is the one thing on the row the player did), and `.lead` is what
+  will actually be built if nothing moves (the quietest, because it is a fact
+  about the tally and the tally is already in the bars). A player whose own
+  vote is losing has to be able to see both at once, and one highlight would
+  say one of the three and imply the other two.
+- **The tally is the authority's and the cursor is not**, which is why the two
+  are separate fields on the screen as well as separate classes: arrowing
+  along the row would otherwise cast four votes, and a locally-lit button under
+  a tally that does not count it is the failure `docs/multiplayer.md` argues
+  the addressed `choice` field out of.
+- **The pointer votes and takes the cursor with it**, so a player who clicks and
+  then reaches for the keyboard carries on from where they clicked. It is the
+  same pointer-events carve-out the tier row and Deploy have: the candidates opt
+  in, the card around them stays inert.
+- **The map NAMES go in with `textContent`**, alone on this card among strings
+  that are written as markup — a candidate this build has no row for is drawn as
+  the id the authority sent, which is a string chosen by whatever is on the far
+  end of the socket.
+- **The countdown is `tabular-nums` in a fixed box.** It is rewritten once a
+  second, which is exactly the cadence at which a label that steps sideways as
+  the number narrows reads as a fault; and it is written once a second rather
+  than once a frame because `Game` compares the whole second before it touches
+  the DOM.
+
 **That button is why the deploy screen's confirm is `menuConfirmPressed`.** It
 changes state on the down edge, which puts the `deploy` branch in front of the very
 click that asked for it — and the first deploy of a round has `respawnT` at 0, so a

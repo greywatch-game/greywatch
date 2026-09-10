@@ -1690,6 +1690,23 @@ is one machine's:
   budget wrecks: the local reinforcement countdown takes ~80 s of wall clock to
   run out, so force `g.respawnT = 0` rather than waiting for it. The server's
   clock is real and is the one that actually gates the deploy.
+- **To watch a ROUND END — the map vote, the rotation, anything on that card —
+  bend `CONFIG.conquest.tickets` before the server imports it, rather than
+  waiting one out.** The server bundle's world chunk exports `CONFIG` as `C`
+  (`dist-server/assets/world-*.js`), and `dist-server/index.js` imports that
+  same instance, so a three-line loader that imports the chunk, sets
+  `C.conquest.tickets = 6` and then imports `index.js` gives a match that
+  bleeds out in a minute or two of bot-on-bot fighting with everything else
+  about it real. `as const` is a compile-time claim and the object is
+  writable. Two rounds of eight seconds each is the rest of the wait, which is
+  `ROUND_OVER_MS` and is where the ballot lives.
+- **`page.keyboard.press()` is a coin toss for anything reading
+  `InputManager`'s edges.** Those are composed once a frame from the keys that
+  are DOWN at that moment, so a press whose `keyup` beats the next frame raises
+  no edge at all and the script reports a control that does not work. Hold it:
+  `keyboard.down(k)`, wait ~120 ms, `keyboard.up(k)`. The arrows survive a tap
+  often enough to be misleading — a run where the cursor moved and the confirm
+  did nothing is this, not a broken confirm.
 - **To stage a map change, push the MESSAGE, not the callback.** `g.net.onRoundStart("greyfen")`
   looks like a rotation and is not one: `NetSession.mapId` is written by `receive`,
   so calling the callback directly leaves the session still naming the old map and

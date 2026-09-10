@@ -1001,6 +1001,13 @@ nearly hit, and `score`, which says what one player was just paid and for what.
 Neither carries a slot at all — the only client either is ever sent to is the
 one it happened to, so there is nothing for a guard to compare.
 
+**`mapvote` is addressed too, and it is the one that is not an event at all.**
+It is a whole MESSAGE rather than a queued instant, because a ballot is state
+in `ScoresMessage`'s sense — a dropped one is corrected by the next and a peer
+that joined mid-window is right on arrival — and it is addressed for the same
+reason `damage` is, one field at a time: `choice` is about the reader. See "The
+next map is VOTED for" below.
+
 A filter on the far side does not fix either, because it is a promise about the
 client rather than a property of the server, and the payload is on the wire
 regardless for anything reading the socket. So `PendingEvent` carries the
@@ -1905,6 +1912,96 @@ naming a world the server does not have. Additive on the wire: a client that
 sends no `map` gets the default, which is what every client got before the field
 existed. The lobby's own Map row is where a player sets it, and it is the same
 pick the menu shows — one choice, two places it is on screen.
+
+### The next map is VOTED for, and the ballot is still the authority's
+
+**The rotation used to be a line of arithmetic** — the next id in `MAPS`, wrapped
+— **and it is a vote now, which changes who decides and nothing else about how a
+round ends.** The window is the round-over pause that was already there
+(`ROUND_OVER_MS`, eight seconds), the answer still arrives as a `roundstart`, and
+a client that ignores the whole feature plays exactly the round it would have
+played before. That is the shape to keep: the vote is a preference collected
+inside a pause the match was taking anyway, not a new phase in the match's life.
+
+**The ballot's FIRST candidate is the map the rotation would have picked
+anyway, and that one decision settles the two questions a vote otherwise has to
+answer separately.** An empty ballot — nobody pressed anything, which is most
+rounds on a quiet server — resolves to it, so a match nobody votes in rotates
+precisely as it did before this existed. A TIE resolves to the earliest
+candidate holding the top count, which is the same sentence again: the rotation
+order is the tie-break, rather than a coin toss whose result nobody watching the
+card could have predicted. Because the fallback and the tie-break are one rule,
+there is no arrangement of votes in which the card shows one map and the server
+builds another — and the card can therefore draw the leader honestly at every
+moment of the window, including before anybody has voted.
+
+**The other candidates are drawn at RANDOM from the rest of the rotation, and
+the map just played is never on the ballot.** Three consecutive maps would be
+the same three every time the rotation came round, which is a rotation with
+extra steps; drawing the rest means the map five places away is reachable in one
+round while the fallback stays exactly where it was. And a ballot that can land
+back on the map everybody has spent ten minutes on is one where most of the
+vote is a vote to stop playing it — the one map nobody has to be asked about is
+that one. `server/MapVote.ts` holds all of it; `Match` does the wire and owns
+none of the rules.
+
+**`mapvote` is ADDRESSED rather than broadcast, and the field that makes it so
+is `choice`.** A client could remember its own press instead, and then a vote
+dropped by the socket, refused for naming a candidate off the ballot, or cleared
+because its peer left would leave a button lit under a tally that does not count
+it — the same disagreement `ScoresMessage` exists to prevent, on a control the
+player is actively pressing. So the tally, the countdown and this client's own
+place in it all arrive from the one side that knows, exactly as the board does.
+
+**It is sent on a CADENCE the peers do not control**, which is the one thing
+here that is a bound rather than a saving. A ballot is the only state on this
+wire a client can make the server re-state at will: a peer alternating between
+two candidates moves the tally on every message it sends, and a naive
+send-on-change would turn one peer's allowance into sixteen encodes at that
+rate. `Match.step` flushes a dirty tally at most once per snapshot interval for
+the length of the window, which is the trade `scores` and `mines` already make
+against a simulation that cannot be provoked.
+
+**A vote names an INDEX and never a map id.** An index cannot name a map that is
+not on the ballot, so `MapVote.vote` is the whole of the check and there is no
+lookup to get wrong; a client that has fallen behind the window names a
+candidate that has already gone rather than a world the server would have to
+resolve. `readClientMessage` asks only that it is an integer, on `deploy`'s
+terms — the shape gate is the wire's and the meaning is the ballot's.
+
+**The candidates cross as map IDS and are named on the client**, like every
+other map on this wire. A candidate this build has never heard of is still drawn
+(as its id) and still votable: the round it wins is one this client cannot
+build, and `applyMatchMap` already answers that at the `roundstart` by putting
+the player back in the lobby with the reason. Naming it here would be a second
+place a build skew could be discovered, with nothing better to do about it.
+
+**Three edges, all of them the same rule — a vote belongs to the window it was
+cast in.** A peer that LEAVES has its row cleared, or a match emptying out
+rotates on votes cast by nobody. A peer that JOINS inside the window is handed
+the standing ballot with its welcome, because it holds a seat and its vote
+counts like anybody's — without it, one player in the match is looking at a wait
+line while everybody else votes. And the ballot is dropped by `rotate` BEFORE
+the next world is built, so a press still in flight is dropped rather than
+counted toward a result that has already been spent; the client drops its own
+copy on the `roundstart` for the same reason it drops last round's glass.
+
+**The countdown on the card is the one number in this feature the client works
+out for itself, and it is allowed to because it decides nothing.**
+`MapVoteMessage.ms` is what was LEFT of the window when the message was sent, a
+duration rather than a deadline on the server's clock, so it owes the offset
+machinery in `Connection` nothing and cannot be read against a position. What
+actually shuts the window is `Match`'s own `setTimeout`, on the wall clock —
+which is the one place on that server where the wall clock is right rather than
+a lapse from `HeadlessGame.now`, because the simulation is not stepped at all
+while `rotating` and its clock is frozen for the whole of the pause.
+
+**Additive on both halves, so no `PROTOCOL_VERSION` bump.** An older client has
+no case for `mapvote`, waits the rotation out as it always did, and is told the
+result by the `roundstart` it already acts on; an older server refuses `vote` in
+`readClientMessage` and drops the frame, which is what "this server runs no
+vote" should look like from the far side. Nothing about what a NUMBER means
+moved, which is the test the roster's bump and the helicopter's both turned on.
 
 ### A match may field no bots at all
 

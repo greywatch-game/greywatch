@@ -1439,8 +1439,23 @@ the wire), a **body coming into the world** (an ASK), and the **scoreboard**.
 is the player asking for one, so every door into it asks `!Game.net` — the
 round-over card's confirm, its own button, and the pause menu's Restart — and
 the two that are DRAWN are absent in a match rather than dimmed, the card
-saying the authority is choosing. A client that started its own disposed the
-`GameMap` under a live match and offered a deploy screen nobody else was in.
+putting the next MAP where the button was. A client that started its own
+disposed the `GameMap` under a live match and offered a deploy screen nobody
+else was in.
+
+**THE NEXT MAP IS VOTED FOR, AND THE BALLOT IS STILL THE AUTHORITY'S** — a
+vote taken inside the round-over pause the match already waited out, so a
+client that ignores the whole of it plays the round it would have played
+(`server/MapVote.ts`; `mapvote` out, `vote` in, neither a version bump).
+**The ballot's FIRST candidate is the map the rotation would have picked
+anyway**, which is what makes an EMPTY ballot and a TIE resolve to the same map
+by the same rule — and therefore why the card can never name a winner the
+server does not build. **A vote is an INDEX into a ballot the server offered
+and never a map id**, so nothing a client sends can name a map, and **`choice`
+is ADDRESSED** because a client that had to remember its own press is one whose
+button can disagree with the tally under it. **The tally goes out on a CADENCE
+the peers do not control**: it is the one state on this wire a client can make
+the server re-state at will.
 
 **A TEAM INDEX IS THE AUTHORITY'S AND A SIDE'S COLOURS ARE THE VIEWER'S**, and
 they stopped being one thing: [`src/core/teamView.ts`](src/core/teamView.ts)
@@ -1524,8 +1539,8 @@ hostname is forbidden**.
 
 → **[`docs/multiplayer.md`](docs/multiplayer.md)** — the authority model and what
 it does not defend against, the roster and the bench, the botless match and the
-row that says so, the deploy ask and the kit that rides it, the two weapons and
-the rate bucket, what a death owes each side, the interpolation clock and its
+row that says so, the map vote and the one rule its ballot rests on, the deploy
+ask and the kit that rides it, the two weapons and the rate bucket, what a death owes each side, the interpolation clock and its
 easy sign error, the rewind, the drive verdict and the correction under it, the
 lobby and the regions' two headers, and what is not built.
 ## Conventions

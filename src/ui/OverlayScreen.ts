@@ -5,8 +5,9 @@
  * Owns: `#overlay` and everything written into it, the pause list's selection,
  * and the `.overlaid` class on `#hud` that hides the gameplay chrome behind a
  * card. A peer of DeployScreen and LoadoutScreen — Game wires its callbacks
- * (`onStart`, `onDifficulty`, `onOpenLoadout`, `onPauseAction`) and drives its
- * selection, and it knows nothing about game state beyond what it is handed.
+ * (`onStart`, `onDifficulty`, `onOpenLoadout`, `onPauseAction`, `onVote`) and
+ * drives its selection, and it knows nothing about game state beyond what it is
+ * handed.
  * Invariants: only one card is up at a time — each `show*` rewrites the whole
  * element — and `hide()` is the single way down from any of them.
  *
@@ -18,6 +19,13 @@
  * own state — a settings screen with rows to edit, a map picker — has earned a
  * file of its own; a card that is markup and a button has not, and the building
  * card is markup and not even that.
+ *
+ * **The round-over card's map BALLOT is the near miss, and it stays for a
+ * reason worth stating.** It is a row of buttons and a cursor, which is the
+ * pause list's shape and is already what this file holds; what it is NOT is a
+ * picker that owns a value. The tally, this player's own vote and the window
+ * all belong to the authority and arrive whole (`setVote`), so nothing here
+ * decides anything — take that away and it would be a screen, and it would go.
  *
  * Deliberately NOT here: the KEY-CAP TABLE. It hung under the menu's title and
  * under the pause list, drawn from one table by one loop, and it belongs to
@@ -109,6 +117,51 @@ export interface MenuState {
   /** The two slots, by id: the panel names them apart and quotes their table. */
   weapon: PrimaryWeaponId;
   sight: SightId;
+}
+
+/**
+ * The ballot for the next map, as the round-over card draws it.
+ *
+ * A view and not the wire's own `MapVoteMessage`, which is why the maps are
+ * NAMED here: naming a map id is `MAPS`' job and this screen has no business
+ * importing a protocol module to be handed one. `Game` resolves the ids and
+ * counts the clock down; everything below draws what it is given.
+ */
+export interface VoteView {
+  /** The candidates, in ballot order — the display name of each. */
+  maps: readonly string[];
+  /** Votes per candidate, indexed alike. */
+  tally: readonly number[];
+  /** Which candidate this player has voted for, or -1. */
+  choice: number;
+  /** Whole seconds left in the window, for the card's own countdown. */
+  seconds: number;
+}
+
+/**
+ * Everything the round-over card draws itself from.
+ *
+ * An object rather than seven positional arguments, which is `MenuState`'s
+ * reason with one more number in the row: two ticket counts side by side is a
+ * signature where swapping them still typechecks and quietly reports the round
+ * backwards, and the two booleans behind them are worse.
+ */
+export interface RoundOverState {
+  /** The side holding the map, already named through `teamLook`. */
+  winnerName: string;
+  playerWon: boolean;
+  /** The two counts in the VIEWER's order — see the method's own note. */
+  ticketsMine: number;
+  ticketsTheirs: number;
+  mapName: string;
+  /** Whether this client is the one deciding what happens next. */
+  solo: boolean;
+  /**
+   * The ballot, or null for a round whose next map nobody is being asked
+   * about — offline (where `solo` answers instead) and against a server that
+   * runs no vote.
+   */
+  vote: VoteView | null;
 }
 
 /**
@@ -292,6 +345,38 @@ export class OverlayScreen {
   onStart: () => void = () => {};
   /** Wired by Game: the player picked something from the pause list. */
   onPauseAction: (action: PauseAction) => void = () => {};
+  /** Wired by Game: the player voted for a candidate, by ballot index. */
+  onVote: (index: number) => void = () => {};
+
+  /**
+   * The block under the result plate that says what happens next — the ballot,
+   * or the wait line that stands in for one. Null on every other card and on a
+   * round-over card this client is deciding for itself.
+   *
+   * Held because the ballot can arrive AFTER the card is raised: an older
+   * server sends none at all, and a client that joined mid-window is welcomed
+   * before it is handed one. Redrawing this block is how a late ballot lands,
+   * and it is the block rather than the card so the result above it does not
+   * flicker under the player.
+   */
+  private nextRoot: HTMLElement | null = null;
+  /** The candidate buttons, in ballot order, or empty when there is no ballot. */
+  private voteEls: HTMLElement[] = [];
+  /** The countdown's own element, written by `setVoteClock` alone. */
+  private voteClockEl: HTMLElement | null = null;
+  /** The footer line, which says how to vote while there is a vote to cast. */
+  private voteFootEl: HTMLElement | null = null;
+  /**
+   * Which candidate the CURSOR is on — and never which one has been voted for.
+   *
+   * The two are separate on purpose and are drawn as separate things (`.sel`
+   * against `.on`), the same split the menu's cursor and the difficulty row's
+   * value already make: a vote is a value this client has stated to the
+   * authority and had confirmed back, and the cursor is where the player's
+   * hand is resting. Merging them would make arrowing along the row cast four
+   * votes.
+   */
+  private voteIndex = 0;
 
   constructor() {
     this.root = document.createElement("div");
@@ -942,27 +1027,27 @@ export class OverlayScreen {
    * literally rather than through `teamLook`: they are the presentation pair,
    * not a team. See `core/teamView.ts`.
    *
-   * `solo` is "this client is the one deciding what happens next", which
+   * `state.solo` is "this client is the one deciding what happens next", which
    * offline is always and in a match is never.
    *
-   * **A round-over card in a MATCH is a WAIT, not a menu**, and the difference
-   * is a button that must not be there rather than one that is dimmed — the
-   * same call the HUD's loader row makes for a hull with no gun. The authority
-   * owns the rotation: it holds the result up for `ROUND_OVER_MS`, builds the
-   * next map and says so with a `roundstart`, and a client that started its
-   * own round here would tear the world down under a match that is still
-   * running and then offer a deploy screen for a round nobody else is in. So
-   * what the card says instead is what is actually happening, which is that
-   * somebody else is picking the map.
+   * **A round-over card in a MATCH does not offer to start a round**, and the
+   * difference is a button that must not be there rather than one that is
+   * dimmed — the same call the HUD's loader row makes for a hull with no gun.
+   * The authority owns the rotation: it holds the result up for
+   * `ROUND_OVER_MS`, builds the next map and says so with a `roundstart`, and a
+   * client that started its own round here would tear the world down under a
+   * match that is still running and then offer a deploy screen for a round
+   * nobody else is in.
+   *
+   * **What stands in that button's place is the next MAP, which in a match is
+   * the players' even though the round is not.** `state.vote` is the ballot
+   * the authority is collecting over that same pause — see `drawNext` — and a
+   * match with none (an older server, or a card raised before the first
+   * `mapvote` landed) gets the wait line this card carried before there was a
+   * vote, which is still exactly what is happening on it.
    */
-  showRoundOver(
-    winnerName: string,
-    playerWon: boolean,
-    ticketsMine: number,
-    ticketsTheirs: number,
-    mapName: string,
-    solo: boolean,
-  ): void {
+  showRoundOver(state: RoundOverState): void {
+    const { winnerName, playerWon, ticketsMine, ticketsTheirs, mapName } = state;
     this.setCardClass("roundover");
     this.setOverlaid(true);
     this.card = "roundover";
@@ -970,6 +1055,7 @@ export class OverlayScreen {
     this.menuEls.clear();
     this.detailEl = null;
     this.buildBar = null;
+    this.clearVote();
     // The bar is the two counts against each other rather than against the
     // ticket pool they started from: a round that ends 142-0 and one that ends
     // 12-0 are not the same round, and the pool is the same number on both
@@ -1004,17 +1090,15 @@ export class OverlayScreen {
             </div>
           </div>
           ${
-            solo
+            state.solo
               ? `<button class="ov-start"><b>Another round</b><i>Enter &middot; A &middot; Start</i></button>`
-              : `<p class="ov-wait">Next map &middot; the server is choosing</p>`
+              : `<div class="ov-next"></div>`
           }
         </div>
       </div>
       <p class="ui-foot">
         <span>${
-          solo
-            ? `<kbd>Enter</kbd><kbd class="pad">A</kbd> deploy again`
-            : `You keep your slot &mdash; the next round starts on its own`
+          state.solo ? `<kbd>Enter</kbd><kbd class="pad">A</kbd> deploy again` : ""
         }</span>
       </p>
     `;
@@ -1022,6 +1106,190 @@ export class OverlayScreen {
     // handler is bound to markup rather than to the screen, so a card without
     // one simply has nothing to bind.
     this.bindStart();
+    this.voteFootEl = this.root.querySelector(".ui-foot span");
+    this.nextRoot = this.root.querySelector(".ov-next");
+    this.drawNext(state.solo ? null : state.vote);
+  }
+
+  /**
+   * What happens next, drawn into the block the card left for it: the ballot,
+   * or the line that stands in for one.
+   *
+   * Also the FOOTER, because the two say one thing between them - a card
+   * offering a vote whose foot reads "the next round starts on its own" is
+   * telling the player not to bother with the control above it. Both are
+   * rewritten together for that reason and never separately.
+   */
+  private drawNext(vote: VoteView | null): void {
+    // The netplay card only: the offline one says "deploy again" and has no
+    // second thing it could be saying.
+    if (this.voteFootEl && this.nextRoot) this.voteFootEl.innerHTML = this.footFor(vote);
+    const root = this.nextRoot;
+    if (!root) return;
+    this.voteEls = [];
+    this.voteClockEl = null;
+    root.innerHTML = "";
+    if (!vote) {
+      root.className = "ov-next";
+      const wait = document.createElement("p");
+      wait.className = "ov-wait";
+      wait.textContent = "Next map \u00b7 the server is choosing";
+      root.appendChild(wait);
+      return;
+    }
+    root.className = "ov-next ov-vote";
+    const head = document.createElement("div");
+    head.className = "vote-head";
+    const lbl = document.createElement("span");
+    lbl.className = "lbl";
+    lbl.textContent = "Vote for the next map";
+    const clock = document.createElement("b");
+    clock.className = "vote-clock";
+    head.append(lbl, clock);
+    this.voteClockEl = clock;
+    // A ROW OF PICKS IS A GRID OF EQUAL SHARES - see `docs/ui.md`. The row is
+    // the same equal shares at every width, and the stylesheet turns it into a
+    // column on a viewport too narrow for three rather than letting the
+    // longest map name decide where it breaks.
+    const row = document.createElement("div");
+    row.className = "vote-row";
+    vote.maps.forEach((name, i) => {
+      const cand = document.createElement("button");
+      cand.className = "cand";
+      // Built rather than written as markup, and the map NAME is why: a
+      // candidate this build has no row for is drawn as the id the authority
+      // sent, which is a string chosen by whatever is on the far end of the
+      // socket. `textContent` is the same answer `cleanName` deliberately
+      // leaves to the renderer for the other string this client did not choose.
+      const nm = document.createElement("span");
+      nm.className = "nm";
+      nm.textContent = name;
+      const bar = document.createElement("i");
+      bar.className = "bar";
+      bar.appendChild(document.createElement("b"));
+      const ct = document.createElement("span");
+      ct.className = "ct";
+      cand.append(nm, bar, ct);
+      // The pointer votes and moves the cursor with it, so a player who clicks
+      // and then reaches for the keyboard carries on from where they clicked
+      // rather than from wherever the cursor was left.
+      cand.addEventListener("click", () => {
+        this.voteIndex = i;
+        this.applyVoteSelection();
+        this.onVote(i);
+      });
+      row.appendChild(cand);
+      this.voteEls.push(cand);
+    });
+    root.append(head, row);
+    this.voteIndex = Math.min(Math.max(this.voteIndex, 0), vote.maps.length - 1);
+    this.paintVote(vote);
+  }
+
+  /**
+   * The foot's one line under a netplay card, which is a different sentence
+   * with a ballot on it and without one.
+   *
+   * A constant either way, which is what makes writing it as MARKUP safe: the
+   * key caps are the same `<kbd>` the rest of this screen sets, and nothing
+   * interpolated reaches it. The one string on this card that a SERVER chose
+   * is a map name, and that goes in through `textContent` next door.
+   */
+  private footFor(vote: VoteView | null): string {
+    return vote
+      ? `<kbd>&larr;</kbd><kbd>&rarr;</kbd> choose &middot; <kbd>Enter</kbd><kbd class="pad">A</kbd> vote &middot; most votes takes it`
+      : "You keep your slot &mdash; the next round starts on its own";
+  }
+
+  /**
+   * A new tally from the authority.
+   *
+   * Redraws the whole block only when the BALLOT itself is different from what
+   * is on screen - a late first one, or a client that was welcomed into the
+   * middle of a window - and otherwise writes the numbers over the buttons that
+   * are already there. Rebuilding on every tally would drop the hover state and
+   * restart the bars under a player who is pointing at one, at the wire's own
+   * cadence.
+   */
+  setVote(vote: VoteView): void {
+    if (this.card !== "roundover" || !this.nextRoot) return;
+    if (this.voteEls.length !== vote.maps.length) {
+      this.drawNext(vote);
+      return;
+    }
+    this.paintVote(vote);
+  }
+
+  /**
+   * The counts, the bars, the cast vote and the leader - everything about the
+   * ballot that moves while it is open.
+   *
+   * The LEADER is drawn because it is the only thing on this card that says
+   * what is actually going to happen: a tie and an empty ballot both resolve to
+   * the first candidate, which is the map the rotation would have picked
+   * anyway, and a player who cannot see that is being asked to vote against
+   * something invisible. See `server/MapVote.ts`.
+   */
+  private paintVote(vote: VoteView): void {
+    const total = vote.tally.reduce((a, b) => a + b, 0);
+    let lead = 0;
+    for (let i = 1; i < vote.tally.length; i++) {
+      if ((vote.tally[i] ?? 0) > (vote.tally[lead] ?? 0)) lead = i;
+    }
+    this.voteEls.forEach((el, i) => {
+      const count = vote.tally[i] ?? 0;
+      el.classList.toggle("on", i === vote.choice);
+      el.classList.toggle("lead", i === lead);
+      const ct = el.querySelector(".ct");
+      if (ct) ct.textContent = String(count);
+      const fill = el.querySelector<HTMLElement>(".bar b");
+      // Share of the votes CAST, so the bars answer "who is winning" rather
+      // than "how many people are in the match" - a match of four with two
+      // votes in it reads the same as a match of sixteen with eight.
+      if (fill) fill.style.width = `${total > 0 ? (count / total) * 100 : 0}%`;
+    });
+    this.setVoteClock(vote.seconds);
+    this.applyVoteSelection();
+  }
+
+  /** The countdown, which `Game` steps rather than this screen. */
+  setVoteClock(seconds: number): void {
+    if (this.voteClockEl) this.voteClockEl.textContent = String(Math.max(0, seconds));
+  }
+
+  /** Walks the cursor along the ballot. A no-op when there is no ballot up. */
+  moveVoteSelection(delta: number): void {
+    const n = this.voteEls.length;
+    if (n === 0) return;
+    this.voteIndex = (this.voteIndex + delta + n) % n;
+    this.applyVoteSelection();
+  }
+
+  /**
+   * Casts the cursor's candidate, and says whether there was one to cast.
+   *
+   * The return value is what keeps the confirm from falling through to
+   * whatever else the card's key would do - the same shape `activateMenu`
+   * gives the menu's own confirm.
+   */
+  activateVote(): boolean {
+    if (this.voteEls.length === 0) return false;
+    this.onVote(this.voteIndex);
+    return true;
+  }
+
+  /** Paints the cursor. A class on buttons that already exist, never a redraw. */
+  private applyVoteSelection(): void {
+    this.voteEls.forEach((el, i) => el.classList.toggle("sel", i === this.voteIndex));
+  }
+
+  /** Forgets the ballot's markup. Called wherever the card it lived on goes. */
+  private clearVote(): void {
+    this.nextRoot = null;
+    this.voteEls = [];
+    this.voteClockEl = null;
+    this.voteFootEl = null;
+    this.voteIndex = 0;
   }
 
   /**
@@ -1054,6 +1322,7 @@ export class OverlayScreen {
     this.menuEls.clear();
     this.detailEl = null;
     this.buildBar = null;
+    this.clearVote();
     // Centred and deliberately bare. Everything else in this file grew a
     // second column while this card did not, and the reason is the freeze it
     // covers: whatever is on it has to be PAINTED before the main thread stops,
@@ -1118,6 +1387,7 @@ export class OverlayScreen {
     this.menuEls.clear();
     this.detailEl = null;
     this.buildBar = null;
+    this.clearVote();
     const items = PAUSE_ITEMS.filter(([, , soloOnly]) => solo || !soloOnly)
       .map(
         ([action, label]) =>
@@ -1207,6 +1477,7 @@ export class OverlayScreen {
     this.clearShot();
     this.detailEl = null;
     this.buildBar = null;
+    this.clearVote();
     // The buttons live in the card's markup, so they die with it.
     this.pauseButtons = [];
     this.pauseIndex = 0;
