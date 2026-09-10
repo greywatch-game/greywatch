@@ -1679,9 +1679,10 @@ export class HeadlessGame {
       (requested != null ? this.conquest.deployAt(team, requested) : null) ??
       this.conquest.spawnFor(team);
     if (!pick) return null;
+    const s = CONFIG.conquest.spawnScatter;
     return {
       pos: pick.pos.add(
-        new Vector3((Math.random() - 0.5) * 6, 0, (Math.random() - 0.5) * 6),
+        new Vector3((Math.random() - 0.5) * s, 0, (Math.random() - 0.5) * s),
       ),
       yaw: pick.yaw,
     };

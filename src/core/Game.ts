@@ -1962,7 +1962,11 @@ export class Game {
         this.deployScreen.setPending();
         return;
       }
-      this.spawnPlayer(spawn);
+      // Scattered HERE rather than on the way in: this is a spawn POINT, and
+      // turning one into a position is what `scatterFrom` is. The netplay
+      // branch above returns before it, because the position that branch is
+      // eventually answered with has already been scattered by the authority.
+      this.spawnPlayer(this.scatterFrom(spawn));
     };
   }
 
@@ -4458,6 +4462,23 @@ export class Game {
     }
   }
 
+  /**
+   * Puts the local body in the world, at `at` or at a spawn this team may use.
+   *
+   * **`at` is a POSITION and never a spawn POINT**, which is the difference
+   * between the two things this method is reached with. A point is a place —
+   * the whole of a team's reinforcement wave is sent to the same one — so the
+   * scatter that stops a squad arriving inside itself belongs to resolving it
+   * (`scatterFrom`, which `spawnPointFor` and the deploy screen's offline
+   * branch both go through), not to arriving. The authority's `spawn` is the
+   * case that makes the distinction load-bearing rather than tidy: the server
+   * scatters in its own `spawnPointFor` and then TELLS us where the body is,
+   * so a second helping applied here put the client's body up to a couple of
+   * metres from the position the authority holds for it. `validate.ts` absorbs
+   * that and the correction path would have covered the rest, but it is the
+   * client having a second opinion about where somebody is, which is the one
+   * thing `onDeploy`'s netplay branch exists to prevent.
+   */
   private spawnPlayer(at?: { pos: Vector3; yaw: number }): void {
     this.player.fullReset();
     // A fresh body has never been anywhere, least of all outside the map. The
@@ -4466,14 +4487,7 @@ export class Game {
     // seconds already spent.
     this.leash.clear();
     const spawn = at ?? this.spawnPointFor(this.player.team);
-    // Scatter slightly so redeploying onto a busy flag doesn't drop the player
-    // inside a squadmate.
-    const jitter = new Vector3(
-      (Math.random() - 0.5) * 5,
-      0,
-      (Math.random() - 0.5) * 5,
-    );
-    this.player.placeAt(spawn ? spawn.pos.add(jitter) : new Vector3(0, 0, 0));
+    this.player.placeAt(spawn ? spawn.pos.clone() : new Vector3(0, 0, 0));
     this.cameraSys.reset(spawn ? spawn.yaw : 0);
     // The aim just jumped to the spawn heading. Reprojecting through that jump
     // would greet the player with one frame smeared across the whole screen.
@@ -4521,10 +4535,22 @@ export class Game {
     if (!this.map) return null;
     const pick = this.conquest.spawnFor(team);
     if (!pick) return null;
-    // Scatter a little so a whole squad doesn't stack on one point.
+    return this.scatterFrom(pick);
+  }
+
+  /**
+   * A spawn POINT scattered into a POSITION — the one place that conversion
+   * happens on this side, and `HeadlessGame.spawnPointFor`'s counterpart on
+   * the other. See `spawnPlayer` for why it is not simply done on arrival.
+   */
+  private scatterFrom(pick: { pos: Vector3; yaw: number }): {
+    pos: Vector3;
+    yaw: number;
+  } {
+    const s = CONFIG.conquest.spawnScatter;
     return {
       pos: pick.pos.add(
-        new Vector3((Math.random() - 0.5) * 6, 0, (Math.random() - 0.5) * 6),
+        new Vector3((Math.random() - 0.5) * s, 0, (Math.random() - 0.5) * s),
       ),
       yaw: pick.yaw,
     };

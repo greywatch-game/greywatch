@@ -40,4 +40,16 @@ export const conquest = {
   maxCaptureMult: 2.6,
   /** Seconds between death and being allowed to redeploy. */
   respawnDelay: 8,
+  /**
+   * The side of the square a spawn POINT is scattered over when it is turned
+   * into a position (metres, so ± half this on each axis). A point is a place
+   * rather than a coordinate — a team's whole reinforcement wave is sent to the
+   * same one — so without this a squad redeploying onto a busy flag arrives
+   * inside itself.
+   *
+   * Read on BOTH sides, and it is the authority's copy that decides where a
+   * body actually is: `HeadlessGame.spawnPointFor` scatters and tells the
+   * client, and the client places what it is told without a second helping.
+   */
+  spawnScatter: 6,
 } as const;
