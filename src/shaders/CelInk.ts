@@ -42,6 +42,18 @@
  * `sampleType: "depth"`, and every read is a `textureLoad`. An edge wants
  * exact texels rather than filtered ones anyway.
  *
+ * DISTANCE IS IN THIS PASS THREE TIMES AND THE DEPTH BUFFER DOES NOT HOLD IT.
+ * What a depth texel holds, linearised, is z along the camera's FORWARD AXIS;
+ * what the cel shader fogs against is the radial distance to the eye, and the
+ * two diverge as 1/cos(theta) toward the edges of the frame. So the fade, the
+ * nib and the near band all read `dist` — view-z scaled by the frustum ray
+ * through the pixel — and the ring tests keep view-z, because `ringAt`'s crease
+ * term rests on 1/z being linear in screen space and that is a fact about the
+ * projection rather than about distance. Getting it wrong is a bug that hides
+ * from whoever looks for it: it appears on the FLANKS of a wide frame as ink
+ * standing in front of fog that has already dissolved what it outlines, and
+ * turning to face it takes theta to zero and the symptom with it.
+ *
  * THE NIB HAS A WIDTH AND THE WIDTH IS A DISTANCE, which is the second thing
  * this pass spends depth on and the one the fog fade could not give. A line one
  * texel wide everywhere is the one thing a pen never draws: it gives the palm
@@ -146,6 +158,7 @@ var emissiveSamplerSampler: sampler;
 var emissiveSampler: texture_2d<f32>;
 
 uniform nearFar: vec2f;
+uniform tanHalfFov: vec2f;   // the half-angles of the frustum, as tangents
 uniform thresholds: vec2f;   // x = silhouette, y = crease
 uniform fadeBand: vec2f;     // the map's fog start and end, in metres
 uniform nearBand: vec2f;     // x = metres it holds for, y = ink kept at the eye
@@ -246,6 +259,24 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
   let dc = linearise(rawAt(p, dims), nf);
 
+  // VIEW-Z IS NOT A DISTANCE, AND THE THREE TERMS BELOW WANT A DISTANCE. What
+  // the depth buffer holds is z along the camera's FORWARD AXIS, and what the
+  // cel shader fogs against is length(vPosW - camPos) — the radial distance
+  // to the eye. The two agree only down the middle of the screen and diverge as
+  // 1/cos(theta) toward its edges: on a 21:9 panel at the hip fov the horizontal
+  // edge is 50.9 degrees off-axis, so a tree the fog has fully dissolved at 78 m
+  // reported 49 m here and kept 0.78 of its ink and a near-bold nib.
+  // That is line work hanging in FRONT of the fog on the flanks of the frame and
+  // nowhere else — and turning to face it walks theta back to zero and takes it
+  // away again, which is the tell.
+  //
+  // The ring tests above stay on view-z and MUST: ringAt's crease term rests
+  // on 1/z being linear in screen space across a plane, which is a fact about
+  // the projection's z and not about distance. So the conversion is spent here,
+  // once, on the three terms that are asking how far away a thing IS.
+  let ndc = input.vUV * 2.0 - vec2f(1.0);
+  let dist = dc * length(vec3f(ndc * uniforms.tanHalfFov, 1.0));
+
   // THE NIB, WHICH IS THE WHOLE OF WHY DISTANCE IS IN THIS PASS TWICE.
   //
   // A line one texel wide everywhere is the one thing a pen never draws: it
@@ -271,9 +302,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // rings, so the nib is clamped at 3 texels (a five-texel stroke); past that a
   // third ring is four more loads.
   let wb = uniforms.widthBand;
-  let far = saturate((dc - uniforms.widthRange.x)
+  let far = saturate((dist - uniforms.widthRange.x)
     / max(0.001, uniforms.widthRange.y - uniforms.widthRange.x));
-  let arm = smoothstep(0.0, 1.0, saturate(dc / max(0.001, uniforms.widthRange.x)));
+  let arm = smoothstep(0.0, 1.0, saturate(dist / max(0.001, uniforms.widthRange.x)));
   let nib = min(3.0, mix(wb.x, mix(wb.y, wb.z, sqrt(far)), arm) * (dimsf.y / wb.w));
 
   // What each ring is worth at this nib. The inner one carries a stroke up to a
@@ -310,7 +341,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // lines, which is the classic screen-space outline failure. The nib's taper
   // is the OTHER half of that and neither stands in for the other: this one
   // takes the line's DARKNESS, the nib takes its WEIGHT.
-  let t = saturate((dc - uniforms.fadeBand.x) / max(0.001, uniforms.fadeBand.y - uniforms.fadeBand.x));
+  let t = saturate((dist - uniforms.fadeBand.x) / max(0.001, uniforms.fadeBand.y - uniforms.fadeBand.x));
   edge *= 1.0 - t * t;
 
   // The NEAR BAND, which is the viewmodel and can only be the viewmodel: a body
@@ -319,7 +350,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // to wear — full-weight line work on parts that small swallows it in black.
   // The nib's inward taper above is that same argument spent on WIDTH; this is
   // the darkness half, and the weapon wants both.
-  edge *= mix(uniforms.nearBand.y, 1.0, saturate(dc / max(0.001, uniforms.nearBand.x)));
+  edge *= mix(uniforms.nearBand.y, 1.0, saturate(dist / max(0.001, uniforms.nearBand.x)));
 
   // The EMISSIVE MASK — what the noInk flag used to buy. An inked emissive is
   // swallowed glow, so the ink gives way wherever the glow layer drew
@@ -375,6 +406,7 @@ export class CelInk {
     this.pass = new PostProcess("celInk", "celInk", {
       uniforms: [
         "nearFar",
+        "tanHalfFov",
         "thresholds",
         "fadeBand",
         "nearBand",
@@ -394,6 +426,20 @@ export class CelInk {
 
     this.pass.onApply = (effect) => {
       effect.setFloat2("nearFar", this.camera.minZ, this.camera.maxZ);
+      // Read fresh every frame rather than cached, because `fov` is written by
+      // `CameraSystem.place` and moves with the ADS zoom, the sight and the
+      // per-shot punch — and a stale one puts the ink's idea of distance back
+      // out of step with the fog's the moment a scope comes up. Babylon's
+      // default fovMode is FOVMODE_VERTICAL_FIXED, so `camera.fov` is the
+      // VERTICAL half-angle doubled and the horizontal follows the aspect,
+      // which is taken from the pass's own target so a resized window is right
+      // on the frame it happens (`MotionBlur` reads both the same way).
+      const tanY = Math.tan(this.camera.fov * 0.5);
+      effect.setFloat2(
+        "tanHalfFov",
+        (tanY * this.pass.width) / Math.max(1, this.pass.height),
+        tanY,
+      );
       effect.setFloat2("thresholds", ink.silhouette, ink.crease);
       effect.setFloat2("fadeBand", this.fadeStart, this.fadeEnd);
       effect.setFloat2("nearBand", ink.near.until, ink.near.scale);

@@ -336,6 +336,28 @@ up finds the shower door quickly.
 **It owes the fog and gets it exactly**, over the MAP's band — so `Game` pushes
 `applyEnvironment` at it on every environment change, including the editor's.
 
+**…AND A DEPTH BUFFER DOES NOT HOLD A DISTANCE, WHICH IS WHAT "EXACTLY" COSTS.**
+A linearised depth texel is z along the camera's FORWARD AXIS; the cel shader
+fogs against `length(vPosW - camPos)`, the radial distance to the eye. The two
+agree down the middle of the frame and diverge as `1/cos(theta)` toward its
+edges, so the three terms in this pass that ask how far away a thing IS — the
+fade, the nib and `ink.near` — scale view-z by the frustum ray through the pixel
+(`tanHalfFov`, read off the live camera every frame because `fov` moves with the
+ADS zoom and the sight). **The ring tests keep view-z and must**: the crease term
+rests on `1/z` being linear in screen space, which is a fact about the projection
+and not about distance.
+
+**This is a bug that hides from whoever goes looking for it**, and it is worth
+knowing the shape rather than the arithmetic. It appears only on the FLANKS of a
+wide frame — at the hip fov on a 21:9 panel the horizontal edge is 50.9° off-axis
+(the ray is 1.58 long, against 1.17 a quarter of the way in), so a tree the fog
+has fully dissolved at 78 m reported 49 m to this pass and kept **0.78 of its
+ink** and a near-bold nib: line work standing in front of fog
+that had already taken away what it outlined. Turning to face it walks theta back
+to zero and takes the symptom with it. **Anything else that reads `FrameDepth`
+and wants a DISTANCE owes the same conversion** — `MotionBlur` already builds the
+same ray for its reprojection.
+
 **Two things stand in for the hull's per-mesh control, and NEITHER is a flag.**
 An emissive part was excluded from the hull by `noOutline`, and an inked
 emissive is swallowed glow; the ink masks it out with `glow.mainTexture`
