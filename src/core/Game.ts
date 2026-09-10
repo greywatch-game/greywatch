@@ -1995,6 +1995,20 @@ export class Game {
    * what was up and `takeDown` knows what each one means, which is the same
    * bargain the rest of this file makes with the table: the obligation is
    * discharged once, here, for screens that did not exist when it was written.
+   *
+   * **`#overlay` is the one screen the TABLE cannot own, and it is owned here
+   * instead.** The menu, the round-over card and the building card are a
+   * STEP's screen rather than a lid — there is no row in `SCREENS` to hang
+   * them off — so they were left to the callers, and the callers had the same
+   * drift the lids used to: three of the seven transitions below hid the card
+   * and four did not. That is invisible offline, where the four are only ever
+   * reached from a state with no card up, and it is the lid bug again in a
+   * netplay round, where the wire decides the step: a `spawn` landing under
+   * the building card put the player in the world behind it, and nothing ever
+   * took it down again (see `bakeWait` below, which is the half that made it
+   * permanent). Hiding it here costs a class write on a step change and makes
+   * the fourth caller correct on the day it is written, which is the whole
+   * bargain above.
    */
   private go(step: StepState): void {
     // The one thing every step change owes that is not a screen: a building
@@ -2004,7 +2018,19 @@ export class Game {
     // wait outlives its own round and `finishBakeWait` opens a deploy screen
     // over whatever replaced it. Re-entering `loading` re-opens it; see
     // `openBakeWait`, which runs long after this line.
+    //
+    // **It is also why the line under it is not optional.** `finishBakeWait`
+    // is the only thing that ever takes the building card down, and this line
+    // is what stops it running — so a step change that killed the wait and
+    // left the card was a card nothing could ever hide again. The two belong
+    // together: ending the wait and taking down what the wait was holding up
+    // are one obligation, and splitting them is what stranded it.
     this.bakeWait = null;
+    // The card the step is leaving, whichever of the four it was showing. A
+    // caller that wants one up puts it up AFTER its own `go` — `startRound`
+    // and `endRound` both do, and re-showing over a hide is one class write
+    // rather than a flicker, because nothing renders in between.
+    this.overlayScreen.hide();
     for (const lid of this.screens.go(step)) this.takeDown(lid);
   }
 
@@ -3584,12 +3610,11 @@ export class Game {
     // suspended audio context and hidden chrome an editor session would
     // otherwise inherit; the kit screen and the settings, either of which would
     // sit over the editor's own panel; and the lobby, which used to be missing
-    // from the list here and did exactly that. `go` takes down whichever it was.
+    // from the list here and did exactly that. `go` takes down whichever it was
+    // — and the menu's own card with them, which is not a lid but is `go`'s all
+    // the same, because F2 is reachable from the menu too.
     this.go("editor");
     const map = this.buildEditorMap();
-    // Not a lid: the menu's own card is on the same element and F2 is reachable
-    // from there too.
-    this.overlayScreen.hide();
     this.hud.setEditing(true);
     this.deployScreen.hide();
     // And from the death cam, whose body would otherwise be left standing in
@@ -3966,11 +3991,10 @@ export class Game {
     // an authority rotating the map under a client mid-drain asks for. `go`
     // below ends the standing wait.
     if (this.buildPending()) return;
-    // The menu's own card, which is not a lid and so is not `go`'s to take.
-    this.overlayScreen.hide();
     // Reachable from the menu, so any lid may still be up over it — including
     // the lobby, which is the one that got here on a networked round — and
-    // straight from the pause menu ("Restart round").
+    // straight from the pause menu ("Restart round"). The menu's own card goes
+    // with them: it is not a lid, and `go` takes it down anyway — see there.
     this.go("loading");
     this.overlayScreen.showBuilding(this.mapDef.name);
     requestAnimationFrame(() =>
@@ -4304,13 +4328,17 @@ export class Game {
   /**
    * The card down and the deploy screen up, whether the bake finished or the
    * wait gave up on it. The two lines `buildRound` used to end on.
+   *
+   * The card comes down on the far side of the work it covered, and with it
+   * `.overlaid` — the deploy screen is one of the two that reads the HUD
+   * underneath it rather than hiding it. It is `enterDeploy`'s own `go` that
+   * takes it, not a line here: the wait and the card the wait holds up come
+   * down together at every step change now, and this is only the step change
+   * that was expected. The write below is what makes the unexpected ones
+   * harmless — see `go`.
    */
   private finishBakeWait(): void {
     this.bakeWait = null;
-    // The building card comes down on the far side of the work it covered, and
-    // with it `.overlaid` — the deploy screen is one of the two that reads the
-    // HUD underneath it rather than hiding it.
-    this.overlayScreen.hide();
     this.enterDeploy(0);
   }
 

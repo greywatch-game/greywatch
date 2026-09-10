@@ -140,6 +140,42 @@ screen live and taking input underneath it. `ScreenStack.go` hands back what was
 up and **`Game.takeDown` — exhaustive over `LidState`, enforced with a `never` —
 is the single place that knows what putting one away means.**
 
+**`#overlay` is the one screen that table cannot own, and it took the same bug a
+second time before it was moved into `go` beside the lids.** The menu, the
+round-over card and the building card are all one element and all belong to a
+STEP rather than being laid over one, so there is no row in `SCREENS` to hang
+them off and they were left to the callers — where they drifted exactly as the
+lid lists had: of the seven `go` call sites, `startRound`, `toggleEditor` and
+`enterMenu` took the card down, `endRound` replaced it, and `enterDeploy`,
+`spawnPlayer` and `enterDying` did neither. Offline that is invisible, because
+those three are only ever reached from a state with no card up. Online the wire
+decides the step, and a `spawn` arriving while the client was still building put
+the player in the world behind an opaque `BUILDING…` card.
+
+**What made it permanent rather than ugly is that `go` also clears `bakeWait`,
+and `finishBakeWait` is the only thing that ever hides that card.** Killing the
+wait and leaving the card were one line apart and were treated as two
+obligations; they are one. A step change under the card therefore ended the
+drain, skipped the hide, and left `updateBakeWait` — gated on `bakeWait` being
+non-null — unable to run again for the rest of the round: a full-screen card
+with `.overlaid` hiding the HUD under it, a live deploy screen behind it that
+nothing could reach, and no button on it that did anything (`onStart` guards on
+`menu`/`roundover`, and the state had moved on). So `go` hides `#overlay` in the
+same breath as it clears the wait, and **a caller that wants a card up raises it
+AFTER its own `go`** — `startRound` and `endRound` both do, and re-showing over
+a hide is one class write rather than a flicker, because nothing renders in
+between.
+
+**The client's own half of a deploy ask has the same shape and is cleared in
+the same spirit** — `NetSession.pendingDeploy` on a `roundstart`. A request
+stands until the authority answers it, which is what lets it survive a socket;
+a rotation is where standing stops being true, because `NetPlayer.retire` drops
+the authority's `deployRequest` across one and the index names a spawn on a map
+nobody is playing any more. Left standing, a reconnect's `flushDeploy` re-sent
+it, the authority resolved a stale index by picking a spawn itself, and the
+`spawn` event came back into whatever state the client's rebuild had reached —
+which is precisely how the stranded card above was reached in a real match.
+
 ## Pausing, and the netplay inversion
 
 Pausing is just `tick` not calling `updateGameplay` — everything else still

@@ -422,6 +422,12 @@ export class NetSession {
    * it a standing request rather than a fire-and-forget: an unanswered one is
    * re-sent on the next welcome.
    *
+   * …and by a `roundstart`, which is the one thing that makes an unanswered
+   * one not worth standing for: a rotation retires every player on the
+   * authority and drops their `deployRequest` with them, so there is nothing
+   * left to answer it, and the index it holds names a spawn on a map that is
+   * no longer being played. See the arm in `receive`.
+   *
    * The KIT is held with it rather than read at the flush, because a standing
    * request outlives the screen that made it: what the authority must resolve
    * is the loadout the player confirmed this spawn with, not whatever the kit
@@ -605,6 +611,18 @@ export class NetSession {
         // way.
         this.vehicles.reset();
         this.ordnance.reset();
+        // Last round's ASK, over last round's spawn table — and this is the
+        // exact half of a rule the far side already keeps. `NetPlayer.retire`
+        // drops the authority's copy across a rotation because the index names
+        // a spawn on the OLD map, and this side held its own copy for a
+        // different reason (an unanswered request is re-sent on the next
+        // welcome) that stops being true at the same instant: a rotation
+        // retires everybody, so there is no longer anything to answer it, and
+        // what a reconnect would re-send is a stale index the authority
+        // resolves by picking for us — a body in the world nobody asked for,
+        // landing in whatever state this client's rebuild happens to be in.
+        // A request is about a ROUND, and this is a different round.
+        this.pendingDeploy = null;
         this.onRoundStart(msg.mapId);
         break;
 

@@ -320,7 +320,10 @@ whether the world under it is held offline, whether it owes the netplay frame th
 authority keeps running behind it, and whether the scoreboard is owed to it.
 `Game` has exactly three moves (`go`, `raiseLid`, `lowerLid`), **nothing in the
 codebase assigns a game state** — `Game.state` is a getter — and `Game.takeDown`
-is the one place that knows what putting a screen away means. **The question a
+is the one place that knows what putting a screen away means. **`#overlay` — the
+menu, the round-over card and the building card — is the one screen the TABLE
+cannot own**, being a STEP's screen rather than a lid, so `go` takes it down
+too and a caller that wants one up raises it AFTER its own `go`. **The question a
 lid raises is never which screen is up, but whether what is under it is moving**:
 offline a pause genuinely holds the world, and in a netplay round it holds
 nothing, because the authority never heard the key.
