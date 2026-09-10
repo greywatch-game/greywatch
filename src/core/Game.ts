@@ -447,6 +447,37 @@ export class Game {
     since: number;
   } | null = null;
   /**
+   * The authority put us in the world while there was no world to put us in.
+   *
+   * A `spawn` event is the one message that MOVES the local body, and it
+   * arrives in whatever state this client happens to be in — including
+   * `buildPending()`, where `installMap` has not run yet and the `GameMap`
+   * under the last one is being torn down. Applied there it placed a body in a
+   * world that was about to be replaced and set the state to `playing`, which
+   * the build's own tail then took straight back off it: `finishBakeWait` ends
+   * in `enterDeploy`, so the player was dropped back onto the deploy screen a
+   * second later while the authority had them alive and walking. Dropping the
+   * event instead is worse and is the reason this is a queue rather than a
+   * guard — the two sides would disagree about whether there is a body, the
+   * client would offer a deploy screen, and the ask behind it would be refused
+   * by `Match.onDeploy` for the rest of the round because a living player may
+   * not deploy.
+   *
+   * So it is HELD, and `finishBakeWait` spends it in place of the deploy
+   * screen it would otherwise have opened. It is the same deferral
+   * `NetSession.onSeated` already makes on the same test, and for the same
+   * reason: `buildPending` is exactly the window in which there is nothing to
+   * apply news to. **Only that window.** During the bake drain the map is
+   * built and a spawn is honoured on the spot; `go("playing")` ends the wait
+   * and the rest of the bake lands in the round, which is what the wait's own
+   * give-up path does anyway.
+   *
+   * A build that is REPLACED or ABANDONED drops it — see `startRound` and
+   * `leaveMatch` — because the position belongs to the build it arrived
+   * during, and both of those get a fresh seat or no session at all.
+   */
+  private pendingSpawn: { pos: Vector3; yaw: number } | null = null;
+  /**
    * How much of the map the frame's own mesh walk is offered. Owns nothing
    * that draws and writes nothing onto a mesh — see `WorldCulling`, which is
    * `ENGINE_UPGRADE.md` S1.
@@ -4011,6 +4042,12 @@ export class Game {
     // an authority rotating the map under a client mid-drain asks for. `go`
     // below ends the standing wait.
     if (this.buildPending()) return;
+    // A spawn held for the build this one REPLACES is a position in a world
+    // that is never going to exist. Safe to drop rather than carry, because
+    // both things that get here with one standing hand out a fresh body
+    // anyway: a rotation retires every player on the authority, and a
+    // reconnect seats this client into a new slot that is dead until it asks.
+    this.pendingSpawn = null;
     // Reachable from the menu, so any lid may still be up over it — including
     // the lobby, which is the one that got here on a networked round — and
     // straight from the pause menu ("Restart round"). The menu's own card goes
@@ -4356,10 +4393,26 @@ export class Game {
    * down together at every step change now, and this is only the step change
    * that was expected. The write below is what makes the unexpected ones
    * harmless — see `go`.
+   *
+   * **And the deploy screen is what a build ends in only when nobody has
+   * already been deployed into it.** A `spawn` that landed while there was no
+   * world is held (`pendingSpawn`) and spent here, THROUGH the screen rather
+   * than instead of it: `enterDeploy` is the funnel every way of leaving a
+   * life goes through — the seat, the death cam, the viewmodel, the panels —
+   * and a spawn out of `loading` owes all of it exactly as a spawn out of
+   * `deploy` does. Both run inside one synchronous turn, so nothing renders in
+   * between and the screen that is opened and immediately answered is never on
+   * the glass.
    */
   private finishBakeWait(): void {
     this.bakeWait = null;
+    // Read and cleared BEFORE the two calls below, neither of which may find
+    // it still standing: `spawnPlayer` is the answer to it, and `enterDeploy`
+    // is a state this client can be knocked back out of.
+    const spawn = this.pendingSpawn;
+    this.pendingSpawn = null;
     this.enterDeploy(0);
+    if (spawn) this.spawnPlayer(spawn);
   }
 
   /**
@@ -6093,7 +6146,17 @@ export class Game {
     // in a networked round — there is no local respawn timer, because a
     // reinforcement is the authority's to spend.
     net.onSpawn = (pos, yaw) => {
-      this.spawnPlayer({ pos: pos.clone(), yaw });
+      // Cloned either way: the session hands this out of a scratch vector that
+      // the next message overwrites, and a held one outlives more of them.
+      const at = { pos: pos.clone(), yaw };
+      // No world to arrive in yet — held rather than applied or dropped. See
+      // `pendingSpawn`, and `NetSession.onSeated`, which defers on the same
+      // test because it is the same window.
+      if (this.buildPending()) {
+        this.pendingSpawn = at;
+        return;
+      }
+      this.spawnPlayer(at);
     };
 
     // A rejected position. Small disagreements are eased so an occasional
@@ -6328,6 +6391,12 @@ export class Game {
     // Nothing can claim these now, and dropping them at the boundary is what
     // stops that being a property of the window's length.
     this.hitCredits.clear();
+    // …and the same sentence about a body: there is no authority left to have
+    // put one anywhere, so a spawn still waiting on a build is a position in
+    // somebody else's match. It is the abandoned half of `startRound`'s
+    // replaced one — the heightfield that would not load and the map this
+    // build does not have both come out through here.
+    this.pendingSpawn = null;
   }
 
   /** What a server event does to this client's screen. Presentation only. */

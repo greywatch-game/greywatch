@@ -91,6 +91,28 @@ consequences:
   outstanding. Every shipped map drains on the first frame and never reaches
   that call.
 
+**News from the authority that needs a world is HELD across `buildPending`, not
+applied and not dropped**, and there are two of them for the same reason.
+`NetSession.onSeated` defers a welcome to `buildRound`, which re-reads it on the
+far side of the heightfield fetch; `Game.pendingSpawn` holds a `spawn` — the one
+message that MOVES the local body — until `finishBakeWait`, which spends it
+THROUGH `enterDeploy` rather than instead of it, so a spawn out of `loading`
+gets the same funnel (the seat, the death cam, the viewmodel, the panels) that a
+spawn off the deploy screen does. Both run in one synchronous turn, so the screen
+that is opened and immediately answered never reaches the glass. Applied where it
+lands, the body went into a world that was about to be replaced and the build's
+own tail took the state straight back off it; DROPPED, the two sides disagree
+about whether there is a body at all — the client offers a deploy screen and
+`Match.onDeploy` refuses the ask behind it for the rest of the round, because a
+living player may not deploy. **The window is `buildPending` and only that.**
+During the bake drain the map is built, a spawn is honoured on the spot, and
+`go("playing")` ends the wait — which is what the wait's own give-up path does
+anyway. A build that is REPLACED (`startRound`) or ABANDONED (`leaveMatch`, which
+is where the heightfield that would not load and the map this build does not have
+both come out) drops the held spawn: both hand out a fresh body regardless, a
+rotation by retiring every player on the authority and a reconnect by seating
+this client into a new slot that is dead until it asks.
+
 **`dying` is the death cam and is a STEP, not a lid** — `updateWorld` runs in full
 underneath it. **`loadout`, `settings`, `lobby` and `paused` are lids**: a screen
 laid over a state, which taking it off puts back rather than moving the game on.
