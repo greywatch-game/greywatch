@@ -214,6 +214,10 @@ npm run icons      # regenerate public/icons (committed)
 npm run audio      # re-cut and re-encode audio/ from its masters (committed
                    #   source). Needs ffmpeg + ffprobe on PATH; the BUILD does
                    #   not, since the output is committed — docs/audio.md
+npm run audio:measure # where the numbers in a `trim` come from: envelope,
+                   #   bands, width, sum, onset, room. `-- --row <id>` for a
+                   #   shipped row, `-- --all` for the directory on one basis,
+                   #   `-- --decode` to prove the browser decodes them
 npm run shots      # re-photograph the maps for the menu backdrop (committed).
                    #   The ONE script here that needs a real GPU — docs/build.md
 npm run proving    # regenerate the DEV-ONLY proving ground (committed source).

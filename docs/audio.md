@@ -4,7 +4,8 @@ The audio pipeline: what a sound costs, what the budget is, and how a recording
 gets from a session file into the game. Split out of
 [`CLAUDE.md`](../CLAUDE.md), which carries the rules that reach other
 subsystems; this file is the contract for `audio/`, `scripts/encode-audio.mjs`,
-`scripts/check-audio.mjs` and `src/core/samples.ts` — and, because the budget
+`scripts/measure-audio.mjs`, `scripts/check-audio.mjs` and
+`src/core/samples.ts` — and, because the budget
 below is what decides it, for the world's SUSTAINED synthesized voices as well:
 `src/systems/AmbienceSystem.ts` and `Sfx.ambience`.
 
@@ -212,10 +213,11 @@ slots rather than memory.
    14.0 dB under the mid in RMS and 9.1 at peak with the channels 0.92
    correlated across the cut, which is the mechanism rows' measurement again
    and is the master it replaced (14.7, 10.3, 0.93) to within a decibel. So
-   would the launcher, at 22.5 and 15.9 with r = 0.99. `tankCannon` would NOT — it is the WIDEST master in the
-   directory, its side channel only 2.3 dB under the mid against the sniper's
-   3.8 — and it is mono anyway, because the exception is
-   for width heard UNPANNED rather than for width.
+   would the launcher, at 22.5 and 15.9 with r = 0.99. `tankCannon` would NOT
+   — it is the WIDEST master in the directory, its side channel 4.4 dB under
+   the mid in RMS across its cut and 2.9 at peak, against the sniper's 13.0 and
+   3.8 — and it is mono anyway, because the exception is for width heard
+   UNPANNED rather than for width.
 
    **And the downmix then found something no envelope in that file shows.**
    Past 230 ms its two channels go NEGATIVELY correlated (r = −0.84 at 240), so
@@ -721,7 +723,33 @@ audio/
   <name>.webm             committed OUTPUT of `npm run audio`
   manifest.json           what to cut, from what, to what — and the budget
 src/core/samples.ts       the id union and the url table the game imports
+scripts/ffmpeg.mjs        where ffmpeg is found, and what a MASTER may be
+scripts/measure-audio.mjs where the numbers in a `trim` come from
+scripts/encode-audio.mjs  `npm run audio` — cuts and encodes every row
+scripts/check-audio.mjs   the build gate: stale, budget, wired, present, counted
 ```
+
+**Every cut below was argued from a measurement, and `npm run audio:measure` is
+where those measurements come from.** For most of this directory's life they
+were made in throwaway scripts and thrown away, which is the one thing a
+committed master and a reviewable `trim` were supposed to prevent — **a
+decision nobody can re-run is a decision nobody can review**. It prints the
+envelope, the octave bands, the width and the sum, where the onset is against
+`Sfx`'s own floor and where the channels stop being correlated; `--row <id>`
+measures a shipped row over its own trim, `--against <file>` answers whether a
+replacement master is a different take or a longer copy of the one it replaces,
+and `--all` prints every row on ONE basis, which is how a row quoting a
+whole-master figure against another row's cut figure gets caught. It DECIDES
+nothing: what the width exception is for and when a plateau is a room are
+arguments, and they are above.
+
+**`--decode` is the half that is not arithmetic.** It boots the real game in
+the real browser and asks whether every row decoded, because a container this
+repo can encode is not necessarily one `decodeAudioData` accepts and the fetch
+is fire-and-forget — nothing in the game complains, and the sound is silently
+the synthesis forever. **A new CALLER owes one check that cannot make**: ring
+it and watch `Sfx.voices` rise by exactly ONE, since the synthesis it stands in
+for is three or four layers and three voices means the sample arm never fired.
 
 **A master is not a file, it is a SOURCE**: thirteen masters carry seventeen rows,
 because `reload.wav` is cut twice and `bolt-cycle.wav` four times. `sourceHash`
@@ -1161,10 +1189,15 @@ fixes, and length is what a `power` of 1.85 is supposed to buy.
 the reason is that a blast is not a transient.** The roll holds within 4 dB of
 peak to 400 ms and within 8 to 850, then steps down about 5 dB into a −11 dB
 shelf at 900. **And that is where the channels COME APART**: r falls from 0.90
-at 1050 to 0.28 at 1100 and stays under 0.6 for the rest of the file, which is
-a room's late field decorrelating — the same test that set `tankCannon`'s end
-one paragraph down, and the same test read the other way that says the 950 ms
-in FRONT of it is not a room at all. The level agrees, another 6 dB down at
+at 1050 to 0.28 at 1100 and never settles again, oscillating between 0.12 and
+0.90 through the rest of the file where the cut in front of it averages 0.88.
+That is a room's late field decorrelating — the same test that set
+`tankCannon`'s end one paragraph down, and the same test read the other way
+that says the 950 ms in FRONT of it is not a room at all. **It is a MEAN and
+not a floor**, and the distinction is here because the first version of this
+paragraph claimed the correlation stayed under 0.6 after 1100 and it does not:
+`npm run audio:measure -- --row explosion` is what caught that, which is most
+of the argument for having it. The level agrees, another 6 dB down at
 1100. So the cut ends in front of both, on a 120 ms fade over live material
 because there is no cliff to cut on (the sniper's rule, spent on 13% of the
 file — which is what the row it replaces spent it on, to the percent).

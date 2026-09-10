@@ -2221,8 +2221,8 @@ the unpanned exception, and therefore the first **MONO** one: a `PannerNode`
 makes the stereo, and a second channel through one is double the RAM for
 nothing. **The main gun's row fails the same test the same way** — a shell is
 spatialised even for the crew firing it — and it is the sharpest case of it in
-the directory, because that master is the WIDEST one there (side only 2.3 dB
-under mid) and goes mono regardless. The exception is for width heard UNPANNED,
+the directory, because that master is the WIDEST one there (side 4.4 dB under
+the mid in RMS across its cut, against the sniper's 13.0) and goes mono regardless. The exception is for width heard UNPANNED,
 not for width. And the cut is 112 ms against this gun's own 111 ms gap at
 `fireRate: 9`, so no two rounds stack — which is the claim `report.length` of
 0.72 was already making in prose.

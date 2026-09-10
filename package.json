@@ -21,7 +21,8 @@
     "proving": "node scripts/generate-proving-ground.mjs",
     "sarab": "node scripts/generate-sarab.mjs",
     "cinderhaven": "node scripts/generate-cinderhaven.mjs",
-    "audio": "node scripts/encode-audio.mjs"
+    "audio": "node scripts/encode-audio.mjs",
+    "audio:measure": "node scripts/measure-audio.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.19.1",

@@ -11,7 +11,7 @@
  * masters, both of which are committed. `npm run audio` is the half with a
  * host requirement, and a clean checkout never has to run it.
  *
- * Four checks, and each one is a failure that is otherwise silent:
+ * Five checks, and each one is a failure that is otherwise silent:
  *
  * - **Stale.** A master edited without re-running the generator ships the OLD
  *   sound, and the diff looks like the new one landed. Same shape as
@@ -24,9 +24,13 @@
  *   weight in the download; a row in `samples.ts` with no generator behind it
  *   is the authored-asset problem this whole pipeline exists to retire.
  * - **Present.** The encoded output exists at all.
+ * - **Counted.** Every place the docs state HOW MANY sounds there are, or how
+ *   many masters, or what the directory weighs, against what the manifest
+ *   actually holds — see `CLAIMS` below for why that is worth a check rather
+ *   than a habit.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -88,6 +92,83 @@ for (const file of imported) {
       `every shipped sound needs a committed master and a generator behind it (docs/build.md)`,
     );
   }
+}
+
+/**
+ * The countable claims the prose makes, and where each one lives.
+ *
+ * **Every number here is derivable from the manifest, which is exactly why it
+ * drifts**: a row added or a master replaced changes four files' worth of
+ * arithmetic, none of it load-bearing, none of it typechecked, and all of it
+ * quoted with the confidence of something that was true once. Adding the
+ * seventeenth row found "eleven masters" in `docs/audio.md` that had been
+ * twelve for two rows, and `docs/build.md` still quoting a download size two
+ * sounds out of date. Nothing breaks; the contract just stops being true in
+ * the small way that makes a reader stop trusting the large way.
+ *
+ * **A pattern that matches NOTHING is a failure too, and that is the half
+ * worth having.** A claim reworded out of existence would otherwise silently
+ * take its check with it, which is the same trap `check-proving.mjs` guards
+ * from the other side — so a sentence that moves has to be re-pointed here
+ * deliberately.
+ *
+ * The prose is matched with its whitespace collapsed, so re-wrapping a
+ * paragraph is free and only the WORDS are the claim.
+ */
+const NUMBER_WORDS = [
+  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+  "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+  "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
+];
+const spoken = (n) => NUMBER_WORDS[n] ?? String(n);
+const said = (raw) => {
+  const i = NUMBER_WORDS.indexOf(raw.toLowerCase());
+  return i >= 0 ? i : Number(raw);
+};
+
+const rows = manifest.samples.length;
+const masters = new Set(manifest.samples.map((r) => r.source)).size;
+const mono = manifest.samples.filter((r) => r.decoded.channels === 1).length;
+const shippedKb = +(
+  manifest.samples.reduce((t, r) => t + statSync(join(AUDIO, r.out)).size, 0) / 1024
+).toFixed(1);
+
+const CLAIMS = [
+  ["CLAUDE.md", /and (\w+) audio files/, [rows]],
+  ["CLAUDE.md", /but for those (\w+)\./, [rows]],
+  ["CLAUDE.md", /which is what keeps (\w+) files serving/, [rows]],
+  ["docs/audio.md", /\*\*(\w+) files sit on top of it/, [rows]],
+  ["docs/audio.md", /([\d.]+) KB downloaded once, ([\d.]+) of the (\d+) mono-seconds/,
+    [shippedKb, +spent.toFixed(2), manifest.budget.decodedSeconds]],
+  ["docs/audio.md", /(\w+) of the (\w+) rows take that exception and the (\w+) that do not/,
+    [rows - mono, rows, mono]],
+  ["docs/audio.md", /the (\w+) are (\w+)-(\w+) rather than/, [rows, rows - mono, mono]],
+  ["docs/audio.md", /(\w+) masters carry (\w+) rows/, [masters, rows]],
+  ["docs/audio.md", /(\w+) masters and (\w+) cuts\./, [masters, rows]],
+  ["docs/audio.md", /they carry six of the (\w+) rows/, [rows]],
+  ["docs/build.md", /\(([\d.]+) KB shipped, (\w+) sounds off (\w+) masters\)/,
+    [shippedKb, rows, masters]],
+];
+
+for (const [file, re, want] of CLAIMS) {
+  const flat = readFileSync(join(ROOT, file), "utf8").replace(/\s+/g, " ");
+  const hits = [...flat.matchAll(new RegExp(re.source, "g"))];
+  if (hits.length !== 1) {
+    problems.push(
+      `${file}: the claim /${re.source}/ matches ${hits.length} times, not once — ` +
+      `a sentence carrying a countable fact was reworded or removed, so re-point ` +
+      `or drop its row in CLAIMS (scripts/check-audio.mjs)`,
+    );
+    continue;
+  }
+  hits[0].slice(1).forEach((raw, i) => {
+    if (said(raw) !== want[i]) {
+      problems.push(
+        `${file}: says "${raw}" where the manifest says ${want[i]} ` +
+        `(/${re.source}/, capture ${i + 1}) — the docs state ${spoken(want[i])}`,
+      );
+    }
+  });
 }
 
 const budget = manifest.budget.decodedSeconds;

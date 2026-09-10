@@ -24,63 +24,22 @@
  * Writes `sourceHash` and `decoded` back into the manifest. Those two are the
  * only fields it authors, and they are what `scripts/check-audio.mjs` reads to
  * refuse a stale or over-budget build.
+ *
+ * **Where the NUMBERS in a `trim` come from is `scripts/measure-audio.mjs`**,
+ * which is this script's other half: every cut in the manifest is argued from
+ * a measurement, and a measurement nobody can re-run is a decision nobody can
+ * review. `MASTER` and the ffmpeg helpers both scripts need live in
+ * `scripts/ffmpeg.mjs` so the two cannot disagree about what a master is.
  */
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MASTER, probe, run, tool } from "./ffmpeg.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const AUDIO = join(ROOT, "audio");
 const MANIFEST = join(AUDIO, "manifest.json");
-
-/**
- * What a master may be, and the check is here rather than in prose because git
- * never forgets a binary. Mono/stereo is the row's own choice, but 48 kHz
- * 16-bit PCM is not: a 96 kHz 24-bit master is six times the bytes for
- * information `decodeAudioData` throws away on the way to the context rate,
- * and by the time anyone notices it is in the history for good.
- */
-const MASTER = { rate: 48000, codec: "pcm_s16le" };
-
-/** ffmpeg and ffprobe, wherever this machine keeps them. */
-function tool(name) {
-  const local = join(ROOT, "tools", `${name}.exe`);
-  return existsSync(local) ? local : name;
-}
-
-function run(bin, args) {
-  try {
-    return execFileSync(bin, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  } catch (err) {
-    if (err.code === "ENOENT") {
-      throw new Error(
-        `${bin} is not on PATH. \`npm run audio\` needs ffmpeg and ffprobe — it is a ` +
-        `requirement of the GENERATOR, not of the build: the encoded files are ` +
-        `committed, so nothing else in this repo needs them. See docs/build.md.`,
-      );
-    }
-    throw new Error(`${bin} failed: ${err.stderr || err.message}`);
-  }
-}
-
-/** Everything ffprobe knows about a file's one audio stream. */
-function probe(file) {
-  const out = run(tool("ffprobe"), [
-    "-v", "error", "-select_streams", "a:0",
-    "-show_entries", "stream=codec_name,sample_rate,channels,duration",
-    "-of", "json", file,
-  ]);
-  const s = JSON.parse(out).streams?.[0];
-  if (!s) throw new Error(`${file}: no audio stream`);
-  return {
-    codec: s.codec_name,
-    rate: Number(s.sample_rate),
-    channels: Number(s.channels),
-    seconds: Number(s.duration),
-  };
-}
 
 const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 16);
 
