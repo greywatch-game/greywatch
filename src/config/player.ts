@@ -92,7 +92,7 @@ export const player = {
    * without taking the fight away. Yaw is half of it and randomly signed: a
    * round throws a muzzle up far more than it throws it sideways, and a
    * signed-by-bearing yaw would let a player read the shooter's direction off
-   * their own crosshair, which is what the damage arcs are for.
+   * their own view kick, which is what the damage arcs are for.
    *
    * A 90-damage grenade asks for 0.099 rad and is caught by `recoil.maxPitch`
    * (0.17) on the way in, so nothing here needs its own ceiling.

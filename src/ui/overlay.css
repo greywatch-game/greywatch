@@ -1042,7 +1042,8 @@
    lining up. A full-bleed veil over that hides the thing the pause is in —
    and it is the same argument that keeps `setOverlaid` out of `showPause`.
    The list is on the left because that is the side a pause menu has been on
-   since consoles had two sticks, and because the crosshair is in the middle.
+   since consoles had two sticks, and because the middle of the screen is where
+   the shot it interrupted was being lined up.
    ===================================================================== */
 #overlay.card-pause {
   display: flex;

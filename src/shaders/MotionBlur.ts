@@ -52,7 +52,7 @@ import { FrameDepth } from "./FrameDepth";
  * frame EXCEPT the object filling the bottom third of it. Smeared, it reads as
  * a dirty lens rather than as motion.
  *
- * It used to be answered with a RADIAL mask — sharp at the crosshair, full at
+ * It used to be answered with a RADIAL mask — sharp at the centre, full at
  * the edges — and that was backwards for the object it was aimed at. The
  * weapon sits LOW AND RIGHT, which is exactly where that mask blurred hardest,
  * so the gun was the most smeared thing in the frame; what the sharp core
@@ -163,10 +163,10 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let here = worldness(input.vUV, dims, uniforms.nearFar, uniforms.nearBand);
   shift *= here;
 
-  // The radial falloff, which is now about the EYE alone: it tracks the
-  // crosshair, so that is where a smear is read AS a smear rather than felt as
-  // speed. Same radial language as HorrorPost's aberration, and deliberately
-  // gentler than it was — it used to be carrying the weapon as well.
+  // The radial falloff, which is now about the EYE alone: it tracks where the
+  // eye is pointed, so that is where a smear is read AS a smear rather than
+  // felt as speed. Same radial language as HorrorPost's aberration, and
+  // deliberately gentler than it was — it used to carry the weapon as well.
   let r = length(input.vUV - 0.5) * 2.0;
   shift *= smoothstep(uniforms.mask.x, uniforms.mask.y, r);
 
@@ -360,7 +360,7 @@ export class MotionBlur {
     const sp = Math.sin(pitch);
     const cy = Math.cos(yaw);
     const sy = Math.sin(yaw);
-    // The same basis CameraSystem builds: forward through the crosshair, right
+    // The same basis CameraSystem builds: forward down the aim axis, right
     // on the flat plane (there is no roll anywhere in this game), up
     // completing the left-handed set.
     this.fwd.set(cp * sy, sp, cp * cy);

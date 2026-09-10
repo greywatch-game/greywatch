@@ -87,7 +87,7 @@ export const camera = {
   /**
    * ADS look sensitivity, as a multiplier on the hip-fire rates BEFORE the
    * fitted optic's magnification is divided out (see `sights`). Aiming
-   * therefore moves the crosshair across the SCREEN at a near-constant rate
+   * therefore moves the AIM across the SCREEN at a near-constant rate
    * whatever is bolted to the rail — a 3.5x scope that kept the hip-fire
    * rates would be unusable, and one tuned by hand per optic would drift.
    * The shipped holo is 1.6x, so these reproduce the 0.6 / 0.5 the camera

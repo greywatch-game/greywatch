@@ -209,7 +209,7 @@ kills, and damage taken (requires a browser with the Gamepad haptics API,
 e.g. Chrome/Edge with an Xbox or DualSense controller).
 
 Gamepad look comes with **aim assist**: the stick slows down while the
-crosshair is over an enemy, and the view pulls gently toward the target
+aim is over an enemy, and the view pulls gently toward the target
 (full strength while aiming down sights, weaker at the hip while firing or
 steering). Pushing the stick against the pull cancels it — a committed push
 always breaks free. It only engages while the right stick is the active

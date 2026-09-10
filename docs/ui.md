@@ -196,7 +196,8 @@ the body you were lining up — so a full-bleed veil over it hides the thing the
 pause is *in*. It is the same argument that keeps `setOverlaid` out of
 `showPause`, stated as a layout instead of as a class. The list is on the left
 because that is the side a pause menu has been on since consoles had two sticks,
-and because the crosshair is in the middle.
+and because the middle of the screen is where the shot it interrupted was being
+lined up.
 
 **The building card is the one that stays centred and bare**, and the freeze it
 covers is why. Everything on it has to be PAINTED before the main thread stops,
@@ -330,9 +331,9 @@ multipliers.
 **A class on `#hud` belongs to whoever raises it.** `OverlayScreen` sets
 `.overlaid`, `LoadoutScreen` sets `.kitting`, `HUD` sets `.paused`, `.editing` and
 `.dying`. That is why a pause is two calls from `Game` rather than one: the card
-goes up and the crosshair comes down, and they are not the same decision —
-`.overlaid` would take the tickets and vitals with it, which under a pause are
-still true.
+goes up and the HUD's own aiming chrome comes down, and they are not the same
+decision — `.overlaid` would take the tickets and vitals with it, which under a
+pause are still true.
 
 **The scoreboard is the one markup rebuild left in `HUD`, and its rows are BUILT
 rather than interpolated.** Tab is a held key, so `Game.updateHud` pushes the
@@ -399,7 +400,7 @@ by its BOTTOM edge over the ammunition column, so the newest line sits still and
 the older ones ride up off it; a top-anchored stack slides the line the player
 is reading downward every time another award lands. It lives on the right
 because that is where the HUD's numbers already are — centre is `#message` and
-`#capture-status`, and anything that moves under the crosshair reads as
+`#capture-status`, and anything that moves in the middle of the screen reads as
 something to shoot at. `HUD.LABELS` is a total map over `ScoreKind`, so a new
 award in `config/score.ts` does not compile until this file has decided what to
 call it.
@@ -429,8 +430,8 @@ a text node, and what it pulses is OPACITY for `#outbounds`'s reason: motion is
 what the eye catches while its owner is being shot at, and a hue change is not.
 The state line is also `nowrap`. The longest string it can hold is a contested
 zone on Sarab, where `MapLayout.perTeam` bounds the count at 24, and a second
-line would move the meter and the name under the crosshair every time the number
-crossed the width.
+line would move the meter and the name into the middle of the screen every time
+the number crossed the width.
 
 **`#outbounds` is the one thing on the HUD that is the map's EDGE**, and it is
 the loudest thing the chrome draws for exactly that reason. On the three maps
@@ -657,13 +658,34 @@ Two rules for anything added to `hud.css`:
   exception below, and hairlines, rims and chamfers, which are a pixel because
   a pixel is what they are.
 - **An INSTRUMENT is exempt, and the test is whether its size is a claim about
-  the screen.** `#crosshair` is the live bullet spread projected onto the glass
-  (`HUD.setCrosshair` writes `--sp` in real pixels), `#gun-marker` is where the
-  barrel points, `#hitmarker` is a confirmation drawn at the point of aim. None
-  of them is a design decision that a smaller screen should scale, and all three
-  are left in pixels on purpose. `#scoreboard` is exempt for its own reason,
-  written down beside it: its width is a promise to the shortest viewport the
-  game runs on, and it already scales the one case that cannot keep it.
+  the screen.** `#gun-marker` is where the barrel points and `#hitmarker` is a
+  confirmation drawn at the point of aim. Neither is a design decision that a
+  smaller screen should scale, and both are left in pixels on purpose.
+  `#scoreboard` is exempt for its own reason, written down beside it: its width
+  is a promise to the shortest viewport the game runs on, and it already scales
+  the one case that cannot keep it.
+
+**THERE IS NO `#crosshair`, and the empty middle of the screen is the aiming
+model rather than a gauge that went missing.** This HUD draws nothing at the
+centre that is a claim about where the rounds go, because the game already has
+an honest instrument for that and it is not on the HUD: the sight fitted to the
+weapon, which `applyFit` cancels onto the very axis `CombatSystem` sends bullets
+down (`docs/weapons.md`). Hip fire is UNAIMED — `Player.spread` is still
+simulated and still reaches every round, it is simply not drawn, so a hip shot
+is a judgement about a weapon the player can see rather than a reading off a
+ring that opens and closes, and the third-person handover that used to fade a
+crosshair out as the sight came up has nothing left to hand over.
+
+There used to be one, and what it cost is worth stating so it is not rebuilt by
+halves: four ticks whose gap WAS the live spread in screen pixels, faded out
+against `adsBlend` because two aiming marks stacked on each other read as a
+smear, hidden by `.mounted`, `.overlaid`, `.paused`, `.dying` and `.editing`
+because in each of those it would have been lying, and pushed a frame at a time
+from `Game.updateHud` off a viewport height cached by the resize handler. **The
+two marks still drawn at the centre are exempt because neither is an aim** —
+`#hitmarker` reports a round that has already landed, and `#gun-marker` is drawn
+where a turret actually points, which in a third-person view is exactly not the
+centre. **Anything new in the middle of the screen owes that same test.**
 
 **The minimap is the one canvas in the tree that resizes itself.** `Minimap`
 observes its own element, sets the backing store to the box times the device
@@ -1246,7 +1268,7 @@ What belongs *here*, with the other screens:
   nothing to press until something is drawn under it. So `setUse` gives the
   vehicle verb a label and puts it on screen, and null takes it away again;
   `Game` decides, from the same `offerUse` that writes the HUD's prompt, so the
-  sentence on the button and the sentence over the crosshair cannot disagree.
+  sentence on the button and the sentence on the HUD cannot disagree.
   Two rules come with it: taking the offer away also LETS GO of the button (a
   finger resting on `EXIT TANK` when the hull brews up must not be reported held
   when the next offer puts it back), and `releaseAll` hides it as well as

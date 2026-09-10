@@ -1,7 +1,7 @@
 /**
  * hud.css — Everything HUD.ts writes markup for: the gameplay chrome (scrim,
  * killfeed, scoreboard, ticket gauge, flag strip, capture panel, vitals, ammo,
- * the stowed slot, crosshair, hitmarker, vignette, damage arcs, messages,
+ * the stowed slot, hitmarker, vignette, damage arcs, messages,
  * toasts, lock hint) and the full-screen overlay screens (menu, round over,
  * pause).
  * Owns: the .overlaid / .paused / .editing state rules too — HUD sets those
@@ -141,7 +141,7 @@
    What you were just paid, over the ammunition column and under the
    killfeed's stretch of the same edge. Right-hand side because that is
    where the numbers of the HUD already live (ammo, magazine, grenades)
-   and the left is vitals; centre would put it under the crosshair, where
+   and the left is vitals; centre would put it under the sight picture, where
    `#capture-status` and `#message` already are and where anything that
    moves is read as something to shoot at.
 
@@ -553,7 +553,7 @@
 /* --- conquest: the "you are standing in it" panel ---
    Shown only while the player is inside a capture zone. The ring drawn
    on the ground says where the boundary is; this says which side of it
-   you are on, so it sits low and centred, under the crosshair and clear
+   you are on, so it sits low and centred, under the sight picture and clear
    of the vitals and ammo.
 
    **It is UN-PANELLED, for the reason `#hud-bottom` is.** It used to be a
@@ -654,7 +654,7 @@
   /* Never wrapped. The longest line this can hold is a contested zone on
      Sarab — `CONTESTED — 24 ENEMIES IN ZONE`, since `MapLayout.perTeam` is
      what bounds the count — and a second line would move the meter and the
-     name every time the number crossed the width, under the crosshair. The
+     name every time the number crossed the width, under the sight. The
      panel is cut to fit that string; if it ever overflows it does so
      symmetrically, into a scrim that has no edge to overflow. */
   white-space: nowrap;
@@ -977,40 +977,15 @@
   to { transform: translateX(100%); }
 }
 
-/* --- crosshair ---
-   Four ticks around a centre dot. The GAP between them is the live
-   bullet spread: HUD.setCrosshair writes `--sp` once per frame and all
-   four ticks read it off, so recoil bloom is the crosshair opening up.
-   No transition on opacity — the ADS blend is already eased, and a
-   second easing on top of it lags the sight it is handing over to. */
-#crosshair {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  --sp: 26px;
-}
-#crosshair i {
-  position: absolute;
-  background: #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.65), 0 0 3px rgba(0, 0, 0, 0.9);
-  transition: transform 0.08s linear;
-}
-#crosshair i.t,
-#crosshair i.b { width: 2px; height: 9px; margin: -4.5px 0 0 -1px; }
-#crosshair i.l,
-#crosshair i.r { width: 9px; height: 2px; margin: -1px 0 0 -4.5px; }
-#crosshair i.t { transform: translateY(calc(var(--sp) / -2 - 5px)); }
-#crosshair i.b { transform: translateY(calc(var(--sp) / 2 + 5px)); }
-#crosshair i.l { transform: translateX(calc(var(--sp) / -2 - 5px)); }
-#crosshair i.r { transform: translateX(calc(var(--sp) / 2 + 5px)); }
-#crosshair .dot {
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  margin: -1.5px 0 0 -1.5px;
-  background: #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
-}
+/* --- the middle of the screen is EMPTY, and nothing here may fill it ---
+   There is no crosshair rule to find below because there is no crosshair:
+   aiming is the fitted sight and nothing else, so the only mark that says
+   where the rounds go is the one on the weapon, drawn on the very axis they
+   fly down. Two things are still drawn at the centre and both are exempt
+   because neither is an aim — #hitmarker, which reports a round that has
+   already landed, and #gun-marker, which is drawn where a turret points and
+   therefore usually is NOT the centre. A spread ring is what this rule
+   exists to refuse; see HUD.ts above `setHitmarker`. */
 
 /* --- hitmarker ---
    Four diagonal ticks, the shooter convention, plus a ring the kill
@@ -1040,7 +1015,7 @@
    that happens ten times a second, and every step up is longer and
    broader at the base. That is the half of the read that survives a dark map, a
    muzzle flash across the middle of the screen and a player whose eye is
-   on the body rather than on the crosshair — which is the situation every
+   on the body rather than on the sight — which is the situation every
    one of these marks is actually seen in. */
 #hitmarker {
   position: absolute;
@@ -1102,7 +1077,7 @@
    cobble swallows one outright, and the soft shadow above gives the mark
    presence without giving it a boundary. `i` is that boundary: the same
    wedge, one pixel proud on every side, in near-black. It is the tight
-   1px ring the crosshair next door gets from a box-shadow, done the one
+   1px ring the hitmarker's ticks get from a box-shadow, done the one
    way that survives being clipped to a shape. */
 #hitmarker i {
   position: absolute;
@@ -1135,7 +1110,7 @@
 
 /* The kill's ring: thrown out from the centre over the whole life of the
    mark while the ticks are still settling from their pop, so the kill has
-   a SHAPE nothing else on the crosshair has and a duration nothing else
+   a SHAPE nothing else on the marker has and a duration nothing else
    has either. Driven by HUD.update, which is also the only thing that
    ever gives it an opacity — every other flavour leaves it at 0. */
 #hitmarker .ring {
@@ -1160,7 +1135,7 @@
 }
 
 /* --- directional damage arcs ---
-   One pooled element per live arc, centred on the crosshair and rotated
+   One pooled element per live arc, centred on the screen and rotated
    by HUD.update() every frame; opacity and rotation are the only things
    written per frame, so this stays a compositor-only change. */
 #damage-dirs {
@@ -1208,7 +1183,7 @@
 
 /* --- the leash: leaving the battlefield ---
    Drawn where nothing else is and where a player cannot avoid reading it:
-   above the crosshair, in the lane `#message` uses, but HIGHER than it and
+   above the centre, in the lane `#message` uses, but HIGHER than it and
    anchored rather than transient. The two can be on screen together — walk
    off the map in the second a flag falls — which is why this sits at 13% and
    the message stays at 24%.
@@ -1327,8 +1302,8 @@
    Two blocks and a marker. `#hud-kit` and `#vehicle` are the infantry and
    armour halves of the bottom-right band and are never up together: HUD
    .setVehicle() puts `.mounted` on #hud, which is also what takes the
-   crosshair away, because in a tank the middle of the screen is where the
-   driver is ASKING to shoot and #gun-marker is where the shell goes. */
+   middle of the screen alone, because in a tank that is where the driver is
+   ASKING to shoot and #gun-marker is where the shell goes. */
 #hud-kit {
   display: flex;
   flex-direction: column;
@@ -1446,7 +1421,7 @@
 /* The gun's own reticle, drawn where the barrel points rather than at the
    centre of the screen. Four ticks with a hole in the middle, so it reads as
    an aim rather than as a target lock, and deliberately larger and thinner
-   than the infantry crosshair — a tank gun is not a precision instrument and
+   than an infantry sight — a tank gun is not a precision instrument and
    the marker should not claim to be one. */
 #gun-marker {
   position: absolute;
@@ -1526,11 +1501,10 @@
 }
 
 /* --- in a vehicle ---
-   The crosshair goes because #gun-marker has replaced it and two reticles is
-   one reticle too many; the magazine block goes because the rifle in the
-   player's hands is not what is firing. Everything else — tickets, flags,
-   vitals, the killfeed — is still true and still wanted. */
-#hud.mounted #crosshair { display: none; }
+   `.mounted` takes the magazine block away, because the rifle in the player's
+   hands is not what is firing; everything else — tickets, flags, vitals, the
+   killfeed — is still true and still wanted. The marker itself goes under a
+   lid, a pause and the death cam, where there is no shot to place. */
 #hud.overlaid #gun-marker,
 #hud.overlaid #use-prompt,
 #hud.paused #gun-marker,
@@ -1547,7 +1521,6 @@
 #hud.overlaid #ticket-bar,
 #hud.overlaid #flag-strip,
 #hud.overlaid #capture-status,
-#hud.overlaid #crosshair,
 #hud.overlaid #hitmarker,
 #hud.overlaid #damage-dirs,
 #hud.overlaid #hud-bottom,
@@ -1560,8 +1533,8 @@
    Unlike .overlaid, this keeps the gauges, the flag strip and the vitals:
    under a pause they are this round's and still true, and the frozen
    scene behind them is the one they describe. What goes is what would be
-   lying — a crosshair with nothing to shoot, a hitmarker and damage arcs
-   stopped mid-decay, and the hint telling you to click for a mouse you
+   lying — a hitmarker and damage arcs stopped mid-decay, a capture panel
+   nobody is contesting, and the hint telling you to click for a mouse you
    have already got. */
 /* The pause overlay is the one that swallows clicks. Everywhere else the
    overlay stays inert and only its buttons opt in — but the deploy map
@@ -1575,7 +1548,6 @@
    pause is still context worth having, it just is not the thing being
    read. The overlay above it already swallows the clicks. */
 #hud.paused #deploy { opacity: 0.18; }
-#hud.paused #crosshair,
 #hud.paused #hitmarker,
 #hud.paused #damage-dirs,
 #hud.paused #capture-status,
@@ -1609,33 +1581,31 @@
 
 /* --- death cam ---
    Raised by HUD.setDeathCam while the player is down and the camera is
-   watching their body. It hides the same four things a pause does and is
+   watching their body. It hides the same things a pause does and is
    a class of its own anyway: the two agree by coincidence, not by
    meaning. A pause hides them because the world stopped; this hides them
    because the world did NOT and the player is simply no longer in it —
-   a crosshair over a camera nobody is aiming, a capture panel for a zone
-   nobody is standing in, arcs bearing on a yaw that is now the cam's.
+   a capture panel for a zone nobody is standing in, arcs bearing on a
+   yaw that is now the cam's.
    The gauges stay for the mirror-image reason: they are live and true,
    and watching the tickets run while you wait is half of why the cam is
    worth showing at all. The lock hint goes because the lock is still
    held — asking for it back would be the one instruction on screen that
    is not merely useless but wrong. */
-#hud.dying #crosshair,
 #hud.dying #hitmarker,
 #hud.dying #damage-dirs,
 #hud.dying #capture-status,
 #hud.dying #lock-hint { display: none; }
 
 /* --- map editor (dev only) --- */
-/* The gameplay chrome is meaningless with no player, and the crosshair
-   actively gets in the way of clicking things. HUD.setEditing() puts
+/* The gameplay chrome is meaningless with no player, and the hitmarker and
+   arcs actively get in the way of clicking things. HUD.setEditing() puts
    .editing on #hud; hiding here rather than per element means update()
    can keep writing to those nodes without fighting the toggle. */
 #hud.editing #scrim,
 #hud.editing #ticket-bar,
 #hud.editing #flag-strip,
 #hud.editing #capture-status,
-#hud.editing #crosshair,
 #hud.editing #hitmarker,
 #hud.editing #damage-dirs,
 #hud.editing #hud-bottom,

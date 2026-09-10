@@ -52,7 +52,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let centered = input.vUV - 0.5;
   let r2 = dot(centered, centered);
 
-  // Radial chromatic aberration — none at the crosshair, smeared at the edge.
+  // Radial chromatic aberration — none at the centre, smeared at the edge.
   let offset = centered * uniforms.aberration * r2 * 0.09;
   var col = vec3f(
     textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV + offset, 0.0).r,
@@ -67,8 +67,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let lum = dot(col, vec3f(0.299, 0.587, 0.114));
   col = mix(col, vec3f(lum), clamp(r2 * 1.1, 0.0, 0.4));
 
-  // Damage: blood pushes in from the border, but never closes over the
-  // crosshair — the player still has to be able to fight while hurt.
+  // Damage: blood pushes in from the border, but never closes over the middle
+  // of the screen — the player still has to be able to fight while hurt.
   col = mix(col, vec3f(0.42, 0.02, 0.03), uniforms.damage * 0.8 * smoothstep(0.04, 0.42, r2));
 
   // Animated film grain, slightly stronger in the shadows.

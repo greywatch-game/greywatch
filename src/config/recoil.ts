@@ -639,9 +639,10 @@ export const recoil = {
    * That asymmetry is the whole trade this axis is for. A rotation of the
    * model while aimed takes the fitted sight's reticle off the axis the rounds
    * fly down, so it is the one term that has to stay small; at the hip there
-   * is no sight on the eye, the crosshair is drawn by the HUD rather than
-   * carried by the gun, and the flip costs nothing but is most of what you
-   * see. **Spend recoil's visual budget here, not on the aim.**
+   * is no sight on the eye and no mark on the screen either — nothing is
+   * drawn that the muzzle could be seen to disagree with — so the flip costs
+   * nothing and is most of what you see. **Spend recoil's visual budget here,
+   * not on the aim.**
    */
   kickPitch: 0.22,
   kickSide: 0.035,

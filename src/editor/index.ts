@@ -441,7 +441,7 @@ export class EditorSession {
    *
    * Picks against colliders rather than visuals, so a new building lands on
    * the terrace top or the road in front of you rather than on the roof shell
-   * between you and it. With nothing under the crosshair it falls back to the
+   * between you and it. With nothing under the view centre it falls back to the
    * ground plane, and to a fixed distance ahead when the view is level or up.
    *
    * The height then comes from the NAV GRID rather than from the pick. Look at

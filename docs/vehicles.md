@@ -1765,7 +1765,7 @@ that comes and goes, and it has to: a key and a d-pad direction are things a
 player presses to find out what they do, while a thumb has nothing to press until
 something is drawn under it. `Game.offerUse` is the one door — it writes the
 HUD's prompt and the field the touch layer is pushed from a frame later, so the
-sentence on the button and the sentence over the crosshair are the same sentence
+sentence on the button and the sentence on the HUD are the same sentence
 by construction. Two things follow from that door existing:
 
 - **The prompt speaks the device's own language.** `E` on a keyboard, `D-PAD ↑`
@@ -1951,8 +1951,10 @@ other end instead —
 2. `Vehicle` walks the gun toward them at the turret's own rate and its own
    acceleration (above);
 3. `Game.fireShell` fires down the **gun's** axis, never the camera's;
-4. `HUD.setGunMarker` draws `#gun-marker` where the barrel points, and
-   `#hud.mounted` takes the crosshair away.
+4. `HUD.setGunMarker` draws `#gun-marker` where the barrel points, and nothing
+   is drawn at the middle of the screen to argue with it — on foot the same
+   promise is kept by drawing no mark at all and letting the fitted sight be
+   the only one.
 
 So the middle of the screen is where the driver is asking to shoot and the
 marker is where the shell will go, and the two visibly converge as the turret

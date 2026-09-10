@@ -503,7 +503,7 @@
 }
 
 /* While the kit is up, everything else under #hud goes dark — the menu, the
-   deploy map, the gauges, the crosshair, all of it. The weapon in the bay is
+   deploy map, the gauges, the killfeed, all of it. The weapon in the bay is
    NOT DOM: it is drawn by the scene on the canvas below every one of these, so
    anything left standing paints over it.
 

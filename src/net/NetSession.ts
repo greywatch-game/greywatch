@@ -353,7 +353,7 @@ export class NetSession {
    *
    * `renderTime` is what the shooter was looking at, not now: other bodies are
    * drawn `interpDelay` in the past, so that is the instant the server has to
-   * rewind them to for the crosshair to have meant anything.
+   * rewind them to for the shot to have meant anything.
    */
   sendShot(origin: Vector3, dir: Vector3, weaponSlot: number): void {
     if (!this.seated) return;

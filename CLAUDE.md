@@ -349,6 +349,16 @@ it owes a re-derivation on **every loadout change, including a change of
 weapon**. So the hold sway is on the AIM and not the rendered camera, and the
 reload breaks the aim outright rather than posing an aimed weapon.
 
+**AND THERE IS NO CROSSHAIR — the middle of the screen is EMPTY, and that is
+the aiming model rather than a gauge nobody got round to.** The fitted sight is
+the only mark in the game that says where the rounds go, which is why it may
+not lie, and hip fire is therefore UNAIMED: `Player.spread` is still simulated
+and still reaches every round, it is simply not drawn. **Two marks still live
+at the centre and both are exempt because neither is an aim** — `#hitmarker`
+reports a round that has already landed, and a hull's `#gun-marker` is drawn
+where the barrel points, which in a third-person view is exactly NOT the centre.
+**Anything new in the middle of the screen owes that test.**
+
 **Springs and timelines have one owner each**: the punch spring is `Player`'s,
 the bob phase is `CameraSystem`'s, and the reload is a timeline keyed to
 `Sfx.reload`'s clacks. **The trigger is two questions** (`semiAuto`, `burst`), and
@@ -463,8 +473,8 @@ existing — `showMenu` rewrites this card on every map step.
 multiple of a ladder in `base.css` (`--hud-u` for shapes, three bands of type,
 `--hud-map` for the minimap), all `clamp()`ed over `vmin` so a desktop is
 untouched. **A new size is a multiple, never a bare pixel**; **an INSTRUMENT is
-exempt**, and the test is whether its size is a claim about the SCREEN (the
-crosshair is the live spread, the gun marker is where the barrel points);
+exempt**, and the test is whether its size is a claim about the SCREEN (the gun
+marker is where the barrel points, the hitmarker is drawn at the point of aim);
 **`#hud.touching` is a TRIM on that ladder**, keyed on the controls rather than
 the viewport, which is the only thing that gets a TABLET right; and **the
 minimap is the one canvas that resizes itself**, redrawn at its box times the

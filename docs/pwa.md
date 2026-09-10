@@ -127,7 +127,7 @@ Details about the phone, each of which was a visible bug first:
 - **Fullscreen is taken on `document.documentElement`, never on the canvas.** A
   fullscreen element is the only thing drawn and the HUD is a `<div>` *sibling* of the
   canvas, so fullscreening the canvas plays the game with no tickets, no flags, no
-  crosshair and no deploy map. It is gated on a coarse pointer: an installed app is
+  vitals and no deploy map. It is gated on a coarse pointer: an installed app is
   already fullscreen from the manifest, and on the desktop the pointer lock does the
   immersing.
 - **A touch is felt nowhere in `InputManager`, and every screen a phone meets

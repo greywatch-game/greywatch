@@ -201,7 +201,7 @@ still running with the CLICK hint up and the next click gets it.
 `#hud.paused` is deliberately **not** `.overlaid`: the menu and round-over card
 hide the gauges because what is under them is last round's, while under a pause the
 tickets, flags and vitals are current and frozen with the scene. It hides what
-would be lying — crosshair, hitmarker, damage arcs, mouse hint. It is also the one
+would be lying — hitmarker, damage arcs, capture panel, mouse hint. It is also the one
 overlay taking pointer events across its whole area, because the deploy screen
 underneath takes them too and a click through the backdrop would land on its map or
 Deploy button.

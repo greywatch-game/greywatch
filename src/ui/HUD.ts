@@ -1,7 +1,7 @@
 /**
  * HUD.ts — The gameplay chrome, and only that: vitals/ammo/grenades, the stowed
- * slot, reinforcement gauge, flag strip, capture-zone panel, crosshair,
- * hitmarker, damage vignette, directional damage arcs, toasts, killfeed,
+ * slot, reinforcement gauge, flag strip, capture-zone panel, hitmarker,
+ * damage vignette, directional damage arcs, toasts, killfeed,
  * score feed, scoreboard.
  * Invariants: Game pushes state every frame (setHealth/setAmmo/setFlags/
  * setCapture/setViewYaw/...) — setting HUD state from anywhere else is
@@ -103,11 +103,11 @@ interface DamageArc {
 
 /**
  * The arc shape: an annulus sector whose thickness tapers to nothing at both
- * ends, with a small tip at the apex jutting *outward* — away from the
- * crosshair, along the bearing to the shooter. A constant-thickness band
- * reads as a slice of a ring around the crosshair; the taper plus that tip is
+ * ends, with a small tip at the apex jutting *outward* — away from the middle
+ * of the screen, along the bearing to the shooter. A constant-thickness band
+ * reads as a slice of a ring around the centre; the taper plus that tip is
  * what makes it read as a pointer. The tip is on the outer edge only, so the
- * inner edge stays a clean arc and the crosshair keeps its clearance. Built
+ * inner edge stays a clean arc and the centre stays clear. Built
  * once as a path string and shared by every element in the pool.
  */
 function damageArcMarkup(): string {
@@ -215,9 +215,8 @@ const HIT_RANK = { hit: 1, head: 2, kill: 3, headKill: 4 } as const;
  * next one — while a kill is the rarest thing the marker says and the only
  * one that asks the player to CHANGE what they are doing (stop shooting,
  * pick the next man). Every flavour used to stand for 120 ms, which for the
- * kill is seven frames arriving in the same instant as a muzzle flash, a
- * tracer and the crosshair blooming — it was being missed because it was
- * genuinely almost not there.
+ * kill is seven frames arriving in the same instant as a muzzle flash and a
+ * tracer — it was being missed because it was genuinely almost not there.
  */
 const HIT_LIFE = [0, 0.14, 0.2, 0.42, 0.46] as const;
 
@@ -414,7 +413,7 @@ export interface CaptureStatus {
 
 /**
  * DOM-based HUD: vitals/ammo, the Conquest reinforcement gauge and flag strip,
- * crosshair, hitmarker, damage vignette, toasts, killfeed and scoreboard.
+ * hitmarker, damage vignette, toasts, killfeed and scoreboard.
  * Styling is `hud.css`, imported above.
  */
 export class HUD {
@@ -476,7 +475,6 @@ export class HUD {
     num: HTMLElement;
     fill: HTMLElement;
   }[] = [];
-  private crosshair: HTMLElement;
   private hitmarker: HTMLElement;
   /** The kill ring inside the marker, driven per frame like the ticks. */
   private hitRing: HTMLElement;
@@ -647,8 +645,6 @@ export class HUD {
   private lastFlagHeight: string[] = [];
   private lastFlagFill: string[] = [];
   private lastCaptureKey = "";
-  private lastCrosshairOpacity = "";
-  private lastCrosshairSpread = "";
   private lastScoreboardVisible = false;
   private lastScoreboardKey = "";
   private lastLockHint = false;
@@ -686,10 +682,6 @@ export class HUD {
         <div class="side theirs"><span class="n"></span><span class="tag"></span></div>
       </div>
       <div id="flag-strip"></div>
-      <div id="crosshair">
-        <i class="t"></i><i class="r"></i><i class="b"></i><i class="l"></i>
-        <span class="dot"></span>
-      </div>
       <div id="hitmarker" class="hidden">
         <i><b></b></i><i><b></b></i><i><b></b></i><i><b></b></i>
         <span class="ring"></span>
@@ -788,7 +780,6 @@ export class HUD {
       cap: this.stowed.querySelector(".n em") as HTMLElement,
     };
     this.flagStrip = document.getElementById("flag-strip")!;
-    this.crosshair = document.getElementById("crosshair")!;
     this.hitmarker = document.getElementById("hitmarker")!;
     this.hitRing = this.hitmarker.querySelector(".ring") as HTMLElement;
     this.vignette = document.getElementById("vignette")!;
@@ -1024,7 +1015,7 @@ export class HUD {
 
   /**
    * The yaw the damage arcs are drawn against — the aim yaw, so an arc lines
-   * up with the crosshair you would have to put on the shooter.
+   * up with the sight you would have to put on the shooter.
    */
   setViewYaw(yaw: number): void {
     this.viewYaw = yaw;
@@ -1515,35 +1506,22 @@ export class HUD {
   }
 
   /**
-   * Crosshair state, pushed every frame. The gap between the four ticks IS the
-   * current bullet spread in screen pixels, so recoil bloom is visible as the
-   * crosshair opening up and settling as it bleeds off. The ticks read the gap
-   * off the `--sp` custom property, so one write per frame moves all four and
-   * the browser keeps it on the compositor.
+   * **THERE IS NO CROSSHAIR, and the empty middle of the screen is the aiming
+   * model rather than a gauge somebody forgot.** A mark drawn at the centre is
+   * the one thing this HUD could put there that would be a claim about where
+   * the ROUNDS go, and the game already has an honest instrument for that: the
+   * sight fitted to the weapon, which `applyFit` cancels onto the very axis
+   * `CombatSystem` sends bullets down. Hip fire is therefore UNAIMED — the
+   * spread is still simulated, it is simply not drawn, so a shot from the hip
+   * is a judgement about a weapon the player can see rather than a reading off
+   * a ring that opens and closes.
    *
-   * `adsBlend` fades it out rather than switching it off: aimed, the weapon's
-   * own holo reticle sits on the camera axis at the exact centre of the
-   * screen, and two aiming marks stacked on each other read as a smear. The
-   * fade rides the same blend the sight comes up on, so the handover happens
-   * while the rifle is still moving.
+   * The two marks that DO live at the middle of the screen are exempt because
+   * neither is an aim: `#hitmarker` reports a round that has already landed,
+   * and `#gun-marker` is drawn where a turret is actually pointing, which is
+   * not the centre. **Anything new in the middle of the screen owes that same
+   * test**, and a spread ring fails it by construction.
    */
-  setCrosshair(adsBlend: number, spreadPx: number): void {
-    // These two genuinely do move most frames of a live round — the spread
-    // bleeds off after every shot and the blend runs whenever the sight comes
-    // up. They are guarded anyway, because the frames they DON'T move on are
-    // the ones a player spends walking with the trigger off, which is most of
-    // them, and the size is already quantised to the pixel it is drawn at.
-    const opacity = `${Math.max(0, 1 - adsBlend * 1.6)}`;
-    if (opacity !== this.lastCrosshairOpacity) {
-      this.lastCrosshairOpacity = opacity;
-      this.crosshair.style.opacity = opacity;
-    }
-    const size = `${Math.round(Math.max(10, Math.min(90, spreadPx)))}px`;
-    if (size !== this.lastCrosshairSpread) {
-      this.lastCrosshairSpread = size;
-      this.crosshair.style.setProperty("--sp", size);
-    }
-  }
 
   /**
    * The hit confirmation, in four flavours: a body hit, a headshot, a kill,
@@ -1930,7 +1908,7 @@ export class HUD {
   }
 
   /**
-   * Hides the gameplay chrome (tickets, flags, crosshair, health, ammo) while
+   * Hides the gameplay chrome (tickets, flags, health, ammo) while
    * the map editor is open. One class on the root rather than a toggle per
    * element — `update()` keeps writing to those nodes regardless, and CSS
    * hiding survives that where a per-element flag would be overwritten.
@@ -2062,7 +2040,7 @@ export class HUD {
    * The driver's readout, or null when the player is on foot.
    *
    * Passing null does not merely blank it: `.mounted` comes off `#hud`, which
-   * is what puts the magazine, the frag pips and the crosshair back. The two
+   * is what puts the magazine and the frag pips back. The two
    * halves of the bottom-right band are never up together, because a tank has
    * no magazine and the rifle in the player's hands is not what is firing.
    */
@@ -2155,13 +2133,15 @@ export class HUD {
    * Where the tank's gun is pointing, as a fraction of the viewport, or null
    * when it is behind the camera or there is no gun.
    *
-   * **This is the marker, and the crosshair is deliberately not.** In a
-   * third-person view the eye and the muzzle are twelve metres apart and the
-   * turret traverses at its own rate, so the middle of the screen is where the
-   * driver is ASKING to shoot and this is where the shell will actually go. The
-   * project's rule is that the reticle may not lie (`docs/weapons.md`); with a
-   * turret in the way the only way to keep that is to draw the gun rather than
-   * the request.
+   * **This is the only mark this HUD draws at a point the player did not
+   * choose, and being drawn AWAY from the middle of the screen is what earns
+   * it that.** In a third-person view the eye and the muzzle are twelve metres
+   * apart and the turret traverses at its own rate, so the middle of the
+   * screen is where the driver is ASKING to shoot and this is where the shell
+   * will actually go. The project's rule is that the reticle may not lie
+   * (`docs/weapons.md`); on foot that is kept by drawing no reticle at all and
+   * letting the fitted sight be the only mark, and with a turret in the way the
+   * only way to keep it is to draw the gun rather than the request.
    *
    * `left`/`top` percentages rather than a transform, because the element is
    * already centred on its own point by a static transform and stacking a
@@ -2188,8 +2168,8 @@ export class HUD {
 
   /**
    * Takes away the chrome that would be lying while the game is held: the
-   * crosshair (nothing to shoot), the hitmarker and damage arcs (frozen
-   * mid-decay), and the lock hint (the pause is why the mouse is free).
+   * hitmarker and damage arcs (frozen mid-decay), the capture panel, and the
+   * lock hint (the pause is why the mouse is free).
    *
    * The pause CARD itself is OverlayScreen's. This is only the HUD's own
    * chrome getting out of its way, which is why the two are separate calls and
@@ -2204,12 +2184,12 @@ export class HUD {
   /**
    * The death cam is up: the player is down and the camera has left their head.
    *
-   * It hides the same four things a pause does and is deliberately NOT the same
+   * It hides the same things a pause does and is deliberately NOT the same
    * class, because the two agree by coincidence rather than by meaning. A pause
    * hides them because the world is frozen; this hides them because the world
-   * is still moving and the player is no longer in it — a crosshair over a
-   * camera nobody is aiming, a capture panel for a zone nobody is standing in,
-   * and damage arcs bearing on a view yaw that has stopped being the player's.
+   * is still moving and the player is no longer in it — a capture panel for a
+   * zone nobody is standing in, and damage arcs bearing on a view yaw that has
+   * stopped being the player's.
    * The gauges stay for the opposite reason to a pause's: not because they are
    * frozen and true, but because they are LIVE and true, and watching the
    * tickets while you wait is half of why the cam is worth showing.

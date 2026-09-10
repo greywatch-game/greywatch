@@ -177,7 +177,7 @@ export class AimAssistSystem {
 
     const a = CONFIG.aimAssist;
 
-    // --- acquire: the live enemy nearest the crosshair, inside its own
+    // --- acquire: the live enemy nearest the aim axis, inside its own
     // slowdown bubble. The bubble is a sphere around the target, so its
     // half-angle shrinks with distance instead of fanning out. ---
     let best: AimTarget | null = null;
@@ -315,7 +315,7 @@ export class AimAssistSystem {
 
       // Invariant 3: input AGAINST the rotation cancels it in proportion —
       // full deflection away means none at all, so a committed push always
-      // walks the crosshair out of the bubble and drops the target, while a
+      // walks the aim out of the bubble and drops the target, while a
       // resting stick keeps the track. (Signs match CameraSystem for both
       // devices: +lookX turns +yaw, +lookY turns -pitch.)
       yaw *= 1 - clamp(-Math.sign(yaw) * (input.stickLookX + dragX), 0, 1);

@@ -414,7 +414,7 @@ export class CameraSystem {
   }
 
   /**
-   * World-space aim direction (through the crosshair), into `out`.
+   * World-space aim direction (the axis the fitted sight sits on), into `out`.
    *
    * The `ToRef` form exists because the getter below it is the most-read API in
    * the frame — the aim assist, the shadow focus, the audio listener and the
@@ -436,7 +436,7 @@ export class CameraSystem {
     );
   }
 
-  /** World-space aim direction (through the crosshair). */
+  /** World-space aim direction (the axis the fitted sight sits on). */
   get forward(): Vector3 {
     return this.forwardToRef(new Vector3());
   }

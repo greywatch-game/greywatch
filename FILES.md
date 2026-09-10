@@ -770,9 +770,10 @@ src/
                         #   .ui-rail, .ui-panel, .ui-facts, .ui-foot.
                         #   Imported by main.ts
     HUD.ts/hud.css      # Gameplay chrome ONLY: tickets, flags, capture panel,
-                        #   vitals, ammo, the stowed slot, crosshair, killfeed,
+                        #   vitals, ammo, the stowed slot, hitmarker, killfeed,
                         #   score feed, scoreboard, damage arcs, +
-                        #   .paused/.editing/.dying
+                        #   .paused/.editing/.dying. NO crosshair: the fitted
+                        #   sight is the only aim mark in the game
     OverlayScreen.ts    # The four cards — menu, round-over, pause, building —
       overlay.css       #   the .overlaid class they raise, and #menu-shot, the
                         #   map photograph the menu stands on: a second root of

@@ -56,8 +56,8 @@ export const minimap = {
 } as const;
 
 /**
- * Battlefield-style directional damage arcs around the crosshair. A hit
- * records the *world* bearing to whoever fired it; the arc is re-projected
+ * Battlefield-style directional damage arcs around the middle of the screen.
+ * A hit records the *world* bearing to whoever fired it; the arc is re-projected
  * against the live view yaw every frame, so turning toward the shooter
  * swings their arc up to the top of the screen and off to the side again if
  * you turn past them. That is the whole point of the thing — an indicator

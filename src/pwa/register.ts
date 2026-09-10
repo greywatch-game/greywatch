@@ -98,7 +98,7 @@ export function registerServiceWorker(): void {
  * **It is the document that goes fullscreen, never the canvas.** A fullscreen
  * element is the only thing drawn, and the HUD is a `<div>` SIBLING of the
  * canvas — so fullscreening the canvas plays the game with the scene at full
- * size and no tickets, no flags, no crosshair and no deploy map. It looks like
+ * size and no tickets, no flags, no vitals and no deploy map. It looks like
  * the HUD failed to build.
  *
  * Everything here is best-effort by design. iPhone Safari has no element

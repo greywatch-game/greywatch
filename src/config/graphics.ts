@@ -84,10 +84,10 @@ export const graphics = {
     nearSharp: 1.5,
     nearFull: 2.4,
     /**
-     * Radial falloff, sharp at the crosshair and full past the outer edge.
-     * It is about the EYE alone now: it tracks the crosshair, so that is
-     * where a smear is read AS a smear rather than felt as speed, and it is
-     * the second subtlety lever after `strength`.
+     * Radial falloff, sharp at the middle of the screen and full past the
+     * outer edge. It is about the EYE alone now: it tracks where the eye is
+     * pointed, so that is where a smear is read AS a smear rather than felt
+     * as speed, and it is the second subtlety lever after `strength`.
      *
      * **It used to be the weapon's mask as well, and at that job it was
      * backwards** — the gun sits low and RIGHT, which is where a radial mask

@@ -514,12 +514,6 @@ export class Game {
   private editorLoading = false;
 
   /**
-   * Viewport height in CSS pixels, refreshed by `applyRenderScale` — which is
-   * also the resize handler, so it is exactly the moment this can change. Only
-   * the crosshair's spread projection reads it.
-   */
-  private viewportHeight = window.innerHeight;
-  /**
    * The map being played, as the layout/environment pair `src/world/maps.ts`
    * keeps together. The single place either half is named: everything from the
    * round start to the editor session reads it off here, so a second map is a
@@ -2304,12 +2298,6 @@ export class Game {
   private applyRenderScale(): void {
     const dpr = window.devicePixelRatio || 1;
     this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
-    // The crosshair's spread projection needs the viewport height in CSS
-    // pixels, and this is the one place that can have changed. Read here rather
-    // than in `updateHud` because that read sits BETWEEN two batches of HUD
-    // writes, and a geometry read with style mutations pending is what forces
-    // an early layout — the one shape of layout thrashing the frame path had.
-    this.viewportHeight = window.innerHeight;
   }
 
   /**
@@ -3510,7 +3498,7 @@ export class Game {
     if (this.buildPending() || this.editor) return;
 
     // F2 is reachable from every screen in the game — the pause card, whose
-    // suspended audio context and hidden crosshair an editor session would
+    // suspended audio context and hidden chrome an editor session would
     // otherwise inherit; the kit screen and the settings, either of which would
     // sit over the editor's own panel; and the lobby, which used to be missing
     // from the list here and did exactly that. `go` takes down whichever it was.
@@ -4325,7 +4313,8 @@ export class Game {
     // took it back was a click — the `pointerdown` handler in the constructor,
     // which is the deploy map's own click arriving a moment later. A pad player
     // never generates one, so every deployment left them in the world with the
-    // OS cursor sitting over the crosshair until they reached for the mouse.
+    // OS cursor sitting in the middle of the screen until they reached for the
+    // mouse.
     // Taking it here covers both: the click path asks twice in the same gesture
     // (harmless — the second request resolves onto the same lock) and the pad
     // path asks at all. It is a best effort, exactly as `requestLock`'s note
@@ -4487,7 +4476,7 @@ export class Game {
       this.player.takeDamage(this.player.health);
     }
 
-    // --- shooting (hitscan from the camera through the crosshair) ---
+    // --- shooting (hitscan from the camera down the aim axis) ---
     // Mouse fire requires pointer lock so UI clicks never discharge the gun.
     // The deploy map's click is the exception that gate cannot see — it is the
     // click that TAKES the lock — and `spawnPlayer` calls `consumeFire()` for it.
@@ -5158,10 +5147,11 @@ export class Game {
    * where it lands, and the noise.
    *
    * **Down the gun, not down the camera**, which is the whole of why the HUD
-   * draws a marker instead of a crosshair. The player's look is a request the
-   * turret is still walking toward; firing along it would put the shell
-   * somewhere the barrel is visibly not pointing, and `docs/weapons.md`'s rule
-   * that the picture and the axis are one fact would be broken by the frame.
+   * draws a marker where the barrel points rather than at the middle of the
+   * screen. The player's look is a request the turret is still walking toward;
+   * firing along it would put the shell somewhere the barrel is visibly not
+   * pointing, and `docs/weapons.md`'s rule that the picture and the axis are
+   * one fact would be broken by the frame.
    *
    * The direct hit and the splash are two separate resolutions on purpose, and
    * they cannot double-count a kill: `hittablesFor` is fetched INSIDE
@@ -7464,9 +7454,9 @@ export class Game {
    * `dying` is the death cam's frame: the gauges are still true and still
    * wanted (the round is live, and watching the tickets while you wait is half
    * the point of showing it at all), but everything about AIMING has stopped
-   * being. The crosshair, the capture panel and the arcs are the three the cam
-   * has to switch off, and each is off for its own reason rather than because
-   * the state changed — see below.
+   * being. The capture panel and the arcs are the two the cam has to switch
+   * off, and each is off for its own reason rather than because the state
+   * changed — see below.
    */
   /**
    * Which way the picture on screen is facing — the question the minimap's cone
@@ -7508,10 +7498,10 @@ export class Game {
     this.hud.setStowedAmmo(this.player.slungAmmo, this.player.slungMagSize);
     this.hud.setGrenades(this.player.grenades, CONFIG.grenade.carried);
     this.pushAntiTankHud();
-    // The armour half of the bottom band, and the marker that replaces the
-    // crosshair with it. Pushed unconditionally like every other gauge — null
-    // is what takes both away, and `HUD.setVehicle` is what knows that means
-    // putting the magazine back.
+    // The armour half of the bottom band, and the gun marker that comes up with
+    // it. Pushed unconditionally like every other gauge — null is what takes
+    // both away, and `HUD.setVehicle` is what knows that means putting the
+    // magazine back.
     this.hud.setVehicle(
       this.driving
         ? {
@@ -7524,18 +7514,14 @@ export class Game {
           }
         : null,
     );
+    // **Nothing is pushed for the middle of the screen, and that is the aiming
+    // model rather than a gauge that went missing.** The spread this used to
+    // project into a ring is still simulated and still reaches every round
+    // `CombatSystem` fires; what is gone is the reading of it, so a shot from
+    // the hip is a judgement about the weapon in the player's hands and the
+    // only mark that says where the rounds go is the sight fitted to it. See
+    // `HUD.setHitmarker`'s header for what may and may not live at the centre.
     this.pushGunMarker(dying);
-    if (!dying) {
-      // The crosshair ring IS the live spread: radians at the aim plane,
-      // projected through the current FOV into screen pixels. Skipped rather
-      // than merely hidden while dying — there is no weapon being aimed, so
-      // there is no spread to project.
-      const spreadPx =
-        (Math.tan(this.player.spread(this.cameraSys.adsBlend)) /
-          Math.tan(this.cameraSys.camera.fov / 2)) *
-        (this.viewportHeight / 2);
-      this.hud.setCrosshair(this.cameraSys.adsBlend, spreadPx);
-    }
     // Damage arcs are world-anchored, so they need this frame's aim yaw to be
     // re-projected onto the screen — pushed here like every other HUD input.
     this.hud.setViewYaw(this.aimViewYaw(dying));
@@ -7582,11 +7568,12 @@ export class Game {
    * Puts the gun marker where the BARREL is pointing, projected onto the glass.
    *
    * **This is the honest half of a third-person tank**, and the whole reason
-   * `#gun-marker` exists rather than the crosshair simply staying up. The eye
-   * is twelve metres behind the hull and the turret is walking toward the
-   * player's look at 40 deg/s, so the middle of the screen is the ORDER and
-   * this is the gun. `docs/weapons.md`'s rule — the reticle may not lie — is
-   * kept by drawing the second one.
+   * `#gun-marker` exists at all. The eye is twelve metres behind the hull and
+   * the turret is walking toward the player's look at 40 deg/s, so the middle
+   * of the screen is the ORDER and this is the gun. `docs/weapons.md`'s rule —
+   * the reticle may not lie — is kept on foot by drawing no mark at all and
+   * letting the fitted sight be the only one; in a hull, where the sight is not
+   * on the gun, it is kept by drawing the gun.
    *
    * Two things it has to get right and neither is the projection:
    *
@@ -7617,9 +7604,9 @@ export class Game {
     //
     // **A DRIVER with no gun gets no marker at all**, which is the same rule
     // one step further: a reticle drawn for a weapon this seat does not have is
-    // exactly the lie `#gun-marker` exists to prevent. The crosshair does not
-    // come back either — `#hud.mounted` takes it away — so a truck's driver
-    // has a clean screen, which is honest: he is driving.
+    // exactly the lie `#gun-marker` exists to prevent. Nothing takes its place,
+    // there being no mark at the middle of the screen to fall back to — so a
+    // truck's driver has a clean screen, which is honest: he is driving.
     const gun = tank.spec.gun;
     if (this.drivingSeat === DRIVER) {
       if (!gun) {
@@ -7889,9 +7876,9 @@ export class Game {
     // the head and hang in front of the body — the same reason `enterDeploy`
     // puts it away, arriving one state earlier.
     this.player.setBodyHidden(true);
-    // Anything on the HUD that is about aiming is now a lie: there is no
-    // crosshair to believe and the damage arcs are anchored to a view yaw that
-    // has stopped being the player's.
+    // Anything on the HUD that is about aiming is now a lie: the damage arcs
+    // are anchored to a view yaw that has stopped being the player's, and the
+    // capture panel counts a zone nobody is standing in.
     this.hud.setDeathCam(true);
     this.hud.clearDamageDirections();
     this.go("dying");

@@ -429,7 +429,8 @@ worth knowing before anyone widens it again: the weapon sits low and to the
 RIGHT, which is where a radial falloff blurs hardest, so the most smeared thing
 in the frame was the one thing in it that never moves — while the sharp core it
 bought was spent on the middle distance, which is where the smear is the whole
-effect. It is still there and still about the EYE, which tracks the crosshair;
+effect. It is still there and still about the EYE, which tracks where the eye
+is pointed;
 it is simply narrower now (0.2/0.75, from 0.35/0.85).
 
 **Measured**: at 1280x720 the whole pass does not separate from a straight copy

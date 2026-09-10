@@ -717,7 +717,7 @@ weapon's. `swayMult` is the weapon's alone.
 
 Everything about an optic falls out of `magnification`: the aimed FOV is
 `2*atan(tan(fovHip/2) / mag)`, the ADS look multipliers are
-`camera.adsLookMouse|Stick / mag` (so the crosshair crosses the *screen* at the
+`camera.adsLookMouse|Stick / mag` (so the aim crosses the *screen* at the
 same rate through any optic — a 3.5x scope on hip-fire rates is unusable), and the
 viewmodel's zoom compensation is `adsMagReference / mag`. The holo is 1.6, exactly
 the 0.62 rad the camera used before optics were a choice.

@@ -84,7 +84,7 @@ export interface BoxSpec {
    * round aimed at a post passes through it too. The alternative is a collider
    * per post and per rail — some 160 more boxes on Hollowmere against the 824
    * it has, on every ray in the game — to catch hits on 0.18 m of timber at a
-   * distance where the crosshair covers it.
+   * distance where a fitted sight's own reticle covers it.
    *
    * Porous is also not COVER: `CoverMap` skips these boxes entirely, or bots
    * would take cover behind something that stops nothing.
