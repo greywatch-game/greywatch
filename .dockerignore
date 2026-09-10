@@ -12,5 +12,10 @@ specs
 # scripts/check-collision.mjs — the gate that refuses a bake older than the
 # layout it came from. Excluding it fails the image build at the COPY.
 *.md
+# ...except the spine, which `check-audio.mjs`'s CLAIMS table reads on the front
+# of `npm run build` — see the COPY for it in the Dockerfile. `*.md` does not
+# reach `docs/` (a pattern's `*` does not cross a `/`), so the companions it
+# also reads need no line here; this one is the whole exception.
+!CLAUDE.md
 Dockerfile
 .dockerignore

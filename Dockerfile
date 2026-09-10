@@ -63,6 +63,18 @@ COPY audio ./audio
 # public/ is copied to dist/ verbatim: the web app manifest and the install
 # icons, which must keep the exact URLs the manifest and index.html name.
 COPY public ./public
+# **The PROSE is a build input now, and it is the second thing to arrive
+# without the line above it predicted.** `check-audio.mjs`'s CLAIMS table reads
+# `CLAUDE.md`, `docs/audio.md` and `docs/build.md` and matches every countable
+# fact in them against `audio/manifest.json` — a number quoted in a sentence
+# being one that was true once. So the gate on the front of `npm run build`
+# opens these files, and without them the image build dies on ENOENT before it
+# has typechecked a line. The whole of `docs/` rather than the two files that
+# have rows today: a new CLAIMS row must not be able to break this image, and
+# 1.3 MB is nothing beside the audio above it. **A gate that reads a file
+# outside `src/` owes a COPY here** — that is now three times.
+COPY CLAUDE.md ./
+COPY docs ./docs
 
 # `npm run build` checks the collision bake is current, typechecks BOTH
 # tsconfigs — via `npm run typecheck`, and that indirection is the whole point —
