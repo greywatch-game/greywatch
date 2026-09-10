@@ -48,11 +48,22 @@ import { drawMapThumb } from "./MapThumb";
  * would file the harmless action below the one that ends the round.
  */
 export type PauseAction = "resume" | "settings" | "restart" | "quit";
-const PAUSE_ITEMS: readonly [PauseAction, string][] = [
-  ["resume", "Resume"],
-  ["settings", "Settings"],
-  ["restart", "Restart round"],
-  ["quit", "Quit to menu"],
+/**
+ * The pause card's rows, and the one of them that is not always offered.
+ *
+ * `solo` is the third field: "Restart round" is a thing only the side running
+ * the simulation may do, and in a match that is not this one. Left in, it read
+ * as a way out of a round that was going badly and was instead a client tearing
+ * its own world down under an authority that had not heard the key — the same
+ * act the round-over card used to offer, arriving through a second door. Quit
+ * to menu is the honest version of what that button was reaching for, and it is
+ * on this list in both rounds.
+ */
+const PAUSE_ITEMS: readonly [PauseAction, string, boolean][] = [
+  ["resume", "Resume", false],
+  ["settings", "Settings", false],
+  ["restart", "Restart round", true],
+  ["quit", "Quit to menu", false],
 ];
 
 /**
@@ -930,6 +941,19 @@ export class OverlayScreen {
    * authority seated them in. That is why the two names below are indexed
    * literally rather than through `teamLook`: they are the presentation pair,
    * not a team. See `core/teamView.ts`.
+   *
+   * `solo` is "this client is the one deciding what happens next", which
+   * offline is always and in a match is never.
+   *
+   * **A round-over card in a MATCH is a WAIT, not a menu**, and the difference
+   * is a button that must not be there rather than one that is dimmed — the
+   * same call the HUD's loader row makes for a hull with no gun. The authority
+   * owns the rotation: it holds the result up for `ROUND_OVER_MS`, builds the
+   * next map and says so with a `roundstart`, and a client that started its
+   * own round here would tear the world down under a match that is still
+   * running and then offer a deploy screen for a round nobody else is in. So
+   * what the card says instead is what is actually happening, which is that
+   * somebody else is picking the map.
    */
   showRoundOver(
     winnerName: string,
@@ -937,6 +961,7 @@ export class OverlayScreen {
     ticketsMine: number,
     ticketsTheirs: number,
     mapName: string,
+    solo: boolean,
   ): void {
     this.setCardClass("roundover");
     this.setOverlaid(true);
@@ -978,13 +1003,24 @@ export class OverlayScreen {
               </div>
             </div>
           </div>
-          <button class="ov-start"><b>Another round</b><i>Enter &middot; A &middot; Start</i></button>
+          ${
+            solo
+              ? `<button class="ov-start"><b>Another round</b><i>Enter &middot; A &middot; Start</i></button>`
+              : `<p class="ov-wait">Next map &middot; the server is choosing</p>`
+          }
         </div>
       </div>
       <p class="ui-foot">
-        <span><kbd>Enter</kbd><kbd class="pad">A</kbd> deploy again</span>
+        <span>${
+          solo
+            ? `<kbd>Enter</kbd><kbd class="pad">A</kbd> deploy again`
+            : `You keep your slot &mdash; the next round starts on its own`
+        }</span>
       </p>
     `;
+    // A no-op when the button is not there, which is the netplay card: the
+    // handler is bound to markup rather than to the screen, so a card without
+    // one simply has nothing to bind.
     this.bindStart();
   }
 
@@ -1071,18 +1107,23 @@ export class OverlayScreen {
    * the same carve-out the difficulty row gets. Selection is a class on a
    * button that already exists rather than a re-render, so arrowing down the
    * list does not restart the prompt's animation or drop the hover state.
+   *
+   * `solo` as `showRoundOver` means it, and it decides one row — see
+   * `PAUSE_ITEMS`.
    */
-  showPause(): void {
+  showPause(solo: boolean): void {
     this.setCardClass("pause");
     this.card = "pause";
     this.clearShot();
     this.menuEls.clear();
     this.detailEl = null;
     this.buildBar = null;
-    const items = PAUSE_ITEMS.map(
-      ([action, label]) =>
-        `<button class="pact" data-action="${action}">${label}</button>`,
-    ).join("");
+    const items = PAUSE_ITEMS.filter(([, , soloOnly]) => solo || !soloOnly)
+      .map(
+        ([action, label]) =>
+          `<button class="pact" data-action="${action}">${label}</button>`,
+      )
+      .join("");
     // Anchored to the LEFT and scrimmed from that side only, which is the one
     // place in this file a card deliberately does not take the screen. The
     // round under a pause is this round, frozen where it stood: the flags

@@ -205,6 +205,30 @@ already passed, and the screen that was up while it passed is the one the frame
 belongs to. The states that are IN the fight answer `false` — `updateWorld` steps
 that same frame already, and a second answer here would step it twice.
 
+**The same inversion decides who may START a round, and there `roundover` is the
+state that gets it wrong on its own.** Offline the round-over card is a menu: the
+player asks for another one and `startRound` gives it to them. In a match it is a
+WAIT — the authority holds the result up for `ROUND_OVER_MS`, builds the next map
+and says so with a `roundstart` — and a client that started its own round there
+disposed the `GameMap` under a live match, offered a deploy screen for a round
+nobody else was in, and sent a `deploy` the authority threw away (`onDeploy`
+refuses a living player, and a rotation's `retire` clears the request of a dead
+one), leaving the card on "Deploying" with nothing coming back. It recovered when
+the real `roundstart` landed, which is the only reason it read as a stutter
+rather than a hang.
+
+**There were three doors into it and the widest was a key.** `updateMenuCard`'s
+confirm tail fires on Enter, pad A and Start for both cards it draws; the
+round-over card's own `ov-start` button is the second; the pause menu's "Restart
+round" is the third. All three now ask `!this.net`, and the two that are drawn ask
+it in the DRAWING as well — `showRoundOver` and `showPause` take a `solo` flag, so
+in a match the button is ABSENT rather than dimmed and the card says the server is
+choosing. The handler guards stay because the markup is what a handler is bound
+to and the markup outlives none of these transitions. The keyboard door is the one
+that was actually being fallen through: the kit screen closes on that very key,
+and when a round ends under it the round-over card arrives beneath the player's
+fingers.
+
 ## The pointer lock
 
 **Losing the pointer lock is the trigger, and it has to be.** Escape belongs to

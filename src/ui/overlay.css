@@ -941,6 +941,22 @@
   width: min(420px, 100%);
   margin-top: 0;
 }
+/* …and what stands in the button's place in a MATCH, where the next round is
+   the authority's rotation rather than anything this card can ask for. Sized
+   and spaced like the button it replaces so the result block above it does not
+   move between an offline round and a networked one, and deliberately quiet:
+   it is a status line, and a line that looked like a control would be the
+   button all over again. */
+#overlay .ov-outcome .ov-wait {
+  width: min(420px, 100%);
+  padding: clamp(11px, 1.6vh, 16px) 0;
+  text-align: center;
+  font-size: var(--ui-cap);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
 
 /* =====================================================================
    THE BUILDING CARD

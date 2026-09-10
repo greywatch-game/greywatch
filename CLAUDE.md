@@ -1435,6 +1435,12 @@ different game in the same window: the local player's **team**
 hardcoded 0 turns every mine/theirs question backwards), the match's **map**
 (`Game.applyMatchMap`; `Game.setMap` is the *player* choosing, never written from
 the wire), a **body coming into the world** (an ASK), and the **scoreboard**.
+**The ROUND is a fifth and it is a REFUSAL rather than a funnel**: `startRound`
+is the player asking for one, so every door into it asks `!Game.net` — the
+round-over card's confirm, its own button, and the pause menu's Restart — and
+the two that are DRAWN are absent in a match rather than dimmed, the card
+saying the authority is choosing. A client that started its own disposed the
+`GameMap` under a live match and offered a deploy screen nobody else was in.
 
 **A TEAM INDEX IS THE AUTHORITY'S AND A SIDE'S COLOURS ARE THE VIEWER'S**, and
 they stopped being one thing: [`src/core/teamView.ts`](src/core/teamView.ts)

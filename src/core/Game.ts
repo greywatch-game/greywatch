@@ -1830,6 +1830,14 @@ export class Game {
     // handler is bound to a button that `hideOverlay` throws away, and a click
     // landing between that and the next repaint must not start a second round.
     this.overlayScreen.onStart = () => {
+      // `!this.net` as well as the state, and it is the netplay card that owes
+      // it: a round is the AUTHORITY's to start, and the round-over card no
+      // longer draws this button in a match — but the markup is what the
+      // handler is bound to and the markup outlives none of these transitions,
+      // so the guard is here as well as in the drawing. Offline it is always
+      // true, since `enterMenu` leaves the match on the way to the only other
+      // state this fires in.
+      if (this.net) return;
       if (this.state === "menu" || this.state === "roundover") this.startRound();
     };
     this.deployScreen.onOpenLoadout = () => this.openLoadout();
@@ -1884,8 +1892,12 @@ export class Game {
       // hides the overlay and ends in `enterDeploy`, which sets the state.
       if (action === "resume") this.resume();
       else if (action === "settings") this.openSettings();
-      else if (action === "restart") this.startRound();
-      else this.enterMenu();
+      // Not drawn in a match (`showPause`), and refused here for `onStart`'s
+      // reason: restarting is the authority's, and Quit to menu is what a
+      // player reaching for this in a match actually wants.
+      else if (action === "restart") {
+        if (!this.net) this.startRound();
+      } else this.enterMenu();
     };
     // Guarded for the same reason `onStart` is, and it is the weaker of the
     // two: `spawnPlayer` sets the state outright, so a click that arrives from
@@ -3052,7 +3064,15 @@ export class Game {
     // which has no cursor to fire, it is all three. The mouse and a tap
     // deploy through the Deploy button and nowhere else, or a click on the
     // map or difficulty row would start the round out from under the pick.
-    if (this.input.confirmPressed && this.overlayT > 0.5) {
+    //
+    // **`!this.net` is what makes this the OFFLINE confirm**, and the state is
+    // not that question: `menu` never has a session (`enterMenu` leaves the
+    // match on the way in), but `roundover` in a match is a WAIT on the
+    // authority's rotation, and this line was the widest of the three doors
+    // into starting a round nobody else was playing. It is also the one a
+    // player is most likely to fall through, because the kit screen closes on
+    // this very key and the round-over card arrives under their fingers.
+    if (this.input.confirmPressed && this.overlayT > 0.5 && !this.net) {
       this.startRound();
     }
   }
@@ -3291,7 +3311,7 @@ export class Game {
     // out from under the menu it just raised.
     this.lockPending = false;
     this.hud.setPaused(true);
-    this.overlayScreen.showPause();
+    this.overlayScreen.showPause(!this.net);
     // Suspends the audio clock, so the tail of the last shot is still there
     // when the round starts again instead of ringing out over the menu.
     //
@@ -7865,6 +7885,10 @@ export class Game {
       this.conquest.tickets[this.player.team],
       this.conquest.tickets[OTHER_TEAM[this.player.team]],
       this.mapDef.name,
+      // Whether this card is a MENU or a WAIT. Offline the next round is the
+      // player's to ask for; in a match it is the authority's rotation, and
+      // the card says so instead of offering a button that must not work.
+      !this.net,
     );
   }
 
