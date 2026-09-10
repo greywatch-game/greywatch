@@ -412,11 +412,19 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    * turned up.
    *
    * **Correcting a claim this file used to make: the sheen never touches the
-   * roadway.** `buildRoad` takes the textured cobble path only when `surface`
-   * is neither `dirt` nor `asphalt`, and every avenue on this map states
-   * `asphalt` — a flat tone with no spec at all. The only cobble on Coldharbour
-   * is the four 4 x 27 m paths across the civic square: 432 m², not "the
-   * roadway".
+   * roadway.** The sheen is opted into per carriageway by `Build
+   * .groundMaterial`, and only the cobbled street asks for it — every avenue on
+   * this map states `asphalt`, which is world-mapped and bumped like the street
+   * but MATTE. The only cobble on Coldharbour is the four 4 x 27 m paths across
+   * the civic square: 432 m², not "the roadway".
+   *
+   * **That was the free half of the claim once and is now a decision, so it is
+   * stated in two places on purpose.** Until the carriageways were textured,
+   * asphalt was a flat cel colour and could not have carried a spec at all;
+   * `getGroundTextured` now builds all three the same way and the argument
+   * below is the whole of what keeps blacktop out of the sheen. It is repeated
+   * beside the recipes in `world/textures.ts`, because that is where somebody
+   * adding the fourth carriageway will be standing.
    *
    * That is what makes a low sun affordable here. The term explodes as the key
    * light drops — the half-vector converges on the ground's own normal — and at

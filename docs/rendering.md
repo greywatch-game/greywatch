@@ -2042,9 +2042,10 @@ does not take, both being look decisions rather than bugs.
   a slow world-space value noise so a 48 m merged block stops arriving in one
   tone; the ground path does the same with its own pair of numbers
   (`graphics.groundVariation`, a cell three tiles wide and a wider swing) for a
-  different reason — a ground texture REPEATS, every 4 m on the valley floor and
-  every 1.5 m on the street, and the eye finds a period in a ground plane faster
-  than anywhere else in the frame. A drift keyed on world position has none to
+  different reason — a ground texture REPEATS, every 4 m on the valley floor,
+  every 1.5 m on the street and every 3 to 3.5 m on the other two carriageways,
+  and the eye finds a period in a ground plane faster than anywhere else in the
+  frame. A drift keyed on world position has none to
   find. It is also why the tiles are painted with no feature larger than a
   quarter of their width: the big variation is this, and a tile carrying its own
   would only be advertising where it ends. The ground path skips the `vBaked.y`

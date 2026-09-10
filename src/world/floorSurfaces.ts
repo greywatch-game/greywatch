@@ -38,6 +38,13 @@ interface FloorSurface {
    * Metres spanned by one texture repeat. Bigger reads as coarser ground and
    * repeats less often across a 240 m valley; smaller reads as finer grain and
    * starts to tile visibly on open ground.
+   *
+   * **It may not equal a CARRIAGEWAY's** (`ROAD_PATTERNS` in `textures.ts`:
+   * 1.5, 3 and 3.5). Every ground texture in the tree is sampled at
+   * `vPosW.xz`, so a road laid over a floor at the same scale is in phase with
+   * it grain for grain and stops reading as a surface of its own — and
+   * Hollowmere and Greyfen both put dirt lanes on `dirt` soil, so the two
+   * genuinely meet.
    */
   metersPerTile: number;
   /**

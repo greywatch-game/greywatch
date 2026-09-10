@@ -23,7 +23,6 @@ import {
   type BuildCtx,
   type BuildParams,
   type Structure,
-  ASPHALT,
   CREEPER,
   DARK_STONE,
   DIRT,
@@ -97,14 +96,20 @@ export function buildRamp(
  * the slab itself: feet rest on the floor from the ground probe and the nav
  * grid. The slab is therefore sunk so its top sits barely proud of the floor —
  * enough to avoid z-fighting the ground, but not enough to swallow a
- * character's ankles. Cobblestone by default; `surface: "dirt"` gives the flat
- * track for farm lanes and `surface: "asphalt"` the blacktop a city street is.
+ * character's ankles. Cobblestone by default; `surface: "dirt"` gives the
+ * scraped track a farm lane is and `surface: "asphalt"` the blacktop a city
+ * street is.
  *
- * The two flat surfaces are one branch because they differ only in colour: the
- * cobble path carries a world-mapped texture, a per-sett bump map and the wet
- * sheen `groundSpec` tunes, and none of that is anything a road wants when it
- * is meant to read as poured. Adding a third tone here is a colour, not a code
- * path.
+ * **All three are world-mapped textures now and this builder no longer branches
+ * on which**, which is a change from the version where the street was textured
+ * and the other two were a flat cel colour apiece. What that cost was stated in
+ * the dash note below and was worst exactly where it was least visible from:
+ * every asphalt avenue on Sarab takes the contoured path, so it had neither a
+ * texture nor a centre line, and 34,000 m² of `#26272c` reads as a hole cut in
+ * the map rather than as a street. A surface is a FIELD (`world/textures.ts`),
+ * `Build.groundMaterial` is the one place that turns one into a material, and
+ * adding a fourth carriageway is a row in `ROAD_PATTERNS`, a field and a
+ * palette — still not a code path here.
  *
  * **How far proud is the SURFACE's, and it is what settles a junction**
  * (`roadTop`, `world/roads.ts`). Two roads that cross are two coplanar sheets
@@ -147,9 +152,6 @@ export function buildRoad(
   // the shipped layouts state a length and no width.
   const w = p.width ?? ROAD_WIDTH;
   const len = p.length ?? ROAD_LENGTH;
-  // Which flat tone this road is, or null for the textured cobble.
-  const flat =
-    surface === "dirt" ? DIRT : surface === "asphalt" ? ASPHALT : null;
 
   const contoured =
     ctx &&
@@ -163,20 +165,26 @@ export function buildRoad(
       top,
       thickness: h,
     });
-  if (contoured) b.surface(contoured, flat ?? undefined);
-  else if (flat) b.box(w, h, len, 0, top - h / 2, 0, flat);
-  else b.groundBox(w, h, len, 0, top - h / 2, 0);
+  if (contoured) b.groundSurface(contoured, surface);
+  else b.groundBox(w, h, len, 0, top - h / 2, 0, surface);
 
-  // Blacktop gets a broken centre line, and it is not decoration: an asphalt
-  // road is the one surface in the kit with no texture and no bump, so a 16 m
-  // carriageway is otherwise the largest untextured area anywhere in the game
-  // and reads as a hole in the map rather than as a street. The dashes give it
-  // a scale, a direction and something for the eye to measure distance along.
+  // Blacktop gets a broken centre line, and what it is for has NARROWED rather
+  // than gone away. It used to be carrying the whole surface — an untextured
+  // 16 m carriageway is the largest flat tone anywhere in the game, and the
+  // dashes were the only thing in it giving the eye a scale to measure by. The
+  // aggregate and the crazing do that now. What no texture in this file can do
+  // is say which way the road RUNS: every one of them is sampled at `vPosW.xz`
+  // and so knows nothing about the slab it is painting, while wheel polish, a
+  // kerb line and a centre line all run along a carriageway. The markings are
+  // where a road states its direction, and that is the whole of their job.
   //
   // Only on the FLAT path. A dash is a box laid on a plane and the contoured
   // path is not one — over sculpted ground each would float or bury itself,
   // which is the whole problem `terrainSlab` exists to solve for the slab
-  // itself and cannot solve for something laid on top of it.
+  // itself and cannot solve for something laid on top of it. So a contoured
+  // avenue (all three of Sarab's, and any Coldharbour one run past its ±150 m
+  // stop) is an unmarked road: since the texture, that is a road with no centre
+  // line, where before it was 860 m of one flat tone.
   if (surface === "asphalt" && !contoured) {
     // **The paint is only ever there because NO ROAD IS INKED**, and that used
     // to be a rule about this one slab. `addOutline` draws Babylon's outline as

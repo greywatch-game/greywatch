@@ -48,10 +48,14 @@ import type { AmbienceId } from "../../core/Sfx";
 import type { LightSpec } from "../environment";
 import { partBox, partCylinder, partSurface } from "../parts";
 import type { TerrainField } from "../TerrainField";
+import type { RoadSurface } from "../roads";
 import {
   COBBLE_TEX_SCALE,
+  ROAD_PATTERNS,
   getCobblestoneBumpTexture,
   getCobblestoneTexture,
+  getRoadBumpTexture,
+  getRoadTexture,
 } from "../textures";
 
 /**
@@ -623,11 +627,11 @@ export class Build implements Structure {
   }
 
   /**
-   * A box surfaced with a world-mapped ground texture (cobblestone). The
-   * shader samples by world XZ, so no UV authoring is needed and the pattern
-   * keeps a constant real-world size however the box is sized — and tiles
-   * seamlessly across separate structures sharing the material. For
-   * up-facing surfaces only; walls would streak.
+   * A box surfaced with a world-mapped carriageway texture. The shader samples
+   * by world XZ, so no UV authoring is needed and the pattern keeps a constant
+   * real-world size however the box is sized — and tiles seamlessly across
+   * separate structures sharing the material. For up-facing surfaces only;
+   * walls would streak.
    */
   groundBox(
     w: number,
@@ -636,6 +640,7 @@ export class Build implements Structure {
     x: number,
     y: number,
     z: number,
+    paving: RoadSurface,
   ): Mesh {
     const m = partBox(
       `${this.tag}-ground${this.meshes.length}`,
@@ -643,50 +648,89 @@ export class Build implements Structure {
       this.scene,
     );
     m.position.set(x, y, z);
-    m.material = this.groundMaterial();
+    m.material = this.groundMaterial(paving);
     this.meshes.push(m);
     return m;
   }
 
   /**
    * A surface handed in as finished vertices rather than described as a
-   * primitive — a road tessellated to follow the ground under it. Takes the
-   * same two materials `box` and `groundBox` do: a palette colour, or the
-   * world-mapped cobblestone when `color` is omitted.
+   * primitive, in a flat palette colour — what `box` is to `groundBox`.
    *
    * Still origin-local: whoever built the vertices did so in the structure's
    * own frame, because MapBuilder rotates and translates the result.
    */
-  surface(data: VertexData, color?: string): Mesh {
+  surface(data: VertexData, color: string): Mesh {
     const m = partSurface(
       `${this.tag}-surface${this.meshes.length}`,
       data,
       this.scene,
     );
-    m.material =
-      color === undefined
-        ? this.groundMaterial()
-        : this.mats.get(color, this.depthUnits);
+    m.material = this.mats.get(color, this.depthUnits);
     this.meshes.push(m);
     return m;
   }
 
   /**
-   * Wet-stone sheen + per-sett bump: the street catches a hard streak looking
-   * moonward, and the light bands ripple over individual stones. Shared by
-   * `groundBox` and `surface` so a flat road and a contoured one cannot end up
-   * on two different materials — they merge into one draw call only while they
-   * are on the same one.
+   * The same vertices wearing a carriageway instead of a colour: a road
+   * tessellated to follow the ground under it.
+   *
+   * It exists as its own word rather than as an optional argument on `surface`
+   * because the two halves of `buildRoad` have to be unable to disagree — a
+   * flat slab and a contoured one merge into one draw call only while they are
+   * on the same material, and the way to guarantee that is for both to name a
+   * `RoadSurface` and neither to be able to name anything else.
    */
-  private groundMaterial(): ShaderMaterial {
+  groundSurface(data: VertexData, paving: RoadSurface): Mesh {
+    const m = partSurface(
+      `${this.tag}-surface${this.meshes.length}`,
+      data,
+      this.scene,
+    );
+    m.material = this.groundMaterial(paving);
+    this.meshes.push(m);
+    return m;
+  }
+
+  /**
+   * What a carriageway is made of: a world-mapped albedo and the height map
+   * matching it texel for texel. Shared by `groundBox` and `groundSurface` so a
+   * flat road and a contoured one cannot end up on two different materials —
+   * they merge into one draw call only while they are on the same one.
+   *
+   * **The street is the branch and the other two are the rule.** Cobbles are
+   * five authored stone tones and the one road surface that is WET — the sheen
+   * `CONFIG.graphics.spec.cobble` opts into is the map's own `groundSpec`, and
+   * `setGroundSpec` is what tunes it per map. The track and the blacktop are a
+   * ladder over the palette colour they have always been, and both are matte:
+   * soil is not wet stone, and Coldharbour's sheen is tuned at 24 degrees of
+   * sun on the stated premise that it never reaches an avenue.
+   */
+  private groundMaterial(paving: RoadSurface): ShaderMaterial {
+    if (paving === "cobble") {
+      return this.mats.getGroundTextured(
+        "cobble",
+        getCobblestoneTexture(this.scene),
+        COBBLE_TEX_SCALE,
+        {
+          spec: CONFIG.graphics.spec.cobble,
+          bump: getCobblestoneBumpTexture(this.scene),
+          bumpScale: CONFIG.graphics.cobbleBumpScale,
+          depthUnits: this.depthUnits,
+        },
+      );
+    }
+    // The road's own colour, stated once in the palette above — the texture is
+    // a grain over it and never a second opinion about what colour a road is.
+    const base = paving === "dirt" ? DIRT : ASPHALT;
+    const { metersPerTile, bumpScale } = ROAD_PATTERNS[paving];
     return this.mats.getGroundTextured(
-      "cobble",
-      getCobblestoneTexture(this.scene),
-      COBBLE_TEX_SCALE,
+      `road-${paving}`,
+      getRoadTexture(this.scene, paving, base),
+      1 / metersPerTile,
       {
-        spec: CONFIG.graphics.spec.cobble,
-        bump: getCobblestoneBumpTexture(this.scene),
-        bumpScale: CONFIG.graphics.cobbleBumpScale,
+        bump: getRoadBumpTexture(this.scene, paving),
+        bumpScale,
         depthUnits: this.depthUnits,
       },
     );

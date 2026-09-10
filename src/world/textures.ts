@@ -1,7 +1,7 @@
 /**
- * textures.ts — Runtime-generated canvas textures: the village street's
- * cobbles and the valley floor's own surfaces, painted per texel out of
- * deterministic noise and cached per scene. Zero asset files.
+ * textures.ts — Runtime-generated canvas textures: the three carriageways a
+ * road may be paved with and the valley floor's own surfaces, painted per texel
+ * out of deterministic noise and cached per scene. Zero asset files.
  * Owns: the tiling noise primitives, one field recipe per surface, and the two
  * painters that turn a field into an albedo and into a height map.
  * Invariants: SIZE must stay a power of two for mipmaps AND must stay 512 —
@@ -44,6 +44,7 @@
  */
 import { DynamicTexture, Scene, Texture } from "@babylonjs/core";
 import { clamp01, smoothstep } from "../core/math";
+import type { RoadSurface } from "./roads";
 
 /** The 2D context a `DynamicTexture` hands back. */
 type Ctx = ReturnType<DynamicTexture["getContext"]>;
@@ -415,6 +416,9 @@ function paintHeight(ctx: Ctx, height: Float32Array): void {
  * The cobbles are a PLACE — a village street, painted in the village's own
  * colours, next to the palette in BuildingKit. That is what separates them
  * from the valley floor's surfaces below, which have no colour of their own.
+ * The other two carriageways in between are places on the same terms; what
+ * makes the street the odd one of the three is that it is FIVE stone tones
+ * rather than a ladder over one, which is why it alone is authored here.
  * ------------------------------------------------------------------------ */
 
 /** Mortar sits just below the darkest timber; the setts jitter around it. */
@@ -507,6 +511,251 @@ const COBBLE_PALETTE: Rgb[] = [
   rgbOf(MORTAR_GRIT),
   ...SETTS.map(rgbOf),
 ];
+
+/* ------------------------------------------------------------------------ *
+ * The other two carriageways
+ *
+ * The cobbles above are a laid street and carry their own five stone tones.
+ * These two are the same KIND of thing — a place, with a colour of its own out
+ * of the kit's palette (`DIRT`, `ASPHALT`) — and not the floor patterns below,
+ * which have no colour at all and take whatever soil the map is standing on.
+ * The base is passed in for the floor's reason nonetheless: a road's colour is
+ * already stated once in `kit/core.ts` and is what the untextured slab used to
+ * be, so a ladder centred on it changes the grain without changing what colour
+ * a road is.
+ *
+ * **A road is not the ground it crosses, and on two maps that is not a matter
+ * of taste.** Hollowmere and Greyfen both state `floorSurface: "dirt"`, and
+ * every ground texture in this file is sampled at `vPosW.xz` — so a track
+ * painted with the floor's own field at the floor's own scale would be in
+ * PHASE with the soil under it, grain for grain, and the carriageway would read
+ * as a tint laid over the ground rather than as a surface laid on it. Hence a
+ * field of its own at a tile size no floor pattern uses; and it wants one
+ * anyway, because a track is a different material from the soil beside it. It
+ * is COMPACTED: the clods are crushed out of it, the stones are pressed flush
+ * instead of standing proud, and what is left is hardpan under a fine dust.
+ *
+ * **Neither is glossy, and for asphalt that is a rule rather than a taste.**
+ * `getGroundTextured`'s spec is the map's own `groundSpec`, which is the wet
+ * *cobble* sheen — and Coldharbour's is tuned at 24 degrees of sun elevation on
+ * the stated premise that it reaches 432 m² of civic path and none of the
+ * avenues (see that map's `environment.ts`). The term explodes as the key light
+ * drops, so a spec'd carriageway there would be a sheet of white. Soil is not
+ * wet stone either, which is the argument `floorSurfaces.ts` already makes for
+ * the floor.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Which road surfaces are painted from a base colour — every one but the
+ * street, which is five authored stone tones and not a tint of anything.
+ * Derived from `RoadSurface` so a fourth carriageway is a compile error here
+ * until it has been given a field, a palette and a tile.
+ */
+export type RoadPatternId = Exclude<RoadSurface, "cobble">;
+
+/** One carriageway's world scale and relief, exactly as `FloorSurface` is. */
+interface RoadPattern {
+  /**
+   * Metres spanned by one texture repeat. Both are deliberately unequal to
+   * every floor pattern's (`floorSurfaces.ts`: 2.5, 4, 4.5 and 5) so a road can
+   * never come into phase with the ground it is lying on.
+   */
+  metersPerTile: number;
+  /**
+   * Metres of fake relief at height 1.0, and what these two are stated against
+   * is each other rather than the cobbles: the shader's slope is `bumpScale`
+   * over a TEXEL, so the number means nothing without the tile it spans. Per
+   * texel, the valley's loose `dirt` is the reference — a scraped track is
+   * packed down and comes in under it, and blacktop is a bound surface with
+   * chips in it rather than a loose one and comes in under that.
+   */
+  bumpScale: number;
+}
+
+/** Both carriageways' tuning, next to the recipes their cell counts are in. */
+export const ROAD_PATTERNS: Record<RoadPatternId, RoadPattern> = {
+  dirt: { metersPerTile: 3.5, bumpScale: 0.026 },
+  asphalt: { metersPerTile: 3, bumpScale: 0.02 },
+};
+
+/**
+ * Each carriageway's field. Read by both painters, and by neither with a
+ * colour in hand — the height map is one texture per surface however many
+ * tints ask for it, exactly as the floor's is.
+ */
+const ROAD_FIELDS: Record<RoadPatternId, () => Field> = {
+  /**
+   * A scraped track: hardpan, a fine dust over it, shallow hollows worn into
+   * it and stones pressed flush.
+   *
+   * **What separates this from the valley's own `dirt` is the RELIEF, not the
+   * tint**, and that is the whole point of the surface. The floor's soil is
+   * folded octaves at 20, 10 and 5 cm — crumb, with a groove where every fold
+   * meets — plus a stone in a quarter of its cells standing proud. A track has
+   * been driven over: there is no crumb left, the stones are trodden into it,
+   * and the only relief above a grain is the DIPS, which are what actually
+   * catches a band of light on a lane at night.
+   */
+  dirt: (): Field => {
+    const field = blankField();
+    const { tone, height } = field;
+    // Dust and fine grit. Three octaves at 110, 220 and 440 cells over the
+    // 3.5 m tile land at 3.2, 1.6 and 0.8 cm — grain, which is what is left
+    // when the crumb has been crushed out.
+    const dust = octaves(0xd18a1, 3, 110);
+    // The hollows: nine cells over the tile is a 39 cm dip, which is the size
+    // that reads as somewhere a puddle sat rather than as a pothole.
+    const hollows = octaves(0xd18a2, 2, 9);
+    // Where the track is scraped down to bare hardpan and where the loose
+    // stuff has gathered. Weak on purpose — the `dirt` floor's own note on
+    // posterizing a smooth low-frequency field applies verbatim: at any real
+    // weight this comes out as flat patches with hard edges, at the size of
+    // this field's own features, which is a contour map and not a road.
+    const bare = octaves(0xd18a3, 2, 3);
+    // A stone every few cells, PRESSED IN. 44 cells over 3.5 m is an 8 cm
+    // stone; what makes it a track's stone rather than the floor's is that it
+    // is mostly tone and barely any height.
+    const stones = cells(44, 0xd18a4);
+
+    for (let y = 0; y < SIZE; y++) {
+      const v = y / SIZE;
+      for (let x = 0; x < SIZE; x++) {
+        const u = x / SIZE;
+        const i = y * SIZE + x;
+
+        const g = fbmAt(dust, u, v);
+        const dip = spread(fbmAt(hollows, u, v), 1.7);
+        const scrape = spread(fbmAt(bare, u, v), 1.5);
+
+        let h = 0.5 + (dip - 0.5) * 0.52 + (g - 0.5) * 0.18;
+
+        // Half buried, and the half that shows is a shallow crown: a stone a
+        // wheel has been over does not have a rim.
+        cellsAt(stones, u, v, hitA);
+        let stone = 0;
+        if (hitA.roll > 0.78) {
+          stone = smoothstep(0.34, 0.18, hitA.f1);
+          h += stone * 0.1;
+        }
+
+        height[i] = clamp01(h);
+        // The dips hold the damp and the crowns dry out pale, which is the
+        // correlation that makes this one material rather than a bump map and
+        // a colour that happen to share a tile. Kept inside half a level, per
+        // the `bare` note above; the fine grain is what carries the read
+        // through the quantization.
+        tone[i] =
+          0.4 +
+          (scrape - 0.5) * 0.3 +
+          (g - 0.5) * 0.42 +
+          (h - 0.5) * 0.3 +
+          stone * 0.24;
+      }
+    }
+    return field;
+  },
+
+  /**
+   * Blacktop: a bound surface with its aggregate showing through, crazed where
+   * it has been standing longest.
+   *
+   * **The cracks are a Voronoi BORDER and nothing is drawn for them**, which is
+   * the same trick the mortar between two setts is: fatigue cracking in asphalt
+   * genuinely fails in polygons, and `f2 - f1` over a coarse cell field already
+   * IS the seam between two of them. What that buys over a noise field is that
+   * a crack is continuous and closes on itself — a crack drawn as thresholded
+   * noise is a scatter of dashes, which reads as dirt on the lens.
+   *
+   * There is no repair patch and no wheel polish here, and both are absences on
+   * purpose. A patch is a low-frequency feature, so it would arrive with the
+   * tile's own period stamped on it (the file header's rule: no feature larger
+   * than a quarter of the tile); what varies a carriageway at that scale is
+   * `graphics.groundVariation`, in world space, which has no period. And polish
+   * runs ALONG the road, which a world-mapped texture cannot know the direction
+   * of — the lane markings are where a road says which way it goes.
+   */
+  asphalt: (): Field => {
+    const field = blankField();
+    const { tone, height } = field;
+    // Aggregate. 76 cells over the 3 m tile is a 3.9 cm chip — deliberately
+    // half of `gravel`'s 8 cm, because gravel is stones you walk on and this is
+    // stones held in bitumen with most of them still under it.
+    const chips = cells(76, 0xa5b17);
+    // The crazing, at 14 cells over 3 m: a 21 cm plate, which is the size
+    // alligator cracking actually comes in — see the note at the seam below.
+    const plates = cells(14, 0xa5b27);
+    // WHERE it has crazed at all. Without this the whole carriageway is one
+    // continuous crack network, which is a road at the end of its life rather
+    // than a road.
+    const fatigue = octaves(0xa5b37, 2, 3);
+    // The binder's own grain, at 128 cells: 2.3 cm.
+    const grain = octaves(0xa5b47, 2, 128);
+
+    for (let y = 0; y < SIZE; y++) {
+      const v = y / SIZE;
+      for (let x = 0; x < SIZE; x++) {
+        const u = x / SIZE;
+        const i = y * SIZE + x;
+
+        const g = fbmAt(grain, u, v);
+        let h = 0.44 + (g - 0.5) * 0.16;
+
+        // A chip in the top third of the rolls is one that has come through the
+        // binder. The rest are still under it and say nothing.
+        cellsAt(chips, u, v, hitA);
+        let chip = 0;
+        if (hitA.roll > 0.66) {
+          chip = smoothstep(0.36, 0.2, hitA.f1);
+          h = h * (1 - chip) + (0.62 + hitA.roll * 0.3) * chip;
+        }
+
+        // 1 on the plate, falling to 0 in the crack between two of them.
+        //
+        // **Both numbers here were photographed down an avenue and both were
+        // wrong the loud way round the first time.** A crack that closed over
+        // 0.055 of a cell is 2 cm of dark at this tile, and a `crazed` gate
+        // opening at 0.52 of a spread field puts some of it nearly everywhere:
+        // the near field came back as a bed of dried mud, and because the cells
+        // were 43 cm the polygons read as FLAGSTONES laid in the road. The
+        // crack has to be a line and the crazing has to be a patch — so the
+        // plate is half the size, the seam is a third the width, and the gate
+        // now opens in the top tail of the field rather than across the middle
+        // of it.
+        cellsAt(plates, u, v, hitB);
+        const plate = smoothstep(0.0, 0.02, hitB.f2 - hitB.f1);
+        const crazed = smoothstep(0.66, 0.94, spread(fbmAt(fatigue, u, v), 1.3));
+        const crack = (1 - plate) * crazed;
+        h -= crack * 0.16;
+
+        height[i] = clamp01(h);
+        // Asphalt is very nearly one tone and the read is the relief catching
+        // the light — sand's argument, in a darker material. What moves at all
+        // is the exposed aggregate, which is stone and therefore paler than the
+        // binder, and the cracks, which are the dark and belong in the grooves.
+        tone[i] =
+          0.42 +
+          (g - 0.5) * 0.3 +
+          chip * 0.34 +
+          (h - 0.5) * 0.22 -
+          crack * 0.2;
+      }
+    }
+    return field;
+  },
+};
+
+/**
+ * Each carriageway's ladder, centred on the road's own colour for the reason
+ * the floor's are centred on the soil's: switching a road from a flat tone to a
+ * textured one has to change its grain and not what colour it is. Both are
+ * narrow — a track is one soil and blacktop is very nearly one tone — and what
+ * has to read is the LOCAL step from binder to chip or from hardpan to dust,
+ * not the range.
+ */
+const ROAD_PALETTES: Record<RoadPatternId, (base: string) => Rgb[]> = {
+  dirt: (base) => ramp(base, 6, 0.74, 1.24, -0.01, 0.028),
+  asphalt: (base) => ramp(base, 6, 0.76, 1.26, 0, 0.014),
+};
 
 /* ------------------------------------------------------------------------ *
  * The valley floor's surfaces
@@ -892,6 +1141,42 @@ export function getCobblestoneTexture(scene: Scene): DynamicTexture {
 export function getCobblestoneBumpTexture(scene: Scene): DynamicTexture {
   return getGenerated(scene, "cobblestone-bump", (ctx) =>
     paintHeight(ctx, fieldOf("cobble", cobbleField).height),
+  );
+}
+
+/**
+ * A carriageway's albedo in the road palette's own colour for that surface.
+ *
+ * The base is a module constant in `kit/core.ts` rather than the map's, so
+ * unlike the floor's this key would be one string however it were written — it
+ * carries the colour anyway, because the day a map is allowed to re-tint its
+ * own streets the cache is the one place that would go quietly wrong.
+ */
+export function getRoadTexture(
+  scene: Scene,
+  id: RoadPatternId,
+  baseHex: string,
+): DynamicTexture {
+  return getGenerated(scene, `road-${id}-${baseHex}`, (ctx) =>
+    paintAlbedo(
+      ctx,
+      fieldOf(`road-${id}`, ROAD_FIELDS[id]).tone,
+      ROAD_PALETTES[id](baseHex),
+    ),
+  );
+}
+
+/**
+ * The height map matching that albedo, keyed WITHOUT the colour for the floor's
+ * reason: the field reads none, so every tint of one carriageway shares one
+ * bump map.
+ */
+export function getRoadBumpTexture(
+  scene: Scene,
+  id: RoadPatternId,
+): DynamicTexture {
+  return getGenerated(scene, `road-${id}-bump`, (ctx) =>
+    paintHeight(ctx, fieldOf(`road-${id}`, ROAD_FIELDS[id]).height),
   );
 }
 

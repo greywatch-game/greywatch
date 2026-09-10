@@ -745,7 +745,13 @@ cones and litter belong — and **what is sown there stands on the ROAD** rather
 than on the floor under it (`roadTopAt`). **Any change to a placement rule
 re-rolls the seeded dressing field**, so it owes `npm run collision` and `npm run
 parity` — the staleness guard hashes the LAYOUT and this kind of change is in
-the BUILDER.
+the BUILDER. **All three carriageways are world-mapped ground textures**, and
+the one rule that reaches outside them is that **a road's tile may not equal a
+FLOOR pattern's** — every ground texture in the tree is sampled at `vPosW.xz`,
+so a track at the soil's own scale is in phase with the soil it crosses and
+reads as a tint over the ground rather than a surface on it. A new
+`floorSurface` picks its `metersPerTile` against `ROAD_PATTERNS` as well as
+against the other floors.
 
 **Where two roads CROSS, the SURFACE decides which one is the ground, and it
 decides by HEIGHT**: `ROAD_RANK` (dirt < cobble < asphalt) lifts a carriageway

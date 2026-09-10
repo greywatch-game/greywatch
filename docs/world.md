@@ -706,6 +706,54 @@ undoing any puts black holes in the cobbles:
   onto the world *anti*-diagonal, so the road would split every cell the opposite way
   from the ground it lies on; the quad starts one corner along.
 
+**ALL THREE CARRIAGEWAYS ARE WORLD-MAPPED TEXTURES, and until recently only the
+street was.** A `RoadSurface` reaches exactly one place that turns it into a
+material — `Build.groundMaterial`, shared by the flat `groundBox` and the
+contoured `groundSurface` so a road's two halves cannot end up on two materials
+and stop merging — and each of the three names an albedo, a height map matching
+it texel for texel, a tile and a relief:
+
+| surface | tile | relief | what the field is |
+| --- | --- | --- | --- |
+| `cobble` | 1.5 m | 0.1 | five authored stone tones, setts as warped Voronoi cells in a mortar groove. The one that is WET: it opts into the map's `groundSpec` |
+| `dirt` | 3.5 m | 0.026 | a ladder over `DIRT`: hardpan under a fine dust, shallow worn hollows, stones pressed flush. Matte |
+| `asphalt` | 3 m | 0.02 | a ladder over `ASPHALT`: aggregate coming through the binder, crazed in patches where it has stood longest. Matte |
+
+Three of those rows are load-bearing beyond their own map.
+
+- **A road may not share a tile size with a floor pattern** (2.5, 4, 4.5 and
+  5 m — `floorSurfaces.ts`). Every ground texture in the tree is sampled at
+  `vPosW.xz`, so a track drawn with the floor's own field at the floor's own
+  scale is in PHASE with the soil it crosses, grain for grain, and reads as a
+  tint laid over the ground rather than as a surface laid on it. Hollowmere and
+  Greyfen are the two maps where that is not a matter of taste: both state
+  `floorSurface: "dirt"` and both have dirt lanes on them.
+- **Only the street is glossy, and for blacktop that is a rule.** The spec
+  `getGroundTextured` takes is the map's own `groundSpec` — the wet-*cobble*
+  sheen — and Coldharbour's is tuned at 24 degrees of sun on the stated premise
+  that it reaches 432 m² of civic path and none of the avenues. The term
+  explodes as the key light drops, so a spec'd carriageway there is a sheet of
+  white. Soil is not wet stone either.
+- **What this cost is one field's generation, once, behind the loading card.**
+  Measured on the Windows box over three consecutive builds per map:
+  Coldharbour's `build:total` 993 → 1049 ms on the first build and 869/843 →
+  855/821 on the two after it; Harrowmead 861 → 918, then 700/659 → 693/651. So
+  ~56 ms per surface a map actually uses, paid on the first build of a page and
+  never again — the field is memoised per pattern and the textures per scene,
+  exactly as the floor's are — plus ~2 MB of GPU per surface for the albedo and
+  the height map. A map that lays no asphalt never builds the asphalt field.
+
+**The lane markings are what is left that a texture cannot do.** Every one of
+these is sampled in world XZ and therefore knows nothing about the slab it is
+painting, while wheel polish, a kerb line and a centre line all run ALONG a
+carriageway — so the broken white line is where a road states its direction, and
+that is now the whole of its job. It used to be carrying the surface as well,
+and the two places that showed were the two where it is absent: a dash is a box
+laid on a plane, so the CONTOURED path has never had one, which made Sarab's
+three 860 m avenues 34,000 m² of a single flat `#26272c`. Since the texture they
+are unmarked roads instead of untextured ones. Coldharbour buys its markings by
+stopping every avenue at ±150 m so all eight stay on the flat fast path.
+
 **Where two roads CROSS, the SURFACE says which of them is the ground.** A junction
 is two flat sheets at the same height in two different meshes — roads are merged one
 per material, so a crossing of two dirt lanes is a single mesh and has always been
