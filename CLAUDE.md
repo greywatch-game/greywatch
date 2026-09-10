@@ -166,8 +166,8 @@ one optional field on a layout whose default is not "unaffected", absent meaning
 `shore` because silent water is a bug.
 
 **TWO FADERS SIT ABOVE ALL OF IT AND THEY MULTIPLY** — `CONFIG.mix.groups` is
-ten FAMILIES and `CONFIG.mix.channels` is forty-one SOUNDS inside them, every
-one shipping at 1 and set by ear in a live round through the dev-only `F4`
+ten FAMILIES and `CONFIG.mix.channels` is forty-one SOUNDS inside them, 1
+being "as built" and each set by ear in a live round through the dev-only `F4`
 panel (`src/dev/mixer/`, behind the editor's own dynamic-import gate). **A
 fader is a DEVIATION and nothing is BALANCED with one**: a sound wrong against
 ITSELF is wrong in `CONFIG.audio` or in `Sfx`. **A GROUP IS A PLACE A SOUND IS

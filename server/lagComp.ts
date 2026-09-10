@@ -13,7 +13,7 @@
  *
  * **Why this exists.** A client draws other bodies `INTERP_DELAY_MS` behind the
  * server, and its own packets took time to arrive on top of that. So when a
- * player puts their crosshair on someone and fires, that someone has already
+ * player puts their sight on someone and fires, that someone has already
  * moved on the server. Resolving the ray against the present would mean a
  * player has to lead every target by their own ping, which is the single most
  * complained-about thing in a networked shooter. Rewinding costs the opposite

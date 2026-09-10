@@ -1505,7 +1505,7 @@ export class HUD {
     parts.state.textContent = state;
   }
 
-  /**
+  /* --- the middle of the screen ---
    * **THERE IS NO CROSSHAIR, and the empty middle of the screen is the aiming
    * model rather than a gauge somebody forgot.** A mark drawn at the centre is
    * the one thing this HUD could put there that would be a claim about where
@@ -1520,8 +1520,7 @@ export class HUD {
    * neither is an aim: `#hitmarker` reports a round that has already landed,
    * and `#gun-marker` is drawn where a turret is actually pointing, which is
    * not the centre. **Anything new in the middle of the screen owes that same
-   * test**, and a spread ring fails it by construction.
-   */
+   * test**, and a spread ring fails it by construction. */
 
   /**
    * The hit confirmation, in four flavours: a body hit, a headshot, a kill,

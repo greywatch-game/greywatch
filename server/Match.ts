@@ -935,10 +935,18 @@ export class Match {
     // zeros until somebody happens to die — and in a quiet minute that is a
     // screen confidently reporting that nothing has happened all round.
     this.send(peer, this.scores());
-    // …and the ballot, if this peer arrived inside the round-over window. A
-    // joiner lands on the card everybody else is looking at, so without this
-    // they would be the one person in the match with a wait line on it — and
-    // they hold a seat, so their vote counts exactly as much as anybody's.
+    // …and the ballot, if this peer arrived inside the round-over window.
+    // They hold a seat, so their vote would count for exactly what anybody
+    // else's does — but a peer seated HERE has no round-over card to cast it
+    // from, and that is a fact about the window rather than something to fix
+    // at this line. The `roundover` event is queued once, on the tick the
+    // round ended, so a client that arrived after it never receives one:
+    // `NetSession` stores this message, `OverlayScreen.setVote` refuses it
+    // for want of a card, and the joiner waits the rotation out with no
+    // ballot rather than one they cannot answer. Sent anyway, because the
+    // authority stating what it holds is not conditional on the far side
+    // having somewhere to put it, and because the day a client does raise a
+    // card inside this window it is already being told.
     if (this.mapVote) this.send(peer, this.voteMessage(slot.index));
     // Started now rather than on the next sweep, so this peer's own row has a
     // real number on it by the time the first table reaches them — a second of

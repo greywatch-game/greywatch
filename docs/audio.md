@@ -721,8 +721,10 @@ multiply. **`groups`** is ten FAMILIES — the weapon in your hands, gunfire out
 in the world, reloads and handling, impacts, explosions, footsteps, engines,
 ambience, hit feedback, objective stings — and **`channels`** is forty-one
 SOUNDS inside them: the rifle, the carbine, the sniper; the reload, the bolt
-cycle, the swap; a round on glass against a round on stone. Every one of them
-ships at 1.
+cycle, the swap; a round on glass against a round on stone. **1 is "as
+built"**, and all but two of them ship there: `reload` and `nearMiss` are the
+two a live round has moved so far, a magazine change and the crack of a round
+going past both having been lost under everything else.
 
 **A fader is a DEVIATION and nothing here is balanced with one.** A sound that
 is wrong against ITSELF — one layer of a report against another — is wrong in
