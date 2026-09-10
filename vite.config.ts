@@ -107,6 +107,14 @@ const WRITABLE = {
     min: 1200,
     marker: "export const HarrowmeadEnvironment",
   },
+  // Not a map's file, and the one entry here a map does not add: the audio
+  // mixer (F4) patches the eleven numbers in `CONFIG.mix` in place, which is
+  // the same bargain the layout patcher makes — everything that is not one of
+  // those lines comes back byte for byte.
+  "src/config/mix.ts": {
+    min: 800,
+    marker: "export const mix",
+  },
 };
 
 /**
@@ -135,9 +143,33 @@ function layoutWriter(): Plugin {
 
     configureServer(server) {
       server.middlewares.use("/__layout", (req, res) => {
+        // GET hands back one writable file's current text. A tool that
+        // PATCHES rather than regenerates needs the bytes it is patching, and
+        // the alternative — a `?raw` import — is frozen at module load and
+        // would silently re-apply a stale baseline after the first save. Same
+        // literal-table lookup as the write below, so it can no more read an
+        // arbitrary path than the write can reach one.
+        if (req.method === "GET") {
+          const url = new URL(req.url ?? "/", "http://localhost");
+          const path = url.searchParams.get("path") ?? "";
+          const known = Object.prototype.hasOwnProperty.call(WRITABLE, path);
+          res.setHeader("Content-Type", "application/json");
+          if (!known) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ ok: false, error: `refusing to read ${path}` }));
+            return;
+          }
+          try {
+            res.end(JSON.stringify({ ok: true, source: readFileSync(absOf(path), "utf8") }));
+          } catch (err) {
+            res.statusCode = 500;
+            res.end(JSON.stringify({ ok: false, error: String(err) }));
+          }
+          return;
+        }
         if (req.method !== "POST") {
           res.statusCode = 405;
-          res.end("POST only");
+          res.end("GET or POST only");
           return;
         }
         let body = "";

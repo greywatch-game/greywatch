@@ -531,6 +531,16 @@ under it, the chest thump, and the action cycling a beat later — and the
 deviations are `ReportVoice`, eight scalars tabled per weapon in
 `CONFIG.weapons[id].report` with a paragraph each on what they mean.
 
+**Two fields on that row are not scalars and neither is a deviation.** `sample`
+names a RECORDING that stands in for the eight (see below), and `mix` names the
+weapon's own fader on the audio mixer (`CONFIG.mix.channels`,
+[`audio.md`](audio.md)) — **which is not `level` restated.** `level` is a claim
+about the weapon, part of the eight, spent on the synthesis and on the
+recording alike; `mix` is what that gun turned out to be worth against the
+other six once they were all in one firefight, set by ear in a live round. A
+weapon that set one from the other has said nothing, exactly as
+`recoilMult`/`recoilImpulse` have not.
+
 - **The rifle is the reference and every one of its numbers is 1.** That is what
   makes the other five rows readable as statements about a weapon rather than as
   absolute levels, and it is also why there is no separate default anywhere: an

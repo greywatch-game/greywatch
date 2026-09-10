@@ -153,6 +153,7 @@ import {
 import { Leash, LEASH_KILLER } from "../world/leash";
 import { perTeamOf, type Heightfield } from "../world/layout";
 import type { EditorSession } from "../editor";
+import type { MixerSession } from "../dev/mixer";
 import { MAPS, loadHeights, type MapDef } from "../world/maps";
 import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
 import { DeployScreen } from "../ui/DeployScreen";
@@ -512,6 +513,20 @@ export class Game {
    * cold load wide, but it is exactly the failure `installMap` exists to stop.
    */
   private editorLoading = false;
+
+  /**
+   * The dev audio mixer's session, or null. `F4`.
+   *
+   * Nothing like `editor` beyond the dynamic import it shares: the mixer is a
+   * panel over a round that carries on underneath it, so there is no state
+   * transition, no map rebuild and nothing to put back — which is why it does
+   * not go through `go`/`raiseLid` and is not a row in `SCREENS`. What it
+   * changes is `Sfx`'s eleven faders, and those deliberately OUTLIVE the
+   * panel (see `MixerPanel.dispose`): you close it to go and listen.
+   */
+  private mixer: MixerSession | null = null;
+  /** `editorLoading`'s twin, for the same one-cold-import-wide window. */
+  private mixerLoading = false;
 
   /**
    * The map being played, as the layout/environment pair `src/world/maps.ts`
@@ -1776,13 +1791,17 @@ export class Game {
       this.profChip.keep();
     });
 
-    // The map editor is a development tool: the whole of src/editor is behind
-    // a dynamic import so none of it reaches a production bundle.
+    // The map editor and the audio mixer are development tools: the whole of
+    // src/editor and src/dev is behind a dynamic import so none of it reaches
+    // a production bundle.
     if (import.meta.env.DEV) {
       window.addEventListener("keydown", (e) => {
         if (e.code === "F2") {
           e.preventDefault();
           void this.toggleEditor();
+        } else if (e.code === "F4") {
+          e.preventDefault();
+          void this.toggleMixer();
         }
       });
     }
@@ -3423,6 +3442,70 @@ export class Game {
    */
   private buildPending(): boolean {
     return this.state === "loading" && this.bakeWait === null;
+  }
+
+  /**
+   * `F4`: the audio mixer, over whatever is on screen.
+   *
+   * `toggleEditor`'s shape and almost none of its problems. There is no state
+   * transition here and no map to rebuild, so the two pre-await guards that
+   * method needs do not apply — what is left is the same one-cold-import-wide
+   * double-open window, and the same whole-body DEV gate, which is what makes
+   * `src/dev/` unreachable under `vite build` and keeps the chunk out of the
+   * bundle entirely rather than emitting an orphan nobody fetches.
+   *
+   * The pointer lock has to go, and that is the one thing the panel cannot do
+   * for itself: under a lock a click reaches no element at all, so a mixer
+   * that did not release it would be eleven sliders nothing can drag.
+   * Clicking the canvas takes the lock back and leaves the panel standing,
+   * which is the loop this tool is for — move a slider, go and listen, come
+   * back.
+   */
+  private async toggleMixer(): Promise<void> {
+    if (!import.meta.env.DEV) return;
+    if (this.mixer) {
+      this.mixer.dispose();
+      this.mixer = null;
+      return;
+    }
+    if (this.mixerLoading) return;
+    this.mixerLoading = true;
+    let createMixer;
+    try {
+      ({ createMixer } = await import("../dev/mixer"));
+    } catch (err) {
+      console.error("[mixer] could not open", err);
+      this.hud.toast("could not open the mixer");
+      return;
+    } finally {
+      // Cleared before the opening for `toggleEditor`'s reason: everything
+      // below is synchronous, and a throw in the import must not wedge F4 for
+      // the rest of the session.
+      this.mixerLoading = false;
+    }
+    if (this.mixer) return;
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.mixer = createMixer({
+      sfx: this.sfx,
+      // Ten metres out along the eye, which is where a spatialised audition
+      // has to be played: the panner is most of what this game's distance
+      // sounds ARE, and a bot's rifle auditioned at the listener is not the
+      // sound anybody is trimming. Read per click rather than captured, so
+      // walking somewhere else and pressing play again means what it looks
+      // like it means.
+      at: () => {
+        const c = this.cameraSys.camera;
+        return c.position.add(c.getDirection(FORWARD_Z).scale(10));
+      },
+      // And two metres, for the one cue that is only itself up close: a round
+      // going PAST passes inside `hitRadius + suppressRadius`, and at ten
+      // metres the panner and the air have made it a different sound.
+      near: () => {
+        const c = this.cameraSys.camera;
+        return c.position.add(c.getDirection(FORWARD_Z).scale(2));
+      },
+      driving: () => this.driving !== null,
+    });
   }
 
   /**

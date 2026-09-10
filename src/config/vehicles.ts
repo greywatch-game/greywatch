@@ -45,6 +45,11 @@
  * the loader row on the HUD, the crew's lay-and-fire, the gun marker and the
  * authority's rate gate all ask.
  */
+// A TYPE from the section next door, which is erased and so is neither an
+// import cycle nor the "only index.ts imports the sections" rule bending: a
+// powerplant names its own fader, for the reason `ReportVoice.mix` does.
+import type { MixChannel } from "./mix";
+
 export interface VehicleSpec {
   readonly maxHealth: number;
   /**
@@ -287,6 +292,8 @@ export interface VehicleSpec {
    * asks the data rather than asking what kind it is holding.
    */
   readonly engine: {
+    /** Its slider on the mixer — see `EngineKind.mix`. */
+    readonly mix: MixChannel;
     /**
      * A multiplier on the firing rate every pitched layer is a multiple of, so
      * a lighter engine revs higher as one machine rather than as four layers
@@ -1901,6 +1908,8 @@ export const vehicles = {
          * row in `audio/manifest.json`, which is the one MONO row in it.
          */
         sample: "mountedGun",
+        /** One gun on three mounts, so one slider — `ReportVoice.mix`. */
+        mix: "mountedGun",
       },
     },
     /**
@@ -1981,7 +1990,7 @@ export const vehicles = {
      * What a tank sounds like, and the reference every other kind's engine is
      * stated against — so both numbers are 1 here by definition.
      */
-    engine: { revMult: 1, clatter: 1, rotor: null },
+    engine: { mix: "tankEngine", revMult: 1, clatter: 1, rotor: null },
   },
   /**
    * The GUN TRUCK: the second kind, and the trade it is.
@@ -2373,6 +2382,8 @@ export const vehicles = {
         actionVol: 1.3,
         /** The same gun as the tank's cupola — see that row for why one file. */
         sample: "mountedGun",
+        /** One gun on three mounts, so one slider — `ReportVoice.mix`. */
+        mix: "mountedGun",
       },
     },
     /**
@@ -2423,7 +2434,7 @@ export const vehicles = {
      * tank's diesel, and it runs on TYRES — `clatter` is 0 here, because link
      * noise under a wheeled vehicle is a tank arriving that nobody can see.
      */
-    engine: { revMult: 1.55, clatter: 0, rotor: null },
+    engine: { mix: "truckEngine", revMult: 1.55, clatter: 0, rotor: null },
   },
 
   /**
@@ -2748,6 +2759,8 @@ export const vehicles = {
         actionVol: 1.25,
         /** The same gun as the tank's cupola — see that row for why one file. */
         sample: "mountedGun",
+        /** One gun on three mounts, so one slider — `ReportVoice.mix`. */
+        mix: "mountedGun",
       },
     },
     /**
@@ -2798,6 +2811,7 @@ export const vehicles = {
      * belts.
      */
     engine: {
+      mix: "heliEngine",
       revMult: 1,
       clatter: 0,
       rotor: {

@@ -1,0 +1,205 @@
+/**
+ * mixer.css — The dev-only audio mixer's panel.
+ * Owns: #mixer-panel and everything under it.
+ * Imported by index.ts, which is only reachable through the dynamic import()
+ * in Game.toggleMixer — so this rides the mixer's own chunk and no part of it
+ * reaches a production build. It must never be imported from index.html or
+ * from anything on the static graph.
+ */
+
+/* Same opt-in as #editor-panel: #hud is pointer-events:none, and the same
+   font for the same reason — this is a dense numeric tool, not part of the
+   game's presentation, and it should not move when the HUD is restyled. */
+#mixer-panel {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 310px;
+  padding: 12px 14px;
+  /* Fifty-one rows will not fit on a 720p window even collapsed, and the
+     panel must not push its own footer off the bottom of the screen — the
+     SAVE button being unreachable is the one failure that loses work. */
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(6, 8, 14, 0.92);
+  border: 2px solid #000;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  pointer-events: auto;
+  /* Over every screen in the game and under the boot card. The mixer is the
+     one panel here that does NOT take a screen down to open — you mix the
+     menu's own ambience with the menu up, and the kit screen's weapon with
+     the kit screen up — so it has to out-rank the ladder in `src/ui/`, whose
+     top is the profile chip at 22. `index.html`'s boot screen is 100 and
+     stays over it: nothing here is worth reaching before the game has booted
+     at all. */
+  z-index: 40;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  color: #dfe6f2;
+  user-select: none;
+}
+#mixer-panel h2 {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #35f0ff;
+  margin-bottom: 2px;
+}
+#mixer-panel .mx-sub {
+  color: #7d8ba3;
+  margin-bottom: 10px;
+  line-height: 1.35;
+}
+
+#mixer-panel .mx-row {
+  padding: 3px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+/* The coarse tier reads as a heading and the fine tier as its contents, which
+   is the only thing stopping fifty-one identical rows from being a wall. */
+#mixer-panel .mx-group > .mx-head .mx-name {
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+#mixer-panel .mx-group.mx-open {
+  background: rgba(53, 240, 255, 0.05);
+}
+#mixer-panel .mx-body {
+  padding-left: 12px;
+  margin-left: 4px;
+  border-left: 1px solid rgba(53, 240, 255, 0.25);
+  background: rgba(0, 0, 0, 0.25);
+}
+#mixer-panel .mx-channel .mx-name {
+  color: #b9c6da;
+}
+#mixer-panel .mx-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+#mixer-panel .mx-line .mx-controls {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#mixer-panel .mx-disc {
+  padding: 1px 4px;
+  line-height: 1;
+  border-color: transparent;
+  background: none;
+}
+#mixer-panel .mx-count {
+  font-size: 9px;
+  color: #55637a;
+  font-variant-numeric: tabular-nums;
+}
+/* A weapon is one fader drawn in two families. Without a mark on the row the
+   second copy reads as a duplicate somebody forgot to delete. */
+#mixer-panel .mx-both {
+  font-size: 10px;
+  color: #35f0ff;
+  opacity: 0.75;
+}
+/* A family whose own fader is untouched but which is hiding a moved sound.
+   Collapsed by default is only safe if a collapsed family can still say so. */
+#mixer-panel .mx-group.mx-child-dirty .mx-count {
+  color: #ffe680;
+}
+#mixer-panel .mx-group.mx-child-dirty .mx-count::after {
+  content: " *";
+}
+/* A fader that no longer matches what is on disk. The mixer is a tool you
+   leave open for twenty minutes, and the one thing you cannot reconstruct
+   from the sliders is which of them you have actually moved. */
+#mixer-panel .mx-row.mx-dirty .mx-name {
+  color: #ffe680;
+}
+#mixer-panel .mx-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+#mixer-panel .mx-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#mixer-panel .mx-val {
+  font-variant-numeric: tabular-nums;
+  color: #9fb4d0;
+  cursor: pointer;
+}
+#mixer-panel .mx-val:hover {
+  color: #35f0ff;
+}
+#mixer-panel .mx-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 0 2px;
+}
+#mixer-panel input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 14px;
+  accent-color: #35f0ff;
+}
+
+#mixer-panel button {
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 5px;
+  background: #12161f;
+  color: #9fb4d0;
+  border: 1px solid #2b3444;
+  cursor: pointer;
+}
+#mixer-panel button:hover {
+  color: #fff;
+  border-color: #4a5a72;
+}
+#mixer-panel button[disabled] {
+  opacity: 0.35;
+  cursor: default;
+}
+/* Mute and solo are the two states that make the panel lie about the mix, so
+   they are the two that have to be unmistakable from the corner of the eye —
+   the same argument the editor's terrain border makes. */
+#mixer-panel button.mx-on.mx-mute {
+  background: #4a1520;
+  color: #ff9aa8;
+  border-color: #ff9aa8;
+}
+#mixer-panel button.mx-on.mx-solo {
+  background: #143a44;
+  color: #35f0ff;
+  border-color: #35f0ff;
+}
+
+#mixer-panel .mx-foot {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+#mixer-panel .mx-foot button {
+  flex: 1 1 auto;
+  font-size: 11px;
+  padding: 5px;
+}
+#mixer-panel .mx-status {
+  margin-top: 7px;
+  min-height: 14px;
+  color: #7d8ba3;
+}
+#mixer-panel .mx-status.mx-bad {
+  color: #ff9aa8;
+}
+#mixer-panel .mx-status.mx-good {
+  color: #8ce99a;
+}

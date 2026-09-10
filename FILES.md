@@ -109,6 +109,12 @@ src/
                         #   does to the aim, and how long a synthesized mouse
                         #   event is disbelieved after a finger
     audio.ts            # Levels, distances, rolloff for the synthesized mix
+    mix.ts              # The mixer, in two tiers that MULTIPLY: ten FAMILY
+                        #   faders (MixGroup) and 41 SOUND faders (MixChannel),
+                        #   every one 1 — a deviation, never a balance. Plus
+                        #   CHANNEL_GROUPS, which is why the two are not a tree:
+                        #   a weapon is ONE fader heard under both gun families.
+                        #   The one config file a tool rewrites (F4)
     graphics.ts         # Render pipeline knobs + pooled effects (graphics,
                         #   effects)
     hud.ts              # Minimap and damage arcs (minimap, damageIndicator)
@@ -174,7 +180,13 @@ src/
                         #   A fire is one hump with the events carrying the
                         #   top; water is two humps in the octaves the fire
                         #   leaves empty, with the events a garnish.
-                        #   docs/audio.md has both tables)
+                        #   docs/audio.md has both tables).
+                        #   Owns the mixer's buses too: a dry tap into the
+                        #   master and a wet tap into the convolver, per family
+                        #   and again per (channel, family) PAIR, handed to
+                        #   every layer helper as its FIRST argument — so a
+                        #   fader reaches a sound's tail as well as its direct
+                        #   sound, and moves a voice already sounding
     samples.ts          # The recorded sounds: an id union and a url table,
                         #   nothing else. A weapon names a report row through
                         #   ReportVoice.sample, and so do all three hulls'
@@ -505,6 +517,17 @@ src/
                         #   not from the camera tail — see it for why
     GrassSystem.ts      # Grass fields as one thin-instanced draw; tufts inside a
                         #   collider are rejected at scatter time
+  dev/                  # Dev-only tools that are not the editor. Same rule:
+    mixer/              #   dynamically imported, never on the static graph
+      index.ts          #   The F4 audio mixer: a slider per family and per
+                        #     sound, live, over a round that carries on
+                        #     underneath. Owns the collapse state, the
+                        #     auditions, and mute/solo — which are per TIER,
+                        #     and the PANEL's rather than the file's
+      source.ts         #   Reads config/mix.ts off /__layout, patches the
+                        #     value lines inside each table's own block, posts
+                        #     it back. Refuses rather than writing partially
+      mixer.css         #   Imported by index.ts so it rides the same chunk
   editor/               # Dev-only map editor (F2). Dynamically imported —
     index.ts            #   never statically imported from anywhere, or it
     EditorCamera.ts     #   lands in the production bundle

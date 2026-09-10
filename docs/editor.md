@@ -210,7 +210,16 @@ editor the note explaining the old colour is theirs to bring back into line.
 **`vite.config.ts`'s `WRITABLE` stays a literal table — three lines per map.** Path
 safety comes from the client's path only ever being *looked up* in it and never used
 to build a path, so a regex or a directory listing trades the guarantee for
-convenience in the one tool here that writes to disk.
+convenience in the tools here that write to disk.
+
+**That endpoint has a second CLIENT and a second ARM now, and neither loosens the
+table.** The audio mixer (`F4`, [`audio.md`](audio.md)) patches
+`src/config/mix.ts` through it, which is the one row in `WRITABLE` a map does not
+add; and `GET /__layout?path=…` hands back a writable file's current text, because
+a tool that PATCHES needs the bytes it is patching and the alternative — a `?raw`
+import — is frozen at module load and would silently re-apply a stale baseline
+after the first save. The GET goes through the *same* literal lookup as the write,
+so it can no more read an arbitrary path than the write can reach one.
 
 Add and delete work because entries are matched to source lines by **object
 identity**, not position — a `WeakMap` from the live layout entry to `{ line, values

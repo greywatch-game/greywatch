@@ -277,6 +277,12 @@ export const audio = {
      */
     fire: {
       /**
+       * Its own slider on the mixer (`CONFIG.mix.channels`), stated per KIND
+       * rather than derived from the id: a bed is one sound a person has an
+       * opinion about, and all three sit under the one `ambience` group.
+       */
+      mix: "fire",
+      /**
        * Metres. Past this the graph is not built at all, with hysteresis on
        * the way back out — `Sfx.ambience`.
        *
@@ -491,6 +497,8 @@ export const audio = {
      * 9.3 and 3.1.
      */
     stream: {
+      /** See `fire.mix`. */
+      mix: "stream",
       /**
        * Metres. A brook is not a landmark either, but it carries further than
        * a burning barrel and it is a LINE rather than a point — see `rolloff`.
@@ -629,6 +637,8 @@ export const audio = {
      * about mechanics rather than about bubbles.
      */
     shore: {
+      /** See `fire.mix`. */
+      mix: "shore",
       /**
        * Further than the brook's, because there is more of it: a harbour or a
        * lake edge is a line hundreds of metres long, and `AmbienceSystem` is

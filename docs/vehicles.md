@@ -2301,6 +2301,13 @@ is the one term both a hull under its own pilot and a hull on the WIRE can
 answer: `updateRemote` pins `lift` at gravity and measures the motion, so a climb
 is visible from either side and a stick is not.
 
+**`EngineKind.mix` is the other field a fourth kind owes**, and it is one word:
+the channel that powerplant is heard on in the audio mixer
+(`CONFIG.mix.channels`, [`audio.md`](audio.md)). Stated on the kind for the
+reason `ReportVoice.mix` is stated on a report — the caller says what it is and
+`Sfx` says what that sounds like — so a new vehicle carries its own slider and
+nothing in the audio layer has to ask which hull it is holding.
+
 **What the voice IS is `EngineKind.rotor`, a nullable block** — the same bargain
 `VehicleSpec.flight` makes one level up, and `driveEngine` forks on it into
 `driveRotor`. It is a block and not three more numbers because the two

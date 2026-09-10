@@ -66,7 +66,14 @@
  * note is GOVERNED and a piston engine's is not.
  */
 import type { Vector3 } from "@babylonjs/core";
-import { CONFIG } from "../config";
+import {
+  CHANNEL_GROUPS,
+  CONFIG,
+  MIX_CHANNELS,
+  MIX_GROUPS,
+  type MixChannel,
+  type MixGroup,
+} from "../config";
 import type { ReportVoice } from "../entities/weapons";
 import { SAMPLE_URLS, type SampleId } from "./samples";
 
@@ -314,6 +321,25 @@ function trimSample(buffer: AudioBuffer): { offset: number; duration: number } {
 const FLAT_REPORT: ReportVoice = CONFIG.weapons.rifle.report;
 
 /**
+ * Which slider a round arriving lands on, by what it landed ON.
+ *
+ * The one place the mixer's taxonomy is finer than this file's own: `impact`
+ * builds one layer for three of these and two for glass, but a round on a man
+ * and a round on a window are two sounds a person has an opinion about, so
+ * they are four faders. A `Record` over the same union `impact` takes, so a
+ * fifth surface cannot reach the game without one.
+ */
+const IMPACT_CHANNEL: Record<
+  "flesh" | "ground" | "hard" | "glass",
+  MixChannel
+> = {
+  flesh: "impactFlesh",
+  ground: "impactGround",
+  hard: "impactHard",
+  glass: "impactGlass",
+};
+
+/**
  * How much louder somebody else's engine is AT SOURCE than the one the player
  * is sitting in — `Sfx.hullEngine`, against `engineOn`'s reference of 1.
  *
@@ -338,6 +364,13 @@ const HULL_ENGINE_LEVEL = 2.2;
  * weapon: the caller says what it is, and this file says what that sounds like.
  */
 export interface EngineKind {
+  /**
+   * Its own slider on the mixer (`CONFIG.mix.channels`), stated per KIND for
+   * `ReportVoice.mix`'s reason: a fourth powerplant carries its own fader and
+   * this file never has to ask which vehicle it is holding. All of them sit
+   * under the one `engine` group.
+   */
+  mix: MixChannel;
   /**
    * A multiplier on the rate every pitched layer is a multiple of — a firing
    * rate on a piston engine, a BLADE rate on a rotor.
@@ -488,6 +521,12 @@ export type WaterAmbienceId = Extract<AmbienceId, "stream" | "shore">;
  * 4 to 8 dB under a fit that had them right on paper (`docs/audio.md`).
  */
 export interface AmbienceKind {
+  /**
+   * Its own slider on the mixer (`CONFIG.mix.channels`), stated per KIND
+   * rather than derived from the id: a bed is one sound a person has an
+   * opinion about, and all three sit under the one `ambience` group.
+   */
+  mix: MixChannel;
   /** Metres: past this the graph is not built. */
   range: number;
   /** Metres: the panner's plateau. */
@@ -683,9 +722,72 @@ interface AmbienceVoice {
  * per shot and, crucially, is not a voice: eighty shots a second all decay
  * through the same bus instead of eighty tail voices fighting over the cap.
  */
+/**
+ * One family's pair of taps, and the reason a fader is a NODE rather than a
+ * number folded into a level.
+ *
+ * A sound reaches the output twice — dry through its panner and wet through
+ * the shared convolver, which `send` taps PRE-panner and which therefore
+ * bypasses anything sitting between a panner and the master. So a fader
+ * applied on one path only would take a family's direct sound away and leave
+ * the village still answering it, which at this game's send levels is most of
+ * what a distant shot IS. Two nodes carrying the same number is the whole
+ * fix, and it is why every layer helper here is handed a bus rather than a
+ * scalar.
+ *
+ * Both are held for the life of the context and neither is ever rebuilt: a
+ * fader is a `gain.value` write on two nodes (`Sfx.setMix`), which is what
+ * makes the dev mixer's slider audible on the sustained voices — an engine,
+ * a fire — as well as on the one-shots that are rebuilt per trigger anyway.
+ */
+export interface MixBus {
+  /** Into the master, after the panner. */
+  dry: GainNode;
+  /** Into the shared convolver, and the `send` tap's only destination. */
+  wet: GainNode;
+}
+
 export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /**
+   * One `MixBus` per family, built with the context and never rebuilt.
+   *
+   * Null before `unlock`, which is the single check every layer helper makes
+   * instead of the `this.master` test it used to: a bus implies a master, and
+   * a null one is the audio graph not existing yet rather than a group that
+   * went missing.
+   */
+  private groupBuses: Record<MixGroup, MixBus> | null = null;
+  /**
+   * One bus per (channel, GROUP) pair that `CHANNEL_GROUPS` declares, chained
+   * into that group's own.
+   *
+   * **A pair rather than a channel, because the two tiers are not a tree.** A
+   * weapon is one fader and is heard under `ownGun` in your hands and
+   * `worldGun` out in the street, so its fader has to exist at two points in
+   * the graph — `setChannel` writes the value to every one of a channel's
+   * buses, which is what keeps "the sniper is quiet" one slider while leaving
+   * "everybody else's guns are loud" a different one.
+   *
+   * `Partial` because most channels are heard exactly one way, and a pair
+   * nobody declared is a pair nothing can play through: `bus` returns null and
+   * the layer helpers refuse, the same refusal they make before `unlock`.
+   */
+  private channelBuses:
+    | Record<MixChannel, Partial<Record<MixGroup, MixBus>>>
+    | null = null;
+  /**
+   * Where each fader currently stands, seeded from `CONFIG.mix`.
+   *
+   * Held beside the nodes rather than read back off them because the dev
+   * mixer has to be able to state what it is about to write to disk, and a
+   * `gain.value` is the wrong place to keep that — it is a scheduled
+   * parameter, and reading one back after a ramp is a promise this file does
+   * not want to make.
+   */
+  private groupFader: Record<MixGroup, number> = { ...CONFIG.mix.groups };
+  private channelFader: Record<MixChannel, number> = { ...CONFIG.mix.channels };
   /**
    * The DRIVEN vehicle's engine — the unpanned one. Null whenever the player
    * is on foot. See `engineOn`.
@@ -797,6 +899,37 @@ export class Sfx {
         const wet = this.ctx.createGain();
         wet.gain.value = CONFIG.audio.reverbMix;
         this.reverb.connect(wet).connect(pre);
+        // The mixer, in two tiers, between everything this file builds and
+        // the two things it all ends up in. Built here rather than lazily so
+        // that no sound can be the one that creates its own bus and so that
+        // neither setter has to ask whether a family has been heard yet.
+        //
+        // ~110 gain nodes, made once per process and never rebuilt. That is
+        // nothing against a graph that stands up six sources for one engine,
+        // and it is what buys a fader that moves a voice already sounding.
+        const groups = {} as Record<MixGroup, MixBus>;
+        for (const g of MIX_GROUPS) {
+          groups[g] = this.makeBus(this.groupFader[g], this.master, this.reverb);
+        }
+        const channels = {} as Record<
+          MixChannel,
+          Partial<Record<MixGroup, MixBus>>
+        >;
+        for (const c of MIX_CHANNELS) {
+          const under: Partial<Record<MixGroup, MixBus>> = {};
+          // Only the pairs `CHANNEL_GROUPS` declares. A channel heard one way
+          // gets one bus; a weapon gets two, carrying one number.
+          for (const g of CHANNEL_GROUPS[c]) {
+            under[g] = this.makeBus(
+              this.channelFader[c],
+              groups[g].dry,
+              groups[g].wet,
+            );
+          }
+          channels[c] = under;
+        }
+        this.groupBuses = groups;
+        this.channelBuses = channels;
         this.listener = this.ctx.listener;
         this.buildNoiseBuffer();
         this.buildBreathBuffer();
@@ -838,6 +971,84 @@ export class Sfx {
     this.paused = on;
     if (!this.ctx) return;
     void (on ? this.ctx.suspend() : this.ctx.resume());
+  }
+
+  /** One pair of taps at `value`, feeding a dry destination and a wet one. */
+  private makeBus(value: number, dry: AudioNode, wet: AudioNode): MixBus {
+    const ctx = this.ctx as AudioContext;
+    const d = ctx.createGain();
+    d.gain.value = value;
+    d.connect(dry);
+    const w = ctx.createGain();
+    w.gain.value = value;
+    w.connect(wet);
+    return { dry: d, wet: w };
+  }
+
+  /**
+   * Where one sound lands: its channel's taps under the group it is being
+   * heard in, and the first line of every method here that makes a noise.
+   *
+   * Null before `unlock` and never null after it for a declared pair, so a
+   * caller that reads it into a local and hands that local to every layer it
+   * builds is correct either way — the helpers all refuse a null bus, which is
+   * the same refusal they used to make against a null master.
+   *
+   * **It is a LOCAL and never a field**, which is what makes it safe for a
+   * gesture that finishes on a timer: `capture` schedules its second tone
+   * 130 ms later, and a field would by then be holding whatever went off in
+   * between. A local is captured by the closure and cannot be overwritten by
+   * another sound.
+   */
+  private bus(c: MixChannel, g: MixGroup): MixBus | null {
+    return this.channelBuses?.[c][g] ?? null;
+  }
+
+  /**
+   * Moves one FAMILY's fader, live — the dev mixer, and nothing else in the
+   * game calls it.
+   *
+   * Ramped over a few milliseconds rather than assigned: a `gain.value` write
+   * lands between two samples, and a slider dragged across a sustained fire
+   * would otherwise be a string of clicks.
+   */
+  setGroupMix(g: MixGroup, value: number): void {
+    this.groupFader[g] = value;
+    this.ramp(this.groupBuses?.[g], value);
+  }
+
+  /**
+   * Moves one SOUND's fader, live — and writes it to every bus that channel
+   * has, which is two for a weapon and one for everything else. One number,
+   * however many places in the graph it has to exist.
+   */
+  setChannelMix(c: MixChannel, value: number): void {
+    this.channelFader[c] = value;
+    const under = this.channelBuses?.[c];
+    if (!under) return;
+    for (const g of CHANNEL_GROUPS[c]) this.ramp(under[g], value);
+  }
+
+  private ramp(b: MixBus | undefined, value: number): void {
+    if (!b || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    b.dry.gain.setTargetAtTime(value, t, 0.01);
+    b.wet.gain.setTargetAtTime(value, t, 0.01);
+  }
+
+  /**
+   * What every fader is PLAYING at, which is not quite the same question as
+   * what it is worth.
+   *
+   * This file knows one number per group and one per channel, and they are the
+   * ones on the nodes. A mixer that mutes or solos is pushing a zero through
+   * here while holding the fader it will eventually save, and that split lives
+   * in the panel — see `dev/mixer`, whose `dispose` puts the faders back
+   * before it lets go, which is what makes this an honest seed for the next
+   * panel that opens.
+   */
+  mixGains(): { groups: Record<MixGroup, number>; channels: Record<MixChannel, number> } {
+    return { groups: { ...this.groupFader }, channels: { ...this.channelFader } };
   }
 
   /**
@@ -922,6 +1133,7 @@ export class Sfx {
    * every other shooter in the game, whose cadence nothing is listening to.
    */
   shoot(voice: ReportVoice = FLAT_REPORT, at = 0): void {
+    const bus = this.bus(voice.mix ?? "otherGun", "ownGun");
     // Two rounds from the same weapon are never the same report, and eight a
     // second of one recording is the loudest tell that a gun is synthesized.
     const v = 0.92 + Math.random() * 0.16;
@@ -943,7 +1155,7 @@ export class Sfx {
     // `tail` still applies, because how hard a shot drives the VILLAGE is the
     // game's question and not the recording's. `snap`, `weight` and `length`
     // are the three the file genuinely subsumes and are simply not read.
-    if (voice.sample && this.sample(voice.sample, {
+    if (voice.sample && this.sample(bus, voice.sample, {
       vol: SAMPLE_LEVEL * voice.level, rate: v,
       // A plain send level like the five layers it replaces — the wet bus's
       // own `reverbMix` is downstream of all of them. The five sum to ~3.25
@@ -962,14 +1174,14 @@ export class Sfx {
     // This is the layer that reads as violent rather than as loud, and it is
     // why the DMR is not just the rifle an octave down — it has the deepest
     // body here AND the sharpest edge.
-    this.burst({
+    this.burst(bus, {
       dur: 0.007, vol: 0.68 * v * lvl * voice.snap, type: "highpass",
       freq: 3600 * f, q: 1, send: 0.2 * tail, keep: true, delay: at,
     });
     // The body of the report, sweeping down as the gas column collapses. A
     // lowpass throws away most of a noise slice's amplitude, so its gain is
     // set well above the level it actually plays at.
-    this.burst({
+    this.burst(bus, {
       dur: 0.1 * len, vol: 0.74 * lvl, type: "lowpass", freq: 2600 * f,
       freqEnd: 340 * voice.pitch, send: 0.9 * tail, keep: true, delay: at,
     });
@@ -977,21 +1189,21 @@ export class Sfx {
     // resonance to put a peak where a small speaker can still find it. Sent
     // hardest of the five, because outdoors the low end of a shot is mostly
     // the village answering it.
-    this.burst({
+    this.burst(bus, {
       dur: 0.26 * len, vol: 1.75 * lvl * voice.weight, type: "lowpass",
       freq: 360 * voice.pitch, freqEnd: 95 * voice.pitch, q: 3,
       send: 1.2 * tail, keep: true, delay: at,
     });
     // Chest thump: the low pressure wave, and the one part of a gunshot that
     // really is a single frequency. A sine's peak is its gain exactly.
-    this.tone(150 * f, 0.16 * len, "sine", 0.32 * lvl * voice.weight, 0.34, null, {
+    this.tone(bus, 150 * f, 0.16 * len, "sine", 0.32 * lvl * voice.weight, 0.34, null, {
       send: 0.7 * tail, keep: true, delay: at,
     });
     // The action riding home, behind the shot rather than under it — mechanism,
     // so it sits far below the blast. A light bolt comes back sooner as well as
     // higher, which is why the delay is divided by the same number that pitches
     // it: the SMG's is thirty milliseconds and the LMG's is sixty-six.
-    this.burst({
+    this.burst(bus, {
       dur: 0.04, vol: 0.18 * lvl * voice.actionVol, type: "bandpass",
       freq: 2900 * voice.actionPitch, q: 1.3,
       delay: at + 0.045 / voice.actionPitch, send: 0.25 * tail, keep: true,
@@ -1000,8 +1212,9 @@ export class Sfx {
 
   /** Hitmarker: a chunky two-part "thock", not a beep. */
   hit(): void {
-    this.tone(520, 0.05, "square", 0.07, 0.7);
-    this.burst({ dur: 0.025, vol: 0.12 });
+    const bus = this.bus("hitmarker", "feedback");
+    this.tone(bus, 520, 0.05, "square", 0.07, 0.7);
+    this.burst(bus, { dur: 0.025, vol: 0.12 });
   }
 
   /**
@@ -1020,9 +1233,10 @@ export class Sfx {
    * it a tail would put it in the same space as the report that caused it.
    */
   headshot(): void {
-    this.tone(1180, 0.055, "sine", 0.085, 1);
-    this.tone(2360, 0.09, "sine", 0.05, 1, null, { delay: 0.03 });
-    this.burst({ dur: 0.018, vol: 0.06, type: "highpass", freq: 4200, q: 0.7 });
+    const bus = this.bus("headshot", "feedback");
+    this.tone(bus, 1180, 0.055, "sine", 0.085, 1);
+    this.tone(bus, 2360, 0.09, "sine", 0.05, 1, null, { delay: 0.03 });
+    this.burst(bus, { dur: 0.018, vol: 0.06, type: "highpass", freq: 4200, q: 0.7 });
   }
 
   /**
@@ -1069,13 +1283,14 @@ export class Sfx {
    * Doppler.
    */
   nearMiss(at: Vector3): void {
+    const bus = this.bus("nearMiss", "impact");
     if (!this.ctx) return;
     const v = 0.9 + Math.random() * 0.2;
     // Panned from the point of closest approach, so the crack says WHICH SIDE
     // as well as "you are being shot at" — which is the difference between a
     // cue you can act on and one that only raises your pulse. It was mono for
     // as long as it existed, and it is the most urgent sound in the game.
-    const panner = this.panner(at);
+    const panner = this.panner(bus, at);
     // **The SNAP is never rate-limited and the other three always are**, which
     // is the opposite way round from `impact` and is why the gate sits here
     // rather than at the top of the method. A burst walked onto the player is
@@ -1094,7 +1309,7 @@ export class Sfx {
     //    was MOVING rather than merely loud, and it is the reason `burst` has
     //    a `rise` at all.
     if (full) {
-      this.burst({
+      this.burst(bus, {
         dur: 0.082, rise: 0.052, vol: 0.32, type: "bandpass",
         freq: 1500 * v, freqEnd: 820, q: 1.4, out: panner,
       });
@@ -1103,7 +1318,7 @@ export class Sfx {
     //    635 Hz, not the 3400 this used to be built at, which is most of what
     //    was wrong with the one-layer version. It runs long and sweeps to 300
     //    so its own second stage becomes the low ring the tail sits on.
-    this.burst({
+    this.burst(bus, {
       dur: 0.115, vol: 0.32, type: "bandpass", freq: 760 * v, freqEnd: 300,
       // No propagation delay beyond the swell's own, and that is the entire
       // point of the N-wave: it arrives BEFORE the report of the rifle that
@@ -1117,7 +1332,7 @@ export class Sfx {
     //    recording's shelf is flat from 4 to 13 kHz through the snap, and no
     //    single bandpass wide enough to hold 635 Hz also delivers that.
     //    Shorter than the body of the snap, because the top goes first.
-    this.burst({
+    this.burst(bus, {
       dur: 0.03, vol: 0.065, type: "highpass", freq: 3600 * v, q: 0.7,
       out: panner, delay: 0.052,
     });
@@ -1126,7 +1341,7 @@ export class Sfx {
     //    the snap, and this layer is what holds the middle of the decay up —
     //    without it the cue falls 13 dB below the recording by 100 ms and
     //    stops sounding like anything with mass in it.
-    this.burst({
+    this.burst(bus, {
       dur: 0.26, vol: 0.165, type: "bandpass", freq: 360 * v, freqEnd: 230,
       q: 1.6, send: 0.1, out: panner, delay: 0.058,
     });
@@ -1134,18 +1349,20 @@ export class Sfx {
     //    air leaving, not shock — so this is hiss and nothing else, and unsent
     //    because a tail into the shared reverb would be the valley answering a
     //    round that never touched it.
-    this.burst({
+    this.burst(bus, {
       dur: 0.3, vol: 0.055, type: "highpass", freq: 7000 * v, q: 0.7,
       out: panner, delay: 0.062,
     });
   }
 
   enemyDie(): void {
-    this.tone(300, 0.25, "sawtooth", 0.06, 0.3);
+    const bus = this.bus("enemyDie", "feedback");
+    this.tone(bus, 300, 0.25, "sawtooth", 0.06, 0.3);
   }
 
   playerHurt(): void {
-    this.tone(110, 0.2, "sawtooth", 0.08, 0.7);
+    const bus = this.bus("playerHurt", "feedback");
+    this.tone(bus, 110, 0.2, "sawtooth", 0.08, 0.7);
   }
 
   /**
@@ -1180,17 +1397,18 @@ export class Sfx {
    * from a pistol magazine, is what it still has to be told.
    */
   reload(duration: number, voice: ReportVoice = FLAT_REPORT): void {
+    const bus = this.bus("reload", "mechanism");
     const t = duration;
     const p = voice.actionPitch;
     const g = voice.actionVol;
-    this.clack(2600 * p, 0.9 * g, 0);
-    if (!this.mechanism("magOut", MAG_OUT_PEAK, t * 0.18, p, g)) {
-      this.clack(1500 * p, 0.5 * g, t * 0.18);
+    this.clack(bus, 2600 * p, 0.9 * g, 0);
+    if (!this.mechanism(bus, "magOut", MAG_OUT_PEAK, t * 0.18, p, g)) {
+      this.clack(bus, 1500 * p, 0.5 * g, t * 0.18);
     }
-    if (!this.mechanism("magIn", MAG_IN_PEAK, t * 0.55, p, g)) {
-      this.clack(760 * p, 1 * g, t * 0.55);
+    if (!this.mechanism(bus, "magIn", MAG_IN_PEAK, t * 0.55, p, g)) {
+      this.clack(bus, 760 * p, 1 * g, t * 0.55);
     }
-    this.clack(3400 * p, 0.8 * g, t * 0.8);
+    this.clack(bus, 3400 * p, 0.8 * g, t * 0.8);
   }
 
   /**
@@ -1216,13 +1434,14 @@ export class Sfx {
    * fall through to the synthesis.
    */
   private mechanism(
+    bus: MixBus | null,
     id: SampleId,
     peak: number,
     at: number,
     pitch: number,
     vol: number,
   ): boolean {
-    return this.sample(id, {
+    return this.sample(bus, id, {
       vol: MECHANISM_LEVEL * vol,
       rate: pitch,
       delay: Math.max(0, at - peak / pitch),
@@ -1289,44 +1508,45 @@ export class Sfx {
    * 7.5 kHz centroid at the stop and arriving at 5.1 kHz on the breech.
    */
   boltCycle(duration: number, voice: ReportVoice = FLAT_REPORT): void {
+    const bus = this.bus("boltCycle", "mechanism");
     const t = duration;
     const p = voice.actionPitch;
     const g = voice.actionVol;
     // The lugs turning out of their seats: high, short and dry. It is the
     // lightest event of the five and the first, which is what makes the rest
     // read as consequences of it.
-    if (!this.mechanism("boltLift", BOLT_LIFT_PEAK, t * 0.16, p, g)) {
-      this.clack(3100 * p, 0.55 * g, t * 0.16);
+    if (!this.mechanism(bus, "boltLift", BOLT_LIFT_PEAK, t * 0.16, p, g)) {
+      this.clack(bus, 3100 * p, 0.55 * g, t * 0.16);
     }
-    if (!this.mechanism("boltBack", BOLT_BACK_PEAK, t * 0.42, p, g)) {
+    if (!this.mechanism(bus, "boltBack", BOLT_BACK_PEAK, t * 0.42, p, g)) {
       // Drawn back — the slide, opening upward — onto the rear stop, which is
       // the hardest single event in the cycle because it is a mass stopped by
       // a shoulder of steel rather than seated on one.
-      this.burst({
+      this.burst(bus, {
         dur: 0.16 / p, vol: 0.1 * g, type: "bandpass", freq: 700 * p,
         freqEnd: 1900 * p, q: 1.1, delay: t * 0.2, send: 0.22,
       });
-      this.clack(1250 * p, 1 * g, t * 0.42);
+      this.clack(bus, 1250 * p, 1 * g, t * 0.42);
       // The case out: bright, small and OFF to the side of everything else in
       // the mix, which is what a piece of brass leaving a rifle sounds like
       // against the mechanism that put it there.
-      this.clack(4200 * p, 0.4 * g, t * 0.47);
+      this.clack(bus, 4200 * p, 0.4 * g, t * 0.47);
     }
-    if (!this.mechanism("boltHome", BOLT_HOME_PEAK, t * 0.68, p, g)) {
+    if (!this.mechanism(bus, "boltHome", BOLT_HOME_PEAK, t * 0.68, p, g)) {
       // Driven home — the slide, closing downward — and the heaviest clack of
       // the five, because this is the one with a round on the end of it.
-      this.burst({
+      this.burst(bus, {
         dur: 0.15 / p, vol: 0.11 * g, type: "lowpass", freq: 1700 * p,
         freqEnd: 420 * p, delay: t * 0.48, send: 0.26,
       });
-      this.clack(620 * p, 1.1 * g, t * 0.68);
-      this.tone(190 * p, 0.08, "sine", 0.05, 0.6, null, { delay: t * 0.68 });
+      this.clack(bus, 620 * p, 1.1 * g, t * 0.68);
+      this.tone(bus, 190 * p, 0.08, "sine", 0.05, 0.6, null, { delay: t * 0.68 });
     }
     // The handle down into its notch — the sound that says the weapon is live
     // again, and the one the player is actually waiting on. Last, and pitched
     // clear of the seat above it so the two do not read as one event.
-    if (!this.mechanism("boltLock", BOLT_LOCK_PEAK, t * 0.78, p, g)) {
-      this.clack(2300 * p, 0.8 * g, t * 0.78);
+    if (!this.mechanism(bus, "boltLock", BOLT_LOCK_PEAK, t * 0.78, p, g)) {
+      this.clack(bus, 2300 * p, 0.8 * g, t * 0.78);
     }
   }
 
@@ -1342,8 +1562,9 @@ export class Sfx {
    * that carries.
    */
   swap(duration: number): void {
-    this.clack(900, 0.55, 0);
-    this.clack(2200, 0.7, duration * 0.45);
+    const bus = this.bus("swap", "mechanism");
+    this.clack(bus, 900, 0.55, 0);
+    this.clack(bus, 2200, 0.7, duration * 0.45);
   }
 
   /**
@@ -1353,8 +1574,9 @@ export class Sfx {
    * thing itself, and sixteen bots' worth of throw noise would bury it.
    */
   grenadeThrow(): void {
-    this.clack(3200, 0.55, 0);
-    this.burst({
+    const bus = this.bus("grenadeThrow", "mechanism");
+    this.clack(bus, 3200, 0.55, 0);
+    this.burst(bus, {
       dur: 0.13, vol: 0.1, type: "bandpass", freq: 800, freqEnd: 1900,
       q: 0.9, delay: 0.06, send: 0.15,
     });
@@ -1385,10 +1607,11 @@ export class Sfx {
    * tail to the shared convolver.
    */
   launcher(at: Vector3): void {
+    const bus = this.bus("launcher", "explosion");
     const a = CONFIG.audio;
     const dist = this.distanceToListener(at);
     if (dist > a.maxDistance * 2.2) return;
-    const panner = this.panner(at);
+    const panner = this.panner(bus, at);
     if (!panner) return;
     const far = Math.min(1, dist / (a.maxDistance * 1.4));
     const delay = dist / a.speedOfSound;
@@ -1399,7 +1622,7 @@ export class Sfx {
     // alone, plus the air absorption the four layers below carry in their own
     // filter frequencies — the panner is already the level and `delay` already
     // the propagation, so that is the only distance cue left to put back.
-    if (this.sample("rocketLauncher", {
+    if (this.sample(bus, "rocketLauncher", {
       vol: LAUNCH_LEVEL, rate: v, delay, out: panner,
       // The same fraction of its own layers' sends that `explosion` and
       // `cannon` each take of theirs: the four below sum to 3.2 across layers
@@ -1408,25 +1631,25 @@ export class Sfx {
     })) return;
     // The ignition: broadband, and softer at the front than a gun's, because
     // nothing here is a sealed breech letting go.
-    this.burst({
+    this.burst(bus, {
       dur: 0.09, vol: 0.7 * (1 - far * 0.6), type: "highpass",
       freq: (900 - 600 * far) * v, q: 0.5, delay, out: panner, send: 0.6,
     });
     // The body: the backblast off the venturi, sweeping down as it spreads.
-    this.burst({
+    this.burst(bus, {
       dur: 0.5 + far * 0.3, vol: 0.9, type: "lowpass",
       freq: 620 - 400 * far, freqEnd: 70, delay, out: panner, send: 1.4,
     });
     // The chest of it. Higher and shorter than a cannon's — a shoulder tube,
     // not a hundred and twenty millimetres.
-    this.tone(38 * v, 0.36, "sine", 0.4 * (1 - far * 0.45), 0.55, panner, {
+    this.tone(bus, 38 * v, 0.36, "sine", 0.4 * (1 - far * 0.45), 0.55, panner, {
       delay, send: 0.7,
     });
     // The motor going away, which is the layer that says ROCKET. It starts
     // under the launch and outlives it, and it climbs rather than falling:
     // everything else here is a pressure wave spreading, and this is a thing
     // receding, so it is the one layer whose filter sweeps UP.
-    this.burst({
+    this.burst(bus, {
       dur: 0.62, vol: 0.3 * (1 - far * 0.5), type: "bandpass",
       freq: 700 * v, freqEnd: 2600, q: 0.8, delay: delay + 0.05, out: panner,
       send: 0.5,
@@ -1455,28 +1678,29 @@ export class Sfx {
    * change it in both.
    */
   rpgLoad(duration: number): void {
+    const bus = this.bus("rpgLoad", "mechanism");
     const t = duration;
     // The round out of the bag: cloth and webbing, which is the one soft
     // event in a family of metallic ones and is what says a thing was
     // FETCHED rather than worked.
-    this.burst({
+    this.burst(bus, {
       dur: 0.22, vol: 0.09, type: "bandpass", freq: 520, freqEnd: 1400,
       q: 0.8, delay: t * 0.26, send: 0.2,
     });
     // The boom tapped onto the muzzle as the round is offered to the bore.
     // Light and high: it is a rim being found, not a part going home.
-    this.clack(2900, 0.45, t * 0.56);
+    this.clack(bus, 2900, 0.45, t * 0.56);
     // The motor driven down the tube — the long one, and the only sound here
     // with any length to it, because it is the only event that is a SLIDE.
-    this.burst({
+    this.burst(bus, {
       dur: 0.17, vol: 0.14, type: "lowpass", freq: 1500, freqEnd: 380,
       delay: t * 0.6, send: 0.3,
     });
     // Home. The heaviest of the four: a kilogram of rocket against a stop.
-    this.clack(620, 1, t * 0.78);
-    this.tone(210, 0.09, "sine", 0.05, 0.5, null, { delay: t * 0.78 });
+    this.clack(bus, 620, 1, t * 0.78);
+    this.tone(bus, 210, 0.09, "sine", 0.05, 0.5, null, { delay: t * 0.78 });
     // The hammer back. Bright, short, and last — the launcher's bolt.
-    this.clack(3300, 0.7, t * 0.9);
+    this.clack(bus, 3300, 0.7, t * 0.9);
   }
 
   /**
@@ -1495,26 +1719,29 @@ export class Sfx {
    * blast, and nothing before it.
    */
   mineSet(): void {
+    const bus = this.bus("mineSet", "mechanism");
     // Metal on stone, twice: the plate down, then the rim rocking flat.
-    this.clack(420, 0.9, 0);
-    this.clack(300, 0.5, 0.07);
-    this.burst({
+    this.clack(bus, 420, 0.9, 0);
+    this.clack(bus, 300, 0.5, 0.07);
+    this.burst(bus, {
       dur: 0.16, vol: 0.09, type: "lowpass", freq: 260, freqEnd: 90,
       delay: 0.01, send: 0.25,
     });
     // The fuze, on the arming clock. A single clean tone against a mix that
     // has nothing else like it in it.
-    this.tone(1650, 0.07, "square", 0.05, 1, null, {
+    this.tone(bus, 1650, 0.07, "square", 0.05, 1, null, {
       delay: CONFIG.equipment.mine.mine.armTime,
     });
   }
 
   pickup(): void {
-    this.tone(700, 0.08, "sine", 0.07, 1.6);
+    const bus = this.bus("pickup", "feedback");
+    this.tone(bus, 700, 0.08, "sine", 0.07, 1.6);
   }
 
   jump(): void {
-    this.tone(330, 0.08, "sine", 0.04, 1.6);
+    const bus = this.bus("jump", "footstep");
+    this.tone(bus, 330, 0.08, "sine", 0.04, 1.6);
   }
 
   /**
@@ -1533,14 +1760,15 @@ export class Sfx {
    * gets mixed too loud and then cannot be un-noticed.
    */
   step(weight: number): void {
+    const bus = this.bus("step", "footstep");
     const v = 0.88 + Math.random() * 0.24;
     // A lowpass throws most of a noise slice's amplitude away, so the gain is
     // set well above the level this plays at — same as the report's body.
-    this.burst({
+    this.burst(bus, {
       dur: 0.07, vol: 0.3 * weight, type: "lowpass", freq: 420 * v,
       freqEnd: 130, send: 0.12,
     });
-    this.burst({
+    this.burst(bus, {
       dur: 0.035, vol: 0.05 * weight * v, type: "bandpass", freq: 2400 * v,
       q: 0.8, send: 0.1,
     });
@@ -1552,31 +1780,34 @@ export class Sfx {
    * and the gear on them, so it gets a third layer the walking step does not.
    */
   land(weight: number): void {
+    const bus = this.bus("land", "footstep");
     const v = 0.9 + Math.random() * 0.2;
-    this.burst({
+    this.burst(bus, {
       dur: 0.09 + weight * 0.06, vol: 0.34 + 0.3 * weight, type: "lowpass",
       freq: 300 * v, freqEnd: 90, send: 0.2,
     });
-    this.burst({
+    this.burst(bus, {
       dur: 0.05, vol: 0.07 + 0.07 * weight, type: "bandpass", freq: 1900 * v,
       q: 0.7, send: 0.15,
     });
     // Webbing and magazines catching up with the body, a beat behind the feet.
     if (weight > 0.25) {
-      this.clack(3000, 0.35 * weight, 0.035);
+      this.clack(bus, 3000, 0.35 * weight, 0.035);
     }
   }
 
   /** Flag captured. */
   capture(): void {
-    this.tone(440, 0.12, "sine", 0.07, 1.5);
-    setTimeout(() => this.tone(660, 0.18, "sine", 0.07, 1.2), 130);
+    const bus = this.bus("capture", "objective");
+    this.tone(bus, 440, 0.12, "sine", 0.07, 1.5);
+    setTimeout(() => this.tone(bus, 660, 0.18, "sine", 0.07, 1.2), 130);
   }
 
   /** Flag lost or neutralised — the same shape, falling instead of rising. */
   flagLost(): void {
-    this.tone(520, 0.14, "sine", 0.06, 0.65);
-    setTimeout(() => this.tone(340, 0.2, "sine", 0.06, 0.7), 130);
+    const bus = this.bus("flagLost", "objective");
+    this.tone(bus, 520, 0.14, "sine", 0.06, 0.65);
+    setTimeout(() => this.tone(bus, 340, 0.2, "sine", 0.06, 0.7), 130);
   }
 
   // --- world-space ---
@@ -1609,6 +1840,7 @@ export class Sfx {
    * is not.
    */
   impact(at: Vector3, kind: "flesh" | "ground" | "hard" | "glass"): void {
+    const bus = this.bus(IMPACT_CHANNEL[kind], "impact");
     const a = CONFIG.audio;
     if (!this.ctx) return;
     // Against the reserve, and BEFORE any work: the point is to leave voices
@@ -1620,7 +1852,7 @@ export class Sfx {
     const range = glass ? a.glassRange : a.impactRange;
     const dist = this.distanceToListener(at);
     if (dist > range) return;
-    const panner = this.panner(at);
+    const panner = this.panner(bus, at);
     if (!panner) return;
     // A break does not spend the rate limiter either, or one window going in
     // would silence the next four rounds' worth of sparks around it.
@@ -1643,30 +1875,30 @@ export class Sfx {
       // longer, quieter tail of pieces landing under it. Both are noise, and
       // the tail's own delay is on top of the flight time so the fall is heard
       // after the break rather than with it.
-      this.burst({
+      this.burst(bus, {
         dur: 0.06, vol: 0.4 * near, type: "highpass",
         freq: 3400 * v, freqEnd: 5200, q: 0.7,
         delay, out: panner, send,
       });
-      this.burst({
+      this.burst(bus, {
         dur: 0.34, vol: 0.2 * near, type: "bandpass",
         freq: 5200 * v, freqEnd: 2400, q: 2.4,
         delay: delay + 0.05, out: panner, send,
       });
     } else if (kind === "hard") {
-      this.burst({
+      this.burst(bus, {
         dur: 0.05, vol: 0.34 * near, type: "bandpass",
         freq: 2600 * v * (1 - far * 0.4), freqEnd: 900, q: 1.1,
         delay, out: panner, send,
       });
     } else if (kind === "ground") {
-      this.burst({
+      this.burst(bus, {
         dur: 0.09, vol: 0.3 * near, type: "lowpass",
         freq: 700 * v * (1 - far * 0.4), freqEnd: 160,
         delay, out: panner, send,
       });
     } else {
-      this.burst({
+      this.burst(bus, {
         dur: 0.07, vol: 0.26 * near, type: "lowpass",
         freq: 420 * v, freqEnd: 120, q: 0.8,
         delay, out: panner, send,
@@ -1709,6 +1941,7 @@ export class Sfx {
    * sample-accurate and unaffected by the frame rate.
    */
   botShot(at: Vector3, after = 0, voice: ReportVoice = FLAT_REPORT): void {
+    const bus = this.bus(voice.mix ?? "otherGun", "worldGun");
     const a = CONFIG.audio;
     const dist = this.distanceToListener(at);
     // The gate, and it is a VOICE decision rather than a free one: under the
@@ -1717,7 +1950,7 @@ export class Sfx {
     // could pick out — so building the nodes only burns voices that could
     // have carried an audible one. Reject before the panner, not after.
     if (dist > a.maxDistance) return;
-    const panner = this.panner(at);
+    const panner = this.panner(bus, at);
     if (!panner) return;
     const far = dist / a.maxDistance;
     const delay = after + dist / a.speedOfSound;
@@ -1748,18 +1981,18 @@ export class Sfx {
     // `rate` is `v` and not `v * p`, for the reason `shoot` argues at length:
     // a recording of this weapon has already said what `pitch` says. `p` below
     // is the synthesis's, and every use of it there is a filter frequency.
-    if (voice.sample && this.sample(voice.sample, {
+    if (voice.sample && this.sample(bus, voice.sample, {
       vol: SAMPLE_LEVEL * 0.8 * voice.level, rate: v, delay, out: panner,
       send: send * voice.tail, lowpass: 16000 - 14800 * far,
     })) return;
-    this.burst({
+    this.burst(bus, {
       dur: 0.03, vol: 0.4 * v * voice.level * voice.snap * (1 - far * 0.8),
       type: "highpass", freq: (2400 - 1700 * far) * v * p, q: 0.6, delay,
       out: panner, send: send * 0.3 * voice.tail,
     });
     // The far half of the map hears a longer, duller thud; the near half hears
     // a report with an edge on it.
-    this.burst({
+    this.burst(bus, {
       dur: (0.1 + far * 0.14) * voice.length, vol: 0.62 * voice.level,
       type: "lowpass", freq: (1500 - 1150 * far) * p, freqEnd: 190 * p, delay,
       out: panner, send: send * voice.tail,
@@ -1770,7 +2003,7 @@ export class Sfx {
     // reason.
     if (dist >= a.thumpRange) return;
     const near = 1 - dist / a.thumpRange;
-    this.burst({
+    this.burst(bus, {
       dur: 0.2 * voice.length, vol: 1.5 * near * voice.level * voice.weight,
       type: "lowpass", freq: 320 * p, freqEnd: 95 * p, q: 3, delay,
       out: panner, send: send * 0.8 * voice.tail,
@@ -1810,11 +2043,12 @@ export class Sfx {
    * it, and `BlastDebrisSystem` still draws the rubble either way.
    */
   explosion(at: Vector3, power = 1): void {
+    const bus = this.bus("blast", "explosion");
     const a = CONFIG.audio;
     const dist = this.distanceToListener(at);
     // A bigger blast carries further, on the same 1.6x exemption.
     if (dist > a.maxDistance * 1.6 * power) return;
-    const panner = this.panner(at);
+    const panner = this.panner(bus, at);
     if (!panner) return;
     const far = Math.min(1, dist / (a.maxDistance * power));
     const delay = dist / a.speedOfSound;
@@ -1845,7 +2079,7 @@ export class Sfx {
     // what is missing is AIR ABSORPTION — and only that: the layer durations
     // that grow with `far` are not reproduced, because stretching a recording
     // is `rate`, and `rate` is already carrying `power`.
-    if (this.sample("explosion", {
+    if (this.sample(bus, "explosion", {
       vol: BLAST_LEVEL * gain, rate: v / drop, delay, out: panner,
       // A plain send, for `shoot`'s reason: the four levels below sum to ~3.2
       // of these across layers a filter has already emptied, and this is the
@@ -1854,25 +2088,25 @@ export class Sfx {
       send: 1.3, lowpass: 14000 - 12800 * far,
     })) return;
     // The crack. Broadband, over in 40 ms, and the thing that says "sharp".
-    this.burst({
+    this.burst(bus, {
       dur: 0.04 * drop, vol: 0.7 * v * gain * (1 - far * 0.7), type: "highpass",
       freq: ((1800 - 1300 * far) * v) / drop, q: 0.5, delay, out: panner, send: 0.4,
     });
     // The body: a long lowpassed roll sweeping down as the pressure wave
     // spreads. This is most of what a distant blast is.
-    this.burst({
+    this.burst(bus, {
       dur: (0.5 + far * 0.35) * power, vol: gain, type: "lowpass",
       freq: (900 - 600 * far) / drop, freqEnd: 70 / drop, delay, out: panner,
       send: 1.4,
     });
     // The chest thump, a fifth of the rifle's pitch and five times its length.
-    this.tone((42 * v) / drop, 0.42 * power, "sine", 0.5 * gain * (1 - far * 0.5), 0.4, panner, {
+    this.tone(bus, (42 * v) / drop, 0.42 * power, "sine", 0.5 * gain * (1 - far * 0.5), 0.4, panner, {
       delay, send: 0.8,
     });
     // Debris coming back down, well behind the blast — the tail that stops it
     // sounding like a single event, and the one layer this game now DRAWS as
     // well (see `BlastDebrisSystem`), so it runs as long as the rubble does.
-    this.burst({
+    this.burst(bus, {
       dur: 0.7 * power, vol: 0.16 * gain * (1 - far * 0.6), type: "bandpass",
       freq: 2200 * v, freqEnd: 700, q: 0.7, delay: delay + 0.14, out: panner,
       send: 0.6,
@@ -1902,10 +2136,11 @@ export class Sfx {
    * synthesis below is what the game does without it.
    */
   cannon(at: Vector3): void {
+    const bus = this.bus("cannon", "worldGun");
     const a = CONFIG.audio;
     const dist = this.distanceToListener(at);
     if (dist > a.maxDistance * 2.2) return;
-    const panner = this.panner(at);
+    const panner = this.panner(bus, at);
     if (!panner) return;
     const far = Math.min(1, dist / (a.maxDistance * 1.4));
     const delay = dist / a.speedOfSound;
@@ -1921,24 +2156,24 @@ export class Sfx {
     // that row read the other way round rather than an inconsistency: the LMG
     // hands its roll to `report.weight` and `length` and must not be paid
     // twice, and nothing here is going to play this one.
-    if (this.sample("tankCannon", {
+    if (this.sample(bus, "tankCannon", {
       vol: BLAST_LEVEL, rate: v, delay, out: panner,
       send: 1.4, lowpass: 14000 - 12800 * far,
     })) return;
     // The muzzle blast: broadband and over in 60 ms. Twice a rifle's and half
     // the length of the roll behind it.
-    this.burst({
+    this.burst(bus, {
       dur: 0.06, vol: 1.15 * (1 - far * 0.6), type: "highpass",
       freq: (1500 - 1100 * far) * v, q: 0.6, delay, out: panner, send: 0.7,
     });
     // The body, sweeping down as the pressure wave spreads. Longer than a
     // grenade's, because the barrel keeps pointing it somewhere.
-    this.burst({
+    this.burst(bus, {
       dur: 0.62 + far * 0.4, vol: 1, type: "lowpass",
       freq: 700 - 460 * far, freqEnd: 55, delay, out: panner, send: 1.7,
     });
     // The chest thump, an octave under the grenade's.
-    this.tone(24 * v, 0.55, "sine", 0.62 * (1 - far * 0.45), 0.5, panner, {
+    this.tone(bus, 24 * v, 0.55, "sine", 0.62 * (1 - far * 0.45), 0.5, panner, {
       delay, send: 0.9,
     });
   }
@@ -1955,8 +2190,9 @@ export class Sfx {
    * exempt.
    */
   engineOn(kind: EngineKind): void {
+    const bus = this.bus(kind.mix, "engine");
     if (this.engine) return;
-    const voice = this.buildEngine(null, kind);
+    const voice = this.buildEngine(bus, null, kind);
     if (!voice) return;
     this.engine = voice;
 
@@ -1979,17 +2215,17 @@ export class Sfx {
     // thing that happens BEFORE it, over the top of the long spool the rotor
     // is already climbing through.
     if (kind.rotor) {
-      this.burst({
+      this.burst(bus, {
         dur: 1.1, vol: 0.1, type: "bandpass", freq: 200, freqEnd: 900, q: 2.2,
       });
       return;
     }
-    this.burst({ dur: 0.32, vol: 0.15, type: "bandpass", freq: 400, freqEnd: 250, q: 2.4 });
-    this.burst({
+    this.burst(bus, { dur: 0.32, vol: 0.15, type: "bandpass", freq: 400, freqEnd: 250, q: 2.4 });
+    this.burst(bus, {
       dur: 0.5, vol: 0.4, type: "lowpass", freq: 430, freqEnd: 70, q: 0.8,
       delay: 0.24,
     });
-    this.tone(58, 0.44, "sine", 0.36, 0.55, null, { delay: 0.26 });
+    this.tone(bus, 58, 0.44, "sine", 0.36, 0.55, null, { delay: 0.26 });
   }
 
   /**
@@ -2055,11 +2291,12 @@ export class Sfx {
    * can find.
    */
   private buildEngine(
+    bus: MixBus | null,
     panner: PannerNode | null,
     kind: EngineKind,
   ): EngineVoice | null {
     const ctx = this.ctx;
-    if (!ctx || !this.master || !this.noiseBuffer) return null;
+    if (!ctx || !bus || !this.noiseBuffer) return null;
     // **The one question this method asks about a kind, asked once.** Every
     // line below that reads it is a level or a corner frequency chosen for a
     // disc instead of for a cylinder — see `EngineKind.rotor` — and a kind
@@ -2068,9 +2305,9 @@ export class Sfx {
     try {
       const out = ctx.createGain();
       out.gain.value = 0;
-      // When there is a panner it is already on the master — `hullEngine`
+      // When there is a panner it is already on the bus — `hullEngine`
       // builds it, because it is the node the range gate is about.
-      out.connect(panner ?? this.master);
+      out.connect(panner ?? bus.dry);
 
       // What comes off the bottom, and it is NOT a DC blocker — the shaper
       // below is asymmetric and the lump multiplies signals by a gain they are
@@ -2556,8 +2793,8 @@ export class Sfx {
     kind: EngineKind,
   ): void {
     const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master) return;
+    const bus = this.bus(kind.mix, "engine");
+    if (!ctx || !bus) return;
     let voice = this.hullVoices.get(key);
     const dist = this.distanceToListener(at);
     // The gate, with a little hysteresis on the way back out — and the
@@ -2575,8 +2812,8 @@ export class Sfx {
       panner.distanceModel = "inverse";
       panner.refDistance = CONFIG.audio.engineRef;
       panner.rolloffFactor = 1;
-      panner.connect(master);
-      const built = this.buildEngine(panner, kind);
+      panner.connect(bus.dry);
+      const built = this.buildEngine(bus, panner, kind);
       if (!built) {
         panner.disconnect();
         return;
@@ -2701,8 +2938,10 @@ export class Sfx {
    */
   ambience(key: number, at: Vector3, kind: AmbienceKind): void {
     const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master) return;
+    // The kind's own family, not the caller's: a burning drum and a shoreline
+    // are one call and two rows on the mixer — see `AmbienceKind.mix`.
+    const bus = this.bus(kind.mix, "ambience");
+    if (!ctx || !bus) return;
     let voice = this.ambienceVoices.get(key);
     const dist = this.distanceToListener(at);
     if (dist > kind.range * (voice ? 1.15 : 1)) {
@@ -2715,7 +2954,7 @@ export class Sfx {
       panner.distanceModel = "inverse";
       panner.refDistance = kind.refDistance;
       panner.rolloffFactor = kind.rolloff;
-      panner.connect(master);
+      panner.connect(bus.dry);
       const built = this.buildAmbience(panner, kind);
       if (!built) {
         panner.disconnect();
@@ -3147,16 +3386,17 @@ export class Sfx {
    * window and three and a half.
    */
   botReload(at: Vector3, voice: ReportVoice = FLAT_REPORT): void {
+    const bus = this.bus("botReload", "mechanism");
     const dist = this.distanceToListener(at);
     if (dist > CONFIG.audio.maxDistance) return;
-    const panner = this.panner(at);
+    const panner = this.panner(bus, at);
     if (!panner) return;
     const delay = dist / CONFIG.audio.speedOfSound;
     const p = voice.actionPitch;
     const g = voice.actionVol;
-    this.clack(2200 * p, 0.5 * g, delay, panner);
-    this.clack(760 * p, 0.6 * g, delay + 0.3, panner);
-    this.clack(3100 * p, 0.45 * g, delay + 0.55, panner);
+    this.clack(bus, 2200 * p, 0.5 * g, delay, panner);
+    this.clack(bus, 760 * p, 0.6 * g, delay + 0.3, panner);
+    this.clack(bus, 3100 * p, 0.45 * g, delay + 0.55, panner);
   }
 
   /**
@@ -3173,16 +3413,17 @@ export class Sfx {
    * roughly over there.
    */
   botStep(at: Vector3): void {
+    const bus = this.bus("botStep", "footstep");
     const f = CONFIG.audio.footstep;
     const dist = this.distanceToListener(at);
     if (dist > f.botRange) return;
-    const panner = this.panner(at);
+    const panner = this.panner(bus, at);
     if (!panner) return;
     const v = 0.85 + Math.random() * 0.3;
     // Fades out over its own range rather than the panner's much longer one,
     // so the last audible steps trail off instead of being cut mid-stride.
     const far = dist / f.botRange;
-    this.burst({
+    this.burst(bus, {
       dur: 0.075, vol: 0.34 * (1 - far * 0.6), type: "lowpass", freq: 380 * v,
       freqEnd: 110, out: panner, send: 0.15,
     });
@@ -3240,7 +3481,7 @@ export class Sfx {
    * a weapon leaning on it hard enough to hear is a weapon that wants its own
    * file.
    */
-  private sample(id: SampleId, o: {
+  private sample(bus: MixBus | null, id: SampleId, o: {
     vol: number;
     /** `playbackRate`: pitch and duration together. 1 is the file as cut. */
     rate?: number;
@@ -3256,7 +3497,7 @@ export class Sfx {
   }): boolean {
     const s = this.samples.get(id);
     if (!s) return false;
-    if (!this.ctx || !this.master) return true;
+    if (!this.ctx || !bus) return true;
     if (!o.keep && this.voices >= CONFIG.audio.maxVoices) return true;
     try {
       const t0 = this.ctx.currentTime + (o.delay ?? 0);
@@ -3275,8 +3516,8 @@ export class Sfx {
         src.connect(f);
         head = f;
       }
-      head.connect(gain).connect(o.out ?? this.master);
-      this.send(gain, o.send);
+      head.connect(gain).connect(o.out ?? bus.dry);
+      this.send(bus, gain, o.send);
       this.voices += 1;
       src.onended = () => {
         this.voices -= 1;
@@ -3455,8 +3696,8 @@ export class Sfx {
    * model their nodes were built and then multiplied by exactly zero, so a
    * grenade past 70 m was silent but for its tail.
    */
-  private panner(at: Vector3): PannerNode | null {
-    if (!this.ctx || !this.master) return null;
+  private panner(bus: MixBus | null, at: Vector3): PannerNode | null {
+    if (!this.ctx || !bus) return null;
     const a = CONFIG.audio;
     if (this.voices >= a.maxVoices) return null;
     const node = this.ctx.createPanner();
@@ -3467,7 +3708,7 @@ export class Sfx {
     node.positionX.value = at.x;
     node.positionY.value = at.y;
     node.positionZ.value = at.z;
-    node.connect(this.master);
+    node.connect(bus.dry);
     return node;
   }
 
@@ -3478,6 +3719,7 @@ export class Sfx {
    * eight plain call sites stay plain.
    */
   private tone(
+    bus: MixBus | null,
     freq: number,
     dur: number,
     type: OscillatorType,
@@ -3486,7 +3728,7 @@ export class Sfx {
     out?: AudioNode | null,
     extra?: { delay?: number; send?: number; keep?: boolean },
   ): void {
-    if (!this.ctx || !this.master) return;
+    if (!this.ctx || !bus) return;
     if (!extra?.keep && this.voices >= CONFIG.audio.maxVoices) return;
     try {
       const t0 = this.ctx.currentTime + (extra?.delay ?? 0);
@@ -3497,8 +3739,8 @@ export class Sfx {
       osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq * freqMult), t0 + dur);
       gain.gain.setValueAtTime(vol, t0);
       gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      osc.connect(gain).connect(out ?? this.master);
-      this.send(gain, extra?.send);
+      osc.connect(gain).connect(out ?? bus.dry);
+      this.send(bus, gain, extra?.send);
       this.voices += 1;
       osc.onended = () => {
         this.voices -= 1;
@@ -3524,7 +3766,7 @@ export class Sfx {
    * **`rise` is the escape hatch from exactly that**, and the only shape this
    * helper makes that is not percussive — see the field.
    */
-  private burst(b: {
+  private burst(bus: MixBus | null, b: {
     dur: number;
     vol: number;
     /** Omitted leaves the slice unfiltered. */
@@ -3557,7 +3799,7 @@ export class Sfx {
      */
     keep?: boolean;
   }): void {
-    if (!this.ctx || !this.master || !this.noiseBuffer) return;
+    if (!this.ctx || !bus || !this.noiseBuffer) return;
     if (!b.keep && this.voices >= CONFIG.audio.maxVoices) return;
     try {
       const t0 = this.ctx.currentTime + (b.delay ?? 0);
@@ -3590,8 +3832,8 @@ export class Sfx {
         src.connect(f);
         head = f;
       }
-      head.connect(gain).connect(b.out ?? this.master);
-      this.send(gain, b.send);
+      head.connect(gain).connect(b.out ?? bus.dry);
+      this.send(bus, gain, b.send);
       this.voices += 1;
       src.onended = () => {
         this.voices -= 1;
@@ -3610,11 +3852,15 @@ export class Sfx {
    * direction, so it is neither panned nor distance-attenuated — callers set
    * the send level from distance themselves.
    */
-  private send(from: GainNode, level: number | undefined): void {
-    if (!this.ctx || !this.reverb || !level) return;
+  private send(
+    bus: MixBus | null,
+    from: GainNode,
+    level: number | undefined,
+  ): void {
+    if (!this.ctx || !this.reverb || !bus || !level) return;
     const s = this.ctx.createGain();
     s.gain.value = level;
-    from.connect(s).connect(this.reverb);
+    from.connect(s).connect(bus.wet);
   }
 
   /**
@@ -3623,6 +3869,7 @@ export class Sfx {
    * noise burst is — a square wave at the same pitch is a beep.
    */
   private clack(
+    bus: MixBus | null,
     freq: number,
     vol: number,
     delay: number,
@@ -3631,7 +3878,7 @@ export class Sfx {
     // The bandpass throws away about half the noise's amplitude, so the raw
     // gain sits above the level this ends up playing at — and the whole family
     // sits far below a report, because a magazine catch is not a gunshot.
-    this.burst({
+    this.burst(bus, {
       dur: 0.045, vol: 0.28 * vol, type: "bandpass", freq, q: 1.2,
       delay, out, send: 0.2,
     });

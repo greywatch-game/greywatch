@@ -714,6 +714,195 @@ the caller's own gait phase… never by a timer in here"*), and the countdown ha
 to be in seconds rather than a per-frame probability — a per-frame chance fires
 eight times as often at 240 Hz as at 30.
 
+## The mixer: two faders over every sound, and what each tier is for
+
+`CONFIG.mix` ([`src/config/mix.ts`](../src/config/mix.ts)) is two tables that
+multiply. **`groups`** is ten FAMILIES — the weapon in your hands, gunfire out
+in the world, reloads and handling, impacts, explosions, footsteps, engines,
+ambience, hit feedback, objective stings — and **`channels`** is forty-one
+SOUNDS inside them: the rifle, the carbine, the sniper; the reload, the bolt
+cycle, the swap; a round on glass against a round on stone. Every one of them
+ships at 1.
+
+**A fader is a DEVIATION and nothing here is balanced with one.** A sound that
+is wrong against ITSELF — one layer of a report against another — is wrong in
+`CONFIG.audio` or in `Sfx`, and moving a fader to paper over that puts one
+number in front of the argument that set the others.
+
+### Why two tiers and not one
+
+**The coarse tier answers "against the rest of the game" and the fine tier
+answers "against its own neighbours", and neither question can be asked with
+the other's fader.**
+
+A group fader moves a family and everything it is being compared against
+inside that family, by the same amount — which is exactly right for "my gun is
+too loud against the village" and exactly useless for "the reload is quiet but
+the bolt cycle beside it is fine". Those two are one gesture apart and 0.8
+seconds apart in the same round, and no arrangement of family levels can tell
+them apart. The same is true of one weapon sitting quiet against the other six.
+
+Going the other way is no better: forty-one sliders with no family above them
+means "everybody else's guns are too loud" is nine separate drags that have to
+stay in proportion afterwards.
+
+**A GROUP IS A PLACE A SOUND IS HEARD; A CHANNEL IS THE SOUND.** That is why
+the player's own report and somebody else's are two groups while a rifle and a
+pistol are one group and two channels — and it is why `Sfx.shoot` and
+`Sfx.botShot` take the same `ReportVoice` and put it under different families.
+
+**A channel is one thing a player would point at**, which is judgement and
+always will be. The four impact kinds are four channels because a round hitting
+a man and a round hitting a window are two sounds people have opinions about; a
+report's five LAYERS are one channel because nobody has an opinion about the low
+roll on its own. The test is whether you could hear the difference and say what
+it was.
+
+### The two tiers are not a TREE, and a weapon is why
+
+A weapon is heard two ways and is ONE slider: "the sniper is quiet" is a fact
+about the sniper wherever it is fired, and "everybody else's guns are loud" is a
+fact about the far field. Different axes. So `CHANNEL_GROUPS` gives each channel
+a LIST of the families it is heard in — one for almost everything, both gun
+families for the nine weapon channels — and `Sfx` builds a bus per declared
+PAIR. One fader value, two places in the graph, and `setChannelMix` writes to
+every bus that channel has. The panel draws such a row in both families with a
+`⇄` on it, and both copies redraw from the one number.
+
+A pair nobody declared is a pair nothing can play through: `Sfx.bus` returns
+null and the layer helpers refuse, the same refusal they make before `unlock`.
+
+### A fader is a NODE, and it has to be TWO of them
+
+Each bus is a `dry` gain and a `wet` gain. **The second is the whole point
+rather than symmetry.** `send` taps a layer PRE-panner — which is what lets a
+distant shot keep its tail while the panner takes its direct sound away — so
+the wet path bypasses anything sitting between a panner and the master. A fader
+folded into `vol`, or hung on the dry side alone, would take a sound's direct
+level down and leave the village still answering it, and at these send levels a
+distant shot is mostly what the village is saying.
+
+Measured on the Windows box with an analyser on `master` and a second on
+`reverb`, firing the sniper with its two faders swept (integrated energy over
+three shots per condition, because `shoot` wobbles each shot's playback rate by
+±8% and a sampled 7 ms peak swings by a third on that alone):
+
+| family × channel | dry | wet |
+| --- | --- | --- |
+| 1 × 1 | 103.6 | 46.5 |
+| 1 × 0.5 | 53.5 | 22.7 |
+| 0.5 × 1 | 54.3 | 23.0 |
+| 0.5 × 0.5 | 27.6 | 11.3 |
+| 0 × 1 and 1 × 0 | 0 | 0 |
+
+Either tier alone halves it, together they quarter it, and the tail follows on
+every row. Two consequences follow from it being a node:
+
+- **A fader is live on the SUSTAINED voices too.** An engine and an ambient bed
+  are graphs held open for minutes, so a scalar spent at build time would only
+  reach the next one built. `setGroupMix`/`setChannelMix` are `setTargetAtTime`
+  writes (10 ms) rather than assignments — a `gain.value` write lands between
+  two samples and a slider dragged across a held voice is otherwise a string of
+  clicks — and the fire you are standing next to moves with the slider.
+- **The bus is a LOCAL and never a field on `Sfx`.** Every public method here
+  reads its bus on its first line and hands that local to every layer it
+  builds. A field would be wrong for any gesture that finishes on a timer —
+  `capture` schedules its second tone 130 ms later, by which time a field is
+  holding whatever went off in between — and it is the kind of wrong that is
+  silent.
+
+**One caution when introspecting this from a script**: a `GainNode` with no
+live source upstream is not pulled by the render graph, so `gain.value` freezes
+at whatever it read when it last WAS pulled. The automation is scheduled and
+correct; it has simply not been evaluated. Play something through the bus
+before believing a reading.
+
+### Who names a channel
+
+A channel that belongs to a THING is stated on that thing, for the reason
+`ReportVoice.sample` is: the caller says what it is and this file says what
+that sounds like.
+
+- **`ReportVoice.mix`** — the seven kit weapons and the cupola gun all three
+  hulls mount. Optional, defaulting to the shared `otherGun`, so a weapon added
+  tomorrow compiles, is audible and is mixable as gunfire. **It is not
+  `ReportVoice.level` restated**: `level` is one of the eight DEVIATIONS from
+  the reference report, a claim about the weapon spent on the synthesis and the
+  recording alike, where this is what that gun turned out to be worth against
+  the other six once they were all in one firefight. Different evidence, and
+  this is the one you move by ear.
+- **`EngineKind.mix`** and **`AmbienceKind.mix`** — one per powerplant and one
+  per bed, so a fourth vehicle or a fourth bed carries its own fader and `Sfx`
+  never asks which one it is holding.
+- Everything else is named at the one call site that plays it, and `impact`'s
+  four are an `IMPACT_CHANNEL` `Record` over the same union the method takes.
+
+### F4: setting them, and writing them back
+
+The panel is [`src/dev/mixer/`](../src/dev/mixer/), dev-only behind the same
+dynamic `import()` gate as the editor, and it is the reason these numbers can be
+set honestly at all: you cannot mix a shooter from a spreadsheet, and the only
+useful place to judge a footstep is under fire.
+
+- **It does not take a screen down**, unlike `F2`. There is no state
+  transition, no map rebuild and nothing to put back — the round carries on
+  underneath it, which is the entire workflow. It sits at `z-index: 40`, over
+  the whole `src/ui/` ladder, so the menu's ambience and the kit screen's
+  weapon can both be mixed with their own screen up.
+- **It releases the pointer lock and does not take it back.** Under a lock a
+  click reaches no element, so a panel that kept it would be sliders nothing
+  can drag; clicking the canvas re-locks and leaves the panel standing. Move a
+  slider, go and listen, come back.
+- **Families are COLLAPSED by default**, because fifty-one rows open at once is
+  a wall rather than a tool. A collapsed family still says that something under
+  it has moved (its count goes yellow and gains a `*`), which is what makes
+  hiding them safe: the one thing this panel exists to tell you is what you
+  have changed.
+- **The sliders are in dB** (−36…+12, quarter-decibel steps) because that is
+  the unit a mix is argued in, and the value written to the file is the
+  multiplier. Clicking a row's readout is its own reset to 0 dB — the gesture
+  you want most often and the one position out of 193 a mouse cannot find.
+- **Mute and solo are per TIER and they intersect.** Soloing a channel silences
+  its neighbours and leaves its family's own fader where it was, which is what
+  "let me hear this one thing, in place" has to mean. Both are the PANEL's and
+  never the file's: `Sfx.mixGains` answers what a fader is PLAYING at, the
+  panel holds what it is WORTH, and it saves the latter. A mixer that saved
+  what it was playing would write a zero into `mix.ts` the first time somebody
+  soloed a row and forgot.
+- **Every channel auditions**, and a weapon auditions TWICE — in your hands and
+  then across the street — because that channel is one fader living under both
+  gun families and the two are the whole reason it is one fader. World-space
+  ones play ten metres out along the eye, since the panner is most of what a
+  distance sound IS here; `nearMiss` plays at two, because a round going past
+  at ten metres is a different sound entirely. The sustained ones are held for
+  three seconds. The engines borrow the DRIVEN voice (`engineOn`) rather than a
+  hull's, because `Game.pushHullEngines` stands every hull voice down on any
+  frame that did not step the fleet — on a map with no vehicles that is every
+  frame.
+- **SAVE patches `src/config/mix.ts` and does not regenerate it.** Only the
+  value lines in the two tables change and every other byte comes back
+  untouched, which is what lets the argument for a family or a sound live in
+  the config beside its number instead of being frozen inside a generator. The
+  patch is SCOPED to each `export const` block rather than applied to the whole
+  file — `CHANNEL_GROUPS` is a third table of the same shape at the same
+  indent, and a key appearing in two of the three would otherwise be patched in
+  whichever came first. The baseline is READ off disk at save time (`GET
+  /__layout?path=…`, the same literal-table lookup the write uses) rather than
+  imported `?raw`, so a second save cannot re-apply the first one's numbers on
+  top of a file somebody has since hand-edited. A block or a key that cannot be
+  found is a refusal, never a partial write. **The block finder is anchored
+  with `^`/`$` and not searched for as a literal `\n`**: working copies here are
+  CRLF, and a bare newline in the needle finds nothing on the machine the tool
+  runs on — which failed as a refusal, so the mixer would never have written at
+  all.
+
+**A new family or a new sound is a member of `MixGroup`/`MixChannel`, a row in
+`groups`/`channels`, a row in `CHANNEL_GROUPS`, and a label** — and the first
+three of those are all that compiles: both tables are `satisfies Record<…>`,
+`MIX_GROUPS`/`MIX_CHANNELS` and the panel's `UNDER` are derived from them, and
+the panel's `LABELS` and `AUDITIONS` are `Record`s over the unions. It cannot
+reach the game half-added.
+
 ## The pipeline
 
 ```
@@ -723,6 +912,9 @@ audio/
   <name>.webm             committed OUTPUT of `npm run audio`
   manifest.json           what to cut, from what, to what — and the budget
 src/core/samples.ts       the id union and the url table the game imports
+src/config/mix.ts         the mixer: ten FAMILY faders, 41 SOUND faders, and
+                          the CHANNEL_GROUPS table that pairs them up
+src/dev/mixer/            the F4 panel that sets them and patches that file
 scripts/ffmpeg.mjs        where ffmpeg is found, and what a MASTER may be
 scripts/measure-audio.mjs where the numbers in a `trim` come from
 scripts/encode-audio.mjs  `npm run audio` — cuts and encodes every row

@@ -165,13 +165,39 @@ RUN — **a fire is a place and a shore is a line** — and `WaterRect.sound` is
 one optional field on a layout whose default is not "unaffected", absent meaning
 `shore` because silent water is a bug.
 
-→ **[`docs/audio.md`](docs/audio.md)** — the three budgets and what each one
-binds, why one ambient loop costs ten times the whole sampled gun kit and what
+**TWO FADERS SIT ABOVE ALL OF IT AND THEY MULTIPLY** — `CONFIG.mix.groups` is
+ten FAMILIES and `CONFIG.mix.channels` is forty-one SOUNDS inside them, every
+one shipping at 1 and set by ear in a live round through the dev-only `F4`
+panel (`src/dev/mixer/`, behind the editor's own dynamic-import gate). **A
+fader is a DEVIATION and nothing is BALANCED with one**: a sound wrong against
+ITSELF is wrong in `CONFIG.audio` or in `Sfx`. **A GROUP IS A PLACE A SOUND IS
+HEARD AND A CHANNEL IS THE SOUND** — the player's own report and somebody
+else's are two families, a rifle and a pistol two channels in each — and **the
+two tiers are NOT A TREE**: a weapon is heard both ways and is ONE slider, so
+`CHANNEL_GROUPS` gives a channel a LIST of families and `Sfx` builds a bus per
+declared PAIR. **A fader is TWO NODES rather than a scalar folded into a level,
+which is the rule a new sound breaks**: `send` taps a layer PRE-panner, so a
+one-sided fader takes a sound's direct level away and leaves the village still
+answering it. Every layer helper in `Sfx` therefore takes a `MixBus` FIRST,
+read into a LOCAL by the method making the sound and **never held in a field**
+— a gesture that finishes on a timer would find one holding whatever went off
+in between. **A channel that belongs to a THING is named on that thing**
+(`ReportVoice.mix`, `EngineKind.mix`, `AmbienceKind.mix`), and a weapon's is
+**not `report.level` restated**: one is a claim about the gun and the other is
+what it turned out to be worth beside the rest of the kit.
+
+→ **[`docs/audio.md`](docs/audio.md)** — the mixer's two tiers, why neither
+question can be asked with the other's fader, the pair buses and the two nodes
+in each, the three budgets and what each one binds, why one
+ambient loop costs ten times the whole sampled gun kit and what
 that rule bought instead (the ranking, the emitter's index, the fire's layers
 and the gate's rendered pops-per-second), both water fits and the tables behind
 them, the waterline derivation and what it costs on the biggest map, the
 mono/round-robin/transient rules and the width measurements under them, the
-manifest and its two gates, the master conventions and every trim in full.
+manifest and its two gates, the master conventions and every trim in full,
+and `F4` — what it does not take down, why it releases the pointer lock, why
+families are collapsed, and why SAVE patches `config/mix.ts` per TABLE off a
+baseline read at save time.
 
 **Havok's `.wasm` (~2 MB) is the one binary that ships**, and it is never named
 by path — Vite emits it content-hashed from the ESM glue's own

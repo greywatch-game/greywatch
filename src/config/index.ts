@@ -28,6 +28,7 @@ import { aimAssist } from "./aimAssist";
 import { input, rumble } from "./input";
 import { touch } from "./touch";
 import { audio } from "./audio";
+import { mix } from "./mix";
 import { graphics, effects } from "./graphics";
 import { minimap, damageIndicator } from "./hud";
 import { net } from "./net";
@@ -40,6 +41,13 @@ import { teams } from "./teams";
 import { vehicles } from "./vehicles";
 
 export { FOG_WALL } from "./fogWall";
+export {
+  CHANNEL_GROUPS,
+  MIX_CHANNELS,
+  MIX_GROUPS,
+  type MixChannel,
+  type MixGroup,
+} from "./mix";
 
 export const CONFIG = {
   ao,
@@ -65,6 +73,7 @@ export const CONFIG = {
   rumble,
   touch,
   audio,
+  mix,
   effects,
   graphics,
   minimap,

@@ -321,6 +321,8 @@ export const weapons = {
      *   into a pistol, since the file itself has said nothing about either.
      */
     report: {
+      /** Its own slider on the mixer — see `ReportVoice.mix`. */
+      mix: "rifle",
       pitch: 1, level: 1, snap: 1, weight: 1,
       length: 1, tail: 1, actionPitch: 1, actionVol: 1,
       // Every row in this table names a sample now, and this one is still the
@@ -459,6 +461,8 @@ export const weapons = {
      * and count.
      */
     report: {
+      /** Its own slider on the mixer — see `ReportVoice.mix`. */
+      mix: "carbine",
       pitch: 1.14, level: 0.95, snap: 1.3, weight: 0.95,
       length: 0.75, tail: 0.85, actionPitch: 1.35, actionVol: 1.25,
       // Cut to the FIRST round of the burst. The master is a burst — the
@@ -546,6 +550,8 @@ export const weapons = {
      * the rate is heard against.
      */
     report: {
+      /** Its own slider on the mixer — see `ReportVoice.mix`. */
+      mix: "smg",
       pitch: 1.42, level: 0.65, snap: 0.85, weight: 0.7,
       length: 0.6, tail: 0.5, actionPitch: 1.4, actionVol: 1.55,
       // The sample is the report and `actionVol` above is still the bolt — and
@@ -689,6 +695,8 @@ export const weapons = {
      * would sound like a rifle a long way off instead of a big one up close.
      */
     report: {
+      /** Its own slider on the mixer — see `ReportVoice.mix`. */
+      mix: "dmr",
       pitch: 0.7, level: 1.2, snap: 1.5, weight: 1.65,
       length: 1.75, tail: 1.8, actionPitch: 0.8, actionVol: 1.15,
       // The longest cut in `audio/manifest.json` at 180 ms, and the only one
@@ -863,6 +871,8 @@ export const weapons = {
      * by hand is heard, and it is the sound the player is waiting on.
      */
     report: {
+      /** Its own slider on the mixer — see `ReportVoice.mix`. */
+      mix: "sniper",
       pitch: 0.6, level: 1.35, snap: 1.9, weight: 2,
       length: 2.1, tail: 2, actionPitch: 0.68, actionVol: 1.35,
       // The hardest master to cut and the shortest result relative to it: it
@@ -992,6 +1002,8 @@ export const weapons = {
      * of a wall.
      */
     report: {
+      /** Its own slider on the mixer — see `ReportVoice.mix`. */
+      mix: "lmg",
       pitch: 0.8, level: 1.35, snap: 1.05, weight: 1.5,
       length: 1.05, tail: 1.35, actionPitch: 0.68, actionVol: 1.4,
       // Cut from 40 ms in: this master and the carbine's are the two that lead
@@ -1091,6 +1103,8 @@ export const weapons = {
      * is being fired around you, this does not sound like any of it.
      */
     report: {
+      /** Its own slider on the mixer — see `ReportVoice.mix`. */
+      mix: "pistol",
       pitch: 1.28, level: 0.98, snap: 1.15, weight: 0.8,
       length: 0.65, tail: 0.65, actionPitch: 1.25, actionVol: 1.3,
       // The one master that needed nothing but its own cliff found: a report

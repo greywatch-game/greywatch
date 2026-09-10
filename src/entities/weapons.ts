@@ -12,7 +12,7 @@
  * separate slots: a weapon decides what the round does, an optic decides what
  * you can see when you send it. Neither reads the other.
  */
-import { CONFIG } from "../config";
+import { CONFIG, type MixChannel } from "../config";
 import type { SampleId } from "../core/samples";
 import { EQUIPMENT_IDS, equipmentSetup, isEquipmentId, type EquipmentId } from "./equipment";
 
@@ -126,6 +126,24 @@ export const DEFAULT_WEAPON: PrimaryWeaponId = "rifle";
  * as, and why `Sfx` needs no separate default to fall back on.
  */
 export interface ReportVoice {
+  /**
+   * Which fader on the mixer this weapon is heard on (`CONFIG.mix.channels`),
+   * or absent for the shared `otherGun`.
+   *
+   * **Not `level` restated, and the two are set from different evidence.**
+   * `level` below is one of the eight DEVIATIONS from the reference report — a
+   * claim about the weapon, spent on the synthesis and on the recording alike.
+   * This names a slider, and what goes on that slider is what this gun turned
+   * out to be worth against the other six once they were all in one firefight.
+   * It is the one a person moves by ear (`F4`, `src/dev/mixer/`).
+   *
+   * It follows the WEAPON rather than the listener: `Sfx.shoot` puts it under
+   * the `ownGun` group and `Sfx.botShot` under `worldGun`, so "the sniper is
+   * quiet" and "everybody else's guns are loud" stay two separate answers.
+   * Optional for `sample`'s reason — a weapon added tomorrow compiles, is
+   * audible, and is mixable as gunfire.
+   */
+  mix?: MixChannel;
   /** Multiplier on every frequency in the report — bore and charge. */
   pitch: number;
   /** Overall level, and read against the weapon's own `fireRate`. */
