@@ -75,12 +75,6 @@ export class Sky {
   private disposables: { dispose(): void }[] = [];
   private cloudTextures: DynamicTexture[] = [];
   private cloudSpeeds: number[] = [];
-  /**
-   * Where the moon hangs, as a unit direction. Zero until apply() runs, and
-   * mutated in place rather than replaced — GodRays holds this instance.
-   */
-  private readonly moonDir = Vector3.Zero();
-
   constructor(
     private scene: Scene,
     private glow: GlowLayer,
@@ -90,15 +84,6 @@ export class Sky {
     // draws over the dome, but it must still respect the WORLD's depth —
     // without this the moon and clouds render through players and walls.
     scene.setRenderingAutoClearDepthStencil(1, false);
-  }
-
-  /**
-   * The moon's direction from the camera (it rides at infiniteDistance, so
-   * there is no world position to speak of). GodRays projects this to find
-   * where on screen the shafts converge.
-   */
-  get moonDirection(): Vector3 {
-    return this.moonDir;
   }
 
   /** Rebuilds the sky for a map's environment; a missing `sky` spec clears it. */
@@ -114,12 +99,13 @@ export class Sky {
       .normalize()
       .negate();
     const discRadius = spec.discRadius ?? cfg.moonRadius;
-    // A sky with no disc hands out no direction, which is exactly what
-    // `clear()` already means by leaving this zero: GodRays reads it as
-    // "nothing to converge on" and takes its pass off the camera. The halo
-    // below is still painted at `moonDir`, which is a local — the sky is lit
-    // from somewhere whether or not the source is drawn.
-    if (discRadius > 0) this.moonDir.copyFrom(moonDir);
+    // Zero draws no disc and that is now the WHOLE of what it does. It used to
+    // switch the light shafts off as well, by withholding the direction they
+    // converged on — `Volumetrics` reads `EnvironmentSpec.lighting.direction`
+    // instead (see `setLightDir`), so a sky with no source drawn is still air
+    // lit from wherever the shadows fall. The halo below is painted at
+    // `moonDir` regardless: the sky is lit from somewhere whether or not the
+    // source is drawn.
 
     // --- dome: gradient + galactic band + stars + baked halo, one draw ---
     const domeMat = new StandardMaterial("sky-dome-mat", this.scene);
@@ -237,9 +223,6 @@ export class Sky {
     this.disposables.length = 0;
     this.cloudTextures.length = 0;
     this.cloudSpeeds.length = 0;
-    // A sky with no moon has no direction to hand out; GodRays reads a zero
-    // here as "nothing to converge on" and switches itself off.
-    this.moonDir.setAll(0);
   }
 
   /** The settings every cloud shell material shares, lit or not. */

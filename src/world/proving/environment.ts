@@ -115,7 +115,8 @@ export const ProvingEnvironment: EnvironmentSpec = {
     cloudLitStrength: 0.7,
     discRadius: 12,
     haloStrength: 0.5,
-    rays: { threshold: 0.86, intensity: 0.4 },
+    // Carried by ratio from the screen-space pass (0.4 of its own 1.3).
+    air: { intensity: 0.31 },
   },
   grade: {
     vignette: 0.18,

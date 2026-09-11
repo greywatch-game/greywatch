@@ -30,9 +30,11 @@
  */
 import {
   type AbstractMesh,
+  type BaseTexture,
   Color3,
   DirectionalLight,
   DynamicTexture,
+  type Matrix,
   Mesh,
   MeshBuilder,
   RenderTargetTexture,
@@ -102,6 +104,30 @@ export class ShadowSystem {
    * open, which is why Sarab needed 240 as well as the ramp.
    */
   private window: number = CONFIG.graphics.shadows.frustumSize;
+
+  /**
+   * The moon's depth map, for a reader that is not a material.
+   *
+   * `mats` gets this pushed at startup and never again — the texture object is
+   * stable while its contents re-render — so a second reader that is not in
+   * the factory's lists (the volumetric pass, which is a `PostProcess` and not
+   * a `ShaderMaterial`) has to come and ask. It is the same texture, not a copy.
+   */
+  get depthMap(): BaseTexture | null {
+    return this.generator.getShadowMap();
+  }
+
+  /**
+   * The light's view*projection, for the same reader and with one caveat worth
+   * stating: `getTransformMatrix` returns a matrix the generator MUTATES IN
+   * PLACE, so what a caller holds tracks the shadow camera whether or not it
+   * asks again. That is an implementation detail of Babylon's rather than a
+   * promise — the same one `update` declines to lean on below — so a caller
+   * that can afford to re-read every frame should.
+   */
+  get lightMatrix(): Matrix {
+    return this.generator.getTransformMatrix();
+  }
 
   constructor(private scene: Scene, mats: CelMaterialFactory) {
     const c = CONFIG.graphics.shadows;

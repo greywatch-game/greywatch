@@ -142,7 +142,7 @@ new here rather than borrowed, and each is written up where it belongs:
   past the coast; and the outer four are the OCEAN, which is what closes this
   map instead of a rim.
 - **The key light comes out of the MOUNTAIN**, which is what puts the sky's one
-  bright disc and every shaft `GodRays` draws over the crater — see
+  bright disc and every shaft the air scatters over the crater — see
   `cinderhaven/environment.ts`, which owns that argument and the measurement
   behind its `fogEnd`.
 - **It has a KIT of its own** (`kit/harbour.ts`), and it is the first map in

@@ -17,6 +17,24 @@ import { CONFIG } from "../config";
 export type RenderScale = (typeof CONFIG.graphics.renderScales)[number];
 
 /**
+ * How much volumetric moonlight, as `off` plus one of
+ * `CONFIG.graphics.volumetrics.rungs`.
+ *
+ * Derived from that table for the reason `RenderScale` is derived from its own
+ * — the ladder is declared exactly once, and a value that is not on it cannot
+ * be stored. `Volumetrics.ts` derives its own rung union from the same table
+ * and neither module imports the other, so the config is the single answer to
+ * what the rungs ARE and there is no second list to keep in step.
+ *
+ * **`off` is a fourth option and not a zeroed rung**: the pass comes off the
+ * camera, because an attached but idle pass still reads and writes the whole
+ * frame. That is the post chain's own rule — see `Game.setVolumetrics`.
+ */
+export type VolumetricQuality =
+  | "off"
+  | keyof typeof CONFIG.graphics.volumetrics.rungs;
+
+/**
  * A look-sensitivity multiplier, as one of `CONFIG.camera.lookScales`. Derived
  * from that list for the same reason `RenderScale` is derived from its own: the
  * ladder is declared once, and a value that is not on it cannot be stored.
@@ -55,6 +73,13 @@ export type Settings = {
    * had ever called `setHardwareScalingLevel`.
    */
   renderScale: RenderScale;
+  /**
+   * Light shafts: how many taps the volumetric march spends per ray, or `off`.
+   *
+   * The second field on this screen that is not a boolean, and the first that
+   * is not a number either — which is what `oneOfString` below exists for.
+   */
+  volumetrics: VolumetricQuality;
   /**
    * Mouse look speed, as a multiplier on `CONFIG.camera.sensX`/`sensY`.
    *
@@ -166,6 +191,13 @@ export const SETTING_DEFAULTS: Settings = {
   fpsCounter: false,
   motionBlur: CONFIG.graphics.motionBlur.strength > 0,
   horrorGrade: true,
+  // **Medium, and it is the rung that costs what the pass it replaced cost.**
+  // Measured against `GodRays`' own 32 taps at 1920x1080, 16 came back at
+  // -0.010 ms of GPU on Hollowmere and -0.019 on Cinderhaven — inside the
+  // noise either way, so a fresh install is not being handed a bill it did not
+  // have. `CONFIG.graphics.volumetrics` carries the whole table and the caveat
+  // that the old pass was detached most of a round and this one is not.
+  volumetrics: "medium",
   renderScale: defaultRenderScale(),
   // 1 on both, and it is the one default that means "change nothing": the rates
   // in `CONFIG.camera` are what every other number there was tuned against.
@@ -241,6 +273,25 @@ function oneOf<T extends number>(allowed: readonly T[]): Codec<T> {
 }
 
 /**
+ * A codec over a fixed list of STRINGS — `oneOf`'s twin, and separate because
+ * that one stringifies a number to compare and this one has nothing to do.
+ * Both reject an unrecognised value rather than storing it, which is how a
+ * setting written by a build with a different ladder degrades to its default.
+ */
+function oneOfString<T extends string>(allowed: readonly T[]): Codec<T> {
+  return {
+    read: (raw) => allowed.find((v) => v === raw) ?? null,
+    write: (value) => value,
+  };
+}
+
+/** `off` plus the config's rungs, in the order the screen draws them. */
+const VOLUMETRIC_QUALITIES = [
+  "off",
+  ...(Object.keys(CONFIG.graphics.volumetrics.rungs) as (keyof typeof CONFIG.graphics.volumetrics.rungs)[]),
+] as const;
+
+/**
  * One codec per field. The mapped type is the point: a field added to
  * `Settings` without an entry here does not compile, so the store can never
  * silently stop remembering something.
@@ -250,6 +301,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   motionBlur: bool,
   horrorGrade: bool,
   renderScale: oneOf(CONFIG.graphics.renderScales),
+  volumetrics: oneOfString(VOLUMETRIC_QUALITIES),
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
   stickSensitivity: oneOf(CONFIG.camera.lookScales),
   touchSensitivity: oneOf(CONFIG.camera.lookScales),

@@ -117,6 +117,104 @@ export const graphics = {
     maskOuter: 0.75,
   },
   /**
+   * Volumetric moonlight: a raymarch through the shadow volume, in air, against
+   * the depth the frame has already written. It is the game's ONLY light-shaft
+   * effect — it replaced `GodRays`, a screen-space radial blur, and that pass
+   * is gone rather than kept as a low rung. `docs/rendering.md` has why one
+   * mechanism rather than two, and `Volumetrics.ts` the shader.
+   *
+   * **The rungs are SAMPLE COUNTS and deliberately not resolutions.** A
+   * `PostProcess` with a `size` under 1 renders the chain's whole image into a
+   * smaller target and the next pass reads THAT — so a half-res march is a
+   * half-res frame, not a half-res effect. Scaling the march resolution is a
+   * second, structural change (march into a target of its own, then a
+   * bilateral upsample against depth); measured, the taps are not what this
+   * costs, so it has not been worth the plumbing.
+   *
+   * **MEASURED against the pass it replaced**, `?gpu`, 1920x1080, headless
+   * uncapped, three interleaved passes of 8 s, camera on the moon so both are
+   * at their most expensive. GPU `frame`, against the shafts' own 32 taps:
+   * Hollowmere **-0.036 / -0.010 / +0.233 ms** at low/medium/high, Cinderhaven
+   * **-0.033 / -0.019 / +0.070**. CPU `tick` did not move on either map in
+   * either direction — the march builds nothing and walks nothing, and every
+   * input it reads was already computed for something else.
+   *
+   * **What that comparison does NOT say is that it is free over a ROUND.** The
+   * shafts were detached whenever the moon was off screen, which is most of a
+   * fight; this is attached always, because a shaft it can draw with the moon
+   * behind you is the whole reason it exists. Read the rows above as the
+   * worst case of each and the average as roughly the whole pass — ~0.75 ms of
+   * GPU, on a frame this game leaves ~75% idle.
+   */
+  volumetrics: {
+    /**
+     * Taps along each ray, per rung. The player's setting is `off` plus these
+     * three, and `off` is absence rather than zero: the pass is detached, so it
+     * costs no read and no write of the frame — the same rule `MotionBlur` and
+     * `HorrorPost` are turned off by.
+     *
+     * The ladder is declared HERE and exactly once: `Settings.volumetrics`
+     * derives its union from these keys and `Volumetrics.ts` derives its own,
+     * so neither can offer a rung the other has never heard of.
+     */
+    rungs: { low: 8, medium: 16, high: 32 } as const,
+    /**
+     * How far the march goes, as a fraction of the shadow window's HALF side.
+     *
+     * The window is a square centred on the player, so from the eye there is
+     * only ever `frustumSize / 2` of shadow information in any direction — 55 m
+     * on the default 110 m window. Past that `shadowAt` answers "lit", exactly
+     * as `celShadow` does, and the haze goes smooth: the beams stop but the
+     * air does not, which is the honest failure and not a wall. Held just
+     * inside the boundary so the ramp is reached before the information runs
+     * out.
+     */
+    reachFraction: 0.92,
+    /**
+     * Scattering per metre of lit air, at the height the haze is thickest.
+     * This is the number that says how thick the night is; everything else
+     * shapes it.
+     */
+    density: 0.02,
+    /**
+     * How fast the haze thins going up, per metre above `heightBase`. A
+     * ground mist at 0 would put beams only in the street; this is shallow
+     * enough that a shaft between two roofs still reads.
+     */
+    heightFalloff: 0.06,
+    /** World Y the falloff is measured from — the valley floor, near enough. */
+    heightBase: 0,
+    /**
+     * Henyey-Greenstein g: how forward-scattering the air is, 0 isotropic and
+     * 1 a perfect forward lobe. It is what makes the effect strong looking
+     * toward the moon and present-but-quiet looking away from it, which is the
+     * whole thing a screen-space smear cannot do.
+     *
+     * **It is held well below what real haze measures, and the constraint is
+     * the 8-BIT CHAIN rather than the air.** `DefaultRenderingPipeline` is
+     * built with `hdr = false` (see `Dither.ts`), so whatever the forward lobe
+     * returns has to fit in the same 0..1 the village is drawn in — there is no
+     * tonemapper downstream to pull a highlight back. Measured off the phase
+     * function: g 0.68 is **54x** brighter looking into the moon than across
+     * it, which is either a white screen forward or nothing at all sideways,
+     * and there is no exposure that is both. 0.55 is 16x, which an LDR frame
+     * can hold at both ends. Raising it is what an HDR chain would buy.
+     */
+    anisotropy: 0.55,
+    /**
+     * Final scale on the accumulated scattering. The phase function carries
+     * its own `1 / 4pi`, so this absorbs that — read it as a look knob and not
+     * as a physical quantity.
+     *
+     * Set against the ALL-LIT ceiling, which is the worst case the shader can
+     * produce: every tap unshadowed at ground level over the full reach. On the
+     * shipped numbers that ceiling is 0.46 added looking into the moon and
+     * 0.028 across it, so a fully lit street has headroom left and the shadowed
+     * frame that is actually drawn sits well under.
+     */
+    intensity: 0.75,
+  },
+  /**
    * Hard-edged directional shadows from the key light (the moon), plus a
    * soft contact blob under every combatant. The shadow camera follows the
    * player inside a fixed ortho window — the fog wall at 78 m hides the

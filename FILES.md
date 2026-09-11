@@ -133,7 +133,7 @@ src/
     lighting.ts         # The dynamic light budget (uniforms, not Babylon lights)
     world.ts            # Map extents, occlusion, water, grass (map, ao, water,
                         #   grass)
-    sky.ts              # The painted sky and moon shafts (sky, godRays)
+    sky.ts              # The painted night sky (sky)
     wind.ts             # The one wind: a shared bearing, and what the grass
                         #   field and the world's foliage each do with it
     teams.ts            # The two sides; index 0 is the player's
@@ -978,7 +978,7 @@ src/
                         #   mirror, and the hole a rotor tears in it. WGSL
     GrassShader.ts      # The blade bend: wind, and combatants pushing through.
                         #   WGSL
-    GodRays.ts          # Moon shafts: screen-space radial blur. WGSL
+    Volumetrics.ts      # Light shafts: raymarched through the shadow volume. WGSL
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
                         #   angles. The viewmodel is held out of it by DEPTH —
                         #   masked shift AND weighted taps — because a gun

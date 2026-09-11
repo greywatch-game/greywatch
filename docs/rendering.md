@@ -255,8 +255,8 @@ lay over a finished frame with the glow already composited into it, and it is
 worth keeping true: it was checked rather than assumed, at seven frozen vantages
 across two maps, and came back **0 brighter channels of 6.2 M per frame**. If a
 halo ever appears to come through a wall, this pass is not where it came from —
-the god rays are screen-space and depth-unaware BY DESIGN (`GodRays.ts` says so
-on the line), and a bloom spreads by blurring after its depth test.
+a bloom spreads by blurring after its depth test, and the light shafts add
+light along a ray they have already bounded at the frame's own depth.
 
 **It runs FIRST in the post chain and that ordering is load-bearing.** It is
 part of the picture, not a grade over one: FXAA behind it antialiases the lines
@@ -267,8 +267,8 @@ APPENDS, so what is constructed first runs first — which is why `Game` builds 
 above the `DefaultRenderingPipeline` rather than beside the other three passes.
 
 **It needs no normal buffer, and the reason is worth knowing before anyone adds
-one.** A `GeometryBufferRenderer` re-renders the map — the wall `GodRays` and
-`MotionBlur` both hit and both wrote down. It is not needed because under a
+one.** A `GeometryBufferRenderer` re-renders the map — the wall the light
+shafts and `MotionBlur` both hit and both wrote down. It is not needed because under a
 perspective projection `1/z` is LINEAR in screen space across any plane, so the
 centre texel against what its two neighbours predict for it is exactly zero on a
 flat surface at any angle, a floor seen edge-on included, and large at a corner.
@@ -2063,8 +2063,8 @@ does not take, both being look decisions rather than bugs.
   the same pair.**
 - **The post-process chain has an order, and a display setting that switches an
   effect off REMOVES its pass** rather than zeroing its uniforms — an attached but idle
-  pass still reads and writes the whole frame. The order is FXAA, shafts, motion blur,
-  horror grade, enforced by where each one re-attaches: `attachPostProcess` appends, so
+  pass still reads and writes the whole frame. The order is FXAA, shafts (`Volumetrics`),
+  motion blur, horror grade, enforced by where each one re-attaches: `attachPostProcess` appends, so
   the blur's toggle takes the grade off and puts it back behind it
   (`Game.setMotionBlurEnabled`), and the grade's own toggle always appends because the
   tail is where it belongs. `HorrorPost` owns whether it is attached, so the blur's
@@ -2239,44 +2239,117 @@ of empty dome.
 rebuilt every round; the sky is not, and repainting 8 megapixels of dome plus two
 noise masks for an unchanged sky is pure cost.
 
-`GodRays` (`src/shaders/GodRays.ts`) adds the shafts in screen space: march each
-pixel back toward the moon's projected position and accumulate what is bright along
-the way, so anything dark between the camera and the moon leaves a beam-shaped hole.
-There is no occlusion render pass — the substitute-material trick Babylon's
-`VolumetricLightScatteringPostProcess` uses does not fit the cel materials — so **the
-luminance threshold IS the occlusion test**, and it has to sit above the brightest
-non-sky thing in the frame. That is the wet cobbled street (~0.67 looking along the
-moon); below it the road smears upward and the frame fills with ground haze.
+`Volumetrics` (`src/shaders/Volumetrics.ts`) is the game's ONLY light-shaft
+effect. It raymarches the air: step along each pixel's view ray in world space,
+ask the moon's shadow map whether each step is lit, weight it by a height-falloff
+haze density, and add the sum back into the frame through a Henyey-Greenstein
+phase function. It is bounded at the near end by the camera and at the far end by
+whichever comes first — the geometry the frame already drew (`FrameDepth`) or the
+edge of what the shadow map knows.
 
-**Because that number is a statement about how bright a particular world is, it
-is the MAP's** — `SkySpec.rays` (`{ threshold, intensity }`), each falling back
-to `CONFIG.godRays`, which is the night village's. `samples` deliberately is not
-overridable: it is interpolated into the shader source as a `#define` at module
-evaluation.
+**IT REPLACED A SCREEN-SPACE PASS AND THAT PASS IS GONE.** `GodRays` accumulated
+bright pixels along a line toward the moon's projected position, so its luminance
+threshold WAS its occlusion test, it could only draw a beam whose source was on
+screen, and it was detached outright for 22 of 24 bearings on a level sweep. The
+march needs none of that: the light does not have to be in frame and neither does
+the occluder, which is what buys a shaft through a doorway seen side-on or a bar
+of light down a street with the moon behind you.
 
-**On a lit map the threshold is BRACKETED rather than chosen, and both ends are
-measurable.** The floor is what every distant surface asymptotes to — the fog
-colour, and the ground mist with it — which is why Coldharbour holds `fogColor`
-and `mistColor` at the same luma (0.753) and treats moving either as a hue
-change only. The ceiling is the dimmest sky the shafts can reach: that map's
-`moonGlowColor` is 0.867 and its `cloudLitColor` 0.891, so 0.82 sits in the gap.
-**The two things that can still defeat the bracket are the ones added PAST the
-soft shoulder** — the ground spec and the translucency band — since everything
-diffuse is compressed under ~0.75 and those two are explicitly allowed over it.
+**One mechanism and not two.** The old pass was not kept as a cheap rung, because
+two shaft mechanisms means two sets of per-map numbers, two calibrations and a
+frame whose look changes with a quality setting rather than only its fidelity.
+The player's ladder is `off / low / medium / high` and it is the same effect all
+the way down — see `Settings.volumetrics`.
 
-`intensity` moves WITH the threshold rather than independently: at night the sky
-is a thin band over a near-black village and on a lit map it is half the frame
-at 0.9+, so the same accumulation is a different size and the night value (1.3)
-returns a white wash instead of beams — Coldharbour runs 0.5.
+### What it costs, and the caveat on that number
 
-**The pass is DETACHED whenever the moon is behind the camera or off the side of the
-screen**, which is most of a round (22 of 24 bearings on a level sweep). Its shader
-early-outs too, but an early-out only skips the sample loop: an attached pass still
-reads and writes the whole frame. `Game` owns the attachment (`syncGodRays`) and the
-pass's FIRST attach as well, because Babylon's `detachPostProcess` nulls the slot
-rather than removing it while `attachPostProcess` appends — so a pass that attached
-itself would have no way to name the hole it came out of, and every cycle would leave
-another one in a list walked every frame.
+Measured with `?gpu` at 1920x1080, headless uncapped, three interleaved passes of
+8 s, camera on the moon so both arms are at their most expensive. GPU `frame`,
+against the shafts' own 32 taps:
+
+| rung | taps | Hollowmere | Cinderhaven |
+| --- | --- | --- | --- |
+| low | 8 | -0.036 ms | -0.033 ms |
+| medium | 16 | -0.010 ms | -0.019 ms |
+| high | 32 | +0.233 ms | +0.070 ms |
+
+CPU `tick` did not move on either map in either direction, which is the whole
+design: the march builds nothing, walks nothing, adds no draw to the scene, and
+every input it reads was already computed for something else — the depth image is
+`FrameDepth`'s (shared with the ink and the blur), and the shadow map and its
+matrix are `ShadowSystem`'s, published to the cel materials whether this exists or
+not. That matters on a frame that is draw-call bound with the GPU at 25-30%
+(`FINDINGS.md` 17).
+
+**The table is worst-case to worst-case and does NOT say this is free over a
+round.** The old pass cost nothing whenever the moon was off screen; this one is
+attached always, because that is the point of it. Read the average as roughly the
+whole pass — about 0.75 ms of GPU.
+
+### The three things a reader must not get wrong
+
+**The rung is a SAMPLE COUNT and not a resolution.** A `PostProcess` with `size`
+under 1 renders the chain's whole image into a smaller target and every pass after
+it reads that target — so a half-res march is a half-res FRAME. Scaling the march
+itself needs a render target of its own plus a depth-aware upsample; the
+measurement above says the taps are not what this costs, so that structure has not
+been built. The count is a WGSL `const` interpolated per rung, so **each rung is
+its own compiled shader** and a rung change is a REBUILD (`Game.setVolumetrics`),
+not a uniform write.
+
+**The reach is the shadow window's HALF side.** `EnvironmentSpec.lighting
+.shadowWindow` is a square centred on the player, so from the eye there is only
+`frustumSize / 2` of shadow information in any direction — 55 m on the default
+110 m window. Past that `shadowAt` answers "lit", exactly as `celShadow` does for
+a surface, and the same `edgeFade` ramp is used so the air and the floor under it
+stop knowing together. A map that raises its shadow window gets a longer march for
+free and pays in texel density exactly as its shadows already do.
+
+**CHARACTERS DO NOT OCCLUDE, and it is a known regression rather than an
+oversight.** A rig is not a shadow caster — the player is ~60 meshes and each bot
+9, and they get blob discs instead — so a bot standing in a beam does not cut it,
+where the screen-space pass got that for free off a dark pixel. Registering rigs
+as casters is exactly the CPU cost this design exists to avoid, and worse than the
+caster count suggests: the depth pass re-renders only when the texel-snapped focus
+MOVES, and an animated caster makes it a per-frame pass. **Measure before
+"fixing" it.**
+
+### The map's own air
+
+`SkySpec.air` (`{ density?, intensity? }`) are MULTIPLIERS on
+`CONFIG.graphics.volumetrics`, both 1 by default, so a map that says nothing gets
+the config's night village. Multipliers rather than absolutes is what lets the
+base be retuned without walking six files.
+
+**The six shipped values were carried over BY RATIO from the screen-space pass and
+are not tuned against the march.** Each map's old `rays.intensity` as a fraction of
+that pass's own default — how much shaft this map wanted relative to the night
+village — is the half of the old pair that still means something. The other half
+was a luminance threshold, which a march has no use for: it is gone, not
+converted, and with it every bracket argument that used to sit in the map files
+(Coldharbour's `fogColor`/`mistColor` luma pairing, Greyfen's measured margins,
+Sarab's `glint` ceiling). Those numbers were kept where they are also the right
+look, and their comments now say which. **Greyfen's 1.54 deserves the least trust
+of the six** — its original argument was three failure modes of the old
+accumulation (a small source, a canopy eating the walk, `decay` running on blocked
+taps) and not one of them exists in a march.
+
+**The phase function reads the KEY LIGHT and not the sky's disc.**
+`Volumetrics.setLightDir` takes the negated `EnvironmentSpec.lighting.direction`,
+which is the light whose shadow map it marches. `Sky` derives its disc from that
+same field and then withholds it when a map sets `discRadius: 0` — which the old
+pass read as "switch off" and a march cannot, since a zero vector into the phase
+cosine scatters sideways everywhere. So a sky with no source DRAWN is still air
+lit from where the shadows fall, and `Sky.moonDirection` is gone.
+
+**`anisotropy` is held below what real haze measures, and the constraint is the
+8-bit chain.** `DefaultRenderingPipeline` is built with `hdr = false`, so whatever
+the forward lobe returns has to fit in the same 0..1 the village is drawn in —
+there is no tonemapper downstream to pull a highlight back. Off the phase
+function: g 0.68 is **54x** brighter looking into the light than across it, which
+is either a white screen forward or nothing at all sideways, and no exposure is
+both. 0.55 is 16x, which an LDR frame can hold at both ends. Raising it is what an
+HDR chain would buy.
 
 ## The capture zone: annotation drawn in the world
 

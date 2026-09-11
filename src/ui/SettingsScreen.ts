@@ -200,6 +200,23 @@ const PAGES: readonly Page[] = [
         })),
       },
       {
+        key: "volumetrics",
+        label: "Light shafts",
+        hint: "Moonlight scattered by the air, marched through the shadows",
+        // Straight off the config's ladder with `off` in front, so the screen
+        // cannot offer a rung the store would refuse to remember. `off` is a
+        // real option and not a zeroed rung — it detaches the pass.
+        options: [
+          { value: "off", label: "Off" } as const,
+          ...(
+            Object.keys(CONFIG.graphics.volumetrics.rungs) as (keyof typeof CONFIG.graphics.volumetrics.rungs)[]
+          ).map((k) => ({
+            value: k,
+            label: k.charAt(0).toUpperCase() + k.slice(1),
+          })),
+        ],
+      },
+      {
         key: "fpsCounter",
         label: "FPS counter",
         hint: "Rate, frame time and 1% low",

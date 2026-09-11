@@ -1,7 +1,7 @@
 /**
  * greyfen/environment.ts — Greyfen's EnvironmentSpec: palette, fog, sun light,
  * the shafts it throws through the canopy, sky, water, drifting spores. Pure
- * data — consumed by applyEnvironment/Sky/GodRays/WaterSystem/Atmosphere.
+ * data — consumed by applyEnvironment/Sky/Volumetrics/WaterSystem/Atmosphere.
  * Fixture light POSITIONS live in layout.ts, not here.
  */
 import type { EnvironmentSpec } from "../environment";
@@ -22,7 +22,7 @@ import type { EnvironmentSpec } from "../environment";
  * Two symptoms, and they were the same cause:
  *
  * - **No shafts.** `discRadius: 0` suppresses the disc and, through the
- *   moon-direction contract `Sky` and `GodRays` share, the light shafts with
+ *   moon-direction contract `Sky` and the shafts shared, the light shafts with
  *   it. A shaft broken by a canopy is the single most iconic jungle image there
  *   is, and this map already had the canopy to break it — five belts of
  *   hardwoods whose lowest frond hangs at 9 m with a mid-story of veils under
@@ -36,9 +36,11 @@ import type { EnvironmentSpec } from "../environment";
  * So the ambient gives way (0.7 -> 0.24) and the key takes what it gave up
  * (1.12 -> 1.55). On the same bark that is 2.1x becoming 9x, which is the whole
  * of the second symptom. The FIRST is what the ambient buys as well as the
- * trunks: `sky.rays.threshold` is an occlusion test done in luminance with no
- * depth pass, so it only separates sky from world on a map whose world is
- * darker than its sky — see that field, where the bracket is measured.
+ * trunks: the light shafts used to do their occlusion in LUMINANCE with no
+ * depth pass, so they only separated sky from world on a map whose world was
+ * darker than its sky. `Volumetrics` asks the shadow map and no longer cares —
+ * but a canopy that reads as unlit against a lit sky is still what this map is,
+ * and the ambient is still where that is decided.
  *
  * ## What did NOT move
  *
@@ -143,9 +145,10 @@ export const GreyfenEnvironment: EnvironmentSpec = {
    *
    * **Luma 0.737, and that number is now load-bearing twice.** Every distant
    * surface on the map asymptotes to exactly this colour, so it is the
-   * brightest thing in the frame that is not sky — which makes it the floor of
-   * `sky.rays.threshold`'s bracket. Raising it narrows the gap the shafts live
-   * in from below; the ground mist is held under it for the same reason.
+   * brightest thing in the frame that is not sky. That used to make it the
+   * floor of the light shafts' luminance bracket, which is gone with the
+   * threshold; what survives is that the ground mist is held under it, so the
+   * two read as one distance rather than two.
    *
    * `SkySpec.horizonColor` moves with it — see its own contract, which requires
    * it to sit near this or the dome cuts a line against the fogged ridge — and
@@ -212,7 +215,7 @@ export const GreyfenEnvironment: EnvironmentSpec = {
      * one band (0.5) and nothing wobbles; under ~23.5 it drops a whole band to
      * 0.375 and the valley floor loses a quarter of its key for one degree of
      * movement. From above, the shafts need the sun near enough to the frame to
-     * be worth having: `GodRays` fades on screen radii from centre (`fadeStart`
+     * be worth having: the old shafts faded on screen radii from centre (`fadeStart`
      * 0.55, `fadeEnd` 1.25) and at `fovHip` 0.95 a sun at 28 degrees projects
      * to uv y 1.018 with the view level — 1.04 radii out, `presence` 0.31 — and
      * is at full strength by about 12 degrees of look-up. Measured at 2 degrees
@@ -364,7 +367,7 @@ export const GreyfenEnvironment: EnvironmentSpec = {
    * The whole block used to read "an overcast dawn: no disc, no stars, and a
    * low sun's warmth smeared across a white lid of cloud". What made that
    * premise expensive is that `discRadius: 0` does not merely omit a disc — it
-   * hands `GodRays` a zero direction, which is the contract `Sky.clear()`
+   * hands out a zero direction, which is the contract `Sky.clear()`
    * documents for "nothing to converge on", and takes the shafts off the camera
    * with it. So the lid was buying an overcast look at the price of the one
    * image this map is best placed in the whole game to make.
@@ -451,59 +454,26 @@ export const GreyfenEnvironment: EnvironmentSpec = {
      */
     haloStrength: 0.42,
     /**
-     * The shafts' own two numbers. **The threshold is BRACKETED rather than
-     * chosen, and both ends are measurable** — which is the only honest way to
-     * set a number doing an occlusion test's whole job with no depth pass.
+     * **The thickest air in the tree, and the one carried value that deserves
+     * the least trust.** A flooded jungle valley wanting more haze than a city
+     * or a desert is a sound premise and the ordering is worth keeping — but
+     * the number's ORIGINAL argument does not survive at all, and that is worth
+     * saying rather than quietly inheriting.
      *
-     * The floor is the brightest non-sky pixel in the frame, and it is
-     * MEASURED. Every distant surface asymptotes to `fogColor` at luma 0.737
-     * and nothing in the diffuse world gets past it: the shader's soft shoulder
-     * compresses anything over 0.75, the ground mist is a `mix` toward 0.787
-     * that peaks at 0.28 of the way there, and the sunlit forest floor comes
-     * back at 0.16-0.22 against 0.06-0.10 in the canopy's shade. Photographed
-     * from inside belt 2 with the sun behind the camera, the whole frame peaks
-     * at 0.795 and NOTHING crosses 0.82; over the flooded basin, masking every
-     * pixel over the line puts all of them above the horizon and none in the
-     * water, its foam or its flecks, which top out at 0.766.
+     * It was 2.0 against the screen-space pass's own 1.3 because that pass had
+     * three failure modes a canopy triggered: the source was small (only the
+     * disc and its halo crossed the threshold, the rest of the sky being within
+     * 0.07 of the fog wall), the walk was eaten (a tap covered part of the way
+     * to the sun and most of that was trunk and frond), and `decay` ran on
+     * BLOCKED taps too, so a beam starting behind a crown arrived at a fraction
+     * of an open one's weight. **Not one of those three exists in a march.** It
+     * steps world-space metres, asks the shadow map per step, and an occluded
+     * step simply contributes nothing.
      *
-     * The ceiling is the dimmest sky the shafts can reach: `moonGlowColor` is
-     * 0.902 and `cloudLitColor` 0.941, with the disc clamped at 1.0 above them.
-     *
-     * So 0.82 sits in a gap running 0.737 to 0.902, and it is deliberately
-     * nearer the middle than the floor because the two things that can still
-     * defeat it are added PAST the soft shoulder and are therefore unbounded by
-     * it: the ground sheen (`groundSpec`, warmed and tightened below for
-     * exactly this reason) and the water's glint, which is why `water.glint`
-     * came DOWN when the sun came out rather than up.
-     *
-     * **`intensity` goes UP, 1.3 -> 2.0, and it is the one number in this file
-     * that disagrees with Coldharbour** — which took the same term the other
-     * way, to 0.5, on the argument that a lit sky is half the frame at 0.9 and
-     * the night value returns a white wash. Both are right, because the number
-     * is not a statement about how bright the sky is. It is a statement about
-     * how much of that brightness the accumulation can actually REACH, and
-     * three things take it away here:
-     *
-     * - **The source is small.** Coldharbour's sky over 0.82 is a whole
-     *   quadrant of a 480 m view. Here it is the disc and what the halo lifts
-     *   around it, because the rest of the sky is within 0.07 of the fog wall —
-     *   the fog IS the light on this map, which is exactly what stops the rest
-     *   of the sky being a source.
-     * - **The canopy eats the walk.** `density` is 0.55, so a tap covers only
-     *   part of the way to the sun, and under a belt most of that is trunk and
-     *   frond. Measured from inside belt 2 at `intensity` 0.5: the frame mean
-     *   moved 0.393 -> 0.398 and nothing was visible at all.
-     * - **`decay` runs on blocked taps too.** `illum` falls 0.96 per sample
-     *   whether or not that sample contributed, so a beam starting behind a
-     *   crown arrives with a fraction of an open one's weight.
-     *
-     * At 2.0 a frond 80 px off the sun goes 0.148 -> 0.289, which is the fan
-     * reading rather than a wash — it lands on foliage at a fifth of full
-     * white, not on sky already clipped at 1.0. The wash Coldharbour warns
-     * about happens to a frame whose bright half is reachable; under a canopy
-     * it is not.
+     * So 1.54 is the old ratio and nothing more. If any map's air is wrong on
+     * the first look pass, expect it to be this one.
      */
-    rays: { threshold: 0.82, intensity: 2.0 },
+    air: { intensity: 1.54 },
   },
   /**
    * The grade the map is seen through.
@@ -561,7 +531,7 @@ export const GreyfenEnvironment: EnvironmentSpec = {
      *
      * That difference is most of the margin. Measured over the confluence
      * basin at 0.22, **nothing below the horizon reaches 0.77** against a
-     * `sky.rays.threshold` of 0.82 — water, foam and flecks included, and the
+     * the shafts' old threshold of 0.82 — water, foam and flecks included, and the
      * only pixels in the frame over the line are sky. What the extra 0.08
      * would buy on the far side of it is not a brighter river: it is a river
      * that stops occluding and starts throwing shafts of its own from below

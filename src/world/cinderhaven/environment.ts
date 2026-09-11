@@ -17,7 +17,8 @@
  * - **The disc goes where the light comes from.** `Sky` hangs the disc
  *   opposite `lighting.direction`, so it lands low in the north-west, over the
  *   crater — which means the ONE bright object in the sky is the eruption
- *   glow, and `GodRays`, which converges on that same point, throws its shafts
+ *   glow, and the volumetric march, lit from that same direction, throws its
+ *   shafts
  *   out of the mountain and across the town. There is no second mechanism
  *   here; the shafts were already keyed to the light's own bearing and this
  *   map just points the light somewhere honest.
@@ -79,10 +80,15 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
    *
    * `gravel` is the surface a lava apron is: broken clinker at a scale the eye
    * reads as ground rather than as objects, and its ramp tops out low enough
-   * over `floorColor` that even under the key light the ground never crosses
-   * `sky.rays.threshold` — which on a map whose whole sky is one bright disc is
-   * the number the floor is held against (see Sarab's `skyLightIntensity` for
-   * the same margin measured from the other end).
+   * over `floorColor` that the apron reads as ground under the key light rather
+   * than as a second light source.
+   *
+   * It used to be held against a hard number — the light shafts' luminance
+   * threshold, which was their whole occlusion test, so a floor that crossed it
+   * radiated. That test is gone with the pass that needed it (`Volumetrics`
+   * asks the shadow map), and what is left is an ordinary judgement about a
+   * ground tone. Sarab's `skyLightIntensity` measured the same margin from the
+   * other end and is likewise now just a look.
    */
   floorColor: "#332e38",
   floorSurface: "gravel",
@@ -165,7 +171,9 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
     /**
      * Twenty degrees up, travelling south-east — set so that the light comes
      * FROM Grimhold at (-400, -380), which puts the disc, the halo and every
-     * shaft `GodRays` draws over the crater.
+     * shaft the air scatters over the crater. **This is the vector the shafts
+     * are lit from**, negated: `Volumetrics.setLightDir` reads it directly
+     * rather than the sky's disc.
      *
      * The elevation is load-bearing twice. Shadow length is `h /
      * tan(elevation)`, so at twenty degrees the chapel's tower throws 45 m and
@@ -312,17 +320,18 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
     discRadius: 15,
     haloStrength: 0.62,
     /**
-     * The shafts, and the threshold is the number that matters.
-     * `CONFIG.godRays`' luminance test IS the whole occlusion test — there is
-     * no depth pass — so what it has to sit above is the brightest thing in
-     * the world that is not sky. On this map that is the lit crest of the
-     * `gravel` ramp under the key light, which is dark, so 0.62 clears it
-     * comfortably while the disc and the lit cloud cross it easily. The
-     * intensity is up because this is the one map where the shafts are the
-     * subject rather than an atmosphere: they come out of the mountain, and
-     * the island's whole skyline is drawn against them.
+     * **The one map where the shafts are the SUBJECT rather than an
+     * atmosphere**: they come out of the mountain, and the island's whole
+     * skyline is drawn against them. So this is the strongest air of the five
+     * lit maps, and it is the number to protect if the base is ever retuned.
+     *
+     * Carried by ratio from the screen-space pass (0.62 of its own 1.3) and
+     * untuned against the march — see `SkySpec.air`. The threshold that used to
+     * sit beside it is gone rather than converted: it existed because a
+     * luminance test was doing an occlusion test's whole job, and the march
+     * asks the shadow map instead.
      */
-    rays: { threshold: 0.62, intensity: 0.62 },
+    air: { intensity: 0.48 },
   },
   /**
    * The sea, and it is drawn almost entirely as REFLECTION — which is what

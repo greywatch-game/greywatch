@@ -1,5 +1,5 @@
 /**
- * config/sky.ts — the painted night sky and the moon shafts.
+ * config/sky.ts — the painted night sky.
  * Owns: dome geometry, stars, the moon, cloud drift and the god-ray pass.
  * Contract: `docs/rendering.md`.
  * Gotcha: everything here rides at `infiniteDistance`, so radii and heights
@@ -124,41 +124,4 @@ export const sky = {
     { radiusOffset: 12, uScale: 1, speedU: 0.0035, opacity: 1.0, coverage: 0.6 },
     { radiusOffset: 26, uScale: 2, speedU: -0.0018, opacity: 0.5, coverage: 0.68 },
   ],
-} as const;
-
-/**
- * Moon shafts (src/shaders/GodRays.ts): screen-space radial blur of the
- * bright parts of the frame away from the moon, so anything standing
- * between the camera and it cuts visible beams out of the haze.
- *
- * The pass costs `samples` texture fetches per pixel, so it early-outs
- * entirely when the moon is off screen or behind the camera — which is most
- * of the time in a fight.
- */
-export const godRays = {
-  /** Taps along each ray. The look is set by density/decay, not by this. */
-  samples: 32,
-  /** How far along the ray the taps reach, in screen widths. */
-  density: 0.55,
-  /** Per-tap falloff — how quickly a beam fades away from the moon. */
-  decay: 0.96,
-  /** Weight per tap, before decay. */
-  weight: 0.32,
-  /** Final scale on the accumulated shafts. */
-  intensity: 1.3,
-  /**
-   * Luminance a pixel needs before it radiates. This is the whole occlusion
-   * test — there is no depth pass — so it has to sit above the brightest
-   * thing in the world that is NOT sky. That is the wet cobbled street,
-   * which comes back around 0.67 when you look along the moon; below this
-   * the road smears upward and the frame fills with haze from the ground.
-   */
-  threshold: 0.78,
-  /**
-   * The shafts fade out as the moon leaves the frame — measured in screen
-   * radii from the centre, since the blur has nothing to sample once the
-   * source is off screen and popping is the alternative.
-   */
-  fadeStart: 0.55,
-  fadeEnd: 1.25,
 } as const;

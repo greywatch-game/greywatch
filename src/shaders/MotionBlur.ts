@@ -2,7 +2,7 @@
  * MotionBlur.ts — Camera-rotation motion blur: reprojects every pixel through
  * the frame's change in look direction and smears along the difference. Owns
  * the pass and the previous frame's camera basis; owns no scene state.
- * Invariants: runs AFTER GodRays and BEFORE HorrorPost, so the shafts smear
+ * Invariants: runs AFTER Volumetrics and BEFORE HorrorPost, so the shafts smear
  * with the frame they belong to while the grain and vignette stay sharp on top
  * of it. Driven from the player's AIM angles, never from the rendered camera
  * matrix — the view punch's per-shot jitter would otherwise turn every shot
@@ -43,7 +43,8 @@ import { FrameDepth } from "./FrameDepth";
  * therefore simply absent: strafing past a cottage wall does not smear it. In
  * a first-person game the whip-pan carries most of the effect, and buying the
  * rest would mean a `GeometryBufferRenderer` re-rendering the map — which the
- * cel materials would also have to survive, the same wall `GodRays` hit.
+ * cel materials would also have to survive, the same wall the shafts hit when
+ * they wanted an occlusion pass (see `Volumetrics`).
  *
  * THE WEAPON DOES NOT MOVE IN SCREEN SPACE AND THEREFORE MUST NOT SMEAR, and
  * it is the one place the argument above breaks down. The viewmodel is
@@ -102,7 +103,7 @@ uniform mask: vec2f;          // radial falloff: x = inner (sharp), y = outer (f
 uniform nearFar: vec2f;       // the camera's clip planes, for the linearise
 uniform nearBand: vec2f;      // x = metres held sharp (the weapon), y = full smear
 
-// See GodRays for why this is a const and not the #define it was.
+// See Volumetrics for why this is a const and not the #define it was.
 const SAMPLES: i32 = ${CONFIG.graphics.motionBlur.samples};
 
 fn hash(p: vec2f) -> f32 {
@@ -316,7 +317,7 @@ export class MotionBlur {
   /**
    * The pass, for `Game` to attach and detach. Exposed rather than given an
    * `attach`/`detach` pair of its own because the ORDER is the caller's
-   * business: this pass has to land between GodRays and HorrorPost, and only
+   * business: this pass has to land between Volumetrics and HorrorPost, and only
    * the place that assembled the chain knows that.
    */
   get pass(): PostProcess {

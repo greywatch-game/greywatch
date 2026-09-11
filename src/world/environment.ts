@@ -115,21 +115,20 @@ export interface SkySpec {
    * The light's own disc, in world units at `CONFIG.sky.moonDistance`.
    * Defaults to `CONFIG.sky.moonRadius`.
    *
-   * **Zero means no disc at all, and it switches the light shafts off with
-   * it.** `Sky` hands `GodRays` the direction the light hangs in, and a zero
-   * vector there already means "nothing to converge on" — the contract
-   * `Sky.clear()` documents. So a sky with no disc is a sky with no shafts,
-   * through the path that already existed.
+   * **Zero means no disc at all**, and it used to switch the light shafts off
+   * with it — `Sky` hands out a zero direction, the contract `Sky.clear()`
+   * documents, and the screen-space pass read that as "nothing to converge on".
+   * **The volumetric pass does NOT inherit that**, and the difference is worth
+   * knowing: it marches the shadow volume rather than converging on a point, so
+   * a sky with no disc still has lit air. Use `air` below to quiet it, and this
+   * for a sky that genuinely has no source to draw.
    *
-   * **No shipped map takes it any more, and what retired it is `rays` below.**
-   * Greyfen was the one that did, on an overcast premise, and half the argument
-   * for that premise was a rendering constraint rather than a look:
-   * `CONFIG.godRays`' luminance threshold IS the whole occlusion test and the
-   * shipped value sits above a night street, so under a lit sky it fired on
-   * everything and the only way to be rid of it was to be rid of the disc.
-   * Giving that number to the MAP answers it without giving up either. What is
-   * left here is for a sky that genuinely has no source to see, and it still
-   * works.
+   * No shipped map takes it. Greyfen was the one that did, on an overcast
+   * premise, and half the argument for that premise was a rendering constraint
+   * rather than a look: the old luminance threshold WAS the occlusion test, so
+   * under a lit sky the shafts fired on everything and the only way to be rid
+   * of them was to be rid of the disc. Neither the constraint nor the dodge
+   * survives the march.
    */
   discRadius?: number;
   /**
@@ -140,20 +139,33 @@ export interface SkySpec {
    */
   haloStrength?: number;
   /**
-   * The shafts' own two numbers, each defaulting to `CONFIG.godRays`.
+   * **How thick this map's air is**, as MULTIPLIERS on
+   * `CONFIG.graphics.volumetrics` — both optional, both 1 by default, so a map
+   * that says nothing gets the config's night village.
    *
-   * They live on the SKY rather than at the top of the spec because the whole
-   * feature already does: `discRadius` is what switches the shafts on and off,
-   * through the zero-`moonDir` contract above, and `Game.applySky` already
-   * reads `moonGlowColor` to tint them. `EnvironmentSpec.grade` is the shape
-   * this copies — a block of `CONFIG.graphics` defaults a map may override.
+   * It lives on the SKY rather than at the top of the spec because the whole
+   * feature already does: `Game.applySky` reads `moonGlowColor` to tint the
+   * shafts, and the light they are shafts OF is the one the disc above draws.
+   * `EnvironmentSpec.grade` is the shape this copies — a block of
+   * `CONFIG.graphics` defaults a map may override.
    *
-   * Only these two, and the omission is mechanical rather than a judgement:
-   * `samples` is interpolated into the shader source as a `#define` at module
-   * evaluation and cannot be per-map at all. Of what is left, these are the
-   * two that are statements about a MAP rather than about the shape of a beam.
+   * **Multipliers and not absolutes, which is what lets the base be retuned.**
+   * A jungle valley wants thicker air than a clear desert and says so by ratio,
+   * so moving `CONFIG.graphics.volumetrics.density` moves all six maps together
+   * and keeps the ordering their authors chose.
+   *
+   * **The shipped values were CARRIED OVER BY RATIO from the screen-space pass
+   * and are not tuned against the march.** Each map's old `rays.intensity` was
+   * a fraction of that pass's own default, and that fraction — how much shaft
+   * this map wants relative to the night village — is the half of the old pair
+   * that still means something. The other half was a luminance threshold, which
+   * a march has no use for at all: it is gone, not converted. Retuning these by
+   * eye, per map, is the job this is waiting for.
+   *
+   * `samples` is deliberately not here: it is the player's rung, interpolated
+   * into the shader source per compile, and a map may not overrule a setting.
    */
-  rays?: { threshold?: number; intensity?: number };
+  air?: { density?: number; intensity?: number };
   /** Drifting cloud decks: tint (the shadowed body) and 0..1 ceiling alpha. */
   cloudColor: string;
   cloudOpacity: number;
@@ -218,12 +230,16 @@ export interface WaterEnvSpec {
    * the body including straight down into still water where the mirror returns
    * almost nothing. It is what makes a surface read as MOVING.
    *
-   * **What it still costs is the SHAFTS, and that is the one number attached
-   * to it.** `SkySpec.rays.threshold` is an occlusion test done in luminance
-   * with no depth pass, so a sheet of water bright enough to cross it stops
-   * being an occluder and starts radiating shafts of its own from below the
-   * horizon. Greyfen's file measures the margin either side; a map with a disc
-   * in its sky wants this LOWER than one without, which is the opposite of the
+   * **It used to cost the SHAFTS as well, and that is worth knowing because it
+   * is why several maps hold a glint lower than the look alone wants.** The
+   * screen-space pass did its occlusion in luminance with no depth pass, so a
+   * sheet of water bright enough to cross the threshold stopped being an
+   * occluder and started radiating shafts of its own from below the horizon.
+   * `Volumetrics` asks the shadow map, so nothing in the world can radiate any
+   * more and that pressure is off — the numbers below have not been relaxed,
+   * because they were also chosen to look right. Greyfen's file measures the
+   * margin either side; a map with a disc in its sky wanted this LOWER than one
+   * without, which is the opposite of the
    * obvious move.
    */
   glint?: number;

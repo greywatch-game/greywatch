@@ -2,7 +2,7 @@
  * coldharbour/environment.ts — Coldharbour's EnvironmentSpec: palette, the
  * long-range haze that stands in for fog, a low afternoon sun, the shafts it
  * throws, a warm dust field, no water. Pure data — consumed by
- * applyEnvironment/Sky/GodRays/Atmosphere. Fixture light POSITIONS live in
+ * applyEnvironment/Sky/Volumetrics/Atmosphere. Fixture light POSITIONS live in
  * layout.ts.
  */
 import type { EnvironmentSpec } from "../environment";
@@ -53,11 +53,12 @@ import type { EnvironmentSpec } from "../environment";
  *   is. This map is barely affected either way: at 200 m the boundary is
  *   100 m out and downtown has no 100 m view down a street to put it in.
  * - **There is a disc and there are shafts**, which is the reverse of what this
- *   file said for its whole life. `CONFIG.godRays`' luminance threshold IS the
- *   whole occlusion test and is calibrated against a night street, so it could
- *   not be used under a lit sky at any hour — the answer was to give the number
- *   to the map (`sky.rays`) rather than to give up the effect. See that field
- *   for how 0.82 is bracketed rather than chosen.
+ *   file said for its whole life. The screen-space pass could not be used under
+ *   a lit sky at any hour — its luminance threshold WAS the occlusion test and
+ *   was calibrated against a night street — and the answer at the time was to
+ *   give that number to the map. `Volumetrics` retired the whole question by
+ *   asking the shadow map instead; what the map still states is how thick its
+ *   air is (`sky.air`).
  * - **Sound and bot perception still did NOT move with the fog.**
  *   `audio.maxDistance` is 70 m and `bots.perception.engageRange` 55, so you
  *   can see far further than a bot will start shooting and further than you can
@@ -137,9 +138,11 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    *
    * **The colour is a HUE move and nothing else, and that is deliberate.**
    * `#c9bfae` is luma 0.753 — the same as the `#b3c3d2` it replaces, to three
-   * places. Every distant surface asymptotes to this colour, which makes its
-   * luminance the number that brackets `sky.rays.threshold` from below; moving
-   * hue and value at once would have left nothing to reason from.
+   * places. Every distant surface asymptotes to this colour, so holding its
+   * luminance still is what lets a hue change be reasoned about at all; moving
+   * hue and value at once would have left nothing to compare. (It used to carry
+   * a second job — bracketing the light shafts' luminance threshold from below
+   * — and that job is gone with the threshold.)
    *
    * `fogStart` 170 -> 130 because a low sun wants the depth earlier: haze now
    * sits over the middle third of an avenue rather than only past the far end
@@ -370,30 +373,20 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
      */
     haloStrength: 0.6,
     /**
-     * The shafts' own two numbers. **The threshold is BRACKETED rather than
-     * chosen, and both ends are measurable** — which is the only way to set a
-     * number that is doing an occlusion test's whole job with no depth pass.
+     * Thin air over a business district at midday — the least of any shipped
+     * map bar Sarab. What it is protecting against is different now but points
+     * the same way: the old worry was a lit sky being half the frame and the
+     * accumulation washing, and this pass's is simply that clear daytime air
+     * over a pale city has no business reading as fog.
      *
-     * The floor is the brightest non-sky pixel in the frame. Every distant
-     * surface asymptotes to `fogColor` and the ground mist takes the lower half
-     * of the frame toward `mistColor`, and both of those are held at luma
-     * 0.753 on purpose. Nothing else in the diffuse world gets near it — the
-     * shader's soft shoulder compresses anything over 0.75 anyway.
-     *
-     * The ceiling is the dimmest sky the shafts can reach: `moonGlowColor` is
-     * 0.867 and `cloudLitColor` 0.891, with the disc clamped at 1.0 above them.
-     *
-     * So 0.82 sits in a gap running 0.758 to 0.867, roughly in the middle of
-     * it. **The two things that can still defeat it are the ones added PAST the
-     * soft shoulder** — the ground spec and a lit translucent surface — which
-     * is why the sheen below is warmed and tightened rather than turned up.
-     *
-     * `intensity` 1.3 -> 0.5 because the accumulation is a different size on a
-     * lit map: at night the sky is a thin band over a near-black village, and
-     * here it is half the frame at 0.9 and above. The night number returns a
-     * white wash rather than beams.
+     * Carried by ratio from the screen-space pass (0.5 of its own 1.3) and
+     * untuned against the march — see `SkySpec.air`. **The bracketed luminance
+     * threshold that used to be the long half of this comment is GONE rather
+     * than converted**, and with it the reason `fogColor` and `mistColor` are
+     * pinned to the same luma — that pairing now stands on the fog's own
+     * argument further up this file, not on an occlusion test.
      */
-    rays: { threshold: 0.82, intensity: 0.5 },
+    air: { intensity: 0.38 },
   },
   /**
    * The grade comes up a little, and only a little. A vignette that reads as

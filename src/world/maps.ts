@@ -227,8 +227,8 @@ export const SARAB: MapDef = {
  * generator is the map, and the town is what stands on the answer, down to the
  * quays, which are placed by MARCHING the finished floor for the waterline
  * rather than by authoring a coordinate on it. And **the key light comes out
- * of the mountain**, which puts the sky's one bright disc and every shaft
- * `GodRays` draws over the crater, and splits the palette by surface NORMAL
+ * of the mountain**, which puts the sky's one bright disc and every shaft the
+ * air scatters over the crater, and splits the palette by surface NORMAL
  * rather than by hue: warm on everything facing the cone, cold starlight on
  * everything facing up. `cinderhaven/environment.ts` owns that argument.
  *

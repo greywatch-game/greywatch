@@ -333,10 +333,13 @@ export const SarabEnvironment: EnvironmentSpec = {
      * baked ONCE, so cloud costs the frame nothing at all and a thin deck was
      * buying nothing with it. What a deck is FOR here is distance — the rim is
      * 750 m out and drawn almost entirely in `fogColor`, so the sky above it is
-     * most of what says how far away that is, and an empty sky says nothing. It
-     * also gives the shafts something to be occluded by: at `rays.threshold`
-     * 0.9 the lit tone below is the only thing in the world besides the disc
-     * that crosses it, and there is now more of it.
+     * most of what says how far away that is, and an empty sky says nothing.
+     *
+     * It used to be load-bearing for the shafts as well — the lit tone below
+     * was the only thing besides the disc that crossed the old luminance
+     * threshold, so a thicker deck was the only occluder they had. The
+     * volumetric pass occludes on the shadow map and does not need it, which
+     * leaves this a statement about DISTANCE and nothing else.
      */
     cloudOpacity: 0.52,
     cloudLitColor: "#fff2d4",
@@ -344,14 +347,18 @@ export const SarabEnvironment: EnvironmentSpec = {
     discRadius: 10,
     haloStrength: 0.44,
     /**
-     * The shafts, and the threshold is the number that matters.
-     * `CONFIG.godRays`' luminance test IS the whole occlusion test — there is
-     * no depth pass — so on a map whose ground is pale sand under a high sun,
-     * a shipped threshold would fire on the floor. 0.9 is high enough that only
-     * the disc and the brightest cloud cross it, which is what leaves the
-     * shafts as something the dust does rather than something the town does.
+     * The thinnest air in the tree, which is the premise of the map: a clear
+     * desert under a high sun, where what little shaft there is reads as
+     * something the DUST does rather than something the town does. The mote
+     * field above is the other half of that sentence.
+     *
+     * Carried by ratio from the screen-space pass (0.34 of its own 1.3) and
+     * untuned against the march — see `SkySpec.air`. The threshold beside it
+     * was doing a different job entirely: pale sand under a high sun would have
+     * radiated through a luminance test, and 0.9 was what kept the floor out of
+     * it. The march asks the shadow map, so the floor was never a candidate.
      */
-    rays: { threshold: 0.9, intensity: 0.34 },
+    air: { intensity: 0.26 },
   },
   /**
    * Four bodies of standing water in a desert, and the palette is written
@@ -372,13 +379,16 @@ export const SarabEnvironment: EnvironmentSpec = {
    * the last few centimetres of every shoreline back into pale sand and made
    * each pool look like it was painted on.
    *
-   * **`glint` is the number under real pressure and it is LOW for a map with a
-   * disc in its sky.** `sky.rays.threshold` is 0.9 and the god rays' occlusion
-   * test is luminance with no depth pass, so anything in the world brighter
-   * than that stops occluding and starts radiating; the lit sand is already at
-   * 0.82 (see `skyLightIntensity`, which is held to that margin). A crest
-   * sparkle is a hard specular that fires anywhere on a body including where
-   * the mirror returns nothing, so it is exactly the term that would cross it.
+   * **`glint` is LOW for a map with a disc in its sky, and it was once under
+   * real pressure to be.** The light shafts' threshold was 0.9 and their
+   * occlusion test was luminance with no depth pass, so anything in the world
+   * brighter than that stopped occluding and started radiating; the lit sand is
+   * already at 0.82 (see `skyLightIntensity`, which is held to that margin),
+   * and a crest sparkle is a hard specular that fires anywhere on a body
+   * including where the mirror returns nothing — exactly the term that would
+   * have crossed it. `Volumetrics` occludes on the shadow map and that pressure
+   * is gone; the number stays because it is also the right look for a shallow
+   * desert pool.
    * 0.3 is enough to say the surface is moving and spends none of the margin.
    *
    * `mirror` is 0.85 rather than 1 for the reason the field exists: these are

@@ -139,7 +139,7 @@ export class HorrorPost {
    * pass from the middle of the chain, and Babylon's `attachPostProcess`
    * APPENDS, so putting it back would land it after this grade; detaching and
    * re-attaching the grade behind it is what keeps the documented order —
-   * GodRays, then the blur, then this — without anyone having to compute an
+   * the shafts, then the blur, then this — without anyone having to compute an
    * insert index against a chain that also holds the pipeline's FXAA. The
    * other caller is `setEnabled` below.
    *
@@ -150,7 +150,7 @@ export class HorrorPost {
    * switched off — the blur's dance is a detach and a re-attach around some
    * other work, and it must not resurrect a pass the player took away. That is
    * also why the grade always APPENDS rather than going back into the slot it
-   * came out of, the way `Game.syncGodRays` does: the tail is where it belongs,
+   * came out of, the way `Game.syncVolumetrics` does: the tail is where it belongs,
    * and a blur attached while it was away is already sitting past its old
    * index. The cost is one null hole per off/on cycle in the camera's list,
    * which is bounded by clicks on a settings row rather than by frames.

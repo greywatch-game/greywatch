@@ -71,11 +71,15 @@ import {
   CelMaterialFactory,
   fogAmountAt,
 } from "../shaders/CelShader";
-import { GodRays } from "../shaders/GodRays";
 import { HorrorPost } from "../shaders/HorrorPost";
 import { CelInk } from "../shaders/CelInk";
 import { FrameDepth } from "../shaders/FrameDepth";
 import { MotionBlur } from "../shaders/MotionBlur";
+import {
+  isVolumetricRung,
+  Volumetrics,
+  type VolumetricRung,
+} from "../shaders/Volumetrics";
 import { Bot } from "../entities/Bot";
 import { difficultyNames } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
@@ -200,7 +204,12 @@ import {
   type LidState,
   type StepState,
 } from "./ScreenStack";
-import { readSettings, writeSettings, type Settings } from "./settings";
+import {
+  readSettings,
+  writeSettings,
+  type Settings,
+  type VolumetricQuality,
+} from "./settings";
 import { Sfx } from "./Sfx";
 import { setViewerTeam, teamLook } from "./teamView";
 
@@ -305,6 +314,15 @@ const kitLampId = (n: number) => `kit-lamp-${n}`;
  * Systems never import each other — `Game` is the only place they meet, and
  * cross-system behavior belongs in this wiring rather than in an import.
  */
+/**
+ * The rung a pass is built at purely to CLAIM the shafts' slot, when the player
+ * has them off. It is the cheapest one, it is never drawn, and it exists only
+ * because `attachPostProcess` appends — see the constructor.
+ */
+const FIRST_VOLUMETRIC_RUNG = Object.keys(
+  CONFIG.graphics.volumetrics.rungs,
+)[0] as VolumetricRung;
+
 export class Game {
   private engine: WebGPUEngine;
   private scene: Scene;
@@ -499,15 +517,33 @@ export class Game {
   private grass: GrassSystem;
   private post: HorrorPost;
   /** Moon shafts. Driven from the sky's own moon direction every frame. */
-  private godRays: GodRays;
   /**
-   * Whether the shaft pass is on the camera, and which slot of the camera's
-   * post-process list it occupies. True to begin with — the constructor
-   * attaches it — and the first `syncGodRays` takes it off if the moon is not
-   * in frame.
+   * The light shafts, or null when the player has them off — which is a
+   * DETACHED pass and not a zeroed one, the post chain's own rule.
+   *
+   * Rebuilt rather than reconfigured on a rung change: the tap count is a WGSL
+   * `const`, so each rung is its own compiled shader. See `setVolumetrics`.
    */
-  private godRaysAttached = true;
-  private godRaysSlot = 0;
+  private volumetrics: Volumetrics | null = null;
+  /** Which rung is BUILT, so a no-op change does not recompile a shader. */
+  private volumetricsRung: VolumetricRung | null = null;
+  /**
+   * Where in the camera's chain the shafts go — claimed once in the
+   * constructor, because `attachPostProcess` APPENDS and only the moment
+   * between the pipeline and the blur knows where they belong.
+   */
+  private volumetricsSlot = 0;
+  private volumetricsAttached = false;
+  /**
+   * `?volumetrics=<rung>`, which overrides the setting for the whole session
+   * — the same relationship `?profile` has with `Settings.profiler`, and for
+   * the same reason: a measurement runs in a fresh profile with no
+   * `localStorage` to write the setting into.
+   */
+  private readonly volumetricsForced: VolumetricRung | null = (() => {
+    const q = new URLSearchParams(location.search).get("volumetrics");
+    return q !== null && isVolumetricRung(q) ? q : null;
+  })();
   private motionBlur: MotionBlur;
   /**
    * The ink. One full-screen edge over the depth the frame already wrote —
@@ -1159,13 +1195,34 @@ export class Game {
     // Moon shafts read the finished frame and add light back into it, so they
     // come after FXAA and before the grade — the vignette and grain have to
     // land on top of the beams, not under them.
-    this.godRays = new GodRays(this.scene);
-    // Attached here rather than by the pass itself, so the slot it lands in is
-    // known: `syncGodRays` takes it off and puts it back in the same hole all
-    // round, and Babylon has no way to ask where a pass used to be.
-    this.godRaysSlot = this.cameraSys.camera.attachPostProcess(
-      this.godRays.pass,
+    // The light shafts: volumetric moonlight marched through the shadow
+    // volume, after FXAA and before the blur — they belong to the same instant
+    // as the geometry, so they have to smear and be graded with it.
+    //
+    // **The SLOT is claimed here by attaching and immediately detaching**, and
+    // that is the whole reason `Game` does this rather than the pass: Babylon's
+    // `attachPostProcess` APPENDS, so only this point in the assembly knows
+    // where the shafts go, and `detachPostProcess` NULLS the entry rather than
+    // removing it — so the hole survives for `syncVolumetrics` to refill, on
+    // the first frame the depth image exists and on every later frame the
+    // player turns them back on. The blur and the grade append after the hole
+    // and the order is exact whatever the setting does.
+    const bootRung = this.volumetricsWanted(this.settings.volumetrics);
+    const first = new Volumetrics(
+      this.scene,
+      this.cameraSys.camera,
+      this.frameDepth,
+      bootRung ?? FIRST_VOLUMETRIC_RUNG,
     );
+    this.volumetricsSlot = this.cameraSys.camera.attachPostProcess(first.pass);
+    this.cameraSys.camera.detachPostProcess(first.pass);
+    if (bootRung) {
+      this.volumetrics = first;
+      this.volumetricsRung = bootRung;
+      this.seedVolumetrics(first, this.mapDef.environment);
+    } else {
+      first.dispose();
+    }
     // Then the look smears, with the shafts already in the frame — they belong
     // to the same instant as the geometry, so they have to blur with it.
     this.motionBlur = new MotionBlur(
@@ -2002,16 +2059,11 @@ export class Game {
     if (this.skyEnv === env) return;
     this.skyEnv = env;
     this.sky.apply(env);
-    if (env.sky) {
-      const tint = Color3.FromHexString(env.sky.moonGlowColor);
-      this.godRays.setTint(tint.r, tint.g, tint.b);
-    }
-    // The shafts' own two numbers, and this is pushed UNCONDITIONALLY where the
-    // tint above is not: a map with no `sky` block draws no disc and detaches
-    // the pass, but the pass is shared and the next map to attach it would
-    // otherwise inherit whatever the last one set. `setRays(undefined)` is what
-    // puts `CONFIG.godRays` back.
-    this.godRays.setRays(env.sky?.rays);
+    // Nothing for the shafts here. Their colour, their air, their reach and the
+    // light they are shafts OF are pushed together by `seedVolumetrics` off the
+    // ENVIRONMENT — which is not the same trigger as this one: the sky is
+    // repainted only when the spec object changes, and the shafts are re-seeded
+    // on every install, because a rebuilt pass has nothing in it.
   }
 
   /**
@@ -2338,6 +2390,7 @@ export class Game {
     this.hud.setFpsVisible(this.settings.fpsCounter);
     this.setProfiling(this.settings.profiler);
     this.applyRenderScale();
+    this.setVolumetrics(this.settings.volumetrics);
     this.setMotionBlurEnabled(this.settings.motionBlur);
     // After the blur, and that is the order rather than a preference: the
     // blur's own toggle takes the grade off and puts it back to keep the
@@ -2422,8 +2475,8 @@ export class Game {
   /**
    * Adds or removes the motion blur pass, keeping the chain's order.
    *
-   * The order is load-bearing and documented on both passes: GodRays, then the
-   * blur, then the grade — the shafts belong to the frame they smear with, and
+   * The order is load-bearing and documented on both passes: the shafts, then
+   * the blur, then the grade — the shafts belong to the frame they smear with, and
    * grain over a smear reads as a dirty lens. Babylon's `attachPostProcess`
    * APPENDS, so simply re-attaching the blur would put it behind the grade.
    * Taking the grade off and putting it back after is what restores the order
@@ -2433,36 +2486,87 @@ export class Game {
    * Nothing throws if this is wrong. The symptom is smeared grain.
    */
   /**
-   * Adds or removes the moon-shaft pass as the moon comes into frame and goes
-   * out of it, for a reason the shafts state on themselves: a detached pass
-   * costs nothing, while an attached one reads and writes the whole frame
-   * however early its shader gives up. `GodRays.update` has already decided;
-   * this is only the attachment.
-   *
-   * It goes back into the SLOT IT CAME OUT OF, and that is the whole reason
-   * Game does the first attach. `detachPostProcess` nulls the entry rather
-   * than removing it, and `attachPostProcess` with no index APPENDS — so the
-   * detach-the-tail-and-put-it-back dance `setMotionBlurEnabled` does would
-   * leave one more hole in the camera's list on every cycle here, in an array
-   * that is walked every frame. Re-attaching into the hole leaves the list the
-   * same length and the order exact, and never touches the other passes.
-   *
-   * This toggles as the moon crosses the edge of the fade, which is why it
-   * has to be the cheap version rather than the rare one.
+   * Which rung should be BUILT for a given setting — `?volumetrics=` first, the
+   * player's choice otherwise, and null for off.
    */
-  private syncGodRays(): void {
-    const on = this.godRays.isLive;
-    if (on === this.godRaysAttached) return;
+  private volumetricsWanted(q: VolumetricQuality): VolumetricRung | null {
+    if (this.volumetricsForced) return this.volumetricsForced;
+    return q === "off" ? null : q;
+  }
+
+  /**
+   * Builds, rebuilds or removes the shaft pass for a quality setting.
+   *
+   * **A rung change is a REBUILD and not a uniform**: the tap count is a WGSL
+   * `const` interpolated per rung, so each is its own compiled shader. That is
+   * why this guards on `volumetricsRung` — `applySettings` runs on every change
+   * to every setting, and recompiling a shader because somebody toggled the FPS
+   * counter would be a hitch with no cause anyone could see.
+   *
+   * The new pass is SEEDED before it goes anywhere. Everything it reads — the
+   * moon's colour, the map's air, the shadow window — is already standing, and
+   * a pass that waited for the next `applySky` would show the config's air over
+   * this map until the next round started.
+   *
+   * It does not attach: `syncVolumetrics` does that on the first frame the
+   * depth image exists, which is also the frame after this on a live rebuild.
+   */
+  private setVolumetrics(q: VolumetricQuality): void {
+    const want = this.volumetricsWanted(q);
+    if (want === this.volumetricsRung) return;
+    const camera = this.cameraSys.camera;
+    if (this.volumetrics) {
+      camera.detachPostProcess(this.volumetrics.pass);
+      this.volumetrics.dispose();
+      this.volumetrics = null;
+      this.volumetricsAttached = false;
+    }
+    this.volumetricsRung = want;
+    if (!want) return;
+    const vol = new Volumetrics(this.scene, camera, this.frameDepth, want);
+    this.seedVolumetrics(vol, this.mapDef.environment);
+    this.volumetrics = vol;
+  }
+
+  /**
+   * Pushes an environment into the pass: the moon's colour, the map's air, how
+   * far the march may reach and which way the light comes from.
+   *
+   * **One method rather than four call sites**, because it is called from three
+   * places that each have a different reason to forget one — a fresh build on a
+   * rung change, the constructor, and every map install. A rebuild that pushed
+   * three of the four is a map lit by the last map's moon, and nothing about it
+   * looks like a bug from inside the game.
+   */
+  private seedVolumetrics(vol: Volumetrics, env: EnvironmentSpec): void {
+    if (env.sky) {
+      const tint = Color3.FromHexString(env.sky.moonGlowColor);
+      vol.setTint(tint.r, tint.g, tint.b);
+    }
+    // UNCONDITIONAL where the tint is not: a map with no `sky` block still has
+    // air and is still lit, and the pass is shared — so the next map would
+    // otherwise inherit whatever the last one set. `setEnv(undefined)` is what
+    // puts `CONFIG.graphics.volumetrics` back.
+    vol.setEnv(env.sky?.air);
+    vol.setReach(
+      env.lighting.shadowWindow ?? CONFIG.graphics.shadows.frustumSize,
+    );
+    const [lx, ly, lz] = env.lighting.direction;
+    vol.setLightDir(-lx, -ly, -lz);
+  }
+
+  private syncVolumetrics(): void {
+    const vol = this.volumetrics;
+    if (!vol) return;
+    const on = vol.ready;
+    if (on === this.volumetricsAttached) return;
     const camera = this.cameraSys.camera;
     if (on) {
-      this.godRaysSlot = camera.attachPostProcess(
-        this.godRays.pass,
-        this.godRaysSlot,
-      );
+      camera.attachPostProcess(vol.pass, this.volumetricsSlot);
     } else {
-      camera.detachPostProcess(this.godRays.pass);
+      camera.detachPostProcess(vol.pass);
     }
-    this.godRaysAttached = on;
+    this.volumetricsAttached = on;
   }
 
   private setMotionBlurEnabled(on: boolean): void {
@@ -2922,14 +3026,17 @@ export class Game {
     this.sky.update(dt);
     // After every state has had its go at the camera, and before the render
     // that the shafts are drawn into.
-    this.godRays.update(
-      this.scene,
-      this.cameraSys.camera,
-      this.sky.moonDirection,
-    );
-    // …and then off the camera entirely when it has nothing to add. Straight
-    // after the update that decided it, and before the render it applies to.
-    this.syncGodRays();
+    // After every state has had its go at the camera, and before the render
+    // the shafts are drawn into. The shadow map is re-read rather than held,
+    // which `ShadowSystem.lightMatrix` explains — the generator mutates that
+    // matrix in place, and leaning on it is leaning on an implementation
+    // detail of Babylon's.
+    if (this.volumetrics) {
+      this.volumetrics.update();
+      const map = this.shadows.depthMap;
+      if (map) this.volumetrics.setShadow(map, this.shadows.lightMatrix);
+    }
+    this.syncVolumetrics();
     // Every frame in every state, so the basis it reprojects against can never
     // go stale while the player sits in a menu. In the editor the free-fly cam
     // drives the Babylon camera directly and never touches these angles, so
@@ -3829,9 +3936,14 @@ export class Game {
     // And how far that light's shadows are allowed to reach. It travels with
     // the direction rather than beside it, because it is a consequence of the
     // direction's elevation — see `EnvironmentSpec.lighting.shadowWindow`.
-    this.shadows.setShadowWindow(
-      environment.lighting.shadowWindow ?? CONFIG.graphics.shadows.frustumSize,
-    );
+    const shadowWindow =
+      environment.lighting.shadowWindow ?? CONFIG.graphics.shadows.frustumSize;
+    this.shadows.setShadowWindow(shadowWindow);
+    // And the shafts, which take that window as their reach — the air is only
+    // shadow-tested for the HALF side of a square centred on the player — plus
+    // the three other facts they need from an environment, pushed together so
+    // none can be missed.
+    if (this.volumetrics) this.seedVolumetrics(this.volumetrics, environment);
     this.shadows.setFogRange(environment.fogStart, environment.fogEnd);
     // How far a BODY is worth drawing, to the three systems that gate on it: a
     // rig is not drawn, a remote body is not drawn and a corpse is not worth

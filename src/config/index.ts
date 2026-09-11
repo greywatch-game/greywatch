@@ -35,7 +35,7 @@ import { net } from "./net";
 import { profiling } from "./profiling";
 import { lighting } from "./lighting";
 import { ao, map, water, grass } from "./world";
-import { sky, godRays } from "./sky";
+import { sky } from "./sky";
 import { wind } from "./wind";
 import { teams } from "./teams";
 import { vehicles } from "./vehicles";
@@ -85,7 +85,6 @@ export const CONFIG = {
   grass,
   wind,
   sky,
-  godRays,
   teams,
   vehicles,
 } as const;

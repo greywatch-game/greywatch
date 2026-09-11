@@ -1606,12 +1606,20 @@ is one machine's:
   `window.__celshock` was — several minutes into a run that had already got into
   a round. Finish editing before starting a long script, or drive `npm run
   preview` instead.
-- **`godRays.isLive` is set by the PREVIOUS frame's `update`, so reading it in
-  the same `evaluate()` that moves the camera always answers about where the
-  camera WAS.** It reads `false` from a vantage plainly pointed at the sun, which
-  looks exactly like the pass being broken. Move the camera, wait, then read.
-  The same is true of anything else derived in `Game.tick` rather than assigned
-  where you set it.
+- **Anything derived in `Game.tick` answers about the PREVIOUS frame when you
+  read it in the same `evaluate()` that set the input.** The shafts used to be
+  the worked example — `godRays.isLive` read `false` from a vantage plainly
+  pointed at the sun, which looked exactly like the pass being broken — and that
+  particular getter is gone with the pass, but the trap is not. Move the camera,
+  wait a frame, then read.
+- **The light shafts are `Volumetrics` now and they are ALWAYS attached**, which
+  changes two things for a script. There is no `isLive` and no detach to wait
+  for, so a vantage pointed away from the light still runs the pass; and the arm
+  is a query string, `?volumetrics=low|medium|high`, which overrides the player
+  setting for the session the way `?profile` does. `Game.volumetrics` is null
+  only when the setting says `off`, and the pass is attached one frame LATER than
+  it is built — `syncVolumetrics` waits for `FrameDepth` to have an image, so
+  `camera._postProcesses` is the honest check rather than the field.
 - **A heavy frame outruns Playwright's default 30 s `page.screenshot` deadline**,
   and the error names the screenshot rather than the cause. Coldharbour with the
   shafts attached, ~15k GPU particles and 37 reflection probes does it every

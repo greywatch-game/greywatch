@@ -1227,9 +1227,12 @@ is a MAP number and moved with the maps, not with the backend. **What is now
 costed is the post chain, and it is small**: finding 12's run puts the whole of
 it at ~1% of Coldharbour's frame. `renderScale` is still the unmeasured lever.
 
-- **Four chained passes at the render resolution** — fxaa, godRays, motionBlur,
-  horror — plus the glow layer's blur. Finding 2's detach takes that to three
-  for most of a round and the blur is already a player setting.
+- **Four chained passes at the render resolution** — fxaa, the light shafts,
+  motionBlur, horror — plus the glow layer's blur. Finding 2's detach took that
+  to three for most of a round while the shafts were `GodRays`; **that saving is
+  gone**, because `Volumetrics` replaced it and is attached always. Measured at
+  ~0.75 ms of GPU (`docs/rendering.md` has the per-rung table). Both the shafts
+  and the blur are player settings.
 - **The resolution itself is now a setting** (`Settings.renderScale`, three
   rungs of the display's native pixels, `Game.applyRenderScale`). Note what the
   investigation behind it turned up, because it changes what this entry means:

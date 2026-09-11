@@ -1,7 +1,7 @@
 /**
  * harrowmead/environment.ts — Harrowmead's EnvironmentSpec: palette, fog, sun
  * light, sky, water, drifting hay seed. Pure data — consumed by
- * applyEnvironment/Sky/GodRays/WaterSystem/Atmosphere. Fixture light POSITIONS
+ * applyEnvironment/Sky/Volumetrics/WaterSystem/Atmosphere. Fixture light POSITIONS
  * live in layout.ts, not here.
  */
 import type { EnvironmentSpec } from "../environment";
@@ -115,9 +115,10 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
    * Gold evening haze — the day's dust and damp with the sun in it. A HUE
    * move against the morning's green-grey, not a value move: luma 0.735
    * against the old 0.74, because every distant surface asymptotes to
-   * exactly this colour and its luminance sits under the floor of
-   * `sky.rays.threshold`'s bracket (see that field — the horizon band at
-   * 0.767 is the bracket's real floor now, and this tucks under it).
+   * exactly this colour and its luminance sits under the horizon band at
+   * 0.767. That pairing used to be load-bearing — it was the floor of the
+   * light shafts' luminance bracket — and is now simply what keeps the fog and
+   * the band reading as one distance.
    *
    * `fogStart` comes down 120 -> 100: a low sun wants the depth earlier
    * (Coldharbour went 170 -> 130 for the same reason), so the gold air sits
@@ -285,17 +286,18 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
     // and the west wood occlude it.
     haloStrength: 0.6,
     /**
-     * The sun is IN frame now whenever the player looks north-west, which
-     * is the wash warning Coldharbour documents — a lit sky is half the
-     * frame. The threshold is BRACKETED rather than chosen: the floor is
-     * the brightest pixel that must NOT radiate, the horizon band at luma
-     * 0.728 (fog 0.715 and mist 0.722 tuck under it), and the ceiling is
-     * the dimmest sky that MUST — the halo at 0.826, the lit cloud shell
-     * at 0.837, the disc above both. 0.78 sits mid-gap. Intensity holds at
-     * 0.5: what it buys is shafts through the west wood and the hedgerow
-     * gaps, and the night value returns a white wash, not beams.
+     * Level with Coldharbour's, and for the same reason: a lit sky with the
+     * sun in frame whenever the player looks north-west. What the air is FOR
+     * here is the west wood and the hedgerow gaps — an evening map where the
+     * light comes through things — which is exactly the case the march is
+     * better at than the pass it replaced, and the first place to look when
+     * these numbers are finally tuned by eye.
+     *
+     * Carried by ratio from the screen-space pass (0.5 of its own 1.3) and
+     * untuned against the march — see `SkySpec.air`. The bracketed luminance
+     * threshold is gone rather than converted.
      */
-    rays: { threshold: 0.78, intensity: 0.5 },
+    air: { intensity: 0.38 },
   },
   // Up a touch from the morning: this is the hour a real camera vignettes
   // and flares (Coldharbour's note), so the same terms read as a lens
