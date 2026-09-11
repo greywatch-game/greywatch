@@ -93,6 +93,15 @@
  *    one of them was the whole of the bug. Two reference comparisons a frame,
  *    and the work still only happens on the frames a target actually moves.
  *
+ *    **What that does NOT fix is the frame the two ends disagree ON**, and it
+ *    is measured rather than suspected: the two targets resize on different
+ *    schedules, so one frame per resize is encoded with a colour attachment at
+ *    the new size and this borrowed depth at the old, the whole command buffer
+ *    is rejected and the frame never presents. It heals on the next frame — a
+ *    round trip is byte-identical — so it is a seam and not the permanent
+ *    break above. `FINDINGS.md` 41 has the counts, including the one that is
+ *    worth something: a dragged window loses one frame in two.
+ *
  * WHAT IT REACHES INTO. `_getComponent`, `_renderMainTexture` and
  * `_currentRenderTarget` are Babylon internals, and a version bump can move any
  * of them. Every one is asserted in a DEV build for the reason `OutlineFog.ts`

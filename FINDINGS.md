@@ -5384,3 +5384,104 @@ arrives late by a millisecond, not one that arrives late by 80.
 get them.** A wrapper is Chromium either way; what it would buy is the command
 line, and the command line is what was just measured. The fix for judder remains
 finding 39's: make the frame fit the interval.
+---
+
+## 41. Every `engine.resize()` loses a whole frame to a depth-attachment size mismatch, and a window DRAG loses one frame in two
+
+**Status:** measured, cause derived from the code and not yet proven, not
+acted on. It is cosmetic — the frame that is lost is one the player was about
+to see change size anyway — and it is the cheap half of what `GlowDepth`'s
+point 5 predicted, so it is filed rather than fixed. **It is NOT the permanent
+break that file exists to prevent: that half holds.**
+
+### What was measured
+
+Headless Chromium, `channel: "chromium"`, Hollowmere, 1920x1080, a round frozen
+with `plans/webgpu-ref/harness.mjs` so nothing else moved. Counting Babylon's
+uncaptured-error log by the frame number it stamps:
+
+| what moved | frames lost |
+| --- | --- |
+| `renderScale` 1 -> 0.5 (the setting) | 1 |
+| `renderScale` 0.5 -> 1 | 1 |
+| viewport 1920x1080 -> 1600x900 | 1 |
+| viewport back | 1 |
+| **twenty successive viewport widths, as a window being dragged** | **10** |
+
+Each one is the same pair of `GPUValidationError`s, and the second is a
+consequence of the first:
+
+```
+The depth stencil attachment [... PostProcessRTT-celInk-DepthStencil ...]
+size (width: 640, height: 360) does not match the size of the other
+attachments' base plane (width: 1280, height: 720).
+  - While encoding [CommandEncoder].BeginRenderPass(
+      [RenderPassDescriptor "EffectLayerMainRTT - RenderPass"]).
+[Invalid CommandBuffer ...] is invalid due to a previous error.
+  - While calling [Queue].Submit(...)
+```
+
+**The whole command buffer is rejected, so the frame does not present at all** —
+this is a dropped frame and not a mis-drawn one. It inverts on the way back up
+(celInk's depth 1280x720 against a 640x360 base plane), which is the tell for
+what it is.
+
+### It is NOT a regression from the light shafts, and it is not new
+
+A/B'd against `origin/develop` at `b7e9c6f` — before `Volumetrics`, before
+`BodyShadows`, before `glowKernelTexels` — in a worktree with the same script:
+**4, 8, 12 logged lines for the same three changes on both trees, identically.**
+It predates all of it. It was found while measuring something else and has
+never been written down.
+
+### And it HEALS, which is the half that matters
+
+A frame taken after a full round trip — down to 0.5 and back to 1, and again
+for the viewport — is **byte-identical** (SHA-1) to the frame taken before it,
+and the layer's state afterwards is consistent: main texture 1920x1080 against
+a render size of 1920x1080, the shared depth the same, the kernel back at 112.
+
+So the depth share comes back, and `GlowDepth`'s re-install-by-identity fix is
+doing its job. **The failure this is not is the one point 5 describes** — the
+render list surviving into a freshly cleared private depth buffer, every lamp
+blooming through its own wall for the rest of the page's life. That one is
+fixed and stays fixed. This is a one-frame seam on the way through.
+
+### Why it happens — derived, not proven
+
+The two ends of the share resize on different schedules. The `EffectLayer`'s
+main texture rebuilds on the resize event itself (point 5 says so), while
+`celInk`'s depth-stencil is a `PostProcess` target that resizes when the pass
+next applies — later in the same frame, or the next one. For one frame the glow
+pass therefore begins a render pass whose colour attachment is already at the
+new size and whose borrowed depth is still at the old one, which is exactly
+what the message says. `GlowDepth` keys the share on both ends and re-checks
+every frame, which is why the frame AFTER is correct; what it does not do is
+stop the mismatched pass being encoded in the frame the sizes disagree.
+
+### Why it might matter
+
+Not for the render-scale setting: one frame at the moment the player moved a
+slider is invisible, and they are watching the resolution change anyway.
+
+It matters for the paths nobody thinks of as a resize. **Dragging a window
+across a screen is one `engine.resize()` per step and lost one frame in two**
+over twenty steps; a phone rotated on its side, a browser zoom, and dragging
+between monitors of different densities are all the same call. On a device
+already near its frame budget, half the frames through a drag is the difference
+between a resize that looks smooth and one that looks like it crashed.
+
+### How to settle it
+
+Prove the cause first — it is one `console.log` of both targets' sizes at the
+top of the hook, on the frame the error fires, and the derivation above is
+either right or it is not. If it is: the cheap fix is for the hook to SKIP the
+glow's main render on a frame where the two ends disagree about their size,
+which costs one frame of bloom on a frame that is already being thrown away.
+The expensive one is forcing the post-process target to resize eagerly on the
+engine's own resize observable, which is reaching further into Babylon's
+lifecycle than point 5's list already does and would want its own DEV assert.
+
+**Do not fix it by reverting the depth share.** The share is worth 1.85 ms on
+Coldharbour and ~20% of the frame on all three big maps (finding 3), against a
+frame lost on an event the player causes by hand.
