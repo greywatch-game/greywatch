@@ -95,6 +95,7 @@ import {
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { RAGDOLL_BONES, type SoldierRig } from "../entities/SoldierModel";
+import { ShadowWindow } from "../core/shadowWindow";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 
 /**
@@ -159,15 +160,18 @@ export class BodyShadows {
   private readonly boneJoint: readonly (keyof SoldierRig)[];
   /** Hull scales, one per kind met, keyed on the spec's own box. */
   private readonly hullLocal = new Map<string, Matrix>();
-  /** Last texel-snapped focus; forces a first update. */
-  private readonly snappedFocus = new Vector3(
-    Number.POSITIVE_INFINITY,
-    Number.POSITIVE_INFINITY,
-    Number.POSITIVE_INFINITY,
-  );
-  /** The light basis, kept off the heap. See `ShadowSystem.update`. */
-  private readonly xAxis = new Vector3(1, 0, 0);
-  private readonly yAxis = new Vector3(0, 1, 0);
+  /**
+   * Where this window stands — `core/shadowWindow.ts`, the same texel snap
+   * `ShadowSystem` places its own window with.
+   *
+   * **The arithmetic is shared and the INSTANCE is not**, which is the whole
+   * of what these two maps do and do not have in common: the snap is in texels
+   * of a particular map size, so 48 m over 1024 and 110 m over 2048 land on two
+   * different grids off the same focus. What would be a bug is the two
+   * DISAGREEING about the arithmetic, and that is exactly what one module
+   * rather than two copies removes.
+   */
+  private readonly win = new ShadowWindow();
   /** Scratch for the one matrix multiply per instance. */
   private readonly scratch: Matrix;
   /** Nearest-first selection scratch, reused frame to frame. See `packBodies`. */
@@ -267,7 +271,7 @@ export class BodyShadows {
       direction[1],
       direction[2],
     ).normalize();
-    this.snappedFocus.setAll(Number.POSITIVE_INFINITY);
+    this.win.invalidate();
   }
 
   /**
@@ -291,29 +295,7 @@ export class BodyShadows {
     hulls: readonly ShadowHull[],
   ): void {
     const c = CONFIG.graphics.bodyShadows;
-    const dir = this.light.direction;
-    const texel = c.window / c.mapSize;
-    const xAxis = this.xAxis;
-    const yAxis = this.yAxis;
-    Vector3.CrossToRef(Vector3.UpReadOnly, dir, xAxis);
-    xAxis.normalize();
-    Vector3.CrossToRef(dir, xAxis, yAxis);
-    yAxis.normalize();
-    const sx = Math.round(Vector3.Dot(focus, xAxis) / texel) * texel;
-    const sy = Math.round(Vector3.Dot(focus, yAxis) / texel) * texel;
-    const sz = Math.round(Vector3.Dot(focus, dir) / texel) * texel;
-    if (
-      sx !== this.snappedFocus.x ||
-      sy !== this.snappedFocus.y ||
-      sz !== this.snappedFocus.z
-    ) {
-      this.snappedFocus.set(sx, sy, sz);
-      const depth = sz - c.distance;
-      this.light.position.set(
-        xAxis.x * sx + yAxis.x * sy + dir.x * depth,
-        xAxis.y * sx + yAxis.y * sy + dir.y * depth,
-        xAxis.z * sx + yAxis.z * sy + dir.z * depth,
-      );
+    if (this.win.place(this.light, focus, c.window, c.mapSize, c.distance)) {
       mats.setBodyShadowMatrix(this.generator.getTransformMatrix());
     }
 
@@ -432,5 +414,4 @@ export class BodyShadows {
     }
     return m;
   }
-
 }

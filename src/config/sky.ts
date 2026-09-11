@@ -1,6 +1,8 @@
 /**
  * config/sky.ts — the painted night sky.
- * Owns: dome geometry, stars, the moon, cloud drift and the god-ray pass.
+ * Owns: dome geometry, stars, the moon and cloud drift. It owns no light
+ * shafts: those are `CONFIG.graphics.volumetrics`, marched through the shadow
+ * volume rather than smeared out of the moon's own pixels.
  * Contract: `docs/rendering.md`.
  * Gotcha: everything here rides at `infiniteDistance`, so radii and heights
  * are angular conveniences, not reachable places.

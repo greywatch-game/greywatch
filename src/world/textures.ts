@@ -1083,9 +1083,15 @@ export type FloorPatternId = keyof typeof FIELDS;
  * is stone and swings wider than it warms, sand is nearly one tone, turf
  * greens as it lightens (a negative warm, which is the blue-green end).
  *
- * The top of every ladder stays at or under 1.3. The god-ray threshold
- * (`config/sky.ts`, 0.78) is calibrated against the cobbled street, and a floor
- * brighter than that street would start shedding shafts off open ground.
+ * **Every ladder tops out at or under 1.3, and that is now a description of
+ * these numbers rather than a rule binding the next one.** What set it was the
+ * old screen-space shafts: their luminance threshold WAS the whole occlusion
+ * test and it was calibrated against the cobbled street, so a floor brighter
+ * than that street stopped being an occluder and started shedding shafts off
+ * open ground. `Volumetrics` asks the shadow map, so nothing in the world can
+ * radiate any more and that pressure is off. The values have not been raised,
+ * because they were also chosen to look right — but a new surface that wants a
+ * brighter top has only the look to answer to.
  */
 const PALETTES: Record<FloorPatternId, (base: string) => Rgb[]> = {
   dirt: (base) => ramp(base, 6, 0.72, 1.26, -0.012, 0.03),

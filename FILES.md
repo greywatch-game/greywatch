@@ -207,6 +207,12 @@ src/
     settings.ts         # Settings shape, defaults, localStorage. Applies
                         #   nothing — that is Game.applySettings, the ONLY
                         #   place a setting reaches whatever owns it
+    shadowWindow.ts     # Where a directional shadow camera STANDS, and the
+                        #   texel snap that stops its edges crawling. Both maps
+                        #   place themselves with it — ShadowSystem's and
+                        #   BodyShadows' — which is the point: two copies would
+                        #   be two windows off one focus. One instance each,
+                        #   never shared, since the snap is in ITS map's texels
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees

@@ -24,9 +24,9 @@
  *
  * **A frozen frame needs EIGHT things held, not the two the plan assumed, and
  * the last two are not clocks at all.** `Game.tick` runs `post.update`,
- * `sky.update`, `godRays.update` and `motionBlur.update` in EVERY state, the
- * deploy lid included, and the wind and the GPU particles run off their own
- * clocks beside them. Holding those six makes two consecutive
+ * `sky.update`, the light shafts' `update` and `motionBlur.update` in EVERY
+ * state, the deploy lid included, and the wind and the GPU particles run off
+ * their own clocks beside them. Holding those six makes two consecutive
  * `page.screenshot()`s byte-identical on all four maps, headed and headless.
  * Holding fewer does not: with the post chain alone Greyfen still moves 0.35%
  * of its pixels between consecutive grabs, and with everything but the wind it
@@ -87,7 +87,7 @@ export const HEIGHT = 1080;
 export const FREEZE_SET = [
   "post",
   "sky",
-  "godrays",
+  "shafts",
   "blur",
   "wind",
   "particles",
@@ -292,7 +292,11 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0 } = {}) {
     window.__refThaw ??= {
       post: g.post.update,
       sky: g.sky.update,
-      godRays: g.godRays.update,
+      // The shafts are `Volumetrics` now and the field is NULL when the player
+      // has them off, so this records the instance beside the method: the pass
+      // is REBUILT on a rung change, and a thaw that assigned a stashed method
+      // back onto a different object would put a dead closure on a live pass.
+      shafts: g.volumetrics && { on: g.volumetrics, fn: g.volumetrics.update },
       blur: g.motionBlur.update,
       wind: g.mats.updateWind,
       grass: g.grass?.update,
@@ -308,7 +312,12 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0 } = {}) {
       for (const tex of g.sky.cloudTextures ?? []) tex.uOffset = 0;
       g.sky.update = () => {};
     }
-    if (f.includes("godrays")) g.godRays.update = () => {};
+    // Belt and braces rather than a clock: `Volumetrics.update` is a pure read
+    // of the camera's basis and FOV and carries no state of its own, so a held
+    // camera already holds it. It stays in the set because the set is "what
+    // `tick` runs", and a pass that is exempt today is one somebody gives a
+    // clock to tomorrow.
+    if (f.includes("shafts") && g.volumetrics) g.volumetrics.update = () => {};
     if (f.includes("blur")) g.motionBlur.update = () => {};
     if (f.includes("wind")) {
       // Assigned and then pushed through the real updater, because the clock
@@ -396,7 +405,10 @@ export function thaw(page) {
     const g = window.__celshock;
     g.post.update = s.post;
     g.sky.update = s.sky;
-    g.godRays.update = s.godRays;
+    // Only onto the instance it was taken from — see the stash.
+    if (s.shafts && g.volumetrics === s.shafts.on) {
+      g.volumetrics.update = s.shafts.fn;
+    }
     g.motionBlur.update = s.blur;
     g.mats.updateWind = s.wind;
     if (g.grass && s.grass) g.grass.update = s.grass;

@@ -1209,9 +1209,6 @@ export class Game {
     // frame on all three big maps; `FINDINGS.md` 3
     // has the three attempts that tried to narrow that list some other way.
     this.glowDepth = new GlowDepth(this.scene, glow, this.cameraSys.camera);
-    // Moon shafts read the finished frame and add light back into it, so they
-    // come after FXAA and before the grade — the vignette and grain have to
-    // land on top of the beams, not under them.
     // The light shafts: volumetric moonlight marched through the shadow
     // volume, after FXAA and before the blur — they belong to the same instant
     // as the geometry, so they have to smear and be graded with it.
@@ -3041,8 +3038,6 @@ export class Game {
     this.prof.begin(P.post);
     this.post.update(dt);
     this.sky.update(dt);
-    // After every state has had its go at the camera, and before the render
-    // that the shafts are drawn into.
     // After every state has had its go at the camera, and before the render
     // the shafts are drawn into. The shadow map is re-read rather than held,
     // which `ShadowSystem.lightMatrix` explains — the generator mutates that

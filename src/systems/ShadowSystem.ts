@@ -44,6 +44,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { ShadowWindow } from "../core/shadowWindow";
 import type { Combatant } from "../entities/Combatant";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 
@@ -70,19 +71,13 @@ export class ShadowSystem {
   corpseShadow: (cbt: Combatant, out: Vector3) => number = () => 0;
   /** Scratch for that callback — no per-frame allocation. */
   private readonly corpseAt = new Vector3();
-  /** Last texel-snapped focus; forces a first update. */
-  private readonly snappedFocus = new Vector3(
-    Number.POSITIVE_INFINITY,
-    Number.POSITIVE_INFINITY,
-    Number.POSITIVE_INFINITY,
-  );
   /**
-   * The two cross-axes of the light's own basis, kept from `update` so the
-   * render-list cull can project casters into it. The third is the light's
-   * direction, which `DirectionalLight` already holds.
+   * Where this window stands: the light's cross-axis basis and the last
+   * texel-snapped focus, both kept after `place` so the render-list cull can
+   * project casters into the same basis. `BodyShadows` holds one of its own —
+   * see that module for why the arithmetic is shared and the instance is not.
    */
-  private readonly xAxis = new Vector3(1, 0, 0);
-  private readonly yAxis = new Vector3(0, 1, 0);
+  private readonly win = new ShadowWindow();
   /** Scratch for the cull, rebuilt on the frames the depth pass re-renders. */
   private readonly windowCasters: AbstractMesh[] = [];
   private fogStart = 24;
@@ -229,7 +224,7 @@ export class ShadowSystem {
     if (metres === this.window) return;
     this.window = metres;
     this.light.shadowFrustumSize = metres;
-    this.snappedFocus.setAll(Number.POSITIVE_INFINITY);
+    this.win.invalidate();
   }
 
   /**
@@ -294,7 +289,7 @@ export class ShadowSystem {
       direction[2],
     ).normalize();
     // Invalidate the snapped focus so the light re-centres on next update.
-    this.snappedFocus.setAll(Number.POSITIVE_INFINITY);
+    this.win.invalidate();
   }
 
   /** Blob shadows fade with the same fog wall that hides distant geometry. */
@@ -353,11 +348,11 @@ export class ShadowSystem {
     const c = CONFIG.graphics.shadows;
     const half = this.window / 2;
     const dir = this.light.direction;
-    const ax = this.xAxis;
-    const ay = this.yAxis;
+    const ax = this.win.axisX;
+    const ay = this.win.axisY;
     // Where the light's camera sits along its own view axis. The window's
     // near and far planes are measured from there.
-    const camDepth = this.snappedFocus.z - c.distance;
+    const camDepth = this.win.snapped.z - c.distance;
     const near = camDepth + this.light.shadowMinZ;
     const far = camDepth + this.light.shadowMaxZ;
     const list = this.windowCasters;
@@ -368,10 +363,10 @@ export class ShadowSystem {
       const e = box.extendSizeWorld;
       const u = p.x * ax.x + p.y * ax.y + p.z * ax.z;
       const ru = Math.abs(e.x * ax.x) + Math.abs(e.y * ax.y) + Math.abs(e.z * ax.z);
-      if (Math.abs(u - this.snappedFocus.x) > half + ru) continue;
+      if (Math.abs(u - this.win.snapped.x) > half + ru) continue;
       const v = p.x * ay.x + p.y * ay.y + p.z * ay.z;
       const rv = Math.abs(e.x * ay.x) + Math.abs(e.y * ay.y) + Math.abs(e.z * ay.z);
-      if (Math.abs(v - this.snappedFocus.y) > half + rv) continue;
+      if (Math.abs(v - this.win.snapped.y) > half + rv) continue;
       const w = p.x * dir.x + p.y * dir.y + p.z * dir.z;
       const rw =
         Math.abs(e.x * dir.x) + Math.abs(e.y * dir.y) + Math.abs(e.z * dir.z);
@@ -393,44 +388,19 @@ export class ShadowSystem {
 
   /**
    * Recentres the shadow window on the focus (the player, biased a little
-   * along the camera's view) and re-uploads the light matrix. The recenter
-   * is snapped to whole shadow-map texels in the light's own view basis:
-   * moving the window by an integer number of texels leaves every texel on
-   * the same world spot, so edges never crawl. The depth pass re-renders
-   * only when the snapped focus actually changed.
+   * along the camera's view) and re-uploads the light matrix. The recentre is
+   * snapped to whole shadow-map texels in the light's own view basis, which
+   * `core/shadowWindow.ts` owns and argues — this file's business with it is
+   * only what a MOVE costs: the depth pass re-renders, and the matrix goes out
+   * to every material, on the frames the snapped focus actually changed and on
+   * no others.
    */
   update(focus: Vector3, mats: CelMaterialFactory): void {
     const c = CONFIG.graphics.shadows;
-    const dir = this.light.direction;
-    const texel = this.window / c.mapSize;
-    // LookAtLH basis: x = normalize(cross(up, z)), y = cross(z, x). Kept on
-    // the instance rather than in locals because the render-list cull projects
-    // into the same basis, and because this runs every frame — the ToRef forms
-    // are what stop it allocating four vectors to do it.
-    const xAxis = this.xAxis;
-    const yAxis = this.yAxis;
-    Vector3.CrossToRef(Vector3.UpReadOnly, dir, xAxis);
-    xAxis.normalize();
-    Vector3.CrossToRef(dir, xAxis, yAxis);
-    yAxis.normalize();
-    const sx = Math.round(Vector3.Dot(focus, xAxis) / texel) * texel;
-    const sy = Math.round(Vector3.Dot(focus, yAxis) / texel) * texel;
-    // The depth axis is snapped too: an unsnapped window sliding along the
-    // light direction shifts receiver depths against caster depths and the
-    // hard edges crawl just the same.
-    const sz = Math.round(Vector3.Dot(focus, dir) / texel) * texel;
-    if (
-      sx !== this.snappedFocus.x ||
-      sy !== this.snappedFocus.y ||
-      sz !== this.snappedFocus.z
-    ) {
-      this.snappedFocus.set(sx, sy, sz);
-      const depth = sz - c.distance;
-      this.light.position.set(
-        xAxis.x * sx + yAxis.x * sy + dir.x * depth,
-        xAxis.y * sx + yAxis.y * sy + dir.y * depth,
-        xAxis.z * sx + yAxis.z * sy + dir.z * depth,
-      );
+    // The snap itself is `core/shadowWindow.ts`, shared with `BodyShadows`
+    // rather than written twice — two maps that disagreed about where one
+    // focus lands would shade a body against a wall it is not standing by.
+    if (this.win.place(this.light, focus, this.window, c.mapSize, c.distance)) {
       this.generator.getShadowMap()?.resetRefreshCounter();
       // Inside the guard, where it belongs: this is the branch that just
       // decided the shadow camera moved, and the matrix is a function of

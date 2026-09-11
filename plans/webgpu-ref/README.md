@@ -111,7 +111,8 @@ lamp or a reflection. See the floor, below.
 ## What makes a diff mean anything
 
 - **The frame is FROZEN, and the freeze PINS clocks rather than stopping
-  them.** `Game.tick` runs `post.update`, `sky.update`, `godRays.update` and
+  them.** `Game.tick` runs `post.update`, `sky.update`, the light shafts' own
+  `update` (`Volumetrics`, and the field is null when the player has them off) and
   `motionBlur.update` in EVERY state, the deploy lid included, and there are
   three more accumulators behind them: **there is one wind and three clocks
   reading it** — the cel factory's `windTime`, the grass field's `time` and the

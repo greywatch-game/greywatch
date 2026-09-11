@@ -526,16 +526,14 @@ the bind group fails to build and the draw is silently lost — and uniforms are
 the exact opposite, where unwritten reads as zeros.
 
 **Every cel material is FROZEN, and `CelMaterialFactory.remember` is the one
-door into the cache so that none can be filed otherwise.** `ShaderMaterial
-.isReady` rebuilds the whole define set — two arrays and a `join` — for every
-submesh of every pass and throws it away, which measured as a FIFTH of
-everything this game allocates; `isFrozen` skips exactly that and does not
-touch the uniform push, which `_mustRebind` gates instead. **What makes it safe
-is that the cache is keyed so no material is ever worn by two meshes that
-disagree about a vertex COLOUR buffer, instancing, bones or morph targets** —
-the four things those defines vary with. **Widening a cache key owes that check
-again** (`FINDINGS.md` 36): the failure is a mesh silently drawn with the
-effect another mesh compiled.
+door into the cache so that none can be filed otherwise.** Freezing skips
+`ShaderMaterial.isReady`'s rebuild of the define set; the uniform push is
+`_mustRebind`'s and keeps flowing. **What makes it safe is that the cache is
+keyed so no material is ever worn by two meshes that disagree about a vertex
+COLOUR buffer, instancing, bones or morph targets** — the four things those
+defines vary with. **Widening a cache key owes that check again**
+(`FINDINGS.md` 36): the failure is a mesh silently drawn with the effect another
+mesh compiled.
 
 Cel materials carry their own light as uniforms — key, ambient, sky fill and a
 packed array of up to `MAX_POINT_LIGHTS` (16) point lights — and `LightingSystem`
@@ -549,26 +547,23 @@ mesh in the world carries so it cannot reach a `StandardMaterial` either.
 RATE RATHER THAN BY WHAT THEY ARE.** The world's re-renders only when its
 texel-snapped focus MOVES, so **nothing that ANIMATES may be registered with
 `shadows.setCasters`** — one such caster turns it into a per-frame redraw of the
-map, which is the cost the volumetric march was designed around. Soldiers and
-hulls therefore have a map of their own (`systems/BodyShadows.ts`), re-rendered
-every frame, and **every proxy in it is a thin instance of ONE unit box — a
-soldier is `RAGDOLL_BONES`, a hull is its collider — so the pass is ONE DRAW
-CALL whatever the roster.** Two things outside that file rest on it: **a rig's
+map. Soldiers and hulls have a map of their own (`systems/BodyShadows.ts`),
+re-rendered every frame, and two things outside that file rest on it: **a rig's
 shape is `RAGDOLL_BONES` and a hull's is its collider box**, so moving either
-moves a shadow; and **the local player casts nothing**, having no rig in first
-person. `celShadow` samples both maps and combines them with `min`, and the blob
-discs stay as the CONTACT term.
+moves a shadow, and **the local player casts nothing**, having no rig in first
+person. **Where a window STANDS is `core/shadowWindow.ts`** — one texel snap
+both maps place themselves with, because two copies of it is two maps looking at
+two places off one focus.
 
-**Nothing drawn
-outside the cel shader gets fog for free, and everything that draws outside it
-owes the same fade** `CelMaterialFactory.setEnvironment` publishes — nothing may
-describe different weather from the wall it hangs in front of.
+**Nothing drawn outside the cel shader gets fog for free, and everything that
+draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`
+publishes — nothing may describe different weather from the wall in front of it.
 
 **The world carries a VERTEX COLOUR buffer and its neutral values are the GL
 defaults, not ours** — baked occlusion in the **alpha**, a world marker in the
 **green**, the wind's sway weight in the **red**, because a mesh with no such
 buffer reads the disabled attrib's `(0, 0, 0, 1)`: unoccluded, not world,
-planted. That is what lets the rigs, the viewmodel and every effect mesh stay
+planted, which is what lets the rigs, the viewmodel and every effect mesh stay
 correct while carrying nothing. The bake (`world/vertexShading.ts`) runs **after
 every merge**: `VertexData.merge` throws when one mesh in a group has `colors`
 and another does not.
@@ -577,96 +572,85 @@ and another does not.
 `CONFIG.wind`, clocked by `CelMaterialFactory.updateWind` beside the grass
 field's clock rather than the shader's eye, because a pause that holds the world
 must hold the canopy. **Anything a collider stands in for may never sway.**
-**The ink's line WEIGHT is a function of distance and is not the same reading as
-its fade**: `ink.width` takes the stroke's weight down with range while
-`fadeBand` takes its darkness, a thin black line coming forward where a thick
-pale one does not.
+**The ink's line WEIGHT is a function of distance and is not the same reading
+as its fade**: `ink.width` takes the stroke's weight down with range and
+`fadeBand` takes its darkness.
 
 **The frame's ALPHA CHANNEL is TRANSLUCENT COVERAGE, and every shader in the
-tree owes it.** The ink comes off DEPTH, and nothing alpha-blended writes depth
-— a capture marker must not hide what it marks — so smoke and the objective
-columns had the line work of whatever stood BEHIND them painted over the top of
-them. Everything opaque writes **0** into that channel (`CelShader`'s
+tree owes it.** Everything opaque writes **0** into that channel (`CelShader`'s
 `opaqueAlpha`, a literal 0 in the grass and the water, and the clear in
 `applyEnvironment`), every alpha-blended draw accumulates into it for free
 (`ALPHA_COMBINE` blends alpha as ONE, ONE), and `CelInk` scales its edge by
 `1 - a` and writes 1 back out. **A REFLECTION PROBE inverts it**: in a cube that
-channel is the bake's own coverage mask, so `ReflectionSystem` flips
-`opaqueAlpha` to 1 for the length of a bake, and **a shader that hardcodes
-either value breaks one of the two passes silently**. **One blended mesh is the
-exception and it is the one that WRITES DEPTH** — the kit screen's backdrop IS
-the surface a pixel records, so it writes 0 coverage over the whole frustum
-(`ALPHA_REPLACE_COLOR` at a fragment alpha of 0).
+channel is the bake's own coverage mask, so
+`ReflectionSystem` flips `opaqueAlpha` to 1 for the length of a bake, and **a
+shader that hardcodes either value breaks one of the two passes silently**.
+**One blended mesh is the exception and it is the one that WRITES DEPTH** — the
+kit screen's backdrop IS the surface a pixel records, so it writes 0 coverage
+over the whole frustum (`ALPHA_REPLACE_COLOR` at a fragment alpha of 0).
 
 **Water is a MIRROR with a dark body under it, and it is SAMPLED FROM NOTHING** —
-directional wave trains, no normal map, and re-adding one brings back four rules
-that existed only to hide its lattice. The one thing that DISTURBS it is a
-rotor: `washSite` is a short uniform array `RotorWash` fills and every body's
-material is handed, so a hole straddling the seam between two rects is one hole
-in one sea.
+directional wave trains and no normal map, re-adding which brings back four
+rules that existed only to hide its lattice. **The one thing that DISTURBS it
+is a rotor**, and a hole straddling the seam between two rects is one hole in
+one sea.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
 GLAZED BLOCK** — not one for the map, not one per material. Glass you cannot is
-`Build.pane({ backed })`, which composites the mass behind it arithmetically and
-therefore writes DEPTH; **it pays only if the pane is drawn first**, which is why
-`Game`'s constructor sorts the opaque queue FRONT TO BACK, and **`backed` is a
-claim about the WORLD that nothing throws over**. **No pane of either kind is a
-shadow caster**, and see-through glazing writes no depth, so the ink does not
-find it either.
+`Build.pane({ backed })`, which composites the mass behind it and therefore
+writes DEPTH — so **`backed` is a claim about the WORLD that nothing throws
+over**. **No pane of either kind is a shadow caster**, and see-through glazing
+writes no depth, so the ink does not find it either.
 
 **The frame WALKS the scene, and the scene is the map** — Babylon evaluates
-every mesh in it every frame before it has decided anything, at ~1 us each, so
-the cost is the map's AREA rather than what is on screen. `WorldCulling` holds
-that down by **replacing `scene.getActiveMeshCandidates` and writing nothing
-onto any mesh**: it never disables, never hides, never unpickles. That is the
-load-bearing part rather than an implementation detail — a disabled mesh leaves
-the shadow map's render list, a cube probe's bake and Babylon's own default pick
-filter, and a candidate list leaves all three untouched. **A collider is never a
-candidate at any distance**, **a mesh carrying `metadata.block` is one only
-while the camera is inside the map's `fogEnd`**, **a body's RIG is one only
-while the root the roster switches is enabled**, and **everything else is
-ELIGIBLE** — which is why the terrain, the roads and the rim carry no block:
-they are what the SKY is behind. **Eligibility is not the same as being
-offered**: one pass a frame (`WorldCulling.offer`) drops whatever is switched
-off right now — `!isVisible` or `!isEnabled()`, the two rejections that walk
-makes anyway — which is what finally reaches the EFFECT POOLS, several hundred
-meshes built once and idled invisible. **It also drops what is too SMALL to
-see** (`CONFIG.graphics.culling.minPixels`, a projected diameter in pixels, so
-one number holds at every resolution and FOV): a hull is the one thing in the
-game with no distance tier of its own, and its 14 cm gun rings were drawn at
-1.4 km. **Three classes are exempt and each is exempt because a screenshot said
-so** — a POOLED BODY (a per-mesh test decapitates a rig; a body is already
-gated whole by `bodyDrawDistance`), anything EMISSIVE (bloom carries a
-sub-pixel emitter far past its geometry), and **anything outside rendering
-group 0**, because `offer` runs before `scene.render()` bakes world matrices
-and the VIEWMODEL — which hangs off the camera — reports itself at the distance
-from the world origin. It answered "1.8 px at 726 m" and the gate deleted the
-player's weapon. **Nothing pooled may ever be block-keyed**, and the rigs
-are **filed mesh by mesh and never by ancestry**, because `RagdollSystem`
-reparents a corpse's joints onto Havok proxies and an ancestry test would drop
-every body in the game the moment it started falling.
+every mesh in it every frame before it has decided anything, so the cost is the
+map's AREA rather than what is on screen. `WorldCulling` holds that down by
+**replacing `scene.getActiveMeshCandidates` and writing nothing onto any mesh**:
+it never disables, never hides, never unpickles. That is the load-bearing part
+rather than an implementation detail — a disabled mesh leaves the shadow map's
+render list, a cube probe's bake and Babylon's own default pick filter, and a
+candidate list leaves all three untouched. **A collider is never a candidate at
+any distance**, **a mesh carrying `metadata.block` is one only while the camera
+is inside the map's `fogEnd`**, **a body's RIG is one only while the root the
+roster switches is enabled**, and **everything else is ELIGIBLE** — which is why
+the terrain, the roads and the rim carry no block: they are what the SKY is
+behind. **Eligibility is not the same as being offered**: one pass a frame
+(`WorldCulling.offer`) drops whatever is switched off right now — `!isVisible`
+or `!isEnabled()`, the two rejections that walk makes anyway — which is what
+finally reaches the EFFECT POOLS. **It also drops what is too SMALL to see**
+(`CONFIG.graphics.culling.minPixels`, a projected diameter in CSS pixels of the
+FRAME, so one number holds at every resolution, every render scale and every
+FOV). **Three classes are exempt and each is exempt because a screenshot said
+so** — a POOLED BODY, already gated whole by `bodyDrawDistance`; anything
+EMISSIVE, since bloom carries a sub-pixel emitter far past its geometry; and
+**anything outside rendering group 0**, because `offer` runs before
+`scene.render()` bakes world matrices and the VIEWMODEL reports itself at the
+distance from the world origin. **Nothing pooled may ever be block-keyed**, and
+the rigs are
+**filed mesh by mesh and never by ancestry**, because `RagdollSystem` reparents
+a corpse's joints onto Havok proxies and an ancestry test would drop every body
+in the game the moment it started falling.
 
 **The GLOW layer draws the EMISSIVE meshes and nothing else, and what makes that
 safe is that its occlusion is the FRAME's own depth buffer** (`GlowDepth`'s
 `shareDepth`) rather than a whole-scene redraw in opaque black. **Do not put the
-whole-scene render list back** — three attempts to narrow it by asking which
-geometry matters to a bloom all failed (`FINDINGS.md` 3), the only honest answer
-being a per-pixel depth test — and **read `GlowDepth`'s header before touching
-the layer**: the schedule, the clear, the framebuffer rebind, the texture's
-resolution and the REBUILD are five separate things that each fail SILENTLY, the
-last of them on every `engine.resize()`. The hooks are re-installed by IDENTITY
-every frame for that reason, and the depth share is keyed on BOTH of its ends.
+whole-scene render list back** (`FINDINGS.md` 3 has the three attempts that
+failed), and **read `GlowDepth`'s header before touching the layer**: the
+schedule, the clear, the framebuffer rebind, the texture's resolution and the
+REBUILD each fail SILENTLY, the last on every `engine.resize()`. **Its blur
+kernel is stated against the FRAME and converted** (`glowKernelTexels`), the
+texture it is in texels of being the backing store the player can resize.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and
 mirror and the three ways a cube probe goes flat, the four light terms and the
-colour buffer's three further rules, the ink's tint and the NIB it varies with
-distance, the wind's two bounds, the muzzle-flash budget, the fog split, the
-shadow window, the bodies' map — its own window and why none of the world's
-numbers transfer to it, the back faces, the two terms' `min`, what still does
-not cast and what the pass measured — the reflection bake's seven load-bearing details, the four
-classes the candidate list sorts the scene into and what the cull measured, the
-glow's own measurement, the painted sky, and the WGSL dialect's own traps.
+colour buffer's three further rules, the frozen define set and what it measured,
+the ink's tint and its NIB, the wind's two bounds, the muzzle-flash budget, the
+fog split, the shadow window, the bodies' map (its own window, the back faces,
+the two terms' `min`, what does not cast and what it all measured), the
+reflection bake's seven load-bearing details, the candidate list's four classes
+and what the cull measured, the glow's own measurement, the painted sky, the
+shafts and the map's own air, and the WGSL dialect's own traps.
 ### The map is data, not code
 
 `src/world/hollowmere/layout.ts` is the entire level — placements, scatter

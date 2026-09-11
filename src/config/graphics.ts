@@ -368,8 +368,12 @@ export const graphics = {
      * It has to span the tallest thing that casts over the lowest thing that
      * receives, and along the SUN rather than vertically — the along-sun reach
      * on the ground is `2 * min(distance - 1, depthRange - distance) / cos(elevation)`,
-     * which at 90/45 is 88 m at a high sun and 91 at Harrowmead's 14.5 degrees.
-     * Both are past `window`, so this is not the bound on any shipped map.
+     * which at 90/45 puts 88 m in the numerator. **That 88 is the FLOOR of the
+     * reach and not a reading at any particular sun**: the divisor is a cosine,
+     * so the reach is smallest with the light flat on the horizon and only
+     * grows as the sun climbs — 91 m at Harrowmead's 14.5 degrees, and further
+     * at every steeper one. The floor is already past `window`, so this bounds
+     * no shipped map at any elevation.
      */
     depthRange: 90,
     /**

@@ -2,7 +2,7 @@
  * CelInk.ts — The game's ink, as one full-screen pass over the depth buffer
  * the frame has ALREADY written. Owns the pass, the depth handle it borrows
  * and the band it fades over; reads no game state and writes to no mesh.
- * Invariants: it runs FIRST in the post chain, before the god rays and the
+ * Invariants: it runs FIRST in the post chain, before the light shafts and the
  * blur and the grade, because it is part of the picture rather than a grade
  * over one — shafts and grain belong on top of inked geometry, not under it.
  * Running first is also what lets it read the frame's alpha as translucent

@@ -804,12 +804,13 @@ is one machine's:
   going through the callback is what keeps a smoke test on the route the game
   actually takes. **This is for getting INTO a round, not for placing a camera**
   — the rule two hundred lines up still holds.
-- **`plans/webgpu-ref/harness.mjs`'s `freeze` THROWS on the current tree.** Its
-  stash reads `g.godRays.update` unconditionally, and that pass was deleted when
-  `Volumetrics` replaced it — so the first line of the evaluate is a TypeError
-  and a script that leans on it never gets a frozen frame at all. Inline the
-  parts you need until somebody fixes it, and note that the set to inline is
-  post / sky / blur / wind (with grass and water) / particles / lights.
+- **`plans/webgpu-ref/harness.mjs`'s `freeze` holds the light shafts under
+  `"shafts"`, not `"godrays"`**, and the rename carries one fact worth knowing
+  before you write a set of your own: `Game.volumetrics` is NULL when the player
+  has the shafts off, and the pass is REBUILT rather than reconfigured on a rung
+  change. So the stash records the instance beside the method and `thaw` puts it
+  back only onto the object it came from. A freeze set spelled by hand owes the
+  same guard, or a thaw lands a dead closure on a live pass.
 - **A frozen frame in `playing` also has to stop `lighting.update`, which the
   harness does not.** That freeze pins `lighting.t` and pushes once at dt = 0,
   which is enough for a vantage — but `updateGameplay` calls the real one every
