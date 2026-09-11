@@ -540,8 +540,26 @@ effect another mesh compiled.
 Cel materials carry their own light as uniforms — key, ambient, sky fill and a
 packed array of up to `MAX_POINT_LIGHTS` (16) point lights — and `LightingSystem`
 is the sole owner of dynamic light. **Adding a `PointLight` or `HemisphericLight`
-to the scene will not affect any cel-shaded mesh**; the one exception is
-`ShadowSystem`'s `DirectionalLight`, which no material reads. **Nothing drawn
+to the scene will not affect any cel-shaded mesh**; the exceptions are the two
+`DirectionalLight`s, which no material reads — `ShadowSystem`'s and
+`BodyShadows`', the second pinned by `includeOnlyWithLayerMask` to a layer no
+mesh in the world carries so it cannot reach a `StandardMaterial` either.
+
+**THERE ARE TWO SHADOW MAPS, AND WHICH CASTERS GO IN WHICH IS DECIDED BY REFRESH
+RATE RATHER THAN BY WHAT THEY ARE.** The world's re-renders only when its
+texel-snapped focus MOVES, so **nothing that ANIMATES may be registered with
+`shadows.setCasters`** — one such caster turns it into a per-frame redraw of the
+map, which is the cost the volumetric march was designed around. Soldiers and
+hulls therefore have a map of their own (`systems/BodyShadows.ts`), re-rendered
+every frame, and **every proxy in it is a thin instance of ONE unit box — a
+soldier is `RAGDOLL_BONES`, a hull is its collider — so the pass is ONE DRAW
+CALL whatever the roster.** Two things outside that file rest on it: **a rig's
+shape is `RAGDOLL_BONES` and a hull's is its collider box**, so moving either
+moves a shadow; and **the local player casts nothing**, having no rig in first
+person. `celShadow` samples both maps and combines them with `min`, and the blob
+discs stay as the CONTACT term.
+
+**Nothing drawn
 outside the cel shader gets fog for free, and everything that draws outside it
 owes the same fade** `CelMaterialFactory.setEnvironment` publishes — nothing may
 describe different weather from the wall it hangs in front of.
@@ -644,7 +662,9 @@ every frame for that reason, and the depth share is keyed on BOTH of its ends.
 mirror and the three ways a cube probe goes flat, the four light terms and the
 colour buffer's three further rules, the ink's tint and the NIB it varies with
 distance, the wind's two bounds, the muzzle-flash budget, the fog split, the
-shadow window, the reflection bake's seven load-bearing details, the four
+shadow window, the bodies' map — its own window and why none of the world's
+numbers transfer to it, the back faces, the two terms' `min`, what still does
+not cast and what the pass measured — the reflection bake's seven load-bearing details, the four
 classes the candidate list sorts the scene into and what the cull measured, the
 glow's own measurement, the painted sky, and the WGSL dialect's own traps.
 ### The map is data, not code

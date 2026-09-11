@@ -183,10 +183,31 @@ export const PROBE_UNIFORM_NAMES = ["reflectProbe"];
 /** The cube itself. */
 export const PROBE_SAMPLER_NAMES = ["reflectionCube"];
 
-/** The uniform names `celShadow` declares, for a consumer's uniform list. */
-export const SHADOW_UNIFORM_NAMES = ["lightMatrix", "shadowParams"] as const;
-/** The sampler `celShadow` declares, for a consumer's sampler list. */
-export const SHADOW_SAMPLER_NAMES = ["shadowMap"] as const;
+/**
+ * The uniform names `celShadow` declares, for a consumer's uniform list.
+ *
+ * FOUR now rather than two: the world's map and the bodies' each carry a matrix
+ * and a params vector, because they are two windows at two resolutions over two
+ * depth volumes and nothing in either pair transfers. See
+ * `systems/BodyShadows.ts`.
+ */
+export const SHADOW_UNIFORM_NAMES = [
+  "lightMatrix",
+  "shadowParams",
+  "bodyLightMatrix",
+  "bodyShadowParams",
+] as const;
+/**
+ * The samplers `celShadow` declares, for a consumer's sampler list.
+ *
+ * **Both must be BOUND on every material that lists them, always** — a declared
+ * sampler with nothing behind it is a bind group that fails to build and every
+ * draw using it silently lost, which is the whole reason these two lists exist
+ * as exported constants. `BodyShadows` therefore creates its map in its
+ * constructor and hands it over there, before `MapBuilder` has asked for a
+ * single material: there is no state in which this one is absent.
+ */
+export const SHADOW_SAMPLER_NAMES = ["shadowMap", "bodyShadowMap"] as const;
 
 ShaderStore.ShadersStoreWGSL["celVertexShader"] = `
 attribute position: vec3f;
@@ -1208,6 +1229,8 @@ export class CelMaterialFactory {
     "pointCount",
     "lightMatrix",
     "shadowParams",
+    "bodyLightMatrix",
+    "bodyShadowParams",
     "variationScale",
     "variationAmount",
     "specColor",
@@ -1252,8 +1275,8 @@ export class CelMaterialFactory {
     "color",
     "uv2",
   ];
-  /** Every cel material samples the shadow map, whatever its albedo path. */
-  private static readonly SAMPLERS = ["shadowMap"];
+  /** Every cel material samples both shadow maps, whatever its albedo path. */
+  private static readonly SAMPLERS = ["shadowMap", "bodyShadowMap"];
   /**
    * How far toward the eye a pane is biased in the depth test, in polygon
    * offset UNITS — one unit being the depth buffer's own smallest resolvable
@@ -1386,6 +1409,11 @@ export class CelMaterialFactory {
   private shadowMap: BaseTexture | null = null;
   private shadowMatrix = Matrix.Identity();
   private shadowParams = new Vector4(0.0025, 0.15, 0.06, 0);
+  // The bodies' map, the same three things over again — see
+  // `SHADOW_UNIFORM_NAMES` for why none of it is shared with the pair above.
+  private bodyShadowMap: BaseTexture | null = null;
+  private bodyShadowMatrix = Matrix.Identity();
+  private bodyShadowParams = new Vector4(0.0015, 0, 0, 0);
 
   /**
    * What each glazing material was built FROM, so a per-probe twin of it can be
@@ -2215,6 +2243,43 @@ export class CelMaterialFactory {
   }
 
   /**
+   * The BODIES' map, bound once at startup for the same reason the world's is:
+   * the texture object is stable while its contents re-render.
+   *
+   * Unlike the world's it re-renders EVERY frame, and nothing here has to know
+   * that — a texture is a texture. What does change is that this one can never
+   * be skipped: it is in `SHADOW_SAMPLER_NAMES`, so a material that lists it and
+   * never receives it loses every draw.
+   */
+  setBodyShadowMap(map: BaseTexture): void {
+    this.bodyShadowMap = map;
+    this.eachShadowReader((mat) => mat.setTexture("bodyShadowMap", map));
+  }
+
+  /** The bodies' light view*projection; re-uploaded when THAT window moves. */
+  setBodyShadowMatrix(matrix: Matrix): void {
+    this.bodyShadowMatrix = matrix;
+    this.eachShadowReader((mat) => mat.setMatrix("bodyLightMatrix", matrix));
+  }
+
+  /**
+   * The bodies' depth bias and tap radius. Two values rather than four: the
+   * darkness and the facet offset are the RECEIVER's and are already in
+   * `shadowParams`, so restating them here would be two places to set one look.
+   *
+   * The radius arrives already divided by that map's size — the caller is the
+   * only thing that knows which size it was — which is the opposite of
+   * `setShadowParams` below, and deliberately: that one is handed a `mapSize`
+   * because it is also the place the world map's number is known at all.
+   */
+  setBodyShadowParams(bias: number, radiusUV: number): void {
+    this.bodyShadowParams.set(bias, radiusUV, 0, 0);
+    this.eachShadowReader((mat) =>
+      mat.setVector4("bodyShadowParams", this.bodyShadowParams),
+    );
+  }
+
+  /**
    * Depth bias, in-shadow darkness, facet-normal offset, and the depth map's
    * size — which is here because the kernel's tap offsets are in UV, and one
    * texel of UV is `1 / mapSize`. Passing the size rather than the offset keeps
@@ -2307,6 +2372,11 @@ export class CelMaterialFactory {
     if (this.shadowMap) mat.setTexture("shadowMap", this.shadowMap);
     mat.setMatrix("lightMatrix", this.shadowMatrix);
     mat.setVector4("shadowParams", this.shadowParams);
+    if (this.bodyShadowMap) {
+      mat.setTexture("bodyShadowMap", this.bodyShadowMap);
+    }
+    mat.setMatrix("bodyLightMatrix", this.bodyShadowMatrix);
+    mat.setVector4("bodyShadowParams", this.bodyShadowParams);
   }
 
   /**

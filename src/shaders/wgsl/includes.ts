@@ -130,7 +130,7 @@ fn band(ndl: f32, steps: f32) -> f32 {
 
 /**
  * The stepped shadow lookup, and the uniforms it reads. Included by the cel,
- * grass and water fragment shaders so all three sample the SAME depth map with
+ * grass and water fragment shaders so all three sample the SAME depth maps with
  * the SAME kernel.
  *
  * Grass and water went without this for as long as they existed, and the
@@ -139,9 +139,25 @@ fn band(ndl: f32, steps: f32) -> f32 {
  * stopped dead at the edge of a grass rect and at the waterline, because the
  * two surfaces standing in the same shadow were the two that could not see it.
  *
- * A consumer owes two uniforms (`SHADOW_UNIFORM_NAMES`) and one sampler
+ * **THERE ARE TWO MAPS NOW AND ONE LOOKUP OVER BOTH.** The world's
+ * (`ShadowSystem`) re-renders only when its window moves and carries ~150
+ * static casters; the bodies' (`BodyShadows`) re-renders every frame and carries
+ * soldiers and hulls as proxy boxes. `shadowTap` is spent once on each and the
+ * results combined with `min` — **in LIT space, before the darkness mix**,
+ * which is what makes the combination free of an ordering: either occluder is
+ * enough, each map answers "lit" outside its OWN volume and ramps back to lit
+ * over its own `edgeFade`, so neither boundary can darken past the other and
+ * nothing has to know which map is the bigger one.
+ *
+ * **The darkness mix moved OUT of the tap for that**, and it is exactly
+ * equivalent rather than nearly: `mix(dark, 1, x)` is affine in `x` and fixes
+ * `x = 1`, so `mix(1, mix(dark, 1, S), E)` — the form this shipped with — is
+ * `mix(dark, 1, mix(1, S, E))` for the single-map case. The picture is
+ * unchanged on a frame with nobody in it.
+ *
+ * A consumer owes four uniforms (`SHADOW_UNIFORM_NAMES`) and two samplers
  * (`SHADOW_SAMPLER_NAMES`) in its own lists, and owes REGISTERING with
- * `CelMaterialFactory.registerShadowConsumer` — the factory pushes all three,
+ * `CelMaterialFactory.registerShadowConsumer` — the factory pushes all of them,
  * and a material that is never registered samples an unbound texture.
  */
 register(
@@ -176,6 +192,24 @@ var shadowMapSampler: sampler;
 var shadowMap: texture_2d<f32>;
 // x = depth bias, y = darkness, z = normal offset, w = tap radius in UV
 uniform shadowParams: vec4f;
+
+// The BODIES' map and its own view*projection — systems/BodyShadows.ts. Same
+// conventions as the pair above, because it is the same kind of object built by
+// the same Babylon generator: raw clip z, no [0,1] remap, XY to UV.
+//
+// **It is a different WINDOW, so it needs its own bias and its own tap radius
+// and cannot borrow either.** The radius is in UV and a UV texel is
+// 1 / mapSize, which is 1/1024 here against the world's 1/2048; the bias is
+// normalised depth over a 90 m volume against the world's 180. Copying
+// shadowParams over would have been a 2x-wide kernel at a 2x-loose bias,
+// which is a soft shadow floating off its own body.
+uniform bodyLightMatrix: mat4x4f;
+var bodyShadowMapSampler: sampler;
+var bodyShadowMap: texture_2d<f32>;
+// x = depth bias, y = tap radius in UV. Darkness and the normal offset are
+// NOT restated: a shadow is a shadow whichever map resolved it, and the offset
+// is a property of the RECEIVER's facet rather than of either caster set.
+uniform bodyShadowParams: vec4f;
 
 // Hard two-level shadow: lit or not, nothing in between — a soft penumbra
 // would fight the flat bands. The sample point is pushed off the facet along
@@ -225,8 +259,36 @@ uniform shadowParams: vec4f;
 // is a sample reached through control flow WGSL cannot prove uniform, and the
 // error names a function that has been correct for the life of the project.
 // The map carries no mip chain, so an explicit level 0 is what was meant.
-fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
-  let sc4 = uniforms.lightMatrix * vec4f(posW + n * uniforms.shadowParams.z, 1.0);
+// One map's answer: how LIT this receiver is by it, 0..1, with the volume's own
+// edge ramp already applied and the darkness mix deliberately NOT — see the
+// header for why that has to come after the two maps are combined.
+//
+// **The texture and the sampler are function PARAMETERS**, which is legal WGSL
+// for a handle passed straight from a module-scope declaration and is the only
+// way two maps can share one kernel. Babylon's WGSL processor rewrites the
+// module-scope texture and sampler DECLARATIONS into group/binding pairs and
+// leaves every reference alone, so a parameter list it never matched is a
+// parameter list it never touched. The alternative was a second copy of the
+// tap, which is the exact failure mode this file's header exists to describe.
+//
+// The declaration shape is deliberately not spelled out in this comment: the
+// processor's rewrite is a regex over the whole shader source, comments
+// included, so a sentence that quoted one would mint a binding with nothing
+// behind it — and a bind group that fails to build loses every draw silently.
+//
+// dir is the per-pixel rotation, unit, computed once by the caller and shared:
+// the two maps have different texel grids but the same need, which is for four
+// taps to stop being five contours along an edge.
+fn shadowTap(
+  m: mat4x4f,
+  tex: texture_2d<f32>,
+  smp: sampler,
+  p: vec3f,
+  dir: vec2f,
+  bias: f32,
+  radius: f32
+) -> f32 {
+  let sc4 = m * vec4f(p, 1.0);
   let sc = sc4.xyz / sc4.w;
   let uv = sc.xy * 0.5 + 0.5;
   // How far inside the volume this receiver is, along whichever of the three
@@ -239,26 +301,41 @@ fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
     min(sc.z, 1.0 - sc.z)
   );
   if (edge <= 0.0) { return 1.0; }
-  let depth = sc.z - uniforms.shadowParams.x;
+  let depth = sc.z - bias;
 
-  let a = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
-    * 6.2831853;
-  let rot = vec2f(cos(a), sin(a)) * uniforms.shadowParams.w;
+  let rot = dir * radius;
   let perp = vec2f(-rot.y, rot.x);
 
-  let lit = step(depth, textureSampleLevel(shadowMap, shadowMapSampler, uv + rot, 0.0).x)
-    + step(depth, textureSampleLevel(shadowMap, shadowMapSampler, uv - rot, 0.0).x)
-    + step(depth, textureSampleLevel(shadowMap, shadowMapSampler, uv + perp, 0.0).x)
-    + step(depth, textureSampleLevel(shadowMap, shadowMapSampler, uv - perp, 0.0).x);
+  let hits = step(depth, textureSampleLevel(tex, smp, uv + rot, 0.0).x)
+    + step(depth, textureSampleLevel(tex, smp, uv - rot, 0.0).x)
+    + step(depth, textureSampleLevel(tex, smp, uv + perp, 0.0).x)
+    + step(depth, textureSampleLevel(tex, smp, uv - perp, 0.0).x);
   // Narrow smoothstep rather than a plain average: the four taps give a 0,
   // 0.25, 0.5, 0.75, 1 ladder, and this pulls the middle of it back toward a
   // decision so the edge stays an edge and only its jaggies are dissolved.
-  let shade = mix(uniforms.shadowParams.y, 1.0, smoothstep(0.25, 0.75, lit * 0.25));
+  let shade = smoothstep(0.25, 0.75, hits * 0.25);
   // Back to fully lit over the outermost band of the volume. Cubic and not
   // linear: a linear ramp is flat-shaded ground with a crease in it at each
   // end, and a crease across open sand is the artefact this exists to remove
   // rather than a milder version of it.
   return mix(1.0, shade, smoothstep(0.0, ${EDGE_FADE.toFixed(4)}, edge));
+}
+
+fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
+  // Offset once, along the receiver's own facet, and spent on both maps. It is
+  // a property of the surface being lit and not of what is shading it.
+  let p = posW + n * uniforms.shadowParams.z;
+  let a = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
+    * 6.2831853;
+  let dir = vec2f(cos(a), sin(a));
+  let world = shadowTap(uniforms.lightMatrix, shadowMap, shadowMapSampler, p, dir,
+    uniforms.shadowParams.x, uniforms.shadowParams.w);
+  let bodies = shadowTap(uniforms.bodyLightMatrix, bodyShadowMap, bodyShadowMapSampler,
+    p, dir, uniforms.bodyShadowParams.x, uniforms.bodyShadowParams.y);
+  // Either occluder is enough, and min is the only combination that does not
+  // invent a darkness neither map claimed: multiplying two 0.15 terms is 0.0225,
+  // which is a black hole where a soldier stands in a doorway's shadow.
+  return mix(uniforms.shadowParams.y, 1.0, min(world, bodies));
 }
 `,
 );

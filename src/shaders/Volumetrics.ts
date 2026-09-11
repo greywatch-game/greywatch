@@ -34,17 +34,20 @@
  * table), but nobody should read that as free over a round — it is about
  * 0.75 ms of GPU, spent on a frame that leaves ~75% of the GPU idle.
  *
- * WHAT IT GIVES UP, and it is not small and it is not yet answered:
- * **CHARACTERS DO NOT OCCLUDE.** The screen-space pass got a bot cutting a beam
- * for free — a dark pixel simply stopped contributing — and this cannot see one
- * at all, because a rig is not a shadow caster (`ShadowSystem`: the player is
- * ~60 meshes and each bot 9, and they get blob discs instead). It is a real
- * regression against what shipped and it is knowingly taken, because putting
- * rigs in the shadow map is exactly the CPU cost this whole design exists to
- * avoid — and worse than the caster count suggests, since the depth pass
- * re-renders only when the texel-snapped focus MOVES and an animated caster
- * makes it a per-frame pass. **Do not "fix" it by registering rigs as casters
- * without measuring that first.**
+ * **CHARACTERS OCCLUDE, AND THEY DO IT THROUGH A MAP OF THEIR OWN.** They did
+ * not when this landed: a rig is not a caster in the world's shadow map and was
+ * never going to be, because that pass re-renders only when its texel-snapped
+ * focus MOVES and one animated caster in its list turns it into a per-frame
+ * redraw of the village. `systems/BodyShadows.ts` is the answer — a second
+ * depth map carrying soldiers and hulls as thin instances of one box, one draw
+ * call whatever the roster — and `shadowAt` below asks both volumes and takes
+ * the `min`. The two windows are deliberately different sizes; that function
+ * says why.
+ *
+ * **What is left unoccluded is the LOCAL PLAYER**, who has no rig to read in
+ * first person, and a FLYING hull far enough up that its shadow lands outside a
+ * 48 m window. Neither is a regression against the screen-space pass: it could
+ * not see an off-screen occluder at all.
  *
  * WHAT IT COSTS THE CPU, which is the question that was actually asked: one
  * full-screen draw and a dozen uniform writes. Every input it needs already
@@ -119,10 +122,19 @@ var depthTexture: texture_depth_2d;
 var shadowMapSampler: sampler;
 var shadowMap: texture_2d<f32>;
 
+// The BODIES' depth map (systems/BodyShadows.ts), declared and sampled exactly
+// as the world's is. **This is what makes a soldier cut a beam**, which the
+// screen-space pass got for free off a dark pixel and the first version of this
+// march could not do at all: a rig is not a caster in the world's map and never
+// will be, so the bodies got a map of their own and this asks both.
+var bodyShadowMapSampler: sampler;
+var bodyShadowMap: texture_2d<f32>;
+
 // Ordered widest-first: these are collected into the auto-generated LeftOver
 // UBO, and a std140 layout is least surprising when the big alignments come
 // before the small ones.
 uniform lightMatrix: mat4x4f;
+uniform bodyLightMatrix: mat4x4f;
 uniform air: vec4f;         // x density, y height falloff, z height base, w g
 uniform camPos: vec3f;
 uniform camRight: vec3f;
@@ -132,7 +144,7 @@ uniform moonDir: vec3f;     // unit, camera -> moon
 uniform tint: vec3f;
 uniform tanHalfFov: vec2f;  // half-extents of the near plane, at z = 1
 uniform nearFar: vec2f;
-uniform march: vec2f;       // x = metres to march, y = depth bias
+uniform march: vec3f;       // x = metres to march, y = world bias, z = body bias
 uniform intensity: f32;
 
 // A WGSL const rather than a #define. Babylon's WGSL processor implements a
@@ -167,8 +179,8 @@ fn linearise(d: f32, nf: vec2f) -> f32 {
 // this stops knowing anything, the beams stop being cut, and what is left is
 // smooth haze. The ramp below is the same ramp the ground uses, so the air and
 // the floor under it stop together.
-fn shadowAt(p: vec3f) -> f32 {
-  let sc4 = uniforms.lightMatrix * vec4f(p, 1.0);
+fn litIn(m: mat4x4f, tex: texture_2d<f32>, smp: sampler, p: vec3f, bias: f32) -> f32 {
+  let sc4 = m * vec4f(p, 1.0);
   let sc = sc4.xyz / sc4.w;
   let uv = sc.xy * 0.5 + 0.5;
   let edge = min(
@@ -176,9 +188,26 @@ fn shadowAt(p: vec3f) -> f32 {
     min(sc.z, 1.0 - sc.z)
   );
   if (edge <= 0.0) { return 1.0; }
-  let lit = step(sc.z - uniforms.march.y,
-    textureSampleLevel(shadowMap, shadowMapSampler, uv, 0.0).x);
+  let lit = step(sc.z - bias, textureSampleLevel(tex, smp, uv, 0.0).x);
   return mix(1.0, lit, smoothstep(0.0, ${EDGE_FADE}, edge));
+}
+
+// The air at p, against BOTH volumes. min because either occluder is enough,
+// and because each returns 1 outside its own window — so the bodies' much
+// smaller volume cannot brighten air the world has already shadowed, and the
+// world's cannot hide a soldier standing in a lit street.
+//
+// **The two windows are very different sizes and that asymmetry is the point.**
+// The world's is the map's shadowWindow (110 m by default) and the bodies' is
+// 48 m, so a beam is cut by walls for the whole march and by bodies only within
+// 24 m of the eye. That is where a body cutting a shaft is worth anything: at
+// 40 m a soldier is a smudge in haze and the cut is a few pixels of noise.
+fn shadowAt(p: vec3f) -> f32 {
+  let world = litIn(uniforms.lightMatrix, shadowMap, shadowMapSampler, p,
+    uniforms.march.y);
+  let bodies = litIn(uniforms.bodyLightMatrix, bodyShadowMap, bodyShadowMapSampler,
+    p, uniforms.march.z);
+  return min(world, bodies);
 }
 
 // Henyey-Greenstein, carrying its own 1/4pi — intensity absorbs it, which is
@@ -292,6 +321,9 @@ export class Volumetrics {
   /** The moon's depth map and its view*projection, pushed by `Game`. */
   private shadowMap: BaseTexture | null = null;
   private lightMatrix: Matrix = Matrix.Identity();
+  /** The BODIES' depth map and ITS view*projection — `BodyShadows`, via `Game`. */
+  private bodyShadowMap: BaseTexture | null = null;
+  private bodyLightMatrix: Matrix = Matrix.Identity();
   /** The map's own air, as multipliers on the config. See `setEnv`. */
   private densityMult = 1;
   private intensityMult = 1;
@@ -311,6 +343,7 @@ export class Volumetrics {
     this.post = new PostProcess(`volumetrics_${rung}`, SHADERS.get(rung)!, {
       uniforms: [
         "lightMatrix",
+        "bodyLightMatrix",
         "air",
         "camPos",
         "camRight",
@@ -323,7 +356,7 @@ export class Volumetrics {
         "march",
         "intensity",
       ],
-      samplers: ["depthTexture", "shadowMap"],
+      samplers: ["depthTexture", "shadowMap", "bodyShadowMap"],
       size: 1.0,
       camera: null,
       engine: scene.getEngine(),
@@ -331,6 +364,7 @@ export class Volumetrics {
     });
     this.post.onApply = (effect) => {
       effect.setMatrix("lightMatrix", this.lightMatrix);
+      effect.setMatrix("bodyLightMatrix", this.bodyLightMatrix);
       effect.setFloat4(
         "air",
         v.density * this.densityMult,
@@ -354,7 +388,12 @@ export class Volumetrics {
         this.tanY,
       );
       effect.setFloat2("nearFar", this.camera.minZ, this.camera.maxZ);
-      effect.setFloat2("march", this.reach, CONFIG.graphics.shadows.bias);
+      effect.setFloat3(
+        "march",
+        this.reach,
+        CONFIG.graphics.shadows.bias,
+        CONFIG.graphics.bodyShadows.bias,
+      );
       effect.setFloat("intensity", v.intensity * this.intensityMult);
       // A DECLARED sampler must be BOUND or the bind group fails to build and
       // the draw is silently lost. Neither can be null by the time this runs —
@@ -363,6 +402,9 @@ export class Volumetrics {
       const depth = this.depth.texture;
       if (depth) effect.setTexture("depthTexture", depth);
       if (this.shadowMap) effect.setTexture("shadowMap", this.shadowMap);
+      if (this.bodyShadowMap) {
+        effect.setTexture("bodyShadowMap", this.bodyShadowMap);
+      }
     };
   }
 
@@ -378,13 +420,29 @@ export class Volumetrics {
 
   /** Everything it needs is bound. `Game` will not attach the pass until it is. */
   get ready(): boolean {
-    return this.shadowMap !== null && this.depth.texture !== null;
+    return (
+      this.shadowMap !== null &&
+      this.bodyShadowMap !== null &&
+      this.depth.texture !== null
+    );
   }
 
   /** The moon's depth map and its view*projection — `ShadowSystem`'s, via `Game`. */
   setShadow(map: BaseTexture, matrix: Matrix): void {
     this.shadowMap = map;
     this.lightMatrix = matrix;
+  }
+
+  /**
+   * The BODIES' depth map and its view*projection — `BodyShadows`', via `Game`.
+   *
+   * Pushed on the same line as `setShadow` and for the same reason: both
+   * generators mutate their matrix in place, so re-reading every frame is the
+   * only thing that does not lean on that.
+   */
+  setBodyShadow(map: BaseTexture, matrix: Matrix): void {
+    this.bodyShadowMap = map;
+    this.bodyLightMatrix = matrix;
   }
 
   /** The moon's own colour, pushed when the map's environment is applied. */

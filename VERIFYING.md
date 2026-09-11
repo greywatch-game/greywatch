@@ -804,6 +804,54 @@ is one machine's:
   going through the callback is what keeps a smoke test on the route the game
   actually takes. **This is for getting INTO a round, not for placing a camera**
   — the rule two hundred lines up still holds.
+- **`plans/webgpu-ref/harness.mjs`'s `freeze` THROWS on the current tree.** Its
+  stash reads `g.godRays.update` unconditionally, and that pass was deleted when
+  `Volumetrics` replaced it — so the first line of the evaluate is a TypeError
+  and a script that leans on it never gets a frozen frame at all. Inline the
+  parts you need until somebody fixes it, and note that the set to inline is
+  post / sky / blur / wind (with grass and water) / particles / lights.
+- **A frozen frame in `playing` also has to stop `lighting.update`, which the
+  harness does not.** That freeze pins `lighting.t` and pushes once at dt = 0,
+  which is enough for a vantage — but `updateGameplay` calls the real one every
+  frame, so in a live round the lantern flicker re-advances and a night village
+  is most of the residue. Measured on Hollowmere: a control pair read mean
+  **5.4/255** with the clocks pinned and this one left running, **0.23** with it
+  stubbed, and **0.0** with the whole of `updateGameplay` stubbed.
+- **`engine.stopRenderLoop()` plus a manual `scene.render()` does NOT give
+  `page.screenshot` a new frame**, and the failure is the worst shape there is:
+  every pair reads **0% of pixels differ**, including a deliberate change, so an
+  A/B concludes that whatever it was testing does nothing. Keep the render loop
+  running and freeze the SIMULATION instead — stubbing `g.updateGameplay` holds
+  the camera, the bodies, the hulls and the flicker all at once, and a control
+  pair then reads exactly 0.000. **Put a sanity condition in every such A/B**,
+  and make it the same KIND of change as the thing under test: a camera move is
+  a bad one, because `cameraSys.update` rewrites the angles from the input on
+  the next frame and it reads as no change either.
+- **Stubbing `battle.update` alone does not hold a round still if the map has
+  vehicles.** The hulls keep driving, and the diff then GROWS with the number of
+  frames between two shots — 0.011 at three frames, 0.27 at six, 0.65 at twelve
+  — which is drift being measured rather than the lever. That growth with frame
+  distance is the tell; if you see it, something is still moving.
+- **Teleporting a bot needs the RIG moved and enabled, not just `bot.position`.**
+  The rig follows that field inside `Bot.update`, and `BattleSystem`'s distance
+  LOD — also in that update — is what switched the root off in the first place,
+  so a staging that pins the AI first leaves every body where it was and
+  switched off. Set `bot.rig.root.position` to `(x, y + rig.centerHeight, z)`
+  and `rig.root.setEnabled(true)` beside `bot.position.set(...)`, THEN pin.
+- **`bot.takeDamage(999, ...)` kills a bot and produces NO RAGDOLL**, and the
+  result reads as the physics being broken. `Game.registerBotKill` is the one
+  place all three death paths converge and the one place the body is offered to
+  the pool, so a direct `takeDamage` leaves a dead bot whose rig is simply
+  switched off — `ragdolling` false, the torso never falls, nothing drawn. Call
+  `g.ragdolls.spawn(victim, g.cameraSys.camera.position)` immediately after, which
+  is exactly what that method does. With it: `ragdolling` true, the rig stays
+  ENABLED for the life of the corpse (`BattleSystem`'s LOD re-enables it every
+  frame while the bot is dead), and the torso drops — measured 3.20 m to 2.32 in
+  300 ms.
+- **Bots are not alive on the frame `playing` arrives**, so a script that stages
+  the roster immediately stages nothing: `battle.bots.filter(b => b.alive)` is
+  empty and every downstream count reads zero without erroring. Wait several
+  seconds first — and assert on the count you staged rather than trusting it.
 - Getting into `playing` takes an indeterminate number of Enter presses (the menu
   gates confirm on `overlayT > 0.5`), so press until `state === "playing"`. A LONG
   PRESS is what registers — `keyboard.press()` can fit the down and up inside one

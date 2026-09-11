@@ -295,9 +295,142 @@ export const graphics = {
      * where that shows.
      */
     pcfRadiusTexels: 0.5,
-    /** Soft contact disc under each combatant. */
+    /**
+     * Soft contact disc under each combatant — and with `bodyShadows` below it
+     * is the CONTACT term rather than the whole shadow.
+     *
+     * **It is deliberately not suppressed where a cast shadow covers the same
+     * body**, which reads as double-shading only if you expect a shadow map to
+     * be able to draw a contact. It cannot: the body map renders BACK FACES
+     * (`forceBackFacesOnly`), so what it records is the far side of each
+     * proxy box and the ground between a boot's front and back faces tests as
+     * lit — a gap of a few centimetres exactly where the eye looks for the
+     * body to be touching the floor. The disc fills it, which is the job it
+     * was already doing, and the pair is what a renderer normally spends an
+     * ambient-occlusion term and a shadow map on.
+     */
     blobRadius: 0.6,
     blobOpacity: 0.55,
+  },
+  /**
+   * The bodies' OWN shadow map: a second depth pass carrying nothing but
+   * soldiers and hulls, re-rendered every frame, sampled by the surfaces
+   * (`celShadow`) and by the volumetric march (`Volumetrics`) alongside the
+   * static world's.
+   *
+   * **IT IS A SECOND MAP RATHER THAN MORE CASTERS IN THE FIRST ONE, and that
+   * is the whole design.** `shadows` above re-renders only when its
+   * texel-snapped focus MOVES, which is what makes ~150 static casters
+   * affordable at all; an animated caster in that list turns it into a
+   * per-frame redraw of the whole village. A map of its own pays for the
+   * bodies and for nothing else, and it buys two things beside: its window is
+   * sized to the BODIES rather than to the map, so it is finer than the world's
+   * at a quarter of the resolution, and it can cull front faces without the
+   * world having to.
+   *
+   * **ONE DRAW CALL carries every body in the game.** The proxies are thin
+   * instances of a single unit box, so a soldier is ten instances
+   * (`RAGDOLL_BONES`) and a hull is one, and the whole pass is one draw
+   * whatever the roster. See `systems/BodyShadows.ts`.
+   */
+  bodyShadows: {
+    /**
+     * Shadow map resolution (square). A quarter of the world map's area for a
+     * window less than half its side: 48 m / 1024 is **4.7 cm** texels against
+     * the world's 5.4, so a body's shadow is drawn FINER than the wall it
+     * falls on rather than coarser.
+     */
+    mapSize: 1024,
+    /**
+     * Side of the ortho window, in metres, centred on the same focus the world
+     * shadows use.
+     *
+     * **It is sized to where a body's shadow is worth drawing and not to where
+     * a body can be seen**, which are two very different distances: a shadow is
+     * a contact cue, and at 24 m a soldier is 40-odd pixels tall and their
+     * shadow is a smudge under them. Past the window `celShadow` answers lit
+     * for this map exactly as it does for the world's, with the same
+     * `edgeFade` ramp — so what a body loses at the boundary is its cast
+     * shadow, and what it keeps is the contact disc.
+     *
+     * **Raising it costs texel density on the near bodies to buy a shadow
+     * nobody is looking at**, which is the wrong way round for a 4.7 cm
+     * budget. What it would buy is a FLYING hull's shadow: a gunship 40 m up
+     * throws its shadow 150 m along a 14.5-degree sun, which no window a
+     * client can afford is going to contain.
+     */
+    window: 48,
+    /** Light camera distance behind the focus, along the light direction. */
+    distance: 45,
+    /**
+     * Depth range of the ortho volume.
+     *
+     * It has to span the tallest thing that casts over the lowest thing that
+     * receives, and along the SUN rather than vertically — the along-sun reach
+     * on the ground is `2 * min(distance - 1, depthRange - distance) / cos(elevation)`,
+     * which at 90/45 is 88 m at a high sun and 91 at Harrowmead's 14.5 degrees.
+     * Both are past `window`, so this is not the bound on any shipped map.
+     */
+    depthRange: 90,
+    /**
+     * Depth bias, in normalised depth units — and it is smaller than the world
+     * map's for a reason that is worth stating, because copying that number
+     * over is the obvious thing to do and wrong.
+     *
+     * `shadows.bias` is 0.0035 over a 180 m volume, which is 63 cm of slop
+     * along the light. It can afford that because the acne it exists to
+     * prevent is a receiver testing against its OWN depth, and the facet-normal
+     * offset does most of that work. **Nothing in this map is ever its own
+     * receiver**: the casters are proxy boxes that are never drawn and the
+     * receivers are the world and the bodies' visible meshes, so there is no
+     * correlated depth error to hide. What is left to beat is half-float
+     * quantisation (~5e-4 near the far plane) and the receiver's own normal
+     * offset, and 0.0015 over a 90 m volume is 13.5 cm — under a boot rather
+     * than under a body.
+     */
+    bias: 0.0015,
+    /**
+     * Half-width of the four-tap kernel, in texels of THIS map.
+     *
+     * The same 0.5 the world map uses and for the same reason — one texel of
+     * support cancels a one-texel staircase — but it cannot be the same
+     * NUMBER once it reaches the shader: the radius is in UV and a UV texel is
+     * `1 / mapSize`, so the two maps have different radii and
+     * `bodyShadowParams` carries its own.
+     */
+    pcfRadiusTexels: 0.5,
+    /**
+     * How many bodies may hold proxies in one frame.
+     *
+     * A budget rather than a count: Sarab and Cinderhaven field 24 a side, and
+     * every one of them inside one 48 m window at once is a street fight that
+     * has already stopped being about shadows. Bodies are taken NEAREST FIRST
+     * to the window's focus, which is the same partial selection
+     * `LightingSystem` spends its sixteen light slots with.
+     */
+    maxBodies: 24,
+    /**
+     * How many HULLS may hold proxies in one frame.
+     *
+     * A separate budget from `maxBodies` because it is a separate shape — one
+     * instance rather than ten — and because the two run out for different
+     * reasons: bodies are limited by the fight in front of you and hulls by how
+     * many a map lays down at all, which is four on the most crowded of the
+     * six. It exists to SIZE THE BUFFER rather than to ration anything.
+     */
+    maxHulls: 8,
+    /**
+     * Metres of slack added to a hull's collider box before it is used as a
+     * proxy.
+     *
+     * The box is what a round is tested against and what a body may not stand
+     * in, and it already encloses the turret on purpose — so as a shadow it is
+     * a little generous rather than a little mean, and this is nearly zero for
+     * that reason. What it is not zero for is the tracks: the collider's floor
+     * is where the hull RESTS and a shadow that stops exactly there leaves a
+     * bright line under the running gear on any ground that is not flat.
+     */
+    hullPad: 0.05,
   },
   /**
    * The ink, as a SCREEN-SPACE edge over the depth the frame has already

@@ -1201,13 +1201,100 @@ grade cannot reach. The sky dome was the expected customer and measured as not
 needing it (233 runs against 229): stars, the galactic band and the halo are
 painted over the whole ramp, and the cloud decks sit in front.
 
-The one exception is `ShadowSystem`'s `DirectionalLight`, which no material reads:
-it exists only to define the shadow camera for its `ShadowGenerator`. The cel
-fragment shader samples that depth map as a hard two-level term gating the key
-light. The shadow window follows the player (texel-snapped, re-rendered only when
-the snapped focus moves), casters are the map's merged static meshes re-registered
-every round via `shadows.setCasters(map.visuals)` (skipping anything flat with
-`metadata.noShadowCaster`), and characters get blob-shadow discs instead of casting.
+The exceptions are the TWO `DirectionalLight`s, which no material reads: each
+exists only to define a shadow camera for its `ShadowGenerator`.
+`ShadowSystem`'s is the world's; `BodyShadows`'s is the bodies', and it is
+pinned to a layer no mesh in the world carries (`includeOnlyWithLayerMask`), so
+it cannot reach a `StandardMaterial` either. The cel fragment shader samples
+both depth maps as one hard two-level term gating the key light. The world's
+window follows the player (texel-snapped, re-rendered only when the snapped
+focus moves), casters are the map's merged static meshes re-registered every
+round via `shadows.setCasters(map.visuals)` (skipping anything flat with
+`metadata.noShadowCaster`).
+
+### The bodies' map: why soldiers and hulls have one of their own
+
+**A rig is not a caster in the world's map and never will be.** That pass
+re-renders only when its texel-snapped focus MOVES, which is the whole reason
+~150 static casters are affordable; one animated caster in its list turns it
+into a per-frame redraw of the village. So the bodies got a second map
+(`systems/BodyShadows.ts`), re-rendered every frame, carrying soldiers and hulls
+and nothing static.
+
+**It buys two things beside the shadows.** Its window is sized to the BODIES
+rather than to the map — 48 m over 1024 texels is **4.7 cm** against the world
+map's 5.4 at a quarter of the area, so a body's shadow is drawn finer than the
+wall it falls on. And it can cull front faces without the world having to.
+
+**ONE DRAW CALL carries every body in the game**, because every proxy is a thin
+instance of one unit box: a soldier is ten instances and a hull is one. So the
+pass costs the same at 8v8 and at 24v24, and what scales is the matrices.
+
+**A soldier's ten boxes are `RAGDOLL_BONES`, and that is load-bearing rather
+than convenient.** They are already measured against the drawn geometry ("the
+glove trimmed off the end") and already hang off the joints the pose drives, so
+the shadow follows a crouch, a stance, a turn and a RAGDOLL for free —
+`RagdollSystem` reparents those joints onto Havok proxies and the shadow goes
+with the corpse without `BodyShadows` knowing physics exists. A hand-authored
+capsule would have been a pill sliding along the ground under a walking body,
+which is the artefact the blob disc already is.
+
+**BACK FACES ONLY (`forceBackFacesOnly`), and without it every soldier and every
+hull is a black cut-out.** A proxy box ENCLOSES what it stands for, so a body's
+own visible surfaces are inside their own caster: recording front faces puts
+every one of them behind the depth it is compared against. Recording the far
+side instead makes a surface inside the box test LIT and the ground behind the
+body test shadowed, and the boxes are closed and convex so there is no case
+where that is approximate. Limb-on-limb self-shadowing survives it and is
+wanted — an arm's box is in front of the torso, so its back face still is.
+
+**The blob discs STAY, and they are the contact term now rather than the whole
+shadow.** What back faces give up is the few centimetres between a boot's near
+and far faces — exactly where the eye looks for the body to be touching the
+floor — so the pair is what a renderer normally spends an ambient-occlusion term
+and a shadow map on. Suppressing the disc where the cast shadow covers the same
+body would put that gap back.
+
+**None of its numbers transfer from the world's map**, which is the mistake to
+avoid when editing either: the tap radius is in UV and a UV texel is
+`1 / mapSize` (1/1024 against 1/2048), and the bias is normalised depth over a
+90 m volume against 180. Copying `shadowParams` across is a 2x-wide kernel at a
+2x-loose bias — a soft shadow floating off its own body. `bodyShadowParams`
+carries its own pair; the DARKNESS and the facet offset are not restated,
+because a shadow is a shadow whichever map resolved it and the offset is a
+property of the receiver.
+
+**The two terms combine with `min`, in LIT space, before the darkness mix.**
+Either occluder is enough; each map answers lit outside its own volume and ramps
+back over its own `edgeFade`, so neither boundary can darken past the other.
+Multiplying two 0.15 terms would give 0.0225, which is a black hole where a
+soldier stands in a doorway's shadow. Moving the darkness mix out of the tap to
+allow that is exactly equivalent rather than nearly — `mix(dark, 1, x)` is affine
+in `x` and fixes `x = 1` — so a frame with nobody in it is unchanged.
+
+**The consequence is that on a map already in shadow the body term measures
+ZERO, and that is the right answer rather than a broken one.** A/B'd on Greyfen
+— a jungle valley whose canopy puts nearly the whole frame in shade, measured as
+98.8% of pixels moving when the world's casters are removed — switching the body
+casters off changed **nothing at all**. Empty the WORLD's map first and the same
+A/B reads 0.38% of pixels at a localised mean of 14.5/255 where a body stands.
+Anyone measuring this on a shaded map needs that discriminator or they will
+conclude the feature is inert.
+
+**What does not cast.** The LOCAL PLAYER, who has no rig to read in first person;
+they keep their contact disc. And a FLYING hull far enough up that its shadow
+lands outside a 48 m window — a gunship 40 m up throws 150 m along a
+14.5-degree sun, which no window a client can afford contains. It casts when it
+is low, which is when a player is under it.
+
+**Measured cost, Sarab at 1920x1080 with 47 bodies staged inside the window (246
+instances — the `maxBodies` cap of 24 bodies plus six hulls), three interleaved
+passes of 6 s**: mean frame 7.824 ms as shipped, 7.763 with the pack stubbed,
+7.771 with the pass unscheduled. So the CPU half reads 0.061 ms and the whole
+pass 0.053 — **under a tenth of a millisecond at the worst roster in the tree,
+and at the edge of what that instrument resolves** (the per-pass spread is
+comparable). Read it as free and re-measure before believing any figure smaller
+than the spread.
 
 **The depth pass draws only the casters standing in the window, and has to do that
 culling itself.** Babylon culls nothing off an explicit `renderList`:
@@ -2305,14 +2392,25 @@ a surface, and the same `edgeFade` ramp is used so the air and the floor under i
 stop knowing together. A map that raises its shadow window gets a longer march for
 free and pays in texel density exactly as its shadows already do.
 
-**CHARACTERS DO NOT OCCLUDE, and it is a known regression rather than an
-oversight.** A rig is not a shadow caster — the player is ~60 meshes and each bot
-9, and they get blob discs instead — so a bot standing in a beam does not cut it,
-where the screen-space pass got that for free off a dark pixel. Registering rigs
-as casters is exactly the CPU cost this design exists to avoid, and worse than the
-caster count suggests: the depth pass re-renders only when the texel-snapped focus
-MOVES, and an animated caster makes it a per-frame pass. **Measure before
-"fixing" it.**
+**CHARACTERS OCCLUDE, THROUGH A MAP OF THEIR OWN.** They did not when this
+landed, and the reason was never that rigs are expensive to draw: the world's
+depth pass re-renders only when its texel-snapped focus MOVES, and one animated
+caster in its list turns it into a per-frame redraw of the village. So the
+answer was a second map rather than more casters in the first —
+`systems/BodyShadows.ts`, one draw call whatever the roster — and `shadowAt`
+asks both volumes and takes the `min`.
+
+**The two windows are deliberately different sizes**, and that asymmetry is the
+point rather than a compromise. The world's is the map's `shadowWindow` (110 m
+by default) and the bodies' is 48, so a beam is cut by walls for the whole march
+and by bodies only within 24 m of the eye. That is where a body cutting a shaft
+is worth anything: at 40 m a soldier is a smudge in haze and the cut is a few
+pixels of noise.
+
+**What is left unoccluded is the LOCAL PLAYER**, who has no rig in first person,
+and a flying hull high enough to throw its shadow outside that window. Neither
+is a regression against the screen-space pass, which could not see an off-screen
+occluder at all.
 
 ### The map's own air
 

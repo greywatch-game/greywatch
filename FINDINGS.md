@@ -772,6 +772,20 @@ the scene's ACTIVE meshes, so an occluder has to be `isVisible` to be seen by
 it, and what stops it drawing normally would have to be renderer state the glow
 pass does not inherit. Untried.
 
+**`BodyShadows` has since built the proxy, and half the Babylon question is now
+answered — but it is the half that does NOT transfer.** That system draws every
+body in the game as thin instances of one unit box (`RAGDOLL_BONES` per soldier,
+the collider per hull) and keeps it out of the main pass with a `layerMask` no
+camera includes, which works because `ObjectRenderer` does not check `layerMask`
+against an EXPLICIT render list. The glow layer has no explicit list — it is
+`_activeMeshes`, and `Scene._evaluateActiveMeshes` does check `layerMask` — so
+the same trick hides the proxy from the glow pass as well. What did transfer is
+the SHAPE: a per-bone box set is a better body-shaped depth write than
+`rig.root`'s single capsule and costs one draw for the whole roster, so whoever
+picks this up should reuse that mesh rather than mint a second one. What is
+still missing is a way to put ONE mesh in the glow layer's list and not the main
+one.
+
 ---
 
 ### RE-MEASURED on the current tree: the share is INVARIANT, and who is in the list

@@ -150,6 +150,7 @@ import { RotorWash } from "../systems/RotorWash";
 import { ScoreBook, awardKill, awardZone, paysKiller } from "../systems/ScoreBook";
 import { LightingSystem } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
+import { BodyShadows } from "../systems/BodyShadows";
 import { ShadowSystem } from "../systems/ShadowSystem";
 import { Sky } from "../systems/Sky";
 import { WaterSystem } from "../systems/WaterSystem";
@@ -436,6 +437,16 @@ export class Game {
    */
   private ambience: AmbienceSystem;
   private shadows: ShadowSystem;
+  /**
+   * The bodies' own shadow map — soldiers and hulls, and nothing static.
+   *
+   * A system of its own rather than a third thing inside `ShadowSystem`, and the
+   * reason is the refresh rate: that one re-renders when its window moves and
+   * this one re-renders every frame, so they are two render targets with two
+   * schedules that happen to share a direction. What keeps them in step is that
+   * `applyEnvironment` pushes that direction to both from one line.
+   */
+  private bodyShadows: BodyShadows;
   /**
    * The world as the glazing reflects it — one cube, baked per map install.
    * The only render target here besides the shadow map.
@@ -1044,6 +1055,12 @@ export class Game {
     // Stepped moon shadows + contact blobs. Must exist before any cel
     // material is created so the shadow map binds on creation.
     this.shadows = new ShadowSystem(this.scene, this.mats);
+    // Same rule as the line above, and it binds a sampler every cel material
+    // DECLARES: `SHADOW_SAMPLER_NAMES` lists `bodyShadowMap`, and a declared
+    // sampler with nothing behind it is a bind group that fails to build and
+    // every draw using it silently lost. So this exists before the first
+    // material does, and there is no state in which it does not.
+    this.bodyShadows = new BodyShadows(this.scene, this.mats);
     this.input = new InputManager(canvas);
     this.cameraSys = new CameraSystem(this.scene);
 
@@ -3035,6 +3052,13 @@ export class Game {
       this.volumetrics.update();
       const map = this.shadows.depthMap;
       if (map) this.volumetrics.setShadow(map, this.shadows.lightMatrix);
+      // And the bodies', which is what lets a soldier standing in a beam cut
+      // it. Re-read for the same reason the line above is: both generators
+      // mutate their matrix in place.
+      const bodyMap = this.bodyShadows.depthMap;
+      if (bodyMap) {
+        this.volumetrics.setBodyShadow(bodyMap, this.bodyShadows.lightMatrix);
+      }
     }
     this.syncVolumetrics();
     // Every frame in every state, so the basis it reprojects against can never
@@ -3933,6 +3957,13 @@ export class Game {
     // The shadow camera follows the environment's key light, and its casters
     // are the fresh map's visuals — last build's meshes are now disposed.
     this.shadows.setLightDirection(environment.lighting.direction);
+    // The bodies' map is lit from the same place, pushed on the line after so
+    // the two windows cannot be pointed in different directions — which would
+    // be two shadows off one soldier, and would read as the bodies' map being
+    // broken rather than as a direction nobody forwarded. It takes no window of
+    // its own: it is sized to the BODIES (`CONFIG.graphics.bodyShadows.window`)
+    // and not to the map, which is what buys it finer texels than the world's.
+    this.bodyShadows.setLightDirection(environment.lighting.direction);
     // And how far that light's shadows are allowed to reach. It travels with
     // the direction rather than beside it, because it is a consequence of the
     // direction's elevation — see `EnvironmentSpec.lighting.shadowWindow`.
@@ -7789,6 +7820,18 @@ export class Game {
     pushers: readonly Combatant[],
   ): void {
     this.shadows.update(shadowFocus, this.mats);
+    // The bodies' map follows the same focus and is rebuilt from whatever is
+    // DRAWN — `rig.root.isEnabled()` inside, which is true of a living bot, of
+    // a corpse under Havok and of nothing in a pool nobody is wearing. So it is
+    // not gated on `player`: that gate means "has a body of its own to shade",
+    // which a DRIVER does not (`frameVehicleCamera` passes null) while his
+    // squad outside the hull still throws shadows.
+    this.bodyShadows.update(
+      shadowFocus,
+      this.mats,
+      this.battle.bots,
+      this.vehicles.hulls,
+    );
     if (player) {
       this.shadows.updateBlobs(
         player,
