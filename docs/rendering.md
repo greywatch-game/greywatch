@@ -1792,11 +1792,35 @@ rather than after. The second is anything too SMALL to see.
 
 **The threshold is a size on the SCREEN, not a distance in the world.**
 `CONFIG.graphics.culling.minPixels` is the projected DIAMETER of a mesh's
-bounding sphere, in pixels: `2r / dist * (renderHeight / fov)`. One number is
-therefore right at every resolution and every field of view, and it tightens by
-itself when a sight goes up, because narrowing the FOV is exactly what makes a
-far thing bigger. It is compared SQUARED — a `sqrt` per candidate measured as a
-net LOSS at the thresholds that drop little.
+bounding sphere, in pixels: `2r / dist * (renderHeight * scalingLevel / fov)`.
+One number is therefore right at every resolution and every field of view, and
+it tightens by itself when a sight goes up, because narrowing the FOV is exactly
+what makes a far thing bigger. It is compared SQUARED — a `sqrt` per candidate
+measured as a net LOSS at the thresholds that drop little.
+
+**The scaling level in that formula is what makes the pixel a fixed unit, and
+without it the gate was a different gate on every rung of the render-scale
+setting.** `getRenderHeight` is the BACKING STORE, and the backing store is
+precisely what `Game.applyRenderScale` moves — so a threshold stated in its
+pixels says one thing at `renderScale` 1 and another at 0.5, where a 3 px gate
+drops everything under **6 CSS px** — twice the threshold it was tuned at, on
+the rung a weak machine is most likely to be sitting at, and visible as a hull
+holding off until half the range the measurement below chose. It fails the other way just as
+quietly — anything that oversamples the CSS grid (a display past 2x, where the
+ladder has no rung near `1 / dpr` and the default lands at 1.5x; supersampling,
+if the ladder ever grows a rung above 1) shrinks the gate instead and hands back
+the saving the table below is the whole argument for: 3 px is -0.51 ms and 2 px
+is only -0.11.
+
+Multiplying by the level converts back to CSS pixels, and it is the whole of the
+correction because `devicePixelRatio` is already inside the level —
+`applyRenderScale` builds it as `1 / (dpr * renderScale)`, so reading the ratio
+again here would square it. The level is **1 at every default install**
+(`defaultRenderScale` picks the rung nearest `1 / dpr` for exactly that reason),
+so this is arithmetically the shipped gate on the machine FINDINGS 39 measured
+and on a fresh install of any density; it moves only once a player has moved the
+slider. The glow's blur kernel is the other number stated in backing-store
+pixels and takes the same factor — see `GlowDepth.glowKernelTexels`.
 
 **What it is FOR is geometry with no level of detail of its own.** Three of the
 four big populations on a 1500 m map are already governed: a body by
@@ -1906,6 +1930,22 @@ does not take, both being look decisions rather than bugs.
   under a headless client: a frozen vantage photographed either side of a resize
   round-trip back to the same size, which differed by a lantern blooming through
   the bell tower before and is byte-identical after.
+- **A SIXTH shipped as a bug on the same joint, and it is the one the fifth's
+  own trigger list predicts.** A texture that is the backing store is a texture
+  the player can RESIZE, and the kernel is stated in its texels — so the
+  render-scale setting, which none of the two constants had heard of, was
+  changing the bloom's size on screen: **twice as wide at `renderScale` 0.5**,
+  and two thirds as wide on a display past 2x, where the ladder has no rung near
+  `1 / dpr` and the default already oversamples the CSS grid by 1.5. It is
+  invisible as a bug because it reads as a taste — the glow having been turned
+  up or down — and it has been in every build since the setting landed. The
+  kernel is derived through `GlowDepth.glowKernelTexels` now and re-derived from
+  `Game.applyRenderScale`, the one line that moves the backing store, at the
+  density the scaling level states: `devicePixelRatio` is already inside that
+  level, so reading it again would square it, and the level is 1 at every
+  default install, which is what makes the correction a no-op on everything
+  that was ever measured. `WorldCulling`'s size gate was the same bug on the
+  same unit and takes the same factor.
 - Flat shading is recovered in the fragment shader from screen-space derivatives of
   the world position. Do not call `convertToFlatShadedMesh()`; it would unweld vertices
   on every prop and clone for no visual gain.

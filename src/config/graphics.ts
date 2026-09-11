@@ -24,10 +24,26 @@ export const graphics = {
    * The DEFAULT is not on this list: it is derived per machine by
    * `defaultRenderScale` in `core/settings.ts`, so a fresh install draws exactly
    * the pixels this game has always drawn and the player opts up from there.
+   *
+   * **Two numbers in this file are stated against the frame and not against the
+   * backing store, and both convert through the scaling level this sets**:
+   * `glowKernel` and `culling.minPixels`. Both shipped as constants in
+   * backing-store pixels, which made each of them a different number on every
+   * rung — a bloom twice as wide at 0.5, and a size gate at twice the
+   * threshold. A rung ADDED here is only honest while that stays true, which
+   * is the first thing to check if this list ever grows one.
    */
   renderScales: [0.5, 0.75, 1] as const,
   /** Emissive glow (neon, reticle, tracers) — GlowLayer settings. */
   glowIntensity: 1.15,
+  /**
+   * The blur's width, stated against the FRAME — NOT the number handed to the
+   * layer. `GlowDepth.glowKernelTexels` converts it, because the layer's kernel
+   * is in texels of a main texture that is the backing store, and the backing
+   * store is what `renderScales` above moves. Judged by eye at a scaling level
+   * of 1, which is what every default install runs at; stating it in that unit
+   * is what stops a rung changing the size of the bloom.
+   */
   glowKernel: 56,
   /** Horror grade post-process (vignette / grain / chromatic aberration). */
   vignette: 0.62,
@@ -515,6 +531,12 @@ export const graphics = {
      * removing him; and anything EMISSIVE, because bloom makes a sub-pixel
      * emitter visible far past its own size and this game has a night map full
      * of lit windows.
+     *
+     * **CSS pixels of the frame, not of the backing store** — `offer` scales by
+     * the engine's own hardware-scaling level to get there. Stated the other
+     * way this number means something different on every rung of
+     * `renderScales`: at 0.5 it drops everything under 6 CSS px, which is twice
+     * the tuning above and pops a hull in at half the range it was measured at.
      *
      * 0 disables it.
      */

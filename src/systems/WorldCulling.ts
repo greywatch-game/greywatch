@@ -543,10 +543,28 @@ export class WorldCulling {
     // Pixels per radian, from the camera's own field of view and the height it
     // is rendering at — so the threshold is a size on the SCREEN and needs no
     // per-map tuning. Read once a frame: the FOV moves when a sight goes up.
+    //
+    // **In CSS pixels, and the scaling level is what makes it CSS.**
+    // `getRenderHeight` is the BACKING STORE, which is not a fixed unit: the
+    // render-scale setting is a `setHardwareScalingLevel` and moves it under
+    // this gate, so a threshold left in backing pixels is a different
+    // threshold per rung — at 0.5 it drops everything under 6 CSS px, twice
+    // the threshold it was tuned at, so a hull holds off until half the range
+    // the measurement chose. It fails the other way just as quietly: anything
+    // that oversamples the CSS grid shrinks the gate instead and hands back
+    // the CPU `FINDINGS.md` 39 bought (3 px is -0.51 ms there, 2 px -0.11). The level already carries
+    // `devicePixelRatio`, since `Game.applyRenderScale` is what built it from
+    // one, and it is 1 at every default install — so this is arithmetically
+    // the shipped gate on the reference machine and on a fresh install of any
+    // density, and only moves once the player has moved the slider.
     const cam = this.scene.activeCamera;
     const minPx = CONFIG.graphics.culling.minPixels;
     const gate = minPx > 0 && cam !== null;
-    const perRad = gate ? this.scene.getEngine().getRenderHeight() / (cam!.fov || 1) : 0;
+    const engine = this.scene.getEngine();
+    const perRad = gate
+      ? (engine.getRenderHeight() * engine.getHardwareScalingLevel()) /
+        (cam!.fov || 1)
+      : 0;
     const px2 = minPx * minPx;
     let k = 0;
     for (let i = 0; i < n; i++) {

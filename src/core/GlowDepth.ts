@@ -69,7 +69,9 @@
  *    17's third open thread says inverts on a phone. The blur kernel is stated
  *    in TEXELS of that texture, so it must double with it or the bloom silently
  *    halves in size on screen; `GLOW_KERNEL_SCALE` is that doubling and the two
- *    constants have to move together.
+ *    constants have to move together. **And a texture that IS the backing store
+ *    is one the player can resize**, which is the third factor and not a fourth
+ *    constant — see `glowKernelTexels`.
  *
  * 5. **The main texture is REBUILT on any resize, and the two halves of this
  *    do not come back together.** `EffectLayer.render` — the compose, which
@@ -98,7 +100,7 @@
  * still renders, with the bloom either gone or reaching through walls, and
  * nobody looking at the thing that changed.
  */
-import type { Camera, GlowLayer, Scene } from "@babylonjs/core";
+import type { AbstractEngine, Camera, GlowLayer, Scene } from "@babylonjs/core";
 
 /**
  * The glow texture's size as a fraction of the render size. **1 is required**,
@@ -117,6 +119,37 @@ export const GLOW_TEXTURE_RATIO = 1;
  * read as the glow having been turned down.
  */
 export const GLOW_KERNEL_SCALE = 2;
+
+/**
+ * The kernel to hand the layer, in TEXELS of its own main texture.
+ *
+ * The two constants above are the whole of the coupling only while that texture
+ * is the size they were tuned at, and it is not: `GLOW_TEXTURE_RATIO` 1 makes
+ * it the BACKING STORE, and the backing store is the one thing in the frame the
+ * player can resize (`Game.applyRenderScale`, `setHardwareScalingLevel`). A
+ * constant number of texels over a texture that changes size is a bloom that
+ * changes size ON SCREEN: at `renderScale` 0.5 it is twice as wide as the
+ * tuning, and on a display past 2x — where the ladder has no rung near
+ * `1 / dpr` and the default lands 1.5x over the CSS grid — two thirds as wide.
+ * Neither is readable as a bug; it reads as the glow having been turned up or
+ * down, which is why it shipped.
+ *
+ * So the third factor is the backing store's DENSITY — pixels per CSS pixel,
+ * the reciprocal of Babylon's scaling level — and the level is where
+ * `devicePixelRatio` already is, since `applyRenderScale` is what built it from
+ * one. **Reading the ratio again here would square it.**
+ *
+ * At every DEFAULT install the level is 1 and this returns exactly the number
+ * that shipped: `defaultRenderScale` picks the rung nearest `1 / dpr` precisely
+ * so the backing store IS the CSS grid. It only moves when the player moves the
+ * slider, which is the case it exists for.
+ */
+export function glowKernelTexels(
+  kernel: number,
+  engine: AbstractEngine,
+): number {
+  return (kernel * GLOW_KERNEL_SCALE) / engine.getHardwareScalingLevel();
+}
 
 /** The scene component key the effect layers register under. */
 const EFFECT_LAYER_COMPONENT = "EffectLayer";

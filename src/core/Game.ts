@@ -81,7 +81,7 @@ import { difficultyNames } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import { FrameProfile, P } from "./FrameProfile";
-import { GLOW_KERNEL_SCALE, GLOW_TEXTURE_RATIO, GlowDepth } from "./GlowDepth";
+import { GLOW_TEXTURE_RATIO, GlowDepth, glowKernelTexels } from "./GlowDepth";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { HitCredits } from "../net/HitCredits";
@@ -1054,7 +1054,7 @@ export class Game {
     // constants move together or the bloom changes size on screen.
     const glow = new GlowLayer("glow", this.scene, {
       mainTextureRatio: GLOW_TEXTURE_RATIO,
-      blurKernelSize: g.glowKernel * GLOW_KERNEL_SCALE,
+      blurKernelSize: glowKernelTexels(g.glowKernel, this.engine),
     });
     glow.intensity = g.glowIntensity;
     // The ink reads that layer's MAIN texture as its emissive mask, which is why
@@ -2398,10 +2398,25 @@ export class Game {
    *
    * Read fresh every call rather than cached: this is also the resize handler,
    * and the density is exactly what a resize can have changed.
+   *
+   * **It is therefore also where anything stated in BACKING-STORE pixels is
+   * re-derived**, because this is the one line that moves them. Today that is
+   * the glow's blur kernel; `WorldCulling`'s size gate is the other reader and
+   * converts per frame instead, having to read the camera's FOV anyway.
    */
   private applyRenderScale(): void {
     const dpr = window.devicePixelRatio || 1;
     this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
+    // The glow's kernel is stated in TEXELS of a texture this just resized —
+    // `GLOW_TEXTURE_RATIO` 1 makes the layer's main texture the backing store —
+    // so it is re-derived here and nowhere else. Here rather than per frame
+    // because the setter recompiles four blur effects; it early-returns on an
+    // unchanged value, so the resize handler's own traffic costs a comparison.
+    // `glowKernelTexels` argues the factor.
+    this.glow.blurKernelSize = glowKernelTexels(
+      CONFIG.graphics.glowKernel,
+      this.engine,
+    );
   }
 
   /**
