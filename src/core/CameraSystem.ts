@@ -379,8 +379,8 @@ export class CameraSystem {
    * same event: the shooter bringing the muzzle down is also the moment they
    * stop fighting what is left of it. `haul` is a rate in radians and
    * `pitchPerShot` is what one kick is worth, so their ratio is the
-   * reciprocal of how long a reference kick takes to come home — 12/s aimed
-   * and 7/s at the hip on the reference weapon, which is what the numbers in
+   * reciprocal of how long a reference kick takes to come home — 2.46/s aimed
+   * and 2.7/s at the hip on the reference weapon, which is what the numbers in
    * `settle` are stated in.
    */
   private drainRate(blend: number): number {

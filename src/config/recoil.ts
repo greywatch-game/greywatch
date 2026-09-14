@@ -244,19 +244,34 @@ export const recoil = {
   settle: {
     /**
      * How fast the grip arrests the rotation (1/s), braced and unbraced. The
-     * rise's time constant is its reciprocal, and `riseTurns` of it is what
-     * the whole attack takes: **59 ms aimed and 112 ms at the hip** on the
-     * reference weapon, against descents (peak back to a tenth of it) of
-     * 254 and 471.
+     * rise's time constant is its reciprocal, and `riseTurns` of it is the
+     * shooter's REACTION — how long before the haul begins: **59 ms aimed and
+     * 79 ms at the hip** on the reference weapon. An isolated rifle round (a
+     * first shot, so `firstShotMult` included) peaks at 65 and 90 ms and is
+     * back to a tenth of its peak 266 and 434 ms after that.
      *
-     * **The aimed pair is MEASURED and the hip pair is scaled from it.** The
-     * footage `docs/weapons.md` records is all ADS, and it puts the muzzle at
-     * the top of its travel 58 ms after the shot and half the way home 160 ms
-     * after that. There is no hip reference at all, so `gripHip`/`haulHip`
-     * were moved by the same factors the aimed pair took (x0.54 and x0.25)
-     * rather than fitted — which keeps the two stances in the relation the
-     * block below argues for, and is the honest place to look first if hip
-     * fire feels wrong.
+     * **The aimed pair is MEASURED and the hip pair is not.** The footage
+     * `docs/weapons.md` records is all ADS, and it puts the muzzle at the top
+     * of its travel 58 ms after the shot and half the way home 160 ms after
+     * that. There is no usable hip reference, so the hip pair is set against
+     * two constraints instead, and **both were violated by the scaled pair it
+     * replaced** (24.1 and 1.48), which made a hip string take 3.7 s to settle
+     * against 0.8 aimed:
+     *
+     * - **The reaction must fit inside an automatic's cycle.** `age` restarts
+     *   on every round, so a reaction longer than the gap between rounds means
+     *   the haul never engages through a held trigger and the string piles up
+     *   unopposed. At 24.1 it was 112 ms against the rifle's 106 and the LMG's
+     *   100; at 34 it is 79 and 76, and the SMG's is 60 against its 77. **Check
+     *   it against the fastest automatic whenever `gripHip`, `riseTurns` or
+     *   `massExp` moves** — the carbine's burst is exempt, three rounds in
+     *   0.1 s being meant to climb as one motion.
+     * - **The haul has to pay for `adsMult`.** It is a RATE, so a hip kick
+     *   already 1/`adsMult` the size of an aimed one takes that much longer to
+     *   come home at the same haul — and a slower haul on top of it compounds.
+     *   That is why `haulHip` is ABOVE `haulAds` in kicks per second: the hip
+     *   is still the softer system, peaking later and climbing higher through
+     *   a string, but it is not charged for the size of its kick twice.
      *
      * **They are set against the FRAME as much as against the gun.** An
      * earlier tuning was 21 ms up and 20 down aimed, and at 60 Hz that is an
@@ -266,15 +281,16 @@ export const recoil = {
      * faster makes it JERKIER. These are nowhere near it.
      */
     gripAds: 45.5,
-    gripHip: 24.1,
+    gripHip: 34,
     /**
      * How fast the shooter hauls it back, in REFERENCE KICKS (`pitchPerShot`)
      * per second. A rate rather than a proportion, so a bigger excursion takes
      * proportionally longer to come home — which is why the bolt gun's return
-     * is slower than the SMG's without either of them saying so.
+     * is slower than the SMG's without either of them saying so — and why
+     * `haulHip` sits above `haulAds` rather than below it (see `gripAds`).
      */
     haulAds: 2.46,
-    haulHip: 1.48,
+    haulHip: 2.7,
     /**
      * Grip time constants the rise gets before the haul begins — the
      * shooter's reaction, and the flat at the top of the travel. At 2.7 the

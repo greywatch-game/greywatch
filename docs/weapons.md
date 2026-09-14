@@ -1097,9 +1097,15 @@ roll than the reference" feels like.
 **Hip fire is measured but deliberately not fitted.** A hip clip of the same
 weapon shows 1.09° of screen-space climb against ADS's 2.56° — but ADS magnifies,
 so pixels are not comparable between the two, and the reference's ADS zoom is not
-recoverable from the footage. `settle.gripHip`/`haulHip` remain scaled from the
-aimed pair rather than measured. If the two stances ever need to be right
-relative to each other, that clip plus a known ADS magnification is the way in.
+recoverable from the footage. `settle.gripHip`/`haulHip` are therefore not
+measured; they are set against two constraints `config/recoil.ts` states — the
+hip REACTION (`riseTurns / gripHip`) must fit inside the fastest automatic's
+cycle or a held trigger is never hauled at all, and the hip HAUL must pay for
+`adsMult` because a rate against a bigger kick is a longer return. The pair they
+replaced (24.1 and 1.48, scaled from the aimed pair) broke both, and a ten-round
+hip string took 3.7 s to settle against 0.8 aimed. If the two stances ever need
+to be right relative to each other, that clip plus a known ADS magnification is
+the way in.
 
 **The amplitude figures depend on the reference's ADS field of view, which is
 not recoverable from the footage.** They are quoted at OUR aimed vertical FOV
