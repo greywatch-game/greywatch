@@ -106,6 +106,7 @@ import {
   IRON,
   TEAK,
   TIMBER,
+  groundRun,
   type BuildCtx,
   type BuildParams,
   type Structure,
@@ -691,25 +692,34 @@ export function buildAdobeHouse(
  * **Author it in runs with gaps.** A sealed compound is a wall the nav grid
  * routes bots the whole way around, and a layout has no way to say "there is a
  * gate here" other than two runs with a space between them.
+ *
+ * On a slope it steps between piers, `buildStoneWall`'s way (`groundRun`).
  */
 export function buildCompoundWall(
   scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
+  ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "compound");
   const len = p.length ?? 14;
   const h = p.height ?? 2.6;
   const skin = p.tint ?? MUDBRICK;
-  b.wall(len, h, 0.4, 0, h / 2, 0, skin);
-  // The coping, and a pier every few metres. The silhouette is what sells mud
-  // brick, since the shader gives it no texture: a wall with a stepped head and
-  // buttresses reads as built, and a bare slab reads as a fence.
-  b.box(len, 0.16, 0.56, 0, h + 0.08, 0, MUDBRICK_DARK);
-  const piers = Math.max(1, Math.round(len / 5));
-  for (let i = 0; i <= piers; i++) {
-    const x = -len / 2 + (i / piers) * len;
-    b.box(0.62, h + 0.3, 0.62, x, (h + 0.3) / 2, 0, skin);
+  const run = groundRun(ctx, len, { pitch: 5, depth: 0.62, pad: 0.31, between: true });
+  for (const s of run.spans) {
+    const w = s.x1 - s.x0;
+    const x = (s.x0 + s.x1) / 2;
+    const top = s.ground + h;
+    b.wall(w, top - s.base, 0.4, x, (top + s.base) / 2, 0, skin);
+    // The coping, and a pier every few metres. The silhouette is what sells mud
+    // brick, since the shader gives it no texture: a wall with a stepped head and
+    // buttresses reads as built, and a bare slab reads as a fence.
+    b.box(w, 0.16, 0.56, x, top + 0.08, 0, MUDBRICK_DARK);
+  }
+  const piers = run.joints.length - 1;
+  for (const j of run.joints) {
+    const top = j.ground + h + 0.3;
+    b.box(0.62, top - j.base, 0.62, j.x, (top + j.base) / 2, 0, skin);
   }
 
   // A rag tied along the head of the wall, on about one run in four.
@@ -725,19 +735,19 @@ export function buildCompoundWall(
   // proud of the wall face, so a sheet placed across one would be half behind
   // it. The top is at `h`, the coping's underside — `drape`'s rule, and here
   // the cap oversails by the same 0.08 the parapet's does.
+  //
+  // On a stepped run the head has to lie under ONE coping, so a rag whose width
+  // would cross a step is not tied at all rather than hung through the wall.
   const tied = clothHash(len, h);
   if (len >= 9 && tied < 0.27) {
     const bay = Math.floor(tied * 3.7 * piers) % piers;
-    drape(
-      b,
-      0.52 + tied * 0.7,
-      0.72 + tied * 0.5,
-      -len / 2 + ((bay + 0.5) / piers) * len,
-      h,
-      -0.2,
-      -1,
-      tied,
-    );
+    const w = 0.52 + tied * 0.7;
+    const x = -len / 2 + ((bay + 0.5) / piers) * len;
+    const reach = (w + 0.12) / 2;
+    const under = run.spans.filter((s) => s.x1 > x - reach && s.x0 < x + reach);
+    if (under.every((s) => s.ground === under[0].ground)) {
+      drape(b, w, 0.72 + tied * 0.5, x, under[0].ground + h, -0.2, -1, tied);
+    }
   }
   return b;
 }

@@ -1088,11 +1088,8 @@ export class MapBuilder {
       this.item = item;
       // An authored y is an offset above the local floor, not an absolute
       // height, so a placement keeps its meaning when the ground under it moves.
-      const origin = new Vector3(
-        p.x,
-        (p.y ?? 0) + terrain.heightAt(p.x, p.z),
-        p.z,
-      );
+      const floor = terrain.heightAt(p.x, p.z);
+      const origin = new Vector3(p.x, (p.y ?? 0) + floor, p.z);
       const rotY = p.rotY ?? 0;
       const isRoad = p.kind === "road";
       // Where it lands is settled before it is built, because a builder may
@@ -1103,6 +1100,7 @@ export class MapBuilder {
         terrain,
         x: p.x,
         y: origin.y,
+        floor,
         z: p.z,
         rotY,
       });

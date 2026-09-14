@@ -897,14 +897,43 @@ in the layouts — it is a reason to re-bake (`npm run collision`) and re-check
 this is a change in the BUILDER.
 
 A road over level ground still collapses to the single box it always was
-(`terrainSlab` returns null), so this costs nothing on the shipped map. Only `road`
-does this (`CONFORMS_TO_TERRAIN` in `BuildingKit.ts`); `terrace`, `ramp`, `stairs`,
-`jetty` and `bridge` carry walkable box colliders, and bending only their visuals
-would put the surface you see out of agreement with the surface bullets spark off.
-The ones with a long run instead take an **overrun** — `stairs` and the manor's
-service flight run on past their own feet and let the buried treads go — because a
-placement height-samples once at its centre and a flight's foot is half a run away
-from it.
+(`terrainSlab` returns null), so this costs nothing on the shipped map. `terrace`,
+`ramp`, `stairs`, `jetty` and `bridge` do not bend: they carry walkable box
+colliders, and bending only their visuals would put the surface you see out of
+agreement with the surface bullets spark off. The ones with a long run instead take
+an **overrun** — `stairs` and the manor's service flight run on past their own feet
+and let the buried treads go — because a placement height-samples once at its centre
+and a flight's foot is half a run away from it.
+
+**A RUN STEPS, and that is the other way a builder follows the ground.** `stoneWall`,
+`fence` and `compoundWall` are 10–34 m long, and a centre sample left them buried at
+one end and in the air at the other: measured before the change, 129 of
+Cinderhaven's 163 field walls showed daylight under them, 22 by more than a metre and
+the worst by 3.1 m, with Harrowmead's two worst at 2.2 and 1.5 m and 78 of Sarab's
+362 compound walls clear by more than 15 cm. `groundRun` (`kit/core.ts`) cuts the
+run into LEVEL SPANS instead, each an ordinary upright box standing its full height
+on its own ground line with its footing sunk under the lowest drawn floor beneath it.
+It steps rather than rakes because a `BoxSpec` pitches only about local X and a run
+lies along it, so every span is a collider the ray queries, the nav graph and the
+cover bake already understand, lined up with the drawing exactly, and cover heights
+hold along the whole run. A masonry wall may step between piers; a fence steps only
+at a post, adding posts rather than leaving a rail's end in the air. After it, no
+footing on any shipped map is more than 2 cm off the floor and no step is taller than
+0.4 m.
+
+Two properties are load-bearing. **A level run is the geometry it always was, bit
+for bit** — one span, ground and footing at zero, joints at the authored pitch — so
+Greyfen, Coldharbour and the proving ground re-bake byte-identical. And **a LIFTED
+placement never conforms**: `BuildCtx.floor` is the ground the origin was sampled at,
+and a placement with an authored `y` over it (Hollowmere's graveyard fence on its
+terrace) is standing on something the terrain does not describe. What it costs is
+boxes, and only on slopes: +721 on Cinderhaven, +230 on Sarab and ~50 on Harrowmead.
+
+**Every builder that declares a `BuildCtx` belongs in `CONFORMS_TO_TERRAIN`**
+(`BuildingKit.ts`) — the road, the three runs and the `pylon`, whose span is drawn
+to the ground under the next pole — because the editor moves anything else by
+translating its meshes, and a builder that read the floor is then drawn against the
+floor it was dragged away from until the next full rebuild.
 
 **A walked surface more than `stepHeight` up needs something built to reach it, and
 `stairs` is that piece.** Its run is `height / 0.35` and is derived rather than

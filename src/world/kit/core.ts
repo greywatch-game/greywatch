@@ -10,9 +10,11 @@
  *   identity is what makes MergeMeshes safe (same trick as
  *   RifleModel.buildRifle).
  * - A builder may take a BuildCtx to read where it is about to end up (the
- *   road bends onto the ground under it). That is a licence to SAMPLE the
- *   world, not to build in it: the geometry returned is still origin-local,
- *   because MapBuilder still rotates and translates it.
+ *   road bends onto the ground under it, a wall steps down it via
+ *   `groundRun`). That is a licence to SAMPLE the world, not to build in it:
+ *   the geometry returned is still origin-local, because MapBuilder still
+ *   rotates and translates it. Declaring one owes an entry in BuildingKit's
+ *   CONFORMS_TO_TERRAIN.
  * - Geometry here is a PART, not a mesh in the ordinary sense: `Build` makes
  *   everything through `world/parts.ts`, so a part holds its vertices and has
  *   no device buffer, no bounding info and no submesh. It may be read,
@@ -291,8 +293,186 @@ export interface BuildCtx {
   x: number;
   /** The world Y MapBuilder will translate by: the authored offset plus floor. */
   y: number;
+  /**
+   * The floor under the origin, which `y` is measured up from — so `y - floor`
+   * is the placement's authored lift. A lifted placement is standing on
+   * something MapBuilder does not know about (a terrace, a deck), and the
+   * ground under it is not what it is standing on.
+   */
+  floor: number;
   z: number;
   rotY: number;
+}
+
+/** One stretch of a run whose ground line is level, in local X. */
+export interface RunSpan {
+  x0: number;
+  x1: number;
+  /** Local height of the ground line this stretch stands its full height on. */
+  ground: number;
+  /** Local height its footing goes down to: at or under the lowest drawn floor. */
+  base: number;
+}
+
+/** A pier or post position along a run, and the spans either side of it. */
+export interface RunJoint {
+  x: number;
+  /** The HIGHER ground line of the spans it stands between. */
+  ground: number;
+  /** The LOWER footing of the spans it stands between. */
+  base: number;
+}
+
+export interface GroundRun {
+  spans: RunSpan[];
+  /** Evenly spaced from end to end, both ends included. */
+  joints: RunJoint[];
+}
+
+/** The tallest step between two neighbouring spans a run will draw. */
+const RUN_MAX_STEP = 0.4;
+/** The shortest span a run will cut to get a step under `RUN_MAX_STEP`. */
+const RUN_MIN_SPAN = 1.2;
+/** Ground lines closer than this are one span. */
+const RUN_LEVEL_EPS = 0.08;
+/** How far a footing goes under the lowest floor it was sampled over. */
+const RUN_BURY = 0.12;
+/** A floor dipping less than this under the ground line needs no footing. */
+const RUN_SNAP = 0.02;
+
+/**
+ * A linear run — a wall, a fence — cut into level spans that follow the ground
+ * under it, for the builders whose footprint is long enough to cross a slope.
+ *
+ * **Why this exists.** `MapBuilder` samples the floor ONCE, at a placement's
+ * centre, and a 30 m run on a hillside is buried at its uphill end and standing
+ * in the air at the other: measured before this, 129 of Cinderhaven's 163
+ * field walls showed daylight under them and 22 stood more than a metre clear.
+ *
+ * **The run STEPS rather than rakes, and that is the collider deciding.** A
+ * `BoxSpec` pitches about local X and a run lies along local X, so a raked
+ * wall would need a new rotation axis in `RayWorld`, `NavGrid` and the
+ * collision bake. A span is an ordinary upright box that stands its full
+ * height on its own ground line, so what a round, a body, the nav graph and
+ * the cover bake see is the drawing exactly, and cover heights keep their
+ * meaning along the whole run. Each span's footing goes down under the lowest
+ * DRAWN floor beneath it (`surfaceAt`), which is what closes the gap; its top
+ * follows the gameplay field (`heightAt`), which is what the placement's own
+ * origin is sampled from.
+ *
+ * **`between` says where a step may fall.** A masonry wall may step anywhere —
+ * a stepped coping is how one is built on a slope — so its joints stay at the
+ * authored pitch and the spans are subdivided under them. A fence's rails must
+ * end on posts, so its steps may only fall at joints and the JOINTS are added
+ * instead, down to `RUN_MIN_SPAN`.
+ *
+ * **Level runs cost nothing, bit for bit.** With no ctx, a flat map, a lifted
+ * placement (see `BuildCtx.floor`), or ground that never leaves
+ * `RUN_LEVEL_EPS`, this is one span from end to end at ground 0 and footing 0
+ * and the joints at the authored pitch — the geometry every one of these
+ * builders emitted before it existed.
+ *
+ * `depth` is the widest thing standing across the run (a pier, not the wall)
+ * and `pad` how far one reaches past its joint, so the footing is sampled under
+ * everything it has to hold up. Everything is local and origin-relative, as
+ * the kit's contract requires.
+ */
+export function groundRun(
+  ctx: BuildCtx | undefined,
+  length: number,
+  o: { pitch: number; minGaps?: number; depth: number; pad: number; between: boolean },
+): GroundRun {
+  let gaps = Math.max(o.minGaps ?? 1, Math.round(length / o.pitch));
+  const half = length / 2;
+  const jointsOf = (spans: RunSpan[]): RunJoint[] => {
+    const joints: RunJoint[] = [];
+    for (let i = 0; i <= gaps; i++) {
+      const x = -half + (i / gaps) * length;
+      let ground = -Infinity;
+      let base = Infinity;
+      for (const s of spans) {
+        if (x < s.x0 - 1e-6 || x > s.x1 + 1e-6) continue;
+        ground = Math.max(ground, s.ground);
+        base = Math.min(base, s.base);
+      }
+      joints.push({ x, ground, base });
+    }
+    return joints;
+  };
+  const level = (): GroundRun => {
+    const spans = [{ x0: -half, x1: half, ground: 0, base: 0 }];
+    return { spans, joints: jointsOf(spans) };
+  };
+  if (!ctx || ctx.terrain.flat || Math.abs(ctx.y - ctx.floor) > 1e-6) {
+    return level();
+  }
+
+  const { terrain } = ctx;
+  const cos = Math.cos(ctx.rotY);
+  const sin = Math.sin(ctx.rotY);
+  // MapBuilder's own rotation: local +X lands on (cos, -sin), local +Z on (sin, cos).
+  const wx = (lx: number, lz: number) => ctx.x + lx * cos + lz * sin;
+  const wz = (lx: number, lz: number) => ctx.z - lx * sin + lz * cos;
+  const ground = (lx: number) => terrain.heightAt(wx(lx, 0), wz(lx, 0)) - ctx.y;
+
+  // Refine until neighbouring cells step no more than RUN_MAX_STEP, or until
+  // the next cut would make a span shorter than RUN_MIN_SPAN.
+  let sub = 1;
+  let heights: number[] = [];
+  for (;;) {
+    const cells = gaps * sub;
+    const cell = length / cells;
+    heights = [];
+    for (let i = 0; i < cells; i++) heights.push(ground(-half + (i + 0.5) * cell));
+    let worst = 0;
+    for (let i = 1; i < cells; i++) {
+      worst = Math.max(worst, Math.abs(heights[i] - heights[i - 1]));
+    }
+    const next = o.between ? length / (gaps * (sub + 1)) : length / ((gaps + 1) * sub);
+    if (worst <= RUN_MAX_STEP || next < RUN_MIN_SPAN) break;
+    if (o.between) sub++;
+    else gaps++;
+  }
+
+  // Greedy merge: a span runs on while its cells stay inside RUN_LEVEL_EPS.
+  const cells = heights.length;
+  const cell = length / cells;
+  const spans: RunSpan[] = [];
+  for (let i = 0; i < cells; ) {
+    let lo = heights[i];
+    let hi = heights[i];
+    let j = i + 1;
+    while (j < cells) {
+      const nlo = Math.min(lo, heights[j]);
+      const nhi = Math.max(hi, heights[j]);
+      if (nhi - nlo > RUN_LEVEL_EPS) break;
+      lo = nlo;
+      hi = nhi;
+      j++;
+    }
+    const x0 = i === 0 ? -half : -half + i * cell;
+    const x1 = j === cells ? half : -half + j * cell;
+    spans.push({ x0, x1, ground: ground((x0 + x1) / 2), base: 0 });
+    i = j;
+  }
+
+  // Footings: the lowest drawn floor under each span and whatever stands at
+  // its ends, on both faces and the centreline.
+  const step = Math.min(0.5, (terrain.field?.cell ?? 1) / 2);
+  for (const s of spans) {
+    const a = s.x0 - o.pad;
+    const b = s.x1 + o.pad;
+    const n = Math.max(1, Math.ceil((b - a) / step));
+    let floor = Infinity;
+    for (let i = 0; i <= n; i++) {
+      const lx = a + ((b - a) * i) / n;
+      for (const lz of [-o.depth / 2, 0, o.depth / 2]) {
+        floor = Math.min(floor, terrain.surfaceAt(wx(lx, lz), wz(lx, lz)) - ctx.y);
+      }
+    }
+    s.base = s.ground - floor <= RUN_SNAP ? s.ground : floor - RUN_BURY;
+  }
+  return { spans, joints: jointsOf(spans) };
 }
 
 /** A fixture light in the structure's local space. */

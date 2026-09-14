@@ -43,6 +43,8 @@ import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import {
   Build,
+  groundRun,
+  type BuildCtx,
   type BuildParams,
   type Structure,
   BRICK,
@@ -125,22 +127,50 @@ export function buildStall(scene: Scene, mats: CelMaterialFactory): Structure {
  *
  * Neither half works alone: without the block a fence is walked through, and
  * without the struts it is a wall you can see your target through.
+ *
+ * On a slope it steps (`groundRun`) and only ever AT A POST, since a rail has
+ * to end on something: where the ground wants a step between two posts, the
+ * run gets another post instead.
  */
 export function buildFence(
   scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
+  ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "fence");
   const len = p.length ?? 10;
-  const posts = Math.max(2, Math.round(len / 2.5));
-  for (let i = 0; i <= posts; i++) {
-    const x = -len / 2 + (i / posts) * len;
-    b.strut(0.18, 1.5, 0.18, x, 0.75, 0, TIMBER);
+  const run = groundRun(ctx, len, {
+    pitch: 2.5,
+    minGaps: 2,
+    depth: 0.4,
+    pad: 0.09,
+    between: false,
+  });
+  for (const j of run.joints) {
+    const top = j.ground + 1.5;
+    b.strut(0.18, top - j.base, 0.18, j.x, (top + j.base) / 2, 0, TIMBER);
   }
-  b.strut(len, 0.12, 0.1, 0, 1.2, 0, TIMBER);
-  b.strut(len, 0.12, 0.1, 0, 0.6, 0, TIMBER);
-  b.block({ w: len, h: 1.4, d: 0.4, x: 0, y: 0.7, z: 0, porous: true });
+  for (const s of run.spans) {
+    const w = s.x1 - s.x0;
+    const x = (s.x0 + s.x1) / 2;
+    b.strut(w, 0.12, 0.1, x, s.ground + 1.2, 0, TIMBER);
+    b.strut(w, 0.12, 0.1, x, s.ground + 0.6, 0, TIMBER);
+  }
+  for (const s of run.spans) {
+    // Down to the footing, so a body cannot pass under the run where the floor
+    // falls away beneath its ground line.
+    const top = s.ground + 1.4;
+    b.block({
+      w: s.x1 - s.x0,
+      h: top - s.base,
+      d: 0.4,
+      x: (s.x0 + s.x1) / 2,
+      y: (top + s.base) / 2,
+      z: 0,
+      porous: true,
+    });
+  }
   return b;
 }
 
@@ -150,23 +180,34 @@ export function buildFence(
  * turns open ground into a fight instead of a shooting gallery. Author it in
  * runs with gaps — a sealed field is a wall the nav grid routes bots all the
  * way around.
+ *
+ * On a slope it STEPS (`groundRun`): each span stands its full height on its
+ * own ground line with its footing under the floor, the coping steps with it,
+ * and a step may fall between piers because that is how dry stone is laid up
+ * a hill.
  */
 export function buildStoneWall(
   scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
+  ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "stonewall");
   const len = p.length ?? 12;
   const h = p.height ?? 1.5;
-  b.wall(len, h, 0.5, 0, h / 2, 0, MOSS_STONE);
-  // Capstones, and a stouter pier every few metres: the silhouette is what
-  // sells dry stone, since the shader gives it no texture.
-  b.box(len, 0.18, 0.66, 0, h + 0.09, 0, DARK_STONE);
-  const piers = Math.max(1, Math.round(len / 5));
-  for (let i = 0; i <= piers; i++) {
-    const x = -len / 2 + (i / piers) * len;
-    b.box(0.7, h + 0.35, 0.72, x, (h + 0.35) / 2, 0, MOSS_STONE);
+  const run = groundRun(ctx, len, { pitch: 5, depth: 0.72, pad: 0.35, between: true });
+  for (const s of run.spans) {
+    const w = s.x1 - s.x0;
+    const x = (s.x0 + s.x1) / 2;
+    const top = s.ground + h;
+    b.wall(w, top - s.base, 0.5, x, (top + s.base) / 2, 0, MOSS_STONE);
+    // Capstones, and a stouter pier every few metres: the silhouette is what
+    // sells dry stone, since the shader gives it no texture.
+    b.box(w, 0.18, 0.66, x, top + 0.09, 0, DARK_STONE);
+  }
+  for (const j of run.joints) {
+    const top = j.ground + h + 0.35;
+    b.box(0.7, top - j.base, 0.72, j.x, (top + j.base) / 2, 0, MOSS_STONE);
   }
   return b;
 }

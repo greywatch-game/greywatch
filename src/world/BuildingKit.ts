@@ -185,7 +185,17 @@ export type BuilderKind = keyof typeof BUILDERS;
  * Kinds whose geometry is a function of the ground under them, so moving one
  * is a rebuild rather than a translate. The editor's drag path patches meshes
  * in place, which is correct for everything else and stale for these.
+ *
+ * **Declaring a `BuildCtx` parameter on a builder is what puts it here**: a
+ * builder that reads the ground and is missing from this set is drawn against
+ * the floor it was dragged away from until the next full rebuild. The road is
+ * contoured, the three runs step (`groundRun`), and the pylon's span is drawn
+ * to the ground under the next pole.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
+  "stoneWall",
+  "fence",
+  "compoundWall",
+  "pylon",
 ] as const);
