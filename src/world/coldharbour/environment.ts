@@ -203,6 +203,17 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
      */
     direction: [0.646, -0.407, 0.646],
     /**
+     * The key WRAPS (`EnvironmentSpec.lighting.keyWrap`), taking the lit
+     * pavement from the 0.5 band to the 0.75 one so a street in the sun reads
+     * as IN the sun next to the long tower shadows across it. Derived as
+     * Harrowmead's is: 0.578 lifts sin(24) = 0.407 to exactly 0.75, the
+     * centre of a band, so a ramp or a kerb tilted seven degrees stays in it
+     * (0.70..0.80). A round number near it lands the flat street on a band
+     * edge instead, and a band edge on the one surface a city is made of is a
+     * shimmer across every crossing.
+     */
+    keyWrap: 0.578,
+    /**
      * Lifted, but well under what the total light budget would take — Greyfen's
      * lesson exactly. Ambient, sky fill and key all add, and the first pass
      * here had all three high: correctly bright, and completely flat, because
@@ -336,21 +347,20 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
     // milkyWayColor omitted — it is not dark yet.
     /**
      * **The cloud is the largest single answer to "nothing moves" on this map,
-     * and it costs nothing, because the decks were ALREADY drifting.**
-     * `CONFIG.sky.cloudLayers` scrolls them at 0.0035 and -0.0018 uv/s — a
-     * circuit in about five and nine minutes — and at the 0.4 opacity this file
-     * shipped there was simply nothing up there solid enough to see move.
-     * Hollowmere ships 0.72, so 0.62 is well inside precedent.
+     * and it costs one draw**: the whole ring is one mesh, turning about the eye
+     * at `CONFIG.sky.clouds.driftDegPerSec`. 0.62 of the ring's count — the
+     * number carried over from the old noise decks' opacity, which is why it
+     * sits where Hollowmere's 0.72 made it precedent.
      *
-     * The contrast between a cool shadowed body and a warm lit side is what
-     * makes the drift legible, and the lit shell is anchored to the sun by a
-     * static per-vertex mask, so at 24 degrees the golden underside sits where
-     * it belongs. `cloudBandBottom` is 0.47 — 5.4 degrees of elevation — so at
-     * this hour the decks pass IN FRONT OF the sun, and the shafts below are
-     * modulated by moving cloud for nothing.
+     * The contrast between a cool shadowed side and a warm lit one is what
+     * makes a faceted mass read as a SHAPE, and the light is asked of each
+     * facet's world normal, so a cloud coming round into the sun lights on its
+     * sun side wherever the drift has carried it. The ring's lowest bases are
+     * at 6 degrees, so at this hour a bank passes IN FRONT OF the 24-degree sun
+     * and hides the disc by depth.
      */
     cloudColor: "#9aa6b4",
-    cloudOpacity: 0.62,
+    cloudCover: 0.62,
     cloudLitColor: "#ffe0b0",
     cloudLitStrength: 0.82,
     /**

@@ -119,7 +119,7 @@ export const HollowmereEnvironment: EnvironmentSpec = {
     moonGlowColor: "#7ea0d8",
     milkyWayColor: "#5a6f96",
     cloudColor: "#1a2434",
-    cloudOpacity: 0.72,
+    cloudCover: 0.72,
     cloudLitColor: "#86a8dc",
     cloudLitStrength: 0.34,
   },

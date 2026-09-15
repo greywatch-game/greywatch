@@ -948,7 +948,8 @@ the spatial granularity any screen-space reasoning about emissives needs**, and
 that trade is not recorded anywhere else.
 
 **One real bug was found on the way and it is in this idea rather than in the
-game.** `Sky`'s four cloud decks carry an emissive AND `infiniteDistance`, so
+game.** `Sky`'s four cloud decks (since retired for one faceted ring, which is
+not emissive) carried an emissive AND `infiniteDistance`, so
 their centre sits on the eye with a ~1,000 m radius around it. They are
 correctly excluded from the layer, but the render list a `getCustomRenderList`
 hook is handed is the scene's active meshes BEFORE the layer's own exclusions,

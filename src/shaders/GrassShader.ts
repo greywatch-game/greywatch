@@ -158,6 +158,7 @@ varying vTip: f32;
 
 uniform lightDir: vec3f;
 uniform lightColor: vec3f;
+uniform keyWrap: f32;
 uniform ambientColor: vec3f;
 uniform rimColor: vec3f;
 uniform fogColor: vec3f;
@@ -204,7 +205,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // point either way — 0.06 m either side of a blade is nothing, and the
   // alternative (the un-flipped normal) is not available here.
   var light = uniforms.ambientColor;
-  light += uniforms.lightColor * band(max(dot(n, -uniforms.lightDir), 0.0), 4.0)
+  // The cel shader's WRAP, so a field is lit by the same low sun the ground
+  // under it is. A blade has no bump, so the geometric and the lit cosine are
+  // one number here — see the cel key term for the argument.
+  let ndl = dot(n, -uniforms.lightDir);
+  let lift = uniforms.keyWrap * smoothstep(0.0, 0.08, ndl) * (1.0 - max(ndl, 0.0));
+  light += uniforms.lightColor * band(clamp(ndl + lift, 0.0, 1.0), 4.0)
     * shadowVisibility(n, fragmentInputs.vPosW);
 
   // --- point lights (3 bands, smooth falloff) ---
@@ -273,6 +279,7 @@ const GRASS_UNIFORMS = [
   "pusherCount",
   "lightDir",
   "lightColor",
+  "keyWrap",
   "ambientColor",
   "rimColor",
   "fogColor",

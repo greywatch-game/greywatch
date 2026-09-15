@@ -274,11 +274,32 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
   // rayW is unnormalised, so the phase's cosine needs the direction proper.
   let phase = phaseHG(dot(normalize(rayW), uniforms.moonDir), uniforms.air.w);
-  let lit = uniforms.tint * (accum * phase * uniforms.intensity);
+
+  // HOW MUCH LIGHT, CAPPED, AND THEN HOW IT MEETS THE FRAME — two steps that
+  // exist because this chain is 8-bit (see anisotropy's note in the config) and
+  // there is no tonemapper downstream to take a highlight back.
+  //
+  // The amount stays LINEAR, and the cap is on the result's brightest channel
+  // rather than per channel: a march looking into the light down a lit street
+  // arrives as the light's own colour at full value, never past it. A per-
+  // channel clamp would have kept the red and the green at 1 and let the blue
+  // catch up — which is gold turning white. A saturating curve (1 - exp) was
+  // tried first and was worse in the other direction: it squeezes every lit
+  // tap toward the same value, so the gap between a beam and the shadowed air
+  // beside it — the only thing that makes a beam a beam — closed into haze.
+  //
+  // And it is SCREENED onto the frame rather than added: scene + lit * (1 -
+  // scene). Against a dark trunk or a shadowed wall that is the whole of the
+  // light, which is where a beam is SEEN; against the sky around the sun, which
+  // is already near the top, it is almost nothing. Added, the same air turned
+  // every golden-hour glare white.
+  let raw = uniforms.tint * (accum * phase * uniforms.intensity);
+  let lit = raw / max(1.0, max(raw.r, max(raw.g, raw.b)));
+  let col = scene + lit * (vec3f(1.0) - clamp(scene, vec3f(0.0), vec3f(1.0)));
 
   // Alpha 1, as every pass downstream of the ink writes: the frame's alpha is
   // translucent coverage and CelInk is the last pass that could read it.
-  fragmentOutputs.color = vec4f(dither(scene + lit, input.vUV * dims), 1.0);
+  fragmentOutputs.color = vec4f(dither(col, input.vUV * dims), 1.0);
 }
 `;
 }

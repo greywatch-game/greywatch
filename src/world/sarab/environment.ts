@@ -329,11 +329,11 @@ export const SarabEnvironment: EnvironmentSpec = {
     moonGlowColor: "#ffeec4",
     cloudColor: "#a3abb6",
     /**
-     * Raised from 0.28, and it is the cheapest thing on this map: the dome is
-     * baked ONCE, so cloud costs the frame nothing at all and a thin deck was
-     * buying nothing with it. What a deck is FOR here is distance — the rim is
-     * 750 m out and drawn almost entirely in `fogColor`, so the sky above it is
-     * most of what says how far away that is, and an empty sky says nothing.
+     * Raised from 0.28, and it is still among the cheapest things on this
+     * map: the whole ring is one draw, however many clouds are in it. What
+     * cloud is FOR here is distance — the rim is 750 m out and drawn almost
+     * entirely in `fogColor`, so the sky above it is most of what says how far
+     * away that is, and an empty sky says nothing.
      *
      * It used to be load-bearing for the shafts as well — the lit tone below
      * was the only thing besides the disc that crossed the old luminance
@@ -341,7 +341,7 @@ export const SarabEnvironment: EnvironmentSpec = {
      * volumetric pass occludes on the shadow map and does not need it, which
      * leaves this a statement about DISTANCE and nothing else.
      */
-    cloudOpacity: 0.52,
+    cloudCover: 0.52,
     cloudLitColor: "#fff2d4",
     cloudLitStrength: 0.72,
     discRadius: 10,

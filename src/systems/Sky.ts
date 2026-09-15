@@ -1,37 +1,50 @@
 /**
- * Sky.ts — Procedural night sky: baked dome texture (gradient/galactic band/
- * stars/moon halo), a textured moon disc, and drifting fBm cloud decks, each
- * a pair of shells (shadowed body + moonlit silver). All unlit emissive
- * meshes, infiniteDistance, unpickable; moon bloom via the GlowLayer.
+ * Sky.ts — Procedural sky: baked dome texture (gradient/galactic band/stars/
+ * moon halo), a textured moon disc, and a ring of faceted cloud MASSES lit per
+ * facet off the key light. The dome and disc are unlit emissive meshes; the
+ * clouds are one cel-banded ShaderMaterial draw. Everything infiniteDistance,
+ * unpickable; moon bloom via the GlowLayer.
  * Invariants: moonDir is negated to align with the shader's light direction;
- * the moon renders in a later renderingGroup than the dome. Rebuilt from an
+ * the moon renders in a later renderingGroup than the dome; the clouds sit
+ * inside the moon's distance so they hide it by depth. Rebuilt from an
  * EnvironmentSpec via apply() — keep it data-driven, no Hollowmere specifics.
  */
 import {
   Color3,
-  Constants,
   DynamicTexture,
   GlowLayer,
   Mesh,
   MeshBuilder,
+  Matrix,
   Scene,
+  type ShaderMaterial,
   StandardMaterial,
   Texture,
   Vector3,
   VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { clamp, hermite, smoothstep } from "../core/math";
+import { clamp } from "../core/math";
+import { createCloudMaterial } from "../shaders/CloudShader";
 import { mulberry32 } from "../world/rng";
 import type { EnvironmentSpec, SkySpec } from "../world/environment";
+import { buildCloudRing, type CloudGeometry } from "./cloudMasses";
 
 /**
- * The night sky: a gradient dome with the galactic band, the stars and the
- * moon's scattering halo baked into a generated texture, an emissive moon
- * disc that feeds the GlowLayer, and cloud decks on sphere shells just inside
- * the dome, scrolling azimuthally. Everything is painted at runtime — the game
- * ships no image files — and nothing here is lit: the scene has no Babylon
- * lights, so sky materials are unlit emissive by construction.
+ * The rendering group the clouds draw in: after the world (0) and after the
+ * disc and the viewmodel (1), with its automatic depth clear turned off in the
+ * constructor. Nothing else in the tree uses group 2.
+ */
+const CLOUD_GROUP = 2;
+
+/**
+ * The sky: a gradient dome with the galactic band, the stars and the moon's
+ * scattering halo baked into a generated texture, an emissive moon disc that
+ * feeds the GlowLayer, and a ring of cloud masses turning slowly about the
+ * eye. Everything is built at runtime — the game ships no image files — and
+ * nothing here is lit by a scene light: the scene has none, so the dome and
+ * disc are unlit emissive by construction and the clouds ask the map's KEY
+ * light for themselves, as uniforms, exactly as the cel materials do.
  *
  * Every sky mesh uses `infiniteDistance` (it rides with the camera, so the
  * horizon never gets closer and the clouds are always overhead) and stays
@@ -58,23 +71,30 @@ import type { EnvironmentSpec, SkySpec } from "../world/environment";
  * a moon still hanging correctly in it because the disc is placed as
  * geometry rather than painted.
  *
- * Two things about the clouds are load-bearing:
- *
- * - **The mask is 3D noise sampled on the sphere direction, not 2D noise on
- *   the texture.** An equirectangular image stretches by 1/sin(latitude), so
- *   a 2D field draws blobs that smear into bands as they climb and pinch to
- *   nothing at the pole; sampling a tileable 3D lattice along the direction
- *   the pixel actually points removes the distortion, and it wraps at the
- *   seam and at the pole for free.
- * - **The moonlit silver is a second, additive shell with a static per-vertex
- *   mask**, not a brighter patch in the texture. The texture scrolls; the moon
- *   does not. Baking the lit side into the mask would drag the highlight
- *   around the sky with the clouds.
+ * **The clouds are GEOMETRY, and that replaced two fBm shells.** A thresholded
+ * noise deck is a soft continuous-tone smear — the one register this game does
+ * not draw in — and its lit side had to be a second additive shell with a
+ * per-vertex mask, because a texture has no facets to turn toward a light. A
+ * pile of lumps does, so the key is asked of each facet and banded like every
+ * wall in the village. `cloudMasses.ts` carries the shape's argument and
+ * `CloudShader.ts` the light's.
  */
 export class Sky {
   private disposables: { dispose(): void }[] = [];
-  private cloudTextures: DynamicTexture[] = [];
-  private cloudSpeeds: number[] = [];
+  /** The cloud ring, which `update` turns; null on a sky with no cover. */
+  private clouds: Mesh | null = null;
+  private cloudMat: ShaderMaterial | null = null;
+  private cloudGeo: CloudGeometry | null = null;
+  /** The index buffer the ring is drawn from, rewritten back to front. */
+  private cloudIndices = new Uint32Array(0);
+  /** Lump ids in the order last written, and each lump's distance scratch. */
+  private cloudOrder = new Uint32Array(0);
+  private cloudDist = new Float32Array(0);
+  /** Where the eye stood, and the ring's turn, when the order was last taken. */
+  private readonly sortedEye = new Vector3(Infinity, Infinity, Infinity);
+  private sortedTurn = Infinity;
+  private readonly localEye = new Vector3();
+  private readonly toLocal = new Matrix();
   constructor(
     private scene: Scene,
     private glow: GlowLayer,
@@ -84,10 +104,19 @@ export class Sky {
     // draws over the dome, but it must still respect the WORLD's depth —
     // without this the moon and clouds render through players and walls.
     scene.setRenderingAutoClearDepthStencil(1, false);
+    // And the clouds live in group 2, for the same reason and one more: they
+    // are drawn after the disc so they can pass in front of it, and they are
+    // depth-TESTED against the world, so group 2 must not clear the depth the
+    // world wrote either.
+    scene.setRenderingAutoClearDepthStencil(CLOUD_GROUP, false);
   }
 
-  /** Rebuilds the sky for a map's environment; a missing `sky` spec clears it. */
-  apply(env: EnvironmentSpec): void {
+  /**
+   * Rebuilds the sky for a map's environment; a missing `sky` spec clears it.
+   * `mapSize` is the play square's side, which is what the cloud ring is laid
+   * out against — see `CONFIG.sky.clouds.minRadius`.
+   */
+  apply(env: EnvironmentSpec, mapSize: number): void {
     this.clear();
     const spec = env.sky;
     if (!spec) return;
@@ -160,7 +189,14 @@ export class Sky {
         { radius: discRadius, tessellation: 48 },
         this.scene,
       );
-      moon.position.copyFrom(moonDir.scale(cfg.moonDistance));
+      // Stood BEHIND the clouds' depth rather than at `moonDistance`, and
+      // scaled up by the same ratio so it subtends exactly the angle a map's
+      // `discRadius` was written for. The disc writes no depth, but the glow
+      // layer blooms it against the frame's depth buffer, so a disc in front of
+      // the clouds' depth blooms straight through every cloud crossing it.
+      const moonScale = cfg.moonDepthDistance / cfg.moonDistance;
+      moon.position.copyFrom(moonDir.scale(cfg.moonDepthDistance));
+      moon.scaling.setAll(moonScale);
       // Billboard, not lookAt: the disc must face the camera dead-on from
       // everywhere on the map, and with infiniteDistance it rides with it.
       moon.billboardMode = Mesh.BILLBOARDMODE_ALL;
@@ -170,120 +206,217 @@ export class Sky {
       this.disposables.push(moonMat, moonTex);
     }
 
-    // --- cloud decks: sphere shells just inside the dome, so there are no
-    // edges anywhere. Transparent, so they veil the moon on their own. ---
-    for (const layer of cfg.cloudLayers) {
-      const cloudTex = this.paintCloudTexture(layer.coverage, rand);
-      cloudTex.uScale = layer.uScale; // azimuthal repeat: smaller, busier blobs
-      this.cloudTextures.push(cloudTex);
-      this.cloudSpeeds.push(layer.speedU);
-      this.disposables.push(cloudTex);
-      const diameter = (cfg.domeRadius - layer.radiusOffset) * 2;
-
-      // The body of the deck: the map's cloud tint, alpha straight from the
-      // mask. This is what blocks the stars.
-      const bodyMat = new StandardMaterial("sky-cloud-mat", this.scene);
-      bodyMat.emissiveTexture = cloudTex;
-      bodyMat.opacityTexture = cloudTex;
-      bodyMat.emissiveColor = Color3.FromHexString(spec.cloudColor);
-      bodyMat.alpha = spec.cloudOpacity * layer.opacity;
-      this.dressCloudMaterial(bodyMat);
-      this.cloudShell(diameter, bodyMat);
-      this.disposables.push(bodyMat);
-
-      // The moonlit face: the same mask, silver, added on top and masked to
-      // the stretch of sky around the moon by per-vertex alpha.
-      const litMat = new StandardMaterial("sky-cloud-lit-mat", this.scene);
-      litMat.emissiveTexture = cloudTex;
-      litMat.opacityTexture = cloudTex;
-      litMat.emissiveColor = Color3.FromHexString(spec.cloudLitColor);
-      litMat.alpha = spec.cloudLitStrength * layer.opacity;
-      // Added, not blended: the silver is light reaching the camera through
-      // the deck, so it lifts the body it sits on rather than replacing it.
-      litMat.alphaMode = Constants.ALPHA_ADD;
-      this.dressCloudMaterial(litMat);
-      const lit = this.cloudShell(diameter, litMat, moonDir);
-      // Slightly inside the body shell: the two are coincident otherwise, and
-      // depth-equal transparent surfaces z-fight into a shimmer as the camera
-      // turns. Both are unlit and depth-write-free, so this is purely order.
-      lit.scaling.setAll(0.998);
-      this.disposables.push(litMat);
-    }
+    // --- cloud masses: one merged mesh, one draw, the whole ring ---
+    this.buildClouds(spec, moonDir, rand, mapSize);
   }
 
-  /** Scrolls the cloud decks azimuthally. Runs in every game state. */
-  update(dt: number): void {
-    for (let i = 0; i < this.cloudTextures.length; i++) {
-      this.cloudTextures[i].uOffset += this.cloudSpeeds[i] * dt;
+  /**
+   * Turns the cloud ring about the map's centre, hands the shader the eye, and
+   * re-orders the lumps back to front when either has moved enough to matter.
+   * Runs in every game state, after the camera has been placed for the frame.
+   */
+  update(dt: number, eye: Vector3): void {
+    const clouds = this.clouds;
+    if (!clouds || !this.cloudMat) return;
+    const c = CONFIG.sky.clouds;
+    clouds.rotation.y += c.driftDegPerSec * (Math.PI / 180) * dt;
+    this.cloudMat.setVector3("camPos", eye);
+    // The one depth every cloud fragment writes: that of a point `depthMetres`
+    // down the view axis, through the camera's own projection. WebGPU's depth
+    // runs 0..1 and nothing here reverses it, so this is the plain perspective
+    // z row. Re-derived every frame because it is two divisions and the camera
+    // is the one thing here that could be swapped out from under a cache.
+    const cam = this.scene.activeCamera;
+    if (cam) {
+      const n = cam.minZ;
+      const f = cam.maxZ;
+      const d = Math.min(c.depthMetres, f * 0.99);
+      this.cloudMat.setFloat("skyDepth", (f / (f - n)) * (1 - n / d));
     }
+    // The ORDER only changes when the eye crosses the plane between two lumps'
+    // centres, and at these distances that takes metres of walking or tenths
+    // of a degree of drift — so the sort is spent on those, not on frames.
+    if (
+      Vector3.DistanceSquared(eye, this.sortedEye) < c.resortMetres * c.resortMetres &&
+      Math.abs(clouds.rotation.y - this.sortedTurn) < c.resortTurn
+    ) {
+      return;
+    }
+    this.sortedEye.copyFrom(eye);
+    this.sortedTurn = clouds.rotation.y;
+    this.sortClouds(clouds, eye);
   }
 
   private clear(): void {
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
-    this.cloudTextures.length = 0;
-    this.cloudSpeeds.length = 0;
-  }
-
-  /** The settings every cloud shell material shares, lit or not. */
-  private dressCloudMaterial(mat: StandardMaterial): void {
-    mat.disableLighting = true;
-    mat.diffuseColor = Color3.Black();
-    mat.specularColor = Color3.Black();
-    mat.disableDepthWrite = true;
+    this.clouds = null;
+    this.cloudMat = null;
+    this.cloudGeo = null;
+    this.sortedEye.set(Infinity, Infinity, Infinity);
+    this.sortedTurn = Infinity;
   }
 
   /**
-   * One cloud shell. Passing `moonDir` gives it a per-vertex alpha mask that
-   * peaks at the moon and falls off around it — the anchor that keeps the
-   * silver in the sky while the texture scrolls through it.
+   * Writes the ring's index buffer with its lumps FARTHEST FIRST.
+   *
+   * **This is the clouds' whole occlusion AMONG THEMSELVES, because they all
+   * write one depth** (see `buildClouds` for why). Back-face culling makes one closed lump
+   * right on its own; the painter's order makes one lump in front of another
+   * right. What it gets wrong is the sliver where two lumps interpenetrate — the
+   * nearer is drawn whole over the farther — and between two facets of one
+   * cloud's colour that is not a visible error.
+   *
+   * The eye is taken into the mesh's own frame rather than every lump out of
+   * it: the ring's world matrix is a turn about Y and nothing else, so one
+   * inverse serves every distance.
    */
-  private cloudShell(
-    diameter: number,
-    mat: StandardMaterial,
-    moonDir?: Vector3,
-  ): Mesh {
-    const cfg = CONFIG.sky;
-    const shell = MeshBuilder.CreateSphere(
-      "sky-cloud",
-      {
-        diameter,
-        segments: cfg.cloudSegments,
-        sideOrientation: Mesh.BACKSIDE,
-      },
-      this.scene,
-    );
-    if (moonDir) {
-      const pos = shell.getVerticesData(VertexBuffer.PositionKind)!;
-      const colors = new Float32Array((pos.length / 3) * 4);
-      const inv = 2 / diameter;
-      for (let i = 0; i < pos.length / 3; i++) {
-        const d =
-          (pos[i * 3] * moonDir.x +
-            pos[i * 3 + 1] * moonDir.y +
-            pos[i * 3 + 2] * moonDir.z) *
-          inv;
-        colors[i * 4] = 1;
-        colors[i * 4 + 1] = 1;
-        colors[i * 4 + 2] = 1;
-        colors[i * 4 + 3] = Math.pow(Math.max(d, 0), cfg.cloudLitPower);
-      }
-      shell.setVerticesData(VertexBuffer.ColorKind, colors);
-      shell.hasVertexAlpha = true;
+  private sortClouds(clouds: Mesh, eye: Vector3): void {
+    const geo = this.cloudGeo;
+    if (!geo) return;
+    clouds.computeWorldMatrix(true).invertToRef(this.toLocal);
+    Vector3.TransformCoordinatesToRef(eye, this.toLocal, this.localEye);
+    const e = this.localEye;
+    const n = geo.lumpFirst.length;
+    const dist = this.cloudDist;
+    for (let i = 0; i < n; i++) {
+      const dx = geo.lumpCentres[i * 3] - e.x;
+      const dy = geo.lumpCentres[i * 3 + 1] - e.y;
+      const dz = geo.lumpCentres[i * 3 + 2] - e.z;
+      dist[i] = dx * dx + dy * dy + dz * dz;
     }
-    shell.material = mat;
-    shell.renderingGroupId = 1;
-    this.prepare(shell, true);
-    return shell;
+    const order = this.cloudOrder.slice();
+    order.sort((a, b) => dist[b] - dist[a]);
+    let same = true;
+    for (let i = 0; i < n; i++) {
+      if (order[i] !== this.cloudOrder[i]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return;
+    this.cloudOrder = order;
+    const idx = this.cloudIndices;
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      const first = geo.lumpFirst[order[i]];
+      const end = first + geo.lumpCount[order[i]];
+      for (let v = first; v < end; v += 3) {
+        idx[k++] = v;
+        idx[k++] = v + 1;
+        idx[k++] = v + 2;
+      }
+    }
+    clouds.updateIndices(idx);
   }
 
   /**
-   * Tags a sky mesh out of every scene contract and parks it at infinite
-   * distance. `excludeGlow` is for the pieces whose emissive fill must not
-   * bloom (dome, clouds); the moon passes false so the GlowLayer haloes it.
+   * The cloud masses: the ring `buildCloudRing` piles, as ONE flat-shaded mesh
+   * with one material, so the whole sky's cloud is a single draw on a frame
+   * that is draw-call bound.
+   *
+   * **The clouds are IN THE WORLD, over the map, and that is the point.** They
+   * rode at `infiniteDistance` first, like the dome, and a player walking
+   * across Harrowmead watched every cloud walk with them: nothing overhead
+   * moved however far they went, which reads as a picture pinned to the camera
+   * rather than as a sky. Laid out as real positions — `CONFIG.sky.clouds
+   * .radius` metres from the map's centre, a few hundred to a thousand metres
+   * up — a cloud slides across the sky as the eye moves under it, by exactly
+   * as much as it should.
+   *
+   * **And they are depth-tested as if they were far beyond the world while
+   * standing in it.** A kilometre-wide cloud a kilometre out is not reliably
+   * farther than every roof, ridge and crater the camera can see, so a test on
+   * its real distance draws it over a mountain. So every cloud fragment writes
+   * ONE depth instead — that of a point `CONFIG.sky.clouds.depthMetres` out
+   * (7 km), behind every surface any map has and in front of the sun's disc,
+   * which `moonDepthDistance` stands behind it. Every surface in the world then
+   * hides a cloud, a cloud hides the disc, and — the reason it cannot simply
+   * write NO depth, which was tried — the glow layer, occluded by this same
+   * buffer, stops blooming the disc through a cloud.
+   *
+   * **All of them sharing one depth is why the lumps are drawn back to front**
+   * (`sortClouds`) under a LEQUAL test: the buffer cannot say which is in front,
+   * so the order does, and a later tie wins. At 7 km the ink's fade has taken
+   * every line off on every map's fog band, so they need no mask from it.
+   *
+   * **A drift is a turn of the mesh, never of what it is lit by.** The light
+   * is asked of the WORLD normal in the shader, so the ring can turn and a
+   * cloud coming round into the sun lights on its sun side, where a baked
+   * colour would have carried its lit face away with it.
    */
-  private prepare(mesh: Mesh, excludeGlow: boolean): void {
-    mesh.infiniteDistance = true;
+  private buildClouds(
+    spec: SkySpec,
+    lightFrom: Vector3,
+    rand: () => number,
+    mapSize: number,
+  ): void {
+    const c = CONFIG.sky.clouds;
+    const count = Math.round(c.maxCount * clamp(spec.cloudCover, 0, 1));
+    if (count <= 0) return;
+    const deg = Math.PI / 180;
+    const ring = buildCloudRing(rand, {
+      count,
+      radius: Math.max(c.minRadius, mapSize * c.perMapSize),
+      minElevation: c.minElevation * deg,
+      maxElevation: c.maxElevation * deg,
+      elevationBias: c.elevationBias,
+      minWidth: c.minWidth * deg,
+      maxWidth: c.maxWidth * deg,
+      minFlatness: c.minFlatness,
+      maxFlatness: c.maxFlatness,
+      depth: c.depth,
+      minLumps: c.minLumps,
+      maxLumps: c.maxLumps,
+      jitter: c.jitter,
+    });
+
+    const mesh = new Mesh("sky-clouds", this.scene);
+    // A soup: every triangle owns its three corners, which is what gives each
+    // facet its own normal. The positions never change; the INDICES are
+    // rewritten whenever the painter's order does, so only they are updatable.
+    mesh.setVerticesData(VertexBuffer.PositionKind, ring.positions, false);
+    mesh.setVerticesData(VertexBuffer.NormalKind, ring.normals, false);
+    const lumps = ring.lumpFirst.length;
+    this.cloudIndices = new Uint32Array(ring.positions.length / 3);
+    for (let i = 0; i < this.cloudIndices.length; i++) this.cloudIndices[i] = i;
+    mesh.setIndices(this.cloudIndices, null, true);
+    this.cloudOrder = new Uint32Array(lumps);
+    for (let i = 0; i < lumps; i++) this.cloudOrder[i] = i;
+    this.cloudDist = new Float32Array(lumps);
+    this.cloudGeo = ring;
+
+    const mat = createCloudMaterial(this.scene, {
+      sunDir: lightFrom,
+      shade: Color3.FromHexString(spec.cloudColor),
+      lit: Color3.FromHexString(spec.cloudLitColor),
+      haze: Color3.FromHexString(spec.horizonColor),
+      glow: Color3.FromHexString(spec.moonGlowColor),
+      litShare: clamp(spec.cloudLitStrength, 0, 1),
+      hazeAtHorizon: c.hazeAtHorizon,
+      lining: c.lining,
+      wrap: c.wrap,
+    });
+    mesh.material = mat;
+    mesh.renderingGroupId = CLOUD_GROUP;
+    // The ring spans kilometres around the map and the eye is always inside
+    // it, so it is always in the frustum; saying so spares the bounding test.
+    mesh.alwaysSelectAsActiveMesh = true;
+    this.prepare(mesh, true, false);
+    this.disposables.push(mat);
+    this.clouds = mesh;
+    this.cloudMat = mat;
+  }
+
+  /**
+   * Tags a sky mesh out of every scene contract and, unless told otherwise,
+   * parks it at infinite distance. `excludeGlow` is for the pieces whose
+   * emissive fill must not bloom (dome, clouds); the moon passes false so the
+   * GlowLayer haloes it. The clouds pass `riding` false: they stand in the
+   * world (see `buildClouds`).
+   */
+  private prepare(mesh: Mesh, excludeGlow: boolean, riding = true): void {
+    mesh.infiniteDistance = riding;
     mesh.isPickable = false;
     // noGlow only where true — the moon keeps its bloom, so it must not
     // claim the flag (the contract reads it as "excluded from the GlowLayer").
@@ -571,156 +704,9 @@ export class Sky {
     return tex;
   }
 
-  /**
-   * Paints one deck's cloud mask: tileable fBm sampled along the direction
-   * each texel points (see the class doc — 2D noise smears at altitude),
-   * thresholded at `coverage` for billowy edges and confined to the latitude
-   * band `cloudBandTop..cloudBandBottom` with its edges faded so no ring
-   * shows. White in rgb, cloud in alpha; the material supplies the tint.
-   */
-  private paintCloudTexture(
-    coverage: number,
-    rand: () => number,
-  ): DynamicTexture {
-    const cfg = CONFIG.sky;
-    const w = cfg.cloudTextureWidth;
-    const h = cfg.cloudTextureHeight;
-    const tex = new DynamicTexture(
-      "sky-cloud-tex",
-      { width: w, height: h },
-      this.scene,
-      true,
-    );
-    const ctx = context2d(tex);
-    const img = ctx.createImageData(w, h);
-    const data = img.data;
-
-    const noise = fbm3(rand, cfg.cloudLattice, cfg.cloudOctaves);
-    const top = cfg.cloudBandTop * h;
-    const bottom = cfg.cloudBandBottom * h;
-    const fade = (bottom - top) * 0.22;
-
-    // The field is built first and stretched to its own full range before it
-    // is thresholded. Summed value noise piles up around 0.5 — the octaves
-    // average out, the way any sum of independent terms does — so a raw fBm
-    // never gets within a third of either end, and a coverage of 0.5 against
-    // it produces not "half sky" but a barely-there haze. Normalising is what
-    // makes `coverage` mean what it says at any octave count.
-    const field = new Float32Array(w * h);
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (let py = 0; py < h; py++) {
-      // Row 0 is the zenith; the sphere's y is cos(pi * row / h).
-      const theta = (Math.PI * (py + 0.5)) / h;
-      const sy = Math.cos(theta);
-      const ring = Math.sin(theta);
-      for (let px = 0; px < w; px++) {
-        const phi = ((px + 0.5) / w) * Math.PI * 2;
-        const f = noise(ring * Math.cos(phi), sy, -ring * Math.sin(phi));
-        field[py * w + px] = f;
-        if (f < lo) lo = f;
-        if (f > hi) hi = f;
-      }
-    }
-    const span = hi - lo || 1;
-
-    for (let py = 0; py < h; py++) {
-      const band =
-        smoothstep(top, top + fade, py) *
-        (1 - smoothstep(bottom - fade, bottom, py));
-      for (let px = 0; px < w; px++) {
-        const i = (py * w + px) * 4;
-        data[i] = 255;
-        data[i + 1] = 255;
-        data[i + 2] = 255;
-        if (band <= 0) continue;
-        const f = (field[py * w + px] - lo) / span;
-        const a =
-          smoothstep(coverage, coverage + cfg.cloudSoftness, f) * band;
-        data[i + 3] = Math.round(clamp(a, 0, 1) * 255);
-      }
-    }
-
-    ctx.putImageData(img, 0, 0);
-    // Not flipped: the band rows above are latitudes, not pixels.
-    tex.update(false);
-    tex.hasAlpha = true;
-    tex.wrapU = Texture.WRAP_ADDRESSMODE;
-    tex.wrapV = Texture.WRAP_ADDRESSMODE;
-    return tex;
-  }
-
   dispose(): void {
     this.clear();
   }
-}
-
-/**
- * Tileable 3D value-noise fBm on the unit sphere. Each octave owns a cubic
- * lattice of random values wrapped at its own resolution, so the field is
- * continuous everywhere on the sphere — no seam at the texture's edge and no
- * pinch at the pole, which is the whole reason the clouds are sampled in 3D.
- * Returns 0..1.
- */
-function fbm3(
-  rand: () => number,
-  lattice: number,
-  octaves: number,
-): (x: number, y: number, z: number) => number {
-  const grids: { n: number; g: Float32Array }[] = [];
-  let amp = 1;
-  let norm = 0;
-  const amps: number[] = [];
-  for (let o = 0; o < octaves; o++) {
-    const n = lattice << o;
-    const g = new Float32Array(n * n * n);
-    for (let i = 0; i < g.length; i++) g[i] = rand();
-    grids.push({ n, g });
-    amps.push(amp);
-    norm += amp;
-    amp *= 0.5;
-  }
-
-  return (x, y, z) => {
-    let sum = 0;
-    for (let o = 0; o < grids.length; o++) {
-      const { n, g } = grids[o];
-      // The sphere is radius 1, so shift into 0..2 before scaling — negative
-      // coordinates would need a modulo on every axis otherwise.
-      const fx = (x + 1) * 0.5 * n;
-      const fy = (y + 1) * 0.5 * n;
-      const fz = (z + 1) * 0.5 * n;
-      const x0 = Math.floor(fx);
-      const y0 = Math.floor(fy);
-      const z0 = Math.floor(fz);
-      const tx = hermite(fx - x0);
-      const ty = hermite(fy - y0);
-      const tz = hermite(fz - z0);
-      const xa = ((x0 % n) + n) % n;
-      const ya = ((y0 % n) + n) % n;
-      const za = ((z0 % n) + n) % n;
-      const xb = (xa + 1) % n;
-      const yb = (ya + 1) % n;
-      const zb = (za + 1) % n;
-      const nn = n * n;
-      const c000 = g[za * nn + ya * n + xa];
-      const c100 = g[za * nn + ya * n + xb];
-      const c010 = g[za * nn + yb * n + xa];
-      const c110 = g[za * nn + yb * n + xb];
-      const c001 = g[zb * nn + ya * n + xa];
-      const c101 = g[zb * nn + ya * n + xb];
-      const c011 = g[zb * nn + yb * n + xa];
-      const c111 = g[zb * nn + yb * n + xb];
-      const e00 = c000 + (c100 - c000) * tx;
-      const e10 = c010 + (c110 - c010) * tx;
-      const e01 = c001 + (c101 - c001) * tx;
-      const e11 = c011 + (c111 - c011) * tx;
-      const f0 = e00 + (e10 - e00) * ty;
-      const f1 = e01 + (e11 - e01) * ty;
-      sum += (f0 + (f1 - f0) * tz) * amps[o];
-    }
-    return sum / norm;
-  };
 }
 
 /**

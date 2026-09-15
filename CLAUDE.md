@@ -588,6 +588,9 @@ shader that hardcodes either value breaks one of the two passes silently**.
 **One blended mesh is the exception and it is the one that WRITES DEPTH** — the
 kit screen's backdrop IS the surface a pixel records, so it writes 0 coverage
 over the whole frustum (`ALPHA_REPLACE_COLOR` at a fragment alpha of 0).
+**The sky's CLOUDS stand in the world but write ONE depth 7 km out**, so every
+surface a map draws must be nearer than that or a cloud draws over it, and the
+sun's disc is stood at 9 km behind them — see `docs/rendering.md`'s sky section.
 
 **Water is a MIRROR with a dark body under it, and it is SAMPLED FROM NOTHING** —
 directional wave trains and no normal map, re-adding which brings back four

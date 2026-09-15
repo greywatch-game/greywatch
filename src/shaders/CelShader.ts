@@ -377,6 +377,8 @@ varying vBaked: vec4f;
 
 uniform lightDir: vec3f;
 uniform lightColor: vec3f;
+// How far the key wraps toward full on anything facing it — see the key term.
+uniform keyWrap: f32;
 uniform ambientColor: vec3f;
 // Hemispheric fill from the sky dome: full strength on up-facing surfaces,
 // nothing underneath. Banded like everything else so the toon look survives.
@@ -634,6 +636,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // The shadow's normal-offset uses the true facet normal — the bump relief
   // is fake, and offsetting along it would leak light at stone edges.
   let shadow = shadowVisibility(n, fragmentInputs.vPosW);
+  // The key's cosine off the TRUE facet, before the relief touches it — what
+  // the wrap below is keyed on, for the reason the rim gate reads level.
+  let ndlGeo = dot(n, -uniforms.lightDir);
 
   #ifdef CEL_BUMP
   // From here on the bumped normal drives every lighting term: key bands,
@@ -656,8 +661,24 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let ao = fragmentInputs.vBaked.w;
 
   var light = uniforms.ambientColor * ao;
+  // THE WRAP (EnvironmentSpec.lighting.keyWrap), which is how a cel painter
+  // lights a low sun: everything turned toward the light is LIT, and the angle
+  // only decides how lit. A facet's cosine is lifted by wrap * (1 - cosine), so
+  // a sun-square wall is untouched (it cannot clip any harder than it already
+  // does against the shoulder) while a floor at a 14-degree sun climbs from the
+  // 0.25 band to the 0.75 one — the ground in the light reads as IN the light,
+  // instead of the sky fill being the brightest thing on it.
+  //
+  // **The lift is keyed on the GEOMETRIC facet and ADDED to the bumped cosine**,
+  // so the relief keeps its whole amplitude instead of being squeezed by
+  // (1 - wrap): a raking sun over cobbles is exactly where the relief is the
+  // picture. And it fades IN over the first few degrees of the terminator, so a
+  // facet grazing the light — where the shadow map is least sure of itself —
+  // is not handed a full band of key to show its acne in. Zero is the old
+  // Lambert exactly, which is what every map that says nothing gets.
+  let lift = uniforms.keyWrap * smoothstep(0.0, 0.08, ndlGeo) * (1.0 - max(ndlGeo, 0.0));
   light += uniforms.lightColor
-    * band(max(dot(n, -uniforms.lightDir), 0.0), 4.0) * shadow;
+    * band(clamp(dot(n, -uniforms.lightDir) + lift, 0.0, 1.0), 4.0) * shadow;
 
   // Sky fill: the whole dome is a dim source, so anything looking up at it
   // picks up moonlight even where the key light is blocked. Deliberately NOT
@@ -1213,6 +1234,7 @@ export class CelMaterialFactory {
     "viewProjection",
     "lightDir",
     "lightColor",
+    "keyWrap",
     "ambientColor",
     "skyLightColor",
     "rimColor",
@@ -1353,6 +1375,7 @@ export class CelMaterialFactory {
 
   private lightDir = new Vector3(-0.5, -0.9, 0.4).normalize();
   private lightColor = new Color3(0.55, 0.62, 0.8);
+  private keyWrap = 0;
   private ambientColor = new Color3(0.16, 0.18, 0.24);
   private skyLightColor = new Color3(0.08, 0.11, 0.18);
   /**
@@ -1948,6 +1971,7 @@ export class CelMaterialFactory {
   setEnvironment(env: {
     lightDir: Vector3;
     lightColor: Color3;
+    keyWrap: number;
     ambientColor: Color3;
     skyLightColor: Color3;
     skyZenithColor: Color3;
@@ -1961,6 +1985,7 @@ export class CelMaterialFactory {
   }): void {
     this.lightDir = env.lightDir.normalizeToNew();
     this.lightColor = env.lightColor;
+    this.keyWrap = env.keyWrap;
     this.ambientColor = env.ambientColor;
     this.skyLightColor = env.skyLightColor;
     this.skyZenithColor = env.skyZenithColor;
@@ -2301,6 +2326,7 @@ export class CelMaterialFactory {
   private applyEnvironment(mat: ShaderMaterial): void {
     mat.setVector3("lightDir", this.lightDir);
     mat.setColor3("lightColor", this.lightColor);
+    mat.setFloat("keyWrap", this.keyWrap);
     mat.setColor3("ambientColor", this.ambientColor);
     mat.setColor3("skyLightColor", this.skyLightColor);
     // The sky's own colour rather than the light it casts, and only the glass

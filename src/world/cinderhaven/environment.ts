@@ -308,7 +308,7 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
     moonGlowColor: "#ff7b30",
     milkyWayColor: "#57648f",
     cloudColor: "#171423",
-    cloudOpacity: 0.66,
+    cloudCover: 0.66,
     cloudLitColor: "#ff8b3a",
     cloudLitStrength: 0.9,
     /**

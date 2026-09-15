@@ -2062,7 +2062,7 @@ export class Game {
    *
    * Called on every round start, and deliberately a no-op when the environment
    * has not changed. `Sky.apply` repaints an 8-megapixel dome (two thousand
-   * stars, a galactic band, a stretched halo) and two fBm cloud masks, and the
+   * stars, a galactic band, a stretched halo) and rebuilds the cloud ring, and the
    * sky over the same map is the same sky it was last round — unlike the map
    * itself, which genuinely has to be rebuilt. The test is object identity,
    * which is why a `MapDef` has to be a module constant; switching maps brings
@@ -2072,7 +2072,10 @@ export class Game {
     const env = this.mapDef.environment;
     if (this.skyEnv === env) return;
     this.skyEnv = env;
-    this.sky.apply(env);
+    // The environment is the identity test and the map's SIZE rides along: an
+    // environment is one map's own module constant, so the same spec object
+    // never stands over two sizes of map.
+    this.sky.apply(env, this.mapDef.layout.size ?? CONFIG.map.size);
     // Nothing for the shafts here. Their colour, their air, their reach and the
     // light they are shafts OF are pushed together by `seedVolumetrics` off the
     // ENVIRONMENT — which is not the same trigger as this one: the sky is
@@ -3037,7 +3040,9 @@ export class Game {
     this.prof.end(P.hudDraw);
     this.prof.begin(P.post);
     this.post.update(dt);
-    this.sky.update(dt);
+    // After every state has placed the camera: the clouds stand in the world
+    // and are drawn back to front from wherever the eye is this frame.
+    this.sky.update(dt, this.cameraSys.camera.position);
     // After every state has had its go at the camera, and before the render
     // the shafts are drawn into. The shadow map is re-read rather than held,
     // which `ShadowSystem.lightMatrix` explains — the generator mutates that

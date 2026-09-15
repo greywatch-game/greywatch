@@ -133,7 +133,8 @@ src/
     lighting.ts         # The dynamic light budget (uniforms, not Babylon lights)
     world.ts            # Map extents, occlusion, water, grass (map, ao, water,
                         #   grass)
-    sky.ts              # The painted night sky (sky)
+    sky.ts              # The sky (sky): the dome, the stars, the disc, and the
+                        #   cloud ring's count, spread, shape and drift
     wind.ts             # The one wind: a shared bearing, and what the grass
                         #   field and the world's foliage each do with it
     teams.ts            # The two sides; index 0 is the player's
@@ -525,7 +526,13 @@ src/
     Atmosphere.ts       # Ash field on the GPU, simulated by a compute shader.
                         #   No CPU fallback — WebGPU is a hard requirement and
                         #   guarantees it
-    Sky.ts              # Generated dome, textured moon, fBm cloud decks
+    Sky.ts              # Generated dome, textured moon, and the cloud RING —
+                        #   one merged mesh of faceted masses standing in the
+                        #   world over the map, drawn back to front at one
+                        #   shared depth 7 km out (the disc stands at 9 km)
+    cloudMasses.ts      # The cloud ring's SHAPE: flat-bellied piles of jittered
+                        #   icosphere lumps as one flat-shaded triangle soup.
+                        #   Pure arithmetic — no Babylon, no state
     WorldCulling.ts     # How much of the map the frame's own mesh walk is
                         #   offered. Replaces scene.getActiveMeshCandidates and
                         #   writes NOTHING onto a mesh, which is what leaves
@@ -1003,7 +1010,12 @@ src/
                         #   mirror, and the hole a rotor tears in it. WGSL
     GrassShader.ts      # The blade bend: wind, and combatants pushing through.
                         #   WGSL
-    Volumetrics.ts      # Light shafts: raymarched through the shadow volume. WGSL
+    Volumetrics.ts      # Light shafts: raymarched through the shadow volume,
+                        #   capped at the light's colour and SCREENED onto the
+                        #   frame so a thick map's glare stays gold. WGSL
+    CloudShader.ts      # The cloud masses lit per FACET: a wrapped, banded key,
+                        #   a darker belly, a stepped silver lining toward the
+                        #   light, the dome's horizon haze. WGSL
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
                         #   angles. The viewmodel is held out of it by DEPTH —
                         #   masked shift AND weighted taps — because a gun

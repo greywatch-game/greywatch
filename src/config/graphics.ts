@@ -208,9 +208,11 @@ export const graphics = {
      *
      * Set against the ALL-LIT ceiling, which is the worst case the shader can
      * produce: every tap unshadowed at ground level over the full reach. On the
-     * shipped numbers that ceiling is 0.46 added looking into the moon and
-     * 0.028 across it, so a fully lit street has headroom left and the shadowed
-     * frame that is actually drawn sits well under.
+     * shipped numbers that ceiling is 0.46 looking into the moon and 0.028
+     * across it. That arithmetic is what bounded a map's air while the pass
+     * ADDED its light; it is now capped at the tint's own value and SCREENED
+     * onto the frame (`Volumetrics.ts`), so a map may thicken its air past the
+     * ceiling and the cost is haze rather than a clipped white sky.
      */
     intensity: 0.75,
   },

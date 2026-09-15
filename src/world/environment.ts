@@ -83,7 +83,7 @@ export interface ParticleSpec {
 
 /**
  * The night-sky palette. Everything here is baked or tinted by `Sky`
- * (`src/systems/Sky.ts`); geometry (dome radius, cloud layer heights, scroll
+ * (`src/systems/Sky.ts`); geometry (dome radius, the cloud ring's spread, drift
  * speeds) lives in `CONFIG.sky`. Omitting it leaves the bare clear colour.
  */
 export interface SkySpec {
@@ -160,21 +160,35 @@ export interface SkySpec {
    * this map wants relative to the night village — is the half of the old pair
    * that still means something. The other half was a luminance threshold, which
    * a march has no use for at all: it is gone, not converted. Retuning these by
-   * eye, per map, is the job this is waiting for.
+   * eye, per map, is the job this is waiting for — and HARROWMEAD is the one
+   * that has had it, against a reference frame (its file says what was judged
+   * where), so its numbers are no longer a ratio of anything.
    *
    * `samples` is deliberately not here: it is the player's rung, interpolated
    * into the shader source per compile, and a map may not overrule a setting.
    */
   air?: { density?: number; intensity?: number };
-  /** Drifting cloud decks: tint (the shadowed body) and 0..1 ceiling alpha. */
-  cloudColor: string;
-  cloudOpacity: number;
   /**
-   * The silver a deck takes on where the moon is behind it, added on a second
-   * shell so the lit patch stays anchored to the moon while the cloud texture
-   * scrolls through it. Strength is that shell's peak alpha.
+   * The cloud masses (`systems/cloudMasses.ts`, lit by `CloudShader`): the
+   * colour a facet turned AWAY from the key light takes. Wants to sit between
+   * the sky behind it and the ground under it — a cloud's shadow side is lit by
+   * both — and to be clearly darker than `horizonColor`, or a low cloud has no
+   * silhouette against the band it stands in.
    */
+  cloudColor: string;
+  /**
+   * How much of the sky is cloud, 0..1: a share of `CONFIG.sky.clouds.maxCount`.
+   * A COUNT and not an alpha — the masses are opaque, so a thin sky is fewer
+   * clouds rather than fainter ones. Zero builds no clouds at all.
+   */
+  cloudCover: number;
+  /** The colour a facet square to the key light takes — the lit side. */
   cloudLitColor: string;
+  /**
+   * How far toward `cloudLitColor` a lit facet goes, 0..1. Below 1 is a light
+   * that does not fully reach the cloud's face: a moon, or a crater glow from
+   * below.
+   */
   cloudLitStrength: number;
 }
 
@@ -346,6 +360,26 @@ export interface EnvironmentSpec {
     intensity: number;
     /** Normalized on load. */
     direction: [number, number, number];
+    /**
+     * How far the key WRAPS toward full on every facet turned toward it, 0..1.
+     * Absent is 0, which is plain Lambert and what every map that says nothing
+     * keeps.
+     *
+     * **It is how a low sun is lit in a cel frame.** Under Lambert a 14-degree
+     * sun hands a flat floor a quarter of the key, so the sky fill ends up the
+     * brightest thing on the ground and a golden hour reads as dusk — and
+     * raising `intensity` to fix the floor clips every sun-square wall against
+     * the shoulder, which is the khaki problem Harrowmead's file argues. The
+     * wrap lifts a facet's cosine by `wrap * (1 - cosine)`, so the wall is
+     * untouched and the floor climbs bands: what is in the light is LIT, and
+     * the terminator is where the two-tone break is. Relief keeps its full
+     * amplitude (the lift is keyed on the true facet and added to the bumped
+     * cosine), so a raking sun still rakes.
+     *
+     * Reaches the cel materials and the grass. Not the water, which is a mirror
+     * and takes the sun as a reflection rather than as a cosine.
+     */
+    keyWrap?: number;
     ambientColor: string;
     ambientIntensity: number;
     /**
@@ -478,6 +512,7 @@ export function applyEnvironment(
   mats.setEnvironment({
     lightDir: new Vector3(dx, dy, dz),
     lightColor: Color3.FromHexString(lit.color).scale(lit.intensity),
+    keyWrap: lit.keyWrap ?? 0,
     ambientColor: Color3.FromHexString(lit.ambientColor).scale(
       lit.ambientIntensity,
     ),

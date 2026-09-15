@@ -110,7 +110,7 @@ export const ProvingEnvironment: EnvironmentSpec = {
     moonColor: "#fff4d8",
     moonGlowColor: "#ffe2ad",
     cloudColor: "#a9b2bd",
-    cloudOpacity: 0.34,
+    cloudCover: 0.34,
     cloudLitColor: "#ffeccb",
     cloudLitStrength: 0.7,
     discRadius: 12,

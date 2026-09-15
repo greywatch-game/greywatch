@@ -112,20 +112,19 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
   // never cuts a seam against the fogged downs.
   skyColor: "#c8a87e",
   /**
-   * Gold evening haze — the day's dust and damp with the sun in it. A HUE
-   * move against the morning's green-grey, not a value move: luma 0.735
-   * against the old 0.74, because every distant surface asymptotes to
-   * exactly this colour and its luminance sits under the horizon band at
-   * 0.767. That pairing used to be load-bearing — it was the floor of the
-   * light shafts' luminance bracket — and is now simply what keeps the fog and
-   * the band reading as one distance.
+   * Gold evening haze — the day's dust and damp with the sun in it. Pushed
+   * further into the gold (from #d4b28c) when the map was re-lit against the
+   * reference frame (`reference-media/visuals.jpg`), whose far houses dissolve
+   * into amber rather than into beige. It still sits UNDER the horizon band
+   * in value, because every distant surface asymptotes to exactly this colour
+   * and the band has to read as the brightest air rather than as more wall.
    *
    * `fogStart` comes down 120 -> 100: a low sun wants the depth earlier
    * (Coldharbour went 170 -> 130 for the same reason), so the gold air sits
    * over the middle distance of a lane rather than only past the far end of
    * one. `fogEnd` does not move — see the header.
    */
-  fogColor: "#d4b28c",
+  fogColor: "#d9ae7a",
   fogStart: 100,
   fogEnd: 520,
   /**
@@ -168,26 +167,45 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
     // 14.5 degrees up, azimuth north-west. Derivations in the header.
     direction: [0.685, -0.25, -0.685],
     /**
-     * Cooled from the midday field-green to a dusk slate, Coldharbour's
-     * reason: at a low sun a shadow is filled by the SKY, and the warm/cool
-     * split across a hedgerow is what makes the hour read as evening rather
-     * than as an orange filter over everything. Up 0.02 rather than down,
-     * against Coldharbour's grain, because this map's interiors are barns
-     * with one door: the ambient is what keeps a floor you can read a body
-     * against while the key leaves the ground.
+     * **The first map to wrap its key, and the hour is why.** Under Lambert
+     * the 14.5-degree sun hands a flat field a quarter of the key (the 0.25
+     * band the header derives), so the SKY fill was the brightest thing on the
+     * ground and the golden hour photographed as dusk — the lit street in the
+     * reference frame is a bright ochre and the shadow across it is dark, and
+     * neither was true here. `intensity` cannot buy that (the khaki problem
+     * above); the wrap can, because it lifts the floor two bands and leaves the
+     * sun-square wall where the shoulder arithmetic put it.
+     *
+     * **The number is DERIVED, and for the header's own reason.** A lifted
+     * cosine moves where the band EDGES fall, so the mid-band argument for the
+     * elevation has to be made again under the wrap or a rolling field
+     * flickers. 2/3 is the one value that lifts sin(14.5) = 0.25 to exactly
+     * 0.75 — the CENTRE of the top-but-one band — and a facet tilted seven
+     * degrees either way lands at 0.71 and 0.79, both inside it. 0.55 was
+     * tried first and looked right on a flat street; it put the floor at
+     * 0.66, on the smoothstep between two bands, which is the flicker the
+     * header chose this elevation to avoid.
      */
-    ambientColor: "#6f7a88",
-    ambientIntensity: 0.34,
+    keyWrap: 0.667,
     /**
-     * The COMPENSATING number, per the header: the floor's share of the key
-     * halved when the sun came down (and fell again when the shoulder
-     * arithmetic above took the key to 1.0), and this is what keeps a flat
-     * field from reading as a hole beside a lit slope. Blue skylight by n.y —
-     * full on the fields and the thatch, nothing on the walls, which is
-     * also what holds the warm/cool split the ambient starts.
+     * A near-neutral slate, and HIGHER than the Lambert-era 0.34 — the other
+     * half of the wrap. With the lit ground now carrying the key, the sky fill
+     * below came down to deepen the shadows across it, and that took the
+     * one-door barns and every wall turned from the sun to black; this is what
+     * gives back a facade you can read a body against. Flat by construction,
+     * so it lifts walls and floors alike and the CONTRAST between lit and
+     * shadowed ground stays the fill's and the wrap's to set.
+     */
+    ambientColor: "#77787c",
+    ambientIntensity: 0.44,
+    /**
+     * Down from 0.44, and no longer the compensating number it was: the wrap
+     * above does the floor's work now, so this is only the cool lift in a
+     * shadow — the warm/cool split across a hedgerow that makes the hour read
+     * as evening. Taken lower (0.26 was tried) shadowed grass went to a hole.
      */
     skyLightColor: "#a3b7dc",
-    skyLightIntensity: 0.44,
+    skyLightIntensity: 0.34,
     /**
      * The one hour a rim light is TRUE: the term fires on steeply-turned
      * facets wherever the sun is, and at 14.5 degrees that is a warm fringe
@@ -238,44 +256,46 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
     drift: [0.18, 0.15],
   },
   /**
-   * Sunset: a deep blue still holding overhead, a gold band where the day
-   * is going down, and the decks lit from underneath. Star field still
-   * zeroed — the sun is UP, and a star over a sunlit field reads as a bug,
-   * not an evening.
+   * Sunset, painted after the reference frame: an AMBER sky rather than a
+   * blue one going gold at the rim, and banks of faceted cloud lit on the
+   * sun's side. Star field still zeroed — the sun is UP, and a star over a
+   * sunlit field reads as a bug, not an evening.
    */
   sky: {
-    // Deepened from the midday luma-0.55 blue to 0.39: honest for the hour,
-    // and even further from ever reaching the shaft threshold.
-    zenithColor: "#46679e",
-    // Required to sit near `fogColor` and slightly above it (luma 0.728
-    // against 0.715), so the band reads as the brightest air rather than as
-    // more wall. Also now the FLOOR of the rays bracket — see `rays`.
-    horizonColor: "#ddb488",
+    // A dusty amber-brown overhead. The blue this replaced (#46679e) was honest
+    // for a clear evening and is not what the reference is — a sky with dust
+    // in it all the way up — and a blue zenith over gold cloud read as two
+    // hours laid on top of each other.
+    zenithColor: "#9c7658",
+    // Near `fogColor` and above it, so the band reads as the brightest air
+    // rather than as more wall. It is also what the lowest clouds haze toward
+    // (`CloudShader`), so a cloud over the rim melts into the same band.
+    horizonColor: "#efc07c",
     starColor: "#ffffff",
     starCount: 0,
     starBrightness: 0,
     // The disc: hotter and whiter than its halo, per the sun maps' rule.
     moonColor: "#ffe2b0",
-    // The air around the disc, and (through applySky) the tint on the
-    // shafts. Deep gold — the first pass at #ffd7a0 washed the halo to
-    // white-pink. Luma 0.826: the top anchor of the rays bracket.
-    moonGlowColor: "#ffcc92",
+    // The air around the disc, and (through seedVolumetrics) the tint on the
+    // shafts. Deep gold, and more saturated than the #ffcc92 it was: the
+    // shafts are SCREENED onto the frame and capped at this colour's own
+    // value, so a pale tint is a pale beam however thick the air.
+    moonGlowColor: "#ffd27a",
     // milkyWayColor omitted — it is not dark yet.
     /**
-     * More deck than the morning's fair-weather 0.32 (0.5, between the
-     * morning and Coldharbour's 0.62), because the cloud is
-     * what a sunset is PAINTED on: the shadowed bodies go mauve while the
-     * lit shell — anchored to the sun's own bearing by the static
-     * per-vertex mask — catches fire from underneath, exactly where a 14.5
-     * degree sun should light it. Lit luma 0.837 is ABOVE the shaft
-     * threshold on purpose: a burning deck is sky, and it radiates. The
-     * decks were already drifting (Coldharbour's note), so the whole show
-     * moves for nothing, and the decks crossing the disc modulate the
-     * shafts below for free.
+     * The cloud is what a sunset is PAINTED on, so this is more of it than the
+     * morning's fair-weather sky carried. The shadow side is a warm grey-brown
+     * rather than the mauve the old noise decks wore: a faceted mass shows its
+     * shadowed side as a SHAPE, and a mauve shape in an amber sky read as a
+     * bruise rather than as the unlit half of a gold cloud. Dark enough that a
+     * bank seen against the sun is a silhouette with a lit rim, which is the
+     * reference's picture of it; the lit colour is a pale peach, because the
+     * lit face of a sunset cloud is the one thing in the sky paler than the
+     * air around it.
      */
-    cloudColor: "#97889b",
-    cloudOpacity: 0.5,
-    cloudLitColor: "#ffcf9a",
+    cloudColor: "#735c58",
+    cloudCover: 0.55,
+    cloudLitColor: "#ffdcaa",
     cloudLitStrength: 0.9,
     // 14, the sun maps' derivation: 1.35 degrees at moonDistance, which the
     // emissive boost and the glow kernel read as a small fierce sun.
@@ -286,18 +306,17 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
     // and the west wood occlude it.
     haloStrength: 0.6,
     /**
-     * Level with Coldharbour's, and for the same reason: a lit sky with the
-     * sun in frame whenever the player looks north-west. What the air is FOR
-     * here is the west wood and the hedgerow gaps — an evening map where the
-     * light comes through things — which is exactly the case the march is
-     * better at than the pass it replaced, and the first place to look when
-     * these numbers are finally tuned by eye.
-     *
-     * Carried by ratio from the screen-space pass (0.5 of its own 1.3) and
-     * untuned against the march — see `SkySpec.air`. The bracketed luminance
-     * threshold is gone rather than converted.
+     * **TUNED BY EYE against the march, the first of the maps to be** — the
+     * ratio-carried 0.38 before it drew no beam anybody could see. What the air
+     * is FOR here is the west wood and the hedgerow gaps: an evening map where
+     * the light comes through things. Judged looking north-west through the ash
+     * rows at eye height, where the reference puts its shafts: the density is
+     * what separates a beam from the shadowed air beside it, and it only
+     * became affordable once the pass stopped ADDING its light (it screens and
+     * caps it now — see `Volumetrics.ts`), because added at this thickness the
+     * whole sun quarter of the frame clipped to white.
      */
-    air: { intensity: 0.38 },
+    air: { density: 3, intensity: 1.2 },
   },
   // Up a touch from the morning: this is the hour a real camera vignettes
   // and flares (Coldharbour's note), so the same terms read as a lens

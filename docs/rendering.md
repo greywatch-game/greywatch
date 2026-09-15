@@ -403,6 +403,13 @@ cache therefore happens only on the frames a probe renders. Get that flip wrong
 and the cube comes back alpha 0 everywhere and every pane reflects nothing but
 sky.
 
+**The CLOUDS write coverage 0 like every opaque surface, and need nothing from the
+ink** — they write one depth 7 km out (see the sky section), past every map's fog
+band, so the ink's own fade has taken their line work off before it is drawn. A
+first version wrote their REAL depth at a few hundred metres and had to write
+coverage 1 to keep Cinderhaven's clouds from being outlined; the far depth retired
+that exception.
+
 **It inks the terrain, the grass, the water and the debris, none of which the
 hull touched, and that is kept.** Every blade of grass writes depth, so every
 blade is a silhouette; what it reads as is denser, darker grass. A judgement,
@@ -625,6 +632,37 @@ walls and undersides stay black — flat ambient alone lifts every face equally,
 reads as a grey wash. Because it is ungated, a roof in the moon's shadow still
 catches it. It lifts *albedo*, so a bright material (the cobble street) gains far
 more from it than a dark one.
+
+**The key may WRAP, and that is how a low sun is lit in a cel frame**
+(`EnvironmentSpec.lighting.keyWrap`, 0 by default, so a map that says nothing is
+Lambert exactly). Under Lambert a 14-degree sun hands a flat floor a quarter of
+the key, the sky fill becomes the brightest thing on the ground, and a golden hour
+photographs as dusk — and raising `intensity` to fix the floor clips every
+sun-square wall against the soft shoulder, which comes back khaki. The wrap lifts
+a facet's cosine by `wrap * (1 - cosine)`: a wall square to the light is untouched
+and the floor climbs bands, so whatever faces the light is LIT and the terminator
+is where the two-tone break falls. Three things about it are load-bearing:
+
+- **The lift is keyed on the GEOMETRIC facet and ADDED to the bumped cosine**, so
+  the ground's relief keeps its whole amplitude rather than being squeezed by
+  `(1 - wrap)` — a raking sun over cobbles is exactly where the relief is the
+  picture.
+- **It fades in over the first few degrees of the terminator** (`smoothstep(0,
+  0.08)` on the geometric cosine), so a facet grazing the light, where the shadow
+  map is least sure of itself, is not handed a full band of key to show its acne
+  in.
+- **A map's wrap is DERIVED, never picked.** A lifted cosine moves where the band
+  edges fall, and `band()`'s edges are at `n + 0.5` of `ndl * 4`: a wrap that puts
+  a flat floor on an edge makes every gentle slope flicker between two bands. The
+  value to state is the one that lifts `sin(elevation)` to exactly 0.75, the
+  centre of a band — `(0.75 - s) / (1 - s)` — which is 0.667 on Harrowmead, 0.578
+  on Coldharbour and 0.529 on Greyfen, and each keeps a facet tilted seven degrees
+  either way inside the band. The first values tried (0.55, 0.4, 0.3) each put
+  that map's flat floor within a smoothstep of an edge, and the first of them
+  looked right on a level street, which is exactly why it has to be computed.
+
+It reaches the cel materials and the grass, the two surfaces that take the key as
+a cosine. Not the water, which takes the sun as a reflection.
 
 **Two more terms are per-material opt-ins, and they are three cache variants rather
 than a matrix.** `getGlossy` adds the toon specular (`specColor`/`specShininess`)
@@ -1199,7 +1237,7 @@ already a ~10 LSB dither whenever it is attached — so the banding is a
 **grade-off** artefact, and the grade-off frame is the one a pass inside the
 grade cannot reach. The sky dome was the expected customer and measured as not
 needing it (233 runs against 229): stars, the galactic band and the halo are
-painted over the whole ramp, and the cloud decks sit in front.
+painted over the whole ramp, and the clouds stand in front of it.
 
 The exceptions are the TWO `DirectionalLight`s, which no material reads: each
 exists only to define a shadow camera for its `ShadowGenerator`.
@@ -2267,17 +2305,18 @@ before its round gets there is what makes a slowed tracer read as fake. One
 
 ## The sky
 
-Everything overhead is painted at runtime by `src/systems/Sky.ts` from the map's
+Everything overhead is built at runtime by `src/systems/Sky.ts` from the map's
 `SkySpec`: an equirectangular dome texture (gradient, galactic band, stars, the
-moon's scattering halo), a textured moon disc that feeds the GlowLayer, and two
-drifting cloud decks.
+moon's scattering halo), a textured moon disc that feeds the GlowLayer, and a ring
+of faceted cloud masses turning slowly about the eye.
 
 **The dome is painted assuming something occludes the bottom of it**, and that
 something is the valley rim — so the two are a contract, not neighbours. Stars and
 the galactic band are culled below canvas row 0.46 (`if (y > h * 0.46) continue`,
-written twice), `cloudBandBottom` stops cloud at 0.47, and the gradient runs to flat
-`fogColor` from row 0.58 down. In elevation that is **7.2° for stars and 5.4° for
-cloud**, below which nothing is painted at all. `Ridge.ts`'s `MIN_SLOPE` is the other
+written twice), no cloud's base stands below `CONFIG.sky.clouds.minElevation`, and
+the gradient runs to flat `fogColor` from row 0.58 down. In elevation that is
+**7.2° for stars and 6° for a cloud's base**, below which nothing is painted at
+all. `Ridge.ts`'s `MIN_SLOPE` is the other
 half of the contract; lowering the rim without moving these cutoffs uncovers a band
 of empty dome.
 
@@ -2300,19 +2339,9 @@ of empty dome.
   half showing the fog colour the gradient ends on. It does not look upside down; it
   looks like there is no sky at all, with a moon still correctly placed because the
   disc is geometry, not paint.
-- **Cloud masks are 3D noise sampled along each texel's own direction.** An equirect
-  image stretches by `1/sin(latitude)`, so a 2D field smears into bands as it climbs
-  and pinches at the pole; a tileable 3D lattice has no seam and no pole. The field is
-  also **normalised to its own range before it is thresholded** — summed value noise
-  clusters around 0.5, so a raw fBm against a 0.5 threshold produces haze, not cloud.
-- **The moonlit silver is a second, additive shell with a static per-vertex alpha
-  mask**, not a bright patch in the mask texture. The texture scrolls and the moon does
-  not; baking the lit side in would drag the highlight across the sky.
 - **Stars live or die on dome resolution.** 360 degrees of texture against ~50 of
   screen is a hard magnification, so a dot much over a pixel arrives as a bokeh ball —
-  hence a 4096x2048 dome and `starMaxSize` ~1.6. The same magnification is why
-  `cloudSoftness` is wide: bilinear magnification of a *hard* alpha contour comes out as
-  straight-edged wedges, torn paper rather than cloud.
+  hence a 4096x2048 dome and `starMaxSize` ~1.6.
 - **The dome wraps, so anything painted near its edge must be painted twice**
   (`acrossSeam`). The left and right edges are the same piece of sky, a canvas clips
   instead of wrapping, and the widest mark on the dome is the moon's halo — wider, at
@@ -2323,8 +2352,82 @@ of empty dome.
   clamped — it runs pole to pole and has nothing to meet.
 
 `Game.applySky()` no-ops when the environment object is unchanged. The map is
-rebuilt every round; the sky is not, and repainting 8 megapixels of dome plus two
-noise masks for an unchanged sky is pure cost.
+rebuilt every round; the sky is not, and repainting 8 megapixels of dome for an
+unchanged sky is pure cost.
+
+### The clouds are geometry
+
+**They replaced two sphere shells of thresholded fBm, and what retired those was
+the look rather than a cost.** A noise deck is a soft, continuous-tone smear — the
+one register this frame does not draw in — and it had to be widened on purpose,
+because a magnified *hard* alpha contour comes out as torn paper. Its lit side was a
+second additive shell with a per-vertex mask, because a texture has no facets to
+turn toward a light. A pile of lumps has facets, so the key is asked of each one and
+banded like every wall in the village, and the silhouette is an edge the geometry
+draws. `systems/cloudMasses.ts` is the shape (pure arithmetic, `glassFracture`'s
+shape) and `shaders/CloudShader.ts` is the light.
+
+- **One mesh, one material, one draw.** The whole ring is a flat-shaded triangle
+  soup — every triangle owns its three corners, which is what gives each facet its
+  own normal — merged once when the sky is applied. Measured: 15,520 triangles
+  on Harrowmead (`cloudCover` 0.55), 16,960 on Coldharbour (0.62) and 23,200 on
+  Hollowmere (0.72).
+- **A cloud is a pile of jittered icosphere lumps with a flat BELLY.** One
+  subdivision, because the facet is the look; the lumps swell toward the middle
+  and a few carry a crown. Three things were each photographed the wrong way first
+  and are now rules in the file: a lump may never be taller than three quarters of
+  its own width (a narrow lump is a TOOTH, and thirteen of them edge-on over the rim
+  were a sawtooth mountain range); the belly is PRESSED toward the base plane
+  (`BELLY_SQUASH`) rather than clamped onto it (a clamp gave every cloud one smooth
+  slab of floor that the haze shaded like sheet metal); and the whole pile stays LOW
+  against its width, because a tall faceted mass is a rock before it is a cloud.
+- **The clouds stand IN THE WORLD, over the map — and that is the rule the first
+  version broke.** It rode at `infiniteDistance` like the dome, and a player
+  walking across Harrowmead watched every cloud walk with them. The ring is now
+  laid out in real metres about the map's centre, `max(minRadius, perMapSize ×
+  size)` out (1200 m on the three small maps, 3000 m on Cinderhaven), so its bases
+  are a few hundred metres up and a cloud slides across the sky as the eye moves
+  under it. **It scales with the map because a ring is only a sky from inside
+  it**: one distance that moved visibly on a 400 m map left Cinderhaven's players
+  walking out from under theirs. 2 km on every map was tried first and slid a cloud
+  four degrees over 150 m of walking, which a player who had just said the clouds
+  followed them would have said again.
+- **Real positions, ONE DEPTH.** A kilometre-wide cloud a kilometre out is not
+  reliably farther than every ridge and crater the camera can see, so a depth test
+  on its real distance draws it over a mountain. The vertex stage projects x and y
+  for real and pins clip z just inside the far plane (so no cloud is ever clipped
+  by it), and the FRAGMENT writes one constant depth, that of a point
+  `clouds.depthMetres` (7 km) down the view axis. Every world surface is nearer, so
+  every one hides a cloud; the disc is stood at `moonDepthDistance` (9 km, scaled so
+  it keeps its angle), so a cloud hides the disc.
+- **It cannot simply write NO depth, and that was tried.** The disc's colour was
+  covered, but the glow layer is occluded by the frame's depth buffer
+  (`GlowDepth`), so the disc went on BLOOMING through every cloud in front of it.
+- **One shared depth is why the lumps are drawn back to front.** The buffer cannot
+  say which lump is in front, so `Sky.sortClouds` rewrites the index buffer
+  farthest lump first whenever the eye has walked `resortMetres` or the ring has
+  turned `resortTurn`, and the test is LEQUAL so a later tie wins. Back-face
+  culling makes each closed lump right on its own. The depth is written as a
+  CONSTANT rather than interpolated because a per-vertex z/w in float32 near 1
+  wobbles by about one 24-bit LSB, which would speckle every overlap.
+- **Rendering group 2 is the clouds', with its automatic depth clear off** — drawn
+  after the disc (group 1) so they can cover it, and depth-tested against what the
+  world wrote. A mesh put in group 2 for any other reason inherits both.
+- **The drift is a TURN of the mesh about the map's centre and never of what lights
+  it.** The key is asked of the world normal in the shader, so a cloud coming round
+  into the sun lights on its sun side. A baked colour would carry its lit face away
+  with it, which is the trap the old second shell existed to dodge.
+- **The shading is four terms, all banded or stepped:** the key WRAPPED round the
+  lump (a volume, not a wall) and cut into three bands; a belly a step darker on
+  every down-facing facet; a SILVER LINING on the facets the eye grazes, stepped,
+  and only well inside the light's quarter of the sky (taken wider, a backlit pile
+  broke into bright shards over a dark one); and the dome's horizon colour over the
+  low ones on the dome's own schedule. The palette is the map's `SkySpec`:
+  `cloudColor` the shadow side, `cloudLitColor` the lit one, `cloudLitStrength` how
+  far a lit facet goes toward it, `cloudCover` the share of the ring's count.
+- **Unfogged by the cel fog.** A cloud is SKY; the air it takes is the dome's
+  gradient, not the village's fog wall. On Hollowmere and Greyfen a 78 m fog would
+  otherwise erase the sky entirely.
 
 `Volumetrics` (`src/shaders/Volumetrics.ts`) is the game's ONLY light-shaft
 effect. It raymarches the air: step along each pixel's view ray in world space,
@@ -2439,6 +2542,21 @@ same field and then withholds it when a map sets `discRadius: 0` — which the o
 pass read as "switch off" and a march cannot, since a zero vector into the phase
 cosine scatters sideways everywhere. So a sky with no source DRAWN is still air
 lit from where the shadows fall, and `Sky.moonDirection` is gone.
+
+**THE SHAFTS ARE SCREENED ONTO THE FRAME AND CAPPED AT THEIR OWN COLOUR, and that
+is what made thick air affordable.** They used to be ADDED: `scene + tint * s`. On
+Harrowmead, tuned thick enough for a beam to show through the ash rows at eye
+height, the whole sun quarter of the frame clipped to white, and white is the
+wrong failure for a golden hour — each channel clips on its own, and the gold is
+exactly the ratio between channels that clipping throws away. So the march's result
+is now capped on its brightest channel (`raw / max(1, max(raw))`, which keeps the
+hue) and screened: `scene + lit * (1 - scene)`. Against a dark trunk or a shadowed
+wall that is the whole of the light, which is where a beam is SEEN; against the sky
+beside the sun, already near the top, it is almost nothing. **A saturating curve
+(`1 - exp(-s)`) was tried first and was worse the other way**: it squeezes every lit
+tap toward one value, so the gap between a beam and the shadowed air beside it —
+the only thing that makes a beam a beam — closed into haze. For thin air all three
+forms are the same number, so a map whose shafts were already faint is unmoved.
 
 **`anisotropy` is held below what real haze measures, and the constraint is the
 8-bit chain.** `DefaultRenderingPipeline` is built with `hdr = false`, so whatever

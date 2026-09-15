@@ -436,7 +436,7 @@ Three rules:
   resolving one — `readMap()` from `localStorage`, say — must return an entry **out
   of `MAPS`** rather than a copy. `applySky` skips repainting eight megapixels of
   dome by comparing the environment by *identity*, so a spread-together `MapDef`
-  fails that test open and repaints the sky, two fBm cloud masks included, on every
+  fails that test open and repaints the sky, its cloud ring included, on every
   round start. Nothing throws; it is a hitch with nothing in the profile to blame.
 - **`Game.mapDef` may only be written from the `menu` state** (`Game.setMap`
   enforces it). `startRound` reads it to apply the environment, paint the sky and
@@ -1081,7 +1081,7 @@ schematics, and that is correct.
   sphere's top and `CoverMap`'s hard-cover height; the noise and the passes ride above
   it, never through it. Measured flush to 0.000 m at 1.05/1.55/1.7 m on all four rims.
 - **The crest is an ANGLE from the map centre, never a height.** `Sky.ts` culls
-  stars below dome row 0.46 (7.2° elevation) and cloud below 0.47, and paints the dome
+  stars below dome row 0.46 (7.2° elevation), stands no cloud's base below 6°, and paints the dome
   flat `fogColor` beneath the horizon — so a crest under that exposes a band of sky
   with nothing painted in it. A tangent clamped at `MIN_SLOPE` makes that true by
   construction, and buys the corners bigger massifs than the sides for free. The rim

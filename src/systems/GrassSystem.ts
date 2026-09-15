@@ -168,6 +168,7 @@ export class GrassSystem {
     const lit = env.lighting;
     mat.setVector3("lightDir", new Vector3(...lit.direction).normalize());
     mat.setColor3("lightColor", Color3.FromHexString(lit.color).scale(lit.intensity));
+    mat.setFloat("keyWrap", lit.keyWrap ?? 0);
     mat.setColor3(
       "ambientColor",
       Color3.FromHexString(lit.ambientColor).scale(lit.ambientIntensity),

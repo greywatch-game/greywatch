@@ -236,6 +236,15 @@ export const GreyfenEnvironment: EnvironmentSpec = {
      */
     direction: [-0.604, -0.469, -0.644],
     /**
+     * The key WRAPS (`EnvironmentSpec.lighting.keyWrap`), so the sunlit
+     * floor between the trunks reads as a pool of morning rather than as a
+     * brighter shade of the shadow around it. Derived as Harrowmead's is:
+     * 0.529 lifts sin(28) = 0.469 to exactly 0.75, the centre of a band, and
+     * the valley's banks grade gently enough that a facet tilted seven degrees
+     * either way stays inside it (0.70..0.80).
+     */
+    keyWrap: 0.529,
+    /**
      * **0.7 -> 0.24, and this is the change gap 7 actually was.**
      *
      * Ambient, sky fill and key all add, and the shipped map put all three
@@ -400,18 +409,18 @@ export const GreyfenEnvironment: EnvironmentSpec = {
     // milkyWayColor omitted — a galactic band two hours after sunrise.
     /**
      * The lid comes apart. 0.92 -> 0.55, which is what turns an overcast into
-     * high broken cloud with sky behind it, and `cloudBandBottom` is 0.47 — so
-     * the decks pass IN FRONT OF a sun at 28 degrees and the shafts below are
-     * modulated by moving cloud for nothing. The body cools and darkens to
-     * match: a deck that is not the light source any more is the shadowed half
-     * of a cloud, and it needs to be darker than the halo behind it or the sky
+     * broken cloud with sky behind it — a share of the ring's count now rather
+     * than an alpha, and the ring's bases start at 6 degrees, so a bank still
+     * passes IN FRONT OF a sun at 28 degrees. The shadow side cools and
+     * darkens to match: a cloud that is not the light source is the shadowed
+     * half of one, and it needs to be darker than the halo behind it or the sky
      * has no depth at all.
      */
     cloudColor: "#aab6be",
-    cloudOpacity: 0.55,
-    // The lit side, anchored to the sun by a static per-vertex mask. Warmer and
-    // much stronger than the overcast version, because there is now a direction
-    // for it to be lit FROM.
+    cloudCover: 0.55,
+    // The lit side — every facet turned toward the sun. Warmer and much
+    // stronger than the overcast version, because there is now a direction for
+    // it to be lit FROM.
     cloudLitColor: "#ffeed2",
     cloudLitStrength: 0.75,
     /**
