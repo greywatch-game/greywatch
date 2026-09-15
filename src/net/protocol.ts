@@ -1359,8 +1359,8 @@ export interface DeployMessage {
    * locally ever since while the authority went on resolving every round of it
    * against whatever they joined with. The damage a shot deals is the
    * authority's (`Match.onShot`), so the symptom is not a mismatch anybody can
-   * see: it is a sniper round that does not kill and an LMG round that pays
-   * the marksman rifle's fifty.
+   * see: it is a sniper head shot that does not kill and an LMG round that
+   * pays the marksman rifle's forty-five.
    *
    * It rides the DEPLOY rather than a message of its own because this is the
    * one door every body in the game comes through, and because the change is

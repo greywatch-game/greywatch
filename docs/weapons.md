@@ -713,8 +713,8 @@ the sniper touched no signature and no system: the wire already resolves whateve
 weapon a client declares through `weaponSetup`, the server's fire-rate gate is
 `Math.max` over the table, and the stat chart's bars are shares of the best
 figure in the kit rather than absolutes. **That last one is worth knowing before
-adding a weapon that sets a new best in a column** — 100 damage takes the
-rifle's damage bar to under a third of the width it used to draw, which is the
+adding a weapon that sets a new best in a column** — the sniper's damage took
+the rifle's damage bar to about a third of the width it used to draw, which is the
 chart working rather than breaking, and pinning the scale to an absolute instead
 would mean re-tuning every bar in the kit the day a weapon is added.
 
@@ -1119,7 +1119,7 @@ weapon HAS a cycle you can be in the middle of (`!semiAuto || burst > 1`). It ha
 to be shared: applied to a string of one, `firstShotMult` is a flat 60% increase
 and the taper is a flat 20% *decrease*, and the decrease is the worse of the two
 because both those weapons' fire rates sit just inside `stringResetTime` (the
-DMR's 0.333 s against 0.35). Only a player firing them as fast as the weapon
+DMR's 0.286 s against 0.35). Only a player firing them as fast as the weapon
 allows would collect it — a discount for spamming a precision weapon, which is
 the opposite of what a rate ceiling is for. Excluded, the DMR and the pistol fire
 shot one every time: full climb, minimum drift, nothing to learn and nothing to
@@ -1198,10 +1198,27 @@ game. `bloomMult` multiplies the *ceiling* as well as the per-shot term — a we
 that blooms faster has to be allowed to bloom further, or the extra rounds per
 second cost it nothing after the second shot.
 
-The three automatics are balanced on time to kill, not damage per second: 4 rifle
-rounds at 8/s is 0.375 s, 6 SMG rounds at 13/s is 0.385 s, 5 LMG rounds at 10/s is
-0.4 s. The choice buys how much of the screen a burst covers, how far away it still
-means anything, and how long you may go on firing it.
+The three automatics are balanced on time to kill, not damage per second, and in
+the order of their reach: 5 SMG rounds at 13/s is 0.308 s, 4 rifle rounds at
+9.43/s is 0.318 s, 5 LMG rounds at 10/s is 0.4 s. The choice buys how much of the
+screen a burst covers, how far away it still means anything, and how long you may
+go on firing it.
+
+**No single round to the BODY kills anything in the kit, and that is the rule the
+table is balanced around.** A one-round kill is always a head hit, and it belongs
+to the one weapon that pays a bolt cycle for it. The balance pass that set it
+(2026-09-14) moved five rows at once, and each move is the reason for the next:
+
+| weapon | was | is | why |
+| --- | --- | --- | --- |
+| sniper | 100 | **80** | a kill anywhere on a man asked nothing of 6x glass and a 0.09° group; 80 leaves 20, which one round of anything finishes |
+| DMR | 50 at 3/s, 12 rds | **45 at 3.5/s, 15 rds** | 50 made its head hit a one-shot at three a second, which is the better sniper at every range it reaches the moment the sniper needs the head |
+| rifle | 30 | **28** | the deferred half of the 9.43/s cadence: 283 dps was the best automatic and the longest reach; 264 puts the LMG's wash back within 3% without moving the 4-shot or 2-head kill |
+| SMG | 18, near 12 m | **21, near 15 m** | six shots at 0.385 s made it slower than the rifle at arm's length; five at 0.308 s gives the room back to the room weapon |
+| LMG | recoil 0.7 / 0.9 | **0.85 / 0.95** | the gentlest climb in the kit with half-bloom made a 75-round belt too easy to hold on a man; its climb per second (`recoilMult × fireRate`) now sits between the SMG's and the rifle's |
+
+The LMG's `recoilImpulse` stops at 0.95 on purpose: a held trigger's shake settles
+at `perShot · i / (1 − e^(−T/τ))`, and at ten a second 1.0 crosses `shake.max`.
 
 **Every one of those figures is the CLOSE one, and that is a change of meaning
 rather than a caveat.** A weapon's `damage` is what a round does at or inside
@@ -1217,14 +1234,19 @@ carbine's burst stops being a kill at a stated distance, and the SMG falls off
 hardest and earliest. Two rewards and two bills, which is the same balance the
 close figures strike.
 
-- **The rifle** is 4 rounds to **53.1 m** and 5 beyond it — 0.375 s becoming
-  0.5 s at a boundary that sits inside the 78 m fog wall, so it is a distance a
+- **The rifle** is 4 rounds to **47.5 m** and 5 beyond it — 0.318 s becoming
+  0.424 s at a boundary that sits inside the 78 m fog wall, so it is a distance a
   player can actually learn.
 - **The LMG's 24 → 21 crosses no round boundary at all** (21 × 5 = 105). Five
   hits kill at 85 m exactly as they do at 5, and only the sustained figure moves
   (240 → 210). That is the same reward `bloomMult` 0.5 is, on a third axis.
-- **The DMR has no fall-off**, and the exemption *is* the weapon: "two shots,
-  whatever the range" is the sentence its entry opens with. It is stated as
+- **The SMG's five-shot kill holds to 17.3 m** (21 falling to 10 over
+  15 → 40 m; the kill is lost when a round makes under 20), six to 24.8 m, and it
+  degrades a round at a time to ten. 21 rather than 20 is headroom for the
+  sidearm's reason below.
+- **The DMR and the sniper have no fall-off**, and the exemption *is* the weapon:
+  "two with a head in them, whatever the range" is the sentence the DMR's entry
+  opens with, and a head shot that stopped killing at range is the sniper's. It is stated as
   `damageFar` equal to `damage` rather than as an absent field, so every weapon
   carries the same three numbers and the lerp needs no special case — the same
   argument `floorSurfaces.ts` makes for `flat` being a real member of its list.
@@ -1249,20 +1271,22 @@ assuming it followed.**
 ## The head zone
 
 A round inside `CONFIG.combat.headRadius` (0.22 m) of the target's `eyePos` is
-worth `headshotMult` (2). The rifle and the pistol kill in two, the SMG in
-three, the LMG in three, and **the DMR kills in one at any range** — the reward
-its `semiAuto`, its 2.2 recoil multiplier and its exemption from fall-off have
-all been asking for. It costs a scope, a 3/s ceiling and a 22 cm target.
+worth `headshotMult` (2). The rifle and the pistol kill in two, the SMG and the
+LMG in three, two of the carbine's three rounds are a kill, the DMR kills with a
+head and any second round (90 + 45) at any range, and **the sniper is the one
+weapon that kills in one — on the head, and only there** (80 becomes 160).
 
-**The sniper is the one weapon this column does nothing for, and that is the
-decision rather than an oversight.** It kills in one on the BODY, so there is
-nothing for a head hit to upgrade and the sphere is never a candidate — but the
-two one-shot kills are still different weapons, and the difference is exactly
-what the multiplier is. The DMR's is a 22 cm target you may take three times a
-second; the sniper's is a man-sized one you may take once every 1.25 s, and the
-cycle is what that costs. A one-shot kill that had to be a head hit AND cost a
-bolt cycle would be a weapon nobody could justify carrying, which is why the
-sniper's `damage` is 100 and not 51.
+**It used to be the other way round, and that was the decision this replaced.**
+The sniper was 100, a kill on the BODY, so this column did nothing for it; the
+argument was that a one-shot kill which had to be a head hit AND cost a bolt
+cycle would be a weapon nobody could justify carrying. In play it was the other
+failure: a round that kills anywhere on a man asks nothing of the 6x glass and
+the tightest group in the game it is carried behind. What keeps the head-only
+sniper worth carrying is the body hit — 80 leaves a man on 20, one round of
+anything in the kit — and the DMR stopping short of a head one-shot, because
+the DMR's old 50 made its head hit a kill at three a second, which is the
+sniper's whole case without the bolt. **Neither half survives without the
+other**: raise the DMR back to 50 and the sniper is dead weight inside 180 m.
 
 Three things about it are structural rather than tuning:
 
@@ -1323,10 +1347,11 @@ weapon the player has since reloaded, holstered or died holding. `fullReset` cle
 it for the one case the guards cannot see — `dying` stops `tryShot` being called at
 all, so a body killed mid-burst would otherwise owe rounds to the next life.
 
-**The DMR steps outside that too, and `semiAuto` is why it can.** Two rounds at 3/s is
-0.333 s — the best ideal TTK in the kit — but the rate is a *ceiling on the trigger
-finger* rather than a cadence, and the error budget pays for it: a missed rifle
-round costs 0.125 s, a missed DMR round 0.333. The recoil is the second half of
+**The DMR steps outside that too, and `semiAuto` is why it can.** A head and a
+body at 3.5/s is 0.286 s — faster than any automatic — and three on the body is
+0.571 s, but the rate is a *ceiling on the trigger finger* rather than a cadence,
+and the error budget pays for it: a missed rifle round costs 0.106 s, a missed DMR
+round 0.286, and every one of them outlasts its own 0.85 s re-settle. The recoil is the second half of
 the bill, and since `recoilImpulse` was split out of `recoilMult` it is mostly
 paid in TIME rather than in angle: 1.49° of muzzle rise, of which 93% settles
 out (`recoil.recoverFraction`), on a spring that is still moving 367 ms later — and then a hold opened to 1.72× and quickened 2.2-fold for
@@ -1337,11 +1362,12 @@ at any deliberate pace the bloom has bled off before the next round leaves.
 one here that does not have to stop; every other number on it is the price of
 that.** Seventy-five rounds is
 fifteen kills and seven and a half seconds of fire; the rifle's twenty-four is six
-kills and three seconds. What makes that affordable is that the ARITHMETIC is a
-wash and only the timing differs: 24 damage at 10/s is 240 a second, exactly the
-rifle's 30 at 8/s, and the duty cycle matches to within a percent (3.0 s of fire
-against 1.4 s of reload is 68%; 7.5 against 3.4 is 69%). Two weapons deliver the
-same damage over a minute, and the one that never has to stop in the middle of a
+kills and two and a half seconds. What makes that affordable is that the ARITHMETIC
+is a wash and only the timing differs: 24 damage at 10/s is 240 a second against
+the rifle's 28 at 9.43/s (264), and the duty cycles run the other way (2.5 s of
+fire against 1.4 s of reload is 65%; 7.5 against 3.4 is 69%), so over a minute of
+trigger the two deliver 170 and 165 a second. Two weapons deliver the
+same damage over a minute to within three percent, and the one that never has to stop in the middle of a
 fight is choosing WHEN, not how much — which is worth exactly as much as the fight
 in the middle of the rifle's reload was going to cost.
 
@@ -1356,14 +1382,17 @@ than twice any other reload, in a game with no reserve ammunition, which is the
 magazine mean anything: at 0.5 the bloom ceiling is 0.015 against the rifle's
 0.03, so the aimed group opens to 0.023 rad and stops, and the fortieth round of a
 burst lands where the fourth did. A weapon that bloomed like the rifle would carry
-seventy-five rounds and have nothing to do with the last fifty. `recoilMult` 0.7 is
-the same argument on the other axis: at 10 rounds a second the rifle's own kick is
-0.24 rad/s of settled climb, and 0.168 is the gentlest in the kit — a burst you steer
-rather than one you abandon. Its `recoilImpulse` of 0.9 is the same trade read
-the other way: a full-power belt round, most of it soaked by the weight of the
-gun, so the settle is 150 ms and the sight is back between rounds at ten a
-second — but it is the highest shake equilibrium in the kit (1.41), because at
-that rate the disturbance never fully clears.
+seventy-five rounds and have nothing to do with the last fifty. `recoilMult` 0.85 is
+the same argument on the other axis, and it was 0.7 until that proved too much of
+a reward stacked on the bloom: its climb per second (`recoilMult × fireRate`) is
+8.5, between the SMG's 7.15 and the rifle's 9.43 — a burst you steer rather than
+one you abandon, but one that has to be steered. Its `recoilImpulse` of 0.95 (was
+0.9) is the same trade read the other way: a full-power belt round, most of it
+soaked by the weight of the gun, so the settle stays short and the sight is back
+between rounds at ten a second (150 ms was measured at 0.9 and has not been
+re-measured) — and its held-trigger shake equilibrium is 1.53, just under the
+rifle's 1.57, because at that rate the disturbance never fully clears. It may not
+go to 1: that is 1.66, over `shake.max`.
 
 The trigger latch lives in **`Player.tryShot`, which takes the trigger rather than
 being called behind it** — a semi-automatic has to see the trigger come *up*, and a

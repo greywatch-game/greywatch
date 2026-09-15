@@ -355,7 +355,8 @@ export const recoil = {
      * counter to aiming at all.
      *
      * It is a GUARD rather than a shape: at the shipped numbers nothing in the
-     * kit reaches it (the LMG on a held trigger settles highest, at 1.41) and
+     * kit reaches it on a held trigger (the rifle at 9.43/s settles highest,
+     * at 1.57, and the LMG at 1.53 — `perShot * i / (1 - e^(-T/tau))`) and
      * that is deliberate. It was 1.3 for one revision, and at 1.3 all four
      * automatics saturated — so a submachine gun and a belt-fed machine gun
      * were equally unsteady on a held trigger and the field said nothing about
@@ -372,7 +373,7 @@ export const recoil = {
      * and that is what makes this field carry the automatics rather than the
      * ceiling above. At 0.5 s and 0.6 the SMG's disturbance is gone in a third
      * of a second and the bolt gun's takes 1.08 — so a held SMG trigger
-     * settles at 0.72 where a held LMG's settles at 1.41, and the bolt gun's
+     * settles at 0.72 where a held LMG's settles at 1.53, and the bolt gun's
      * single round opens the hold to 2.1x for **literally about a second**,
      * which is the thing a shooter means by needing to re-settle and the whole
      * reason this block exists.

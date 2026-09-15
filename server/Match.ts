@@ -1863,8 +1863,8 @@ export class Match {
     // screen is reachable from the deploy screen, so a player who switches to
     // the sniper on their third death was carrying it locally while this side
     // went on resolving their rounds against the gun they joined with: a
-    // sniper round that does not kill, and an LMG round paying the marksman
-    // rifle's fifty.
+    // sniper head shot that does not kill, and an LMG round paying the
+    // marksman rifle's forty-five.
     //
     // Absent means UNCHANGED rather than default, which is what a client that
     // predates the fields means and what keeps them additive — hence the

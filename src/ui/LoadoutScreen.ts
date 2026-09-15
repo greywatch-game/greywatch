@@ -164,14 +164,14 @@ const ARMED_SLOTS: readonly Slot[] = ["weapon", "sight", "equipment", "finish"];
  */
 export const WEAPON_BLURBS: Record<PrimaryWeaponId, string> = {
   rifle:
-    "A full-power battle rifle. Four rounds kill at any distance you can see a target at, and it holds its group across the valley — but the magazine is short and every round has to be worth its recoil.",
+    "A full-power battle rifle. Four rounds kill out to the middle distance and five across the valley, and it holds its group the whole way — but the magazine is short and every round has to be worth its recoil.",
   carbine:
     "A bullpup, and the trigger buys three rounds rather than one. All three land in a tenth of a second and all three together are a kill — then the weapon sits out four tenths whether they hit or not, which makes a wasted burst the most expensive mistake in the kit.",
-  smg: "Pistol-calibre, and it empties a long magazine in under three seconds. Quickest to the shoulder, cheapest to miss with, and past the width of a street it will not group whatever optic is on top of it.",
-  dmr: "Semi-automatic: one round per trigger pull, and two rounds anywhere on a man will do it. The tightest group in the kit short of the bolt gun, paid for with a kick that has to be ridden back down before the second shot means anything — but you keep your sight picture the whole way, which is the thing the sniper cannot offer.",
+  smg: "Pistol-calibre, and it empties a long magazine in under three seconds. The fastest kill of any held trigger inside a room, quickest to the shoulder, cheapest to miss with — and past the width of a street it will neither group nor hurt, whatever optic is on top of it.",
+  dmr: "Semi-automatic: one round per trigger pull. Three anywhere on a man will do it, two if one of them is the head, at any range it reaches. The tightest group in the kit short of the bolt gun, paid for with a kick that has to be ridden back down before the next shot means anything — but you keep your sight picture the whole way, which is the thing the sniper cannot offer.",
   sniper:
-    "Bolt-action, and one round anywhere on a man is a kill at any range it reaches. Then you work the bolt: a second and a quarter with the rifle off your target and no way to hurry it, which is the whole price of the weapon and is charged whether the round landed or not. Five in the magazine, nothing to offer inside a room, and a sidearm you will need.",
-  lmg: "Belt-fed, and the only weapon here that does not have to stop: seventy-five rounds is fifteen kills without a pause, and the group barely opens across the whole belt. Slowest into the shoulder, useless from the hip, and a reload long enough that being caught empty is a decision about the sidearm.",
+    "Bolt-action, and one round to the head is a kill at any range it reaches; anywhere else it is a wound for somebody to finish. Then you work the bolt: a second and a quarter with the rifle off your target and no way to hurry it, which is the whole price of the weapon and is charged whether the round killed or not. Five in the magazine, nothing to offer inside a room, and a sidearm you will need.",
+  lmg: "Belt-fed, and the only weapon here that does not have to stop: seventy-five rounds is fifteen kills without a pause, and the group barely opens across the whole belt — though the climb has to be pulled down the whole way. Slowest into the shoulder, useless from the hip, and a reload long enough that being caught empty is a decision about the sidearm.",
 };
 
 /**
@@ -267,7 +267,7 @@ function fireMode(w: (typeof CONFIG.weapons)[WeaponId]): string {
  * weapon's own button instead, next to the number it qualifies.
  *
  * **Two rows carry fall-off, and both had to.** Damage prints BOTH ends of the
- * curve, because one number is now a half-truth — the SMG's 18 and the LMG's 24
+ * curve, because one number is now a half-truth — the SMG's 21 and the LMG's 24
  * rank one way in a room and the other way at 40 m. The bar stays keyed to the
  * close figure, which is the one a weapon is picked to win a room with. A
  * weapon with no fall-off prints one number, and on the two that do it that is
@@ -275,8 +275,8 @@ function fireMode(w: (typeof CONFIG.weapons)[WeaponId]): string {
  *
  * **The chart is RELATIVE and the sniper is what proves it costs nothing.**
  * Every bar is a share of the best figure in the kit, so a weapon that sets a
- * new best shortens every other bar in that row — 100 damage against the
- * rifle's 30 takes the rifle's damage bar to under a third of the width it used
+ * new best shortens every other bar in that row — 80 damage against the
+ * rifle's 28 takes the rifle's damage bar to about a third of the width it used
  * to draw. That is the chart working rather than breaking: the rifle has not
  * changed, and what the row is for is saying where a weapon sits among the ones
  * it is being chosen against. Pinning the scale to an absolute instead would
@@ -296,7 +296,7 @@ function weaponStats(id: PrimaryWeaponId): StatRow[] {
   return [
     {
       // Both ends of the curve, because one number is now a half-truth: the
-      // SMG's 18 and the LMG's 24 rank one way close and the other way at
+      // SMG's 21 and the LMG's 24 rank one way close and the other way at
       // 40 m. The bar itself stays keyed to the CLOSE figure — that is the
       // one a player is choosing a weapon to win a room with — and the value
       // column says what happens to it. A weapon with no fall-off (the DMR and
