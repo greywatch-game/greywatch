@@ -2405,6 +2405,11 @@ export class Game {
       this.settings.stickSensitivity,
       this.settings.touchSensitivity,
     );
+    // The stick's mode goes straight to the device. Aim-on-fire does NOT go
+    // from here: whether it applies depends on what the player is doing, so it
+    // is pushed every frame with the rest of the controls' state
+    // (`pushTouchControls`) and reads the setting there.
+    this.touch.setStickMode(this.settings.touchStick);
   }
 
   /**
@@ -8449,6 +8454,19 @@ export class Game {
       this.driving !== null &&
         this.driving.flies &&
         this.drivingSeat === DRIVER,
+    );
+    // Aim-on-fire: whether the fire button also raises the sight, and whether
+    // the sight is up far enough for the round to leave. On foot only — in a
+    // hull the ADS input is the GUNNER's optic (`opticUp`), and a trigger that
+    // threw the view into it on every burst would be a different control — and
+    // only for something aimed (`sighted`), which is what keeps a mine going
+    // down at your feet rather than being held up to your face first.
+    const carried = this.player.carriedEquipment;
+    this.touch.setAutoAds(
+      this.settings.touchAutoAds &&
+        this.driving === null &&
+        (carried === null || CONFIG.equipment[carried].sighted),
+      this.cameraSys.adsBlend >= CONFIG.touch.autoAds.fireAt,
     );
   }
 

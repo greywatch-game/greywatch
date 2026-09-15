@@ -1,13 +1,14 @@
 /**
- * TouchControls.ts — the on-screen controls a phone plays with: a floating
- * movement stick in the left zone, a free-look drag in the right one, and the
- * button cluster over both.
+ * TouchControls.ts — the on-screen controls a phone plays with: a floating (or
+ * fixed) movement stick in the left zone, a free-look drag in the right one,
+ * and the button cluster over both.
  * Owns: `#touch` and every finger that lands on it — the pointer-id bookkeeping,
- * the stick's origin, the ADS and scoreboard latches, and the look delta it
- * hands over consume-on-read. Owns NO game state: it is polled by
- * `InputManager` exactly as a gamepad is, and the three things it draws that it
- * cannot know (whether the body is crouched, whether the magazine is out, and
- * whether there is a hull in reach to get into or out of) are PUSHED by `Game`
+ * the stick's origin, the ADS and scoreboard latches, the round a fire press is
+ * owed under aim-on-fire, and the look delta it hands over consume-on-read.
+ * Owns NO game state: it is polled by `InputManager` exactly as a gamepad is,
+ * and the things it cannot know (whether the body is crouched, whether the
+ * magazine is out, whether there is a hull in reach to get into or out of, and
+ * whether the trigger should aim and the sight is up yet) are PUSHED by `Game`
  * like every other HUD gauge.
  *
  * Invariants: `consume()` must be called exactly once per frame — it zeroes the
@@ -22,12 +23,23 @@
  * Mobile and Delta Force Mobile made, because the ergonomics are not a matter of
  * taste — two thumbs have to cover four jobs:
  *
- * - **The stick FLOATS.** Its ring is born wherever the thumb lands in the left
- *   zone rather than sitting in a fixed corner, so it is in the right place on
- *   every screen size and under every grip, and the thumb never has to look for
- *   it. It is also forgiving: a thumb that drags past the radius pulls the
- *   origin along instead of pinning at full deflection, so pulling back
- *   responds at once rather than after the slack is taken up.
+ * - **The stick FLOATS, unless the player fixes it.** By default its ring is
+ *   born wherever the thumb lands in the left zone rather than sitting in a
+ *   fixed corner, so it is in the right place on every screen size and under
+ *   every grip, and the thumb never has to look for it. It is also forgiving:
+ *   a thumb that drags past the radius pulls the origin along instead of
+ *   pinning at full deflection, so pulling back responds at once rather than
+ *   after the slack is taken up.
+ *   A FIXED stick (`Settings.touchStick`, CoD Mobile's "Fixed Joystick") is
+ *   the other half of the same trade, and players who want it want it for the
+ *   thing floating cannot do: the ring is always drawn in the corner and
+ *   deflection is measured from ITS centre, so a thumb that lands off-centre
+ *   moves the body on that frame without dragging first. Neither of the
+ *   floating stick's forgiveness rules can apply to it — the origin cannot
+ *   follow a thumb past the rim and still be fixed, and a touch that lands
+ *   well away from the ring (`CONFIG.touch.fixedReach`) is not a claim on it.
+ *   Where the ring sits is `touch.css`'s, and this file MEASURES it at the
+ *   moment of the press rather than restating a number the sheet owns.
  * - **Sprint comes off the stick, not off a button** (CoD Mobile's "Joystick
  *   Sprint"): pushing to the rim runs. A button would cost a press with a thumb
  *   that is already busy, and there is no room for another one anyway.
@@ -46,9 +58,22 @@
  *   holds one for `C` and the pad's B, and this button flips that one on its
  *   rising edge exactly as they do. Which is also why the crouched LOOK of the
  *   button is pushed in rather than known here.
+ * - **FIRE may also AIM** (`Settings.touchAutoAds`, CoD Mobile's "ADS fire").
+ *   The ADS latch costs a tap before every fight, and it is the tap a phone
+ *   player skips. With the option on, a finger on either fire button raises the
+ *   sight, and the sight stays up for `CONFIG.touch.autoAds.linger` after the
+ *   finger lifts so tapping out a semi-automatic stays aimed. **The round waits
+ *   for the sight** (`setAutoAds`' `sightUp`, pushed by `Game`, which owns the
+ *   blend): a round fired as the sight starts to rise goes out at hip spread,
+ *   and hip spread here is 7.5x to 90x the aimed figure with no crosshair to
+ *   say so. So a press is OWED a round: a tap that lifts before the sight
+ *   arrives still fires once when it does, and the sight is held up until it
+ *   has. `Game` decides whether it applies at all (on foot, and not with a
+ *   mine), because this layer cannot know what the player is carrying.
  */
 import "./touch.css";
 import { CONFIG } from "../config";
+import type { TouchStick } from "../core/settings";
 
 /**
  * One frame of touch input, as `InputManager` folds it in.
@@ -210,7 +235,10 @@ export class TouchControls {
   /** Every finger on the glass, by `pointerId`. */
   private readonly roles = new Map<number, Role>();
 
-  /** Where the floating stick was born, in client pixels. */
+  /** Whether the stick is fixed in the corner. See `setStickMode`. */
+  private fixed = false;
+  /** Where the stick was born (floating) or its ring's centre (fixed), in
+   * client pixels. */
   private stickX = 0;
   private stickY = 0;
   /** Its deflection, -1..1, y positive forward. */
@@ -229,6 +257,14 @@ export class TouchControls {
   private useOffer: string | null = null;
   /** Whether the collective pair is on screen. See `setFlying`. */
   private flying = false;
+  /** Whether a fire button also aims right now. Pushed; see `setAutoAds`. */
+  private autoAds = false;
+  /** Whether the sight is far enough up for a round to leave. Pushed. */
+  private sightUp = false;
+  /** A fire press that has not produced a trigger frame yet. See the header. */
+  private shotOwed = false;
+  /** `performance.now()` until which the sight stays up after a lift. */
+  private aimUntil = 0;
 
   /** Reused, because `consume()` runs every frame of every touch round. */
   private readonly frame: TouchFrame = {
@@ -381,6 +417,53 @@ export class TouchControls {
   }
 
   /**
+   * Floating or fixed, from the player's settings. `Game.applySettings` pushes
+   * it on load and on every change; guarded, so the push can be unconditional.
+   *
+   * A thumb on the stick is let go of on a change, which the settings screen
+   * already guarantees (the controls are not up while it is) and this does not
+   * rely on: a stick claimed under one rule and driven under the other would
+   * measure from a floating origin that the fixed rule never moves again. The
+   * floating stick's last inline position goes too, or it would override the
+   * corner the sheet gives the fixed one.
+   */
+  setStickMode(mode: TouchStick): void {
+    const fixed = mode === "fixed";
+    if (fixed === this.fixed) return;
+    this.fixed = fixed;
+    for (const [id, role] of this.roles) if (role.kind === "stick") this.roles.delete(id);
+    this.dropStick();
+    this.stick.style.left = "";
+    this.stick.style.top = "";
+    this.root.classList.toggle("fixed-stick", fixed);
+  }
+
+  /**
+   * Whether a fire button also aims right now, and whether the sight is far
+   * enough up for the round to leave. Pushed by `Game` every frame the
+   * controls are up.
+   *
+   * `armed` is the setting AND what the player is doing: `Game` sends false in
+   * a vehicle and with a mine in hand, which this layer cannot tell apart from
+   * a rifle. `sightUp` is `CameraSystem.adsBlend` against
+   * `CONFIG.touch.autoAds.fireAt` — the one number here this layer cannot
+   * know, and a frame old by the time it is read, which is inside the blend's
+   * own time constant.
+   *
+   * Disarming drops an owed round and the linger with it: a tap owed while
+   * walking must not fire the moment the player is next armed.
+   */
+  setAutoAds(armed: boolean, sightUp: boolean): void {
+    this.sightUp = sightUp;
+    if (armed === this.autoAds) return;
+    this.autoAds = armed;
+    if (!armed) {
+      this.shotOwed = false;
+      this.aimUntil = 0;
+    }
+  }
+
+  /**
    * The frame's input, spent by reading it: the look delta is zeroed and the
    * one-frame floor under every tap is cleared, so a frame that never ran
    * cannot fire a shot twice and a tap between two frames cannot be lost.
@@ -394,8 +477,22 @@ export class TouchControls {
     f.lookY = this.lookY;
     this.lookX = 0;
     this.lookY = 0;
-    f.fire = this.held("fire") || this.held("fire2");
-    f.ads = this.buttons.get("ads")!.latched;
+    const firing = this.held("fire") || this.held("fire2");
+    let aimed = false;
+    if (this.autoAds) {
+      // The trigger is the finger OR a round a tap is still owed, and neither
+      // is let through before the sight is up. Spending the debt on the first
+      // frame the trigger is reported is what makes a tap one round: a
+      // semi-automatic sees one rising edge, an automatic one frame of trigger.
+      const now = performance.now();
+      if (firing) this.aimUntil = now + CONFIG.touch.autoAds.linger * 1000;
+      aimed = firing || this.shotOwed || now < this.aimUntil;
+      f.fire = (firing || this.shotOwed) && this.sightUp;
+      if (f.fire) this.shotOwed = false;
+    } else {
+      f.fire = firing;
+    }
+    f.ads = this.buttons.get("ads")!.latched || aimed;
     f.scoreboard = this.buttons.get("score")!.latched;
     f.crouch = this.held("crouch");
     f.jump = this.held("jump");
@@ -433,13 +530,32 @@ export class TouchControls {
     for (const id of ["climb", "descend"] as const) {
       this.buttons.get(id)!.el.classList.add("hidden");
     }
+    // And aim-on-fire's pushed pair, for the same reason: a round owed when a
+    // pause came down must not leave the moment the round resumes.
+    this.autoAds = false;
+    this.sightUp = false;
+    this.shotOwed = false;
+    this.aimUntil = 0;
+    this.lookX = 0;
+    this.lookY = 0;
+    this.dropStick();
+  }
+
+  /**
+   * The stick with no thumb on it: centred, not running, and — floating — gone.
+   *
+   * The knob goes back to the middle here rather than on the next claim,
+   * which the floating stick never needed because nobody sees its ring idle.
+   * A fixed ring is always drawn, so a knob left where the thumb let go would
+   * show a stick still pushed.
+   */
+  private dropStick(): void {
     this.moveX = 0;
     this.moveY = 0;
     this.sprinting = false;
-    this.lookX = 0;
-    this.lookY = 0;
     this.stick.classList.remove("live");
     this.moveZone.classList.remove("running");
+    this.knob.style.transform = "translate(-50%, -50%)";
   }
 
   /** Down, or pressed since the last frame looked. */
@@ -450,16 +566,31 @@ export class TouchControls {
 
   private claimStick(e: PointerEvent): void {
     e.preventDefault();
+    let originX = e.clientX;
+    let originY = e.clientY;
+    if (this.fixed) {
+      // Measured off the ring rather than restated: the sheet places it, with
+      // the safe-area insets a number here would not know about. It is not
+      // moved while fixed, so the box a press measures is the box the whole
+      // drag happens in.
+      const box = this.stick.getBoundingClientRect();
+      originX = box.left + box.width / 2;
+      originY = box.top + box.height / 2;
+      const reach = CONFIG.touch.fixedReach * CONFIG.touch.stickRadius;
+      if (Math.hypot(e.clientX - originX, e.clientY - originY) > reach) return;
+    }
     // A second thumb in the left zone REPLACES the first rather than being
     // ignored: the common case is a player lifting and re-placing, and an
     // ignored press reads as a stick that has stopped working.
     for (const [id, role] of this.roles) if (role.kind === "stick") this.roles.delete(id);
     this.roles.set(e.pointerId, { kind: "stick" });
     this.capture(this.moveZone, e.pointerId);
-    this.stickX = e.clientX;
-    this.stickY = e.clientY;
-    this.stick.style.left = `${e.clientX}px`;
-    this.stick.style.top = `${e.clientY}px`;
+    this.stickX = originX;
+    this.stickY = originY;
+    if (!this.fixed) {
+      this.stick.style.left = `${originX}px`;
+      this.stick.style.top = `${originY}px`;
+    }
     this.stick.classList.add("live");
     this.driveStick(e.clientX, e.clientY);
   }
@@ -490,6 +621,9 @@ export class TouchControls {
     state.down = true;
     state.pending = true;
     el.classList.add("held");
+    // A press owes a round when the trigger also aims, so a tap that lifts
+    // before the sight is up is still a shot. See the header.
+    if (this.autoAds && (id === "fire" || id === "fire2")) this.shotOwed = true;
     if (state.spec.kind === "latch") {
       state.latched = !state.latched;
       el.classList.toggle("lit", state.latched);
@@ -524,12 +658,7 @@ export class TouchControls {
     if (!role) return;
     this.roles.delete(e.pointerId);
     if (role.kind === "stick") {
-      this.moveX = 0;
-      this.moveY = 0;
-      this.sprinting = false;
-      this.stick.classList.remove("live");
-      this.moveZone.classList.remove("running");
-      this.knob.style.transform = "translate(-50%, -50%)";
+      this.dropStick();
       return;
     }
     if (role.kind !== "button") return;
@@ -541,18 +670,22 @@ export class TouchControls {
   /**
    * Where the thumb is against where the stick was born.
    *
-   * Past the radius the ORIGIN follows the thumb rather than the output pinning
-   * — the forgiveness every guide to this asks for. Without it a thumb that has
-   * wandered 30 px past the rim has to travel those 30 px back before the
-   * character slows at all, which reads as input lag and is why a fixed origin
-   * feels stuck.
+   * Past the radius a FLOATING stick's ORIGIN follows the thumb rather than the
+   * output pinning — the forgiveness every guide to this asks for. Without it
+   * a thumb that has wandered 30 px past the rim has to travel those 30 px back
+   * before the character slows at all, which reads as input lag. A FIXED stick
+   * pins instead, knob at the rim: that slack is the price of an origin that
+   * never moves, and the player who chose it chose that.
    */
   private driveStick(x: number, y: number): void {
     const r = CONFIG.touch.stickRadius;
     let dx = x - this.stickX;
     let dy = y - this.stickY;
     const dist = Math.hypot(dx, dy);
-    if (dist > r) {
+    if (dist > r && this.fixed) {
+      dx *= r / dist;
+      dy *= r / dist;
+    } else if (dist > r) {
       const pull = (dist - r) / dist;
       this.stickX += dx * pull;
       this.stickY += dy * pull;

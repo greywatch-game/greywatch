@@ -341,6 +341,13 @@ Five things are load-bearing:
   it: the consequence is movement, which is too far from this table to leave to
   a default. Its counterpart at the model's end is `WeaponParts.warhead` — one
   says the cooldown is a load, the other draws it.
+- **`sighted` is the second thing that tells them apart, and one reader asks
+  it**: the touch controls' aim-on-fire (`docs/ui.md`), which raises the sight
+  before the trigger and holds the round until it is up. Right for a tube with
+  an optic on it, and wrong for a plate held in both hands, which would be
+  lifted to the face and held there before it could go down. Stated on both
+  rows for `muzzleLoad`'s reason, and a capability rather than a test of which
+  item is carried, so a third item answers it in its own row.
 
   **`CONFIG.weapons[id].boltCycle` is the same flag on the other table**, and
   the pair is the pattern rather than a coincidence: a fire cooldown may be a

@@ -131,7 +131,7 @@ interface Page {
   facts?: () => readonly [string, string][];
 }
 
-/** Off/On, the shape four of the rows share. */
+/** Off/On, the shape five of the rows share. */
 const OFF_ON = [
   { value: false, label: "Off" },
   { value: true, label: "On" },
@@ -181,6 +181,25 @@ const PAGES: readonly Page[] = [
         hint: "How far a drag turns the view",
         options: LOOK_SCALES,
         style: "slider",
+      },
+      // The two touch settings sit under touch look, which is where a phone
+      // player already is. Both hints say what the choice DOES, because
+      // "Fixed" and "Aim on fire" are names borrowed from other games and a
+      // player who has not played those learns nothing from them.
+      {
+        key: "touchStick",
+        label: "Touch stick",
+        hint: "Floating: the stick appears wherever your thumb lands. Fixed: it stays in the corner and moves you from its centre",
+        options: [
+          { value: "floating", label: "Floating" },
+          { value: "fixed", label: "Fixed" },
+        ],
+      },
+      {
+        key: "touchAutoAds",
+        label: "Aim on fire",
+        hint: "Holding FIRE raises the sight first, and the first round waits for it. On foot only",
+        options: OFF_ON,
       },
     ],
     bindings: BINDINGS,

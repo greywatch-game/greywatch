@@ -42,6 +42,18 @@ export type VolumetricQuality =
 export type LookScale = (typeof CONFIG.camera.lookScales)[number];
 
 /**
+ * Where the touch movement stick is: born under the thumb wherever it lands
+ * in the left zone (`floating`), or drawn at one spot in the corner and
+ * measured from its centre (`fixed`).
+ *
+ * The two are listed in the order the screen draws them, and `floating` is
+ * first because it is what shipped. See `TouchControls`' header for what each
+ * one trades.
+ */
+export const TOUCH_STICKS = ["floating", "fixed"] as const;
+export type TouchStick = (typeof TOUCH_STICKS)[number];
+
+/**
  * One row on the settings screen. Mostly booleans; `renderScale` is the first
  * field that is not, and it is what the note this replaces was warning about.
  *
@@ -110,6 +122,26 @@ export type Settings = {
    * assist through `CameraSystem.touchYawRate`, exactly as the stick's does.
    */
   touchSensitivity: LookScale;
+  /**
+   * Whether the touch movement stick floats or is fixed. See `TouchStick`.
+   *
+   * A setting rather than a decision because players split on it and neither
+   * side is wrong: a floating stick is wherever the thumb is, and a fixed one
+   * moves the body the instant a thumb lands off-centre, without a drag first.
+   * Call of Duty Mobile and PUBG Mobile both ship the same toggle.
+   */
+  touchStick: TouchStick;
+  /**
+   * Whether the touch FIRE button raises the sight as well as pulling the
+   * trigger (`CONFIG.touch.autoAds`). On foot only, and not for an item that
+   * is set down rather than aimed (`CONFIG.equipment.*.sighted`) — `Game` works
+   * that out each frame (`pushTouchControls`).
+   *
+   * Touch only. A mouse, a pad and a keyboard all have a finger free to aim
+   * with; glass does not, which is why ADS is a latch there and why this
+   * exists.
+   */
+  touchAutoAds: boolean;
   /**
    * The frame profiler: `FrameProfile` recording the last few thousand frames,
    * and the chip that gets a capture off the device.
@@ -204,6 +236,10 @@ export const SETTING_DEFAULTS: Settings = {
   mouseSensitivity: 1,
   stickSensitivity: 1,
   touchSensitivity: 1,
+  // Both at what shipped before they were settings: a player who never opens
+  // the screen gets the controls they already know.
+  touchStick: "floating",
+  touchAutoAds: false,
   // Off, for the reason the counter is: it is an instrument, not chrome — and
   // this one costs a megabyte of ring as well as a line of screen.
   profiler: false,
@@ -305,6 +341,8 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
   stickSensitivity: oneOf(CONFIG.camera.lookScales),
   touchSensitivity: oneOf(CONFIG.camera.lookScales),
+  touchStick: oneOfString(TOUCH_STICKS),
+  touchAutoAds: bool,
   profiler: bool,
 };
 

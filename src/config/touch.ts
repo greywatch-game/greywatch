@@ -6,6 +6,10 @@
  * one sits here rather than beside `camera.sensX` deliberately — the rule is one
  * module per subsystem, and the subsystem here is a device, the same way
  * `input.ts` owns the pad's deadzones rather than `camera.ts` owning them.
+ * Gotcha: two of what the device does are the PLAYER's rather than this
+ * table's, because players split on them: whether the stick floats or is
+ * fixed (`Settings.touchStick`) and whether FIRE also aims
+ * (`Settings.touchAutoAds`). The numbers each one runs on are here.
  * Gotcha: `stickRadius` is drawn as well as read. `TouchControls` publishes it
  * as a CSS custom property so the ring on screen and the deflection the maths
  * computes cannot drift apart — the same rule the minimap's backing store
@@ -28,13 +32,29 @@ export const touch = {
    * How far the thumb travels from where it landed for full deflection, in CSS
    * pixels, and the radius the ring is drawn at.
    *
-   * The stick FLOATS: the ring is born under the thumb rather than sitting in a
-   * fixed corner, so this is a distance from the touch-down point and never a
-   * position on screen. That is what makes one number right on a 5" phone and a
-   * 13" tablet alike, and it is why nothing here is expressed as a fraction of
-   * the viewport.
+   * By default the stick FLOATS: the ring is born under the thumb rather than
+   * sitting in a fixed corner, so this is a distance from the touch-down point
+   * and never a position on screen. That is what makes one number right on a 5"
+   * phone and a 13" tablet alike, and it is why nothing here is expressed as a
+   * fraction of the viewport. A FIXED stick's position is `touch.css`'s, and
+   * the maths measures it off the ring rather than restating it.
    */
   stickRadius: 58,
+  /**
+   * How far from a FIXED stick's centre a touch still claims it, as a multiple
+   * of `stickRadius`. The floating stick has no such number: it is born under
+   * the thumb wherever that lands.
+   *
+   * Generous, because a thumb looking for a fixed ring lands by feel and a
+   * touch that misses reads as a stick that has stopped working. Not the whole
+   * zone, because a fixed stick measures from its CENTRE and not from where
+   * the thumb came down (`Settings.touchStick`) — a touch half a screen above
+   * the ring would be full forward and a sprint the player never asked for.
+   * 2.2 is a 255 px circle a thumb can hardly miss, and a touch beyond it does
+   * nothing rather than turning the view, for the reason the zones split the
+   * screen at all.
+   */
+  fixedReach: 2.2,
   /**
    * Deflection under which the stick reads as centred, as a fraction of the
    * radius.
@@ -89,6 +109,36 @@ export const touch = {
    * flick, not the drift of a thumb holding an aim.
    */
   cancelDrag: 14,
+  /**
+   * Aim on fire (`Settings.touchAutoAds`): the fire button raises the sight
+   * as well as pulling the trigger, the way every gun in Call of Duty Mobile's
+   * advanced mode is set up out of the box. It exists because ADS is a
+   * latch here: a phone player has no spare thumb to tap it before every fight.
+   */
+  autoAds: {
+    /**
+     * How far up the sight has to be before the trigger is let through, as
+     * `CameraSystem.adsBlend`.
+     *
+     * **Firing the moment the button goes down wastes the round.** Hip spread is
+     * 7.5x the aimed figure on the rifle and nearly 90x on the bolt gun, and
+     * hip fire has no crosshair here, so a round fired as the sight starts to
+     * rise is unaimed. Spread scales with the blend, so this is also the share
+     * of the hip-to-aimed difference already gone. 0.8 is ~140 ms for the
+     * rifle under a reflex sight and ~520 ms for the bolt gun under the 6x,
+     * which is each pairing's own ADS cost, paid once at the start of a burst
+     * rather than on every round.
+     */
+    fireAt: 0.8,
+    /**
+     * Seconds the sight stays up after the fire button is let go.
+     *
+     * Without it a semi-automatic is unusable: the DMR's gap between rounds is
+     * 286 ms, and a sight that dropped on every lift would come back down and
+     * go back up between taps, making the player wait for it on every round.
+     */
+    linger: 0.4,
+  },
   /**
    * How long after a finger a mouse event is disbelieved, in seconds.
    *

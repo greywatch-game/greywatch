@@ -1,6 +1,6 @@
 /*
  * touch.css — the on-screen controls, and only those: the two zones, the
- * floating stick and the button cluster.
+ * movement stick (floating, or fixed in the corner) and the button cluster.
  * Owns everything under #touch. Written against `TouchControls.ts`, which
  * publishes the two numbers this sheet cannot own — the stick's radius and the
  * width of the movement zone — as custom properties, so the ring drawn here and
@@ -115,6 +115,37 @@
   box-shadow: inset 0 0 0 2px var(--mine);
 }
 #touch-move.running #touch-stick { --frame-edge: rgba(255, 196, 107, 0.5); }
+
+/* --- the FIXED stick (Settings.touchStick) ---
+   The same ring, placed by this sheet instead of by the finger, and drawn when
+   idle, because a thumb can only find a fixed control that it can see.
+   `TouchControls.claimStick` measures the ring's box at the press, so this
+   rule is the one place its position is written.
+
+   Low in the corner, where a thumb holding a phone rests, but lifted clear of
+   the vitals: `#hud-bottom` draws the health readout in exactly this corner,
+   and a ring drawn over it for the whole round would hide the one number a
+   player checks mid-fight. A thumb on the stick covers it either way, but an
+   idle ring must not.
+
+   The lift is in the HUD's own unit (`--hud-u`, base.css) rather than in
+   pixels, because what it has to clear is sized in that unit: the vitals
+   block stands about 90 of them tall on a phone and on a tablet alike, which
+   is 44 px on an 844x390 phone and ~65 px on a 1024x768 tablet — a pixel lift
+   right for one is on top of the readout on the other. Measured at 844x390,
+   this puts the ring's bottom edge 18 px above the VITALS caption and its left
+   edge 22 px clear of the claw trigger (`.tb-fire2`).
+
+   Idle it is dimmed rather than shown at full strength: it is where the thumb
+   goes, not something to look at. */
+#touch.fixed-stick #touch-stick {
+  left: calc(env(safe-area-inset-left) + 72px + var(--stick-r));
+  top: calc(
+    100% - env(safe-area-inset-bottom) - 100 * var(--hud-u) - 14px - var(--stick-r)
+  );
+  opacity: 0.45;
+}
+#touch.fixed-stick #touch-stick.live { opacity: 1; }
 
 /* --- the button groups ---
    Three, because they are pinned to three different corners and each has to

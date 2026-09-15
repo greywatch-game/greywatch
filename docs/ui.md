@@ -1316,6 +1316,29 @@ What belongs *here*, with the other screens:
   when the next offer puts it back), and `releaseAll` hides it as well as
   clearing it, because here the class is not a look but the control's whole
   existence.
+- **Two of its behaviours are SETTINGS, and neither is a second device.** The
+  stick floats or is fixed (`Settings.touchStick`), and the fire button may
+  also aim (`Settings.touchAutoAds`). Both are toggles CoD Mobile ships under
+  those names ("Fixed Joystick", "ADS fire"), and both are ones players split
+  on, which is the test for a behaviour becoming a setting rather than a
+  decision. Neither adds a field to the `TouchFrame`: a fixed stick still
+  reports a deflection, and aim-on-fire still reports `ads` and `fire`, so
+  `InputManager` and everything after it are unchanged. Three rules come with
+  them:
+  - **A fixed stick's position is the SHEET's and the maths MEASURES it**
+    (`claimStick` reads the ring's box at the press), the rule the kit screen's
+    bay follows. Its lift is stated in `--hud-u` because what it has to clear,
+    the vitals, is sized in that unit; a pixel lift that clears them on a phone
+    sits on them on a tablet.
+  - **Aim-on-fire's round WAITS for the sight.** Hip fire here is unaimed and
+    hip spread is 7.5x to 90x the aimed figure, so a round fired as the sight
+    starts to rise is wasted. `Game` pushes whether the blend has reached
+    `CONFIG.touch.autoAds.fireAt`; the layer holds the trigger until it has, and
+    a press is OWED one round so a tap that lifts first still fires. What
+    `setAutoAds` is given is the setting AND the situation (on foot, and an
+    item that is `sighted`), because the layer cannot see either.
+  - **Both pushed halves are dropped by `releaseAll`**, the rule the crouch lamp
+    already follows: an owed round must not leave the moment a pause lifts.
 - **The buttons are `.frame`s**, the same chamfered hull the panels use, cut on
   the same two corners. Not decoration: `base.css` bans `border-radius` on
   gameplay chrome, and a set of round translucent buttons is precisely the "web

@@ -196,7 +196,8 @@ screen**: `InputManager` polls it once a frame exactly as it polls a gamepad, so
 nothing in gameplay has heard of it. The shape is the one every shipped mobile
 shooter converged on — floating stick left, look drag right, cluster over both —
 and the reasoning for each part is in that file's header, next to the code it
-explains.
+explains. Two parts are the player's to choose, because players split on them:
+a FIXED stick, and a fire button that also aims ([`ui.md`](ui.md)).
 
 What belongs here is the part that is about **the phone rather than the game**:
 

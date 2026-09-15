@@ -81,6 +81,17 @@ export const equipment = {
      */
     muzzleLoad: true,
     /**
+     * **Whether the item is AIMED down a sight or set down at your feet.**
+     *
+     * Read by one thing, the touch controls' aim-on-fire (`Settings.touchAutoAds`):
+     * a trigger that raises the sight first is right for a tube with an optic on
+     * it and wrong for a plate held in both hands, where "aiming" is holding it
+     * up in front of your face and waiting for that before it goes down. A
+     * capability rather than a test of which item is carried, so a third AT item
+     * answers the question in its own row.
+     */
+    sighted: true,
+    /**
      * What the rocket does to the HULL it strikes, before `resist.shell`
      * (which is 1, so this is the number that lands).
      *
@@ -316,6 +327,8 @@ export const equipment = {
      * a player backing away from a hull must not be pinned by it.
      */
     muzzleLoad: false,
+    /** Set down, not aimed — see `rpg.sighted`. */
+    sighted: false,
     /**
      * What a mine does to the hull that runs over it. A tracked vehicle
      * driving onto a shaped charge is the worst thing that happens to it in
