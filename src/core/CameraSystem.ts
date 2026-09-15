@@ -66,6 +66,7 @@ import {
   type CarriedId,
 } from "../entities/weapons";
 import type { InputManager } from "./InputManager";
+import type { GyroMode } from "./settings";
 
 /**
  * First-person camera. Aiming down sights brings the weapon's sight onto the
@@ -110,6 +111,9 @@ export class CameraSystem {
   private mouseScale = 1;
   private stickScale = 1;
   private touchScale = 1;
+  /** Gyro aiming, pushed by `Game.applySettings`. See `setGyro`. */
+  private gyroMode: GyroMode = "off";
+  private gyroScale = 1;
 
   /**
    * Head-bob phase, in radians, advanced by travel rather than by time.
@@ -395,6 +399,15 @@ export class CameraSystem {
     this.mouseScale = mouse;
     this.stickScale = stick;
     this.touchScale = touch;
+  }
+
+  /**
+   * Gyro aiming: when the phone's rotation turns the view, and at what
+   * multiple of `CONFIG.touch.gyro.gain`. Pushed by `Game.applySettings`.
+   */
+  setGyro(mode: GyroMode, scale: number): void {
+    this.gyroMode = mode;
+    this.gyroScale = scale;
   }
 
   /**
@@ -791,6 +804,17 @@ export class CameraSystem {
       (aiming ? this.sight.mouseMult : 1) * this.touchScale * assistMult;
     this.yaw += input.touchLookX * CONFIG.touch.lookSensX * touchMult;
     this.pitch -= input.touchLookY * CONFIG.touch.lookSensY * touchMult;
+    // The gyro. Already an angle, so no `dt` and no per-pixel rate; it takes
+    // the optic's multiplier as the drag does, so a scope steadies the wrist
+    // by the same ratio, and NOT the assist's slowdown, which exists for a
+    // thumb's imprecision and would make a wrist tracking a target lag it.
+    // "aiming" reads the same `adsBlend > 0.5` step as everything above.
+    if (this.gyroMode === "always" || (this.gyroMode === "aiming" && aiming)) {
+      const gyroMult =
+        (aiming ? this.sight.mouseMult : 1) * CONFIG.touch.gyro.gain * this.gyroScale;
+      this.yaw += input.gyroYaw * gyroMult;
+      this.pitch += input.gyroPitch * gyroMult;
+    }
     if (assist) {
       this.yaw += assist.yaw;
       this.pitch += assist.pitch;

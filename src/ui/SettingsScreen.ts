@@ -16,6 +16,21 @@
 import "./settings.css";
 import { CONFIG } from "../config";
 import type { Settings } from "../core/settings";
+import type { GyroStatus } from "../core/GyroInput";
+
+/**
+ * The gyro row's second sentence, per sensor state. Empty where the row's own
+ * hint is the whole story (off) or the news is good and says so briefly.
+ */
+const GYRO_NOTES: Record<GyroStatus, string> = {
+  off: "",
+  unsupported: "this browser has no motion sensor access (it needs HTTPS)",
+  permission: "tap anywhere to allow motion access",
+  denied: "motion access was refused; allow it in the browser's settings and reload",
+  waiting: "waiting for the gyroscope",
+  absent: "no gyroscope is reporting on this device",
+  live: "gyroscope live",
+};
 
 /**
  * One line on the screen: a labelled CHOICE bound to one field of `Settings`.
@@ -175,6 +190,18 @@ const PAGES: readonly Page[] = [
         options: LOOK_SCALES,
         style: "slider",
       },
+    ],
+    bindings: BINDINGS,
+  },
+  // A page of its own, by this table's own rule: nothing here scrolls, and the
+  // five rows a phone player wants would have put the Controls page's foot
+  // under the edge of a landscape phone. It is also the page a phone player
+  // is looking for, and the Controls page's key table is nothing to them.
+  // Every hint says what the choice DOES, because "Fixed", "Aim on fire" and
+  // "While aiming" are names borrowed from other games.
+  {
+    label: "Touch",
+    rows: [
       {
         key: "touchSensitivity",
         label: "Touch look",
@@ -182,10 +209,6 @@ const PAGES: readonly Page[] = [
         options: LOOK_SCALES,
         style: "slider",
       },
-      // The two touch settings sit under touch look, which is where a phone
-      // player already is. Both hints say what the choice DOES, because
-      // "Fixed" and "Aim on fire" are names borrowed from other games and a
-      // player who has not played those learns nothing from them.
       {
         key: "touchStick",
         label: "Touch stick",
@@ -201,8 +224,24 @@ const PAGES: readonly Page[] = [
         hint: "Holding FIRE raises the sight first, and the first round waits for it. On foot only",
         options: OFF_ON,
       },
+      {
+        key: "touchGyro",
+        label: "Gyro aim",
+        hint: "Turning the phone turns the view. Aiming: only while a sight is up",
+        options: [
+          { value: "off", label: "Off" },
+          { value: "aiming", label: "Aiming" },
+          { value: "always", label: "Always" },
+        ],
+      },
+      {
+        key: "gyroSensitivity",
+        label: "Gyro speed",
+        hint: "How far a turn of the phone turns the view",
+        options: LOOK_SCALES,
+        style: "slider",
+      },
     ],
-    bindings: BINDINGS,
   },
   {
     label: "Display",
@@ -301,6 +340,8 @@ export class SettingsScreen {
   private root: HTMLElement;
   private body: HTMLElement;
   private values: Settings;
+  /** What the gyro is doing. See `setGyroStatus`. */
+  private gyroStatus: GyroStatus = "off";
   /**
    * The column beside the list: what the cursor's row is FOR, and — on the
    * page that has one — the key-cap table.
@@ -396,6 +437,18 @@ export class SettingsScreen {
   setValues(values: Settings): void {
     this.values = { ...values };
     this.draw();
+  }
+
+  /**
+   * What the motion sensor is actually doing, pushed by `Game`. Drawn into the
+   * gyro row's hint, because "On" over a sensor that is not there, or that iOS
+   * is still waiting to be allowed, is a setting that looks broken with nothing
+   * on screen to say why.
+   */
+  setGyroStatus(status: GyroStatus): void {
+    if (status === this.gyroStatus) return;
+    this.gyroStatus = status;
+    if (this.visible) this.draw();
   }
 
   show(): void {
@@ -519,6 +572,17 @@ export class SettingsScreen {
         return `${row.hint} &mdash; ${deg(
           c.stickSensX * this.values.stickSensitivity,
         )}&deg;/s at full stick`;
+      // A quarter turn of the phone, because that is the gesture: nobody turns
+      // a phone a whole circle, and 90 in is a number a wrist can picture.
+      case "gyroSensitivity":
+        return `${row.hint} &mdash; ${Math.round(
+          90 * CONFIG.touch.gyro.gain * this.values.gyroSensitivity,
+        )}&deg; per 90&deg; turn`;
+      // What the SENSOR is doing, not what the setting says. See `setGyroStatus`.
+      case "touchGyro": {
+        const note = GYRO_NOTES[this.gyroStatus];
+        return note ? `${row.hint} &mdash; ${note}` : row.hint;
+      }
       default:
         return row.hint;
     }

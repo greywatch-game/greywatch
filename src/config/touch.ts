@@ -140,6 +140,66 @@ export const touch = {
     linger: 0.4,
   },
   /**
+   * Gyro aiming (`Settings.touchGyro`): the phone's own rotation turns the
+   * view, on top of the drag. See `core/GyroInput.ts` for how a rotation
+   * becomes a yaw and a pitch.
+   */
+  gyro: {
+    /**
+     * Radians of view per radian of phone rotation, at a speed setting of 1.
+     *
+     * Microsoft's touch guidance for cloud-streamed shooters puts a 90-degree
+     * turn of the phone at about 120 degrees in the game, "so it is familiar to
+     * players moving between games", and that ratio is this number. Under 1 would
+     * ask for more wrist than a seated player has; much over it and the small
+     * corrections an aimed shot is made of are lost in the gain. The aimed
+     * multiplier comes on top of it, exactly as the drag's does
+     * (`CameraSystem.update`), so a 6x scope is steadier by the optic's own ratio.
+     */
+    gain: 1.33,
+    /**
+     * Rotation speed, in degrees a second of the phone, under which the gyro is
+     * scaled DOWN in proportion rather than passed straight through, which
+     * GyroWiki calls tightening.
+     *
+     * A hand holding still is not still: a phone gyro reads a degree or two a
+     * second of tremor and uncorrected bias, and at a 6x scope that is a
+     * reticle that never settles. Scaling rather than cutting is what keeps a
+     * slow deliberate track moving: at half the threshold it moves at half
+     * rate, where a deadzone would stop it outright and then jump.
+     */
+    tighten: 1.5,
+    /**
+     * How fast the gravity estimate follows the accelerometer, per second.
+     *
+     * Gravity says which way is UP in the phone's frame, and that is only used
+     * to decide how much of a twist is a turn (`GyroInput`'s player space).
+     * The grip angle changes slowly, and the accelerometer also reads every
+     * step the player takes and every shove of recoil, so this is slow on
+     * purpose: a quarter-second time constant.
+     */
+    gravityRate: 4,
+    /**
+     * How far past the exact projection onto gravity a twist may count as a
+     * turn: GyroWiki's player-space "relax factor".
+     *
+     * A true turn of the body projects onto gravity whole at any grip angle.
+     * What the projection shortchanges is the other gesture players make, a
+     * wrist twist about the phone's OWN vertical axis: held 45 degrees back,
+     * that counts at 71% of its rate. 1.41 puts it back to 100%, and the result
+     * is capped at the combined rate of the two axes, so a real turn is never
+     * amplified.
+     */
+    yawRelax: 1.41,
+    /**
+     * Seconds of silence from the sensor after which the setting reports
+     * that there is no gyroscope. A laptop fires the event with no rotation in
+     * it, and a player told "on" when nothing is listening would believe the
+     * aim was broken.
+     */
+    silenceAfter: 1.5,
+  },
+  /**
    * How long after a finger a mouse event is disbelieved, in seconds.
    *
    * A touch on a page raises a `pointerdown` and then, a moment later, a

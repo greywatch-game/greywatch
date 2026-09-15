@@ -1323,8 +1323,11 @@ What belongs *here*, with the other screens:
   on, which is the test for a behaviour becoming a setting rather than a
   decision. Neither adds a field to the `TouchFrame`: a fixed stick still
   reports a deflection, and aim-on-fire still reports `ads` and `fire`, so
-  `InputManager` and everything after it are unchanged. Three rules come with
-  them:
+  `InputManager` and everything after it are unchanged. The settings screen
+  gives them a **Touch** page of their own, with touch look and the gyro,
+  because five phone rows under the Controls page's two would have put its
+  foot off a landscape phone and nothing on these screens scrolls. Three
+  rules come with them:
   - **A fixed stick's position is the SHEET's and the maths MEASURES it**
     (`claimStick` reads the ring's box at the press), the rule the kit screen's
     bay follows. Its lift is stated in `--hud-u` because what it has to clear,
@@ -1339,6 +1342,27 @@ What belongs *here*, with the other screens:
     item that is `sighted`), because the layer cannot see either.
   - **Both pushed halves are dropped by `releaseAll`**, the rule the crouch lamp
     already follows: an owed round must not leave the moment a pause lifts.
+- **GYRO AIMING is a DEVICE beside this one, not a part of it**
+  (`src/core/GyroInput.ts`, `Settings.touchGyro`: off, while aiming, always).
+  It draws nothing and owns no finger, so it lives in core and is polled by
+  `InputManager` (`setGyroSource`) into a fourth look path, `gyroYaw/Pitch`,
+  which only the two cameras read. What a player needs to know about it is
+  what the settings screen tells them: the row's hint carries the sensor's
+  real state (`setGyroStatus`), and the speed row resolves to degrees of view
+  per 90 degrees of phone. Three rules reach outside the file:
+  - **It is PLAYER SPACE**: yaw is the turn about GRAVITY and pitch the tilt
+    about the screen's horizontal, so a phone held tilted back turns cleanly.
+    Yaw read off the phone's own vertical turns at the cosine of the grip and
+    rolls into every turn.
+  - **It takes the OPTIC's multiplier and not the aim assist's slowdown.** A
+    scope steadies the wrist by its own ratio, as it does the drag; the
+    slowdown exists for a thumb's imprecision and would make a wrist tracking a
+    target lag behind it.
+  - **"Aiming" is the camera's own `adsBlend > 0.5` step on foot and the
+    gunner's sight in a hull**, and it applies in both cameras, because a look
+    setting that held in one view and not the other is a lie about one of them.
+    It is not gated on touch being in hand: a phone with a pad clipped to it is
+    who wants a gyro most.
 - **The buttons are `.frame`s**, the same chamfered hull the panels use, cut on
   the same two corners. Not decoration: `base.css` bans `border-radius` on
   gameplay chrome, and a set of round translucent buttons is precisely the "web

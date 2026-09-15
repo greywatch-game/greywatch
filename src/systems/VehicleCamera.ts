@@ -90,6 +90,7 @@ import { CONFIG } from "../config";
 import type { AxisSpec, VehicleSpec } from "../config/vehicles";
 import type { Vehicle } from "../entities/Vehicle";
 import type { InputManager } from "../core/InputManager";
+import type { GyroMode } from "../core/settings";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 
 /**
@@ -171,6 +172,8 @@ export class VehicleCamera {
   private mouseScale = 1;
   private stickScale = 1;
   private touchScale = 1;
+  private gyroMode: GyroMode = "off";
+  private gyroScale = 1;
 
   // Scratch. Runs every frame while driving; nothing below allocates.
   private readonly anchor = new Vector3();
@@ -198,6 +201,12 @@ export class VehicleCamera {
     this.mouseScale = mouse;
     this.stickScale = stick;
     this.touchScale = touch;
+  }
+
+  /** `CameraSystem.setGyro`'s twin, for this file's reason. */
+  setGyro(mode: GyroMode, scale: number): void {
+    this.gyroMode = mode;
+    this.gyroScale = scale;
   }
 
   /**
@@ -253,6 +262,14 @@ export class VehicleCamera {
       input.touchLookX * CONFIG.touch.lookSensX * this.touchScale * mouse;
     this.pitch -=
       input.touchLookY * CONFIG.touch.lookSensY * this.touchScale * mouse;
+    // The gyro, on the drag's multiplier for the drag's reason: it is a picture
+    // moved directly. "aiming" here is the gunner's sight being up, the one
+    // thing in a hull that reads ADS.
+    if (this.gyroMode === "always" || (this.gyroMode === "aiming" && optic)) {
+      const gyroMult = CONFIG.touch.gyro.gain * this.gyroScale * mouse;
+      this.yaw += input.gyroYaw * gyroMult;
+      this.pitch += input.gyroPitch * gyroMult;
+    }
     // The GUN's stops while its sight is up and the CAMERA's otherwise. The
     // gun's band is the narrower of the two on every kind in the fleet, so
     // raising the sight can pull the order up to meet a gun already sitting at

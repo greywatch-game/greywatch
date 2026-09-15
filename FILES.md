@@ -112,7 +112,8 @@ src/
                         #   (input, rumble)
     touch.ts            # The on-screen controls: the stick's shape and a fixed
                         #   stick's reach, what a drag does to the aim,
-                        #   aim-on-fire's two numbers, and how long a
+                        #   aim-on-fire's two numbers, the gyro's gain and
+                        #   filters, and how long a
                         #   synthesized mouse event is disbelieved after a finger
     audio.ts            # Levels, distances, rolloff for the synthesized mix
     mix.ts              # The mixer, in two tiers that MULTIPLY: ten FAMILY
@@ -169,7 +170,13 @@ src/
                         #   new state does not compile without a row
     InputManager.ts     # Keyboard/mouse + gamepad + TOUCH state, and rumble.
                         #   Three sources, one composition, one set of fields —
-                        #   and the clock that says which device is in hand
+                        #   and the clock that says which device is in hand.
+                        #   The gyro is polled here too, into its own look path
+    GyroInput.ts        # Gyro aiming's sensor: devicemotion, iOS's permission
+                        #   (asked from a gesture, retried on the next tap),
+                        #   screen-orientation axes and PLAYER SPACE yaw off a
+                        #   gravity estimate. Reports the sensor's real state
+                        #   for the settings row; applies nothing
     CameraSystem.ts     # First-person cam at the eye; ADS zooms and slows by
                         #   the fitted optic, at the weapon's own rate
     Sfx.ts              # Procedural WebAudio, spatialised, voice-capped —
@@ -879,7 +886,8 @@ src/
                         #   one (the thumb picks an option INDEX, so both are
                         #   the same choice). Row 0 is the page selector, which
                         #   is why tabs need no key of their own; the Controls
-                        #   page carries the key-cap table the menu used to.
+                        #   page carries the key-cap table the menu used to,
+                        #   and the Touch page the phone's five rows.
                         #   Owns no setting: picks leave through onChange and
                         #   return as setValues
     LobbyScreen.ts      # The match browser: every region's matches in one list

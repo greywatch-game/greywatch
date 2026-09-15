@@ -17,7 +17,8 @@
  * many devices the player has. It is INJECTED (`setTouchSource`) rather than
  * imported: the layer that draws it is a screen, and core does not import
  * src/ui. The one thing that is not a fold is `touchLookX/Y`, which the camera
- * reads on its own path; see the field.
+ * reads on its own path; see the field. The phone's GYRO is polled the same
+ * way (`setGyroSource`) and is not a fold either (`gyroYaw/Pitch`).
  */
 import { CONFIG } from "../config";
 import { clamp } from "./math";
@@ -51,6 +52,16 @@ export interface TouchSource {
     use: boolean;
     lift: number;
   };
+}
+
+/**
+ * One frame of the phone's rotation — the structural subset of `GyroInput`
+ * this file needs, for the reason `TouchSource` is declared above rather than
+ * imported: the dependency is a fact about the data. Radians of VIEW, in the
+ * camera's signs (yaw right, pitch up), before any gain.
+ */
+export interface GyroSource {
+  consume(): { yaw: number; pitch: number };
 }
 
 /**
@@ -356,6 +367,19 @@ export class InputManager {
   touchLookX = 0;
   touchLookY = 0;
   /**
+   * The phone's own rotation since the last frame, as radians of view (yaw
+   * right, pitch up) before any gain. Zero unless gyro aiming is on and a
+   * sensor is reporting.
+   *
+   * A FOURTH look path, and not folded into the drag: it is already an angle
+   * rather than pixels, it is gated on a MODE (always, or only while aiming)
+   * that the drag has no equivalent of, and it takes no aim-assist slowdown —
+   * a wrist has the precision the assist exists to make up for on a thumb.
+   * `CameraSystem` and `VehicleCamera` apply it; nothing else reads it.
+   */
+  gyroYaw = 0;
+  gyroPitch = 0;
+  /**
    * Whether TOUCH is the device in the player's hands.
    *
    * STICKY, unlike `padActive`: a thumb resting still between bursts is still a
@@ -432,6 +456,8 @@ export class InputManager {
   private fireBlocked = false;
   /** The on-screen controls, when there are any. See `setTouchSource`. */
   private touch: TouchSource | null = null;
+  /** The motion sensor, when there is one. See `setGyroSource`. */
+  private gyro: GyroSource | null = null;
   private prevTouchSprint = false;
   /**
    * When each device was last used, as `performance.now()` stamps. The most
@@ -591,6 +617,11 @@ export class InputManager {
     // drain — the drag was zeroed by the layer that handed it over.
     this.touchLookX = t ? t.lookX : 0;
     this.touchLookY = t ? t.lookY : 0;
+    // Spent every frame whether or not anything applies it, so a menu or a
+    // pause does not bank a turn to be delivered when the round resumes.
+    const gyro = this.gyro?.consume() ?? null;
+    this.gyroYaw = gyro ? gyro.yaw : 0;
+    this.gyroPitch = gyro ? gyro.pitch : 0;
 
     // Actions (LT=6 ADS, RT=7 shoot, RB=5 grenade, A=0 jump, B=1 crouch,
     // X=2 reload, L3=10, Start=9)
@@ -867,6 +898,11 @@ export class InputManager {
    */
   setTouchSource(source: TouchSource | null): void {
     this.touch = source;
+  }
+
+  /** Hands over the motion sensor, polled from `update()` as the touch layer is. */
+  setGyroSource(source: GyroSource | null): void {
+    this.gyro = source;
   }
 
   /**

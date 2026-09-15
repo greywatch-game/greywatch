@@ -54,6 +54,15 @@ export const TOUCH_STICKS = ["floating", "fixed"] as const;
 export type TouchStick = (typeof TOUCH_STICKS)[number];
 
 /**
+ * When the phone's rotation turns the view: never, only with a sight up, or
+ * all the time. The middle one is CoD Mobile's "While ADS", and it is the
+ * gentle way in: the drag still does the big turns and the wrist only does
+ * the fine work an aimed shot is made of.
+ */
+export const GYRO_MODES = ["off", "aiming", "always"] as const;
+export type GyroMode = (typeof GYRO_MODES)[number];
+
+/**
  * One row on the settings screen. Mostly booleans; `renderScale` is the first
  * field that is not, and it is what the note this replaces was warning about.
  *
@@ -142,6 +151,21 @@ export type Settings = {
    * exists.
    */
   touchAutoAds: boolean;
+  /**
+   * Gyro aiming: whether, and when, the phone's own rotation turns the view
+   * (`core/GyroInput.ts`, `CONFIG.touch.gyro`). In a vehicle too, where
+   * "aiming" means the gunner's sight is up, because a setting that held on
+   * foot and not in a turret would be a lie about one of the two views.
+   *
+   * NOT gated on touch being the device in hand: a phone with a pad clipped to
+   * it is exactly who wants a gyro most.
+   */
+  touchGyro: GyroMode;
+  /**
+   * Gyro speed, as a multiplier on `CONFIG.touch.gyro.gain`, on the same
+   * geometric ladder the three look speeds use.
+   */
+  gyroSensitivity: LookScale;
   /**
    * The frame profiler: `FrameProfile` recording the last few thousand frames,
    * and the chip that gets a capture off the device.
@@ -240,6 +264,10 @@ export const SETTING_DEFAULTS: Settings = {
   // the screen gets the controls they already know.
   touchStick: "floating",
   touchAutoAds: false,
+  // Off: a view that moves when the phone does is a surprise to anyone who did
+  // not ask for it, and on iOS turning it on raises a permission prompt.
+  touchGyro: "off",
+  gyroSensitivity: 1,
   // Off, for the reason the counter is: it is an instrument, not chrome — and
   // this one costs a megabyte of ring as well as a line of screen.
   profiler: false,
@@ -343,6 +371,8 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   touchSensitivity: oneOf(CONFIG.camera.lookScales),
   touchStick: oneOfString(TOUCH_STICKS),
   touchAutoAds: bool,
+  touchGyro: oneOfString(GYRO_MODES),
+  gyroSensitivity: oneOf(CONFIG.camera.lookScales),
   profiler: bool,
 };
 

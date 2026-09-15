@@ -176,6 +176,7 @@ import { SettingsScreen } from "../ui/SettingsScreen";
 import { LobbyScreen } from "../ui/LobbyScreen";
 import { Minimap } from "../ui/Minimap";
 import { TouchControls } from "../ui/TouchControls";
+import { GyroInput } from "./GyroInput";
 import { ProfileChip } from "../ui/ProfileChip";
 import { enterFullscreenOnTouch } from "../pwa/register";
 import { CameraSystem } from "./CameraSystem";
@@ -345,6 +346,14 @@ export class Game {
    * out like every other screen's.
    */
   private touch: TouchControls;
+  /**
+   * The phone's motion sensor, for gyro aiming. A device like the touch layer
+   * and polled the same way (`InputManager.setGyroSource`); it is switched on
+   * and off by the setting and reports what the sensor is really doing to the
+   * settings screen, which is the only place a player can find out why a gyro
+   * they turned on is not turning anything.
+   */
+  private gyro = new GyroInput();
   /**
    * Where this frame's milliseconds went, if anybody asked.
    *
@@ -1952,6 +1961,8 @@ export class Game {
     // guarded on the state like the Deploy handlers above, because the layer it
     // is drawn on outlives none of them.
     this.input.setTouchSource(this.touch);
+    this.input.setGyroSource(this.gyro);
+    this.gyro.onStatus = (status) => this.settingsScreen.setGyroStatus(status);
     this.touch.onPause = () => {
       if (this.state === "playing") this.pause();
     };
@@ -2251,6 +2262,9 @@ export class Game {
    */
   private openSettings(): void {
     if (!this.raiseLid("settings")) return;
+    // Read rather than trusted to the callback: a stored "on" is applied at
+    // boot, before `onStatus` is wired.
+    this.settingsScreen.setGyroStatus(this.gyro.status);
     this.settingsScreen.setValues(this.settings);
     this.settingsScreen.show();
   }
@@ -2410,6 +2424,13 @@ export class Game {
     // is pushed every frame with the rest of the controls' state
     // (`pushTouchControls`) and reads the setting there.
     this.touch.setStickMode(this.settings.touchStick);
+    // Gyro aiming: the mode and speed to both cameras, for the reason the look
+    // speeds go to both, and the sensor switched on only while a mode wants
+    // it. `setEnabled` is reached synchronously from the settings screen's
+    // click, which is what lets iOS's permission prompt be asked from it.
+    this.cameraSys.setGyro(this.settings.touchGyro, this.settings.gyroSensitivity);
+    this.vehicleCam.setGyro(this.settings.touchGyro, this.settings.gyroSensitivity);
+    this.gyro.setEnabled(this.settings.touchGyro !== "off");
   }
 
   /**

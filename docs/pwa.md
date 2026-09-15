@@ -196,8 +196,8 @@ screen**: `InputManager` polls it once a frame exactly as it polls a gamepad, so
 nothing in gameplay has heard of it. The shape is the one every shipped mobile
 shooter converged on — floating stick left, look drag right, cluster over both —
 and the reasoning for each part is in that file's header, next to the code it
-explains. Two parts are the player's to choose, because players split on them:
-a FIXED stick, and a fire button that also aims ([`ui.md`](ui.md)).
+explains. Three parts are the player's to choose, because players split on them:
+a FIXED stick, a fire button that also aims, and gyro aiming ([`ui.md`](ui.md)).
 
 What belongs here is the part that is about **the phone rather than the game**:
 
@@ -218,6 +218,22 @@ What belongs here is the part that is about **the phone rather than the game**:
   headless, that alone took the controls off a phone the instant it deployed.
   There is no pointer lock to take on a phone, and the `pointerdown` that asks
   for one skips a finger for the same reason.
+- **The GYRO is the one sensor the game reads, and the phone decides whether it
+  may** (`src/core/GyroInput.ts`). `devicemotion` is a secure-context API, which
+  the installed app always is and a LAN address during development is not. iOS
+  additionally asks permission through `DeviceMotionEvent.requestPermission`,
+  which rejects outside a user gesture — and a stored "on" is applied at boot,
+  where there is none — so a refusal to ASK is treated as "wait for the next
+  tap" (`touchend`/`click`/`keydown`, capture phase, because a finger's
+  `pointerdown` is not an activating event) and only a real `denied` is
+  final. Android asks nothing. Both platforms have disagreed about the SIGN of
+  `accelerationIncludingGravity`, so gravity's direction is settled from the
+  grip rather than trusted: the screen faces the player and never the floor.
+  **The settings row reports the sensor's real state** (`GyroStatus`), because
+  on a desktop, an insecure origin or an iPhone still waiting for the tap, an
+  "on" that turns nothing is otherwise undiagnosable. **Not measured on a
+  device**: the axis mapping and signs are the spec's and were checked with
+  synthetic events in headless Chromium at orientation angles 90 and 270.
 - **The fire gate has a third term.** `Game`'s trigger asks for a pointer lock or
   a gamepad, because a UI click must never discharge the gun; a phone has neither
   and never will, so `touchActive` joins them rather than an exception being
