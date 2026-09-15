@@ -7,10 +7,8 @@
  * Invariants: this is annotation geometry and nothing else — never
  * `metadata.solid`, never `checkCollisions`, never pickable, and never a
  * WorldBox, so no ray test (hitscan, LOS, ground probe) and no nav consumer
- * can see it. Every mesh sets noInk/noGlow/noShadowCaster AND calls
- * `glow.addExcludedMesh` by hand: Game's GlowLayer exclusion scan runs once at
- * construction, so nothing built later is picked up by it (same reason
- * WaterSystem and the editor proxies exclude their own meshes).
+ * can see it. Every mesh sets noInk/noGlow/noShadowCaster; the bloom reads
+ * `noGlow` every frame, so a marker built mid-round is out of it too.
  *
  * The ring's radius IS the capture radius — both this and
  * `ConquestSystem.pointAt` read `ControlPointDef.radius`, so the line you see
@@ -31,7 +29,6 @@ import {
   StandardMaterial,
   VertexBuffer,
   VertexData,
-  type GlowLayer,
 } from "@babylonjs/core";
 import { clamp01 } from "../core/math";
 import type { Team } from "../entities/Combatant";
@@ -153,10 +150,7 @@ export class CaptureZoneSystem {
   private fogEnd = 1;
   private t = 0;
 
-  constructor(
-    private scene: Scene,
-    private glow: GlowLayer,
-  ) {}
+  constructor(private scene: Scene) {}
 
   /**
    * Rebuilds every marker for a round. Takes the terrain AND the nav graph
@@ -428,7 +422,6 @@ export class CaptureZoneSystem {
     mesh.isPickable = false;
     mesh.checkCollisions = false;
     mesh.metadata = { noInk: true, noGlow: true, noShadowCaster: true };
-    this.glow.addExcludedMesh(mesh);
     mesh.freezeWorldMatrix();
 
     return { marker: { mesh, mat, alpha, fogFloor }, colors, points };

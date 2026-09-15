@@ -241,12 +241,6 @@ src/
                         #   mean an output range, an input clamp and a
                         #   precondition at once. Nothing with a single caller
                         #   belongs here
-    GlowDepth.ts        # Takes the GlowLayer's occlusion from the depth the
-                        #   FRAME has already written (shareDepth), so its
-                        #   render list is the emissive meshes and not the
-                        #   whole visible scene drawn black. ~20% of the frame
-                        #   on the big maps. FOUR mechanics and each fails
-                        #   SILENTLY on its own — read the header first
   entities/
     Player.ts           # Movement, sprint, crouch, jump, weapon state
     ViewModel.ts        # The first-person weapon: carried gun + gloved arms on
@@ -993,6 +987,12 @@ src/
                         #   frame already wrote. Replaced Babylon's outline
                         #   hull AND MapBuilder's ink twins — Coldharbour
                         #   +32%, Harrowmead +51%. Only ever DARKENS
+    GlowPass.ts         # THE BLOOM, owned end to end: an emissive-only mask
+                        #   drawn against the FRAME's depth (shared, sized in
+                        #   the same function that draws it), Babylon's kernel
+                        #   blur at half and quarter resolution, and an additive
+                        #   compose straight after the ink. Public API only;
+                        #   `Game` supplies the rules (what blooms, how bright)
     FrameDepth.ts       # The frame's own depth attachment, captured once and
                         #   wrapped for the two passes that sample it (the ink's
                         #   edges, the blur's weapon mask). Renders and copies

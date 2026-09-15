@@ -39,7 +39,6 @@ import {
   Mesh,
   StandardMaterial,
   VertexData,
-  type GlowLayer,
   type Scene,
 } from "@babylonjs/core";
 import { clamp } from "../core/math";
@@ -108,7 +107,6 @@ export class TerrainBrush {
 
   constructor(
     private scene: Scene,
-    private glow: GlowLayer,
     private map: GameMap,
   ) {
     const m = new StandardMaterial("ed-brush", scene);
@@ -483,7 +481,6 @@ export class TerrainBrush {
     mesh.isPickable = false;
     mesh.checkCollisions = false;
     mesh.metadata = { noGlow: true, noShadowCaster: true };
-    this.glow.addExcludedMesh(mesh);
     this.overlay = mesh;
   }
 }

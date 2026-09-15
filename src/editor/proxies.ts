@@ -10,10 +10,8 @@
  *   `MapBuilder.collider()` is the only thing allowed to make a collider, and
  *   a proxy that leaked into the nav grid would wall off the very region it
  *   was drawn to describe.
- * - Every proxy sets noInk + noGlow + noShadowCaster AND calls
- *   glow.addExcludedMesh by hand. Game's GlowLayer exclusion scan runs once at
- *   construction, so nothing created later is ever picked up by it — the same
- *   reason WaterSystem and GrassSystem exclude their own meshes.
+ * - Every proxy sets noInk + noGlow + noShadowCaster. The bloom reads `noGlow`
+ *   every frame, so a proxy built long after `Game`'s constructor is out of it.
  * - Proxies carry `metadata.editorRef` so the same pick predicate finds them
  *   as finds real placements.
  */
@@ -24,7 +22,6 @@ import {
   Scene,
   StandardMaterial,
   Vector3,
-  type GlowLayer,
 } from "@babylonjs/core";
 import { isScatterRect, type ScatterSpec } from "../world/layout";
 import type { GameMap } from "../world/MapBuilder";
@@ -39,10 +36,7 @@ export class ProxyLayer {
   private meshes: Mesh[] = [];
   private materials: StandardMaterial[] = [];
 
-  constructor(
-    private scene: Scene,
-    private glow: GlowLayer,
-  ) {}
+  constructor(private scene: Scene) {}
 
   /** Rebuilds every proxy from the map's layout-derived data. */
   build(map: GameMap): void {
@@ -134,7 +128,6 @@ export class ProxyLayer {
       noGlow: true,
       noShadowCaster: true,
     };
-    this.glow.addExcludedMesh(mesh);
     this.meshes.push(mesh);
   }
 

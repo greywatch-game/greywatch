@@ -53,7 +53,7 @@ which over ~22 pairs is **~5 us a frame**, or 0.06% of a 7.8 ms one. The rest is
 `endFrame`. If the cost ever has to come down, that is the end to look at.
 
 **The four spans inside `render` add about four more pairs a frame** — the two
-rendering groups, the glow's texture and its compose, with the shadow map's on
+rendering groups, the glow's mask and its compose, with the shadow map's on
 the handful of frames that re-render it — which is ~0.9 us against the 5 above
 and well inside the run-to-run spread the paired runs already showed. It is
 arithmetic on the same probe rather than a new measurement, and the reason it
@@ -224,8 +224,8 @@ frame                       the whole tick, wall to wall
 ├─ audio                    pushHullEngines
 └─ render                   scene.render()
    ├─ shadowPass            the depth map, on the frames that re-render it
-   ├─ glow                  the GlowLayer: its main texture, its four blurs,
-   │                        and its compose two stages later
+   ├─ glow                  GlowPass: its mask and four blurs at the end of
+   │                        the draw phase, and its compose in the post chain
    ├─ drawWorld             rendering group 0 — the map and the bodies
    └─ drawOverlay           groups above it — the gun
 
@@ -347,17 +347,21 @@ where `frameMs` rises alone it was not.
 **The last four are not brackets in `Game.ts` and cannot be**, because the
 boundaries they want are inside `scene.render()`. `FrameProfile.hookRender`
 hangs them off the scene's own observables at `arm` and takes them off again at
-`disarm`, finding the shadow map through `scene.lights` and the glow through
-`scene.effectLayers` — so no system knows about them either.
+`disarm`, finding the shadow map through `scene.lights` and taking the glow
+as two observables handed to `arm` (`GlowSpans`) — so no system knows about
+them either.
 
 **They cannot overlap, and the method's header carries the proof** rather than
 the assertion: `Scene._renderForCamera` runs the render targets (the shadow
-map, then the effect layers' main textures) *before* it opens the draw phase,
-the camera's own pass *inside* it, and the glow's compose *after* it closes.
-The group spans are gated on being in that draw phase, because
-`onBeforeRenderingGroupObservable` is the SCENE's and a render target's own
-rendering manager fires it too — without the gate the shadow map's groups would
-be added to `drawWorld` on top of `shadowPass`.
+map) *before* it opens the draw phase, the camera's own pass *inside* it with
+the glow's mask and blur at its very end, and the glow's compose in the post
+chain *after* it closes. The group spans are gated on being in that draw phase,
+because `onBeforeRenderingGroupObservable` is the SCENE's and a render target's
+own rendering manager fires it too — without the gate the shadow map's groups
+would be added to `drawWorld` on top of `shadowPass`. **The glow closes the
+gate when its span opens**, since its mask renders from the same end-of-draw
+observable before the profiler's own observer there runs; until it did, the
+mask's groups were being added to `drawWorld` too.
 
 **What is left inside `render` and named by nothing** is the active-mesh
 evaluation (the `Mesh walk` counter, which is the same number in other units),

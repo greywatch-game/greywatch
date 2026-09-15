@@ -42,7 +42,7 @@
  * Also owns the fog as a published fact: setEnvironment writes it once, the cel
  * materials get it as uniforms, OutlineFog bakes it into the outline pass,
  * EmissiveFog uploads it to the unlit emissive materials, and fogAmountAt()
- * hands the same curve to the GlowLayer. Anything else drawn unshaded owes that
+ * hands the same curve to the glow's rules. Anything else drawn unshaded owes that
  * fade, or it hangs in front of the fog wall at full strength.
  *
  * Both stages are hand-written WGSL, and `shaderLanguage` on all six materials

@@ -24,11 +24,12 @@
  * - **The joints are `TransformNode`s above the merged meshes**, so the turret
  *   traversing, the gun elevating and the tracks running are transforms and
  *   never a re-merge.
- * - **Nothing here is emissive.** `Game`'s GlowLayer scan is construction-time
- *   and a tank is built per round, so a bloom-eligible material on one would
- *   never be excluded by the `noGlow` contract and would glow for the rest of
- *   the round. The rear lens `world/kit/core.ts` allows itself is exactly the
- *   thing this model may not have.
+ * - **Nothing here is emissive.** The rule was written when the glow's `noGlow`
+ *   exclusion was a one-shot scan at construction and a tank, built per round,
+ *   could never be excluded; the bloom reads `noGlow` per mesh every frame now
+ *   (`GlowPass`), so that reason is gone, but an emissive part on a hull is
+ *   still a decision nobody has made. The rear lens `world/kit/core.ts` allows
+ *   itself is exactly the thing this model may not have.
  *
  * `+Z is forward`, matching the yaw convention everywhere else in the game
  * (`forward = (sin(yaw), 0, cos(yaw))`), and `y = 0` is the bottom of the

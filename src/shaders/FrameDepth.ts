@@ -23,7 +23,7 @@
  *    `Game`'s constructor turns that clear OFF for group 1 (it was `Sky.ts`'s,
  *    while the moon drew there). So group 1 shares group 0's buffer and there is ONE coherent depth
  *    image holding the village, the sky shell and the gun. That line is also
- *    what makes `GlowDepth`'s occlusion work, and breaking it breaks all three
+ *    what makes `GlowPass`'s occlusion work, and breaking it breaks all three
  *    readers.
  * 2. **Babylon's WebGPU backend creates depth textures with `TEXTURE_BINDING`**,
  *    and `FINDINGS.md` 4 put the engine at sample count 1 with `depth32float`
@@ -45,7 +45,7 @@ type DepthOwner = {
   _depthStencilTexture?: object | null;
 };
 
-/** The engine internal `GlowDepth` already depends on, named the same way. */
+/** The one engine internal this reads, named in one place. */
 type EngineInternals = {
   _currentRenderTarget?: DepthOwner | null;
 };
@@ -56,9 +56,12 @@ export class FrameDepth {
   private source: object | null = null;
 
   /**
-   * Takes the frame's depth attachment at the end of the draw phase — the same
-   * hook and the same guard as `GlowDepth`, and deliberately not disturbing
-   * what that one leaves bound: nothing here binds, renders or copies.
+   * Takes the frame's depth attachment at the end of the draw phase, with the
+   * same probe guard as `GlowPass`, and binds, renders and copies nothing.
+   * `GlowPass`'s observer on the same hook is registered FIRST (`Game` builds
+   * the glow before this) and renders its own targets, so what this reads as
+   * the bound target depends on that pass putting the frame back — which it
+   * does, as its last act.
    *
    * One identity test a frame, and on the frames the target actually moves (a
    * resize) one wrapper.

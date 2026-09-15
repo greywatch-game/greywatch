@@ -138,7 +138,7 @@
  *
  * **A LENS is free and a LIGHT is one of sixteen, and almost everything in this
  * file follows from that.** `Build.glow` is an emissive box: it takes the
- * GlowLayer's bloom and `EmissiveFog`'s per-pixel fade for nothing and spends
+ * glow's bloom and `EmissiveFog`'s per-pixel fade for nothing and spends
  * no shader slot at all. `Build.light` spends one, `LightingSystem` uploads the
  * sixteen nearest, and there is no arbitration beyond distance — so an
  * unbudgeted fixture is not a fixture that costs a little, it is an interior
@@ -2182,7 +2182,7 @@ export function buildCar(
  *
  * **The lens is not emissive either, and that was a fix rather than a
  * simplification.** It was a `glow` at a tenth of a lantern's strength, on the
- * argument that the head should still read at distance — and the `GlowLayer`
+ * argument that the head should still read at distance — and the glow
  * does not scale with the sky: a pale emissive against a bright afternoon
  * blooms to a hard white disc, so every junction on the map had a lamp burning
  * in broad daylight. What reads at distance instead is the SILHOUETTE, which is
@@ -2201,7 +2201,7 @@ export function buildStreetLight(
   b.box(0.9, 0.18, 0.42, reach, h - 0.24, 0, ALLOY);
   // The lens, and it is `glow` rather than a flat tone for the reason the whole
   // fixture argument turns on: an emissive box costs no light slot, takes the
-  // GlowLayer's bloom, and is faded per pixel by `EmissiveFog` like everything
+  // glow's bloom, and is faded per pixel by `EmissiveFog` like everything
   // else `getEmissive` hands out. Sodium orange rather than a pale white — a
   // pale lens against a lit sky blooms to a hard white disc, which is why the
   // lens was left off this model in the first place; a saturated one reads as a

@@ -275,7 +275,7 @@ export interface BuildParams {
    * it.
    *
    * The two are different questions because they cost different things. A lens
-   * is `Build.glow` — an emissive box that takes the GlowLayer's bloom and
+   * is `Build.glow` — an emissive box that takes the glow's bloom and
    * `EmissiveFog`'s per-pixel fade for free and spends NO light slot. A light
    * is one of sixteen, uploaded nearest-first, and a street full of them
    * evicts the interior fixtures a lit building is legible by. So a map lights
@@ -671,7 +671,7 @@ export const WINDOW_LIGHT = "#ffd79a";
  * **Saturated on purpose, where `WINDOW_LIGHT` is pale.** A lit window is seen
  * against the wall it is cut into and wants to read as warm light on a room; a
  * lamp head is a hand-sized emissive hanging in open sky at the top of a
- * column, and a pale one blooms through the GlowLayer into a hard white disc —
+ * column, and a pale one blooms through the glow into a hard white disc —
  * which is exactly why `buildStreetLight` carried no lens at all until the map
  * moved to an hour that wanted one. Sodium orange survives the bloom as a
  * colour rather than as a hole in the frame, and it holds its hue as

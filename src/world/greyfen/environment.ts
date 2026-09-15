@@ -396,7 +396,7 @@ export const GreyfenEnvironment: EnvironmentSpec = {
     starCount: 0,
     starBrightness: 0,
     // The sun's own disc: hotter and whiter than the halo around it, which is
-    // what a disc has to be to survive `moonEmissiveBoost` and the GlowLayer
+    // what a disc has to be to survive `moonEmissiveBoost` and the glow
     // without turning into a cream blob.
     moonColor: "#fff6dc",
     /**
@@ -427,7 +427,7 @@ export const GreyfenEnvironment: EnvironmentSpec = {
      * The disc comes back, at 14 rather than `CONFIG.sky.moonRadius`'s 32 —
      * Coldharbour's number and Coldharbour's derivation. 32 at `moonDistance`
      * 595 subtends 3.1 degrees, which is a moon; 14 subtends 1.35, which with
-     * `moonEmissiveBoost` and the GlowLayer's kernel reads as a small fierce
+     * `moonEmissiveBoost` and the glow's kernel reads as a small fierce
      * sun. It is also what makes the shafts possible rather than merely
      * permitted: they need a core in frame brighter than anything in the world
      * by a margin, and a halo on its own does not give one.

@@ -225,9 +225,10 @@ the tracks.
 
 Four things the model may not do, each of which has already been done once:
 
-- **Nothing emissive.** `Game`'s GlowLayer scan is construction-time and a tank
-  is built per round, so a bloom-eligible material on one is never excluded by
-  the `noGlow` contract and glows for the rest of the round. The headlights are
+- **Nothing emissive.** Written when the glow's `noGlow` exclusion was a
+  one-shot scan at construction, which a tank built per round could never join.
+  The bloom reads `noGlow` every frame now (`GlowPass`), so that reason is gone;
+  a glowing part on a hull is still a look nobody has chosen. The headlights are
   boxes.
 - **Nothing pickable.** The collider box is the only pickable thing a tank has.
   A pickable visual would put the hitscan's wall ray, the bots' LOS and the

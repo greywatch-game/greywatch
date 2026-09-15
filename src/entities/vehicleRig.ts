@@ -37,9 +37,10 @@
  *
  * ## Two rules every model owes, both inherited and both already broken once
  *
- * - **Nothing emissive.** `Game`'s GlowLayer scan is construction-time and a
- *   hull is built per round, so a bloom-eligible material on one is never
- *   excluded by the `noGlow` contract and glows for the rest of the round.
+ * - **Nothing emissive.** Written when the glow's `noGlow` exclusion was a
+ *   one-shot scan at construction, which a hull built per round could never
+ *   join. The bloom reads `noGlow` every frame now (`GlowPass`), so a glowing
+ *   part is possible — it is still a look nobody has chosen.
  * - **Nothing pickable.** The collider box is the only pickable thing a vehicle
  *   has — see `Vehicle`. A pickable visual would put the hitscan's wall ray,
  *   the bots' LOS and the ground probe on sixty triangles of track link.

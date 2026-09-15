@@ -9,8 +9,9 @@
  * coverage: it is the last pass that could, since every pass after it writes
  * alpha 1.
  * It only ever DARKENS (`mix(scene, scene * tint, edge)` with tint < 1), which
- * is what makes it safe to lay over a finished frame and is worth keeping
- * true. Its shader is hand-written WGSL and `shaderLanguage` on the
+ * is what makes it safe to lay over a lit frame and is worth keeping true. The
+ * bloom is composited AFTER it (`GlowPass`, the next pass in the chain), so a
+ * halo lies over the lines round its lamp rather than under them. Its shader is hand-written WGSL and `shaderLanguage` on the
  * PostProcess is load-bearing rather than declarative: the constructor
  * defaults to GLSL and would look this pass up in a store nothing writes any
  * more.
@@ -86,13 +87,13 @@
  *
  * TWO THINGS STAND IN FOR THE HULL'S PER-MESH CONTROL AND NEITHER IS A FLAG,
  * which is the part `FINDINGS.md` 18 said would need an ink-id attachment.
- * - **Emissives are masked out by `glow.mainTexture`.** Every emissive part was
+ * - **Emissives are masked out by the glow's MASK.** Every emissive part was
  *   excluded from the hull through what is now `noInk`, and an inked emissive
- *   is swallowed glow. `GlowDepth` had already made that texture FULL
- *   RESOLUTION and emissive-only, so the mask costs one texture read and no
- *   pass. It is SHARP — the layer's blur writes to its own targets rather than
- *   back into this one — and already depth-tested against this frame, so a lamp
- *   behind a wall does not protect the wall in front of it.
+ *   is swallowed glow. `GlowPass` draws that mask at FULL RESOLUTION and
+ *   emissive-only, so it costs one texture read and no pass. It is SHARP — the
+ *   blur starts from a downsample of it and never writes back — and already
+ *   depth-tested against this frame, so a lamp behind a wall does not protect
+ *   the wall in front of it.
  * - **The viewmodel is scaled down by a DEPTH band.** The gun sits 0.3-0.5 m
  *   from the lens and a body cannot get within about 0.4 m of world geometry,
  *   so distance names the weapon with no per-mesh data at all. It replaces the
@@ -114,8 +115,8 @@
  * read** — it is the fourth channel of the sample this shader already took —
  * and this pass writes 1 back out, so nothing downstream ever sees it. THREE
  * things share it and each is checked in the tree rather than assumed: the glow
- * layer composes with ALPHA_ADD, whose alpha factors are (ZERO, ONE), so a
- * bloom cannot claim coverage it does not have; an ADDITIVE effect leaves the
+ * composes AFTER this pass and passes the alpha it is handed straight through,
+ * so a bloom cannot claim coverage it does not have; an ADDITIVE effect leaves the
  * channel alone and should, since a flare adds light rather than hiding what is
  * behind it; and a REFLECTION PROBE wants the opposite value out of the same
  * line, which is why `opaqueAlpha` is a uniform and `ReflectionSystem` flips it
@@ -129,11 +130,11 @@
  */
 import {
   Camera,
-  GlowLayer,
   PostProcess,
   Scene,
   ShaderLanguage,
   ShaderStore,
+  type BaseTexture,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { fogBand } from "./CelShader";
@@ -150,9 +151,9 @@ var textureSampler: texture_2d<f32>;
 // for it and there is none to get wrong.
 var depthTexture: texture_depth_2d;
 
-// The GLOW layer's main texture: the emissive meshes ALONE, full resolution and
-// UNBLURRED (the blur writes to the layer's own blur targets, not back into
-// this one), already depth-tested against this same frame. See
+// The GLOW's mask: the emissive meshes ALONE, full resolution and UNBLURRED
+// (the blur reads a downsample of it and never writes back), already
+// depth-tested against this same frame. See
 // CONFIG.graphics.ink.emissiveMask.
 var emissiveSamplerSampler: sampler;
 var emissiveSampler: texture_2d<f32>;
@@ -380,8 +381,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   edge *= 1.0 - saturate(frame.a);
 
   // ONLY EVER DARKER. tint < 1, so no pixel can leave this pass brighter than
-  // it arrived — which is what lets the ink sit over a finished frame with the
-  // glow already composited into it without touching the bloom.
+  // it arrived — which is what lets the ink sit over a lit frame, with the
+  // bloom composited over it afterwards, without either disturbing the other.
   fragmentOutputs.color = vec4f(mix(scene, scene * uniforms.tint, edge), 1.0);
   return fragmentOutputs;
 }
@@ -397,8 +398,8 @@ export class CelInk {
   constructor(
     scene: Scene,
     private readonly camera: Camera,
-    /** Read for its main texture ALONE — the emissive mask. Never mutated. */
-    private readonly glow: GlowLayer,
+    /** The glow's emissive mask (`GlowPass.mask`). Read, never written. */
+    private readonly emissiveMask: BaseTexture,
     /** The frame's own depth image. Shared — see `FrameDepth`. */
     private readonly depth: FrameDepth,
   ) {
@@ -456,9 +457,9 @@ export class CelInk {
       // until the first frame has handed one over, rather than resting on it.
       const depth = this.depth.texture;
       if (depth) effect.setTexture("depthTexture", depth);
-      // Same rule, and this one cannot be null: the layer owns its main texture
-      // from construction and `Game` builds the layer before this pass.
-      effect.setTexture("emissiveSampler", this.glow.mainTexture);
+      // Same rule, and this one cannot be null: the glow owns its mask from
+      // construction and `Game` builds the glow before this pass.
+      effect.setTexture("emissiveSampler", this.emissiveMask);
     };
 
     this.applyEnvironment();

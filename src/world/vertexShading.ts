@@ -279,7 +279,7 @@ export function bakeVertexShading(
     // with an unlit emissive `StandardMaterial` — 42 of them on Hollowmere.
     // Writing `rgb = (0, 1, 0)` onto those multiplied every one by pure green:
     // the village's lanterns and fires rendered as green blobs inside their own
-    // correctly-coloured bloom, since `GlowLayer` builds its halo from
+    // correctly-coloured bloom, since the glow builds its halo from
     // `material.emissiveColor` and never saw the vertex buffer.
     if (!(mesh.material instanceof ShaderMaterial)) return;
 

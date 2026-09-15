@@ -12,7 +12,7 @@
 
 /**
  * The night sky (src/systems/Sky.ts): a gradient dome with baked stars and
- * moon halo, an emissive moon disc that feeds the GlowLayer, and drifting
+ * moon halo, an emissive moon disc that feeds the bloom, and drifting
  * cloud banks. Palette lives in the map's EnvironmentSpec (`sky`); this is
  * geometry and motion. The dome and disc ride at `infiniteDistance`, so radii and
  * heights are angular conveniences, not reachable places.
@@ -48,7 +48,7 @@ export const sky = {
    */
   moonDepthDistance: 9000,
   /**
-   * Emissive scale on the moon colour — above 1 so the GlowLayer blooms it
+   * Emissive scale on the moon colour — above 1 so the bloom (`GlowPass`) takes it
    * into a proper halo on top of the soft one baked into the dome texture.
    */
   moonEmissiveBoost: 1.9,

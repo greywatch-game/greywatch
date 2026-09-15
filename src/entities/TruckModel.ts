@@ -599,9 +599,8 @@ export function buildTruck(
     // The rear window, which is what makes the back of this a back rather than
     // a wall.
     [BODY_HW * 2 - 0.44, 0.38, 0.06, 0, 1.66, tailZ + 0.02, kit.glass],
-    // The lamps. BOXES and not lights — nothing on a vehicle may be emissive,
-    // because `Game`'s GlowLayer scan is construction-time and a hull is built
-    // per round.
+    // The lamps. BOXES and not lights — nothing on a vehicle is emissive (see
+    // `vehicleRig.ts`).
     [0.26, 0.2, 0.08, -(BODY_HW - 0.34), 1.16, noseZ + 0.06, kit.glass],
     [0.26, 0.2, 0.08, BODY_HW - 0.34, 1.16, noseZ + 0.06, kit.glass],
     [0.16, 0.32, 0.07, -(BODY_HW - 0.2), 1.24, tailZ - 0.12, kit.glass],

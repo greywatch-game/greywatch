@@ -35,7 +35,7 @@ states for scatter, kept for a different reason.
 draws outside it owes the same fade.** The fog is a uniform on the cel materials
 and a per-pixel `mix` in their fragment shader; **three** passes never run it.
 Babylon's outline renderer writes `outlineColor` flat (its whole fragment shader
-is `fragmentOutputs.color = uniforms.color`), the `GlowLayer` builds its bloom from a material's
+is `fragmentOutputs.color = uniforms.color`), the glow builds its bloom from a material's
 emissive colour, which says nothing about where the mesh stands, and
 `getEmissive()`'s unlit `StandardMaterial` — every lit window, flame, ember,
 tracer, spark and team-colour bar — draws a flat colour with lighting disabled.
@@ -89,8 +89,8 @@ z where the cel shader's is `t*t` over the RADIAL distance, so a window over-fog
 against its own wall through the whole middle of the band and disagrees by up to
 1.4x at the corners; it is also scene-wide, so the sky dome would need opting out
 by hand. A `ShaderMaterial` of our own loses `material.emissiveColor`, which is
-what the GlowLayer's selector reads — every lantern, tracer, visor and reticle in
-the game stops glowing.
+what the glow's mask reads to decide what blooms — every lantern, tracer, visor
+and reticle in the game stops glowing.
 
 **THE INK'S TINT NEEDS NO DERIVATION NOW, AND THAT IS THE OTHER HALF OF WHAT
 WENT.** The hull's ink was UNLIT — `albedo * tint` with no light term at all —
@@ -155,7 +155,7 @@ Three rules about it, and the first is the one everything else rests on:
   `StandardMaterial` — 42 of them on Hollowmere. Baking `rgb = (0, 1, 0)` onto
   those multiplied each one by pure green, so the village's lanterns and fires
   rendered as green blobs *inside their own correctly-coloured bloom*, since the
-  `GlowLayer` builds its halo from `material.emissiveColor` and never saw the
+  glow builds its halo from `material.emissiveColor` and never saw the
   vertex buffer. `walk` skips anything whose material is not a `ShaderMaterial`.
 
 The same buffer's green channel gates the cel shader's **albedo weathering**, a
@@ -360,10 +360,10 @@ same ray for its reprojection.
 
 **Two things stand in for the hull's per-mesh control, and NEITHER is a flag.**
 An emissive part was excluded from the hull by `noOutline`, and an inked
-emissive is swallowed glow; the ink masks it out with `glow.mainTexture`
-instead, which `GlowDepth` had already made full-resolution and emissive-only —
-sharp, because the layer's blur writes to its own targets rather than back into
-that one, and already depth-tested against this frame, so a lamp behind a wall
+emissive is swallowed glow; the ink masks it out with the glow's MASK
+(`GlowPass.mask`) instead, which is full-resolution and emissive-only —
+sharp, because the blur reads a downsample of it and never writes back, and
+already depth-tested against this frame, so a lamp behind a wall
 does not protect the wall. The weapon wore a hand-set 0.004 m hull because a
 full-weight line on parts that small swallows it in black; what replaces that is
 `ink.near`, a DEPTH band — the gun is 0.3-0.5 m out and a body cannot get within
@@ -388,8 +388,8 @@ even a texture read**: it is the fourth channel of the sample the shader already
 took, and nothing downstream ever sees it.
 
 Four things share that channel and each was checked in the tree rather than
-assumed. The glow layer composes with `ALPHA_ADD`, whose alpha factors are
-(ZERO, ONE), so a bloom cannot claim coverage it does not have. An ADDITIVE
+assumed. The glow composes AFTER the ink and passes the alpha it is handed
+straight through, so a bloom cannot claim coverage it does not have. An ADDITIVE
 effect leaves the channel alone and should — a flare adds light rather than
 hiding what is behind it. The GLAZING writes its Fresnel alpha, so ink behind a
 window is attenuated by how opaque the window is, which is what you want and is
@@ -1902,7 +1902,7 @@ that matters.
 **The candidate list is `scene.meshes` MINUS things, in scene ORDER, and the
 order was measured rather than assumed.** A list assembled as loose-then-cells
 holds exactly the same meshes and hands them over differently, and the order
-reaches the picture: `_activeMeshes` is what the `GlowLayer` accumulates over
+reaches the picture: `_activeMeshes` is what the glow's mask is built from
 and what the transparent queue's distance sort breaks ties by, and neither is
 exact in eight bits. Two of Hollowmere's four banked vantages moved by 0.0004
 and 0.0012 mean/255 that way. In scene order fourteen of the fifteen banked
@@ -1945,7 +1945,7 @@ again here would square it. The level is **1 at every default install**
 so this is arithmetically the shipped gate on the machine FINDINGS 39 measured
 and on a fresh install of any density; it moves only once a player has moved the
 slider. The glow's blur kernel is the other number stated in backing-store
-pixels and takes the same factor — see `GlowDepth.glowKernelTexels`.
+pixels and takes the same factor — see `GlowPass.kernelTexels`.
 
 **What it is FOR is geometry with no level of detail of its own.** Three of the
 four big populations on a 1500 m map are already governed: a body by
@@ -2019,58 +2019,63 @@ does not take, both being look decisions rather than bugs.
   display-ready colors and Babylon's image-processing pass re-gammas them and washes
   the palette out. That is also why the vignette/grain/aberration/damage flash grade is
   hand-written (`src/shaders/HorrorPost.ts`).
-- Glow is a `GlowLayer` keyed off emissive color, deliberately not threshold bloom —
+- Glow is an emissive MASK blurred and added to the frame (`src/shaders/GlowPass.ts`),
+  keyed off emissive colour and deliberately not threshold bloom —
   bright-but-not-emissive surfaces must stay crisp.
+- **The pass OWNS its target, its clear, its depth and its place in the frame**,
+  and every Babylon call in it is public API. It replaced a `GlowLayer` with
+  `GlowDepth` bolted on from outside, which overrode all four of those through
+  three Babylon internals and re-applied the overrides every frame because the
+  layer kept putting its own back.
 - **Its occlusion is the MAIN pass's depth buffer, not a second drawing of the
-  world** (`src/core/GlowDepth.ts`). The layer used to redraw every visible mesh
-  into its own texture as opaque black solely so the buffer would depth-occlude;
-  it now shares the depth the frame has already written and its render list is
-  the emissive meshes alone — ~20% of the frame on the three big maps, and the
-  occlusion is exact rather than approximate. **Five things make it work and
-  each fails silently on its own**: the main texture renders LATE (from the end
-  of the draw phase, or it can only share the previous frame's depth), its clear
-  is REPLACED rather than added to (the layer installs one that wipes depth, and
-  an `Observable` runs every observer), the framebuffer is re-bound after the
-  render (an RTT render restores the default one, so the compose would land on
-  the canvas), the texture is FULL resolution with a doubled kernel (depth
-  sharing demands matching dimensions; the kernel is in texels of that texture),
-  and the hooks are RE-INSTALLED BY IDENTITY every frame rather than once.
-  `FINDINGS.md` 3 has the three attempts that instead tried to work out which
-  geometry could matter to a bloom, and why none of them could.
-- **The fifth of those shipped as a bug, and it is the shape to remember rather
-  than the line that fixed it.** `EffectLayer.render` — the compose — throws the
-  main texture away and builds another whenever the render size moves, and the
-  new one carries Babylon's own colour-depth-stencil clear again while the
-  emissive-only render list SURVIVES, because that list lives on the
-  `ObjectRenderer` the new texture is handed and not on the texture. Losing both
-  halves would only have put the stock whole-scene pass back; losing one left
-  the layer drawing the emissive meshes ALONE into a freshly cleared private
-  depth buffer, which is no occluders anywhere. Every `engine.resize()` is a
-  trigger — a resized window, a browser zoom, a monitor with a different
-  density, the render-scale setting, a phone turned on its side — and nothing
-  but a reload cleared it, which is why it read as intermittent: what it looked
-  like was the muzzle flash drawn ON TOP of the gun it came out of. A depth
-  SHARE is a relation between two targets, so it is cached on both of them;
-  caching it on the source alone was the whole of the bug. Reproduced and fixed
-  under a headless client: a frozen vantage photographed either side of a resize
-  round-trip back to the same size, which differed by a lantern blooming through
-  the bell tower before and is byte-identical after.
-- **A SIXTH shipped as a bug on the same joint, and it is the one the fifth's
-  own trigger list predicts.** A texture that is the backing store is a texture
-  the player can RESIZE, and the kernel is stated in its texels — so the
-  render-scale setting, which none of the two constants had heard of, was
-  changing the bloom's size on screen: **twice as wide at `renderScale` 0.5**,
-  and two thirds as wide on a display past 2x, where the ladder has no rung near
-  `1 / dpr` and the default already oversamples the CSS grid by 1.5. It is
-  invisible as a bug because it reads as a taste — the glow having been turned
-  up or down — and it has been in every build since the setting landed. The
-  kernel is derived through `GlowDepth.glowKernelTexels` now and re-derived from
-  `Game.applyRenderScale`, the one line that moves the backing store, at the
-  density the scaling level states: `devicePixelRatio` is already inside that
-  level, so reading it again would square it, and the level is 1 at every
-  default install, which is what makes the correction a no-op on everything
-  that was ever measured. `WorldCulling`'s size gate was the same bug on the
-  same unit and takes the same factor.
+  world.** The mask is drawn from the end of the draw phase, where the depth is
+  final, into a colour-only target sharing the frame's depth, and its render list
+  is the emissive meshes alone. The stock layer redrew every visible mesh in opaque
+  black solely so its own buffer would depth-occlude; not doing that is worth ~20%
+  of the frame on the three big maps (`FINDINGS.md` 3), and the occlusion is exact
+  rather than approximate. **The mask writes NO depth**: every mesh it draws wrote
+  its own in the main pass, so an LEQUAL test is the whole of the occlusion, and
+  a blended mesh that wrote none there must not start writing one into the buffer
+  the ink and the blur read.
+- **The mask is SIZED, SHARED AND DRAWN IN ONE FUNCTION**, which is the whole of
+  the resize rule. It reads the size of the depth it is about to borrow, resizes to
+  it, re-shares when either end of the share has moved (a share is a relation
+  between two targets), and draws. The layer's texture and that depth resized on
+  different schedules, and one frame per `engine.resize()` was encoded with a
+  colour attachment at one size and a depth at another and rejected whole — a
+  dragged window lost one frame in two (`FINDINGS.md` 3, last section).
+  **Two failures to remember** because both are silent: the target's clear must be
+  COLOUR ONLY, or the borrowed depth is wiped and every lamp blooms through its
+  wall; and its `renderList` must be `null` rather than the empty array a target is
+  born with, or `getCustomRenderList` is handed nothing and the mask is black with
+  no error anywhere.
+- **The mask is drawn with an OVERRIDE material, not the mesh's own.** Every
+  glowing mesh wears an unlit `StandardMaterial` faded by `EmissiveFog`, but that
+  fade goes toward the FOG colour, and a bloom of the fog colour is a pale haze
+  round every far lamp on a bright map. So a small WGSL material (variants for an
+  emissive texture, an opacity texture and blending) takes each mesh's colour from
+  `Game`'s `GlowRules.colour`, which fades toward black by the mesh's
+  bounding-sphere centre. It has no instance attributes; nothing glowing is
+  instanced, and a DEV build warns the first time something is. **Which meshes
+  bloom is one rule read every frame**: an emissive colour, no `metadata.noGlow`,
+  and `GlowRules.admits` (the kit screen's stage-only test) — so a mesh built at
+  any time is in or out by its own metadata, and nothing excludes a mesh by hand.
+- **The blur is off the backing store.** The mask stays full resolution because
+  depth sharing needs it and the ink reads it as its emissive mask, but the blur
+  starts from a half-resolution downsample: Babylon's own `kernelBlur`, across and
+  down at half resolution and again at quarter, the two summed, scaled by
+  `glowIntensity`, clamped to 1 and added to the frame — the layer's look at the
+  size its kernel was tuned at. The kernel is `glowKernel / (2 * level)` texels of
+  the half target, read before every blur from the scaling level (the setter
+  returns on an unchanged value), so the render-scale setting cannot change the
+  bloom's size on screen: `devicePixelRatio` is already inside the level, and the
+  level is 1 at every default install.
+- **The compose is a post-process straight behind the ink**, and that is a LOOK
+  decision: a bloom lies over the ink lines round its lamp rather than under them,
+  and FXAA, the shafts and the grade treat it as part of the picture. Against the
+  old order the banked frames move only on edges under a bloom (a halo is no
+  longer darkened by the line through it) — up to 0.26 mean/255 on the vantages
+  with the sun or lamps in frame, and ~0.01 on the moon and the kit screen.
 - Flat shading is recovered in the fragment shader from screen-space derivatives of
   the world position. Do not call `convertToFlatShadedMesh()`; it would unweld vertices
   on every prop and clone for no visual gain.
@@ -2150,7 +2155,7 @@ does not take, both being look decisions rather than bugs.
   if the world is ever given its rim back.
 - Rendering group **1 is the viewmodel's, and nothing else is in it.** Its depth
   clear is OFF (`Game`'s constructor), so the frame keeps one depth image holding
-  the world and the gun that `FrameDepth` and `GlowDepth` both read. **The moon
+  the world and the gun that `FrameDepth` and `GlowPass` both read. **The moon
   disc used to share the group and does not any more**: it drew after every
   blended mesh in group 0, none of which write depth, so it painted over a
   capture beacon or a tracer standing in front of it. It is a blended mesh in
@@ -2158,7 +2163,7 @@ does not take, both being look decisions rather than bugs.
   the blended queue. **Particles are still under it** — Babylon draws a group's
   particle systems before its blended meshes, so a plume in front of the disc is
   the one case the move does not fix. **Nor does it fix the disc's BLOOM**: the
-  glow layer occludes on depth alone, so the halo is composited over a beacon in
+  glow occludes on depth alone, so the halo is composited over a beacon in
   front of the disc and saturates it back to white — on Cinderhaven the frame is
   byte-identical in either group with the glow on, and differs over the disc with
   it off. `infiniteDistance` stays the glow's fog
@@ -2171,8 +2176,8 @@ does not take, both being look decisions rather than bugs.
   `Number.MAX_VALUE`, so any ordinary large number sorts the card in front of the
   capture skirt instead of behind it. `depthFunction: ALWAYS` keeps a near wall
   from cutting it, `forceDepthWrite` makes the card the surface every depth reader
-  sees (it also once kept the moon, then in group 1, from drawing over it), and a **glow layer is composited over the finished frame and so cannot
-  be covered at all** — `Game`'s emissive selector zeroes everything off the stage
+  sees (it also once kept the moon, then in group 1, from drawing over it), and the **bloom is composited over the finished frame and so cannot
+  be covered at all** — `Game`'s `GlowRules.admits` drops everything off the stage
   while the kit is up.
 - **…and it is therefore the one blended mesh that must write NO COVERAGE, which
   is the alpha-channel rule read the other way round.** Every alpha-blended draw
@@ -2341,10 +2346,9 @@ Three constraints hold it together, and undoing any of them is silent:
 - **`DOUBLESIDE` is geometry, never `backFaceCulling`.** `getEmissive` caches
   one material per colour and this pool shares those materials with the tracers
   and the sparks, so a flag flipped here flips for every effect in the game.
-- **The `noGlow` flag only works because `Game` builds `CombatSystem` before
-  its construction-time GlowLayer scan.** Move the construction later and every
-  dust disc blooms like a lamp. The scan is a one-shot loop over
-  `scene.meshes`; anything built after it is eligible forever.
+- **The pool is `noGlow`**, which the glow reads per mesh every frame — without
+  it every dust disc blooms like a lamp. It once held only because `CombatSystem`
+  was built before a one-shot exclusion scan; there is no scan any more.
 - **The disc gets its fog fade for free from `mats.getEmissive()`**
   (`EmissiveFog`), which is the whole reason it is an emissive mesh rather than
   a hand-rolled material. A dedicated unlit dust shader would owe the fade
@@ -2362,7 +2366,7 @@ before its round gets there is what makes a slowed tracer read as fake. One
 
 Everything overhead is built at runtime by `src/systems/Sky.ts` from the map's
 `SkySpec`: an equirectangular dome texture (gradient, galactic band, stars, the
-moon's scattering halo), a textured moon disc that feeds the GlowLayer, and a ring
+moon's scattering halo), a textured moon disc that feeds the bloom, and a ring
 of faceted cloud masses turning slowly about the eye.
 
 **The dome is painted assuming something occludes the bottom of it**, and that
@@ -2468,8 +2472,8 @@ shape) and `shaders/CloudShader.ts` is the light.
   interpolated view direction so every fragment on one pixel writes bit-identical
   depth, which the tie below needs.
 - **It cannot simply write NO depth, and that was tried.** The disc's colour was
-  covered, but the glow layer is occluded by the frame's depth buffer
-  (`GlowDepth`), so the disc went on BLOOMING through every cloud in front of it.
+  covered, but the glow is occluded by the frame's depth buffer
+  (`GlowPass`), so the disc went on BLOOMING through every cloud in front of it.
 - **One shared depth is why the lumps are drawn back to front.** The buffer cannot
   say which lump is in front, so `Sky.sortClouds` rewrites the index buffer
   farthest lump first whenever the eye has walked `resortMetres` or the ring has
@@ -2660,8 +2664,8 @@ about DRAWING; the meter they annotate is `ConquestSystem`'s and is in
   inside you are always looking through its far side; at any alpha that reads as a
   wall, that is a white wash over the entire screen. Per-frame vertex alpha keyed to
   the viewer's distance shows only the stretch you are about to cross.
-- **Markers are annotation.** No `solid`, no collider, no `WorldBox`, excluded from
-  the GlowLayer by hand (`Game`'s scan is construction-time). They are the one
+- **Markers are annotation.** No `solid`, no collider, no `WorldBox`, `noGlow` so
+  the bloom leaves them out. They are the one
   persistent unlit `StandardMaterial` geometry in the world, so they get no shader fog
   and have to fade themselves out at the fog wall — the beacon keeps a floor so a
   distant flag still reads as a faint column in the mist.

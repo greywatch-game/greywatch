@@ -24,7 +24,6 @@ import {
   MeshBuilder,
   Scene,
   StandardMaterial,
-  type GlowLayer,
 } from "@babylonjs/core";
 import type { GameMap } from "../world/MapBuilder";
 import { FLOW_UNREACHED } from "../world/NavGrid";
@@ -41,10 +40,7 @@ export class NavOverlay {
   private materials: StandardMaterial[] = [];
   private visible = false;
 
-  constructor(
-    private scene: Scene,
-    private glow: GlowLayer,
-  ) {}
+  constructor(private scene: Scene) {}
 
   get isVisible(): boolean {
     return this.visible;
@@ -146,11 +142,9 @@ export class NavOverlay {
     }
     quad.thinInstanceSetBuffer("matrix", matrices, 16);
 
-    // Editor furniture: no outline, no glow, no shadows, and excluded from the
-    // GlowLayer by hand because Game's exclusion scan ran long ago.
+    // Editor furniture: no outline, no glow, no shadows.
     quad.isPickable = false;
     quad.metadata = { noGlow: true, noShadowCaster: true };
-    this.glow.addExcludedMesh(quad);
     quad.setEnabled(this.visible);
     this.meshes.set(bucket, quad);
   }

@@ -101,12 +101,20 @@
  */
 import {
   SceneInstrumentation,
-  type EffectLayer,
-  type Observer,
-  type RenderTargetTexture,
+  type Observable,
   type Scene,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+
+/**
+ * What the profiler needs of the glow: a pair of notifications around each
+ * piece of its work. Structural, so this file imports no pass — `GlowPass`
+ * satisfies it and `Game` hands it over at `arm`.
+ */
+export interface GlowSpans {
+  readonly onBeforeWorkObservable: Observable<void>;
+  readonly onAfterWorkObservable: Observable<void>;
+}
 
 /**
  * The phases, in the order a frame runs them. **An index into this list IS a
@@ -1054,21 +1062,6 @@ export class FrameProfile {
   private scene: Scene | null = null;
   private instr: SceneInstrumentation | null = null;
 
-  /**
-   * The glow layer, the main texture it is currently rendering into, and the
-   * observer sitting on that texture.
-   *
-   * **The texture is re-created rather than resized**, by `EffectLayer.render`
-   * itself the frame after the backing store changes — a window resize, or the
-   * render-scale setting — so an observer hung off it once at `arm` is on a
-   * disposed object from then on and `glow` silently reads as the compose
-   * alone. `bindGlow` is one reference comparison at the end of each frame
-   * against exactly that, which is cheaper than any of the ways of being told.
-   */
-  private glowLayer: EffectLayer | null = null;
-  private glowTex: RenderTargetTexture | null = null;
-  private glowIn: Observer<RenderTargetTexture> | null = null;
-  private glowOut: Observer<RenderTargetTexture> | null = null;
 
   private grainMs = 0;
   private overheadUs = 0;
@@ -1114,7 +1107,7 @@ export class FrameProfile {
    * They cost a few milliseconds once, during a settings toggle — never in a
    * frame.
    */
-  arm(scene: Scene): void {
+  arm(scene: Scene, glow: GlowSpans | null = null): void {
     if (this.on) return;
     const n = this.capacity;
     this.startMs = new Float32Array(n * SLOTS);
@@ -1173,7 +1166,7 @@ export class FrameProfile {
     // brackets. Registered before `on`, which costs nothing: every one of them
     // goes through `begin`/`endAdd` and returns on the same first line as the
     // rest of this class.
-    this.hookRender(scene);
+    this.hookRender(scene, glow);
     this.hookEngine(scene);
 
     this.on = true;
@@ -1199,10 +1192,6 @@ export class FrameProfile {
     this.on = false;
     for (const off of this.unhook) off();
     this.unhook = [];
-    this.glowLayer = null;
-    this.glowTex = null;
-    this.glowIn = null;
-    this.glowOut = null;
     this.inDraw = false;
     this.tickEndAt = 0;
     this.lastSlot = -1;
@@ -1291,7 +1280,7 @@ export class FrameProfile {
    * **Every one of `hookRender`'s spans needs this and none of `Game`'s does**,
    * which is the whole reason it is a second method rather than `end` growing a
    * flag: a rendering group is entered once per group per camera, the glow is
-   * entered twice — its main texture, then its compose two stages later — and a
+   * entered twice — its mask and blur, then its compose in the post chain — and a
    * plain `end` would report the LAST of those as the phase's whole cost.
    *
    * **`entered` is what says "first this frame", and it is sound because
@@ -1326,22 +1315,22 @@ export class FrameProfile {
    * phase is a pair of lines in a method whose order `Game` already declares;
    * these four are boundaries INSIDE `scene.render()`, and the alternative to
    * an observer is no measurement at all. Nothing here reaches for a system —
-   * the shadow map and the glow are found through the SCENE (`scene.lights`,
-   * `scene.effectLayers`), so `ShadowSystem` and `Game`'s glow layer still
-   * have not heard of this file and do not have to.
+   * the shadow map is found through the SCENE (`scene.lights`) and the glow is
+   * handed in as two observables (`GlowSpans`), so `ShadowSystem` and
+   * `GlowPass` still have not heard of this file and do not have to.
    *
    * **THE FOUR CANNOT OVERLAP, and that is a fact about where Babylon runs
    * them rather than a hope.** `Scene._renderForCamera` is one order:
    *
-   *  1. the render targets — the shadow map among them, then the effect
-   *     layers' main textures — all of it before the draw phase opens;
+   *  1. the render targets — the shadow map among them — all of it before
+   *     the draw phase opens;
    *  2. `onBeforeDrawPhaseObservable`, the rendering manager, and
-   *     `onAfterDrawPhaseObservable`, which is the camera's own pass;
-   *  3. the after-camera stages, where the glow COMPOSES, and then the post
-   *     chain.
+   *     `onAfterDrawPhaseObservable`, which is the camera's own pass and where
+   *     the glow draws its mask and blurs it, after every group has drawn;
+   *  3. the post chain, where the glow COMPOSES.
    *
-   * So the shadow map and the glow's main texture are in (1), the two group
-   * spans are in (2), and the glow's compose is in (3). What is left inside
+   * So the shadow map is in (1), the two group spans and then the glow's mask
+   * are in (2), and the glow's compose is in (3). What is left inside
    * `render` and named by nothing is the active-mesh evaluation, the post
    * chain, a frame's share of a reflection bake, and the present.
    *
@@ -1349,7 +1338,12 @@ export class FrameProfile {
    * it.** `onBeforeRenderingGroupObservable` is the SCENE's, and every
    * `RenderingManager` in the process notifies it — including the one inside a
    * render target — so the shadow map's own groups and the glow's would be
-   * added to `drawWorld` on top of the spans that already hold them.
+   * added to `drawWorld` on top of the spans that already hold them. **The glow
+   * closes that gate itself when its span opens**, because its mask renders
+   * from `onAfterDrawPhaseObservable` BEFORE the observer below that would
+   * otherwise close it (the glow's was added at construction, ours at `arm`):
+   * every group of the camera's own pass has drawn by then, so nothing is
+   * lost, and the mask's groups are not counted twice.
    *
    * **Group 0 is the world and everything above it is `drawOverlay`**, which
    * today is the viewmodel (`VIEWMODEL_GROUP`) alone — the sky draws in group 0.
@@ -1357,11 +1351,9 @@ export class FrameProfile {
    * asking is what the MAP costs against what the gun costs, and a third group
    * added to the game should join the overlay rather than go unrecorded.
    *
-   * **A render target is bracketed BIND to UNBIND, and the unbind is where the
-   * blur is.** A glow layer hangs its four blur passes off that same
-   * `onAfterUnbindObservable` at construction, and observers fire in the order
-   * they were added — ours is added at `arm`, which is always later — so the
-   * blurs are inside the span rather than after it.
+   * **A render target is bracketed BIND to UNBIND.** The glow is not bracketed
+   * as a target at all: it notifies around its mask AND its blur together, and
+   * again around its compose, and `endAdd` sums the two.
    */
   /**
    * Hangs `present` off the ENGINE's end-of-frame notification.
@@ -1387,7 +1379,7 @@ export class FrameProfile {
     this.unhook.push(() => engine.onEndFrameObservable.remove(done));
   }
 
-  private hookRender(scene: Scene): void {
+  private hookRender(scene: Scene, glow: GlowSpans | null): void {
     const off = this.unhook;
 
     const drawOn = scene.onBeforeDrawPhaseObservable.add(() => {
@@ -1426,52 +1418,16 @@ export class FrameProfile {
       off.push(() => map.onAfterUnbindObservable.remove(unbind));
     }
 
-    // The effect layers, of which this game has exactly one — the glow — and
-    // the COMPOSE half of it, which is the half that is not a render target.
-    const layer = scene.effectLayers[0] ?? null;
-    this.glowLayer = layer;
-    if (!layer) return;
-    const before = layer.onBeforeComposeObservable.add(() => this.begin(P.glow));
-    off.push(() => layer.onBeforeComposeObservable.remove(before));
-    const after = layer.onAfterComposeObservable.add(() => this.endAdd(P.glow));
-    off.push(() => layer.onAfterComposeObservable.remove(after));
-    off.push(() => {
-      if (!this.glowTex) return;
-      if (this.glowIn) this.glowTex.onBeforeBindObservable.remove(this.glowIn);
-      if (this.glowOut) this.glowTex.onAfterUnbindObservable.remove(this.glowOut);
+    // The glow: its mask and blur at the end of the draw phase, and its
+    // compose in the post chain. See the header on `inDraw`.
+    if (!glow) return;
+    const before = glow.onBeforeWorkObservable.add(() => {
+      this.inDraw = false;
+      this.begin(P.glow);
     });
-    this.bindGlow();
-  }
-
-  /**
-   * Puts the glow's two brackets on whichever main texture the layer is
-   * rendering into now, and does nothing at all while that is the one they are
-   * already on.
-   *
-   * See the fields for why this is POLLED rather than subscribed: the texture
-   * is re-created on a size change, and the observable that announces one fires
-   * BEFORE the replacement exists, so being told is worth less here than one
-   * reference comparison at the end of a frame.
-   *
-   * Both observers move together and both are registered ONCE per texture,
-   * which is the header's no-allocation rule reaching a method that runs inside
-   * `scene.render()`: a one-shot close added per open would be a closure per
-   * frame, on the recording path, in the instrument built to catch exactly
-   * that.
-   */
-  private bindGlow(): void {
-    const tex = this.glowLayer?.mainTexture ?? null;
-    if (tex === this.glowTex) return;
-    if (this.glowTex) {
-      if (this.glowIn) this.glowTex.onBeforeBindObservable.remove(this.glowIn);
-      if (this.glowOut) this.glowTex.onAfterUnbindObservable.remove(this.glowOut);
-    }
-    this.glowTex = tex;
-    this.glowIn = null;
-    this.glowOut = null;
-    if (!tex) return;
-    this.glowIn = tex.onBeforeBindObservable.add(() => this.begin(P.glow));
-    this.glowOut = tex.onAfterUnbindObservable.add(() => this.endAdd(P.glow));
+    off.push(() => glow.onBeforeWorkObservable.remove(before));
+    const after = glow.onAfterWorkObservable.add(() => this.endAdd(P.glow));
+    off.push(() => glow.onAfterWorkObservable.remove(after));
   }
 
   /**
@@ -1535,10 +1491,6 @@ export class FrameProfile {
       this.rttMs![i] = instr.renderTargetsRenderTimeCounter.current;
       this.particlesMs![i] = instr.particlesRenderTimeCounter.current;
     }
-    // One reference comparison, here rather than in `beginFrame`, because the
-    // texture it is watching for is re-created INSIDE the render this frame has
-    // just finished — see `bindGlow`.
-    this.bindGlow();
     // The collections the sentinel reported since the last frame closed, and
     // the heap they left behind. `gcPending` is cleared here rather than in the
     // callback, so a collection that fires between two frames lands on the one

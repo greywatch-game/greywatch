@@ -13,7 +13,7 @@
  * The editor borrows the running scene rather than building its own — same
  * materials, same lighting, same grade — so what you author is what you play.
  */
-import type { FreeCamera, GlowLayer, Mesh, Scene } from "@babylonjs/core";
+import type { FreeCamera, Mesh, Scene } from "@babylonjs/core";
 import { Vector3 } from "@babylonjs/core";
 import type { InputManager } from "../core/InputManager";
 import type { EnvironmentSpec } from "../world/environment";
@@ -93,7 +93,6 @@ export interface EditorDeps {
   camera: FreeCamera;
   input: InputManager;
   scene: Scene;
-  glow: GlowLayer;
   /** The map as currently built — an editor build, so it carries `editor`. */
   map: GameMap;
   /**
@@ -192,21 +191,21 @@ export class EditorSession {
     this.panel.setVisible(true);
     this.panel.setAddMenu(ADD_GROUPS, (list, choice) => this.onAdd(list, choice));
     this.panel.setMapMenu(() => this.select(FLOOR_REF));
-    this.proxies = new ProxyLayer(deps.scene, deps.glow);
+    this.proxies = new ProxyLayer(deps.scene);
     this.proxies.build(this.map);
     this.proxies.buildScatter(deps.layout.scatter, this.map.terrain);
     this.gizmos = new EditorGizmos(deps.scene, {
       onChange: (at, rotY) => this.onDrag(at, rotY),
       onCommit: () => this.onDragEnd(),
     });
-    this.pathHandles = new PathHandles(deps.scene, deps.glow);
+    this.pathHandles = new PathHandles(deps.scene);
     // On by default: the first thing anyone opening the editor wants is to see
     // the map. Toggle it off to check how a placement actually reads at night.
     this.applyLighting();
     this.select(null);
 
-    this.navOverlay = new NavOverlay(deps.scene, deps.glow);
-    this.brush = new TerrainBrush(deps.scene, deps.glow, this.map);
+    this.navOverlay = new NavOverlay(deps.scene);
+    this.brush = new TerrainBrush(deps.scene, this.map);
     this.revalidate();
     this.saver = new LayoutSaver(deps.mapId, deps.layout);
     this.envSaver = new EnvironmentSaver(deps.mapId);

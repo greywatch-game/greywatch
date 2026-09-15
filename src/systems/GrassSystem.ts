@@ -12,7 +12,6 @@
  */
 import {
   Color3,
-  type GlowLayer,
   Matrix,
   Mesh,
   Quaternion,
@@ -105,8 +104,8 @@ function buildTuftVertexData(rng: () => number): VertexData {
  *
  * The field is drawn and never tested: unpickable, non-colliding, no `solid`
  * metadata — every ray (hitscan, LOS, ground probes) passes through it, and
- * bots neither path around nor trip over it. It is excluded from the
- * GlowLayer and never gets an outline (a second pass over ~4k instances
+ * bots neither path around nor trip over it. It is marked out of the
+ * bloom and never gets an outline (a second pass over ~4k instances
  * would double the cost and read as mush).
  */
 export class GrassSystem {
@@ -123,7 +122,6 @@ export class GrassSystem {
 
   constructor(
     private scene: Scene,
-    private glow: GlowLayer,
     private mats: CelMaterialFactory,
   ) {}
 
@@ -161,8 +159,6 @@ export class GrassSystem {
     mesh.checkCollisions = false;
     mesh.metadata = { noGlow: true };
     mesh.freezeWorldMatrix();
-    // Built after Game's construction-time glow scan, so exclude by hand.
-    this.glow.addExcludedMesh(mesh);
 
     const mat = createGrassMaterial(this.scene, "grass");
     const lit = env.lighting;

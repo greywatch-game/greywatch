@@ -367,7 +367,7 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
      * The disc comes back, at 14 rather than `CONFIG.sky.moonRadius`'s 32.
      *
      * 32 at `moonDistance` 595 subtends 3.1 degrees, which is a moon; 14
-     * subtends 1.35, which with `moonEmissiveBoost` and the GlowLayer's kernel
+     * subtends 1.35, which with `moonEmissiveBoost` and the glow's kernel
      * reads as a small fierce sun with a bloom around it. It is also what makes
      * the shafts possible at all rather than merely permitted: they need a core
      * in the frame brighter than anything in the world by a margin, and a halo

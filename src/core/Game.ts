@@ -42,8 +42,8 @@
  * The map is a `MapDef` held in one field (`mapDef`) and built in one method
  * (`installMap`), which both a round start and an editor rebuild go through —
  * no map's layout or environment may be named anywhere else in here.
- * Also owns: GlowLayer scan (construction-time only; metadata.noGlow contract)
- * and its distance fade (customEmissiveColorSelector — the bloom is the one
+ * Also owns: the glow's RULES (`GlowRules` — which meshes may bloom this frame,
+ * and the distance fade on each — the bloom is the one
  * pass that reads a material and never asks where the mesh stands, so without
  * it a glow is the last thing left when the world around it has gone to fog;
  * infiniteDistance exempts the moon),
@@ -56,11 +56,8 @@
 import {
   Color3,
   DefaultRenderingPipeline,
-  GlowLayer,
   Matrix,
-  Mesh,
   Scene,
-  type StandardMaterial,
   type SubMesh,
   Vector3,
   Viewport,
@@ -74,6 +71,7 @@ import {
 import { HorrorPost } from "../shaders/HorrorPost";
 import { CelInk } from "../shaders/CelInk";
 import { FrameDepth } from "../shaders/FrameDepth";
+import { GlowPass } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
 import {
   isVolumetricRung,
@@ -85,7 +83,6 @@ import { difficultyNames } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import { FrameProfile, P } from "./FrameProfile";
-import { GLOW_TEXTURE_RATIO, GlowDepth, glowKernelTexels } from "./GlowDepth";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { HitCredits } from "../net/HitCredits";
@@ -571,18 +568,12 @@ export class Game {
   private player: Player;
   private canvas: HTMLCanvasElement;
   /**
-   * Kept as a field, not a constructor local: the exclusion scan in the
-   * constructor runs once, so anything created later (the editor's proxies and
-   * overlays) has to exclude itself by hand and needs the layer to do it.
-   */
-  private glow: GlowLayer;
-  /**
-   * Installs its own hooks on the layer and is never spoken to again — held
-   * because it owns them, and public for the reason `scene` and `battle`
-   * are: the smoke scripts that check the glow's occlusion read it off
+   * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
+   * Held for the profiler, and public for the reason `scene` and `battle`
+   * are: the smoke scripts that check the glow read its mask off
    * `window.__celshock`.
    */
-  readonly glowDepth: GlowDepth;
+  readonly glow: GlowPass;
   /** Non-null only while the state is "editor". Dev builds only. */
   private editor: EditorSession | null = null;
   /**
@@ -1092,15 +1083,77 @@ export class Game {
     // while the moon shared that group; the moon is in group 0 now and what the
     // line still holds up is ONE depth image for the frame — the world and the
     // gun together — which `FrameDepth` hands to the ink and the blur, and which
-    // `GlowDepth` occludes the bloom against. Clear it and all three readers
+    // `GlowPass` occludes the bloom against. Clear it and all three readers
     // see a buffer holding the weapon alone.
     this.scene.setRenderingAutoClearDepthStencil(VIEWMODEL_GROUP, false);
 
     // Post-processing: FXAA smooths the hard cel/outline edges. Glow comes
-    // from a GlowLayer rather than threshold bloom — it keys off material
+    // from an emissive MASK rather than threshold bloom — it keys off material
     // emissive color, so neon/reticle/tracer meshes bloom while bright
     // non-emissive surfaces stay crisp.
-    const g = CONFIG.graphics;
+    // The bloom's mask, blur and compose — `shaders/GlowPass.ts`. Built before
+    // the ink because the ink reads the MASK as its emissive mask; the compose
+    // is not on the camera until `attach` below, so building it here puts
+    // nothing in the chain ahead of the ink.
+    //
+    // The RULES are this file's, because both are questions about the game.
+    //
+    // The bloom is the ONE pass that reads a material and never asks where the
+    // mesh carrying it stands, so without the fade a glow is the last thing left
+    // when everything around it has gone to fog: Greyfen's chapel windows are
+    // 0.08 m slivers whose whole read at 60 m is bloom, and they sat on a wall
+    // faded almost to white as three saturated cyan bars. Fogging the emissive
+    // MATERIAL cannot fix it — `EmissiveFog` fades the base colour toward the
+    // FOG, and a bloom drawn from that would be a pale haze round every far
+    // lamp — so the base pass and the bloom are attenuated separately, and the
+    // bloom is by far the larger term. It does NOT reproduce an emissive
+    // texture's `level`, which is sound only while nothing in this game pairs a
+    // texture with a glow — the moon is the one textured emissive and it is
+    // exempt below.
+    //
+    // `infiniteDistance` is the exemption and it is exactly the right test:
+    // every sky mesh sets it (see Sky.prepare), it means "this rides with the
+    // camera", and the moon is the one glowing thing that must never fog — it
+    // is not in the valley, and its bounding sphere is a dome radius away, so
+    // any distance fade would delete it outright.
+    const glow = new GlowPass(this.scene, this.cameraSys.camera, {
+      // The kit screen hangs a dark card behind the weapon (see
+      // `inspect.backdrop`), and the one thing in the game that card cannot
+      // cover is the bloom: it is composited over the FINISHED frame, so a lamp
+      // the bench is standing in front of blooms straight through it. Only what
+      // is on the stage may bloom while the stage is up, which still leaves the
+      // reticle and the hot parts of the weapon itself glowing — exactly what
+      // the screen is for. "On the stage" is the viewmodel's rendering group,
+      // and nothing else is in it: the moon, which shared it once and needed an
+      // `infiniteDistance` test to be picked back out, draws in group 0 now
+      // (see `Sky.apply`).
+      admits: (mesh) =>
+        this.state !== "loadout" || mesh.renderingGroupId === VIEWMODEL_GROUP,
+      colour: (mesh, material, out) => {
+        const emissive = material.emissiveColor;
+        // Read off the base Material: only PBR declares it.
+        let k =
+          (material as { emissiveIntensity?: number }).emissiveIntensity ?? 1;
+        if (!mesh.infiniteDistance) {
+          // The sphere's CENTRE, deliberately — not the near point
+          // `updateOutlineScales` thins width by. A bloom is a soft blob with
+          // no edge to speak of, so its middle is where it reads from; the near
+          // point of a block-merged mesh (the chapel's six windows are one,
+          // 8.5 m of radius) sits a whole radius early and fogged them by 16%
+          // where the wall behind was at 35%. Every glowing mesh here is a
+          // fitting or a window, so a centre is never far from the light it
+          // stands for.
+          const sphere = mesh.getBoundingInfo().boundingSphere;
+          const d = Vector3.Distance(
+            sphere.centerWorld,
+            this.cameraSys.camera.globalPosition,
+          );
+          k *= 1 - fogAmountAt(d);
+        }
+        out.set(emissive.r * k, emissive.g * k, emissive.b * k, material.alpha);
+      },
+    });
+    this.glow = glow;
     // THE INK GOES ON FIRST, and the ordering is the whole of why it is
     // constructed here rather than beside the other three passes. A
     // `PostProcess` given a camera attaches itself, and `attachPostProcess`
@@ -1109,20 +1162,6 @@ export class Game {
     // it draws (they come off a depth buffer, which has no antialiasing of its
     // own), and the shafts, the smear and the grain all land on top of inked
     // geometry rather than under it.
-    // FULL resolution and a doubled kernel, both of which `GlowDepth` requires:
-    // its occlusion comes from the main pass's depth buffer now, and sharing a
-    // depth texture demands matching dimensions. See that file — the two
-    // constants move together or the bloom changes size on screen.
-    const glow = new GlowLayer("glow", this.scene, {
-      mainTextureRatio: GLOW_TEXTURE_RATIO,
-      blurKernelSize: glowKernelTexels(g.glowKernel, this.engine),
-    });
-    glow.intensity = g.glowIntensity;
-    // The ink reads that layer's MAIN texture as its emissive mask, which is why
-    // the layer is built above it. An `EffectLayer` composes through
-    // `_afterCameraDrawStage` rather than through the camera's post-process
-    // list, so moving it up the constructor changes no ordering the chain below
-    // depends on.
     // The frame's own depth image, captured ONCE and read by two passes — the
     // ink's edges and the blur's weapon mask. It has to exist before either of
     // them, since a declared sampler that is still null at apply time loses the
@@ -1131,9 +1170,17 @@ export class Game {
     this.celInk = new CelInk(
       this.scene,
       this.cameraSys.camera,
-      glow,
+      glow.mask,
       this.frameDepth,
     );
+    // The bloom's compose goes on SECOND, straight behind the ink: after it, so
+    // a bloom lies over the lines round its lamp rather than under them, and
+    // before FXAA and everything else, which treat it as part of the picture.
+    // The ink is also the pass the scene draws into, and so the one whose depth
+    // the mask borrows. Worth ~20% of the frame on the three big maps against
+    // a mask that redrew the whole visible scene to occlude itself
+    // (`FINDINGS.md` 3).
+    glow.attach(this.celInk.pass);
     const pipeline = new DefaultRenderingPipeline("post", false, this.scene, [
       this.cameraSys.camera,
     ]);
@@ -1141,78 +1188,6 @@ export class Game {
     // processing pass would re-apply gamma and wash them out.
     pipeline.imageProcessingEnabled = false;
     pipeline.fxaaEnabled = true;
-    // The bloom is the ONE pass that reads a material and never asks where the
-    // mesh carrying it stands, so without this a glow is the last thing left
-    // when everything around it has gone to fog: Greyfen's chapel windows are
-    // 0.08 m slivers whose whole read at 60 m is bloom, and they sat on a wall
-    // faded almost to white as three saturated cyan bars. Fogging the emissive
-    // MATERIAL cannot fix it — the glow map is generated from the emissive
-    // colour directly, so the base pass and the bloom have to be attenuated
-    // separately, and the bloom is by far the larger term.
-    //
-    // This replaces Babylon's own selector wholesale, so it owes the default's
-    // two other behaviours: `emissiveIntensity`, and the neutral colour for a
-    // material with no emissive at all (every cel ShaderMaterial in the scene
-    // reaches here, since the layer holds everything not explicitly excluded).
-    // It does NOT reproduce an emissive texture's `level`, which is sound only
-    // while nothing in this game pairs a texture with a glow — the moon is the
-    // one textured emissive and it is exempt below.
-    //
-    // `infiniteDistance` is the exemption and it is exactly the right test:
-    // every sky mesh sets it (see Sky.prepare), it means "this rides with the
-    // camera", and the moon is the one glowing thing that must never fog — it
-    // is not in the valley, and its bounding sphere is a dome radius away, so
-    // any distance fade would delete it outright.
-    glow.customEmissiveColorSelector = (mesh, _subMesh, material, result) => {
-      // The kit screen hangs a dark card behind the weapon (see
-      // `inspect.backdrop`), and the one thing in the game that card cannot
-      // cover is this: a glow layer is composited over the FINISHED frame, so
-      // a lamp the bench is standing in front of blooms straight through it.
-      // Only what is on the stage may bloom while the stage is up, which
-      // still leaves the reticle and the hot parts of the weapon itself
-      // glowing — exactly what the screen is for. "On the stage" is the
-      // viewmodel's rendering group, and nothing else is in it: the moon, which
-      // shared it once and needed an `infiniteDistance` test to be picked back
-      // out, draws in group 0 now (see `Sky.apply`).
-      if (this.state === "loadout" && mesh.renderingGroupId !== VIEWMODEL_GROUP) {
-        result.set(0, 0, 0, material.alpha);
-        return;
-      }
-      const emissive = (material as StandardMaterial).emissiveColor;
-      if (!emissive) {
-        const n = glow.neutralColor;
-        result.set(n.r, n.g, n.b, n.a);
-        return;
-      }
-      // Read off the base Material: only PBR declares it, and this selector
-      // runs for whatever the layer holds.
-      const level =
-        (material as { emissiveIntensity?: number }).emissiveIntensity ?? 1;
-      let k = level;
-      if (!mesh.infiniteDistance) {
-        // The sphere's CENTRE, deliberately — not the near point
-        // `updateOutlineScales` thins width by. A bloom is a soft blob with no
-        // edge to speak of, so its middle is where it reads from; the near
-        // point of a block-merged mesh (the chapel's six windows are one, 8.5 m
-        // of radius) sits a whole radius early and fogged them by 16% where the
-        // wall behind was at 35%. Every glowing mesh here is a fitting or a
-        // window, so a centre is never far from the light it stands for.
-        const sphere = mesh.getBoundingInfo().boundingSphere;
-        const d = Vector3.Distance(
-          sphere.centerWorld,
-          this.cameraSys.camera.globalPosition,
-        );
-        k *= 1 - fogAmountAt(d);
-      }
-      result.set(emissive.r * k, emissive.g * k, emissive.b * k, material.alpha);
-    };
-    this.glow = glow;
-    // Takes the layer's occlusion from the depth buffer the frame has already
-    // written, so its render list is the emissive meshes rather than the whole
-    // visible scene drawn black. Worth 1.85 ms on Coldharbour and ~20% of the
-    // frame on all three big maps; `FINDINGS.md` 3
-    // has the three attempts that tried to narrow that list some other way.
-    this.glowDepth = new GlowDepth(this.scene, glow, this.cameraSys.camera);
     // The light shafts: volumetric moonlight marched through the shadow
     // volume, after FXAA and before the blur — they belong to the same instant
     // as the geometry, so they have to smear and be graded with it.
@@ -1274,8 +1249,8 @@ export class Game {
     // `mats` is not for building materials here — both systems own their own
     // shader. It is the publisher of the shadow map, its matrix and its params,
     // which both now sample (see `celShadow`).
-    this.water = new WaterSystem(this.scene, glow, this.mats);
-    this.grass = new GrassSystem(this.scene, glow, this.mats);
+    this.water = new WaterSystem(this.scene, this.mats);
+    this.grass = new GrassSystem(this.scene, this.mats);
     // Same relationship to `mats` as the two above, in the other direction:
     // this one PUBLISHES to it — the cube the glazing samples, baked from the
     // map itself. Built here so a pane material is born holding the sampler.
@@ -1345,16 +1320,13 @@ export class Game {
     this.aimAssist = new AimAssistSystem();
     this.battle = new BattleSystem(this.scene, this.mats, this.combat);
     this.conquest = new ConquestSystem();
-    this.zones = new CaptureZoneSystem(this.scene, glow);
+    this.zones = new CaptureZoneSystem(this.scene);
     // The weapon is parented to the camera, so the camera has to exist first.
     this.player = new Player(this.scene, this.mats, this.cameraSys.camera);
     this.player.setBodyHidden(true); // hidden until a round starts
-    for (const m of this.scene.meshes) {
-      if (m.metadata && m.metadata.noGlow === true) glow.addExcludedMesh(m as Mesh);
-    }
     // The sky hangs behind every state (menu included), so it is dressed
     // once here and re-applied per round alongside the environment.
-    this.sky = new Sky(this.scene, glow);
+    this.sky = new Sky(this.scene);
     this.applySky();
 
     // Everything above is CONSTRUCTION, and stays here because the fields it
@@ -2451,7 +2423,7 @@ export class Game {
   private setProfiling(on: boolean): void {
     if (on === this.prof.armed) return;
     if (on) {
-      this.prof.arm(this.scene);
+      this.prof.arm(this.scene, this.glow);
       this.prof.setMap(this.mapDef.id);
     } else {
       this.prof.disarm();
@@ -2474,23 +2446,15 @@ export class Game {
    * and the density is exactly what a resize can have changed.
    *
    * **It is therefore also where anything stated in BACKING-STORE pixels is
-   * re-derived**, because this is the one line that moves them. Today that is
-   * the glow's blur kernel; `WorldCulling`'s size gate is the other reader and
-   * converts per frame instead, having to read the camera's FOV anyway.
+   * re-derived**, because this is the one line that moves them — or read per
+   * frame, which is what both readers do: `GlowPass` re-derives its blur
+   * kernel from the scaling level before each blur (the setter returns on an
+   * unchanged value), and `WorldCulling`'s size gate converts beside the
+   * camera's FOV, which it has to read anyway.
    */
   private applyRenderScale(): void {
     const dpr = window.devicePixelRatio || 1;
     this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
-    // The glow's kernel is stated in TEXELS of a texture this just resized —
-    // `GLOW_TEXTURE_RATIO` 1 makes the layer's main texture the backing store —
-    // so it is re-derived here and nowhere else. Here rather than per frame
-    // because the setter recompiles four blur effects; it early-returns on an
-    // unchanged value, so the resize handler's own traffic costs a comparison.
-    // `glowKernelTexels` argues the factor.
-    this.glow.blurKernelSize = glowKernelTexels(
-      CONFIG.graphics.glowKernel,
-      this.engine,
-    );
   }
 
   /**
@@ -3869,7 +3833,6 @@ export class Game {
       camera: this.cameraSys.camera,
       input: this.input,
       scene: this.scene,
-      glow: this.glow,
       map,
       rebuildMap: () => this.buildEditorMap(),
       mapId: this.mapDef.id,
@@ -4459,13 +4422,15 @@ export class Game {
    * is this round's would be a second place for the answer in `buildRound` to
    * live.
    *
-   * **The GLOW layer is deliberately not fed from here, and that is a
-   * measurement rather than an omission.** Every rig mesh but the visor is a
-   * cel `ShaderMaterial` with no `emissiveColor`, so the layer draws it opaque
-   * BLACK — a second draw per mesh, 310 of them a frame on Sarab with nineteen
-   * bodies in view, worth 7.2% of the frame. Excluding them was built, measured
-   * and thrown away: the black is what makes the glow buffer depth-occlude, and
-   * a body occludes a lamp exactly as a wall does. Staged from the `lanterns`
+   * **The GLOW is deliberately not fed from here.** A rig is occluder and
+   * never emitter, and the glow's occlusion is the frame's own depth
+   * (`GlowPass`), so a body occludes a lamp there for nothing. The history is
+   * worth keeping because the obvious lever was wrong: while the glow was a
+   * `GlowLayer` that redrew every visible mesh in opaque BLACK to occlude
+   * itself, that was 310 draws a frame on Sarab with nineteen bodies in view,
+   * worth 7.2% of the frame — and excluding the rigs was built, measured and
+   * thrown away, because the black was what made the glow buffer
+   * depth-occlude and a body occludes a lamp exactly as a wall does. Staged from the `lanterns`
    * vantage against an A-vs-A control that was byte-identical, a soldier
    * standing in front of a lamp differed by **254/255 at 1.5 m, 253 at 4.5,
    * 177 at 8.5 and 104 at 13.5** — the lamp blooming through his chest, and

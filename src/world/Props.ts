@@ -4,7 +4,7 @@
  * mesh builders: each assembles at the origin and returns a
  * hierarchy; placement/merging/colliders are the caller's job.
  * Invariants: emissive parts (lantern glow, fire, fungus) MUST set
- * metadata.noInk (and noGlow where they shouldn't feed the GlowLayer).
+ * metadata.noInk (and noGlow where they shouldn't feed the bloom).
  * Foliage the wind moves calls `marksSway`, and NOTHING a collider stands in
  * for may (`PROP_BODIES` is the list to check) — see `world/sway.ts`.
  * Never set metadata.solid here — colliders come from MapBuilder only.

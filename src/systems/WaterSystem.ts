@@ -18,7 +18,6 @@
 import {
   Color3,
   Constants,
-  type GlowLayer,
   Mesh,
   MeshBuilder,
   RawTexture,
@@ -71,7 +70,7 @@ interface BedMap {
  *
  * The planes are drawn and never tested: unpickable, non-colliding, no
  * `solid` metadata — every ray (hitscan, LOS, ground probes) passes through
- * to the creek bed below. They are also excluded from the GlowLayer and the
+ * to the creek bed below. They are also out of the bloom (`noGlow`) and the
  * outline pass per the metadata contract.
  *
  * **Water is a mirror, so this system has a second input nothing else here
@@ -98,7 +97,6 @@ export class WaterSystem {
 
   constructor(
     private scene: Scene,
-    private glow: GlowLayer,
     private mats: CelMaterialFactory,
   ) {}
 
@@ -157,8 +155,6 @@ export class WaterSystem {
       mesh.checkCollisions = false;
       mesh.metadata = { noGlow: true };
       mesh.freezeWorldMatrix();
-      // Built after Game's construction-time glow scan, so exclude by hand.
-      this.glow.addExcludedMesh(mesh);
 
       const hx = r.width / 2;
       const hz = r.depth / 2;

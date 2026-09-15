@@ -453,7 +453,7 @@ export class WorldCulling {
    * **The order is the reason, and it was measured rather than assumed.** A
    * list assembled as `loose` then `cells` holds exactly the same meshes and
    * hands them over in a different order, and the order reaches the picture:
-   * `_activeMeshes` is what the `GlowLayer` accumulates over and what the
+   * `_activeMeshes` is what the glow's mask is built from and what the
    * transparent queue's distance sort breaks ties by, and neither is exact in
    * eight bits. Measured on the reference bank: two of Hollowmere's four
    * vantages moved by 0.0004 and 0.0012 mean/255 — nothing a player could see,

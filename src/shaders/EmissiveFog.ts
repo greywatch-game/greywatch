@@ -28,10 +28,12 @@
  *   whole middle of the band, and planar against radial disagrees by up to 1.4x
  *   at the corners of a 54 deg FOV. Both are this bug again, one notch quieter.
  *   It is also scene-wide, so the sky dome would need opting out by hand.
- * - **Not a `ShaderMaterial` of our own.** The GlowLayer builds its bloom from
- *   `material.emissiveColor`; a material without one falls to `neutralColor` and
- *   every lantern, tracer, visor and reticle in the game stops glowing. Keeping
- *   the `StandardMaterial` is what keeps `Game`'s selector working unchanged.
+ * - **Not a `ShaderMaterial` of our own.** The glow (`GlowPass`) decides what
+ *   blooms by `material.emissiveColor`; a material without one is not in the
+ *   mask, and every lantern, tracer, visor and reticle in the game stops
+ *   glowing. Keeping the `StandardMaterial` is what keeps that rule working.
+ *   The BLOOM is not drawn from this fogged colour, though: it fades toward the
+ *   fog, and the glow wants its halo to fade toward black.
  * - **Not baked literals + a cache drop, the way `OutlineFog` does it.** That
  *   file has no choice: `OutlineRenderer` hardcodes its `uniformsNames`. A
  *   material plugin can declare real uniforms, so this one does, and a fog change

@@ -711,7 +711,7 @@ export function buildOptics(
     glass.parent = node;
     glass.position.set(0, winY, winZ + 0.009);
     glass.material = glassMat;
-    // noGlow: the GlowLayer would turn the faint tint into a cyan haze that
+    // noGlow: the bloom would turn the faint tint into a cyan haze that
     // obscures the sight picture.
     glass.metadata = { noInk: true, noGlow: true };
     glass.isPickable = false;

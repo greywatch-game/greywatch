@@ -34,13 +34,13 @@ export const graphics = {
    * is the first thing to check if this list ever grows one.
    */
   renderScales: [0.5, 0.75, 1] as const,
-  /** Emissive glow (neon, reticle, tracers) — GlowLayer settings. */
+  /** Emissive glow (neon, reticle, tracers) — `GlowPass`'s bloom strength. */
   glowIntensity: 1.15,
   /**
    * The blur's width, stated against the FRAME — NOT the number handed to the
-   * layer. `GlowDepth.glowKernelTexels` converts it, because the layer's kernel
-   * is in texels of a main texture that is the backing store, and the backing
-   * store is what `renderScales` above moves. Judged by eye at a scaling level
+   * blur. `GlowPass.kernelTexels` converts it, because the blur's kernel is in
+   * texels of a target sized off the backing store, and the backing store is
+   * what `renderScales` above moves. Judged by eye at a scaling level
    * of 1, which is what every default install runs at; stating it in that unit
    * is what stops a rung changing the size of the bloom.
    */
@@ -562,10 +562,10 @@ export const graphics = {
      * **This is what `noInk` used to buy and the flag no longer can.** Every
      * emissive part — eyes, flames, signs, lit windows, tracers, the holo
      * reticle — was excluded from the hull, and an inked emissive is swallowed
-     * glow. The mask is `glow.mainTexture`, which `GlowDepth` already made FULL
-     * RESOLUTION and emissive-only, so it costs one texture read and no pass:
-     * it is the emissive geometry alone, drawn sharp (the blur writes to its own
-     * targets, not back into this one) and already depth-tested against the
+     * glow. The mask is `GlowPass.mask`, which is FULL RESOLUTION and
+     * emissive-only, so it costs one texture read and no pass: it is the
+     * emissive geometry alone, drawn sharp (the blur reads a downsample of it
+     * and never writes back) and already depth-tested against the
      * frame, so a lamp behind a wall does not protect the wall in front of it.
      */
     emissiveMask: { from: 0.12, to: 0.4 },

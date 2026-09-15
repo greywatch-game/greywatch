@@ -639,15 +639,19 @@ the rigs are
 a corpse's joints onto Havok proxies and an ancestry test would drop every body
 in the game the moment it started falling.
 
-**The GLOW layer draws the EMISSIVE meshes and nothing else, and what makes that
-safe is that its occlusion is the FRAME's own depth buffer** (`GlowDepth`'s
-`shareDepth`) rather than a whole-scene redraw in opaque black. **Do not put the
+**The GLOW draws the EMISSIVE meshes and nothing else, and what makes that safe
+is that its occlusion is the FRAME's own depth buffer** rather than a
+whole-scene redraw in opaque black — `src/shaders/GlowPass.ts`, a pass that OWNS
+its mask, its blur and its compose through public API alone. **Do not put the
 whole-scene render list back** (`FINDINGS.md` 3 has the three attempts that
-failed), and **read `GlowDepth`'s header before touching the layer**: the
-schedule, the clear, the framebuffer rebind, the texture's resolution and the
-REBUILD each fail SILENTLY, the last on every `engine.resize()`. **Its blur
-kernel is stated against the FRAME and converted** (`glowKernelTexels`), the
-texture it is in texels of being the backing store the player can resize.
+failed). **The mask is sized from the depth it borrows, in the same function
+that shares and draws it**, which is what keeps a resize from losing a frame;
+its clear is COLOUR ONLY and it writes NO depth. **What may bloom is read per
+mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'s
+`GlowRules` — so nothing excludes a mesh by hand. **Its compose is the post
+process straight after the ink**, so `CelInk` stays first in the chain and the
+bloom lies over the lines. **Its blur kernel is stated against the FRAME** and
+re-derived from the scaling level before every blur.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and
 mirror and the three ways a cube probe goes flat, the four light terms and the
@@ -984,16 +988,16 @@ misbehaves silently:
   draw call on Coldharbour, 0 on Harrowmead and Hollowmere** — an exempt mesh
   almost always differs by material anyway). **What HONOURS it is three
   mechanisms, none of which is the flag**, and that is the thing to know before
-  adding a fourth: an emissive part is masked out by `glow.mainTexture`
-  (`ink.emissiveMask`), a viewmodel part is scaled down by the near-depth band
+  adding a fourth: an emissive part is masked out by the glow's mask (`GlowPass.mask`,
+  `ink.emissiveMask`), a viewmodel part is scaled down by the near-depth band
   (`ink.near`), and a coplanar decal — a road dash, a blob shadow, the capture
   ring — produces no depth step and no bend, so the pass never finds it. The sky
   writes no depth at all. It was called `noOutline` while an inverted hull read
   it; **it is deliberately absent now from grass, water and both debris pools**,
   which the ink does draw on purpose.
-- `noGlow: true` — excluded from the `GlowLayer` in the `Game` constructor. Only
-  meshes existing at construction time are scanned. A mesh that stays in bloom
-  is faded with distance instead (`customEmissiveColorSelector`), and
+- `noGlow: true` — out of the bloom. `GlowPass` reads it per mesh every frame,
+  so a mesh built at any time needs only the flag. A mesh that stays in bloom
+  is faded with distance instead (`GlowRules.colour` in `Game`), and
   `infiniteDistance` is that fade's one exemption — it is what every sky mesh
   sets, and the moon is not in the valley to be fogged out of.
 - `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers

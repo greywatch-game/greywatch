@@ -20,9 +20,8 @@
  * body sphere encloses it and it could not win a nearest-hit search.
  * Tracers/sparks/impact discs are
  * fixed-size pools: add new effects to a pool, NEVER allocate per shot.
- * The disc pool is `noGlow`, and that flag only works because `Game` builds
- * this system BEFORE its construction-time GlowLayer scan. Move the
- * construction later and every dust disc blooms like a lamp.
+ * The disc pool is `noGlow`, which the bloom reads every frame; without it
+ * every dust disc blooms like a lamp.
  * `RayHit.surface` chooses the impact; "hard" is what everything but the floor
  * answers, exactly as `metadata.surface` was absent on everything but the
  * terrain collider's clone.
@@ -402,9 +401,8 @@ export class CombatSystem {
       mesh.rotationQuaternion = Quaternion.Identity();
       mesh.isVisible = false;
       mesh.isPickable = false;
-      // The GlowLayer scan is construction-time and runs in `Game`'s
-      // constructor AFTER this system is built, so this flag is honoured —
-      // see the header. Without it a brown dust disc blooms like a lamp.
+      // Out of the bloom — see the header. Without it a brown dust disc
+      // blooms like a lamp.
       mesh.metadata = { noGlow: true };
       this.discs.push({ mesh, t: 0, from: 0, to: 1 });
     }

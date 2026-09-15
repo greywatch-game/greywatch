@@ -26,8 +26,7 @@
  * - an EXTEND past each end — click to lengthen the road by a new end point.
  *
  * Same invariants as `proxies.ts`, for the same reasons: never `solid`, never
- * `checkCollisions`, never a WorldBox; noGlow + noShadowCaster and the glow
- * layer's exclusion by hand. Handles are resized every frame against the
+ * `checkCollisions`, never a WorldBox; noGlow + noShadowCaster. Handles are resized every frame against the
  * camera (`update`), so they stay clickable at any distance.
  */
 import {
@@ -37,7 +36,6 @@ import {
   StandardMaterial,
   Vector3,
   VertexData,
-  type GlowLayer,
   type Scene,
 } from "@babylonjs/core";
 import { bendPath } from "../world/roadPaths";
@@ -77,10 +75,7 @@ export class PathHandles {
     curve: StandardMaterial;
   };
 
-  constructor(
-    private scene: Scene,
-    private glow: GlowLayer,
-  ) {
+  constructor(private scene: Scene) {
     const c = EDITOR.colors;
     this.mats = {
       point: this.material("point", c.pathPoint, 0.95),
@@ -229,7 +224,6 @@ export class PathHandles {
   private adopt(mesh: Mesh, tags: Record<string, unknown>): void {
     mesh.checkCollisions = false;
     mesh.metadata = { ...tags, noGlow: true, noShadowCaster: true };
-    this.glow.addExcludedMesh(mesh);
   }
 
   private material(name: string, hex: string, alpha: number): StandardMaterial {

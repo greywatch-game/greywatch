@@ -3,7 +3,7 @@
  * moon halo), a textured moon disc, and a ring of faceted cloud MASSES lit per
  * facet off the key light. The dome and disc are unlit emissive meshes; the
  * clouds are one cel-banded ShaderMaterial draw. Everything infiniteDistance,
- * unpickable; moon bloom via the GlowLayer.
+ * unpickable; moon bloom via `GlowPass`.
  * Invariants: moonDir is negated to align with the shader's light direction;
  * the moon is BLENDED in rendering group 0, so it draws after the opaque dome
  * and before any nearer blended mesh; the clouds sit inside the moon's
@@ -14,7 +14,6 @@ import {
   Camera,
   Color3,
   DynamicTexture,
-  GlowLayer,
   Mesh,
   MeshBuilder,
   Matrix,
@@ -37,7 +36,7 @@ import { buildCloudRing, type CloudGeometry } from "./cloudMasses";
 /**
  * The sky: a gradient dome with the galactic band, the stars and the moon's
  * scattering halo baked into a generated texture, an emissive moon disc that
- * feeds the GlowLayer, and a ring of cloud masses turning slowly about the
+ * feeds the bloom, and a ring of cloud masses turning slowly about the
  * eye. Everything is built at runtime — the game ships no image files — and
  * nothing here is lit by a scene light: the scene has none, so the dome and
  * disc are unlit emissive by construction and the clouds ask the map's KEY
@@ -46,10 +45,9 @@ import { buildCloudRing, type CloudGeometry } from "./cloudMasses";
  * Every sky mesh uses `infiniteDistance` (it rides with the camera, so the
  * horizon never gets closer and the clouds are always overhead) and stays
  * outside the pick/collide contract: no `solid` metadata, `isPickable =
- * false`, `noInk`. These meshes are built after Game's constructor-time
- * GlowLayer scan, so the pieces that must NOT bloom (dome, clouds — a
- * full-screen gradient would haze the frame) are excluded directly, the
- * WaterSystem way. The moon keeps its bloom on purpose.
+ * false`, `noInk`. The pieces that must NOT bloom (dome, clouds — a
+ * full-screen gradient would haze the frame) carry `noGlow`, which the bloom
+ * reads every frame. The moon keeps its bloom on purpose.
  *
  * The moon sits opposite the key light's direction (`lighting.direction`),
  * so the disc always agrees with the shadows the cel shader paints. Its
@@ -94,10 +92,7 @@ export class Sky {
   private readonly depthRay = new Vector4();
   private readonly depthLine = new Vector2();
   private readonly toLocal = new Matrix();
-  constructor(
-    private scene: Scene,
-    private glow: GlowLayer,
-  ) {}
+  constructor(private scene: Scene) {}
 
   /**
    * Rebuilds the sky for a map's environment; a missing `sky` spec clears it.
@@ -154,7 +149,7 @@ export class Sky {
     this.prepare(dome, true);
     this.disposables.push(domeMat, domeMat.emissiveTexture!);
 
-    // --- moon: emissive disc, deliberately left inside the GlowLayer ---
+    // --- moon: emissive disc, deliberately left inside the bloom ---
     // Omitted entirely at radius 0 — an overcast sky has a source but no
     // visible disc, and drawing a small one instead reads as a hole rather
     // than as a sun behind cloud.
@@ -197,8 +192,8 @@ export class Sky {
       // anything blended standing against it: none of those write a depth to
       // stop it. PARTICLES are the exception the group cannot fix — Babylon
       // draws a group's particle systems before its blended meshes. And the
-      // disc's BLOOM still reaches over all of them: the glow layer is occluded
-      // by depth alone (`GlowDepth`), and at `moonEmissiveBoost` the bloom
+      // disc's BLOOM still reaches over all of them: the glow is occluded
+      // by depth alone (`GlowPass`), and at `moonEmissiveBoost` the bloom
       // saturates the disc white again over a beacon — measured on Cinderhaven,
       // byte-identical in either group with the glow on, different with it off.
       this.prepare(moon, false);
@@ -344,7 +339,7 @@ export class Sky {
    * map has and in front of the sun's disc,
    * which `moonDepthDistance` stands behind it. Every surface in the world then
    * hides a cloud, a cloud hides the disc, and — the reason it cannot simply
-   * write NO depth, which was tried — the glow layer, occluded by this same
+   * write NO depth, which was tried — the glow, occluded by this same
    * buffer, stops blooming the disc through a cloud.
    *
    * **All of them sharing one depth is why the lumps are drawn back to front**
@@ -430,18 +425,17 @@ export class Sky {
    * Tags a sky mesh out of every scene contract and, unless told otherwise,
    * parks it at infinite distance. `excludeGlow` is for the pieces whose
    * emissive fill must not bloom (dome, clouds); the moon passes false so the
-   * GlowLayer haloes it. The clouds pass `riding` false: they stand in the
+   * bloom haloes it. The clouds pass `riding` false: they stand in the
    * world (see `buildClouds`).
    */
   private prepare(mesh: Mesh, excludeGlow: boolean, riding = true): void {
     mesh.infiniteDistance = riding;
     mesh.isPickable = false;
     // noGlow only where true — the moon keeps its bloom, so it must not
-    // claim the flag (the contract reads it as "excluded from the GlowLayer").
+    // claim the flag (the contract reads it as "excluded from the bloom").
     mesh.metadata = excludeGlow
       ? { noInk: true, noGlow: true }
       : { noInk: true };
-    if (excludeGlow) this.glow.addExcludedMesh(mesh);
     this.disposables.push(mesh);
   }
 
