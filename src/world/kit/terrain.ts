@@ -17,7 +17,8 @@ import {
   roadSurface,
   roadTop,
 } from "../roads";
-import { terrainSlab } from "../TerrainField";
+import { stripSections } from "../roadPaths";
+import { terrainFan, terrainRibbon, terrainSlab } from "../TerrainField";
 import {
   Build,
   type BuildCtx,
@@ -152,6 +153,33 @@ export function buildRoad(
   // the shipped layouts state a length and no width.
   const w = p.width ?? ROAD_WIDTH;
   const len = p.length ?? ROAD_LENGTH;
+
+  // A PATH road is not a slab at all: the network has already decided where
+  // it runs, where each end stops and which junctions it paves (`ctx.road`),
+  // and all that is left here is laying that plan over the ground. Each join
+  // is paved in its own surface, which may not be this road's — a lane leaving
+  // a street leaves from the street's apron — and sits at its own height, so
+  // its skirt is sized the way this slab's is. No centre line: a dash is a box
+  // on a plane, the contoured slab's reason for having none.
+  if (p.path) {
+    if (!ctx?.road) return b;
+    const frame = { x: ctx.x, z: ctx.z, rotY: ctx.rotY, originY: ctx.y };
+    const { strip, joins } = ctx.road;
+    if (strip) {
+      b.groundSurface(
+        terrainRibbon(ctx.terrain, frame, stripSections(strip), top, h, [strip.free0, strip.free1]),
+        surface,
+      );
+    }
+    for (const j of joins) {
+      const jh = 0.08 + (j.top - ROAD_TOP);
+      b.groundSurface(
+        terrainFan(ctx.terrain, frame, j.x, j.z, j.xs, j.zs, j.kerb, j.top, jh),
+        j.surface,
+      );
+    }
+    return b;
+  }
 
   const contoured =
     ctx &&

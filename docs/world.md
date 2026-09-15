@@ -868,9 +868,10 @@ it that is not a picture.** It still carries no collider, still stops no round a
 body, and is still in no baked structure — but nothing ROOTED may be sown on a
 carriageway, because a palm growing out of fourteen metres of asphalt is not cover a
 bot can use or a round can stop on, it is a picture of a bug. `world/roads.ts` is the
-whole of it: `roadRects` derives the rectangles off the layout's own `road`
-placements (so the extent is stated once and the builder's own width and length
-defaults are shared with it), and `onRoad` is the test. There are two readers.
+whole of it: the FOOTPRINT is derived off the layout's own `road` placements (so the
+extent is stated once and the builder's own width and length defaults are shared
+with it) — `roadRects` for a rectangle, `roadNetwork`'s pieces for a path, below —
+and `onRoad` is the test. There are two readers.
 `MapBuilder.findSpot` refuses a spot for a prop whose `PropBody.rooted` is set,
 padded by the prop's own **half-footprint** rather than by its placement clearance —
 which is the difference between a tree that may lean its crown over a street and one
@@ -895,6 +896,72 @@ turned away is redrawn. That is not avoidable and is not a reason to keep such a
 in the layouts — it is a reason to re-bake (`npm run collision`) and re-check
 (`npm run parity`) when one changes, since the staleness guard hashes the LAYOUT and
 this is a change in the BUILDER.
+
+**A ROAD MAY BE A PATH, and then where it stops is the NETWORK's decision
+rather than the layout's** (`world/roadPaths.ts`). A `road` placement with
+`params.path` states its CENTRELINE — points in the placement's own frame, so
+the gizmo still moves it — instead of a `width` x `length` rectangle. What it
+replaced is worth knowing, because both failures were visible from any rooftop
+on Cinderhaven: a road that bends was a chain of rectangles overlapping by half a
+width at each leg, so every bend was a notch on the outside and a doubled sheet
+on the inside; and a road meeting another at anything but a right angle ran its
+square end out past the far kerb, because a rectangle cannot stop along a line
+that is not across it.
+
+- **A corner is a circular arc tangent to both legs** (`bendPath`), taking up to
+  half of each leg, capped by `radius` if the layout states one and by
+  `ROAD_BEND_CUT` (2 m) — how far inside its point a bend may pass. Without the
+  cut a thirteen-degree corner between Cinderhaven's 190 m coast-road legs
+  passed 5.5 m inside its point, onto a barn placed against it; a shore traced
+  every thirty metres passes half a metre inside at most and is untouched by it.
+  An arc rather than a spline because its offset is another arc: the
+  carriageway keeps its width all the way round, and the straights either side
+  stay straight.
+- **A junction is FOUND, never authored.** Three shapes: an end landing on
+  another path's carriageway (within its own width short of or past the kerb,
+  met at no shallower than 20°) is a T, cut on that road's centreline while the
+  other runs through; ends landing within half their summed widths of each other
+  are one meeting — a grid corner's two ends sit 0.7 of a width apart — cut at
+  the point their centrelines agree on in least squares; and two paths crossing
+  away from both ends are a crossing, and neither is cut.
+- **Every junction is one PATCH** drawn as a fan from its centre. Between two
+  neighbouring carriageways the kerb is a fillet of `ROAD_KERB` (half the
+  narrower width) where they make an angle, a straight where they run on, and a
+  round where the outside of a corner opens past a half turn; a fillet whose
+  tangent would run further than `ROAD_KERB_REACH` (1.5 wider widths) along
+  either road has its radius reduced, and a meeting too shallow for any is left
+  overlapping. An arm that ends in a junction ends clear of any road running
+  through it, or its cap would lie across that road.
+- **The patch is paved in the THROUGH road's surface**, or the best arriving one
+  where nothing runs through — a track leaving a street leaves from the street's
+  apron — and rides `ROAD_JOIN_LIFT` (1 mm, half a rank) over a carriageway of
+  its own surface, because the two are the same texture triangulated differently
+  over the same ground and a tie between them is broken per pixel. The placement
+  that owns that surface draws it (`BuildCtx.road`), so the editor selects it
+  with that road.
+- **Rectangles are untouched and are never an arm of anything.** A map with no
+  path resolves to exactly the footprint it had, which is what keeps the seeded
+  dressing on Hollowmere, Greyfen, Coldharbour, Harrowmead and Sarab
+  bit-identical. A path ending inside a rectangle — a street arriving in a paved
+  square — overlaps it as roads always have.
+- **The footprint is pieces, not rectangles**: a quad per stretch between two
+  cross-sections and a triangle per slice of patch, bucketed on a 16 m lattice
+  because an island has thousands. A pad grows a piece MITRED, the shape the
+  rectangle test has always grown by.
+- **It is draped the way the slab is and for the same reasons**
+  (`terrainRibbon`, `terrainFan`): upper envelope, cut to a quarter cell both
+  ways — and not at all where `TerrainField.levelOver` says the ground under it
+  is one height, which on an island whose towns stand on levelled benches is most
+  junctions. No lane markings, the contoured slab's reason.
+- **What it cost on Cinderhaven, measured**: the same two road draw calls (one
+  per surface) it always had; 122k triangles of carriageway from 60 paths and 108
+  junctions, against 72k from the 115 rectangles they replaced; the network
+  resolves in 16 ms of the build; and a footprint query is a quarter of a
+  microsecond.
+- **`bendPath` has a TWIN in `scripts/generate-cinderhaven.mjs`**, because the
+  generator claims the ground a road will cover before anything else is placed
+  and cannot import TypeScript. Change one and change the other, or claims sit a
+  metre off the carriageway on a long bend with nothing to say so.
 
 A road over level ground still collapses to the single box it always was
 (`terrainSlab` returns null), so this costs nothing on the shipped map. `terrace`,

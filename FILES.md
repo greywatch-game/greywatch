@@ -578,8 +578,9 @@ src/
                         #   NOT a field on MapLayout: see MapDef.heights
     TerrainField.ts     # The floor's height and the ONLY place that knows it:
                         #   heightAt() + per-block VertexData + terrainSlab(),
-                        #   and the BORDERLAND past the authored grid on a map
-                        #   whose boundary is open
+                        #   terrainRibbon()/terrainFan() for a PATH road's strip
+                        #   and junction patch, and the BORDERLAND past the
+                        #   authored grid on a map whose boundary is open
     Ridge.ts            # The valley rim, in two forms — an escarpment and the
                         #   downs. Shape only: no collider, nothing inside the
                         #   boundary it is handed
@@ -587,14 +588,21 @@ src/
                         #   one clock per body, and the verdict it reaches.
                         #   Pure — the caller does the killing, and offline that
                         #   is Game while in a match it is HeadlessGame
-    roads.ts            # The road network as rectangles, and the two questions
-                        #   they answer: is this ground PAVED, and where two
+    roads.ts            # The road FOOTPRINT — rectangles, plus the convex
+                        #   pieces a path resolves to — and the two questions
+                        #   it answers: is this ground PAVED, and where two
                         #   cross, which one IS the ground (ROAD_RANK — dirt
                         #   under cobble under asphalt, 2 mm apart). A
                         #   road still stops no round and no body — what it
                         #   rejects is something ROOTED sown on it, which is
                         #   trees and scrub (PropBody.rooted) and every blade
                         #   of grass
+    roadPaths.ts        # A road laid along a PATH: its corners drawn as arcs
+                        #   (bendPath, twinned in generate-cinderhaven.mjs) and
+                        #   the network's JUNCTIONS found and resolved — an end
+                        #   on another road, ends on each other, a crossing —
+                        #   into cuts and filleted patches. Pure; the client
+                        #   and the authority resolve the same one
     rng.ts              # mulberry32 — the seeded PRNG world-building uses
     MapBuilder.ts       # Builds the map; merges visuals, emits colliders
     solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the

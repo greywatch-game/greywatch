@@ -31,10 +31,15 @@
  * `buildRoad` is the only thing that draws with it, so a layout still says
  * nothing about junctions and still cannot.
  *
- * A linear scan is the whole implementation and is deliberate: the busiest map
- * in the tree lists twenty-four roads, and against ~11,000 tufts that is a
- * quarter of a million rectangle tests inside a build the loading card is
- * already covering. There is nothing here worth an index.
+ * **A road is a rectangle OR a path, and the footprint holds both.** A
+ * rectangle is what every road was and what every map but Cinderhaven still
+ * states, and it is tested exactly as it always was — a linear scan, because
+ * the busiest rectangle list in the tree is twenty-four long. A PATH road is
+ * resolved by `roadPaths.ts` into convex PIECES (a quad per stretch of
+ * carriageway, a triangle per slice of junction), and there are thousands of
+ * those on an island, so they are bucketed on a lattice. Nothing about a
+ * rectangle's answer moved when paths arrived, which is what keeps the seeded
+ * dressing on the maps that have none bit-identical.
  */
 import type { Placement } from "./layout";
 
@@ -228,13 +233,13 @@ export function roadTop(surface: RoadSurface): number {
 }
 
 /**
- * One road's ground footprint in world space: `width` across the carriageway,
- * `length` along it, turned by `rotY` about (x, z).
+ * One RECTANGULAR road's ground footprint in world space: `width` across the
+ * carriageway, `length` along it, turned by `rotY` about (x, z).
  *
  * The slab itself is re-cut against the heightfield by `terrainSlab` and a
  * contoured road follows every bank it crosses — but it is bent VERTICALLY
- * only, so this rectangle is the footprint of both forms and there is no third
- * case to carry.
+ * only, so this rectangle is the footprint of both forms. A road that bends in
+ * PLAN is a path, and is a `RoadPiece` list instead.
  */
 export interface RoadRect {
   x: number;
@@ -253,17 +258,18 @@ export interface RoadRect {
 }
 
 /**
- * Every road in a layout, as rectangles.
+ * Every RECTANGULAR road in a layout — a `road` placement with no `path`.
  *
  * Derived from the placement list rather than authored beside it: a road is a
  * `Placement` like any other and stating its extent twice is the sort of pair
  * that drifts. Cheap enough to call per build — the longest list in the tree is
- * Coldharbour's twelve out of ~700 placements.
+ * Coldharbour's twelve out of ~700 placements. The path roads are
+ * `roadNetwork`'s (`roadPaths.ts`), which calls this for the rest.
  */
 export function roadRects(placements: readonly Placement[]): RoadRect[] {
   const out: RoadRect[] = [];
   for (const p of placements) {
-    if (p.kind !== "road") continue;
+    if (p.kind !== "road" || p.params?.path) continue;
     out.push({
       x: p.x,
       z: p.z,
@@ -277,6 +283,183 @@ export function roadRects(placements: readonly Placement[]): RoadRect[] {
 }
 
 /**
+ * One convex piece of a PATH road's footprint — a stretch of carriageway
+ * between two cross-sections, or one slice of a junction — as the half-planes
+ * that bound it.
+ *
+ * Stored as edges rather than corners because the only question ever asked of
+ * one is "is this point inside, give or take a pad", and a unit inward normal
+ * per edge answers that with three multiplications: `nx * x + nz * z >= c` on
+ * every edge. A pad moves every edge outward by the same distance, which is a
+ * MITRED grow — the same shape `onRoad`'s rectangle test has always grown by.
+ */
+export interface RoadPiece {
+  /** `(nx, nz, c)` per edge, inward unit normal and offset. */
+  edges: Float64Array;
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+  /** `roadTop`-style lift above the floor, as `RoadRect.top`. */
+  top: number;
+}
+
+/**
+ * Everything a layout PAVES, for the two questions below.
+ *
+ * Built once per map by `roadNetwork` (`roadPaths.ts`) — on the client by
+ * `MapBuilder` and on the authority off the same placements — and carried on
+ * `GameMap.roads`.
+ */
+export interface RoadFootprint {
+  rects: readonly RoadRect[];
+  pieces: readonly RoadPiece[];
+  /** The lattice `pieces` are bucketed on: side, origin and extent in cells. */
+  cell: number;
+  ox: number;
+  oz: number;
+  nx: number;
+  nz: number;
+  /** Row-major, `nx * nz` long; each a list of indices into `pieces`. */
+  cells: readonly (readonly number[])[];
+}
+
+/**
+ * The side of the lattice path pieces are bucketed on. A junction slice is
+ * rarely wider than this and a stretch of carriageway is cut far shorter, so a
+ * piece lands in a handful of cells and a query reads one.
+ */
+const PIECE_CELL = 16;
+
+/**
+ * A footprint over these rectangles and these convex polygons, each polygon's
+ * corners anticlockwise seen from above (+X right, +Z up the page) — which is
+ * the order `roadPaths.ts` builds them in and the one the inward normals below
+ * are derived from.
+ */
+export function roadFootprint(
+  rects: readonly RoadRect[],
+  polygons: readonly { xs: readonly number[]; zs: readonly number[]; top: number }[],
+): RoadFootprint {
+  const pieces: RoadPiece[] = [];
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const poly of polygons) {
+    const n = poly.xs.length;
+    if (n < 3) continue;
+    const edges = new Float64Array(n * 3);
+    const piece: RoadPiece = {
+      edges,
+      minX: Infinity,
+      minZ: Infinity,
+      maxX: -Infinity,
+      maxZ: -Infinity,
+      top: poly.top,
+    };
+    let usable = true;
+    for (let k = 0; k < n; k++) {
+      const ax = poly.xs[k];
+      const az = poly.zs[k];
+      const bx = poly.xs[(k + 1) % n];
+      const bz = poly.zs[(k + 1) % n];
+      const len = Math.hypot(bx - ax, bz - az);
+      // A zero-length edge bounds nothing; one is left as an always-true
+      // half-plane rather than dividing by it.
+      if (len < 1e-9) {
+        edges[k * 3] = 0;
+        edges[k * 3 + 1] = 0;
+        edges[k * 3 + 2] = -Infinity;
+      } else {
+        // Anticlockwise, so the inside is on the LEFT of each edge.
+        const nx = -(bz - az) / len;
+        const nz = (bx - ax) / len;
+        edges[k * 3] = nx;
+        edges[k * 3 + 1] = nz;
+        edges[k * 3 + 2] = nx * ax + nz * az;
+      }
+      piece.minX = Math.min(piece.minX, ax);
+      piece.minZ = Math.min(piece.minZ, az);
+      piece.maxX = Math.max(piece.maxX, ax);
+      piece.maxZ = Math.max(piece.maxZ, az);
+      if (!Number.isFinite(ax) || !Number.isFinite(az)) usable = false;
+    }
+    if (!usable) continue;
+    pieces.push(piece);
+    minX = Math.min(minX, piece.minX);
+    minZ = Math.min(minZ, piece.minZ);
+    maxX = Math.max(maxX, piece.maxX);
+    maxZ = Math.max(maxZ, piece.maxZ);
+  }
+  if (pieces.length === 0) {
+    return { rects, pieces, cell: PIECE_CELL, ox: 0, oz: 0, nx: 0, nz: 0, cells: [] };
+  }
+  const ox = Math.floor(minX / PIECE_CELL) * PIECE_CELL;
+  const oz = Math.floor(minZ / PIECE_CELL) * PIECE_CELL;
+  const nx = Math.floor((maxX - ox) / PIECE_CELL) + 1;
+  const nz = Math.floor((maxZ - oz) / PIECE_CELL) + 1;
+  const cells: number[][] = Array.from({ length: nx * nz }, () => []);
+  pieces.forEach((p, i) => {
+    const i0 = Math.floor((p.minX - ox) / PIECE_CELL);
+    const i1 = Math.floor((p.maxX - ox) / PIECE_CELL);
+    const j0 = Math.floor((p.minZ - oz) / PIECE_CELL);
+    const j1 = Math.floor((p.maxZ - oz) / PIECE_CELL);
+    for (let j = j0; j <= j1; j++) {
+      for (let k = i0; k <= i1; k++) cells[j * nx + k].push(i);
+    }
+  });
+  return { rects, pieces, cell: PIECE_CELL, ox, oz, nx, nz, cells };
+}
+
+/** Is (x, z) inside `p` grown by `pad`? */
+function inPiece(p: RoadPiece, x: number, z: number, pad: number): boolean {
+  if (x < p.minX - pad || x > p.maxX + pad || z < p.minZ - pad || z > p.maxZ + pad) {
+    return false;
+  }
+  const e = p.edges;
+  for (let k = 0; k < e.length; k += 3) {
+    if (e[k] * x + e[k + 1] * z < e[k + 2] - pad) return false;
+  }
+  return true;
+}
+
+/**
+ * The best answer the path pieces give at (x, z): with `wantTop` false, 1 if
+ * any piece grown by `pad` holds the point and 0 if none does; with it true,
+ * the highest `top` among the pieces holding it. One walk for both questions,
+ * written out rather than handed a callback so that a query allocates nothing.
+ * A piece spanning two cells can be tested twice, which costs a repeated test
+ * and nothing else.
+ */
+function pieceQuery(
+  fp: RoadFootprint,
+  x: number,
+  z: number,
+  pad: number,
+  wantTop: boolean,
+): number {
+  if (fp.pieces.length === 0) return 0;
+  const i0 = Math.max(0, Math.floor((x - pad - fp.ox) / fp.cell));
+  const i1 = Math.min(fp.nx - 1, Math.floor((x + pad - fp.ox) / fp.cell));
+  const j0 = Math.max(0, Math.floor((z - pad - fp.oz) / fp.cell));
+  const j1 = Math.min(fp.nz - 1, Math.floor((z + pad - fp.oz) / fp.cell));
+  let best = 0;
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      for (const k of fp.cells[j * fp.nx + i]) {
+        const p = fp.pieces[k];
+        if (wantTop && p.top <= best) continue;
+        if (!inPiece(p, x, z, pad)) continue;
+        if (!wantTop) return 1;
+        best = p.top;
+      }
+    }
+  }
+  return best;
+}
+
+/**
  * True when (x, z) is on a road, with `pad` metres of margin around the
  * carriageway.
  *
@@ -287,12 +470,13 @@ export function roadRects(placements: readonly Placement[]): RoadRect[] {
  * as the verge it is.
  */
 export function onRoad(
-  roads: readonly RoadRect[],
+  roads: RoadFootprint,
   x: number,
   z: number,
   pad: number,
 ): boolean {
-  for (const r of roads) {
+  if (pieceQuery(roads, x, z, pad, false) > 0) return true;
+  for (const r of roads.rects) {
     const dx = x - r.x;
     const dz = z - r.z;
     let lx = dx;
@@ -332,12 +516,12 @@ export function onRoad(
  * not whether something may be planted there.
  */
 export function roadTopAt(
-  roads: readonly RoadRect[],
+  roads: RoadFootprint,
   x: number,
   z: number,
 ): number {
-  let top = 0;
-  for (const r of roads) {
+  let top = pieceQuery(roads, x, z, 0, true);
+  for (const r of roads.rects) {
     if (r.top <= top) continue;
     const dx = x - r.x;
     const dz = z - r.z;

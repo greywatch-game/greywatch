@@ -51,6 +51,7 @@ import type { LightSpec } from "../environment";
 import { partBox, partCylinder, partSurface } from "../parts";
 import type { TerrainField } from "../TerrainField";
 import type { RoadSurface } from "../roads";
+import type { RoadJoin, RoadStrip } from "../roadPaths";
 import {
   COBBLE_TEX_SCALE,
   ROAD_PATTERNS,
@@ -216,6 +217,25 @@ export interface BuildParams {
   /** Road: cobblestone street (default), the flat dirt track, or blacktop. */
   surface?: "cobble" | "dirt" | "asphalt";
   /**
+   * Road: the carriageway's CENTRELINE, as points in the placement's own frame
+   * — which makes it a PATH road rather than a `width` x `length` rectangle,
+   * and `length` is then ignored.
+   *
+   * The corners are drawn as arcs (`radius`), and where a path's end meets
+   * another path, or two paths cross, the junction is resolved by the network
+   * rather than by the layout: see `world/roadPaths.ts`. Local rather than world
+   * coordinates so that moving the placement moves the road, which is what the
+   * editor's gizmo does to everything else.
+   */
+  path?: readonly (readonly [number, number])[];
+  /**
+   * Road with a `path`: the LARGEST radius a bend may be drawn at. Absent is
+   * "as round as the legs allow", each corner taking up to half of both legs
+   * beside it — the right answer for a road traced through the ground's own
+   * lie, and why a layout seldom states one.
+   */
+  radius?: number;
+  /**
    * How many WALKED levels a city building has, ground floor included — so 3
    * is a ground floor and two storeys over it, reached by two flights.
    *
@@ -302,6 +322,14 @@ export interface BuildCtx {
   floor: number;
   z: number;
   rotY: number;
+  /**
+   * A PATH road's share of the road network (`world/roadPaths.ts`): the strip
+   * of carriageway it draws between the junctions that cut it, and the
+   * junctions it is the one to draw. Only a road with a `path` is handed one —
+   * a junction belongs to the whole network, and this is how one placement is
+   * told which part of it is its own to build.
+   */
+  road?: { strip?: RoadStrip; joins: readonly RoadJoin[] };
 }
 
 /** One stretch of a run whose ground line is level, in local X. */

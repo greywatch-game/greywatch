@@ -34,7 +34,7 @@ import type { EnvironmentSpec } from "../world/environment";
 import { type LocalXZ, rotateToLocalXZ } from "../world/boxGeometry";
 import { type BoxIndex, boxesNear, buildBoxIndex } from "../world/boxIndex";
 import type { GrassRect, WorldBox } from "../world/MapBuilder";
-import { onRoad, type RoadRect } from "../world/roads";
+import { onRoad, type RoadFootprint } from "../world/roads";
 import type { TerrainField } from "../world/TerrainField";
 import { mulberry32 } from "../world/rng";
 
@@ -140,7 +140,7 @@ export class GrassSystem {
     rects: readonly GrassRect[],
     env: EnvironmentSpec,
     boxes: readonly WorldBox[],
-    roads: readonly RoadRect[],
+    roads: RoadFootprint,
     terrain: TerrainField,
     /** The map's extent, for the collider index below. See `GameMap.size`. */
     size: number,
@@ -274,7 +274,7 @@ export class GrassSystem {
   private scatter(
     rects: readonly GrassRect[],
     boxes: readonly WorldBox[],
-    roads: readonly RoadRect[],
+    roads: RoadFootprint,
     terrain: TerrainField,
     size: number,
     rng: () => number,

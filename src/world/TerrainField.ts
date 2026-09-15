@@ -4,7 +4,9 @@
  * tessellating it into per-block VertexData for MapBuilder to hang meshes on —
  * plus `terrainSlab`, which bends a flat footprint (a road) onto that same
  * surface, so ground-hugging dressing is cut against the floor by the one file
- * that knows its shape — plus the BORDERLAND, the ground past the authored
+ * that knows its shape, and its two siblings for a road that bends in plan
+ * (`terrainRibbon` for a path's strip, `terrainFan` for a junction's patch —
+ * the plan itself is `roadPaths.ts`'s) — plus the BORDERLAND, the ground past the authored
  * square on a map whose boundary is open (`MapLayout.borderland`). That belongs
  * here for the same reason everything else does: it is floor, and this is the
  * one place that knows where the floor is.
@@ -115,6 +117,24 @@ export class TerrainField {
   /** True when nothing reshapes the floor; lets callers keep their fast path. */
   get flat(): boolean {
     return this.field === undefined;
+  }
+
+  /**
+   * True when every grid vertex of every cell touching the box is one height —
+   * so the floor under it is a single plane and a surface laid on it needs no
+   * vertices of its own to follow it. False past the grid, where the
+   * borderland rolls.
+   */
+  levelOver(minX: number, minZ: number, maxX: number, maxZ: number): boolean {
+    const f = this.field;
+    if (!f) return true;
+    const h = this.half;
+    if (minX < -h || minZ < -h || maxX > h || maxZ > h) return false;
+    const i0 = Math.min(f.size - 1, Math.max(0, Math.floor((minX + h) / f.cell)));
+    const j0 = Math.min(f.size - 1, Math.max(0, Math.floor((minZ + h) / f.cell)));
+    const i1 = Math.min(f.size, Math.ceil((maxX + h) / f.cell));
+    const j1 = Math.min(f.size, Math.ceil((maxZ + h) / f.cell));
+    return uniformHeight(f, i0, j0, Math.max(i1, i0 + 1), Math.max(j1, j0 + 1)) !== null;
   }
 
   /**
@@ -575,6 +595,244 @@ function slabCuts(
   return cuts;
 }
 
+/** Where MapBuilder will put a structure: its origin and its turn. */
+export interface DrapeFrame {
+  x: number;
+  z: number;
+  rotY: number;
+  /** The origin Y MapBuilder will translate by; local Y is measured from it. */
+  originY: number;
+}
+
+/** Left and right kerb of one cross-section of a carriageway, world XZ. */
+export interface DrapeSection {
+  lx: number;
+  lz: number;
+  rx: number;
+  rz: number;
+}
+
+/**
+ * How finely a surface laid over the box must be cut to follow the floor:
+ * `SLAB_OFF_AXIS_STEP` of a cell, or not at all where the floor under it is
+ * level. A path road is never aligned to the grid, so it takes the off-axis
+ * half of `terrainSlab`'s argument and none of the aligned one.
+ */
+function drapeStep(
+  terrain: TerrainField,
+  minX: number,
+  minZ: number,
+  maxX: number,
+  maxZ: number,
+): number {
+  const f = terrain.field;
+  if (!f || terrain.levelOver(minX, minZ, maxX, maxZ)) return Infinity;
+  return f.cell * SLAB_OFF_AXIS_STEP;
+}
+
+/** World XZ into a structure's own frame — `rotateY` run backwards. */
+function toLocal(frame: DrapeFrame, wx: number, wz: number): [number, number] {
+  const c = Math.cos(frame.rotY);
+  const s = Math.sin(frame.rotY);
+  const dx = wx - frame.x;
+  const dz = wz - frame.z;
+  return [dx * c - dz * s, dx * s + dz * c];
+}
+
+/**
+ * A carriageway laid along a run of cross-sections — a PATH road's strip — cut
+ * to follow the ground under it, in the placement's LOCAL frame.
+ *
+ * `terrainSlab`'s job for a shape that bends in plan. The top face rides `top`
+ * above the floor as drawn (`surfaceAt`'s upper envelope, for that function's
+ * reason) and is cut finer than a quarter cell both ways wherever the ground
+ * under the strip is not level; a skirt `thickness` deep hangs off both kerbs,
+ * and off each end that `caps` says is open ground rather than a junction.
+ */
+export function terrainRibbon(
+  terrain: TerrainField,
+  frame: DrapeFrame,
+  sections: readonly DrapeSection[],
+  top: number,
+  thickness: number,
+  caps: readonly [boolean, boolean],
+): VertexData {
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  let width = 0;
+  for (const s of sections) {
+    minX = Math.min(minX, s.lx, s.rx);
+    minZ = Math.min(minZ, s.lz, s.rz);
+    maxX = Math.max(maxX, s.lx, s.rx);
+    maxZ = Math.max(maxZ, s.lz, s.rz);
+    width = Math.max(width, Math.hypot(s.lx - s.rx, s.lz - s.rz));
+  }
+  const step = drapeStep(terrain, minX, minZ, maxX, maxZ);
+  const across = Number.isFinite(step) ? Math.max(1, Math.ceil(width / step)) : 1;
+
+  // Cross-sections every `step` along, interpolated kerb to kerb between the
+  // ones the line itself set out.
+  const rows: DrapeSection[] = [sections[0]];
+  for (let k = 1; k < sections.length; k++) {
+    const a = sections[k - 1];
+    const b = sections[k];
+    const run = Math.max(Math.hypot(b.lx - a.lx, b.lz - a.lz), Math.hypot(b.rx - a.rx, b.rz - a.rz));
+    const m = Number.isFinite(step) ? Math.max(1, Math.ceil(run / step)) : 1;
+    for (let q = 1; q <= m; q++) {
+      const f = q / m;
+      rows.push({
+        lx: a.lx + (b.lx - a.lx) * f,
+        lz: a.lz + (b.lz - a.lz) * f,
+        rx: a.rx + (b.rx - a.rx) * f,
+        rz: a.rz + (b.rz - a.rz) * f,
+      });
+    }
+  }
+
+  const acc = new Accum();
+  // Column 0 is the LEFT kerb and column `across` the right.
+  const at = (row: DrapeSection, c: number): [number, number, number] => {
+    const f = c / across;
+    const wx = row.lx + (row.rx - row.lx) * f;
+    const wz = row.lz + (row.rz - row.lz) * f;
+    return [wx, wz, terrain.surfaceAt(wx, wz, true) + top - frame.originY];
+  };
+  const index: number[] = [];
+  for (const row of rows) {
+    for (let c = 0; c <= across; c++) {
+      const [wx, wz, y] = at(row, c);
+      const [lx, lz] = toLocal(frame, wx, wz);
+      index.push(acc.vertex(lx, y, lz, wx, wz));
+    }
+  }
+  const w = across + 1;
+  for (let r = 0; r + 1 < rows.length; r++) {
+    for (let c = 0; c < across; c++) {
+      const a = index[r * w + c];
+      const b = index[r * w + c + 1];
+      const cc = index[(r + 1) * w + c + 1];
+      const d = index[(r + 1) * w + c];
+      acc.upTri(a, b, cc);
+      acc.upTri(a, cc, d);
+    }
+  }
+
+  // Skirts, each walked with open ground on its LEFT — see `Accum.skirt`. Down
+  // the left kerb forwards, back up the right one, across the start from right
+  // to left and across the end from left to right.
+  const edge = (p: [number, number, number], q: [number, number, number]): void => {
+    const [ax, az] = toLocal(frame, p[0], p[1]);
+    const [bx, bz] = toLocal(frame, q[0], q[1]);
+    acc.skirt(ax, p[2], az, bx, q[2], bz, thickness);
+  };
+  for (let r = 0; r + 1 < rows.length; r++) {
+    edge(at(rows[r], 0), at(rows[r + 1], 0));
+    edge(at(rows[r + 1], across), at(rows[r], across));
+  }
+  if (caps[0]) {
+    for (let c = across; c > 0; c--) edge(at(rows[0], c), at(rows[0], c - 1));
+  }
+  if (caps[1]) {
+    const last = rows[rows.length - 1];
+    for (let c = 0; c < across; c++) edge(at(last, c), at(last, c + 1));
+  }
+  return acc.finish(false);
+}
+
+/**
+ * A junction's patch — a ring star-shaped about (cx, cz), anticlockwise seen
+ * from above — laid over the ground as a fan, in the placement's LOCAL frame.
+ *
+ * Over level ground it is the fan and nothing else. Otherwise the ring is cut
+ * to `SLAB_OFF_AXIS_STEP` of a cell and the fan into as many rings out from the
+ * centre, so no triangle is wider than the step either way. A skirt hangs from
+ * each ring segment `kerb` marks as open ground.
+ */
+export function terrainFan(
+  terrain: TerrainField,
+  frame: DrapeFrame,
+  cx: number,
+  cz: number,
+  xs: readonly number[],
+  zs: readonly number[],
+  kerb: readonly boolean[],
+  top: number,
+  thickness: number,
+): VertexData {
+  const step = drapeStep(
+    terrain,
+    Math.min(cx, ...xs),
+    Math.min(cz, ...zs),
+    Math.max(cx, ...xs),
+    Math.max(cz, ...zs),
+  );
+  const px: number[] = [];
+  const pz: number[] = [];
+  const pk: boolean[] = [];
+  const n = xs.length;
+  for (let k = 0; k < n; k++) {
+    const ax = xs[k];
+    const az = zs[k];
+    const bx = xs[(k + 1) % n];
+    const bz = zs[(k + 1) % n];
+    const m = Number.isFinite(step) ? Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / step)) : 1;
+    for (let q = 0; q < m; q++) {
+      px.push(ax + ((bx - ax) * q) / m);
+      pz.push(az + ((bz - az) * q) / m);
+      pk.push(kerb[k]);
+    }
+  }
+  let reach = 0;
+  for (let k = 0; k < px.length; k++) reach = Math.max(reach, Math.hypot(px[k] - cx, pz[k] - cz));
+  const rings = Number.isFinite(step) ? Math.max(1, Math.ceil(reach / step)) : 1;
+
+  const acc = new Accum();
+  const put = (wx: number, wz: number): number => {
+    const [lx, lz] = toLocal(frame, wx, wz);
+    return acc.vertex(lx, terrain.surfaceAt(wx, wz, true) + top - frame.originY, lz, wx, wz);
+  };
+  const centre = put(cx, cz);
+  // index[k][i - 1] is ring point k pulled in to i / rings of the way out.
+  const index: number[][] = px.map((x, k) => {
+    const col: number[] = [];
+    for (let i = 1; i <= rings; i++) {
+      const f = i / rings;
+      col.push(put(cx + (x - cx) * f, cz + (pz[k] - cz) * f));
+    }
+    return col;
+  });
+  const count = px.length;
+  for (let k = 0; k < count; k++) {
+    const a = index[k];
+    const b = index[(k + 1) % count];
+    acc.upTri(centre, a[0], b[0]);
+    for (let i = 0; i + 1 < rings; i++) {
+      acc.upTri(a[i], a[i + 1], b[i + 1]);
+      acc.upTri(a[i], b[i + 1], b[i]);
+    }
+  }
+  for (let k = 0; k < count; k++) {
+    if (!pk[k]) continue;
+    const k1 = (k + 1) % count;
+    // Anticlockwise ring, so open ground is on the RIGHT going forwards: walk
+    // each panel backwards to put its face outward.
+    const [ax, az] = toLocal(frame, px[k1], pz[k1]);
+    const [bx, bz] = toLocal(frame, px[k], pz[k]);
+    acc.skirt(
+      ax,
+      terrain.surfaceAt(px[k1], pz[k1], true) + top - frame.originY,
+      az,
+      bx,
+      terrain.surfaceAt(px[k], pz[k], true) + top - frame.originY,
+      bz,
+      thickness,
+    );
+  }
+  return acc.finish(false);
+}
+
 /** Accumulates quads into one block's buffers. */
 class Accum {
   private readonly positions: number[] = [];
@@ -661,6 +919,22 @@ class Accum {
   /** `quad`, by index, for callers that placed their own vertices. */
   face(a: number, b: number, c: number, d: number): void {
     this.quad(a, b, c, d);
+  }
+
+  /**
+   * One triangle by index, wound front face UP whichever order its corners
+   * arrive in — for shapes whose corner order is not a grid's. The test is the
+   * one `quad`'s first triangle passes: anticlockwise in (x, z), +X right and
+   * +Z up the page. A triangle with no area in plan is dropped.
+   */
+  upTri(a: number, b: number, c: number): void {
+    const p = this.positions;
+    const area =
+      (p[b * 3] - p[a * 3]) * (p[c * 3 + 2] - p[a * 3 + 2]) -
+      (p[b * 3 + 2] - p[a * 3 + 2]) * (p[c * 3] - p[a * 3]);
+    if (Math.abs(area) < 1e-12) return;
+    if (area > 0) this.indices.push(a, b, c);
+    else this.indices.push(a, c, b);
   }
 
   /**

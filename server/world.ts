@@ -58,7 +58,7 @@ import { NavGrid } from "../src/world/NavGrid";
 import { ObstacleField } from "../src/world/ObstacleField";
 import { RayWorld } from "../src/world/RayWorld";
 import { CollisionField } from "../src/world/CollisionField";
-import { roadRects } from "../src/world/roads";
+import { roadNetwork } from "../src/world/roadPaths";
 import { TerrainField, terrainPatches } from "../src/world/TerrainField";
 
 /**
@@ -379,7 +379,7 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     // was already held back when the client's bake was taken — but the same
     // rule applies: a `GameMap` that disagrees with the client's about what
     // the map contains is a trap for whoever next writes something that does.
-    roads: roadRects(def.layout.placements),
+    roads: roadNetwork(def.layout.placements).footprint,
     terrain,
     dispose(): void {
       for (const mesh of colliders) mesh.dispose();

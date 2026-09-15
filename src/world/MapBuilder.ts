@@ -76,7 +76,8 @@ import {
   insertBox,
 } from "./boxIndex";
 import { ridgeSegments } from "./Ridge";
-import { onRoad, type RoadRect, roadRects, roadTopAt } from "./roads";
+import { roadNetwork, type RoadNetwork } from "./roadPaths";
+import { onRoad, type RoadFootprint, roadFootprint, roadTopAt } from "./roads";
 import { TerrainField, terrainPatches, waterY } from "./TerrainField";
 import { NavGrid } from "./NavGrid";
 import { RayWorld } from "./RayWorld";
@@ -526,9 +527,10 @@ export interface GameMap {
    * `GrassSystem` holds every tuft off it. Carried on the map rather than
    * re-derived by each because the authority builds one too, off the same
    * layout, so a rule that reads it cannot mean different ground on the two
-   * sides. See `world/roads.ts`.
+   * sides. See `world/roads.ts`, and `world/roadPaths.ts` for a road that
+   * bends.
    */
-  roads: RoadRect[];
+  roads: RoadFootprint;
   /**
    * The floor's height, for everything that used to assume zero. Flat when the
    * layout declares no terrain, which is the whole of the old behaviour.
@@ -836,7 +838,7 @@ export class MapBuilder {
    * Ground a ROOTED scatter prop may not grow out of: every road on the
    * layout. Rebuilt per `build`, and read only by `findSpot`.
    */
-  private roads: RoadRect[] = [];
+  private roads: RoadFootprint = roadFootprint([], []);
   /**
    * Ground a BLOCKING scatter prop may not stand on, as discs — every control
    * point and every spawn on the layout. Rebuilt per `build`.
@@ -1019,7 +1021,14 @@ export class MapBuilder {
     // draws them. Nothing else about a road changes: it is still visual-only,
     // still emits no collider, and is still invisible to every ray, to the nav
     // grid and to cover. See `world/roads.ts`.
-    this.roads = roadRects(layout.placements);
+    //
+    // A road with a `path` is resolved as a NETWORK first, because where it
+    // stops depends on what it meets: the strip each such placement draws and
+    // the junctions it owns are handed to its builder below, and the footprint
+    // of all of it is what `findSpot` and the grass ask. See
+    // `world/roadPaths.ts`.
+    const network: RoadNetwork = roadNetwork(layout.placements);
+    this.roads = network.footprint;
     // Sized to the widest burial test this layout will run. `findSpot` asks
     // about `(spec.clearance ?? 0.8) * scale`, and `scale` tops out at the
     // upper end of the spec's own range — so the layout knows the answer before
@@ -1103,6 +1112,10 @@ export class MapBuilder {
         floor,
         z: p.z,
         rotY,
+        road:
+          isRoad && p.params?.path
+            ? { strip: network.strips.get(i), joins: network.joins.get(i) ?? [] }
+            : undefined,
       });
 
       for (const merged of mergeByMaterial(s.meshes, p.kind)) {
@@ -1873,7 +1886,7 @@ export class MapBuilder {
       // stand in it — a palm's `clearance` is 2.6 m and holding a grove that far
       // back from every kerb would leave a bald verge down both sides of the
       // road it is supposed to be shading. See `PropBody.rooted`.
-      if (ok && body.rooted && this.roads.length > 0) {
+      if (ok && body.rooted && (this.roads.rects.length > 0 || this.roads.pieces.length > 0)) {
         const half = (Math.max(body.w, body.d) / 2) * scale;
         if (onRoad(this.roads, x, z, half)) ok = false;
       }

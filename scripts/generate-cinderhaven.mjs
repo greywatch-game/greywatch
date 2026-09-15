@@ -1291,13 +1291,14 @@ function quarterStreets(o) {
   // crossing rather than two carriageways stopping short of each other.
   const runU = spanV + edgeWidth * 2;
   const runV = spanU + edgeWidth * 2;
+  // Each street a two-point path, so that where its end lands on another
+  // carriageway — its own quarter's ring, or the road the quarter fronts — the
+  // game joins the two rather than overlapping them.
   for (const [u, w] of lineU) {
-    const [sx, sz] = at(u, 0);
-    roadSlab(sx, sz, rot, runU, w, surface, 0.1);
+    roadPath([at(u, -runU / 2), at(u, runU / 2)], w, surface, 0.1);
   }
   for (const [v, w] of lineV) {
-    const [sx, sz] = at(0, v);
-    roadSlab(sx, sz, rot + Math.PI / 2, runV, w, surface, 0.1);
+    roadPath([at(-runV / 2, v), at(runV / 2, v)], w, surface, 0.1);
   }
 
   const blocks = [];
@@ -2074,6 +2075,11 @@ function roadDist(x, z) {
   return best;
 }
 
+/**
+ * A rectangle of paving — which on this map is a SQUARE and nothing else. A
+ * street or a road is a path (`roadPath`); a square is the one piece of paving
+ * that is an area rather than a line.
+ */
 function roadSlab(x, z, rot, len, w, surface, pad = 1.4) {
   ROADS.push({
     x,
@@ -2096,33 +2102,130 @@ function roadSlab(x, z, rot, len, w, surface, pad = 1.4) {
 }
 
 /**
- * A road as a POLYLINE, emitted one slab per leg.
- *
- * Legs overlap by half a width at each joint: two slabs meeting at an angle
- * leave a wedge of bare ground between them otherwise, and a road is the one
- * thing here whose seams are at eye height on the way past. Two slabs of the
- * SAME surface overlapping is a tie between two coplanar sheets that nothing
- * can see — one colour, one merged mesh — which is why a junction only needs
- * deciding (`ROAD_RANK`) when the two surfaces differ.
+ * `world/roadPaths.ts`'s `ROAD_BEND_MIN`, `ROAD_BEND_CUT`, `ROAD_BEND_SAG` and
+ * the five-degree chord, restated for `bendPath` below — see that function.
  */
+const ROAD_BEND_MIN = 0.6;
+const ROAD_BEND_CUT = 2;
+const ROAD_BEND_SAG = 0.03;
+const ROAD_BEND_STEP = (5 * Math.PI) / 180;
+
+/**
+ * **A TWIN of `bendPath` in `src/world/roadPaths.ts`**, which is what the game
+ * draws a path road along. It is here because this file claims the ground a
+ * road will cover BEFORE anything else is placed, and it has to claim the
+ * carriageway the builder is going to draw rather than the polyline it was
+ * handed: on the coast road's long legs a corner rounded as far as its legs
+ * allow stands five metres inside the point it was authored through, and a
+ * claim along the polyline would let a croft be built on the tarmac. The two
+ * must round a corner the same way; change one and change the other.
+ */
+function bendPath(pts, width, radius = Infinity) {
+  const out = [];
+  const push = (x, z) => {
+    const last = out[out.length - 1];
+    if (!last || Math.hypot(x - last[0], z - last[1]) > 1e-6) out.push([x, z]);
+  };
+  if (pts.length === 0) return out;
+  push(pts[0][0], pts[0][1]);
+  const rFloor = ROAD_BEND_MIN * width;
+  const rCap = Math.max(radius, rFloor);
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, pz] = pts[i - 1];
+    const [cx, cz] = pts[i];
+    const [nx, nz] = pts[i + 1];
+    const l1 = Math.hypot(cx - px, cz - pz);
+    const l2 = Math.hypot(nx - cx, nz - cz);
+    if (l1 < 1e-6 || l2 < 1e-6) continue;
+    const d1x = (cx - px) / l1;
+    const d1z = (cz - pz) / l1;
+    const d2x = (nx - cx) / l2;
+    const d2z = (nz - cz) / l2;
+    const turn = Math.acos(Math.max(-1, Math.min(1, d1x * d2x + d1z * d2z)));
+    if (turn < 1e-4 || turn > Math.PI - 1e-3) {
+      push(cx, cz);
+      continue;
+    }
+    const tan = Math.tan(turn / 2);
+    const byCut = (ROAD_BEND_CUT * tan) / (1 / Math.cos(turn / 2) - 1);
+    const t = Math.min(0.5 * Math.min(l1, l2), rCap * tan, Math.max(byCut, rFloor * tan));
+    const r = t / tan;
+    const side = d1x * d2z - d1z * d2x > 0 ? 1 : -1;
+    const ax = cx - d1x * t;
+    const az = cz - d1z * t;
+    const ox = ax - d1z * r * side;
+    const oz = az + d1x * r * side;
+    const bySag = r > ROAD_BEND_SAG ? 2 * Math.acos(1 - ROAD_BEND_SAG / r) : ROAD_BEND_STEP;
+    const n = Math.max(1, Math.ceil(turn / Math.min(ROAD_BEND_STEP, bySag)));
+    const a0 = Math.atan2(az - oz, ax - ox);
+    push(ax, az);
+    for (let k = 1; k < n; k++) {
+      const a = a0 + (side * turn * k) / n;
+      push(ox + Math.cos(a) * r, oz + Math.sin(a) * r);
+    }
+    push(cx + d2x * t, cz + d2z * t);
+  }
+  const last = pts[pts.length - 1];
+  push(last[0], last[1]);
+  return out;
+}
+
+/** Every carriageway's centreline as it will be DRAWN, bends and all. */
+const LINES = [];
+
+/**
+ * A road or a street as a PATH: one placement, drawn along its centreline with
+ * its corners rounded, and joined to whatever it meets by the game rather than
+ * by this file (`world/roadPaths.ts`).
+ *
+ * This used to be one rectangle per leg, overlapping by half a width at each
+ * joint, and both of the things wrong with that were visible from anywhere
+ * above a rooftop: every bend was a notch outside and a doubled sheet inside,
+ * and every road meeting another at an angle ran its square end past the far
+ * kerb. So a road is authored as the points it passes through, and the claim
+ * is laid along what will actually be drawn — the bent line, a rectangle per
+ * chord. A junction needs no claim of its own: its kerb return is half the
+ * narrower carriageway's width in radius, and at a square meeting the whole of
+ * it stands inside the two pads already claimed either side of the corner
+ * (0.29 of the radius in from the corner against a pad of 1.4 m on a road; a
+ * street's return is under a metre into a plot the setback holds a house off).
+ *
+ * The placement stands at the middle of the path's extent, so the editor's
+ * handle is somewhere on the road, with the points stated relative to it.
+ */
+function roadPath(pts, w, surface, pad) {
+  const line = bendPath(pts, w);
+  LINES.push(line);
+  for (let i = 1; i < line.length; i++) {
+    const [ax, az] = line[i - 1];
+    const [bx, bz] = line[i];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const len = Math.hypot(dx, dz);
+    const x = (ax + bx) / 2;
+    const z = (az + bz) / 2;
+    const rot = Math.atan2(dx, dz);
+    ROADS.push({ x, z, hw: w / 2, hd: len / 2, c: Math.cos(rot), s: Math.sin(rot) });
+    claim(x, z, w, len + 0.2, rot, pad, true);
+  }
+
+  const xs = pts.map((p) => p[0]);
+  const zs = pts.map((p) => p[1]);
+  const ox = Number(((Math.min(...xs) + Math.max(...xs)) / 2).toFixed(2));
+  const oz = Number(((Math.min(...zs) + Math.max(...zs)) / 2).toFixed(2));
+  const path = pts.map(([x, z]) => `[${n2(x - ox)}, ${n2(z - oz)}]`).join(", ");
+  placements.push(
+    `  { kind: "road", x: ${n2(ox)}, z: ${n2(oz)}, ` +
+      `params: { path: [${path}], width: ${n2(w)}, surface: "${surface}" } },`,
+  );
+  roadLegs++;
+}
+
 /** Every arterial, kept so that the outskirts can be laid ALONG the roads. */
 const TRACKS = [];
 function roadRun(pts, w, surface) {
   TRACKS.push(pts);
-  for (let i = 1; i < pts.length; i++) {
-    const [ax, az] = pts[i - 1];
-    const [bx, bz] = pts[i];
-    const dx = bx - ax;
-    const dz = bz - az;
-    roadSlab(
-      (ax + bx) / 2,
-      (az + bz) / 2,
-      Math.atan2(dx, dz),
-      Math.hypot(dx, dz) + w,
-      w,
-      surface,
-    );
-  }
+  roadPath(pts, w, surface, 1.4);
 }
 
 // --- the arterials -----------------------------------------------------------
@@ -4293,7 +4396,9 @@ const ROAD_GRADE = 0.35;
 let worstRoadGrade = 0;
 {
   const bad = [];
-  for (const pts of TRACKS) {
+  // Along the line as DRAWN — a corner rounded off its point crosses different
+  // ground from the two legs it replaced, and that ground is what is walked.
+  for (const pts of LINES) {
     for (let i = 1; i < pts.length; i++) {
       const [ax, az] = pts[i - 1];
       const [bx, bz] = pts[i];
@@ -4492,7 +4597,7 @@ console.log(
     `${landKm2.toFixed(2)} km2 dry, ${seaKm2.toFixed(2)} water (bay ${bayKm2.toFixed(2)}) of ` +
     `${((PLAY * PLAY) / 1e6).toFixed(2)}
 ` +
-    `  ${roadLegs} road slabs, steepest carriageway ${worstRoadGrade.toFixed(2)} against a bar of ${ROAD_GRADE}; every dwelling within ${ROAD_REACH} m of one
+    `  ${roadLegs} roads, steepest carriageway ${worstRoadGrade.toFixed(2)} against a bar of ${ROAD_GRADE}; every dwelling within ${ROAD_REACH} m of one
 ` +
     `  steepest LAND step ${worstStep.toFixed(2)} m at ${worstAt}\n` +
     `  steep land edges exempted: ${EXEMPT.cone} on the cone, ${EXEMPT.cliff} on sea cliffs\n` +

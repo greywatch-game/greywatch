@@ -772,6 +772,15 @@ materials, or a car's underbody rides off the ground. **A road is not inked and
 needs no rule to stop it**: `CelInk` finds an edge where depth STEPS or BENDS,
 and two coplanar sheets do neither.
 
+**A road may be a PATH (`params.path`), and then the NETWORK decides where it
+stops** (`world/roadPaths.ts`): its corners are arcs, and where a path's end
+meets another path, ends meet each other or two paths cross, the junction is
+FOUND and paved as one filleted patch — a layout never states one. **A
+rectangle is never an arm of anything**, which is what keeps every map without
+a path bit-identical. The footprint the grass and the scatter ask is the
+network's on both sides (`GameMap.roads`), and **`bendPath` has a twin in
+`generate-cinderhaven.mjs`** that must round a corner the same way.
+
 **There is a sixth entry in `MAPS` and it is DEV-ONLY and not a level.**
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
 against, written by `npm run proving`. **`MAPS` is an `import.meta.env.DEV`
