@@ -521,6 +521,13 @@ this replaced, which scattered a few hundred filled ellipses per tile:
   slow change of soil across a valley is `graphics.groundVariation` instead — the
   same world-space drift the flat cel colours get, applied to the ground texture
   path in `CelShader`, where it has no period to find.
+- **A height plane is a DEPTH, not only a slope.** The shader carves it —
+  parallax and a hard self-shadow toward the key, at the surface's own
+  `bumpScale` — so a recipe is judged by what it looks like CUT: the highest
+  features sit near 1, nothing small stands proud of its surroundings (it drops
+  a shadow speck), and nothing sinks to the bottom of the range unless it is
+  meant to be a hole. `docs/rendering.md`, "A slope is not a depth", has the
+  shader's half and what each recipe was before it.
 
 **The finished visuals also carry BAKED AMBIENT OCCLUSION**, written after the
 merge by `src/world/vertexShading.ts` from the collider boxes and the terrain.

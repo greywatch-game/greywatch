@@ -44,7 +44,7 @@ import type { EnvironmentSpec } from "../environment";
  * face lands in the TOP band (cos 14.5 = 0.97), which is what a golden hour
  * IS — the walls double and the ground halves, Coldharbour's note one hour
  * later in its own evening. The compensation lives in `skyLightIntensity`
- * and nowhere else: the gold is the KEY's, and the loam, the turf and the
+ * and nowhere else: the gold is the KEY's, and the loam, the soil and the
  * grass keep the colours they had at noon, because an albedo warmed under a
  * warm key double-counts the hour.
  *
@@ -63,7 +63,7 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
    * up-facing surface at once, so a floor authored as "lush green" in the
    * swatch renders chalky — and every tuft the layout grows must sit IN the
    * ground, not ON it, which means the gaps between tufts have to stay near
-   * the blades' own green. Every tone `turf` paints is derived from this, so
+   * the blades' own green. Every tone `dirt` paints is derived from this, so
    * re-tinting the vale is this one line.
    *
    * **It did not move when the hour did, and resisting that is the point**
@@ -74,14 +74,16 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
    */
   floorColor: "#363a22",
   /**
-   * The first map on `turf` — matted ground cover rather than bare clods,
-   * which is the one honest answer for a valley whose whole premise is that
-   * things grow here. `dirt` on the roads' verges is the road builder's
-   * business, not the floor's. A low sun rakes a height field far harder
-   * than a high one; `turf`'s relief is the shallowest of the four patterns,
-   * which is why the hour could drop 35 degrees without re-judging it.
+   * **Cracked summer ground, and it was `turf` until the ground had a depth.**
+   * Matted cover was the argument for a valley whose premise is that things
+   * grow here, and it held while the relief was only a slope. Carved, turf's
+   * blade grain is a streak pattern cut into every clump, which reads as a
+   * texture; the reference frame (`reference-media/visuals.jpg`) is dried
+   * ground in plates under the grass, and a 14.5-degree sun raking plates that
+   * each lean their own way is the most three-dimensional thing a floor can
+   * do. What grows here is the grass field's job, which it always was.
    */
-  floorSurface: "turf",
+  floorSurface: "dirt",
   /**
    * The high downs: grazed summer grass going grey-green with the distance.
    *

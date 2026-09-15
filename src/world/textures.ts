@@ -37,7 +37,14 @@
  * - the relief carries the detail and the albedo stays quiet. The shader's
  *   quantized bands ripple over the height map, and that read is free; the same
  *   detail spent on albedo contrast is what made the old surfaces spotty;
- * - low contrast between levels, and the darkest tone belongs in the grooves.
+ * - low contrast between levels, and the darkest tone belongs in the grooves;
+ * - **a height map is a DEPTH now, not only a slope**, so what is carved has to
+ *   be a shape that reads carved: the highest features sit near 1 (the mesh is
+ *   the top of the relief and everything is cut down from it), nothing small
+ *   stands proud of what surrounds it (a pebble that does drops a shadow
+ *   speck), and nothing sinks to the floor of the range unless it is a hole.
+ *   `docs/rendering.md`, "A slope is not a depth", has what each recipe was
+ *   before and what carving it did.
  *
  * Textures are authored in display space and sampled raw, matching the
  * no-image-processing pipeline (same convention as the player skin).
@@ -232,10 +239,18 @@ interface Hit {
   f2: number;
   /** The nearest site's own roll. */
   roll: number;
+  /**
+   * Where the texel sits relative to that site, in cell widths — what a recipe
+   * reads to TILT a cell, so one clod faces the light and its neighbour turns
+   * away from it. Continuous inside a cell, which is all a tilt needs: the
+   * border it jumps across is the groove.
+   */
+  dx: number;
+  dy: number;
 }
 
-const hitA: Hit = { f1: 0, f2: 0, roll: 0 };
-const hitB: Hit = { f1: 0, f2: 0, roll: 0 };
+const hitA: Hit = { f1: 0, f2: 0, roll: 0, dx: 0, dy: 0 };
+const hitB: Hit = { f1: 0, f2: 0, roll: 0, dx: 0, dy: 0 };
 
 /**
  * Nearest and second-nearest site over the 3x3 neighbourhood, wrapped. Three
@@ -251,6 +266,8 @@ function cellsAt(c: Cells, u: number, v: number, out: Hit): void {
   let f1 = 1e9;
   let f2 = 1e9;
   let roll = 0;
+  let nx = 0;
+  let ny = 0;
   for (let dy = -1; dy <= 1; dy++) {
     const gy = cy + dy;
     const wy = (((gy % n) + n) % n) | 0;
@@ -265,6 +282,8 @@ function cellsAt(c: Cells, u: number, v: number, out: Hit): void {
         f2 = f1;
         f1 = d;
         roll = c.roll[i];
+        nx = -px;
+        ny = -py;
       } else if (d < f2) {
         f2 = d;
       }
@@ -273,6 +292,8 @@ function cellsAt(c: Cells, u: number, v: number, out: Hit): void {
   out.f1 = f1;
   out.f2 = f2;
   out.roll = roll;
+  out.dx = nx;
+  out.dy = ny;
 }
 
 /* ------------------------------------------------------------------------ *
@@ -472,21 +493,29 @@ function cobbleField(): Field {
       // The joint: `f2 - f1` is zero on the border between two setts and grows
       // inward, so this is a mortar groove of a fixed width whatever shape the
       // stones came out.
-      const stone = smoothstep(0.035, 0.12, hitA.f2 - hitA.f1);
+      const border = hitA.f2 - hitA.f1;
+      const stone = smoothstep(0.03, 0.07, border);
 
-      // A worn sett is a flat crown with a rounded shoulder, not a dome: the
-      // crown is where a boot lands and the shoulder is where the mortar takes
-      // over. One stone in twenty is sunk nearly flush — a street that has been
-      // relaid a few times.
+      // **A sett is a PILLOW: a rounded shoulder all the way up to a crown that
+      // is still very slightly domed.** The version before the relief had a
+      // depth reached its crown a quarter of the way in, which was invisible
+      // while the street was only a slope — and the moment the shader could
+      // carve it, the street came back as flat-topped TILES standing on
+      // vertical sides. The shoulder is an ease-out over most of the stone's
+      // radius, so a raking sun lands a lit rim on the side toward it and the
+      // shadow falls off the far one.
       //
-      // It is DARKER, not black. Sunk far enough to reach the mortar's own
-      // entry on the ramp, a sett stops reading as a stone that has settled and
-      // starts reading as a hole in the road — and because there are two or
-      // three per tile, those holes were the most repeated thing on the street.
+      // One stone in twenty is sunk — a street that has been relaid a few
+      // times — and it is sunk by a third, not to the mortar: sunk further, a
+      // carved sett is a HOLE the relief's own shadow fills black, and at two
+      // or three per tile those holes were the most repeated thing on the
+      // street.
       const sunk = hitA.roll < 0.05;
-      const peak = sunk ? 0.30 : 0.66 + hitA.roll * 0.34;
-      const crown = smoothstep(0.0, 0.55, stone);
-      height[i] = clamp01(crown * peak + g * 0.06);
+      const peak = sunk ? 0.58 : 0.78 + hitA.roll * 0.22;
+      const shoulder = smoothstep(0.03, 0.34, border);
+      const dome = 1 - (1 - shoulder) * (1 - shoulder);
+      const mortar = 0.16 + g * 0.08;
+      height[i] = clamp01(mortar + (peak - mortar) * dome + (g - 0.5) * 0.04 * stone);
 
       // Tone is the sett's own roll, quantized by the ramp into one of five
       // stone colours — flat, as a painted sett should be — with the mortar
@@ -562,20 +591,21 @@ interface RoadPattern {
    */
   metersPerTile: number;
   /**
-   * Metres of fake relief at height 1.0, and what these two are stated against
-   * is each other rather than the cobbles: the shader's slope is `bumpScale`
-   * over a TEXEL, so the number means nothing without the tile it spans. Per
-   * texel, the valley's loose `dirt` is the reference — a scraped track is
-   * packed down and comes in under it, and blacktop is a bound surface with
-   * chips in it rather than a loose one and comes in under that.
+   * Metres of relief at height 1.0 — the slope's scale AND, since the ground
+   * was given a depth, how deep the shader carves (`CONFIG.graphics.relief`).
+   * The two stopped being separable, which is why the track's went UP when it
+   * was carved: at 2.6 cm a worn hollow and a pressed-in stone were real
+   * slopes and no depth at all, so the lane read as a flat sheet beside a
+   * floor that had become cracked ground. Blacktop is a bound surface and
+   * stays the shallowest thing that is not sand.
    */
   bumpScale: number;
 }
 
 /** Both carriageways' tuning, next to the recipes their cell counts are in. */
 export const ROAD_PATTERNS: Record<RoadPatternId, RoadPattern> = {
-  dirt: { metersPerTile: 3.5, bumpScale: 0.026 },
-  asphalt: { metersPerTile: 3, bumpScale: 0.02 },
+  dirt: { metersPerTile: 3.5, bumpScale: 0.05 },
+  asphalt: { metersPerTile: 3, bumpScale: 0.024 },
 };
 
 /**
@@ -616,6 +646,11 @@ const ROAD_FIELDS: Record<RoadPatternId, () => Field> = {
     // stone; what makes it a track's stone rather than the floor's is that it
     // is mostly tone and barely any height.
     const stones = cells(44, 0xd18a4);
+    // Where the loose stones have gathered — the floor's `drifts` argument: a
+    // cell grid is evenly spaced, and grit spread evenly is a pattern.
+    const drifts = octaves(0xd18a5, 2, 6);
+    const warpU = lattice(8, 0xd18a6);
+    const warpV = lattice(8, 0xd18a7);
 
     for (let y = 0; y < SIZE; y++) {
       const v = y / SIZE;
@@ -627,15 +662,29 @@ const ROAD_FIELDS: Record<RoadPatternId, () => Field> = {
         const dip = spread(fbmAt(hollows, u, v), 1.7);
         const scrape = spread(fbmAt(bare, u, v), 1.5);
 
-        let h = 0.5 + (dip - 0.5) * 0.52 + (g - 0.5) * 0.18;
+        // **The hollows are WORN IN, with an edge**, which is what a carved
+        // track needs that a bumped one did not. A smooth dip is a slope and
+        // nothing else; given a depth it is a soft saucer nobody can see. The
+        // deepest third of the field is cut down to a floor with a lip round
+        // it, so a low sun lands a shadow inside the near rim and a lit face on
+        // the far one — somewhere a puddle sat.
+        const hollow = smoothstep(0.64, 0.84, dip);
+        let h = 0.62 + (dip - 0.5) * 0.18 + (g - 0.5) * 0.16 - hollow * 0.2;
 
-        // Half buried, and the half that shows is a shallow crown: a stone a
-        // wheel has been over does not have a rim.
-        cellsAt(stones, u, v, hitA);
+        // Stones, PRESSED IN and standing a little proud of it: a rounded
+        // crown a wheel has been over, which under a raking light is a lit
+        // cap with a shadow off the far side. At no depth they were pale DOTS
+        // on the track, and a dot is a sprinkle rather than a stone.
+        const wu = u + (latticeAt(warpU, u, v) - 0.5) * 0.02;
+        const wv = v + (latticeAt(warpV, u, v) - 0.5) * 0.02;
+        cellsAt(stones, wu, wv, hitA);
         let stone = 0;
-        if (hitA.roll > 0.78) {
-          stone = smoothstep(0.34, 0.18, hitA.f1);
-          h += stone * 0.1;
+        const gritty = 0.95 - smoothstep(0.45, 0.72, fbmAt(drifts, u, v)) * 0.14;
+        if (hitA.roll > gritty) {
+          const r = 0.16 + (hitA.roll - gritty) * 1.6;
+          const t = clamp01(1 - hitA.f1 / r);
+          stone = Math.sqrt(t);
+          h = Math.max(h, 0.6 + 0.3 * stone * (0.6 + hitA.roll * 0.4) - hollow * 0.2);
         }
 
         height[i] = clamp01(h);
@@ -643,13 +692,15 @@ const ROAD_FIELDS: Record<RoadPatternId, () => Field> = {
         // correlation that makes this one material rather than a bump map and
         // a colour that happen to share a tile. Kept inside half a level, per
         // the `bare` note above; the fine grain is what carries the read
-        // through the quantization.
+        // through the quantization. The stones take only a little of the
+        // ramp: their relief is what shows them now.
         tone[i] =
-          0.4 +
-          (scrape - 0.5) * 0.3 +
+          0.42 +
+          (scrape - 0.5) * 0.18 +
           (g - 0.5) * 0.42 +
-          (h - 0.5) * 0.3 +
-          stone * 0.24;
+          (h - 0.5) * 0.3 -
+          hollow * 0.12 +
+          (stone > 0 ? 0.1 : 0);
       }
     }
     return field;
@@ -698,15 +749,17 @@ const ROAD_FIELDS: Record<RoadPatternId, () => Field> = {
         const i = y * SIZE + x;
 
         const g = fbmAt(grain, u, v);
-        let h = 0.44 + (g - 0.5) * 0.16;
+        let h = 0.78 + (g - 0.5) * 0.12;
 
         // A chip in the top third of the rolls is one that has come through the
-        // binder. The rest are still under it and say nothing.
+        // binder. The rest are still under it and say nothing — and the ones
+        // that show stand barely proud, because a carved chip that stands up
+        // drops a shadow speck, and a road of those is pepper.
         cellsAt(chips, u, v, hitA);
         let chip = 0;
         if (hitA.roll > 0.66) {
           chip = smoothstep(0.36, 0.2, hitA.f1);
-          h = h * (1 - chip) + (0.62 + hitA.roll * 0.3) * chip;
+          h = h * (1 - chip) + (0.84 + hitA.roll * 0.08) * chip;
         }
 
         // 1 on the plate, falling to 0 in the crack between two of them.
@@ -722,22 +775,33 @@ const ROAD_FIELDS: Record<RoadPatternId, () => Field> = {
         // now opens in the top tail of the field rather than across the middle
         // of it.
         cellsAt(plates, u, v, hitB);
-        const plate = smoothstep(0.0, 0.02, hitB.f2 - hitB.f1);
-        const crazed = smoothstep(0.66, 0.94, spread(fbmAt(fatigue, u, v), 1.3));
+        const plate = smoothstep(0.0, 0.035, hitB.f2 - hitB.f1);
+        const crazed = smoothstep(0.58, 0.9, spread(fbmAt(fatigue, u, v), 1.3));
         const crack = (1 - plate) * crazed;
-        h -= crack * 0.16;
+        // A crack is CUT, not scored: with the relief carved, a shallow one is
+        // a line that no light can find, and a deep one is a dark seam with a
+        // shadow in it. Where the crazing is worst the plates between the
+        // cracks have SETTLED as well, each to its own depth, which is what
+        // turns alligator cracking from a line drawing on the road into a
+        // surface that has moved.
+        h -= crack * 0.7 + crazed * hitB.roll * 0.22;
 
         height[i] = clamp01(h);
         // Asphalt is very nearly one tone and the read is the relief catching
         // the light — sand's argument, in a darker material. What moves at all
         // is the exposed aggregate, which is stone and therefore paler than the
         // binder, and the cracks, which are the dark and belong in the grooves.
+        //
+        // The chips are worth a SIXTH of what they were. At a third of a level
+        // every one of them crossed a palette boundary on its own, and a road
+        // full of pale specks read as a noise pattern printed on a sheet; with
+        // the relief carved, the chip is a cap catching the light instead.
         tone[i] =
-          0.42 +
+          0.44 +
           (g - 0.5) * 0.3 +
-          chip * 0.34 +
-          (h - 0.5) * 0.22 -
-          crack * 0.2;
+          chip * 0.06 +
+          (h - 0.5) * 0.18 -
+          crack * 0.24;
       }
     }
     return field;
@@ -793,12 +857,12 @@ const FIELDS = {
    * reads as an object, which is the whole trick. What carries the surface is
    * the RELIEF; the albedo does little except mottle damp against dry.
    *
-   * **The cracks are masked, and that mask is the difference between soil and
-   * dried mud.** A cell field applied everywhere rings every clod with a
-   * groove, which is a real surface — a dry lake bed — and not this one. Here
-   * the cell borders are let through only where a low-frequency mask says so,
-   * so a third of the ground has a crack pattern, the rest has crumb, and the
-   * boundary between them is not a shape either.
+   * **The cracks are masked, and that mask is the difference between cracked
+   * ground and a dry lake bed.** A cell field applied everywhere rings every
+   * clod with a groove, and the whole floor becomes one crazed sheet. Here the
+   * plates are let through only where a low-frequency mask says so — most of
+   * the ground, since the relief could carve them — the rest is crumb, and the
+   * boundary between the two is a crack fading out rather than a shape.
    */
   dirt: (): Field => {
     const field = blankField();
@@ -808,8 +872,10 @@ const FIELDS = {
     const damp = octaves(0xd1a3, 3, 14);
     const crumb = octaves(0xd1a7, 3, 20);
     const grit = octaves(0xd1a4, 2, 96);
-    const cracks = cells(13, 0xd1a5);
-    const crackMask = octaves(0xd1a8, 2, 7);
+    // Ten plates across the 4 m tile is a 40 cm slab, the size dried ground
+    // breaks into when it has had a summer to do it.
+    const cracks = cells(10, 0xd1a5);
+    const crackMask = octaves(0xd1a8, 2, 5);
     const stones = cells(72, 0xd1a6);
     const drifts = octaves(0xd1a9, 2, 7);
 
@@ -828,14 +894,33 @@ const FIELDS = {
 
         // Soil is crumb first: three folded octaves, none of them big enough
         // to be a thing.
-        let h = 0.16 + lump * 0.62 + g * 0.07;
+        const crumbH = 0.16 + lump * 0.62 + g * 0.07;
 
-        // Then the cracks, where there are any.
+        // Then the cracks, where there are any — and where there are, the
+        // ground between them is a PLATE rather than crumb with a groove
+        // scored through it. **That is what the relief's depth asked of this
+        // recipe.** Scored crumb is a line drawn on the soil, and carved it
+        // reads as one; a crack is where dried ground has pulled APART, so
+        // what stands either side of it is a slab with a rounded lip, each one
+        // settled at its own tilt. The tilt is the loud part under a low sun:
+        // one plate turns its face to the light and its neighbour turns away,
+        // which is what makes a cracked flat read as ground with a shape
+        // rather than as a pattern on a sheet.
         cellsAt(cracks, wu, wv, hitA);
-        const groove =
-          (1 - smoothstep(0.01, 0.2, hitA.f2 - hitA.f1)) *
-          smoothstep(0.5, 0.78, fbmAt(crackMask, u, v));
-        h -= groove * 0.3;
+        const border = hitA.f2 - hitA.f1;
+        const cracked = smoothstep(0.36, 0.6, fbmAt(crackMask, u, v));
+        const lip = smoothstep(0.0, 0.2, border);
+        const edge = 1 - (1 - lip) * (1 - lip);
+        const lean = hitA.roll * Math.PI * 2;
+        const plateH =
+          0.58 +
+          (hitA.roll - 0.5) * 0.14 +
+          (hitA.dx * Math.cos(lean) + hitA.dy * Math.sin(lean)) * 0.26 +
+          (lump - 0.5) * 0.22 +
+          g * 0.05;
+        const groove = (1 - smoothstep(0.012, 0.07, border)) * cracked;
+        let h =
+          crumbH * (1 - cracked) + (0.1 + (plateH - 0.1) * edge) * cracked;
 
         // Grit worked through the soil: one small cell in eight carries a
         // stone, and at a 5.5 cm cell that is a pebble rather than a pea.
@@ -860,7 +945,10 @@ const FIELDS = {
         if (hitB.roll > gritty) {
           const size = 0.2 + (hitB.roll - gritty) * 2.2;
           stone = smoothstep(size, size * 0.55, hitB.f1);
-          h = h * (1 - stone) + (0.52 + hitB.roll * 0.26) * stone;
+          // Level with a plate's face rather than proud of it: carved, a stone
+          // standing over the soil drops a shadow speck behind it, and a drift
+          // of them read as ground peppered black.
+          h = h * (1 - stone) + (0.5 + hitB.roll * 0.12) * stone;
         }
 
         height[i] = clamp01(h);
@@ -889,7 +977,7 @@ const FIELDS = {
           wet * 0.36 +
           (h - 0.5) * 0.3 +
           (g - 0.5) * 0.44 -
-          groove * 0.18 +
+          groove * 0.26 +
           stone * 0.08;
       }
     }

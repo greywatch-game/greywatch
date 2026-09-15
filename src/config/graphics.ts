@@ -993,6 +993,41 @@ export const graphics = {
    */
   cobbleBumpScale: 0.1,
   /**
+   * The DEPTH of every textured ground's relief — the street, both other
+   * carriageways and the valley floor's surfaces — as opposed to its slope,
+   * which is `bumpScale` alone. A slope turns a normal and nothing else, so a
+   * bumped street is still stones painted on one sheet: nothing hides anything
+   * and nothing casts a shadow. These two marches (`CelShader`'s
+   * `reliefParallax` and `reliefLit`) put that back off the same height map at
+   * the same `bumpScale`, so the depth, the slope and the shadow are one fact.
+   */
+  relief: {
+    /**
+     * Layers the eye ray is marched through, and the taps the shadow ray
+     * climbs out of a groove in. Both are WGSL loop bounds — compile-time —
+     * and both are spent only on pixels inside their fade.
+     */
+    parallaxSteps: 12,
+    shadowSteps: 8,
+    /**
+     * Metres from the eye over which the parallax goes to nothing. It has to
+     * fade — the shift is depth over the view ray's rise, and at a graze a
+     * fixed step count stops resolving it — and by the far end the mip chain
+     * has flattened the relief it would displace anyway.
+     */
+    parallaxFade: [8, 22] as const,
+    /**
+     * The same for the relief's own shadow, which carries much further: it is
+     * not keyed on the view at all, and a lane raked by a low sun reads as
+     * carved for as long as its stones are resolvable.
+     */
+    shadowFade: [30, 60] as const,
+    /** How much of the key a stone's shadow takes — 1 is all of it. */
+    shadowStrength: 1,
+    /** How much ambient a groove at height 0 loses against a crown. */
+    cavity: 0.45,
+  },
+  /**
    * The most slots the drifting mote field (`systems/Atmosphere.ts`) may
    * allocate — a **VRAM ceiling and NOTHING else**, never a target. What the
    * ash looks like (colour, size, drift, how much of it there is) is the

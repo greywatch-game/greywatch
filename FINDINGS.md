@@ -5486,3 +5486,44 @@ lifecycle than point 5's list already does and would want its own DEV assert.
 **Do not fix it by reverting the depth share.** The share is worth 1.85 ms on
 Coldharbour and ~20% of the frame on all three big maps (finding 3), against a
 frame lost on an event the player causes by hand.
+
+## 42. The ground's relief DEPTH is unmeasured for aliasing, and unmeasured on a phone
+
+**Status:** open. The depth (parallax and self-shadow over the ground's height
+maps — `docs/rendering.md`, "A slope is not a depth") was judged by eye in
+still frames and priced on one desktop GPU. Neither of the two questions a
+per-pixel march raises was measured.
+
+### What was measured
+
+- `gpu.frame`, at eye height down a street in a 1920x1080 headless frame on the
+  Windows box, 600 frames settled in `deploy`: **Cinderhaven 1.61 → 1.93 ms,
+  Harrowmead 1.54 → 1.50 ms**, frame rate within 3% on both (71.8/72.2 and
+  103.5/100.2 fps, one run each — the frame is draw-call bound).
+- Still frames on all six maps, at dusk, noon and night, against
+  `reference-media/visuals.jpg`.
+
+### What is not
+
+- **Aliasing and crawl in MOTION.** The slope's own aliasing was measured against
+  a 4x supersampled reference (`docs/rendering.md`, the world-space slope
+  bullet: 0.85% off-reference on Coldharbour's lit streets as shipped). That
+  figure has not been re-taken with the depth on. The self-shadow's edge is a
+  0.03-of-height smoothstep and nothing in the pipe antialiases it, so a
+  shadow edge per sett is thousands of new hard edges per screen; the
+  parallax's crossing moves with the eye by design and could crawl on a slow
+  strafe. The two fades (8–22 m and 30–60 m) are smooth, but a ring the eye
+  finds would be a camera-locked shape of exactly the kind the rim light was
+  gated off level ground for.
+- **A phone.** Up to 12 layers, 3 refines and 8 shadow taps per ground pixel
+  inside the fades, on a device whose GPU was never the budget here. Nothing
+  gates it but the fades.
+
+### How to settle it
+
+Re-take the supersampled comparison on Coldharbour and Harrowmead with
+`CONFIG.graphics.relief.shadowStrength` at 0 and at 1, and with the parallax
+fade pulled to 0, standing still and after a slow strafe. On a phone, a
+`?profile&gpu` capture down Cinderhaven's harbour street with the relief on and
+with both fades pulled to zero. If either is bad, the lever is the fade
+distances and the step counts in `CONFIG.graphics.relief`, not the height maps.

@@ -63,7 +63,7 @@ interface FloorSurface {
  * without the other.
  */
 const SURFACES: Record<FloorPatternId, FloorSurface> = {
-  dirt: { label: "dirt", metersPerTile: 4, bumpScale: 0.035 },
+  dirt: { label: "dirt", metersPerTile: 4, bumpScale: 0.05 },
   gravel: { label: "gravel", metersPerTile: 2.5, bumpScale: 0.03 },
   sand: { label: "sand", metersPerTile: 5, bumpScale: 0.015 },
   turf: { label: "turf", metersPerTile: 4.5, bumpScale: 0.03 },

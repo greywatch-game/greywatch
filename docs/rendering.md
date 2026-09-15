@@ -2250,6 +2250,52 @@ does not take, both being look decisions rather than bugs.
   dropping `CEL_BUMP`) and then pushing a dummy define onto every cached cel
   material — see `VERIFYING.md`, because a re-registered include alone hands
   back the effect that is already cached.
+- **A slope is not a depth, and the ground has both now.** A bump turns a normal
+  and nothing else, so a bumped street was still stones PAINTED on one sheet:
+  nothing on it hid anything and nothing cast a shadow, and a raking sun — the
+  one light that should carve a street — lit it as a mosaic with shading on it
+  (`reference-media/visuals.jpg` is what it was measured against). Two marches
+  over the same height map at the same `bumpScale` put the third dimension back
+  (`CelShader`'s `reliefParallax` and `reliefLit`, `CONFIG.graphics.relief`):
+  - **the sheet is the TOP of the relief** — height 1 — and everything is carved
+    down into it, so no stone stands proud of the mesh the depth buffer and the
+    ink know about. A recipe should put its highest features near 1: a whole
+    field authored low is a surface sunk under its own mesh, which the parallax
+    draws as a texture sliding as the eye moves;
+  - **both marches treat height as a displacement straight DOWN in WORLD space**,
+    which is exact here rather than a tangent-frame approximation, because the
+    albedo is already projected down world Y — on a slope as on a level street;
+  - **the relief's self-shadow is HARD and joins the map's** (`shadow *=`), so
+    the key, the specular and the translucency all lose the light behind a stone
+    together, and a groove loses a share of the AMBIENT (`relief.cavity`), which
+    is what keeps a crack dark inside a tree's shadow where the key has gone;
+  - **every relief fetch is `textureSampleGrad` against the UNDISPLACED
+    footprint** (`groundGX`/`groundGY`, taken once in `main`). The mip chain is
+    still the fade, exactly as the slope's taps had it; what the explicit
+    gradient buys is that neighbouring pixels may be displaced by different
+    amounts without that jump reading as a footprint — an implicit LOD off a
+    displaced uv picks a tiny mip along every silhouette the relief draws;
+  - **both fade with distance and the parallax has to**: its shift is depth
+    over the view ray's rise, unbounded at a graze, so it goes to nothing over
+    8–22 m and the rise is floored at 0.2. The shadow is not keyed on the view
+    and carries to 30–60 m. The layer count is adaptive (40% of the cap looking
+    straight down) and a crossing is refined with three secant steps, without
+    which the side of a sett reads as a stack of plates.
+
+  **What the height maps had to become for it**, because a field tuned as a
+  slope is wrong as a depth: a sett was a flat crown reached a quarter of the way
+  in, which carved as a TILE on vertical sides, so it is a pillow now; a sunk
+  sett reached the mortar, which carved as a hole its own shadow filled black; a
+  pebble or an asphalt chip standing proud drops a shadow SPECK, and a field of
+  them reads as pepper, so they stand barely proud; and dried ground is PLATES
+  with a rounded lip and a tilt of their own rather than crumb with a groove
+  scored through it — the tilt being what a low sun reads, one plate facing it
+  and the next turned away. Cost, measured at eye height down a street in a
+  1920x1080 headless frame on the Windows box: `gpu.frame` 1.61 → 1.93 ms on
+  Cinderhaven's cobbles, no measurable change on Harrowmead's (1.54 → 1.50), and
+  frame rate within 3% on both (one run each), the frame being draw-call bound. **The
+  supersampled aliasing figure above has NOT been re-taken with the depth on**
+  (`FINDINGS.md`).
 - **Two up-facing surfaces must never share a plane.** The merge is per colour, so a
   floor slab and the plinth under it land in *different* meshes and their draw order is
   arbitrary — a shared top face is a depth-test tie broken per pixel, which strobes as

@@ -649,6 +649,7 @@ texture it is in texels of being the backing store the player can resize.
 → **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and
 mirror and the three ways a cube probe goes flat, the four light terms and the
 colour buffer's three further rules, the frozen define set and what it measured,
+the ground's height maps carved as a DEPTH (parallax, self-shadow) and not only a slope,
 the ink's tint and its NIB, the wind's two bounds, the muzzle-flash budget, the
 fog split, the shadow window, the bodies' map (its own window, the back faces,
 the two terms' `min`, what does not cast and what it all measured), the

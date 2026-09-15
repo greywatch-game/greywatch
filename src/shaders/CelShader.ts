@@ -87,7 +87,9 @@ import "./wgsl/includes";
  * by the height slope, measured from world-space taps a texel apart — never
  * from screen-space derivatives, which make the relief boil as the player walks
  * (see perturbNormal) — so the light bands ripple across individual
- * cobblestones.
+ * cobblestones. The same height map is also marched for DEPTH — parallax and
+ * a hard self-shadow toward the key (reliefParallax, reliefLit) — so a stone
+ * hides the mortar behind it and throws a shadow off its far side.
  * Outlines are drawn with Babylon's outline renderer (inverted hull).
  *
  * Lighting has four parts, all banded so the toon look survives:
@@ -399,6 +401,12 @@ uniform groundVariationAmount: f32;
 var bumpTexSampler: sampler;
 var bumpTex: texture_2d<f32>;
 uniform bumpScale: f32; // metres of fake relief at height value 1.0
+// The relief's DEPTH — see groundRelief. x, y: the distance the parallax fades
+// out over; z, w: the distance the self-shadow fades out over.
+uniform reliefFade: vec4f;
+// x: how dark the relief's own shadow is (1 = the key gone), y: how much of the
+// ambient a groove at height 0 loses.
+uniform reliefShade: vec2f;
 #endif
 #else
 uniform baseColor: vec3f;
@@ -575,14 +583,22 @@ fn valueNoise(p: vec3f) -> f32 {
 // Three taps rather than four: forward differences off a shared centre. The
 // asymmetry is half a texel of bias in where a grain's slope is reported, which
 // is nothing beside a fetch per ground pixel.
-fn perturbNormal(n: vec3f) -> vec3f {
-  let uv = fragmentInputs.vPosW.xz * uniforms.texScale;
+//
+// **Every fetch from here down is textureSampleGrad against the UNDISPLACED
+// footprint** (gx, gy — the world-mapped uv's own screen derivatives, taken
+// once in main). The mip chain is still the fade, exactly as it was when these
+// were implicit; what the explicit gradient buys is that the parallax below may
+// move uv by a different amount on neighbouring pixels without that jump being
+// read as a footprint — an implicit LOD taken off a displaced uv picks the
+// smallest mip along every silhouette the relief draws, which is a grey seam
+// round every stone.
+fn perturbNormal(n: vec3f, uv: vec2f, gx: vec2f, gy: vec2f) -> vec3f {
   // One texel of the height map. Albedo and height are painted at the same
   // size (SIZE in world/textures.ts), which is what lets this be a constant.
   let e = 1.0 / 512.0;
-  let h0 = textureSample(bumpTex, bumpTexSampler, uv).r;
-  let hx = textureSample(bumpTex, bumpTexSampler, uv + vec2f(e, 0.0)).r;
-  let hz = textureSample(bumpTex, bumpTexSampler, uv + vec2f(0.0, e)).r;
+  let h0 = textureSampleGrad(bumpTex, bumpTexSampler, uv, gx, gy).r;
+  let hx = textureSampleGrad(bumpTex, bumpTexSampler, uv + vec2f(e, 0.0), gx, gy).r;
+  let hz = textureSampleGrad(bumpTex, bumpTexSampler, uv + vec2f(0.0, e), gx, gy).r;
   // Metres of rise per metre travelled: the tap is e / texScale metres away.
   let perMetre = uniforms.bumpScale * uniforms.texScale / e;
   var grad = vec3f((hx - h0) * perMetre, 0.0, (hz - h0) * perMetre);
@@ -591,6 +607,116 @@ fn perturbNormal(n: vec3f) -> vec3f {
   // projection is what keeps a sloped road or a pitched deck honest.
   grad -= n * dot(grad, n);
   return normalize(n - grad);
+}
+
+// THE RELIEF'S DEPTH, which is what the slope above cannot give. A bump only
+// turns a normal: every stone is still painted on one flat sheet, so nothing on
+// the street ever hides anything else and nothing ever casts a shadow, and a
+// raking sun — the one light that should make a street look carved — draws it
+// as a mosaic with shading on it. Two marches over the SAME height map put the
+// third dimension back, and both are asked of the height as a displacement
+// straight DOWN in world space, which is exact rather than approximate here:
+// the albedo is projected down the world Y axis, so a height keyed on world Y
+// is the one frame the texture is already in, on a slope as on a level street.
+//
+// The sheet is the TOP of the relief (height 1) and everything is carved down
+// into it, so no stone ever stands proud of the mesh the depth buffer and the
+// ink know about.
+const RELIEF_STEPS: i32 = ${CONFIG.graphics.relief.parallaxSteps};
+const RELIEF_SHADOW_STEPS: i32 = ${CONFIG.graphics.relief.shadowSteps};
+
+fn reliefHeight(uv: vec2f, gx: vec2f, gy: vec2f) -> f32 {
+  return textureSampleGrad(bumpTex, bumpTexSampler, uv, gx, gy).r;
+}
+
+// PARALLAX: where the eye ray actually meets the carved surface, as that uv and
+// the height it meets it at. A linear march through RELIEF_STEPS layers and one
+// linear refine between the last two, which is enough for relief a few
+// centimetres deep — the sampling layers are finer than a sett's shoulder at
+// every distance this is not already faded out by.
+//
+// **It fades out with distance and has to.** The shift is depth over the view
+// ray's rise, so at a graze it grows without limit, and a march at a fixed
+// step count stops resolving it: past the fade the relief is the slope and the
+// self-shadow alone, which is also all the mip chain has left of it by then.
+// The rise is clamped for the same reason, so a pixel on the horizon line
+// cannot ask for a shift of a whole tile.
+fn reliefParallax(uv0: vec2f, gx: vec2f, gy: vec2f, dist: f32) -> vec3f {
+  let amount = 1.0 - smoothstep(uniforms.reliefFade.x, uniforms.reliefFade.y, dist);
+  let top = reliefHeight(uv0, gx, gy);
+  if (amount <= 0.0 || top >= 1.0) {
+    return vec3f(uv0, top);
+  }
+  let v = normalize(uniforms.camPos - fragmentInputs.vPosW);
+  // Tile units of travel across the relief's whole depth.
+  let span = -v.xz / max(v.y, 0.2) * uniforms.bumpScale * uniforms.texScale * amount;
+  // Fewer layers looking straight down, where the shift is short, and the
+  // whole count at a graze, where it is long.
+  let count = i32(ceil(mix(f32(RELIEF_STEPS), f32(RELIEF_STEPS) * 0.4, v.y)));
+  let layer = 1.0 / f32(count);
+  var prevDepth = 0.0;
+  // Surface depth minus ray depth: positive while the ray is still above.
+  var prevGap = 1.0 - top;
+  for (var i = 1; i <= count; i++) {
+    let depth = f32(i) * layer;
+    let gap = (1.0 - reliefHeight(uv0 + span * depth, gx, gy)) - depth;
+    if (gap <= 0.0) {
+      // Bracketed between two layers: a few secant steps inside the bracket,
+      // which is what stops the side of a stone reading as a stack of plates.
+      var lo = prevDepth;
+      var hi = depth;
+      var gLo = prevGap;
+      var gHi = gap;
+      for (var j = 0; j < 3; j++) {
+        let mid = mix(lo, hi, gLo / max(gLo - gHi, 1e-5));
+        let gMid = (1.0 - reliefHeight(uv0 + span * mid, gx, gy)) - mid;
+        if (gMid > 0.0) {
+          lo = mid;
+          gLo = gMid;
+        } else {
+          hi = mid;
+          gHi = gMid;
+        }
+      }
+      let d = mix(lo, hi, gLo / max(gLo - gHi, 1e-5));
+      return vec3f(uv0 + span * d, 1.0 - d);
+    }
+    prevGap = gap;
+    prevDepth = depth;
+  }
+  return vec3f(uv0 + span, 0.0);
+}
+
+// SELF-SHADOW: whether the relief between this point and the key light stands
+// higher than the light's ray does. Marched only as far as the ray takes to
+// climb out of the relief — past height 1 nothing can stand in its way — so a
+// crown costs almost nothing and a groove is where the taps are spent.
+//
+// It is HARD, a narrow smoothstep on how far the relief stands over the ray,
+// because the frame's shadow is hard: the stepped shadow map is lit or not, and
+// a soft penumbra under every stone would be the one continuous-tone shadow on
+// screen. What softens the edge is the geometry — a stone's shoulder is a slope,
+// so where it rises past the ray is a line, not a stipple.
+//
+// The sun's rise is floored, so the reach across the tile is bounded for a
+// light on the horizon: a street at 14.5 degrees of sun already throws a
+// shadow four times the relief's own depth, which is the look this is for.
+fn reliefLit(uv: vec2f, h: f32, gx: vec2f, gy: vec2f, dist: f32) -> f32 {
+  let amount = (1.0 - smoothstep(uniforms.reliefFade.z, uniforms.reliefFade.w, dist))
+    * uniforms.reliefShade.x;
+  let l = -uniforms.lightDir;
+  if (amount <= 0.0 || l.y <= 0.0 || h >= 1.0) {
+    return 1.0;
+  }
+  let run = l.xz / max(l.y, 0.12) * uniforms.bumpScale * uniforms.texScale;
+  let climb = (1.0 - h) / f32(RELIEF_SHADOW_STEPS);
+  var occ = 0.0;
+  for (var i = 1; i <= RELIEF_SHADOW_STEPS; i++) {
+    let rise = f32(i) * climb;
+    let over = reliefHeight(uv + run * rise, gx, gy) - (h + rise);
+    occ = max(occ, smoothstep(0.0, 0.03, over));
+  }
+  return 1.0 - occ * amount;
 }
 #endif
 
@@ -635,15 +761,30 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // --- directional key light (4 bands), gated by the stepped shadow ---
   // The shadow's normal-offset uses the true facet normal — the bump relief
   // is fake, and offsetting along it would leak light at stone edges.
-  let shadow = shadowVisibility(n, fragmentInputs.vPosW);
+  var shadow = shadowVisibility(n, fragmentInputs.vPosW);
   // The key's cosine off the TRUE facet, before the relief touches it — what
   // the wrap below is keyed on, for the reason the rim gate reads level.
   let ndlGeo = dot(n, -uniforms.lightDir);
 
+  #ifdef CEL_GROUND_TEX
+  // The world-mapped uv and its footprint, taken here, once, before anything
+  // displaces it — see perturbNormal for why every relief fetch reads these.
+  let groundUV0 = fragmentInputs.vPosW.xz * uniforms.texScale;
+  let groundGX = dpdx(groundUV0);
+  let groundGY = dpdy(groundUV0);
+  var groundUV = groundUV0;
+  #endif
+
   #ifdef CEL_BUMP
+  let reliefDist = distance(fragmentInputs.vPosW, uniforms.camPos);
+  let carved = reliefParallax(groundUV0, groundGX, groundGY, reliefDist);
+  groundUV = carved.xy;
+  // The relief's own shadow joins the map's, so the key, the specular and the
+  // translucency all lose the light behind a stone together.
+  shadow *= reliefLit(groundUV, carved.z, groundGX, groundGY, reliefDist);
   // From here on the bumped normal drives every lighting term: key bands,
   // point lights, rim, and the specular streak all follow the setts.
-  n = perturbNormal(n);
+  n = perturbNormal(n, groundUV, groundGX, groundGY);
   #endif
 
   // Baked ambient occlusion, and it multiplies the two AMBIENT terms only.
@@ -658,7 +799,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   //
   // Defaults to 1 on anything with no baked buffer (rigs, viewmodel, effects),
   // so this line is a no-op for them rather than a special case.
+  #ifdef CEL_BUMP
+  // A groove sees less sky than a crown, which is the relief's share of the
+  // same statement — and what keeps a crack dark in a tree's shadow, where the
+  // key and everything it drew are gone.
+  let ao = fragmentInputs.vBaked.w
+    * (1.0 - uniforms.reliefShade.y * (1.0 - smoothstep(0.0, 0.7, carved.z)));
+  #else
   let ao = fragmentInputs.vBaked.w;
+  #endif
 
   var light = uniforms.ambientColor * ao;
   // THE WRAP (EnvironmentSpec.lighting.keyWrap), which is how a cel painter
@@ -706,9 +855,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // Base albedo: a flat palette colour, or a world-mapped ground texture. Both
   // are used raw (display-ready), matching the no-image-processing pipe.
   #ifdef CEL_GROUND_TEX
-  var base = textureSample(
-    baseColorTex, baseColorTexSampler,
-    fragmentInputs.vPosW.xz * uniforms.texScale).rgb;
+  var base = textureSampleGrad(
+    baseColorTex, baseColorTexSampler, groundUV, groundGX, groundGY).rgb;
   // The same world-space drift the flat colours get below, and here it is
   // load-bearing rather than a nicety: this albedo REPEATS, every 4 m on the
   // valley floor and every 1.5 m on the street, and the eye finds a period in a
@@ -1900,7 +2048,7 @@ export class CelMaterialFactory {
             "texScale",
             "groundVariationScale",
             "groundVariationAmount",
-            ...(bump ? ["bumpScale"] : []),
+            ...(bump ? ["bumpScale", "reliefFade", "reliefShade"] : []),
           ],
           samplers: [
             "baseColorTex",
@@ -1928,6 +2076,21 @@ export class CelMaterialFactory {
       if (bump) {
         mat.setTexture("bumpTex", bump);
         mat.setFloat("bumpScale", opts.bumpScale ?? 0.1);
+        // CONFIG's and never the map's, for groundVariation's reason above.
+        const relief = CONFIG.graphics.relief;
+        mat.setVector4(
+          "reliefFade",
+          new Vector4(
+            relief.parallaxFade[0],
+            relief.parallaxFade[1],
+            relief.shadowFade[0],
+            relief.shadowFade[1],
+          ),
+        );
+        mat.setVector2(
+          "reliefShade",
+          new Vector2(relief.shadowStrength, relief.cavity),
+        );
       }
       this.applyCamera(mat);
       this.applyWind(mat);
