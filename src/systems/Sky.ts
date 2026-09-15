@@ -10,6 +10,7 @@
  * EnvironmentSpec via apply() — keep it data-driven, no Hollowmere specifics.
  */
 import {
+  Camera,
   Color3,
   DynamicTexture,
   GlowLayer,
@@ -20,7 +21,9 @@ import {
   type ShaderMaterial,
   StandardMaterial,
   Texture,
+  Vector2,
   Vector3,
+  Vector4,
   VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -94,6 +97,8 @@ export class Sky {
   private readonly sortedEye = new Vector3(Infinity, Infinity, Infinity);
   private sortedTurn = Infinity;
   private readonly localEye = new Vector3();
+  private readonly depthRay = new Vector4();
+  private readonly depthLine = new Vector2();
   private readonly toLocal = new Matrix();
   constructor(
     private scene: Scene,
@@ -221,17 +226,28 @@ export class Sky {
     const c = CONFIG.sky.clouds;
     clouds.rotation.y += c.driftDegPerSec * (Math.PI / 180) * dt;
     this.cloudMat.setVector3("camPos", eye);
-    // The one depth every cloud fragment writes: that of a point `depthMetres`
-    // down the view axis, through the camera's own projection. WebGPU's depth
-    // runs 0..1 and nothing here reverses it, so this is the plain perspective
-    // z row. Re-derived every frame because it is two divisions and the camera
-    // is the one thing here that could be swapped out from under a cache.
+    // What the fragment needs to write the depth of a point `depthMetres` out
+    // ALONG ITS OWN PIXEL'S RAY (see `CloudShader`'s fragment for why along the
+    // ray and never down the axis). For a ray whose view-space direction is
+    // (x, y, 1), that point's z is D / |ray|, and WebGPU's depth — 0..1, nothing
+    // here reverses it — is a * (1 - n / z) with a = f / (f - n): so
+    // a - (a * n / D) * |ray|, and the two numbers are handed over as a line.
+    // Re-derived every frame: the fov moves with every aim, the target with
+    // every resize, and the camera could be swapped out from under a cache.
     const cam = this.scene.activeCamera;
     if (cam) {
+      const engine = this.scene.getEngine();
+      const w = Math.max(1, engine.getRenderWidth());
+      const h = Math.max(1, engine.getRenderHeight());
+      const half = Math.tan(cam.fov * 0.5);
+      const horizontal = cam.fovMode === Camera.FOVMODE_HORIZONTAL_FIXED;
+      const tanX = horizontal ? half : (half * w) / h;
+      const tanY = horizontal ? (half * h) / w : half;
+      this.cloudMat.setVector4("depthRay", this.depthRay.set(tanX, tanY, 2 / w, 2 / h));
       const n = cam.minZ;
       const f = cam.maxZ;
-      const d = Math.min(c.depthMetres, f * 0.99);
-      this.cloudMat.setFloat("skyDepth", (f / (f - n)) * (1 - n / d));
+      const a = f / (f - n);
+      this.cloudMat.setVector2("depthLine", this.depthLine.set(a, (a * n) / c.depthMetres));
     }
     // The ORDER only changes when the eye crosses the plane between two lumps'
     // centres, and at these distances that takes metres of walking or tenths
@@ -328,8 +344,10 @@ export class Sky {
    * standing in it.** A kilometre-wide cloud a kilometre out is not reliably
    * farther than every roof, ridge and crater the camera can see, so a test on
    * its real distance draws it over a mountain. So every cloud fragment writes
-   * ONE depth instead — that of a point `CONFIG.sky.clouds.depthMetres` out
-   * (7 km), behind every surface any map has and in front of the sun's disc,
+   * ONE depth per pixel instead — that of a point `CONFIG.sky.clouds
+   * .depthMetres` (7 km) out along that pixel's ray, never down the view axis
+   * (`CloudShader`'s fragment has the bug that was), behind every surface any
+   * map has and in front of the sun's disc,
    * which `moonDepthDistance` stands behind it. Every surface in the world then
    * hides a cloud, a cloud hides the disc, and — the reason it cannot simply
    * write NO depth, which was tried — the glow layer, occluded by this same

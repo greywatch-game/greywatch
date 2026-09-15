@@ -10,8 +10,9 @@
  * Invariants: unlit by any scene light and unfogged by the cel fog — a cloud is
  * SKY, and the atmosphere it takes is the dome's gradient rather than the
  * village's fog wall; the geometry is REAL world positions (a cloud stays over
- * the field it is over as the player walks) but every fragment writes one
- * depth 7 km out — see the fragment's end — so every surface in the world
+ * the field it is over as the player walks) but every fragment writes the depth
+ * of a point 7 km out along its own pixel's ray — see the fragment's end — so
+ * every surface in the world
  * hides a cloud and a cloud hides only the sun's disc; writes coverage 0, as
  * every opaque surface does.
  * Contract: `docs/rendering.md` ("The sky").
@@ -23,6 +24,7 @@ import {
   ShaderLanguage,
   ShaderMaterial,
   ShaderStore,
+  Vector2,
   Vector3,
   Vector4,
 } from "@babylonjs/core";
@@ -77,7 +79,12 @@ uniform litColor: vec3f;    // a facet square to it
 uniform hazeColor: vec3f;   // the dome's horizon band
 uniform glowColor: vec3f;   // the dome's halo around the light
 uniform look: vec4f;        // x lit share, y haze at the horizon, z lining, w wrap
-uniform skyDepth: f32;      // the ONE depth every cloud fragment writes
+// Where a cloud's depth is written from: x, y the tangents of the half field of
+// view, z, w two over the target's width and height (pixel -> NDC).
+uniform depthRay: vec4f;
+// The depth of a point depthMetres out ALONG ITS OWN RAY is x - y * |ray|,
+// with the ray's view-space z at 1 — see the fragment's end.
+uniform depthLine: vec2f;
 
 #include<celBand>
 #include<celDither>
@@ -123,15 +130,31 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let haze = (1.0 - smoothstep(0.06, 0.5, v.y)) * uniforms.look.y;
   col = mix(col, uniforms.hazeColor, haze);
 
-  // ONE DEPTH FOR EVERY CLOUD, written here rather than interpolated. It is the
-  // depth of a point 7 km out (Sky.update computes it from the camera), which
-  // is behind every surface in the world and in front of the sun's disc — so a
-  // roof hides a cloud, a cloud hides the disc, and the glow layer, which is
-  // occluded by this same depth buffer, stops blooming the disc through one.
-  // Constant and not interpolated for the painter's order's sake: with LEQUAL,
-  // a nearer lump drawn later must tie exactly with the farther one under it,
-  // and a per-vertex z/w in float32 near 1 wobbles by about one depth LSB.
-  fragmentOutputs.fragDepth = uniforms.skyDepth;
+  // ONE DEPTH PER PIXEL FOR EVERY CLOUD, written here rather than interpolated.
+  // It is the depth of a point 7 km out along THIS PIXEL'S RAY, which is behind
+  // every surface in the world and in front of the sun's disc — so a roof hides
+  // a cloud, a cloud hides the disc, and the glow layer, occluded by this same
+  // depth buffer, stops blooming the disc through one.
+  //
+  // **Along the ray, never along the view axis, and the difference was a bug
+  // anybody could see.** A depth buffer stores view-axis z, and the disc 9 km
+  // out has a view z of 9 km x cos(its angle off the centre of the screen). The
+  // first version wrote one constant, the depth of 7 km DOWN THE AXIS, so past
+  // about 39 degrees off-centre the disc's z fell under it and the disc drew in
+  // front of the cloud hiding it: turn until the moon was toward the side of the
+  // screen and the order flipped. A point at radial distance D on a ray whose
+  // view-space direction is (x, y, 1) has z = D / |ray|, so writing that makes
+  // the cloud's distance and the disc's the same KIND of distance at every
+  // pixel, and 7 against 9 holds everywhere on the screen.
+  //
+  // From the pixel's own position rather than from vDir, for the painter's
+  // order's sake: with LEQUAL a nearer lump drawn later must tie EXACTLY with
+  // the farther one under it, and every fragment on one pixel is handed the same
+  // position bit for bit, where an interpolated direction is not.
+  let ndc = fragmentInputs.position.xy * uniforms.depthRay.zw - vec2f(1.0);
+  let ray = ndc * uniforms.depthRay.xy;
+  fragmentOutputs.fragDepth = uniforms.depthLine.x
+    - uniforms.depthLine.y * sqrt(1.0 + dot(ray, ray));
   // Coverage 0, as everything opaque writes. At 7 km the ink's own fade has
   // taken every line off already, on every map's fog band.
   fragmentOutputs.color = vec4f(dither(col), 0.0);
@@ -157,8 +180,8 @@ export interface CloudLook {
  * the world matrix and `camPos` keep flowing through `_mustRebind`, which does
  * not read `isFrozen`.
  *
- * **Every fragment writes the SAME depth and back faces are CULLED, and the two
- * go together.** With one depth for the whole ring the buffer cannot settle
+ * **Every fragment on a pixel writes the SAME depth and back faces are CULLED,
+ * and the two go together.** With one depth for the whole ring the buffer cannot settle
  * which facet is in front, so a closed lump is only right because its far side
  * is culled, and one lump in front of another is only right because `Sky` draws
  * the lumps back to front and the test is LEQUAL, so a later tie wins.
@@ -174,7 +197,8 @@ export function createCloudMaterial(scene: Scene, look: CloudLook): ShaderMateri
         "world",
         "viewProjection",
         "camPos",
-        "skyDepth",
+        "depthRay",
+        "depthLine",
         "sunDir",
         "shadeColor",
         "litColor",
@@ -186,7 +210,8 @@ export function createCloudMaterial(scene: Scene, look: CloudLook): ShaderMateri
     },
   );
   mat.setVector3("camPos", Vector3.Zero());
-  mat.setFloat("skyDepth", 1);
+  mat.setVector4("depthRay", new Vector4(1, 1, 0, 0));
+  mat.setVector2("depthLine", new Vector2(1, 0));
   mat.setVector3("sunDir", look.sunDir.normalizeToNew());
   mat.setColor3("shadeColor", look.shade);
   mat.setColor3("litColor", look.lit);

@@ -404,7 +404,7 @@ and the cube comes back alpha 0 everywhere and every pane reflects nothing but
 sky.
 
 **The CLOUDS write coverage 0 like every opaque surface, and need nothing from the
-ink** — they write one depth 7 km out (see the sky section), past every map's fog
+ink** — they write the depth of a point 7 km out (see the sky section), past every map's fog
 band, so the ink's own fade has taken their line work off before it is drawn. A
 first version wrote their REAL depth at a few hundred metres and had to write
 coverage 1 to keep Cinderhaven's clouds from being outlined; the far depth retired
@@ -2396,10 +2396,22 @@ shape) and `shaders/CloudShader.ts` is the light.
   reliably farther than every ridge and crater the camera can see, so a depth test
   on its real distance draws it over a mountain. The vertex stage projects x and y
   for real and pins clip z just inside the far plane (so no cloud is ever clipped
-  by it), and the FRAGMENT writes one constant depth, that of a point
-  `clouds.depthMetres` (7 km) down the view axis. Every world surface is nearer, so
-  every one hides a cloud; the disc is stood at `moonDepthDistance` (9 km, scaled so
-  it keeps its angle), so a cloud hides the disc.
+  by it), and the FRAGMENT writes the depth of a point `clouds.depthMetres` (7 km)
+  out ALONG ITS OWN PIXEL'S RAY. Every world surface is nearer, so every one hides a
+  cloud; the disc is stood at `moonDepthDistance` (9 km, scaled so it keeps its
+  angle), so a cloud hides the disc.
+- **Along the ray, never down the view axis — the axis version shipped and flipped
+  the order at the side of the screen.** The buffer stores view-axis z, and the disc
+  9 km out has a z of 9 km × cos(its angle off centre). A constant written as the
+  depth of 7 km DOWN THE AXIS fell behind the disc's past about 39° off centre, so on
+  Cinderhaven the moon sat behind a cloud until the player turned to put it toward
+  the edge of the screen, and then drew in front. A point at radial D on a view ray
+  (x, y, 1) has z = D / |ray|, so the fragment writes `a − (a·n/D)·|ray|` (`a = f /
+  (f − n)`), taking the ray from `fragmentInputs.position` — which makes the clouds'
+  distance and the disc's the same kind of distance at every pixel, and 7 against
+  9 holds everywhere. The ray comes from the pixel position rather than the
+  interpolated view direction so every fragment on one pixel writes bit-identical
+  depth, which the tie below needs.
 - **It cannot simply write NO depth, and that was tried.** The disc's colour was
   covered, but the glow layer is occluded by the frame's depth buffer
   (`GlowDepth`), so the disc went on BLOOMING through every cloud in front of it.
@@ -2407,8 +2419,8 @@ shape) and `shaders/CloudShader.ts` is the light.
   say which lump is in front, so `Sky.sortClouds` rewrites the index buffer
   farthest lump first whenever the eye has walked `resortMetres` or the ring has
   turned `resortTurn`, and the test is LEQUAL so a later tie wins. Back-face
-  culling makes each closed lump right on its own. The depth is written as a
-  CONSTANT rather than interpolated because a per-vertex z/w in float32 near 1
+  culling makes each closed lump right on its own. The depth is written per PIXEL
+  rather than interpolated because a per-vertex z/w in float32 near 1
   wobbles by about one 24-bit LSB, which would speckle every overlap.
 - **Rendering group 2 is the clouds', with its automatic depth clear off** — drawn
   after the disc (group 1) so they can cover it, and depth-tested against what the

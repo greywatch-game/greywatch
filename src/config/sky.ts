@@ -177,8 +177,10 @@ export const sky = {
     resortMetres: 2,
     resortTurn: 0.002,
     /**
-     * The distance whose depth every cloud fragment writes — not where a cloud
-     * is but where the depth test is told it is (`Sky.buildClouds`). It has to
+     * The distance whose depth every cloud fragment writes, measured ALONG the
+     * pixel's ray — not where a cloud is but where the depth test is told it is
+     * (`Sky.buildClouds`). A RADIAL distance like `moonDepthDistance`, which is
+     * what keeps the two in order at the edge of the screen. It has to
      * be behind every surface any map draws (Cinderhaven's sea runs about
      * 3 km from its edges) and in front of `moonDepthDistance`, both inside the
      * camera's 10 km far plane. 7 km leaves roughly a hundred 24-bit steps to
