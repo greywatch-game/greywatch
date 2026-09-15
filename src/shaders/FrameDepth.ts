@@ -20,8 +20,8 @@
  *
  * 1. **The frame's depth at the end of the draw phase is the WORLD's.** Babylon
  *    clears depth between rendering groups — the classic viewmodel trick — but
- *    `Sky.ts` turns that clear OFF for group 1 so the moon cannot draw through
- *    a wall. So group 1 shares group 0's buffer and there is ONE coherent depth
+ *    `Game`'s constructor turns that clear OFF for group 1 (it was `Sky.ts`'s,
+ *    while the moon drew there). So group 1 shares group 0's buffer and there is ONE coherent depth
  *    image holding the village, the sky shell and the gun. That line is also
  *    what makes `GlowDepth`'s occlusion work, and breaking it breaks all three
  *    readers.

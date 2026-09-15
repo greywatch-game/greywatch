@@ -227,7 +227,7 @@ frame                       the whole tick, wall to wall
    ├─ glow                  the GlowLayer: its main texture, its four blurs,
    │                        and its compose two stages later
    ├─ drawWorld             rendering group 0 — the map and the bodies
-   └─ drawOverlay           groups above it — the sky shell, the moon, the gun
+   └─ drawOverlay           groups above it — the gun
 
 present                     the engine's endFrame AFTER tick returns: the
                             render pass closed and queue.submit. A ROOT, not a

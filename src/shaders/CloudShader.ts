@@ -207,6 +207,16 @@ export function createCloudMaterial(scene: Scene, look: CloudLook): ShaderMateri
         "look",
       ],
       shaderLanguage: ShaderLanguage.WGSL,
+      // Nothing is alpha-TESTED here, and this is not a claim that anything
+      // is: it is the draw ORDER. Babylon draws a rendering group's opaque list,
+      // then its alpha-test list, then its particles and its blended meshes, so
+      // this puts the clouds after every opaque surface — the dome included,
+      // which is depth-tested at 600 m and would paint over a cloud drawn before
+      // it — and BEFORE everything that writes no depth. Drawn after those (the
+      // clouds had a rendering group of their own), a cloud covered every
+      // capture marker, tracer and plume standing against the sky: the far
+      // depth passes wherever nothing wrote one. See `Sky.buildClouds`.
+      needAlphaTesting: true,
     },
   );
   mat.setVector3("camPos", Vector3.Zero());

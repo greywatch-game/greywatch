@@ -1087,6 +1087,14 @@ export class Game {
       if (!eye) return 0;
       return eyeDistanceSq(a, eye) - eyeDistanceSq(b, eye);
     });
+    // **The viewmodel's group does NOT clear depth before it draws**, where
+    // Babylon's default for every group above 0 is to clear. It lived in `Sky`
+    // while the moon shared that group; the moon is in group 0 now and what the
+    // line still holds up is ONE depth image for the frame — the world and the
+    // gun together — which `FrameDepth` hands to the ink and the blur, and which
+    // `GlowDepth` occludes the bloom against. Clear it and all three readers
+    // see a buffer holding the weapon alone.
+    this.scene.setRenderingAutoClearDepthStencil(VIEWMODEL_GROUP, false);
 
     // Post-processing: FXAA smooths the hard cel/outline edges. Glow comes
     // from a GlowLayer rather than threshold bloom — it keys off material
@@ -1163,14 +1171,10 @@ export class Game {
       // Only what is on the stage may bloom while the stage is up, which
       // still leaves the reticle and the hot parts of the weapon itself
       // glowing — exactly what the screen is for. "On the stage" is the
-      // viewmodel's rendering group MINUS the sky, which shares it (see
-      // `Sky`'s constructor) and is picked back out by the same
-      // `infiniteDistance` the fog exemption below turns on: without that
-      // second half the moon hangs its bloom over the bench.
-      if (
-        this.state === "loadout" &&
-        (mesh.renderingGroupId !== VIEWMODEL_GROUP || mesh.infiniteDistance)
-      ) {
+      // viewmodel's rendering group, and nothing else is in it: the moon, which
+      // shared it once and needed an `infiniteDistance` test to be picked back
+      // out, draws in group 0 now (see `Sky.apply`).
+      if (this.state === "loadout" && mesh.renderingGroupId !== VIEWMODEL_GROUP) {
         result.set(0, 0, 0, material.alpha);
         return;
       }

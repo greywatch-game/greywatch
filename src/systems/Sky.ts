@@ -5,8 +5,9 @@
  * clouds are one cel-banded ShaderMaterial draw. Everything infiniteDistance,
  * unpickable; moon bloom via the GlowLayer.
  * Invariants: moonDir is negated to align with the shader's light direction;
- * the moon renders in a later renderingGroup than the dome; the clouds sit
- * inside the moon's distance so they hide it by depth. Rebuilt from an
+ * the moon is BLENDED in rendering group 0, so it draws after the opaque dome
+ * and before any nearer blended mesh; the clouds sit inside the moon's
+ * distance so they hide it by depth. Rebuilt from an
  * EnvironmentSpec via apply() — keep it data-driven, no Hollowmere specifics.
  */
 import {
@@ -32,13 +33,6 @@ import { createCloudMaterial } from "../shaders/CloudShader";
 import { mulberry32 } from "../world/rng";
 import type { EnvironmentSpec, SkySpec } from "../world/environment";
 import { buildCloudRing, type CloudGeometry } from "./cloudMasses";
-
-/**
- * The rendering group the clouds draw in: after the world (0) and after the
- * disc and the viewmodel (1), with its automatic depth clear turned off in the
- * constructor. Nothing else in the tree uses group 2.
- */
-const CLOUD_GROUP = 2;
 
 /**
  * The sky: a gradient dome with the galactic band, the stars and the moon's
@@ -103,18 +97,7 @@ export class Sky {
   constructor(
     private scene: Scene,
     private glow: GlowLayer,
-  ) {
-    // Rendering groups above 0 clear the depth buffer by default (the
-    // classic FPS-viewmodel trick). The sky lives in group 1 so the moon
-    // draws over the dome, but it must still respect the WORLD's depth —
-    // without this the moon and clouds render through players and walls.
-    scene.setRenderingAutoClearDepthStencil(1, false);
-    // And the clouds live in group 2, for the same reason and one more: they
-    // are drawn after the disc so they can pass in front of it, and they are
-    // depth-TESTED against the world, so group 2 must not clear the depth the
-    // world wrote either.
-    scene.setRenderingAutoClearDepthStencil(CLOUD_GROUP, false);
-  }
+  ) {}
 
   /**
    * Rebuilds the sky for a map's environment; a missing `sky` spec clears it.
@@ -206,7 +189,18 @@ export class Sky {
       // everywhere on the map, and with infiniteDistance it rides with it.
       moon.billboardMode = Mesh.BILLBOARDMODE_ALL;
       moon.material = moonMat;
-      moon.renderingGroupId = 1; // after the dome, so depth can't drop it
+      // **Group 0, in its BLENDED pass**, which Babylon draws after the opaque
+      // dome and after the clouds (see `buildClouds`), sorted far to near — so
+      // at 9 km the disc is the first blended mesh down and every capture
+      // marker, tracer and pane in front of it draws over it. It rode in the
+      // viewmodel's group once, after the whole world, and painted itself over
+      // anything blended standing against it: none of those write a depth to
+      // stop it. PARTICLES are the exception the group cannot fix — Babylon
+      // draws a group's particle systems before its blended meshes. And the
+      // disc's BLOOM still reaches over all of them: the glow layer is occluded
+      // by depth alone (`GlowDepth`), and at `moonEmissiveBoost` the bloom
+      // saturates the disc white again over a beacon — measured on Cinderhaven,
+      // byte-identical in either group with the glow on, different with it off.
       this.prepare(moon, false);
       this.disposables.push(moonMat, moonTex);
     }
@@ -416,7 +410,13 @@ export class Sky {
       wrap: c.wrap,
     });
     mesh.material = mat;
-    mesh.renderingGroupId = CLOUD_GROUP;
+    // **Group 0, on its ALPHA-TEST list** (`createCloudMaterial` sets that):
+    // after every opaque surface and before everything that writes no depth.
+    // It had a group of its own, drawn after the whole world, and every capture
+    // marker, tracer and plume standing against the sky was painted over — the
+    // cloud's far depth passes wherever a blended draw wrote none. The disc
+    // needs no ORDER from it: it stands at `moonDepthDistance`, behind the
+    // depth a cloud writes, so it is rejected wherever one has been drawn.
     // The ring spans kilometres around the map and the eye is always inside
     // it, so it is always in the frustum; saying so spares the bounding test.
     mesh.alwaysSelectAsActiveMesh = true;

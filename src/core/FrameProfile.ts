@@ -1352,7 +1352,7 @@ export class FrameProfile {
    * added to `drawWorld` on top of the spans that already hold them.
    *
    * **Group 0 is the world and everything above it is `drawOverlay`**, which
-   * today is the sky shell, the moon and the viewmodel (`VIEWMODEL_GROUP`).
+   * today is the viewmodel (`VIEWMODEL_GROUP`) alone — the sky draws in group 0.
    * Split that way rather than one slot per id because the question worth
    * asking is what the MAP costs against what the gun costs, and a third group
    * added to the game should join the overlay rather than go unrecorded.

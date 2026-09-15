@@ -572,7 +572,7 @@ export class WorldCulling {
       if (!mesh.isVisible || !mesh.isEnabled()) continue;
       // **The gate is about WORLD geometry and only rendering group 0 holds
       // any.** Everything above it is drawn against the EYE rather than
-      // standing in the map — the viewmodel, the sky shell, the moon — and
+      // standing in the map — the viewmodel — and
       // their world bounding info is not what this reads: the viewmodel hangs
       // off the camera and Babylon bakes its matrix inside the render, so at
       // this point in the frame the gun's bounds are still sitting at the

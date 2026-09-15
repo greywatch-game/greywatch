@@ -213,12 +213,12 @@ function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
   mat.alpha = 0;
   // Depth is then bent both ways, and both are load-bearing. `ALWAYS` is what
   // lets the card ignore the world's depth, so a wall the deploy camera is
-  // standing against cannot cut a hole in the bench. Writing depth is how it
-  // covers what its own pass cannot reach: the SKY is in the viewmodel's
-  // rendering group too (`Sky` puts the moon there so the dome cannot drop
-  // it), which draws after this one whatever the sorting says — and a card
-  // that stamps 8 m across the frame fails the moon out of the depth test
-  // while the weapon, a half-metre from the lens, sails through it.
+  // standing against cannot cut a hole in the bench. Writing depth makes the
+  // card the SURFACE every depth reader sees — the ink, the blur's weapon mask,
+  // the glow's occlusion — and it is what first covered the moon, while the
+  // disc drew in the viewmodel's group after this one whatever the sorting
+  // said. The disc is a blended mesh in group 0 now and sorts under the card;
+  // the weapon, a half-metre from the lens, still sails through an 8 m stamp.
   //
   // `forceDepthWrite`, not the absence of `disableDepthWrite`: setting a blend
   // mode turns depth writing OFF in the engine, so a blended mesh has to ask.

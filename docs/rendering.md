@@ -2148,12 +2148,21 @@ does not take, both being look decisions rather than bugs.
   against haze very nearly its own colour. The tilt gate stays and is not redundant —
   it is what keeps a rig's top faces and a hull's deck out, and it is what has to hold
   if the world is ever given its rim back.
-- Rendering group **1 is the viewmodel's**, for the depth clear Babylon does between
-  groups. Putting world geometry in group 1 makes it draw through everything. The
-  **sky is in it too** (`Sky`'s constructor turns the depth clear back off so the
-  moon still respects a wall), which is why anything reasoning about "what is on
-  the camera" has to separate the two — `infiniteDistance` is the test, and both
-  the glow's fog exemption and the kit screen's use it.
+- Rendering group **1 is the viewmodel's, and nothing else is in it.** Its depth
+  clear is OFF (`Game`'s constructor), so the frame keeps one depth image holding
+  the world and the gun that `FrameDepth` and `GlowDepth` both read. **The moon
+  disc used to share the group and does not any more**: it drew after every
+  blended mesh in group 0, none of which write depth, so it painted over a
+  capture beacon or a tracer standing in front of it. It is a blended mesh in
+  group 0 now, drawn after the opaque dome and the clouds and, at 9 km, first of
+  the blended queue. **Particles are still under it** — Babylon draws a group's
+  particle systems before its blended meshes, so a plume in front of the disc is
+  the one case the move does not fix. **Nor does it fix the disc's BLOOM**: the
+  glow layer occludes on depth alone, so the halo is composited over a beacon in
+  front of the disc and saturates it back to white — on Cinderhaven the frame is
+  byte-identical in either group with the glow on, and differs over the disc with
+  it off. `infiniteDistance` stays the glow's fog
+  exemption; the kit screen's test is the group alone.
 - **The kit screen's backdrop is the one blended mesh in the game whose DRAW
   ORDER is load-bearing** (`buildKitBackdrop` in `ViewModel.ts`). It has to cover
   the world and be covered by the weapon, and the only slot that does both is a
@@ -2161,8 +2170,8 @@ does not take, both being look decisions rather than bugs.
   group's blended meshes last, and its default `alphaIndex` is already
   `Number.MAX_VALUE`, so any ordinary large number sorts the card in front of the
   capture skirt instead of behind it. `depthFunction: ALWAYS` keeps a near wall
-  from cutting it, `forceDepthWrite` is what stops the sky in group 1 drawing
-  over it, and a **glow layer is composited over the finished frame and so cannot
+  from cutting it, `forceDepthWrite` makes the card the surface every depth reader
+  sees (it also once kept the moon, then in group 1, from drawing over it), and a **glow layer is composited over the finished frame and so cannot
   be covered at all** — `Game`'s emissive selector zeroes everything off the stage
   while the kit is up.
 - **…and it is therefore the one blended mesh that must write NO COVERAGE, which
@@ -2468,9 +2477,16 @@ shape) and `shaders/CloudShader.ts` is the light.
   culling makes each closed lump right on its own. The depth is written per PIXEL
   rather than interpolated because a per-vertex z/w in float32 near 1
   wobbles by about one 24-bit LSB, which would speckle every overlap.
-- **Rendering group 2 is the clouds', with its automatic depth clear off** — drawn
-  after the disc (group 1) so they can cover it, and depth-tested against what the
-  world wrote. A mesh put in group 2 for any other reason inherits both.
+- **The clouds draw in group 0, on its ALPHA-TEST list** (`needAlphaTesting` on
+  the material, which tests nothing) — after every opaque surface and before the
+  group's particles and blended meshes. Both halves are load-bearing. After the
+  opaque list, because the dome is depth-TESTED at `domeRadius` (600 m) and paints
+  over any cloud drawn before it. Before the blended draws, because those write
+  no depth, so a cloud drawn after them passes its test wherever they stand
+  against the sky: the clouds had rendering group 2 to themselves once, and every
+  capture ring, beacon, tracer and plume against the sky was drawn over. The disc
+  (group 0's blended pass, after them) needs no order from them — it stands behind
+  the depth a cloud writes and is rejected by it.
 - **The drift is a TURN of the mesh about the map's centre and never of what lights
   it.** The key is asked of the world normal in the shader, so a cloud coming round
   into the sun lights on its sun side. A baked colour would carry its lit face away
