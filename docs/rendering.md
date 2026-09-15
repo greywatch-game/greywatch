@@ -2429,8 +2429,9 @@ shape) and `shaders/CloudShader.ts` is the light.
 - **One mesh, one material, one draw.** The whole ring is a flat-shaded triangle
   soup — every triangle owns its three corners, which is what gives each facet its
   own normal — merged once when the sky is applied. Measured: 12,640 triangles
-  on Harrowmead (`cloudCover` 0.55), 14,080 on Coldharbour (0.62) and 16,640 on
-  Hollowmere (0.72).
+  on Harrowmead (`cloudCover` 0.55) and 14,080 on Coldharbour (0.62), measured
+  when Hollowmere still carried 16,640 at 0.72. Hollowmere is 0 now, and a cover
+  of 0 builds no ring, no material and no draw at all.
 - **A cloud is a long BANK of flattened icosphere lumps with a flat BELLY.** One
   subdivision, because the facet is the look; four to eight lumps a row, swelling
   toward the middle and thinning to the ends, a thinner tier SLID one way along the

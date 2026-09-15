@@ -105,9 +105,9 @@ export const HollowmereEnvironment: EnvironmentSpec = {
   /**
    * A cold moon low in the south-east (opposite the key light — see above)
    * burning a wide halo into a deep blue zenith, with a dead-green
-   * band at the horizon that hands off to the fog. Broken cloud drifts across
-   * it and silvers where the moon is behind it; the galactic band shows in
-   * the clear stretch overhead.
+   * band at the horizon that hands off to the fog, and the galactic band
+   * overhead. No cloud: `cloudCover` 0 builds no ring at all. The cloud palette
+   * is left stated, so putting the cloud back is that one number.
    */
   sky: {
     zenithColor: "#050b17",
@@ -119,7 +119,7 @@ export const HollowmereEnvironment: EnvironmentSpec = {
     moonGlowColor: "#7ea0d8",
     milkyWayColor: "#5a6f96",
     cloudColor: "#1a2434",
-    cloudCover: 0.72,
+    cloudCover: 0,
     cloudLitColor: "#86a8dc",
     cloudLitStrength: 0.34,
   },
