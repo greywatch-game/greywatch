@@ -21,7 +21,9 @@
  *   `rotationRate` is the gyroscope itself; `deviceorientation` is a fused
  *   attitude that re-anchors to the compass and snaps near its poles, which is
  *   a view that twitches on its own. The spec's unit is degrees a second, and
- *   Chrome has honoured it since 66 (it was radians before).
+ *   Chrome has honoured it since 66 (it was radians before). Its three names
+ *   are the device's X, Y and Z in that order — not the orientation event's
+ *   Euler order, which is the mistake this file first shipped with.
  * - **The device's axes are not the screen's.** The sensor reports about the
  *   phone held upright (x right, y up, z out of the glass), and this game is
  *   played sideways in either direction. `screen.orientation.angle` rotates
@@ -293,11 +295,17 @@ export class GyroInput {
     // Angular velocity, rad/s, about the screen's right, up and out axes.
     // Right-handed: +right tilts the view UP (the top edge comes toward the
     // player), +up turns it LEFT.
-    const wx = r.beta * DEG;
-    const wy = r.gamma * DEG;
+    // `alpha` is about the device's X, `beta` its Y and `gamma` its Z — the
+    // spec's current text, and what Chromium and WebKit both do. It is NOT the
+    // Euler order `deviceorientation` uses (alpha about Z), which an older
+    // revision of the spec also used for this and which MDN still repeats:
+    // read that way, tilting the phone turned the view sideways and only a
+    // steering-wheel roll pitched it.
+    const wx = r.alpha * DEG;
+    const wy = r.beta * DEG;
     const wRight = wx * c - wy * s;
     const wUp = wx * s + wy * c;
-    const wOut = r.alpha * DEG;
+    const wOut = r.gamma * DEG;
 
     const worldYaw = wUp * upU + wOut * upO;
     const cap = Math.hypot(wUp, wOut);
