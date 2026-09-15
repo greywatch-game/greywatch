@@ -63,6 +63,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+// The GAME's own bend, loaded by Node's type stripping (Node 24+). This file
+// claims the ground a path road will cover before anything else is placed, and
+// it has to claim the carriageway the builder draws rather than the polyline
+// it was handed: on the coast road's long legs a rounded corner stands metres
+// inside the point it was authored through, and a claim along the polyline
+// would let a croft be built on the tarmac.
+import { bendPath } from "../src/world/roadPaths.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -2099,75 +2106,6 @@ function roadSlab(x, z, rot, len, w, surface, pad = 1.4) {
       `params: { length: ${n2(len)}, width: ${n2(w)}, surface: "${surface}" } },`,
   );
   roadLegs++;
-}
-
-/**
- * `world/roadPaths.ts`'s `ROAD_BEND_MIN`, `ROAD_BEND_CUT`, `ROAD_BEND_SAG` and
- * the five-degree chord, restated for `bendPath` below — see that function.
- */
-const ROAD_BEND_MIN = 0.6;
-const ROAD_BEND_CUT = 2;
-const ROAD_BEND_SAG = 0.03;
-const ROAD_BEND_STEP = (5 * Math.PI) / 180;
-
-/**
- * **A TWIN of `bendPath` in `src/world/roadPaths.ts`**, which is what the game
- * draws a path road along. It is here because this file claims the ground a
- * road will cover BEFORE anything else is placed, and it has to claim the
- * carriageway the builder is going to draw rather than the polyline it was
- * handed: on the coast road's long legs a corner rounded as far as its legs
- * allow stands five metres inside the point it was authored through, and a
- * claim along the polyline would let a croft be built on the tarmac. The two
- * must round a corner the same way; change one and change the other.
- */
-function bendPath(pts, width, radius = Infinity) {
-  const out = [];
-  const push = (x, z) => {
-    const last = out[out.length - 1];
-    if (!last || Math.hypot(x - last[0], z - last[1]) > 1e-6) out.push([x, z]);
-  };
-  if (pts.length === 0) return out;
-  push(pts[0][0], pts[0][1]);
-  const rFloor = ROAD_BEND_MIN * width;
-  const rCap = Math.max(radius, rFloor);
-  for (let i = 1; i < pts.length - 1; i++) {
-    const [px, pz] = pts[i - 1];
-    const [cx, cz] = pts[i];
-    const [nx, nz] = pts[i + 1];
-    const l1 = Math.hypot(cx - px, cz - pz);
-    const l2 = Math.hypot(nx - cx, nz - cz);
-    if (l1 < 1e-6 || l2 < 1e-6) continue;
-    const d1x = (cx - px) / l1;
-    const d1z = (cz - pz) / l1;
-    const d2x = (nx - cx) / l2;
-    const d2z = (nz - cz) / l2;
-    const turn = Math.acos(Math.max(-1, Math.min(1, d1x * d2x + d1z * d2z)));
-    if (turn < 1e-4 || turn > Math.PI - 1e-3) {
-      push(cx, cz);
-      continue;
-    }
-    const tan = Math.tan(turn / 2);
-    const byCut = (ROAD_BEND_CUT * tan) / (1 / Math.cos(turn / 2) - 1);
-    const t = Math.min(0.5 * Math.min(l1, l2), rCap * tan, Math.max(byCut, rFloor * tan));
-    const r = t / tan;
-    const side = d1x * d2z - d1z * d2x > 0 ? 1 : -1;
-    const ax = cx - d1x * t;
-    const az = cz - d1z * t;
-    const ox = ax - d1z * r * side;
-    const oz = az + d1x * r * side;
-    const bySag = r > ROAD_BEND_SAG ? 2 * Math.acos(1 - ROAD_BEND_SAG / r) : ROAD_BEND_STEP;
-    const n = Math.max(1, Math.ceil(turn / Math.min(ROAD_BEND_STEP, bySag)));
-    const a0 = Math.atan2(az - oz, ax - ox);
-    push(ax, az);
-    for (let k = 1; k < n; k++) {
-      const a = a0 + (side * turn * k) / n;
-      push(ox + Math.cos(a) * r, oz + Math.sin(a) * r);
-    }
-    push(cx + d2x * t, cz + d2z * t);
-  }
-  const last = pts[pts.length - 1];
-  push(last[0], last[1]);
-  return out;
 }
 
 /** Every carriageway's centreline as it will be DRAWN, bends and all. */

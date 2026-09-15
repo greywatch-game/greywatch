@@ -605,7 +605,7 @@ src/
                         #   trees and scrub (PropBody.rooted) and every blade
                         #   of grass
     roadPaths.ts        # A road laid along a PATH: its corners drawn as arcs
-                        #   (bendPath, twinned in generate-cinderhaven.mjs) and
+                        #   (bendPath, which the map generators import) and
                         #   the network's JUNCTIONS found and resolved — an end
                         #   on another road, ends on each other, a crossing —
                         #   into cuts and filleted patches. Pure; the client

@@ -965,10 +965,12 @@ that is not across it.
   junctions, against 72k from the 115 rectangles they replaced; the network
   resolves in 16 ms of the build; and a footprint query is a quarter of a
   microsecond.
-- **`bendPath` has a TWIN in `scripts/generate-cinderhaven.mjs`**, because the
-  generator claims the ground a road will cover before anything else is placed
-  and cannot import TypeScript. Change one and change the other, or claims sit a
-  metre off the carriageway on a long bend with nothing to say so.
+- **A generator IMPORTS `bendPath` from `src/world/roadPaths.ts`** rather than
+  keeping a copy, because it claims the ground a road will cover before anything
+  else is placed and must claim the curve that will be drawn. Node 24 loads the
+  module by type stripping, which puts two rules on `roadPaths.ts` and `roads.ts`
+  (their headers): a value import names its `.ts`, and no syntax that must be
+  compiled rather than erased. A new map's generator imports it the same way.
 
 **A COBBLED STREET ENDS IN A KERB COURSE** (`layKerb` in `kit/terrain.ts`), and
 it exists because the ground was given a depth. The setts are carved down into

@@ -75,7 +75,7 @@ and what it must never do. Read it before editing that file.
 
 **GREYWATCH — Cel-Shaded Conquest**: a browser-based, single-player
 **first-person** Conquest shooter (8v8 vs bots, five control points, ticket
-bleed). **Babylon.js** + **TypeScript** + **Vite**; ES modules, Node 18+,
+bleed). **Babylon.js** + **TypeScript** + **Vite**; ES modules, Node 24+,
 **WebGPU** — there is no WebGL fallback engine in the tree and there must not be
 one. `main.ts` gates the boot on `navigator.gpu` AND an adapter, so a browser
 without one gets a sentence instead of a black page; what that costs is reach,
@@ -786,8 +786,10 @@ meets another path, ends meet each other or two paths cross, the junction is
 FOUND and paved as one filleted patch — a layout never states one. **A
 rectangle is never an arm of anything**, which is what keeps every map without
 a path bit-identical. The footprint the grass and the scatter ask is the
-network's on both sides (`GameMap.roads`), and **`bendPath` has a twin in
-`generate-cinderhaven.mjs`** that must round a corner the same way.
+network's on both sides (`GameMap.roads`), and **a map GENERATOR imports
+`bendPath` from `roadPaths.ts` rather than copying it** — Node loads that file
+and `roads.ts` by type stripping, so a value import in either names its `.ts`
+and neither may hold syntax that must be compiled rather than erased.
 
 **There is a sixth entry in `MAPS` and it is DEV-ONLY and not a level.**
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures

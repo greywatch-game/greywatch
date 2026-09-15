@@ -40,6 +40,11 @@
  * those on an island, so they are bucketed on a lattice. Nothing about a
  * rectangle's answer moved when paths arrived, which is what keeps the seeded
  * dressing on the maps that have none bit-identical.
+ *
+ * **A Node script loads this file by type stripping**, through `roadPaths.ts`
+ * (a map generator imports that straight out of `src/`), so a value import here
+ * names its `.ts` and nothing here may be syntax that has to be compiled rather
+ * than erased — see `roadPaths.ts`'s header.
  */
 import type { Placement } from "./layout";
 

@@ -50,8 +50,18 @@
  * rectangle (a street arriving in a paved square) simply overlaps it, as every
  * road always has.
  *
+ * **A Node SCRIPT imports this file straight out of `src/`**, so every map's
+ * generator bends a path exactly as the game does rather than keeping a copy
+ * that nothing checks. Node loads it by TYPE STRIPPING, which puts two rules
+ * on this file and on everything it imports at runtime (`roads.ts`): a value
+ * import names its `.ts` (the resolver tries no extensions; a type-only import
+ * is erased and needs none), and nothing in it may be syntax that has to be
+ * COMPILED rather than erased — no `enum`, no `namespace`, no constructor
+ * parameter property. Break either and the generator fails at startup.
+ *
  * Must NOT: read the terrain (a join is a plan; `TerrainField` drapes it),
- * build a mesh, or know which map it is on.
+ * build a mesh, know which map it is on, or import Babylon (a generator would
+ * load all of it).
  */
 import type { Placement } from "./layout";
 import {
@@ -63,7 +73,7 @@ import {
   roadTop,
   type RoadFootprint,
   type RoadSurface,
-} from "./roads";
+} from "./roads.ts";
 
 /**
  * How far an arc's chords may sag inside the true curve, in metres. A kerb
@@ -145,10 +155,10 @@ export type PathPoint = readonly [number, number];
  * tighter than `ROAD_BEND_MIN` of `width` by either cap. The ends are the
  * path's own.
  *
- * **`scripts/generate-cinderhaven.mjs` carries a twin of this**, because the
- * generator claims ground along the road it is about to emit and cannot import
- * TypeScript. The two must round a corner the same way or the claims sit a
- * metre off the carriageway on a long bend; nothing checks it but the plan.
+ * **A map GENERATOR imports this very function** (`generate-cinderhaven.mjs`),
+ * because it claims ground along the road it is about to emit and has to claim
+ * the curve that will be drawn. Node loads this file by type stripping, which
+ * is why the import below names `./roads.ts` — see the header's last rule.
  */
 export function bendPath(
   pts: readonly PathPoint[],

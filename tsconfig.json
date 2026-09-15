@@ -13,6 +13,11 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "noEmit": true,
+    // A module a Node SCRIPT imports straight out of `src/` (a generator
+    // importing `world/roadPaths.ts`) is loaded by Node's type stripping,
+    // which resolves no extensionless specifier — so its value imports name
+    // the `.ts`, and this lets `tsc` accept that.
+    "allowImportingTsExtensions": true,
     // Ambient type packages, and the list is CLOSED rather than empty: `[]`
     // was the point before WebGPU, and one entry keeps that — @types/node and
     // whatever else lands in node_modules stay out of the global scope. The

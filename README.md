@@ -24,7 +24,7 @@ npm run icons    # regenerate the install icons under public/icons (committed)
 npm run shots    # re-photograph each map for the menu backdrop (committed)
 ```
 
-Requires Node 18+ and a **WebGPU-capable browser**: Chrome or Edge on any
+Requires Node 24+ and a **WebGPU-capable browser**: Chrome or Edge on any
 platform, Safari 18 or later, and Firefox on Windows. Firefox on Linux and
 macOS cannot run it, and neither can an older Android or iOS. There is no
 WebGL fallback — the boot screen checks for a GPU adapter and says so rather

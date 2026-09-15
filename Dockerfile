@@ -21,7 +21,7 @@
 # ---------------------------------------------------------------------------
 # Build stage
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 
 WORKDIR /app
 
@@ -101,7 +101,7 @@ RUN npm run build:server
 # ---------------------------------------------------------------------------
 # Runtime stage: the match server
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS server
+FROM node:24-alpine AS server
 
 WORKDIR /app
 
