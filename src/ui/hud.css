@@ -1155,6 +1155,15 @@
   opacity: 0;
   filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
 }
+/* The markup's width/height attributes are the viewBox's 300 px, and the box
+   above is 300 --hud-u — less than 300 px on a short viewport. Left intrinsic,
+   the drawing overflows the box down and right while the rotation stays about
+   the box's centre, so every arc circles a point off the middle of a phone. */
+#damage-dirs .arc svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 #damage-dirs .arc path {
   fill: #a5120a;
   stroke: rgba(0, 0, 0, 0.7);
