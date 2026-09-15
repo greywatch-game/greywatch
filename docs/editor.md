@@ -214,9 +214,27 @@ saver holding map A's text and handed map B's layout patches the wrong file and
 mostly **succeeds** at it — the one failure mode here that loses work with a clean
 "saved" in the status bar. The constructor refuses unless the source it found
 declares that map's own `export const <MapId>Layout`, failing into `blocked` rather
-than throwing. `serializeHeights` takes the id for the same reason: it writes the
+than throwing. `serializeHeights` takes the id for the same reason: it checks the
 `export const <MapId>Heights` that map's own `heights.ts` declares, and a wrong
 name there is a checkout that stops compiling after a terrain save.
+
+**`heights.ts` is rewritten ROW BY ROW, and everything around the rows is the
+file's own.** `serializeHeights` reads the file off disk at save time (the
+endpoint's GET arm — a `?raw` import would be frozen at load and would bundle
+megabytes of Cinderhaven's numbers), keeps every byte above `  heights: [` and
+below its closing `  ],`, and regenerates only the rows between. It used to
+regenerate the whole module from a template about "the valley floor", on the
+grounds that a file of bare numbers had nothing to preserve — which stopped being
+true when the generators started writing one: every save, including one that
+sculpted nothing, replaced Cinderhaven's sixty-line account of how its floor is
+built with that paragraph. It also changed the file, and `heights.ts` is in
+`collision-hash.mjs`'s hash, so moving a fence staled the collision bake. Now a
+save that touches no terrain leaves `heights.ts` byte-identical and does not
+write it (verified on all six maps), and a sculpt changes the rows it moved.
+**It refuses rather than guesses** when the block is not there, or the text
+above it does not state that map's export and the field's own `size` and
+`cell` — a header describing another grid is a file that lies. The layout is
+already written by then, and the status says so.
 
 **The floor it writes is an ARGUMENT to `save`, not a field on the layout.**
 There is no `MapLayout.terrain` any more — a heightfield reaches a build
