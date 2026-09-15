@@ -40,6 +40,24 @@ export const EDITOR = {
    */
   rebuildDelay: 200,
 
+  /** A path road's point handles. */
+  path: {
+    /**
+     * A handle's radius per metre of distance from the camera, floored at
+     * `minRadius`. A fixed size is either a boulder at your feet or a speck on
+     * a road a street away; scaled, it stays about the same size on screen.
+     */
+    radiusPerMetre: 0.011,
+    minRadius: 0.45,
+    /** An insert handle is this much smaller than a point. */
+    insertScale: 0.7,
+    /** How far past an end the extend handle stands, as road widths. */
+    extendWidths: 2,
+    /** The drawn lines' width in metres, and their lift off the floor. */
+    lineWidth: 0.35,
+    lineLift: 0.25,
+  },
+
   snap: {
     /** Position snap in metres. */
     position: 0.5,
@@ -60,6 +78,15 @@ export const EDITOR = {
     /** The level brush. Distinct from the sculpt violet: which tool is armed
      *  changes what a drag does, so it has to be readable at the cursor. */
     terrainLevel: "#ff9ad5",
+    /** A path road's points, and the one the gizmo is on. */
+    pathPoint: "#ffffff",
+    pathPointSelected: "#35f0ff",
+    /** The `+` handles that insert a point, between two or past an end. */
+    pathInsert: "#7fd66a",
+    /** The authored polyline between the points. */
+    pathControl: "#ffffff",
+    /** The centreline the builder will draw, bends and all. */
+    pathCurve: "#35f0ff",
     navWalkable: "#4fd06a",
     navIsland: "#ff5a4f",
     navUnrouted: "#ffc46b",

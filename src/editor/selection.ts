@@ -17,6 +17,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import type { EditorRef } from "../world/MapBuilder";
+import type { PathHandle } from "./pathHandles";
 import { EDITOR } from "./tuning";
 
 /**
@@ -64,6 +65,23 @@ function refOf(mesh: AbstractMesh): SelectionRef | null {
 export function pickRef(scene: Scene, x: number, y: number): SelectionRef | null {
   const hit = scene.pick(x, y, (m) => m.metadata?.editorRef !== undefined);
   return hit?.pickedMesh ? refOf(hit.pickedMesh) : null;
+}
+
+/**
+ * A path road's handle under the pointer, or null. Asked BEFORE `pickRef`, and
+ * against handles alone: a handle sits on the road it edits, and a pick over
+ * everything would hand the click to the road or a roof between the camera and
+ * a handle the author can plainly see the edge of.
+ */
+export function pickPathHandle(
+  scene: Scene,
+  x: number,
+  y: number,
+): { ref: SelectionRef; handle: PathHandle } | null {
+  const hit = scene.pick(x, y, (m) => m.metadata?.pathHandle !== undefined);
+  const mesh = hit?.pickedMesh;
+  const ref = mesh ? refOf(mesh) : null;
+  return mesh && ref ? { ref, handle: mesh.metadata.pathHandle as PathHandle } : null;
 }
 
 /**

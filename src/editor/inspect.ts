@@ -32,8 +32,12 @@ import {
   type ChoiceOption,
   type FieldSpec,
 } from "./fields";
+import { pathWorldPoints, roadShapeOf, type EntryRecord } from "./mutate";
 import { BUILDER_KINDS, PARAMS, SCATTER_PROPS } from "./params";
 import type { SelectionRef } from "./selection";
+
+/** A world coordinate as the serializer would write it. */
+const round3 = (v: number): number => Math.round(v * 1000) / 1000;
 
 /**
  * Half of THIS map — the same bound the ridge check uses, and a per-map number
@@ -101,6 +105,8 @@ export function inspect(
   layout: MapLayout,
   env: EnvironmentSpec,
   ref: SelectionRef | null,
+  /** The path road point under the gizmo, when the selection is a path road. */
+  point: number | null = null,
 ): Inspection {
   if (!ref) return EMPTY;
   const reach = reachOf(layout);
@@ -124,7 +130,14 @@ export function inspect(
           0,
         ),
       ];
-      const specs = PARAMS[p.kind];
+      // A road is a rectangle or a path, and which one decides which of its
+      // params mean anything: a path has no `length`, a rectangle no bends.
+      const entry = p as unknown as EntryRecord;
+      const isPath = p.kind === "road" && roadShapeOf(entry) === "path";
+      if (p.kind === "road") {
+        fields.push(choice("shape", "shape", isPath ? "path" : "rect", options(["rect", "path"])));
+      }
+      const specs = PARAMS[p.kind].filter((s) => !(isPath && s.key === "length"));
       if (!specs.length) {
         fields.push(note("params", "none — placed as built"));
       }
@@ -150,6 +163,25 @@ export function inspect(
             choice(key, s.label, set === undefined ? s.def : String(set), options(s.options)),
           );
         }
+      }
+      if (isPath) {
+        const pts = pathWorldPoints(entry);
+        // No placeholder number: absent is "as round as the legs allow", which
+        // is no radius at all rather than a big one.
+        fields.push(
+          number("params.radius", "bend max r", p.params?.radius ?? null, 0, 2000, 1),
+          note("points", `${pts.length} · click one to move it · + adds one`),
+        );
+        const at = point !== null ? pts[point] : undefined;
+        if (at) {
+          fields.push(
+            number("point.x", `point ${point} x`, round3(at[0]), -reach, reach),
+            number("point.z", `point ${point} z`, round3(at[1]), -reach, reach),
+            note("point", "Del removes it · Esc back to the road"),
+          );
+        }
+        const title = at ? `road path #${ref.index} · point ${point}` : `road path #${ref.index}`;
+        return { title, fields, deletable: true };
       }
       return { title: `${p.kind} #${ref.index}`, fields, deletable: true };
     }

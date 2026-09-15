@@ -1,7 +1,10 @@
 /**
  * editor/mutate.ts — Applies a moved/rotated selection to the layout and to
  * the geometry already in the scene.
- * Owns: the write path. Reading is inspect.ts's job.
+ * Owns: the write path. Reading is inspect.ts's job. That includes a path
+ * road's POINTS — moved, inserted, deleted and re-centred in the placement's
+ * own frame (see "path roads" below) — which the handles in `pathHandles.ts`
+ * draw and nothing else writes.
  *
  * The layout is the source of truth and is edited in place; the scene is
  * brought back into agreement with it. Two tiers, because they cost three
@@ -357,9 +360,15 @@ function put(target: EntryRecord, key: string, value: FieldValue): void {
   else target[key] = n;
 }
 
-/** A placement's kind changed: keep only the params the new builder reads. */
+/**
+ * A placement's kind changed: keep only the params the new builder reads.
+ *
+ * Choosing the kind it already has is not a change. Pruning on it anyway would
+ * take a path road's `path` — which is not in the descriptor table, being a
+ * list of points rather than a control — and leave a 40 m rectangle behind.
+ */
 function setKind(entry: EntryRecord, kind: string): void {
-  if (!(kind in PARAMS)) return;
+  if (!(kind in PARAMS) || entry.kind === kind) return;
   entry.kind = kind;
   const params = entry.params as EntryRecord | undefined;
   if (!params) return;
@@ -481,7 +490,12 @@ export function setField(
 
   if (key === "kind") return setKind(entry, String(value));
   if (key === "owner") return setOwner(entry, String(value));
-  if (key === "shape") return setShape(entry, String(value));
+  if (key === "shape") {
+    // Two entries have a shape, and a road's is a different decision from a
+    // scatter region's: a rectangle or a centreline, not a disc or a box.
+    if (ref.list === "placements") return setRoadShape(entry, String(value));
+    return setShape(entry, String(value));
+  }
   if (head === "params") return setParam(entry, tail, value);
   if (head === "scale") return setScale(entry, Number(tail), value);
   if (head === "pos") {
@@ -560,6 +574,20 @@ export function addItem(
 
   switch (list) {
     case "placements": {
+      if (choice === ROAD_PATH_CHOICE) {
+        // Two points, one straight leg of the default length along local Z —
+        // the same line a fresh rectangle road would cover — so the first
+        // thing on screen is a road to pull points out of, not a dot.
+        const half = PATH_START_LENGTH / 2;
+        array.push({
+          kind: "road",
+          x,
+          z,
+          ...(y === 0 ? {} : { y }),
+          params: { path: [[0, -half], [0, half]] },
+        });
+        break;
+      }
       if (!(choice in PARAMS)) return null;
       array.push({ kind: choice, x, z, ...(y === 0 ? {} : { y }) });
       break;
@@ -602,6 +630,193 @@ export function addItem(
       break;
   }
   return { list, index: array.length - 1 };
+}
+
+// --- path roads --------------------------------------------------------------
+//
+// A `road` with `params.path` is laid along a centreline stated in the
+// placement's OWN frame (`BuildParams.path`, `world/roadPaths.ts`), so moving
+// or turning the placement carries the whole road and everything below works
+// in that frame: a point is read out into the world for a handle, and written
+// back in through the inverse of MapBuilder's `rotateY`. Every write here is a
+// geometry change — the network re-resolves its junctions off the whole
+// placement list — so the caller owes the full rebuild, as for any param.
+
+/** The add menu's entry for a path road, beside the builder kinds. */
+export const ROAD_PATH_CHOICE = "road (path)";
+
+/** How long a freshly added path road's one leg is, in metres. */
+const PATH_START_LENGTH = 30;
+
+/** A path point, in the placement's own frame. */
+type PathPoint = [number, number];
+
+/** The placement behind a ref when it is a road laid along a path, else null. */
+export function pathRoadOf(layout: MapLayout, ref: SelectionRef | null): EntryRecord | null {
+  if (ref?.list !== "placements") return null;
+  const entry = entryFor(layout, ref);
+  return entry && pointsOf(entry) ? entry : null;
+}
+
+/** A path road's points, or null when the entry is not one. */
+function pointsOf(entry: EntryRecord): readonly PathPoint[] | null {
+  if (entry.kind !== "road") return null;
+  const path = (entry.params as EntryRecord | undefined)?.path;
+  return Array.isArray(path) && path.length >= 2 ? (path as PathPoint[]) : null;
+}
+
+/** The placement's frame, as MapBuilder's `rotateY` turns it. */
+function frameOf(entry: EntryRecord): { x: number; z: number; c: number; s: number } {
+  const rot = Number(entry.rotY ?? 0);
+  return { x: Number(entry.x), z: Number(entry.z), c: Math.cos(rot), s: Math.sin(rot) };
+}
+
+/**
+ * A path road's points in the WORLD, in order — what the handles are drawn at.
+ * Empty when the entry is not a path road.
+ */
+export function pathWorldPoints(entry: EntryRecord): PathPoint[] {
+  const pts = pointsOf(entry);
+  if (!pts) return [];
+  const f = frameOf(entry);
+  return pts.map(([lx, lz]) => [f.x + lx * f.c + lz * f.s, f.z - lx * f.s + lz * f.c]);
+}
+
+/** A world point into the placement's frame: the inverse of `pathWorldPoints`. */
+function toLocal(entry: EntryRecord, x: number, z: number): PathPoint {
+  const f = frameOf(entry);
+  const dx = x - f.x;
+  const dz = z - f.z;
+  return [q(dx * f.c - dz * f.s), q(dx * f.s + dz * f.c)];
+}
+
+/** Replaces the path with a new array rather than writing into the old one. */
+function writePath(entry: EntryRecord, pts: PathPoint[]): void {
+  (entry.params as EntryRecord).path = pts;
+}
+
+/** Moves one point to a world position. */
+export function movePathPoint(entry: EntryRecord, index: number, x: number, z: number): void {
+  const pts = pointsOf(entry);
+  if (!pts || index < 0 || index >= pts.length) return;
+  const next = pts.map((p) => [p[0], p[1]] as PathPoint);
+  next[index] = toLocal(entry, x, z);
+  writePath(entry, next);
+}
+
+/**
+ * Inserts a point at a world position so that it BECOMES `index` — 0 puts a
+ * new start on the road, the point count puts a new end on it.
+ */
+export function insertPathPoint(entry: EntryRecord, index: number, x: number, z: number): void {
+  const pts = pointsOf(entry);
+  if (!pts || index < 0 || index > pts.length) return;
+  const next = pts.map((p) => [p[0], p[1]] as PathPoint);
+  next.splice(index, 0, toLocal(entry, x, z));
+  writePath(entry, next);
+}
+
+/**
+ * Removes one point. Refused at two: a path of one point is ignored by the
+ * network outright (`pathRoads`), so the road would vanish from the map while
+ * its placement stayed in the file — deleting the road is the honest way to
+ * ask for that.
+ */
+export function deletePathPoint(entry: EntryRecord, index: number): boolean {
+  const pts = pointsOf(entry);
+  if (!pts || pts.length <= 2 || index < 0 || index >= pts.length) return false;
+  writePath(entry, pts.filter((_, i) => i !== index).map((p) => [p[0], p[1]] as PathPoint));
+  return true;
+}
+
+/**
+ * Stands the placement at the middle of its path's extent again, moving every
+ * point the other way so the road does not move at all.
+ *
+ * The placement's origin is where the whole-road gizmo sits and what a click
+ * on the road reselects around, so a road extended a hundred metres to one side
+ * would otherwise be dragged from a handle in a field. It is the same anchor
+ * `generate-cinderhaven.mjs` emits a path road with.
+ *
+ * `y` is left alone, and on purpose: a path road is draped over the floor in
+ * WORLD height and its builder subtracts the origin's height back out
+ * (`terrainRibbon`'s `originY`), so the origin's height moves nothing that is
+ * drawn. Carrying the absolute height across to the new origin, as a gizmo drag
+ * does for a building, wrote a `y` onto a road that never had one.
+ */
+export function recentrePath(entry: EntryRecord): void {
+  const pts = pointsOf(entry);
+  if (!pts) return;
+  const xs = pts.map((p) => p[0]);
+  const zs = pts.map((p) => p[1]);
+  const cx = q((Math.min(...xs) + Math.max(...xs)) / 2);
+  const cz = q((Math.min(...zs) + Math.max(...zs)) / 2);
+  if (cx === 0 && cz === 0) return;
+  const f = frameOf(entry);
+  entry.x = q(f.x + cx * f.c + cz * f.s);
+  entry.z = q(f.z - cx * f.s + cz * f.c);
+  writePath(entry, pts.map(([lx, lz]) => [q(lx - cx), q(lz - cz)]));
+}
+
+/** Which shape a road placement has, for the inspector's choice. */
+export function roadShapeOf(entry: EntryRecord): "rect" | "path" {
+  return pointsOf(entry) ? "path" : "rect";
+}
+
+/**
+ * A road's shape: a `width` x `length` RECTANGLE, or a PATH. The two describe
+ * the same carriageway either way round, so the conversion keeps the road where
+ * it was rather than resetting it.
+ *
+ * - rect to path: its length becomes one leg along local Z, the axis
+ *   `roadRects` lays a rectangle's length on, so nothing moves.
+ * - path to rect: the rectangle runs from the path's first point to its last —
+ *   the chord, which is all a rectangle can say — and the placement stands at
+ *   the chord's middle, turned to face along it.
+ *
+ * `radius` means nothing to a rectangle and goes with the path.
+ */
+function setRoadShape(entry: EntryRecord, shape: string): void {
+  if (entry.kind !== "road" || shape === roadShapeOf(entry)) return;
+  const params = (entry.params as EntryRecord | undefined) ?? {};
+  const lengthDef = roadParamDef("length");
+
+  if (shape === "path") {
+    const len = typeof params.length === "number" ? params.length : lengthDef;
+    delete params.length;
+    params.path = [[0, q(-len / 2)], [0, q(len / 2)]];
+    entry.params = params;
+    return;
+  }
+
+  const pts = pointsOf(entry);
+  if (!pts) return;
+  const [ax, az] = pts[0];
+  const [bx, bz] = pts[pts.length - 1];
+  const f = frameOf(entry);
+  const mx = (ax + bx) / 2;
+  const mz = (az + bz) / 2;
+  entry.x = q(f.x + mx * f.c + mz * f.s);
+  entry.z = q(f.z - mx * f.s + mz * f.c);
+  // A local heading h is a world heading of rotY + h (`rotateY` on (sin h, cos h)).
+  let rot = Number(entry.rotY ?? 0) + Math.atan2(bx - ax, bz - az);
+  rot = Math.atan2(Math.sin(rot), Math.cos(rot));
+  const rotY = qAngle(rot);
+  if (rotY === 0) delete entry.rotY;
+  else entry.rotY = rotY;
+  delete params.path;
+  delete params.radius;
+  const len = q(Math.max(Math.hypot(bx - ax, bz - az), 1));
+  if (len === lengthDef) delete params.length;
+  else params.length = len;
+  if (Object.keys(params).length) entry.params = params;
+  else delete entry.params;
+}
+
+/** The road builder's own default for one of its numeric params. */
+function roadParamDef(key: string): number {
+  const spec = PARAMS.road.find((s) => s.key === key);
+  return spec?.type === "number" ? spec.def : 0;
 }
 
 /** The first unused single-letter flag id, or null when all 26 are taken. */

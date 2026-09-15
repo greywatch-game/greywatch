@@ -96,6 +96,7 @@ export class EditorGizmos {
     this.move.xGizmo.snapDistance = pos;
     this.move.yGizmo.snapDistance = pos;
     this.move.zGizmo.snapDistance = pos;
+    this.move.yPlaneGizmo.snapDistance = pos;
     this.rotate.yGizmo.snapDistance = rot;
   }
 
@@ -120,6 +121,26 @@ export class EditorGizmos {
   private detach(): void {
     this.move.attachedNode = null;
     this.rotate.attachedNode = null;
+  }
+
+  /**
+   * A path road's POINT is under the handles rather than a whole item: it has
+   * a position on the ground and nothing else — no height of its own (the road
+   * drapes over the floor) and no facing. So the Y arrow and the ring go, and
+   * the ground-plane square comes in, because a point is placed by where it is
+   * rather than by one axis at a time. Call before `attachTo`: the gizmo
+   * attaches only the parts that are enabled when it is handed a node.
+   */
+  setPointMode(on: boolean): void {
+    this.move.yGizmo.isEnabled = !on;
+    this.move.planarGizmoEnabled = on;
+    // The setter enables all three squares; only the one lying on the ground
+    // (the plane whose normal is Y) means anything for a point.
+    if (on) {
+      this.move.xPlaneGizmo.isEnabled = false;
+      this.move.zPlaneGizmo.isEnabled = false;
+      this.rotate.yGizmo.isEnabled = false;
+    }
   }
 
   /** Rotation is meaningless for a circular region or a rect; hide that ring. */

@@ -13,6 +13,13 @@
  * - `kind` on a placement also prunes params the new builder does not read.
  * - `owner` on a spawn sets `team` and `controlPoint` as a pair — a spawn is
  *   either a home spawn or a flag spawn, never both and never neither.
+ * - `shape` is a scatter region's disc or rectangle, and a ROAD's rectangle or
+ *   path — `width`/`length` against `params.path`, converted so the road stays
+ *   where it was.
+ * - `point.x` / `point.z` are the world coordinates of the path road point under
+ *   the gizmo. Not paths into the entry at all: a point is stored in the
+ *   placement's own frame, so `EditorSession.onField` writes them through
+ *   `movePathPoint` rather than `setField`.
  *
  * **Angles are edited in degrees and stored in radians.** Layouts are authored
  * as `Math.PI / 2`, which is unreadable in a text box and unusable with a

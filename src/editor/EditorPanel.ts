@@ -106,6 +106,7 @@ export class EditorPanel {
         <div><b>LMB</b> select &nbsp; <b>Esc</b> deselect</div>
         <div><b>Alt</b> hold to place off-grid</div>
         <div><b>Del</b> delete selection &nbsp; <b>Ctrl+S</b> save</div>
+        <div><b>Path road</b> click a point to move it &nbsp; <b>+</b> adds one</div>
         <div><b>N</b> nav overlay &nbsp; <b>L</b> work light</div>
         <div><b>T</b> terrain mode &nbsp; <b>[ ]</b> brush size</div>
         <div class="ed-terrain-help">

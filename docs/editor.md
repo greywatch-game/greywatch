@@ -129,9 +129,47 @@ ref after it in that list**: the editor drops its selection on delete rather tha
 fixing them up, and `applyStructural` runs the rebuild immediately rather than
 leaving stale indices addressable.
 
+**A path road is edited by its POINTS, and a point is a sub-selection rather
+than a ref.** A `road` with `params.path` (`world/roadPaths.ts`) is a centreline
+in the placement's own frame, so selecting one draws handles over it
+(`pathHandles.ts`): a point at each point, an insert at the middle of each leg
+and an extend past each end. Clicking a point puts the gizmo on it in POINT MODE
+— the ground-plane square and the two flat arrows, no Y arrow and no ring,
+because a point has neither a height of its own nor a facing — and `Del` and
+`Esc` then mean the point before they mean the road. `EditorSession.pathPoint`
+is the index, deliberately beside the `SelectionRef` and not in it: the
+highlight, the tiers and the save are all about the placement.
+`pickPathHandle` is asked before `pickRef`, against handles alone, because a
+handle sits on the road it edits and an ordinary pick hands the click to the
+road. The rules under it:
+
+- **A point drag moves nothing that is built.** The network resolves every
+  junction off the whole placement list, so there is no tier-1 move for a road's
+  shape; the handles redraw on every frame of the drag instead, with the
+  builder's own `bendPath` drawn as the preview, and releasing it buys the
+  tier-3 rebuild (~0.5 s on Hollowmere, ~2.5 s on Cinderhaven). An insert or a
+  delete rebuilds at once rather than on the debounce, like an added entry,
+  because the next thing done is a drag of the point it made.
+- **The point survives its own road's rebuild** (`rebuildGeometry` carries it
+  across), or every drag would cost a click to get the gizmo back.
+- **The placement is RE-CENTRED on its path after every point edit**
+  (`recentrePath`), moving the points the other way so nothing drawn moves —
+  the origin is where the whole-road gizmo sits, and it is the anchor
+  `generate-cinderhaven.mjs` emits. It leaves `y` alone: a path road drapes over
+  the floor in world height and `terrainRibbon` subtracts the origin's height
+  back out, so carrying the absolute height across wrote a `y` onto a road that
+  never had one.
+- **A path keeps two points.** One point is ignored by the network outright, so
+  the road would vanish from the map while its line stayed in the file.
+- **`shape` converts rather than resets**: a rectangle's `length` becomes one
+  leg along local Z (the axis `roadRects` lays it on), and a path becomes the
+  rectangle along its CHORD, stood at the chord's middle and turned to face
+  along it. And **`kind` set to the kind an entry already has is not a change**
+  — `setKind` pruned every param not in the descriptor table, which is `path`.
+
 Property editing is driven by three files that must agree on what a field key
 means: `fields.ts` declares the vocabulary (dotted paths like `params.width`, plus
-the three compound keys `kind`, `owner` and `shape` that write more than one field),
+the compound keys `kind`, `owner` and `shape` that write more than one field, and `point.x`/`point.z`, which are not paths at all),
 `inspect.ts` produces the controls, `mutate.setField` applies them. Two rules keep
 the layout terse: **a value equal to the builder's own default is removed, not
 written**, and absent-means-default fields (`y`, `rotY`, `blocking`, `clearance`,

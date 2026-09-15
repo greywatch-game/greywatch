@@ -30,11 +30,18 @@ import {
   addItem,
   applyTransform,
   deleteItem,
+  deletePathPoint,
+  insertPathPoint,
   isRotatable,
+  movePathPoint,
   originOf,
+  pathRoadOf,
+  pathWorldPoints,
   quantize,
   rebuildNavigation,
+  recentrePath,
   repositionScene,
+  ROAD_PATH_CHOICE,
   rotationOf,
   setField,
   setFloorField,
@@ -42,6 +49,7 @@ import {
   type Tier,
 } from "./mutate";
 import { NavOverlay } from "./navOverlay";
+import { PathHandles, type PathHandle } from "./pathHandles";
 import { MAX_WALKABLE_GRADE, TerrainBrush } from "./terrainBrush";
 import { BUILDER_KINDS, SCATTER_PROPS } from "./params";
 import { ProxyLayer } from "./proxies";
@@ -51,6 +59,7 @@ import { EDITOR } from "./tuning";
 import { validate, type Finding } from "./validate";
 import {
   FLOOR_REF,
+  pickPathHandle,
   pickRef,
   sameRef,
   SelectionHighlight,
@@ -61,7 +70,9 @@ import { workLightEnvironment } from "./workLight";
 
 /** What the add menu offers, and which layout list each entry lands in. */
 const ADD_GROUPS: AddGroup[] = [
-  { list: "placements", label: "structure", choices: [...BUILDER_KINDS] },
+  // A path road rides beside the kinds rather than in a group of its own: the
+  // panel tells groups apart by their list, and it is a placement.
+  { list: "placements", label: "structure", choices: [...BUILDER_KINDS, ROAD_PATH_CHOICE] },
   { list: "scatter", label: "scatter field", choices: [...SCATTER_PROPS] },
   { list: "water", label: "water rect", choices: [] },
   { list: "grass", label: "grass rect", choices: [] },
@@ -135,6 +146,14 @@ export class EditorSession {
   private highlight = new SelectionHighlight();
   private gizmos: EditorGizmos;
   private selected: SelectionRef | null = null;
+  /**
+   * Which POINT of a selected path road the gizmo is on, or null when it is on
+   * the whole road. A sub-selection rather than a member of `SelectionRef`,
+   * because everything written against a ref — the highlight, the tiers, the
+   * save — is about the placement, and a point is a place inside one.
+   */
+  private pathPoint: number | null = null;
+  private pathHandles: PathHandles;
   private dirty = false;
   private saver: LayoutSaver;
   private envSaver: EnvironmentSaver;
@@ -180,6 +199,7 @@ export class EditorSession {
       onChange: (at, rotY) => this.onDrag(at, rotY),
       onCommit: () => this.onDragEnd(),
     });
+    this.pathHandles = new PathHandles(deps.scene, deps.glow);
     // On by default: the first thing anyone opening the editor wants is to see
     // the map. Toggle it off to check how a placement actually reads at night.
     this.applyLighting();
@@ -213,7 +233,9 @@ export class EditorSession {
       }
       if (e.code === "Delete" || e.code === "Backspace") {
         e.preventDefault();
-        this.onDelete();
+        // A point under the gizmo is what Del means; the road is one Esc away.
+        if (this.pathPoint !== null) this.onDeletePoint();
+        else this.onDelete();
         return;
       }
       if (e.code === "KeyT") {
@@ -232,6 +254,7 @@ export class EditorSession {
         this.applyLighting();
       } else if (e.code === "Escape") {
         if (this.mode === "terrain") this.setMode("object");
+        else if (this.pathPoint !== null) this.selectPoint(null);
         else this.select(null);
       } else if (e.code === "KeyN") {
         // Building the overlay is the expensive half, so it is only built the
@@ -258,6 +281,11 @@ export class EditorSession {
       }
       // A click that started on a gizmo handle is a drag, not a reselect.
       if (this.gizmos.isDragging) return;
+      const handle = pickPathHandle(this.deps.scene, e.clientX, e.clientY);
+      if (handle) {
+        this.onPathHandle(handle.ref, handle.handle);
+        return;
+      }
       this.select(pickRef(this.deps.scene, e.clientX, e.clientY));
     };
     // Terrain mode needs the pointer wherever it goes: hover to place the
@@ -338,21 +366,109 @@ export class EditorSession {
   private select(ref: SelectionRef | null): void {
     if (sameRef(ref, this.selected)) return;
     this.selected = ref;
+    this.pathPoint = null;
     this.highlight.show(this.meshesFor(ref));
     this.refreshInspector();
-    if (ref) {
-      this.gizmos.setRotatable(isRotatable(this.deps.layout, ref));
-      this.gizmos.attachTo(
-        originOf(this.deps.layout, ref, this.map.terrain),
-        rotationOf(this.deps.layout, ref),
-      );
-    } else {
+    this.attachGizmos();
+    this.showPathHandles();
+  }
+
+  /**
+   * Puts the gizmo on a point of the selected path road, or back on the whole
+   * road with null. A point that no longer exists — the shape changed, or it
+   * was the one deleted — is the whole road.
+   */
+  private selectPoint(point: number | null): void {
+    const road = pathRoadOf(this.deps.layout, this.selected);
+    const count = road ? pathWorldPoints(road).length : 0;
+    this.pathPoint = point !== null && point >= 0 && point < count ? point : null;
+    this.refreshInspector();
+    this.attachGizmos();
+    this.showPathHandles();
+  }
+
+  /**
+   * Hangs the gizmo where the selection is: on the point under edit, or on the
+   * item's own origin. The one place both where the handles go and which of
+   * their parts show are decided, so a typed coordinate, a drag and a reselect
+   * cannot disagree about it.
+   */
+  private attachGizmos(): void {
+    const ref = this.selected;
+    if (!ref) {
       this.gizmos.attachTo(null);
+      return;
     }
+    const road = pathRoadOf(this.deps.layout, ref);
+    const at = road && this.pathPoint !== null ? pathWorldPoints(road)[this.pathPoint] : undefined;
+    if (at) {
+      this.gizmos.setPointMode(true);
+      this.gizmos.attachTo(new Vector3(at[0], this.map.terrain.heightAt(at[0], at[1]), at[1]));
+      return;
+    }
+    this.pathPoint = null;
+    this.gizmos.setPointMode(false);
+    this.gizmos.setRotatable(isRotatable(this.deps.layout, ref));
+    this.gizmos.attachTo(
+      originOf(this.deps.layout, ref, this.map.terrain),
+      rotationOf(this.deps.layout, ref),
+    );
+  }
+
+  /** Redraws the point handles for the selection, or clears them. */
+  private showPathHandles(): void {
+    const road = pathRoadOf(this.deps.layout, this.selected);
+    this.pathHandles.show(road, this.selected, this.map.terrain, this.pathPoint);
+    this.pathHandles.update(this.deps.camera.position);
+  }
+
+  /**
+   * A path handle was clicked. A point takes the gizmo; an insert writes a new
+   * point where it was drawn and hands the gizmo to it, so the next thing the
+   * author does — drag it where it belongs — needs no second click.
+   */
+  private onPathHandle(ref: SelectionRef, handle: PathHandle): void {
+    this.select(ref);
+    if (handle.op === "point") {
+      this.selectPoint(handle.index);
+      return;
+    }
+    const road = pathRoadOf(this.deps.layout, ref);
+    if (!road) return;
+    insertPathPoint(road, handle.index, handle.x, handle.z);
+    this.dirty = true;
+    this.selectPoint(handle.index);
+    this.panel.setStatus(`added point ${handle.index}`, "ok");
+    // Now rather than on the debounce, as for an added entry: one deliberate
+    // click, and the very next thing done is a drag of the point it made — a
+    // rebuild landing 200 ms into that drag would take the gizmo out from
+    // under the pointer.
+    this.applyStructural("placements", this.selected);
+  }
+
+  /** Del with a point under the gizmo: that point goes, never below two. */
+  private onDeletePoint(): void {
+    const road = pathRoadOf(this.deps.layout, this.selected);
+    const point = this.pathPoint;
+    if (!road || point === null) return;
+    if (!deletePathPoint(road, point)) {
+      this.panel.setStatus("a path needs two points — delete the road instead", "error");
+      return;
+    }
+    recentrePath(road);
+    this.dirty = true;
+    this.panel.setStatus(`deleted point ${point}`, "ok");
+    this.selectPoint(null);
+    this.applyStructural("placements", this.selected);
   }
 
   private refreshInspector(): void {
-    const view = inspect(this.deps.layout, this.deps.environment, this.selected);
+    const view = inspect(
+      this.deps.layout,
+      this.deps.environment,
+      this.selected,
+      this.pathPoint,
+    );
     // Controls are live whenever there are any; only the delete BUTTON is
     // conditional. The two used to travel together, which was fine while every
     // selection was a layout entry — the map's own floor is editable and is
@@ -390,18 +506,28 @@ export class EditorSession {
       this.schedule(tierFor(ref.list));
       return;
     }
-    setField(this.deps.layout, ref, key, value);
+    // A path road point's coordinates are not a path into the entry — the
+    // point is stored in the placement's frame and shown in the world's — so
+    // they go through the point writer rather than `setField`.
+    if (key === "point.x" || key === "point.z") {
+      const road = pathRoadOf(this.deps.layout, ref);
+      const point = this.pathPoint;
+      const at = road && point !== null ? pathWorldPoints(road)[point] : undefined;
+      if (!road || point === null || !at || typeof value !== "number") return;
+      movePathPoint(road, point, key === "point.x" ? value : at[0], key === "point.z" ? value : at[1]);
+    } else {
+      setField(this.deps.layout, ref, key, value);
+    }
     this.dirty = true;
-    this.refreshInspector();
     // Typing a coordinate has to move the handles too, or the next drag snaps
     // the item back to where the gizmo still thinks it is. Which handles there
     // are can change with the value as well — a scatter region gains a rotation
-    // ring the moment it becomes a rectangle.
-    this.gizmos.setRotatable(isRotatable(this.deps.layout, ref));
-    this.gizmos.attachTo(
-      originOf(this.deps.layout, ref, this.map.terrain),
-      rotationOf(this.deps.layout, ref),
-    );
+    // ring the moment it becomes a rectangle, and a road its points the moment
+    // it becomes a path. `attachGizmos` drops a point that no longer exists,
+    // so the inspector is drawn after it.
+    this.attachGizmos();
+    this.refreshInspector();
+    this.showPathHandles();
     this.schedule(tierFor(ref.list));
   }
 
@@ -503,6 +629,10 @@ export class EditorSession {
    * highlight — so all of it is re-derived rather than patched.
    */
   private rebuildGeometry(select: SelectionRef | null): void {
+    // The point under edit survives a rebuild of its own road: every point
+    // write buys one, and losing the gizmo after each would cost a click per
+    // drag.
+    const point = sameRef(select, this.selected) ? this.pathPoint : null;
     this.gizmos.attachTo(null);
     this.highlight.clear();
     this.selected = null;
@@ -511,6 +641,7 @@ export class EditorSession {
     this.rebuildProxies();
     this.deps.invalidateShadows();
     this.select(select);
+    if (point !== null) this.selectPoint(point);
     this.afterNavigationChanged();
   }
 
@@ -547,6 +678,16 @@ export class EditorSession {
     if (!ref) return;
     // Quantise once, then use the same numbers for the data and the geometry.
     const { at, rotY } = quantize(raw, rawRotY);
+    const road = pathRoadOf(this.deps.layout, ref);
+    if (road && this.pathPoint !== null) {
+      // A point moves nothing that is built: the road is re-derived when the
+      // drag is released, and until then the handles' curve is the preview.
+      movePathPoint(road, this.pathPoint, at.x, at.z);
+      this.showPathHandles();
+      this.refreshInspector();
+      this.dirty = true;
+      return;
+    }
     applyTransform(this.deps.layout, ref, at, rotY, this.map.terrain);
     repositionScene(this.map, this.deps.layout, ref, at, rotY);
     if (ref.list !== "placements" && ref.list !== "scatter") {
@@ -554,6 +695,8 @@ export class EditorSession {
       // rather than tracking which mesh stands for which field.
       this.rebuildProxies();
     }
+    // A whole path road dragged or turned takes its handles with it.
+    if (road) this.showPathHandles();
     this.deps.invalidateShadows();
     this.refreshInspector();
     this.dirty = true;
@@ -561,6 +704,15 @@ export class EditorSession {
 
   /** Drag finished: bring navigation back into agreement with the geometry. */
   private onDragEnd(): void {
+    // A path road's point: the placement stands back at the middle of its
+    // path, and the road — whose junctions are resolved off every placement
+    // at once — is rebuilt.
+    const road = pathRoadOf(this.deps.layout, this.selected);
+    if (road && this.pathPoint !== null) {
+      recentrePath(road);
+      this.rebuildGeometry(this.selected);
+      return;
+    }
     // A road's vertices were cut against the ground it started on, so a move
     // leaves it contoured to the wrong patch of floor — the one thing a
     // translate cannot fix. Rebuilding covers navigation too, so it replaces
@@ -704,6 +856,7 @@ export class EditorSession {
     // lands while the window is unfocused would otherwise leave snapping off.
     this.gizmos.setFreeMode(this.deps.input.altHeld);
     this.cam.update(dt, this.deps.input);
+    this.pathHandles.update(this.deps.camera.position);
     const p = this.deps.camera.position;
     this.panel.update(p.x, p.y, p.z, this.cam.flySpeed);
   }
@@ -717,6 +870,7 @@ export class EditorSession {
     this.navOverlay.dispose();
     this.brush.dispose();
     this.gizmos.dispose();
+    this.pathHandles.dispose();
     this.highlight.clear();
     this.proxies.dispose();
     this.cam.dispose();

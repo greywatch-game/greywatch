@@ -813,7 +813,8 @@ the two rim forms and the leash.
 ### The map editor (dev only)
 
 `F2` in a dev build opens `src/editor/`: free-fly the real scene, click to
-select, drag gizmos, edit properties, sculpt terrain. It is reached through **one
+select, drag gizmos, edit properties, sculpt terrain, lay a path road point by
+point. It is reached through **one
 dynamic `import()` inside an `import.meta.env.DEV` branch** in
 `Game.toggleEditor` — the *whole method body* is behind that gate, which is what
 makes the chunk unreachable under `vite build`. **Never import `src/editor/`

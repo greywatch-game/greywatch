@@ -567,7 +567,10 @@ src/
     selection.ts        #   SelectionRef, predicate pick, highlight
     proxies.ts          #   Stand-ins for flags/spawns/scatter/water/grass
     gizmos.ts           #   Move + Y-rotate handles, snapping
-    mutate.ts           #   Layout writes: transform, fields, add/delete
+    pathHandles.ts      #   A path road's point/insert/extend handles and the
+                        #     bendPath preview a point drag reads against
+    mutate.ts           #   Layout writes: transform, fields, add/delete, and a
+                        #     path road's points (move/insert/delete/recentre)
     fields.ts           #   FieldSpec + the key conventions inspect, the panel
                         #   and mutate all have to agree on
     inspect.ts/params.ts#   Inspector read model + per-kind param table
