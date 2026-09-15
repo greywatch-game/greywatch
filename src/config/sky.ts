@@ -153,15 +153,18 @@ export const sky = {
     maxFlatness: 0.2,
     /** Depth along the line of sight, as a fraction of width. */
     depth: 0.4,
-    /** Lumps in a cloud's base row; the crown tier is added on top of these. */
-    minLumps: 6,
-    maxLumps: 13,
+    /**
+     * Lumps in a cloud's base row; the upper tier and the tail are added on top
+     * of these. FEW and long: thirteen beads a cloud was the popcorn.
+     */
+    minLumps: 4,
+    maxLumps: 8,
     /**
      * Radial jitter on every lump vertex. This is what makes a facet read as a
      * cut stone rather than as a panel of a geodesic ball — and, past about
      * 0.15, as a SPIKE, which is the same rock problem as the flatness above.
      */
-    jitter: 0.1,
+    jitter: 0.12,
     /**
      * Drift, in degrees per second, as a turn of the whole ring about the map.
      * About forty minutes a circuit: a cloud crossing the sun takes the better
@@ -193,8 +196,36 @@ export const sky = {
      * lowest clouds take, and the strength of the silver lining on silhouette
      * facets looking toward the light.
      */
-    wrap: 0.12,
+    wrap: -0.1,
     hazeAtHorizon: 0.3,
     lining: 0.45,
+    /**
+     * How much of each FACET's own normal the light sees, the rest being the
+     * lump's smooth one. At 1 every triangle is its own tone and a cloud is a
+     * crystal; at 0 the terminator is an airbrushed curve. Between, it is one
+     * line across the lump that breaks along the facets.
+     */
+    facetShare: 0.45,
+    /**
+     * How far the shadow side is pulled toward the sky behind it: a cloud's
+     * shade is lit by the dome all round it, so it is a darker patch OF the
+     * sky rather than a solid in front of it.
+     */
+    shadeSky: 0.35,
+    /**
+     * The lit side is TWO tones, cut at the wrap and again at `highlight` (a
+     * cosine to the light): `litStep` is how far toward the lit colour the
+     * first cut goes, and the facets square to the light take the rest. One
+     * cut left a flat bank's whole top a single cream shape with nothing in it.
+     */
+    litStep: 0.6,
+    highlight: 0.45,
+    /** How much darker the flat belly's tone is than the shadow side. */
+    belly: 0.12,
+    /**
+     * How much of the sky behind it every cloud takes, however high — the
+     * floor under `hazeAtHorizon`'s ramp.
+     */
+    air: 0.15,
   },
 } as const;

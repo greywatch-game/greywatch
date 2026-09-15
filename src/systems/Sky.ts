@@ -384,6 +384,7 @@ export class Sky {
     // rewritten whenever the painter's order does, so only they are updatable.
     mesh.setVerticesData(VertexBuffer.PositionKind, ring.positions, false);
     mesh.setVerticesData(VertexBuffer.NormalKind, ring.normals, false);
+    mesh.setVerticesData("smoothNormal", ring.smoothNormals, false, 3);
     const lumps = ring.lumpFirst.length;
     this.cloudIndices = new Uint32Array(ring.positions.length / 3);
     for (let i = 0; i < this.cloudIndices.length; i++) this.cloudIndices[i] = i;
@@ -398,11 +399,18 @@ export class Sky {
       shade: Color3.FromHexString(spec.cloudColor),
       lit: Color3.FromHexString(spec.cloudLitColor),
       haze: Color3.FromHexString(spec.horizonColor),
+      zenith: Color3.FromHexString(spec.zenithColor),
       glow: Color3.FromHexString(spec.moonGlowColor),
       litShare: clamp(spec.cloudLitStrength, 0, 1),
       hazeAtHorizon: c.hazeAtHorizon,
       lining: c.lining,
       wrap: c.wrap,
+      facetShare: c.facetShare,
+      shadeSky: c.shadeSky,
+      belly: c.belly,
+      air: c.air,
+      litStep: c.litStep,
+      highlight: c.highlight,
     });
     mesh.material = mat;
     // **Group 0, on its ALPHA-TEST list** (`createCloudMaterial` sets that):

@@ -524,8 +524,10 @@ src/
                         #   one merged mesh of faceted masses standing in the
                         #   world over the map, drawn back to front at one
                         #   shared depth 7 km out (the disc stands at 9 km)
-    cloudMasses.ts      # The cloud ring's SHAPE: flat-bellied piles of jittered
-                        #   icosphere lumps as one flat-shaded triangle soup.
+    cloudMasses.ts      # The cloud ring's SHAPE: long, flat-bellied banks of
+                        #   flattened icosphere lumps with a sheared upper tier
+                        #   and a tail, as one triangle soup carrying both the
+                        #   facet normal and the lump's smooth one.
                         #   Pure arithmetic — no Babylon, no state
     WorldCulling.ts     # How much of the map the frame's own mesh walk is
                         #   offered. Replaces scene.getActiveMeshCandidates and
@@ -1017,9 +1019,11 @@ src/
     Volumetrics.ts      # Light shafts: raymarched through the shadow volume,
                         #   capped at the light's colour and SCREENED onto the
                         #   frame so a thick map's glare stays gold. WGSL
-    CloudShader.ts      # The cloud masses lit per FACET: a wrapped, banded key,
-                        #   a darker belly, a stepped silver lining toward the
-                        #   light, the dome's horizon haze. WGSL
+    CloudShader.ts      # The cloud masses in cel TONES: lit mostly off the
+                        #   lump's smooth normal so a terminator is one cut
+                        #   line, shade pulled toward the dome's gradient behind
+                        #   it, a highlight cut, a belly, a rim-only lining and
+                        #   the dome's haze. WGSL
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
                         #   angles. The viewmodel is held out of it by DEPTH —
                         #   masked shift AND weighted taps — because a gun

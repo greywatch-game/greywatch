@@ -2428,18 +2428,25 @@ shape) and `shaders/CloudShader.ts` is the light.
 
 - **One mesh, one material, one draw.** The whole ring is a flat-shaded triangle
   soup — every triangle owns its three corners, which is what gives each facet its
-  own normal — merged once when the sky is applied. Measured: 15,520 triangles
-  on Harrowmead (`cloudCover` 0.55), 16,960 on Coldharbour (0.62) and 23,200 on
+  own normal — merged once when the sky is applied. Measured: 12,640 triangles
+  on Harrowmead (`cloudCover` 0.55), 14,080 on Coldharbour (0.62) and 16,640 on
   Hollowmere (0.72).
-- **A cloud is a pile of jittered icosphere lumps with a flat BELLY.** One
-  subdivision, because the facet is the look; the lumps swell toward the middle
-  and a few carry a crown. Three things were each photographed the wrong way first
-  and are now rules in the file: a lump may never be taller than three quarters of
-  its own width (a narrow lump is a TOOTH, and thirteen of them edge-on over the rim
-  were a sawtooth mountain range); the belly is PRESSED toward the base plane
-  (`BELLY_SQUASH`) rather than clamped onto it (a clamp gave every cloud one smooth
-  slab of floor that the haze shaded like sheet metal); and the whole pile stays LOW
-  against its width, because a tall faceted mass is a rock before it is a cloud.
+- **A cloud is a long BANK of flattened icosphere lumps with a flat BELLY.** One
+  subdivision, because the facet is the look; four to eight lumps a row, swelling
+  toward the middle and thinning to the ends, a thinner tier SLID one way along the
+  top rather than a crown sat square on it, and on most clouds a short tail off the
+  end the tier shears toward. Five things were each photographed the wrong way first
+  and are now rules in the file: a lump may never rise more than `MAX_LUMP_RISE`
+  (0.38) of its own half-width — at three quarters every lump was a faceted BALL,
+  and six to thirteen of them a cloud read as popcorn, or as pale boulders hung in
+  the sky, which is what the player called "too 3D and solid"; the belly is PRESSED
+  toward the base plane (`BELLY_SQUASH`) rather than clamped onto it (a clamp gave
+  every cloud one smooth slab of floor that the haze shaded like sheet metal); the
+  whole pile stays LOW against its width, because a tall faceted mass is a rock
+  before it is a cloud; a tail many times longer than it is tall ends in a POINT and
+  read as a blade; and every corner carries the lump's SMOOTH normal (the unjittered
+  ellipsoid's gradient, the squash dividing its y) beside the facet's, for the
+  shading below.
 - **The clouds stand IN THE WORLD, over the map — and that is the rule the first
   version broke.** It rode at `infiniteDistance` like the dome, and a player
   walking across Harrowmead watched every cloud walk with them. The ring is now
@@ -2495,14 +2502,36 @@ shape) and `shaders/CloudShader.ts` is the light.
   it.** The key is asked of the world normal in the shader, so a cloud coming round
   into the sun lights on its sun side. A baked colour would carry its lit face away
   with it, which is the trap the old second shell existed to dodge.
-- **The shading is four terms, all banded or stepped:** the key WRAPPED round the
-  lump (a volume, not a wall) and cut into three bands; a belly a step darker on
-  every down-facing facet; a SILVER LINING on the facets the eye grazes, stepped,
-  and only well inside the light's quarter of the sky (taken wider, a backlit pile
-  broke into bright shards over a dark one); and the dome's horizon colour over the
-  low ones on the dome's own schedule. The palette is the map's `SkySpec`:
-  `cloudColor` the shadow side, `cloudLitColor` the lit one, `cloudLitStrength` how
-  far a lit facet goes toward it, `cloudCover` the share of the ring's count.
+- **The light is asked MOSTLY OF THE LUMP and only partly of the facet**
+  (`CONFIG.sky.clouds.facetShare`, 0.45). Lit per facet alone, every triangle took
+  a tone of its own and a cloud was a crystal of forty greys; lit off the smooth
+  normal alone, the terminator is an airbrushed curve. Between, it is one cut line
+  across the lump that breaks along the facets — the frame's own hand-cut edge.
+- **The shading is cel TONES, every edge a one-pixel `fwidth` cut:** the key cut
+  once just past the equator (`wrap`, -0.1) and again at `highlight` (0.45), so the
+  lit side is two tones (`litStep`) and a flat bank's top has a broken bright ridge
+  rather than one cream shape; a belly a tone darker where the SMOOTH normal faces
+  down, so it is one band along the base; a SILVER LINING on the RIM, looking
+  toward the light; and the dome's colour over everything (`air`) and much more over
+  the low ones on the dome's own schedule (`hazeAtHorizon`).
+- **The shadow side is pulled toward the DOME'S GRADIENT behind the pixel**
+  (`shadeSky`), which the fragment rebuilds stop for stop from `zenithColor` and
+  `horizonColor` — a cloud's shade is lit by the sky all round it, so it is a darker
+  patch OF the sky rather than a solid in front of it. **The gradient and never the
+  baked halo**: taken with the halo, a cloud crossing the sun went the halo's own
+  colour and vanished into it.
+- **The wrap was POSITIVE once, and on a low sun that lit the whole cloud.** The
+  lumps are flat, so their tops and bellies have normals nearly square to a light a
+  few degrees up, and a terminator below the equator put all of it on the lit side —
+  peach against a peach sky. The same flatness is why **the lining asks for a LEVEL
+  normal as well as a grazing one**: seen almost edge-on, a flat lump's whole top
+  and belly graze the view, and a graze-only lining went over all of them.
+- **What still washes a cloud out next to the sun on Harrowmead is the SHAFTS, not
+  this shader** — measured by switching `Volumetrics` off at the same frozen
+  vantage, where the same clouds stand clear. That is the map's `air` tuning.
+- The palette is the map's `SkySpec`: `cloudColor` the shadow side before the dome
+  takes its share, `cloudLitColor` the lit one, `cloudLitStrength` how far a lit
+  facet goes toward it, `cloudCover` the share of the ring's count.
 - **Unfogged by the cel fog.** A cloud is SKY; the air it takes is the dome's
   gradient, not the village's fog wall. On Hollowmere and Greyfen a 78 m fog would
   otherwise erase the sky entirely.

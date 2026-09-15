@@ -1,14 +1,16 @@
 /**
  * cloudMasses.ts — The SHAPE of the sky's clouds: a ring of faceted cloud
- * masses, each a flat-bottomed pile of jittered icosphere lumps, handed back as
- * one flat-shaded triangle soup. Pure arithmetic — no Babylon, no state, no
+ * banks, each a long, flat-bottomed row of flattened icosphere lumps with a
+ * thinner tier slid along its top and a tail off one end, handed back as one
+ * triangle soup carrying each facet's normal and its lump's smooth one. Pure arithmetic — no Babylon, no state, no
  * random source of its own — which is `glassFracture.ts`'s shape, and for its
  * reason: the only thing a reader needs to trust about it is its output.
  * Owns: where each cloud stands on the ring, how it is piled, and which way
  * every facet faces. Owns no colour, no light and no drift — `Sky` and
  * `shaders/CloudShader.ts` are those.
  * Invariants: every triangle's winding and its stored normal agree and point
- * OUT of the lump it came from; a degenerate facet is dropped rather than
+ * OUT of the lump it came from, and its smooth normals ride with its corners
+ * through any re-winding; a degenerate facet is dropped rather than
  * emitted with a NaN normal;
  * nothing is placed with its base under `minElevation`, which is the dome's own
  * contract with the valley rim.
@@ -65,6 +67,13 @@ export interface CloudRingOptions {
 export interface CloudGeometry {
   positions: Float32Array;
   normals: Float32Array;
+  /**
+   * The lump's SMOOTH normal at each corner — the gradient of the ellipsoid it
+   * was built from, before the jitter — beside the facet's own in `normals`.
+   * The shader lights mostly off this one, so the terminator runs across a
+   * lump as one clean cel edge instead of every facet taking a tone of its own.
+   */
+  smoothNormals: Float32Array;
   /** Each lump's centre, xyz packed, in the same metres as `positions`. */
   lumpCentres: Float32Array;
   /** Each lump's first vertex, and how many vertices it owns (a multiple of 3). */
@@ -87,6 +96,7 @@ export function buildCloudRing(
 ): CloudGeometry {
   const pos: number[] = [];
   const nrm: number[] = [];
+  const smooth: number[] = [];
   const centres: number[] = [];
   const firsts: number[] = [];
   const counts: number[] = [];
@@ -131,9 +141,20 @@ export function buildCloudRing(
       cy + (ly < 0 ? ly * BELLY_SQUASH : ly),
       cz + lx * tz + lz * rz,
     ];
+    // The same frame for a DIRECTION: no offset, and the squash divides a
+    // normal's y rather than multiplying it, because a normal is a gradient.
+    const orient = (nx: number, ny: number, nz: number, below: boolean): Vec3 => {
+      const y = below ? ny / BELLY_SQUASH : ny;
+      const wx = nx * tx + nz * rx;
+      const wz = nx * tz + nz * rz;
+      const l = Math.hypot(wx, y, wz) || 1;
+      return [wx / l, y / l, wz / l];
+    };
     for (const lump of pileLumps(rand, o, width, height, depth)) {
       const first = pos.length / 3;
-      centres.push(...emitLump(unit, lump, o.jitter, rand, place, pos, nrm));
+      centres.push(
+        ...emitLump(unit, lump, o.jitter, rand, place, orient, pos, nrm, smooth),
+      );
       firsts.push(first);
       counts.push(pos.length / 3 - first);
     }
@@ -142,6 +163,7 @@ export function buildCloudRing(
   return {
     positions: new Float32Array(pos),
     normals: new Float32Array(nrm),
+    smoothNormals: new Float32Array(smooth),
     lumpCentres: new Float32Array(centres),
     lumpFirst: new Uint32Array(firsts),
     lumpCount: new Uint32Array(counts),
@@ -158,6 +180,13 @@ type Vec3 = [number, number, number];
  * underside while still reading as flat from any distance a cloud is seen at.
  */
 const BELLY_SQUASH = 0.18;
+
+/**
+ * The tallest a lump may be against its own half-width. At 0.75 a lump was a
+ * faceted ball and a cloud was a pile of them; under half, the icosphere's
+ * facets are stretched into the long slabs a cloud's silhouette is cut from.
+ */
+const MAX_LUMP_RISE = 0.38;
 
 /** One ellipsoidal lump in a cloud's own frame: centre and three radii. */
 interface Lump {
@@ -184,44 +213,67 @@ function pileLumps(
   const n = o.minLumps + Math.floor(rand() * (o.maxLumps - o.minLumps + 1));
   const out: Lump[] = [];
   const slot = width / n;
+  // Which way the upper tier SHEARS: one direction per cloud, so the layers
+  // read as a bank that the wind has dragged, not as a heap stacked by hand.
+  const shear = rand() < 0.5 ? -1 : 1;
   for (let i = 0; i < n; i++) {
     const t = (i + 0.5 + (rand() - 0.5) * 0.6) / n;
-    // Swells to the middle; the 0.6 power keeps the shoulders from being bare.
-    const swell = Math.pow(Math.sin(Math.PI * Math.min(Math.max(t, 0), 1)), 0.6);
-    // Wider than its slot, so neighbours overlap into one bank rather than
-    // standing as a row of separate beads.
-    const sx = slot * (1.0 + 0.6 * rand()) * (0.7 + 0.5 * swell);
-    // And never taller than most of its own width: a lump narrower than it is
-    // high is a TOOTH, and a cloud of thirteen of them seen edge-on low over
-    // the rim photographed as a sawtooth range of mountains.
+    // Swells to the middle and THINS to the ends: a cloud that stops at full
+    // height stops like a wall, and one that tapers into a streak is a cloud.
+    const swell = Math.pow(Math.sin(Math.PI * Math.min(Math.max(t, 0), 1)), 0.9);
+    // Well over its slot, so neighbours merge into one long bank rather than
+    // standing as a row of beads — the beads were the popcorn.
+    const sx = slot * (1.4 + 0.8 * rand()) * (0.65 + 0.55 * swell);
+    // And FLAT against its own width. A lump anywhere near as tall as it is
+    // wide is a ball, and a pile of faceted balls is a heap of pale rocks
+    // hanging in the sky; the cap is what keeps every facet a long slab.
     const sy = Math.min(
-      height * (0.35 + 0.65 * swell) * (0.75 + 0.5 * rand()),
-      sx * 0.75,
+      height * (0.25 + 0.75 * swell) * (0.75 + 0.5 * rand()),
+      sx * MAX_LUMP_RISE,
     );
     const lump: Lump = {
       x: (t - 0.5) * width,
       // Centred a quarter of its height ABOVE the base, so the squash takes the
       // bottom of every lump onto the cloud's one flat belly.
       y: sy * 0.25,
-      z: (rand() - 0.5) * depth * 0.7,
+      z: (rand() - 0.5) * depth * 0.8,
       sx,
       sy,
-      sz: depth * (0.45 + 0.35 * rand()),
+      sz: depth * (0.35 + 0.35 * rand()) * (0.6 + 0.4 * swell),
     };
     out.push(lump);
-    // The crown: only on the swollen middle, and not on every lump there, so
-    // two clouds of the same width still have different skylines. Low and
-    // broad — a crown as tall as its base is where a cloud turns into a peak.
-    if (swell > 0.7 && rand() < 0.45) {
+    // The upper tier: a thinner layer riding over the swollen middle and slid
+    // one way along the bank, not a crown sat square on top — a crown as tall
+    // as its base is where a cloud turns into a peak.
+    if (swell > 0.55 && rand() < 0.5) {
+      const sxTop = lump.sx * (0.7 + 0.3 * rand());
       out.push({
-        x: lump.x + (rand() - 0.5) * slot * 0.6,
-        y: lump.y + sy * (0.45 + 0.2 * rand()),
+        x: lump.x + shear * slot * (0.3 + 0.5 * rand()),
+        y: lump.y + sy * (0.4 + 0.2 * rand()),
         z: lump.z + (rand() - 0.5) * depth * 0.3,
-        sx: lump.sx * (0.6 + 0.2 * rand()),
-        sy: sy * (0.5 + 0.15 * rand()),
+        sx: sxTop,
+        sy: Math.min(sy * (0.5 + 0.15 * rand()), sxTop * MAX_LUMP_RISE),
         sz: lump.sz * 0.7,
       });
     }
+  }
+  // A TAIL off one end, on most clouds: a long, thin streak at the base,
+  // trailing the way the tier shears. It is the one shape a lump pile cannot
+  // make on its own, and the one that most says "vapour" rather than "mass".
+  // Not much longer than a lump, and not much thinner: an ellipsoid many times
+  // longer than it is tall ends in a POINT, and a bank trailing one read as a
+  // blade in the sky.
+  if (rand() < 0.7) {
+    const sx = slot * (1.2 + 0.6 * rand());
+    const sy = Math.min(height * (0.2 + 0.1 * rand()), sx * MAX_LUMP_RISE);
+    out.push({
+      x: shear * (width * 0.5 + sx * 0.2),
+      y: sy * 0.25,
+      z: (rand() - 0.5) * depth * 0.4,
+      sx,
+      sy,
+      sz: depth * (0.2 + 0.15 * rand()),
+    });
   }
   return out;
 }
@@ -237,27 +289,32 @@ function emitLump(
   jitter: number,
   rand: () => number,
   place: (x: number, y: number, z: number) => Vec3,
+  orient: (x: number, y: number, z: number, below: boolean) => Vec3,
   pos: number[],
   nrm: number[],
+  smooth: number[],
 ): Vec3 {
   // A lump's centre is never under the base (see `pileLumps`), so the squash
   // leaves it where it is and it is a sound reference for "out".
   const centre = place(l.x, l.y, l.z);
   const world: Vec3[] = [];
+  const soft: Vec3[] = [];
   for (let i = 0; i < unit.verts.length; i += 3) {
     const r = 1 + (rand() * 2 - 1) * jitter;
-    world.push(
-      place(
-        l.x + unit.verts[i] * r * l.sx,
-        l.y + unit.verts[i + 1] * r * l.sy,
-        l.z + unit.verts[i + 2] * r * l.sz,
-      ),
-    );
+    const ux = unit.verts[i], uy = unit.verts[i + 1], uz = unit.verts[i + 2];
+    const ly = l.y + uy * r * l.sy;
+    world.push(place(l.x + ux * r * l.sx, ly, l.z + uz * r * l.sz));
+    // The UNJITTERED ellipsoid's gradient: the jitter is what cuts the facets,
+    // and it is exactly what the smooth normal is there to look past.
+    soft.push(orient(ux / l.sx, uy / l.sy, uz / l.sz, ly < 0));
   }
   for (let f = 0; f < unit.faces.length; f += 3) {
     const a = world[unit.faces[f]];
     let b = world[unit.faces[f + 1]];
     let c = world[unit.faces[f + 2]];
+    const sa = soft[unit.faces[f]];
+    let sb = soft[unit.faces[f + 1]];
+    let sc = soft[unit.faces[f + 2]];
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
     const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     let nx = uy * vz - uz * vy;
@@ -278,11 +335,15 @@ function emitLump(
       const t = b;
       b = c;
       c = t;
+      const st = sb;
+      sb = sc;
+      sc = st;
       nx = -nx;
       ny = -ny;
       nz = -nz;
     }
     pos.push(...a, ...b, ...c);
+    smooth.push(...sa, ...sb, ...sc);
     for (let k = 0; k < 3; k++) nrm.push(nx, ny, nz);
   }
   return centre;
