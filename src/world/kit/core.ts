@@ -50,7 +50,7 @@ import type { AmbienceId } from "../../core/Sfx";
 import type { LightSpec } from "../environment";
 import { partBox, partCylinder, partSurface } from "../parts";
 import type { TerrainField } from "../TerrainField";
-import type { RoadSurface } from "../roads";
+import type { RoadFootprint, RoadSurface } from "../roads";
 import type { RoadJoin, RoadStrip } from "../roadPaths";
 import {
   COBBLE_TEX_SCALE,
@@ -330,6 +330,13 @@ export interface BuildCtx {
    * told which part of it is its own to build.
    */
   road?: { strip?: RoadStrip; joins: readonly RoadJoin[] };
+  /**
+   * The whole network's footprint, rectangles and paths together — handed to
+   * EVERY road, because where a kerb may stand is a question about every
+   * other carriageway: a kerb runs only where one side of it is paved and the
+   * other is not (see `layKerbs` in `kit/terrain.ts`).
+   */
+  roads?: RoadFootprint;
 }
 
 /** One stretch of a run whose ground line is level, in local X. */
@@ -569,6 +576,14 @@ export const DIRT = "#4a4438";
 export const BRICK = "#5b4038";
 /** Lichened field stone — the dry walls and roadside shrines. */
 export const MOSS_STONE = "#4f574c";
+/**
+ * A cobbled street's kerb course: dressed stone, a step paler than the
+ * palest sett (`SETTS` in `world/textures.ts`) so the edge reads as a line
+ * the street was laid up to rather than as one more row of it. Two tones,
+ * because a course re-set a stone at a time is never one colour.
+ */
+export const KERB = "#5f5a51";
+export const KERB_WORN = "#57534a";
 
 export const FLAME = "#ffbe63";
 /** Forge/kiln mouth — hotter and redder than a lantern's FLAME. */

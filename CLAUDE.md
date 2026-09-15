@@ -754,7 +754,10 @@ cones and litter belong — and **what is sown there stands on the ROAD** rather
 than on the floor under it (`roadTopAt`). **Any change to a placement rule
 re-rolls the seeded dressing field**, so it owes `npm run collision` and `npm run
 parity` — the staleness guard hashes the LAYOUT and this kind of change is in
-the BUILDER. **All three carriageways are world-mapped ground textures**, and
+the BUILDER. **A cobbled carriageway ends in a KERB COURSE, laid wherever
+exactly one side of its edge is paved** (`BuildCtx.roads`, `docs/world.md`) —
+visual only like the road, so a kerb is one more thing no ray and no body can
+see. **All three carriageways are world-mapped ground textures**, and
 the one rule that reaches outside them is that **a road's tile may not equal a
 FLOOR pattern's** — every ground texture in the tree is sampled at `vPosW.xz`,
 so a track at the soil's own scale is in phase with the soil it crosses and

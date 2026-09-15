@@ -970,6 +970,39 @@ that is not across it.
   and cannot import TypeScript. Change one and change the other, or claims sit a
   metre off the carriageway on a long bend with nothing to say so.
 
+**A COBBLED STREET ENDS IN A KERB COURSE** (`layKerb` in `kit/terrain.ts`), and
+it exists because the ground was given a depth. The setts are carved down into
+the slab (`docs/rendering.md`, "A slope is not a depth") and the slab's edge is a
+straight line the world-mapped texture knows nothing about, so the street
+stopped by slicing every stone along it in half and the carving had no side: a
+three-dimensional street that ended like a decal. A course of dressed stones laid
+over the line hides the cut and stands `KERB_PROUD` (3.5 cm) over the road, so
+the setts read as sunk between kerbs and the ink finds the edge by itself.
+
+- **A kerb is laid wherever exactly ONE side of the edge is paved**, asked of
+  `onRoad` on the network's footprint (`BuildCtx.roads`, handed to every road)
+  either side of the line, sampled along it and bisected at every change. That
+  single rule stops a kerb at a crossing, at a T, across a lane leaving the
+  street, along a junction patch's mouth and against a rectangle abutting a path,
+  without rectangles and paths knowing about each other — and it is why a
+  cobbled edge against a dirt or asphalt road has no kerb at all.
+- **Rectangles, strips and junction patches are all kerbed**: a rectangle's four
+  edges, a strip's two sides plus a cap at each FREE end, a patch's ring
+  segments that `RoadJoin.kerb` marks as open ground. A side runs half a kerb's
+  width past a corner and a cap stops half a width short of it, and a kerb the
+  network cut runs half a width on into the other street's kerb, so every corner
+  is closed by one stone and not two.
+- **Visual only, exactly like the road under it**: no collider, no `WorldBox`,
+  nothing a ray, a body, the nav grid, the cover bake or the collision bake can
+  see, so `npm run parity` does not move. It is on the ROAD merge (no shadow,
+  never block-keyed), in two tones — two draw calls map-wide.
+- **Written as vertex data, never as a box part per stone.** Cinderhaven lays
+  ~7,900 stones (78k triangles); a `Build.box` per stone was a `Mesh` object each
+  for the merge to throw away and cost that map's build ~250 ms, and writing the
+  five visible faces straight into one buffer per tone brought it to ~110 ms.
+  Lengths and tones are rolled off the stone's WORLD position, never
+  `Math.random()`.
+
 A road over level ground still collapses to the single box it always was
 (`terrainSlab` returns null), so this costs nothing on the shipped map. `terrace`,
 `ramp`, `stairs`, `jetty` and `bridge` do not bend: they carry walkable box

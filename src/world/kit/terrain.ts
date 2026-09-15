@@ -7,18 +7,25 @@
  * must stay within CONFIG.nav.stepHeight of adjacent ground and ramps need
  * rotX on the COLLIDER, not just the visual.
  */
-import { Scene } from "@babylonjs/core";
+import { Scene, VertexData } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import {
   ROAD_DEPTH_UNITS,
   ROAD_LENGTH,
   ROAD_TOP,
   ROAD_WIDTH,
+  onRoad,
   roadSurface,
   roadTop,
+  type RoadFootprint,
 } from "../roads";
-import { stripSections } from "../roadPaths";
-import { terrainFan, terrainRibbon, terrainSlab } from "../TerrainField";
+import { stripSections, type RoadJoin } from "../roadPaths";
+import {
+  type TerrainField,
+  terrainFan,
+  terrainRibbon,
+  terrainSlab,
+} from "../TerrainField";
 import {
   Build,
   type BuildCtx,
@@ -28,6 +35,8 @@ import {
   DARK_STONE,
   DIRT,
   GUARD_THICKNESS,
+  KERB,
+  KERB_WORN,
   PLANK,
   ROAD_PAINT,
   TEAK,
@@ -178,6 +187,28 @@ export function buildRoad(
         j.surface,
       );
     }
+    const site = kerbSite(ctx, frame.x, frame.z, frame.rotY);
+    if (site) {
+      if (strip && surface === "cobble") {
+        const sec = stripSections(strip);
+        const first = sec[0];
+        const last = sec[sec.length - 1];
+        // A side runs on past a FREE end to cover the corner the trimmed cap
+        // leaves; at a joined end the junction's own kerb takes over from the
+        // same point, and running on would lay one stone over the other.
+        const e0 = strip.free0 ? KERB_WIDTH / 2 : 0;
+        const e1 = strip.free1 ? KERB_WIDTH / 2 : 0;
+        layKerb(site, sec.map((s) => [s.lx, s.lz]), e0, e1);
+        layKerb(site, sec.map((s) => [s.rx, s.rz]), e0, e1);
+        if (strip.free0) layKerb(site, [[first.lx, first.lz], [first.rx, first.rz]], -KERB_WIDTH / 2, -KERB_WIDTH / 2);
+        if (strip.free1) layKerb(site, [[last.rx, last.rz], [last.lx, last.lz]], -KERB_WIDTH / 2, -KERB_WIDTH / 2);
+      }
+      for (const j of joins) {
+        if (j.surface !== "cobble") continue;
+        for (const run of joinKerbRuns(j)) layKerb(site, run, 0, 0);
+      }
+      flushKerbs(b, site);
+    }
     return b;
   }
 
@@ -195,6 +226,28 @@ export function buildRoad(
     });
   if (contoured) b.groundSurface(contoured, surface);
   else b.groundBox(w, h, len, 0, top - h / 2, 0, surface);
+
+  const site = surface === "cobble" && ctx ? kerbSite(ctx, ctx.x, ctx.z, ctx.rotY) : null;
+  if (site) {
+    // The four edges in the placement's own frame, taken out to the world so
+    // the ground and the rest of the network can be asked about them. The
+    // sides run the kerb's half-width past both ends and the caps stop the
+    // same half-width short, so a corner is one stone and never two.
+    const c = Math.cos(site.rotY);
+    const s = Math.sin(site.rotY);
+    const at = (lx: number, lz: number): KerbPoint => [
+      site.x + lx * c + lz * s,
+      site.z - lx * s + lz * c,
+    ];
+    const hw = w / 2;
+    const hl = len / 2;
+    const out = KERB_WIDTH / 2;
+    layKerb(site, [at(-hw, -hl), at(-hw, hl)], out, out);
+    layKerb(site, [at(hw, hl), at(hw, -hl)], out, out);
+    layKerb(site, [at(-hw, hl), at(hw, hl)], -out, -out);
+    layKerb(site, [at(hw, -hl), at(-hw, -hl)], -out, -out);
+    flushKerbs(b, site);
+  }
 
   // Blacktop gets a broken centre line, and what it is for has NARROWED rather
   // than gone away. It used to be carrying the whole surface — an untextured
@@ -260,6 +313,318 @@ export function buildRoad(
     }
   }
   return b;
+}
+
+// --- the kerb --------------------------------------------------------------
+
+/*
+ * A COBBLED STREET ENDS IN A KERB COURSE, because since the ground was given a
+ * depth its edge cannot be a cut. The setts are carved down into the slab
+ * (`CelShader`'s `reliefParallax`), and the slab's edge is a straight line the
+ * world-mapped texture knows nothing about — so the street stopped by slicing
+ * every stone along it in half, and the carving had no side to it: a
+ * three-dimensional street that ended like a decal. A course of dressed stones
+ * laid over that line is what a laid street actually ends in, and it is the
+ * one fix that is geometry rather than a trick: it hides the cut, it stands a
+ * few centimetres over the carriageway so the setts read as sunk between
+ * kerbs, and the ink finds its edge on its own.
+ *
+ * **Visual only, like the road under it**: no collider, no `WorldBox`, nothing
+ * a ray, a body, the nav grid or the collision bake can see. It stands
+ * `KERB_PROUD` over the road, which is under a boot's sole and far under
+ * `CONFIG.nav.stepHeight`.
+ *
+ * **Where a kerb stands is decided by the NETWORK, not by the placement**: a
+ * stone is laid only where one side of it is paved and the other is not. That
+ * one rule is what stops a kerb at a crossing, at a T, where a cap abuts
+ * another street, along a junction patch's mouth and across a lane leaving the
+ * street — for rectangles and paths alike, without either knowing about the
+ * other. It is asked of `onRoad` on the footprint MapBuilder already resolved,
+ * sampled along the edge and bisected at every change, so a kerb stops within
+ * a centimetre of the carriageway it gives way to.
+ */
+
+/** Across a kerb stone, centred on the carriageway's edge line. */
+const KERB_WIDTH = 0.28;
+/** How far a kerb's top stands over the road's own top. */
+const KERB_PROUD = 0.035;
+/** Top to bottom: the rest is buried in the slab and the floor beside it. */
+const KERB_HEIGHT = 0.16;
+/** A stone's mean length along the course; each is jittered around it. */
+const KERB_STONE = 0.7;
+/** The joint left between two stones. */
+const KERB_JOINT = 0.014;
+/** How far either side of the edge line the footprint is asked about. */
+const KERB_PROBE = 0.4;
+/** Along-course spacing of that question, before the bisection. */
+const KERB_SAMPLE = 0.5;
+/** Stretches of kerb shorter than this are not laid. */
+const KERB_MIN_RUN = 0.3;
+
+type KerbPoint = [number, number];
+
+/** What a kerb needs of the world: the ground, the network, and the frame. */
+interface KerbSite {
+  terrain: TerrainField;
+  roads: RoadFootprint;
+  x: number;
+  z: number;
+  rotY: number;
+  originY: number;
+  /** The road's top over the floor — `roadTop` of the street's surface. */
+  top: number;
+  /** The stones laid so far, by tone, in the placement's own frame. */
+  sinks: Map<string, { positions: number[]; normals: number[]; indices: number[] }>;
+}
+
+function kerbSite(ctx: BuildCtx, x: number, z: number, rotY: number): KerbSite | null {
+  if (!ctx.roads) return null;
+  const sink = () => ({ positions: [], normals: [], indices: [] });
+  return {
+    sinks: new Map([
+      [KERB, sink()],
+      [KERB_WORN, sink()],
+    ]),
+    terrain: ctx.terrain,
+    roads: ctx.roads,
+    x,
+    z,
+    rotY,
+    originY: ctx.y,
+    top: roadTop("cobble"),
+  };
+}
+
+/** A deterministic 0..1 roll off a world position — never `Math.random()`. */
+function kerbRoll(x: number, z: number, salt: number): number {
+  let h = Math.imul(Math.round(x * 64) | 0, 0x27d4eb2d);
+  h ^= Math.imul(Math.round(z * 64) | 0, 0x165667b1);
+  h ^= Math.imul(salt | 0, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/**
+ * A junction patch's open-ground ring segments, joined into runs. The ring is
+ * closed, so a run that wraps past the last segment is carried on from the
+ * first rather than broken in two.
+ */
+function joinKerbRuns(j: RoadJoin): KerbPoint[][] {
+  const n = j.xs.length;
+  if (n < 2) return [];
+  const runs: KerbPoint[][] = [];
+  // Start just after a segment that is NOT kerb, so no run is split at k = 0.
+  let start = j.kerb.findIndex((k) => !k);
+  if (start < 0) {
+    const ring: KerbPoint[] = j.xs.map((x, k) => [x, j.zs[k]]);
+    ring.push([j.xs[0], j.zs[0]]);
+    return [ring];
+  }
+  start = (start + 1) % n;
+  let run: KerbPoint[] | null = null;
+  for (let step = 0; step < n; step++) {
+    const k = (start + step) % n;
+    if (j.kerb[k]) {
+      if (!run) run = [[j.xs[k], j.zs[k]]];
+      const k1 = (k + 1) % n;
+      run.push([j.xs[k1], j.zs[k1]]);
+    } else if (run) {
+      runs.push(run);
+      run = null;
+    }
+  }
+  if (run) runs.push(run);
+  return runs;
+}
+
+/**
+ * Lays a kerb course along a world-space polyline, extended by `ext0`/`ext1`
+ * past its two ends (negative trims), wherever the network says the edge is
+ * an edge. See the section note above.
+ */
+function layKerb(
+  site: KerbSite,
+  pts: readonly KerbPoint[],
+  ext0: number,
+  ext1: number,
+): void {
+  const acc: number[] = [0];
+  for (let i = 1; i < pts.length; i++) {
+    acc.push(acc[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  }
+  const total = acc[acc.length - 1];
+  if (total < KERB_MIN_RUN) return;
+
+  // Position and unit direction at arc length s, carried straight on past
+  // either end so an extension follows the edge it extends.
+  const frameAt = (s: number): [number, number, number, number] => {
+    let i = 0;
+    while (i < pts.length - 2 && acc[i + 1] < s) i++;
+    while (i < pts.length - 2 && acc[i + 1] - acc[i] < 1e-9) i++;
+    const l = Math.max(acc[i + 1] - acc[i], 1e-9);
+    const dx = (pts[i + 1][0] - pts[i][0]) / l;
+    const dz = (pts[i + 1][1] - pts[i][1]) / l;
+    const u = s - acc[i];
+    return [pts[i][0] + dx * u, pts[i][1] + dz * u, dx, dz];
+  };
+  const paved = (x: number, z: number): boolean => onRoad(site.roads, x, z, 0);
+  const isEdge = (s: number): boolean => {
+    const [x, z, dx, dz] = frameAt(s);
+    const a = paved(x - dz * KERB_PROBE, z + dx * KERB_PROBE);
+    const c = paved(x + dz * KERB_PROBE, z - dx * KERB_PROBE);
+    return a !== c;
+  };
+  // Where along the run the edge is an edge, to the centimetre: sampled, and
+  // every change of answer bisected.
+  const intervals: [number, number][] = [];
+  const steps = Math.max(2, Math.ceil(total / KERB_SAMPLE));
+  let prevS = 0;
+  let prev = isEdge(Math.min(0.02, total / 2));
+  let open = prev ? 0 : -1;
+  for (let k = 1; k <= steps; k++) {
+    const s = k === steps ? total : (total * k) / steps;
+    const probeS = k === steps ? Math.max(total - 0.02, total / 2) : s;
+    const now = isEdge(probeS);
+    if (now !== prev) {
+      let lo = prevS;
+      let hi = s;
+      for (let it = 0; it < 6; it++) {
+        const mid = (lo + hi) / 2;
+        if (isEdge(mid) === prev) lo = mid;
+        else hi = mid;
+      }
+      const cut = (lo + hi) / 2;
+      if (now) open = cut;
+      else if (open >= 0) {
+        intervals.push([open, cut]);
+        open = -1;
+      }
+    }
+    prev = now;
+    prevS = s;
+  }
+  if (open >= 0) intervals.push([open, total]);
+
+  const seed = kerbRoll(pts[0][0], pts[0][1], pts.length);
+  for (const [i0, i1] of intervals) {
+    // A run end is the caller's corner; an end the network cut is a junction,
+    // and a kerb running half its width on into the other street's kerb is
+    // what closes the corner there.
+    const a = i0 <= 1e-6 ? -ext0 : i0 - KERB_WIDTH / 2;
+    const z = i1 >= total - 1e-6 ? total + ext1 : i1 + KERB_WIDTH / 2;
+    const span = z - a;
+    if (span < KERB_MIN_RUN) continue;
+    const n = Math.max(1, Math.round(span / KERB_STONE));
+    const raw: number[] = [];
+    let sum = 0;
+    for (let k = 0; k < n; k++) {
+      const r = 0.75 + 0.5 * kerbRoll(i0 * 7.3 + k, seed * 97, k + 11);
+      raw.push(r);
+      sum += r;
+    }
+    let s = a;
+    for (let k = 0; k < n; k++) {
+      const len = (raw[k] / sum) * span;
+      kerbStone(site, frameAt(s + KERB_JOINT / 2), frameAt(s + len - KERB_JOINT / 2), k);
+      s += len;
+    }
+  }
+}
+
+/**
+ * One stone, from one end of its chord to the other, stood on the floor as
+ * drawn at both ends and pitched between them — written straight into the
+ * site's vertex buffers rather than made as a box part. Cinderhaven lays
+ * ~7,900 of them, and a part per stone is a `Mesh` object per stone for the
+ * merge to throw away; a box's bottom face is buried and never written.
+ */
+function kerbStone(
+  site: KerbSite,
+  from: readonly number[],
+  to: readonly number[],
+  k: number,
+): void {
+  const [ax, az] = from;
+  const [bx, bz] = to;
+  const run = Math.hypot(bx - ax, bz - az);
+  if (run < 0.05) return;
+  const ya = site.terrain.surfaceAt(ax, az, true);
+  const yb = site.terrain.surfaceAt(bx, bz, true);
+  const roll = kerbRoll((ax + bx) / 2, (az + bz) / 2, k);
+  const lift = site.top + KERB_PROUD - KERB_HEIGHT / 2 - site.originY + (roll - 0.5) * 0.008;
+  // Into the placement's own frame, which MapBuilder rotates back out of.
+  const c = Math.cos(site.rotY);
+  const s = Math.sin(site.rotY);
+  const local = (x: number, y: number, z: number): [number, number, number] => {
+    const dx = x - site.x;
+    const dz = z - site.z;
+    return [dx * c - dz * s, y, dx * s + dz * c];
+  };
+  const a = local(ax, ya + lift, az);
+  const b = local(bx, yb + lift, bz);
+  // Forward along the stone (pitched), right across it (level), up = F x R.
+  let fx = b[0] - a[0];
+  let fy = b[1] - a[1];
+  let fz = b[2] - a[2];
+  const fl = Math.hypot(fx, fy, fz);
+  fx /= fl;
+  fy /= fl;
+  fz /= fl;
+  const hl = Math.hypot(fx, fz);
+  const rx = fz / hl;
+  const rz = -fx / hl;
+  const ux = fy * rz;
+  const uy = fz * rx - fx * rz;
+  const uz = -fy * rx;
+  const hw = KERB_WIDTH / 2;
+  const hh = KERB_HEIGHT / 2;
+  const cx = (a[0] + b[0]) / 2;
+  const cy = (a[1] + b[1]) / 2;
+  const cz = (a[2] + b[2]) / 2;
+  const hf = fl / 2;
+  const corner = (i: number, j: number, m: number): [number, number, number] => [
+    cx + rx * hw * i + ux * hh * j + fx * hf * m,
+    cy + uy * hh * j + fy * hf * m,
+    cz + rz * hw * i + uz * hh * j + fz * hf * m,
+  ];
+  const sink = site.sinks.get(roll < 0.35 ? KERB_WORN : KERB)!;
+  // Each face as its four corners and its outward normal; the winding is
+  // settled against the normal, so no face depends on getting an order right.
+  const face = (n: [number, number, number], q: [number, number, number][]): void => {
+    const base = sink.positions.length / 3;
+    for (const p of q) {
+      sink.positions.push(p[0], p[1], p[2]);
+      sink.normals.push(n[0], n[1], n[2]);
+    }
+    // Babylon is left-handed: a front face's (p1 - p0) x (p2 - p0) points AWAY
+    // from its normal (see TerrainField's `Accum.quad`).
+    const e1 = [q[1][0] - q[0][0], q[1][1] - q[0][1], q[1][2] - q[0][2]];
+    const e2 = [q[2][0] - q[0][0], q[2][1] - q[0][1], q[2][2] - q[0][2]];
+    const cross =
+      (e1[1] * e2[2] - e1[2] * e2[1]) * n[0] +
+      (e1[2] * e2[0] - e1[0] * e2[2]) * n[1] +
+      (e1[0] * e2[1] - e1[1] * e2[0]) * n[2];
+    if (cross < 0) sink.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    else sink.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  };
+  face([ux, uy, uz], [corner(-1, 1, -1), corner(1, 1, -1), corner(1, 1, 1), corner(-1, 1, 1)]);
+  face([rx, 0, rz], [corner(1, -1, -1), corner(1, -1, 1), corner(1, 1, 1), corner(1, 1, -1)]);
+  face([-rx, 0, -rz], [corner(-1, -1, 1), corner(-1, -1, -1), corner(-1, 1, -1), corner(-1, 1, 1)]);
+  face([fx, fy, fz], [corner(-1, -1, 1), corner(1, -1, 1), corner(1, 1, 1), corner(-1, 1, 1)]);
+  face([-fx, -fy, -fz], [corner(1, -1, -1), corner(-1, -1, -1), corner(-1, 1, -1), corner(1, 1, -1)]);
+}
+
+/** Hands a road's laid kerbs to its build, one surface per tone. */
+function flushKerbs(b: Build, site: KerbSite): void {
+  for (const [color, sink] of site.sinks) {
+    if (sink.indices.length === 0) continue;
+    const data = new VertexData();
+    data.positions = sink.positions;
+    data.normals = sink.normals;
+    data.indices = sink.indices;
+    b.surface(data, color);
+  }
 }
 
 // --- the boardwalk --------------------------------------------------------

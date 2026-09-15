@@ -655,7 +655,8 @@ src/
     kit/structures.ts   #   silo, well, stall, fence, stoneWall, bridge,
                         #   trestleBridge, templeRuin, haystack, lamp, cart,
                         #   crates, woodpile, shed, trough, shrine, kiln
-    kit/terrain.ts      #   terrace, ramp, road, jetty, boardwalk, stairs
+    kit/terrain.ts      #   terrace, ramp, road (and a cobbled street's kerb
+                        #   course), jetty, boardwalk, stairs
     kit/harbour.ts      #   smelter, lighthouse, crane, fishRack, careenedHull,
                         #   netLoft, saltPan — the volcanic-coast set, and the
                         #   only one in the kit built for a map that already

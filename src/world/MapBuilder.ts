@@ -1116,6 +1116,7 @@ export class MapBuilder {
           isRoad && p.params?.path
             ? { strip: network.strips.get(i), joins: network.joins.get(i) ?? [] }
             : undefined,
+        roads: isRoad ? network.footprint : undefined,
       });
 
       for (const merged of mergeByMaterial(s.meshes, p.kind)) {
