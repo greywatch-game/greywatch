@@ -962,8 +962,11 @@ src/
                         #   thing on it that is not input is the pause button,
                         #   which a phone has no Escape key for. Game pushes the
                         #   states it draws or acts on but cannot know
-                        #   (crouched, the magazine wanting attention, and
-                        #   whether aim-on-fire applies and the sight is up yet)
+                        #   (crouched, the magazine wanting attention, whether
+                        #   aim-on-fire applies and the sight is up yet, the two
+                        #   vehicle verbs, and WHAT THE THUMBS ARE ON — a body's
+                        #   controls or a crewed hull's, setMode, a button
+                        #   outside them being off the glass rather than dimmed)
                         #   and decides when it is up: `playing`, and only while
                         #   touch is the device in hand
     ping.ts             # What a latency LOOKS like — the text and the quality

@@ -251,6 +251,33 @@
 .tb-grenade { right: 190px; bottom: 170px; width: 62px; height: 62px; font-size: 9px; }
 .tb-swap { right: 190px; bottom: 244px; width: 62px; height: 62px; }
 
+/* SWAP, saying something. In a hull this button is the SEAT verb rather than
+   the weapon swap (`TouchControls.setSeatOffer`, the same sentence the HUD's
+   own prompt carries), and a sentence does not go in a 62px square at 10px —
+   so it takes `.tb-use`'s treatment and `.tb-use`'s width, in the same amber
+   and for the same reason: like the verb below it, it is on the glass only
+   when it would do something.
+
+   It keeps its RIGHT edge and grows LEFT rather than moving, because the thumb
+   that used to find SWAP there has to find this there, and the column it grows
+   into is one nothing else is in while the player is crewed — JUMP, CROUCH,
+   RELOAD and GRENADE are a body's and off the glass. That last 28px is the
+   whole of the clearance it has: growing the other way put its left edge 4px
+   inside `.tb-climb`, which is the very collision this mode exists to end. It
+   leaves the group's own box by 20px doing it, which costs nothing — the box
+   is `pointer-events: none`, clips nothing, and scales about the corner this
+   is furthest from. */
+.tb-swap.saying {
+  right: 190px;
+  width: 90px;
+  height: 58px;
+  font-size: 9px;
+  line-height: 1.35;
+  letter-spacing: 0.1em;
+  --frame-edge: rgba(255, 196, 107, 0.5);
+  --frame-fill: rgba(10, 13, 20, 0.32);
+}
+
 /* The vehicle verb, and the only control here that comes and goes. Low and
    INBOARD of the trigger — the corner under ADS is the one place in this
    cluster a thumb can reach without crossing the fire button, which matters
@@ -292,6 +319,11 @@
    ONE column inboard of that pair so a thumb already resting on the fire button
    does not have to travel, and they are stacked up/down in the order they act
    — an UP button below a DOWN button is a control that reads backwards.
+
+   Sharing the slots is only safe because the two pairs are never on the glass
+   together: JUMP and CROUCH are a BODY's controls and a crewman has neither
+   (`ButtonSpec.modes`). Before that they were, and this pair drew straight
+   over them. Anything else placed here owes the same test.
 
    Framed in amber for .tb-use's reason, and it is the same reason: neither is
    ever merely available, and both are on screen only while there is something

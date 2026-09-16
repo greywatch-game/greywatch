@@ -70,6 +70,17 @@
  *   arrives still fires once when it does, and the sight is held up until it
  *   has. `Game` decides whether it applies at all (on foot, and not with a
  *   mine), because this layer cannot know what the player is carrying.
+ * - **THE CLUSTER IS THE CONTROLS OF WHATEVER THE PLAYER IS IN.** A body and a
+ *   hull are two different jobs for the same two thumbs, so every button
+ *   declares which MODES it belongs to (`ButtonSpec.modes`) and a button
+ *   outside the one the player is in is OFF THE GLASS rather than dimmed —
+ *   which is the rule `#hud-kit` and `#vehicle` already follow one layer up
+ *   (`hud.css`). JUMP, CROUCH, RELOAD and GRENADE are a BODY's and go when the
+ *   player boards; the collective takes two of the slots they left, which is
+ *   what it was placed on and what used to draw straight over them; ADS is the
+ *   body's sight or the GUNNER's optic and never a driver's; and the trigger
+ *   itself goes on a hull whose driver has no main gun. `Game` pushes the mode
+ *   (`setMode`) exactly as it pushes every other fact this layer cannot know.
  */
 import "./touch.css";
 import { CONFIG } from "../config";
@@ -115,6 +126,16 @@ export interface TouchFrame {
   lift: number;
 }
 
+/**
+ * What the thumbs are ON — a body's controls, or a crewed hull's, and which
+ * chair. Pushed by `Game`; see `setMode`.
+ *
+ * The SEAT rather than the vehicle, because the two chairs are two different
+ * sets of controls (a gunner has no sticks and no collective, a driver has no
+ * optic) — and never the KIND, which nothing in this game branches on.
+ */
+export type TouchMode = "foot" | "driver" | "gunner";
+
 /** What a finger currently on the glass is doing. */
 type Role =
   | { kind: "stick" }
@@ -154,12 +175,18 @@ interface ButtonSpec {
   /** Whether a finger on it also drags the view. The fire buttons do. */
   look?: boolean;
   /**
-   * Whether it is only on screen when the game says so — hidden until
-   * `setUse` gives it a label, and hidden again the moment the offer goes.
-   * Today the vehicle verb, and only that.
+   * Which modes this button is part of the controls FOR. Required rather than
+   * defaulted, so a new button does not compile until it has answered the
+   * question — the same bargain `SCREENS` makes of a new screen.
+   *
+   * Membership is only half of whether it is drawn: the rest is the pushed
+   * facts `shows()` reads, and that one method is where the two meet.
    */
-  contextual?: boolean;
+  modes: readonly TouchMode[];
 }
+
+/** Every mode, for the buttons that are the same job in all of them. */
+const ANY: readonly TouchMode[] = ["foot", "driver", "gunner"];
 
 /**
  * The cluster, in DOM order. Position and size are CSS (`touch.css`) — this
@@ -167,37 +194,44 @@ interface ButtonSpec {
  * every other screen here makes.
  */
 const BUTTONS: readonly ButtonSpec[] = [
-  { id: "fire", label: "FIRE", kind: "hold", group: "main", look: true },
-  { id: "ads", label: "ADS", kind: "latch", group: "main" },
-  { id: "jump", label: "JUMP", kind: "tap", group: "main" },
-  { id: "crouch", label: "CROUCH", kind: "tap", group: "main" },
-  { id: "reload", label: "RELOAD", kind: "tap", group: "main" },
-  { id: "grenade", label: "GRENADE", kind: "tap", group: "main" },
-  { id: "swap", label: "SWAP", kind: "tap", group: "main" },
-  // The only button here that is not always there. It is `contextual`, which
-  // is one line of bookkeeping and the whole reason a phone can drive: `E` and
-  // the pad's X are keys a player finds by pressing them, and glass
+  { id: "fire", label: "FIRE", kind: "hold", group: "main", look: true, modes: ANY },
+  // Aiming is the body's sight or the GUNNER's optic (`Game.opticUp`), and a
+  // driver has neither: the view from that chair is the chase camera's, and
+  // the gun it would raise is laid by the same look that steers it.
+  { id: "ads", label: "ADS", kind: "latch", group: "main", modes: ["foot", "gunner"] },
+  // The four a BODY has and a crewman does not, and the whole reason `modes`
+  // exists: `touch.css` puts UP and DOWN on CROUCH's slot and the one above
+  // the trigger on purpose, because Space and Ctrl are where a player who has
+  // flown anything already reaches. While these stayed up in a hull, that
+  // placement simply drew the collective on top of them.
+  { id: "jump", label: "JUMP", kind: "tap", group: "main", modes: ["foot"] },
+  { id: "crouch", label: "CROUCH", kind: "tap", group: "main", modes: ["foot"] },
+  { id: "reload", label: "RELOAD", kind: "tap", group: "main", modes: ["foot"] },
+  { id: "grenade", label: "GRENADE", kind: "tap", group: "main", modes: ["foot"] },
+  // In every mode because it is TWO verbs on one button, exactly as the pad's
+  // Y and this button already are to `InputManager`: the weapon swap on foot,
+  // and crossing to the other chair in a hull. Which one it is saying is
+  // `setSeatOffer`'s, for `setUse`'s reason — one vocabulary per verb.
+  { id: "swap", label: "SWAP", kind: "tap", group: "main", modes: ANY },
+  // The only button here that is not always there. It is gated on an offer,
+  // which is one line of bookkeeping and the whole reason a phone can drive:
+  // `E` and the pad's X are keys a player finds by pressing them, and glass
   // has neither — so the verb has to APPEAR when there is something to use and
   // say what it would do. `Game` pushes both facts (`setUse`), exactly as it
   // pushes the crouch lamp and the empty magazine, because this layer cannot
   // know it is standing next to a tank.
-  { id: "use", label: "", kind: "tap", group: "main", contextual: true },
+  { id: "use", label: "", kind: "tap", group: "main", modes: ANY },
   // The collective, and the same bargain the verb above makes for the same
   // reason: a phone has no Space and no Ctrl, so the only way to fly one is for
   // the control to APPEAR when there is something to fly. `hold` and not
   // `tap`, because how long you hold it IS the input — a tap's one-frame floor
-  // would be a machine that climbed in steps.
-  { id: "climb", label: "UP", kind: "hold", group: "main", contextual: true },
-  {
-    id: "descend",
-    label: "DOWN",
-    kind: "hold",
-    group: "main",
-    contextual: true,
-  },
-  { id: "fire2", label: "FIRE", kind: "hold", group: "left", look: true },
-  { id: "score", label: "SCORE", kind: "latch", group: "top" },
-  { id: "menu", label: "MENU", kind: "tap", group: "top" },
+  // would be a machine that climbed in steps. The DRIVER's alone, which is
+  // stated here as well as gated by `setFlying`: a gunner has no sticks at all.
+  { id: "climb", label: "UP", kind: "hold", group: "main", modes: ["driver"] },
+  { id: "descend", label: "DOWN", kind: "hold", group: "main", modes: ["driver"] },
+  { id: "fire2", label: "FIRE", kind: "hold", group: "left", look: true, modes: ANY },
+  { id: "score", label: "SCORE", kind: "latch", group: "top", modes: ANY },
+  { id: "menu", label: "MENU", kind: "tap", group: "top", modes: ANY },
 ];
 
 /** The markup for one group's buttons. */
@@ -205,7 +239,7 @@ function groupMarkup(group: ButtonSpec["group"]): string {
   return BUTTONS.filter((b) => b.group === group)
     .map(
       (b) =>
-        `<div class="tb tb-${b.id} frame${b.contextual ? " hidden" : ""}" data-act="${b.id}"><span>${b.label}</span></div>`,
+        `<div class="tb tb-${b.id} frame" data-act="${b.id}"><span>${b.label}</span></div>`,
     )
     .join("");
 }
@@ -255,6 +289,15 @@ export class TouchControls {
   /** What the vehicle verb would do right now, or null when it would do
    * nothing. Also the button's label — see `setUse`. */
   private useOffer: string | null = null;
+  /** What the thumbs are on. Pushed; see `setMode`. */
+  private mode: TouchMode = "foot";
+  /** Whether pulling the trigger would do anything at all. Pushed with the
+   * mode, and false only for the driver of an unarmed hull. */
+  private trigger = true;
+  /** How this player would change SEATS, or null when they would not — which
+   * on foot is always, the button being the weapon swap there. See
+   * `setSeatOffer`. */
+  private seatOffer: string | null = null;
   /** Whether the collective pair is on screen. See `setFlying`. */
   private flying = false;
   /** Whether a fire button also aims right now. Pushed; see `setAutoAds`. */
@@ -312,6 +355,10 @@ export class TouchControls {
       this.buttons.set(spec.id, { el, spec, down: false, pending: false, latched: false });
       el.addEventListener("pointerdown", (e) => this.pressButton(e, spec.id, el));
     }
+    // What is on the glass is never written into the markup: `refresh` is the
+    // one place that decides it, so the cluster a round opens with and the one
+    // a mode change leaves behind are the same computation.
+    this.refresh();
     this.moveZone.addEventListener("pointerdown", (e) => this.claimStick(e));
     this.lookZone.addEventListener("pointerdown", (e) => this.claimLook(e));
     // On the window rather than per element: a captured pointer retargets to
@@ -381,14 +428,48 @@ export class TouchControls {
   setUse(label: string | null): void {
     if (label === this.useOffer) return;
     this.useOffer = label;
-    const state = this.buttons.get("use")!;
-    if (label !== null) state.el.firstElementChild!.textContent = label;
-    else {
-      state.down = false;
-      state.pending = false;
-      state.el.classList.remove("held");
-    }
-    state.el.classList.toggle("hidden", label === null);
+    this.refresh();
+  }
+
+  /**
+   * What the SWAP button would do to the SEATS right now — the same sentence
+   * `Game.swapPrompt` gives the HUD (`TAKE OVER GUN`, `SWAP SEAT`) — or null
+   * when it would do nothing to them, which is every frame on foot and the
+   * frames in a hull whose other chair a PERSON is in. Guarded.
+   *
+   * It is the label AND the gate, for `setUse`'s reason twice over. One
+   * vocabulary per verb, so the words on the glass and the words on the HUD
+   * cannot come apart; and a button that would do nothing is off the glass
+   * rather than dead under a thumb — in a hull there is no weapon swap left
+   * for it to fall back on, `Player.update` not being called there at all.
+   *
+   * On foot it is null and the button is its own plain self, which is why this
+   * is an OFFER rather than a label: the two are different controls sharing
+   * one key everywhere else in the game, and `shows()` reads it as one.
+   */
+  setSeatOffer(label: string | null): void {
+    if (label === this.seatOffer) return;
+    this.seatOffer = label;
+    this.refresh();
+  }
+
+  /**
+   * What the thumbs are on, and whether the trigger under them does anything.
+   * Pushed by `Game` every frame the controls are up; guarded on the pair.
+   *
+   * See the header: a button outside the current mode is off the glass rather
+   * than dimmed, and this is the push that moves the whole cluster between a
+   * body's controls and a hull's. `armed` is the one thing the mode cannot say
+   * on its own — a DRIVER has a main gun only on a hull that has one
+   * (`Vehicle.armed`; the truck and the gunship have none, and `gunReady` is
+   * already false there), and a trigger that fires nothing is the same bad
+   * bargain a collective in a gunner's chair would be.
+   */
+  setMode(mode: TouchMode, armed: boolean): void {
+    if (mode === this.mode && armed === this.trigger) return;
+    this.mode = mode;
+    this.trigger = armed;
+    this.refresh();
   }
 
   /**
@@ -405,14 +486,74 @@ export class TouchControls {
   setFlying(on: boolean): void {
     if (on === this.flying) return;
     this.flying = on;
-    for (const id of ["climb", "descend"] as const) {
-      const state = this.buttons.get(id)!;
-      if (!on) {
-        state.down = false;
-        state.pending = false;
-        state.el.classList.remove("held");
-      }
+    this.refresh();
+  }
+
+  /**
+   * Whether one button is on the glass right now — the ONE place that decides
+   * it, which is what lets the mode table and four pushed facts meet without
+   * any of them having to know the others exist.
+   *
+   * Membership in the mode first, then whatever that particular button is
+   * additionally waiting on. The switch is over the few with a second gate;
+   * the default is the answer for every button that is simply part of the
+   * controls it belongs to.
+   */
+  private shows(spec: ButtonSpec): boolean {
+    if (!spec.modes.includes(this.mode)) return false;
+    switch (spec.id) {
+      case "fire":
+      case "fire2":
+        return this.trigger;
+      case "use":
+        return this.useOffer !== null;
+      case "climb":
+      case "descend":
+        return this.flying;
+      case "swap":
+        return this.mode === "foot" || this.seatOffer !== null;
+      default:
+        return true;
+    }
+  }
+
+  /**
+   * Draws the cluster the pushed facts describe, and LETS GO of everything
+   * that just left it.
+   *
+   * The letting go is the load-bearing half rather than tidiness: a finger
+   * resting on `EXIT TANK` when the hull brews up, or on UP when the pilot
+   * swaps seats, would otherwise still be reported held for as long as it
+   * stayed there — and a LATCH on a button that is no longer drawn is one the
+   * player can neither see nor turn off, which is how a body comes back out of
+   * a tank already aiming down its sights. The finger's ROLE goes with it, or
+   * a thumb still down on a vanished fire button keeps dragging the view.
+   *
+   * What does NOT go is the pushed LOOK of a button — the crouch lamp, the
+   * empty magazine — because both are still true of the body waiting outside,
+   * and their setters are guarded on the value they last wrote.
+   */
+  private refresh(): void {
+    const swap = this.buttons.get("swap")!;
+    swap.el.firstElementChild!.textContent = this.seatOffer ?? swap.spec.label;
+    swap.el.classList.toggle("saying", this.seatOffer !== null);
+    if (this.useOffer !== null) {
+      this.buttons.get("use")!.el.firstElementChild!.textContent = this.useOffer;
+    }
+    for (const state of this.buttons.values()) {
+      const on = this.shows(state.spec);
+      // Already right, and that guard is what makes this cheap enough to be
+      // the only path: `Game` pushes the mode every frame of every round.
+      if (on === !state.el.classList.contains("hidden")) continue;
       state.el.classList.toggle("hidden", !on);
+      if (on) continue;
+      state.down = false;
+      state.pending = false;
+      state.latched = false;
+      state.el.classList.remove("held", "lit");
+      for (const [pid, role] of this.roles) {
+        if (role.kind === "button" && role.id === state.spec.id) this.roles.delete(pid);
+      }
     }
   }
 
@@ -521,15 +662,18 @@ export class TouchControls {
     // for the rest of a round the player spent crouched.
     this.crouched = false;
     this.reloadDue = false;
-    // Same rule, and the contextual button has a second half to it: the class
-    // that hides it is not a look but the button's whole existence, so it goes
-    // back on here or a round resumed on foot comes back offering a seat.
+    // Same rule, and the facts that decide what is on the glass AT ALL have a
+    // second half to it: the class that hides a button is not a look but the
+    // button's whole existence, so they go back to what a body outside a hull
+    // has — or a round resumed on foot comes back offering a seat, and one
+    // resumed in a tank comes back with a rifle's controls over the tank's.
+    // `refresh` is what draws the answer, here as everywhere else.
     this.useOffer = null;
-    this.buttons.get("use")!.el.classList.add("hidden");
     this.flying = false;
-    for (const id of ["climb", "descend"] as const) {
-      this.buttons.get(id)!.el.classList.add("hidden");
-    }
+    this.mode = "foot";
+    this.trigger = true;
+    this.seatOffer = null;
+    this.refresh();
     // And aim-on-fire's pushed pair, for the same reason: a round owed when a
     // pause came down must not leave the moment the round resumes.
     this.autoAds = false;

@@ -8475,6 +8475,28 @@ export class Game {
     // `pointerlockchange` knows not to read this particular loss as the player
     // leaving. The mouse takes it back on its next click, as it always did.
     if (document.pointerLockElement) document.exitPointerLock();
+    // WHAT THE THUMBS ARE ON, which is the same question `#hud-kit` and
+    // `#vehicle` already answer one layer up and the touch layer used to not
+    // ask at all: a crewman was given a body's buttons with the hull's drawn
+    // over the top of them, the collective landing exactly on JUMP and CROUCH
+    // because `touch.css` puts it there on purpose. The SEAT and never the
+    // kind — the two chairs are two different sets of controls.
+    const hull = this.driving;
+    this.touch.setMode(
+      hull === null ? "foot" : this.drivingSeat === DRIVER ? "driver" : "gunner",
+      // …and whether the trigger under them does anything. A body always has a
+      // weapon and a gunner always has the cupola gun; a DRIVER has a main gun
+      // only on a hull that has one, and on the truck and the gunship
+      // `Vehicle.armed` is false and `gunReady` with it. A trigger that fires
+      // nothing is this layer's own rule about the collective, read across.
+      hull === null || this.drivingSeat === GUNNER || hull.armed,
+    );
+    // …and the second vehicle verb, which shares the SWAP button exactly as it
+    // shares the pad's Y. `swapPrompt` is the one place that decides whether
+    // there is a crossing to offer and in what words, so the button, the HUD's
+    // own prompt and the key cannot disagree — and it already answers in the
+    // bare verb when a finger is what is asking.
+    this.touch.setSeatOffer(hull === null ? null : this.swapPrompt(hull));
     this.touch.setCrouched(this.player.crouching);
     // "The magazine wants attention", which is either state it can be in: empty
     // and waiting, or filling. A phone player has no eye spare for the corner

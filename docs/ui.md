@@ -1418,23 +1418,49 @@ What belongs *here*, with the other screens:
   three neighbours) are the one-frame belt to that brace — the push lands on the
   next tick, and a trigger drawn over the pause card for a frame is a trigger
   somebody tries to press.
-- **The three things it draws that it cannot know are pushed in**, exactly as
-  every gauge in `HUD` is and with the same write guards: whether the body is
-  crouched (it owns no crouch latch — `InputManager` has one already, shared with
-  `C` and the pad's B), whether the magazine wants attention, and what the
-  vehicle verb would do right now. Nothing else about the round reaches it.
-- **One button is CONTEXTUAL, and it is the whole reason a phone can drive.**
-  Every other control on the layer is a key that has always been there, because
-  a key is something a player presses to find out what it does — and glass has
-  nothing to press until something is drawn under it. So `setUse` gives the
-  vehicle verb a label and puts it on screen, and null takes it away again;
-  `Game` decides, from the same `offerUse` that writes the HUD's prompt, so the
-  sentence on the button and the sentence on the HUD cannot disagree.
-  Two rules come with it: taking the offer away also LETS GO of the button (a
-  finger resting on `EXIT TANK` when the hull brews up must not be reported held
-  when the next offer puts it back), and `releaseAll` hides it as well as
-  clearing it, because here the class is not a look but the control's whole
-  existence.
+- **Everything it draws that it cannot know is pushed in**, exactly as every
+  gauge in `HUD` is and with the same write guards: whether the body is crouched
+  (it owns no crouch latch — `InputManager` has one already, shared with `C` and
+  the pad's B), whether the magazine wants attention, what the two vehicle verbs
+  would do right now, and what the player is sitting in. Nothing else about the
+  round reaches it.
+- **THE CLUSTER IS THE CONTROLS OF WHATEVER THE PLAYER IS IN, and a button
+  outside them is OFF THE GLASS rather than dimmed** — the rule `#hud-kit` and
+  `#vehicle` already follow one layer up, arrived at here the hard way. A
+  keyboard can leave every key bound because a key nobody presses costs nothing;
+  a 260 px cluster cannot, and `touch.css` puts the collective exactly where
+  JUMP and CROUCH are on purpose (Space and Ctrl are the same two keys, so the
+  position is the muscle memory). While the body's buttons stayed up in a hull,
+  that placement drew the hull's controls straight over the body's.
+  So every button declares its `modes` — `foot`, `driver`, `gunner` — and
+  `Game.pushTouchControls` pushes which one is live (`setMode`). It is the SEAT
+  and never the KIND: a gunner has no sticks and no collective, a driver has no
+  optic, and nothing in this game branches on what kind of vehicle it is holding.
+  Three rules come with it:
+  - **`shows()` is the one place that decides what is drawn**, where the mode
+    table and the pushed facts meet. A new button answers `modes` or does not
+    compile; a new GATE is an arm in that switch and nothing else moves.
+  - **What leaves the glass is LET GO of** — the finger's press, its role, and
+    its latch. A latch on a button nobody can see is one the player cannot turn
+    off, which is how a body used to come back out of a tank still aiming.
+  - **The mode cannot say everything**, so the trigger takes a second push:
+    a DRIVER has a main gun only on a hull that has one (`Vehicle.armed`), and a
+    trigger that fires nothing is the same bad bargain as a collective in a
+    gunner's chair.
+- **The two VEHICLE VERBS are contextual, and they are the whole reason a phone
+  can drive.** Every other control on the layer is a key that has always been
+  there, because a key is something a player presses to find out what it does —
+  and glass has nothing to press until something is drawn under it. So `setUse`
+  gives the boarding verb a label and puts it on screen and null takes it away,
+  and `setSeatOffer` does the same to the SWAP button, which is the weapon swap
+  on foot and the crossing to the other chair in a hull — one button for two
+  verbs, exactly as the pad's Y already is. `Game` decides both, from the same
+  `offerUse` and `swapPrompt` that write the HUD's own prompts, so the sentence
+  on the button and the sentence on the HUD cannot disagree. Taking an offer
+  away LETS GO of the button (a finger resting on `EXIT TANK` when the hull
+  brews up must not be reported held when the next offer puts it back), and
+  `releaseAll` puts the whole cluster back to a body's, because here the class
+  is not a look but the control's whole existence.
 - **Two of its behaviours are SETTINGS, and neither is a second device.** The
   stick floats or is fixed (`Settings.touchStick`), and the fire button may
   also aim (`Settings.touchAutoAds`). Both are toggles CoD Mobile ships under
