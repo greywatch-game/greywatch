@@ -66,6 +66,14 @@ const MOUNT: OpticMount = {
 const STOCK_TOP = Math.min(0.058, ironSightFloor(MOUNT, -0.3) - 0.006);
 
 /**
+ * How far the comb stands over the stock it is laid on. The stock's top is
+ * `STOCK_TOP` MINUS this, so the pad is the part that reaches the clamped line
+ * and the two never share a plane — a cheek pad flush with the stock's own top
+ * face is the wedge that flickers across it as the weapon moves.
+ */
+const COMB_PROUD = 0.004;
+
+/**
  * Where each hand grips, in weapon-local units. The support hand is on the
  * handguard's REAR half, behind the folded bipod for the DMR's reason: a fist
  * closed around two stowed legs reads as a hand pushed through the weapon.
@@ -143,7 +151,9 @@ export function buildLmg(
   // cannot cut, the same two-slab trick the rifle's upper uses.
   b.box("receiver", BODY, 0.086, 0.1, 0.6, 0, 0.02, 0);
   b.box("receiverDeck", BODY, 0.072, 0.016, 0.6, 0, 0.062, 0);
-  b.box("receiverFoot", POLYMER, 0.08, 0.016, 0.56, 0, -0.034, -0.02);
+  // Stops a hair short of the receiver at both ends: flush, its rear face was
+  // the receiver's own.
+  b.box("receiverFoot", POLYMER, 0.08, 0.016, 0.556, 0, -0.034, -0.018);
   // Two takedown pins, proud on both flanks — a machine gun comes apart.
   b.pin("pinFront", METAL, 0.016, 0.092, 0, 0.005, 0.235);
   b.pin("pinRear", METAL, 0.016, 0.092, 0, 0.005, -0.245);
@@ -160,9 +170,13 @@ export function buildLmg(
   b.box("coverLatch", METAL, 0.032, 0.026, 0.028, 0, 0.072, -0.293);
   b.box("coverLatchTab", METAL, 0.012, 0.03, 0.014, 0, 0.062, -0.308);
   // The cover's own seam down each flank: a lid that meets the receiver in a
-  // line is a lid, and one that does not is a thicker receiver.
+  // line is a lid, and one that does not is a thicker receiver. It stands a
+  // millimetre PROUD of the flank and a millimetre under the receiver's top,
+  // because a seam authored flush shares two planes with the part it is drawn
+  // against — and two coplanar faces in different tones is the long flicker
+  // down the receiver, not a line.
   for (const side of [-1, 1] as const) {
-    b.box("coverSeam", POLYMER, 0.006, 0.006, 0.54, side * 0.04, 0.067, 0);
+    b.box("coverSeam", POLYMER, 0.006, 0.006, 0.54, side * 0.0415, 0.065, 0);
   }
 
   // --- feed tray: where the belt goes in, left flank ---
@@ -179,8 +193,10 @@ export function buildLmg(
   b.box("ejectPort", METAL, 0.008, 0.03, 0.1, 0.045, 0.035, 0.06);
   b.box("portCover", METAL, 0.007, 0.022, 0.096, 0.047, 0.014, 0.058);
   b.box("deflector", BODY, 0.016, 0.026, 0.042, 0.046, 0.056, 0);
-  b.box("linkChute", BODY, 0.034, 0.036, 0.1, 0.028, -0.046, 0.21);
-  b.box("linkChuteLip", POLYMER, 0.03, 0.01, 0.09, 0.028, -0.064, 0.212);
+  // Both stop short of the receiver foot's own front face, which they used to
+  // share a plane with.
+  b.box("linkChute", BODY, 0.034, 0.036, 0.1, 0.028, -0.046, 0.206);
+  b.box("linkChuteLip", POLYMER, 0.03, 0.01, 0.09, 0.028, -0.064, 0.208);
 
   // Charging handle, RIGHT side. Every other long gun in the kit charges on
   // the left; this one cannot, because the left flank is carrying a belt and
@@ -220,11 +236,24 @@ export function buildLmg(
 
   // --- stock: solid, hollowed, with the shoulder rest under the butt ---
   b.box("stockNeck", POLYMER, 0.072, 0.09, 0.07, 0, 0.008, -0.325);
-  b.box("stockBody", POLYMER, 0.066, STOCK_TOP + 0.03, 0.16, 0, (STOCK_TOP - 0.03) / 2, -0.4);
+  b.box(
+    "stockBody",
+    POLYMER,
+    0.066,
+    STOCK_TOP - COMB_PROUD + 0.03,
+    0.16,
+    0,
+    (STOCK_TOP - COMB_PROUD - 0.03) / 2,
+    -0.4,
+  );
   // The lightening cut, which reads as a hollow because it is darker and a
   // hair proud — the same trick as the carbine's handle window.
   b.box("stockCut", BODY, 0.07, 0.05, 0.075, 0, 0.012, -0.395);
   b.box("stockCutBar", POLYMER, 0.072, 0.012, 0.016, 0, 0.012, -0.395);
+  // The comb keeps STOCK_TOP and the stock drops out from under it: a pad laid
+  // ON the stock, rather than one whose top face is the stock's own. The clamp
+  // above therefore still bounds the highest thing on the stock, which is what
+  // it is for.
   b.box("comb", RUBBER, 0.05, 0.012, 0.12, 0, STOCK_TOP - 0.006, -0.39);
   b.box("buttPlate", BODY, 0.072, 0.1, 0.02, 0, 0.005, -0.468);
   b.box("buttPad", RUBBER, 0.074, 0.094, 0.018, 0, 0.003, -0.485);
@@ -236,8 +265,9 @@ export function buildLmg(
   // one more thing on this weapon that only exists because it is fired in
   // bursts nobody else here can fire.
   b.pin("restPin", METAL, 0.012, 0.05, 0, -0.036, -0.44);
-  b.box("shoulderRest", POLYMER, 0.048, 0.055, 0.016, 0, -0.062, -0.462);
-  b.box("restPad", RUBBER, 0.05, 0.05, 0.008, 0, -0.062, -0.474);
+  b.box("shoulderRest", POLYMER, 0.048, 0.055, 0.016, 0, -0.062, -0.463);
+  // Proud of the butt plate rather than level with it, for the comb's reason.
+  b.box("restPad", RUBBER, 0.05, 0.05, 0.008, 0, -0.062, -0.475);
   b.box("slingRear", METAL, 0.024, 0.03, 0.014, -0.04, -0.028, -0.43);
 
   // --- barrel: heavy, fluted, and quick-change ---
@@ -250,8 +280,13 @@ export function buildLmg(
   b.tube("barrelRear", BODY, 0.048, 0.054, 0.08, 0, 0, 0.35);
   // Cooling flutes: rings a hair proud of the barrel, in the fittings tone, so
   // the heavy section reads as machined rather than as a thicker pipe.
+  // A hair PROUD has to hold at the FIRST ring too, where the cone is thickest:
+  // at 0.052 the rear ring sat inside `barrelRear`'s own taper, two ten-sided
+  // cylinders built with the same tessellation and the same facet phase. The
+  // run is also offset so that no ring's cap lands on 0.390, which is the
+  // heavy section's own front face.
   for (let i = 0; i < 6; i++) {
-    b.tube("barrelFlute", METAL, 0.052, 0.052, 0.008, 0, 0, 0.33 + i * 0.028);
+    b.tube("barrelFlute", METAL, 0.054, 0.054, 0.008, 0, 0, 0.336 + i * 0.028);
   }
   b.tube("barrel", BODY, 0.038, 0.046, 0.32, 0, 0, 0.5);
   b.tube("gasTube", METAL, 0.014, 0.014, 0.24, 0, 0.03, 0.43);
@@ -273,7 +308,10 @@ export function buildLmg(
   // --- handguard: a short heat shield under the barrel ---
   b.box("handguard", POLYMER, 0.058, 0.05, 0.2, 0, -0.045, 0.39);
   b.box("hgKeel", BODY, 0.032, 0.012, 0.18, 0, -0.072, 0.39);
-  b.box("hgCap", BODY, 0.06, 0.052, 0.014, 0, -0.045, 0.297);
+  // Two millimetres PROUD of the handguard's own rear face rather than flush
+  // with it: a cap that ends where the part it caps ends is two coplanar faces
+  // in two tones.
+  b.box("hgCap", BODY, 0.06, 0.052, 0.014, 0, -0.045, 0.295);
   for (const side of [-1, 1] as const) {
     for (let i = 0; i < 4; i++) {
       b.box("vent", BODY, 0.005, 0.024, 0.016, side * 0.03, -0.045, 0.325 + i * 0.042);
@@ -292,7 +330,8 @@ export function buildLmg(
   b.box("carryCatch", METAL, 0.018, 0.016, 0.022, -0.047, 0.018, 0.282);
 
   // --- bipod: folded back along the underside, feet trailing ---
-  b.box("bipodYoke", METAL, 0.05, 0.032, 0.042, 0, -0.032, 0.6);
+  // Inside the gas block's own flanks rather than level with them.
+  b.box("bipodYoke", METAL, 0.046, 0.032, 0.042, 0, -0.032, 0.6);
   b.pin("bipodPin", METAL, 0.012, 0.062, 0, -0.052, 0.6);
   for (const side of [-1, 1] as const) {
     b.box("bipodLeg", METAL, 0.013, 0.015, 0.175, side * 0.02, -0.078, 0.515);
@@ -361,7 +400,9 @@ export function buildLmg(
     b.pin("beltRim", BRASS, 0.019, 0.007, -0.076, y, z, "x");
     // The link between this round and the next, dark against the brass.
     if (i < 6) {
-      b.box("beltLink", METAL, 0.034, 0.009, 0.017, -0.048, y + 0.007, z - 0.0013);
+      // Wide enough to stand outboard of the chute's own flank: a link whose
+      // outer face IS that flank flickers where the belt crosses it.
+      b.box("beltLink", METAL, 0.037, 0.009, 0.017, -0.048, y + 0.007, z - 0.0013);
     }
   }
   meshes.push(...b.merge("lmgBox", magazine));
