@@ -227,9 +227,18 @@ function hue(hex: string): [number, number, number] {
  * biggest map in the tree as on the smallest.
  *
  * Two terms, as every relief map since the nineteenth century: HEIGHT, which
- * separates high ground from low, and SLOPE against a light in the upper left,
- * which is what makes a bank read as a bank rather than as a gradient. A map
- * lit from below reads inside out.
+ * separates high ground from low, and SLOPE against a fixed light, which is
+ * what makes a bank read as a bank rather than as a gradient.
+ *
+ * **The light is in the upper RIGHT**, which is `shade` below being
+ * `-(dx + dz)` — the aspect against `(+x, +z)`, and +x is right and +z is up
+ * the page. The convention this inherits from paper is the upper LEFT, which
+ * would be `dx - dz`, and the only reason to name the corner at all is that
+ * getting it WRONG is not a matter of taste: a relief lit from below reads
+ * inside out, every bank a ditch and every ditch a bank, and a reader cannot
+ * talk themselves out of it. Both upper corners are safe from that, so the
+ * choice between them is the drawing's, and this one is measured — a cone's
+ * east and north flanks come back at 82 against its west and south at 55.
  */
 function drawRelief(
   c: CanvasRenderingContext2D,
