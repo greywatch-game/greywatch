@@ -419,6 +419,48 @@ export const vehicles = {
    */
   wreckTime: 16,
   /**
+   * What the GROUND takes off a wreck that is still sliding, m/s^2.
+   *
+   * **A friction and not a decay, and the difference is the frame budget
+   * rather than the feel.** An exponential never reaches zero, and a wreck
+   * whose speed never quite reaches zero is one that re-arms
+   * `Vehicle.needsGround` every frame — so a burnt-out hull would pay the
+   * ten-contact ground probe for the whole of `wreckTime` while visibly
+   * standing still, which is exactly the cost `needsGround`'s skip exists to
+   * avoid. Subtracted rather than scaled, this arrives at zero and the hull
+   * stops asking.
+   *
+   * Well over `drive.brake` (9), because a wreck is not braking: it is a dead
+   * mass being dragged by whatever it is lying on, with seized running gear
+   * and no wheel or belt turning under it. Far enough to read as momentum and
+   * short enough that the wreck is still cover where the fight is, which is
+   * the whole reason it stands there at all: measured on Sarab, a tank killed
+   * at road speed (11 m/s) rolls 3.5 m and stops in 0.7 s.
+   */
+  wreckScrub: 16,
+  /**
+   * What the AIR takes off a wreck that is still falling, per second, as
+   * `exp(-drag * dt)` — `flight.drag`'s form, spent on a machine that is no
+   * longer flying.
+   *
+   * **A machine that has lost its rotor has lost its THRUST as well as its
+   * lift**, and the two go together: the disc was the only thing pushing it
+   * along. So the arc is shorter than a bare ballistic one, and deliberately —
+   * a gunship hit at 40 m/s from 40 m up comes down about 55 m ahead of where
+   * it was killed rather than 108, which keeps the wreck, the respawn it is
+   * counting down and the fight that killed it in the same part of the map.
+   *
+   * **The ceiling on it is that the machine must still be MOVING when it
+   * arrives**, which is the whole point of the feature and the thing a bigger
+   * number quietly takes away: at 0.9 the fall itself ate nearly all of the
+   * speed, the wreck landed at 2.9 m/s and scrubbed 20 cm, and what a player
+   * saw was a lurch and then a vertical drop. Just over `flight.drag` (0.5),
+   * which is a FLYING machine's number — measured with a disc holding it up
+   * and tilted into its own travel, where a dead one is presenting its
+   * fuselage to the airflow instead.
+   */
+  wreckDrag: 0.55,
+  /**
    * The GUNNER's sight: one block for the fleet, and `wash`'s split made again
    * one seat up.
    *

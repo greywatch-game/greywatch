@@ -946,16 +946,17 @@ which is narrowed rather than replaced.** It MOVES a body instead of answering a
 question about one, so no analytic query stands in for it — and Babylon walks
 `scene.meshes` for every call **and again for every retry**, which priced a body
 on the map's size exactly as a pick did, and worst at the moment it is pressed
-against something. **There are exactly TWO sweeps in the game and both go
-through `narrowedMove`**: `Vehicle.update` for a hull and `Player.update` for a
-body on foot. `map.collidables`
+against something. **There are exactly THREE sweeps in the game and all of them
+go through `narrowedMove`**: `Vehicle.update` for a hull, `Vehicle.coast` for the
+WRECK of one still carrying the momentum it was killed with, and `Player.update`
+for a body on foot. `map.collidables`
 ([`src/world/CollisionField.ts`](src/world/CollisionField.ts)) is `rays`'
 counterpart — the same collider set bucketed as MESHES — and a body hands the
 answer to Babylon's own `surroundingMeshes`. **The saving is only sound while
 that list is a SUPERSET of what the sweep can reach**, so the reach is the
 sphere's radius plus the whole step plus a margin, the centre is
 `getAbsolutePosition()`, the order is the scene's, and `narrowedMove` CHECKS the
-promise and re-runs the whole walk when a sweep outran it. **A THIRD sweep goes
+promise and re-runs the whole walk when a sweep outran it. **A FOURTH sweep goes
 through `narrowedMove` too, or it is a body walking the whole map.**
 
 **Colliders are still MERGED, and the grouping is now data rather than a

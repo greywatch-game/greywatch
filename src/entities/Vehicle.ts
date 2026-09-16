@@ -1839,7 +1839,13 @@ export class Vehicle implements Combatant, RayHull {
   wreck(): void {
     if (!this.alive) return;
     this.alive = false;
-    this.speed = 0;
+    // **WHAT IS RETIRED IS THE POWERPLANT AND NOT THE MOMENTUM**, which is the
+    // line this method draws and the reason `vel` and `speed` are conspicuously
+    // not on the list below. Destroying a machine takes away what it can
+    // PRODUCE; the mass it already had is still travelling, and `coast` is what
+    // carries it. `speed` was zeroed here once, and a hull that stopped dead in
+    // the air on the frame it was hit is what that looked like.
+    //
     // **THE DISC STOPS, AND THAT IS THE WHOLE OF WHY A SHOT-DOWN MACHINE
     // FALLS.** A wreck is never stepped through `flyStep` again, so every term
     // that method writes is frozen exactly where the shot left it — and one of
@@ -2336,7 +2342,9 @@ export class Vehicle implements Combatant, RayHull {
   update(dt: number, drive: DriveInput | null): void {
     if (this.wreckT > 0) this.wreckT = Math.max(0, this.wreckT - dt);
     if (!this.alive) {
-      this.settle(dt);
+      const speedWasDead = this.speed;
+      this.coast(dt);
+      this.settle(dt, dt > 0 ? (this.speed - speedWasDead) / dt : 0);
       return;
     }
 
@@ -2604,6 +2612,83 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * A wreck going where it was already going — the horizontal half of a
+   * burnt-out hull's frame, and `update`'s alone.
+   *
+   * **A machine does not stop because it has been destroyed.** `wreck` takes
+   * the powerplant away and leaves `vel` standing, so what is left is a mass
+   * with no thrust: a tank killed at road speed rolls to a halt, and a gunship
+   * hit at forty metres carries on along its own track while `settle` drops it
+   * out of the sky. Both are the same three steps here and neither is a kind
+   * this method has heard of.
+   *
+   * **What sheds the speed is asked of `grounded` and never of `flight`**,
+   * which is the same bargain `standOnGround` makes one axis over: a wreck in
+   * the air is in the air whatever it is, and `wreckDrag` is what the air takes
+   * off it; a wreck on the ground is being dragged along whatever it is lying
+   * on, and `wreckScrub` is a friction that arrives at exactly zero so the
+   * ground probe can stop asking. A machine that lands still moving crosses
+   * from one to the other on the frame the plank catches it, with no landing to
+   * detect.
+   *
+   * **The move is `narrowedMove` because there is no other kind of move in this
+   * game** — it is the third of the three sweeps `CLAUDE.md` allows, and a
+   * sweep that walked `scene.meshes` would price a burning hull on the size of
+   * the map. A wreck that hits a building has ARRIVED: the velocity is re-read
+   * off the ground actually covered rather than docked by a fraction, so a slide
+   * along a wall keeps the along-wall share and a head-on stop keeps nothing.
+   * Bounded by what was ASKED, because a sphere being ejected out of a box
+   * covers a great deal of ground the wrong way, and a wreck that took that
+   * literally would be fired across the street.
+   *
+   * The collision sphere is not re-aimed: `ellipsoidOffset` is a function of
+   * the yaw, which a wreck does not turn, and of a lead sign that only moves
+   * when the speed changes direction, which a friction cannot do.
+   */
+  private coast(dt: number): void {
+    if (!this.body.isEnabled()) return;
+    const w = CONFIG.vehicles;
+    const was = Math.hypot(this.vel.x, this.vel.z);
+    if (was > 1e-4) {
+      const left = this.grounded
+        ? Math.max(0, was - w.wreckScrub * dt)
+        : was * Math.exp(-w.wreckDrag * dt);
+      const k = left / was;
+      this.vel.x *= k;
+      this.vel.z *= k;
+    } else {
+      this.vel.x = 0;
+      this.vel.z = 0;
+    }
+    // The along-heading scalar every downstream reader wants, MEASURED off the
+    // velocity exactly as `flyStep` and `updateRemote` measure it — the ground
+    // probe's climb rate and its own skip, and the lean's deceleration, all
+    // read this rather than the vector.
+    this.speed =
+      this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw);
+
+    this.step.copyFrom(this.vel).scaleInPlace(dt);
+    const asked = this.step.length();
+    if (asked > AbstractEngine.CollisionsEpsilon) {
+      const p = this.body.position;
+      const beforeX = p.x;
+      const beforeZ = p.z;
+      narrowedMove(this.body, this.step, this.collidables, this.nearby);
+      const dx = p.x - beforeX;
+      const dz = p.z - beforeZ;
+      const covered = Math.hypot(dx, dz);
+      const k = covered > 1e-6 ? Math.min(1, asked / covered) / dt : 0;
+      this.vel.set(dx * k, 0, dz * k);
+      this.speed =
+        this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw);
+    }
+    // A wreck is COVER, so one welded into a shopfront is worse than a live
+    // hull in the same place — nothing is going to drive it out again. The
+    // gate is `update`'s: still moving, or still owed a push from last frame.
+    if (asked > 0 || this.clearing) this.freeFromWalls(dt);
+  }
+
+  /**
    * One frame of a BURNT-OUT hull, and the one path both `update` and
    * `updateRemote` hand a wreck to.
    *
@@ -2613,6 +2698,10 @@ export class Vehicle implements Combatant, RayHull {
    * in the world and the world is still running underneath it. So what it gets
    * is the tail of `update`'s frame and nothing else: where the ground is,
    * what the ground just did to it, the attitude that asks for, and the whips.
+   *
+   * **The HORIZONTAL half is `coast` and it is deliberately not in here**, for
+   * the reason the drive is not: where a hull is, is `update`'s to work out and
+   * the wire's to state, and this is the half both of them agree on afterwards.
    *
    * **It FALLS, and on the flying kind that is the whole of the feature.** A
    * hull killed off a kerb has always dropped the last half metre, because
@@ -2629,15 +2718,33 @@ export class Vehicle implements Combatant, RayHull {
    * gunship shot down in a 30-degree bank lay in the street at 30 degrees with
    * a skid through the road for the whole of `wreckTime`.
    *
-   * `accel` and `lateral` are 0 and not merely small: weight transfer is a
-   * load the drive puts across the gear, and a wreck has no drive. The springs
-   * still answer to `jolt`, which is the landing and is `standOnGround`'s.
+   * **`accel` is the scrub and it is CLAMPED to the drive's own brake**, which
+   * is the one number in here that is a compromise rather than a fact. A wreck
+   * grinding to a halt really is a load across the gear — friction acts at the
+   * contact patch, below the mass, so it pitches the hull exactly as braking
+   * does — but `wreckScrub` is over twice `drive.brake`, and a spring tuned
+   * against what a DRIVE can produce, handed more than double it, is a wreck
+   * that slams its own suspension onto the stops for the half second it takes
+   * to stop. Clamped, the dive is exactly the hardest one the hull has ever
+   * been tuned to draw and not a degree past it — measured on Sarab, a wreck
+   * scrubbing from road speed peaks at 2.90 degrees of nose-down against a
+   * live hull's 2.90 under full brake from the same speed — which is the right
+   * end of the range for a machine digging into a street, and it comes back to
+   * zero as the wreck stops rather than being left on the stops. The clamp is
+   * two-sided because `updateRemote` measures this off the
+   * ground covered, and one long frame there is an acceleration no hull ever
+   * had.
+   *
+   * `lateral` is 0 and not merely small: it is the CENTRIPETAL term, a wreck
+   * turns nothing, and a hull sliding sideways is not a hull going round a
+   * corner. The springs still answer to `jolt` on top of both, which is the
+   * landing and is `standOnGround`'s.
    *
    * A hull that has been taken off the field (`hide`) is skipped outright:
    * nothing can see it, and the ground probe is far too expensive to spend on
    * a mesh that is not there.
    */
-  private settle(dt: number): void {
+  private settle(dt: number, accel: number): void {
     if (this.body.isEnabled()) {
       this.standOnGround(dt);
       // A wreck settles on its springs after it falls, for the reason its
@@ -2651,7 +2758,8 @@ export class Vehicle implements Combatant, RayHull {
         this.groundPitchTarget = this.tiltPitch;
         this.groundRollTarget = this.tiltRoll;
       }
-      this.leanHull(dt, 0, 0);
+      const c = this.spec.drive;
+      this.leanHull(dt, Math.max(-c.brake, Math.min(c.accel, accel)), 0);
       // The masts keep stirring on a burnt-out hull, and that is the point of
       // paying for them: a wreck with two antennae frozen mid-crack is a
       // freeze-frame, and a wreck whose whips settle and then move in the
@@ -2858,10 +2966,15 @@ export class Vehicle implements Combatant, RayHull {
     this.gunPitch = gunPitch;
 
     if (!this.alive) {
-      // Where the wreck IS has already been written from the wire above, which
-      // is the one thing this side does not work out for itself; what is left
-      // is the picture running down, and it is `update`'s own.
-      this.settle(dt);
+      // **Where the wreck IS has already been written from the wire above, and
+      // that is why there is no `coast` on this side.** A sliding wreck is a
+      // hull the authority is moving, so it arrives here like any other
+      // position and integrating a second copy of it would be this screen
+      // running its own crash beside the real one. What is left is the picture
+      // running down, and it is `update`'s own — including the scrub's own
+      // deceleration, which is `speed` measured off the ground covered exactly
+      // as it is for a hull somebody is driving.
+      this.settle(dt, dt > 0 ? (this.speed - speedWas) / dt : 0);
       return;
     }
 

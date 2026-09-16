@@ -1596,13 +1596,15 @@ under a bridge a tank is crossing — nothing at all of him is inside the box.
 tilts, only the picture leans), which is what lets both height terms be
 unrotated. The enabled/pickable gate is `rayBox`'s, so a hull that has been
 taken away crushes nothing; a WRECK still could, and never does, because
-nothing moves one.
+`tank.alive` is the first of the three gates below — and that gate is doing real
+work now rather than restating a fact about wrecks, because `Vehicle.coast`
+moves one.
 
 ### The three gates, and what each is holding back
 
 | gate | what it stops |
 | --- | --- |
-| `tank.alive` | a wreck mowing down whatever it was rolling toward when it died — nothing moves one, but dying does not zero `speed` |
+| `tank.alive` | a wreck mowing down whatever it was rolling toward when it died. **The one gate here that stops something that would otherwise HAPPEN**: a wreck keeps the momentum it was killed with and `coast` carries it, so a burning hull genuinely does slide through the street it died in — it simply cannot kill anybody doing it |
 | `speed >= crush.minSpeed` (1.5 m/s) | a hardstanding becoming a mincer. Bots walk into parked armour all round, for the reason at the top of this section, and a hull with no speed gate would fill its own side's ticket count while sitting still |
 | a DRIVER | crediting a kill to nobody. It is barely a rule — an empty hull is also one that is not moving — but `by` is what a kill is filed against, and `Game.driverOf` is where the player's seat and the bot crew are asked in `VehicleSystem`'s own order |
 
@@ -2255,6 +2257,72 @@ A wreck on the wire takes the same path and nothing else had to be told:
 `updateRemote` has already written where the authority says the hull is before it
 reaches the branch, so a client watches the server's own fall rather than running
 a second one.
+
+### …and it carries the momentum it was killed with, which is `coast`
+
+**A machine does not stop because it has been destroyed**, and the line `wreck`
+draws is that it retires the POWERPLANT and not the MOMENTUM: `rotor` and `lift`
+go, `vel` and `speed` stand. What is left is a mass with no thrust, and
+`Vehicle.coast` is the horizontal half of its frame — `update`'s alone, for the
+reason the drive is. `updateRemote` calls only `settle`, because a sliding wreck
+is a hull the AUTHORITY is moving and it arrives like any other position;
+integrating a second copy of it would be a client running its own crash beside
+the real one.
+
+**What sheds the speed is asked of `grounded` and never of `flight`**, which is
+the bargain `standOnGround` already makes one axis over. In the air
+`vehicles.wreckDrag` (0.55, as `exp(-drag * dt)`) is what the air takes off it —
+a machine that has lost its rotor has lost its THRUST as well as its lift, so the
+arc is deliberately shorter than a bare ballistic one. On the ground
+`vehicles.wreckScrub` (16 m/s²) is a dead mass being dragged along whatever it is
+lying on, with seized running gear. A machine that lands still moving crosses
+from one to the other on the frame the plank catches it, with no landing to
+detect.
+
+**The scrub is a FRICTION and not a decay, and the reason is the frame budget
+rather than the feel.** An exponential never reaches zero, and a wreck whose speed
+never quite reaches zero re-arms `needsGround` every frame — so a burnt-out hull
+would pay the ten-contact ground probe for the whole of `wreckTime` while visibly
+standing still, which is exactly the cost that skip exists to avoid. Subtracted,
+it arrives at zero and the hull stops asking. **The air drag has a ceiling for
+the opposite reason**: the machine has to still be MOVING when it arrives, which
+is the whole point. At 0.9 the fall ate nearly all of the speed, the wreck landed
+at 2.9 m/s and scrubbed 20 cm, and what a player saw was a lurch and then a
+vertical drop.
+
+The move is `narrowedMove`, the third of the three sweeps `CLAUDE.md` allows — a
+sweep that walked `scene.meshes` would price a burning hull on the size of the
+map. **A wreck that hits a building has ARRIVED**: the velocity is re-read off the
+ground actually COVERED rather than docked by a fraction, so a slide along a wall
+keeps the along-wall share and a head-on stop keeps nothing, and it is bounded by
+what was ASKED, because a sphere being ejected out of a box covers a great deal of
+ground the wrong way and a wreck that took that literally would be fired across
+the street. `freeFromWalls` runs on the same gate `update` uses, because a wreck
+is COVER and one welded into a shopfront is worse than a live hull in the same
+place — nothing is going to drive it out again. The collision sphere is not
+re-aimed: `ellipsoidOffset` is a function of the yaw, which a wreck does not turn,
+and of a lead sign that only moves when the speed changes direction, which a
+friction cannot do.
+
+**The scrub is spent on the SUSPENSION too, clamped to `drive.brake`.** A wreck
+grinding to a halt really is a load across the gear — friction acts at the contact
+patch, below the mass, so it pitches the hull exactly as braking does — but
+`wreckScrub` is nearly twice the brake, and a spring tuned against what a drive
+can produce, handed double it, is a wreck that slams its own suspension onto the
+stops. Clamped, it is exactly the hardest dive the hull has ever been tuned to
+draw and not a degree past it: measured on Sarab, 2.90 degrees of nose-down on a
+wreck scrubbing from road speed against 2.90 on a live hull under full brake from
+the same speed, and back to zero as it stops. `lateral` stays 0 — that term is
+CENTRIPETAL, a wreck turns nothing, and a hull sliding sideways is not a hull
+going round a corner.
+
+Measured end to end on Sarab. A gunship killed at 41 m doing 17.5 m/s falls for
+2.0 s, lands 20.9 m along its own track still doing 5.8 m/s, gouges 0.9 m and
+comes to rest 21.8 m from where it was hit, sitting exactly `hull.height / 2`
+over the ground with `needsGround` back off. A tank killed at road speed rolls
+3.5 m and stops in 0.7 s. A hull killed while PARKED does not move by a
+millimetre in three seconds, which is the regression that matters: `coast` zeroes
+a velocity under 1e-4 outright rather than asking the sweep about it.
 
 ## The mounted gun is one gun on three mounts, and it is one recording
 
