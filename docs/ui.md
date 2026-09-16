@@ -466,11 +466,14 @@ static `N` but the heading the top of the canvas is pointing at, drawn `↑ NE`,
 and it sits OUTSIDE the canvas in the gap above the frame because the rim inside
 now carries lettered markers of its own. **The OBJECTIVES**, which a zoomed map
 stops showing and which are the only reason to look at one: every control point
-off the drawn square is pinned to the rim on its own bearing, carrying its
+off the drawn disc is pinned to the rim on its own bearing, carrying its
 letter, its owner's colour and the contested pulse, so the way to the next flag
-is always on screen. The rim it is pinned to is the SQUARE's and not a circle
-inscribed in it — the corners are drawn map like anywhere else, and a circular
-rim would post a marker for a flag the player can already see sitting in one.
+is always on screen. The rim it is pinned to is the plate's own circle and the
+pin is one EUCLIDEAN test, which is the second thing the round plate bought:
+while the plate was a chamfered square the test had to be Chebyshev, because a
+circle inscribed in a square posts a marker for a flag the player can already
+see sitting in a corner. There are no corners now, so "off the map" and "past
+the rim" have become one question.
 And **the player's own arrow needs no clamp any more**: it was clamped because a
 borderland let its owner stand eighty metres off the bitmap, and a canvas clips;
 now it is the one marker with no arithmetic behind it at all.
@@ -482,9 +485,23 @@ proud behind it — the `.hull` trick every chamfered panel in the interface use
 Thinning the plate breaks that outright: an edge layer BEHIND a see-through
 canvas is a lit rectangle rather than a line, and a CSS background under one is
 the opaque square the plate stopped being. So `Minimap.ts` owns the shape now —
-it clips the two-cut chamfer and strokes the hairline in canvas pixels, the CSS
-box and the backing store already being the same size — and `minimap.css` is
-left positioning the box and styling the compass. What that buys is the same
+it clips the outline and strokes the hairline in canvas pixels, the CSS box and
+the backing store already being the same size — and `minimap.css` is left
+positioning the box and styling the compass.
+
+**And the shape it clips is a DISC**, which is the one place this map departs
+from the chamfered plate the rest of the interface is cut from, and it departs
+on purpose: a heading-up map is a COMPASS ROSE, its boundary is a reach rather
+than a frame, and a square boundary states a reach that is half again as long
+along the diagonals as it is on the axes. `CONFIG.minimap.viewRange` is
+therefore the radius in every direction now, where it used to be the mid-edge
+and the corners quietly showed 85 m of a 60 m promise. The element stays square
+— `--hud-map` sizes the box, the compass and the drop shadow are positioned
+against it — and the circle is inscribed in it by `Minimap.outline`, the one
+description of the shape that serves both the clip and the hairline. The shadow
+follows the canvas's own alpha, so it comes out round for free; a
+`border-radius` on the element would round the plate instead of the drawing and
+clip the antialiased edge the canvas has already drawn. What that buys is the same
 thing `#hud-bottom` and `#capture-status` buy: legibility from a scrim rather
 than from a panel, and a map that sits IN the scene instead of on top of it.
 

@@ -3,12 +3,14 @@
  * Owns: #minimap-frame and #minimap only.
  *
  * **The map's SHAPE and its PLATE are NOT here any more**, and since the plate
- * went translucent the chamfer and its hairline edge had to follow it into the
- * canvas: a CSS edge layer sitting BEHIND a see-through canvas is a lit
- * rectangle rather than a line, and a CSS background is an opaque square behind
- * a map that is deliberately not one. So this file positions the box and styles
- * the one piece of text outside it, and everything inside the rectangle is
- * drawn.
+ * went translucent the outline and its hairline edge had to follow it into the
+ * canvas: a CSS edge layer sitting BEHIND a see-through canvas is a lit shape
+ * rather than a line, and a CSS background is an opaque square behind a map
+ * that is deliberately not one — the plate is a DISC. So this file positions
+ * the box and styles the one piece of text outside it, and everything inside
+ * the circle is drawn. Note that the element is still SQUARE: the box is what
+ * `--hud-map` sizes and what the shadow and the compass are positioned
+ * against, and the circle is inscribed in it by `Minimap.outline`.
  *
  * **What IS here is how BIG it is, and that is a reversal.** The canvas used to
  * take its own width and height from `CONFIG.minimap.size` and write them as an
@@ -31,10 +33,11 @@
      element's. */
   z-index: 0;
   line-height: 0;
-  /* `drop-shadow` follows the canvas's own alpha, so the cut corners cast a
-     cut-corner shadow and the transparent ones cast none. Wider and softer
-     than a panel's: what it is for is separating a translucent map from the
-     street behind it, not putting a bevel on a plate. */
+  /* `drop-shadow` follows the canvas's own alpha, so a round plate casts a
+     round shadow and the transparent corners cast none — which is the whole
+     reason the shape may live in the canvas and the shadow in CSS. Wider and
+     softer than a panel's: what it is for is separating a translucent map from
+     the street behind it, not putting a bevel on a plate. */
   filter: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.6));
 }
 #minimap {
@@ -45,9 +48,11 @@
      writing both, and the reason this is a WIDTH and not a `transform`. */
   width: var(--hud-map);
   height: var(--hud-map);
-  /* Deliberately no background and no clip-path: both are the canvas's, and a
-     CSS background here would be the opaque rectangle the plate stopped
-     being. See the header. */
+  /* Deliberately no background, no border-radius and no clip-path: the shape
+     is the canvas's, and a CSS background here would be the opaque rectangle
+     the plate stopped being — a `border-radius` would round it rather than
+     remove it, and would clip the antialiased edge the canvas already draws.
+     See the header. */
   background: transparent;
 }
 /* The heading the top of the map is pointing at — the north the map gives up

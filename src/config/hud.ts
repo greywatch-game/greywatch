@@ -14,8 +14,9 @@
  */
 export const minimap = {
   /**
-   * The map's AUTHORED size in pixels, square — the one it was drawn for and
-   * the one every constant below is stated against.
+   * The map's AUTHORED size in pixels — the side of the square box the plate's
+   * disc is inscribed in, the size it was drawn for, and the one every constant
+   * below is stated against.
    *
    * It is no longer the canvas's size. The box is `--hud-map` in `base.css`,
    * which comes down with the viewport and again when the on-screen controls
@@ -27,15 +28,20 @@ export const minimap = {
    */
   size: 220,
   /**
-   * Metres from the player to the MID-EDGE of the canvas — half the map's
-   * width across the picture, and the whole of the zoom. Raising it costs
-   * nothing per frame but makes the prerendered backdrop bigger by the square
-   * (`size / 2 / viewRange` pixels per metre over the play square), so a very
-   * small number is the thing to be careful with, not a large one. Sixty is
-   * `bots.perception.engageRange` (55) with five metres to spare, so the whole
-   * band a bot will open fire from is inside the drawn square — which is the
-   * read this map is for: everything that could already be shooting at me is
-   * on it.
+   * Metres from the player to the RIM of the plate — the disc's radius in world
+   * units, and the whole of the zoom. Raising it costs nothing per frame but
+   * makes the prerendered backdrop bigger by the square (`size / 2 / viewRange`
+   * pixels per metre over the play square), so a very small number is the thing
+   * to be careful with, not a large one. Sixty is `bots.perception.engageRange`
+   * (55) with five metres to spare, so the whole band a bot will open fire from
+   * is inside the drawn disc — which is the read this map is for: everything
+   * that could already be shooting at me is on it.
+   *
+   * **It is now the reach in EVERY direction, which it was not while the plate
+   * was a square**: the corners used to show 1.41x this and nothing else did,
+   * so that band was a promise the map kept along the diagonals and exactly met
+   * on the axes. The round plate spends those corners, and this is the number
+   * to raise if the five metres of margin stop feeling like any.
    */
   viewRange: 60,
   /** Seconds an enemy stays on the minimap after one of their shots. */
@@ -49,7 +55,7 @@ export const minimap = {
    * The rim marker standing in for a control point the zoomed view does not
    * reach: the disc's radius, and how far in from the canvas edge its centre
    * is pinned. The pad has to clear the disc plus its chevron (6 px) or the
-   * marker is cut off by the frame's chamfer.
+   * marker is cut off by the plate's rim.
    */
   edgeRadius: 7,
   edgePad: 14,

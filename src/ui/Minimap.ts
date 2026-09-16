@@ -7,7 +7,7 @@
  * setMap() must be called once per round to rebuild the backdrop.
  * The view is PLAYER-CENTRED and HEADING-UP: the player sits at the canvas
  * centre and the world turns under them, so a control point off the drawn
- * square owes an edge marker or it is simply gone.
+ * disc owes a rim marker or it is simply gone.
  * The bodies it draws are `Combatant`s and nothing narrower: offline they are
  * `Bot`s and in a netplay round they are the roster's `NetSoldier`s, and this
  * class must never be able to tell which — a remote human is a body on the map
@@ -19,11 +19,12 @@
  * arrow. Anything about what the GROUND looks like belongs in `mapPaint.ts`,
  * or the corner map and the deploy screen start disagreeing about the village
  * again.
- * **The map's SHAPE and its PLATE are this file's, not the stylesheet's**: the
- * chamfer is a canvas clip and the edge is a canvas stroke, because the plate
- * is translucent and a CSS edge layer behind a translucent canvas is a lit
- * rectangle rather than a line. `minimap.css` positions the box and styles the
- * one piece of text outside it; everything inside the rectangle is drawn here.
+ * **The map's SHAPE and its PLATE are this file's, not the stylesheet's, and
+ * the shape is a DISC**: the clip is a canvas arc and the edge is a canvas
+ * stroke, because the plate is translucent and a CSS edge layer behind a
+ * translucent canvas is a lit shape rather than a line. `minimap.css` positions
+ * the box and styles the one piece of text outside it; everything inside the
+ * circle is drawn here.
  */
 import "./minimap.css";
 import type { Vector3 } from "@babylonjs/core";
@@ -64,20 +65,10 @@ const COLOR_NEUTRAL = "#9aa4b2";
 const PLATE_ALPHA = 0.84;
 /** The ground past the play square, which only a borderland map ever shows. */
 const COLOR_OUTSIDE = "rgba(4, 6, 10, 0.62)";
-/** The hairline the plate is closed with, drawn along the chamfer. */
+/** The hairline the plate is closed with, drawn around the rim. */
 const COLOR_EDGE = "rgba(255, 255, 255, 0.2)";
 /** How far the player's view cone reaches, at the authored size. */
 const CONE_LENGTH = 32;
-/**
- * The corner cut — the same two-cut plate `.frame` draws in CSS, and the reason
- * the number is HERE is that the shape is clipped and stroked in canvas
- * coordinates rather than by the stylesheet.
- *
- * Like everything else on this plate it is stated at the AUTHORED size and
- * multiplied by `Minimap.k`; a chamfer held at twelve pixels while the box came
- * down to a phone's would be an eighth of the map cut off each corner.
- */
-const CHAMFER = 12;
 /**
  * The floor under anything on this map that has to be READ rather than merely
  * seen — a blip, a letter, a rim marker. Below about this the mark stops being
@@ -99,8 +90,9 @@ const CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
  * answer *what is around me right now*, which a 240–400 m square shrunk into
  * 220 px cannot do — at Harrowmead's scale a building was two pixels and the
  * five flags sat in the middle third. `CONFIG.minimap.viewRange` metres reach
- * the mid-edge, and the world turns under a player who stays put at the centre
- * pointing up, so a bearing read off the map is the bearing the picture above
+ * the RIM — the plate is a disc, so that is one radius in every direction
+ * rather than a square's mid-edge — and the world turns under a player who
+ * stays put at the centre pointing up, so a bearing read off the map is the bearing the picture above
  * it already shows. What that costs is NORTH, which the frame's compass gives
  * back as the heading the top of the map is currently pointing at.
  *
@@ -153,8 +145,8 @@ export class Minimap {
   private dpr = 1;
   /**
    * The box against the size this map was AUTHORED at, and the one number that
-   * says how much smaller the plate has become. Shapes on it — the chamfer, the
-   * view cone, the rim gutter — are stated at the authored size and multiplied
+   * says how much smaller the plate has become. Shapes on it — the view cone,
+   * the rim gutter, the arrow — are stated at the authored size and multiplied
    * by this; the marks a player has to read are floored instead (see
    * `MIN_BLIP`), because a blip drawn to scale on a phone-sized map is a blip
    * nobody can see.
@@ -352,23 +344,23 @@ export class Minimap {
   }
 
   /**
-   * The plate's outline: the two-cut chamfer `.frame` draws in CSS, as a path
-   * in canvas pixels. `inset` moves it inward, which is how one description of
-   * the shape serves both the clip (0) and the hairline that closes it (0.5,
-   * so a 1 px stroke lands wholly inside the clip instead of half outside it
-   * and half antialiased away).
+   * The plate's outline: the DISC the map is drawn in, as a path in canvas
+   * pixels. `inset` moves it inward, which is how one description of the shape
+   * serves both the clip (0) and the hairline that closes it (0.5, so a 1 px
+   * stroke lands wholly inside the clip instead of half outside it and half
+   * antialiased away).
+   *
+   * **It is a circle, and that is not only a look — it is what makes the rim
+   * markers a single number.** The boundary is now the same distance from the
+   * player in every direction, so "off the map" is one Euclidean test and a
+   * pin lands ON the edge rather than on a chamfered square's approximation of
+   * it. It also takes the corners away, which is where the map reached 1.41x
+   * `viewRange` and nothing else did — see that field in `config/hud.ts`.
    */
   private outline(c: CanvasRenderingContext2D, inset: number): void {
-    const a = inset;
-    const b = this.box - inset;
-    const cham = CHAMFER * this.k;
+    const half = this.box / 2;
     c.beginPath();
-    c.moveTo(a + cham, a);
-    c.lineTo(b, a);
-    c.lineTo(b, b - cham);
-    c.lineTo(b - cham, b);
-    c.lineTo(a, b);
-    c.lineTo(a, a + cham);
+    c.arc(half, half, half - inset, 0, Math.PI * 2);
     c.closePath();
   }
 
@@ -512,21 +504,24 @@ export class Minimap {
     //
     // A zoomed map is a map that has stopped showing the objectives, and the
     // objectives are the only reason to look at it. So every flag off the
-    // drawn square is pinned to the rim on the bearing it lies at, carrying
+    // drawn disc is pinned to the rim on the bearing it lies at, carrying
     // its letter and its owner's colour — the direction to walk, at the cost
     // of the distance to it, which the pin cannot express and the flag list
     // across the top of the HUD does not need to.
     //
-    // The rim is the SQUARE's, not a circle inscribed in it: the corners are
-    // drawn map like everywhere else, and a circular rim would post a marker
-    // for a flag the player can already see sitting in one.
+    // The rim is the plate's own circle, so the pin is EUCLIDEAN — a flag is
+    // off the map exactly when it is further from the centre than the clip is.
+    // It used to be a Chebyshev test because the plate was a square and a
+    // circle inscribed in one would have posted a marker for a flag the player
+    // could already see sitting in a corner; there are no corners now, so the
+    // two questions have become the same question.
     // The disc is sized off the LETTER it carries rather than given a floor of
     // its own: the glyph has one (`MIN_GLYPH`) because it has to be read, and a
     // disc that followed the box all the way down would end up smaller than the
     // letter standing in it. The authored pair is 9 px of type in a 7 px disc,
     // which is where the 0.78 comes from — at full size this is `edgeRadius`
     // to within a rounding error. The gutter is then measured out from whatever
-    // the disc came to, so the chevron on its outer side clears the chamfer.
+    // the disc came to, so the chevron on its outer side clears the rim.
     const rimGlyph = Math.max(9 * k, MIN_GLYPH);
     const edgeR = Math.max(mr.edgeRadius * k, rimGlyph * 0.78);
     const lim = half - edgeR - Math.max((mr.edgePad - mr.edgeRadius) * k, 6);
@@ -535,7 +530,7 @@ export class Minimap {
       const by = toY(p.def.pos.z) - py;
       const sx = bx * cos + by * sin;
       const sy = -bx * sin + by * cos;
-      const m = Math.max(Math.abs(sx), Math.abs(sy));
+      const m = Math.hypot(sx, sy);
       if (m <= lim) continue;
       const k = lim / m;
       const x = half + sx * k;
@@ -544,7 +539,7 @@ export class Minimap {
 
       // The chevron carries the bearing; the hexagon behind it carries the
       // name — and it is the SAME hexagon the flag itself wears when it is on
-      // the drawn square, which is the point. A marker that changed shape as
+      // the drawn disc, which is the point. A marker that changed shape as
       // the player walked toward it would be a second alphabet.
       c.save();
       c.translate(x, y);
@@ -612,8 +607,8 @@ export class Minimap {
     c.fill();
     c.restore();
 
-    // The plate's own edge, last and inside the clip: one hairline along the
-    // chamfer, which is the whole of the frame now.
+    // The plate's own edge, last and inside the clip: one hairline around the
+    // rim, which is the whole of the frame now.
     this.outline(c, 0.5);
     c.strokeStyle = COLOR_EDGE;
     c.lineWidth = 1;
