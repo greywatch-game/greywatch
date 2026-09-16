@@ -1232,7 +1232,7 @@ nearly **seven pixels wide** on a plain village wall. `shaders/Dither.ts` adds
 one LSB of triangular noise immediately before `fragmentOutputs.color` in the
 cel, grass and water shaders — registered as the `celDither` include — which
 takes those contours to ~2 px. It is deliberately *not*
-in `FilmGrain`: that pass is detachable by a player setting, so the banding is a
+in `PaperGrain`: that pass is detachable by a player setting, so the banding is a
 **grade-off** artefact, and the grade-off frame is the one a pass inside the
 grade cannot reach. **The old screen grain happened to be a ~10 LSB dither
 wherever it was attached, and the paper is NOT** — measured on Hollowmere, the
@@ -2021,7 +2021,7 @@ does not take, both being look decisions rather than bugs.
 - `pipeline.imageProcessingEnabled` must stay `false`: the cel shader outputs
   display-ready colors and Babylon's image-processing pass re-gammas them and washes
   the palette out. That is also why the vignette/grain/aberration/damage flash grade is
-  hand-written (`src/shaders/FilmGrain.ts`).
+  hand-written (`src/shaders/PaperGrain.ts`).
 - Glow is an emissive MASK blurred and added to the frame (`src/shaders/GlowPass.ts`),
   keyed off emissive colour and deliberately not threshold bloom —
   bright-but-not-emissive surfaces must stay crisp.
@@ -2206,19 +2206,20 @@ does not take, both being look decisions rather than bugs.
 - **The post-process chain has an order, and a display setting that switches an
   effect off REMOVES its pass** rather than zeroing its uniforms — an attached but idle
   pass still reads and writes the whole frame. The order is FXAA, shafts (`Volumetrics`),
-  motion blur, film grain, enforced by where each one re-attaches: `attachPostProcess` appends, so
+  motion blur, paper grain, enforced by where each one re-attaches: `attachPostProcess` appends, so
   the blur's toggle takes the grade off and puts it back behind it
   (`Game.setMotionBlurEnabled`), and the grade's own toggle always appends because the
-  tail is where it belongs. `FilmGrain` owns whether it is attached, so the blur's
+  tail is where it belongs. `PaperGrain` owns whether it is attached, so the blur's
   dance can never resurrect a grade the player turned off — the guard is in `attach`,
   not at the call sites. Nothing throws if this is wrong; the symptom is grain over a
   smear, which reads as a dirty lens. The red damage flash is painted by the grade's
   shader and goes off with it, leaving the HUD's damage arcs to tell the player where a
   hit came from.
-- **The film grain is PAPER PINNED TO THE WORLD, and a grain keyed on the pixel is the
-  thing it replaced.** Walking past a wall under a screen grain slides the wall under a
+- **The grain is PAPER PINNED TO THE WORLD, and a grain keyed on the pixel is the thing
+  it replaced — which is why the setting no longer says "film".** Walking past a wall
+  under a screen grain slides the wall under a
   texture that stays put — a film over the scene rather than a world drawn on paper. So
-  `FilmGrain` turns the frame's depth (`FrameDepth`) back into a position and evaluates
+  `PaperGrain` turns the frame's depth (`FrameDepth`) back into a position and evaluates
   a 3D noise there. A texture fixed in the world has no single size, so it is a stack of
   power-of-two OCTAVES, each fixed in the world, weighted by how many metres a pixel
   covers at that distance (Bénard et al.'s dynamic solid textures): walking toward a wall

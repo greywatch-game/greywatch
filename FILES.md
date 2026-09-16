@@ -1071,8 +1071,9 @@ src/
                         #   masked shift AND weighted taps — because a gun
                         #   parented to the camera never moves in screen space.
                         #   WGSL
-    FilmGrain.ts        # Vignette / aberration / damage flash, and a PAPER
+    PaperGrain.ts       # Vignette / aberration / damage flash, and a PAPER
                         #   grain pinned to the world through the frame's
                         #   depth: octaves fixed in world space, weighted by
-                        #   distance. WGSL
+                        #   distance. The player's setting is still stored as
+                        #   `filmGrain`, which is what it used to be. WGSL
 ```

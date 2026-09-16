@@ -457,7 +457,7 @@ Three rules:
 exist because each turned out to be a statement about Hollowmere rather than about
 the game: `sky.discRadius` (0 draws no disc **and** switches the god rays off, via
 the zero-`moonDir` contract `Sky.clear` already documents), `sky.haloStrength`,
-`grade` (the map scales the film grain pass; the PLAYER still decides whether it runs
+`grade` (the map scales the paper grain pass; the PLAYER still decides whether it runs
 at all), `groundSpec` (the wet cobble sheen, which `config/graphics.ts` warns is tuned to the
 key light's elevation), and `lighting.lampIntensity` (0 removes the player's
 shoulder lamp, which otherwise spends one of the sixteen light slots).

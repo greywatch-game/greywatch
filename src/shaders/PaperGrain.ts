@@ -1,5 +1,5 @@
 /**
- * FilmGrain.ts — Full-screen grade: vignette, corner desaturation, radial
+ * PaperGrain.ts — Full-screen grade: vignette, corner desaturation, radial
  * chromatic aberration, a PAPER grain pinned to the world, red damage flash.
  * Why hand-written: Babylon's image-processing pass re-gammas the cel shader's
  * already display-ready colors and washes the palette out — which is also why
@@ -94,7 +94,7 @@ const CELL_PIXELS = 2;
 /** The sky's paper is a sphere of this radius around the eye. */
 const SKY_RADIUS = 1000;
 
-ShaderStore.ShadersStoreWGSL["filmGrainFragmentShader"] = `
+ShaderStore.ShadersStoreWGSL["paperGrainFragmentShader"] = `
 varying vUV: vec2f;
 var textureSamplerSampler: sampler;
 var textureSampler: texture_2d<f32>;
@@ -283,7 +283,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 }
 `;
 
-export class FilmGrain {
+export class PaperGrain {
   private post: PostProcess;
   private readonly camera: Camera;
   private damage = 0;
@@ -316,7 +316,7 @@ export class FilmGrain {
     private readonly depth: FrameDepth,
   ) {
     this.camera = camera;
-    this.post = new PostProcess("filmGrain", "filmGrain", {
+    this.post = new PostProcess("paperGrain", "paperGrain", {
       uniforms: [
         "cellOffset",
         "camRight",

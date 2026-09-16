@@ -434,11 +434,11 @@ export interface EnvironmentSpec {
   grass?: GrassEnvSpec;
   sky?: SkySpec;
   /**
-   * How hard the film grain pass is pushed on this map. Each field defaults to
+   * How hard the paper grain pass is pushed on this map. Each field defaults to
    * its `CONFIG.graphics` value, which is Hollowmere's.
    *
    * The map scales the effect; the PLAYER still decides whether it runs at
-   * all (`settings.filmGrain`). Those are different questions: a heavy
+   * all (`settings.paperGrain`). Those are different questions: a heavy
    * vignette is dread on a night village and a lens fault on a bright one,
    * but wanting it off entirely is a preference no map should override.
    */

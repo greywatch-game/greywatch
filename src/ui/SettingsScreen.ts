@@ -287,8 +287,8 @@ const PAGES: readonly Page[] = [
         options: OFF_ON,
       },
       {
-        key: "filmGrain",
-        label: "Film grain",
+        key: "paperGrain",
+        label: "Paper grain",
         hint: "The paper the world is drawn on, vignette, and the red damage flash",
         options: OFF_ON,
       },

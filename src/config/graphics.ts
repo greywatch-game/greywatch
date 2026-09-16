@@ -46,7 +46,7 @@ export const graphics = {
    */
   glowKernel: 56,
   /**
-   * The film grain pass (`FilmGrain`): vignette, paper grain and chromatic
+   * The paper grain pass (`PaperGrain`): vignette, paper grain and chromatic
    * aberration. `grain` is the paper's strength; the map may restate all three
    * (`EnvironmentSpec.grade`).
    *
@@ -66,7 +66,7 @@ export const graphics = {
   /**
    * The paper the world is drawn on — its GRAIN IS PINNED TO THE WORLD and not
    * to the screen, so walking past a wall does not slide the paper across it.
-   * `FilmGrain`'s header has how, and why the grain still keeps one size on
+   * `PaperGrain`'s header has how, and why the grain still keeps one size on
    * screen at every distance.
    */
   paper: {
@@ -222,7 +222,7 @@ export const graphics = {
      * Taps along each ray, per rung. The player's setting is `off` plus these
      * three, and `off` is absence rather than zero: the pass is detached, so it
      * costs no read and no write of the frame — the same rule `MotionBlur` and
-     * `FilmGrain` are turned off by.
+     * `PaperGrain` are turned off by.
      *
      * The ladder is declared HERE and exactly once: `Settings.volumetrics`
      * derives its union from these keys and `Volumetrics.ts` derives its own,

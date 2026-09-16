@@ -68,7 +68,7 @@ import {
   CelMaterialFactory,
   fogAmountAt,
 } from "../shaders/CelShader";
-import { FilmGrain } from "../shaders/FilmGrain";
+import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
 import { FrameDepth } from "../shaders/FrameDepth";
 import { GlowPass } from "../shaders/GlowPass";
@@ -532,7 +532,7 @@ export class Game {
   private sky: Sky;
   private water: WaterSystem;
   private grass: GrassSystem;
-  private post: FilmGrain;
+  private post: PaperGrain;
   /** Moon shafts. Driven from the sky's own moon direction every frame. */
   /**
    * The light shafts, or null when the player has them off — which is a
@@ -1234,7 +1234,7 @@ export class Game {
     );
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
-    this.post = new FilmGrain(
+    this.post = new PaperGrain(
       this.scene,
       this.cameraSys.camera,
       this.frameDepth,
@@ -2406,7 +2406,7 @@ export class Game {
     // After the blur, and that is the order rather than a preference: the
     // blur's own toggle takes the grade off and puts it back to keep the
     // chain's tail, so the grade has the last word on whether it is attached.
-    this.post.setEnabled(this.settings.filmGrain);
+    this.post.setEnabled(this.settings.paperGrain);
     // The look speeds go to the camera and stop there: the aim assist reads its
     // own bound off `stickYawRate`, which already carries the stick's.
     this.cameraSys.setLookScale(

@@ -21,7 +21,7 @@
  * WHY IT IS NOT IN THE GRADE, WHICH IS WHERE A DITHER NORMALLY GOES. Three
  * reasons, and the third is the one that decides it:
  *
- * - `FilmGrain` is **detachable by a player setting**, and the contract for the
+ * - `PaperGrain` is **detachable by a player setting**, and the contract for the
  *   post chain is that a setting which turns an effect off REMOVES its pass. A
  *   dither living there would be a correctness fix that disappears.
  * - A new always-attached fifth full-screen pass costs a full read and write of

@@ -79,12 +79,14 @@ export type Settings = {
   /** The camera-rotation smear. Off detaches the pass, not just its effect. */
   motionBlur: boolean;
   /**
-   * The film grain — the paper grain, vignette, aberration, and with them the
-   * red damage flash, which is painted by the same shader. Off detaches the
-   * pass. Stored under a new key: a player who had the old horror filter off
-   * gets the paper back once, since what they turned off is not what this is.
+   * The paper the world is drawn on, plus the vignette, the aberration and the
+   * red damage flash painted by the same shader. Off detaches the pass.
+   *
+   * **It is stored as `filmGrain`, which is what this field used to be called**
+   * — see `STORED_AS`. The pass did not change when the name did, so a player
+   * who had turned it off is still the same player turning off the same thing.
    */
-  filmGrain: boolean;
+  paperGrain: boolean;
   /**
    * How much of the panel's native resolution the scene is drawn at.
    *
@@ -248,7 +250,7 @@ export function defaultRenderScale(): RenderScale {
 export const SETTING_DEFAULTS: Settings = {
   fpsCounter: false,
   motionBlur: CONFIG.graphics.motionBlur.strength > 0,
-  filmGrain: true,
+  paperGrain: true,
   // **Medium, and it is the rung that costs what the pass it replaced cost.**
   // Measured against `GodRays`' own 32 taps at 1920x1080, 16 came back at
   // -0.010 ms of GPU on Hollowmere and -0.019 on Cinderhaven — inside the
@@ -277,6 +279,27 @@ export const SETTING_DEFAULTS: Settings = {
 
 /** One key per field, so the fields are independent in the store as well. */
 const KEY_PREFIX = "greywatch.setting.";
+
+/**
+ * Fields whose stored key is NOT their name, because the field was RENAMED and
+ * what the player chose is still the same choice.
+ *
+ * A setting's key is its field name, which is what makes adding one free — and
+ * it also means a rename silently forgets every player's answer. That is
+ * sometimes right: `filmGrain` deliberately took a new key when it replaced the
+ * horror filter, because what a player had turned off was a different effect.
+ * It is wrong when only the NAME moved, which is this row: `paperGrain` is the
+ * same pass doing the same thing, renamed because "film grain" described a film
+ * running over the scene — the exact thing the world-pinned paper replaced.
+ *
+ * **So the question a rename has to answer is whether the EFFECT changed, and
+ * this table is where the answer "no" is written down.** An entry is permanent:
+ * it is the key that is already on players' machines, so it may never be tidied
+ * to match the field it belongs to.
+ */
+const STORED_AS: Partial<Record<keyof Settings, string>> = {
+  paperGrain: "filmGrain",
+};
 
 /**
  * Reads every field on its own, falling back per field.
@@ -365,7 +388,7 @@ const VOLUMETRIC_QUALITIES = [
 const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   fpsCounter: bool,
   motionBlur: bool,
-  filmGrain: bool,
+  paperGrain: bool,
   renderScale: oneOf(CONFIG.graphics.renderScales),
   volumetrics: oneOfString(VOLUMETRIC_QUALITIES),
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
@@ -380,7 +403,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
 
 function readRaw(key: keyof Settings): string | null {
   try {
-    return window.localStorage.getItem(KEY_PREFIX + key);
+    return window.localStorage.getItem(KEY_PREFIX + (STORED_AS[key] ?? key));
   } catch {
     // Private browsing and file:// both throw here. Defaults are fine.
     return null;
@@ -389,7 +412,7 @@ function readRaw(key: keyof Settings): string | null {
 
 function writeRaw(key: keyof Settings, raw: string): void {
   try {
-    window.localStorage.setItem(KEY_PREFIX + key, raw);
+    window.localStorage.setItem(KEY_PREFIX + (STORED_AS[key] ?? key), raw);
   } catch {
     // Not being able to remember a setting is not worth failing over.
   }
