@@ -1840,11 +1840,26 @@ export class Vehicle implements Combatant, RayHull {
     if (!this.alive) return;
     this.alive = false;
     this.speed = 0;
-    // A wreck's hull node is never leaned again, so the rate that bends its
-    // whips has to be retired with it — left standing, the last frame's rock
-    // would be a constant bias holding both masts over for the whole wreck.
-    this.leanRateX = 0;
-    this.leanRateZ = 0;
+    // **THE DISC STOPS, AND THAT IS THE WHOLE OF WHY A SHOT-DOWN MACHINE
+    // FALLS.** A wreck is never stepped through `flyStep` again, so every term
+    // that method writes is frozen exactly where the shot left it — and one of
+    // them is `lift`, which on a machine at a hover is `gravity` to the bit.
+    // Left standing, `standOnGround`'s free-fall step is the no-op that IS the
+    // hover, and the burning hull hangs in the sky for the whole of
+    // `wreckTime` and then blinks out of it.
+    //
+    // **Retired here rather than gated inside the fall**, for the reason
+    // `speed` above is: what is wrong with a wreck is not that the ground
+    // model has to learn about one, it is that the machine is carrying state
+    // it can no longer produce. A destroyed rotor is not turning, so `rotor`
+    // is 0 and `lift` is 0, and every reader downstream is right for free —
+    // `rotorPower` and with it `gearLoad`, which is where this was already
+    // ASSUMED: "a rotor at REST is 1, so a wreck stands on its skids and
+    // settles like anything else" was true of a machine that had landed and
+    // false of one that was flying, which had no weight on its gear at the
+    // moment it most obviously does.
+    this.rotor = 0;
+    this.lift = 0;
     this.wreckT = CONFIG.vehicles.wreckTime;
     this.rig.paint(true);
     this.onDestroyed();
@@ -2321,23 +2336,7 @@ export class Vehicle implements Combatant, RayHull {
   update(dt: number, drive: DriveInput | null): void {
     if (this.wreckT > 0) this.wreckT = Math.max(0, this.wreckT - dt);
     if (!this.alive) {
-      // A wreck still falls — it can be killed off a kerb — and then settles
-      // and stops asking, exactly as a parked hull does. A hull that has been
-      // taken off the field (`hide`) is skipped outright: nothing can see it,
-      // and the probe is far too expensive to spend on a mesh that is not
-      // there.
-      if (this.body.isEnabled()) {
-        this.standOnGround(dt);
-        // A wreck settles on its springs after it falls, for the reason its
-        // masts keep stirring: it is still a mass standing on the ground.
-        this.flexHeave(dt);
-        // The masts keep stirring on a burnt-out hull, and that is the point of
-        // paying for them: a wreck with two antennae frozen mid-crack is a
-        // freeze-frame, and a wreck whose whips settle and then move in the
-        // wind is the only thing on it still saying the world is running.
-        this.flexAntennae(dt, 0, 0);
-      }
-      this.sync();
+      this.settle(dt);
       return;
     }
 
@@ -2605,6 +2604,66 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * One frame of a BURNT-OUT hull, and the one path both `update` and
+   * `updateRemote` hand a wreck to.
+   *
+   * **A wreck is not stepped and it is not static either**, which is the
+   * distinction this whole method is: nothing decides anything for it — there
+   * is no drive, no turret, no trigger and no engine — but it is still a mass
+   * in the world and the world is still running underneath it. So what it gets
+   * is the tail of `update`'s frame and nothing else: where the ground is,
+   * what the ground just did to it, the attitude that asks for, and the whips.
+   *
+   * **It FALLS, and on the flying kind that is the whole of the feature.** A
+   * hull killed off a kerb has always dropped the last half metre, because
+   * `standOnGround` integrates free fall for anything whose plank is below it
+   * — and a helicopter is the same statement at forty metres, once `wreck` has
+   * taken the rotor's `lift` away from it. Nothing here knows which kind it is
+   * holding.
+   *
+   * **The attitude is LEANED rather than frozen**, and the two halves of when
+   * are `update`'s: in the air the commanded tilt the shot left the machine at
+   * stands (`leanToGround` all but stops off the ground, so a machine that
+   * died banked falls banked), and on the skids `standOnGround`'s contacts win
+   * and the wreck settles onto whatever it landed on. Frozen instead, a
+   * gunship shot down in a 30-degree bank lay in the street at 30 degrees with
+   * a skid through the road for the whole of `wreckTime`.
+   *
+   * `accel` and `lateral` are 0 and not merely small: weight transfer is a
+   * load the drive puts across the gear, and a wreck has no drive. The springs
+   * still answer to `jolt`, which is the landing and is `standOnGround`'s.
+   *
+   * A hull that has been taken off the field (`hide`) is skipped outright:
+   * nothing can see it, and the ground probe is far too expensive to spend on
+   * a mesh that is not there.
+   */
+  private settle(dt: number): void {
+    if (this.body.isEnabled()) {
+      this.standOnGround(dt);
+      // A wreck settles on its springs after it falls, for the reason its
+      // masts keep stirring: it is still a mass standing on the ground.
+      this.flexHeave(dt);
+      // `update`'s rule, and it is `grounded` that decides rather than a kind:
+      // the commanded attitude wins in the air and the ground's wins on the
+      // skids. `tiltPitch`/`tiltRoll` are frozen wherever the shot left them,
+      // which is exactly what a falling wreck should be drawn at.
+      if (this.spec.flight && !this.grounded) {
+        this.groundPitchTarget = this.tiltPitch;
+        this.groundRollTarget = this.tiltRoll;
+      }
+      this.leanHull(dt, 0, 0);
+      // The masts keep stirring on a burnt-out hull, and that is the point of
+      // paying for them: a wreck with two antennae frozen mid-crack is a
+      // freeze-frame, and a wreck whose whips settle and then move in the
+      // wind is the only thing on it still saying the world is running. After
+      // the hull, never before it, for `update`'s reason: the rate they bend
+      // against is a difference `leanHull` has only just finished computing.
+      this.flexAntennae(dt, 0, 0);
+    }
+    this.sync();
+  }
+
+  /**
    * One frame of a hull SOMEBODY ELSE is driving — the authority's copy of a
    * player's tank, or a client's copy of anybody's.
    *
@@ -2799,15 +2858,10 @@ export class Vehicle implements Combatant, RayHull {
     this.gunPitch = gunPitch;
 
     if (!this.alive) {
-      // A wreck standing where it died: the same three lines `update` spends
-      // on one, for the same reasons. Nothing arriving from the wire moves it,
-      // so this is purely the picture running down.
-      if (this.body.isEnabled()) {
-        this.standOnGround(dt);
-        this.flexHeave(dt);
-        this.flexAntennae(dt, 0, 0);
-      }
-      this.sync();
+      // Where the wreck IS has already been written from the wire above, which
+      // is the one thing this side does not work out for itself; what is left
+      // is the picture running down, and it is `update`'s own.
+      this.settle(dt);
       return;
     }
 

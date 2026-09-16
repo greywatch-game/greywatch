@@ -577,7 +577,11 @@ is one machine's:
   half-dismantled; take the middle 80% and let PNG payload size stand in for
   "did this frame contain the bright thing" across the lot.
 - **A tank is easiest to test by stepping the fleet directly, and the camera is
-  the trap.** `g.vehicles.tanks` is the fleet, `g.mount(tank)` takes the seat and
+  the trap.** `g.vehicles.hulls` is the fleet, `g.mount(tank, 0)` takes the DRIVER's
+  seat — the seat is a SECOND argument, and passing none writes
+  `seats[undefined]`, which reads as a hull that IS being driven (`g.driving`
+  is right) while the rotor never spools: a helicopter sits on its pad at full
+  collective looking like a bug in the flight model — and
   `g.vehicles.update(dt, g.vehicleOrders)` is the real drive path with no
   rendering in it — sixty calls at `1/20` is three seconds of driving in one
   synchronous `evaluate`, which is the only way to move a vehicle at 0.1 fps.

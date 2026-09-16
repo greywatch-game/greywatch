@@ -2208,6 +2208,54 @@ The hull is POOLED: `Vehicle.placeAt` puts a destroyed one back rather than buil
 a new one, and `resetTankPose` is what guarantees nothing survives the round it
 died in. Nothing is disposed inside a round.
 
+### A wreck is not stepped and it is not static either, and `settle` is that
+
+`Vehicle.settle` is the whole of a wreck's frame and the one path both `update`
+and `updateRemote` hand one to. Nothing decides anything for a burnt-out hull —
+no drive, no turret, no trigger, no engine — but it is still a mass in a world
+that is still running, so it gets the tail of `update`'s frame and nothing else:
+`standOnGround`, `flexHeave`, the lean and the whips. A hull that has been taken
+off the field (`hide`) is skipped outright, because nothing can see it and the
+ten-contact probe is far too expensive to spend on a mesh that is not there.
+
+**A WRECK FALLS, and what makes a helicopter fall is that `wreck` STOPS THE
+DISC.** A hull killed off a kerb has always dropped the last half metre, because
+`standOnGround` integrates free fall for anything whose plank is below it — and a
+gunship is that same statement at forty metres. What stood in the way was not the
+ground model but STALE STATE: a wreck is never stepped through `flyStep` again, so
+every term that method writes is frozen where the shot left it, and one of them is
+`lift`, which on a machine at a hover is `gravity` to the bit. The free-fall step
+is then the no-op that IS the hover, and the burning hull hung in the sky for the
+whole of `wreckTime` and blinked out of it — measured on Sarab: killed at 41.2 m,
+still at 41.2 m eight seconds later.
+
+So `wreck` retires `rotor` and `lift` beside the `speed` it already retired,
+which is the same statement all three times: the machine is carrying state it can
+no longer produce. **Nothing in the fall knows what kind it is holding**, and
+every reader downstream comes right for free — `rotorPower`, and with it
+`gearLoad`, which is where this was already ASSUMED. "A rotor at REST is 1, so a
+wreck stands on its skids and settles like anything else" was true of a machine
+that had landed and false of one that was flying, which had no weight on its gear
+at the moment it most obviously does.
+
+**The attitude is LEANED rather than frozen, and the two halves of when are
+`update`'s own**: in the air the commanded tilt stands, because `leanToGround` all
+but stops off the ground — so a machine that died banked falls banked — and on the
+skids `standOnGround`'s contacts win and the wreck settles onto whatever it landed
+on. Frozen instead, a gunship shot down in a bank lay in the street at that bank
+with a skid through the road for the whole of `wreckTime`. Measured on Sarab,
+killed at 41.2 m in a 14.2-degree bank and 13.8 nose-down: it holds -14.3 the
+whole way down, lands 1.9 s later with its centre exactly `hull.height / 2` over
+the ground, and is on the terrain's own 3.2/1.7 six tenths of a second after
+that. `accel` and `lateral` are 0 and not merely small — weight transfer is a
+load the DRIVE puts across the gear — and the springs still answer to `jolt`,
+which is the landing and is `standOnGround`'s.
+
+A wreck on the wire takes the same path and nothing else had to be told:
+`updateRemote` has already written where the authority says the hull is before it
+reaches the branch, so a client watches the server's own fall rather than running
+a second one.
+
 ## The mounted gun is one gun on three mounts, and it is one recording
 
 `VehicleSpec.mg.report` is a `ReportVoice` — the same eight scalars a carried
