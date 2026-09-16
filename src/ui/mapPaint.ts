@@ -251,7 +251,17 @@ function drawRelief(
   const out = img.data;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const y = at(i, j);
+      // The CELL's own corners, and the cell is what a raster pixel is. The
+      // height is their mean and the gradient the mean of the two opposite
+      // edges, which is the bilinear surface's average over the cell — read
+      // off the low corner instead, both land half a cell south-west of the
+      // pixel they are drawn in, and the shading walks out of register with
+      // the contour lines traced from the same array.
+      const h00 = at(i, j);
+      const h10 = at(i + 1, j);
+      const h01 = at(i, j + 1);
+      const h11 = at(i + 1, j + 1);
+      const y = (h00 + h10 + h01 + h11) / 4;
       // Against the map's OWN MEAN over a fixed span, softly, rather than
       // normalised between its lowest point and its highest. Min-to-max is
       // what a relief map does when every map is a landscape, and half of
@@ -265,21 +275,26 @@ function drawRelief(
       // The gradient in metres per metre, so the shading says the same thing
       // on a 3 m cell and a 6 m one. Clamped tight: this is texture under a
       // plan, not a terrain render.
-      const dx = (at(i + 1, j) - y) / cell;
-      const dz = (at(i, j + 1) - y) / cell;
+      const dx = (h10 + h11 - h00 - h01) / (2 * cell);
+      const dz = (h01 + h11 - h00 - h10) / (2 * cell);
       const shade = Math.max(-0.06, Math.min(0.06, (dx + dz) * -1));
-      // FLOORED, and the floor is not a safety net: an escarpment's shade and
-      // a low datum both subtract, and on Hollowmere the two together took the
-      // bank above the bog to within a few points of black — a hole in the map
-      // where a hillside is. Shading may say "this faces away"; it may not say
-      // "there is nothing here".
       // FLOORED, and the floor is not a safety net: a slope facing away and
       // ground below the datum both subtract, and together they took the bank
       // above Hollowmere's bog to within a few points of black — a hole in the
       // map where a hillside is. Shading may say "this faces away"; it may not
       // say "there is nothing here".
       const k = Math.max(0.1, 0.185 + rise * 0.075 + shade);
-      const o = (j * n + i) * 4;
+      // **Written from the BOTTOM ROW UP**, because the two axes disagree: `j`
+      // counts NORTH off the heightfield (`TerrainField.sample` reads
+      // `heights[j * row + i]` at `z = -half + j * cell`) and an `ImageData`
+      // row counts DOWN the picture, which `drawImage` then lands top edge
+      // first at `py(half)`. Filled in `j` order the whole hillshade is
+      // mirrored north to south against every other layer here — the contours
+      // traced from this same array, the roads, the mass — so the shading sat
+      // over the wrong half of the town and Cinderhaven drew its sea on the
+      // land. Nothing else in this file needs it: every vector layer goes
+      // through `py`, which owns the flip.
+      const o = ((n - 1 - j) * n + i) * 4;
       out[o] = t.ground[0] * k;
       out[o + 1] = t.ground[1] * k;
       out[o + 2] = t.ground[2] * k;
@@ -293,9 +308,9 @@ function drawRelief(
   c.save();
   c.imageSmoothingEnabled = true;
   c.imageSmoothingQuality = "high";
-  // Half a cell out on every side: a raster pixel is a CELL, and the samples
-  // are the cells' own corners, so the image covers the field's extent and not
-  // the lattice through its middles.
+  // Edge to edge over the field's own extent: a raster pixel is a CELL and
+  // every value in it was taken at that cell's centre, so the picture and the
+  // ground cover exactly the same square.
   const x0 = px(view, -half);
   const y0 = py(view, half);
   c.drawImage(tile, x0, y0, half * 2 * view.scale, half * 2 * view.scale);
@@ -485,11 +500,22 @@ function march(
       break;
     case 5:
     case 10: {
+      // **What the mean decides is which pair the MIDDLE belongs to, and the
+      // segments then isolate the OTHER pair** — the corner a segment cuts off
+      // is the one it leaves alone, so a centre that joins `h00` to `h11`
+      // (code 5, mean above) has to be drawn by fencing off `h10` and `h01`,
+      // not by fencing off the two corners it just joined. Read the other way
+      // round it is precisely inverted: a ridge comes out broken and a col
+      // joined, which is the standard choice backwards.
       const mid = (h00 + h10 + h11 + h01) / 4 >= level;
-      if (code === 5 ? mid : !mid) {
+      if (code === 5 ? !mid : mid) {
+        // The two BELOW corners of a code-10 cell, or the two ABOVE corners of
+        // a code-5 cell whose middle is below: `h00` in the low corner and
+        // `h11` in the high one, each cut off by its own pair of edges.
         seg(path, lx, ly, bx, by);
         seg(path, rx, ry, tx, ty);
       } else {
+        // The other diagonal: `h01` and `h10`.
         seg(path, lx, ly, tx, ty);
         seg(path, bx, by, rx, ry);
       }
@@ -634,20 +660,28 @@ function drawWater(
   const deep = [24 + t.sky[0] * 0.08, 36 + t.sky[1] * 0.1, 58 + t.sky[2] * 0.14];
   const shore = deep.map((ch, i) => ch + (t.foam[i] - ch) * 0.45);
 
-  for (let k = 0; k < depth.length; k++) {
-    const d = depth[k];
-    if (d <= 0) continue;
-    // Beer-Lambert, as in the shader and for the shader's reason: a fade that
-    // clamps draws the bed's own contour line across the water, and a flood
-    // meadow is nothing but scattered pockets either side of one.
-    const body = 1 - Math.exp(-d / CONFIG.water.depthFade);
-    const o = k * 4;
-    out[o] = shore[0] + (deep[0] - shore[0]) * body;
-    out[o + 1] = shore[1] + (deep[1] - shore[1]) * body;
-    out[o + 2] = shore[2] + (deep[2] - shore[2]) * body;
-    // Faded out over the same few centimetres the real surface stops showing
-    // its bed through, so the waterline arrives rather than being cut.
-    out[o + 3] = Math.min(1, d / CONFIG.water.bedDepth) * 242;
+  // Sampled south to north (`j` walks +z) and written north to south, for
+  // `drawRelief`'s reason and with a worse symptom: an `ImageData` row counts
+  // DOWN the picture and this one is landed top edge first at `py(z1)`, so a
+  // mask filled in sample order puts the pool on the far side of the map from
+  // the basin it was measured in — which on a map whose floor IS the level
+  // draws the sea over the town.
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const d = depth[j * nx + i];
+      if (d <= 0) continue;
+      // Beer-Lambert, as in the shader and for the shader's reason: a fade
+      // that clamps draws the bed's own contour line across the water, and a
+      // flood meadow is nothing but scattered pockets either side of one.
+      const body = 1 - Math.exp(-d / CONFIG.water.depthFade);
+      const o = ((nz - 1 - j) * nx + i) * 4;
+      out[o] = shore[0] + (deep[0] - shore[0]) * body;
+      out[o + 1] = shore[1] + (deep[1] - shore[1]) * body;
+      out[o + 2] = shore[2] + (deep[2] - shore[2]) * body;
+      // Faded out over the same few centimetres the real surface stops
+      // showing its bed through, so the waterline arrives rather than cut.
+      out[o + 3] = Math.min(1, d / CONFIG.water.bedDepth) * 242;
+    }
   }
   mctx.putImageData(img, 0, 0);
   c.save();
@@ -1096,7 +1130,11 @@ export function paintFlagIcon(
     /** -1..1 as `ControlPoint.meter`; drawn as an arc from twelve o'clock. */
     meter?: number;
     meterColor?: string;
-    /** Radians the arc's zero is rotated by, for a map that turns. */
+    /**
+     * Radians the CALLER's layer is turned by, for a map that turns under the
+     * player — the whole mark is turned back by it, so the letter stays
+     * readable and the dial's zero stays at the top of the glass.
+     */
     twelve?: number;
     contested?: boolean;
     alpha?: number;
@@ -1106,6 +1144,14 @@ export function paintFlagIcon(
   const a = opts.alpha ?? 1;
   c.save();
   c.translate(x, y);
+  // **Turned UPRIGHT once, here, and the whole mark with it.** `twelve` is the
+  // rotation the caller's own layer is under — the minimap draws its world
+  // turned by `-playerYaw` — so undoing it is what makes this a LABEL rather
+  // than a thing painted on the ground: the letter has to be READ, and the
+  // dial is read rather than steered, so neither may spin under a turning
+  // player. Everything below is therefore written in the SCREEN's frame,
+  // twelve o'clock included.
+  c.rotate(opts.twelve ?? 0);
   // The hexagon `hud.css` clips its flag chips to, in canvas coordinates:
   // half-width at 26% and 74% of the height, points at the top and bottom.
   c.beginPath();
@@ -1124,10 +1170,10 @@ export function paintFlagIcon(
 
   const meter = opts.meter ?? 0;
   if (meter !== 0) {
-    // Twelve o'clock is the SCREEN's, and `twelve` is what keeps it there on a
-    // map that turns under the player: a dial is read, not steered, and one
-    // that started at map north would put "nearly taken" at eight o'clock.
-    const from = -Math.PI / 2 + (opts.twelve ?? 0);
+    // Twelve o'clock, in a frame that is already the screen's — see the turn
+    // at the top. One that started at map north would spin under a turning
+    // player and put "nearly taken" at eight o'clock.
+    const from = -Math.PI / 2;
     c.beginPath();
     c.arc(0, 0, r * 1.42, from, from + Math.abs(meter) * TAU);
     c.strokeStyle = withAlpha(opts.meterColor ?? color, 0.95 * a);
@@ -1138,7 +1184,6 @@ export function paintFlagIcon(
     c.stroke();
   }
 
-  c.rotate(-(opts.twelve ?? 0));
   c.textAlign = "center";
   c.textBaseline = "middle";
   c.font = `700 ${(r * 1.22).toFixed(1)}px ${opts.face ?? FACE}`;

@@ -198,11 +198,6 @@ export class DeployScreen {
     // does not change the element's layout size, so this cannot feed itself.
     new ResizeObserver(() => this.resize()).observe(this.canvas);
     this.resize();
-    // The element and not the window, so the map follows its box however it
-    // moved. Writing  from inside the callback does not change the
-    // element LAYOUT size, so this cannot feed itself.
-    new ResizeObserver(() => this.resize()).observe(this.canvas);
-    this.resize();
   }
 
   /**
