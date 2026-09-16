@@ -4,7 +4,7 @@
  * its speed step. Owns no camera of its own.
  *
  * It writes CameraSystem's FreeCamera rather than creating a second one on
- * purpose: DefaultRenderingPipeline and HorrorPost are bound to that camera
+ * purpose: DefaultRenderingPipeline and FilmGrain are bound to that camera
  * INSTANCE, so a second camera would render without FXAA or the grade until
  * both were rebound. Nothing needs restoring on the way out either —
  * CameraSystem.update() writes position, target and fov absolutely every

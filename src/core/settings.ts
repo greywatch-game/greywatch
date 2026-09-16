@@ -79,10 +79,12 @@ export type Settings = {
   /** The camera-rotation smear. Off detaches the pass, not just its effect. */
   motionBlur: boolean;
   /**
-   * The horror grade — vignette, grain, aberration, and with them the red
-   * damage flash, which is painted by the same shader. Off detaches the pass.
+   * The film grain — the paper grain, vignette, aberration, and with them the
+   * red damage flash, which is painted by the same shader. Off detaches the
+   * pass. Stored under a new key: a player who had the old horror filter off
+   * gets the paper back once, since what they turned off is not what this is.
    */
-  horrorGrade: boolean;
+  filmGrain: boolean;
   /**
    * How much of the panel's native resolution the scene is drawn at.
    *
@@ -246,7 +248,7 @@ export function defaultRenderScale(): RenderScale {
 export const SETTING_DEFAULTS: Settings = {
   fpsCounter: false,
   motionBlur: CONFIG.graphics.motionBlur.strength > 0,
-  horrorGrade: true,
+  filmGrain: true,
   // **Medium, and it is the rung that costs what the pass it replaced cost.**
   // Measured against `GodRays`' own 32 taps at 1920x1080, 16 came back at
   // -0.010 ms of GPU on Hollowmere and -0.019 on Cinderhaven — inside the
@@ -363,7 +365,7 @@ const VOLUMETRIC_QUALITIES = [
 const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   fpsCounter: bool,
   motionBlur: bool,
-  horrorGrade: bool,
+  filmGrain: bool,
   renderScale: oneOf(CONFIG.graphics.renderScales),
   volumetrics: oneOfString(VOLUMETRIC_QUALITIES),
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),

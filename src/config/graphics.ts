@@ -45,10 +45,48 @@ export const graphics = {
    * is what stops a rung changing the size of the bloom.
    */
   glowKernel: 56,
-  /** Horror grade post-process (vignette / grain / chromatic aberration). */
+  /**
+   * The film grain pass (`FilmGrain`): vignette, paper grain and chromatic
+   * aberration. `grain` is the paper's strength; the map may restate all three
+   * (`EnvironmentSpec.grade`).
+   */
   vignette: 0.62,
   grain: 0.055,
   aberration: 0.55,
+  /**
+   * The paper the world is drawn on — its GRAIN IS PINNED TO THE WORLD and not
+   * to the screen, so walking past a wall does not slide the paper across it.
+   * `FilmGrain`'s header has how, and why the grain still keeps one size on
+   * screen at every distance.
+   */
+  paper: {
+    /**
+     * How fine the finest tooth is, stated against the FRAME: the grain is
+     * sized as if the frame were this many rows tall, whatever the backing
+     * store, the render scale or the display is — so a scaling rung does not
+     * change the size of the paper.
+     */
+    rows: 1080,
+    /** Weight of the fibres (thin lines) against the tooth, and of the broad
+     *  cloudy mottle under both. */
+    fibres: 0.55,
+    mottle: 0.7,
+    /**
+     * Metres of lens inside which a pixel is the WEAPON, whose paper is pinned
+     * to the CAMERA instead: it moves with the view, so world-pinned paper would
+     * slide across it. The viewmodel is measured at 0.05 m to 1.39 m (every gun,
+     * hip pose — `motionBlur.nearSharp` has the measurement), and the cost is
+     * the same as that band's: a wall hugged inside it carries camera paper.
+     */
+    heldWithin: 1.45,
+    /**
+     * Metres past which a pixel is SKY, whose paper is pinned to the view
+     * DIRECTION: it is infinitely far, so a direction is where it is. The
+     * clouds' 7 km shell counts as sky; no map draws a surface this far out
+     * that fog has not already taken.
+     */
+    skyFrom: 4000,
+  },
   /** Peak red edge flash when the player is hit, and how fast it decays. */
   damageFlash: 1.0,
   damageFlashDecay: 2.6,
@@ -151,7 +189,7 @@ export const graphics = {
      * Taps along each ray, per rung. The player's setting is `off` plus these
      * three, and `off` is absence rather than zero: the pass is detached, so it
      * costs no read and no write of the frame — the same rule `MotionBlur` and
-     * `HorrorPost` are turned off by.
+     * `FilmGrain` are turned off by.
      *
      * The ladder is declared HERE and exactly once: `Settings.volumetrics`
      * derives its union from these keys and `Volumetrics.ts` derives its own,

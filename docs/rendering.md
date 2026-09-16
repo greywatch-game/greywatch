@@ -1232,8 +1232,9 @@ nearly **seven pixels wide** on a plain village wall. `shaders/Dither.ts` adds
 one LSB of triangular noise immediately before `fragmentOutputs.color` in the
 cel, grass and water shaders — registered as the `celDither` include — which
 takes those contours to ~2 px. It is deliberately *not*
-in `HorrorPost`: that pass is detachable by a player setting, and its grain is
-already a ~10 LSB dither whenever it is attached — so the banding is a
+in `FilmGrain`: that pass is detachable by a player setting, and its grain was
+already a ~10 LSB dither whenever it was attached (measured against the old screen
+grain; the paper that replaced it has not been re-measured as a dither) — so the banding is a
 **grade-off** artefact, and the grade-off frame is the one a pass inside the
 grade cannot reach. The sky dome was the expected customer and measured as not
 needing it (233 runs against 229): stars, the galactic band and the halo are
@@ -2018,7 +2019,7 @@ does not take, both being look decisions rather than bugs.
 - `pipeline.imageProcessingEnabled` must stay `false`: the cel shader outputs
   display-ready colors and Babylon's image-processing pass re-gammas them and washes
   the palette out. That is also why the vignette/grain/aberration/damage flash grade is
-  hand-written (`src/shaders/HorrorPost.ts`).
+  hand-written (`src/shaders/FilmGrain.ts`).
 - Glow is an emissive MASK blurred and added to the frame (`src/shaders/GlowPass.ts`),
   keyed off emissive colour and deliberately not threshold bloom —
   bright-but-not-emissive surfaces must stay crisp.
@@ -2203,15 +2204,35 @@ does not take, both being look decisions rather than bugs.
 - **The post-process chain has an order, and a display setting that switches an
   effect off REMOVES its pass** rather than zeroing its uniforms — an attached but idle
   pass still reads and writes the whole frame. The order is FXAA, shafts (`Volumetrics`),
-  motion blur, horror grade, enforced by where each one re-attaches: `attachPostProcess` appends, so
+  motion blur, film grain, enforced by where each one re-attaches: `attachPostProcess` appends, so
   the blur's toggle takes the grade off and puts it back behind it
   (`Game.setMotionBlurEnabled`), and the grade's own toggle always appends because the
-  tail is where it belongs. `HorrorPost` owns whether it is attached, so the blur's
+  tail is where it belongs. `FilmGrain` owns whether it is attached, so the blur's
   dance can never resurrect a grade the player turned off — the guard is in `attach`,
   not at the call sites. Nothing throws if this is wrong; the symptom is grain over a
   smear, which reads as a dirty lens. The red damage flash is painted by the grade's
   shader and goes off with it, leaving the HUD's damage arcs to tell the player where a
   hit came from.
+- **The film grain is PAPER PINNED TO THE WORLD, and a grain keyed on the pixel is the
+  thing it replaced.** Walking past a wall under a screen grain slides the wall under a
+  texture that stays put — a film over the scene rather than a world drawn on paper. So
+  `FilmGrain` turns the frame's depth (`FrameDepth`) back into a position and evaluates
+  a 3D noise there. A texture fixed in the world has no single size, so it is a stack of
+  power-of-two OCTAVES, each fixed in the world, weighted by how many metres a pixel
+  covers at that distance (Bénard et al.'s dynamic solid textures): walking toward a wall
+  fades finer octaves in and coarser ones out, and nothing slides. Four rules hold it up.
+  **The shader divides only CAMERA-RELATIVE distances**, and where the eye sits in each
+  octave's wrapped lattice is computed in float64 on the CPU and uploaded per level —
+  a 2 km coordinate over a millimetre cell is a quarter-cell crawl in float32. **The
+  footprint is never finer than the depth buffer's own step**, or distant ground shows
+  the non-reversed depth32float's quantisation as contours in the grain. **The weapon is
+  pinned to the CAMERA and the sky to the view DIRECTION** (`CONFIG.graphics.paper`'s
+  `heldWithin` and `skyFrom`), because world paper slides across both; the cost is the
+  blur's own, a wall hugged inside the weapon's band carrying camera paper. And **it has
+  no clock** — the old grain's `time` is gone, because paper does not boil. Measured: a
+  40 px yaw moves the grain 40–41 px with the scene (correlation 0.50–0.56 there, ~0 at
+  0 px), and the pass is ~0.25 ms of GPU at 1920x1080 on the Windows box, eight extra
+  copies attached against none.
 - The cobblestone texture is 512² over a 1.5 m tile (`textures.ts`), sized for a
   camera **1.55 m above the street**. 512 is also written into the shader —
   `perturbNormal` takes its taps at a hard-coded `1.0 / 512.0` — so the two move

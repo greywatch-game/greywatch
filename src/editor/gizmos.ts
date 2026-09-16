@@ -11,7 +11,7 @@
  * The utility layer renders into its own virtual scene with post-processing
  * off, on `onAfterRenderCameraObservable` — after the frame is graded — so the
  * handles land crisp on top and cannot disturb the cel pipeline, the
- * glow, or HorrorPost. Its internal HemisphericLight lives in that scene
+ * glow, or FilmGrain. Its internal HemisphericLight lives in that scene
  * only, so the "adding a Babylon light does nothing to cel meshes" rule is not
  * violated in the one that matters.
  *

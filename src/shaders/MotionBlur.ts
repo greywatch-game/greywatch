@@ -2,7 +2,7 @@
  * MotionBlur.ts — Camera-rotation motion blur: reprojects every pixel through
  * the frame's change in look direction and smears along the difference. Owns
  * the pass and the previous frame's camera basis; owns no scene state.
- * Invariants: runs AFTER Volumetrics and BEFORE HorrorPost, so the shafts smear
+ * Invariants: runs AFTER Volumetrics and BEFORE FilmGrain, so the shafts smear
  * with the frame they belong to while the grain and vignette stay sharp on top
  * of it. Driven from the player's AIM angles, never from the rendered camera
  * matrix — the view punch's per-shot jitter would otherwise turn every shot
@@ -166,7 +166,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
   // The radial falloff, which is now about the EYE alone: it tracks where the
   // eye is pointed, so that is where a smear is read AS a smear rather than
-  // felt as speed. Same radial language as HorrorPost's aberration, and
+  // felt as speed. Same radial language as FilmGrain's aberration, and
   // deliberately gentler than it was — it used to carry the weapon as well.
   let r = length(input.vUV - 0.5) * 2.0;
   shift *= smoothstep(uniforms.mask.x, uniforms.mask.y, r);
@@ -317,7 +317,7 @@ export class MotionBlur {
   /**
    * The pass, for `Game` to attach and detach. Exposed rather than given an
    * `attach`/`detach` pair of its own because the ORDER is the caller's
-   * business: this pass has to land between Volumetrics and HorrorPost, and only
+   * business: this pass has to land between Volumetrics and FilmGrain, and only
    * the place that assembled the chain knows that.
    */
   get pass(): PostProcess {

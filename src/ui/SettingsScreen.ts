@@ -287,9 +287,9 @@ const PAGES: readonly Page[] = [
         options: OFF_ON,
       },
       {
-        key: "horrorGrade",
-        label: "Horror filter",
-        hint: "Vignette, grain, and the red damage flash",
+        key: "filmGrain",
+        label: "Film grain",
+        hint: "The paper the world is drawn on, vignette, and the red damage flash",
         options: OFF_ON,
       },
       {

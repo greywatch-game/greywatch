@@ -21,14 +21,16 @@
  * WHY IT IS NOT IN THE GRADE, WHICH IS WHERE A DITHER NORMALLY GOES. Three
  * reasons, and the third is the one that decides it:
  *
- * - `HorrorPost` is **detachable by a player setting**, and the contract for the
+ * - `FilmGrain` is **detachable by a player setting**, and the contract for the
  *   post chain is that a setting which turns an effect off REMOVES its pass. A
  *   dither living there would be a correctness fix that disappears.
  * - A new always-attached fifth full-screen pass costs a full read and write of
  *   the frame — exactly what `FINDINGS.md` §5 counts — to run three instructions.
  * - **With the grade attached there is nothing to fix.** Its grain is
  *   `(n - 0.5) * 0.055 * (1.3 - lum * 0.6)`, never less than about ten LSB of
- *   noise; it is already dithering the frame, far past what a dither needs. The
+ *   noise; it is already dithering the frame, far past what a dither needs. (That
+ *   was the old screen grain. The paper grain that replaced it in `FilmGrain` has
+ *   pixel-scale tooth too, but has not been re-measured as a dither.) The
  *   banding is a **grade-off** artefact, and the grade-off frame is the one
  *   configuration a pass inside the grade cannot reach.
  *

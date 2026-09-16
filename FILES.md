@@ -1071,5 +1071,8 @@ src/
                         #   masked shift AND weighted taps — because a gun
                         #   parented to the camera never moves in screen space.
                         #   WGSL
-    HorrorPost.ts       # Vignette / grain / aberration / damage flash. WGSL
+    FilmGrain.ts        # Vignette / aberration / damage flash, and a PAPER
+                        #   grain pinned to the world through the frame's
+                        #   depth: octaves fixed in world space, weighted by
+                        #   distance. WGSL
 ```

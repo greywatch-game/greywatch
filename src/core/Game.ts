@@ -68,7 +68,7 @@ import {
   CelMaterialFactory,
   fogAmountAt,
 } from "../shaders/CelShader";
-import { HorrorPost } from "../shaders/HorrorPost";
+import { FilmGrain } from "../shaders/FilmGrain";
 import { CelInk } from "../shaders/CelInk";
 import { FrameDepth } from "../shaders/FrameDepth";
 import { GlowPass } from "../shaders/GlowPass";
@@ -532,7 +532,7 @@ export class Game {
   private sky: Sky;
   private water: WaterSystem;
   private grass: GrassSystem;
-  private post: HorrorPost;
+  private post: FilmGrain;
   /** Moon shafts. Driven from the sky's own moon direction every frame. */
   /**
    * The light shafts, or null when the player has them off — which is a
@@ -1234,7 +1234,11 @@ export class Game {
     );
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
-    this.post = new HorrorPost(this.scene, this.cameraSys.camera);
+    this.post = new FilmGrain(
+      this.scene,
+      this.cameraSys.camera,
+      this.frameDepth,
+    );
     this.sfx = new Sfx();
     this.hud = new HUD();
     // After the HUD: its root is the element every screen appends to.
@@ -2402,7 +2406,7 @@ export class Game {
     // After the blur, and that is the order rather than a preference: the
     // blur's own toggle takes the grade off and puts it back to keep the
     // chain's tail, so the grade has the last word on whether it is attached.
-    this.post.setEnabled(this.settings.horrorGrade);
+    this.post.setEnabled(this.settings.filmGrain);
     // The look speeds go to the camera and stop there: the aim assist reads its
     // own bound off `stickYawRate`, which already carries the stick's.
     this.cameraSys.setLookScale(
