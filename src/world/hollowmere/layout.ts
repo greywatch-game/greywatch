@@ -447,7 +447,7 @@ const scatter: ScatterSpec[] = [
   // and the only green on the map. Appended rather than filed with the other
   // woods on purpose: one seeded stream serves the whole build, so inserting a
   // region rerolls the dressing of every region after it.
-  { prop: "pine", x: -109.5, z: 61, width: 14, depth: 50, count: 12, scale: [0.9, 1.3], blocking: true, clearance: 1.2 },
+  { prop: "deadTree", x: -110, z: 61, width: 14, depth: 50, count: 12, scale: [0.9, 1.3], blocking: true, clearance: 1.2 },
   { prop: "deadTree", x: 111, z: -50.19, radius: 11, count: 10, y: -0.365, scale: [0.8, 1.4], blocking: true, clearance: 0.55 },
   { prop: "barrel", x: 98.794, z: -84.998, radius: 6, count: 3, blocking: true, clearance: 0.55 },
 ];
