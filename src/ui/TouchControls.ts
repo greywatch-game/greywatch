@@ -103,7 +103,7 @@ export interface TouchFrame {
   scoreboard: boolean;
   /**
    * Momentary: get into or out of the hull in front of you. Folded into
-   * `InputManager.usePressed` beside `E` and the pad's d-pad up, so nothing
+   * `InputManager.usePressed` beside `E` and the pad's X, so nothing
    * downstream knows a finger asked.
    */
   use: boolean;
@@ -176,7 +176,7 @@ const BUTTONS: readonly ButtonSpec[] = [
   { id: "swap", label: "SWAP", kind: "tap", group: "main" },
   // The only button here that is not always there. It is `contextual`, which
   // is one line of bookkeeping and the whole reason a phone can drive: `E` and
-  // the pad's d-pad north are keys a player finds by pressing them, and glass
+  // the pad's X are keys a player finds by pressing them, and glass
   // has neither — so the verb has to APPEAR when there is something to use and
   // say what it would do. `Game` pushes both facts (`setUse`), exactly as it
   // pushes the crouch lamp and the empty magazine, because this layer cannot

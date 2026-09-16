@@ -19,6 +19,12 @@
  * src/ui. The one thing that is not a fold is `touchLookX/Y`, which the camera
  * reads on its own path; see the field. The phone's GYRO is polled the same
  * way (`setGyroSource`) and is not a fold either (`gyroYaw/Pitch`).
+ * ONE public field is not composed from devices alone: the pad's X carries both
+ * the reload and the vehicle verb, so `setUseOffer` is pushed in from `Game`
+ * and decides which of the two that button's press lands on. It is the only
+ * thing this file is told about the world, and it comes through the same door
+ * (`Game.offerUse`) that writes the prompt naming the button — see
+ * `usePressed`.
  */
 import { CONFIG } from "../config";
 import { clamp } from "./math";
@@ -88,8 +94,10 @@ export class InputManager {
    * body nothing.** A driver never calls `Player.update`, so neither meaning
    * can be live at the same time as this one: `jumpPressed` is an EDGE that
    * nothing in a vehicle reads, and `crouch` is a LATCH no driver consults.
-   * That is the same two-lives-that-never-overlap argument `usePressed` makes
-   * for the d-pad and `swapPressed` makes for Y.
+   * That is the same two-lives-that-never-overlap argument `swapPressed` makes
+   * for Y — and the weaker cousin of the one `usePressed` makes for X, which
+   * shares a button with a verb that CAN be live at the same time and is told
+   * apart by the offer instead.
    *
    * The pad's A and B are read RAW here rather than through those two flags,
    * and that is load-bearing rather than tidy: a collective is a thing you
@@ -107,6 +115,15 @@ export class InputManager {
   /** Held: trigger. See `consumeFire()` for the release latch. */
   fire = false;
   jumpPressed = false;
+  /**
+   * Edge-triggered "reload" (`R` / gamepad X / the touch layer's button).
+   *
+   * X is shared outright with the vehicle verb and this is the half that gives
+   * way: while `setUseOffer` says there is a seat in reach, the pad's X raises
+   * `usePressed` instead and never lands here. The keyboard's `R` and the
+   * touch button are untouched by that — they are bindings of their own, so
+   * there is nothing for the offer to disambiguate.
+   */
   reloadPressed = false;
   /**
    * Edge-triggered "throw a grenade" (G / gamepad RB).
@@ -159,14 +176,32 @@ export class InputManager {
    * a vehicle, and nothing else.
    *
    * `E` because that is where every shooter puts this verb and a player will
-   * try it before they try anything else. On the pad it is d-pad UP, which is
-   * the one control in this game with two lives that genuinely never overlap:
-   * the four d-pad directions are the menus' navigation (see
-   * `menuUpPressed`), and there is no state in which a menu is taking the
-   * d-pad and a body is standing next to a tank. Every face button was already
-   * spoken for twice over — A jumps and confirms, B crouches and backs out, X
-   * reloads, Y swaps and opens the kit — so a fifth meaning on one of those
-   * would be the first pad binding in the file that could be ambiguous.
+   * try it before they try anything else. **On the pad it is X**, for exactly
+   * the same reason one level along: X is where a console shooter has put this
+   * verb since Halo, so it is the button a pad player presses at a tank
+   * without being told to.
+   *
+   * X is also RELOAD, and that overlap is the convention rather than a
+   * collision to be dodged — the same two jobs sit on the same button in the
+   * games this borrows from, because the two asks are told apart by whether
+   * there is anything to get into. The thing that tells them apart HERE is
+   * `setUseOffer`, which is the SAME FACT the HUD's prompt is drawn from
+   * (`Game.offerUse` is the one door to both): while a seat is on offer X is
+   * this verb, and every other frame it reloads. **So the button always does
+   * what the screen says it does**, which is the only arrangement that makes
+   * an overloaded button honest — a rule resolved anywhere else would be one
+   * the caption could disagree with.
+   *
+   * What it costs is the reload taken standing at a hull, and the cost is
+   * small on purpose: the magazine's last round starts its own reload inside
+   * `tryShot`, so the case it actually eats is a voluntary top-up in the one
+   * spot on the map with a tank in arm's reach.
+   *
+   * **D-pad UP stays as a second binding**, which costs nothing: the four
+   * d-pad directions are the menus' navigation (see `menuUpPressed`), and
+   * there is no state in which a menu is taking the d-pad and a body is
+   * standing next to a tank. It is what this verb was bound to alone, and a
+   * player who learned it there keeps it.
    *
    * Edge rather than held for the obvious reason: mounting and dismounting are
    * the same key, so a held one would put the player in and out of a hull once
@@ -440,6 +475,20 @@ export class InputManager {
   private prevMenuBack = false;
   private prevPause = false;
   private prevUse = false;
+  /**
+   * The RAW edge of the pad's X, kept apart from `prevReload` and `prevUse`
+   * because the button is routed to one or the other at the PRESS: a player
+   * holding X to reload who then walks into an offer band must not be mounted
+   * by a press they already made, and a held X must not fire a second gesture
+   * behind the first when the offer goes away.
+   */
+  private prevPadX = false;
+  /**
+   * Whether there is something to USE right now — pushed by `Game.offerUse`,
+   * the one door that also writes the HUD's prompt. It is what decides which
+   * of the two jobs the pad's X is doing this frame; see `usePressed`.
+   */
+  private useOffered = false;
   private prevLoadout = false;
   private prevSettings = false;
   private prevMultiplayer = false;
@@ -624,13 +673,15 @@ export class InputManager {
     this.gyroPitch = gyro ? gyro.pitch : 0;
 
     // Actions (LT=6 ADS, RT=7 shoot, RB=5 grenade, A=0 jump, B=1 crouch,
-    // X=2 reload, L3=10, Start=9)
+    // X=2 reload OR the vehicle verb, L3=10, Start=9)
     const padAds = pad ? buttonHeld(pad, 6, trig) : false;
     const padFire = pad ? buttonHeld(pad, 7, trig) : false;
     const padGrenade = pad ? buttonHeld(pad, 5, trig) : false;
     const padJump = pad ? buttonHeld(pad, 0, trig) : false;
     const padCrouch = pad ? buttonHeld(pad, 1, trig) : false;
-    const padReload = pad ? buttonHeld(pad, 2, trig) : false;
+    // X/Square, read raw: which of its two verbs this is belongs below, where
+    // the offer is. Named for the BUTTON and not for a job, because it has two.
+    const padX = pad ? buttonHeld(pad, 2, trig) : false;
     // Y/Triangle. Two jobs on two disjoint sets of states — the kit screen out
     // of a menu, the weapon swap inside a round — read once here so they cannot
     // disagree about the button.
@@ -663,7 +714,7 @@ export class InputManager {
         padGrenade ||
         padJump ||
         padCrouch ||
-        padReload ||
+        padX ||
         padStart ||
         padSprint ||
         buttonHeld(pad, 8, trig));
@@ -753,8 +804,22 @@ export class InputManager {
     this.jumpPressed = jumpNow && !this.prevJump;
     this.prevJump = jumpNow;
 
-    const reloadNow = this.keys.has("KeyR") || padReload || (t ? t.reload : false);
-    this.reloadPressed = reloadNow && !this.prevReload;
+    // --- the pad's X, which is two verbs ---
+    // Routed at the PRESS and never re-routed while it is down: the raw edge is
+    // taken once here, and whichever job the offer says it is doing is the job
+    // it stays doing until the button comes back up. Resolving it per frame
+    // instead would mount a player who walked into an offer band with X already
+    // held for a reload. See `usePressed`.
+    const padXPressed = padX && !this.prevPadX;
+    this.prevPadX = padX;
+    const padXUse = padXPressed && this.useOffered;
+    const padXReload = padXPressed && !this.useOffered;
+
+    // The keyboard's and the glass's halves keep their own edge, and the pad's
+    // press is OR'd in already resolved — three bindings, one flag, and no
+    // device's hold able to suppress another's press.
+    const reloadNow = this.keys.has("KeyR") || (t ? t.reload : false);
+    this.reloadPressed = (reloadNow && !this.prevReload) || padXReload;
     this.prevReload = reloadNow;
 
     const grenadeNow =
@@ -854,13 +919,15 @@ export class InputManager {
     this.menuBackPressed = backNow && !this.prevMenuBack;
     this.prevMenuBack = backNow;
 
-    // The vehicle verb. `padUp` is the d-pad's north, which the menus also read
-    // — see `usePressed` on why that is safe rather than merely convenient.
+    // The vehicle verb. Button 12 is the d-pad's north, which the menus also
+    // read — see `usePressed` on why that is safe rather than merely
+    // convenient — and `padXUse` is the pad's real binding for this, already
+    // resolved against the offer up where the button's edge was taken.
     const useNow =
       this.keys.has("KeyE") ||
       (pad ? buttonHeld(pad, 12, trig) : false) ||
       (t ? t.use : false);
-    this.usePressed = useNow && !this.prevUse;
+    this.usePressed = (useNow && !this.prevUse) || padXUse;
     this.prevUse = useNow;
 
     const pauseNow = this.keys.has("Escape") || padStart;
@@ -903,6 +970,23 @@ export class InputManager {
   /** Hands over the motion sensor, polled from `update()` as the touch layer is. */
   setGyroSource(source: GyroSource | null): void {
     this.gyro = source;
+  }
+
+  /**
+   * Says whether there is a seat in reach — the one thing this file has to be
+   * told about the world, and it is told because the pad's X carries two verbs
+   * and only the world can say which one is meant.
+   *
+   * Pushed from `Game.offerUse`, which is also what writes the HUD's prompt and
+   * draws the touch layer's button, so the caption and the routing below are
+   * one fact rather than two that can drift. It arrives a frame old — `update()`
+   * runs at the top of a frame and the offer is settled at the bottom of the
+   * last one — and that is the RIGHT frame rather than a tolerable lag: the
+   * offer being read here is the offer the player was looking at when they
+   * pressed the button.
+   */
+  setUseOffer(offered: boolean): void {
+    this.useOffered = offered;
   }
 
   /**

@@ -97,6 +97,14 @@ const BINDINGS: readonly Binding[] = [
   ["Fire", "RT", "LMB"],
   ["Jump", "A", "Space"],
   ["Reload", "X", "R"],
+  // X twice, and the table can say it plainly for the reason the Y row can:
+  // the two never come up at once. A seat in reach is what makes X this verb
+  // and the absence of one is what makes it the reload, and the HUD names the
+  // button the moment the first is true — so the pair of rows reads as "X, and
+  // the prompt will tell you which". Only ever true on a map with vehicles;
+  // the row stays, because a reference table that changed per map would be one
+  // a player could not learn from.
+  ["Enter / exit", "X", "E"],
   // Three keys, because they are two different asks: the wheel swaps to the
   // other weapon and the numbers name one outright. Y is the kit screen's
   // button in a menu and this one in a round; the two states never overlap, so

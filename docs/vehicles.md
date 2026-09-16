@@ -1759,17 +1759,18 @@ really got out:
 | `vehicles.setOccupied(tank, seat, true)` | written on the TRANSITION, never derived in `update` — derived, `enterable` would offer a chair somebody is already sitting in for the rest of the frame they got into it |
 
 **The verb is one input field and THREE devices, and the third one had to be
-built.** `InputManager.usePressed` is `E`, the pad's d-pad north, and — since a
+built.** `InputManager.usePressed` is `E`, the pad's **X**, and — since a
 phone could otherwise walk up to its own armour and stand there — a button
 `TouchControls` puts on the glass. That last one is the only control on the layer
-that comes and goes, and it has to: a key and a d-pad direction are things a
+that comes and goes, and it has to: a key and a face button are things a
 player presses to find out what they do, while a thumb has nothing to press until
 something is drawn under it. `Game.offerUse` is the one door — it writes the
-HUD's prompt and the field the touch layer is pushed from a frame later, so the
-sentence on the button and the sentence on the HUD are the same sentence
-by construction. Two things follow from that door existing:
+HUD's prompt, the field the touch layer is pushed from a frame later, and (see
+below) the routing of the pad's X itself, so the sentence on the button, the
+sentence on the HUD and what the thumb actually does are one fact rather than
+three that can drift. Three things follow from that door existing:
 
-- **The prompt speaks the device's own language.** `E` on a keyboard, `D-PAD ↑`
+- **The prompt speaks the device's own language.** `E` on a keyboard, `X`
   when `input.padInHand` says a pad is what is in the player's hands, and NOTHING
   on glass — the button already carries the words and is the thing being pressed,
   so a caption over it is one instruction twice. `padInHand` is `touchActive`'s
@@ -1777,6 +1778,24 @@ by construction. Two things follow from that door existing:
   different question from `gamepadConnected`, which is what the trigger gates
   ask: a machine with a pad plugged in and a hand on the mouse answers the two
   differently, which is the whole reason both exist.
+- **X IS ALSO THE RELOAD, AND THE OFFER IS WHAT TELLS THEM APART.** X is where a
+  console shooter has put this verb since Halo, so it is the button a pad player
+  presses at a tank without being told to — and in those games it is the reload
+  as well, because the two asks are distinguished by whether there is anything
+  to get into. Here that distinction is `InputManager.setUseOffer`, pushed from
+  this same door: while a seat is on offer the pad's X raises `usePressed`, and
+  every other frame it raises `reloadPressed`. **So the button always does what
+  the prompt beside it says**, which is the only arrangement that makes an
+  overloaded button honest — a rule resolved anywhere but at the door that
+  writes the caption would be one the caption could disagree with. The routing
+  is taken at the PRESS and held until the button comes up (`prevPadX`), or a
+  player holding X for a reload would be mounted by walking into the offer band;
+  it is read one frame stale, which is the right frame rather than a tolerable
+  lag, since it is the offer that was on screen when the thumb went down. What
+  it costs is a voluntary top-up taken standing at a hull — small, because the
+  magazine's last round starts its own reload inside `tryShot`. **D-pad UP stays
+  bound as well**, costing nothing (the menus' navigation and a body at a tank
+  never overlap) and keeping the control a player already learned.
 - **A driver is told the way out.** `updateDriver` offers `EXIT TANK` every frame.
   A driver used to be told nothing at all, which is survivable on a keyboard —
   the same key got you in a moment ago — and on glass is the difference between a

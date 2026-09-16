@@ -5133,6 +5133,14 @@ export class Game {
    * `TouchControls` puts on screen carries the same sentence and is the thing
    * being pressed, and a caption over a labelled button is one instruction
    * twice.
+   *
+   * **And the pad is told, not just captioned.** X carries this verb AND the
+   * reload, and `InputManager` has no way to know which is meant — so the
+   * third line below hands it the same fact the first two draw. That is why
+   * this had to stay one door rather than becoming three: the caption a player
+   * reads and the routing that answers their thumb are now literally the same
+   * call, and a second place that offered a seat would be a button whose
+   * prompt and whose behaviour disagree.
    */
   private offerUse(label: string | null): void {
     this.useOffer = label;
@@ -5140,10 +5148,11 @@ export class Game {
       label === null || this.input.touchActive
         ? null
         : this.input.padInHand
-          ? "D-PAD ↑"
+          ? "X"
           : "E",
       label ?? "",
     );
+    this.input.setUseOffer(label !== null);
   }
 
   /**
@@ -8474,7 +8483,7 @@ export class Game {
     this.touch.setReloadDue(this.player.reloading || this.player.ammo === 0);
     // The vehicle verb: a button that is only there when it would do
     // something, carrying the same sentence the HUD's prompt carries on a
-    // keyboard. `E` and the d-pad's north are keys a player finds by pressing
+    // keyboard. `E` and the pad's X are keys a player finds by pressing
     // them; glass has nothing to press until this puts it there, which is why
     // a phone could not get into a tank at all.
     this.touch.setUse(this.useOffer);
