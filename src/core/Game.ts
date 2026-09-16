@@ -4632,7 +4632,7 @@ export class Game {
     // change of side is the one thing that rebuilds it, and `prepare` is the
     // one that knows how to do that safely — see there.
     this.deathCam.prepare(team);
-    this.minimap.setMap(map, team);
+    this.minimap.setMap(map, team, this.mapDef.environment);
     this.hud.setTickets(
       [teamLook(0).name, teamLook(1).name],
       this.conquest.tickets,
@@ -4644,7 +4644,7 @@ export class Game {
     // that changed UNDER a standing deploy screen has to go back through
     // `show`, because the spawn list it is offering belongs to the other side.
     if (this.deployScreen.visible) {
-      this.deployScreen.show(map, this.conquest, team);
+      this.deployScreen.show(map, this.conquest, team, this.mapDef.environment);
     }
   }
 
@@ -8141,7 +8141,14 @@ export class Game {
     // of them — a player waiting out a reinforcement is exactly who wants it.
     this.hud.setCapture(null);
     this.hud.setLeash(null);
-    if (this.map) this.deployScreen.show(this.map, this.conquest, this.player.team);
+    if (this.map) {
+      this.deployScreen.show(
+        this.map,
+        this.conquest,
+        this.player.team,
+        this.mapDef.environment,
+      );
+    }
     this.deployScreen.update(this.respawnT);
     // A netplay death is decided by the wire and arrives in whatever state this
     // client is in — including under a lid, which is where this used to leave a

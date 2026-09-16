@@ -1,9 +1,13 @@
 /**
- * DeployScreen.ts — Top-down deploy map: renders spawn options from the
- * GameMap's collider geometry, hit-tests clicks, steps the selection for the
- * keyboard/pad (moveSelection), fires onDeploy (wired in Game) when a
- * selection is confirmed.
- * Invariants: CSS contract — #hud is pointer-events:none and this overlay
+ * DeployScreen.ts — Top-down deploy map: paints the shared plan of the built
+ * world (`mapPlan.ts`/`mapPaint.ts`), draws the live flags and the spawn
+ * options over it, hit-tests clicks, steps the selection for the keyboard/pad
+ * (moveSelection), and fires onDeploy (wired in Game) when a selection is
+ * confirmed.
+ * Invariants: the plan is PRERENDERED and blitted — this screen redraws every
+ * frame and the biggest map is 3,700 colliders — so anything added to the
+ * static ground belongs in the painter and anything that changes inside a
+ * round belongs in `draw`. CSS contract — #hud is pointer-events:none and this overlay
  * opts back in; don't break that or gameplay clicks die. Re-checks map/
  * conquest readiness every update; the 3D scene renders live behind it. The
  * offer is derived from flag ownership and changes UNDER the cursor, so the
@@ -14,7 +18,17 @@
 import "./deploy.css";
 import { OTHER_TEAM, type Team } from "../entities/Combatant";
 import { teamLook } from "../core/teamView";
+import {
+  paintFlagIcon,
+  paintPlan,
+  paintZone,
+  px,
+  py,
+  type PlanView,
+} from "./mapPaint";
+import { planFromWorld } from "./mapPlan";
 import type { ConquestSystem } from "../systems/ConquestSystem";
+import type { EnvironmentSpec } from "../world/environment";
 import type { GameMap, SpawnPointDef } from "../world/MapBuilder";
 
 /**
@@ -27,7 +41,9 @@ import type { GameMap, SpawnPointDef } from "../world/MapBuilder";
  * The map is drawn straight from the collider boxes rather than from a separate
  * authored minimap. That keeps the two from ever disagreeing — if a building
  * blocks movement it appears here, and nothing has to be updated twice when the
- * layout changes.
+ * layout changes. It is the same drawing the corner minimap and the menu's
+ * dossier make of the same place, at three magnifications; see
+ * `mapPaint.ts` for what that buys and `docs/ui.md` for what it replaced.
  *
  * Note the CSS contract: `#hud` is `pointer-events: none` so the HUD never eats
  * a click meant for the game, which means this overlay has to opt back in.
@@ -52,6 +68,17 @@ export class DeployScreen {
 
   private map: GameMap | null = null;
   private conquest: ConquestSystem | null = null;
+  /**
+   * The palette the plan is drawn in, handed over with the map it belongs to.
+   *
+   * Definitely assigned rather than defaulted, and there is no map to default
+   * TO: every colour on the plan is derived from the standing map's own
+   * environment (see `mapPaint.ts`), and one named map borrowed as a fallback
+   * would draw a desert town in a night village's palette on whatever frame
+   * went wrong. Nothing reads it before `show`, which is the only door a map
+   * arrives through and the only thing that fills `this.map` in.
+   */
+  private env!: EnvironmentSpec;
   private team: Team = 0;
   private options: SpawnPointDef[] = [];
   private selected = 0;
@@ -70,6 +97,16 @@ export class DeployScreen {
   private selectedSpawn: SpawnPointDef | null = null;
   /** Screen-space hit targets, rebuilt every draw. */
   private hotspots: { x: number; y: number; r: number; index: number }[] = [];
+  /**
+   * The prerendered plan and the two facts it is only valid for — the map it
+   * was drawn of and the backing store it was drawn at. Dropped rather than
+   * patched when either moves: it is one call to make again.
+   */
+  private base: HTMLCanvasElement | null = null;
+  private baseFor: GameMap | null = null;
+  private baseSize = 0;
+  /** Where the world lands on the canvas. Written by `buildBase`. */
+  private view: PlanView = { scale: 1, ox: 0, oy: 0 };
   private ready = false;
   /** The spawn a networked deploy has been requested at, until it is granted. */
   private pendingLabel: string | null = null;
@@ -156,6 +193,16 @@ export class DeployScreen {
     this.goBtn.onpointerdown = () => this.confirm();
 
     this.canvas.addEventListener("pointerdown", (e) => this.click(e));
+    // The ELEMENT is what is watched and not the window, so the map follows
+    // its box however that moved. Setting `width` from inside the callback
+    // does not change the element's layout size, so this cannot feed itself.
+    new ResizeObserver(() => this.resize()).observe(this.canvas);
+    this.resize();
+    // The element and not the window, so the map follows its box however it
+    // moved. Writing  from inside the callback does not change the
+    // element LAYOUT size, so this cannot feed itself.
+    new ResizeObserver(() => this.resize()).observe(this.canvas);
+    this.resize();
   }
 
   /**
@@ -167,15 +214,28 @@ export class DeployScreen {
     this.kitEl.textContent = label;
   }
 
-  show(map: GameMap, conquest: ConquestSystem, team: Team): void {
+  show(
+    map: GameMap,
+    conquest: ConquestSystem,
+    team: Team,
+    env: EnvironmentSpec,
+  ): void {
     this.map = map;
     this.conquest = conquest;
+    this.env = env;
     this.team = team;
     this.selected = 0;
     this.selectedSpawn = null;
     this.ready = false;
     this.pendingLabel = null;
     this.root.classList.remove("hidden");
+    // Measured HERE and not left to the observer, because a hidden screen is
+    // `display: none` and measures nothing: the first frame after a show would
+    // otherwise draw the plan at whatever store the canvas last carried, and
+    // the observer would drop it and draw it again a frame later. On the
+    // biggest map that is the same 70 ms twice, on the frame a player's death
+    // cam has just ended.
+    this.resize();
   }
 
   /**
@@ -294,36 +354,76 @@ export class DeployScreen {
     }
   }
 
+  /**
+   * Matches the backing store to the box the stylesheet gave the canvas, and
+   * drops the prerendered plan so the next draw builds it at the new scale.
+   *
+   * The canvas used to carry a fixed 620 x 620 store and be stretched to
+   * `--map` by CSS, which on a 1440p monitor is a 900 px map drawn at 620 and
+   * resampled — soft hairlines on the one screen in the game that is nothing
+   * but hairlines — and on a phone at 2x the same map drawn at a third of the
+   * resolution it is shown at.
+   */
+  private resize(): void {
+    const box = this.canvas.clientWidth;
+    if (box < 1) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const store = Math.round(box * dpr);
+    if (this.canvas.width === store) return;
+    this.canvas.width = store;
+    this.canvas.height = store;
+    this.base = null;
+  }
+
+  /**
+   * The static plan, prerendered — the ground, the water, the roads and the
+   * built mass, which is everything on this screen that cannot change inside a
+   * round.
+   *
+   * It is a picture and not a redraw for two reasons, and the second is the
+   * one that matters. Cinderhaven is 3,743 colliders, a heightfield, a
+   * waterline bake and a road network, and this screen redraws EVERY FRAME
+   * while the player waits out a reinforcement clock; and the plan is the same
+   * drawing the minimap and the menu make, which is `mapPaint.ts`'s and is
+   * priced for being made once. What changes per frame is five flags and a
+   * cursor.
+   */
+  private buildBase(map: GameMap): void {
+    const size = this.canvas.width;
+    const base = document.createElement("canvas");
+    base.width = size;
+    base.height = size;
+    const c = base.getContext("2d");
+    if (!c) return;
+    const scale = size / map.size;
+    this.view = { scale, ox: size / 2, oy: size / 2 };
+    paintPlan(c, planFromWorld(map, this.env), this.view, {
+      bounds: { x: 0, y: 0, w: size, h: size },
+      // The one of the three maps that letters its grid. It is the whole
+      // window, and it is the map a player reads a position OFF — "the barn in
+      // D4" is a thing two people can say to each other, and neither the
+      // dossier's thumbnail nor a turning corner map can carry it.
+      grid: "labelled",
+    });
+    this.base = base;
+    this.baseFor = map;
+    this.baseSize = size;
+  }
+
   private draw(): void {
     const map = this.map;
     const conquest = this.conquest;
     if (!map || !conquest) return;
     const c = this.ctx;
     const size = this.canvas.width;
-    const scale = size / map.size;
-    const toX = (wx: number) => (wx + map.size / 2) * scale;
-    // Canvas Y grows downward and world +Z is north, so the axis is flipped —
-    // north ends up at the top, matching the layout diagram.
-    const toY = (wz: number) => (map.size / 2 - wz) * scale;
-
-    c.fillStyle = "#0b0e12";
-    c.fillRect(0, 0, size, size);
-
-    // Building footprints, straight from the collision data.
-    c.fillStyle = "#39434a";
-    for (const b of map.colliderBoxes) {
-      if (b.w > 200 || b.d > 200) continue; // ground plane and ridge
-      c.save();
-      c.translate(toX(b.cx), toY(b.cz));
-      c.rotate(-b.rotY);
-      c.fillRect(
-        (-b.w / 2) * scale,
-        (-b.d / 2) * scale,
-        b.w * scale,
-        b.d * scale,
-      );
-      c.restore();
+    if (!this.base || this.baseFor !== map || this.baseSize !== size) {
+      this.buildBase(map);
     }
+    if (!this.base) return;
+    const view = this.view;
+    const k = size / DRAWN_AT;
+    c.clearRect(0, 0, size, size);
+    c.drawImage(this.base, 0, 0);
 
     this.hotspots.length = 0;
     // Through the view rather than the index, so `mine` is the amber every
@@ -333,29 +433,34 @@ export class DeployScreen {
     const mine = teamLook(this.team).color;
     const theirs = teamLook(OTHER_TEAM[this.team]).color;
 
-    // Flags.
+    // Flags: the zone at its real radius, the hexagon the whole interface
+    // names a control point with, and the point's NAME under it — this is the
+    // one map in the game with room for the word, and "Chapel" is what the
+    // orders panel beside it is about to read back.
     for (const p of conquest.points) {
-      const x = toX(p.def.pos.x);
-      const y = toY(p.def.pos.z);
-      c.beginPath();
-      c.arc(x, y, p.def.radius * scale, 0, Math.PI * 2);
-      c.fillStyle =
-        p.owner === null
-          ? "rgba(150,150,160,0.15)"
-          : p.owner === this.team
-            ? hexA(mine, 0.22)
-            : hexA(theirs, 0.22);
-      c.fill();
-      c.strokeStyle =
-        p.owner === null ? "#8b8f96" : p.owner === this.team ? mine : theirs;
-      c.lineWidth = p.contested ? 3 : 1.5;
-      c.stroke();
-
-      c.fillStyle = "#e8e8ea";
-      c.font = "bold 15px system-ui, sans-serif";
+      const x = px(view, p.def.pos.x);
+      const y = py(view, p.def.pos.z);
+      const color =
+        p.owner === null ? NEUTRAL : p.owner === this.team ? mine : theirs;
+      paintZone(c, x, y, p.def.radius * view.scale, color, {
+        contested: p.contested,
+      });
+      paintFlagIcon(c, x, y, 13 * k, color, p.def.id, {
+        meter: p.meter,
+        meterColor:
+          Math.sign(p.meter) === (this.team === 0 ? -1 : 1) ? mine : theirs,
+        contested: p.contested,
+        face: FACE,
+      });
+      c.save();
       c.textAlign = "center";
-      c.textBaseline = "middle";
-      c.fillText(p.def.id, x, y);
+      c.textBaseline = "top";
+      c.font = `600 ${(9 * k).toFixed(1)}px ${FACE}`;
+      c.fillStyle = "rgba(226, 234, 246, 0.62)";
+      c.shadowColor = "rgba(0, 0, 0, 0.85)";
+      c.shadowBlur = 3;
+      c.fillText(p.def.name.toUpperCase(), x, y + 22 * k);
+      c.restore();
     }
 
     // Deployment markers. The selection is drawn LAST and on its own, so it is
@@ -366,17 +471,16 @@ export class DeployScreen {
     // The hit radius is the same for every marker whatever it is drawn at:
     // shrinking the unselected ones is a legibility decision, and it must not
     // quietly shrink their click targets with it.
-    this.hotspots.length = 0;
     const ink = lighten(mine, 0.4);
     for (let i = 0; i < this.options.length; i++) {
       const s = this.options[i];
-      const x = toX(s.pos.x);
-      const y = toY(s.pos.z);
-      this.hotspots.push({ x, y, r: 16, index: i });
-      if (i !== this.selected) this.drawMarker(x, y, ink);
+      const x = px(view, s.pos.x);
+      const y = py(view, s.pos.z);
+      this.hotspots.push({ x, y, r: 16 * k, index: i });
+      if (i !== this.selected) this.drawMarker(x, y, ink, k);
     }
     const sel = this.hotspots[this.selected];
-    if (sel) this.drawSelected(sel.x, sel.y);
+    if (sel) this.drawSelected(sel.x, sel.y, k);
   }
 
   /**
@@ -391,16 +495,16 @@ export class DeployScreen {
    * lightening stays because what it protects against is the next dark team
    * colour, not that one.
    */
-  private drawMarker(x: number, y: number, ink: string): void {
+  private drawMarker(x: number, y: number, ink: string, k: number): void {
     const c = this.ctx;
     c.beginPath();
-    c.arc(x, y, 9, 0, Math.PI * 2);
+    c.arc(x, y, 9 * k, 0, Math.PI * 2);
     c.fillStyle = "rgba(6,8,12,0.8)";
     c.fill();
     c.strokeStyle = ink;
-    c.lineWidth = 2;
+    c.lineWidth = 2 * k;
     c.stroke();
-    this.chevron(x, y, ink);
+    this.chevron(x, y, ink, k);
   }
 
   /**
@@ -416,7 +520,7 @@ export class DeployScreen {
    * this screen's only job is to be looked at, so a phase that survives across
    * respawns costs nothing and there is no dt in reach here anyway.
    */
-  private drawSelected(x: number, y: number): void {
+  private drawSelected(x: number, y: number, k: number): void {
     const c = this.ctx;
     const beat = 0.5 + 0.5 * Math.sin((performance.now() / 1000) * 3.4);
 
@@ -424,43 +528,43 @@ export class DeployScreen {
     // A dark backing disc first: the halo is translucent, and over the mid-grey
     // of a building footprint it would otherwise wash out to nothing.
     c.beginPath();
-    c.arc(x, y, 17, 0, Math.PI * 2);
+    c.arc(x, y, 17 * k, 0, Math.PI * 2);
     c.fillStyle = "rgba(6,8,12,0.72)";
     c.fill();
 
     c.beginPath();
-    c.arc(x, y, 15 + beat * 3, 0, Math.PI * 2);
+    c.arc(x, y, (15 + beat * 3) * k, 0, Math.PI * 2);
     c.strokeStyle = `rgba(255,230,128,${0.5 - beat * 0.28})`;
-    c.lineWidth = 2;
+    c.lineWidth = 2 * k;
     c.stroke();
 
     // Four ticks pointing in at the marker — the part that still reads when the
     // map is scaled down to a landscape phone and the disc is a few pixels.
     c.strokeStyle = "rgba(255,230,128,0.85)";
-    c.lineWidth = 2;
+    c.lineWidth = 2 * k;
     c.lineCap = "round";
-    for (let k = 0; k < 4; k++) {
-      const a = (k * Math.PI) / 2 + Math.PI / 4;
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2 + Math.PI / 4;
       const dx = Math.cos(a);
       const dy = Math.sin(a);
       c.beginPath();
-      c.moveTo(x + dx * 16, y + dy * 16);
-      c.lineTo(x + dx * 23, y + dy * 23);
+      c.moveTo(x + dx * 16 * k, y + dy * 16 * k);
+      c.lineTo(x + dx * 23 * k, y + dy * 23 * k);
       c.stroke();
     }
 
     c.shadowColor = "rgba(255,230,128,0.9)";
-    c.shadowBlur = 12;
+    c.shadowBlur = 12 * k;
     c.beginPath();
-    c.arc(x, y, 12, 0, Math.PI * 2);
+    c.arc(x, y, 12 * k, 0, Math.PI * 2);
     c.fillStyle = HOT;
     c.fill();
     c.strokeStyle = "#fff6d2";
-    c.lineWidth = 2.5;
+    c.lineWidth = 2.5 * k;
     c.stroke();
     c.restore();
 
-    this.chevron(x, y, "#0b0e12", 1.35);
+    this.chevron(x, y, "#0b0e12", k * 1.35);
   }
 
   private chevron(x: number, y: number, fill: string, scale = 1): void {
@@ -475,14 +579,25 @@ export class DeployScreen {
   }
 }
 
+/**
+ * The canvas side every mark on this screen is stated against, so that one
+ * number carries the lot to whatever the backing store turned out to be.
+ *
+ * The marks are NOT to scale with the map and must not be: a spawn marker is a
+ * target a thumb has to hit and a flag's hexagon is a label, so both are sized
+ * against the SCREEN. What they follow is the canvas's own resolution, which
+ * moves with the window and with the device pixel ratio — see `resize`.
+ */
+const DRAWN_AT = 620;
+
+/** The HUD's own face; a canvas inherits no font. */
+const FACE = '"Bahnschrift", "DIN Alternate", "Roboto Condensed", sans-serif';
+
 /** The interface's accent (`--hot` in base.css), which the canvas cannot read. */
 const HOT = "#ffe680";
 
-/** Hex colour with an alpha channel, for the zone fills. */
-function hexA(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
+/** `--neutral` in `base.css`: a point nobody holds. */
+const NEUTRAL = "#aeb6c2";
 
 /**
  * A team colour mixed toward white, for the marks small enough that the colour

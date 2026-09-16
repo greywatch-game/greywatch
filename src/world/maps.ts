@@ -91,14 +91,24 @@ export interface MapDef {
    */
   heights?: () => Promise<{ default: Heightfield }>;
   /**
-   * The baked collider set, for the multiplayer server — which has no canvas
-   * and so cannot run `MapBuilder` at all (see `world/collision.ts`).
+   * The baked collider set — for the multiplayer server, which has no canvas
+   * and so cannot run `MapBuilder` at all (see `world/collision.ts`), and now
+   * for the MENU as well.
    *
    * A LAZY import, and that is the whole reason it is a function. The data is
-   * hundreds of kilobytes per map and the browser has no use for it: a client
-   * builds the real colliders. Behind `import()` Vite splits it into a chunk
-   * nothing in the game ever asks for, so the third half of a map travels with
-   * the other two here without riding along in the bundle.
+   * hundreds of kilobytes per map, and behind `import()` Vite splits it into a
+   * chunk of its own, so the third half of a map travels with the other two
+   * here without riding along in either bundle.
+   *
+   * **What changed is who asks.** This was "the browser has no use for it: a
+   * client builds the real colliders", and that is still true of the ROUND —
+   * but the menu's dossier draws a schematic of a map nothing has built yet,
+   * and this is the only description of that map's BUILDINGS that exists
+   * outside a built world (a `Placement` is a point and a kit name; the
+   * footprint is the builder's). So a map row under the cursor now fetches
+   * this beside the floor, and the schematic is the same drawing the deploy
+   * screen will make of the same place. Go through `loadCollision` rather
+   * than calling this directly, as with `heights`.
    */
   collision: () => Promise<{ default: MapCollision }>;
 }
@@ -372,6 +382,45 @@ export async function loadHeights(def: MapDef): Promise<Heightfield | null> {
 export function heightsOf(def: MapDef): Heightfield | null | undefined {
   return FLOORS.get(def);
 }
+
+/**
+ * A map's baked collider set, fetched — `loadHeights`' twin, and new with the
+ * interface's three maps becoming one drawing.
+ *
+ * **The bake is no longer the server's alone**, which is the one thing to know
+ * before reading `MapDef.collision`'s note above: the menu's dossier draws a
+ * schematic of a map nothing has built yet, and the only description of that
+ * map's BUILDINGS that exists outside a built world is this. It is a lazy
+ * import for exactly the reason it always was — hundreds of kilobytes per map,
+ * and a chunk nobody who never opens the map row ever asks for — and the
+ * client still builds the real colliders when it builds the world. See
+ * `src/ui/MapThumb.ts`, which is the caller and takes the answer as an
+ * argument rather than reaching for it.
+ *
+ * A FAILED fetch is left to throw, as the floor's is, and the caller turns it
+ * into a schematic without masses rather than a broken menu: a picture of the
+ * ground is a worse map, and no map at all is a hole in the screen.
+ */
+export async function loadCollision(def: MapDef): Promise<MapCollision> {
+  const held = BAKES.get(def);
+  if (held) return held;
+  const bake = (await def.collision()).default;
+  BAKES.set(def, bake);
+  return bake;
+}
+
+/**
+ * The same bake, if `loadCollision` has already been through for this map.
+ * `undefined` means NOT YET, exactly as `heightsOf`'s does — with the one
+ * difference that there is no "this map has none": every map in the registry
+ * names a bake, because the authority cannot run without one.
+ */
+export function collisionOf(def: MapDef): MapCollision | undefined {
+  return BAKES.get(def);
+}
+
+/** What `loadCollision` has resolved, per map. Weak for `FLOORS`' reason. */
+const BAKES = new WeakMap<MapDef, MapCollision>();
 
 /**
  * What `loadHeights` has resolved, per map.

@@ -610,7 +610,9 @@ src/
                         #   road still stops no round and no body — what it
                         #   rejects is something ROOTED sown on it, which is
                         #   trees and scrub (PropBody.rooted) and every blade
-                        #   of grass
+                        #   of grass. `pieceCorners` is the inverse of how a
+                        #   piece is stored, for the one reader that has to
+                        #   DRAW a carriageway rather than test a point in one
     roadPaths.ts        # A road laid along a PATH: its corners drawn as arcs
                         #   (bendPath, which the map generators import) and
                         #   the network's JUNCTIONS found and resolved — an end
@@ -727,15 +729,20 @@ src/
                         #   `MAPS` is an `import.meta.env.DEV` ternary and must
                         #   stay one — that fold is what keeps the proving
                         #   ground out of both bundles. Also loadHeights/
-                        #   heightsOf: a map's floor is a LAZY import and
-                        #   this is where it is asked for and remembered
+                        #   heightsOf and loadCollision/collisionOf: a map's
+                        #   floor and its collider bake are both LAZY imports,
+                        #   and this is where they are asked for and remembered
     buildProfile.ts     # Where the time behind the loading card went, per
                         #   phase. DEV ONLY and a no-op otherwise; the handle
                         #   is `window.__buildProfile()`
     collision.ts        # MapCollision: the shape of a baked collider set, and
                         #   the tuple->WorldBox expansion the server rebuilds
                         #   from. Names no map; reached via MapDef.collision,
-                        #   which is a LAZY import so the client never ships it
+                        #   a LAZY import, so neither bundle carries one. The
+                        #   server is no longer its only reader — the menu's
+                        #   schematic draws a map nothing has built yet, and
+                        #   this is the only description of its buildings that
+                        #   exists outside a built world
     fingerprint.ts      # A comparable summary of a built world — the nav graph,
                         #   not the boxes. What `npm run parity` diffs
     hollowmere/layout.ts      # A MAP — every placement, flag and spawn
@@ -857,14 +864,31 @@ src/
                         #   pause is the one card that
                         #   does not take the screen — left-anchored over a
                         #   round that is still worth seeing
-    MapThumb.ts         # The menu panel's map schematic, drawn from a map's
-                        #   LAYOUT (heightfield relief, water, scatter masses,
-                        #   placements, lettered flags) and coloured from its
-                        #   EnvironmentSpec. Never touches a built GameMap —
-                        #   the menu is the one screen where there is none.
-                        #   A water rect is an extent, not a shape: the
-                        #   waterline is baked from the heightfield here the
-                        #   same way the real bed depth is
+    mapPlan.ts          # WHAT all three of this interface's maps draw, as one
+                        #   description: the floor, the water, the
+                        #   carriageways and the masses standing on them — and
+                        #   nothing about a round. Two adapters make one,
+                        #   `planFromWorld` off a built GameMap (the deploy
+                        #   screen, the minimap) and `planFromLayout` off a
+                        #   MapDef plus whichever of its two lazy halves have
+                        #   landed (the menu, where nothing is built). A mass
+                        #   is filed by its LONG RUN and not by its area: a
+                        #   building is walls, and a wall is 0.25 m thick
+    mapPaint.ts         # The LOOK of one, for all three: paper, hillshade,
+                        #   contours at an interval chosen so they never crowd,
+                        #   the derived waterline, the carriageways, the fences
+                        #   and the built mass — closed into silhouettes and
+                        #   laddered by height — then the survey grid. Plus the
+                        #   two marks all three share, a control point's zone
+                        #   and the hexagon `hud.css` names it with. Colour
+                        #   means OWNERSHIP here and nothing else does
+    MapThumb.ts         # The menu panel's map schematic: the projection into
+                        #   the dossier's canvas, and the flags and home gates
+                        #   over the plan. Never touches a built GameMap — the
+                        #   menu is the one screen where there is none — so it
+                        #   takes the FLOOR and the COLLIDER BAKE as arguments
+                        #   that may be absent and draws what it has, in up to
+                        #   three passes as they land
     mapShots.ts         # The PHOTOGRAPH behind the menu: one shot per map
                         #   (shots/<id>.jpg, imported ?url) and the VANTAGE it
                         #   was taken from, which is what lets `npm run shots`
@@ -872,7 +896,11 @@ src/
                         #   map with no row here simply has no backdrop. Not a
                         #   field on MapDef, because the SERVER imports those
     DeployScreen.ts     # Top-down deploy map, with the orders panel beside it
-      deploy.css        #   rather than under it. The offer is live, so the
+      deploy.css        #   rather than under it. The plan is mapPaint's,
+                        #   PRERENDERED once per map and blitted — this screen
+                        #   redraws every frame and Cinderhaven is 3,700
+                        #   colliders — and it is the one of the three that
+                        #   letters its grid. The offer is live, so the
                         #   highlight is held by IDENTITY; in a netplay round a
                         #   confirm is a REQUEST and says so
     LoadoutScreen.ts    # Kit screen: four slots, a stat chart derived from
@@ -906,6 +934,9 @@ src/
     Minimap.ts          # Corner minimap, player-centred and heading-up: flags,
       minimap.css       #   friendlies, firing enemies, and a rim marker for
                         #   every control point the zoomed view does not reach.
+                        #   Its backdrop is mapPaint's plan, prerendered north-
+                        #   up at the live scale and turned under the player;
+                        #   the plate's translucency is one alpha on that BLIT.
                         #   The one canvas that RESIZES itself: the box is
                         #   --hud-map and the backing store follows it
     ProfileChip.ts      # The frame profiler's corner of the HUD: what the ring

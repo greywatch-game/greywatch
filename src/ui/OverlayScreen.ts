@@ -43,7 +43,13 @@ import { difficultyTiers } from "../entities/BotSkill";
 import type { SightId } from "../entities/sights";
 import type { PrimaryWeaponId } from "../entities/weapons";
 import { perTeamOf } from "../world/layout";
-import { heightsOf, loadHeights, type MapDef } from "../world/maps";
+import {
+  collisionOf,
+  heightsOf,
+  loadCollision,
+  loadHeights,
+  type MapDef,
+} from "../world/maps";
 import { kitLabel, WEAPON_BLURBS } from "./LoadoutScreen";
 import { mapShotUrl } from "./mapShots";
 import { drawMapThumb } from "./MapThumb";
@@ -821,31 +827,36 @@ export class OverlayScreen {
    * frame callback — a thumbnail that arrives a frame after the row it belongs
    * to reads as the panel flickering.
    *
-   * **The paint is synchronous and the map's FLOOR may not be here yet, which
-   * is why this can run twice for one row.** The heightfield is a chunk of its
-   * own (`MapDef.heights`, ENGINE_UPGRADE.md S7) — the one field on this panel
-   * that is fetched rather than bundled — so the first paint draws whatever
-   * `heightsOf` already has, which on a cold boot is nothing, and the second
-   * is booked for when the ground lands. The row is re-tested inside the
-   * callback because the cursor moves faster than a fetch: a floor arriving
-   * for the map the player has already scrolled off must not repaint the one
-   * they are looking at now. A warm map answers on the first paint and books
-   * nothing.
+   * **The paint is synchronous and NEITHER of the map's two bulk halves may be
+   * here yet, which is why this can run three times for one row.** The
+   * heightfield and the collider bake are chunks of their own
+   * (`MapDef.heights`, `MapDef.collision`) — the only fields on this panel
+   * that are fetched rather than bundled — so the first paint draws whatever
+   * has already landed, which on a cold boot is neither, and each arrival
+   * books another. What the player sees is a bare square, then the ground it
+   * is cut in, then the town on it; see `MapThumb.ts` for why that order is
+   * the honest one.
+   *
+   * The row is re-tested inside every callback because the cursor moves faster
+   * than a fetch: a floor arriving for the map the player has already scrolled
+   * off must not repaint the one they are looking at now. A warm map answers
+   * on the first paint and books nothing.
    */
   private paintThumb(): void {
     const canvas = this.detailEl?.querySelector("canvas");
     const map = this.maps[this.mapIndex];
     if (!canvas || !map) return;
     const floor = heightsOf(map);
-    drawMapThumb(canvas, map, floor ?? null);
-    if (floor !== undefined) return;
-    void loadHeights(map)
-      .then(() => {
-        if (this.maps[this.mapIndex] === map) this.paintThumb();
-      })
-      // A schematic is not worth a broken menu. The round start asks for the
-      // same chunk and reports the failure where it can be acted on.
-      .catch(() => {});
+    const bake = collisionOf(map);
+    drawMapThumb(canvas, map, floor ?? null, bake ?? null);
+    // A schematic is not worth a broken menu, so both rejections are
+    // swallowed: the round start asks for the same two chunks and reports the
+    // failure where it can be acted on.
+    const again = () => {
+      if (this.maps[this.mapIndex] === map) this.paintThumb();
+    };
+    if (floor === undefined) void loadHeights(map).then(again).catch(() => {});
+    if (bake === undefined) void loadCollision(map).then(again).catch(() => {});
   }
 
   /** One picture layer of the backdrop. Empty until a map is chosen. */

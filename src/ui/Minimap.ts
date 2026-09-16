@@ -1,6 +1,7 @@
 /**
- * Minimap.ts — Corner minimap: prerendered static backdrop (per map), flags,
- * friendlies, player. Canvas redrawn each frame.
+ * Minimap.ts — Corner minimap: the shared map plan prerendered once per map
+ * (`mapPlan.ts`/`mapPaint.ts`), with the flags, the friendlies and the player
+ * drawn over it every frame.
  * Invariants: enemies are NEVER shown live — only briefly via reveal() when
  * they fire. That's a deliberate information-rule, not a missing feature.
  * setMap() must be called once per round to rebuild the backdrop.
@@ -11,6 +12,13 @@
  * `Bot`s and in a netplay round they are the roster's `NetSoldier`s, and this
  * class must never be able to tell which — a remote human is a body on the map
  * exactly as a bot is.
+ * **The DRAWING is the painter's and the TURN is this file's.** What belongs
+ * here is only what a heading-up map owes that a north-up one does not: the
+ * counter-rotation, `twelve` (which keeps a capture dial's zero at the top of
+ * the glass), the rim markers, the compass, and the pad under the player's own
+ * arrow. Anything about what the GROUND looks like belongs in `mapPaint.ts`,
+ * or the corner map and the deploy screen start disagreeing about the village
+ * again.
  * **The map's SHAPE and its PLATE are this file's, not the stylesheet's**: the
  * chamfer is a canvas clip and the edge is a canvas stroke, because the plate
  * is translucent and a CSS edge layer behind a translucent canvas is a lit
@@ -22,33 +30,40 @@ import type { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { ControlPoint } from "../systems/ConquestSystem";
+import type { EnvironmentSpec } from "../world/environment";
 import type { GameMap } from "../world/MapBuilder";
+import {
+  paintFlagIcon,
+  paintPlan,
+  paintZone,
+  type PlanView,
+} from "./mapPaint";
+import { planFromWorld } from "./mapPlan";
 
 // The "mine/theirs" palette the rest of the HUD uses. Those live in CSS,
 // but canvas drawing needs them here.
 const COLOR_MINE = "#ffc46b";
 const COLOR_THEIRS = "#ff5a4f";
 const COLOR_NEUTRAL = "#9aa4b2";
-const COLOR_TEXT = "#eef1f6";
 /**
- * The play square's ground, and everything past it — **translucent, and that
- * is the whole of the plate**. The HUD's own house rule is that legibility
- * comes from a scrim rather than from an opaque panel over a moving scene
+ * How much of the scene the plate lets through — **translucent, and that is
+ * the whole of the plate**. The HUD's own house rule is that legibility comes
+ * from a scrim rather than from an opaque panel over a moving scene
  * (`base.css`), and this map was the last gameplay chrome still painting a
- * solid rectangle over the village. They are dense enough that a lamp-lit
- * street behind them cannot take a footprint off the map, and thin enough that
- * the map sits IN the scene rather than on top of it.
+ * solid rectangle over the village.
+ *
+ * **It is now one alpha on the BLIT rather than an alpha per colour**, which
+ * is what lets the plan be the same drawing as the deploy screen's and the
+ * menu's: `mapPaint.ts` paints an opaque plan into the backdrop, and the plate
+ * is that picture composited at this. Dense enough that a lamp-lit street
+ * behind it cannot take a footprint off the map, thin enough that the map sits
+ * IN the scene rather than on top of it — and, unlike the per-colour version,
+ * it holds the plan's own value ladder together instead of flattening a
+ * three-storey block and a yard wall into one wash.
  */
-const COLOR_GROUND = "rgba(10, 13, 19, 0.84)";
+const PLATE_ALPHA = 0.84;
+/** The ground past the play square, which only a borderland map ever shows. */
 const COLOR_OUTSIDE = "rgba(4, 6, 10, 0.62)";
-/**
- * A building footprint, stated as WHITE over the plate rather than as a flat
- * slate, and both reasons are the line above: the mass has to lift off
- * whatever the plate is standing on rather than off one authored ground
- * colour, and over a translucent plate an opaque grey block is the one thing
- * on the map that does not let the scene through.
- */
-const COLOR_BUILDING = "rgba(158, 176, 200, 0.28)";
 /** The hairline the plate is closed with, drawn along the chamfer. */
 const COLOR_EDGE = "rgba(255, 255, 255, 0.2)";
 /** How far the player's view cone reaches, at the authored size. */
@@ -159,6 +174,7 @@ export class Minimap {
    */
   private lastMap: GameMap | null = null;
   private lastTeam: Team = 0;
+  private lastEnv: EnvironmentSpec | null = null;
   /** Enemies currently given away by their gunfire, seconds remaining. */
   private readonly revealed = new Map<Combatant, number>();
   /** Accumulator driving the contested-flag pulse. */
@@ -242,7 +258,9 @@ export class Minimap {
     // old space and is a REACH rather than a shape (see the field).
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.cone = null;
-    if (this.lastMap) this.buildBase(this.lastMap, this.lastTeam);
+    if (this.lastMap && this.lastEnv) {
+      this.buildBase(this.lastMap, this.lastTeam, this.lastEnv);
+    }
   }
 
   setVisible(visible: boolean): void {
@@ -259,12 +277,13 @@ export class Minimap {
    * image's own edge — which is the boundary the leash is counting them down
    * against, and worth drawing for that alone.
    */
-  setMap(map: GameMap, playerTeam: Team): void {
+  setMap(map: GameMap, playerTeam: Team, env: EnvironmentSpec): void {
     this.mapSize = map.size;
     this.revealed.clear();
     this.lastMap = map;
     this.lastTeam = playerTeam;
-    this.buildBase(map, playerTeam);
+    this.lastEnv = env;
+    this.buildBase(map, playerTeam, env);
   }
 
   /**
@@ -272,54 +291,48 @@ export class Minimap {
    * the scale it is prerendered at is the live view's, and the live view's
    * scale moves with the box.
    */
-  private buildBase(map: GameMap, playerTeam: Team): void {
+  private buildBase(
+    map: GameMap,
+    playerTeam: Team,
+    env: EnvironmentSpec,
+  ): void {
     /** The backdrop is the play square at the live view's own scale. */
     const dim = Math.round(map.size * this.ppm);
-    const scale = this.ppm;
-    const toX = (wx: number) => (wx + map.size / 2) * scale;
-    // Canvas Y grows downward and world +Z is north — flip, so the backdrop
-    // itself is north-up and the turning is done once, at draw time.
-    const toY = (wz: number) => (map.size / 2 - wz) * scale;
-
     const base = document.createElement("canvas");
     base.width = dim;
     base.height = dim;
     const c = base.getContext("2d")!;
 
-    c.fillStyle = COLOR_GROUND;
-    c.fillRect(0, 0, dim, dim);
-
-    // Building footprints, from the same collider data the deploy map draws.
-    c.fillStyle = COLOR_BUILDING;
-    for (const b of map.colliderBoxes) {
-      if (b.w > 200 || b.d > 200) continue; // ground plane and ridge
-      c.save();
-      c.translate(toX(b.cx), toY(b.cz));
-      c.rotate(-b.rotY);
-      c.fillRect(
-        (-b.w / 2) * scale,
-        (-b.d / 2) * scale,
-        b.w * scale,
-        b.d * scale,
-      );
-      c.restore();
-    }
+    // Canvas Y grows downward and world +Z is north, so the projection flips
+    // Z: the backdrop itself is drawn north-up and the turning is done once,
+    // per frame, at draw time.
+    const view: PlanView = { scale: this.ppm, ox: dim / 2, oy: dim / 2 };
+    // The plan — the same one the deploy screen and the menu draw, at this
+    // map's own magnification. LINES and no letters: the map turns under the
+    // player, so a lettered square would be read upside down half the time,
+    // and the grid is here for the sense of SPEED a moving lattice gives
+    // rather than as a coordinate anybody quotes.
+    paintPlan(c, planFromWorld(map, env), view, {
+      bounds: { x: 0, y: 0, w: dim, h: dim },
+      grid: "lines",
+    });
 
     // Home gates, so both ends of the map read at a glance. Outlined rather
     // than filled, and for the reason the zone rings are: a gate is a PLACE on
     // the map, and three solid lozenges of the loudest colour the HUD owns
     // outshouted the flags, the friendlies and the player's own arrow.
+    const r = Math.max(4, 3.4 * this.k);
     c.lineWidth = 1;
     for (const s of map.spawns) {
       if (s.team === null) continue; // flag spawns are drawn per frame
-      const x = toX(s.pos.x);
-      const y = toY(s.pos.z);
+      const x = view.ox + s.pos.x * view.scale;
+      const y = view.oy - s.pos.z * view.scale;
       const color = s.team === playerTeam ? COLOR_MINE : COLOR_THEIRS;
       c.beginPath();
-      c.moveTo(x, y - 5);
-      c.lineTo(x + 5, y);
-      c.lineTo(x, y + 5);
-      c.lineTo(x - 5, y);
+      c.moveTo(x, y - r);
+      c.lineTo(x + r, y);
+      c.lineTo(x, y + r);
+      c.lineTo(x - r, y);
       c.closePath();
       c.fillStyle = color;
       c.globalAlpha = 0.16;
@@ -329,12 +342,6 @@ export class Minimap {
       c.stroke();
       c.globalAlpha = 1;
     }
-
-    // The play square's own edge, baked in rather than stroked per frame:
-    // the one line on this map that is the boundary the leash measures.
-    c.strokeStyle = "rgba(255, 255, 255, 0.13)";
-    c.lineWidth = 1;
-    c.strokeRect(0.5, 0.5, dim - 1, dim - 1);
 
     this.base = base;
   }
@@ -428,7 +435,11 @@ export class Minimap {
     c.translate(half, half);
     c.rotate(-playerYaw);
     c.translate(-px, -py);
+    // The plate's translucency, in one place: the plan is an opaque picture
+    // and this is how much of the street behind it survives. See PLATE_ALPHA.
+    c.globalAlpha = PLATE_ALPHA;
     c.drawImage(this.base, 0, 0);
+    c.globalAlpha = 1;
 
     // --- flags ---
     for (const p of points) {
@@ -437,57 +448,28 @@ export class Minimap {
       const r = p.def.radius * scale;
       const ownerColor = flagColor(p, playerTeam);
 
-      c.beginPath();
-      c.arc(x, y, r, 0, Math.PI * 2);
-      c.fillStyle = hexA(ownerColor, 0.12);
-      c.fill();
-      c.strokeStyle = ownerColor;
-      c.lineWidth = p.contested ? 1.6 : 1;
-      c.lineWidth *= Math.max(k, 0.8);
-      // A contested flag pulses so it reads from the corner of the eye.
-      c.globalAlpha = p.contested ? pulse : 0.7;
-      c.stroke();
-      c.globalAlpha = 1;
-
-      // The meter as an arc from twelve o'clock: a full circle is owned
-      // outright. Its colour is the team the meter belongs to, so a flag
-      // being flipped shows the attacker's colour eating the defender's.
-      //
-      // Twelve o'clock is the SCREEN's, and `+ playerYaw` is what keeps it
-      // there: this layer is turned by -yaw, so an angle written in it lands
-      // that much anticlockwise on the glass. A dial is read, not steered —
-      // one that started at map north would spin under a turning player and
-      // put "nearly taken" at eight o'clock.
-      if (p.meter !== 0) {
-        const meterColor =
+      // The zone, the hexagon and the meter are `mapPaint.ts`'s, because the
+      // flag a player reads off this corner map, off the deploy screen they
+      // picked it on and off the strip along the top of the HUD has to be one
+      // mark. What is this file's is the two things only a TURNING map has:
+      // the contested pulse, and `twelve` — the layer is turned by -yaw, so an
+      // angle written in it lands that much anticlockwise on the glass, and a
+      // dial is read rather than steered. One that started at map north would
+      // spin under a turning player and put "nearly taken" at eight o'clock.
+      paintZone(c, x, y, r, ownerColor, {
+        contested: p.contested,
+        alpha: p.contested ? pulse : 1,
+      });
+      paintFlagIcon(c, x, y, Math.max(7 * k, MIN_GLYPH * 0.78), ownerColor, p.def.id, {
+        meter: p.meter,
+        meterColor:
           Math.sign(p.meter) === (playerTeam === 0 ? -1 : 1)
             ? COLOR_MINE
-            : COLOR_THEIRS;
-        const from = -Math.PI / 2 + playerYaw;
-        c.beginPath();
-        c.arc(x, y, r + 3 * k, from, from + Math.abs(p.meter) * Math.PI * 2);
-        c.strokeStyle = meterColor;
-        c.lineWidth = Math.max(2 * k, 1.2);
-        // Round caps: the dial is the one moving line on the map, and a
-        // squared-off end reads as a tick mark rather than as a level.
-        c.lineCap = "round";
-        c.stroke();
-        c.lineCap = "butt";
-      }
-
-      // Upright, whichever way the map is turned: the one thing on here that
-      // has to be READ rather than merely seen. The halo is what lets it be
-      // read over a footprint as well as over open ground, which a plain fill
-      // could only manage by being heavy enough to shout on both.
-      c.save();
-      c.translate(x, y);
-      c.rotate(playerYaw);
-      c.font = `700 ${Math.max(10 * k, MIN_GLYPH).toFixed(1)}px ${this.face}`;
-      c.shadowColor = "rgba(0, 0, 0, 0.9)";
-      c.shadowBlur = 3;
-      c.fillStyle = COLOR_TEXT;
-      c.fillText(p.def.id, 0, 0);
-      c.restore();
+            : COLOR_THEIRS,
+        twelve: playerYaw,
+        contested: p.contested,
+        face: this.face,
+      });
     }
 
     // --- friendlies ---
@@ -560,7 +542,10 @@ export class Minimap {
       const y = half + sy * k;
       const color = flagColor(p, playerTeam);
 
-      // The chevron carries the bearing; the disc behind it carries the name.
+      // The chevron carries the bearing; the hexagon behind it carries the
+      // name — and it is the SAME hexagon the flag itself wears when it is on
+      // the drawn square, which is the point. A marker that changed shape as
+      // the player walked toward it would be a second alphabet.
       c.save();
       c.translate(x, y);
       c.rotate(Math.atan2(sy, sx));
@@ -574,19 +559,11 @@ export class Minimap {
       c.fill();
       c.restore();
 
-      c.beginPath();
-      c.arc(x, y, edgeR, 0, Math.PI * 2);
-      c.fillStyle = "rgba(8, 11, 16, 0.9)";
-      c.globalAlpha = 1;
-      c.fill();
-      c.strokeStyle = color;
-      c.lineWidth = 1;
-      c.globalAlpha = p.contested ? pulse : 0.85;
-      c.stroke();
-      c.globalAlpha = 1;
-      c.fillStyle = COLOR_TEXT;
-      c.font = `700 ${rimGlyph.toFixed(1)}px ${this.face}`;
-      c.fillText(p.def.id, x, y);
+      paintFlagIcon(c, x, y, edgeR, color, p.def.id, {
+        contested: p.contested,
+        alpha: p.contested ? pulse : 1,
+        face: this.face,
+      });
     }
 
     // --- player: view cone + arrow ---
@@ -611,6 +588,16 @@ export class Minimap {
     c.closePath();
     c.fillStyle = this.cone;
     c.fill();
+    // A dark pad under the arrow, and it is not decoration: the plan under
+    // the player is now a town drawn in pale grey mass rather than the flat
+    // near-black plate this arrow was drawn for, and a white arrow standing on
+    // a white roof is not a marker. The pad is what guarantees a value under
+    // it whatever the player happens to be standing on.
+    c.beginPath();
+    c.arc(0, 0, 7.4 * ak, 0, Math.PI * 2);
+    c.fillStyle = "rgba(6, 9, 14, 0.55)";
+    c.fill();
+
     c.beginPath();
     c.moveTo(0, -6.5 * ak);
     c.lineTo(4.4 * ak, 4.6 * ak);
@@ -651,10 +638,4 @@ export class Minimap {
 function flagColor(p: ControlPoint, playerTeam: Team): string {
   if (p.owner === null) return COLOR_NEUTRAL;
   return p.owner === playerTeam ? COLOR_MINE : COLOR_THEIRS;
-}
-
-/** Hex colour with an alpha channel, for the zone fills. */
-function hexA(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }

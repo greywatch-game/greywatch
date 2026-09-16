@@ -496,6 +496,24 @@ STEPPER**, six maps in a segmented row of equal shares being `HOLLO…`, `GREYF�
 the card being RAISED** (`setCardClass`'s `raised`), never to its markup
 existing — `showMenu` rewrites this card on every map step.
 
+**THERE ARE THREE MAPS OF THE SAME PLACE HERE AND THEY ARE ONE DRAWING** — the
+menu's dossier, the deploy screen and the corner minimap. `ui/mapPlan.ts` is
+WHAT is drawn (the floor, the water, the carriageways, the masses, and
+**nothing about a round**) and `ui/mapPaint.ts` is what it looks like; a screen
+supplies a projection and its own overlay, and **a fourth surface is a
+projection and a call, never a fourth dialect**. The two adapters differ only
+in WAITING — `planFromWorld` off a built `GameMap`, `planFromLayout` off a
+`MapDef` plus both lazy halves — so **the menu now fetches the COLLIDER BAKE
+beside the floor**, `MapDef.collision` being the only description of a map's
+buildings outside a built world. **COLOUR MEANS OWNERSHIP**: the ground is a
+value ramp off the map's own hue pulled most of the way to neutral, and only
+the flags, the bodies and the cursor are saturated. **A mass is filed by its
+long RUN and not its area** — a building is walls — and is **CLOSED into a
+silhouette before it is drawn**, or a village is confetti. **All three
+PRERENDER and blit**, and the minimap's translucency is one alpha on that blit
+rather than an alpha per colour. **A flag is the same HEXAGON on all three and
+on the HUD's own strip.**
+
 **The CHROME is sized by a UNIT, never by a transform** — a transform takes a
 10 px caption to six along with the 46 px numeral it was aimed at. `hud.css` and
 `minimap.css` are authored in a 720p window's pixels and state every size as a
@@ -510,7 +528,8 @@ minimap is the one canvas that resizes itself**, redrawn at its box times the
 device ratio rather than resampled.
 
 → **[`docs/ui.md`](docs/ui.md)** — the shell, the four cards as one class, the
-menu's rail and the map schematic drawn from a LAYOUT, why **the pointer deploys
+menu's rail, the three maps as one drawing (the plan/paint split, the mass
+layer's three failed readings, the scale gates and the prerender), why **the pointer deploys
 only through the Deploy button**, the deploy map, the kit screen's MEASURED bay
 and the layout that buys, the settings panel, the lobby's row identity, the
 gauges' metric and the four ladders, the short-viewport scaling, the portrait

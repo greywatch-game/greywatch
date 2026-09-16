@@ -4,10 +4,12 @@
  * Owns: the `MapCollision` type the generated `<map>/collision.ts` files are
  * written against, and the tuple→struct expansion the server rebuilds from.
  * Invariants: this file names no map. The generated modules are reached through
- * `MapDef.collision`, which is a LAZY import so the client never downloads a
- * chunk it has no use for — it builds the real thing. Nothing here runs in the
- * browser at all today; it exists so the multiplayer server and the bake script
- * agree on one format instead of two.
+ * `MapDef.collision`, which is a LAZY import so neither bundle carries one.
+ * It exists so the multiplayer server and the bake script agree on one format
+ * instead of two — and, since the menu's map schematic began drawing real
+ * buildings, so that the CLIENT can read the same boxes for a map it has not
+ * built (`src/ui/mapPlan.ts`). Only the server EXPANDS them into a world; the
+ * interface reads the tuples and draws them.
  *
  * Why the data exists: the server simulates under Babylon's NullEngine, which
  * has no canvas, so `DynamicTexture` throws and `MapBuilder` (which reaches one

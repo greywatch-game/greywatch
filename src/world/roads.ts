@@ -417,6 +417,49 @@ export function roadFootprint(
   return { rects, pieces, cell: PIECE_CELL, ox, oz, nx, nz, cells };
 }
 
+/**
+ * A piece's CORNERS, back out of the half-planes it is stored as.
+ *
+ * `roadFootprint` above throws the corners away on purpose — every question
+ * the world layer asks a piece is "is this point inside", which three
+ * multiplications per edge answer without them — and this is the inverse of
+ * exactly that encoding: edge `k` runs corner `k` to corner `k + 1`, so corner
+ * `k` is where edges `k - 1` and `k` meet. Nothing in the world needs them and
+ * the DRAWING does: `src/ui/mapPlan.ts` paints the carriageways on all three
+ * of the interface's maps, and a half-plane is not something a canvas can
+ * fill.
+ *
+ * Derived rather than stored beside `edges` because the two would be one shape
+ * written down twice, and the arithmetic is a handful of pieces per map done
+ * once. `null` for a piece that cannot be recovered — a zero-length edge is
+ * kept as an always-true half-plane with no normal, which bounds nothing and
+ * names no corner. Both callers of `roadFootprint` build from real polygons,
+ * so this is a refusal that should never fire rather than a case with a
+ * fallback.
+ */
+export function pieceCorners(
+  p: RoadPiece,
+): { xs: number[]; zs: number[] } | null {
+  const n = p.edges.length / 3;
+  const xs: number[] = [];
+  const zs: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const j = (k + n - 1) % n;
+    const ax = p.edges[j * 3];
+    const az = p.edges[j * 3 + 1];
+    const ac = p.edges[j * 3 + 2];
+    const bx = p.edges[k * 3];
+    const bz = p.edges[k * 3 + 1];
+    const bc = p.edges[k * 3 + 2];
+    const det = ax * bz - az * bx;
+    // Parallel (or a degenerate edge, whose normal is (0, 0)): no corner.
+    if (Math.abs(det) < 1e-9) return null;
+    xs.push((ac * bz - bc * az) / det);
+    zs.push((ax * bc - bx * ac) / det);
+  }
+  return n >= 3 ? { xs, zs } : null;
+}
+
 /** Is (x, z) inside `p` grown by `pad`? */
 function inPiece(p: RoadPiece, x: number, z: number, pad: number): boolean {
   if (x < p.minX - pad || x > p.maxX + pad || z < p.minZ - pad || z > p.maxZ + pad) {

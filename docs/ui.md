@@ -495,6 +495,19 @@ browser's UI face sitting in the corner of an interface set entirely in
 `--font` — the one thing on this map that was not the same piece of software as
 the rest of it.
 
+**The backdrop is the shared PLAN, prerendered north-up and turned under the
+player.** It is `mapPaint.ts`'s — the same ground, water, carriageways and
+built mass the deploy screen and the menu draw, at this map's own
+magnification — and what is this file's is only the two things a TURNING map
+owes: `twelve`, which keeps a capture dial's zero at the top of the glass
+whichever way the world is facing, and the contested pulse. The grid is drawn
+as LINES and never lettered, because a lettered square would be read upside
+down half the time and what the lattice is here for is the sense of speed a
+moving one gives. The player's own arrow now stands on a dark pad: the plan
+under it is a town drawn in pale grey mass rather than the flat near-black
+plate that arrow was designed against, and a white arrow on a white roof is not
+a marker.
+
 **What the backdrop stops at is the PLAY SQUARE**, and on a map with a
 borderland that edge is worth the pixel it costs — it is the line the leash is
 counting its owner down against, so the ground past it is painted a duller tone
@@ -600,6 +613,89 @@ change moved no content-hashed filename. Three rules keep it that way:
   a camera flash. The second is the boot screen's own block, for the same reason
   one step further along. Neither may grow a rule that styles anything a module
   writes, and nothing else may be added beside them.
+
+## The three maps are one drawing
+
+**This interface draws the same place three times — the menu's dossier, the
+deploy screen and the corner minimap — and until they were made one drawing
+they were three.** The menu plotted a placement as a grey square, because a
+`Placement` is a point and a kit name; the deploy screen filled every collider
+box flat `#39434a`; the minimap filled the same boxes translucent white over an
+opaque plate. Each had its own idea of what a building, a road and a shoreline
+looked like, none of them showed the ground, and a player who learned a map off
+one of them had to learn it again off the next.
+
+One description and one painter is the whole of the fix.
+[`mapPlan.ts`](../src/ui/mapPlan.ts) is WHAT is drawn — the floor, the water,
+the carriageways, the masses — and [`mapPaint.ts`](../src/ui/mapPaint.ts) is
+what it LOOKS like. A screen supplies a projection and draws its own overlay on
+top, which is the half each of the three knows something different about: the
+menu has five control points and no round, the deploy screen has live
+ownership and a cursor, the minimap has a heading and a rim.
+
+**A plan is the static ground and nothing else, and that boundary is what keeps
+one type from being three.** Flags, spawns, bodies, meters and cursors are the
+screen's, because the three know different amounts about them; a plan that
+carried the union would be three objects wearing one name. What IS shared
+beyond the ground is the two marks that must be the same mark everywhere — a
+control point's zone and the flattened hexagon `hud.css` clips its flag chips
+to. A player reads B off the strip along the top of the HUD, off the deploy map
+they picked it on and off the corner map on the way there, and three shapes for
+one flag is three things to learn.
+
+**The two adapters differ in one thing and it is not detail — it is WAITING.**
+`planFromWorld` takes a built `GameMap` and is synchronous. `planFromLayout`
+takes a `MapDef` and both of its bulk halves, either of which may not be here
+yet, and draws what it has — see the menu's bullets under *Getting into a
+round* for what that buys and what it costs.
+
+**Colour means OWNERSHIP, and that is the rule a new layer has to hold.** The
+ground, the water, the carriageways and the built mass are a value ramp off the
+map's own hue and nothing else; the only saturated things on any of these three
+surfaces are the flags, the bodies and the cursor. A drawing where the town is
+as loud as the objective is a drawing a player has to search. The hue itself is
+pulled most of the way to neutral before anything is multiplied by it: a
+normalised map colour is a fully SATURATED one, so Harrowmead came back the
+purest green the drawing owns and every gap between two of Hollowmere's
+buildings read as a warm tan lane somebody had put there.
+
+**The same plan is read at 0.15 px/m and at 4.2, and the layers gate
+themselves on that.** The contour interval is chosen so the lines are never
+closer than about nine pixels whatever the ground is doing, fences appear only
+where a fence would be more than a stipple, and the grid's cell is a round
+number of METRES near a tenth of the extent rather than a fixed count of
+divisions — eight divisions of Hollowmere is 30 m and eight of Cinderhaven is
+187, so the same drawing said two different things and neither of them was a
+distance.
+
+**A building is not a box; it is eight or ten WALLS, and every version of the
+mass layer has had to answer that.** Drawn honestly a 0.25 m wall is a quarter
+of a pixel on the dossier, so the town vanishes; thickened, the same walls are
+a field of disconnected four-pixel dashes, which is what Hollowmere read as —
+confetti, not a plan. So the rectangles are grown by a metre and a half a side
+into an offscreen sheet, which welds a building's own walls into one silhouette
+and leaves the street between two buildings open, and then the TRUE rectangles
+are drawn back over that silhouette a shade brighter. The wall lines are there
+to read at a magnification that can hold them and disappear into the mass at
+one that cannot. One sheet composited once is also what keeps it honest where
+shapes overlap: painted straight onto the plan, two translucent walls crossing
+would be brighter than either and a dense quarter would glow.
+
+**And it is filed by the long RUN, never by area.** At six square metres a 6 m
+wall (1.5 m²) is dropped and a 2.5 m crate (6.25 m²) is kept, which left one
+mass standing on the whole of Greyfen and drew Hollowmere as a scatter of
+cover. The long axis is what separates a thing that ENCLOSES from a thing that
+stands in the open, and it does it on all six maps at once.
+
+**All three PRERENDER and blit.** The plan costs about 70 ms on Cinderhaven —
+3,700 colliders, a 250 x 250 heightfield, a waterline bake and a road network
+cut into 6,000 convex pieces — and the deploy screen redraws every frame a
+player waits out a reinforcement clock. So each of the three builds the picture
+once, when its map or its backing store moves, and spends a frame on the five
+flags and the cursor. The minimap's translucency is one alpha on that BLIT
+rather than an alpha per colour, which is also what lets the plan's own value
+ladder survive instead of flattening a three-storey block and a yard wall into
+one wash.
 
 ## The gauges' metric: one authored pixel, four rates
 
@@ -958,38 +1054,44 @@ it is measured against.
   exist yet. The dossier FADES where the rail rises, and that is a canvas
   rather than a taste: the schematic is sized off the box it is painted into,
   and a fade cannot even raise the question a travelling panel would.
-- **The map row's schematic is drawn from the LAYOUT, never from a built map**
-  ([`MapThumb.ts`](../src/ui/MapThumb.ts)). The deploy screen draws its map out
-  of the finished collider set, which is the honest way to draw a map you are
-  standing in; the menu is the one screen in the game where there is no built
-  map at all, and building one to illustrate a row costs the ~0.7 s the building
-  card exists to cover. Everything it reads — the water rects, the scatter
-  regions, the placements, the flags — is a module constant that was in the
-  bundle before the player pressed anything, and its palette is the map's
-  own `EnvironmentSpec`, so a fourth map is coloured by what it ships with
-  rather than by a table here somebody has to remember to extend.
-- **The one exception is the HEIGHTFIELD, and it is why this panel can paint
-  twice for one row.** A map's floor is a lazy `import()` now
-  (`MapDef.heights`, ENGINE_UPGRADE.md S7) — hundreds of kilobytes on a large
-  map, which is a thing to fetch when a row is looked at and never a thing to
-  boot with. `drawMapThumb` takes it as an ARGUMENT and goes and gets nothing:
-  `paintThumb` hands it whatever `heightsOf` already has, which on a cold boot
-  is nothing, and books a repaint for when the ground lands. The row is
-  re-tested inside that callback, because the cursor moves faster than a fetch
-  and a floor arriving for a map the player has scrolled off must not repaint
-  the one they are looking at. A flat map for a moment and then the real relief
-  is the honest order; a hole in the menu until a fetch returns is not.
+- **The map row's schematic is never drawn from a BUILT map**
+  ([`MapThumb.ts`](../src/ui/MapThumb.ts)). The deploy screen draws out of the
+  finished collider set, which is the honest way to draw a map you are standing
+  in; the menu is the one screen in the game where there is no built map at
+  all, and building one to illustrate a row costs the ~0.7 s the building card
+  exists to cover. Its palette is the map's own `EnvironmentSpec`, so a seventh
+  map is coloured by what it ships with rather than by a table here somebody
+  has to remember to extend.
+- **It is nonetheless the same drawing the other two make, and what buys that
+  is the COLLIDER BAKE.** This panel used to plot a placement as a square,
+  because a `Placement` is a point and a kit name and the footprint belongs to
+  the builder — so the menu said "there is something here" where the deploy map
+  said what shape it was. `MapDef.collision` is that shape, it is already
+  generated for the authority, and it is behind an `import()` exactly as the
+  floor is. What it costs is a second lazy chunk per map row looked at, the
+  largest of them 132 kB gzipped on Cinderhaven.
+- **So this panel can paint THREE times for one row, and that order is the
+  feature.** Both bulk halves are lazy (`MapDef.heights`, `MapDef.collision`),
+  `drawMapThumb` takes both as ARGUMENTS and goes and gets nothing, and
+  `paintThumb` hands it whatever has already landed — on a cold boot, neither —
+  and books a repaint per arrival. What a player sees is a bare square, then
+  the ground it is cut in, then the town on it. The row is re-tested inside
+  every callback, because the cursor moves faster than a fetch and a chunk
+  arriving for a map the player has scrolled off must not repaint the one they
+  are looking at. A coarse map for a moment and then the real one is the honest
+  order; a hole in the menu until two fetches return is not.
 - **A `WaterRect` is an EXTENT and the waterline is DERIVED**, which is the one
-  thing on that schematic that cannot be read straight off the layout. The real
+  thing on these maps that cannot be read straight off the layout. The real
   surface is a flat plane and the world is opaque, so a body is only the part of
   its rect the floor does not stand in front of — and the rects say so plainly:
   Greyfen's flood is one 250 m rect over the whole valley and Harrowmead's leat
   is 404 m by 100, so drawing the rects reported both maps as open water end to
-  end, with flags in it. `drawWater` bakes a depth mask over the union of the
-  rects instead, against the same `waterY` the surface sits at and the same
+  end, with flags in it. `mapPaint`'s water layer bakes a depth mask over the
+  union of the rects instead, against the same `waterY` the surface sits at and the same
   `TerrainField.surfaceAt` the real bed map is baked from, and draws nothing
-  where that depth is not positive. **A map with no `WaterEnvSpec` draws no
-  water here**, because `WaterSystem.build` returns on the same test.
+  where that depth is not positive. **A map with no floor in hand draws no
+  water at all** — a rect with nothing under it is not a shape, and that is
+  exactly the mistake this note is about.
 - **The prose those panels carry lives with the thing it describes**, not in
   this directory: a map's line is `MapDef.blurb` in
   [`world/maps.ts`](../src/world/maps.ts), a tier's is `blurb` beside its own
