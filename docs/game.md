@@ -32,12 +32,16 @@ on — `window.__celshock` non-null with every pool built the moment the
 constructor returns, which ~40 smoke scripts assume (`VERIFYING.md`). Awaiting
 in `main.ts` and injecting the result keeps both true at once.
 
-**Nothing about the engine's OPTIONS lives here either.** `antialias: false` and
-`stencil: false` are stated beside the `initAsync` call in `main.ts`, with the
-argument for each — and the second of them picks the depth FORMAT under WebGPU,
-which is what `GLASS_DEPTH_UNITS` and the outline z-offsets are measured in (see
-[`rendering.md`](rendering.md)). A change to either is a change to numbers three
-files away, so it is made where it is explained.
+**Nothing about the engine's OPTIONS lives here either.** `antialias: false`,
+`stencil: false` and `powerPreference: "high-performance"` (the hybrid-laptop
+adapter hint, shared with both bare `requestAdapter` probes so all three ask
+about the same GPU, and dropped for the whole boot by the gate rather than
+retried per site if a browser ever refuses it) are stated beside the
+`initAsync` call in `main.ts`, with the argument for each — and `stencil`
+picks the depth FORMAT under WebGPU, which is what `GLASS_DEPTH_UNITS` and the
+outline z-offsets are measured in (see [`rendering.md`](rendering.md)). A
+change to any of them is a change to numbers three files away, so it is made
+where it is explained.
 
 ## What may leave `Game.ts`, and what may not
 

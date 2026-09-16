@@ -60,6 +60,49 @@ registerServiceWorker();
 type GpuVerdict = "ok" | "insecure" | "unavailable";
 
 /**
+ * **On a laptop with two GPUs, this is what picks the fast one.**
+ * `powerPreference` is a HINT and not a request — the browser may hand back
+ * whatever it likes — but its default on a hybrid machine is the INTEGRATED
+ * adapter, and this frame is draw-call bound on hardware nobody here owns
+ * (`FINDINGS.md` #17). Babylon forwards the whole engine options object to
+ * `requestAdapter`, so the constructor below carries it; the two bare probes
+ * carry it too, because **a probe that asks a DIFFERENT adapter is answering
+ * about a GPU the game will not run on** — the boot gate would clear a
+ * machine whose other adapter fails, and the `?gpu` feature test would read
+ * `timestamp-query` off one device and require it of another.
+ *
+ * **It is a `let` because the GATE resolves it, and that is the whole guard
+ * against the hint costing somebody the game.** A machine with only
+ * integrated graphics is NOT supposed to be able to fail this: the hint
+ * narrows nothing, and the spec's adapter algorithm returns what the machine
+ * has — only `forceFallbackAdapter`, which nothing here passes, can turn a
+ * preference into a null. But that is a claim about every browser this ever
+ * runs on, the cost of being wrong is a capable machine told it has no
+ * WebGPU, and the cost of the guard is one extra `requestAdapter` on a boot
+ * that has already failed one. So `checkWebGPU` drops the hint and asks again
+ * before it refuses, and what it drops it drops for the REST OF THE BOOT —
+ * the probe and the engine read this variable, so the three cannot end up
+ * asking for different adapters, which is the failure this comment opened by
+ * describing.
+ *
+ * **What does NOT guard it is a try/catch around `initAsync`**, which is the
+ * obvious shape and is worse in three ways: `initAsync` rejects for every
+ * other reason too (no adapter at all, a device lost on creation, a driver
+ * that fell over), so a retry pays a second full init and puts the SECOND
+ * failure on the boot screen for the cases that actually happen; the dead
+ * engine cannot be cleaned up, since `WebGPUEngine.dispose` dereferences
+ * `_timestampQuery` and `_device` unconditionally and both are undefined
+ * before an adapter (`webgpuEngine.pure.js:3025`) — so it throws, and the
+ * half-built engine stays in `EngineStore.Instances` for the life of the
+ * page; and the retry would have to restate the engine's options, which is
+ * how `?gpu` quietly stops measuring anything.
+ *
+ * What the hint costs is battery on an unplugged laptop, which is the trade a
+ * shooter makes.
+ */
+let power: GPUPowerPreference | undefined = "high-performance";
+
+/**
  * WebGPU or nothing — every cel material, the shadow map and the GPU particle
  * systems assume it, and there is no WebGL fallback engine in the tree.
  *
@@ -90,8 +133,13 @@ type GpuVerdict = "ok" | "insecure" | "unavailable";
 async function checkWebGPU(): Promise<GpuVerdict> {
   if (!window.isSecureContext) return "insecure";
   try {
-    const adapter = navigator.gpu && (await navigator.gpu.requestAdapter());
-    return adapter ? "ok" : "unavailable";
+    if (await navigator.gpu?.requestAdapter({ powerPreference: power })) {
+      return "ok";
+    }
+    // Not expected to be reachable — see `power` — so the hint goes and does
+    // not come back rather than being retried per site.
+    power = undefined;
+    return (await navigator.gpu?.requestAdapter()) ? "ok" : "unavailable";
   } catch {
     return "unavailable";
   }
@@ -221,7 +269,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   let gpuTimingOk = false;
   if (wantGpuTiming) {
     try {
-      const probe = await navigator.gpu?.requestAdapter();
+      const probe = await navigator.gpu?.requestAdapter({
+        powerPreference: power,
+      });
       gpuTimingOk = !!probe?.features.has("timestamp-query");
     } catch {
       gpuTimingOk = false;
@@ -233,6 +283,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     engine = new WebGPUEngine(canvas, {
       antialias: false,
       stencil: false,
+      powerPreference: power,
       ...(gpuTimingOk
         ? { deviceDescriptor: { requiredFeatures: ["timestamp-query"] } }
         : {}),
