@@ -26,13 +26,14 @@
  *   dither living there would be a correctness fix that disappears.
  * - A new always-attached fifth full-screen pass costs a full read and write of
  *   the frame — exactly what `FINDINGS.md` §5 counts — to run three instructions.
- * - **With the grade attached there is nothing to fix.** Its grain is
- *   `(n - 0.5) * 0.055 * (1.3 - lum * 0.6)`, never less than about ten LSB of
- *   noise; it is already dithering the frame, far past what a dither needs. (That
- *   was the old screen grain. The paper grain that replaced it in `FilmGrain` has
- *   pixel-scale tooth too, but has not been re-measured as a dither.) The
- *   banding is a **grade-off** artefact, and the grade-off frame is the one
- *   configuration a pass inside the grade cannot reach.
+ * - **The banding is a grade-off artefact, and the grade-off frame is the one
+ *   configuration a pass inside the grade cannot reach.** The old screen grain
+ *   was `(n - 0.5) * 0.055 * (1.3 - lum * 0.6)`, never less than about ten LSB
+ *   of noise, so with the grade attached there was nothing left to fix — but
+ *   **that was a happy accident and the paper is not it**: measured on
+ *   Hollowmere it moves 0.7/255 RMS in the darkest band against 5.5 in the
+ *   brightest, the lit sheet (`paper.litFloor`) having put the dark end there
+ *   on purpose. Which is only a reason this argument never rested on it.
  *
  * So the noise goes in at the source, in the three shaders that draw the
  * gradients, where it is free and where the information still exists.

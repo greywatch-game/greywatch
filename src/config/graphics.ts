@@ -49,9 +49,19 @@ export const graphics = {
    * The film grain pass (`FilmGrain`): vignette, paper grain and chromatic
    * aberration. `grain` is the paper's strength; the map may restate all three
    * (`EnvironmentSpec.grade`).
+   *
+   * **`grain` is HOLLOWMERE's, because Hollowmere is the one map that states
+   * no grade of its own**, and it was set for the SCREEN noise the paper
+   * replaced. 0.055 carried over unmeasured, which left the night village
+   * running at twice the tree's other night map (Cinderhaven's 0.028) and
+   * nearly four times its brightest (Sarab's 0.011) — a paper that reads as
+   * dirt on the sky rather than as tooth on it. Measured against Coldharbour,
+   * which is the look this is aiming at: the paper there moves 1.1-2.3 of 255
+   * over the frame, and Hollowmere at 0.055 moved 3.5-5.5 with a dark plate
+   * under it. At 0.03, with the lit sheet below, it moves 0.7-3.0.
    */
   vignette: 0.62,
-  grain: 0.055,
+  grain: 0.03,
   aberration: 0.55,
   /**
    * The paper the world is drawn on — its GRAIN IS PINNED TO THE WORLD and not
@@ -71,6 +81,29 @@ export const graphics = {
      *  cloudy mottle under both. */
     fibres: 0.55,
     mottle: 0.7,
+    /**
+     * THE SHEET IS LIT AND NOT LUMINOUS — how much paper a pixel takes for
+     * the light that is on it.
+     *
+     * The paper is laid on twice: MULTIPLIED into the paint, which is
+     * self-scaling and needs none of this, and ADDED under it so a black
+     * shadow stays a sheet rather than becoming a hole. The added half is the
+     * one that has to be told, because it is the only one left as the paint
+     * goes to zero: on its own it puts the most paper exactly where there is
+     * no light to show any by, and a night map is then a spray of grey over
+     * black at the same absolute amplitude a noon map spends on a white wall.
+     * Measured on Hollowmere before this existed, the grain held a near-flat
+     * 3.5-5.5 of 255 from the darkest band to the brightest, which is 35% of
+     * the plate in the shadows against 5% on a lit wall — and a viewer reads
+     * the RATIO.
+     *
+     * `litKnee` is the luminance at which the sheet is fully lit (above it
+     * nothing is changed at all, which is why a bright map is untouched), and
+     * `litFloor` is the share that survives in the black — NOT zero, or the
+     * shadow is the featureless hole the added half exists to prevent.
+     */
+    litKnee: 0.35,
+    litFloor: 0.25,
     /**
      * Metres of lens inside which a pixel is the WEAPON, whose paper is pinned
      * to the CAMERA instead: it moves with the view, so world-pinned paper would

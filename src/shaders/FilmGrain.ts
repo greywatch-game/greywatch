@@ -62,6 +62,14 @@ import type { FrameDepth } from "./FrameDepth";
  * glass write no depth, so they carry the paper of what is behind them, which
  * is what paint on a sheet does.
  *
+ * THE SHEET IS LIT AND NOT LUMINOUS. The paper is laid on twice — multiplied
+ * into the paint and added under it — and only the added half survives as the
+ * paint goes to zero, so on its own it puts the most paper exactly where there
+ * is no light to show any by. It therefore takes the light at the pixel
+ * (`paper.litKnee`, `paper.litFloor`), which is what stops a night map being a
+ * spray of grey over black at the amplitude a noon map spends on a white wall.
+ * `docs/rendering.md` has what it measured and why the floor is not zero.
+ *
  * PRECISION IS THE TRAP, and why the octaves are offset from the CPU. A world
  * coordinate of 2 km divided by a 1 mm cell is two million cells, and a float32
  * holds that to a quarter of a cell — the grain would crawl. So the shader
@@ -118,6 +126,8 @@ const HELD_WITHIN: f32 = ${P.heldWithin.toFixed(3)};
 const SKY_FROM: f32 = ${P.skyFrom.toFixed(1)};
 const FIBRES: f32 = ${P.fibres.toFixed(3)};
 const MOTTLE: f32 = ${P.mottle.toFixed(3)};
+const LIT_KNEE: f32 = ${P.litKnee.toFixed(3)};
+const LIT_FLOOR: f32 = ${P.litFloor.toFixed(3)};
 
 // Buffer depth -> metres along the view axis. The same inverse CelInk,
 // MotionBlur and Volumetrics take: left-handed, NDC z in [0, 1], no reverse-z.
@@ -256,9 +266,18 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // shadow is still ink on a sheet rather than a hole in it. The light side is
   // warm and the dark side neutral: the pale flecks are the sheet showing
   // through, and a sheet is not white.
+  //
+  // THE SHEET IS LIT AND NOT LUMINOUS, and that is what keeps a night map from
+  // being a spray of grey over black. The added half is the only one that
+  // survives as the paint goes to zero — the multiplied half goes down with it
+  // — so on its own it puts the MOST paper exactly where there is least light
+  // to show any by, and its weight rises as the picture darkens on top of
+  // that. A sheet reflects what falls on it, so the added half takes the light
+  // at the pixel, down to a floor that keeps a shadow a sheet and not a hole.
   let g = paper(rel, world, foot) * uniforms.grain;
   let sheet = select(vec3f(1.0), vec3f(1.0, 0.94, 0.82), g > 0.0);
-  col = col * (1.0 + g * 2.2) + g * sheet * (0.9 - lumV * 0.5);
+  let lit = mix(LIT_FLOOR, 1.0, smoothstep(0.0, LIT_KNEE, lumV));
+  col = col * (1.0 + g * 2.2) + g * sheet * (0.9 - lumV * 0.5) * lit;
 
   fragmentOutputs.color = vec4f(col, 1.0);
 }

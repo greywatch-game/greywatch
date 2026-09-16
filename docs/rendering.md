@@ -1232,11 +1232,13 @@ nearly **seven pixels wide** on a plain village wall. `shaders/Dither.ts` adds
 one LSB of triangular noise immediately before `fragmentOutputs.color` in the
 cel, grass and water shaders — registered as the `celDither` include — which
 takes those contours to ~2 px. It is deliberately *not*
-in `FilmGrain`: that pass is detachable by a player setting, and its grain was
-already a ~10 LSB dither whenever it was attached (measured against the old screen
-grain; the paper that replaced it has not been re-measured as a dither) — so the banding is a
+in `FilmGrain`: that pass is detachable by a player setting, so the banding is a
 **grade-off** artefact, and the grade-off frame is the one a pass inside the
-grade cannot reach. The sky dome was the expected customer and measured as not
+grade cannot reach. **The old screen grain happened to be a ~10 LSB dither
+wherever it was attached, and the paper is NOT** — measured on Hollowmere, the
+paper moves 0.7/255 RMS in the darkest band and 5.5 in the brightest, and the
+lit sheet below is what put the dark end there deliberately. That changes
+nothing: the dither was never in the grade, and the fix is at the source. The sky dome was the expected customer and measured as not
 needing it (233 runs against 229): stars, the galactic band and the halo are
 painted over the whole ramp, and the clouds stand in front of it.
 
@@ -2220,7 +2222,7 @@ does not take, both being look decisions rather than bugs.
   a 3D noise there. A texture fixed in the world has no single size, so it is a stack of
   power-of-two OCTAVES, each fixed in the world, weighted by how many metres a pixel
   covers at that distance (Bénard et al.'s dynamic solid textures): walking toward a wall
-  fades finer octaves in and coarser ones out, and nothing slides. Four rules hold it up.
+  fades finer octaves in and coarser ones out, and nothing slides. Five rules hold it up.
   **The shader divides only CAMERA-RELATIVE distances**, and where the eye sits in each
   octave's wrapped lattice is computed in float64 on the CPU and uploaded per level —
   a 2 km coordinate over a millimetre cell is a quarter-cell crawl in float32. **The
@@ -2233,6 +2235,24 @@ does not take, both being look decisions rather than bugs.
   40 px yaw moves the grain 40–41 px with the scene (correlation 0.50–0.56 there, ~0 at
   0 px), and the pass is ~0.25 ms of GPU at 1920x1080 on the Windows box, eight extra
   copies attached against none.
+- **THE SHEET IS LIT AND NOT LUMINOUS, and that is what makes the paper a rule a DARK
+  map can take rather than a number each one has to dodge.** The paper is laid on
+  twice — MULTIPLIED into the paint, which scales itself, and ADDED under it so a black
+  shadow stays a sheet and not a hole — and the added half is the one that needs
+  telling, being the only one left standing as the paint goes to zero. Worse, its own
+  weight RISES as the picture darkens (`0.9 - lum * 0.5`, the pale flecks of sheet
+  showing through heavy ink), so the two compound. Measured on Hollowmere before the
+  fix: the grain held a near-flat **3.5–5.5 of 255 from the darkest band of the frame
+  to the brightest**, which is **35% of the plate in the shadows against 5% on a lit
+  wall** — and the eye reads the RATIO, so a night map was a spray of grey over black
+  at the amplitude a noon map spends on a white wall. A sheet reflects what falls on
+  it, so the added half now takes the light at the pixel: `mix(paper.litFloor, 1,
+  smoothstep(0, paper.litKnee, lum))`. **Above the knee nothing changes at all**, which
+  is why a bright map is untouched — 74% of a Coldharbour frame came back
+  byte-identical — and **the floor is not zero**, or the shadow is exactly the hole the
+  added half exists to prevent. After it, with `graphics.grain` down from the old
+  screen grain's 0.055 to 0.03, Hollowmere moves **0.7–3.0 of 255 at 2.6–7% of the
+  plate**, against Coldharbour's 1.1–2.3 at 1.1–5%.
 - The cobblestone texture is 512² over a 1.5 m tile (`textures.ts`), sized for a
   camera **1.55 m above the street**. 512 is also written into the shader —
   `perturbNormal` takes its taps at a hard-coded `1.0 / 512.0` — so the two move
