@@ -445,6 +445,12 @@ uniform opaqueAlpha: f32;
 // rather than literals so the pair can be judged live against a wall.
 uniform variationScale: f32;
 uniform variationAmount: f32;
+// The map's grime and how much of it. x is the strength of the whole term and
+// 0 is off; y is the cosine edge the vertical fade starts at. See the WEAR
+// block in the fragment body, and \`CONFIG.wear\` for what the bake put in the
+// blue channel these are spent on.
+uniform wearColor: vec3f;
+uniform wearParams: vec2f;
 
 uniform pointPos: array<vec3f, ${MAX_POINT_LIGHTS}>;
 uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by intensity
@@ -921,6 +927,51 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
       * (valueNoise(fragmentInputs.vPosW * uniforms.variationScale) - 0.5);
   }
   #endif
+
+  // --- WEAR: the ground's dirt climbing the first metre of every wall ---
+  //
+  // TWO FACTORS, ONE FROM EACH END. \`vBaked.z\` is the height ramp the bake
+  // wrote — 1 at the footing, 0 by \`CONFIG.wear.height\` — because only the bake
+  // can know how far above the TERRAIN a vertex is without sampling the
+  // heightfield per pixel. \`n.y\` is how vertical this face is, and only the
+  // fragment can know that cheaply, because it holds the world normal already.
+  // Baking the second would have spent the colour buffer's last free channel on
+  // something free at this end.
+  //
+  // WHY IT IS A MIX AND NOT A MULTIPLY. Grime is a substance ON the surface,
+  // not the surface being darker, so a fully-grimed footing should reach the
+  // same colour whatever it is made of — a whitewashed cottage and a slate
+  // warehouse meet the same mud. A multiply keeps the wall's own hue and just
+  // dims it, which is what AO already does two lines up, and stacking a second
+  // darkening on the first is why this read as a shadow the first time it was
+  // tried. It is applied to \`base\` rather than to \`col\` for the same reason:
+  // dirt is ALBEDO, and it has to be lit by the map like the wall it is on, or
+  // a wall in shadow has clean-looking dirt on it.
+  //
+  // OUTSIDE \`CEL_PALETTE\`, deliberately. The block-merged village draws through
+  // \`getWorldCel\` and would be covered by sitting inside that define with the
+  // albedo variation, but not every world mesh is block-merged, and a term that
+  // grimed the buildings and left the scatter props and the terrain's banks
+  // clean would draw a line exactly where the merge happens to fall — which is
+  // a fact about draw-call batching and not about the world.
+  //
+  // THE BRANCH IS THE ONE ALREADY BEING TAKEN. \`vBaked.y\` is 1 on baked world
+  // geometry and 0 on the rigs, the viewmodel and every effect mesh, so this is
+  // uniform across a whole mesh and predicts perfectly — the argument written
+  // out in full above the albedo variation. The \`wearParams.x > 0\` half is
+  // uniform across the whole DRAW, so a clean map pays nothing per pixel.
+  if (uniforms.wearParams.x > 0.0 && fragmentInputs.vBaked.y > 0.5) {
+    // Full at vertical, none at level, smooth between. \`abs\` because an
+    // UNDERSIDE is as level as a floor and collects no splash either — a
+    // soffit, a deck's belly, the underside of an arch.
+    let upright = 1.0 - smoothstep(uniforms.wearParams.y, 1.0, abs(n.y));
+    base = mix(
+      base,
+      uniforms.wearColor,
+      fragmentInputs.vBaked.z * upright * uniforms.wearParams.x,
+    );
+  }
+
   var col = base * light;
 
   // Soft shoulder: several lights overlapping (or a torch at point-blank
@@ -1403,6 +1454,8 @@ export class CelMaterialFactory {
     "bodyShadowParams",
     "variationScale",
     "variationAmount",
+    "wearColor",
+    "wearParams",
     "specColor",
     "specShininess",
     "specMirror",
@@ -1535,6 +1588,15 @@ export class CelMaterialFactory {
   private skyZenithColor = new Color3(0.1, 0.14, 0.22);
   private rimColor = new Color3(0.18, 0.2, 0.26);
   private mistColor = new Color3(0.1, 0.12, 0.15);
+  // A map with no `wear` block is CLEAN, and the amount is what says so — the
+  // colour is then never read. Defaulted here rather than left undefined so a
+  // material created before the first `setEnvironment` binds a real vec3 rather
+  // than whatever an unwritten uniform holds; uniforms read as zeros when
+  // unwritten, which would be black dirt at amount 0 and invisible, but relying
+  // on that is relying on the amount never being raised before an environment
+  // lands.
+  private wearColor = new Color3(0.1, 0.1, 0.1);
+  private wearAmount = 0;
   private mistParams = new Vector2(2.2, 0.45);
 
   // Packed point-light uniforms, re-used every frame to avoid allocation.
@@ -2145,6 +2207,8 @@ export class CelMaterialFactory {
     mistColor: Color3;
     mistHeight: number;
     mistStrength: number;
+    wearColor: Color3;
+    wearAmount: number;
   }): void {
     this.lightDir = env.lightDir.normalizeToNew();
     this.lightColor = env.lightColor;
@@ -2166,6 +2230,8 @@ export class CelMaterialFactory {
     setEmissiveFog(fogState.color, fogState.start, fogState.end);
     this.mistColor = env.mistColor;
     this.mistParams.set(env.mistHeight, env.mistStrength);
+    this.wearColor = env.wearColor;
+    this.wearAmount = env.wearAmount;
     this.cache.forEach((mat) => this.applyEnvironment(mat));
   }
 
@@ -2509,6 +2575,19 @@ export class CelMaterialFactory {
     const variation = CONFIG.graphics.albedoVariation;
     mat.setFloat("variationScale", 1 / Math.max(0.001, variation.metersPerCell));
     mat.setFloat("variationAmount", variation.amount);
+    // The map's grime, and the one piece of state in this method that IS the
+    // map's — see `EnvironmentSpec.wear` for why dirt is a claim about a place
+    // where the albedo variation above is a claim about the renderer. The
+    // vertical fade's edge is CONFIG's: it is the physics of splash-back and is
+    // the same in every village.
+    mat.setColor3("wearColor", this.wearColor);
+    mat.setVector2(
+      "wearParams",
+      new Vector2(
+        this.wearAmount,
+        Math.sin((CONFIG.wear.verticalDegrees * Math.PI) / 180),
+      ),
+    );
   }
 
   /**

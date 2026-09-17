@@ -1,8 +1,11 @@
 /**
  * vertexShading.ts — The world's baked vertex-colour buffer, written once per
  * map build from the collider boxes and the terrain: ambient occlusion in the
- * ALPHA, the world mark in the GREEN, the wind's sway weight in the RED.
- * Owns: the occlusion estimate, the sway ramp, and the vertex-colour write.
+ * ALPHA, the world mark in the GREEN, the wind's sway weight in the RED and the
+ * wear ramp in the BLUE. All four channels are spoken for; a fifth per-vertex
+ * quantity has nowhere to go and owes a second buffer and the argument for it.
+ * Owns: the occlusion estimate, the sway ramp, the wear ramp, and the
+ * vertex-colour write.
  * Owns no geometry and no materials; `MapBuilder` calls it, `world/sway.ts`
  * says what a mesh's weight means and `CelShader` reads what it wrote.
  * Invariants: AO lives in the ALPHA and 1.0 means UNOCCLUDED (see below — the
@@ -11,11 +14,11 @@
  * meshes are written to (see the guard in `walk`), and `hasVertexAlpha` must
  * stay false. Contract: `docs/rendering.md`.
  *
- * **Three channels, one walk, and one reason they share a file.** Each is a
+ * **Four channels, one walk, and one reason they share a file.** Each is a
  * per-vertex quantity that can only be known once the merges are done and that
  * has to be derived from where a vertex ENDED UP rather than from what it was
  * built as — see the merge argument below, which is the same argument for all
- * three. Splitting them would mean walking a few hundred thousand vertices
+ * four. Splitting them would mean walking a few hundred thousand vertices
  * twice and re-uploading the same buffer to say two things about it.
  *
  * WHY. The renderer had four light terms and no occlusion of any kind, and no
@@ -50,6 +53,22 @@
  * gale without carrying a byte, and the shader needs no define and no branch it
  * would not have taken anyway. `world/sway.ts` owns what the number MEANS; this
  * file owns where it lands.
+ *
+ * The BLUE channel is the fourth and the trick's last free slot: how far up
+ * from the ground this vertex is, ramped and inverted so 1 is at the footing
+ * and 0 is clear of it. Its neutral value is 0 again — CLEAN — so the rigs, the
+ * viewmodel and every effect mesh are exempt by construction exactly as they
+ * are from sway, and the branch the shader takes on the world mark is the same
+ * one it was already taking. `CONFIG.wear` owns what the number MEANS and
+ * `EnvironmentSpec.wear` owns how much of it a given map spends; this file owns
+ * where it lands.
+ *
+ * **What the blue channel deliberately does NOT carry is the other half of the
+ * term.** Wear is the height ramp TIMES how vertical the surface is, and the
+ * second factor is a fragment's own business: it has the world normal already,
+ * and baking it would spend the one remaining channel on something free at the
+ * other end. The split is the same one AO makes — bake what only the bake can
+ * know.
  *
  * AFTER THE MERGE, NEVER BEFORE. `VertexData.merge` throws outright —
  * "Cannot merge vertex data that do not have the same set of attributes" — the
@@ -253,6 +272,14 @@ export function bakeVertexShading(
   size: number,
 ): number {
   const cfg = CONFIG.ao;
+  const wearCfg = CONFIG.wear;
+  const wearHeight = wearCfg.height;
+  // NOTE the asymmetry with the AO's early return above: `ao.strength` at 0
+  // skips the whole walk, and wear cannot, because the walk is also what writes
+  // the sway weight and the world mark. Wear has no disable of its own for the
+  // same reason — its strength is the MAP's (`EnvironmentSpec.wear`), spent at
+  // fragment time, so a clean map costs one `Math.pow` per vertex at build and
+  // exactly nothing per frame.
   if (cfg.strength <= 0) return 0;
   // Glass occludes nothing: it is transparent while it stands and gone after,
   // and a pane that darkened the reveal it sits in would leave that shadow
@@ -325,11 +352,29 @@ export function bakeVertexShading(
       // valley falls two metres under a stand of trees and dips to -1.34 in a
       // riverbed, and a ramp measured from y = 0 would plant the ferns on one
       // bank and let the ones on the other slide.
-      colors[i * 4] = layer
-        ? swayWeight(py - terrain.heightAt(px, pz), layer)
-        : 0;
+      //
+      // HOISTED, and it is now unconditional where it used to be foliage's
+      // alone. Both the sway ramp and the wear ramp are functions of exactly
+      // this number, so a second `heightAt` here would be the same bilinear
+      // sample of the same field twice per vertex. What the hoist costs is that
+      // every NON-foliage vertex now takes one it did not before — see the
+      // measurement in the header.
+      const above = py - terrain.heightAt(px, pz);
+      colors[i * 4] = layer ? swayWeight(above, layer) : 0;
       colors[i * 4 + 1] = 1;
-      colors[i * 4 + 2] = 0;
+      // The wear ramp, 1 at the footing and 0 by `wearCfg.height`. Clamped at
+      // the TOP as well as the bottom because `above` goes negative on anything
+      // founded below grade — a sunken wall, a quay's face, the terrain's own
+      // skirt — and an unclamped ramp would hand those a weight above 1 and
+      // push the mix past the dirt colour into whatever lies beyond it.
+      //
+      // This is the ramp ALONE, with no strength folded in: how dirty the place
+      // is belongs to `EnvironmentSpec.wear` and is spent as a uniform, which is
+      // what lets a map be dirtied without a rebuild. Nothing here knows which
+      // map it is baking.
+      colors[i * 4 + 2] = wearHeight > 0
+        ? Math.pow(Math.min(1, Math.max(0, 1 - above / wearHeight)), wearCfg.falloff)
+        : 0;
       colors[i * 4 + 3] = ao;
     }
 

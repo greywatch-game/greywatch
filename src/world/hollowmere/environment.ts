@@ -52,6 +52,17 @@ export const HollowmereEnvironment: EnvironmentSpec = {
   mistColor: "#1d2a38",
   mistHeight: 3.2,
   mistStrength: 0.45,
+  /**
+   * A wet village at night. The dirt is `floorColor` taken down and a shade
+   * greener — this valley's ground is damp and the walls wick it, which is the
+   * literal fiction of the term and the one map where it needs no licence.
+   *
+   * 0.34 is middling on purpose. Hollowmere is the darkest map in the rotation
+   * and the ambient is already doing most of the work at a footing, so a
+   * stronger mix lands on top of the AO's crease and reads as a second shadow
+   * rather than as dirt.
+   */
+  wear: { color: "#2b2b24", amount: 0.34 },
   lighting: {
     color: "#a8c4ff",
     intensity: 0.78,

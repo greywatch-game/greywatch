@@ -275,6 +275,36 @@ export interface GrassEnvSpec {
  * This is the old `RoomTheme.environment` minus `props` — a hand-laid map
  * carries its own placements, so the environment no longer owns a prop roster.
  */
+/**
+ * A map's grime: the colour of its dirt and how much of it there is.
+ *
+ * Both halves are needed together and neither is useful alone, which is why
+ * this is one optional block rather than two optional fields — a colour with no
+ * amount paints nothing and an amount with no colour has nothing to paint.
+ */
+export interface WearSpec {
+  /**
+   * The dirt's colour. The term is a `mix` TOWARD this rather than a multiply,
+   * so it is the colour a fully-grimed footing actually reaches, and it is read
+   * directly rather than being scaled by any light term — see the fragment.
+   *
+   * It wants to be near the map's own `floorColor` and a little darker: the
+   * fiction is the ground climbing the wall, and a hue that disagrees with the
+   * ground reads as a painted plinth. Going lighter than the wall inverts the
+   * whole effect and is worth trying exactly once on a dust map.
+   */
+  color: string;
+  /**
+   * How much of the way to `color` a fully-grimed fragment goes, 0 to 1.
+   *
+   * This is the strength of the WHOLE term and 0 is off. Past ~0.5 the footing
+   * stops reading as a dirty wall and starts reading as a second material, at
+   * which point the building looks like it has a plinth — which is a fine thing
+   * to want and the wrong way to get it.
+   */
+  amount: number;
+}
+
 export interface EnvironmentSpec {
   /**
    * The valley floor's colour, and the ONE answer to what colour the ground
@@ -355,6 +385,25 @@ export interface EnvironmentSpec {
   mistColor: string;
   mistHeight: number;
   mistStrength: number;
+  /**
+   * How dirty this place is, and what colour its dirt is — the grime the bake
+   * ramps up the first `CONFIG.wear.height` of every vertical face.
+   *
+   * ABSENT IS CLEAN, so a map that says nothing is unaffected and this shipped
+   * without touching five of the six. The ramp itself is always baked (it is
+   * map-independent geometry — see `CONFIG.wear`), so this is a pair of
+   * uniforms and nothing here needs a rebuild: the editor's work light
+   * re-derives it with every other palette field, and a map may be dirtied and
+   * cleaned in a live round.
+   *
+   * WHAT MAKES IT WORTH BEING THE MAP'S rather than one number in CONFIG is
+   * that dirt is the cheapest thing in this renderer that says WHERE you are.
+   * Ash is not mud and neither is dust: Cinderhaven's grime wants to be the
+   * volcano's, Sarab's the desert's, and a single global brown would announce
+   * that all six places are the same place with the lights changed — which is
+   * the exact criticism this term exists to answer.
+   */
+  wear?: WearSpec;
   lighting: {
     color: string;
     intensity: number;
@@ -533,6 +582,11 @@ export function applyEnvironment(
     mistColor: Color3.FromHexString(env.mistColor),
     mistHeight: env.mistHeight,
     mistStrength: env.mistStrength,
+    // Absent is CLEAN, and it is the AMOUNT that says so rather than the
+    // colour: a map with no `wear` block sends 0 and the colour is never read,
+    // which is what lets five of the six maps say nothing and be bit-identical.
+    wearColor: Color3.FromHexString(env.wear?.color ?? "#000000"),
+    wearAmount: env.wear?.amount ?? 0,
   });
   // The ground's wet sheen is the map's weather, and it is tuned against the
   // key light's elevation — which this function has just changed. Pushed here

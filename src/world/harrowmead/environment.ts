@@ -141,6 +141,17 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
   mistColor: "#cfb593",
   mistHeight: 2.4,
   mistStrength: 0.16,
+  /**
+   * Farmland at sunset: dry earth rather than mud, so the dirt is `floorColor`
+   * taken down and slightly warmer, and the amount sits under Hollowmere's.
+   * Dust settles on a wall; damp climbs it, and only one of those is happening
+   * here.
+   *
+   * Worth knowing when reading this against the others: the sun is 14.5 degrees
+   * and gold, so a footing on the lit side is much brighter than on any other
+   * map and the same 0.30 shows more of itself there than it does at night.
+   */
+  wear: { color: "#2a2a18", amount: 0.30 },
   lighting: {
     /**
      * Deep gold, and the SATURATION is doing the work the level cannot: the

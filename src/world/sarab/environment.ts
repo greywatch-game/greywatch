@@ -139,6 +139,18 @@ export const SarabEnvironment: EnvironmentSpec = {
   mistColor: "#cabb9b",
   mistHeight: 4.5,
   mistStrength: 0.14,
+  /**
+   * THE ONE THAT INVERTS, and it is the map `EnvironmentSpec.wear` says to try
+   * it on. Everywhere else the dirt is darker than the wall, because everywhere
+   * else the dirt is wet. Here it is blown dust under a 52-degree sun, and dust
+   * that has settled on a shaded footing is LIGHTER than the wall above it —
+   * so the colour is `floorColor` lifted rather than dropped.
+   *
+   * Read against the rest of the file this is the same argument the ambient
+   * makes: dry grit under a high sun is nothing like any of the other five, and
+   * a term that only ever darkens would have made the desert look damp.
+   */
+  wear: { color: "#a8956e", amount: 0.32 },
   lighting: {
     color: "#fff2d6",
     intensity: 1.02,

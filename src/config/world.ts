@@ -82,6 +82,78 @@ export const ao = {
 } as const;
 
 /**
+ * The world's WEAR: the grime a surface collects where it meets the ground,
+ * baked into the BLUE channel of the same vertex walk that writes the AO and
+ * spent by the cel shader as a tint toward the map's own dirt colour.
+ *
+ * WHY IT RIDES THE BAKE. What a fragment cannot answer for itself is how far
+ * above the GROUND it is: it holds `vPosW` and its own normal, but the terrain
+ * height at its own xz is a heightfield sample, and taking one per pixel would
+ * put a texture fetch and a filter on every world surface in the frame. It is a
+ * per-vertex quantity knowable only once the merges are done and derived from
+ * where a vertex ENDED UP — which is the AO's argument word for word, and why
+ * this shares that walk rather than asking for one of its own.
+ *
+ * WHAT IT IS FOR. The cel shader has no texture detail, so a wall is one flat
+ * band from its footing to its eaves and meets the street with nothing but the
+ * AO's crease. That reads as a building PLACED on the ground rather than one
+ * standing in it. A dirt ramp up the first metre or two of every vertical face
+ * is the cheapest thing that fixes it, and it is the only surface-detail term
+ * in this renderer that costs no sample, no lattice and no second material.
+ *
+ * ONLY THE RAMP'S GEOMETRY IS HERE, and the split is the one the eight
+ * overrides in `CLAUDE.md`'s table already make: how splash-back and damp climb
+ * a wall is physics and is the same everywhere, so it is CONFIG; how dirty a
+ * place is and what colour its dirt is are claims about a PLACE, so they are
+ * `EnvironmentSpec.wear` and default to nothing. A map that says nothing is
+ * unaffected.
+ *
+ * It is NOT `graphics.albedoVariation` with a different name. That term is a
+ * noise breaking one flat albedo up so a wall is not one value — a property of
+ * the RENDERER, which is why its own note says weathering belongs to the look
+ * and not to the map. This one is directional, keyed to the ground, and says
+ * something about where it is; the two stack and neither substitutes.
+ */
+export const wear = {
+  /**
+   * How far up a surface the grime reaches, in metres.
+   *
+   * 1.6 is chosen against the KIT rather than against a photograph: the
+   * building kit's ground-floor band — sills, door heads, the course a
+   * shopfront's fascia sits on — lands between 1.4 and 2.2 m, so a ramp dying
+   * at 1.6 stays underneath the architecture and reads as the ground climbing
+   * the wall. Pushed to head height it stops being contact grime and becomes a
+   * two-tone paint job on every building in the village.
+   */
+  height: 1.6,
+  /**
+   * The ramp's shape: 1 is linear, higher crowds the dirt toward the footing.
+   *
+   * Linear puts as much grime at waist height as at the skirting, which is
+   * exactly what reads as paint rather than as dirt. Splash-back and capillary
+   * damp both fall off fast, so the curve wants to be well over 1 — and this is
+   * the first number to move if the effect reads as a BAND rather than a STAIN.
+   */
+  falloff: 2.2,
+  /**
+   * How far from vertical a face may lean and still take the full ramp, in
+   * degrees.
+   *
+   * Grime of this kind is splash and rising damp: both climb a wall, neither
+   * collects on a floor. So the term is weighted by how vertical the surface
+   * is — which the FRAGMENT answers from its own normal and which is therefore
+   * not baked, the mirror of the height ramp it cannot answer.
+   *
+   * Without it the terrain takes the ramp over its whole area (every ground
+   * vertex is at zero height above the ground by construction) and the map
+   * shifts tone for nothing. A roof pitch — ~24 degrees in the kit, see
+   * `BuildingKit.gableRoof` — sits well outside this and stays clean, which is
+   * right: a roof's dirt is a different signal and would want its own term.
+   */
+  verticalDegrees: 35,
+} as const;
+
+/**
  * Surface water (Hollowmere's creek and bog, Greyfen's flood, Harrowmead's
  * mill leat). Visual only — the planes carry no collider, so wading is free
  * and swimming never comes up. Palette lives in the map's EnvironmentSpec;

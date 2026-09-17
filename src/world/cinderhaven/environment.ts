@@ -160,6 +160,19 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
   mistColor: "#241d33",
   mistHeight: 5,
   mistStrength: 0.38,
+  /**
+   * Ash, and it is the map where the dirt is not the ground's at all: it falls
+   * out of the air. So this one alone is not derived from `floorColor` but from
+   * the cone's own tone — warm-grey with the purple the whole island is lit in
+   * — and it wants to read on the quay and the harbour wall as much as at a
+   * cottage's footing.
+   *
+   * 0.36 against Greyfen's 0.42: ash settles rather than wicking, so it is more
+   * even and less concentrated at the very bottom of the ramp than damp is.
+   * The ramp's shape is CONFIG's and cannot be said per map, which is the one
+   * thing this block would ask for if it could.
+   */
+  wear: { color: "#292430", amount: 0.36 },
   lighting: {
     /**
      * Fire, not moonlight — see the header. The intensity is under a moon's

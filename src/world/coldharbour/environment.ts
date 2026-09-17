@@ -170,6 +170,16 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
   mistColor: "#cbbfa9",
   mistHeight: 4.5,
   mistStrength: 0.11,
+  /**
+   * The cleanest place in the rotation and the only one that is NEW: a business
+   * district in the afternoon, glass and poured concrete, swept pavements. 0.26
+   * is the floor of what still reads at all, and it is meant to — the point of
+   * having this number per map is that somewhere gets to be tidy.
+   *
+   * Cooler and greyer than the other five, because urban grime is traffic film
+   * and not earth. There is no soil here for the walls to wick.
+   */
+  wear: { color: "#3a3833", amount: 0.26 },
   lighting: {
     color: "#ffd9a0",
     intensity: 1.12,

@@ -580,12 +580,26 @@ publishes — nothing may describe different weather from the wall in front of i
 
 **The world carries a VERTEX COLOUR buffer and its neutral values are the GL
 defaults, not ours** — baked occlusion in the **alpha**, a world marker in the
-**green**, the wind's sway weight in the **red**, because a mesh with no such
-buffer reads the disabled attrib's `(0, 0, 0, 1)`: unoccluded, not world,
-planted, which is what lets the rigs, the viewmodel and every effect mesh stay
-correct while carrying nothing. The bake (`world/vertexShading.ts`) runs **after
-every merge**: `VertexData.merge` throws when one mesh in a group has `colors`
-and another does not.
+**green**, the wind's sway weight in the **red** and the wear ramp in the
+**blue**, because a mesh with no such buffer reads the disabled attrib's
+`(0, 0, 0, 1)`: unoccluded, not world, planted, clean — which is what lets the
+rigs, the viewmodel and every effect mesh stay correct while carrying nothing.
+**All four channels are now spoken for**, so a fifth per-vertex quantity owes a
+second buffer and the argument for it. The bake (`world/vertexShading.ts`) runs
+**after every merge**: `VertexData.merge` throws when one mesh in a group has
+`colors` and another does not.
+
+**A map's GRIME is the MAP's and its ramp is not** (`EnvironmentSpec.wear`
+against `CONFIG.wear`), and the split is the one every override in this file
+makes: how splash-back and rising damp climb a wall is physics and is the same
+in every village, while what colour a place's dirt is and how much of it there
+is are claims about that place. Absent is CLEAN, so a map that says nothing is
+unaffected. **The ramp is always baked and the strength is always a uniform**,
+which is what lets a map be dirtied without a rebuild and is why the editor's
+work light re-derives it with every other palette field. **Sarab is the one
+that INVERTS** — blown dust is LIGHTER than the wall it settles on, where every
+other map's dirt is wet and darker — so nothing may assume the term only ever
+darkens.
 
 **There is ONE wind and everything that leans in it leans the same way** —
 `CONFIG.wind`, clocked by `CelMaterialFactory.updateWind` beside the grass
