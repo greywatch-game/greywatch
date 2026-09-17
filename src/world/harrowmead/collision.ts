@@ -42,7 +42,7 @@
 import type { MapCollision } from "../collision";
 
 export const HarrowmeadCollision: MapCollision = {
-  sourceHash: "40a8cf06eff6a8d5",
+  sourceHash: "173059b80269673e",
   boxes: [
   [1604,20,2,0,10,801,0,0],
   [1604,20,2,0,10,-801,0,0],

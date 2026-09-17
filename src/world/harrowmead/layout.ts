@@ -454,6 +454,114 @@ const scatter: ScatterSpec[] = [
   { prop: "fernClump", x: 30, z: 47, width: 40, depth: 10, count: 10, scale: [0.8, 1.4] },
   { prop: "fernClump", x: 30, z: 13, width: 50, depth: 10, count: 10, scale: [0.8, 1.4] },
   { prop: "fernClump", x: 120, z: 46, width: 56, depth: 12, count: 10, scale: [0.8, 1.4] },
+
+  // ===== THE COUNTRY BEYOND THE PLAY SQUARE ==================================
+  // Appended for the reason the greening above it was, and the same warning
+  // applies: this is the END of the stream, and a region spliced in above it
+  // re-rolls every field below.
+  //
+  // WHY IT IS HERE AT ALL. `borderland` below used to argue that the margin
+  // was deliberately bare, and half of that argument was right and half of it
+  // was a consequence dressed up as a decision. What was right is that the
+  // dressing THINNING OUT is the first thing a player notices about leaving
+  // the vale, a beat ahead of the countdown — so the hedge lines, the walls,
+  // the grass and the fern understory still all stop dead at the play square
+  // and the ring a player is actually run out through is still open pasture.
+  // What was wrong is what that left on the HORIZON. Six hundred metres of
+  // unbroken grass under `fogEnd` 520 is not "the country keeps going"; it is
+  // a flat plane fading to `fogColor`, which reads as a backdrop rather than
+  // as distance, and a vale whose own fields are hedged and wooded to the last
+  // metre and then stop is a diorama on a table. What tells an eye that ground
+  // recedes is stuff standing ON it at intervals, and in farm country that is
+  // woods and field boundaries.
+  //
+  // So the play square keeps its bare collar and the country resumes past it.
+  // Nothing here is nearer than 90 m to the play edge, which is what makes the
+  // whole block cost the FIGHT nothing: the leash is ten seconds and a sprint
+  // is 6.9 m/s, so a living player reaches 69 m past the square and no
+  // further, and a bot cannot reach the borderland at all (the nav graph stops
+  // at the play square, and bots are never leashed). Everything below is
+  // therefore scenery in the strict sense — it is looked at from inside the
+  // map and it is never stood in.
+  //
+  // WHICH IS WHY NONE OF IT BLOCKS, and that is the load-bearing line in this
+  // block rather than a saving. A blocking prop is a collider, a `WorldBox`
+  // and a row in the collision bake; out here it would be 2.5 km2 of geometry
+  // the bots can neither see nor route around, and — the sharp one — it would
+  // be something to CATCH a player sprinting home against a countdown. Omit
+  // `blocking` and the props emit nothing at all: no collider, no box, no
+  // change to the nav graph, the cover bake, the obstacle field or the baked
+  // collision set, which stays byte-identical across this change. Nothing can
+  // walk into one because nothing alive gets within 90 m of one.
+  //
+  // WHAT IT COSTS is draw calls and vertices, and the arithmetic is the reason
+  // there are twenty-one regions here and not sixty. Each region merges to
+  // one or two meshes and is filed under one cull cell, so ~874 trees land as
+  // twenty-odd draws that `WorldCulling` drops whenever the camera is more
+  // than `fogEnd` off their bounds. Counts are the woods' own density from
+  // inside the map (~120 m2 a tree, the south-east wood's) rather than
+  // anything thinner, because a stand read at 300 m through half a fog has to
+  // be a MASS: at 19 m spacing it comes back as scattered dots. Nothing
+  // smaller than a tree is out here — a fern at 300 m is a sub-pixel draw call.
+  //
+  // AND IT IS NOT A RING. A continuous belt of wood round the vale is the bowl
+  // the downs rim was removed for, one notch quieter. The sides are given
+  // different country: the north is the wooded, watered one (the knoll wood
+  // carries on, and the stream's ash line follows the channel out of the map —
+  // the floor past the grid continues the edge profile, so the watercourse
+  // really does run on out there), the east repeats the south-east wood and
+  // takes the stream out the other side, the west has the one hanger, and the
+  // SOUTH is deliberately the thinnest side on the map: two hedge lines, one
+  // far wood and a copse, with what closes that quarter off standing on the
+  // two corners either side of it rather than across the middle of it. Stand
+  // on the green and look south and the country opens out; look north and it
+  // closes in.
+
+  // NORTH — the wooded side, and the one the stream comes in through.
+  { prop: "pine", x: -320, z: 352, width: 130, depth: 104, count: 110, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "ashTree", x: -320, z: 300, width: 130, depth: 16, count: 14, scale: [0.8, 1.15], clearance: 2.0 },
+  // The stream's own line of standards, running out of the vale up the channel
+  // it cut through the north edge (the bed is lowest at x = -40 there).
+  { prop: "ashTree", x: -46, z: 394, width: 24, depth: 208, count: 24, scale: [0.8, 1.15], clearance: 2.0 },
+  { prop: "ashTree", x: 112, z: 316, width: 276, depth: 12, count: 24, scale: [0.8, 1.15], clearance: 2.0 },
+  { prop: "pine", x: 196, z: 432, width: 220, depth: 26, count: 34, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "ashTree", x: -80, z: 540, width: 376, depth: 14, count: 28, scale: [0.8, 1.15], clearance: 2.0 },
+
+  // EAST — where the stream leaves (the bed crosses x = +200 at z = -12), and
+  // the south-east wood's country carrying on.
+  { prop: "ashTree", x: 400, z: -12, width: 216, depth: 24, count: 24, scale: [0.8, 1.15], clearance: 2.0 },
+  { prop: "pine", x: 402, z: -222, width: 120, depth: 132, count: 108, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "ashTree", x: 336, z: -222, width: 14, depth: 132, count: 14, scale: [0.8, 1.15], clearance: 2.0 },
+  { prop: "ashTree", x: 322, z: 146, width: 12, depth: 236, count: 20, scale: [0.8, 1.15], clearance: 2.0 },
+  { prop: "pine", x: 544, z: 92, width: 26, depth: 260, count: 32, scale: [0.9, 1.4], clearance: 1.2 },
+
+  // SOUTH — the open side, and kept open. Two boundaries and one wood far
+  // enough out to be most of the way into the fog.
+  { prop: "ashTree", x: -28, z: -322, width: 320, depth: 12, count: 26, scale: [0.8, 1.15], clearance: 2.0 },
+  { prop: "pine", x: -398, z: -428, width: 110, depth: 96, count: 76, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "ashTree", x: 158, z: -404, radius: 26, count: 12, scale: [0.8, 1.15], clearance: 2.0 },
+  { prop: "ashTree", x: 44, z: -536, width: 296, depth: 14, count: 22, scale: [0.8, 1.15], clearance: 2.0 },
+
+  // WEST — the hanger the west wood runs into, and one boundary north of it.
+  { prop: "pine", x: -390, z: -58, width: 112, depth: 152, count: 118, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "ashTree", x: -326, z: -58, width: 14, depth: 152, count: 16, scale: [0.8, 1.15], clearance: 2.0 },
+  { prop: "ashTree", x: -318, z: 148, width: 12, depth: 188, count: 16, scale: [0.8, 1.15], clearance: 2.0 },
+
+  // THE CORNERS, which are the longest look out of this map and were the last
+  // thing here to be wrong. A side is 200 m of square away from the middle and
+  // a corner is 283, so the diagonal out of a home yard is the one bearing on
+  // which the whole borderland sits past the readable half of the fog — and
+  // with the four sides laid out as sides, the four diagonals were left with
+  // the far tail of two of them. Measured from the south-west gatehouse the
+  // nearest thing on that bearing was the far wood at 358 m, which comes back
+  // as a 19-pixel smudge: country that is technically there and reads as an
+  // empty plane. These sit at the same 90 m collar the sides do, so they are
+  // the NEAREST borderland on the map — 141 m off the corner of the square,
+  // which is what a corner needs. The north-west is not among them: the knoll
+  // wood's continuation is already standing in it.
+  { prop: "pine", x: -330, z: -338, width: 104, depth: 92, count: 68, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "pine", x: 338, z: -330, width: 96, depth: 104, count: 66, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "ashTree", x: 352, z: 332, radius: 38, count: 22, scale: [0.8, 1.15], clearance: 2.0 },
 ];
 
 const controlPoints: ControlPointDef[] = [
@@ -707,16 +815,26 @@ export const HarrowmeadLayout: MapLayout = {
    * radial smear of the map's own edge and spent the shape on pasture past the
    * fog. 40 m puts full amplitude back where a player meets it.
    *
-   * **It is still deliberately BARE, and that is the one part of it that is a
-   * decision rather than a consequence.** Every scatter region, grass rect and
-   * hedge line in this file stops at the play square, so the borderland is open
-   * pasture and nothing else — no copses, no walls, nothing to fight from and
-   * nothing to catch a player running back in. What that buys is a cue the HUD
-   * cannot give: the map's dressing thinning out is the first thing you notice
-   * about leaving it, a beat before the countdown starts shouting. Anything
-   * added out here would also be a collider outside the nav grid, which is
-   * geometry the bots can neither see nor route around — and at this margin it
-   * would be 2.5 km2 of it.
+   * **What stands out there is a COLLAR and then country, and the two halves
+   * of that used to be one word.** The collar is the first 90 m past the play
+   * square and it is bare, which is the decision: every grass rect, wall,
+   * fence, hedge line and fern in this file still stops dead at the square, so
+   * the map's dressing thinning out is the first thing you notice about
+   * leaving it, a beat before the countdown starts shouting — a cue the HUD
+   * cannot give. Past that the country resumes, because bare was only ever
+   * half a decision and the other half was a consequence: 600 m of unbroken
+   * grass under `fogEnd` 520 is a flat plane fading to `fogColor`, which reads
+   * as a backdrop rather than as distance, and the vale is hedged and wooded
+   * to its last metre and then stops. The scatter array's last block is that
+   * country and carries the argument in full; the two constraints it is
+   * written against are stated there and both come from here. It starts at 90 m
+   * because the leash is ten seconds and a sprint is 6.9 m/s, so nothing alive
+   * reaches it — bots are never leashed and the nav graph stops at the square.
+   * And **none of it blocks**: a prop out here would be a collider outside the
+   * nav grid, geometry the bots can neither see nor route around, and — the
+   * sharp one — something to catch a player sprinting home against a
+   * countdown. Non-blocking scatter emits no collider and no `WorldBox` at
+   * all, so the baked collision set is unchanged by every tree of it.
    */
   borderland: { margin: 600, roll: 3.2, ease: 40 },
   /**
