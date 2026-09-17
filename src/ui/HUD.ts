@@ -475,6 +475,11 @@ export class HUD {
     num: HTMLElement;
     fill: HTMLElement;
   }[] = [];
+  /**
+   * The hit confirmation. At the middle of the screen on foot and on the gun
+   * marker in a hull — see `anchorHitmarker`, which is the only thing that
+   * writes its position.
+   */
   private hitmarker: HTMLElement;
   /** The kill ring inside the marker, driven per frame like the ticks. */
   private hitRing: HTMLElement;
@@ -620,6 +625,16 @@ export class HUD {
   private lastSwap: string | null = null;
   /** The marker's last position, as the string that was written. "" is hidden. */
   private lastMarker = "";
+  /**
+   * Where the hit confirmation is being drawn, as the string that was written.
+   *
+   * **It starts at the CENTRE and that initial value has to agree with
+   * `hud.css`**, which is where the element's own `top`/`left` put it: this
+   * guard's whole job is to write nothing while the anchor has not moved, and
+   * a field that starts empty would let the first reset claim a change that
+   * the stylesheet had already made.
+   */
+  private hitAnchor = "50.0,50.0";
   private lastHealthWidth = "";
   private lastHealthLow = false;
   private lastHealthText = "";
@@ -1516,11 +1531,15 @@ export class HUD {
    * is a judgement about a weapon the player can see rather than a reading off
    * a ring that opens and closes.
    *
-   * The two marks that DO live at the middle of the screen are exempt because
-   * neither is an aim: `#hitmarker` reports a round that has already landed,
-   * and `#gun-marker` is drawn where a turret is actually pointing, which is
-   * not the centre. **Anything new in the middle of the screen owes that same
-   * test**, and a spread ring fails it by construction. */
+   * The two marks drawn there anyway are exempt because neither is an aim:
+   * `#hitmarker` reports a round that has already landed, and `#gun-marker` is
+   * drawn where a turret is actually pointing, which is not the centre.
+   * **Anything new in the middle of the screen owes that same test**, and a
+   * spread ring fails it by construction.
+   *
+   * The first of those is only AT the middle when the player is on foot, where
+   * the middle is their own point of aim; in a hull it is anchored to the gun
+   * marker instead. `anchorHitmarker` has the argument. */
 
   /**
    * The hit confirmation, in four flavours: a body hit, a headshot, a kill,
@@ -2152,6 +2171,10 @@ export class HUD {
       if (this.lastMarker !== "") {
         this.lastMarker = "";
         this.gunMarker.classList.add("hidden");
+        // Back to the middle of the screen, which is where a body on foot
+        // points its own weapon. Inside the transition guard on purpose: this
+        // is called every frame that nobody is driving.
+        this.anchorHitmarker(0.5, 0.5);
       }
       return;
     }
@@ -2163,6 +2186,55 @@ export class HUD {
     this.lastMarker = key;
     this.gunMarker.style.left = `${(x! * 100).toFixed(2)}%`;
     this.gunMarker.style.top = `${(y * 100).toFixed(2)}%`;
+    // THE HIT CONFIRMATION GOES WHERE THE GUN IS, and it is written from here
+    // rather than from a second source so that the two marks cannot come to
+    // hold two ideas of where this player's rounds are going. See
+    // `anchorHitmarker`.
+    this.anchorHitmarker(x!, y);
+  }
+
+  /**
+   * Moves the hit confirmation to the player's own point of aim.
+   *
+   * **The hitmarker is drawn at the point of AIM, and in a hull that is not
+   * the middle of the screen.** On foot the two are the same thing and this is
+   * never called with anything else: the camera is the eye, the rounds go down
+   * the axis it looks along, and a mark in the middle is a mark on the shot.
+   * In a hull the eye is twelve metres behind the hull and the gun is walking
+   * toward the player's look at its own rate, so the centre is the ORDER and
+   * `#gun-marker` is the gun — and a confirmation left at the centre reported
+   * a round that landed somewhere the player was not looking, at full traverse
+   * most of a screen away from the mark they were actually reading.
+   *
+   * **It is not an aim and it does not become one by moving**, which is the
+   * rule the middle of the screen is empty for: this is a round that has
+   * ALREADY landed, and what it now agrees with is the one honest mark the
+   * seat already draws. A seat with no gun marker — a truck's driver, a turret
+   * swung round behind the camera — falls back to the centre, having nothing
+   * to coincide with.
+   *
+   * **It FOLLOWS the marker for as long as it stands** rather than being
+   * pinned where the gun was when the round left, because the pin is the same
+   * complaint one step quieter: a mark abandoned beside a traversing turret is
+   * a confirmation pointing at nothing. `left`/`top` for `setGunMarker`'s own
+   * reason — the per-frame transform is the pop and the two must not fight.
+   *
+   * **A gun traversed past the edge of the frame therefore confirms nothing
+   * VISIBLY, and that is accepted rather than clamped.** `Game.pushGunMarker`
+   * only refuses a point BEHIND the eye, so between the half-FOV and a right
+   * angle the marker is shown and off-frame — the seat has no mark on screen
+   * at all there, which is already true of the reticle, and `Sfx.hit` is what
+   * says a round landed. An edge clamp would put a mark where the round did
+   * not land, which is the one thing this is arranged to refuse.
+   */
+  private anchorHitmarker(x: number, y: number): void {
+    // The same tenth of a percent `setGunMarker` dedupes on, and for the same
+    // reason: a gun tracking a still target may not repaint.
+    const key = `${(x * 100).toFixed(1)},${(y * 100).toFixed(1)}`;
+    if (key === this.hitAnchor) return;
+    this.hitAnchor = key;
+    this.hitmarker.style.left = `${(x * 100).toFixed(2)}%`;
+    this.hitmarker.style.top = `${(y * 100).toFixed(2)}%`;
   }
 
   /**

@@ -795,10 +795,27 @@ against `adsBlend` because two aiming marks stacked on each other read as a
 smear, hidden by `.mounted`, `.overlaid`, `.paused`, `.dying` and `.editing`
 because in each of those it would have been lying, and pushed a frame at a time
 from `Game.updateHud` off a viewport height cached by the resize handler. **The
-two marks still drawn at the centre are exempt because neither is an aim** —
+two marks drawn there anyway are exempt because neither is an aim** —
 `#hitmarker` reports a round that has already landed, and `#gun-marker` is drawn
 where a turret actually points, which in a third-person view is exactly not the
 centre. **Anything new in the middle of the screen owes that same test.**
+
+**AND THE HIT CONFIRMATION IS ANCHORED TO THE GUN MARKER RATHER THAN TO THE
+MIDDLE OF THE SCREEN**, which is the one place those two rules meet. The
+hitmarker is drawn at the point of AIM, and on foot that is the centre because
+the camera is the eye and the rounds go down the axis it looks along. In a hull
+it is not: the eye is twelve metres back, the gun is walking toward the
+player's look at its own rate, and a confirmation left at the centre reported a
+round that landed most of a screen away from the only mark the seat draws.
+`HUD.anchorHitmarker` is written from `setGunMarker` itself and from nowhere
+else, so the two marks cannot come to hold two ideas of where this player's
+rounds are going, and a seat with no marker at all — a truck's driver, a
+turret swung round behind the camera — falls back to the centre, having
+nothing to coincide with. It FOLLOWS the marker for as long as it stands rather
+than pinning itself where the gun was when the round left: a mark abandoned
+beside a traversing turret is the same complaint one step quieter. It moves in
+`left`/`top` for `setGunMarker`'s own reason, the per-frame transform being the
+pop.
 
 **The minimap is the one canvas in the tree that resizes itself.** `Minimap`
 observes its own element, sets the backing store to the box times the device

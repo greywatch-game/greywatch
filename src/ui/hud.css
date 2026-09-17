@@ -981,11 +981,17 @@
    There is no crosshair rule to find below because there is no crosshair:
    aiming is the fitted sight and nothing else, so the only mark that says
    where the rounds go is the one on the weapon, drawn on the very axis they
-   fly down. Two things are still drawn at the centre and both are exempt
-   because neither is an aim — #hitmarker, which reports a round that has
-   already landed, and #gun-marker, which is drawn where a turret points and
-   therefore usually is NOT the centre. A spread ring is what this rule
-   exists to refuse; see HUD.ts above `setHitmarker`. */
+   fly down. Two things are drawn there anyway and both are exempt because
+   neither is an aim — #hitmarker, which reports a round that has already
+   landed, and #gun-marker, which is drawn where a turret points and therefore
+   usually is NOT the centre. A spread ring is what this rule exists to
+   refuse; see HUD.ts above `setHitmarker`.
+
+   NEITHER OF THE TWO IS PINNED HERE. The `top`/`left` below are the centre,
+   which is where the hitmarker sits on foot, and HUD.anchorHitmarker writes
+   over both to keep it on #gun-marker in a hull — so the initial value in
+   that guard has to agree with this rule. Do not fold the centring into the
+   transform: the transform is the pop, written every frame. */
 
 /* --- hitmarker ---
    Four diagonal ticks, the shooter convention, plus a ring the kill

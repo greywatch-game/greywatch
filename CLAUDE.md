@@ -382,11 +382,16 @@ reload breaks the aim outright rather than posing an aimed weapon.
 the aiming model rather than a gauge nobody got round to.** The fitted sight is
 the only mark in the game that says where the rounds go, which is why it may
 not lie, and hip fire is therefore UNAIMED: `Player.spread` is still simulated
-and still reaches every round, it is simply not drawn. **Two marks still live
-at the centre and both are exempt because neither is an aim** — `#hitmarker`
+and still reaches every round, it is simply not drawn. **Two marks are drawn
+there anyway and both are exempt because neither is an aim** — `#hitmarker`
 reports a round that has already landed, and a hull's `#gun-marker` is drawn
-where the barrel points, which in a third-person view is exactly NOT the centre.
-**Anything new in the middle of the screen owes that test.**
+where the barrel points, which in a third-person view is exactly NOT the
+centre. **Anything new in the middle of the screen owes that test.** And
+because the gun marker is the seat's only honest mark, **the hit confirmation
+is ANCHORED to it** rather than to the middle of the screen — written from
+`HUD.setGunMarker` itself, so the two can never hold two ideas of where this
+player's rounds are going, and back at the centre for a seat that draws no
+marker.
 
 **Springs and timelines have one owner each**: the punch spring is `Player`'s,
 the bob phase is `CameraSystem`'s, and the reload is a timeline keyed to
