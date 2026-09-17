@@ -885,11 +885,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // \`vBaked.z\` is the height LINE the bake wrote — 1 at the footing, 0 at
   // \`CONFIG.wear.height\`, and signed above that — because only the bake can
   // know how far above the TERRAIN a vertex is without sampling the heightfield
-  // per pixel. \`n.y\` is how vertical this face is, and only the fragment can
-  // know that cheaply, because it holds the world normal already; baking it
-  // would have spent the colour buffer's last free channel on something free at
-  // this end. And the CURVE is the third, which used to be baked and is the
-  // reason this term barely read: see below.
+  // per pixel. It is 0 on every face with a ROOF over it as well, which is the
+  // other thing only the bake can know: this end holds one normal and one world
+  // position, and the inside and the outside of a wall are the same corners
+  // with opposite normals, so the ramp alone grimes a parlour like a street
+  // front (\`world/vertexShading.ts\`'s \`shelteredAt\`). \`n.y\` is how vertical
+  // this face is, and only the fragment can know that cheaply, because it holds
+  // the world normal already; baking it would have spent the colour buffer's
+  // last free channel on something free at this end. And the CURVE is the
+  // third, which used to be baked and is the reason this term barely read: see
+  // below.
   //
   // WHY IT IS A MIX AND NOT A MULTIPLY. Grime is a substance ON the surface,
   // not the surface being darker, so a fully-grimed footing should reach the

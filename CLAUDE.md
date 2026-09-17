@@ -601,7 +601,13 @@ a straight line whatever is written there, so a baked curve arrives as a wash
 up the whole wall and a clamp at the eaves drags the stain's edge up with it.
 The falloff, the strength and the GRAIN that breaks the tide line into runs are
 all uniforms, which is what lets a map be dirtied without a rebuild and why the
-editor's work light re-derives it with every other palette field. **Sarab is
+editor's work light re-derives it with every other palette field. **It is also
+only on the OUTSIDE, and the BAKE decides that rather than anything a builder
+declares** — a vertex steps `wear.shelterProbe` along its own NORMAL and is
+clean if a collider stands over that spot, so a wall is dirty on the street and
+dry in the parlour. **That step has to clear the deepest EAVES in the kit and
+stay inside its shallowest ROOM**, so a structure that overhangs further than a
+jettied townhouse owes it a look. **Sarab is
 the one that INVERTS** — blown dust is LIGHTER than the wall it settles on,
 where every other map's dirt is wet and darker — so nothing may assume the term
 only ever darkens.

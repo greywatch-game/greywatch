@@ -123,7 +123,7 @@ into the flat ambient and the sky fill — **not** the key light, which the shad
 map already owns, and **not** the point lights, for the same reason those ignore
 the shadow map: a lantern in a doorway has to light the doorway.
 
-Five rules about it, and the first is the one everything else rests on:
+Six rules about it, and the first is the one everything else rests on:
 
 - **Occlusion lives in the colour buffer's ALPHA, and 1 means unoccluded.** A
   mesh with no colour buffer leaves that attrib array disabled, and a disabled
@@ -156,6 +156,36 @@ Five rules about it, and the first is the one everything else rests on:
   vertical face, so the LINE interpolates exactly. `CONFIG.wear.falloff` is a
   uniform, spent per fragment, and so is the grain that breaks the line's edge.
   The neutral default survives it: 0 is the TOP of the ramp, which is clean.
+- **The same channel says INSIDE from OUTSIDE, and the probe that decides it is
+  sized against the worst EAVES in the kit.** Splash-back and rising damp are
+  weather, and a height ramp has no opinion about which side of a wall it is
+  looking at — a wall box's two faces are the same four corners with opposite
+  normals, so the term climbed the inside of every enterable building exactly as
+  it climbed the street front. So a vertex whose ramp is still live steps
+  `CONFIG.wear.shelterProbe` out along its own **normal** and asks whether any
+  collider box stands over that spot with its underside clear of
+  `CONFIG.wear.shelterCover` above the ground; a sheltered one is written 0.
+  The step is what makes it work and it is the part that is easy to get wrong:
+  a vertex asking about its own xz is under its own building's roof collider
+  from either side of the wall. **0.6 m is not enough.** It clears a cottage's
+  `gableRoof` (0.35 of overhang, 0.18 past the face once the wall's half
+  thickness comes off) and falls 25 mm short of a JETTIED townhouse, whose roof
+  rides the oversailing upper storey and reaches 0.63 m out over the ground
+  floor — measured on Hollowmere, that took the grime off the whole ground
+  floor of every townhouse in the village, one clean facade on the square
+  between two dirty neighbours, and it cost 3.2% of the lanterns vantage's
+  pixels against 0.53% at the shipped 1.2 m. What bounds the probe above is the
+  shallowest room in the kit (6 m deep, so 2.8 m of cover in front of a wall's
+  inner face) and `CONFIG.ao.radius`, whose `pad` the index was built with.
+  **Two things keep the channel safe to interpolate**: cover must clear the
+  VERTEX as well as the ground, so shelter is monotone in height and a face can
+  go from a dirty footing to a clean top but never the other way; and the probe
+  is skipped wherever the line has already gone negative, which is both the
+  conservative direction (writing 0 over a negative would RAISE it, and 1 at a
+  footing against 0 at the eaves is grime up the whole wall) and where the cost
+  goes — every vertex above `wear.height` pays nothing, and the probe does not
+  show up over the bake's own run-to-run noise on either the smallest map or
+  the biggest.
 - **`hasVertexAlpha` must stay false.** `setVerticesData` does not set it, and
   the world is opaque — the alpha here is a lighting term, not a transparency.
 - **Only a CEL-SHADED mesh may be given the buffer**, and `visuals` is not all

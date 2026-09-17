@@ -94,6 +94,14 @@ export const ao = {
  * where a vertex ENDED UP — which is the AO's argument word for word, and why
  * this shares that walk rather than asking for one of its own.
  *
+ * AND THE SECOND THING IT CANNOT ANSWER IS WHETHER IT IS INDOORS. Splash-back
+ * and rising damp are weather, and a height ramp has no opinion about which
+ * side of a wall it is on — a wall box's two faces are the same four corners
+ * with opposite normals, so the term climbed the inside of every cottage in the
+ * village exactly as it climbed the street front. `shelterProbe` and
+ * `shelterCover` are what the bake tests instead; the fragment holds one normal
+ * and one world position and could never have known.
+ *
  * WHAT IT IS FOR. The cel shader has no texture detail, so a wall is one flat
  * band from its footing to its eaves and meets the street with nothing but the
  * AO's crease. That reads as a building PLACED on the ground rather than one
@@ -192,6 +200,59 @@ export const wear = {
    * right: a roof's dirt is a different signal and would want its own term.
    */
   verticalDegrees: 35,
+  /**
+   * How far off a face the bake stands before it looks UP for cover, in metres
+   * — the probe that decides a surface is an OUTSIDE one.
+   *
+   * Splash-back and rising damp are both weather, and an interior wall gets
+   * neither: a room's plaster is as dry a metre off the floor as it is at the
+   * skirting. Without this the ramp is a pure function of height above ground,
+   * so it climbed the inside of every cottage in the village exactly as it
+   * climbed the street front, and the two faces of one wall box — which are
+   * the same four corners projected from opposite normals — came out identical.
+   *
+   * IT HAS TO CLEAR THE EAVES, and that is the whole of why it is a distance
+   * rather than a flag, as well as why it is as big as it is. A vertex standing
+   * on its own xz is under its own building's roof collider whichever side of
+   * the wall it is on, so the probe steps out along the face's own normal until
+   * it is past the overhang and genuinely in the open. What it is sized against
+   * is the WORST overhang in the kit rather than the commonest: a cottage's
+   * `gableRoof` stands 0.35 off the wall it caps, which is 0.18 past the face
+   * once the wall's own half thickness comes off, but a JETTIED townhouse
+   * carries its roof on the upper storey and oversails the ground floor as
+   * well, so its eaves reach 0.63 m out over that facade. 0.6 was tried first
+   * and is the measurement worth keeping: it cleared every cottage in
+   * Hollowmere and fell 25 mm short of the townhouses, which took the grime off
+   * the whole ground floor of every one of them — a facade on the square,
+   * clean, between two dirty neighbours.
+   *
+   * WHAT BOUNDS IT ABOVE IS THE SHALLOWEST ROOM, since the same step taken
+   * INWARD has to still be under the roof: the kit's smallest interior is
+   * 6 m deep, so a wall's inner face has 2.8 m of cover in front of it and
+   * this has most of that as headroom. It may not exceed `ao.radius` either —
+   * the probe rides the AO's box index, whose `pad` is the promise that query
+   * was built with — and it is clamped to it rather than asserted, because the
+   * two numbers are set in different blocks of this file and neither one's own
+   * note is about the other.
+   */
+  shelterProbe: 1.2,
+  /**
+   * How high a thing overhead has to be, in metres above the ground beneath it,
+   * before it counts as COVER rather than as furniture.
+   *
+   * The probe asks "is anything above me", and everything in a village is
+   * above something: a crate against a wall, a plinth, a kerb, the wall
+   * itself. What separates a roof from all of that is that you can stand under
+   * it, so cover is a box whose UNDERSIDE clears this — a roof slab (the kit
+   * puts one at the eaves), a first floor, an arcade, an awning, a deck you
+   * can walk beneath. A crate's underside is on the ground and shelters
+   * nothing.
+   *
+   * 1.5 is under the lowest eaves in the kit and over the tallest prop, which
+   * is the band this has to land in; it is not a head height and nothing walks
+   * to it.
+   */
+  shelterCover: 1.5,
   /**
    * Metres per cell of the grain's COARSE octave — which stretch of frontage is
    * dirty and which got away with it.

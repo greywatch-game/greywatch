@@ -57,9 +57,10 @@
  * The BLUE channel is the fourth and the trick's last free slot: how far up
  * from the ground this vertex is, as a straight line through 1 at the footing
  * and 0 at `CONFIG.wear.height`. Its neutral value is 0 again — the top of the
- * ramp, so CLEAN — which is what keeps the rigs, the viewmodel and every effect
- * mesh exempt by construction exactly as they are from sway, and the branch the
- * shader takes on the world mark is the same one it was already taking.
+ * ramp, so CLEAN, and what a vertex UNDER A ROOF is written too — which is
+ * what keeps the rigs, the viewmodel and every effect mesh exempt by
+ * construction exactly as they are from sway, and the branch the shader takes
+ * on the world mark is the same one it was already taking.
  * `CONFIG.wear` owns what the number MEANS and `EnvironmentSpec.wear` owns how
  * much of it a given map spends; this file owns where it lands.
  *
@@ -71,12 +72,23 @@
  * the fragment, where it is free; `wear.falloff` is spent there too, for the
  * same reason. See the write itself.
  *
+ * **It is also the channel that says INSIDE from OUTSIDE, because nothing else
+ * can.** Dirt of this kind is splash-back and rising damp — weather — and a
+ * height ramp on its own has no opinion about whether it is looking at a street
+ * front or a parlour: a wall box's two faces are the same four corners with
+ * opposite normals, so both came out equally grimy. So a vertex whose ramp is
+ * still live steps `wear.shelterProbe` out along its own normal and asks
+ * whether anything is over that spot, and a sheltered one is written 0 —
+ * `shelteredAt` has the argument, including why the step has to clear the eaves
+ * and why the test is monotone in height.
+ *
  * **What the blue channel deliberately does NOT carry is the other half of the
  * term.** Wear is the height ramp TIMES how vertical the surface is, and the
  * second factor is a fragment's own business: it has the world normal already,
  * and baking it would spend the one remaining channel on something free at the
  * other end. The split is the same one AO makes — bake what only the bake can
- * know.
+ * know, and which side of a wall a face is on is the second thing in that
+ * class.
  *
  * AFTER THE MERGE, NEVER BEFORE. `VertexData.merge` throws outright —
  * "Cannot merge vertex data that do not have the same set of attributes" — the
@@ -267,6 +279,78 @@ function occlusionAt(
 }
 
 /**
+ * Is the face at `p` with horizontal normal `(nx, nz)` an OUTSIDE one — or is
+ * there a roof over it?
+ *
+ * **Wear is weather, and the bake is the only end that can tell inside from
+ * outside.** The blue channel is a function of height above ground, and a wall
+ * box's two faces are the same four corners with opposite normals, so the ramp
+ * alone climbs a parlour's plaster exactly as it climbs the street front. The
+ * fragment cannot help: it holds its own normal and `vPosW` and has no idea
+ * what is above it.
+ *
+ * SO THE PROBE STEPS OFF THE FACE AND LOOKS UP, and the step is the part that
+ * is not obvious. A vertex asking about its own xz is under its own building's
+ * roof collider from either side of the wall, which would call every exterior
+ * wall in the village sheltered; standing `wear.shelterProbe` out along the
+ * face's own normal puts the question past the eaves for an outward face and
+ * leaves it under the roof for an inward one. The normal is what knows which
+ * side of the wall this is, and it is the only thing that does.
+ *
+ * COVER IS A BOX WHOSE UNDERSIDE CLEARS `wear.shelterCover` above the ground
+ * AND above the vertex, and the second half of that is what keeps the channel
+ * safe to interpolate. Shelter is then monotone in height — a vertex cannot be
+ * covered while the one below it on the same column is not — so a face can go
+ * from a dirty footing to a clean top but never the other way, which is the one
+ * ordering that would put grime up a whole wall (see the write).
+ *
+ * `rayOnly` struts emit no `WorldBox` and so shelter nothing, which is right: a
+ * fence rail is not a roof. Glass is out of the occluder list for the AO's own
+ * reason and therefore shelters nothing either — there is no glazed roof in the
+ * kit, and if one is built this is where it would have to be reconsidered.
+ */
+function shelteredAt(
+  px: number,
+  py: number,
+  pz: number,
+  nx: number,
+  nz: number,
+  index: Bucketed,
+  terrain: TerrainField,
+  probe: number,
+  cover: number,
+): boolean {
+  const flat = Math.hypot(nx, nz);
+  // A level face — a floor, a roof plane, the terrain — is asking nothing: the
+  // fragment's own `upright` term has already taken its wear away, and there is
+  // no side of it to step off.
+  if (flat < 1e-4) return false;
+  const sx = px + (nx / flat) * probe;
+  const sz = pz + (nz / flat) * probe;
+  // ONE bucket and complete, as everywhere else in this file: a box whose
+  // footprint CONTAINS the sample point is stamped into that point's own cell
+  // whatever `pad` the index was built with.
+  const list = boxesNear(index.index, sx, sz);
+  if (!list) return false;
+  // The ground under the SAMPLE, not under the vertex: cover is measured from
+  // the floor of the place it stands over, and a wall on a slope is exactly the
+  // case where those two differ.
+  const floor = terrain.heightAt(sx, sz) + cover;
+  for (const i of list) {
+    const box = index.index.boxes[i];
+    const half = index.half[i];
+    // `half.y` folds the pitch in, so a tilted slab's underside comes out at
+    // its lowest corner — which under-reports cover rather than inventing it.
+    const under = box.cy - half.y;
+    if (under < floor || under < py) continue;
+    const { lx, lz } = rotateToLocalXZ(box, sx, sz, localScratch);
+    if (Math.abs(lx) > half.x || Math.abs(lz) > half.z) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
  * Writes a colour buffer onto every finished visual: `rgb = (0, 1, 0)` and
  * `a = ao`, where 1 is unoccluded.
  *
@@ -282,6 +366,12 @@ export function bakeVertexShading(
   const cfg = CONFIG.ao;
   const wearCfg = CONFIG.wear;
   const wearHeight = wearCfg.height;
+  // The probe may not outrun the index's `pad`, which is the AO radius — the
+  // promise `bucket` below built the grid with. It is a clamp rather than an
+  // assert because the two numbers are set in different blocks of the same
+  // config file and neither's own note is about the other.
+  const wearProbe = Math.min(wearCfg.shelterProbe, cfg.radius);
+  const wearCover = wearCfg.shelterCover;
   // NOTE the asymmetry with the AO's early return above: `ao.strength` at 0
   // skips the whole walk, and wear cannot, because the walk is also what writes
   // the sway weight and the world mark. Wear has no disable of its own for the
@@ -399,8 +489,29 @@ export function bakeVertexShading(
       // is belongs to `EnvironmentSpec.wear` and is spent as a uniform, which is
       // what lets a map be dirtied without a rebuild. Nothing here knows which
       // map it is baking.
+      //
+      // AND IT IS NOTHING AT ALL UNDER A ROOF. See `shelteredAt`: the ramp on
+      // its own is a function of height above ground, so it climbed the INSIDE
+      // of every building in the village as readily as the street front, and
+      // one wall box's two faces came out identical because they are the same
+      // corners with opposite normals. A sheltered vertex is written the
+      // channel's neutral 0 — CLEAN, the same value every rig and every effect
+      // mesh gets by carrying no buffer at all — rather than a scaled ramp,
+      // because a room is dry rather than less wet.
+      //
+      // The probe is SKIPPED where the line has already gone negative, and that
+      // is the cheap half as well as the safe half. Cheap: every vertex over
+      // `wearCfg.height` above the ground — eaves, roofs, upper storeys — pays
+      // nothing, which is most of a village. Safe: writing 0 over a negative
+      // would RAISE it, and a face reading 1 at its footing and 0 at its eaves
+      // is grime up the whole wall. `shelteredAt`'s own `py` test is the other
+      // half of that ordering.
+      const line = wearHeight > 0 ? Math.min(1, 1 - above / wearHeight) : 0;
       colors[i * 4 + 2] =
-        wearHeight > 0 ? Math.min(1, 1 - above / wearHeight) : 0;
+        line > 0 &&
+        shelteredAt(px, py, pz, nx, nz, index, terrain, wearProbe, wearCover)
+          ? 0
+          : line;
       colors[i * 4 + 3] = ao;
     }
 
