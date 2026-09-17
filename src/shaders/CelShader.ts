@@ -51,11 +51,11 @@
  * the port are worth knowing before editing either stage. **A sampler a
  * variant DECLARES has to be BOUND, used or not** — which is why the sampler
  * declarations below sit under exactly the defines each material's own
- * `samplers` list is built from, and why CEL_INK still binds a shadow map it
- * never reads. And **the six defines make six UBO LAYOUTS**, so a uniform
- * moved into or out of an `#ifdef` moves offsets for that variant alone. See
- * `docs/rendering.md` for the rest of what the dialect and Babylon's WGSL
- * processor decide.
+ * `samplers` list is built from rather than under a looser one that would let
+ * a variant declare what it never binds. And **the defines make FIVE UBO
+ * LAYOUTS**, so a uniform moved into or out of an `#ifdef` moves offsets for
+ * that variant alone. See `docs/rendering.md` for the rest of what the dialect
+ * and Babylon's WGSL processor decide.
  */
 import {
   type BaseTexture,
@@ -254,16 +254,6 @@ uniform windTime: f32;
 uniform windDir: vec2f;
 uniform windParams: vec3f;
 
-#ifdef CEL_INK
-// The ink hull's own expansion, and the eye it thins against. Declared here
-// rather than shared with the fragment stage because only this variant expands:
-// x = full width (m), y = the distance it holds it to, z = the distance it has
-// reached its floor (w) by. Same four numbers as CONFIG.graphics.outlines,
-// spent per VERTEX rather than per mesh — see getInk in this file.
-uniform camPos: vec3f;
-uniform inkParams: vec4f;
-#endif
-
 varying vNormalW: vec3f;
 varying vPosW: vec3f;
 varying vBaked: vec4f;
@@ -323,30 +313,6 @@ fn main(input: VertexInputs) -> FragmentInputs {
     mat3x3f(uniforms.world[0].xyz, uniforms.world[1].xyz, uniforms.world[2].xyz)
       * vertexInputs.normal);
   vertexOutputs.vNormalW = nW;
-
-  #ifdef CEL_INK
-  // The inverted hull, expanded along the world normal AFTER the sway — which
-  // is the whole reason this variant exists. Babylon's own outline pass cannot
-  // do it: OutlineRenderer.isReady builds its effect with a hardcoded attribute
-  // list of position and normal ("const color = false", literally) and a
-  // hardcoded uniform list with no clock in it, so its hull can see neither the
-  // wind nor the weight and stays at the rest pose while the leaf leaves it.
-  //
-  // Thinned per VERTEX against the eye rather than per mesh, which is a
-  // correction as well as a convenience: updateOutlineScales measures one
-  // distance per mesh, and BlockMerge hands it meshes that span the whole fog
-  // band (measured: 50 of 687). The colour fade was moved per pixel for exactly
-  // that reason; this is the width catching up.
-  let inkDist = distance(worldPos.xyz, uniforms.camPos);
-  let inkT = clamp(
-    (inkDist - uniforms.inkParams.y)
-      / max(uniforms.inkParams.z - uniforms.inkParams.y, 0.001),
-    0.0, 1.0);
-  let grow = nW * (uniforms.inkParams.x * mix(1.0, uniforms.inkParams.w, inkT));
-  worldPos.x += grow.x;
-  worldPos.y += grow.y;
-  worldPos.z += grow.z;
-  #endif
 
   vertexOutputs.vPosW = worldPos.xyz;
   vertexOutputs.vBaked = vertexInputs.color;
@@ -413,9 +379,6 @@ uniform baseColor: vec3f;
 #endif
 uniform fogColor: vec3f;
 uniform fogParams: vec2f;  // x = start, y = end
-#ifdef CEL_INK
-uniform inkColor: vec3f;
-#endif
 #ifdef CEL_PALETTE
 // The map's own albedo palette, indexed by \`vPalette - 1\`. This is what lets
 // one material stand for every paint colour in the village, which is what lets
@@ -742,30 +705,6 @@ fn reliefLit(uv: vec2f, h: f32, gx: vec2f, gy: vec2f, dist: f32) -> f32 {
 
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
-  #ifdef CEL_INK
-  // The ink is a flat colour and nothing else — no lighting, no shadow, no rim,
-  // no occlusion. It falls through to the shared atmosphere block at the bottom
-  // so the line over a wall dissolves on exactly the curve the wall does, which
-  // is what OutlineFog has to bake literals into Babylon's shader to achieve
-  // and what this variant gets for free. It picks up the ground MIST as well,
-  // which that one cannot do at all.
-  // \`inkColor\` means two different things across this variant's two callers
-  // and the palette index is what says which. On a foliage twin it is the
-  // RESOLVED ink — \`inkColorFor\` has already multiplied the source's albedo
-  // by the map's tint, and there is no index. On the world's twin there is no
-  // single albedo to have resolved, so it carries the TINT alone and the albedo
-  // arrives per vertex; the product is the same \`albedo * tint\` per channel
-  // either way, which is the arithmetic \`inkState\` requires to keep an ink
-  // under the light term.
-  var col = uniforms.inkColor;
-  #ifdef CEL_PALETTE
-  if (fragmentInputs.vPalette >= 0.5) {
-    col *= uniforms.celPalette[u32(fragmentInputs.vPalette + 0.5) - 1u];
-  }
-  #endif
-  // Opaque: see opaqueAlpha.
-  var alpha = uniforms.opaqueAlpha;
-  #else
   var n = facetNormal();
 
   // How level this facet is, read off the TRUE geometry before any bump map
@@ -1338,9 +1277,6 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 #endif
 #endif
 
-  #endif
-  // CEL_INK — everything above is the lit path the ink skips
-
   // --- atmosphere ---
   let dist = length(fragmentInputs.vPosW - uniforms.camPos);
 
@@ -1527,12 +1463,6 @@ export class CelMaterialFactory {
     "windTime",
     "windDir",
     "windParams",
-    // Spent only under CEL_INK. On every other variant the compiler drops them
-    // and the `setVector*` finds no location, which is the same no-op the
-    // glazing uniforms already are on a matte material — one list is worth more
-    // than a second one that has to be kept in step with this.
-    "inkColor",
-    "inkParams",
   ];
   /**
    * Every cel material's vertex attributes.

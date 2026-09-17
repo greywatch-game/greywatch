@@ -1697,7 +1697,7 @@ check the SAMPLER before assuming a mip-less texture cannot tell the
 difference.
 
 **Every `#ifdef` over a uniform declaration is another UBO LAYOUT.** The cel
-shader has six defines and compiles six leftover UBOs, each laid out from the
+shader has five defines and compiles five leftover UBOs, each laid out from the
 declarations that survived the preprocessor for that variant — so moving a
 uniform into or out of an `#ifdef` moves the offsets for that variant alone, and
 a mistake shows up on one material on one map. It is also what makes the sampler

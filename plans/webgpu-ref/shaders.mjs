@@ -58,15 +58,21 @@ const MAPS = maps.length > 0 ? maps : MAP_IDS;
  * The cel variants the four shipped maps must between them compile, keyed by
  * the define set that makes each a separate effect.
  *
- * Eight materials and six shapes: matte, glossy and translucent are one
- * compiled effect wearing three sets of uniforms, and the other five are each
+ * Seven materials and five shapes: matte, glossy and translucent are one
+ * compiled effect wearing three sets of uniforms, and the other four are each
  * their own. A map missing one of these is not an error — Hollowmere has no
  * glazed block — which is why the requirement is on the UNION over every map
  * asked for, and why a run over a single map only reports.
+ *
+ * **This list rots the moment a variant is retired and the rot is a FAILING
+ * GATE**, which is worth knowing because it has already happened once: the
+ * inverted-hull ink went away with `CelInk` (`36855c2`) and `CEL_INK` stayed
+ * here, so from that commit to this one the script exited non-zero on every
+ * run and could not stand in front of a merge the way its header says it does.
+ * A variant deleted from `CelShader` is deleted from here in the same change.
  */
 const WANTED = [
   "",
-  "CEL_INK",
   "CEL_GLASS",
   "CEL_GLASS+CEL_GLASS_BACKED",
   "CEL_GROUND_TEX",

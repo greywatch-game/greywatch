@@ -8,9 +8,10 @@
  * writes the weight and `CelShader` spends it.
  * Invariants: only VISUAL geometry may be marked (a collider proxy is never
  * drawn, and the box it stands for never moves), the weight is 0 at the ground
- * and rises with height, and a marked group is taken out of BABYLON's outline
- * pass and given an ink twin instead — see `MapBuilder.inkTwin` for why its
- * hull cannot follow a moving surface and ours can.
+ * and rises with height, and a swaying mesh's line work is the FRAME's — the
+ * ink is one full-screen pass over the depth a swayed vertex has already
+ * written (`shaders/CelInk.ts`), so nothing here has to keep a second copy of
+ * the geometry in step with the wind.
  * Contract: `docs/rendering.md`.
  *
  * WHY A HEIGHT RAMP RATHER THAN A PER-PART ANCHOR. What a leaf should do is
