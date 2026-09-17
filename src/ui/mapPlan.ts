@@ -190,6 +190,7 @@ export function planFromLayout(
     floor ?? undefined,
     margin,
     layout.borderland?.roll,
+    layout.borderland?.ease,
   );
   const masses: PlanMass[] = [];
   const fences: PlanMass[] = [];

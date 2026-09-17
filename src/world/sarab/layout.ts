@@ -1579,9 +1579,9 @@ export const SarabLayout: MapLayout = {
    * margin's width for it to be flush with.
    *
    * What stands out there is the rim of the basin the town sits in — low, dry
-   * hills at ±750, rising 60 to 90 m over 150 m of run. Gentler than
-   * Harrowmead's downs and much further away, because the whole point of the
-   * 300 m margin is that the boundary is scenery rather than architecture: at
+   * hills at ±750, rising 60 to 90 m over 150 m of run. Gentler than the downs
+   * Harrowmead used to carry, and much further away, because the whole point of
+   * the 300 m margin is that the boundary is scenery rather than architecture: at
    * this distance the rim is drawn almost entirely in `fogColor` and its job is
    * to be a horizon line rather than a landform.
    *

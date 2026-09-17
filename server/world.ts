@@ -251,7 +251,12 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   // above is one. Awaited beside it rather than bundled — the boxes are baked
   // and the ground is arithmetic, and this process needs both.
   const heights = def.heights ? (await def.heights()).default : undefined;
-  const terrain = new TerrainField(heights, margin, def.layout.borderland?.roll);
+  const terrain = new TerrainField(
+    heights,
+    margin,
+    def.layout.borderland?.roll,
+    def.layout.borderland?.ease,
+  );
   const boxes = toWorldBoxes(collision);
 
   // A box gets one mesh, unless the client merged it with its neighbours into a

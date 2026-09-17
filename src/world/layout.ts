@@ -319,6 +319,24 @@ export interface Borderland {
    * the way.
    */
   roll?: number;
+  /**
+   * How far out the roll takes to reach full amplitude, in metres. Absent
+   * means a third of the margin, which is what every map stating nothing here
+   * gets and is bit-identical to what it got before this field existed.
+   *
+   * **It is stated by a map whose margin is sized by the HORIZON rather than
+   * by the leash**, and the two want opposite numbers. The ramp exists so the
+   * boundary has no crease; a third of eighty metres is twenty-seven, which is
+   * inside the strip a player run out of the map walks through, so the country
+   * out there rolls as the country inside does. A third of six hundred is two
+   * hundred — four times as far as a leashed player can get — so the same
+   * fraction would hand that player a radial smear out of the map's own edge
+   * and save the shape for ground nobody can stand on. Harrowmead states forty
+   * for that reason; Sarab's margin is the horizon too, but its roll reaches
+   * full amplitude at a hundred metres against three hundred of borderland,
+   * and it was authored looking at that.
+   */
+  ease?: number;
 }
 
 export interface MapLayout {

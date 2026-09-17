@@ -106,12 +106,34 @@ export class TerrainField {
   /** Peak-to-trough of the borderland's roll; see `Borderland.roll`. */
   private readonly roll: number;
 
-  constructor(readonly field?: Heightfield, margin = 0, roll = 2.6) {
+  /**
+   * How far out the roll takes to reach full amplitude, in metres — the map's
+   * `Borderland.ease`, or a third of the margin.
+   *
+   * It is a DISTANCE rather than a fraction because what it is measured
+   * against is the player and not the margin: the ramp is the only part of
+   * this shape anybody walks on, and how far out a body can get is the leash's
+   * answer whatever the ground does past it. A third of eighty metres is
+   * twenty-seven and a third of six hundred is two hundred, so a map that
+   * grows its margin to put the horizon past the fog would, on the fraction
+   * alone, flatten the one strip of it a living player ever stands in.
+   */
+  private readonly ease: number;
+
+  constructor(
+    readonly field?: Heightfield,
+    margin = 0,
+    roll = 2.6,
+    ease?: number,
+  ) {
     this.half = field ? (field.size * field.cell) / 2 : 0;
     // A flat map has no edge profile to continue, so it has no borderland
     // either: `heightAt` already answers 0 everywhere, in or out.
     this.margin = field ? margin : 0;
     this.roll = roll;
+    // Never zero: `borderRoll` divides by it, and a map is free to state a
+    // margin of nothing.
+    this.ease = Math.max(1e-3, ease ?? this.margin / 3);
   }
 
   /** True when nothing reshapes the floor; lets callers keep their fast path. */
@@ -164,8 +186,8 @@ export class TerrainField {
    * - **Gentle.** Two sines, swells of about 370 m and 160 m — long enough that
    *   an eighty-metre margin is part of one rather than a corrugation, which is
    *   what open country looks like from inside it. The steepest gradient the
-   *   pair can make is `(roll / 2) * (0.026 + 4.5 / margin)`, the second term
-   *   being the ramp's own: 0.09 at Harrowmead's numbers, against a
+   *   pair can make is `(roll / 2) * (0.026 + 1.5 / ease)`, the second term
+   *   being the ramp's own: 0.10 at Harrowmead's numbers, against a
    *   `MAX_WALKABLE_GRADE` of 0.4. A player being run out of the map must never
    *   be stopped by the ground on the way; a hill they cannot climb is the wall
    *   again, wearing grass.
@@ -177,9 +199,9 @@ export class TerrainField {
   private borderRoll(x: number, z: number): number {
     const out = Math.max(Math.abs(x) - this.half, Math.abs(z) - this.half, 0);
     if (out <= 0) return 0;
-    // Eased in over the first third of the margin, so the crease at the
-    // boundary is C1 and not merely continuous.
-    const t = Math.min(1, out / (this.margin / 3));
+    // Eased in over `ease`, so the crease at the boundary is C1 and not merely
+    // continuous.
+    const t = Math.min(1, out / this.ease);
     const ramp = t * t * (3 - 2 * t);
     const wave =
       Math.sin(x / 74 + z / 96) * 0.62 + Math.sin(z / 31 - x / 44) * 0.38;

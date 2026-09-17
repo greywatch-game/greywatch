@@ -642,33 +642,72 @@ export const HarrowmeadLayout: MapLayout = {
   grass,
   /**
    * The largest map yet. `terrain.size * terrain.cell` equals it (100 x 4),
-   * the rim's boundary boxes stay over 200 m (they are size + 4), and the
-   * heightfield grew with the square rather than getting coarser — the three
-   * things `MapLayout.size` says a larger map owes.
+   * the rim's boundary boxes stay over 200 m (they are the BOUNDARY's extent
+   * plus 4, and the boundary is this plus twice the borderland below — 1604),
+   * and the heightfield grew with the square rather than getting coarser — the
+   * three things `MapLayout.size` says a larger map owes.
    */
   size: 400,
   // `surfaces` stays at the default 3: a farm stacks like a village (stream
   // bed, bank, hayloft), not like an office block.
   /**
+   * Twice the default, and it is the borderland below that asks for it rather
+   * than the play square. The floor is cut into patches of this, and the
+   * borderland's own blocks are four times it — so with 600 m of pasture on
+   * every side the default 48 would cut this map's ground into 193 meshes,
+   * two thirds of them country nobody fights over, every one of them walked by
+   * the frame (the floor carries no `metadata.block`, so `WorldCulling` files
+   * no cell for it and the terrain is a candidate at every distance). At 96 it
+   * is 57, which is fewer than the map had at 560 m square, and the play
+   * floor's own share of that falls from 81 draws to 25.
+   *
+   * What it costs is frustum granularity on the ground you fight on: a 96 m
+   * patch is rejected less often than a 48 m one. On a 400 m map stating a
+   * `fogEnd` of 520 that is very nearly nothing — the whole floor is inside
+   * the view from the middle of the vale whichever way it is cut — and a draw
+   * call saved is a draw call saved on a frame that is bound by them.
+   */
+  terrainBlock: 96,
+  /**
    * **No wall.** The vale is not closed by anything you can walk up to: the
-   * fields carry on for eighty metres past the play square and what stops you
-   * is the leash, a countdown rather than a face of rock. See `Borderland`, and
-   * `world/leash.ts` for the rule.
+   * fields carry on for six hundred metres past the play square and what stops
+   * you is the leash, a countdown rather than a face of rock. See
+   * `Borderland`, and `world/leash.ts` for the rule.
    *
-   * 80 m is set by the leash and not by taste. `CONFIG.map.leash.seconds` is
-   * ten and a sprint is 6.9 m/s, so a player who turns and runs the instant the
-   * warning starts dies 69 m out — inside this, with eleven metres of slack, so
-   * the four boundary colliders at ±280 are a bound the simulation can state
-   * rather than anything a living player can find. Shorten it and they find it,
-   * which is an invisible wall in an open field: the one outcome worse than the
-   * escarpment this replaced.
+   * **The margin is the HORIZON's now and not the leash's, and that is what
+   * pays for `ridge.form: "none"` below.** It was 80 m, which is the leash's
+   * own number — ten seconds at 6.9 m/s is 69, so a player who turns and runs
+   * dies eleven metres short of the boundary colliders and never finds them.
+   * That is still true and still the floor on this figure; what it did not buy
+   * is a horizon. Ground that stops 80 m outside the play square stops well
+   * inside `fogEnd` (520), and the cel shader's fog is LINEAR between
+   * `fogStart` and `fogEnd` — so the floor's last ring arrives on screen at
+   * about a sixth of its own colour, against a sky dome painted flat
+   * `fogColor` below the horizon. That is a green line drawn round the world,
+   * which is exactly the dead band `Ridge.ts` says a rim is there to cover.
    *
-   * The roll is a little under the default, because this vale is a floodplain
-   * either side of a stream rather than hill country, and the country outside
-   * it should read as more of the same fields rather than as the downs starting
-   * early.
+   * 600 is that argument solved rather than a number chosen: the furthest a
+   * living player gets is the play edge plus the leash's 69 m, and the far
+   * edge has to be `fogEnd` from there, so 520 + 69 rounded up. Anywhere
+   * inside the play square it is further still, and every bearing is covered
+   * because the borderland is a square ring rather than four strips. Reduce it
+   * and the line comes back; the map does not fail, it just has an edge again.
    *
-   * **It is deliberately BARE, and that is the one part of it that is a
+   * The roll is Sarab's rather than the 2.2 it was — the same reason Sarab's
+   * is: over 600 m of open country a metre of swing reads as a table, and
+   * these are hills a metre or two high like the ones inside the map, not the
+   * downs that used to stand out there.
+   *
+   * **`ease` is the field this map exists to state**, and it is stated because
+   * the margin stopped being the leash's. The ramp defaults to a third of the
+   * margin, which was 27 m when the margin was 80 — well inside the strip a
+   * player is run out through, so the ground they cross rolls like the ground
+   * they came from. A third of 600 is 200, four times as far as anyone alive
+   * can get, which would have flattened the whole visible borderland into a
+   * radial smear of the map's own edge and spent the shape on pasture past the
+   * fog. 40 m puts full amplitude back where a player meets it.
+   *
+   * **It is still deliberately BARE, and that is the one part of it that is a
    * decision rather than a consequence.** Every scatter region, grass rect and
    * hedge line in this file stops at the play square, so the borderland is open
    * pasture and nothing else — no copses, no walls, nothing to fight from and
@@ -676,46 +715,41 @@ export const HarrowmeadLayout: MapLayout = {
    * cannot give: the map's dressing thinning out is the first thing you notice
    * about leaving it, a beat before the countdown starts shouting. Anything
    * added out here would also be a collider outside the nav grid, which is
-   * geometry the bots can neither see nor route around.
+   * geometry the bots can neither see nor route around — and at this margin it
+   * would be 2.5 km2 of it.
    */
-  borderland: { margin: 80, roll: 2.2 },
+  borderland: { margin: 600, roll: 3.2, ease: 40 },
   /**
-   * The downs around the vale — `form: "downs"`, which is the whole point of
-   * the fourth map's boundary and the reason the form exists at all.
+   * **No rim at all.** The vale ends in more vale, and what closes the horizon
+   * is the fog rather than a landform — `form: "none"`, which until now only
+   * Cinderhaven took.
    *
-   * It shipped as the standard escarpment, gentled to 0.16, and gentling was
-   * never going to be enough: an escarpment's basal band is a vertical face at
-   * the player's feet and its profile puts a 32 m crest 15 m behind that, so
-   * what stood around a green farming vale was a flat-topped grey mesa with two
-   * notches cut in it. The problem was the LANDFORM and not the number.
+   * `Ridge.ts` states the one condition on taking it: a map may only draw
+   * nothing over its own boundary if it has already laid something out there
+   * that reaches past `fogEnd` on every bearing, because the sky dome is flat
+   * `fogColor` below the horizon and `paintStars` culls the lowest 7.2 deg, so
+   * a boundary with nothing beyond it is a dead band of sky with the stars
+   * stopping in a line above it. Cinderhaven pays that with 2,300 m of ocean;
+   * this map pays it with the 600 m borderland above, which is why the two
+   * fields are one decision and why shrinking that margin without putting a
+   * landform back is the thing not to do here.
    *
-   * What is here now is a hillside. It stands at ±280 rather than ±200 — the
-   * borderland above is between — and it rises 58 to 88 m over 150 m of run,
-   * which is 21 to 30 degrees: a chalk down you could walk up, seen across a
-   * quarter mile of fields. The crest subtends 7.7 to 11.7 degrees from the centre of
-   * the map, and the low end of that is what sets the pair: `slope` and
-   * `slopeVariance` are chosen so the wander never reaches `MIN_SLOPE`, because
-   * the clamp does not soften a dip, it FLATTENS one — a stretch of skyline
-   * pinned to exactly the sky's own floor, which reads as a straight edge in
-   * among the swells. 30 m of crest between the highest and the lowest is what
-   * keeps this from being the mesa again in a different colour.
+   * What was here was `form: "downs"` — a chalk hillside rising 58 to 88 m
+   * over 150 m of run, with four passes notched in it where the stream and the
+   * two home-yard roads leave the vale. It was a good rim and it is no longer
+   * wanted: a farming vale with a continuous ring of hill round it is a bowl,
+   * and the thing a 400 m map wants to say about its own edges is that the
+   * country keeps going. The four passes went with it, and so did the
+   * arithmetic tying `slope` and `slopeVariance` to `MIN_SLOPE` — there is no
+   * crest to keep above the star cull when there is no crest.
    *
-   * The four passes move out with the ring, and they are the same four things
-   * leaving the vale: the stream in from the north-west and out to the east,
-   * and each home yard's road climbing out to its own corner. Wider than they
-   * were, because a col has twice as much hill to notch.
+   * `EnvironmentSpec.ridgeColor` and `ridgeScreeColor` are still set and are
+   * now read by nothing on this map: `MapBuilder` only asks for them per
+   * segment and there are no segments. They stay because they are required
+   * fields, and because a rim is one line from coming back.
    */
   ridge: {
-    form: "downs",
-    slope: 0.17,
-    slopeVariance: 0.035,
-    passes: [
-      { x: -280, z: 95, width: 40 },
-      { x: 280, z: 24, width: 40 },
-      { x: 160, z: 280, width: 32 },
-      { x: -160, z: -280, width: 32 },
-    ],
-    seed: 0x4d454144,
+    form: "none",
   },
   // Fixed so the dressing — and the colliders blocking scatter emits, and so
   // the nav graph — is identical on every boot. Changing it rerolls the whole
