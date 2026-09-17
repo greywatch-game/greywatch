@@ -515,15 +515,19 @@ export function buildJungleManor(
   // the collider — the board thickness showing, and what the ground probe
   // walks 4 cm under.
   //
-  // **The box is as DEEP as the podium, not as deep as the boards look.** A
-  // 0.14 m slab here rendered its own outline ink over the entire hall floor
-  // and read as a black void: `OutlineRenderer` draws the ink shell with a
-  // NEGATIVE z-offset, which is slope-scaled, and at the grazing angle a floor
-  // is seen from that bias is enormous — so the shell's underside, only
-  // `h + outlineWidth` behind the real top face, wins the depth test. Thick
-  // enough and it cannot: the same floor at 0.5 m deep puts its shell 0.55 m
-  // back and renders clean. Nothing announces this; the surface simply comes
-  // back as `outlineInkFor` of its own colour.
+  // **The box is as DEEP as the podium, not as deep as the boards look**, and
+  // the bug that set that rule is retired while the shape it left is not. A
+  // 0.14 m slab here rendered its own ink over the entire hall floor and read
+  // as a black void, back when the ink was a back-face shell: `OutlineRenderer`
+  // drew it with a NEGATIVE z-offset, which is slope-scaled, and at the grazing
+  // angle a floor is seen from that bias is enormous — so the shell's
+  // underside, only `h + outlineWidth` behind the real top face, won the depth
+  // test. Thick enough and it could not: the same floor at 0.5 m deep put its
+  // shell 0.55 m back and rendered clean. A full-screen ink cannot reproduce
+  // it, having no shell to misplace, so what is left here is a depth this
+  // podium no longer needs and a warning about how quietly the old one failed
+  // — nothing announced it; the surface simply came back inked in its own
+  // colour.
   boardDeck(b, FW, FD, 0, 0);
   // Under the portico, and the one flight of steps up to the front door.
   b.block({ w: PORTICO_HW * 2 + 1.2, h: POD, d: PORTICO_OUT + 0.4, x: 0, y: POD / 2, z: PORTICO_Z });

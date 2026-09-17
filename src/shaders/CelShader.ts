@@ -35,12 +35,15 @@
  * every piece of shared state on the spot (applyCamera/applyEnvironment/
  * applyPointLights/applyShadow): the per-frame walks are guarded on change and
  * skip a still frame entirely, so what a material is born with is what it keeps
- * until that state next moves. addOutline() skips meshes with
- * metadata.noInk, tints the ink from the mesh's own cel colour, and
- * registers the mesh for updateOutlineScales() (distance thinning, prunes
- * disposed meshes). Effect meshes use getEmissive() (unlit StandardMaterial).
+ * until that state next moves. Effect meshes use getEmissive() (unlit
+ * StandardMaterial). **Nothing here registers a mesh for INK any more**: the
+ * ink is one full-screen pass over the frame's own depth (`shaders/CelInk.ts`),
+ * so it takes no per-mesh bookkeeping, no back-face shell and no second
+ * material — `metadata.noInk` survives as a record of INTENT that nothing
+ * reads to decide ink, and what actually keeps a part out of the line work is
+ * the glow's mask, the near-depth band or being coplanar (CLAUDE.md).
  * Also owns the fog as a published fact: setEnvironment writes it once, the cel
- * materials get it as uniforms, OutlineFog bakes it into the outline pass,
+ * materials get it as uniforms, CelInk takes the same band as `fadeBand`,
  * EmissiveFog uploads it to the unlit emissive materials, and fogAmountAt()
  * hands the same curve to the glow's rules. Anything else drawn unshaded owes that
  * fade, or it hangs in front of the fog wall at full strength.
@@ -1861,8 +1864,8 @@ export class CelMaterialFactory {
    * The same flat cel colour as get(), but with the toon specular band
    * enabled — a hard key-light highlight for metal, glass, wet stone.
    * Cached under its own key so the matte variant of the same colour is
-   * untouched; named `cel-gloss-#rrggbb` so outlineInkFor() still recovers
-   * the palette colour for the ink.
+   * untouched, and named `cel-gloss-#rrggbb` to stay in the one naming scheme
+   * the merge readers parse.
    *
    * **The SPEC is part of the cache key and the NAME is not**, and both
    * halves of that are load-bearing. The spec is a uniform rather than a
@@ -1870,8 +1873,10 @@ export class CelMaterialFactory {
    * differ only in what was uploaded to them — keyed on the colour alone,
    * whichever level asked first would silently answer for both, which is a
    * weapon finish coming out matte because some other finish had already
-   * minted its colour. The NAME still carries the palette colour and
-   * nothing else, because `inkColorFor` parses it.
+   * minted its colour. The NAME still carries the palette colour and nothing
+   * else, because a name is what `MapBuilder.plainCelHex` reads to decide
+   * whether a mesh can join the palette merge — the one reader left now that
+   * the hull ink's own `inkColorFor` has gone with it.
    */
   getGlossy(hex: string, spec: SpecSpec): ShaderMaterial {
     const cacheKey =
@@ -1915,8 +1920,8 @@ export class CelMaterialFactory {
    * hard Blinn glint on it, and the cache is per colour, so an axis that
    * multiplies is an axis that costs.
    *
-   * Cached under its own key and named `cel-trans-#rrggbb` so
-   * outlineInkFor() still recovers the palette colour for the ink.
+   * Cached under its own key and named `cel-trans-#rrggbb`, in the same naming
+   * scheme as the other two and for the same reason `getGlossy` gives.
    */
   getTranslucent(hex: string, trans: TranslucencySpec): ShaderMaterial {
     const cacheKey = `\0trans-${hex}`;
@@ -2767,15 +2772,17 @@ export class CelMaterialFactory {
  * it reach it from outside any material. They take it two different ways, and
  * the difference is what each pass can be told:
  *
- * - The OUTLINE pass gets it baked into its shader by `OutlineFog`, and fades
- *   per PIXEL. It has to: `BlockMerge` gives one mesh per 48 m block, so a
- *   per-mesh ink fade left the far half of a block in clear ink over a wall
- *   that had already gone to fog (measured: 50 of 687 outlined meshes span the
- *   entire fog band).
+ * - The INK takes the band itself, as `CelInk`'s `fadeBand` uniform, and fades
+ *   per PIXEL off the distance it already holds. It has to be per pixel:
+ *   `BlockMerge` gives one mesh per 48 m block, so a per-MESH ink fade left the
+ *   far half of a block in clear ink over a wall that had already gone to fog
+ *   (measured, while the ink was still a hull: 50 of 687 outlined meshes span
+ *   the entire fog band). That measurement is why the hull needed a shader-store
+ *   patch to fade correctly and why a full-screen pass gets it for nothing.
  * - The GLOW layer gets it through `fogAmountAt`, and fades per MESH, because
  *   its bloom is generated from a material's emissive colour and there is no
- *   per-pixel hook at all. That is affordable where the outline's was not: a
- *   bloom is a soft blob with no edge to misplace.
+ *   per-pixel hook at all. That is affordable where the ink's was not: a bloom
+ *   is a soft blob with no edge to misplace.
  */
 const fogState = { color: new Color3(0.05, 0.06, 0.08), start: 24, end: 78 };
 
@@ -2795,12 +2802,18 @@ const fogState = { color: new Color3(0.05, 0.06, 0.08), start: 24, end: 78 };
 /**
  * The name of the one material every matte surface in the village wears.
  *
- * It deliberately does NOT match `inkColorFor`'s regex — there is no hex in it,
- * because there is no single colour to name — and three readers key on that
- * being true: `getInk` gives it the palette, `applyEnvironment` gives it the
- * tint rather than a resolved ink, and `MapBuilder` never calls `addOutline` on
- * a mesh wearing it, because Babylon's outline pass is per MESH and this mesh
- * is many colours.
+ * **It deliberately carries no hex**, because there is no single colour to
+ * name — the palette arrives per vertex (`getWorldCel`, `vPalette`) — and the
+ * name is what says so to every reader that parses one: `MapBuilder`'s
+ * `plainCelHex` refuses it, so a mesh already wearing the palette material is
+ * never offered to the palette merge a second time.
+ *
+ * It used to matter to two more readers and both went with the hull ink, which
+ * is worth knowing only because it is why the rule reads as bigger than it now
+ * is: the ink's own name regex had to skip this material, and `MapBuilder` had
+ * to keep it out of Babylon's per-MESH outline pass, which could not tint one
+ * shell for a mesh holding ten colours. A full-screen ink asks the name
+ * nothing.
  */
 export const WORLD_CEL_NAME = "cel-world";
 
@@ -2814,8 +2827,9 @@ const windBearing = new Vector2(
  * the cel shader's own curve — the `t * t` in CEL_FRAGMENT's atmosphere block,
  * repeated here for the passes that cannot run that shader.
  *
- * **Anything drawn unshaded owes this curve**, through here or baked as
- * `OutlineFog` bakes it, or it hangs in front of the fog wall at full strength
+ * **Anything drawn unshaded owes this curve**, through here or through a band
+ * of its own the way `CelInk` takes one, or it hangs in front of the fog wall
+ * at full strength
  * while the world behind it dissolves. That was two separate bugs on Greyfen,
  * and neither showed on Hollowmere: with a near-black fog, unfogged ink is
  * invisible against the wall and a glow reads as a lamp. A bright fog is what

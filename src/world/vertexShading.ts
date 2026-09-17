@@ -37,9 +37,9 @@
  *
  * So the world is the only thing that carries a colour buffer, everything else
  * is correct by construction, and the shader needs no define, no second cache
- * variant, no fourth `cel-<variant>-#rrggbb` name for `outlineInkFor`'s regex to
- * learn, and no branch. `docs/rendering.md` spells out what a fourth variant
- * costs; this design does not pay it.
+ * variant, no fourth `cel-<variant>-#rrggbb` name for the merge's own name
+ * readers to learn, and no branch. `docs/rendering.md` spells out what a fourth
+ * variant costs; this design does not pay it.
  *
  * The green channel is the other half of that: it is 1 on baked world geometry
  * and 0 (the same generic default) everywhere else, so a shader term that must

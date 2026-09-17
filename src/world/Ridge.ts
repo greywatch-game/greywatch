@@ -519,11 +519,15 @@ function assertOutsidePlay(positions: number[], half: number): void {
 }
 
 /**
- * Builds the rim as `SEGMENTS` runs per tone. Segmenting is not only for
- * frustum culling: `updateOutlineScales` sizes ink by
- * `distance(boundingSphere.centerWorld, cam) - radiusWorld`, clamped at zero,
- * so one mesh spanning the perimeter would sit at full outline width forever
- * and paint a fat line across the horizon.
+ * Builds the rim as `SEGMENTS` runs per tone, for frustum culling and for
+ * `WorldCulling`'s candidate list, both of which are answered per MESH.
+ *
+ * It had a second reason that has gone: the ink was a back-face shell whose
+ * width was sized per mesh from `distance(boundingSphere.centerWorld, cam) -
+ * radiusWorld`, so one mesh spanning the perimeter sat at full width forever
+ * and painted a fat line across the horizon. A full-screen ink has no per-mesh
+ * width to get wrong, so segmenting no longer defends against that — it is
+ * worth keeping on the culling argument alone.
  */
 export function ridgeSegments(
   spec: RidgeSpec | undefined,

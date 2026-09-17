@@ -87,10 +87,11 @@ export function pickPathHandle(
 /**
  * Outlines the selected item's meshes using Babylon's edge renderer.
  *
- * Deliberately NOT the cel outline (`addOutline`): that is a back-face shell
- * whose width is managed globally by `updateOutlineScales`, so borrowing it
- * for selection would fight the renderer over every mesh it touches every
- * frame. Edges are a separate pass and cost nothing here.
+ * Deliberately NOT the game's own ink, which is one full-screen pass over the
+ * frame's depth (`shaders/CelInk.ts`) and therefore has no per-mesh handle to
+ * borrow: it draws every edge in the frame on the same terms and cannot be
+ * asked to draw one mesh differently. Edges are a separate pass, they are per
+ * MESH by construction, and they cost nothing here.
  */
 export class SelectionHighlight {
   private lit: Mesh[] = [];

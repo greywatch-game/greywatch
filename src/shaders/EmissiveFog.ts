@@ -3,12 +3,13 @@
  * Owns: a `MaterialPluginBase` bolted onto every material `getEmissive()` hands
  * out, and the fog values it binds. Invariants: the fog it uploads must be the
  * SAME fog the cel shader is given — `CelMaterialFactory.setEnvironment` is the
- * only caller of `setEmissiveFog`, exactly as it is for `setOutlineFog`, so a
- * lit window cannot describe different weather from the wall it is set into.
+ * only caller of `setEmissiveFog`, exactly as it is the one writer of the band
+ * `CelInk` fades on, so a lit window cannot describe different weather from the
+ * wall it is set into.
  *
- * WHY THIS EXISTS. `getEmissive()` returns an unlit `StandardMaterial` — the
- * third pass in this game that never runs the cel shader, after the outline
- * shell and the glow map, and the last one to be given a fade. It draws a flat
+ * WHY THIS EXISTS. `getEmissive()` returns an unlit `StandardMaterial` — one
+ * of the passes in this game that never runs the cel shader, and the last of
+ * them to be given a fade. It draws a flat
  * `emissiveColor` with `disableLighting`, so a lit window, a forge's embers, a
  * brazier flame, a gatehouse's team-colour bar and a tracer all rendered at full
  * saturation from any distance. Measured on Greyfen before this: a cottage
@@ -34,10 +35,11 @@
  *   glowing. Keeping the `StandardMaterial` is what keeps that rule working.
  *   The BLOOM is not drawn from this fogged colour, though: it fades toward the
  *   fog, and the glow wants its halo to fade toward black.
- * - **Not baked literals + a cache drop, the way `OutlineFog` does it.** That
- *   file has no choice: `OutlineRenderer` hardcodes its `uniformsNames`. A
- *   material plugin can declare real uniforms, so this one does, and a fog change
- *   is a buffer write rather than a recompile.
+ * - **Not baked literals + a cache drop, the way the retired `OutlineFog`
+ *   had to.** That one had no choice: `OutlineRenderer` hardcodes its
+ *   `uniformsNames`, so the only way in was to patch the shader source and drop
+ *   the cache. A material plugin can declare real uniforms, so this one does,
+ *   and a fog change is a buffer write rather than a recompile.
  *
  * The distance is `vPositionW` against `vEyePosition`. Both are unconditional in
  * `default.fragment` — `vPositionW` is declared outside every `#ifdef` and

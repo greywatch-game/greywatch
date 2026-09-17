@@ -1144,9 +1144,10 @@ export class Game {
         let k =
           (material as { emissiveIntensity?: number }).emissiveIntensity ?? 1;
         if (!mesh.infiniteDistance) {
-          // The sphere's CENTRE, deliberately — not the near point
-          // `updateOutlineScales` thins width by. A bloom is a soft blob with
-          // no edge to speak of, so its middle is where it reads from; the near
+          // The sphere's CENTRE, deliberately — not the NEAR point, which is
+          // what a per-mesh ink width used to be measured to. A bloom is a soft
+          // blob with no edge to speak of, so its middle is where it reads
+          // from; the near
           // point of a block-merged mesh (the chapel's six windows are one,
           // 8.5 m of radius) sits a whole radius early and fogged them by 16%
           // where the wall behind was at 35%. Every glowing mesh here is a

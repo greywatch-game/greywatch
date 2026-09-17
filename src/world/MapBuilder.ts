@@ -1206,24 +1206,19 @@ export class MapBuilder {
       merged.metadata = { ...(merged.metadata ?? {}), noShadowCaster: true };
       // **AND NO ROAD IS INKED**, which is the same sentence one line up rather
       // than a second exemption: a sheet lying on the ground has no silhouette
-      // to cast a shadow from and none to draw a line round either. What
-      // `addOutline` would hang on it is a hull expanded 5 cm along its own
-      // normals, drawn a second time after the mesh with colour write off and
-      // depth write ON — so the ink of a road stands in the depth buffer 5 cm
-      // above its own carriageway, and anything else at road height is BEHIND a
+      // to cast a shadow from and none to draw a line round either. Nothing has
+      // to ENFORCE that now — `CelInk` finds an edge where depth steps or
+      // bends, and two coplanar sheets do neither — but it was enforced here,
+      // and the reason is worth keeping because it is what a per-mesh ink costs
+      // on flat ground. A shell expanded 5 cm along its own normals and drawn
+      // with depth write ON puts a road's ink in the depth buffer 5 cm above
+      // its own carriageway, so anything else at road height is BEHIND a
       // surface nobody can see. Lane markings hit that first and were given
-      // `noInk` for it (see `buildRoad`); a road CROSSING a road is the
-      // same fact, and it painted every junction between two surfaces solid
-      // black — measured on Sarab, where the ink of whichever mesh the
-      // front-to-back sort drew second covered the whole intersection, and no
-      // amount of lift fixed it because the shell rides with the slab.
-      //
-      // What is given up is a 5 cm line where the carriageway meets the verge.
-      // Measured against it: a road's outline never thins (`updateOutlineScales`
-      // measures to a bounding sphere the camera is standing inside, so a
-      // map-spanning merge is always at full width), and on Hollowmere's square
-      // the line is the difference between two frames you have to flick between
-      // to tell apart. The junction is not.
+      // `noInk` for it (see `buildRoad`); a road CROSSING a road was the same
+      // fact, and it painted every junction between two surfaces solid black —
+      // measured on Sarab, where the ink of whichever mesh the front-to-back
+      // sort drew second covered the whole intersection, and no amount of lift
+      // fixed it because the shell rode with the slab.
       visuals.push(merged);
     }
 
@@ -2966,12 +2961,18 @@ type Palette = {
 /**
  * The hex of a PLAIN matte cel material, or null for anything else.
  *
- * Deliberately stricter than `inkColorFor`'s regex, which also accepts the
- * gloss and translucent variants: those differ from this one in shader
- * BEHAVIOUR and not merely in a uniform, so they cannot share a material
- * however alike their colours are. The two regexes are not duplicates of each
- * other and must not be made into one — they are asking different questions of
- * the same name.
+ * **It matches the matte name ALONE and must stay that strict**, which is the
+ * whole of what it is for: gloss and translucent differ from matte in shader
+ * BEHAVIOUR rather than merely in a uniform, so they cannot join the palette
+ * merge however alike their colours are, and a regex loosened to
+ * `cel-(gloss-|trans-)?#rrggbb` would quietly enrol them. `cel-world` is
+ * refused by the same line, having no hex at all — see `WORLD_CEL_NAME`.
+ *
+ * It had a looser twin once, `inkColorFor`, which DID accept all three because
+ * it was asking a different question of the same name: what colour to tint a
+ * mesh's ink shell. That went with the hull ink, so this is the only reader of
+ * a material name left and there is no longer a second regex to keep it
+ * distinct from.
  */
 function plainCelHex(materialName: string): string | null {
   const m = /^cel-(#[0-9a-fA-F]{6})$/.exec(materialName);
