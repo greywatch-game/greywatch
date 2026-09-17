@@ -36,6 +36,11 @@
  *   walk through is a fall) AND it has to stand off the surface (a rail on it
  *   costs the nav grid a cell). That method owns the argument; the watchtower,
  *   the bridge and the barn were each written the wrong way first.
+ * - An APPLIED member — a post, a girt, a brace, a batten — is bedded on the
+ *   wall's FACE and never centred in it. A 0.3 m post at `x = ±w / 2` stands
+ *   inside a 0.4 m wall, the boarding closes over it, and the elevation is
+ *   drawn as one flat colour with a door in it. `buildBarn` owns the worked
+ *   version, and its header says what that cost.
  * - No Hollowmere special-casing; register new builders in
  *   BuildingKit.ts's BUILDERS.
  */
