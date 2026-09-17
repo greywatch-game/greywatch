@@ -741,23 +741,32 @@ so that a map saying nothing is unaffected:
 
 **A map is CLOSED one of two ways, and the second has no wall at all.** The rim
 is four boxes at `±size/2` under `Ridge`'s escarpment. `MapLayout.borderland` is
-the other: the floor carries on for a `margin` past the play square —
-`TerrainField` continues the field, so nav, the roads, the grass and
-**`server/validate.ts`** agree for free — and what stops you leaving is
-`src/world/leash.ts`, a countdown rather than a shape. **It is sized by the
-leash, it kills on the AUTHORITY and only draws on a client, and bots are never
-leashed**, the nav graph stopping at the play square. **What a boundary is
+the other: the floor carries on for a `margin` past the play square
+(`TerrainField` continues the field, so nav, the roads, the grass and
+**`server/validate.ts`** agree for free) and what stops you leaving is
+`src/world/leash.ts`, a countdown rather than a shape. **The LEASH is the FLOOR
+under that margin and the EYE is what spends it** — under a sprint's 69 m a
+player reaches the boundary colliders, which is the invisible wall this exists
+to avoid — and **`Borderland.ease`, the roll's ramp, is measured against the
+PLAYER while the margin is not**, so a map sizing its margin by the horizon
+states one. It kills on the AUTHORITY and only draws on a client, and **bots are
+never leashed**, the nav graph stopping at the play square. **What a boundary is
 closed BY and what it is closed WITH are two questions**: `RidgeSpec.form` takes
-`none` for a map that has laid something out there already, an ISLAND stating
-its horizon in water instead.
+`none` for a map that has laid something out there already — an ISLAND stating
+its horizon in water, or a `borderland` bought past the map's own `fogEnd`, where
+the ground arrives at the horizon as flat `fogColor` with no step for a landform
+to cover. **What a `none` owes is that reach from EVERYWHERE a player can be**,
+and the fog is LINEAR: a margin short of it draws an edge rather than softening
+one.
 
 **The shipped maps are Hollowmere** (a night village), **Greyfen** (a jungle
 valley), **Coldharbour** (a business district — what the first three overrides
-exist for), **Harrowmead** (`size: 400`, no wall around it), **Sarab**
+exist for), **Harrowmead** (`size: 400` inside 1600 m of ground, no wall and no
+rim — the country runs out into the fog), **Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
 `ENGINE_UPGRADE.md` exists for) **and Cinderhaven** (`size: 1500` inside 2000 m
 of ground and 4,600 m of sea — a harbour town on a volcanic island, at night,
-the biggest map in the tree and the only one with no rim at all). **The last
+the biggest map in the tree). **The last
 four are the four with vehicles on them**; **Sarab and Cinderhaven are the two
 with all THREE KINDS and the two that are not 8v8**, both fielding 24 a side
 online and off. Both were **SEEDED by a generator** (`npm run sarab`,
@@ -852,8 +861,9 @@ and reached through `npm run simulate:dev`.
 heightfield and the road slabs cut against it, the winding trap that makes a
 floor vanish, the builder and two-pass merge rules, the harbour kit and the
 island's floor, the road ladder's arithmetic, the layout gotchas that have
-already cost time, the valley rim's contract with the sky, and the borderland,
-the two rim forms and the leash.
+already cost time, the valley rim's contract with the sky, the borderland, the
+two rim forms and the leash, and the margin that IS the landform — the fog
+arithmetic, the four margins it was measured at and what pays for it.
 
 ### The map editor (dev only)
 

@@ -1067,7 +1067,12 @@ export class MapBuilder {
         );
       }
     }
-    const terrain = new TerrainField(heights, margin, layout.borderland?.roll);
+    const terrain = new TerrainField(
+      heights,
+      margin,
+      layout.borderland?.roll,
+      layout.borderland?.ease,
+    );
     record("valley", () =>
       this.buildValley(
         size,

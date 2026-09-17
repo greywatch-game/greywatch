@@ -1098,10 +1098,12 @@ still the default and still what Hollowmere, Greyfen and Coldharbour are.
 
 **And the LANDFORM is separable from the boundary a third time**: `RidgeSpec.form:
 "none"` builds no geometry at all, for a map that has already put something out
-past its own boundary for the horizon to be made of. Cinderhaven is the one that
-takes it — a `borderland` of ground with 2,300 m of open sea drawn over and past
-it, which is `fogEnd` beyond the furthest point anything in the simulation can
-reach. What a map owes before it may take that form is exactly the crest rule
+past its own boundary for the horizon to be made of. TWO maps take it, and they
+pay for it in different currencies — Cinderhaven in WATER, a `borderland` of
+ground with 2,300 m of open sea drawn over and past it; Harrowmead in GROUND,
+600 m of borderland and nothing over it at all. Both numbers are the same
+number: `fogEnd` beyond the furthest point anything in the simulation can reach.
+What a map owes before it may take that form is exactly the crest rule
 three bullets down, paid in something other than rock: the sky dome is flat
 `fogColor` below the horizon and `Sky` culls its stars out of the lowest 7.2°, so
 a boundary with nothing over it AND nothing beyond it is a dead band under a
@@ -1156,20 +1158,28 @@ rather than a face of rock. It is declared by `MapLayout.borderland` — absent 
 the other three, which are bit-identical to what they were before it existed —
 and it is three pieces, each answering a different part of the same question.
 
-**The two maps that state one size it for opposite reasons**, and that is worth
-knowing before setting a third. Harrowmead's 80 m is the LEASH: ten seconds at a
-sprint is 69 m, so the boundary boxes sit just past where a player who turns and
-runs dies, and any more would be invisible to anybody alive. Sarab's 300 m is the
-HORIZON: at 560 m of haze on a 900 m square, the play boundary is inside the view
-from every quarter, so without ground past it the town would stand on a plate
-with sky under its edges. The leash number is a floor on the margin; what it is
-FOR past that floor is what the map can see.
+**Both maps that state one size it by the HORIZON, and the leash is the FLOOR
+under that rather than the answer**, which is worth knowing before setting a
+third. The leash's number is easy: ten seconds at a sprint is 69 m, so a margin
+under that lets a player reach the boundary colliders, which is the invisible
+wall this mechanism exists to avoid. Everything past 69 m is bought for the
+EYE. Sarab's 300 m is what a 900 m square needs at 560 m of haze so the town
+does not stand on a plate with sky under its edges; Harrowmead's 600 is the
+whole of its rim, and buying that is what lets it state `RidgeSpec.form:
+"none"` — see **When the borderland IS the landform** below.
+
+**Harrowmead's was 80 m and the rest of this section was written against it**,
+which is worth knowing because the numbers that follow still read as if the
+margin were a strip. It was the leash's number exactly, and it bought a
+boundary a living player never finds and nothing else: at 80 m the far edge of
+the floor stands well inside `fogEnd`, so the map needed a landform standing on
+it, and it had one.
 
 **The ground keeps going, and `TerrainField` is what makes that true.** A
-`Borderland` states a `margin` (Harrowmead: 80 m, Sarab: 300) and the field continues past
+`Borderland` states a `margin` (Harrowmead: 600 m, Sarab: 300) and the field continues past
 the authored grid for that distance: `heightAt` returns the clamped edge plus a
-closed-form roll (`borderRoll`) instead of the clamp alone, eased in over the
-first third of the margin so the boundary has no crease and every reader inside
+closed-form roll (`borderRoll`) instead of the clamp alone, eased in over
+`Borderland.ease` so the boundary has no crease and every reader inside
 the play square gets the number it always got. That one change is the whole of
 it, because every reader is already asking this object — the nav grid, the
 grass, the roads, the rim's own toe, and the one that makes it load-bearing
@@ -1195,14 +1205,16 @@ so every invariant above is measured on that. They stay — a bound the simulati
 can state is worth having even where nothing should reach it, since a body
 outside every box has no floor, no nav cell and no answer to `validateMove` —
 and growing them only grows them, so the `> 200 m` shape the seven sites read is
-untouched. `RidgeSpec.form: "downs"` is the landform: no vertical basal band, no
+untouched. `RidgeSpec.form: "downs"` is the landform Sarab takes: no vertical
+basal band, no
 ledges, a rounded crest, and offsets that run ten times as far for the same rise,
 so the face lies at ~23° where the escarpment's is near 60. **The band's absence
 is the same rule rather than an exception to it** — it exists to be flush with a
 collider plane a player can stand against, and on an open boundary there is
-nothing within eighty metres to be flush with. A map taking this form without a
+nothing within a margin's width to be flush with. A map taking this form without a
 borderland would put a hillside where the wall was and spark rounds on air along
-the whole perimeter.
+the whole perimeter. Harrowmead took it too, until its margin grew past
+`fogEnd` and left it with nothing to draw.
 
 **Four smaller things the form changes, and every one of them is what a big
 smooth surface costs in a cel shader rather than a matter of taste.** They were
@@ -1234,15 +1246,90 @@ away with things because it is small, steep and deliberately ledged.
   arithmetic forwards. It also makes `passWindow`'s station-space width wrong
   inside a fan, so author a pass on a SIDE.
 
+### When the borderland IS the landform
+
+**A margin bought past `fogEnd` does not need a rim standing on it, because it
+has become one.** Harrowmead states `RidgeSpec.form: "none"` and 600 m of
+borderland, and the second is what pays for the first: the far edge of the floor
+is further from any eye than the fog can see, so the ground arrives at the
+horizon as flat `fogColor` and the dome above it is painted the same flat
+`fogColor` — there is no line to draw because there is no step to draw it at.
+What used to stand there was a chalk hillside rising 58 to 88 m, four passes cut
+in it where the stream and the two home-yard roads leave the vale, and a bowl
+around a farming valley that a 400 m map did not want to be.
+
+**The arithmetic is the same one `MIN_SLOPE` does for a crest, spent on distance
+instead of height, and it is measured from the player rather than from the play
+square.** The cel shader's fog is LINEAR between `fogStart` and `fogEnd`
+(`CelShader`, `clamp((dist - start) / (end - start))`), so a surface reaches
+exactly `fogColor` at `fogEnd` and not one metre before it. The furthest an eye
+gets is the play boundary plus what the leash allows — 69 m at a sprint — so the
+margin a map owes is `fogEnd + 69`, which on Harrowmead's `fogEnd` of 520 is 589,
+rounded to **600**. Anywhere inside the play square the edge is further still,
+and every bearing is covered at once because a borderland is a square ring and
+not four strips. **Shrink it without putting a landform back and the line
+returns**; the map still builds, it just has an edge again.
+
+**It was measured rather than reasoned about, and the measurement is worth
+keeping because the bound is not obvious.** Six eye-level vantages — the play
+edge, the leash limit, mid-map, over a corner, from the orchard hill and looking
+back in — shot at four margins and diffed on the ground region only, at 1600x900:
+
+| margin | ground pixels differing from 600 m | what it looks like |
+| --- | --- | --- |
+| 80 (the old one) | 7,989 at the play edge, **75,270** at the leash limit | a dead-straight unfogged cut, the floor simply stopping |
+| 300 | 0, 229, 651 on the three worst | edge hidden almost everywhere, still showing from the hill |
+| 600 | — | no edge from any of them |
+| 1200 | **0 on every vantage** | identical; more ground buys nothing |
+
+So 600 is where it converges and 300 is not quite, and the sky-region diffs
+(500–8,800 across all four) are cloud drift between runs rather than signal —
+read the ground column only.
+
+**What actually closes the horizon at eye level is the LAND, not the fog**, and
+that is why the far half of this margin is never seen as shape. From 1.7 m up on
+ground rolling a metre or two, the silhouette is a crest 150–300 m out, which is
+a quarter fogged and reads as a hard line against the sky exactly as an open
+field inside the map does. The fog's job here is not to hide the edge from the
+eye — the ground already does that — it is to guarantee the edge STAYS hidden
+when a terrain edit flattens a quarter or a player stands on the orchard hill.
+
+**`Borderland.ease` exists because the ramp is measured against the PLAYER and
+the margin is not.** `borderRoll` is scaled in over a distance so the boundary is
+C1 rather than merely continuous, and that distance defaulted to a third of the
+margin — 27 m at 80, which is well inside the strip a player is run out through,
+so the country they cross rolls like the country they came from. A third of 600
+is 200, four times as far as anyone alive can get: the same fraction would have
+flattened the whole visible borderland into a radial smear of the map's own edge
+and spent the shape on pasture past the fog. Harrowmead states 40 m. Absent, the
+field is still `margin / 3` and every other map is bit-identical to what it was.
+The steepest gradient the roll can make is `(roll / 2) * (0.026 + 1.5 / ease)`,
+which at 3.2 and 40 m is 0.10 against a `MAX_WALKABLE_GRADE` of 0.4 — a player
+being run out of the map must never be stopped by the ground on the way.
+
+**What it costs is TERRAIN, and the lever that pays for it is `terrainBlock`.**
+600 m of borderland on a 400 m square is 1,600 m of ground at a 4 m cell —
+160,000 quads, against Sarab's 140,625 and Cinderhaven's 111,556, so it is the
+biggest floor in the tree but not by a new order. The mesh COUNT is the part that
+would have hurt, because `terrainPatches` cuts the borderland at four times the
+floor's block and the floor carries no `metadata.block`, so every patch is a
+`WorldCulling` candidate at every distance: at the default 48 this map's ground
+is 193 meshes. Harrowmead states `terrainBlock: 96` and it is 57 — **fewer than
+the 97 it had at 560 m square**, because the play floor's own share falls from 81
+draws to 25. The trade is frustum granularity on the ground you fight over, which
+on a 400 m map stating a `fogEnd` of 520 is very nearly nothing: the whole floor
+is inside the view from the middle of the vale however it is cut.
+
 **What stops you leaving is `src/world/leash.ts`.** Cross the play square and a
 countdown starts on the HUD (`CONFIG.map.leash.seconds`, 10); come back and it
 clears outright rather than winding back, stay and it kills. It is a rule and not
 a shape on purpose — the one thing an open boundary must never become is an
 invisible wall, which is a rule pretending to be a shape and is worse than
-either. **The margin is sized by the leash and not by taste**: a sprint is 6.9
-m/s, so ten seconds is 69 m, and 80 m of borderland leaves eleven metres of slack
-before the boundary colliders. Undersize it and a player reaches them, which is
-the invisible wall again.
+either. **The leash is the FLOOR under the margin and not the whole of it**: a
+sprint is 6.9 m/s, so ten seconds is 69 m, and any borderland under that lets a
+player reach the boundary colliders, which is the invisible wall again. Above
+that floor the margin is the EYE's, and both maps that state one spend it there
+— Harrowmead's 600 m leaves 531 m of slack it will never use as GROUND.
 
 **The same class runs on both sides and only one of them is real.** The authority
 holds one per `NetPlayer` and steps it in `HeadlessGame` against the last

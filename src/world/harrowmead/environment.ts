@@ -87,26 +87,35 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
   /**
    * The high downs: grazed summer grass going grey-green with the distance.
    *
-   * **It stopped being rock when the rim stopped being a cliff.** The other
-   * three maps close on an escarpment and this pair is stone and talus for
-   * them; Harrowmead's rim is `form: "downs"` (see the layout), a hillside 280
-   * m out with eighty metres of the map's own fields running up to its foot,
-   * and chalk grey on it read as a quarry face someone had grassed the
-   * approach to. Desaturated and lifted rather than greened outright, because
-   * everything at that range is most of the way to `fogColor` already and a
-   * saturated hill would fight the haze it is supposed to be dissolving into.
+   * **NOTHING ON THIS MAP READS EITHER OF THESE ANY MORE**, and they are kept
+   * rather than deleted because `EnvironmentSpec` requires them and because a
+   * rim is one line from coming back. The layout states `ridge.form: "none"`,
+   * so `ridgeSegments` returns no segments and `MapBuilder` only asks for a
+   * tone per segment — see the layout, and `docs/world.md`'s "When the
+   * borderland IS the landform" for what pays for that.
+   *
+   * What they were for: **the pair stopped being rock when the rim stopped
+   * being a cliff.** The other three maps close on an escarpment and this pair
+   * is stone and talus for them; Harrowmead's rim was `form: "downs"`, a
+   * hillside 280 m out with eighty metres of the map's own fields running up
+   * to its foot, and chalk grey on it read as a quarry face someone had
+   * grassed the approach to. Desaturated and lifted rather than greened
+   * outright, because everything at that range is most of the way to
+   * `fogColor` already and a saturated hill would fight the haze it is
+   * supposed to be dissolving into.
    */
   ridgeColor: "#6d7358",
   /**
-   * The hill's foot — and on this form that is the lower PASTURE, not a hem of
+   * The hill's foot — and on that form it was the lower PASTURE, not a hem of
    * talus: `DOWNS_SCREE_RING` cuts the two tones at ring 5, which is halfway up
-   * the face and eighty-odd metres of run. So this is the tone that has to
+   * the face and eighty-odd metres of run. So this is the tone that had to
    * carry the whole way from the borderland's grass to the crest colour above,
    * and it is `floorColor` lifted toward it rather than a colour of its own.
+   * Unread now, for the reason above.
    *
-   * BAKED into the rim material rather than pushed as a uniform, so unlike the
-   * rest of this palette it needs the map rebuilt and the editor's work light
-   * will not show it.
+   * It was also BAKED into the rim material rather than pushed as a uniform, so
+   * unlike the rest of this palette it needed the map rebuilt and the editor's
+   * work light would not show it.
    */
   ridgeScreeColor: "#464c2e",
   accentColor: "#7fe0a0",
