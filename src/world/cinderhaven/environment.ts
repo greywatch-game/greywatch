@@ -167,12 +167,14 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
    * — and it wants to read on the quay and the harbour wall as much as at a
    * cottage's footing.
    *
-   * 0.36 against Greyfen's 0.42: ash settles rather than wicking, so it is more
+   * 0.62 against Greyfen's 0.70: ash settles rather than wicking, so it is more
    * even and less concentrated at the very bottom of the ramp than damp is.
    * The ramp's shape is CONFIG's and cannot be said per map, which is the one
-   * thing this block would ask for if it could.
+   * thing this block would ask for if it could — and it is the reason this is
+   * the map that gained the least when the curve moved to the fragment, ash
+   * being the one dirt here that WANTS the flat wash the old bug produced.
    */
-  wear: { color: "#292430", amount: 0.36 },
+  wear: { color: "#292430", amount: 0.62 },
   lighting: {
     /**
      * Fire, not moonlight — see the header. The intensity is under a moon's

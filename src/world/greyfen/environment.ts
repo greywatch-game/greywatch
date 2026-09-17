@@ -175,7 +175,7 @@ export const GreyfenEnvironment: EnvironmentSpec = {
   // half of the atmosphere the shafts are struck THROUGH.
   mistStrength: 0.28,
   /**
-   * The wettest map here, and the strongest wear in the rotation at 0.42: a
+   * The wettest map here, and the strongest wear in the rotation at 0.70: a
    * drowned valley an hour after sunrise, where the only thing that is NOT damp
    * is the canopy. Black-green off `floorColor`, which is leaf mould.
    *
@@ -184,7 +184,7 @@ export const GreyfenEnvironment: EnvironmentSpec = {
    * up, and a footing here is genuinely dark, so the dirt has to be dark enough
    * to still separate from the wall it is on.
    */
-  wear: { color: "#241f14", amount: 0.42 },
+  wear: { color: "#241f14", amount: 0.70 },
   lighting: {
     /**
      * Warm, because a sun two hours up is warm and because the warmth has to

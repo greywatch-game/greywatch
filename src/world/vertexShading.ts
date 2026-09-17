@@ -55,13 +55,21 @@
  * file owns where it lands.
  *
  * The BLUE channel is the fourth and the trick's last free slot: how far up
- * from the ground this vertex is, ramped and inverted so 1 is at the footing
- * and 0 is clear of it. Its neutral value is 0 again — CLEAN — so the rigs, the
- * viewmodel and every effect mesh are exempt by construction exactly as they
- * are from sway, and the branch the shader takes on the world mark is the same
- * one it was already taking. `CONFIG.wear` owns what the number MEANS and
- * `EnvironmentSpec.wear` owns how much of it a given map spends; this file owns
- * where it lands.
+ * from the ground this vertex is, as a straight line through 1 at the footing
+ * and 0 at `CONFIG.wear.height`. Its neutral value is 0 again — the top of the
+ * ramp, so CLEAN — which is what keeps the rigs, the viewmodel and every effect
+ * mesh exempt by construction exactly as they are from sway, and the branch the
+ * shader takes on the world mark is the same one it was already taking.
+ * `CONFIG.wear` owns what the number MEANS and `EnvironmentSpec.wear` owns how
+ * much of it a given map spends; this file owns where it lands.
+ *
+ * **It is the one channel that is SIGNED, and that is load-bearing rather than
+ * sloppy.** A wall's only two samples are its footing and its eaves, so the
+ * rasteriser draws a straight line between whatever is written there — and a
+ * ramp clamped to 0 at the eaves puts the stain's top edge at the EAVES rather
+ * than at `wear.height`. The line is stored unclamped below zero and clamped at
+ * the fragment, where it is free; `wear.falloff` is spent there too, for the
+ * same reason. See the write itself.
  *
  * **What the blue channel deliberately does NOT carry is the other half of the
  * term.** Wear is the height ramp TIMES how vertical the surface is, and the
@@ -278,7 +286,7 @@ export function bakeVertexShading(
   // skips the whole walk, and wear cannot, because the walk is also what writes
   // the sway weight and the world mark. Wear has no disable of its own for the
   // same reason — its strength is the MAP's (`EnvironmentSpec.wear`), spent at
-  // fragment time, so a clean map costs one `Math.pow` per vertex at build and
+  // fragment time, so a clean map costs one divide per vertex at build and
   // exactly nothing per frame.
   if (cfg.strength <= 0) return 0;
   // Glass occludes nothing: it is transparent while it stands and gone after,
@@ -362,19 +370,37 @@ export function bakeVertexShading(
       const above = py - terrain.heightAt(px, pz);
       colors[i * 4] = layer ? swayWeight(above, layer) : 0;
       colors[i * 4 + 1] = 1;
-      // The wear ramp, 1 at the footing and 0 by `wearCfg.height`. Clamped at
-      // the TOP as well as the bottom because `above` goes negative on anything
-      // founded below grade — a sunken wall, a quay's face, the terrain's own
-      // skirt — and an unclamped ramp would hand those a weight above 1 and
-      // push the mix past the dirt colour into whatever lies beyond it.
+      // The wear ramp: the STRAIGHT LINE through 1 at the footing and 0 at
+      // `wearCfg.height`, and deliberately NOT the curve the shader draws off
+      // it.
+      //
+      // WHY THE CURVE IS NOT BAKED. A box part has eight corners and no
+      // vertical subdivision, so a wall's only samples here are its footing and
+      // its eaves — and whatever is written at those two, the rasteriser joins
+      // them with a straight line. Bake `pow` and that line runs from 1 to 0
+      // across the WHOLE wall: on a 3 m wall head height still carries 0.47 of
+      // full grime, and the height and falloff this file thinks it is spending
+      // reach the screen as neither. Height above ground is itself linear up a
+      // vertical face, so the LINE is exact under interpolation where the curve
+      // is not. `pow` is a uniform's job now (`CelShader`'s WEAR block).
+      //
+      // AND IT IS NOT CLAMPED BELOW, which is the part that looks like an
+      // oversight. The ZERO CROSSING is what puts the stain's top edge where
+      // `wearCfg.height` says, and a vertex clamped to 0 at the eaves drags
+      // that crossing up to the eaves with it — the same bug as baking the
+      // curve, wearing a clamp's clothes. So the eaves of a 6 m wall store
+      // -1.3 and the shader clamps after interpolation, where it is free. The
+      // TOP clamp stays: `above` goes negative on anything founded below
+      // grade — a sunken wall, a quay's face, the terrain's own skirt — and a
+      // weight over 1 pushes the mix past the dirt colour into whatever lies
+      // beyond it.
       //
       // This is the ramp ALONE, with no strength folded in: how dirty the place
       // is belongs to `EnvironmentSpec.wear` and is spent as a uniform, which is
       // what lets a map be dirtied without a rebuild. Nothing here knows which
       // map it is baking.
-      colors[i * 4 + 2] = wearHeight > 0
-        ? Math.pow(Math.min(1, Math.max(0, 1 - above / wearHeight)), wearCfg.falloff)
-        : 0;
+      colors[i * 4 + 2] =
+        wearHeight > 0 ? Math.min(1, 1 - above / wearHeight) : 0;
       colors[i * 4 + 3] = ao;
     }
 

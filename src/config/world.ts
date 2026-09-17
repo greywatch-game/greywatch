@@ -108,6 +108,31 @@ export const ao = {
  * `EnvironmentSpec.wear` and default to nothing. A map that says nothing is
  * unaffected.
  *
+ * WHAT THE BAKE STORES IS THE STRAIGHT LINE AND NOT THE CURVE, and that is the
+ * one thing in here somebody could undo without noticing. A box part has eight
+ * corners and no vertical subdivision, so a wall's only samples are its footing
+ * and its eaves: baking the curved weight and letting the rasteriser join them
+ * up draws a straight line between 1 and 0 across the WHOLE wall, which is how
+ * this term spent its first version reading as a building that is slightly
+ * darker rather than a building with dirt on it — at head height on a 3 m wall
+ * the interpolant was still 0.47 of full grime. The height above ground is
+ * itself linear up a vertical face, so the LINE interpolates exactly where the
+ * curve cannot, and `falloff` is spent per FRAGMENT. That is also why the blue
+ * channel may now be NEGATIVE above `height` and why nothing may clamp it in
+ * the walk: the zero crossing is what puts the stain's top edge where this
+ * says, and clamping the eaves vertex to 0 moves that crossing back up to the
+ * eaves. The shader clamps, after interpolation, where it is free.
+ *
+ * THE GRAIN IS THE SECOND HALF AND IT IS NOT A TEXTURE. A tide line at one
+ * exact height on every wall in the village is a contour, and a contour is a
+ * clock: you read the rule rather than the dirt. Two octaves of the value noise
+ * the albedo variation already uses displace the ramp itself — sampled in WORLD
+ * space with the vertical squashed, so the cells stretch into runs down a face
+ * — which breaks the top edge into a ragged line and thins the footing
+ * unevenly at the same time, off one field, for the price of two hashes on
+ * world geometry only. It is not a lattice, it has no uv and no clock, and it
+ * costs no sample: the same test `graphics.albedoVariation` passes.
+ *
  * It is NOT `graphics.albedoVariation` with a different name. That term is a
  * noise breaking one flat albedo up so a wall is not one value — a property of
  * the RENDERER, which is why its own note says weathering belongs to the look
@@ -116,16 +141,28 @@ export const ao = {
  */
 export const wear = {
   /**
-   * How far up a surface the grime reaches, in metres.
+   * How far up a surface the grime reaches, in metres — the height at which the
+   * baked ramp crosses zero, NOT where the stain stops being visible.
    *
-   * 1.6 is chosen against the KIT rather than against a photograph: the
-   * building kit's ground-floor band — sills, door heads, the course a
-   * shopfront's fascia sits on — lands between 1.4 and 2.2 m, so a ramp dying
-   * at 1.6 stays underneath the architecture and reads as the ground climbing
-   * the wall. Pushed to head height it stops being contact grime and becomes a
-   * two-tone paint job on every building in the village.
+   * Those two were the same number while the curve was baked and are not now:
+   * `falloff` is spent at the fragment, so the perceptible top edge of a stain
+   * at a typical `amount` sits at a bit over HALF of this, and the grain then
+   * wanders that edge by `height * edgeBreak / 2` either side. At 2.6 the line
+   * lands near 1.4 m and the wander is about a metre, so the DIRTIEST streaks
+   * reach into the building kit's ground-floor band (sills, door heads, the
+   * course a shopfront's fascia sits on, 1.4 to 2.2 m) while the wall between
+   * them is clean well below it. That is the constraint that has always set
+   * this number and it is why the grain is what let it be raised: a stain that
+   * reaches 2 m in RUNS is a wet wall, and the same stain reaching 2 m
+   * uniformly is a two-tone paint job on every building in the village.
+   *
+   * **A footing is not where the terrain is**, which is the thing that surprises
+   * when this is set from arithmetic alone: `above` is measured from the
+   * HEIGHTFIELD, and the visible bottom of a wall sits on a plinth, a step or a
+   * road slab laid over it. Half a metre of this is spent before the wall
+   * starts.
    */
-  height: 1.6,
+  height: 2.6,
   /**
    * The ramp's shape: 1 is linear, higher crowds the dirt toward the footing.
    *
@@ -133,8 +170,12 @@ export const wear = {
    * exactly what reads as paint rather than as dirt. Splash-back and capillary
    * damp both fall off fast, so the curve wants to be well over 1 — and this is
    * the first number to move if the effect reads as a BAND rather than a STAIN.
+   *
+   * It is a UNIFORM and no longer a `Math.pow` in the walk, which is what makes
+   * it worth having at all: see the header on why a curve baked at two vertices
+   * three metres apart is not the curve it was written as.
    */
-  falloff: 2.2,
+  falloff: 1.4,
   /**
    * How far from vertical a face may lean and still take the full ramp, in
    * degrees.
@@ -151,6 +192,68 @@ export const wear = {
    * right: a roof's dirt is a different signal and would want its own term.
    */
   verticalDegrees: 35,
+  /**
+   * Metres per cell of the grain's COARSE octave — which stretch of frontage is
+   * dirty and which got away with it.
+   *
+   * It wants to be smaller than a building and bigger than a window, so that
+   * one wall carries two or three of them: at 5 m (`albedoVariation`'s figure)
+   * a whole cottage is inside one cell and the grain only tilts the tide line
+   * instead of breaking it. Under about 1 m the coarse octave stops being
+   * blotches and starts doing the fine octave's job twice. The fine octave is
+   * this at 3.4x and is not stated — what these two are FOR is one blotch field
+   * with runs in it, and the knob worth having is the pair's scale.
+   */
+  metersPerCell: 2.2,
+  /**
+   * How much the noise cells are SQUASHED vertically before they are sampled, 1
+   * being round and smaller being taller.
+   *
+   * This is the whole difference between blotches and RUNS. Water leaves a wall
+   * by running down it, so the field that describes where it went has to be
+   * anisotropic — and because the squash is applied to world Y before the
+   * sample rather than to a uv, a wall, a fence post and a barrel all get runs
+   * the same way up with nothing to say which is which. At 0.3 a cell is a
+   * little over three times as tall as it is wide.
+   */
+  streak: 0.3,
+  /**
+   * How far the grain displaces the ramp, peak to peak, in RAMP units.
+   *
+   * The ramp is 1 at the footing and 0 at `height`, so this converts to metres
+   * by halving it and multiplying by `height`: 0.8 wanders the tide line about
+   * a metre either way at the shipped height. It thins the footing by the same
+   * stroke — the low side of the grain takes the ramp below 1 where the high
+   * side is clamped by it — so one field breaks the edge AND mottles the stain,
+   * which is right, a wall being dirtiest exactly where the water ran.
+   *
+   * It is big because the displacement is what the effect READS as. Measured on
+   * Hollowmere's square: at 0.55 with `contrast` at 2.6 the term was a smooth
+   * vertical gradient and a screenshot could not find a single streak in it;
+   * this pair is what turned it into runs down a wall.
+   *
+   * 0 is a clean contour at one height on every wall in the village, and is
+   * worth setting once to see what the grain is doing.
+   */
+  edgeBreak: 0.8,
+  /**
+   * How far the grain is stretched about its own middle before it is spent.
+   *
+   * **Without this the grain is arithmetic nobody can see**, and it is the one
+   * number here that is about the NOISE rather than about dirt. Trilinear value
+   * noise is eight hashes averaged, so it is centrally peaked rather than
+   * uniform — a cell centre's standard deviation is about 0.10 against a
+   * corner's 0.29 — and summing two octaves narrows it again to something like
+   * 0.15. At that spread `edgeBreak` moves a tide line by a few centimetres,
+   * which is a straight line that cost two hashes.
+   *
+   * 5 takes it bimodal, which is the right shape for the thing being described:
+   * a wall is stained here or it is not, and what carries the look is the
+   * boundary between those rather than a smooth field of in-betweens. Lower is
+   * a haze — 2.6 was tried and is invisible — and much higher is a hard-edged
+   * map of the noise's own cells.
+   */
+  contrast: 5.0,
 } as const;
 
 /**

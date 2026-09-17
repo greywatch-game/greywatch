@@ -594,12 +594,17 @@ against `CONFIG.wear`), and the split is the one every override in this file
 makes: how splash-back and rising damp climb a wall is physics and is the same
 in every village, while what colour a place's dirt is and how much of it there
 is are claims about that place. Absent is CLEAN, so a map that says nothing is
-unaffected. **The ramp is always baked and the strength is always a uniform**,
-which is what lets a map be dirtied without a rebuild and is why the editor's
-work light re-derives it with every other palette field. **Sarab is the one
-that INVERTS** — blown dust is LIGHTER than the wall it settles on, where every
-other map's dirt is wet and darker — so nothing may assume the term only ever
-darkens.
+unaffected. **What the BAKE stores is a straight LINE and never the curve** —
+1 at the footing, 0 at `wear.height`, SIGNED above it and clamped by nobody —
+because a box part has two vertical samples and the rasteriser joins them with
+a straight line whatever is written there, so a baked curve arrives as a wash
+up the whole wall and a clamp at the eaves drags the stain's edge up with it.
+The falloff, the strength and the GRAIN that breaks the tide line into runs are
+all uniforms, which is what lets a map be dirtied without a rebuild and why the
+editor's work light re-derives it with every other palette field. **Sarab is
+the one that INVERTS** — blown dust is LIGHTER than the wall it settles on,
+where every other map's dirt is wet and darker — so nothing may assume the term
+only ever darkens.
 
 **There is ONE wind and everything that leans in it leans the same way** —
 `CONFIG.wind`, clocked by `CelMaterialFactory.updateWind` beside the grass

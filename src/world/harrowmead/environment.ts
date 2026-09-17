@@ -149,9 +149,9 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
    *
    * Worth knowing when reading this against the others: the sun is 14.5 degrees
    * and gold, so a footing on the lit side is much brighter than on any other
-   * map and the same 0.30 shows more of itself there than it does at night.
+   * map and the same 0.58 shows more of itself there than it does at night.
    */
-  wear: { color: "#2a2a18", amount: 0.30 },
+  wear: { color: "#2a2a18", amount: 0.58 },
   lighting: {
     /**
      * Deep gold, and the SATURATION is doing the work the level cannot: the

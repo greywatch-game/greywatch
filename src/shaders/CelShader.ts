@@ -446,11 +446,20 @@ uniform opaqueAlpha: f32;
 uniform variationScale: f32;
 uniform variationAmount: f32;
 // The map's grime and how much of it. x is the strength of the whole term and
-// 0 is off; y is the cosine edge the vertical fade starts at. See the WEAR
-// block in the fragment body, and \`CONFIG.wear\` for what the bake put in the
-// blue channel these are spent on.
+// 0 is off; y is the cosine edge the vertical fade starts at; z is the ramp's
+// falloff exponent, which is spent HERE rather than in the bake because a curve
+// baked at a wall's two corners is a straight line by the time it is a
+// fragment; w is how far the grain displaces the ramp, peak to peak.
+//
+// \`wearGrain\` is that grain's shape: x is 1/metres of its coarse octave, y is
+// how much the noise cells are squashed vertically — which is what turns
+// blotches into runs down a face — and z is how far the field is stretched
+// about its middle, without which a value noise's own clustering leaves the
+// tide line effectively straight. See the WEAR block in the fragment body, and
+// \`CONFIG.wear\` for what the bake put in the blue channel these are spent on.
 uniform wearColor: vec3f;
-uniform wearParams: vec2f;
+uniform wearParams: vec4f;
+uniform wearGrain: vec3f;
 
 uniform pointPos: array<vec3f, ${MAX_POINT_LIGHTS}>;
 uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by intensity
@@ -930,13 +939,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
   // --- WEAR: the ground's dirt climbing the first metre of every wall ---
   //
-  // TWO FACTORS, ONE FROM EACH END. \`vBaked.z\` is the height ramp the bake
-  // wrote — 1 at the footing, 0 by \`CONFIG.wear.height\` — because only the bake
-  // can know how far above the TERRAIN a vertex is without sampling the
-  // heightfield per pixel. \`n.y\` is how vertical this face is, and only the
-  // fragment can know that cheaply, because it holds the world normal already.
-  // Baking the second would have spent the colour buffer's last free channel on
-  // something free at this end.
+  // THREE FACTORS, AND EACH IS HERE BECAUSE THE OTHER END COULD NOT ANSWER IT.
+  // \`vBaked.z\` is the height LINE the bake wrote — 1 at the footing, 0 at
+  // \`CONFIG.wear.height\`, and signed above that — because only the bake can
+  // know how far above the TERRAIN a vertex is without sampling the heightfield
+  // per pixel. \`n.y\` is how vertical this face is, and only the fragment can
+  // know that cheaply, because it holds the world normal already; baking it
+  // would have spent the colour buffer's last free channel on something free at
+  // this end. And the CURVE is the third, which used to be baked and is the
+  // reason this term barely read: see below.
   //
   // WHY IT IS A MIX AND NOT A MULTIPLY. Grime is a substance ON the surface,
   // not the surface being darker, so a fully-grimed footing should reach the
@@ -960,15 +971,67 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // uniform across a whole mesh and predicts perfectly — the argument written
   // out in full above the albedo variation. The \`wearParams.x > 0\` half is
   // uniform across the whole DRAW, so a clean map pays nothing per pixel.
+  //
+  // WHY THE CURVE IS SPENT HERE AND NOT IN THE BAKE. A box part has eight
+  // corners and no vertical subdivision, so a wall carries exactly two samples
+  // of this ramp — its footing and its eaves — and the rasteriser joins them
+  // with a STRAIGHT LINE whatever was written at each. \`pow\` applied in the
+  // walk therefore never reached a pixel as a curve: it reached it as 1 falling
+  // linearly to 0 over the whole wall, which at head height on a 3 m wall is
+  // still 0.47 of full grime. That is not a dirty footing, it is a building
+  // rendered slightly darker, and it is what this term looked like for its
+  // first version. Height above ground is itself linear up a vertical face, so
+  // the LINE interpolates exactly; the curve is one \`pow\` here, on pixels the
+  // branch below has already narrowed to world geometry.
+  //
+  // AND THE GRAIN IS WHY IT DOES NOT READ AS A CONTOUR. The same tide line at
+  // the same height on every wall in the village is a rule you can see, which
+  // is the failure this whole renderer's weathering rules are written against
+  // — no lattice and no clock. Two octaves of the value noise the albedo
+  // variation already uses displace the RAMP itself rather than tinting the
+  // result, so one field does both jobs at once: the top edge comes out ragged,
+  // and the footing is thinned wherever the grain runs low, which is right —
+  // a wall is dirtiest exactly where the water ran down it. It is sampled in
+  // WORLD space with Y squashed (\`wearGrain.y\`), so the cells stretch into
+  // vertical runs and a wall, a fence post and a barrel all streak the same way
+  // up with nothing needed to tell them apart. No uv, no sample, no second
+  // material — the same test \`albedoVariation\` passes.
   if (uniforms.wearParams.x > 0.0 && fragmentInputs.vBaked.y > 0.5) {
     // Full at vertical, none at level, smooth between. \`abs\` because an
     // UNDERSIDE is as level as a floor and collects no splash either — a
     // soffit, a deck's belly, the underside of an arch.
     let upright = 1.0 - smoothstep(uniforms.wearParams.y, 1.0, abs(n.y));
+    // The squashed sampling point, and the fine octave at 3.4x the coarse one
+    // with its cells stretched twice as far again — a ratio rather than a
+    // second pair of uniforms, because what these two are FOR is one blotch
+    // field with runs in it and the interesting knob is the pair's scale.
+    let gp = vec3f(
+      fragmentInputs.vPosW.x,
+      fragmentInputs.vPosW.y * uniforms.wearGrain.y,
+      fragmentInputs.vPosW.z) * uniforms.wearGrain.x;
+    let octaves = mix(
+      valueNoise(gp),
+      valueNoise(vec3f(gp.x, gp.y * 0.5, gp.z) * 3.4 + vec3f(19.3, 7.1, 41.7)),
+      0.35);
+    // STRETCHED ABOUT ITS MIDDLE, and without this the grain is not visible at
+    // all. Trilinear value noise is eight hashes averaged, so it is centrally
+    // peaked rather than uniform — a cell CENTRE has a standard deviation of
+    // about 0.10 where a corner has 0.29 — and summing two octaves narrows it
+    // again, to something like 0.15 overall. A displacement of \`edgeBreak\`
+    // times that is a tide line that wanders a few centimetres, which is a
+    // straight line with extra arithmetic. The stretch turns the field bimodal,
+    // which is what dirt is: a wall is either stained here or it is not, and
+    // the interesting part is the boundary between those.
+    let grain = clamp((octaves - 0.5) * uniforms.wearGrain.z + 0.5, 0.0, 1.0);
+    // Clamped AFTER the displacement and after the interpolation, which is the
+    // one place it is free and the one place it is correct.
+    let ramp = clamp(
+      fragmentInputs.vBaked.z + (grain - 0.5) * uniforms.wearParams.w,
+      0.0, 1.0);
     base = mix(
       base,
       uniforms.wearColor,
-      fragmentInputs.vBaked.z * upright * uniforms.wearParams.x,
+      pow(ramp, uniforms.wearParams.z) * upright * uniforms.wearParams.x,
     );
   }
 
@@ -1456,6 +1519,7 @@ export class CelMaterialFactory {
     "variationAmount",
     "wearColor",
     "wearParams",
+    "wearGrain",
     "specColor",
     "specShininess",
     "specMirror",
@@ -2575,17 +2639,30 @@ export class CelMaterialFactory {
     const variation = CONFIG.graphics.albedoVariation;
     mat.setFloat("variationScale", 1 / Math.max(0.001, variation.metersPerCell));
     mat.setFloat("variationAmount", variation.amount);
-    // The map's grime, and the one piece of state in this method that IS the
-    // map's — see `EnvironmentSpec.wear` for why dirt is a claim about a place
-    // where the albedo variation above is a claim about the renderer. The
-    // vertical fade's edge is CONFIG's: it is the physics of splash-back and is
-    // the same in every village.
+    // The map's grime, and the AMOUNT is the one piece of state in this method
+    // that IS the map's — see `EnvironmentSpec.wear` for why dirt is a claim
+    // about a place where the albedo variation above is a claim about the
+    // renderer. Everything else here is CONFIG's: the vertical fade's edge, the
+    // ramp's shape and the grain are the physics of splash-back and rising damp
+    // and are the same in every village. The falloff rides here rather than in
+    // the bake because a curve baked at a wall's two corners arrives as a
+    // straight line; see the fragment's WEAR block.
     mat.setColor3("wearColor", this.wearColor);
-    mat.setVector2(
+    mat.setVector4(
       "wearParams",
-      new Vector2(
+      new Vector4(
         this.wearAmount,
         Math.sin((CONFIG.wear.verticalDegrees * Math.PI) / 180),
+        CONFIG.wear.falloff,
+        CONFIG.wear.edgeBreak,
+      ),
+    );
+    mat.setVector3(
+      "wearGrain",
+      new Vector3(
+        1 / Math.max(0.001, CONFIG.wear.metersPerCell),
+        CONFIG.wear.streak,
+        CONFIG.wear.contrast,
       ),
     );
   }

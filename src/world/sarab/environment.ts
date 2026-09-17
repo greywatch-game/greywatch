@@ -149,8 +149,12 @@ export const SarabEnvironment: EnvironmentSpec = {
    * Read against the rest of the file this is the same argument the ambient
    * makes: dry grit under a high sun is nothing like any of the other five, and
    * a term that only ever darkens would have made the desert look damp.
+   *
+   * 0.58, and the grain matters more here than anywhere: a LIGHT stain with a
+   * clean top edge reads as a painted dado, which is the one failure this
+   * inversion is exposed to and the other five are not.
    */
-  wear: { color: "#a8956e", amount: 0.32 },
+  wear: { color: "#a8956e", amount: 0.58 },
   lighting: {
     color: "#fff2d6",
     intensity: 1.02,

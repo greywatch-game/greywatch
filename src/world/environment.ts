@@ -297,10 +297,24 @@ export interface WearSpec {
   /**
    * How much of the way to `color` a fully-grimed fragment goes, 0 to 1.
    *
-   * This is the strength of the WHOLE term and 0 is off. Past ~0.5 the footing
-   * stops reading as a dirty wall and starts reading as a second material, at
-   * which point the building looks like it has a plinth — which is a fine thing
-   * to want and the wrong way to get it.
+   * This is the strength of the WHOLE term and 0 is off, and it is spent on the
+   * BOTTOM of the ramp rather than across it: `CONFIG.wear.falloff` is a
+   * per-fragment curve now, so a fragment that takes the full amount is one in
+   * the first few centimetres of a footing and the perceptible top edge of the
+   * stain sits at a bit over half of `CONFIG.wear.height` whatever this says.
+   *
+   * THE OLD CEILING WAS A SYMPTOM AND NOT A LIMIT. The note here used to put it
+   * at ~0.5, past which a footing "reads as a second material and the building
+   * looks like it has a plinth" — and that was true of the term as it then
+   * behaved, because the curve was baked at a wall's two corners and reached
+   * the screen as a straight line running the whole height of the wall. A flat
+   * wash with a hard top IS a plinth. With the curve spent at the fragment and
+   * its edge broken by the grain, the six shipped maps sit between 0.36 and
+   * 0.56 and none of them reads as one. The real ceiling is the one the colour
+   * sets: `mix` cannot go past `color`, so the question at the top of this
+   * range is whether a fully-grimed footing being flatly `color` is a thing you
+   * want to see, which on a light dirt (Sarab) arrives sooner than on a dark
+   * one.
    */
   amount: number;
 }

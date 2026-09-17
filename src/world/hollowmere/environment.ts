@@ -57,12 +57,15 @@ export const HollowmereEnvironment: EnvironmentSpec = {
    * greener — this valley's ground is damp and the walls wick it, which is the
    * literal fiction of the term and the one map where it needs no licence.
    *
-   * 0.34 is middling on purpose. Hollowmere is the darkest map in the rotation
+   * 0.66 is middling on purpose. Hollowmere is the darkest map in the rotation
    * and the ambient is already doing most of the work at a footing, so a
    * stronger mix lands on top of the AO's crease and reads as a second shadow
-   * rather than as dirt.
+   * rather than as dirt. What bought the extra 0.32 is that the stain is a
+   * STAIN now — the curve reaches the screen as a curve and the grain breaks
+   * its edge, so the strength is spent on the first half metre instead of being
+   * smeared up the whole wall where it could only ever read as tone.
    */
-  wear: { color: "#2b2b24", amount: 0.34 },
+  wear: { color: "#2b2b24", amount: 0.66 },
   lighting: {
     color: "#a8c4ff",
     intensity: 0.78,

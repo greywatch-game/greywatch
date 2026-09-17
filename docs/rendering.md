@@ -123,7 +123,7 @@ into the flat ambient and the sky fill — **not** the key light, which the shad
 map already owns, and **not** the point lights, for the same reason those ignore
 the shadow map: a lantern in a doorway has to light the doorway.
 
-Three rules about it, and the first is the one everything else rests on:
+Five rules about it, and the first is the one everything else rests on:
 
 - **Occlusion lives in the colour buffer's ALPHA, and 1 means unoccluded.** A
   mesh with no colour buffer leaves that attrib array disabled, and a disabled
@@ -143,6 +143,19 @@ Three rules about it, and the first is the one everything else rests on:
   estimate legitimate: two meshes meeting at a corner are in different merge
   groups (the merge is per colour), and shading a vertex from where it *is*
   rather than from what it belongs to is what makes the two sides agree.
+- **The BLUE channel is the one that is SIGNED, and nothing may clamp it in the
+  walk.** It carries the WEAR ramp as a straight line through 1 at a footing and
+  0 at `CONFIG.wear.height`, and it goes negative above that on purpose. A box
+  part has eight corners and no vertical subdivision, so a wall's only samples
+  are its footing and its eaves and the rasteriser joins them with a straight
+  line whatever is written there — which means a curve baked in the walk is not
+  the curve it was written as (on a 3 m wall, head height still carried 0.47 of
+  full grime, and the term read as a building that is a bit darker rather than
+  one with dirt on it), and a bottom clamp at the eaves drags the stain's top
+  edge up to the eaves with it. Height above ground is itself linear up a
+  vertical face, so the LINE interpolates exactly. `CONFIG.wear.falloff` is a
+  uniform, spent per fragment, and so is the grain that breaks the line's edge.
+  The neutral default survives it: 0 is the TOP of the ramp, which is clean.
 - **`hasVertexAlpha` must stay false.** `setVerticesData` does not set it, and
   the world is opaque — the alpha here is a lighting term, not a transparency.
 - **Only a CEL-SHADED mesh may be given the buffer**, and `visuals` is not all
