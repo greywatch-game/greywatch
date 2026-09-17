@@ -1685,8 +1685,16 @@ lobby and the regions' two headers, and what is not built.
 - **Every ROUND is hitscan** — player and bots share `CombatSystem.fire()`, which
   takes the shooter's target list (so friendly fire is excluded by construction rather
   than by a team check inside) and the shooter's own `range`, which bounds the wall pick
-  and the near-miss sweep as well as the damage. Tracers, sparks and impact discs are
-  pooled; add effects to a pool rather than allocating per shot. **Two things are
+  and the near-miss sweep as well as the damage. Tracers, sparks, impact discs and
+  bullet MARKS are pooled; add effects to a pool rather than allocating per shot.
+  **The mark pool is the one whose slots outlive the shot** (`systems/BulletMarks.ts`),
+  and the two things about it that are not its own business are these: it is the
+  one effect in the game wearing a CEL material rather than `getEmissive`, because
+  a hole that is still there a minute later has to be lit by the same map the wall
+  is — which is also what puts it inside `WorldCulling`'s size gate, where every
+  emissive effect mesh is exempt; and it is stood on the STATIC world only, a hull
+  answering "hard" like any other box while being the one solid thing in the game
+  that drives away from where it was shot. **Two things are
   deliberate exceptions and there are exactly two**: the grenade, and the
   anti-tank rocket. Both fly, both cost one collision ray a frame, and both are
   arguments about giving a player time to react rather than oversights.

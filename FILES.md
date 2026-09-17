@@ -391,6 +391,9 @@ src/
                         #   `awardZone` are the one place each that a payout's
                         #   shape is decided — both sides call the same two
     CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, beacon
+    BulletMarks.ts      # The holes a round leaves behind: a ring of pooled decal
+                        #   quads, cel-lit so a mark belongs to the wall on
+                        #   every map, and stood on the STATIC world only
     CombatSystem.ts     # Hitscan, fall-off, the head zone; pooled tracers, sparks, impacts
     GrenadeSystem.ts    # The one thing that isn't hitscan, and six of the
                         #   eight layers a blast is drawn as: the flash, the

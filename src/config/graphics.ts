@@ -1177,4 +1177,37 @@ export const effects = {
    * a flickering impact reads as a broken decal rather than as dust.
    */
   discLift: 0.02,
+  /**
+   * How many bullet MARKS stand on the world at once (`systems/BulletMarks.ts`).
+   *
+   * The one effect pool here whose slots are long-lived, so this is not the
+   * "worst case in one frame" figure the three above are — it is how far BACK
+   * a wall remembers, and the ring takes the oldest slot whatever is in it.
+   * Sized so a firefight in one street never recycles a mark you are still
+   * looking at: 72 is a magazine and a half from the player plus whatever the
+   * bots put around him, and the ones that get taken are the ones behind you.
+   *
+   * **It is the worst-case DRAW-CALL figure, though, and this frame is
+   * draw-call bound — so here is what it was measured at.** A mark wears a cel
+   * material and is therefore NOT size-exempt in `WorldCulling` the way every
+   * emissive effect mesh is, so the size gate drops it: measured on Hollowmere
+   * at 1280x720 with the whole pool emptied into ONE wall, the active-mesh
+   * count went 67 -> 132 at 3 m, 79 -> 150 at 25 m and 80 -> 89 at 40 m. So
+   * the gate bites between 25 and 40 m (it is a size on the SCREEN, so the
+   * distance moves with resolution and FOV), and the price of this number is
+   * paid only by marks in the room you are standing in — but a sustained
+   * firefight against one building CAN put most of them in one frame. Lower
+   * it before anything else here if a map starts costing draws.
+   */
+  markPoolSize: 72,
+  /**
+   * Metres a mark is lifted off the surface along its own normal.
+   *
+   * A tenth of `discLift`, and it is the ROAD's rung rather than the dust's:
+   * the z-fight is answered by the mark's depth bias (`MARK_DEPTH_UNITS`), so
+   * this only has to keep the geometry off the wall, and a decal that stands a
+   * full two centimetres proud is one that floats visibly at a grazing angle
+   * and is big enough for `CelInk` to find a depth step at.
+   */
+  markLift: 0.002,
 } as const;

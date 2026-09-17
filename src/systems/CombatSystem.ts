@@ -18,10 +18,16 @@
  * sphere is never tested, so the bot path pays nothing for it. It is an
  * upgrade to a body hit that already landed, never a separate candidate — the
  * body sphere encloses it and it could not win a nearest-hit search.
- * Tracers/sparks/impact discs are
+ * Tracers/sparks/impact discs/bullet marks are
  * fixed-size pools: add new effects to a pool, NEVER allocate per shot.
  * The disc pool is `noGlow`, which the bloom reads every frame; without it
  * every dust disc blooms like a lamp.
+ * The MARK pool (`BulletMarks`) is the one whose slots outlive the shot, and
+ * the two things that reach out of it are here rather than there: a mark is
+ * owed by the impact KIND (`IMPACTS.mark`, absent on flesh and on glass), and
+ * only ever by a round that stopped on the STATIC world — a hull is "hard"
+ * like any other box and is the one solid thing in the game that drives away
+ * from where it was shot.
  * `RayHit.surface` chooses the impact; "hard" is what everything but the floor
  * answers, exactly as `metadata.surface` was absent on everything but the
  * terrain collider's clone.
@@ -46,6 +52,7 @@ import {
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { newRayHit, type RayHull, type RayWorld } from "../world/RayWorld";
+import { BulletMarks } from "./BulletMarks";
 
 /**
  * What DELIVERED a hit, for the one kind of target that answers differently
@@ -206,28 +213,58 @@ export interface ShotOptions {
  */
 export type ImpactKind = "flesh" | "ground" | "hard" | "glass";
 
-/** How each kind looks: the hot core, the dust disc, and how big it opens. */
+/**
+ * How each kind looks: the hot core, the dust disc, how big it opens, and the
+ * MARK it leaves once the dust is gone.
+ *
+ * The first three are the moment and the fourth is the minute after it, which
+ * is why `mark` is the one field here whose absence is a statement rather than
+ * a default: a kind with none leaves nothing behind. Flesh does not (there is
+ * no blood in this game), and glass does not (a pane either breaks whole or is
+ * decoration — `docs/world.md`), so the two that mark are the two that throw
+ * dust, and each marks in its own dust's colour a good deal darker. `radius`
+ * is metres, before the per-mark jitter `BulletMarks.place` rolls on top.
+ */
 const IMPACTS: Record<
   ImpactKind,
-  { spark: string | null; disc: string | null; from: number; to: number }
+  {
+    spark: string | null;
+    disc: string | null;
+    from: number;
+    to: number;
+    mark: { hex: string; radius: number } | null;
+  }
 > = {
   // A hit on a body gets the spark and NO disc. Flesh does not throw dust on
   // the world, and the hitmarker plus `Sfx.hit` is where that confirmation
   // actually lands. There is no blood anywhere in this game and this is not
   // the pass that introduces it.
-  flesh: { spark: "#ffe680", disc: null, from: 0, to: 0 },
+  flesh: { spark: "#ffe680", disc: null, from: 0, to: 0, mark: null },
   // Stone and timber: the original grey spark, plus a small pale bloom of
-  // dust off the face.
-  hard: { spark: "#c8c8c8", disc: "#b9b4ab", from: 0.15, to: 0.5 },
+  // dust off the face — and a chip out of the render that stays.
+  hard: {
+    spark: "#c8c8c8",
+    disc: "#b9b4ab",
+    from: 0.15,
+    to: 0.5,
+    mark: { hex: "#2b2723", radius: 0.042 },
+  },
   // Earth does not spark. It throws more and glows less, so the disc alone,
-  // bigger and duller.
-  ground: { spark: null, disc: "#6b5a44", from: 0.2, to: 0.75 },
+  // bigger and duller — and the divot it leaves is bigger and warmer for the
+  // same reason.
+  ground: {
+    spark: null,
+    disc: "#6b5a44",
+    from: 0.2,
+    to: 0.75,
+    mark: { hex: "#4b3a26", radius: 0.062 },
+  },
   // Glass is the odd one, and it is the ONLY kind not chosen by
   // `metadata.surface`: a round passes through a pane rather than stopping on
   // it, so there is no pick to read a surface off. `GlassSystem` names this
   // one directly at the crossing point. A bright cold spark and no disc —
   // glass throws shards, which `DebrisSystem` draws, not dust.
-  glass: { spark: "#cfeaf2", disc: null, from: 0, to: 0 },
+  glass: { spark: "#cfeaf2", disc: null, from: 0, to: 0, mark: null },
 };
 
 interface Tracer {
@@ -253,6 +290,18 @@ interface Tracer {
    * right guess for the only surface that answers "ground".
    */
   impactNormal: Vector3;
+  /**
+   * Whether this round's impact may leave a MARK — which is a question about
+   * what it stopped ON and not about the surface, so it cannot be read off
+   * `impactKind`.
+   *
+   * False for a round that stopped on a HULL. A hull answers "hard" like every
+   * other box in the world and gets the spark and the dust for it, but it is
+   * the one solid thing in this game that MOVES (`docs/vehicles.md`), and a
+   * decal is stood in the world rather than parented to anything — so a mark
+   * on a tank is one hanging in the street the moment it drives off.
+   */
+  impactMark: boolean;
 }
 
 /** One dust disc: a facing quad that opens and fades on the surface. */
@@ -284,6 +333,13 @@ export class CombatSystem {
   private tracers: Tracer[] = [];
   private sparks: Spark[] = [];
   private discs: Disc[] = [];
+  /**
+   * The fourth pool, and the only one whose slots outlive the shot — see
+   * `BulletMarks`. Built here rather than wired by `Game` for the reason the
+   * other three are: it is this system's own picture of a round arriving, and
+   * nothing outside ever raises one.
+   */
+  private marks: BulletMarks;
 
   /**
    * Wired by Game: a round passed within `suppressRadius` of `near` without
@@ -374,6 +430,7 @@ export class CombatSystem {
         impact: Vector3.Zero(),
         impactKind: null,
         impactNormal: Vector3.Up(),
+        impactMark: false,
       });
     }
     for (let i = 0; i < fx.sparkPoolSize; i++) {
@@ -406,6 +463,7 @@ export class CombatSystem {
       mesh.metadata = { noGlow: true };
       this.discs.push({ mesh, t: 0, from: 0, to: 1 });
     }
+    this.marks = new BulletMarks(scene, mats);
   }
 
   /**
@@ -546,6 +604,11 @@ export class CombatSystem {
     // normal, and neither does a round that stopped on nothing.
     let kind: ImpactKind | null = null;
     let normal: Vector3 | null = null;
+    // The STATIC world is what a mark may be stood on, and `hull` is the whole
+    // of the test — see `Tracer.impactMark`. It is read here beside the
+    // surface rather than at the impact, because by then the query has been
+    // paid for again by somebody else's round.
+    let mark = false;
     if (hitTarget && !hitTarget.armoured) {
       kind = "flesh";
     } else if (hitWall) {
@@ -553,8 +616,9 @@ export class CombatSystem {
       // Scratch, and handed straight to `spawnTracer`, which copies it — see
       // its `normal` parameter. Nothing in flight holds a query result.
       normal = this.wall.normal;
+      mark = this.wall.hull === null;
     }
-    this.spawnTracer(muzzle, hitPoint, kind, normal);
+    this.spawnTracer(muzzle, hitPoint, kind, normal, mark);
     // Glass last, and bounded by `hitDist` rather than by `range`: the segment
     // the round actually flew is the one that crosses windows, so a wall — or a
     // body — between the shooter and a pane protects it, exactly as it protects
@@ -615,8 +679,9 @@ export class CombatSystem {
     SCRATCH.addInPlace(origin);
     const kind = hitWall ? this.wall.surface : null;
     const normal = hitWall ? this.wall.normal : null;
+    const mark = hitWall && this.wall.hull === null;
     for (let i = 0; i < rounds; i++) {
-      this.spawnTracer(muzzle, SCRATCH, kind, normal, i * spacing);
+      this.spawnTracer(muzzle, SCRATCH, kind, normal, mark, i * spacing);
     }
   }
 
@@ -635,7 +700,7 @@ export class CombatSystem {
       if (tr.head < 0) continue;
       tr.mesh.isVisible = true;
       if (tr.impactKind !== null && tr.head >= tr.dist) {
-        this.spawnImpact(tr.impact, tr.impactNormal, tr.impactKind);
+        this.spawnImpact(tr.impact, tr.impactNormal, tr.impactKind, tr.impactMark);
         // Nulled so it fires once, and it is also what makes the sound and
         // the visual one event rather than two things that could disagree.
         tr.impactKind = null;
@@ -696,6 +761,11 @@ export class CombatSystem {
       d.t = 0;
       d.mesh.isVisible = false;
     }
+    // The marks go with them, and this is the only thing that takes one off
+    // the world: they belong to the MAP that was standing when they were
+    // made, and this method is called from `installMap` before it builds the
+    // next one.
+    this.marks.clear();
   }
 
   /**
@@ -713,6 +783,7 @@ export class CombatSystem {
     to: Vector3,
     kind: ImpactKind | null,
     normal: Vector3 | null,
+    mark: boolean,
     delay = 0,
   ): void {
     const tr = this.tracers.find((t) => !t.alive) ?? this.tracers[0];
@@ -730,6 +801,7 @@ export class CombatSystem {
     tr.alive = true;
     tr.impact.copyFrom(to);
     tr.impactKind = kind;
+    tr.impactMark = mark;
     // Up is the right guess where the pick could not supply one: the only
     // surface that answers "ground" is the valley floor.
     if (normal) tr.impactNormal.copyFrom(normal);
@@ -757,10 +829,21 @@ export class CombatSystem {
    * are competing for, and there is nothing useful this side of it could
    * decide about audibility.
    */
-  private spawnImpact(pos: Vector3, normal: Vector3, kind: ImpactKind): void {
+  private spawnImpact(
+    pos: Vector3,
+    normal: Vector3,
+    kind: ImpactKind,
+    mark: boolean,
+  ): void {
     const look = IMPACTS[kind];
     if (look.spark) this.spawnSpark(pos, look.spark);
     if (look.disc) this.spawnDisc(pos, normal, look);
+    // Two gates and they ask different things: the KIND says whether this
+    // surface is one that keeps a mark at all, and `mark` says whether what
+    // was hit will still be there to keep it.
+    if (look.mark && mark) {
+      this.marks.place(pos, normal, look.mark.hex, look.mark.radius);
+    }
     this.onImpact(pos, kind);
   }
 
