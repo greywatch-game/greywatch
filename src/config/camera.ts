@@ -190,5 +190,25 @@ export const camera = {
     crouchMult: 0.55,
     /** How fast the weight follows a change of state (per second). */
     smooth: 3,
+    /**
+     * How fast the breath STOPS when an automatic string opens, and starts
+     * again when it closes (per second, on the phase's rate — the wander holds
+     * wherever it had got to rather than going anywhere).
+     *
+     * **A shooter does not breathe through a burst**, and when this game's did
+     * it read as recoil going DOWN. The breath is a 4.3 s cycle, so a two- or
+     * three-second string always rides a good part of one side of it — the
+     * SMG's sway (`swayMult` 1.2) carried a held string's aim 0.6 deg down
+     * with the recoil itself flat underneath, measured component by component
+     * in the client, and the aim ended the string below where it began. The
+     * reference footage holds a flat floor through 28 rounds.
+     *
+     * Only a weapon with a string holds it (`Player.stringed`), so the DMR, the
+     * pistol and the bolt gun re-settle between rounds exactly as they always
+     * did. 10/s stops it within about a round and a half of the rifle and
+     * gives it back over a quarter of a second, which is not a step anybody
+     * can see at a breath's speed.
+     */
+    holdEase: 10,
   },
 } as const;

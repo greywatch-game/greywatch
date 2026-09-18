@@ -1708,8 +1708,8 @@ lobby and the regions' two headers, and what is not built.
   **re-derive them rather than assuming they followed** whenever
   `CONFIG.recoil.pattern`, `pitchPerShot`, `yawPerShot` or `firstShotMult`
   moves.
-- Recoil only partly springs back: `CONFIG.recoil.recoverFraction` (0.93)
-  returns 93% and pushes 7% permanently into the player's own `pitch`/`yaw`.
+- Recoil only partly springs back: `CONFIG.recoil.recoverFraction` (0.958)
+  returns 95.8% and pushes 4.2% permanently into the player's own `pitch`/`yaw`.
   **It is the first number to move back if the rifle proves too easy to hold**,
   0.7 having been an explicit product decision that a fully-recovering recoil is
   decoration. **That share is HANDED OVER at the haul's own rate rather than
@@ -1719,6 +1719,15 @@ lobby and the regions' two headers, and what is not built.
   the player made, so a permanent share would ratchet the view skyward over one
   exchange — it queues nothing, the owed buckets being the only route into
   `pitch`/`yaw`.
+- **Nothing may take the RENDERED aim DOWN under a held trigger except each
+  round's own recovery.** The report was "downward recoil" and the recoil was
+  never the cause: the hold sway, the shake that widens it and the view punch
+  are all on the same picture. So a string disturbs the hold ONCE
+  (`opensString`), the breath's phase HOLDS while a string is live
+  (`aimSway.holdEase`), a gunshot's punch lifts nothing (`recoil.punchLift`),
+  and the haul LEANS IN past `settle.reach*` so a string plateaus instead of
+  sinking. **Anything new on `aimPitch` or the rendered pitch owes that test**,
+  through a held trigger in the live client (`docs/weapons.md`).
 - **The recoil vector is built in `Player.recoilKick`, never at the call site.**
   Every number in it is the weapon's or the body's, and the horizontal is drawn
   ONCE per shot into `Player.kickDrift` so the aim, the viewmodel's lean and the

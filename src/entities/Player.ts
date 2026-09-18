@@ -498,6 +498,10 @@ export class Player implements Combatant {
     riseTurns: CONFIG.recoil.kick.riseTurns,
     haulRamp: CONFIG.recoil.kick.haulRamp,
     easeBand: CONFIG.recoil.kick.easeBand,
+    // The weapon on screen never leans in: every round of every weapon is
+    // home before the next lands (`kick.stackPeak`), so a string has nothing
+    // to settle at, and that measured figure is what `adsClearance` rests on.
+    reach: Infinity,
   };
   private readonly kickAds: RecoilShape = {
     grip: CONFIG.recoil.kick.gripAds,
@@ -505,6 +509,7 @@ export class Player implements Combatant {
     riseTurns: CONFIG.recoil.kick.riseTurns,
     haulRamp: CONFIG.recoil.kick.haulRamp,
     easeBand: CONFIG.recoil.kick.easeBand,
+    reach: Infinity,
   };
   private readonly kickShape: RecoilShape = { ...this.kickHip };
   /**
@@ -1011,7 +1016,9 @@ export class Player implements Combatant {
     return Math.pow(this.weapon.recoilImpulse, CONFIG.recoil.punchCompress);
   }
 
-  recoilKick(adsBlend: number): { pitch: number; yaw: number } {
+  recoilKick(
+    adsBlend: number,
+  ): { pitch: number; yaw: number; opensString: boolean } {
     const r = CONFIG.recoil;
     const pat = r.pattern;
     // How far into the string this round is, 0 on the first and 1 once the
@@ -1041,6 +1048,13 @@ export class Player implements Combatant {
         r.yawPerShot *
         (pat.yawStart + (1 - pat.yawStart) * into) *
         kickMult,
+      // Whether this round OPENS a string, which the camera spends twice: an
+      // opening round disturbs the shooter's hold (`CONFIG.recoil.shake`) and
+      // every round behind it has the haul lean in (`settle.reachAds`). A
+      // weapon with no string opens one on every round, so the DMR, the
+      // pistol and the bolt gun disturb on each and never lean — exactly as
+      // they always did.
+      opensString: !this.stringed || this.stringShots === 1,
     };
   }
 
@@ -1842,6 +1856,16 @@ export class Player implements Combatant {
     // ways rather than two gestures. It reads 1 on every weapon that is not a
     // bolt gun, so nothing here asks which weapon is in the hands.
     cam.setCyclePhase(this.cycleProgress);
+
+    // Whether a string is live, for the breath the camera holds through one
+    // (`camera.aimSway.holdEase`). The same clock and the same exclusion as
+    // `firstShotMult`: a weapon with no string never holds, and the string
+    // is over when that counter would reset.
+    cam.setBreathHeld(
+      this.stringed &&
+        this.stringShots > 0 &&
+        this.sinceShot < CONFIG.recoil.stringResetTime,
+    );
 
     // --- footfalls, off that same phase ---
     // The phase read here is a frame behind (the camera has not run yet), the

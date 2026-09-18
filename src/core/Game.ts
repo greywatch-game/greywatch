@@ -4955,13 +4955,20 @@ export class Game {
       // Exactly once per shot — it reads the string counter and the drift
       // `tryShot` just advanced.
       const kick = this.player.recoilKick(blend);
-      this.cameraSys.addRecoil(kick.pitch, kick.yaw);
+      this.cameraSys.addRecoil(kick.pitch, kick.yaw, kick.opensString);
       // Cosmetic view punch: FOV spike + shove + a nudge thrown the way this
       // round went, on the rendered camera only — the bullets above already
       // left with the clean aim. The SHOCK is the weapon's, built in `Player`
       // like the kick above it; a blast raises a punch too and passes none, so
       // the number arrives per event rather than being read off the hands.
-      this.cameraSys.addPunch(this.player.kickDrift, this.player.punchShock);
+      // `punchLift` is the one term a gunshot drops: the aim's kick above is
+      // already the whole measured lift (`CONFIG.recoil.punchLift`).
+      this.cameraSys.addPunch(
+        this.player.kickDrift,
+        this.player.punchShock,
+        1,
+        CONFIG.recoil.punchLift,
+      );
       // Muzzle flash: a hard, very short pulse that lights whatever is in
       // front of the player — the main reason to keep shooting in the dark.
       const lc = CONFIG.lighting;
@@ -5417,8 +5424,13 @@ export class Game {
     // `recoilMult` is the heaviest in the game and the mine's is zero, so one
     // pair of lines serves both.
     const kick = this.player.recoilKick(this.cameraSys.adsBlend);
-    this.cameraSys.addRecoil(kick.pitch, kick.yaw);
-    this.cameraSys.addPunch(this.player.kickDrift, this.player.punchShock);
+    this.cameraSys.addRecoil(kick.pitch, kick.yaw, kick.opensString);
+    this.cameraSys.addPunch(
+      this.player.kickDrift,
+      this.player.punchShock,
+      1,
+      CONFIG.recoil.punchLift,
+    );
   }
 
   /**

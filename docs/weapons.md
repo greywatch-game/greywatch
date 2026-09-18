@@ -1040,8 +1040,10 @@ has no business being scaled by whatever the player happens to be holding.
 
 **The kick's DIRECTION rotates as a string runs, and `recoil.pattern` is that.**
 Two envelopes over the counter `firstShotMult` already reads: `pitchSettled`
-(0.8) takes the vertical down across `patternShots` (7) as a muzzle climbs and
+(0.55) takes the vertical down across `patternShots` (8) as a muzzle climbs and
 then binds, while `yawStart` (0.3) brings the horizontal up over the same span.
+**The taper is not what makes a string level off** — `settle.reachAds` is, below —
+and for one revision, at 0.25, it was, which is how the SMG came to sink.
 So the first rounds of any string go nearly straight up — which is what makes a
 tap precise and is the reason to tap — and a held trigger walks off sideways
 about `yawBias`. Before it, the kick was the same vector on shot 1 and shot 20
@@ -1050,10 +1052,11 @@ magnitude, which can be pulled against but not learned.
 
 **The pair no longer leaves the total walk alone, because the walk is what the
 reference match cut.** For the rifle's 24 rounds from the hip the per-shot
-pitch multipliers sum to 9.25 and the yaw multipliers to 21.27, so the permanent
-share is **0.71° of climb and 0.31° of drift**, against the 10.6° and 2.4° they
-were before. Most of that is `recoverFraction` going 0.7 → 0.93 rather than
-anything in `pattern`. `maxYaw` and `maxPitch` are untouched and
+pitch multipliers sum to 15.25 and the yaw multipliers to 21.27, so the permanent
+share is **0.70° of climb and 0.20° of drift**, against the 10.6° and 2.4° they
+were before. Most of that is `recoverFraction` going 0.7 → 0.958 rather than
+anything in `pattern` — and its last step, 0.93 → 0.958, is what held the climb
+at 0.70° when `pitchSettled` went 0.25 → 0.55. `maxYaw` and `maxPitch` are untouched and
 neither binds on any weapon now; they are kept for what `addFlinch` queues onto
 the same axes. **All these figures are derived. Re-derive them rather than
 assuming they followed** whenever anything in `pattern`, `pitchPerShot`,
@@ -1076,7 +1079,9 @@ the two sides moving vertically against each other. The game itself rendered at
 | isolated peak | 0.735° at 58 ms | `pitchPerShot`, `settle.gripAds` |
 | 50% recovered | 160 ms after peak | `settle.haulAds` |
 | residual at 300 ms | ~10% of peak | `recoverFraction` |
-| sustained string | flat **2.562°** from round 8 to 22 | `pattern.pitchSettled`, `patternShots` |
+| sustained string | floor climbs to ~2.2° by round 9, then flat to ±0.15° through round 28 | `settle.reachAds`, `pattern.pitchSettled`, `patternShots` |
+| each round of that plateau | lifts **0.31°**, gives ~0.25° back before the next | `pattern.pitchSettled`, `settle.reachAds` |
+| per-round peak through the string | 58–70 ms after the shot | `recoil.punchLift` (0) |
 | permanent climb after a string | 0.15° | `recoverFraction` |
 | lateral, 22 rd | **0.40° RIGHT**, building, springs back to ~0 | `yawPerShot` |
 | roll | rises from zero to **0.86° at 58 ms**, home by ~100 ms | `recoil.rollBeat` |
@@ -1113,6 +1118,78 @@ not recoverable from the footage.** They are quoted at OUR aimed vertical FOV
 mouse travel; if the reference's FOV differs, every angle above scales with it.
 The timings, the roll and the shape do not — roll is an image-plane rotation and
 the rest are clocks.
+
+### A held trigger may never take the aim DOWN
+
+**Nothing may move the aim down under a held trigger except each round's own
+recovery**, and for a while four things did. The report was "the recoil goes
+downwards sometimes", and the recoil model on its own cannot do that: the kick
+is always up, the haul only ever brings the displacement back toward zero, and
+the permanent share only ever adds. What a player sees is not the recoil,
+though, but the RENDERED pitch — the player's aim plus the recoil plus the hold
+sway plus the punch — and three of those four were pulling the picture down
+through the middle of a string. Measured in the live client through a held
+trigger, frame by frame, before the fix: the aimed rifle had a floor that went
+DOWN on 6–10 of its 28 rounds and fell 1.3–1.5° from its high while still
+firing; the aimed SMG's floor ended the string **below where it began**.
+
+The reference was tracked the same way, from `reference-media/`, by
+cross-correlating row and column profiles of background crops that exclude the
+viewmodel and the HUD: its floor climbs for nine rounds and then holds flat to
+±0.15°, and the only downward motion in it is each round giving back ~0.25° of
+its own 0.31° before the next one lands. Four fixes, one per cause:
+
+1. **The haul had no equilibrium.** It is a RATE, so a cycle nets `kick − haul ×
+   (time it ran)` whatever the level — a string either climbs without end (the
+   hip rifle was past 9° at round 24 and still going) or, where the tapered kick
+   comes in under the haul, **sinks with the trigger held** (the aimed SMG: 0.8°
+   down through a magazine, the recoil alone and nothing else). The rifle's
+   aimed plateau only existed because the taper had been fitted to it.
+   `settle.reachAds`/`reachHip` make the haul **lean in** past a displacement —
+   a shooter pulls harder the further off they are — so every weapon at every
+   rate finds a level. It is armed by the rounds BEHIND a string's first and
+   lets go at `reach`, where the load is exactly 1, so **a lone round, a tap and
+   a flinch are unchanged to the number** (checked: all fourteen single-round
+   and flinch excursions are identical to before) and a grenade's flinch is
+   still two seconds.
+2. **The shake piled up.** `recoil.shake` was raised by every round, so a held
+   automatic sat at ~1.5: a hold sway 2.6× as wide and 3.5× as fast, which swung
+   the aim through 1.4° in the middle of a string, half of it downward. A
+   string now disturbs the hold once, on its opening round (`opensString`), and
+   a weapon with no string — the DMR, the pistol, the bolt gun — pays on every
+   round exactly as before.
+3. **The breath ran through the burst.** Even at rest the sway is a 4.3 s
+   cycle, and a two-to-three-second string rides one side of it: component by
+   component in the client, the SMG's recoil held flat while its breath carried
+   the aim 0.6° down. The breath's PHASE now stops while a string is live
+   (`camera.aimSway.holdEase`) — the wander holds wherever it got to rather than
+   being taken away, which would itself be a motion — and resumes when the
+   string ends. Firing in the respiratory pause is how a shooter holds a burst.
+4. **The punch added a step.** Its pitch nudge landed whole on the frame the
+   trigger broke and fell over 90 ms, so every round of a string peaked on its
+   first frame and then SANK, while the aim under it was still rising. The aim's
+   kick is fitted to the reference's whole visible lift, so the nudge was a
+   second copy of it; `recoil.punchLift` is 0 for gunfire and a blast keeps all
+   of it.
+
+With `pattern.pitchSettled` 0.25 → 0.55 fitted beside `reachAds` (6× closer to
+the reference floor than before, and a per-round lift through the plateau of
+0.32° against the reference's 0.31°), the live client reads, aimed rifle, three
+trials: floor 2.1° at round 10, 2.4° at round 20, 2.5° at round 28, **no round
+with a floor lower than the one before it**, worst fall from the running high
+0.34° (the reference's is ~0.5°, its own recovery plus a hand), each round
+peaking 49 ms after the shot. The aimed SMG levels at 1.45° where it used to go
+below zero, and the hip rifle levels at ~4.9° where it used to pass 9°. The hip
+plateau is SET rather than fitted, for the reason the hip pair above is: at
+`reachHip` 0.6 it sits about twice the aimed one.
+
+**What to re-measure, and how.** The fit's sim is not in the tree; the honest
+check is the live one — hold ADS and the trigger through `window.__celshock`
+(stub `input.update` to hold `ads`/`fire`, no-op `cameraSys.addFlinch` so a bot
+cannot move the aim), and read the rendered camera's pitch on every
+`onAfterRenderObservable`. A floor sampled on the frame before each round
+aliases against the fire interval by up to ~0.1° on the steep hip sawtooth, so
+count a round as net-down only past that.
 
 **Both string-shaped terms share one exclusion**, `Player.stringed` — whether the
 weapon HAS a cycle you can be in the middle of (`!semiAuto || burst > 1`). It has
@@ -1217,8 +1294,10 @@ to the one weapon that pays a bolt cycle for it. The balance pass that set it
 | SMG | 18, near 12 m | **21, near 15 m** | six shots at 0.385 s made it slower than the rifle at arm's length; five at 0.308 s gives the room back to the room weapon |
 | LMG | recoil 0.7 / 0.9 | **0.85 / 0.95** | the gentlest climb in the kit with half-bloom made a 75-round belt too easy to hold on a man; its climb per second (`recoilMult × fireRate`) now sits between the SMG's and the rifle's |
 
-The LMG's `recoilImpulse` stops at 0.95 on purpose: a held trigger's shake settles
-at `perShot · i / (1 − e^(−T/τ))`, and at ten a second 1.0 crosses `shake.max`.
+The LMG's `recoilImpulse` of 0.95 was set against a held trigger's shake, which
+no longer piles up: a string disturbs the hold once, on its opening round (see
+"A held trigger may never take the aim DOWN"). It is now a statement about the
+settle alone.
 
 **Every one of those figures is the CLOSE one, and that is a change of meaning
 rather than a caveat.** A weapon's `damage` is what a round does at or inside
@@ -1390,9 +1469,9 @@ one you abandon, but one that has to be steered. Its `recoilImpulse` of 0.95 (wa
 0.9) is the same trade read the other way: a full-power belt round, most of it
 soaked by the weight of the gun, so the settle stays short and the sight is back
 between rounds at ten a second (150 ms was measured at 0.9 and has not been
-re-measured) — and its held-trigger shake equilibrium is 1.53, just under the
-rifle's 1.57, because at that rate the disturbance never fully clears. It may not
-go to 1: that is 1.66, over `shake.max`.
+re-measured). It used to be pinned under 1 by the held-trigger shake, which
+piled up to 1.53 at ten a second; a string now pays its shake once, so that
+ceiling no longer binds and 0.95 is a statement about the settle alone.
 
 The trigger latch lives in **`Player.tryShot`, which takes the trigger rather than
 being called behind it** — a semi-automatic has to see the trigger come *up*, and a

@@ -132,6 +132,30 @@ export interface RecoilShape {
    * left, which is a first-order ease at `haul / easeBand` per second.
    */
   easeBand: number;
+  /**
+   * Above this displacement the haul LEANS IN — its rate multiplied by how
+   * many `reach`es off the muzzle is — but only once the shooter is IN a
+   * string: a strike has to ask for it (`RecoilAxis.strike`'s `lean`), and it
+   * lets go by itself when the muzzle comes back inside `reach`, where the
+   * load is exactly 1 so the let-go is not a step in the velocity. A single
+   * round, a tap and a flinch never ask, so every one of them is the straight
+   * descent the rest of this file argues for, to the number.
+   *
+   * **Without it a held trigger has no equilibrium, and that is not a detail.**
+   * A pure rate nets `kick - haul * (time the haul ran)` per cycle, and that
+   * sum does not depend on where the muzzle already is: a string whose kick
+   * beats it climbs without bound, and one whose kick loses to it SINKS for
+   * the rest of the magazine while the trigger is still held — the SMG's aim
+   * came down 0.8 deg through a held string, which a player reads as recoil
+   * going the wrong way. A shooter pulls harder the further off they are, so
+   * the haul grows with the displacement and every string finds a level where
+   * the round's kick and the haul balance: a PLATEAU, for every weapon at
+   * every fire rate, rather than one that holds for one weapon by tuning
+   * coincidence. The reference footage shows exactly that: the recovery each
+   * cycle is nothing at the start of a string and a quarter of a degree once it
+   * has climbed. Pass `Infinity` to switch it off.
+   */
+  reach: number;
 }
 
 /**
@@ -155,15 +179,24 @@ export class RecoilAxis {
    * held trigger climbs where a tap does not, and needs no separate rule.
    */
   private age = 0;
+  /**
+   * Whether the haul is leaning in (`RecoilShape.reach`). Raised by a strike
+   * that asks for it and dropped by `step` once the displacement is back
+   * inside `reach`.
+   */
+  private leaning = false;
 
   /**
    * A shot. `peak` is the displacement this round is worth at the top of its
    * travel and `gain` is `recoilGain` for the shape it will be stepped on —
    * kept apart so a caller may state a kick in the units its table uses.
+   * `lean` says the shooter is in a string and hauls against it harder the
+   * further off it gets — see `RecoilShape.reach`.
    */
-  strike(peak: number, gain: number): void {
+  strike(peak: number, gain: number, lean = false): void {
     this.vel += peak * gain;
     this.age = 0;
+    if (lean) this.leaning = true;
   }
 
   /**
@@ -192,8 +225,28 @@ export class RecoilAxis {
       const mag = this.value < 0 ? -this.value : this.value;
       if (mag > 0) {
         const eased = s.easeBand > 0 ? Math.min(1, mag / s.easeBand) : 1;
-        const step = Math.min(mag, s.haul * ramp * eased * dt);
-        this.value += this.value < 0 ? step : -step;
+        const rate = s.haul * ramp * eased;
+        // Above `reach`, in a string, the haul leans in — a rate proportional
+        // to the displacement, which is an exponential and is taken in closed
+        // form, so where a held string settles cannot depend on the frame
+        // rate. A frame that crosses `reach` spends the rest of itself on the
+        // line, and the lean lets go there, at a load of exactly 1.
+        let left = dt;
+        let next = mag;
+        if (this.leaning && next > s.reach) {
+          const k = rate / s.reach;
+          const after = next * Math.exp(-k * left);
+          if (after >= s.reach) {
+            next = after;
+            left = 0;
+          } else {
+            left -= Math.log(next / s.reach) / k;
+            next = s.reach;
+          }
+        }
+        if (left > 0) next = Math.max(0, next - rate * left);
+        if (next <= s.reach) this.leaning = false;
+        this.value = this.value < 0 ? -next : next;
       }
     }
     // Parked exactly. This is an additive offset on an aim and on a pose, and
@@ -210,6 +263,7 @@ export class RecoilAxis {
     this.value = 0;
     this.vel = 0;
     this.age = 0;
+    this.leaning = false;
   }
 }
 

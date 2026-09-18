@@ -64,9 +64,14 @@ export const recoil = {
    * Monte-Carlo over the real `kickDrift` draw rather than by algebra —
    * mean 0.41 deg at round 22, and a single magazine lands anywhere from
    * 0.12 to 0.83. The reference's own drift is comparably noisy.
+   *
+   * **0.0109 is that fit carried across `recoverFraction` 0.93 -> 0.958**, not
+   * a new one: a smaller permanent share takes lateral out of every round, and
+   * the same Monte-Carlo puts the round-22 mean back where 0.0103 had it at the
+   * old fraction. Re-run it rather than scaling if either moves again.
    */
   pitchPerShot: 0.0192,
-  yawPerShot: 0.0103,
+  yawPerShot: 0.0109,
   /**
    * What the FIRST round of a string kicks, as a multiple of the rest.
    *
@@ -114,8 +119,8 @@ export const recoil = {
    *
    * **The pair no longer leaves the total walk alone, because the walk itself
    * was what the reference match cut.** For the rifle at the hip (24 rounds,
-   * `recoilMult` 1) the pitch multipliers sum to 9.25 and the yaw multipliers
-   * to 21.27, so the permanent share is **0.71 deg** of climb and **0.31 deg**
+   * `recoilMult` 1) the pitch multipliers sum to 15.25 and the yaw multipliers
+   * to 21.27, so the permanent share is **0.70 deg** of climb and **0.20 deg**
    * of drift, against the 10.6 and 2.4 they were before. Most of that is
    * `recoverFraction`, not this block: the footage shows a weapon that gives
    * back nearly everything it takes. Re-derive both figures if any of these
@@ -135,19 +140,24 @@ export const recoil = {
     /**
      * What the vertical falls to once the muzzle has bound.
      *
-     * **This was 0.8, and the comment here used to warn that 0.65 was already
-     * too far** — that a late string which barely climbs stops being something
-     * you pull down, which is the control the recoil is FOR. 0.25 is well past
-     * that line and it is deliberate: the reference weapon genuinely does stop
-     * climbing, holding a flat **2.56 deg** from round 8 to round 22, and a
-     * milder taper cannot produce a plateau at all. What the old warning was
-     * protecting is real, and it is now spent — the rifle after round 8 is
-     * held by its BLOOM and its cadence rather than by muzzle climb.
+     * **It is NOT what makes a string plateau any more, and for one revision it
+     * was.** At 0.25 the taper was standing in for an equilibrium the haul did
+     * not have: a pure-rate haul nets the same amount off every cycle wherever
+     * the muzzle is, so a string plateaus only where the tapered kick happens
+     * to equal it. It did for the aimed rifle, by fitting; for the aimed SMG it
+     * came in under, and a held SMG's aim SANK for the rest of the magazine —
+     * 0.8 deg down with the trigger still held, which reads as downward recoil.
+     * `settle.reachAds` is the plateau now, and it holds for every weapon.
      *
-     * Measured in the client at this value: plateau 2.557 deg against the
-     * footage's 2.562.
+     * **0.55 is what the reference's per-round kick is through a held string.**
+     * Tracked frame by frame, every round of its plateau still lifts the aim
+     * ~0.31 deg and the shooter takes ~0.25 back before the next one — a
+     * sawtooth riding a flat floor. At 0.25 the rounds past the eighth made
+     * 0.15 deg of it and the string read as a smear; at 0.55 it is 0.32. It was
+     * grid-fitted with `patternShots` and `reachAds` against the reference's
+     * floor through all 28 rounds, and lands 6x closer than 0.25 did.
      */
-    pitchSettled: 0.25,
+    pitchSettled: 0.55,
     /**
      * What the horizontal starts at. Low, because the first rounds of a string
      * going almost straight up is the half of this that makes tapping precise —
@@ -189,7 +199,14 @@ export const recoil = {
    * it is worth about eight times as much of the walk as anything in
    * `pattern`.
    *
-   * **The walk is now ~0.71 deg of climb and ~0.31 deg of drift for the
+   * **0.958 rather than 0.93 holds the walk where it was when
+   * `pattern.pitchSettled` went 0.25 -> 0.55.** Every round past the eighth
+   * now kicks twice as hard, so at the old fraction the same magazine would
+   * have kept half as much again — 1.10 deg of climb instead of 0.71, and
+   * further from the reference's 0.15, not nearer. The walk is a claim this
+   * file makes on purpose and a kick change should not move it by accident.
+   *
+   * **The walk is now ~0.70 deg of climb and ~0.20 deg of drift for the
    * rifle's 24 rounds from the hip**, and it is derived rather than set: the
    * vertical is `pitchPerShot * (1 - recoverFraction) * sum(firstShotMult-and-
    * taper over the magazine)`, which `pattern` works through. Re-derive both
@@ -206,7 +223,7 @@ export const recoil = {
    * handover does not change the total** — the walk figures above are what
    * they are because of the fraction, not because of when it is collected.
    */
-  recoverFraction: 0.93,
+  recoverFraction: 0.958,
   /**
    * The SETTLE: how the aim comes back, and the one place a weapon's IMPULSE
    * (as against its muzzle rise) buys anything.
@@ -315,6 +332,37 @@ export const recoil = {
      */
     easeBand: 0.1,
     /**
+     * Above this many reference kicks of displacement the haul LEANS IN — its
+     * rate multiplied by how many of these the muzzle is off — braced and
+     * unbraced, **and only in a string**: the rounds behind a string's first
+     * ask for it, and it lets go when the muzzle is back inside this.
+     * `RecoilShape.reach` has the argument; the short version is that a pure
+     * rate gives a held trigger no level to settle at, so a string either
+     * climbs forever or, where the kick is small against the haul, SINKS with
+     * the trigger still held. The aimed SMG did the second: 0.8 deg down
+     * through a magazine. With this every string finds a plateau.
+     *
+     * **A lone round, a tap and a flinch never lean**, so each is the measured
+     * shape to the number — the straight descent, the corner and every figure
+     * `docs/weapons.md` measures off one — and a grenade's flinch is still the
+     * two seconds it was. Applied to everything it would have halved both,
+     * which is a balance change nobody asked this for.
+     *
+     * **The aimed number is FITTED and the hip one is set, as with the pairs
+     * above.** 0.8 (0.88 deg) was grid-fitted with `pattern` against the
+     * reference's floor through a 28-round string.
+     *
+     * The hip one is lower because the hip REACTION eats most of an
+     * automatic's cycle (79 ms of the rifle's 106), so it has far less haul
+     * per round to lean with. At 0.6 a hip string plateaus about twice as high
+     * as an aimed one — the rifle at ~4.5 deg, where it used to climb past 9
+     * with no end in sight — which keeps the hip the softer system and bounds
+     * it. **Re-fit `reachAds` against the footage, not by feel**, if
+     * `pattern`, `haulAds` or `gripAds` moves.
+     */
+    reachAds: 0.8,
+    reachHip: 0.6,
+    /**
      * How much of the weapon's `recoilImpulse` slows both the arrest and the
      * haul, as an exponent. More mass in the system takes longer to stop and
      * longer to drive back — and note this is the ONLY thing the impulse does
@@ -344,9 +392,24 @@ export const recoil = {
    * rides `swayW`, so aiming and crouching steady the disturbance exactly as
    * they steady the hold, and hip fire pays none of it (hip fire is charged in
    * bloom instead).
+   *
+   * **A STRING disturbs the hold ONCE, on its opening round, and the rounds
+   * behind it are the recoil's to charge.** It used to be raised by every
+   * round, and on a held automatic trigger that piled up to ~1.5 — a sway
+   * 2.6x as wide and 3.5x as fast, swinging the aim through a degree and a
+   * half in the middle of a string. Half of every swing is DOWN, and a player
+   * holding the trigger reads a muzzle going down under fire as recoil going
+   * the wrong way — which is exactly what one did. The reference shows nothing
+   * of it: tracked through 28 rounds, its floor holds flat to a tenth of a
+   * degree. `Player.recoilKick` says which rounds disturb (`opensString`), off the
+   * same `stringed`/`stringShots` pair `firstShotMult` reads, so a DMR, a
+   * pistol and a bolt gun — strings of one — pay on every round exactly as
+   * before, and every burst of the carbine's pays once.
    */
   shake: {
-    /** Raised per shot, times the weapon's `recoilImpulse`. */
+    /**
+     * Raised per DISTURBING round (above), times the weapon's `recoilImpulse`.
+     */
     perShot: 0.3,
     /**
      * The ceiling, which SATURATES rather than accumulating — the argument is
@@ -354,13 +417,10 @@ export const recoil = {
      * that climbed with the volume of fire would make a held trigger a hard
      * counter to aiming at all.
      *
-     * It is a GUARD rather than a shape: at the shipped numbers nothing in the
-     * kit reaches it on a held trigger (the rifle at 9.43/s settles highest,
-     * at 1.57, and the LMG at 1.53 — `perShot * i / (1 - e^(-T/tau))`) and
-     * that is deliberate. It was 1.3 for one revision, and at 1.3 all four
-     * automatics saturated — so a submachine gun and a belt-fed machine gun
-     * were equally unsteady on a held trigger and the field said nothing about
-     * either of them. What separated them was `settleExp` below, not this.
+     * It is a GUARD rather than a shape, and since a string disturbs only on
+     * its opening round the automatics are nowhere near it: the DMR fired as
+     * fast as it cycles is the one thing in the kit that stacks rounds on it —
+     * 0.72 a round every 0.286 s against a 0.84 s fade, which reaches it.
      */
     max: 1.6,
     /**
@@ -370,13 +430,11 @@ export const recoil = {
      * spring's own step is exact: it is on the hold sway, which is on the aim.
      *
      * **A heavy round does not merely disturb more, it disturbs for LONGER**,
-     * and that is what makes this field carry the automatics rather than the
-     * ceiling above. At 0.5 s and 0.6 the SMG's disturbance is gone in a third
-     * of a second and the bolt gun's takes 1.08 — so a held SMG trigger
-     * settles at 0.72 where a held LMG's settles at 1.53, and the bolt gun's
-     * single round opens the hold to 2.1x for **literally about a second**,
-     * which is the thing a shooter means by needing to re-settle and the whole
-     * reason this block exists.
+     * At 0.5 s and 0.6 the SMG's disturbance is gone in a third of a second
+     * and the bolt gun's takes 1.08 — so the bolt gun's single round opens the
+     * hold to 2.1x for **literally about a second**, which is the thing a
+     * shooter means by needing to re-settle and the whole reason this block
+     * exists.
      */
     settle: 0.5,
     settleExp: 0.6,
@@ -715,6 +773,23 @@ export const recoil = {
   camPush: 0.035,
   shakePitch: 0.007,
   shakeYaw: 0.006,
+  /**
+   * How much of `shakePitch` a GUNSHOT's punch lifts the view by — the blast
+   * that shares `addPunch` lifts by all of it.
+   *
+   * **Zero, because the aim's own kick already IS the whole lift, measured.**
+   * `settle` and `pattern` are fitted against what the reference's picture
+   * does per round — a rise to the top at ~60 ms, and ~0.3 deg of it through a
+   * held string — and that footage is the rendered view, so it has no second
+   * term to add. The punch's nudge landed on top as a STEP: the full 0.24-0.40
+   * deg on the frame the trigger broke, then 90 ms of fall. Through a held
+   * string that put every round's peak on its first frame instead of at 60
+   * ms, doubled the per-round travel, and made the dominant motion of each
+   * cycle the view SINKING while the aim was still rising — the other half of
+   * what a player described as downward recoil. The FOV spike, the shove, the
+   * yaw nudge and the roll are untouched, and a grenade still snaps the head.
+   */
+  punchLift: 0,
   /**
    * The camera's ROLL after a shot: the weapon twisting in the hands, as two
    * opposite-signed beats on one clock — `core/math.ts`'s `impulse`, the same

@@ -191,6 +191,7 @@ export class CameraSystem {
     riseTurns: CONFIG.recoil.settle.riseTurns,
     haulRamp: CONFIG.recoil.settle.haulRamp,
     easeBand: CONFIG.recoil.settle.easeBand * CONFIG.recoil.pitchPerShot,
+    reach: CONFIG.recoil.settle.reachHip * CONFIG.recoil.pitchPerShot,
   };
   private readonly shapeAds: RecoilShape = {
     grip: CONFIG.recoil.settle.gripAds,
@@ -198,6 +199,7 @@ export class CameraSystem {
     riseTurns: CONFIG.recoil.settle.riseTurns,
     haulRamp: CONFIG.recoil.settle.haulRamp,
     easeBand: CONFIG.recoil.settle.easeBand * CONFIG.recoil.pitchPerShot,
+    reach: CONFIG.recoil.settle.reachAds * CONFIG.recoil.pitchPerShot,
   };
   /** Scratch for the blended shape — stepped every frame, never allocated. */
   private readonly shape: RecoilShape = { ...this.shapeHip };
@@ -265,6 +267,13 @@ export class CameraSystem {
   /** Eased weight from the player's stance, 1 = standing still. */
   private swayAmount = 1;
   private swayTarget = 1;
+  /**
+   * How much the breath is running, eased: 1 breathing, 0 held through a
+   * string. It scales the PHASE's rate and nothing else, so holding it leaves
+   * the wander where it was — see `camera.aimSway.holdEase`.
+   */
+  private breath = 1;
+  private breathHeld = false;
 
   /**
    * The bolt cycle, 0..1 and 1 whenever nothing is being cycled — pushed by
@@ -372,6 +381,7 @@ export class CameraSystem {
     this.shape.riseTurns = a.riseTurns;
     this.shape.haulRamp = a.haulRamp;
     this.shape.easeBand = a.easeBand;
+    this.shape.reach = a.reach + (b.reach - a.reach) * blend;
     return this.shape;
   }
 
@@ -545,6 +555,8 @@ export class CameraSystem {
     this.swayYaw = 0;
     this.swayAmount = 1;
     this.swayTarget = 1;
+    this.breath = 1;
+    this.breathHeld = false;
     this.cyclePhase = 1;
     this.cyclePitch = 0;
     this.cycleYaw = 0;
@@ -593,6 +605,15 @@ export class CameraSystem {
   }
 
   /**
+   * Whether an automatic string is live, so the breath is held through it.
+   * Pushed by Player, which owns the string clock, for the reason the two
+   * drives above are pushed.
+   */
+  setBreathHeld(held: boolean): void {
+    this.breathHeld = held;
+  }
+
+  /**
    * Where the bolt is this frame, 0..1 and 1 for every weapon that has none —
    * `Player.cycleProgress`, pushed here for the reason the two drives above are
    * pushed: the clock is the fire cooldown and movement owns it, and this
@@ -632,12 +653,17 @@ export class CameraSystem {
    * is why this one number arrives per event while the settle spring and the
    * post-shot unsteadiness are held per weapon. Until it existed a bolt gun
    * and a submachine gun shook the frame identically.
+   *
+   * `lift` scales the upward nudge alone, per event for the same reason: a
+   * gunshot passes `CONFIG.recoil.punchLift` (0 — the aim's kick is already
+   * the whole measured lift, and a step on top of it sank the view through
+   * every round of a string), and a blast keeps all of it.
    */
-  addPunch(drift = 0, shock = 1, twist = 1): void {
+  addPunch(drift = 0, shock = 1, twist = 1, lift = 1): void {
     this.punchT = 1;
     this.punchScale = shock;
     const d = Math.max(-1, Math.min(1, drift));
-    this.punchPitch = 0.6 + Math.random() * 0.4;
+    this.punchPitch = (0.6 + Math.random() * 0.4) * lift;
     this.punchYaw = d * 0.5 + (Math.random() * 2 - 1) * 0.5;
     this.rollT = 0;
     this.rollTwist = twist;
@@ -665,12 +691,13 @@ export class CameraSystem {
    * same as any other look input.
    *
    * The third thing a shot does is disturb the shooter's POSITION, which is
-   * `shotShake` and is where a heavy round is actually charged. It is raised
+   * `shotShake` and is where a heavy round is actually charged — once per
+   * STRING, on the round `opensString` names. It is raised
    * from the carried weapon's own impulse (`setSettleSpring` holds it) rather
    * than passed, because unlike the view punch this is state the shots stack
    * on and nothing but a weapon can raise it.
    */
-  addRecoil(pitch: number, yaw: number): void {
+  addRecoil(pitch: number, yaw: number, opensString: boolean): void {
     const r = CONFIG.recoil;
     const keep = 1 - r.recoverFraction;
     this.owedPitch += pitch * keep;
@@ -683,12 +710,22 @@ export class CameraSystem {
     const rise = shape.riseTurns / shape.grip;
     const bleed = keep * (1 - Math.exp(-this.drainRate(this.adsBlend) * rise));
     const gain = recoilGain(shape, bleed);
-    this.recoilPitch.strike(pitch, gain);
-    this.recoilYaw.strike(yaw, gain);
-    this.shotShake = Math.min(
-      r.shake.max,
-      this.shotShake + r.shake.perShot * this.weaponImpulse,
-    );
+    // The rounds behind a string's first have the haul LEAN IN, which is what
+    // gives a held trigger a level to settle at rather than a climb without
+    // end or a sink with the trigger still held (`RecoilShape.reach`). A lone
+    // round never asks, so its shape is the measured one to the number.
+    this.recoilPitch.strike(pitch, gain, !opensString);
+    this.recoilYaw.strike(yaw, gain, !opensString);
+    // Only a string's opening round disturbs the hold; the rounds behind it
+    // are the settle's to charge. Raised by every round, a held automatic
+    // piled this to ~1.5 and the widened, quickened sway swung the aim down
+    // through the middle of the string. See `CONFIG.recoil.shake`.
+    if (opensString) {
+      this.shotShake = Math.min(
+        r.shake.max,
+        this.shotShake + r.shake.perShot * this.weaponImpulse,
+      );
+    }
   }
 
   /**
@@ -928,9 +965,20 @@ export class CameraSystem {
     const shake = this.shotShake;
     this.swayAmount +=
       (this.swayTarget - this.swayAmount) * Math.min(1, dt * sw.smooth);
+    // The breath is HELD through an automatic string: the phase stops rather
+    // than the wander being taken away, so it holds wherever it had got to
+    // and goes neither up nor down. Riding one side of a 4.3 s breath through
+    // a string is what carried a held SMG's aim down under its recoil.
+    this.breath +=
+      ((this.breathHeld ? 0 : 1) - this.breath) * Math.min(1, dt * sw.holdEase);
     this.swayPhase =
       (this.swayPhase +
-        Math.PI * 2 * sw.rate * (1 + shake * rec.shake.rateGain) * dt) %
+        Math.PI *
+          2 *
+          sw.rate *
+          (1 + shake * rec.shake.rateGain) *
+          this.breath *
+          dt) %
       (Math.PI * 4);
     const b = this.swayPhase;
     const swayW =
