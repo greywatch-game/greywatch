@@ -12,7 +12,11 @@
  *
  * - **`tower`** — not enterable, and the stock the skyline is made of. What it
  *   contributes is silhouette and a wall to a sightline, and both are three
- *   colliders. The others are worth entering partly because it is not.
+ *   colliders. The others are worth entering partly because it is not. **What
+ *   it is NOT allowed to be is a box with windows**, and its header is mostly
+ *   about how a building that nothing may go into is given a front door, a
+ *   lobby, a service bay and a crown without a fourth collider: a recess is
+ *   free, a projection over reach is free, and a lens is free.
  * - **`office`** — a plate you fight ACROSS: one room per storey, cover in the
  *   middle of it, a window band on three bearings.
  * - **`shophouse`** — the opposite at a quarter of the footprint. A shop with
@@ -112,6 +116,14 @@
  * 4 cm behind it, and the sheet is never in `GameMap.panes`, the sweep, the
  * collision bake or the wire at all — see `PaneSpec.breakable`.
  *
+ * **One sheet on a tower is see-through and still does not break, and it is
+ * the exception that keeps the rule readable.** `buildTower`'s lobby front has
+ * a drawn room behind it rather than a shaft, so it is not `backed` — the room
+ * is what it is there to show. It is not `breakable` either, because the test
+ * has never been whether you can SEE something behind the glass: it is whether
+ * you can GET there, and nothing can. A round stops on the podium's own box
+ * where the sheet is drawn, exactly as it does on the curtain wall above.
+ *
  * The places glass is the ONLY thing in the way are the two SHOPFRONTS —
  * `buildOffice`'s +Z elevation and `buildShophouse`'s, twelve bays each across
  * the map. Both are a wall until somebody shoots them and a way in afterwards,
@@ -154,7 +166,11 @@
  * "neon ~.9" stays unused until something can afford a slot for it.
  *
  * `litWindows` is the other spender, and every enterable building here takes
- * it: two lights for an office or a depot, three for a shophouse. **An interior
+ * it: two lights for an office or a depot, three for a shophouse, and one for
+ * a tower's lobby — which is the one that is NOT an interior and is here
+ * because thirty-seven towers could never each have had one. No placement
+ * states it on a tower; what a tower's own floors are lit by is `Build.glow`,
+ * which spends no slot at all. **An interior
  * on a daylit map is lit by the ambient and the sky term, and the sky term is
  * applied by `n.y`** — so it lands in full on a floor and not at all on a
  * ceiling, and a room with no fixture in it comes out as a bright plate under a
@@ -181,6 +197,7 @@ import {
   type BuildParams,
   type Structure,
   ALLOY,
+  ASHLAR,
   ASPHALT,
   AWNING,
   BRICK,
@@ -197,7 +214,10 @@ import {
   PLASTER,
   RENDER,
   ROAD_PAINT,
+  ROOM_GLOW,
+  RUST,
   SLATE,
+  STONE,
   TEAK,
   WINDOW_LIGHT,
 } from "./core";
@@ -386,19 +406,140 @@ function laneFlight(o: {
 }
 
 /**
+ * A stable 0..1 from a builder's own parameters, so a row of these is not a row
+ * of one of these.
+ *
+ * **World-building code may not call `Math.random()`** — the nav graph would
+ * differ between page loads (`CLAUDE.md`) — and a structure builder is the one
+ * place in the world layer with no seed to hand: a scatter prop is given one by
+ * `MapBuilder`, and a `BuilderKind` is handed only its params. So the variation
+ * comes out of the params themselves. `kit/desert.ts`'s `clothHash` got there
+ * first and its header owns the argument, which is that two buildings with the
+ * same footprint and the same height ARE the same building, and what separates
+ * them on the ground is `rotY` and what is standing next to them.
+ *
+ * It lands better here than anywhere else in the kit, because HEIGHT is already
+ * the one thing a layout varies about a tower: Coldharbour's thirty-seven are
+ * nearly all 26 x 26 and no two are the same height, so a number the layout was
+ * choosing anyway for the skyline drives every roll below as well — which crown
+ * it wears, which flank carries the fire escape, where the entrance sits along
+ * its frontage, and which floors have their lights on.
+ */
+function towerRoll(...ns: number[]): number {
+  let hash = 0x9e3779b9;
+  for (const n of ns) {
+    hash ^= Math.round(n * 64) + 0x9e3779b9 + (hash << 6) + (hash >>> 2);
+    hash = hash >>> 0;
+  }
+  return (hash >>> 8) / 0x1000000;
+}
+
+/**
  * A tower: the solid stock a downtown is mostly made of, and the thing that
  * turns a street into a canyon.
  *
- * **Not enterable, on purpose.** Sixteen bots and a player do not need sixty
- * rooms; what a skyline needs is silhouette and a wall to a sightline, and both
- * are three colliders. The enterable buildings are `office` and `parkade`, and
- * they are worth entering partly because their neighbours are not.
+ * **Not enterable, on purpose, and that has not changed.** Sixteen bots and a
+ * player do not need sixty rooms; what a skyline needs is silhouette and a wall
+ * to a sightline. The enterable buildings are `office`, `shophouse`, `depot`
+ * and `parkade`, and they are worth entering partly because their neighbours
+ * are not.
  *
- * Its skin is chosen by its own HEIGHT rather than by a parameter, so a layout
- * gets the two kinds of building a real block holds without stating which:
- * under `BRICK_CEILING` it is older low stock in brick with punched windows,
- * over it a banded curtain wall. One number, two silhouettes, and no way to ask
- * for a fifty-metre brick warehouse by accident.
+ * ## The budget this is built inside, which is the whole of its design
+ *
+ * **It is still THREE colliders — two on a brick one — and every line below had
+ * to be bought without a fourth.** The file header prices an interior at 35 to
+ * 50 boxes and records what that did to every ray in the game: ~95% dearer,
+ * exactly linear in the mesh count. There are THIRTY-SEVEN of these on
+ * Coldharbour, against **800 collider boxes on the whole map** (`npm run
+ * collision`; 821 solid meshes in a live round, Hollowmere's 828 and 720). One
+ * more box each is +37, which is 4.6% on every shot, every bot's LOS and every
+ * grenade — for a building nobody can go into, on a map whose next want is more
+ * building KINDS rather than more boxes on the ones it has. So the rule for
+ * anything added here is the one the glass already followed: **buy it with
+ * drawing, and if it cannot be bought with drawing, do not buy it.**
+ *
+ * The bake is the check, and it is exact: `npm run collision` reports 800 both
+ * sides of this redesign. What DID move is the proving ground's scatter, by
+ * nine props — placement is seeded against the collider set, so a footprint
+ * that changed shape re-rolls which dressing fits beside it. That is
+ * `CLAUDE.md`'s rule about a placement change owing a re-bake, arriving from
+ * the one direction it is easy to miss.
+ *
+ * What that forbids and what it allows are both counter-intuitive, so:
+ *
+ * - **A recess is free and a projection is not.** The collider is the plain
+ *   mass; the DRAWING may be notched into it as deep as you like, because
+ *   nothing picks a visual and a body is stopped at the mass's own plane. So
+ *   the lobby below is a 2.6 m hole cut in the podium's elevation with no
+ *   collider anywhere near it, and a player who walks up to it is stopped at
+ *   the glass — which is what glass does. Standing something PROUD is the
+ *   opposite case and stays inside the trim budget the rest of the kit works to
+ *   (the shophouse's shopfront frames are 0.1 to 0.34), with one exemption:
+ *   anything over reach — a canopy, a cornice, a fire escape — projects as far
+ *   as it likes, because nothing walks through what it cannot touch.
+ * - **A LENS is free and a LIGHT is one of sixteen**, and this is the builder
+ *   that rule binds hardest: thirty-seven lobbies with a lamp in each is the
+ *   shader's whole budget four times over, and what actually happens is that
+ *   every interior on the map goes dark. So every warm thing on a tower — the
+ *   lobby's soffit, the lift call panel, the lit floors, the entrance sign, the
+ *   obstruction light — is a `Build.glow`, which costs a mesh that block-merges
+ *   with every other emissive in its 48 m block and no slot at all.
+ *   `litWindows` is honoured and spends exactly one, for the two or three
+ *   towers a layout wants a pool of light at the foot of; no placement states
+ *   it, so the map's light budget is exactly where it was.
+ *
+ * ## The podium, which is where a tower meets a person
+ *
+ * A tower used to be a shaft on a 0.3 m plinth, glazed from the kerb to the
+ * parapet on all four bearings, and what was wrong with it was not that it
+ * lacked detail. It was that the only part of it a player ever stands next to —
+ * the bottom four metres — was the part with nothing on it at all.
+ *
+ * So the plinth grew into a PODIUM: one or two storeys of a different material,
+ * carrying the entrance, the service bay and the signage, with the curtain wall
+ * starting at its coping rather than at the ground. **It costs no collider,
+ * because it IS the plinth's box** — `w + 0.5` against the plinth's `w + 0.7`,
+ * so no layout moves and no street narrows: the solid footprint at body height
+ * grows by 0.25 a side, and the drawn base course still stands where the
+ * plinth's outer face did. What is genuinely given up is that the plinth's top
+ * was walkable (inside `HEIGHT_EPS`, so the nav grid merged it with the terrain
+ * rather than spending a slot on it). A 0.3 m step is not cover — `CoverMap`'s
+ * low line is over a metre — and no cell centre lands in a 0.35 m ring, so the
+ * graph does not notice: what is lost is a step, and what stands there instead
+ * is a doorway.
+ *
+ * ## A tower has a FRONT now, and its doors are shut
+ *
+ * The other half of reading as a prop was four-fold symmetry — the same
+ * elevation on every bearing is the one thing no building has. A placement
+ * already carries `rotY`, and the rest of this file already means +Z by "the
+ * street" (`buildOffice`'s shopfront, `buildShophouse`'s frontage), so the
+ * entrance goes on +Z, the service bay on -Z, and the shaft's own blind service
+ * spine on whichever flank the roll picks.
+ *
+ * **The entrance doors are drawn SHUT, and that is the exact inverse of
+ * `buildShophouse`'s rule rather than an exception to it.** There, a door on an
+ * opening a body walks through is drawn open, because a shut-looking door on a
+ * way in is the one thing an elevation must not say. Here there is no way in,
+ * so a door standing open would be the lie.
+ *
+ * The lobby glass is not `breakable` for the same reason and by the same test
+ * (`PaneSpec.breakable`): there is nothing behind it to get into. It is not
+ * `backed` either, and it is the one sheet on a tower that is not — every other
+ * pane here hangs 4 cm off a solid shaft and is drawn opaque over that shaft's
+ * own colour, while this one has a drawn room behind it and the room is what
+ * you are meant to see. It costs no reflection probe: `ReflectionSystem` mints
+ * one per glazed BLOCK, and the curtain wall already put one on every block a
+ * tower stands in.
+ *
+ * ## The skin is still chosen by the HEIGHT, and now so is everything else
+ *
+ * Under `BRICK_CEILING` it is older low stock in brick — a rendered ground
+ * floor, punched windows with sills and heads, a string course at every floor
+ * line, a cornice, and on some of them a fire escape down one flank. Over it, a
+ * banded curtain wall on a stone podium, with a plant floor of louvres somewhere
+ * up the shaft and a crown the roll picks from three. One number, two kinds of
+ * building, and no way to ask for a fifty-metre brick warehouse by accident.
  *
  * The floor bands are COLLARS — one box wrapping all four elevations per floor
  * line — rather than four boxes a side. A tower is twelve floor lines and the
@@ -418,27 +559,354 @@ export function buildTower(
   const BRICK_CEILING = 17;
   const brick = h < BRICK_CEILING;
   const skin = brick ? CITY_BRICK : CONCRETE;
+  /** This placement's stable variation. See `towerRoll`. */
+  const roll = (salt: number): number => towerRoll(w, d, h, salt);
 
-  // The plinth. 0.3 m so it MERGES with the ground in the nav grid rather than
-  // spending a slot (see `GROUND`), and so a body steps onto it: a kerb around
-  // a tower is cover you can back into, and a 0.4 m one would be a separate
-  // surface nothing links to at the corners.
-  b.box(w + 0.7, 0.3, d + 0.7, 0, 0.15, 0, DARK_CONCRETE);
-  b.block({ w: w + 0.7, h: 0.3, d: d + 0.7, x: 0, y: 0.15, z: 0 });
+  // --- the podium ----------------------------------------------------------
+
+  /**
+   * One storey under a brick block or a short shaft, two under a tall one, and
+   * always a whole number of them, so the coping lands on a floor line and the
+   * collars above carry on the same rhythm. Clamped so a six-metre tower is not
+   * all podium.
+   */
+  const podH = Math.min(
+    (brick || h < 26 ? 1 : 2) * STOREY,
+    Math.max(2.4, h - 2.4),
+  );
+  const pw = w + 0.5;
+  const pd = d + 0.5;
+  /**
+   * Dressed stone under a curtain wall, a cooler stone course under brick —
+   * and in both cases LIGHTER than what stands on it. See `ASHLAR`: a base in
+   * the shaft's own dark grey is not a base, it is a hole across the whole
+   * frontage at exactly the height a player's eye is.
+   */
+  const podSkin = brick ? STONE : ASHLAR;
+
+  // The base course. Drawn rather than stood on: 0.15 proud of the podium and
+  // 0.4 proud of the shaft, which is where the old plinth's outer face was, and
+  // at ankle height a proud visual takes the same latitude the collars take at
+  // four metres.
+  b.box(pw + 0.3, 0.34, pd + 0.3, 0, 0.17, 0, DARK_CONCRETE);
+
+  // The podium's one collider: the plain mass, full depth, no notch. Everything
+  // that follows is drawn inside it.
+  b.block({ w: pw, h: podH, d: pd, x: 0, y: podH / 2, z: 0 });
+
+  /** How deep the entrance is cut into the +Z elevation's DRAWING. */
+  const recess = Math.min(2.8, Math.max(1.5, d * 0.14));
+  /** The entrance bay: wide enough to read from across a street, never a slot. */
+  const openW = Math.min(8.4, Math.max(4.2, pw * 0.34));
+  const openH = Math.min(podH - 0.9, 4.2);
+  /**
+   * Where the entrance sits along the frontage. Centred on a narrow podium
+   * because there is nowhere else for it to go; off-centre on a wide one, which
+   * is what stops a block face of these reading as one building repeated with
+   * all its doors in a line.
+   */
+  const ex = (roll(3) - 0.5) * Math.max(0, pw - openW - 5);
+  /** The lobby's back wall, and the centre of the slice the piers stand in. */
+  const zBack = pd / 2 - recess;
+  const zFront = zBack + recess / 2;
+
+  // The mass, drawn back from the frontage by the lobby's depth, and the +Z
+  // elevation returned round the opening as two piers and a head. Four boxes
+  // where a podium would be one, and the notch they leave between them is the
+  // room.
+  b.box(pw, podH, pd - recess, 0, podH / 2, -recess / 2, podSkin);
+  const pierL = ex - openW / 2 + pw / 2;
+  const pierR = pw / 2 - (ex + openW / 2);
+  if (pierL > 0.05) {
+    b.box(pierL, podH, recess, -pw / 2 + pierL / 2, podH / 2, zFront, podSkin);
+  }
+  if (pierR > 0.05) {
+    b.box(pierR, podH, recess, pw / 2 - pierR / 2, podH / 2, zFront, podSkin);
+  }
+  b.box(openW, podH - openH, recess, ex, openH + (podH - openH) / 2, zFront, podSkin);
+
+  // --- the lobby, drawn in the notch ---------------------------------------
+  //
+  // It takes NO occlusion from the mass it is standing inside: `occlusionAt`
+  // skips an occluder its sample point is within (`r < SELF`), so a room cut
+  // into a collider is shaded as though it were out on the pavement. That is
+  // the file header's "bright plate under a black lid" with the lid missing
+  // too, and the lit soffit is what answers it — one bright thing in a dark
+  // hole is what a lobby looks like from a street at dusk anyway.
+  {
+    b.box(openW, 0.14, recess, ex, 0.07, zFront, RENDER);
+    // The soffit, and the FITTINGS in it rather than a lit ceiling. A LENS
+    // either way — see the header on why thirty-seven of these may not be
+    // lamps — but the area is the second half of that choice: the first cut
+    // glowed the whole 16 m2 soffit in `WINDOW_LIGHT` and the bloom took it to
+    // a flat white rectangle with no lobby behind it. Two strips is a fraction
+    // of the area at the same colour, and it reads as downlighting because it
+    // IS downlighting.
+    b.box(openW, 0.18, recess, ex, openH - 0.09, zFront, DARK_CONCRETE);
+    for (const s of [-1, 1]) {
+      b.glow(openW - 1.4, 0.05, 0.3, ex, openH - 0.21, zFront + s * recess * 0.22, WINDOW_LIGHT);
+    }
+    // The lift lobby on the back wall, which is the thing that says there is a
+    // building over this rather than a shop.
+    b.box(openW, openH, 0.14, ex, openH / 2, zBack + 0.07, DARK_CONCRETE);
+    const liftH = Math.min(2.3, openH - 0.5);
+    for (const s of [-1, 1]) {
+      b.box(1.12, liftH, 0.09, ex + s * 0.92, liftH / 2, zBack + 0.18, ALLOY);
+    }
+    b.glow(0.44, 0.07, 0.05, ex, liftH * 0.92, zBack + 0.2, ROOM_GLOW);
+    // The desk, set back and to one side so that the way past it reads.
+    const deskW = Math.max(2.2, openW * 0.4);
+    const deskX = ex - openW * 0.16;
+    b.box(deskW, 1.02, 0.62, deskX, 0.65, zBack + 1.05, TEAK);
+    b.box(deskW + 0.18, 0.08, 0.76, deskX, 1.2, zBack + 1.05, ALLOY);
+    // A bench against the far pier. It is the only thing in here at a person's
+    // scale, which is what gives the rest of it one.
+    b.box(1.5, 0.1, 0.44, ex + openW * 0.3, 0.55, zBack + 0.75, TEAK);
+    for (const s of [-1, 1]) {
+      b.box(0.08, 0.4, 0.4, ex + openW * 0.3 + s * 0.68, 0.34, zBack + 0.75, ALLOY);
+    }
+  }
+
+  // --- the podium's own elevations ----------------------------------------
+  //
+  // **A podium is not a plinth with a door in it, and the first cut of this
+  // learned that the expensive way.** With the entrance drawn and nothing else,
+  // every other metre of the base — which is to say most of what a player ever
+  // stands in front of — came out as one unbroken slab four to seven metres
+  // high, and a screenshot of it is a black rectangle with a lit hole at one
+  // end. Three things fix it and all three are drawn on the mass rather than
+  // cut into it: a BAY rhythm of shallow piers, a STRING at the storey line on
+  // a two-storey base, and GLAZING between the piers on the three public
+  // bearings.
+  //
+  // The back is left blank on purpose. It is the service elevation and it has
+  // its own four things on it; a building that is glazed the whole way round at
+  // street level has no back, which is the symmetry this redesign exists to
+  // break.
+  {
+    const rib = 0.5;
+    const out = 0.14;
+    /** One elevation's piers and the glass between them. */
+    const elevation = (
+      span: number,
+      /** Places a pier, then a bay, in the elevation's own frame. */
+      place: (c: number, w: number, kind: "pier" | "bay") => void,
+    ): void => {
+      const bays = Math.max(2, Math.round(span / 5.5));
+      const pitch = span / bays;
+      for (let i = 0; i <= bays; i++) {
+        place(-span / 2 + i * pitch, rib, "pier");
+      }
+      for (let i = 0; i < bays; i++) {
+        place(-span / 2 + (i + 0.5) * pitch, pitch - rib - 0.5, "bay");
+      }
+    };
+    /** A window in a bay: a backed sheet with a sill and a head on it. */
+    const slot = (
+      bw: number,
+      bd: number,
+      x: number,
+      z: number,
+      ox2: number,
+      oz2: number,
+    ): void => {
+      const sy = 1.05;
+      const sh = Math.min(2.3, podH - sy - 0.7);
+      // The sheet's WIDTH is whichever of the two horizontals is not its
+      // thickness, because a flank's window is a `bd` and a frontage's is a
+      // `bw`. Testing `bw` alone silently dropped every window on both flanks:
+      // legal geometry, no warning, and visible only as a base with glazing on
+      // one bearing out of three.
+      if (Math.max(bw, bd) < 1.0 || sh < 0.9) return;
+      b.pane(bw, sh, bd, x, sy + sh / 2, z, { backed: podSkin });
+      b.box(bw + 0.3, 0.16, bd + 0.2, x + ox2 * 0.06, sy - 0.08, z + oz2 * 0.06, podSkin);
+      b.box(bw + 0.3, 0.2, bd + 0.16, x + ox2 * 0.05, sy + sh + 0.1, z + oz2 * 0.05, podSkin);
+    };
+    for (const sx of [-1, 1]) {
+      const x = (sx * (pw + out)) / 2;
+      elevation(pd, (cz, bw, kind) => {
+        if (kind === "pier") b.box(out, podH - 0.36, rib, x, 0.34 + (podH - 0.36) / 2, cz, podSkin);
+        else slot(0.12, bw, (sx * (pw + 0.12)) / 2 - sx * 0.02, cz, sx, 0);
+      });
+    }
+    // The street elevation, minus whatever the entrance is standing in.
+    const z = (pd + out) / 2;
+    elevation(pw, (cx, bw, kind) => {
+      if (kind === "pier") {
+        if (Math.abs(cx - ex) < openW / 2 + rib) return;
+        b.box(rib, podH - 0.36, out, cx, 0.34 + (podH - 0.36) / 2, z, podSkin);
+      } else {
+        if (Math.abs(cx - ex) < (openW + bw) / 2 + 0.3) return;
+        slot(bw, 0.12, cx, (pd + 0.12) / 2 - 0.02, 0, 1);
+      }
+    });
+    // The rear gets the piers and no glass: see above.
+    elevation(pw, (cx, _bw, kind) => {
+      if (kind === "pier") b.box(rib, podH - 0.36, out, cx, 0.34 + (podH - 0.36) / 2, -z, podSkin);
+    });
+    // The string at the storey line, on a base deep enough to have one. It is
+    // what turns a seven-metre mass into two courses, and it lands on `STOREY`
+    // so the podium and the shaft above it are read on one rhythm.
+    if (podH > STOREY * 1.5) {
+      b.box(pw + 0.3, 0.26, pd + 0.3, 0, STOREY, 0, podSkin);
+    }
+  }
+
+  // --- the frontage: glass, a shut door, a canopy ---------------------------
+
+  {
+    const zg = pd / 2;
+    const sill = 0.14;
+    const gh = openH - sill - 0.24;
+    const mull = 0.16;
+    const bays = Math.max(2, Math.round(openW / 2.6));
+    const pitch = openW / bays;
+    // Unbacked — the one sheet on a tower that is. See the header.
+    for (let i = 0; i < bays; i++) {
+      const cx = ex - openW / 2 + (i + 0.5) * pitch;
+      b.pane(pitch - mull, gh, 0.1, cx, sill + gh / 2, zg);
+    }
+    for (let i = 0; i <= bays; i++) {
+      const cx = ex - openW / 2 + i * pitch;
+      b.box(mull, gh + 0.2, 0.2, cx, sill + gh / 2, zg + 0.03, ALLOY);
+    }
+    b.box(openW + 0.4, 0.28, 0.3, ex, openH - 0.14, zg + 0.03, ALLOY);
+    b.box(openW + 0.4, 0.2, 0.42, ex, 0.1, zg + 0.04, DARK_CONCRETE);
+
+    // The doors, SHUT — the inverse of the shophouse's rule, for the reason in
+    // the header. Two leaves with their meeting stiles together in the middle,
+    // and the pulls, which are the only thing on this elevation at hand height.
+    const dw = 2.3;
+    const dh = Math.min(2.45, gh - 0.1);
+    for (const s of [-1, 1]) {
+      b.box(0.1, dh, 0.14, ex + (s * dw) / 2, sill + dh / 2, zg + 0.06, ALLOY);
+      b.box(0.07, dh, 0.14, ex + s * 0.05, sill + dh / 2, zg + 0.06, ALLOY);
+      b.box(dw / 2 - 0.1, 0.09, 0.14, ex + (s * dw) / 4, sill + dh - 0.05, zg + 0.06, ALLOY);
+      b.box(dw / 2 - 0.1, 0.18, 0.14, ex + (s * dw) / 4, sill + 0.09, zg + 0.06, ALLOY);
+      b.box(0.05, 1.0, 0.05, ex + s * 0.26, sill + 1.06, zg + 0.15, ALLOY);
+    }
+
+    // The canopy — what says ENTRANCE from sixty metres, and the one thing on
+    // the podium that projects. It hangs at `openH`, which is over reach, so
+    // nothing walks through it. Two tie rods back to the wall, because a slab
+    // standing two metres off a building with nothing holding it up reads as a
+    // mistake rather than as a canopy.
+    const proj = Math.min(2.1, recess + 0.7);
+    const cy = openH + 0.46;
+    b.box(openW + 1.7, 0.22, proj, ex, cy, zg + proj / 2 - 0.15, ALLOY);
+    b.box(openW + 1.7, 0.42, 0.16, ex, cy - 0.06, zg + proj - 0.22, DARK_CONCRETE);
+    {
+      const rise = 1.35;
+      const reach = proj - 0.35;
+      const len = Math.hypot(reach, rise);
+      for (const s of [-1, 1]) {
+        b.box(
+          0.07,
+          len,
+          0.07,
+          ex + s * (openW / 2 + 0.6),
+          cy + rise / 2,
+          zg + 0.1 + reach / 2,
+          ALLOY,
+          // Negative: a positive `rotation.x` tips local +Y toward +Z, and the
+          // TOP of a tie is the end against the wall. Positive here draws a
+          // strut rising to a point in mid-air off the canopy's outer edge,
+          // which is the same three boxes and reads as a mistake.
+          { x: -Math.atan2(reach, rise) },
+        );
+      }
+    }
+    // The name band on the fascia. A board either way; naming a colour is what
+    // lights its FACE, which is `buildShophouse`'s reading of `sign` and the
+    // same arithmetic behind it — a `flicker` is only visible on a light, and
+    // this is a lens.
+    if (p.sign) {
+      b.glow(openW * 0.66, 0.24, 0.03, ex, cy - 0.06, zg + proj - 0.15, p.sign);
+    }
+    // The street number, on whichever pier is the wider of the two.
+    if (Math.max(pierL, pierR) > 1.2) {
+      const numX = pierL > pierR ? -pw / 2 + pierL / 2 : pw / 2 - pierR / 2;
+      b.box(0.5, 0.62, 0.05, numX, 2.5, zg + 0.03, ALLOY);
+    }
+
+    // One light, and only where a layout spends it. See the header on the
+    // budget: this is a pool of light on the pavement at a tower a round is
+    // fought around, not something thirty-seven buildings each get.
+    if (p.litWindows) {
+      b.light(WINDOW_LIGHT, 13, 0.7, 0.02, ex, openH - 0.5, zBack + recess * 0.6);
+    }
+  }
+
+  // --- the service side, on -Z ---------------------------------------------
+  //
+  // The back of a building is the other half of it having a front. A shutter, a
+  // door beside it, an extract grille and a riser: four flat things on a wall,
+  // every one of them drawn on the elevation rather than standing off it, and
+  // between them the reason a player who has walked round the block knows which
+  // way they are facing.
+  {
+    const zs = -pd / 2;
+    const shutW = Math.min(4.6, pw * 0.3);
+    const shutH = Math.min(3.6, podH - 0.5);
+    const sx = (roll(7) - 0.5) * Math.max(0, pw - shutW - 6);
+    const away = sx > 0 ? -1 : 1;
+    /** Nothing on this elevation may hang off the end of it. */
+    const onFace = (x: number, half: number): number =>
+      Math.max(-pw / 2 + half, Math.min(pw / 2 - half, x));
+    b.box(shutW + 0.4, shutH + 0.3, 0.16, sx, (shutH + 0.3) / 2, zs - 0.08, DARK_CONCRETE);
+    b.box(shutW, shutH, 0.1, sx, shutH / 2, zs - 0.17, RUST);
+    for (let i = 1; i < 6; i++) {
+      b.box(shutW, 0.07, 0.05, sx, (i / 6) * shutH, zs - 0.23, DARK_CONCRETE);
+    }
+    b.box(shutW + 1.6, 0.06, 0.5, sx, 0.03, zs - 0.25, ASPHALT);
+    // The service door, and the step under it.
+    const sdx = onFace(sx + away * (shutW / 2 + 1.4), 0.8);
+    b.box(1.1, 2.2, 0.12, sdx, 1.1, zs - 0.06, IRON);
+    b.box(0.07, 0.34, 0.06, sdx + 0.38, 1.05, zs - 0.13, ALLOY);
+    b.box(1.5, 0.16, 0.5, sdx, 0.08, zs - 0.2, DARK_CONCRETE);
+    // The grille and the riser beside it: the two pieces of plant that are
+    // always on the back of a building and never on the front.
+    const gx = onFace(sx - away * (shutW / 2 + 1.6), 2.5);
+    b.box(1.8, 1.2, 0.14, gx, podH - 1.2, zs - 0.07, ALLOY);
+    for (let i = 0; i < 4; i++) {
+      b.box(1.7, 0.09, 0.1, gx, podH - 1.62 + i * 0.26, zs - 0.15, DARK_CONCRETE);
+    }
+    b.cyl(podH - 0.4, 0.16, 0.16, 6, gx + 1.5, (podH - 0.4) / 2, zs - 0.16, RUST);
+  }
+
+  // --- the shaft -----------------------------------------------------------
 
   // The shaft, and the setback above it. Two masses rather than one is what
-  // stops a row of these reading as a row of crates: the upper one is inset,
-  // so the skyline steps.
+  // stops a row of these reading as a row of crates: the upper one is inset, so
+  // the skyline steps.
   const setback = brick ? 0 : Math.round(h * 0.34);
   const lower = h - setback;
   const sw = w * 0.76;
   const sd = d * 0.76;
-  b.box(w, lower, d, 0, lower / 2, 0, skin);
-  b.block({ w, h: lower, d, x: 0, y: lower / 2, z: 0 });
+  const shaftH = Math.max(0.4, lower - podH);
+  b.box(w, shaftH, d, 0, podH + shaftH / 2, 0, skin);
+  b.block({ w, h: shaftH, d, x: 0, y: podH + shaftH / 2, z: 0 });
   if (setback > 0) {
     b.box(sw, setback, sd, 0, lower + setback / 2, 0, skin);
     b.block({ w: sw, h: setback, d: sd, x: 0, y: lower + setback / 2, z: 0 });
   }
+  // The podium's coping: the ledge the shaft rises out of, and the one shadow
+  // line a flat elevation gets for a single box.
+  b.box(pw + 0.24, 0.5, pd + 0.24, 0, podH + 0.1, 0, podSkin);
+
+  /**
+   * Which flank carries the shaft's service spine — the blind slot the lifts
+   * and the risers are behind, and the one thing that stops a curtain wall
+   * being the same elevation four times over.
+   */
+  const spine: -1 | 1 = roll(11) > 0.5 ? 1 : -1;
+  /**
+   * Whether this building's lights are on, which is a claim about the BUILDING
+   * rather than about the hour: at dusk some towers are working and some are
+   * shut, and a skyline with every window lit is the same mistake as one with
+   * none. `litWindows: false` says "this one is dark" outright.
+   */
+  const lit = p.litWindows !== false && roll(12) > 0.34;
 
   /**
    * Glazing, standing PROUD of each elevation rather than recessed into it.
@@ -466,6 +934,12 @@ export function buildTower(
    * in no pane list, no sweep and no bake. The shopfront below is the opposite
    * case and is cut per bay for the opposite reason: there, a pane is what
    * BREAKS.
+   *
+   * **Three things break the grid's own regularity and they are what make it a
+   * building rather than a sheet of graph paper**: one band of LOUVRES where
+   * the plant floor is, one blind BAY up the spine flank, and the storeys whose
+   * lights are on. All three are drawn, none of them is a collider, and the lit
+   * panels are `Build.glow` for the reason in the header.
    */
   const glaze = (mw: number, md: number, y0: number, y1: number): void => {
     const tall = y1 - y0 - 0.6;
@@ -479,40 +953,121 @@ export function buildTower(
     // the glass below is cut on it and the fins further down are drawn on it,
     // so a panel is bounded by mullions rather than merely near them.
     const fin = 0.26;
-    const bays = (span: number) => Math.max(2, Math.round(span / 5.5));
-    const nx = bays(mw);
-    const nz = bays(md);
+    const bayCount = (span: number) => Math.max(2, Math.round(span / 5.5));
+    const nx = bayCount(mw);
+    const nz = bayCount(md);
+    /**
+     * The plant floor. A tower has one and it is never at the top: a band of
+     * louvres two thirds of the way up is the cheapest thing there is that says
+     * there is machinery in here, and it breaks the glazing's rhythm at a
+     * height the eye is already reading.
+     */
+    const mech =
+      rows >= 5 ? Math.max(1, Math.round(rows * (0.5 + roll(13) * 0.28))) : -1;
+    /** Which bay of the spine flank is blind, all the way up. */
+    const spineBay = Math.min(
+      nz - 1,
+      Math.max(0, Math.round((nz - 1) * roll(14))),
+    );
+    /**
+     * One panel: glass, or louvres on the plant floor, or blind skin up the
+     * spine — and a warm plane in FRONT of the glass where the lights are on,
+     * because the sheet is `backed` and therefore drawn opaque. A glow behind
+     * an opaque pane is a glow nobody ever sees.
+     */
+    const panel = (
+      bw: number,
+      bh: number,
+      bd: number,
+      x: number,
+      y: number,
+      z: number,
+      out: number,
+      blind: boolean,
+      key: number,
+      row: number,
+      share: number,
+    ): void => {
+      if (row === mech) {
+        b.box(bw, bh, bd, x, y, z, ALLOY);
+        const slats = Math.max(3, Math.round(bh / 0.45));
+        for (let s = 1; s < slats; s++) {
+          const sy = y - bh / 2 + (s / slats) * bh;
+          if (bd > bw) {
+            b.box(0.06, 0.1, bd * 0.92, x + out * 0.08, sy, z, DARK_CONCRETE);
+          } else {
+            b.box(bw * 0.92, 0.1, 0.06, x, sy, z + out * 0.08, DARK_CONCRETE);
+          }
+        }
+        return;
+      }
+      if (blind) {
+        b.box(bw, bh, bd, x, y, z, skin);
+        return;
+      }
+      b.pane(bw, bh, bd, x, y, z, { backed: skin });
+      if (lit && towerRoll(x, y, key, 9) < share) {
+        // Inset well inside the sheet, so the panel keeps a frame of unlit
+        // glass round it: a glow filling its own bay is a panel that HAS no
+        // bay, and the grid the elevation is read by disappears wherever the
+        // lights are on.
+        if (bd > bw) {
+          b.glow(0.05, bh - 0.9, bd - 0.9, x + out * 0.09, y, z, ROOM_GLOW);
+        } else {
+          b.glow(bw - 0.9, bh - 0.9, 0.05, x, y, z + out * 0.09, ROOM_GLOW);
+        }
+      }
+    };
     /**
      * One elevation's glass for one band, cut into its bays.
      *
      * `span` is the mass's own width along that elevation and `n` its bay
-     * count; `place` turns a bay's centre and width into a pane, which is all
-     * the two elevations disagree about. The glass stops 0.6 m short of the
-     * mass's corners and half a fin short of an interior mullion, so no panel
-     * is ever drawn behind the thing that frames it.
+     * count; `place` turns a bay's centre, width and INDEX into a panel, which
+     * is all the four elevations disagree about. The glass stops 0.6 m short of
+     * the mass's corners and half a fin short of an interior mullion, so no
+     * panel is ever drawn behind the thing that frames it.
      */
-    const cut = (span: number, n: number, place: (c: number, w: number) => void): void => {
+    const cut = (
+      span: number,
+      n: number,
+      place: (c: number, bw: number, i: number) => void,
+    ): void => {
       const pitch = span / n;
       for (let i = 0; i < n; i++) {
         const lo = i === 0 ? 0.6 : fin / 2 + 0.04;
         const hi = i === n - 1 ? 0.6 : fin / 2 + 0.04;
-        const w = pitch - lo - hi;
-        if (w <= 0.2) continue;
-        place(-span / 2 + i * pitch + lo + w / 2, w);
+        const bw = pitch - lo - hi;
+        if (bw <= 0.2) continue;
+        place(-span / 2 + i * pitch + lo + bw / 2, bw, i);
       }
     };
     for (let r = 0; r < rows; r++) {
       // A hair short of the pitch, so the collar line still reads between two
       // bands rather than the glass meeting itself.
-      const h = band - 0.08;
+      const bh = band - 0.08;
       const cy = y0 + 0.3 + band * (r + 0.5);
+      // Whether this storey is working late, and how much of it is. Lit floors
+      // rather than lit windows: an office keeps its lights on a floor at a
+      // time, and scattered ones read as a fault in the drawing.
+      //
+      // **Both numbers are low and both were photographed down to here.** At
+      // half the floors and seven panels in ten the elevation is not a building
+      // with its lights on, it is a light — and the thing that makes a lit
+      // window read is the dark glass around it, which there was none of. A
+      // third of the floors at two panels in five leaves the wall dark enough
+      // to be a wall. See `ROOM_GLOW` for the other half of the same finding.
+      const share = lit && towerRoll(w, h, r, 5) > 0.64 ? 0.4 : 0.06;
       for (const sx of [-1, 1]) {
         const x = (sx * (mw + t)) / 2 - sx * 0.04;
-        cut(md, nz, (cz, w) => b.pane(t, h, w, x, cy, cz, { backed: skin }));
+        cut(md, nz, (cz, bw, i) =>
+          panel(t, bh, bw, x, cy, cz, sx, sx === spine && i === spineBay, i, r, share),
+        );
       }
       for (const sz of [-1, 1]) {
         const z = (sz * (md + t)) / 2 - sz * 0.04;
-        cut(mw, nx, (cx, w) => b.pane(w, h, t, cx, cy, z, { backed: skin }));
+        cut(mw, nx, (cx, bw, i) =>
+          panel(bw, bh, t, cx, cy, z, sz, false, i + 40, r, share),
+        );
       }
     }
     const mid = (y0 + y1) / 2;
@@ -531,29 +1086,160 @@ export function buildTower(
         b.box(fin, tall, fin, (sx * (mw + fin)) / 2 - sx * 0.06, mid, z, skin);
       }
     }
+    // The spine's own pilaster, standing proud of the blind bay it closes: a
+    // slot of solid wall in a curtain reads as a mistake, and the same slot
+    // with a rib on it reads as a core.
+    if (nz > 1) {
+      const pitch = md / nz;
+      const cz = -md / 2 + (spineBay + 0.5) * pitch;
+      b.box(
+        0.34,
+        tall,
+        pitch * 0.62,
+        (spine * (mw + 0.34)) / 2 - spine * 0.1,
+        mid,
+        cz,
+        skin,
+      );
+    }
   };
+
   if (brick) {
-    // Punched openings rather than a wall of glass: a grid of small panes,
-    // two elevations only. The other two are blank brick, which is what the
-    // party walls of a terrace are and costs nothing to draw.
-    const rows = Math.max(1, Math.floor((h - 1.6) / STOREY));
+    // --- brick: punched openings, string courses, a cornice -----------------
+    //
+    // Punched openings rather than a wall of glass: a grid of small panes on
+    // two elevations. The other two are blank brick, which is what the party
+    // walls of a terrace are and costs nothing to draw.
+    //
+    // **What was missing from them was the REVEAL.** A pane drawn flat on a
+    // brick wall is a dark rectangle painted on it; a sill standing proud under
+    // it and a lintel over it are four small boxes that turn the same rectangle
+    // into a hole. `buildShophouse`'s `sash` is the worked version at domestic
+    // scale, and this is it at a block's.
+    // Zero on a block too short to hold a window course over its podium, which
+    // is a 6 m editor tower and nothing a layout ships. The loop then draws
+    // nothing rather than punching a window through the cornice.
+    const rows = Math.max(0, Math.floor((h - podH - 1.2) / STOREY));
     const cols = Math.max(2, Math.round(w / 3.2));
     for (let r = 0; r < rows; r++) {
+      const y = podH + 0.5 + r * STOREY;
       for (let c = 0; c < cols; c++) {
         const x = -w / 2 + ((c + 0.5) / cols) * w;
-        const y = 1.5 + r * STOREY;
         for (const sz of [-1, 1]) {
-          b.pane(1.3, 1.5, 0.14, x, y, (sz * d) / 2, { backed: skin });
+          const z = (sz * d) / 2;
+          b.pane(1.3, 1.5, 0.14, x, y + 0.9, z, { backed: skin });
+          b.box(1.62, 0.14, 0.24, x, y + 0.1, z + sz * 0.1, RENDER);
+          b.box(1.62, 0.2, 0.2, x, y + 1.78, z + sz * 0.08, RENDER);
+          for (const s of [-1, 1]) {
+            b.box(0.12, 1.66, 0.16, x + s * 0.71, y + 0.92, z + sz * 0.06, RENDER);
+          }
+          if (lit && towerRoll(x, y, c + r * 7, 3) < 0.22) {
+            b.glow(1.0, 1.2, 0.05, x, y + 0.9, z + sz * 0.11, ROOM_GLOW);
+          }
         }
+      }
+      // The string course. One box a floor line wrapping the whole mass — the
+      // collar's argument on an older elevation, and the one thing that stops
+      // fourteen metres of brick reading as a single flat band.
+      if (r > 0) {
+        b.box(w + 0.3, 0.22, d + 0.3, 0, y - 0.35, 0, RENDER);
+      }
+    }
+    // The cornice: two courses, the upper oversailing the lower. It is what a
+    // brick block has instead of a parapet slab, and at this height it is the
+    // whole of the silhouette.
+    b.box(w + 0.5, 0.3, d + 0.5, 0, h - 0.7, 0, RENDER);
+    b.box(w + 0.8, 0.34, d + 0.8, 0, h - 0.38, 0, RENDER);
+
+    // A ghost sign on a blank flank: a painted panel gone flat with age. One
+    // box, and it is the cheapest piece of character in this file.
+    if (roll(17) > 0.4) {
+      const gsx: -1 | 1 = roll(18) > 0.5 ? 1 : -1;
+      const gsh = Math.min(4.2, h - podH - 2.4);
+      if (gsh > 1.6) {
+        b.box(0.05, gsh, d * 0.52, (gsx * (w + 0.05)) / 2, podH + 1.6 + gsh / 2, 0, RENDER);
+      }
+    }
+
+    // The fire escape, which is the character element of this stock.
+    //
+    // **A zigzag is landings that ALTERNATE**, and the flight between them is
+    // the whole of what makes it read as one. Drawn first with every landing at
+    // the same end, each flight ran off into the air beside the next landing
+    // rather than up to it — which is a stair to nowhere on every storey, and
+    // is invisible in the numbers because each piece is individually right.
+    //
+    // It is honest rather than decorative in the one way that matters here:
+    // the bottom ladder is DRAWN RETRACTED, which is what a real one does, and
+    // that is what puts every member of the assembly over a standing body. So
+    // nothing needs a collider to keep anyone out of it, and it takes the
+    // header's exemption for what projects above reach.
+    if (rows >= 2 && roll(20) > 0.42) {
+      const fx: -1 | 1 = roll(21) > 0.5 ? 1 : -1;
+      const face = (fx * w) / 2;
+      /** Half the zigzag's travel along the elevation: a landing sits at each. */
+      const half = 1.5;
+      const run = half * 2;
+      /** The first landing, and what the ladder below it hangs from. */
+      const foot = podH + 0.9;
+      const flights = Math.min(3, rows - 1);
+      const landZ = (i: number): number => (i % 2 === 0 ? -half : half);
+      for (let i = 0; i <= flights; i++) {
+        const y = foot + i * STOREY;
+        const cz = landZ(i);
+        // The landing: a grating, a rail along its outer edge, and a post and
+        // a rail at each end.
+        b.box(1.5, 0.07, 1.9, face + fx * 0.75, y, cz, RUST);
+        b.box(0.06, 0.06, 1.9, face + fx * 1.46, y + 1.0, cz, RUST);
+        for (const s of [-1, 1]) {
+          b.box(0.06, 1.0, 0.06, face + fx * 1.46, y + 0.5, cz + s * 0.92, RUST);
+          b.box(1.5, 0.06, 0.06, face + fx * 0.75, y + 1.0, cz + s * 0.92, RUST);
+        }
+        // The flight up to the next landing: two stringers and four treads,
+        // raked in the YZ plane so the run is ALONG the elevation rather than
+        // out of it. A positive `rotation.x` tips local +Y toward +Z, so the
+        // sign IS which way this flight climbs and it comes off the landings.
+        if (i < flights) {
+          const dirZ = landZ(i + 1) > cz ? 1 : -1;
+          const len = Math.hypot(run, STOREY);
+          for (const s of [-1, 1]) {
+            b.box(
+              0.07,
+              len,
+              0.07,
+              face + fx * (0.75 + s * 0.55),
+              y + STOREY / 2,
+              cz + dirZ * half,
+              RUST,
+              { x: dirZ * Math.atan2(run, STOREY) },
+            );
+          }
+          for (let t = 1; t <= 4; t++) {
+            const f = t / 5;
+            b.box(1.1, 0.05, 0.22, face + fx * 0.75, y + f * STOREY, cz + dirZ * f * run, RUST);
+          }
+        }
+      }
+      // The retracted counterweighted ladder, hung from the first landing so
+      // the two cannot drift apart. Its lowest member sits 2 m under that
+      // landing, which on the shallowest podium in the kit is 2.5 m off the
+      // pavement — over a standing body, which is the clearance the whole
+      // assembly rests on.
+      const lz = landZ(0);
+      for (const s of [-1, 1]) {
+        b.box(0.06, 2.2, 0.06, face + fx * (0.75 + s * 0.4), foot - 1.0, lz, RUST);
+      }
+      for (let i = 0; i < 4; i++) {
+        b.box(0.86, 0.05, 0.05, face + fx * 0.75, foot - 1.8 + i * 0.5, lz, RUST);
       }
     }
   } else {
-    glaze(w, d, 0.3, lower);
+    glaze(w, d, podH, lower);
     if (setback > 0) glaze(sw, sd, lower, h - 0.4);
     // Floor-line collars. One box each, wrapping the whole mass — and standing
     // proud of the glazing above, which is what turns a flat elevation into a
     // storey rhythm. See `glaze` for the three depths this is one of.
-    for (let y = STOREY; y < lower - 0.4; y += STOREY) {
+    for (let y = podH + STOREY; y < lower - 0.4; y += STOREY) {
       b.box(w + 0.4, 0.42, d + 0.4, 0, y, 0, skin);
     }
     for (let y = lower + STOREY; y < h - 0.6; y += STOREY) {
@@ -561,20 +1247,112 @@ export function buildTower(
     }
   }
 
-  // The cap: a parapet collar, the plant housing behind it, and a mast. Emitted
-  // last for the header's first rule — a roof is a surface nothing can reach
-  // and must never take a slot a floor needs. Visual only; the shaft's own
-  // collider already stops everything at this height.
-  const topW = setback > 0 ? sw : w;
-  const topD = setback > 0 ? sd : d;
-  b.box(topW + 0.5, 0.9, topD + 0.5, 0, h + 0.15, 0, DARK_CONCRETE);
-  b.box(topW * 0.5, 1.8, topD * 0.5, topW * 0.12, h + 0.9, 0, ALLOY);
-  if (!brick) {
-    b.cyl(6, 0.16, 0.3, 5, -topW * 0.3, h + 3.6, topD * 0.24, ALLOY);
-    // An obstruction light. Emissive, so it reads at any hour and at any
-    // distance — on a map with no fog the far side of the skyline is a
-    // silhouette, and this is the one thing on it that is not.
-    b.glow(0.34, 0.34, 0.34, -topW * 0.3, h + 6.7, topD * 0.24, "#ff5a4a");
+  // --- the crown -----------------------------------------------------------
+  //
+  // Emitted last for the file header's first rule — a roof is a surface nothing
+  // can reach and must never take a nav slot a floor needs. Visual only; the
+  // shaft's own collider already stops everything at this height.
+  //
+  // **Three crowns rather than one, chosen by the roll**, because the skyline is
+  // what thirty-seven of these are FOR and a skyline of one silhouette repeated
+  // is a texture rather than a city. Each is the same three ideas in a
+  // different arrangement: something tall and off-centre (the lift overrun),
+  // something low and wide (the plant), and something thin against the sky.
+  {
+    const topW = setback > 0 ? sw : w;
+    const topD = setback > 0 ? sd : d;
+    const crown = brick ? 3 : Math.min(2, Math.floor(roll(31) * 3));
+    // The parapet and its coping. Two boxes: a parapet with no capping on it is
+    // a wall that stops, and the cap is the line the sky is read against.
+    if (!brick) {
+      b.box(topW + 0.5, 0.95, topD + 0.5, 0, h + 0.17, 0, DARK_CONCRETE);
+      b.box(topW + 0.7, 0.18, topD + 0.7, 0, h + 0.73, 0, ALLOY);
+    }
+    const ox = topW * (roll(32) - 0.5) * 0.4;
+    const oz = topD * (roll(33) - 0.5) * 0.4;
+    if (crown === 0) {
+      // The lift overrun and a low plant deck beside it: the commonest roof in
+      // a city, and the one that reads as a working building.
+      b.box(topW * 0.3, 3.2, topD * 0.34, ox, h + 1.6, oz, DARK_CONCRETE);
+      b.box(topW * 0.3 + 0.3, 0.2, topD * 0.34 + 0.3, ox, h + 3.3, oz, ALLOY);
+      b.box(topW * 0.42, 1.5, topD * 0.24, -ox * 0.8, h + 0.75, -oz, ALLOY);
+      for (let i = 0; i < 3; i++) {
+        b.box(0.9, 0.85, 0.9, -ox * 0.8 + (i - 1) * 1.3, h + 1.9, -oz, ALLOY);
+        b.cyl(0.3, 0.8, 0.8, 8, -ox * 0.8 + (i - 1) * 1.3, h + 2.45, -oz, DARK_CONCRETE);
+      }
+    } else if (crown === 1) {
+      // A stepped crown: two setbacks of the shaft's own skin over the parapet,
+      // which is what pre-war stock did and what makes a tall one read as tall.
+      b.box(topW * 0.72, 2.4, topD * 0.72, 0, h + 1.2, 0, skin);
+      b.box(topW * 0.74, 0.3, topD * 0.74, 0, h + 2.5, 0, ALLOY);
+      b.box(topW * 0.42, 2.6, topD * 0.42, 0, h + 3.9, 0, skin);
+      b.box(topW * 0.44, 0.26, topD * 0.44, 0, h + 5.3, 0, ALLOY);
+      b.box(topW * 0.2, 1.4, topD * 0.2, ox * 0.4, h + 6.1, oz * 0.4, DARK_CONCRETE);
+    } else if (crown === 2) {
+      // A water tank on a frame, and a gantry rail round the parapet: older
+      // stock that got a lift and a tank bolted to the top of it later.
+      const tankY = h + 2.9;
+      b.cyl(2.6, 3.4, 3.4, 10, ox, tankY, oz, RUST);
+      b.cyl(0.4, 3.6, 3.6, 10, ox, tankY + 1.5, oz, DARK_CONCRETE);
+      for (const sx2 of [-1, 1]) {
+        for (const sz2 of [-1, 1]) {
+          b.box(0.16, 2.4, 0.16, ox + sx2 * 1.2, h + 1.2, oz + sz2 * 1.2, RUST);
+        }
+      }
+      b.box(topW * 0.34, 1.6, topD * 0.28, -ox, h + 0.8, -oz, DARK_CONCRETE);
+      // The gantry rail: a hairline round the coping, and what gives a flat top
+      // a scale at all.
+      for (const sz2 of [-1, 1]) {
+        b.box(topW + 0.4, 0.07, 0.07, 0, h + 1.9, (sz2 * (topD + 0.4)) / 2, ALLOY);
+      }
+      for (const sx2 of [-1, 1]) {
+        b.box(0.07, 0.07, topD + 0.4, (sx2 * (topW + 0.4)) / 2, h + 1.9, 0, ALLOY);
+        for (let i = 0; i <= 3; i++) {
+          b.box(
+            0.07,
+            1.1,
+            0.07,
+            (sx2 * (topW + 0.4)) / 2,
+            h + 1.35,
+            -topD / 2 + (i / 3) * topD,
+            ALLOY,
+          );
+        }
+      }
+    } else {
+      // Brick stock: a stair head and a stack of flues, which is what is on top
+      // of a building of this age and nothing else is.
+      b.box(topW * 0.26, 2.0, topD * 0.3, ox, h + 0.9, oz, RENDER);
+      b.box(topW * 0.26 + 0.3, 0.2, topD * 0.3 + 0.3, ox, h + 2.0, oz, RENDER);
+      b.box(1.5, 2.6, 1.0, -ox, h + 1.2, -oz, CITY_BRICK);
+      b.box(1.8, 0.24, 1.3, -ox, h + 2.6, -oz, RENDER);
+      for (let i = 0; i < 3; i++) {
+        b.cyl(0.5, 0.36, 0.42, 6, -ox - 0.5 + i * 0.5, h + 2.95, -oz, DARK_CONCRETE);
+      }
+    }
+    if (!brick) {
+      // The mast, its stays, and a dish on the taller ones. Thin against the
+      // sky is the third of the crown's three ideas, and the only one that is
+      // the same on all of them.
+      const mx = -topW * 0.3;
+      const mz = topD * 0.24;
+      b.cyl(6, 0.16, 0.3, 5, mx, h + 3.6, mz, ALLOY);
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        b.box(0.05, 3.4, 0.05, mx + Math.cos(a) * 0.55, h + 2.1, mz + Math.sin(a) * 0.55, ALLOY, {
+          x: Math.sin(a) * 0.3,
+          z: -Math.cos(a) * 0.3,
+        });
+      }
+      if (h > 30) {
+        b.cyl(0.24, 1.5, 0.5, 8, mx + 1.6, h + 2.4, mz, ALLOY, { x: Math.PI / 2.6 });
+        b.box(0.12, 1.6, 0.12, mx + 1.6, h + 1.6, mz, ALLOY);
+      }
+      // An obstruction light. Emissive, so it reads at any hour and at any
+      // distance — on a map with no fog the far side of the skyline is a
+      // silhouette, and this is the one thing on it that is not.
+      b.glow(0.34, 0.34, 0.34, mx, h + 6.7, mz, "#ff5a4a");
+    }
   }
   return b;
 }

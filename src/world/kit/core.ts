@@ -651,6 +651,19 @@ export const GLASS = "#2a333b";
 export const ALLOY = "#4a4f54";
 /** Fired brick on the older, lower stock between the towers. */
 export const CITY_BRICK = "#6b463a";
+/**
+ * Dressed pale stone: what a tower's base storeys are faced in, and the one
+ * light value the downtown palette has at street level.
+ *
+ * It exists because the podium is the only part of a tower anybody stands next
+ * to, and a base in `DARK_CONCRETE` under a `CONCRETE` shaft is not a base — it
+ * is a hole four metres high across the whole frontage, which is what the first
+ * cut of `buildTower`'s podium came out as. Lighter than `RENDER` and cooler,
+ * so a stone-faced tower and a rendered terrace are not the same decade; and
+ * light enough that a low sun finds it, which is the whole job at an hour when
+ * everything above it is in its own shade.
+ */
+export const ASHLAR = "#726c61";
 /** Painted steel: shutters, barriers, plant housings, a parked car's body. */
 export const ENAMEL = "#3f4b52";
 /** Lane markings and kerb paint — the one thing here allowed to be bright. */
@@ -669,6 +682,29 @@ export const ROAD_PAINT = "#9c9887";
 export const LAMP_RED = "#7b2f2c";
 /** A lit window or a shopfront at dusk; the city's `FLAME`. */
 export const WINDOW_LIGHT = "#ffd79a";
+/**
+ * A lit ROOM seen from outside it, which is not the colour of the lamp in it.
+ *
+ * `WINDOW_LIGHT` is what a fixture EMITS and is spent on `Build.light`, where a
+ * pale warm white is right because the shader multiplies it into a surface.
+ * This is what an emissive PLANE the size of a storey may be, and the whole
+ * difference is AREA — which is `LAMP_SODIUM`'s argument one step further on.
+ * That note is about a hand-sized lens blooming into a hard white disc; a
+ * 2.6 x 3.6 m panel of the same pale hue is the same failure across a whole
+ * elevation, and it is what a tower's lit floors came out as first: solid white
+ * bars with no window left in them.
+ *
+ * A room is also genuinely dimmer than the lamp lighting it, so the honest
+ * colour and the one that survives the bloom are the same colour.
+ *
+ * **It is DARK, and the number was arrived at by photographing it.** At (125,
+ * 95, 53) a tower's lit floors still came out as a lantern — the glow adds a
+ * blurred copy of the emissive over a frame that already has a low sun in it,
+ * so a panel this size clips long before its own colour does. At (78, 58, 31)
+ * the same panel reads as a warm rectangle with a bloom around it, which is
+ * what a lit floor looks like from a street.
+ */
+export const ROOM_GLOW = "#4e3a1f";
 /**
  * A street lamp's lens, and the one emissive on this map that is meant to be
  * seen from the far side of it.

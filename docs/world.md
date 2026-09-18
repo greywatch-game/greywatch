@@ -1714,9 +1714,14 @@ cost one: glass breaks where there is enterable space behind it.** A sheet hung
 on something solid stops nothing — the round has always ended on the concrete —
 so breaking it changes nothing you can play with, and it costs the building the
 one thing an elevation was saying: a street-level shopfront that shatters into a
-blank grey shaft is a building admitting it is a box. Coldharbour draws **6,139
+blank grey shaft is a building admitting it is a box. Coldharbour draws **4,458
 sheets and twenty-four of them break**, all twenty-four SHOPFRONT bays — twelve
-on the two offices and twelve on the eight shophouses.
+on the two offices and twelve on the eight shophouses. (It was 6,139 before the
+towers got a podium: a curtain wall that starts at a base's coping rather than
+at the kerb is two storeys of glazing a tower no longer draws, and the podium
+glazing and the lobby front that replaced them are a fraction of that. The
+figure is the merged glazing's own vertex count over the 24 a sheet carries —
+nothing keeps the raw count after the merge.)
 The curtain walls (4 cm off a solid shaft), the punched windows drawn on the
 same shaft, the shophouses' sash windows drawn on their own shells and the cars'
 greenhouses (a cabin nobody gets into) stay whole. The
@@ -1732,15 +1737,18 @@ no other part of the game.
 
 **The DRAW CALLS are the one cost every sheet pays, and the answer is that
 glazing is merged and a pane is a vertex range rather than a mesh.** A mesh each
-would be 6,139 meshes against ~150 for the whole map — and worse than the count
+would be 4,458 meshes against ~150 for the whole map — and worse than the count
 says, because glazing is alpha-blended and a transparent mesh is sorted and
 drawn on its own rather than batched. Instead it merges per placement
 (`MapBuilder.paneGroup`) and then again per map block (`PaneBlocks`, on the SAME
 side as `BlockMerge` — see `MapLayout.blockSize`), which on
-Coldharbour is **82 glazed placements into 71 meshes across 40 blocks** — both
+Coldharbour is **82 glazed placements into 114 meshes across 40 blocks** — both
 passes group by MATERIAL, so a block glazed in more than one kind is more than
 one mesh, and since `backed` glazing (below) is a material of its own that is
-now the ordinary case rather than a hypothetical one. A breakable pane's
+now the ordinary case rather than a hypothetical one. The count went 71 -> 114
+when the towers got podium glazing and a see-through lobby front, and almost
+all of that is the second reason rather than the first: a block holding both a
+`backed` sheet and a clear one holds two meshes where it held one. A breakable pane's
 positions are a known range in the result: breaking one collapses that range
 onto its own first vertex, every triangle in it becomes degenerate and
 rasterizes nothing, and the cost is one `updateVerticesData` on one small
