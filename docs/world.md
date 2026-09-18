@@ -603,9 +603,10 @@ S7 for the measurement and `src/world/maps.ts` for the shape.
   lands at -0.28, below the bank around it.
 - **A `WaterRect` is an extent, not a shore, and only the terrain under it knows
   where the water actually ends.** Hollowmere's three rects are pools and their
-  edges are roughly their banks; Greyfen's single rect is 250 m of flood over the
-  whole valley, and its edges are out past the ridge — 11% of it is wet and the rest
-  is under the hills that occlude it. `WaterSystem.bakeDepth` therefore bakes
+  edges are roughly their banks; Greyfen's single rect is 600 m of flood over the
+  whole FLOOR — the play square plus both margins of its borderland, so that the
+  three river mouths keep running once the rim is gone — and 7.5% of it is wet,
+  the rest being under ground that stands above it. `WaterSystem.bakeDepth` therefore bakes
   `surfaceY - terrain.surfaceAt(...)` across each rect into a one-byte-per-texel map
   (`CONFIG.water.depthTexels` per metre, capped) and the shader reads the waterline
   and the body colour out of that. Two consequences for an author: a rect may be
@@ -1093,9 +1094,9 @@ exactly ±120) and they are the only thing that stops anything leaving;
 `src/world/Ridge.ts` draws an escarpment over them and stops nothing.
 
 **That is one of two ways a map may be closed, and the other one is below** —
-Harrowmead has no wall at all, and neither has Hollowmere. Everything in this
-section is the rim's, which is still the default and still what Greyfen and
-Coldharbour are.
+Harrowmead has no wall at all, and neither have Hollowmere and Greyfen.
+Everything in this section is the rim's, which is still the default and is now
+only what **Coldharbour** is.
 
 **And the LANDFORM is separable from the boundary a third time**: `RidgeSpec.form:
 "none"` builds no geometry at all, for a map that has already put something out
@@ -1156,12 +1157,12 @@ would end its shadow in a hard line sliding across open ground as you walk.
 
 ## The other way to close a map: a borderland and a leash
 
-**Four shipped maps have no wall around them — Harrowmead, Sarab, Cinderhaven
-and Hollowmere.** The ground carries on past the play square, and what stops a
-player leaving is a countdown rather than a face of rock. It is declared by
-`MapLayout.borderland` — absent only on Greyfen and Coldharbour, which are
-bit-identical to what they were before it existed — and it is three pieces, each
-answering a different part of the same question.
+**Five shipped maps have no wall around them — Harrowmead, Sarab, Cinderhaven,
+Hollowmere and Greyfen.** The ground carries on past the play square, and what
+stops a player leaving is a countdown rather than a face of rock. It is declared
+by `MapLayout.borderland` — absent only on Coldharbour, which is bit-identical
+to what it was before it existed — and it is three pieces, each answering a
+different part of the same question.
 
 **Every map that states one sizes it by the HORIZON, and the leash is the FLOOR
 under that rather than the answer**, which is worth knowing before setting
@@ -1186,7 +1187,7 @@ it, and it had one.
 
 **The ground keeps going, and `TerrainField` is what makes that true.** A
 `Borderland` states a `margin` (Harrowmead: 600 m, Sarab and Cinderhaven: 300
-and 250, Hollowmere: 180) and the field continues past
+and 250, Hollowmere and Greyfen: 180) and the field continues past
 the authored grid for that distance: `heightAt` returns the clamped edge plus a
 closed-form roll (`borderRoll`) instead of the clamp alone, eased in over
 `Borderland.ease` so the boundary has no crease and every reader inside
@@ -1332,6 +1333,24 @@ The steepest gradient the roll can make is `(roll / 2) * (0.026 + 1.5 / ease)`,
 which at 3.2 and 40 m is 0.10 against a `MAX_WALKABLE_GRADE` of 0.4 — a player
 being run out of the map must never be stopped by the ground on the way.
 
+**`roll` is normally chosen for SHAPE, and Greyfen is the map that shows it can
+be BOUNDED instead — by water.** `TerrainField` continues the floor by clamping
+its edge row outward, so a channel cut to the boundary extrudes out through the
+margin carrying its own cross-section; then `borderRoll` is added on TOP of
+that, swinging ±`roll`/2. So a margin with a river running out of it cannot
+swell further than the river is deep, or the roll lifts the bed above the water
+plane and the map draws a dry trench. Greyfen has three mouths and the
+shallowest — the east branch — sits 0.82 m under its water. Measured along all
+three centrelines out to the boundary: at the default 2.6 two of the three run
+dry (the east branch 22 m out and for 63 m, which is inside the readable band),
+at 1.6 the east branch is left with 2 cm, and at **1.2** the worst place on the
+worst arm still holds 0.22 m. That map states 1.2 and loses nothing by it,
+because its valley floor is flat — 4,906 of 6,561 vertices exactly 0, the whole
+authored range -1.34 to +0.16 — so what closes its horizon was never going to
+be a swell. **A borderland that carries a watercourse out owes this check**, and
+the number it is checked against is the channel's depth below the water plane
+rather than anything about the margin.
+
 **What it costs is TERRAIN, and the lever that pays for it is `terrainBlock`.**
 600 m of borderland on a 400 m square is 1,600 m of ground at a 4 m cell —
 160,000 quads, against Sarab's 140,625 and Cinderhaven's 111,556, so it is the
@@ -1353,7 +1372,7 @@ learned that the same way and neither found it in a screenshot of the boundary:
 what tells an eye that ground RECEDES is stuff standing ON it at intervals, so
 an unbroken floor reaching the horizon is a diorama on a table however far out
 its edge is. Harrowmead put twenty-one regions and ~874 trees out there;
-Hollowmere put sixteen and ~440.
+Hollowmere put sixteen and ~440; Greyfen puts thirty-nine and 718.
 
 **Three rules are the same on both, and they are the ones a third map should
 copy.** *Nothing blocks* — a blocking prop is a collider outside the nav grid,
@@ -1373,7 +1392,7 @@ tails of two of them.
 the map.** The question is how far away the borderland is READ from, and that is
 `fogEnd` and not the margin:
 
-| | Harrowmead (`fogEnd` 520) | Hollowmere (`fogEnd` 78) |
+| | Harrowmead (`fogEnd` 520) | Hollowmere and Greyfen (`fogEnd` 78) |
 | --- | --- | --- |
 | read from | ~300 m, through half a fog | ~40 m, barely a quarter fogged |
 | smallest prop worth sowing | a tree; a fern at 300 m is a sub-pixel draw call | anything; a 2.2 m boulder at 60 m is still 19 px of a 720p frame |
@@ -1391,9 +1410,42 @@ it gives the collar up, and **what makes that safe is the PROP rather than the
 distance**: this map's tree is a bare blighted trunk 0.7 m across with 4 cm
 twigs on it, so there is nothing to hide behind, and the one genuinely opaque
 prop out there — the boulders — is held past 25 m and is opaque BOTH ways in a
-strip a bot cannot enter and a player has ten seconds in. **A map giving up the
-collar owes that argument about its own prop**, and a map whose borderland tree
-has a canopy does not get to make it.
+strip a bot cannot enter and a player has ten seconds in.
+
+**A map giving up the collar owes that argument, and Greyfen is the one that
+makes it with DENSITY instead of with its prop** — which is the general form,
+because the thing a collar is actually buying is that nobody can be CONCEALED
+out there. Greyfen cannot copy either of the others. It has no cue to protect
+(its forest is sown to the play square on three sides, so a bare ring is a
+firebreak cut round a jungle that has not got one) and its tree is not bare: a
+1.0 m bole tapering to 0.42 over 11.2 m, so 0.91 m at eye height, with a
+buttress flare wider again. What it spends instead is the spacing, and the
+number it is spent against is the fog. A sightline's mean free path through
+randomly placed trunks is `1 / (trees per m² × trunk width)`: that map's deep
+forest runs 35 m² a tree, which is 38 m — half its fog wall, so a stand inside
+the map is a screen and is meant to be — and its borderland stands run
+110–173 m² in the near band a living player reaches, which is 121–190 m, and
+216–240 past it. **A sightline out there reaches the fog before
+it reaches a trunk.** The second half is what makes it safe rather than merely
+true: the forest two metres back INSIDE the line stops rounds and the
+borderland does not, so stepping out of the map to fight from it is a trade
+DOWN. **A map giving up the collar owes one of those three arguments** — the
+distance, the prop, or the density — and none of them is free.
+
+**Which side the holes are on is MEASURED, not photographed, and that is the
+third map's other contribution.** A screenshot finds the gap you happened to
+point the camera at; a borderland's failure is the bearing nobody stood on. The
+test is cheap and is a pure function of the layout: for every place a living
+player can be — the play edge, 30 m out and the leash limit, every 20 m along
+all four sides — sweep the OUTWARD half-horizon two degrees at a time and ask
+what fraction of it finds a tree region inside `fogEnd`. Greyfen's first pass
+was twenty-five regions and read **88.9% mean with a worst of 14%**, and the
+worst was not a corner: it was the west side between z 60 and 120, which is
+what one of the two home spawns looks out at. Thirty-nine regions read **97.7%
+mean, 100% median, worst 75.6%**, and everything still under 80 is a river
+mouth or the far end of the leash strip — openings on purpose. **That test is
+also what says a corner wants TWO regions rather than one**: a stand far enough
+out to close the diagonal is too far out to close the near half of it.
 
 **What it costs is draw calls, and the ceiling is the region count and not the
 prop count.** Each region merges to one or two meshes filed under one cull cell,
@@ -1404,6 +1456,14 @@ rim's own ten segments went with it: 52 → 50 looking north from the square, 11
 → 17 at the gatehouse, 2 → 7 at the leash limit. `scene.meshes` went 2,020 →
 2,039.
 
+**And what it costs BUILD time is the prop, which is the one budget that scales
+with the tree rather than with the region.** Hollowmere's borderland is bare
+trunks; Greyfen's tree is twenty-odd boxes of bole, buttress, plate and frond,
+and 718 of them take that map's round build from 4.1 s to 7.0 s on the Windows
+box, with `scene.meshes` 2,000 → 2,135. It is paid once, on the building card,
+by a state that simulates nothing — but a map whose borderland prop is
+expensive should know it is buying seconds there and not frames.
+
 **And one artifact is only found by removing a rim, which is that the rim was
 HIDING things.** Two of Hollowmere's dead trees sat at x ≈ -125, seven metres
 outside the play square: `MapBuilder.insideCollider` tests the boundary's 2 m
@@ -1412,8 +1472,11 @@ props PAST the boxes rather than being rejected by them, and with an escarpment
 standing there they were buried in rock. They stand in open country now. The
 same map's bog rect ran to exactly z = -120 and stopped, which is invisible
 against a cliff and a straight waterline cut across 55 m of marsh without one.
-**A map losing its rim should look for what the rim was standing in front of**,
-and both of those were found by reading the boundary rather than by playing it.
+Greyfen's was the same failure with a river in it: its one 250 m rect was
+centred at (1.7, -6.0), so its north edge stood at z = 119 — a metre short of
+the map, and short on the one side a channel runs out through. **A map losing
+its rim should look for what the rim was standing in front of**, and all three
+of those were found by reading the boundary rather than by playing it.
 
 **What stops you leaving is `src/world/leash.ts`.** Cross the play square and a
 countdown starts on the HUD (`CONFIG.map.leash.seconds`, 10); come back and it

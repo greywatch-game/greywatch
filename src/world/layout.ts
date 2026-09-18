@@ -274,7 +274,7 @@ export interface RidgeSpec {
 /**
  * The ground PAST the play square, on a map whose boundary is open.
  *
- * Absent — which is only Greyfen and Coldharbour now — and the boundary is the
+ * Absent — which is only Coldharbour now — and the boundary is the
  * rim: four colliders at `±size/2` and an escarpment drawn over them, and there
  * is nothing outside because nothing can get outside. Present, and the four
  * colliders move out to `±(size/2 + margin)`, the floor is tessellated the whole

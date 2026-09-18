@@ -750,8 +750,8 @@ so that a map saying nothing is unaffected:
 | `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in all three callers of `terrainPatches` — `buildValley`, the server's `terrainColliders` and the editor's brush — or the two sides tessellate different floors |
 | `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` is FULLY LIT outside the window, the last `edgeFade` of the volume ramping back to it — so an undersized one puts that transition on ground the player can see, and an OVERSIZED one moves it not at all while costing texel density (`ShadowSystem` DEV-warns) |
 
-**A map is CLOSED one of two ways, and the second has no wall at all** — four
-of the six, Greyfen and Coldharbour being the two left on a rim. The rim is four
+**A map is CLOSED one of two ways, and the second has no wall at all** — five
+of the six, Coldharbour being the one left on a rim. The rim is four
 boxes at `±size/2` under `Ridge`'s escarpment. `MapLayout.borderland` is
 the other: the floor carries on for a `margin` past the play square
 (`TerrainField` continues the field, so nav, the roads, the grass and
@@ -773,7 +773,9 @@ one.
 
 **The shipped maps are Hollowmere** (a night village; no wall and no rim, and
 its whole horizon costs 180 m of margin because `fogEnd` is 78 — that number is
-the FOG's, not the map's), **Greyfen** (a jungle valley), **Coldharbour** (a
+the FOG's, not the map's), **Greyfen** (a jungle valley; no wall and no rim
+either, on the same 180 m for the same `fogEnd`, and the map where a river runs
+out through the margin), **Coldharbour** (a
 business district — what the first three overrides exist for), **Harrowmead**
 (`size: 400` inside 1600 m of ground, no wall and no rim — the country runs out
 into the fog), **Sarab**

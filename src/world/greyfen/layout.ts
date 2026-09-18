@@ -52,9 +52,12 @@ import type {
  *   an embankment, or a fence line.
  * - Lamps stand at road corners, and fences split with a gate wherever a road
  *   or ramp passes through them.
- * - Scatter regions stay clear of buildings, spawn points, and the valley
- *   ridge. `MapBuilder.findSpot` rejects any spot buried in a collider, but a
- *   region that blankets a structure just wastes its count on rejects.
+ * - Scatter regions stay clear of buildings and spawn points.
+ *   `MapBuilder.findSpot` rejects any spot buried in a collider, but a region
+ *   that blankets a structure just wastes its count on rejects. There is no
+ *   valley rim to stay clear of any more — the last block of the scatter array
+ *   is the country PAST the play square, and it is the one place on this map
+ *   where a region deliberately stands outside it.
  */
 
 /**
@@ -335,6 +338,173 @@ const scatter: ScatterSpec[] = [
   { prop: "fernClump", x: -66, z: -68, radius: 16, count: 18, scale: [0.8, 1.4] },
   { prop: "buttressLog", x: -46, z: -30, radius: 14, count: 5, scale: [0.85, 1.2], blocking: true, clearance: 1.6 },
   { prop: "buttressLog", x: 70, z: -52, radius: 14, count: 5, scale: [0.85, 1.2], blocking: true, clearance: 1.6 },
+
+  // ===== THE COUNTRY PAST THE PLAY SQUARE ====================================
+  // Thirty-nine regions, 718 trees and 115 pieces of understory, APPENDED
+  // for the reason the note at the top of this array gives: one seeded stream
+  // serves the whole build in authored order, so a region spliced in above
+  // this line rerolls every field below it and moves every tree in the valley.
+  // This is the END of the stream. Append, never insert.
+  //
+  // WHY IT IS HERE AT ALL. `borderland` takes the rim away, and a margin with
+  // nothing standing on it is not "the valley keeps going" — it is a plane
+  // fading to `fogColor`, which reads as a backdrop. What tells an eye that
+  // ground RECEDES is stuff standing ON it at intervals.
+  //
+  // NONE OF IT BLOCKS, and that is the load-bearing line rather than a saving.
+  // A blocking prop is a collider, a `WorldBox` and a row in the collision
+  // bake; out here it would be geometry the bots can neither see nor route
+  // around — the nav graph stops at the play square — and, the sharp one,
+  // something to CATCH a player sprinting home against a countdown. Omitting
+  // `blocking` emits nothing at all, so every tree below leaves the baked
+  // collision set byte-identical. The two props that carry a body inside the
+  // square (`buttressLog`, `carvedStele`) are sown WITHOUT it out here and are
+  // pictures.
+  //
+  // …AND NOTHING IS A PLACEMENT. A structure would be a collider too, and
+  // worse: placements build BEFORE scatter off the same stream, so one ruin
+  // out here would move all 1,396 trees inside the map. The ruins' motif
+  // carries on as non-blocking steles instead.
+  //
+  // THE COLLAR ARGUMENT, WHICH THIS MAP MAKES WITH DENSITY RATHER THAN WITH
+  // ITS PROP. Harrowmead keeps 90 m of bare ground past its square because its
+  // hedges and walls genuinely stop there, so the dressing thinning out is a
+  // cue the HUD cannot give, and because 90 m is past the leash's 69 so
+  // nothing alive ever stands in a non-blocking wood. Hollowmere gives the
+  // collar up and pays for it with the PROP — a bare blighted trunk 0.7 m
+  // across, nothing to hide behind. Greyfen can do neither. It has no cue to
+  // protect (the forest is sown to z = ±120 on three sides, so a bare ring
+  // would be a firebreak cut round a jungle that has not got one, and against
+  // a 78 m fog wall it would put the whole block out of sight), and its tree
+  // is 0.91 m of bole at eye height with a buttress flare wider than that. So
+  // what this map spends instead is the DENSITY, and the number it is spent
+  // against is the fog:
+  //
+  //   a sightline's mean free path through randomly placed trunks is
+  //   1 / (trees-per-m² × trunk width). Inside the square the deep forest runs
+  //   35 m² a tree, which is 38 m — HALF the fog wall, so a stand inside the
+  //   map is a screen and is meant to be. The stands below run 110–173 m² a
+  //   tree in the near band a living player reaches (121–190 m) and 216–240
+  //   past it: a sightline out here reaches the fog before it reaches a trunk,
+  //   everywhere, by half again at the worst of it.
+  //
+  // So the borderland is the one wood on Greyfen you can see through further
+  // than you can see, and the concealment a collar exists to prevent is not
+  // available in it. What makes that safe rather than merely true is that the
+  // forest two metres back INSIDE the line stops rounds and this does not, so
+  // stepping out of the map to fight from it is a trade DOWN — which is the
+  // argument this map has and Hollowmere's moor did not.
+  //
+  // AND IT STILL READS AS JUNGLE, because on this tree the canopy and the bole
+  // are different arguments. The crown is 7.6 m plates at 10 m with fronds
+  // past them, so about 50 m² of sky each: at 110–155 m² a tree that is 32–45%
+  // closure — gallery forest along a flood plain, which is exactly what the
+  // banks of a tropical river are, against the >100% closure of the valley you
+  // are standing in. The thing that says "jungle" at 40 m through this fog is
+  // the canopy line, and this has one.
+  //
+  // WHERE THE TREES ARE NOT. Nothing is sown past 150 m from the square. From
+  // the leash limit at 69 m out, 150 m is 81 m away and the fog wall is 78, so
+  // the last 30 m of margin is fog insurance rather than country, and sowing it
+  // would be paying for geometry nobody can be standing anywhere to see. The
+  // three channel mouths are left open for the same kind of reason the other
+  // way round: what carries the north, west and east bearings out of the map
+  // is the RIVER, and a stand across a channel is a stand standing in it.
+  //
+  // IT IS NOT A RING, which is the bowl a rim would have been at one notch
+  // quieter. Each side is given the country the valley already has on it: the
+  // SOUTH is the deepest forest on the map, simply carried on, and is the
+  // thickest side; the NORTH is the hamlet's treeline west of the channel and
+  // the temple shelf's thinner woods east of it, with the river coming down
+  // between them; the WEST is Bravo's open bank, the thinnest side, with the
+  // west branch running out through it; the EAST is the temple's own country,
+  // and the steles say there is more of it. The CORNERS get TWO regions each,
+  // an inner and an outer, because a side is 120 m of square from the middle
+  // and a corner is 170: lay four sides as sides and the diagonal out of a
+  // home spawn is left with the far tails of two of them, and one corner stand
+  // far enough out to close the diagonal is too far out to close the near half
+  // of it.
+  //
+  // WHICH WAS MEASURED, and it is the test worth copying rather than the
+  // numbers. For every place a living player can stand — the play edge, 30 m
+  // out and the leash limit, every 20 m along all four sides — sweep the
+  // OUTWARD half-horizon two degrees at a time and ask how much of it finds a
+  // stand inside `fogEnd`. The first pass put twenty-five regions out here and
+  // read 88.9% mean with a worst of 14%, and the worst was not a corner: it
+  // was the west side between z 60 and 120, which is what the Valeguard home
+  // spawn looks out at, where half the horizon was open ground. At thirty-nine
+  // it is 97.7% mean, 100% median and a worst of 75.6% — and the places still
+  // under 80 are the three river mouths and the far ends of the leash strip,
+  // which are openings on purpose. A screenshot finds the hole you happen to
+  // photograph; this finds the one nobody stood in.
+
+  // SOUTH — the canopy camp's forest carrying on, and the thickest side.
+  { prop: "jungleTree", x: -80, z: -152, width: 72, depth: 60, count: 39, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: -4, z: -150, width: 68, depth: 56, count: 33, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 72, z: -152, width: 68, depth: 60, count: 37, scale: [0.85, 1.3], clearance: 0.95 },
+  // The understory in the near verge, where it is read from twenty metres
+  // rather than from sixty. Ferns are the map's own non-blocking prop and are
+  // already sown this way inside the fight; the logs are not, and are pictures
+  // out here.
+  { prop: "fernClump", x: 26, z: -140, radius: 20, count: 24, scale: [0.8, 1.4] },
+  { prop: "buttressLog", x: -46, z: -142, radius: 16, count: 5, scale: [0.85, 1.2] },
+  // The two southern corners' INNER halves — see the corner note above.
+  { prop: "jungleTree", x: -116, z: -172, width: 56, depth: 60, count: 28, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 114, z: -172, width: 56, depth: 60, count: 28, scale: [0.85, 1.3], clearance: 0.95 },
+  // The far line, aimed at a player who is already dying: from the leash limit
+  // at z = -189 the fog reaches -267, and without these the last thing anybody
+  // sees on the way out is a plane. Thin, because it is only ever read through
+  // most of a fog wall.
+  { prop: "jungleTree", x: -42, z: -216, width: 76, depth: 56, count: 19, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 44, z: -220, width: 76, depth: 56, count: 19, scale: [0.85, 1.3], clearance: 0.95 },
+
+  // NORTH — Alpha's treeline west of the channel, the shelf's woods east of
+  // it. Both stop short of x 19..49, which is the channel and its banks.
+  { prop: "jungleTree", x: -86, z: 152, width: 68, depth: 60, count: 30, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: -20, z: 144, width: 48, depth: 44, count: 14, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 84, z: 150, width: 66, depth: 56, count: 27, scale: [0.85, 1.3], clearance: 0.95 },
+  // The channel's own banks, and the only thing standing between the two
+  // woods: a river is a hole in the canopy and the light comes down it, which
+  // is the argument the reed-bed grass rects below are laid on as well.
+  { prop: "fernClump", x: 34, z: 156, width: 30, depth: 64, count: 28, scale: [0.8, 1.4] },
+  { prop: "buttressLog", x: 28, z: 140, radius: 14, count: 5, scale: [0.85, 1.2] },
+  { prop: "jungleTree", x: -116, z: 172, width: 56, depth: 60, count: 24, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 114, z: 172, width: 56, depth: 60, count: 24, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: -64, z: 212, width: 72, depth: 56, count: 18, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 24, z: 218, width: 72, depth: 56, count: 18, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 96, z: 208, width: 64, depth: 52, count: 15, scale: [0.85, 1.3], clearance: 0.95 },
+
+  // WEST — Bravo's bank is the most exposed flag on the map and the forest
+  // stops short of it on three sides; this is that, carried on. The thinnest
+  // side, and the west branch leaves through the middle of it.
+  { prop: "jungleTree", x: -152, z: 26, width: 60, depth: 68, count: 29, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: -148, z: -28, width: 52, depth: 40, count: 12, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "fernClump", x: -150, z: -86, width: 56, depth: 26, count: 22, scale: [0.8, 1.4] },
+  { prop: "carvedStele", x: -142, z: -56, radius: 13, count: 4, scale: [0.85, 1.25] },
+  { prop: "jungleTree", x: -152, z: -122, width: 60, depth: 52, count: 22, scale: [0.85, 1.3], clearance: 0.95 },
+  // The north half of this side, which is what the Valeguard home spawn looks
+  // out at — measured, and it was the worst hole on the map before it: half of
+  // the outward horizon from x = -120, z = 60..120 was open ground.
+  { prop: "jungleTree", x: -152, z: 96, width: 60, depth: 72, count: 33, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: -212, z: 6, width: 60, depth: 72, count: 20, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: -216, z: -104, width: 60, depth: 60, count: 16, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: -214, z: 96, width: 64, depth: 72, count: 21, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: -214, z: -172, width: 64, depth: 60, count: 16, scale: [0.85, 1.3], clearance: 0.95 },
+
+  // EAST — the temple's country. The stelae are why this side gets a motif of
+  // its own: Delta is the one flag with worked stone around it, and a few more
+  // of them standing out in the forest are the cheapest thing on this map that
+  // says the valley had more in it than the five places you fight over.
+  { prop: "jungleTree", x: 152, z: 52, width: 60, depth: 72, count: 31, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "carvedStele", x: 146, z: 30, radius: 15, count: 5, scale: [0.85, 1.25] },
+  { prop: "jungleTree", x: 150, z: -4, width: 56, depth: 40, count: 14, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "fernClump", x: 152, z: -39, width: 60, depth: 24, count: 22, scale: [0.8, 1.4] },
+  { prop: "jungleTree", x: 152, z: -96, width: 60, depth: 68, count: 29, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 152, z: 106, width: 60, depth: 68, count: 29, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 214, z: 40, width: 64, depth: 72, count: 21, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 216, z: -70, width: 64, depth: 64, count: 18, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 214, z: 140, width: 64, depth: 64, count: 18, scale: [0.85, 1.3], clearance: 0.95 },
+  { prop: "jungleTree", x: 216, z: -170, width: 64, depth: 60, count: 16, scale: [0.85, 1.3], clearance: 0.95 },
 ];
 
 const controlPoints: ControlPointDef[] = [
@@ -373,13 +543,22 @@ const spawns: SpawnPointDef[] = [
 /**
  * Dug ground lives in `heights.ts`, generated by the editor's terrain mode.
  *
- * What is cut into it is a Y-shaped river. One channel enters the rim in the
- * north-east and runs south-south-west into a wide confluence basin above the
- * manor, where it splits: a west branch running down the left flank and out
- * through the south-west rim, and an east branch running south-east and then
- * out through the east rim. Beds bottom at -0.89 and -1.34; a shallow rise of
- * +0.15 blankets the north-east quadrant, which is relief rather than a
- * feature.
+ * What is cut into it is a Y-shaped river. One channel enters through the
+ * NORTH edge at x 27..42 and runs south-south-west into a wide confluence
+ * basin above the manor, where it splits: a west branch running down the left
+ * flank and out through the WEST edge at z -93..-78, and an east branch
+ * running south-east and then out through the EAST edge at z -45..-33. Beds
+ * bottom at -0.89 and -1.34; a shallow rise of +0.15 blankets the north-east
+ * quadrant, which is relief rather than a feature.
+ *
+ * **All three mouths now RUN, which is what the map losing its rim is for.**
+ * There is no landform at the boundary any more (`ridge: { form: "none" }`),
+ * `TerrainField` clamps the field's edge row outward, and the water rect is
+ * the whole floor — so each channel extrudes its own cross-section straight
+ * out through the margin and keeps carrying water the whole 180 m. What
+ * bounds `Borderland.roll` is exactly that: see the export at the foot of this
+ * file, because the roll is added on top of the clamped bed and a big enough
+ * swell lifts a river out of its own trench.
  *
  * THE RIVER IS NOT A BARRIER, and that is deliberate. Every bank on this map
  * is graded at about 0.66 m per 3 m terrain cell — a gradient of 0.22, well
@@ -400,9 +579,62 @@ const spawns: SpawnPointDef[] = [
  * beneath it, so bots and the player wade across — no swimming, and the nav
  * grid never hears about it. A rect over a dug basin therefore sits below the
  * surrounding ground: -0.6 m of bed puts the surface at -0.28.
+ *
+ * **ONE rect, and it is the whole FLOOR rather than the whole valley now** —
+ * 600 m on a side, which is `size` plus twice the `borderland`'s margin, so
+ * the water stops exactly where the ground does. A rect is an EXTENT and not a
+ * shore: the bed decides what is wet, and at this size 7.5% of it is.
+ *
+ * **What it buys is that the river LEAVES.** The Y has three mouths in the
+ * boundary — the north-east channel through the north edge at x 27..42, the
+ * west branch through the west edge at z -93..-78 and the east branch through
+ * the east edge at z -45..-33 — and `TerrainField` clamps its edge row
+ * outward, so the trench is out there on all three bearings whether the water
+ * is or not. It was not: the old rect was 250 m centred at (1.7, -6.0), whose
+ * north edge stood at z = 119 — one metre SHORT of the map, and short on the
+ * one side a channel runs out through. That was invisible while an escarpment
+ * stood at z = 120 and is a river ending in a straight line across its own bed
+ * now that one does not. **A map losing its rim should look for what the rim
+ * was standing in front of**; on this one it was that.
+ *
+ * **It stays ONE rect for the reason Hollowmere's bog does, and here the
+ * reason is three times over.** A seam between two rects is where the MIRROR
+ * changes — each carries its own cube probe, stood at the depth-weighted
+ * centroid of its own wet cells — and a channel arm out in the borderland
+ * would have to be seamed to the valley's water straight across the bearing a
+ * player looks down as they leave. Three arms, three seams, all three laid
+ * across a sightline somebody stands on.
+ *
+ * **What it costs is bed-map resolution, and that was MEASURED rather than
+ * assumed, because the assumption was wrong.** The bed is
+ * `CONFIG.water.depthTexelsMax` (512) texels a side however large the rect is,
+ * so widening 250 m to 600 takes a texel from 0.50 m to 1.17 — which sounds
+ * like a coarser shoreline and is not one, for two reasons. The waterline's
+ * POSITION was never in this map: where the water's edge falls is where the
+ * terrain MESH crosses the plane, and that is exact geometry at any texel
+ * size. And the depth the shader reads is smooth over a bank graded at 0.22,
+ * so resampling it costs almost nothing: rebuilding both bakes and sampling
+ * them against the true bed over all 27,754 wet half-metre cells inside the
+ * play square, the error goes from 0.4 cm mean / 1.9 p95 / 5.6 worst to
+ * **1.0 / 4.1 / 11.8**, on depths averaging 62 cm. Through `foamWidth` (0.45)
+ * and `foamDepth` (0.05) that moves the mean shoreline foam over the wet
+ * square from 0.004 to 0.001 and over the marsh bar — the shallowest water on
+ * the map, 16 cm over its own bar, and therefore the place this should have
+ * hurt — from 0.012 to 0.008.
+ *
+ * **What DOES visibly change is the reflection probe, and it is a fix rather
+ * than a cost.** The centroid of the old rect's wet cells was (-2.5, 0.8) —
+ * inside the manor's great hall, half a metre under its floor, which is
+ * Cinderhaven's failure (a probe baked from inside a building) sitting on this
+ * map since it was dug. The three arms and the swale pools pull it to
+ * (12.3, 25.9), the confluence basin: open water, open sky, and the one place
+ * on Greyfen that looks like what the rest of the water should be mirroring.
+ * The river reads brighter for it, and it is the first time its surface has
+ * had visible relief on it at all — a mirror of a dark interior returned the
+ * same value whichever way a ripple turned.
  */
 const water: WaterRect[] = [
-  { x: 1.693, z: -6.027, width: 250, depth: 250, y: -0.52 },
+  { x: 0, z: 0, width: 600, depth: 600, y: -0.52 },
 ];
 
 /**
@@ -504,6 +736,99 @@ export const GreyfenLayout: MapLayout = {
   spawns,
   water,
   grass,
+  /**
+   * **No wall.** The valley is not closed by anything you can walk up to: the
+   * jungle and the river carry on for a hundred and eighty metres past the
+   * play square and what stops you is the leash, a countdown rather than a
+   * face of rock. See `Borderland`, and `world/leash.ts` for the rule.
+   *
+   * **The margin is the HORIZON's, and on this map the horizon is 78 m.** The
+   * cel shader's fog is LINEAR between `fogStart` and `fogEnd`, so a surface
+   * reaches exactly `fogColor` at `fogEnd` and not one metre before it, and
+   * ground that stops any nearer arrives on screen at some fraction of its own
+   * colour against a sky dome painted flat `fogColor` below the horizon — a
+   * green line drawn round the world, which is the dead band `Ridge.ts` says a
+   * rim is there to cover. So the edge has to be `fogEnd` from the furthest an
+   * EYE gets: the play edge plus the leash's 69 m is 147, the death cam's own
+   * orbit stands 3.4 m further out than the body it frames and a blast can
+   * throw that body further still, and 180 is that rounded up. Every bearing
+   * is covered at once because a borderland is a square ring and not four
+   * strips. It is the same 180 Hollowmere buys for the same `fogEnd`, which is
+   * the point of the arithmetic: what a margin has to beat is the FOG and
+   * nothing about the map.
+   *
+   * **`roll` is 1.2, and it is the one number on this map the RIVER sets.**
+   * Everywhere else a borderland's swell is chosen for shape; here it is
+   * bounded, and the bound is not obvious. `TerrainField` continues the floor
+   * by clamping its edge row outward, so the Y's three mouths extrude straight
+   * out of the map as channels of their own cross-section — and then
+   * `borderRoll` is ADDED on top, swinging ±roll/2. The shallowest mouth is
+   * the east branch, whose bed sits 0.82 m under the water plane; at the
+   * default 2.6 the roll lifts it 1.3 and the river runs dry 22 m out and
+   * stays dry for 63 m, which is inside the readable band and reads as a
+   * riverbed rather than a river. Measured along all three centrelines out to
+   * the boundary: 2.6 dries two of the three, 1.6 leaves 2 cm in the east
+   * branch, and **1.2 leaves 0.22 m in the worst place on the worst arm** —
+   * about a quarter of the channel's own depth, which is a riffle and not a
+   * gravel bar. The valley has no shape to lose to it: 4,906 of the
+   * heightfield's 6,561 vertices are exactly 0 and the whole authored range is
+   * -1.34 to +0.16, so what closes this horizon was never going to be a swell.
+   * It is the canopy.
+   *
+   * **`ease` is stated at 30 for Hollowmere's reason, which is the mirror of
+   * Harrowmead's.** A third of 180 is 60 — inside the leash's 69, so by
+   * Harrowmead's test the default lands in the right place and the field need
+   * not be stated. What that test does not cover is a map whose FOG is nearer
+   * than its leash: the borderland anybody ever sees is 78 m deep against a
+   * 69 m strip they are run out through, so a 60 m ramp spends four fifths of
+   * everything ever seen out there flattening it into a radial smear of the
+   * map's own edge. The number to beat is whichever of the leash and `fogEnd`
+   * is SHORTER. The steepest gradient the roll can then make is
+   * `(roll / 2) * (0.026 + 1.5 / ease)` = 0.046, and measured over the whole
+   * finished floor on a 4 m lattice the worst anywhere is 0.219 — which is the
+   * river's own authored bank, inside the square, and was there before this.
+   * `MAX_WALKABLE_GRADE` is 0.4: a player being run out of the map is never
+   * stopped by the ground on the way.
+   *
+   * **What stands out there is the forest, and it does not stop at the
+   * square** — the scatter array's last block is that country and carries the
+   * argument in full, including the one this map has to make differently from
+   * both of the others: why it gives up the bare collar, and what it spends
+   * instead of the bare prop Hollowmere spends.
+   */
+  borderland: { margin: 180, roll: 1.2, ease: 30 },
+  /**
+   * **No rim at all.** The valley ends in more valley, and what closes the
+   * horizon is the fog rather than a landform.
+   *
+   * `Ridge.ts` states the one condition on taking `form: "none"`: a map may
+   * only draw nothing over its own boundary if it has already laid something
+   * out there that reaches past `fogEnd` on every bearing, because the sky
+   * dome is flat `fogColor` below the horizon, so a boundary with nothing
+   * beyond it is a dead band of sky. Cinderhaven pays that with 2,300 m of
+   * ocean, Harrowmead with 600 m of pasture and Hollowmere with 180 m of
+   * blight; this map pays it with the 180 above. The furthest an eye gets is
+   * 69 m past the square, which leaves 111 m of ground beyond it on an axis
+   * and 185 on a diagonal, against a fog wall of 78. The two fields are one
+   * decision, and shrinking that margin without putting a landform back is the
+   * thing not to do here.
+   *
+   * What was here was the default `escarpment` — a crag ringing a jungle
+   * valley, which is the one landform a drowned tropical basin has no business
+   * having and which, at `fogEnd` 78 against a 240 m map, was only ever
+   * visible from the outer band. From the middle of the square there is no
+   * horizon to hold up at all. What the ring actually did was tell a player
+   * standing at a flag that the world ends thirty metres behind it, and cut
+   * the three river mouths off dead at the boundary.
+   *
+   * `EnvironmentSpec.ridgeColor` and `ridgeScreeColor` are still set and are
+   * now read by nothing on this map: `MapBuilder` only asks for them per
+   * segment and there are no segments. They stay because they are required
+   * fields, and because a rim is one line from coming back.
+   */
+  ridge: {
+    form: "none",
+  },
   // Fixed so the dressing — and the colliders blocking scatter emits, and so
   // the nav graph — is identical on every boot. Changing it rerolls the whole
   // scatter field, which is a visible change to the level: re-walk the flags.

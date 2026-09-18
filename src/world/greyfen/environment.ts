@@ -108,9 +108,14 @@ export const GreyfenEnvironment: EnvironmentSpec = {
    * this surface worth having in the first place, one step further on.
    */
   floorSurface: "dirt",
+  // **Both ridge tones are read by NOTHING on this map now.** The valley took
+  // `RidgeSpec.form: "none"` when it grew a borderland, so `MapBuilder` asks
+  // for these per rim segment and there are no segments. They stay because
+  // they are required fields of an `EnvironmentSpec` and because a rim is one
+  // line from coming back; the scree note below is what they were tuned for.
   ridgeColor: "#5c6360",
-  // Moved with the floor: this band's whole job is melting the rim's foot into
-  // `floorColor`, so it follows the soil rather than the rock above it.
+  // Moved with the floor: this band's whole job was melting the rim's foot
+  // into `floorColor`, so it follows the soil rather than the rock above it.
   ridgeScreeColor: "#55503c",
   accentColor: "#7fe0a0",
   // Moved with the fog. Only the clear colour, so it shows where the dome
