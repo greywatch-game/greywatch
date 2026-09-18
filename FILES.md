@@ -684,7 +684,10 @@ src/
                         #   set, and the first builders that stack WALKED floors.
                         #   Its header owns the four rules that makes necessary,
                         #   what each of the five buildings is FOR, and the
-                        #   collider budget an enterable one is spending
+                        #   collider budget an enterable one is spending.
+                        #   buildTower's own header owns the opposite budget:
+                        #   what a building nobody may enter can be given
+                        #   without a fourth collider
     kit/desert.ts       #   adobeHouse, compoundWall, shellBlock, mosque,
                         #   minaret, souk, windTower, caravanserai, hammam,
                         #   granary, blastWall, sandbags, pylon — the desert-town
