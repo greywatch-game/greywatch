@@ -750,8 +750,9 @@ so that a map saying nothing is unaffected:
 | `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in all three callers of `terrainPatches` — `buildValley`, the server's `terrainColliders` and the editor's brush — or the two sides tessellate different floors |
 | `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` is FULLY LIT outside the window, the last `edgeFade` of the volume ramping back to it — so an undersized one puts that transition on ground the player can see, and an OVERSIZED one moves it not at all while costing texel density (`ShadowSystem` DEV-warns) |
 
-**A map is CLOSED one of two ways, and the second has no wall at all.** The rim
-is four boxes at `±size/2` under `Ridge`'s escarpment. `MapLayout.borderland` is
+**A map is CLOSED one of two ways, and the second has no wall at all** — four
+of the six, Greyfen and Coldharbour being the two left on a rim. The rim is four
+boxes at `±size/2` under `Ridge`'s escarpment. `MapLayout.borderland` is
 the other: the floor carries on for a `margin` past the play square
 (`TerrainField` continues the field, so nav, the roads, the grass and
 **`server/validate.ts`** agree for free) and what stops you leaving is
@@ -770,10 +771,12 @@ to cover. **What a `none` owes is that reach from EVERYWHERE a player can be**,
 and the fog is LINEAR: a margin short of it draws an edge rather than softening
 one.
 
-**The shipped maps are Hollowmere** (a night village), **Greyfen** (a jungle
-valley), **Coldharbour** (a business district — what the first three overrides
-exist for), **Harrowmead** (`size: 400` inside 1600 m of ground, no wall and no
-rim — the country runs out into the fog), **Sarab**
+**The shipped maps are Hollowmere** (a night village; no wall and no rim, and
+its whole horizon costs 180 m of margin because `fogEnd` is 78 — that number is
+the FOG's, not the map's), **Greyfen** (a jungle valley), **Coldharbour** (a
+business district — what the first three overrides exist for), **Harrowmead**
+(`size: 400` inside 1600 m of ground, no wall and no rim — the country runs out
+into the fog), **Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
 `ENGINE_UPGRADE.md` exists for) **and Cinderhaven** (`size: 1500` inside 2000 m
 of ground and 4,600 m of sea — a harbour town on a volcanic island, at night,

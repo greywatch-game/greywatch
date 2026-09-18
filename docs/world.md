@@ -1093,16 +1093,20 @@ exactly ±120) and they are the only thing that stops anything leaving;
 `src/world/Ridge.ts` draws an escarpment over them and stops nothing.
 
 **That is one of two ways a map may be closed, and the other one is below** —
-Harrowmead has no wall at all. Everything in this section is the rim's, which is
-still the default and still what Hollowmere, Greyfen and Coldharbour are.
+Harrowmead has no wall at all, and neither has Hollowmere. Everything in this
+section is the rim's, which is still the default and still what Greyfen and
+Coldharbour are.
 
 **And the LANDFORM is separable from the boundary a third time**: `RidgeSpec.form:
 "none"` builds no geometry at all, for a map that has already put something out
-past its own boundary for the horizon to be made of. TWO maps take it, and they
-pay for it in different currencies — Cinderhaven in WATER, a `borderland` of
-ground with 2,300 m of open sea drawn over and past it; Harrowmead in GROUND,
-600 m of borderland and nothing over it at all. Both numbers are the same
-number: `fogEnd` beyond the furthest point anything in the simulation can reach.
+past its own boundary for the horizon to be made of. THREE maps take it, and
+they pay for it in different currencies — Cinderhaven in WATER, a `borderland`
+of ground with 2,300 m of open sea drawn over and past it; Harrowmead in GROUND,
+600 m of borderland and nothing over it at all; Hollowmere in 180 m of the same
+ground, which is a quarter of Harrowmead's and buys the same thing because that
+map's fog stops at 78 m. All three numbers are the same number: `fogEnd` beyond
+the furthest point anything in the simulation can reach — which is why the
+cheapest boundary in the tree is on the map with the tightest fog.
 What a map owes before it may take that form is exactly the crest rule
 three bullets down, paid in something other than rock: the sky dome is flat
 `fogColor` below the horizon and `Sky` culls its stars out of the lowest 7.2°, so
@@ -1152,21 +1156,26 @@ would end its shadow in a hard line sliding across open ground as you walk.
 
 ## The other way to close a map: a borderland and a leash
 
-**Harrowmead has no wall around it, and Sarab has none either.** The ground
-carries on past the play square, and what stops a player leaving is a countdown
-rather than a face of rock. It is declared by `MapLayout.borderland` — absent on
-the other three, which are bit-identical to what they were before it existed —
-and it is three pieces, each answering a different part of the same question.
+**Four shipped maps have no wall around them — Harrowmead, Sarab, Cinderhaven
+and Hollowmere.** The ground carries on past the play square, and what stops a
+player leaving is a countdown rather than a face of rock. It is declared by
+`MapLayout.borderland` — absent only on Greyfen and Coldharbour, which are
+bit-identical to what they were before it existed — and it is three pieces, each
+answering a different part of the same question.
 
-**Both maps that state one size it by the HORIZON, and the leash is the FLOOR
-under that rather than the answer**, which is worth knowing before setting a
-third. The leash's number is easy: ten seconds at a sprint is 69 m, so a margin
-under that lets a player reach the boundary colliders, which is the invisible
-wall this mechanism exists to avoid. Everything past 69 m is bought for the
-EYE. Sarab's 300 m is what a 900 m square needs at 560 m of haze so the town
-does not stand on a plate with sky under its edges; Harrowmead's 600 is the
-whole of its rim, and buying that is what lets it state `RidgeSpec.form:
-"none"` — see **When the borderland IS the landform** below.
+**Every map that states one sizes it by the HORIZON, and the leash is the FLOOR
+under that rather than the answer**, which is worth knowing before setting
+another. The leash's number is easy: ten seconds at a sprint is 69 m, so a
+margin under that lets a player reach the boundary colliders, which is the
+invisible wall this mechanism exists to avoid. Everything past 69 m is bought
+for the EYE. Sarab's 300 m is what a 900 m square needs at 560 m of haze so the
+town does not stand on a plate with sky under its edges; Harrowmead's 600 is the
+whole of its rim, and buying that is what lets it state `RidgeSpec.form: "none"`
+— see **When the borderland IS the landform** below. **Hollowmere's 180 is the
+same purchase at the other end of the scale**, and it is the one that shows the
+rule is about the FOG rather than about the map: a 240 m square with `fogEnd` 78
+buys its whole horizon for less ground than Sarab spends, because what the
+margin has to beat is `fogEnd` from the furthest eye and nothing else.
 
 **Harrowmead's was 80 m and the rest of this section was written against it**,
 which is worth knowing because the numbers that follow still read as if the
@@ -1176,7 +1185,8 @@ the floor stands well inside `fogEnd`, so the map needed a landform standing on
 it, and it had one.
 
 **The ground keeps going, and `TerrainField` is what makes that true.** A
-`Borderland` states a `margin` (Harrowmead: 600 m, Sarab: 300) and the field continues past
+`Borderland` states a `margin` (Harrowmead: 600 m, Sarab and Cinderhaven: 300
+and 250, Hollowmere: 180) and the field continues past
 the authored grid for that distance: `heightAt` returns the clamped edge plus a
 closed-form roll (`borderRoll`) instead of the clamp alone, eased in over
 `Borderland.ease` so the boundary has no crease and every reader inside
@@ -1302,7 +1312,22 @@ so the country they cross rolls like the country they came from. A third of 600
 is 200, four times as far as anyone alive can get: the same fraction would have
 flattened the whole visible borderland into a radial smear of the map's own edge
 and spent the shape on pasture past the fog. Harrowmead states 40 m. Absent, the
-field is still `margin / 3` and every other map is bit-identical to what it was.
+field is still `margin / 3` and every map that says nothing is bit-identical to
+what it was.
+
+**Hollowmere states 30 for the MIRROR of that reason, and between them the two
+say what the field is actually measured against.** A third of its 180 m margin
+is 60, which is INSIDE the leash's 69 — so by Harrowmead's own test the default
+lands in the right place and the field need not be stated at all. What that test
+does not cover is a map whose FOG is nearer than its leash: Hollowmere's
+`fogEnd` is 78, so the borderland anybody ever sees is 78 m deep against a 69 m
+strip they are run out through, and a 60 m ramp spends four fifths of everything
+ever seen out there flattening it into a radial smear of the map's own edge. So
+the number to beat is whichever of the leash and `fogEnd` is SHORTER, because
+that is the borderland a player actually reads. At 2.6 and 30 m the roll's
+steepest gradient is 0.10; measured over the whole ring on a 4 m lattice the
+worst gradient the finished floor makes is 0.159, the extra coming from the
+clamped edge profile where the creek and the bog trench leave the square.
 The steepest gradient the roll can make is `(roll / 2) * (0.026 + 1.5 / ease)`,
 which at 3.2 and 40 m is 0.10 against a `MAX_WALKABLE_GRADE` of 0.4 — a player
 being run out of the map must never be stopped by the ground on the way.
@@ -1320,6 +1345,76 @@ draws to 25. The trade is frustum granularity on the ground you fight over, whic
 on a 400 m map stating a `fogEnd` of 520 is very nearly nothing: the whole floor
 is inside the view from the middle of the vale however it is cut.
 
+### What stands on a borderland
+
+**A margin with nothing on it is not "the country keeps going" — it is a plane
+fading to `fogColor`, which reads as a backdrop.** Both maps that dress one
+learned that the same way and neither found it in a screenshot of the boundary:
+what tells an eye that ground RECEDES is stuff standing ON it at intervals, so
+an unbroken floor reaching the horizon is a diorama on a table however far out
+its edge is. Harrowmead put twenty-one regions and ~874 trees out there;
+Hollowmere put sixteen and ~440.
+
+**Three rules are the same on both, and they are the ones a third map should
+copy.** *Nothing blocks* — a blocking prop is a collider outside the nav grid,
+geometry bots can neither see nor route around, and something to CATCH a player
+sprinting home against a countdown; omitting `blocking` emits no collider, no
+`WorldBox` and no row in the bake, so a whole borderland's dressing leaves the
+baked collision set byte-identical. *It is APPENDED to the scatter array* — one
+seeded stream serves the whole build in authored order, so a region spliced in
+higher up rerolls every field below it. *And it is not a RING*: a continuous belt
+round the map is the bowl the rim was removed for at one notch quieter, so each
+side gets the country the village already has on it and the CORNERS get their
+own regions, because a side is `size/2` from the middle and a corner is
+`size/√2` — lay four sides as sides and the four diagonals are left with the far
+tails of two of them.
+
+**Two rules INVERT, and both invert on `fogEnd` rather than on anything about
+the map.** The question is how far away the borderland is READ from, and that is
+`fogEnd` and not the margin:
+
+| | Harrowmead (`fogEnd` 520) | Hollowmere (`fogEnd` 78) |
+| --- | --- | --- |
+| read from | ~300 m, through half a fog | ~40 m, barely a quarter fogged |
+| smallest prop worth sowing | a tree; a fern at 300 m is a sub-pixel draw call | anything; a 2.2 m boulder at 60 m is still 19 px of a 720p frame |
+| bare collar past the square | 90 m, and it is a decision | none, and that is also a decision |
+
+**The collar is the sharper of the two.** Harrowmead keeps 90 m of bare ground
+because its hedges, walls, fences and ferns genuinely stop at the play square,
+so the dressing thinning out is the first thing a player notices about leaving
+— a cue the HUD cannot give — and because 90 m is past the leash's 69, so
+nothing alive ever stands in a non-blocking wood. Hollowmere can have neither:
+its own dead woods fill three corners to ±113 and its moor runs to z = -100, so
+a bare ring there is a firebreak cut round a valley that does not have one; and
+with a 78 m horizon a 90 m collar would put the entire block out of sight. So
+it gives the collar up, and **what makes that safe is the PROP rather than the
+distance**: this map's tree is a bare blighted trunk 0.7 m across with 4 cm
+twigs on it, so there is nothing to hide behind, and the one genuinely opaque
+prop out there — the boulders — is held past 25 m and is opaque BOTH ways in a
+strip a bot cannot enter and a player has ten seconds in. **A map giving up the
+collar owes that argument about its own prop**, and a map whose borderland tree
+has a canopy does not get to make it.
+
+**What it costs is draw calls, and the ceiling is the region count and not the
+prop count.** Each region merges to one or two meshes filed under one cull cell,
+so `WorldCulling` drops the lot whenever the camera is more than `fogEnd` off
+their bounds. Measured on Hollowmere across thirteen vantages, active meshes ran
++2 to +6 at the boundary and **−2 to −4 in the middle of the map**, because the
+rim's own ten segments went with it: 52 → 50 looking north from the square, 11
+→ 17 at the gatehouse, 2 → 7 at the leash limit. `scene.meshes` went 2,020 →
+2,039.
+
+**And one artifact is only found by removing a rim, which is that the rim was
+HIDING things.** Two of Hollowmere's dead trees sat at x ≈ -125, seven metres
+outside the play square: `MapBuilder.insideCollider` tests the boundary's 2 m
+plate and not a half-space, so a scatter region overhanging the square places
+props PAST the boxes rather than being rejected by them, and with an escarpment
+standing there they were buried in rock. They stand in open country now. The
+same map's bog rect ran to exactly z = -120 and stopped, which is invisible
+against a cliff and a straight waterline cut across 55 m of marsh without one.
+**A map losing its rim should look for what the rim was standing in front of**,
+and both of those were found by reading the boundary rather than by playing it.
+
 **What stops you leaving is `src/world/leash.ts`.** Cross the play square and a
 countdown starts on the HUD (`CONFIG.map.leash.seconds`, 10); come back and it
 clears outright rather than winding back, stay and it kills. It is a rule and not
@@ -1328,8 +1423,13 @@ invisible wall, which is a rule pretending to be a shape and is worse than
 either. **The leash is the FLOOR under the margin and not the whole of it**: a
 sprint is 6.9 m/s, so ten seconds is 69 m, and any borderland under that lets a
 player reach the boundary colliders, which is the invisible wall again. Above
-that floor the margin is the EYE's, and both maps that state one spend it there
-— Harrowmead's 600 m leaves 531 m of slack it will never use as GROUND.
+that floor the margin is the EYE's, and every map that states one spends it
+there — Harrowmead's 600 m leaves 531 m of slack it will never use as GROUND,
+and Hollowmere's 180 leaves 111. **Hollowmere's floor is the death cam's as
+well as the player's**, which is the one thing that arithmetic had not been
+asked for before: the orbit stands 3.4 m further out than the body it frames
+and a blast can throw that body further still, so 78 + 69 is 147 and the margin
+is 180.
 
 **The same class runs on both sides and only one of them is real.** The authority
 holds one per `NetPlayer` and steps it in `HeadlessGame` against the last

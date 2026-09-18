@@ -367,6 +367,21 @@ const placements: Placement[] = [
   { kind: "fence", x: 25.285, z: -19.321, rotY: Math.PI / 2, params: { length: 14 } },
   { kind: "woodpile", x: 20.478, z: -47.91, y: 0.05, rotY: 0.495 },
   { kind: "trough", x: 19.011, z: -51.848, y: 0.083 },
+
+  // ===== the two tracks out of the valley =====================================
+  // What the ridge's two cols used to be for. Each gatehouse road stopped three
+  // and a half metres short of the boundary, which was right while there was a
+  // crag standing there and is a road ending in a field now that there is not —
+  // and a track running out into the fog is the strongest thing on this map
+  // that says the country carries on. Appended so every index above is stable.
+  //
+  // Each one ABUTS the stub it continues rather than overlapping it: two
+  // carriageways of the same surface sharing ground are coplanar sheets in two
+  // meshes, which is a per-pixel tie whose winner changes as the camera moves.
+  // Both are `dirt`, which is a rank below the metalled stub inside the village
+  // (`ROAD_RANK`, `world/roads.ts`) and is what a road out of a dead valley is.
+  { kind: "road", x: -100, z: 153.5, params: { length: 74, width: 6.5, surface: "dirt" } },
+  { kind: "road", x: 105, z: -151, params: { length: 78, width: 6.5, surface: "dirt" } },
 ];
 
 const scatter: ScatterSpec[] = [
@@ -450,6 +465,126 @@ const scatter: ScatterSpec[] = [
   { prop: "deadTree", x: -110, z: 61, width: 14, depth: 50, count: 12, scale: [0.9, 1.3], blocking: true, clearance: 1.2 },
   { prop: "deadTree", x: 111, z: -50.19, radius: 11, count: 10, y: -0.365, scale: [0.8, 1.4], blocking: true, clearance: 0.55 },
   { prop: "barrel", x: 98.794, z: -84.998, radius: 6, count: 3, blocking: true, clearance: 0.55 },
+
+  // ===== THE COUNTRY BEYOND THE PLAY SQUARE ==================================
+  // Appended for the reason the pinewood above it was, and the same warning
+  // applies: this is the END of the stream, and a region spliced in above it
+  // re-rolls every field below.
+  //
+  // WHY IT IS HERE AT ALL. `borderland` takes the rim away, and a margin with
+  // nothing standing on it is not "the valley keeps going" — it is a plane
+  // fading to `fogColor`, which reads as a backdrop. What tells an eye that
+  // ground recedes is stuff standing ON it at intervals, and in this valley
+  // that is dead wood.
+  //
+  // THIS BLOCK IS READ FROM FORTY METRES, WHICH IS WHAT MAKES IT A DIFFERENT
+  // PROBLEM FROM HARROWMEAD'S. That map's borderland is looked at from three
+  // hundred metres through half a fog, so it holds nothing smaller than a tree
+  // (a fern at 300 m is a sub-pixel draw call) and nothing nearer than a 90 m
+  // collar. Here `fogEnd` is 78, so the borderland anybody ever sees is the
+  // 78 m nearest them and the far three fifths of the margin is fog insurance.
+  // Everything below is therefore at READING distance: a 5.4 m dead tree at
+  // 60 m subtends 46 px of a 720p frame and a 2.2 m boulder still subtends 19,
+  // so the understory is worth sowing out here where on Harrowmead it was not.
+  //
+  // AND THERE IS NO BARE COLLAR, which is the other rule that inverts. Harrow-
+  // mead keeps 90 m of it because its hedges, walls and ferns genuinely stop
+  // at its own edge, so the dressing thinning out is a cue the HUD cannot
+  // give. This map has no such cue to protect: the dead woods fill three of
+  // its four corners to ±113 and the moor runs to z = -100, so a bare ring
+  // here would be a firebreak cut round a valley that does not have one. The
+  // blight carries on instead.
+  //
+  // WHICH MEANS A LIVING PLAYER REACHES THIS, and Harrowmead's collar was
+  // buying one thing besides the cue: that nothing alive ever stands in a
+  // non-blocking wood. What makes giving that up safe here is the PROP. A
+  // blocking prop out here would be a collider outside the nav grid, geometry
+  // the bots can neither see nor route around, and — the sharp one — some-
+  // thing to CATCH a player sprinting home against a countdown, so none of
+  // this blocks and the baked collision set is unchanged by every tree of it.
+  // The thing a non-blocking prop can still do wrong is CONCEAL without
+  // stopping a round, and this map's tree is a bare blighted trunk 0.7 m
+  // across with 4 cm twigs on it: there is nothing to hide behind. Where a
+  // prop is genuinely opaque it is held out past 25 m — the boulders below —
+  // and even then it is opaque BOTH ways, in a strip a bot cannot enter and a
+  // player has ten seconds in. The brambles are the map's own non-blocking
+  // prop and are already sown that way inside the fight.
+  //
+  // IT IS NOT A RING, which is the bowl the escarpment was removed for one
+  // notch quieter. Each side is given the country the village already has on
+  // it: the NORTH is the Ashwood the logging camp is cutting and is the
+  // thickest side by a distance, the WEST carries the creek's stands and the
+  // pinewood on, the EAST is the holdings' rough grazing over a low swell the
+  // roll puts at z = -40, and the SOUTH is the moor and the bog — the wet,
+  // open, deliberately thinnest quarter, where what breaks the plane is
+  // standing water rather than timber. Stand at the Bog Docks and look south
+  // and the valley opens out; stand at the Chapel and look north and it closes.
+  //
+  // THE CORNERS get their own, for Harrowmead's reason at this map's scale: a
+  // side is 120 m of square from the middle and a corner is 170, so with four
+  // sides laid out as sides the diagonals are left with the far tails of two
+  // of them. A player standing on the corner of the square needs mass inside
+  // 60 m on that bearing or the quarter reads as an empty plane.
+
+  // NORTH — the Ashwood's own country, and the thickest side on the map.
+  { prop: "deadTree", x: 88, z: 142, width: 64, depth: 40, count: 32, scale: [0.9, 1.7], clearance: 0.55 },
+  { prop: "deadTree", x: 34, z: 172, width: 116, depth: 50, count: 68, scale: [0.9, 1.7], clearance: 0.55 },
+  // Straddles the Valeguard track on purpose: `findSpot` holds anything ROOTED
+  // off a carriageway, so the road cuts its own avenue through this stand
+  // rather than the layout carving a gap by hand.
+  { prop: "deadTree", x: -66, z: 148, width: 116, depth: 48, count: 56, scale: [0.9, 1.7], clearance: 0.55 },
+  // Stones on the cleared ground the loggers worked, out past 25 m.
+  { prop: "boulder", x: -30, z: 158, width: 100, depth: 24, count: 10, scale: [0.8, 1.3], clearance: 1.0 },
+  // The far line, and the one region on this map aimed at a player who is
+  // already dying: from the leash limit at z = 185 the fog reaches 263, and
+  // without this the last thing anybody sees on the way out is a plane.
+  { prop: "deadTree", x: 0, z: 214, width: 250, depth: 18, count: 28, scale: [0.9, 1.7], clearance: 0.55 },
+
+  // WEST — the creek's side. The roll digs a hollow opposite the mill at
+  // z = 20..60 and raises the ground again south of it, which is where these
+  // two stands sit either side of.
+  { prop: "deadTree", x: -146, z: 40, width: 44, depth: 90, count: 26, scale: [0.9, 1.3], clearance: 1.2 },
+  { prop: "bramble", x: -138, z: -10, width: 20, depth: 80, count: 22, scale: [0.8, 1.4] },
+  { prop: "deadTree", x: -152, z: -80, width: 56, depth: 70, count: 32, scale: [0.9, 1.7], clearance: 0.55 },
+
+  // SOUTH — the moor and the bog going on, and the quarter this block was
+  // hardest on. It is the OPEN side and it still has to be country: the first
+  // pass gave it one thin band at 180 m2 a trunk and the Redline gatehouse
+  // looked out at a plane with four trees on the edge of it. What the moor has
+  // that the woods do not is WATER — the bog carries on past the square and is
+  // the thing that breaks this plane — so the timber out here stays thinner
+  // than the north's (about 120 m2 a trunk against 80) and the pool does the
+  // work instead.
+  { prop: "deadTree", x: -50, z: -140, width: 130, depth: 40, count: 44, scale: [0.9, 1.7], clearance: 0.55 },
+  // The moor's own scrub in the near verge, where it is read from twenty
+  // metres rather than from sixty.
+  { prop: "bramble", x: -60, z: -132, width: 110, depth: 22, count: 26, scale: [0.8, 1.4] },
+  { prop: "boulder", x: -90, z: -164, width: 60, depth: 30, count: 8, scale: [0.8, 1.3], clearance: 1.0 },
+  // Corpse-fungus on the bog's far shore — the map's own light down there, and
+  // kept to the count the pools inside the square carry. It is EMISSIVE, so it
+  // is exempt from `WorldCulling`'s size gate and carries further than its
+  // geometry: six is a shore, thirty would be a runway.
+  { prop: "fungus", x: 26, z: -152, width: 56, depth: 30, count: 6, scale: [0.8, 1.4] },
+  // Between the bog's east shore and the Redline track, which is the one
+  // bearing a player leaving that gatehouse looks down.
+  { prop: "deadTree", x: 78, z: -150, width: 70, depth: 44, count: 26, scale: [0.9, 1.7], clearance: 0.55 },
+
+  // EAST — the holdings' rough grazing, on the swell the roll raises to +1.3 m
+  // around z = -40. A stand on a rise is the one thing on this map that reads
+  // as a crest rather than as a wall.
+  { prop: "deadTree", x: 146, z: -34, width: 44, depth: 76, count: 26, scale: [0.8, 1.4], clearance: 0.55 },
+  { prop: "bramble", x: 130, z: 40, width: 16, depth: 80, count: 18, scale: [0.8, 1.4] },
+
+  // THE CORNERS, and the two southern ones are the reason this list has counts
+  // rather than areas. A corner region has to fill the whole diagonal and not
+  // sit at the end of it: at radius 26 and twenty trees the south-west came
+  // back as a copse floating in a void with bare ground between it and the
+  // square, which is the empty-plane failure at a smaller scale. They are the
+  // woods' own density now, and wide enough to meet the two sides either side.
+  { prop: "deadTree", x: 158, z: 156, radius: 34, count: 40, scale: [0.9, 1.7], clearance: 0.55 },
+  { prop: "deadTree", x: -158, z: 152, radius: 30, count: 30, scale: [0.9, 1.7], clearance: 0.55 },
+  { prop: "deadTree", x: -156, z: -154, radius: 34, count: 40, scale: [0.9, 1.7], clearance: 0.55 },
+  { prop: "deadTree", x: 152, z: -152, radius: 30, count: 30, scale: [0.9, 1.7], clearance: 0.55 },
 ];
 
 const controlPoints: ControlPointDef[] = [
@@ -512,7 +647,31 @@ const water: WaterRect[] = [
   { x: -85, z: -10, width: 6.6, depth: 76, y: -0.246, sound: "stream" },
   // The bog: the pool the boathouse and jetties stand in. Stops short of the
   // boathouse ramp foot in the north and the Redline road in the east.
-  { x: 37, z: -95, width: 55, depth: 50 },
+  //
+  // **It runs OUT of the map, and that is a bug fix rather than dressing.**
+  // Its south edge used to sit exactly on the play square, which was invisible
+  // while an escarpment stood there and is a straight waterline cut across
+  // fifty-five metres of marsh now that one does not — read from the Bog Docks
+  // flag at thirty-five metres, which is barely a quarter fogged. The dug basin
+  // itself already carries on: `TerrainField` clamps the field's edge row
+  // outward, and row 0 is dug to -0.6 from x = 9 to x = 51, so the trench is
+  // out there whether the water is or not.
+  //
+  // **What makes the extension a shore rather than a longer rectangle is that
+  // nothing here draws one.** The bed past the square is that clamped row plus
+  // `borderRoll`, and the roll takes it from -0.8 at z = -140 to -1.5 at
+  // -170 while the undug ground east of x = 51 rises to meet the surface — so
+  // the pool deepens down the middle, dries out along its own east edge, and
+  // the waterline is wherever those two happen to cross. Nobody ever sees the
+  // far end: at 60 m past the square it is 68% fogged from the boundary and
+  // past `fogEnd` from the flag.
+  //
+  // It stays ONE rect rather than gaining a second in the borderland, because
+  // a seam between two rects is where the mirror changes and this one would
+  // have been laid straight across the bearing everybody looks down. What it
+  // costs is bed-map resolution — 512 texels a side whatever the extent, so
+  // 0.21 m a texel down z instead of 0.10 — which is the cheaper of the two.
+  { x: 37, z: -125, width: 55, depth: 110 },
   // The mire: the moor's own pool, out where the south-west crofts drowned.
   // One jetty runs into it; everything else around it is ruin.
   { x: -56, z: -96, width: 34, depth: 26 },
@@ -566,22 +725,97 @@ export const HollowmereLayout: MapLayout = {
   water,
   grass,
   /**
-   * The valley rim. Only the two cols are authored — everything else about the
-   * escarpment falls out of Ridge.ts's defaults.
+   * **No wall.** The valley is not closed by anything you can walk up to: the
+   * blight carries on for a hundred and eighty metres past the play square and
+   * what stops you is the leash, a countdown rather than a face of rock. See
+   * `Borderland`, and `world/leash.ts` for the rule.
    *
-   * Each col sits over the road that leaves the valley through a gatehouse, so
-   * the two home spawns look out through a saddle in the crag rather than at a
-   * blank rock face. Both roads run along Z, so the Valeguard gap is in the
-   * north rim and Redline's is in the SOUTH rim — not the east, though its
-   * gatehouse stands only 15 m off it.
+   * **The margin is the HORIZON's, and on this map the horizon is 78 m.** That
+   * is the whole arithmetic and it is the same one Harrowmead ran at nine times
+   * the distance: the cel shader's fog is LINEAR between `fogStart` and
+   * `fogEnd`, so a surface reaches exactly `fogColor` at `fogEnd` and not one
+   * metre before it, and ground that stops any nearer than that arrives on
+   * screen at some fraction of its own colour against a sky dome painted flat
+   * `fogColor` below the horizon — a line drawn round the world, which is the
+   * dead band `Ridge.ts` says a rim is there to cover. So the edge has to be
+   * `fogEnd` from the furthest an EYE gets: the play edge plus the leash's 69 m
+   * is 147, the death cam's own orbit stands 3.4 m further out than the body it
+   * frames and a blast can throw that body further still, and 180 is that
+   * rounded up. Every bearing is covered at once because a borderland is a
+   * square ring and not four strips.
+   *
+   * **`fogEnd` 78 is why this map gets away with a margin a quarter of
+   * Harrowmead's, and it is also the thing that makes the block below hard.**
+   * The borderland a living player can ever SEE is 78 m deep wherever they
+   * stand, so the far three fifths of this margin is insurance against the fog
+   * being retuned and nothing else, and everything that has to read as country
+   * has to do it inside the near 78.
+   *
+   * **`roll` is left at its default 2.6 and that is a decision.** The valley
+   * floor is flat — 6,003 of the heightfield's 6,561 vertices are exactly 0 —
+   * so the two swells `borderRoll` makes (about 370 m and 160 m) are already
+   * more shape than the map has inside it, and a bigger number would make the
+   * ground outside read as different country rather than as the same country
+   * going on.
+   *
+   * **`ease` is stated, and for the opposite reason Harrowmead states it.**
+   * The ramp defaults to a third of the margin, which here is 60 m — inside
+   * the leash's 69, so by Harrowmead's own test the default lands in the right
+   * place. What it misses is that on this map the leash strip and the VISIBLE
+   * borderland are nearly the same 70-odd metres, so a 60 m ramp spends four
+   * fifths of everything anybody ever sees out here flattening it into a
+   * radial smear of the map's own edge. 30 m puts full amplitude up while the
+   * ground is still only a third fogged. The gradient it can make is
+   * `(roll / 2) * (0.026 + 1.5 / ease)` = 0.10, against a `MAX_WALKABLE_GRADE`
+   * of 0.4 — a player run out of the map is never stopped by the ground.
+   *
+   * **What stands out there is the wood, and it does not stop at the square.**
+   * Harrowmead keeps a 90 m bare collar because its dressing genuinely stops
+   * at its own edge and the thinning-out is a cue the HUD cannot give. This
+   * map has no such cue to protect: the dead woods fill three of its four
+   * corners to ±113 and the moor runs to z = -100, so a bare ring here would
+   * be a firebreak cut round a valley that does not have one. The blight
+   * carries on instead, which is also the only thing that could close a
+   * horizon 78 m deep. The scatter array's last block is that country and
+   * carries the argument in full, including the one thing a collar was also
+   * buying — that nothing alive stands in a non-blocking wood — and why the
+   * bare dead tree is the prop that makes it safe to give up here.
+   */
+  borderland: { margin: 180, ease: 30 },
+  /**
+   * **No rim at all.** The valley ends in more valley, and what closes the
+   * horizon is the fog rather than a landform.
+   *
+   * `Ridge.ts` states the one condition on taking `form: "none"`: a map may
+   * only draw nothing over its own boundary if it has already laid something
+   * out there that reaches past `fogEnd` on every bearing, because the sky
+   * dome is flat `fogColor` below the horizon and `paintStars` culls the
+   * lowest 7.2 deg, so a boundary with nothing beyond it is a dead band of sky
+   * with the stars stopping in a line above it. Cinderhaven pays that with
+   * 2,300 m of ocean and Harrowmead with 600 m of pasture; this map pays it
+   * with the 180 m above, which is why the two fields are one decision and why
+   * shrinking that margin without putting a landform back is the thing not to
+   * do here.
+   *
+   * What was here was the default `escarpment` with two cols notched in it,
+   * one over each gatehouse road, so that a home spawn looked out through a
+   * saddle in the crag rather than at a blank rock face. It was a good rim and
+   * it was the wrong thing for a village this fog already encloses: at
+   * `fogEnd` 78 against a 240 m map the crag was only ever visible from the
+   * outer band of the map — from the middle of the square there is no horizon
+   * to hold up — so what the ring was actually doing was telling a player
+   * standing at a flag that the world ends thirty metres behind it. The two
+   * cols went with it, and so did the one thing they were for: the roads now
+   * leave through open country, and they carry on out there (see the two
+   * `borderland` stubs in `placements`) rather than stopping dead at a line.
+   *
+   * `EnvironmentSpec.ridgeColor` and `ridgeScreeColor` are still set and are
+   * now read by nothing on this map: `MapBuilder` only asks for them per
+   * segment and there are no segments. They stay because they are required
+   * fields, and because a rim is one line from coming back.
    */
   ridge: {
-    passes: [
-      // Above the Valeguard road, which runs north to z ≈ 116.5.
-      { x: -100, z: 120, width: 26 },
-      // The Redline track south. Narrower: the corner massif is close.
-      { x: 105, z: -120, width: 18 },
-    ],
+    form: "none",
   },
   // Fixed so the dressing — and the colliders blocking scatter emits, and so
   // the nav graph — is identical on every boot. Changing it rerolls the whole

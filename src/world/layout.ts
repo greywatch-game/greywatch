@@ -274,9 +274,9 @@ export interface RidgeSpec {
 /**
  * The ground PAST the play square, on a map whose boundary is open.
  *
- * Absent — which is every map but Harrowmead — and the boundary is the rim: four
- * colliders at `±size/2` and an escarpment drawn over them, and there is
- * nothing outside because nothing can get outside. Present, and the four
+ * Absent — which is only Greyfen and Coldharbour now — and the boundary is the
+ * rim: four colliders at `±size/2` and an escarpment drawn over them, and there
+ * is nothing outside because nothing can get outside. Present, and the four
  * colliders move out to `±(size/2 + margin)`, the floor is tessellated the whole
  * way with them, and what stops a player leaving is the leash
  * (`CONFIG.map.leash`) rather than a box.
@@ -335,6 +335,18 @@ export interface Borderland {
    * for that reason; Sarab's margin is the horizon too, but its roll reaches
    * full amplitude at a hundred metres against three hundred of borderland,
    * and it was authored looking at that.
+   *
+   * **Hollowmere states it for the MIRROR of Harrowmead's reason, which is
+   * what the field is actually for.** Its `fogEnd` is 78, so its margin is
+   * 180 and a third of that is 60 — INSIDE the leash's 69, which is where
+   * Harrowmead's argument says the ramp belongs. What that argument does not
+   * cover is a map whose fog is nearer than its leash: the borderland anybody
+   * can SEE is 78 m deep and the strip they are run out through is 69, so a
+   * 60 m ramp spends four fifths of everything ever seen out there flattening
+   * it. 30 puts full amplitude up while the ground is still only a third
+   * fogged. So the test is not the default's fraction and not the leash — it
+   * is whichever of the leash and `fogEnd` is SHORTER, because that is the
+   * borderland a player actually reads.
    */
   ease?: number;
 }
