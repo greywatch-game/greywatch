@@ -213,6 +213,63 @@ export interface RidgePass {
 }
 
 /**
+ * A stretch of boundary the landform is NOT DRAWN OVER at all.
+ *
+ * **It is `form: "none"` scoped to an arc, and it rests on exactly the same
+ * claim**: a map may draw nothing over its own boundary only where it has
+ * already laid something out there that reaches past `fogEnd`, because the sky
+ * dome is flat `fogColor` below the horizon and `Sky` culls the lowest 7.2 deg
+ * of stars. `none` says that of every bearing at once; a mouth says it of one
+ * side, and the map owes the same picture there that the whole-ring form owes
+ * everywhere. Coldharbour is what it was added for — a sea laid off one side
+ * and hills on the other three — and `Ridge.ts` carries the argument.
+ *
+ * **A mouth is NOT a deep `RidgePass`, and the difference is the one thing
+ * that makes a pass safe.** A pass cuts the crest's ANGLE and is then
+ * re-clamped against `MIN_SLOPE`, so it is always a saddle and can never open
+ * a hole in the sky; that clamp is exactly what a mouth has to get past. So a
+ * mouth does not touch the angle at all — it shrinks the whole landform, its
+ * REACH along with its height, until the ring collapses onto its own toe and
+ * emits nothing. What that buys beyond an on/off switch is the ENDS: the
+ * hills grow back out of the ground over `ease` rather than stopping at a
+ * face, which is what a headland running down into the sea looks like.
+ */
+export interface RidgeMouth {
+  /**
+   * A point on the boundary the mouth is centred on — the same convention
+   * `RidgePass` uses, and placed by the nearest station for the same reason.
+   */
+  x: number;
+  z: number;
+  /**
+   * How much boundary is fully open, in metres.
+   *
+   * **Measured along the CREST's own curve rather than along the boundary
+   * square**, which is the one number here that has to be worked out rather
+   * than eyeballed, and the reason is the corners. The crest stands `reach *
+   * profile[CREST_RING]` metres outboard, so the curve it traces is the square
+   * offset outward — four straight sides and a quarter circle at each corner —
+   * and a corner therefore contributes `crestOut * pi / 2` of run that the
+   * boundary itself contributes none of. On the downs that is 236 m a corner
+   * against a 4 m square edge. A width authored against the square would put
+   * the taper most of a side away from where it was meant to be.
+   */
+  width: number;
+  /**
+   * How far the landform takes to rise back out of the ground at each end, in
+   * the same metres. Absent means a quarter of `width`.
+   *
+   * It is the whole shape of the thing at the ends: over the ramp the crest,
+   * the reach and the shoulder all come up together, so the range grows from
+   * nothing rather than being cut off, and where it crosses the waterline is
+   * a headland. Short and the hills end in a wall standing in the sea; long
+   * and the highest ground is a long way from the coast, which is what real
+   * country tends to look like.
+   */
+  ease?: number;
+}
+
+/**
  * The valley rim: the landform that closes the map off. SHAPE only — the rim's
  * colours are the environment's (`ridgeColor`/`ridgeScreeColor`), the same
  * split as the floor's `terrain` here against `floorColor` there. That is not
@@ -249,6 +306,10 @@ export interface RidgeSpec {
    *   is a band of empty sky under a starless one. Cinderhaven is the map it
    *   was added for — an island whose ocean runs out past the fog wall on
    *   every bearing — and `Ridge.ts` carries the argument in full.
+   *
+   * `mouth` below is this same choice taken one side at a time; a map whose
+   * horizon is closed by a landform on three bearings and by water on the
+   * fourth states `downs` here and a mouth there.
    */
   form?: "escarpment" | "downs" | "none";
   /**
@@ -264,6 +325,14 @@ export interface RidgeSpec {
   reach?: number;
   passes?: RidgePass[];
   /**
+   * Stretches of boundary the landform is not drawn over at all. See
+   * `RidgeMouth`: a pass is a saddle in the rim and a mouth is the rim not
+   * being there, and the two are different fields because they are different
+   * claims — one about the shape of a crest, one about what closes the
+   * horizon.
+   */
+  mouth?: RidgeMouth[];
+  /**
    * The rim's own seed. Deliberately separate from `seed` below: one stream
    * serves the whole map build in authored order, so drawing from it here would
    * reroll every scatter region on the map.
@@ -274,7 +343,8 @@ export interface RidgeSpec {
 /**
  * The ground PAST the play square, on a map whose boundary is open.
  *
- * Absent — which is only Coldharbour now — and the boundary is the
+ * Absent — which no shipped map is any more, Coldharbour having been the last
+ * and given it up for a coast — and the boundary is the
  * rim: four colliders at `±size/2` and an escarpment drawn over them, and there
  * is nothing outside because nothing can get outside. Present, and the four
  * colliders move out to `±(size/2 + margin)`, the floor is tessellated the whole

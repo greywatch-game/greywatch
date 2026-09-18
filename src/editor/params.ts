@@ -240,6 +240,11 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     num("depth", "depth", 1.4, 0.8, 6, 0.2),
   ],
   barrier: [num("length", "length", 6, 3, 40, 1)],
+  quay: [
+    num("length", "run", 40, 8, 120, 1),
+    num("depth", "deck", 4, 2, 12, 0.5),
+    num("height", "drop", 6, 2, 20, 0.5),
+  ],
   streetLight: [num("height", "height", 7.5, 4, 12, 0.5), bool("lit", "lit")],
   monument: [num("width", "width", 11, 5, 20, 0.5)],
   car: [

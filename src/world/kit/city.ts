@@ -189,6 +189,8 @@ import {
   DARK_CONCRETE,
   ENAMEL,
   IRON,
+  KERB,
+  KERB_WORN,
   LAMP_RED,
   LAMP_SODIUM,
   PLANK,
@@ -1923,6 +1925,79 @@ export function buildBarrier(
     b.box(0.36, h - 0.34, unit, 0, 0.34 + (h - 0.34) / 2, z, CONCRETE);
   }
   b.block({ w: 0.62, h, d: len, x: 0, y: h / 2, z: 0 });
+  return b;
+}
+
+
+/**
+ * A QUAY: the retaining mass a waterfront city stands on, the parapet along its
+ * edge and the bollards behind it. Runs along local X with the WATER on local
+ * -Z, which is the kit's front.
+ *
+ * **It is a RETAINING wall, so the thing it is built against is the floor and
+ * not the water.** The mass hangs DOWN from the placement's own ground plane —
+ * the deck's top face is y = 0 — and a map lays it exactly where its
+ * heightfield falls away, so the street carries on over the drop instead of
+ * stopping at a lip. That is the whole reason this is a structure rather than
+ * a terrace: a terrace stands ON the ground and this one stands IN a hole in
+ * it, and everything below the coping is there to be seen from a boat.
+ *
+ * **The parapet is a `Build.guard` and it is load-bearing in the literal
+ * sense**: there is no swimming in this game, so a frontage a body can walk
+ * off is a body underwater on the seabed with the leash counting down. It is
+ * also the one thing here that has to be CONTINUOUS — a 40 m run with a gap
+ * between it and the next one is a gap somebody finds — so a caller lays these
+ * end to end at exactly `length` apart and the pedestals fall where they fall.
+ *
+ * **The bollards are `strut`s and the coping and the pedestals are neither.**
+ * A bollard is iron a round stops on and no part of a body's problem, which is
+ * the pair `Build.strut` exists for; a coping cap is 14 cm of stone on top of
+ * a rail whose collider already owns that line, and giving it one of its own
+ * would put a second box round the thing the guard is already standing off the
+ * edge to avoid.
+ */
+export function buildQuay(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  p: BuildParams = {},
+): Structure {
+  const b = new Build(scene, mats, "quay");
+  const len = p.length ?? 40;
+  /** How far the deck reaches out over the water from the ground's own edge. */
+  const deck = p.depth ?? 4;
+  /** How far the face reaches below the deck — under the bed, not down to it. */
+  const drop = p.height ?? 6;
+  /** Chest-high, and deliberately under `cover.crouchHeight` — see the layout. */
+  const PARAPET = 1.0;
+
+  // The mass. Top face at y = 0, so it is the street continuing rather than a
+  // step onto something; one collider, because a body only ever meets its top.
+  b.box(len, drop, deck, 0, -drop / 2, -deck / 2, CONCRETE);
+  b.block({ w: len, h: drop, d: deck, x: 0, y: -drop / 2, z: -deck / 2 });
+
+  // The parapet, standing outboard of the seaward face for `Build.guard`'s own
+  // reason, and the coping cap over it — wider than the rail, which is what
+  // stops 0.16 m of collider reading as a sheet of card on edge.
+  b.guard("-z", -deck, 0, len, 0, { height: PARAPET, color: CONCRETE });
+  b.box(len, 0.16, 0.72, 0, PARAPET + 0.08, -deck - 0.08, KERB_WORN);
+
+  // Pedestals at the quarter points: the parapet's own rhythm, and the thing
+  // that makes a 40 m run read as built rather than extruded.
+  for (let i = 1; i < 4; i++) {
+    const x = -len / 2 + (i * len) / 4;
+    b.box(0.72, PARAPET + 0.3, 0.66, x, (PARAPET + 0.3) / 2, -deck - 0.08, CONCRETE);
+    b.box(0.86, 0.16, 0.8, x, PARAPET + 0.38, -deck - 0.08, KERB_WORN);
+  }
+
+  // Mooring bollards, set back a metre and a half so there is room to work a
+  // rope round one, and a course of kerb along the back of the deck where the
+  // paving changes.
+  for (let i = 0; i < 4; i++) {
+    const x = -len / 2 + (i + 0.5) * (len / 4);
+    b.strut(0.3, 0.62, 0.3, x, 0.31, -deck + 1.5, ALLOY);
+    b.cyl(0.17, 0.52, 0.38, 8, x, 0.7, -deck + 1.5, ALLOY);
+  }
+  b.box(len, 0.06, 0.5, 0, 0.03, -0.25, KERB);
   return b;
 }
 

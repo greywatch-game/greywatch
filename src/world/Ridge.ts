@@ -28,6 +28,17 @@
  * made of. It is the first line of `ridgeSegments` and the argument for it is
  * there.
  *
+ * **And `RidgeSpec.mouth` is that same `none` asked of ONE ARC**, for a map
+ * whose horizon is closed by a landform on some bearings and by something it
+ * laid out itself on others. It is not a deep pass and could not be one: a
+ * pass cuts the crest ANGLE and is re-clamped against `MIN_SLOPE`, which is
+ * precisely the clamp that stops a pass opening a hole in the sky. A mouth
+ * shrinks the whole landform instead — the crest, the REACH and the shoulder
+ * together — so the ring converges onto its own toe and `RingAccum.quad`
+ * drops what is left of it. `shrink` is that factor, it is 1 at every station
+ * on a map that states no mouth, and that is what keeps this bit-identical
+ * for the five maps that do not.
+ *
  * Invariants:
  * - **Nothing it emits is inside `±size/2`.** The band runs from the boundary
  *   OUTWARD, where there is no playable space at all, so the whole landform
@@ -69,7 +80,7 @@
  *   extrudes along normals `VertexData.transform` does not renormalise.
  */
 import { VertexData } from "@babylonjs/core";
-import type { RidgePass, RidgeSpec } from "./layout";
+import type { RidgeMouth, RidgePass, RidgeSpec } from "./layout";
 import type { TerrainField } from "./TerrainField";
 import { mulberry32 } from "./rng";
 
@@ -376,6 +387,83 @@ function passWindow(
 }
 
 /**
+ * How far round the CREST's own curve each station stands, and what that curve
+ * measures in total.
+ *
+ * A mouth's width is stated in these metres rather than in metres of boundary,
+ * and the CORNERS are why. The crest stands `crestOut` outboard, so the curve
+ * it traces is the boundary square offset outward — four straight sides and a
+ * quarter circle at each corner — while a corner fan is stations at ONE point
+ * with the normal swept through them, contributing a quarter circle of run
+ * that the square itself contributes nothing of. On the downs that is 236 m a
+ * corner against a 4 m square edge, so a width authored against the boundary
+ * would put the taper most of a side away from where it was meant to be.
+ *
+ * It is the same offset curve `cornerStations` is derived from, read the other
+ * way round — which is why the stations come out ~`STATION_SPACING` apart here
+ * as well as along a side.
+ */
+function crestArc(
+  stations: Station[],
+  crestOut: number,
+): { at: number[]; total: number } {
+  const span = (a: Station, b: Station): number =>
+    Math.hypot(
+      b.x + b.nx * crestOut - (a.x + a.nx * crestOut),
+      b.z + b.nz * crestOut - (a.z + a.nz * crestOut),
+    );
+  const at = new Array<number>(stations.length);
+  let run = 0;
+  for (let i = 0; i < stations.length; i++) {
+    if (i > 0) run += span(stations[i - 1], stations[i]);
+    at[i] = run;
+  }
+  // The ring closes, so the total takes in the step back to station 0.
+  return { at, total: run + span(stations[stations.length - 1], stations[0]) };
+}
+
+/**
+ * How OPEN the boundary is at each station for one mouth: 1 where the landform
+ * is not to be drawn at all, 0 where it stands at full height, and smoothed
+ * between.
+ *
+ * Smoothstep rather than `passWindow`'s cosine and rather than a straight
+ * ramp, for the reason the borderland eases its own roll: this factor
+ * multiplies the crest height and the reach together, so a C0 join would put a
+ * crease down the hillside exactly where a headland meets the water, which is
+ * the one part of the ramp anybody is looking at.
+ */
+function mouthWindow(
+  mouth: RidgeMouth,
+  stations: Station[],
+  arc: { at: number[]; total: number },
+): (i: number) => number {
+  // Placed by the nearest station to the authored point, measured on the TOE —
+  // `passWindow`'s convention, so the two fields are authored the same way
+  // even though their widths are measured along different curves.
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < stations.length; i++) {
+    const d = (stations[i].x - mouth.x) ** 2 + (stations[i].z - mouth.z) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  const half = Math.max(0, mouth.width) / 2;
+  const ease = Math.max(1e-3, mouth.ease ?? mouth.width / 4);
+  const centre = arc.at[best];
+  return (i: number): number => {
+    let d = Math.abs(arc.at[i] - centre);
+    if (d > arc.total / 2) d = arc.total - d; // the ring wraps
+    const t = (half + ease - d) / ease;
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    return t * t * (3 - 2 * t);
+  };
+}
+
+/**
  * Accumulates the rim's quad strips.
  *
  * Winding, derived and checked against Babylon's `ComputeNormals`, which uses
@@ -588,6 +676,8 @@ export function ridgeSegments(
     passWindow(p, stations, count),
   );
   const depths = (spec?.passes ?? []).map((p) => p.depth ?? 0.45);
+  const arc = crestArc(stations, profile[CREST_RING][0] * reach);
+  const mouths = (spec?.mouth ?? []).map((m) => mouthWindow(m, stations, arc));
 
   // --- per-station profile parameters -------------------------------------
   const crest: number[] = [];
@@ -595,9 +685,26 @@ export function ridgeSegments(
   const plinth: number[] = [];
   const ledge: number[] = [];
   const groundY: number[] = [];
+  /**
+   * What is LEFT of the landform at each station — 1 everywhere on a map that
+   * states no mouth, and 0 where one is fully open.
+   *
+   * It multiplies the crest, the REACH and the shoulder rather than any one of
+   * them, and that is the whole mechanism. A hill whose height alone went to
+   * zero would leave a 310 m sheet of rock lying flat on the floor along the
+   * opening; one whose reach alone went to zero would leave a spike. Both
+   * together collapse the column onto its own toe, where every quad it makes
+   * is degenerate and `RingAccum.quad` already drops those.
+   */
+  const shrink: number[] = [];
   for (let i = 0; i < count; i++) {
     const u = i / count;
     const st = stations[i];
+
+    let open = 0;
+    for (const m of mouths) open = Math.max(open, m(i));
+    const left = 1 - open;
+    shrink.push(left);
 
     let pass = 0;
     let slope = baseSlope + variance * (slopeNoise(u) * 2 - 1);
@@ -614,7 +721,7 @@ export function ridgeSegments(
     // angle is measured on — solved directly rather than iterated.
     const crestOut = profile[CREST_RING][0] * reach;
     const rCrest = st.r + crestOut;
-    crest.push(rCrest * slope);
+    crest.push(rCrest * slope * left);
 
     // A pass is a SADDLE, not a cutting. Pulling the face in and raising the
     // basal band turns it into a sheer slot at the boundary, which reads as
@@ -629,7 +736,9 @@ export function ridgeSegments(
     // country. The rim's variation on this form belongs in the crest's HEIGHT,
     // which `slopeVariance` already owns.
     bulge.push(
-      (downs ? 0.88 + 0.26 * bulgeNoise(u) : 0.7 + 0.85 * bulgeNoise(u)) * reach,
+      (downs ? 0.88 + 0.26 * bulgeNoise(u) : 0.7 + 0.85 * bulgeNoise(u)) *
+        reach *
+        left,
     );
     if (downs) {
       // The shoulder, not a plinth: a swell in the pasture. It still eases down
@@ -643,7 +752,7 @@ export function ridgeSegments(
       // shoulder has to clear that or the floor overhangs the hill it runs into
       // and leaves a notch along the seam. 0.55 of `DOWNS_SHOULDER` is 0.33.
       const swell = DOWNS_SHOULDER * (0.55 + 0.45 * plinthNoise(u));
-      plinth.push(swell * (1 - 0.55 * pass));
+      plinth.push(swell * (1 - 0.55 * pass) * left);
       // No ledges: the whole point of this form is a face with nothing
       // horizontal in it, and a wobble of a few centimetres on rings whose
       // normals are already near the sky fill's band edge is the one thing
@@ -657,7 +766,9 @@ export function ridgeSegments(
       // hard-cover height (1.7). The wander and the pass both ride ABOVE that
       // floor — a col eases the band down toward it, never through it.
       const band = PLINTH_FLOOR + 1.2 + 1.2 * (plinthNoise(u) * 2 - 1);
-      plinth.push(PLINTH_FLOOR + (band - PLINTH_FLOOR) * (1 - 0.55 * pass));
+      plinth.push(
+        (PLINTH_FLOOR + (band - PLINTH_FLOOR) * (1 - 0.55 * pass)) * left,
+      );
       ledge.push((ledgeNoise(u) * 2 - 1) * 0.06);
     }
 
@@ -683,17 +794,25 @@ export function ridgeSegments(
       const acc = new RingAccum();
       // One extra station so neighbouring segments share an edge; the ring
       // wraps, so the last segment's overhang is station 0.
-      const cols: number[][] = [];
+      // `null` where a mouth has taken the landform away outright: the column
+      // is a fan of degenerate quads, and the strips either side of it have to
+      // BREAK rather than bridge across the opening.
+      const cols: (number[] | null)[] = [];
       for (let k = from; k <= to; k++) {
         const i = k % count;
         const st = stations[i];
+        if (shrink[i] <= 1e-3) {
+          cols.push(null);
+          continue;
+        }
         const col: number[] = [];
         for (let j = j0; j <= j1; j++) {
           const [off, frac] = profile[j];
           let y: number;
           if (j === 0) y = groundY[i] - 0.4;
           else if (j === 1) y = groundY[i] + plinth[i];
-          else if (j === profile.length - 1) y = groundY[i] + frac * 24;
+          else if (j === profile.length - 1)
+            y = groundY[i] + frac * 24 * shrink[i];
           else {
             const wob = j === 3 || j === 5 || j === 7 ? ledge[i] : 0;
             y = groundY[i] + (frac + wob) * crest[i];
@@ -703,7 +822,12 @@ export function ridgeSegments(
           // changes nothing there; on the downs it keeps the shoulder's five
           // metres the same five metres all the way round, so what varies at
           // the foot of the hill is its height and not where it starts.
-          const t = off * (j <= 1 ? 1 : bulge[i]);
+          // Rings 0 and 1 are the band and are never BULGED, for the reason
+          // below — but they are still SHRUNK by a mouth, or the shoulder's
+          // five metres would still be five metres after everything above
+          // them had gone, and lay a strip of rock along the floor the whole
+          // length of the opening.
+          const t = off * (j <= 1 ? shrink[i] : bulge[i]);
           // The crest ring is shared with the first back strip, so its normal
           // is a blend — the winding check takes the rings below it only.
           col.push(
@@ -713,13 +837,11 @@ export function ridgeSegments(
         cols.push(col);
       }
       for (let c = 0; c + 1 < cols.length; c++) {
-        for (let j = 0; j + 1 < cols[c].length; j++) {
-          acc.quad(
-            cols[c][j],
-            cols[c + 1][j],
-            cols[c + 1][j + 1],
-            cols[c][j + 1],
-          );
+        const a = cols[c];
+        const b = cols[c + 1];
+        if (!a || !b) continue;
+        for (let j = 0; j + 1 < a.length; j++) {
+          acc.quad(a[j], b[j], b[j + 1], a[j + 1]);
         }
       }
       if (acc.empty) continue;

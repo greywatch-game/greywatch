@@ -1,7 +1,8 @@
 /**
  * coldharbour/environment.ts — Coldharbour's EnvironmentSpec: palette, the
  * long-range haze that stands in for fog, a low afternoon sun, the shafts it
- * throws, a warm dust field, no water. Pure data — consumed by
+ * throws, a warm dust field, and the sea off its southern side. Pure data —
+ * consumed by
  * applyEnvironment/Sky/Volumetrics/Atmosphere. Fixture light POSITIONS live in
  * layout.ts.
  */
@@ -104,23 +105,51 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    */
   floorSurface: "dirt",
   /**
-   * The bluffs the city sits under. Read only by the rim — and on this map you
-   * can actually SEE the rim, from anywhere, which is new: on both valleys it
-   * is `fogColor` past 78 m and this colour only at the two home spawns. So it
-   * is picked as a landform at a distance rather than as rock up close, and it
-   * is deliberately close in value to the haze it stands in.
-   */
-  ridgeColor: "#6a7078",
-  /**
-   * The rim's foot, melting into `floorColor`. Warmer and near it, per the
-   * EnvironmentSpec note: a bright tone here comes back chalky on the ledges.
+   * The HILLS behind the city. Read only by the rim, and this map can actually
+   * see its rim from anywhere — on both valleys it is `fogColor` past 78 m and
+   * this colour only at the two home spawns — so it is picked as a landform at
+   * a distance rather than as rock up close, and it is deliberately close in
+   * value to the haze it stands in.
    *
-   * Warmed with the hour — this is the band of the rim a low sun actually
-   * rakes. Note it is BAKED into the rim material rather than pushed as a
-   * uniform, so unlike everything else in this block it needs the map rebuilt
-   * and the editor's work light will not show it.
+   * **It went green when the rim became `downs`, and then most of the way back
+   * again, which is the part worth writing down.** It was #6a7078, a grey
+   * crag, and a crag is what an escarpment is; a hillside under an afternoon
+   * haze is neither grey nor rock. But #6d7462 was tried next and was a
+   * MISTAKE of a kind this map is especially exposed to: a `downs` face is one
+   * unbroken surface a hundred metres tall with nothing standing on it, so
+   * whatever colour it is arrives as a single flat band across a third of the
+   * frame — and a green band over the dun one below it read as two strips of
+   * card rather than as a hill.
+   *
+   * So the hue stays and the SATURATION goes. Both tones sit within a few
+   * points of `floorColor` in value now and a few of each other, which leaves
+   * the hill separating from the SKY at its crest — the one edge that has to
+   * read — and letting the fog do the rest. What puts shape back into the face
+   * is not a colour at all: it is the stands of pine sown across the
+   * borderland in front of it (`layout.ts`'s last scatter block), which is
+   * Harrowmead's lesson about a flat margin applied to a tall one.
    */
-  ridgeScreeColor: "#71685c",
+  ridgeColor: "#6b6e5e",
+  /**
+   * The hills' lower ground, melting into `floorColor`. Warmer and near it,
+   * per the EnvironmentSpec note: a bright tone here comes back chalky.
+   *
+   * **On the downs this is most of the visible hill rather than a hem of
+   * talus** — `DOWNS_SCREE_RING` cuts the two tones five rings up instead of
+   * two, because on a slope rising a hundred metres over its own run the foot
+   * IS the lower pasture. So it carries more weight than it did under the
+   * escarpment, and the contract's own instruction — that it MELT into
+   * `floorColor` — stops being a nicety and becomes the whole of the test. A
+   * dun light enough to read as sunlit chalk (#7a7059 was tried) puts a hard
+   * horizontal step across the map where the hill's foot meets the plain, 680
+   * m wide and dead straight, which is the one edge on this boundary that must
+   * not be visible at all.
+   *
+   * Note it is BAKED into the rim material rather than pushed as a uniform, so
+   * unlike everything else in this block it needs the map rebuilt and the
+   * editor's work light will not show it.
+   */
+  ridgeScreeColor: "#5e5b4e",
   /**
    * Unread. `accentColor` is declared here, set by all three maps, and consumed
    * by nothing in the codebase — left alone deliberately rather than pressed
@@ -449,8 +478,42 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    * this block's.
    */
   groundSpec: { color: "#ffdcae", intensity: 0.05, shininess: 34 },
-  // No water: the rect list has no entry, so a palette here would be dead
-  // weight. See `WaterEnvSpec` — omitting it is what leaves the map dry.
+  /**
+   * THE SEA, which this map now has and which is the whole southern horizon.
+   *
+   * **Every one of these is judged against the fact that almost none of it is
+   * ever seen NEAR.** The shore is the quay's own face, the water starts two
+   * metres below the coping and the next thing out there is 2,700 m of open
+   * water under `fogStart` 130 — so what this palette mostly decides is what a
+   * band across the bottom of the frame looks like at half fog and beyond, not
+   * what a reach looks like from a bank.
+   *
+   * `deepColor` is therefore the number that matters and it is dark and cold,
+   * against a sky and a fog that are both warm: a sea that met this haze at
+   * its own value would vanish into it and take the horizon line with it,
+   * which is the one thing the water is here to draw. `shallowColor` is nearly
+   * unreachable — the bed is 3.8 m down everywhere and `CONFIG.water.depthMax`
+   * is 1.5 — and is set as the colour the body grades toward under the quay
+   * rather than as a shoal anybody will stand in.
+   *
+   * **`glint` is the field to be careful with on this map and it is held
+   * LOW.** The sun is 24 degrees at azimuth 225, which puts it straight down
+   * the water: the term is `lightColor * specStrength * glint` added RAW past
+   * the cel shader's soft shoulder, and a key of 1.12 in #ffd9a0 over half a
+   * square kilometre of surface is the brightest thing in this frame by a
+   * distance. 0.35 keeps the crests reading as a moving surface without the
+   * sea becoming the light source; the broad glare off a low sun is the
+   * MIRROR's job (`CONFIG.water.sunHalo`) and arrives through the Fresnel
+   * where the geometry says it should.
+   */
+  water: {
+    deepColor: "#33433f",
+    shallowColor: "#566d68",
+    foamColor: "#c8cdc2",
+    bedColor: "#3a3630",
+    mirror: 0.7,
+    glint: 0.35,
+  },
   /**
    * The civic square's lawn, and the one green thing on the map.
    *

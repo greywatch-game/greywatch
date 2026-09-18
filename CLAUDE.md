@@ -750,9 +750,10 @@ so that a map saying nothing is unaffected:
 | `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in all three callers of `terrainPatches` — `buildValley`, the server's `terrainColliders` and the editor's brush — or the two sides tessellate different floors |
 | `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` is FULLY LIT outside the window, the last `edgeFade` of the volume ramping back to it — so an undersized one puts that transition on ground the player can see, and an OVERSIZED one moves it not at all while costing texel density (`ShadowSystem` DEV-warns) |
 
-**A map is CLOSED one of two ways, and the second has no wall at all** — five
-of the six, Coldharbour being the one left on a rim. The rim is four
-boxes at `±size/2` under `Ridge`'s escarpment. `MapLayout.borderland` is
+**A map is CLOSED one of two ways, and NO map takes the first one any more** —
+Coldharbour was the last and gave it up for a coast. That way is four boxes at
+`±size/2` with `Ridge`'s escarpment over them, and it is still what a layout
+stating nothing gets. `MapLayout.borderland` is
 the other: the floor carries on for a `margin` past the play square
 (`TerrainField` continues the field, so nav, the roads, the grass and
 **`server/validate.ts`** agree for free) and what stops you leaving is
@@ -763,20 +764,27 @@ to avoid — and **`Borderland.ease`, the roll's ramp, is measured against the
 PLAYER while the margin is not**, so a map sizing its margin by the horizon
 states one. It kills on the AUTHORITY and only draws on a client, and **bots are
 never leashed**, the nav graph stopping at the play square. **What a boundary is
-closed BY and what it is closed WITH are two questions**: `RidgeSpec.form` takes
-`none` for a map that has laid something out there already — an ISLAND stating
-its horizon in water, or a `borderland` bought past the map's own `fogEnd`, where
-the ground arrives at the horizon as flat `fogColor` with no step for a landform
-to cover. **What a `none` owes is that reach from EVERYWHERE a player can be**,
-and the fog is LINEAR: a margin short of it draws an edge rather than softening
-one.
+closed BY and what it is closed WITH are two questions, and the answer may
+differ PER BEARING**: `RidgeSpec.form` takes `none` for a map that has laid
+something out there already — an ISLAND stating its horizon in water, or a
+`borderland` bought past the map's own `fogEnd`, where the ground arrives at
+the horizon as flat `fogColor` with no step for a landform to cover — and
+`RidgeSpec.mouth` is that same claim scoped to an ARC, for a map closed by a
+landform on some sides and by what it laid out itself on others. **What either
+owes is that reach from EVERYWHERE a player can be**, and the fog is LINEAR: a
+margin short of it draws an edge rather than softening one. **A mouth is NOT a
+deep `RidgePass`** — a pass cuts the crest's angle and is re-clamped against
+the rim's minimum slope, which is the clamp that stops it opening a hole in the
+sky and is exactly the clamp a mouth has to get past.
 
 **The shipped maps are Hollowmere** (a night village; no wall and no rim, and
 its whole horizon costs 180 m of margin because `fogEnd` is 78 — that number is
 the FOG's, not the map's), **Greyfen** (a jungle valley; no wall and no rim
 either, on the same 180 m for the same `fogEnd`, and the map where a river runs
 out through the margin), **Coldharbour** (a
-business district — what the first three overrides exist for), **Harrowmead**
+business district on a COAST — `size: 320` inside 180 m of ground, hills on
+three sides and the open sea across the fourth, and what the first three
+overrides exist for), **Harrowmead**
 (`size: 400` inside 1600 m of ground, no wall and no rim — the country runs out
 into the fog), **Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
@@ -878,8 +886,9 @@ heightfield and the road slabs cut against it, the winding trap that makes a
 floor vanish, the builder and two-pass merge rules, the harbour kit and the
 island's floor, the road ladder's arithmetic, the layout gotchas that have
 already cost time, the valley rim's contract with the sky, the borderland, the
-two rim forms and the leash, and the margin that IS the landform — the fog
-arithmetic, the four margins it was measured at and what pays for it.
+three rim forms, the mouth and the leash, and the margin that IS the landform —
+the fog arithmetic, the five margins it was measured at and what pays for
+each.
 
 ### The map editor (dev only)
 

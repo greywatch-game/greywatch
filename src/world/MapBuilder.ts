@@ -1047,8 +1047,8 @@ export class MapBuilder {
     this.item = null;
 
     // How far the ground carries on past the play square, and therefore where
-    // the boundary actually is. Zero on every map closed by the rim, which is
-    // only Coldharbour now — see `MapLayout.borderland`.
+    // the boundary actually is. Zero on a map closed by the rim, which no
+    // shipped map is any more — see `MapLayout.borderland`.
     const margin = layout.borderland?.margin ?? 0;
     // The one thing the two halves of a map owe each other that the compiler
     // can no longer see. `Heightfield.cell`'s contract is that `size * cell`

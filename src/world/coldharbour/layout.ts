@@ -1,8 +1,8 @@
 /**
  * coldharbour/layout.ts — THE MAP, as data: structure placements, scatter
- * regions, control points, spawns, the two vehicle hardstandings and the civic
- * square's lawn. No water — a downtown has none. The floor's shape is generated
- * data and lives in heights.ts.
+ * regions, control points, spawns, the two vehicle hardstandings, the civic
+ * square's lawn and the sea. The floor's shape is generated data and lives in
+ * heights.ts.
  * The first map with `vehicles` on it, and the avenues are why: sixteen metres
  * wide, four each way, and one runs the full 320 m. See `vehicles` below.
  * Harrowmead is the other, and it answers the same question with open country
@@ -23,6 +23,7 @@ import type {
   ScatterSpec,
   SpawnPointDef,
   VehicleSpawnDef,
+  WaterRect,
 } from "../layout";
 
 /**
@@ -50,14 +51,64 @@ import type {
  *      z= -40  ~~~~~~ avenue ~~~~~~~~~~~~~~~~~~     B  the parkade
  *              | ## |ss dp |  ##  |E ss  | ## |     E  the tower plaza (office)
  *      z=-120  ~~~~~~ avenue ~~~~~~~~~~~~~~~~~~     ss shophouse terrace
- *              | 26 |  ##  |  ##  |dp##  | 26 |     dp goods depot
- *      z=-160  +----+------+------+------+----+
+ *              | dp |  the quayside, open to the avenues that feed it  |
+ *      z=-152  ======================== the quay =========================
+ *              ~~~~~~~~~~~~~~~~~~~~~~~~~ THE SEA ~~~~~~~~~~~~~~~~~~~~~~~~~
  *             x=-160  -120   -40    +40   +120  +160
  *
  * The five flags are the centre block and the four blocks diagonally off it, so
  * every one is 113 m from C and 160 m from its neighbours, and the two home
  * yards are the far corner blocks — the NW and SE 32 m squares, left empty
  * because a spawn wants ground rather than a lobby.
+ *
+ * ## The city is ON a coast now, and that is what the south band is
+ *
+ * **The map used to be closed on all four sides by a valley rim** — an
+ * escarpment drawn over the four boundary boxes, pitched shallow (0.17) because
+ * with `fogEnd` at 480 you could see it from anywhere. That was the last rim in
+ * the tree and it was the wrong landform twice over: a business district does
+ * not sit in a bowl, and a wall thirty metres behind the outer block face is a
+ * wall telling a player standing on an avenue that the world stops there.
+ *
+ * So the boundary is open now (`borderland` at the bottom of this file), and
+ * what closes the horizon is two different things on two different bearings:
+ * **hills on the north, east and west, and the OPEN SEA on the south**
+ * (`ridge.form: "downs"` with a `mouth` across the southern side — see both
+ * fields, and `RidgeMouth` for what a mouth is). The two ranges run down into
+ * the water at the south-east and south-west corners as headlands, which is
+ * what the mouth's `ease` is drawing.
+ *
+ * **What it cost inside the play square is the southern row of towers, and
+ * that is a real change to the map rather than dressing.** Seven of them stood
+ * in the outer 32 m band — six across the frontage and the corner tower in the
+ * south-west — and that band had 3 m of ground between a tower's back wall and
+ * the boundary. There is no way to put a waterfront in three metres, so the
+ * row came out and the band is a quayside: 24 m of open ground from the avenue
+ * kerb at z = -128 to the quay's own line at z = -152, with a carriageway
+ * along it, a goods depot anchoring the west end, and the four north-south
+ * avenues running down into it.
+ *
+ * **What that does to the fight is worth stating, because it is the price.**
+ * The south flank was a run of blind tower faces and is now the most OPEN
+ * ground on the map after the civic square — crossable, overlooked from every
+ * storey of the blocks behind it, and the one place on Coldharbour where
+ * nothing breaks a 300 m line except what has been put there on purpose. The
+ * barriers, the crates and the parked cars along it are that purpose; they are
+ * laid on the bounds an attacker actually uses, the same way the square's
+ * furniture is. It is also the approach to B and to team 1's yard, so it is
+ * not a backdrop.
+ *
+ * **Colliders, measured, because `kit/city.ts` owns that budget and says there
+ * is not much room left.** What every ray in the game is priced on is the
+ * SOLID MESH count, and it goes **807 to 821** — 1.7%, against the 95% the
+ * mixed-use stock cost when it went in. The bake moves with it: 768 boxes to
+ * **800**, plus 180 strut boxes in 10 groups. Out was seven towers at 3
+ * boxes each; in is eight quay runs at two apiece with their bollards merged
+ * into one strut mesh each, one `depot`, three barriers, three crate stacks
+ * and two cars. **The trees are free** — everything sown in the borderland is
+ * non-blocking, so it emits no collider and no `WorldBox` and the bake does
+ * not know it exists. A ninth BUILDING here is the thing to think twice about;
+ * a tenth barrier is not.
  *
  * ## What each flag is, and why they are four different things
  *
@@ -227,13 +278,61 @@ const placements: Placement[] = [
   // holding the office has to watch, and now somewhere to watch it from.
   { kind: "shophouse", x: 103, z: -71.5, rotY: Math.PI / 2, params: { width: 11, depth: 16, floors: 2, tint: "#7c4a3f", sign: "#39e0d0" } },
   { kind: "shophouse", x: 103, z: -60.5, rotY: Math.PI / 2, params: { width: 11, depth: 16, floors: 3, tint: "#4a5a4a", litWindows: true, sign: "#ff4f4f" } },
-  { kind: "tower", x: -144, z: -144, params: { width: 26, depth: 26, height: 24 } },
-  { kind: "tower", x: -95, z: -144, params: { width: 26, depth: 26, height: 31 } },
-  { kind: "tower", x: -65, z: -144, params: { width: 26, depth: 26, height: 18 } },
-  { kind: "tower", x: -15, z: -144, params: { width: 26, depth: 26, height: 36 } },
-  { kind: "tower", x: 15, z: -144, params: { width: 26, depth: 26, height: 21 } },
-  { kind: "tower", x: 65, z: -144, params: { width: 26, depth: 26, height: 28 } },
-  { kind: "tower", x: 95, z: -144, params: { width: 26, depth: 26, height: 15 } },
+  // --- the waterfront -------------------------------------------------------
+  //
+  // **The quay is EIGHT runs of forty metres laid end to end, and the runs
+  // touching is the one thing about it that is not a look.** There is no
+  // swimming in this game, so a gap in the parapet is a body on the seabed
+  // outside the play square with the leash counting down, and it would be
+  // found in the first round. They stand at z = -152, which is where the
+  // heightfield falls away (see heights.ts): a `quay` hangs DOWN from the
+  // ground plane it is placed on, so the street runs out over the drop instead
+  // of stopping at a lip, and the 4 m deck plus the parapet outboard of it
+  // puts the coping at about z = -156.2 with the water 2.2 m below.
+  //
+  // The parapet is 1.0 m, which is under `cover.crouchHeight` (1.3) — 320 m of
+  // continuous HARD cover along one edge of the map would be a gift to whoever
+  // held it. It steers a body and stops nothing, exactly as a parked car does.
+  { kind: "quay", x: -140, z: -152, params: { length: 40 } },
+  { kind: "quay", x: -100, z: -152, params: { length: 40 } },
+  { kind: "quay", x: -60, z: -152, params: { length: 40 } },
+  { kind: "quay", x: -20, z: -152, params: { length: 40 } },
+  { kind: "quay", x: 20, z: -152, params: { length: 40 } },
+  { kind: "quay", x: 60, z: -152, params: { length: 40 } },
+  { kind: "quay", x: 100, z: -152, params: { length: 40 } },
+  { kind: "quay", x: 140, z: -152, params: { length: 40 } },
+  // The quayside carriageway, and it stops at x = -120 rather than running the
+  // full width: the depot below is on the last thirty metres, and a road under
+  // a building is the one thing this file's own hygiene note forbids. It is
+  // asphalt like every other road here, so it merges into the same mesh and
+  // the four junctions with the avenues cannot z-fight.
+  { kind: "road", x: 15, z: -146.5, rotY: Math.PI / 2, params: { surface: "asphalt", width: 9, length: 270 } },
+  // The one building left on the frontage, at the west end where the corner
+  // tower was. It is here to do two things the open band cannot: give the
+  // quayside a mass to read its length against, and put a covered bound on the
+  // approach to B from the south-west — which is the block the parkade's own
+  // terrace already does on the other side.
+  { kind: "depot", x: -144, z: -138, params: { width: 28, depth: 16, litWindows: true } },
+  // Lamps on the quayside kerb, 1.6 m off it like every other column on the
+  // map, and all four are LENSES — see the note above on the sixteen-slot
+  // budget. Nothing is fought over out here at the range a lamp lights.
+  { kind: "streetLight", x: -110.4, z: -140.4, params: { height: 7.5 } },
+  { kind: "streetLight", x: -49.6, z: -140.4, params: { height: 7.5 } },
+  { kind: "streetLight", x: 30.4, z: -140.4, params: { height: 7.5 } },
+  { kind: "streetLight", x: 110.4, z: -140.4, params: { height: 7.5 } },
+  // What breaks the frontage at chest height. Laid between the avenue mouths
+  // rather than across them, so a bound down an avenue onto the quay is still
+  // a bound and not a blocked one.
+  { kind: "barrier", x: -86, z: -137, rotY: Math.PI / 2, params: { length: 12 } },
+  { kind: "barrier", x: 8, z: -137, rotY: Math.PI / 2, params: { length: 12 } },
+  { kind: "barrier", x: 92, z: -137, rotY: Math.PI / 2, params: { length: 12 } },
+  // Cargo off the quay, and the only hard cover on it — 2.3 m, so these are
+  // what an attacker actually crosses between.
+  { kind: "crates", x: -60, z: -138 },
+  { kind: "crates", x: 62, z: -137 },
+  { kind: "crates", x: 126, z: -139 },
+  { kind: "car", x: -24, z: -149.6, params: { tint: "#4a4f45" } },
+  { kind: "car", x: 74, z: -149.6, params: { tint: "#6b463a" } },
   { kind: "tower", x: -144, z: -95, params: { width: 26, depth: 26, height: 33 } },
   { kind: "tower", x: -144, z: -65, params: { width: 26, depth: 26, height: 19 } },
   { kind: "tower", x: 144, z: -95, params: { width: 26, depth: 26, height: 26 } },
@@ -394,6 +493,47 @@ const scatter: ScatterSpec[] = [
   { prop: "pine", x: -19, z: -19, width: 20, depth: 20, count: 10, scale: [0.8, 1.2], blocking: true, clearance: 4 },
   { prop: "pine", x: 19, z: -19, width: 20, depth: 20, count: 10, scale: [0.9, 1.3], blocking: true, clearance: 4 },
 
+  // --- the country outside the city ----------------------------------------
+  //
+  // **This is the borderland, and it is here because a flat margin reads as a
+  // backdrop rather than as distance** — Harrowmead's finding, and this map
+  // found the taller half of it. The hills are the horizon, but a `downs` face
+  // is ONE unbroken surface a hundred metres tall with nothing on it, and the
+  // 180 m of level plain in front of it is another: photographed from the NW
+  // yard the two arrived as three flat bands of colour stacked on the sky, and
+  // no tone in `environment.ts` was going to fix that because the problem was
+  // that there was nothing to cast a shadow or break a silhouette. Trees fix
+  // it, and they fix the hill as well as the plain — a treeline sown in FRONT
+  // of a slope is what gives the slope a scale.
+  //
+  // **None of it BLOCKS, and that is a rule rather than a saving.** Out here a
+  // collider would be geometry outside the nav grid that the bots can neither
+  // see nor route around, and — the sharp one — something to catch a player
+  // sprinting home against the leash's countdown. Non-blocking scatter emits
+  // no collider and no `WorldBox`, so the baked collision set is unchanged by
+  // every tree of this.
+  //
+  // **It is not a RING**, for Greyfen's reason: a continuous belt round a city
+  // is a city in a clearing. Each side gets two or three stands with open
+  // ground between them, they start about forty metres past the play square so
+  // that leaving the city is still the first thing a player notices about
+  // leaving it, and the corners get their own because a stand far enough out
+  // to close a diagonal is too far out to close the near half of it. The
+  // southern quadrant gets none at all: it is the sea.
+  { prop: "pine", x: -232, z: 268, width: 150, depth: 96, count: 80, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "pine", x: -40, z: 292, width: 170, depth: 84, count: 70, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "pine", x: 196, z: 276, width: 190, depth: 104, count: 95, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "pine", x: -288, z: 96, width: 92, depth: 210, count: 85, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "pine", x: -274, z: -86, width: 110, depth: 106, count: 55, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "pine", x: 286, z: 30, width: 96, depth: 250, count: 100, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "pine", x: 268, z: -94, width: 120, depth: 92, count: 50, scale: [0.9, 1.4], clearance: 1.2 },
+  { prop: "pine", x: 96, z: 236, radius: 24, count: 15, scale: [0.85, 1.25], clearance: 1.2 },
+  { prop: "pine", x: -150, z: 228, radius: 20, count: 11, scale: [0.85, 1.25], clearance: 1.2 },
+  // Two stands of the dead ones the city's own back lots are planted with, so
+  // the near edge of the country is the same trees that failed inside it.
+  { prop: "deadTree", x: -226, z: -30, radius: 30, count: 9, scale: [0.9, 1.3], clearance: 2 },
+  { prop: "deadTree", x: 214, z: 150, radius: 32, count: 10, scale: [0.9, 1.3], clearance: 2 },
+
   // --- the city's own dressing ----------------------------------------------
   //
   // **Appended, never inserted, and that is a rule rather than a style.**
@@ -525,7 +665,9 @@ const spawns: SpawnPointDef[] = [
   { team: 0, pos: new Vector3(-136, 0, 152), yaw: (Math.PI * 3) / 4 },
   { team: 1, pos: new Vector3(144, 0, -144), yaw: -Math.PI / 4 },
   { team: 1, pos: new Vector3(152, 0, -136), yaw: -Math.PI / 4 },
-  { team: 1, pos: new Vector3(136, 0, -152), yaw: -Math.PI / 4 },
+  // Was at z = -152, which is the quay's own line now — six metres back so a
+  // body deploys onto the quayside rather than into the parapet.
+  { team: 1, pos: new Vector3(136, 0, -146), yaw: -Math.PI / 4 },
   { team: null, controlPoint: "A", pos: new Vector3(-80, 0, 46), yaw: 0 },
   { team: null, controlPoint: "B", pos: new Vector3(-80, 0, -46), yaw: Math.PI },
   // C's spawn is on the line x = z, and that is arithmetic rather than taste.
@@ -589,6 +731,60 @@ const vehicles: VehicleSpawnDef[] = [
  * ~13,500 tufts over the four rects, which is one thin-instanced draw call and
  * a build-time scatter, not a per-frame cost.
  */
+/**
+ * THE SEA, as four rectangles, and what it is FOR is the horizon rather than
+ * the drawing.
+ *
+ * This map states `ridge.mouth` across its southern side, which means it draws
+ * no landform there at all — and `Ridge.ts` allows that only where the map has
+ * already laid something out past its own `fogEnd` on those bearings, because
+ * the sky dome is flat `fogColor` below the horizon and `Sky` culls the lowest
+ * 7.2 degrees of stars. This is that something. `fogEnd` is 480, so the water
+ * runs to 2,700 m: far enough that its own far edge arrives as exactly
+ * `fogColor` from anywhere a living player can stand, which is the play square
+ * plus the borderland the leash lets them into.
+ *
+ * **A `WaterRect` is an extent and the BED decides where the shore is**, so
+ * any partition of the same area draws the same coastline. What varies is
+ * where the reflection PROBES stand — one per rect, at the depth-weighted
+ * centroid of that rect's own wet cells — and two rules pick this partition,
+ * both of them Cinderhaven's.
+ *
+ * **Every probe has to stand in water.** All four centroids are open sea; the
+ * nearest thing to any of them is the western headland, whose back toe stops
+ * at x = -650 against that rect's centre at -1,700.
+ *
+ * **And a SEAM must not fall where anybody is looking across it**, because two
+ * rects at one height share an invisible edge and carry two different mirrors.
+ * The frontage is ONE rect out to x = +/-700 and z = -700, and those numbers
+ * are `fogEnd` measured from the nearest place a player can be rather than
+ * round figures: the quay is at z = -152 and the play square's side at
+ * x = +/-160, so the three seams stand 540 to 548 m off, past the 480 m at
+ * which everything is `fogColor` anyway. Bring any of them in and the mirror
+ * changes along a line drawn across the water in full view of the quay.
+ *
+ * **The frontage rect is not widened to reach the horizon, and that is the one
+ * thing to keep if this is ever repartitioned.** A rect's bed map is a fixed
+ * 512 texels a side (`CONFIG.water.depthTexelsMax`) however big the rect is,
+ * and this is the only one of the four with a shoreline in it — the waterline,
+ * the foam and the shoal grading are all read off that texture. At 1,400 m
+ * that is 2.7 m a texel along the coast; at 5,400 it would be ten.
+ *
+ * `y` is -2.2 on all four and they must go on agreeing, for the drawing and
+ * for the sound: `MapBuilder.waterAmbience` joins rects into one BODY when
+ * they touch AND agree about what they are, and one harbour that shelved into
+ * four seas would be four emitters contending for the same voices.
+ */
+const water: WaterRect[] = [
+  // The harbour: the frontage, both headlands and the water between them.
+  { x: 0, z: -420, width: 1400, depth: 560, y: -2.2 },
+  // The western and eastern seas, meeting the harbour out past the headlands.
+  { x: -1700, z: -420, width: 2000, depth: 560, y: -2.2 },
+  { x: 1700, z: -420, width: 2000, depth: 560, y: -2.2 },
+  // The ocean, which is what the southern horizon actually is.
+  { x: 0, z: -1700, width: 5400, depth: 2000, y: -2.2 },
+];
+
 const grass: GrassRect[] = [
   { x: 17, z: 17, width: 26, depth: 26, density: 5 },
   { x: -17, z: 17, width: 26, depth: 26, density: 5 },
@@ -602,6 +798,7 @@ export const ColdharbourLayout: MapLayout = {
   controlPoints,
   spawns,
   vehicles,
+  water,
   grass,
   /**
    * The first map that is not `CONFIG.map.size`. Everything downstream takes
@@ -642,21 +839,128 @@ export const ColdharbourLayout: MapLayout = {
    */
   surfaces: 4,
   /**
-   * The bluffs the city sits under. Shallower than the default 0.205, because
-   * on this map you can SEE the rim from anywhere — the fog no longer hides it
-   * at 78 m — and a valley wall pitched for a village stands taller than the
-   * fifty-metre towers in front of it. 0.17 puts the crest at ~27 m on the
-   * sides and higher at the corners, which reads as the far side of a river
-   * bowl and still clears the 7.2 deg the sky needs (see Ridge.ts).
+   * Twice the default, and it is the `borderland` below that asks for it —
+   * Harrowmead's argument, run on this map's numbers.
    *
-   * The two passes are where the central avenues leave town.
+   * The floor is cut into patches of this and the borderland's own blocks are
+   * FOUR times it, so with 180 m of ground on every side the default 48 cuts
+   * this map's ground into **61** patches against the 49 it had when the
+   * boundary was a wall — and every one of them is walked by the frame at
+   * every distance, because the floor carries no `metadata.block` and
+   * `WorldCulling` therefore files no cull cell for it. At 96 it is **24**: 16
+   * for the play square and 8 for the borderland, which is half what the map
+   * shipped with and is a saving rather than a cost. (Counted in MESHES, which
+   * is what the frame pays, those are 122, 98 and 48 — the floor carries an
+   * invisible collider clone of every patch.)
+   *
+   * What it spends is frustum granularity on the ground that is fought over,
+   * and on a 320 m map stating `fogEnd: 480` that is very nearly nothing —
+   * the whole floor is inside the view from the civic square whichever way it
+   * is cut. It also suits the shape of this particular floor: the city is dead
+   * level, so `uniformHeight` collapses most of these patches to a single quad
+   * and a bigger patch is a bigger saving.
+   */
+  terrainBlock: 96,
+  /**
+   * **No wall, and no rim under it either — this was the last map in the tree
+   * closed by one.** The ground carries on for three hundred metres past the
+   * play square on every side and what stops a player leaving is the leash, a
+   * countdown rather than a face of rock. See `Borderland`, and
+   * `world/leash.ts` for the rule.
+   *
+   * **The margin is the LANDFORM's here, which is a third reason to size one
+   * and is this map's own.** Hollowmere and Greyfen size theirs by the fog and
+   * Harrowmead by the horizon; those three draw nothing at their boundary, so
+   * the margin has to BE the distance. This map draws hills (see `ridge`), and
+   * a hill closes a horizon whatever the margin is — so what a margin buys
+   * here is not closure but DISTANCE, and it is bounded at BOTH ends.
+   *
+   * **It was 300 first and the fog ate them.** `fogColor` arrives in full at
+   * `fogEnd`, which is 480 on this map and does not move (see
+   * `environment.ts`): at a 300 m margin the hills' toe stands 460 m from the
+   * middle of the map and their crest 610, so from the civic square the whole
+   * range sat inside the last 4% of its own colour and from the southern half
+   * of the city it was not there at all. Photographed rather than reasoned
+   * about — the range came out as a faint crease in an otherwise blank sky.
+   *
+   * 180 is the other end of it. The toe stands 180 m past the play edge — six
+   * times the 30 m the old escarpment stood at, and more than half the map's
+   * own width, so nothing about it reads as a wall behind the last block —
+   * and the crest is 330 m from the nearest street at 93 m high, which is 16
+   * degrees of hillside at a bit over half fog. What it costs is the middle of
+   * the map, where the crest still fades out around `fogEnd`; that is aerial
+   * perspective rather than a seam, because the colour it fades to is the
+   * colour the sky above it already is.
+   *
+   * It is also two and a half times the leash's own 69 m, so nothing alive
+   * gets within 110 m of the boundary boxes.
+   *
+   * **The roll is low for a reason that is not about the look: a third of this
+   * borderland is SEABED.** The ground past the southern boundary is the bed
+   * of the sea above (see `water` and heights.ts), and `borderRoll` swings the
+   * floor by `roll / 2` either way — so at the 2.6 default the bed's high
+   * points come up to -3.7 against a surface at -2.2, which is 1.5 m of water
+   * and exactly where `CONFIG.water.depthMax` stops being opaque. That is a
+   * shoal showing through the open sea. At 1.8 the worst case is -4.1 and the
+   * body stays solid everywhere; the swell that is lost is on ground no one
+   * can reach, and the land half of the borderland reads the same either way.
+   *
+   * `ease` is 30 for Harrowmead's reason rather than the default third: a
+   * third of 180 is 60, which is most of the way to the leash's own 69, so the
+   * ramp would spend nearly the whole strip a player can cross flattening it.
+   * The test is whichever of the leash (69) and `fogEnd` (480) is SHORTER, and
+   * here that is the leash — the same number and the same arithmetic
+   * Hollowmere and Greyfen arrive at from the other side.
+   */
+  borderland: { margin: 180, roll: 1.8, ease: 30 },
+  /**
+   * **HILLS on three sides and the OPEN SEA on the fourth**, which is the one
+   * thing about this map's edge that is not a default.
+   *
+   * What was here was an `escarpment` at `slope: 0.17` with two passes notched
+   * in it where the central avenues left town — the last rim in the tree, and
+   * deliberately shallow because `fogEnd` is 480 and you could see it from
+   * anywhere. Shallow was the right answer to the wrong question. A rim thirty
+   * metres behind the outer block face is a wall whatever its pitch, and a
+   * ring of it is a bowl; the passes were two holes in a wall rather than two
+   * ways out of a valley.
+   *
+   * `downs` is the other landform and the only one a `borderland` may take
+   * (see `RidgeSpec.form`): no basal band, a shoulder rather than a step, and
+   * a crest 150 m out that rounds over instead of capping. At `slope: 0.19`
+   * against the boundary's own radius that is about 93 m on the sides and 120
+   * at the corners — hills at 180 m and not a wall at 30 — and
+   * `slopeVariance` is up from the 0.04 default so the skyline wanders rather
+   * than running level round three sides of a square.
+   *
+   * **The `mouth` is the sea, and it is the field this map exists to have
+   * added.** It takes the landform away outright across the whole southern
+   * side and both southern corners, which is `form: "none"` asked of one arc —
+   * and it is allowed for exactly the reason the whole-ring form is: there IS
+   * something out there past `fogEnd` on those bearings. See `water`.
+   *
+   * **The width is arithmetic and not a figure anybody eyeballed.** A mouth is
+   * measured along the CREST's own curve, which is the boundary square offset
+   * outward by `crestOut` — so a corner contributes a quarter circle rather
+   * than a corner. The boundary is 320 + 2 * 180 = 680 m a side and the downs
+   * put their crest 150 m out, so the southern side is 680 and each corner fan
+   * is 150 * pi / 2 = 235.6: fully open across both corners is
+   * 680 + 2 * 235.6 = 1151.
+   *
+   * The `ease` is what a headland IS. Over 300 m of that same curve the crest,
+   * the reach and the shoulder come back up together, so each range grows out
+   * of the sea at its corner and reaches full height 300 m up its own side —
+   * at z = -40, which is the middle of the map. What that draws is the thing a
+   * coast actually does: the highest ground in the north, falling south, and
+   * two headlands standing in the water either side of an open bay. Shorten it
+   * and the hills end in a cliff face standing in the sea; lengthen it and the
+   * range never gets tall before it runs out of side.
    */
   ridge: {
-    slope: 0.17,
-    passes: [
-      { x: -40, z: 160, width: 26, depth: 0.5 },
-      { x: 120, z: -160, width: 26, depth: 0.5 },
-    ],
+    form: "downs",
+    slope: 0.19,
+    slopeVariance: 0.06,
+    mouth: [{ x: 0, z: -340, width: 1151, ease: 300 }],
     seed: 0x43484252,
   },
   // Fixed so the dressing — and the colliders blocking scatter emits, and so

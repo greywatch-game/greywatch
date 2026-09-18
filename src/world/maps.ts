@@ -153,8 +153,9 @@ export const COLDHARBOUR: MapDef = {
   id: "coldharbour",
   name: "Coldharbour",
   blurb:
-    "A business district an hour before dusk. Three floors to hold, glass " +
-    "to break, and no fog at all to be missed in.",
+    "A business district an hour before dusk, with the sea at the end of " +
+    "every avenue. Three floors to hold, glass to break, and no fog at all " +
+    "to be missed in.",
   layout: ColdharbourLayout,
   environment: ColdharbourEnvironment,
   heights: () => import("./coldharbour/heights"),

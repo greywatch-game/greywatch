@@ -1094,18 +1094,21 @@ exactly ±120) and they are the only thing that stops anything leaving;
 `src/world/Ridge.ts` draws an escarpment over them and stops nothing.
 
 **That is one of two ways a map may be closed, and the other one is below** —
-Harrowmead has no wall at all, and neither have Hollowmere and Greyfen.
-Everything in this section is the rim's, which is still the default and is now
-only what **Coldharbour** is.
+and NO shipped map takes this one any more, Coldharbour having been the last
+and given it up for a coast. Everything in this section is still what a layout
+stating no `borderland` gets, and the LANDFORM half of it is what five of the
+six still draw.
 
 **And the LANDFORM is separable from the boundary a third time**: `RidgeSpec.form:
 "none"` builds no geometry at all, for a map that has already put something out
-past its own boundary for the horizon to be made of. THREE maps take it, and
+past its own boundary for the horizon to be made of. FOUR maps take it, and
 they pay for it in different currencies — Cinderhaven in WATER, a `borderland`
 of ground with 2,300 m of open sea drawn over and past it; Harrowmead in GROUND,
-600 m of borderland and nothing over it at all; Hollowmere in 180 m of the same
-ground, which is a quarter of Harrowmead's and buys the same thing because that
-map's fog stops at 78 m. All three numbers are the same number: `fogEnd` beyond
+600 m of borderland and nothing over it at all; Hollowmere and Greyfen in 180 m
+of the same ground, which is a quarter of Harrowmead's and buys the same thing
+because those maps' fog stops at 78 m. **A fifth map makes the claim of SOME
+bearings only** — see **A mouth** below, which is this same form scoped to an
+arc. All three numbers are the same number: `fogEnd` beyond
 the furthest point anything in the simulation can reach — which is why the
 cheapest boundary in the tree is on the map with the tightest fog.
 What a map owes before it may take that form is exactly the crest rule
@@ -1157,12 +1160,12 @@ would end its shadow in a hard line sliding across open ground as you walk.
 
 ## The other way to close a map: a borderland and a leash
 
-**Five shipped maps have no wall around them — Harrowmead, Sarab, Cinderhaven,
-Hollowmere and Greyfen.** The ground carries on past the play square, and what
-stops a player leaving is a countdown rather than a face of rock. It is declared
-by `MapLayout.borderland` — absent only on Coldharbour, which is bit-identical
-to what it was before it existed — and it is three pieces, each answering a
-different part of the same question.
+**No shipped map has a wall around it any more.** The ground carries on past
+the play square on all six, and what stops a player leaving is a countdown
+rather than a face of rock. It is declared by `MapLayout.borderland` — absent
+on nothing now, Coldharbour having been the last to state nothing and being the
+map that shows the field has a THIRD reason to be sized — and it is three
+pieces, each answering a different part of the same question.
 
 **Every map that states one sizes it by the HORIZON, and the leash is the FLOOR
 under that rather than the answer**, which is worth knowing before setting
@@ -1172,7 +1175,15 @@ invisible wall this mechanism exists to avoid. Everything past 69 m is bought
 for the EYE. Sarab's 300 m is what a 900 m square needs at 560 m of haze so the
 town does not stand on a plate with sky under its edges; Harrowmead's 600 is the
 whole of its rim, and buying that is what lets it state `RidgeSpec.form: "none"`
-— see **When the borderland IS the landform** below. **Hollowmere's 180 is the
+— see **When the borderland IS the landform** below. **Coldharbour's 180 is the
+third reason and it is the opposite one**: that map DRAWS a landform, and a
+landform closes a horizon at any distance, so its margin buys nothing but the
+distance the hills are seen from. 300 was tried and the fog ate them — at
+`fogEnd` 480 a crest 610 m from the middle of the map sits inside the last 4% of
+its own colour — and 180 puts the toe six times further out than the escarpment
+it replaced while keeping the crest inside the readable half of the haze. That
+is a margin bounded at BOTH ends, which none of the others are. **Hollowmere's
+180 is the
 same purchase at the other end of the scale**, and it is the one that shows the
 rule is about the FOG rather than about the map: a 240 m square with `fogEnd` 78
 buys its whole horizon for less ground than Sarab spends, because what the
@@ -1187,7 +1198,8 @@ it, and it had one.
 
 **The ground keeps going, and `TerrainField` is what makes that true.** A
 `Borderland` states a `margin` (Harrowmead: 600 m, Sarab and Cinderhaven: 300
-and 250, Hollowmere and Greyfen: 180) and the field continues past
+and 250, Hollowmere, Greyfen and Coldharbour: 180) and the field continues
+past
 the authored grid for that distance: `heightAt` returns the clamped edge plus a
 closed-form roll (`borderRoll`) instead of the clamp alone, eased in over
 `Borderland.ease` so the boundary has no crease and every reader inside
@@ -1256,6 +1268,55 @@ away with things because it is small, steep and deliberately ledged.
   hill with one side lit and the other not. `cornerStations` runs that
   arithmetic forwards. It also makes `passWindow`'s station-space width wrong
   inside a fan, so author a pass on a SIDE.
+
+
+### A mouth: `form: "none"` asked of one arc
+
+**Coldharbour is closed by a landform on three bearings and by open sea on the
+fourth, and `RidgeSpec.mouth` is how a boundary says that.** A mouth is a stretch
+of boundary the rim is not drawn over at all, and it rests on the same claim the
+whole-ring `none` does — that the map has already laid something out there
+reaching past its own `fogEnd` — scoped to an arc instead of asserted of every
+bearing at once. It was added for that map; nothing else states one.
+
+**It is NOT a deep `RidgePass`, and could not be.** A pass cuts the crest's
+ANGLE and the result is re-clamped against `MIN_SLOPE`, which is precisely what
+makes a pass safe: it is always a saddle and can never open a hole in the sky.
+A mouth's whole job is to open one. So it does not touch the angle at all —
+`shrink` multiplies the crest height, the profile's REACH (`bulge`) and the
+shoulder together, and where it reaches zero the column has collapsed onto its
+own toe and every quad it would make is degenerate, which `RingAccum.quad`
+already drops. Two details make that work rather than merely nearly work:
+
+- **Rings 0 and 1 are shrunk even though they are never BULGED.** The band is
+  excluded from `bulge` on purpose — on the escarpment it is the vertical face,
+  and on the downs it keeps the shoulder's five metres the same five metres all
+  the way round. But five metres of shoulder left standing after everything
+  above it has gone is a strip of rock lying flat on the floor the whole length
+  of the opening, so the band takes `shrink` where it does not take `bulge`.
+- **A fully open station emits NO COLUMN and the strip breaks across it.** A
+  degenerate fan would still push vertices into `assertFacesInward`'s front
+  list with no triangle to give them a normal; skipping the column and skipping
+  the quads either side of it is cheaper and says what is meant.
+
+**The width is measured along the CREST's own curve, not along the boundary
+square, and the corners are why.** The crest stands `crestOut` outboard, so the
+curve it traces is the square offset outward — four sides and a quarter circle
+at each corner — while a corner FAN is stations at one point with the normal
+swept through them. On the downs that is a corner contributing 236 m of run
+against the square's 4. Coldharbour's mouth is therefore
+`680 + 2 * 150 * pi / 2 = 1151` for "the whole southern side and both southern
+corners", which is a number nobody would have guessed from the plan.
+
+**The `ease` is what draws a headland.** Over it the crest, the reach and the
+shoulder come back up together, so a range grows out of the sea rather than
+ending at a face; Coldharbour spends 300 m of curve on each end, which puts
+full height 300 m up the side — the middle of the map — and leaves the highest
+ground inland with the two ranges running down into the water either side of
+the bay. Short, and the hills end in a cliff standing in the sea. The ramp is a
+smoothstep rather than `passWindow`'s cosine for the reason the borderland eases
+its own roll: this factor multiplies the height and the reach at once, so a C0
+join puts a crease down the hillside exactly where anybody is looking at it.
 
 ### When the borderland IS the landform
 
