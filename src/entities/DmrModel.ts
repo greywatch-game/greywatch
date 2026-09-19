@@ -39,6 +39,18 @@ const MAG_RAKE = -0.06;
 const RAIL_TOP = 0.09;
 
 /**
+ * Height of the bore above the origin: in the upper receiver, level with the
+ * bottom of the ejection port.
+ *
+ * It was on y = 0, which is the seam between the upper and the lower — a
+ * chamber in the trigger housing. The free-float tube is a sleeve around the
+ * barrel, so it comes up with it, and so do the bipod and the hand stop hung
+ * under it and the hand that holds it; the tube's top now runs just under the
+ * upper's own deck, which is where an AR-pattern rail-height handguard sits.
+ */
+const BORE_Y = 0.03;
+
+/**
  * Where the DMR offers its rail.
  *
  * The front iron station is the one number here that is not a styling choice.
@@ -104,14 +116,14 @@ const BUTT_Y = COMB_TOP - 0.014 - BUTT_H / 2;
  */
 const GRIP_HAND = new Vector3(0.02, -0.164, -0.166);
 const GRIP_ELBOW = new Vector3(0.26, -0.564, -0.541);
-const SUPPORT_HAND = new Vector3(-0.02, -0.08, 0.38);
-const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, 0.1);
+const SUPPORT_HAND = new Vector3(-0.02, -0.08 + BORE_Y, 0.38);
+const SUPPORT_ELBOW = new Vector3(-0.3, -0.5 + BORE_Y, 0.1);
 
 /**
  * Builds a low-poly cel-styled semi-automatic marksman rifle. Local +z is the
  * barrel axis, origin at the receiver centre — the same frame the other two
  * weapons are built in, so the viewmodel poses any of them with the same
- * numbers.
+ * numbers — with the bore `BORE_Y` above it.
  *
  * The silhouette is the argument for the weapon, and it is made of four things
  * the other two do not have: a long stepped heavy barrel ending in a chambered
@@ -194,48 +206,51 @@ export function buildDmr(
 
   // --- handguard: a long free-float tube, slotted, running past the receiver
   // to carry the bipod at its far end ---
-  b.box("handguard", POLYMER, 0.088, 0.062, 0.42, 0, -0.015, 0.42);
-  b.box("hgTop", POLYMER, 0.07, 0.014, 0.42, 0, 0.019, 0.42);
-  b.box("hgBottom", POLYMER, 0.07, 0.014, 0.42, 0, -0.049, 0.42);
-  b.box("hgCap", BODY, 0.084, 0.07, 0.014, 0, -0.015, 0.623);
+  // Every height here is stated against the bore (`f`): the tube floats
+  // around the barrel, not around the receiver.
+  const f = BORE_Y;
+  b.box("handguard", POLYMER, 0.088, 0.062, 0.42, 0, f - 0.015, 0.42);
+  b.box("hgTop", POLYMER, 0.07, 0.014, 0.42, 0, f + 0.019, 0.42);
+  b.box("hgBottom", POLYMER, 0.07, 0.014, 0.42, 0, f - 0.049, 0.42);
+  b.box("hgCap", BODY, 0.084, 0.07, 0.014, 0, f - 0.015, 0.623);
   for (const side of [-1, 1] as const) {
     for (let i = 0; i < 4; i++) {
-      b.box("vent", BODY, 0.006, 0.03, 0.05, side * 0.045, -0.015, 0.27 + i * 0.08);
+      b.box("vent", BODY, 0.006, 0.03, 0.05, side * 0.045, f - 0.015, 0.27 + i * 0.08);
     }
-    b.box("sideRail", METAL, 0.014, 0.026, 0.24, side * 0.047, -0.04, 0.42);
+    b.box("sideRail", METAL, 0.014, 0.026, 0.24, side * 0.047, f - 0.04, 0.42);
   }
   for (let i = 0; i < 4; i++) {
-    b.box("mlok", BODY, 0.03, 0.006, 0.05, 0, -0.054, 0.27 + i * 0.08);
+    b.box("mlok", BODY, 0.03, 0.006, 0.05, 0, f - 0.054, 0.27 + i * 0.08);
   }
-  b.box("bottomRail", METAL, 0.05, 0.016, 0.26, 0, -0.06, 0.42);
+  b.box("bottomRail", METAL, 0.05, 0.016, 0.26, 0, f - 0.06, 0.42);
   // Hand stop rather than a vertical foregrip: the support hand's job on this
   // weapon is to hold a position, not to steer between two of them.
-  b.box("handStop", POLYMER, 0.044, 0.028, 0.028, 0, -0.078, 0.315);
+  b.box("handStop", POLYMER, 0.044, 0.028, 0.028, 0, f - 0.078, 0.315);
 
   // --- bipod, folded back along the underside ---
   // Deployed legs would be geometry the player can never use — nothing here
   // rests a weapon on anything — so it is stowed, which is also the only state
   // it would be in while the weapon is being carried.
-  b.box("bipodMount", BODY, 0.036, 0.03, 0.05, 0, -0.058, 0.6);
-  b.pin("bipodPin", METAL, 0.012, 0.044, 0, -0.062, 0.6);
-  const bipodPivot = b.pivot("bipodPivot", 0, -0.07, 0.6, -0.12);
+  b.box("bipodMount", BODY, 0.036, 0.03, 0.05, 0, f - 0.058, 0.6);
+  b.pin("bipodPin", METAL, 0.012, 0.044, 0, f - 0.062, 0.6);
+  const bipodPivot = b.pivot("bipodPivot", 0, f - 0.07, 0.6, -0.12);
   for (const side of [-1, 1] as const) {
     b.box("bipodLeg", METAL, 0.014, 0.014, 0.14, side * 0.024, 0, -0.07, bipodPivot);
     b.box("bipodFoot", RUBBER, 0.018, 0.016, 0.026, side * 0.024, -0.002, -0.145, bipodPivot);
   }
-  b.box("bipodCatch", METAL, 0.05, 0.012, 0.016, 0, -0.076, 0.47);
+  b.box("bipodCatch", METAL, 0.05, 0.012, 0.016, 0, f - 0.076, 0.47);
 
   // --- barrel: heavy, stepped, and long ---
-  b.box("gasBlock", BODY, 0.05, 0.05, 0.06, 0, 0, 0.665);
-  b.box("gasPort", METAL, 0.022, 0.014, 0.026, 0, 0.03, 0.665);
-  b.tube("gasTube", METAL, 0.012, 0.012, 0.05, 0, 0.022, 0.645);
-  b.tube("barrel", BODY, 0.046, 0.046, 0.2, 0, 0, 0.72);
-  b.tube("barrelNut", METAL, 0.054, 0.054, 0.016, 0, 0, 0.638);
+  b.box("gasBlock", BODY, 0.05, 0.05, 0.06, 0, f, 0.665);
+  b.box("gasPort", METAL, 0.022, 0.014, 0.026, 0, f + 0.03, 0.665);
+  b.tube("gasTube", METAL, 0.012, 0.012, 0.05, 0, f + 0.022, 0.645);
+  b.tube("barrel", BODY, 0.046, 0.046, 0.2, 0, f, 0.72);
+  b.tube("barrelNut", METAL, 0.054, 0.054, 0.016, 0, f, 0.638);
   // Steps, not flutes. A flute is a groove and this vocabulary is additive —
   // the same reason the rifle's receiver chamfer is a narrower slab on top —
   // so the heavy profile is said with proud bands instead of cut ones.
   for (let i = 0; i < 2; i++) {
-    b.tube("barrelStep", METAL, 0.052, 0.052, 0.012, 0, 0, 0.7 + i * 0.06);
+    b.tube("barrelStep", METAL, 0.052, 0.052, 0.012, 0, f, 0.7 + i * 0.06);
   }
 
   // --- muzzle brake: three chambers, ported sideways and up ---
@@ -244,14 +259,14 @@ export function buildDmr(
   // and the device reads as chambered instead of as a can. The bottom is
   // webbed shut for the same reason the rifle's birdcage is — a brake that
   // vents downward lifts the muzzle it is fitted to fight.
-  b.tube("mzCollar", BODY, 0.056, 0.05, 0.018, 0, 0, 0.828);
-  b.tube("mzCore", RUBBER, 0.028, 0.028, 0.1, 0, 0, 0.885);
+  b.tube("mzCollar", BODY, 0.056, 0.05, 0.018, 0, f, 0.828);
+  b.tube("mzCore", RUBBER, 0.028, 0.028, 0.1, 0, f, 0.885);
   for (let i = 0; i < 3; i++) {
-    b.shell("mzBaffle", BODY, 0.03, 0.014, 0.012, 0, 0.845 + i * 0.04, 10);
+    b.shell("mzBaffle", BODY, 0.03, 0.014, 0.012, f, 0.845 + i * 0.04, 10);
   }
-  b.box("mzStrap", BODY, 0.05, 0.012, 0.095, 0, 0.029, 0.885);
-  b.box("mzWeb", BODY, 0.04, 0.012, 0.095, 0, -0.029, 0.885);
-  b.shell("crown", METAL, 0.03, 0.011, 0.012, 0, 0.944, 10);
+  b.box("mzStrap", BODY, 0.05, 0.012, 0.095, 0, f + 0.029, 0.885);
+  b.box("mzWeb", BODY, 0.04, 0.012, 0.095, 0, f - 0.029, 0.885);
+  b.shell("crown", METAL, 0.03, 0.011, 0.012, f, 0.944, 10);
 
   // --- fixed stock: adjustable comb on posts, adjustable pad on rails ---
   // Fixed rather than folding, and that is the point of it: the two things a
@@ -322,7 +337,7 @@ export function buildDmr(
 
   return {
     root,
-    muzzle: new Vector3(0, 0, 0.96),
+    muzzle: new Vector3(0, BORE_Y, 0.96),
     // Matches the `ejectPort` box above — the right side of the receiver.
     ejectPort: new Vector3(0.05, 0.044, 0.08),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },

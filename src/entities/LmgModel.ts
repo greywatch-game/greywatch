@@ -30,6 +30,21 @@ import {
 const RAIL_TOP = 0.095;
 
 /**
+ * Height of the bore above the origin: the middle of the receiver, just under
+ * the feed tray.
+ *
+ * It was on y = 0, in the bottom third of the receiver: 3 cm under the slot
+ * the belt comes in through and under the ejection port, so a round stripped
+ * off the belt had a hand's width to fall before it met a chamber. Everything
+ * concentric with the barrel comes up with it: the collar, the flutes, the gas
+ * system and the regulator under it, the heat shield under that and the hand
+ * on it, the folded handle and bipod, the muzzle, and the port the brass
+ * leaves by. The front sight tower keeps its top at `RAIL_TOP` and simply
+ * stands on a higher barrel.
+ */
+const BORE_Y = 0.02;
+
+/**
  * Where the LMG offers its rail.
  *
  * The front station is the one number that is not free, and on this weapon it
@@ -80,14 +95,14 @@ const COMB_PROUD = 0.004;
  */
 const GRIP_HAND = new Vector3(0.02, -0.135, -0.185);
 const GRIP_ELBOW = new Vector3(0.26, -0.535, -0.555);
-const SUPPORT_HAND = new Vector3(-0.02, -0.1, 0.34);
-const SUPPORT_ELBOW = new Vector3(-0.3, -0.52, 0.06);
+const SUPPORT_HAND = new Vector3(-0.02, -0.1 + BORE_Y, 0.34);
+const SUPPORT_ELBOW = new Vector3(-0.3, -0.52 + BORE_Y, 0.06);
 
 /**
  * Builds a low-poly cel-styled belt-fed light machine gun. Local +z is the
  * barrel axis, origin at the receiver centre — the same frame the other four
  * weapons are built in, so the viewmodel poses any of them with the same
- * numbers.
+ * numbers — with the bore `BORE_Y` above it.
  *
  * **The argument is the ammunition, and this is the one weapon here that shows
  * you its own.** The other four keep every round they have inside a box you
@@ -145,7 +160,7 @@ export function buildLmg(
   const root = new TransformNode(`${prefix}_lmg`, scene);
   const b = new WeaponBuild(scene, mats, prefix, root);
 
-  // --- receiver: one long deep box, bore at y = 0 as on every weapon here ---
+  // --- receiver: one long deep box, with the bore through its middle ---
   // Deep because the bolt, the feed mechanism and the belt are stacked, not
   // side by side. The narrow upper deck is the chamfer additive geometry
   // cannot cut, the same two-slab trick the rifle's upper uses.
@@ -190,8 +205,8 @@ export function buildLmg(
   // --- ejection port and link chute: right flank and under it ---
   // Brass out of the side and the emptied links out of the bottom, which is
   // the one thing about a belt-fed the other weapons have no equivalent of.
-  b.box("ejectPort", METAL, 0.008, 0.03, 0.1, 0.045, 0.035, 0.06);
-  b.box("portCover", METAL, 0.007, 0.022, 0.096, 0.047, 0.014, 0.058);
+  b.box("ejectPort", METAL, 0.008, 0.03, 0.1, 0.045, 0.028, 0.06);
+  b.box("portCover", METAL, 0.007, 0.022, 0.096, 0.047, 0.004, 0.058);
   b.box("deflector", BODY, 0.016, 0.026, 0.042, 0.046, 0.056, 0);
   // Both stop short of the receiver foot's own front face, which they used to
   // share a plane with.
@@ -276,8 +291,9 @@ export function buildLmg(
   // the mount may stand above the rail.
   b.box("barrelLatch", METAL, 0.024, 0.05, 0.042, -0.03, 0.052, 0.3);
   b.box("barrelLatchTab", METAL, 0.03, 0.014, 0.016, -0.036, 0.07, 0.3);
-  b.box("barrelCollar", BODY, 0.062, 0.062, 0.05, 0, 0.005, 0.325);
-  b.tube("barrelRear", BODY, 0.048, 0.054, 0.08, 0, 0, 0.35);
+  const f = BORE_Y;
+  b.box("barrelCollar", BODY, 0.062, 0.062, 0.05, 0, f + 0.005, 0.325);
+  b.tube("barrelRear", BODY, 0.048, 0.054, 0.08, 0, f, 0.35);
   // Cooling flutes: rings a hair proud of the barrel, in the fittings tone, so
   // the heavy section reads as machined rather than as a thicker pipe.
   // A hair PROUD has to hold at the FIRST ring too, where the cone is thickest:
@@ -286,56 +302,58 @@ export function buildLmg(
   // run is also offset so that no ring's cap lands on 0.390, which is the
   // heavy section's own front face.
   for (let i = 0; i < 6; i++) {
-    b.tube("barrelFlute", METAL, 0.054, 0.054, 0.008, 0, 0, 0.336 + i * 0.028);
+    b.tube("barrelFlute", METAL, 0.054, 0.054, 0.008, 0, f, 0.336 + i * 0.028);
   }
-  b.tube("barrel", BODY, 0.038, 0.046, 0.32, 0, 0, 0.5);
-  b.tube("gasTube", METAL, 0.014, 0.014, 0.24, 0, 0.03, 0.43);
-  b.box("gasBlock", BODY, 0.05, 0.054, 0.062, 0, 0.004, 0.55);
+  b.tube("barrel", BODY, 0.038, 0.046, 0.32, 0, f, 0.5);
+  b.tube("gasTube", METAL, 0.014, 0.014, 0.24, 0, f + 0.03, 0.43);
+  b.box("gasBlock", BODY, 0.05, 0.054, 0.062, 0, f + 0.004, 0.55);
   // The regulator, under the block: the one part on any weapon here meant to
   // be turned during a fight, and a machine gun's answer to a fouled action.
-  b.tube("gasReg", METAL, 0.028, 0.032, 0.052, 0, -0.03, 0.572);
-  b.tube("gasRegCap", METAL, 0.02, 0.022, 0.012, 0, -0.03, 0.602);
+  b.tube("gasReg", METAL, 0.028, 0.032, 0.052, 0, f - 0.03, 0.572);
+  b.tube("gasRegCap", METAL, 0.02, 0.022, 0.012, 0, f - 0.03, 0.602);
 
   // Front sight tower: the bridge the cover's rail cannot make. Its top face
   // IS the rail — exactly RAIL_TOP, never above it (see the header).
-  b.box("fsTower", BODY, 0.032, 0.078, 0.05, 0, 0.048, 0.5);
-  b.box("fsTowerBrace", BODY, 0.028, 0.03, 0.09, 0, 0.02, 0.478);
+  // Standing on the barrel, so its FOOT follows the bore and its top does not.
+  const towerFoot = f + 0.009;
+  b.box("fsTower", BODY, 0.032, 0.087 - towerFoot, 0.05, 0, (0.087 + towerFoot) / 2, 0.5);
+  b.box("fsTowerBrace", BODY, 0.028, 0.03, 0.09, 0, f + 0.02, 0.478);
   b.box("fsRail", BODY, 0.05, 0.014, 0.11, 0, 0.088, 0.49);
   for (let i = 0; i < 2; i++) {
     b.box("fsRailRib", METAL, 0.054, 0.012, 0.014, 0, 0.093, 0.455 + i * 0.07);
   }
 
   // --- handguard: a short heat shield under the barrel ---
-  b.box("handguard", POLYMER, 0.058, 0.05, 0.2, 0, -0.045, 0.39);
-  b.box("hgKeel", BODY, 0.032, 0.012, 0.18, 0, -0.072, 0.39);
+  b.box("handguard", POLYMER, 0.058, 0.05, 0.2, 0, f - 0.045, 0.39);
+  b.box("hgKeel", BODY, 0.032, 0.012, 0.18, 0, f - 0.072, 0.39);
   // Two millimetres PROUD of the handguard's own rear face rather than flush
   // with it: a cap that ends where the part it caps ends is two coplanar faces
   // in two tones.
-  b.box("hgCap", BODY, 0.06, 0.052, 0.014, 0, -0.045, 0.295);
+  b.box("hgCap", BODY, 0.06, 0.052, 0.014, 0, f - 0.045, 0.295);
   for (const side of [-1, 1] as const) {
     for (let i = 0; i < 4; i++) {
-      b.box("vent", BODY, 0.005, 0.024, 0.016, side * 0.03, -0.045, 0.325 + i * 0.042);
+      b.box("vent", BODY, 0.005, 0.024, 0.016, side * 0.03, f - 0.045, 0.325 + i * 0.042);
     }
   }
-  b.box("slingFront", METAL, 0.022, 0.026, 0.012, -0.034, -0.066, 0.31);
+  b.box("slingFront", METAL, 0.022, 0.026, 0.012, -0.034, f - 0.066, 0.31);
 
   // --- carry handle, folded down the barrel's left flank ---
   // On top of the barrel is where this belongs and where it may not go; see
   // the header. Hinged at the front so it folds BACK, which is also what keeps
   // its catch within reach of the hand already on the handguard.
-  b.box("carryHinge", METAL, 0.03, 0.028, 0.032, -0.036, 0.018, 0.472);
-  b.pin("carryPin", METAL, 0.012, 0.03, -0.036, 0.018, 0.472);
-  b.box("carryBar", METAL, 0.014, 0.018, 0.2, -0.049, 0.018, 0.375);
-  b.box("carryGrip", RUBBER, 0.02, 0.022, 0.11, -0.05, 0.018, 0.375);
-  b.box("carryCatch", METAL, 0.018, 0.016, 0.022, -0.047, 0.018, 0.282);
+  b.box("carryHinge", METAL, 0.03, 0.028, 0.032, -0.036, f + 0.018, 0.472);
+  b.pin("carryPin", METAL, 0.012, 0.03, -0.036, f + 0.018, 0.472);
+  b.box("carryBar", METAL, 0.014, f + 0.018, 0.2, -0.049, f + 0.018, 0.375);
+  b.box("carryGrip", RUBBER, 0.02, 0.022, 0.11, -0.05, f + 0.018, 0.375);
+  b.box("carryCatch", METAL, f + 0.018, 0.016, 0.022, -0.047, f + 0.018, 0.282);
 
   // --- bipod: folded back along the underside, feet trailing ---
   // Inside the gas block's own flanks rather than level with them.
-  b.box("bipodYoke", METAL, 0.046, 0.032, 0.042, 0, -0.032, 0.6);
-  b.pin("bipodPin", METAL, 0.012, 0.062, 0, -0.052, 0.6);
+  b.box("bipodYoke", METAL, 0.046, 0.032, 0.042, 0, f - 0.032, 0.6);
+  b.pin("bipodPin", METAL, 0.012, 0.062, 0, f - 0.052, 0.6);
   for (const side of [-1, 1] as const) {
-    b.box("bipodLeg", METAL, 0.013, 0.015, 0.175, side * 0.02, -0.078, 0.515);
-    b.box("bipodFoot", RUBBER, 0.017, 0.019, 0.03, side * 0.02, -0.078, 0.418);
+    b.box("bipodLeg", METAL, 0.013, 0.015, 0.175, side * 0.02, f - 0.078, 0.515);
+    b.box("bipodFoot", RUBBER, 0.017, 0.019, 0.03, side * 0.02, f - 0.078, 0.418);
   }
 
   // --- muzzle: a flared cone, against three cages and a brake ---
@@ -343,18 +361,18 @@ export function buildLmg(
   // than a fourth size, and a cone is the one the primitives give honestly:
   // `tube` takes a front and a rear diameter, so the flare is the part itself
   // rather than a stack of rings pretending to be one.
-  b.tube("mzCollar", BODY, 0.05, 0.048, 0.022, 0, 0, 0.668);
-  b.tube("mzCone", BODY, 0.058, 0.038, 0.1, 0, 0, 0.728);
+  b.tube("mzCollar", BODY, 0.05, 0.048, 0.022, 0, f, 0.668);
+  b.tube("mzCone", BODY, 0.058, 0.038, 0.1, 0, f, 0.728);
   // Four slots down the cone, dark against it — what reads as a cut is
   // something darker in front of the gap, the same trick as the rifle's cage.
   for (const side of [-1, 1] as const) {
-    b.box("mzSlot", RUBBER, 0.006, 0.03, 0.07, side * 0.024, 0, 0.725);
-    b.box("mzSlotV", RUBBER, 0.03, 0.006, 0.07, 0, side * 0.024, 0.725);
+    b.box("mzSlot", RUBBER, 0.006, 0.03, 0.07, side * 0.024, f, 0.725);
+    b.box("mzSlotV", RUBBER, 0.03, 0.006, 0.07, 0, f + side * 0.024, 0.725);
   }
-  b.shell("crown", METAL, 0.046, 0.007, 0.014, 0, 0.774, 12);
+  b.shell("crown", METAL, 0.046, 0.007, 0.014, f, 0.774, 12);
   // The bore: a dark disc proud of the cone's front face, so the muzzle is a
   // hole rather than a cap.
-  b.tube("mzBore", RUBBER, 0.028, 0.028, 0.008, 0, 0, 0.779);
+  b.tube("mzBore", RUBBER, 0.028, 0.028, 0.008, 0, f, 0.779);
 
   // The LMG itself is finished. Merge it before any optic is built, so a
   // sight's parts can never end up inside the weapon's colour groups.
@@ -417,11 +435,11 @@ export function buildLmg(
 
   return {
     root,
-    muzzle: new Vector3(0, 0, 0.8),
+    muzzle: new Vector3(0, BORE_Y, 0.8),
     // Matches the `ejectPort` box above — the right side of the receiver. The
     // links leave underneath and are not modelled leaving: there is one brass
     // pool and it throws casings, which is what the eye reads at this range.
-    ejectPort: new Vector3(0.05, 0.035, 0.06),
+    ejectPort: new Vector3(0.05, 0.028, 0.06),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
     // No `magHand`: the shared offset takes the support hand back and down to

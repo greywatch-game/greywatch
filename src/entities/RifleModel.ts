@@ -21,6 +21,17 @@ import {
   type WeaponParts,
 } from "./weaponKit";
 
+/**
+ * Height of the bore above the origin: the middle of the upper receiver.
+ *
+ * It was on y = 0, which on this weapon is the seam between the upper and the
+ * lower — a chamber in the trigger housing, 4 cm under its own ejection port
+ * and charging handle. A SCAR's barrel comes out of the FRONT FACE of the
+ * upper with the lower rail hung beneath it, so the barrel, the gas block and
+ * the birdcage move up and the handguard stays where the hand is.
+ */
+const BORE_Y = 0.032;
+
 /** Top face of the receiver's rail — what every sight base stands on. */
 const RAIL_TOP = 0.084;
 
@@ -104,7 +115,8 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, 0.12);
 
 /**
  * Builds a low-poly cel-styled SCAR-pattern battle rifle with a rail optic.
- * Local +z is the barrel axis, origin at the receiver center.
+ * Local +z is the barrel axis, origin at the receiver center, the bore
+ * `BORE_Y` above it.
  *
  * The silhouette follows the FN SCAR: one long stepped upper receiver carrying
  * a full-length top rail, an angular polymer lower with a flared magwell, a
@@ -248,24 +260,24 @@ export function buildRifle(
   b.box("foregripCap", RUBBER, 0.05, 0.016, 0.057, 0, -0.104, 0, foregripPivot);
 
   // --- barrel: gas block, exposed barrel, birdcage flash hider ---
-  b.box("gasBlock", BODY, 0.052, 0.055, 0.07, 0, 0, 0.575);
-  b.box("gasPort", METAL, 0.022, 0.014, 0.026, 0, 0.032, 0.575);
-  b.tube("gasTube", METAL, 0.012, 0.012, 0.055, 0, 0.024, 0.552);
-  b.tube("barrel", BODY, 0.036, 0.036, 0.13, 0, 0, 0.6);
-  b.tube("barrelNut", METAL, 0.042, 0.042, 0.014, 0, 0, 0.652);
+  b.box("gasBlock", BODY, 0.052, 0.055, 0.07, 0, BORE_Y, 0.575);
+  b.box("gasPort", METAL, 0.022, 0.014, 0.026, 0, BORE_Y + 0.032, 0.575);
+  b.tube("gasTube", METAL, 0.012, 0.012, 0.055, 0, BORE_Y + 0.024, 0.552);
+  b.tube("barrel", BODY, 0.036, 0.036, 0.13, 0, BORE_Y, 0.6);
+  b.tube("barrelNut", METAL, 0.042, 0.042, 0.014, 0, BORE_Y, 0.652);
   // Birdcage: rear collar, four struts with the slots between them, open front
   // ring. `a0` is a half facet, so a slot rather than a strut sits at top dead
   // centre — which is where a muzzle device vents, to hold the barrel down.
   // The dark core is what the slots are cut against: without something behind
   // them they open onto the skybox and the cage reads as a smooth tube. Its
   // front face doubles as the bore, seen through the ring.
-  b.tube("mzCollar", BODY, 0.05, 0.046, 0.022, 0, 0, 0.674);
-  b.tube("mzCore", RUBBER, 0.03, 0.03, 0.058, 0, 0, 0.711);
-  b.shell("mzStrut", BODY, 0.032, 0.009, 0.048, 0, 0.711, 4, Math.PI / 4, 0.5);
+  b.tube("mzCollar", BODY, 0.05, 0.046, 0.022, 0, BORE_Y, 0.674);
+  b.tube("mzCore", RUBBER, 0.03, 0.03, 0.058, 0, BORE_Y, 0.711);
+  b.shell("mzStrut", BODY, 0.032, 0.009, 0.048, BORE_Y, 0.711, 4, Math.PI / 4, 0.5);
   // The bottom slot is webbed shut, the way a device that fights muzzle rise
   // vents everywhere but down.
-  b.box("mzWeb", BODY, 0.021, 0.011, 0.048, 0, -0.0205, 0.711);
-  b.shell("crown", METAL, 0.032, 0.011, 0.013, 0, 0.742, 10);
+  b.box("mzWeb", BODY, 0.021, 0.011, 0.048, 0, BORE_Y - 0.0205, 0.711);
+  b.shell("crown", METAL, 0.032, 0.011, 0.013, BORE_Y, 0.742, 10);
 
   // The rifle itself is finished. Merge it before any optic is built, so a
   // sight's parts can never end up inside the weapon's colour groups.
@@ -298,7 +310,7 @@ export function buildRifle(
 
   return {
     root,
-    muzzle: new Vector3(0, 0, 0.75),
+    muzzle: new Vector3(0, BORE_Y, 0.75),
     // Matches the `ejectPort` box above: brass leaves the right side of the
     // receiver, not the middle of the gun.
     ejectPort: new Vector3(0.05, 0.04, 0.06),

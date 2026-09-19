@@ -40,6 +40,16 @@ const MAG_RAKE = -0.1;
 const RAIL_TOP = 0.075;
 
 /**
+ * Height of the bore above the origin: the middle of the upper receiver, and
+ * level with the bottom of the ejection port.
+ *
+ * It was on y = 0, the seam between the upper and the lower — a chamber in the
+ * trigger housing. The handguard is a sleeve over the barrel, so it comes up
+ * with it, and the foregrip under it and the hand on that come too.
+ */
+const BORE_Y = 0.026;
+
+/**
  * Where the SMG offers its rail. The iron stations are 0.4 apart against the
  * rifle's 0.715: a short sight radius is exactly what makes irons on a
  * close-quarters weapon less precise, and it falls out of the receiver's
@@ -55,13 +65,14 @@ const MOUNT: OpticMount = {
 /** Where each hand grips, in weapon-local units. */
 const GRIP_HAND = new Vector3(0.02, -0.124, -0.197);
 const GRIP_ELBOW = new Vector3(0.26, -0.494, -0.537);
-const SUPPORT_HAND = new Vector3(-0.02, -0.08, 0.235);
-const SUPPORT_ELBOW = new Vector3(-0.3, -0.48, 0.0);
+const SUPPORT_HAND = new Vector3(-0.02, -0.08 + BORE_Y, 0.235);
+const SUPPORT_ELBOW = new Vector3(-0.3, -0.48 + BORE_Y, 0.0);
 
 /**
  * Builds a low-poly cel-styled compact SMG. Local +z is the barrel axis,
  * origin at the receiver center — the same frame the rifle is built in, so the
- * viewmodel poses either one with the same numbers.
+ * viewmodel poses either one with the same numbers — with the bore `BORE_Y`
+ * above it.
  *
  * The silhouette is a stubby squared receiver with a full-width top rail, a
  * straight box magazine standing ahead of the trigger group, a short vented
@@ -137,19 +148,21 @@ export function buildSmg(
   b.box("magRelease", METAL, 0.012, 0.026, 0.026, 0.038, -0.048, -0.014);
 
   // --- handguard: a short vented sleeve with a stubby vertical foregrip ---
-  b.box("handguard", POLYMER, 0.07, 0.05, 0.16, 0, -0.005, 0.2);
-  b.box("hgTop", POLYMER, 0.056, 0.012, 0.16, 0, 0.026, 0.2);
-  b.box("hgBottom", POLYMER, 0.056, 0.012, 0.16, 0, -0.036, 0.2);
-  b.box("hgCap", BODY, 0.068, 0.058, 0.012, 0, -0.005, 0.276);
+  // Stated against the bore (`f`): a sleeve is round the barrel it covers.
+  const f = BORE_Y;
+  b.box("handguard", POLYMER, 0.07, 0.05, 0.16, 0, f - 0.005, 0.2);
+  b.box("hgTop", POLYMER, 0.056, 0.012, 0.16, 0, f + 0.026, 0.2);
+  b.box("hgBottom", POLYMER, 0.056, 0.012, 0.16, 0, f - 0.036, 0.2);
+  b.box("hgCap", BODY, 0.068, 0.058, 0.012, 0, f - 0.005, 0.276);
   for (const side of [-1, 1] as const) {
     for (let i = 0; i < 3; i++) {
-      b.box("vent", BODY, 0.005, 0.026, 0.032, side * 0.036, -0.005, 0.15 + i * 0.05);
+      b.box("vent", BODY, 0.005, 0.026, 0.032, side * 0.036, f - 0.005, 0.15 + i * 0.05);
     }
   }
-  b.box("bottomRail", METAL, 0.044, 0.014, 0.12, 0, -0.046, 0.2);
+  b.box("bottomRail", METAL, 0.044, 0.014, 0.12, 0, f - 0.046, 0.2);
   // Toe FORWARD — the support grip's sign, which is the firing grip's
   // inverted. See the rifle's foregrip for why the two lean apart.
-  const foregripPivot = b.pivot("foregripPivot", 0, -0.04, 0.235, -0.38);
+  const foregripPivot = b.pivot("foregripPivot", 0, f - 0.04, 0.235, -0.38);
   b.box("foregrip", POLYMER, 0.042, 0.085, 0.05, 0, -0.044, 0, foregripPivot);
   b.box("foregripCap", RUBBER, 0.044, 0.014, 0.052, 0, -0.09, 0, foregripPivot);
 
@@ -166,16 +179,16 @@ export function buildSmg(
   b.box("slingRear", METAL, 0.022, 0.026, 0.012, -0.034, -0.03, -0.318);
 
   // --- barrel: short, with a slotted flash hider ---
-  b.tube("barrel", BODY, 0.03, 0.03, 0.14, 0, 0, 0.34);
-  b.tube("barrelNut", METAL, 0.038, 0.038, 0.014, 0, 0, 0.283);
+  b.tube("barrel", BODY, 0.03, 0.03, 0.14, 0, f, 0.34);
+  b.tube("barrelNut", METAL, 0.038, 0.038, 0.014, 0, f, 0.283);
   // Same construction as the rifle's birdcage, three quarters the size: a
   // collar, four struts with the slots between them, a dark core behind them
   // so the slots are cut against something, and an open crown ring.
-  b.tube("mzCollar", BODY, 0.042, 0.038, 0.018, 0, 0, 0.42);
-  b.tube("mzCore", RUBBER, 0.026, 0.026, 0.05, 0, 0, 0.455);
-  b.shell("mzStrut", BODY, 0.028, 0.008, 0.042, 0, 0.455, 4, Math.PI / 4, 0.5);
-  b.box("mzWeb", BODY, 0.018, 0.01, 0.042, 0, -0.018, 0.455);
-  b.shell("crown", METAL, 0.028, 0.009, 0.012, 0, 0.482, 10);
+  b.tube("mzCollar", BODY, 0.042, 0.038, 0.018, 0, f, 0.42);
+  b.tube("mzCore", RUBBER, 0.026, 0.026, 0.05, 0, f, 0.455);
+  b.shell("mzStrut", BODY, 0.028, 0.008, 0.042, f, 0.455, 4, Math.PI / 4, 0.5);
+  b.box("mzWeb", BODY, 0.018, 0.01, 0.042, 0, f - 0.018, 0.455);
+  b.shell("crown", METAL, 0.028, 0.009, 0.012, f, 0.482, 10);
 
   const meshes = b.merge("smg", root);
 
@@ -202,7 +215,7 @@ export function buildSmg(
 
   return {
     root,
-    muzzle: new Vector3(0, 0, 0.5),
+    muzzle: new Vector3(0, BORE_Y, 0.5),
     ejectPort: new Vector3(0.046, 0.036, 0.03),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },

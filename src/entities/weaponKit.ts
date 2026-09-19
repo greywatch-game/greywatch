@@ -243,8 +243,12 @@ export interface WeaponParts {
    * with the other two — a bolt gun has a magazine as well.
    *
    * **Its geometry must be built about the BORE**, because the cycle rotates
-   * this node about z to lift the handle and the node sits at the weapon's own
-   * origin. That is not a constraint the animation imposes on the model, it is
+   * this node about its own z to lift the handle, and `ViewModel` zeroes its
+   * transform to put the part home. So the node's ORIGIN must be on the bore:
+   * a weapon whose bore is not on y = 0 builds the parts on the axis and hangs
+   * this node from a fixed parent at the bore's height (`SniperModel`'s
+   * `boltSeat`), since an offset written on the node itself would be wiped.
+   * That is not a constraint the animation imposes on the model, it is
    * how a bolt actually is: the bolt is in line with the barrel, and a model
    * that puts the raceway somewhere else is wrong before it is animated.
    *
