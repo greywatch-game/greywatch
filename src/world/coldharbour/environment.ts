@@ -127,7 +127,10 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    * read — and letting the fog do the rest. What puts shape back into the face
    * is not a colour at all: it is the stands of pine sown across the
    * borderland in front of it (`layout.ts`'s last scatter block), which is
-   * Harrowmead's lesson about a flat margin applied to a tall one.
+   * Harrowmead's lesson about a flat margin applied to a tall one — and now
+   * the knolls and the woods on the hill itself (`ridge.rolling`), which
+   * leave this tone showing as pasture between stands rather than as a whole
+   * face, so it is the same test it always was and a smaller share of it.
    */
   ridgeColor: "#6b6e5e",
   /**

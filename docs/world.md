@@ -1318,6 +1318,56 @@ smoothstep rather than `passWindow`'s cosine for the reason the borderland eases
 its own roll: this factor multiplies the height and the reach at once, so a C0
 join puts a crease down the hillside exactly where anybody is looking at it.
 
+### Rolling downs: `RidgeSpec.rolling`
+
+**The downs alone are ONE swept profile**, so on a map that can see its rim
+from everywhere they arrive as a single smooth bank with a level skyline — a
+backdrop however it is painted. `RidgeSpec.rolling` turns that into country,
+and it is Coldharbour's alone today: separate **summits** and saddles along the
+crest (a periodic noise round the CREST's curve, so a corner fan is not a clump
+of hills), **knolls** and hollows across the face (world-XZ noise weighted
+`4f(1-f)` on the ring's height fraction, so neither the seam with the floor nor
+the skyline moves), and **woods** sown on the slope. Absent, every rim is
+bit-identical to what it was — every table it adds is filled from a stream of
+its own seeded off the rim's, never from the rim's own stream and never from
+`MapBuilder`'s — which was checked by hashing Sarab's rim vertices before and
+after.
+
+- **The summits are cut BEFORE `MIN_SLOPE`'s clamp**, as a pass is, so the
+  deepest saddle is still a saddle against the sky and never a hole in it.
+- **A rolling rim cuts its face four times finer (`ROLL_SPLIT`), and that is
+  the cel shader's price rather than a nicety.** A face quad is one station
+  wide (2.5 m) and one ring tall (~22 m), and a knoll TWISTS it — the slope
+  along the ring differs between the quad's lower and upper edge — so its two
+  flat-shaded triangles lean different ways and the face came out as a row of
+  saw teeth, the same failure the downs' coarse slope noise exists to avoid.
+  The twist per quad is the change in the knoll's weight between two rings, so
+  splitting each span divides it. `refineProfile` keeps the band and the back
+  toe unsplit, because both have special-cased heights.
+- **The woods are the RIM's, not scatter.** They are built into the rim's own
+  VertexData, so they emit no collider, no `WorldBox`, nothing in the collision
+  bake, and draw nothing from the map's seeded stream — nothing inside the play
+  square can reroll because a tree on a hill moved. They are sown per QUAD and
+  weighted by its plan area, never per station, or every corner fan (ninety-odd
+  stations at one toe point) would be a forest. A stand mask cut at a threshold
+  `woods` moves makes cover come as STANDS with pasture between them; the tops
+  go bald, the foot thins into the plain, broadleaf holds the lower slope and
+  conifer the upper. `shore` is the lowest height a tree may stand at, for a
+  range running down into the sea.
+- **They wear the near trees' paint** (`Props.RIM_WOOD`): the pine's needles
+  and bark, and the dark broadleaf — the ash's spring green came out as a
+  field of bright diamonds under a low sun. They go into `visuals`, so the
+  vertex bake gives them the colour buffer the merged pines carry, which is
+  what makes sharing the pines' cached materials safe. **Every tree has a
+  trunk**: at 150 m a crown with nothing under it reads as hanging in the air
+  before anything else about it reads at all.
+- **What it costs is DRAWS.** Four tones per run of woods, so the woods are cut
+  into `WOOD_RUNS` (5) rather than the rim's ten. Measured on Coldharbour with
+  the shipped profiler: at ten runs the woods were +0.13–0.19 ms of the tick
+  from every vantage; at five, +0.04–0.10 ms and +8–12 draws. The ~6,800 trees
+  are about 200k vertices, which the GPU does not notice. They are receivers
+  only (`noShadowCaster`), for the rim's own reason.
+
 ### When the borderland IS the landform
 
 **A margin bought past `fogEnd` does not need a rim standing on it, because it

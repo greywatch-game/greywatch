@@ -108,6 +108,7 @@ import {
   buildRubble,
   buildSkip,
   buildTrafficCone,
+  RIM_WOOD,
 } from "./Props";
 
 /** A capturable flag. */
@@ -1529,9 +1530,24 @@ export class MapBuilder {
     for (const seg of ridgeSegments(ridge, extent, terrain)) {
       const mesh = new Mesh(`ridge-${seg.key}`, this.scene);
       seg.data.applyToMesh(mesh);
-      mesh.material = this.mats.get(
-        seg.tone === "scree" ? env.ridgeScreeColor : env.ridgeColor,
-      );
+      if (seg.tone === "scree" || seg.tone === "rock") {
+        mesh.material = this.mats.get(
+          seg.tone === "scree" ? env.ridgeScreeColor : env.ridgeColor,
+        );
+      } else {
+        // The woods on a rolling rim, in the near trees' own paint. They go
+        // into `visuals` like the rock, so the vertex bake gives them the same
+        // colour buffer the merged pines carry — which is what makes sharing
+        // the pines' cached material safe (see `CelMaterialFactory.remember`).
+        const wood = RIM_WOOD[seg.tone];
+        mesh.material =
+          wood.trans === null
+            ? this.mats.get(wood.hex)
+            : this.mats.getTranslucent(
+                wood.hex,
+                CONFIG.graphics.translucency[wood.trans],
+              );
+      }
       // A 20-45 m crest throws 26-58 m of shadow at the moon's 38 deg, and the
       // shadow window is a fixed 110 m square that follows the player — so a
       // casting rim would end its shadow in a hard line that slides across open

@@ -610,8 +610,9 @@ src/
                         #   and junction patch, and the BORDERLAND past the
                         #   authored grid on a map whose boundary is open
     Ridge.ts            # The valley rim, in two forms — an escarpment and the
-                        #   downs. Shape only: no collider, nothing inside the
-                        #   boundary it is handed
+                        #   downs — and, on a `rolling` downs, the summits,
+                        #   knolls and the woods sown on it. Shape only: no
+                        #   collider, nothing inside the boundary it is handed
     leash.ts            # What stops a player leaving a map that has no wall:
                         #   one clock per body, and the verdict it reaches.
                         #   Pure — the caller does the killing, and offline that

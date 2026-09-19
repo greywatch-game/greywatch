@@ -53,6 +53,7 @@ const ASH_BARK = "#6b6553";
 // and the same grey at two hundred.
 const ASH_LEAF = "#35602f";
 const ASH_LEAF_LIT = "#57893c";
+
 // Jungle hardwood: paler and greyer than the valley's dead bark — a wet trunk
 // under a bright sky, not a charred one under a moon.
 const JUNGLE_BARK = "#5b5443";
@@ -70,6 +71,22 @@ const FROND_LIT = "#71934a";
 const DATE_FRUIT = "#8a5a2a";
 const LEAF = "#2c5230";
 const LEAF_LIT = "#437a3e";
+
+/**
+ * What the woods on a rolling rim wear (`Ridge.ts`), keyed by its tones: the
+ * pine's own needles and bark, so a stand on the hill and the stands on the
+ * plain in front of it are one wood seen at two distances, and the dark
+ * broadleaf rather than the ash's — the ash's spring green, a hundred crowns
+ * of it lit by a low sun, came out as a field of bright diamonds a long way
+ * brighter than the pines beside it. `trans` is the translucency each takes,
+ * `null` for an opaque cel material; `MapBuilder` reads both.
+ */
+export const RIM_WOOD = {
+  needle: { hex: NEEDLE, trans: "foliage" },
+  needleLit: { hex: NEEDLE_LIT, trans: "foliage" },
+  leaf: { hex: LEAF, trans: "canopy" },
+  bark: { hex: BARK, trans: null },
+} as const;
 // Creeper and moss. The same value as the kit's CREEPER, deliberately restated
 // rather than imported: Props.ts owns its own palette and takes nothing from
 // the structure kit, so a prop stays placeable without a builder.

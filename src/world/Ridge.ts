@@ -80,16 +80,38 @@
  *   extrudes along normals `VertexData.transform` does not renormalise.
  */
 import { VertexData } from "@babylonjs/core";
-import type { RidgeMouth, RidgePass, RidgeSpec } from "./layout";
+import type {
+  RidgeMouth,
+  RidgePass,
+  RidgeRolling,
+  RidgeSpec,
+} from "./layout";
 import type { TerrainField } from "./TerrainField";
 import { mulberry32 } from "./rng";
+
+/**
+ * The rim's tones. The last four are the WOODS, and they are the near trees'
+ * own paint (`Props.RIM_WOOD`) rather than colours of the rim's, so a stand on
+ * the hill and a stand on the plain in front of it cannot disagree.
+ */
+export type RidgeTone =
+  | "rock"
+  | "scree"
+  | "needle"
+  | "needleLit"
+  | "leaf"
+  | "bark";
 
 /** One merged run of rim, ready for a mesh. */
 export interface RidgeSegment {
   /** Mesh name suffix — `ridge-<key>`. */
   key: string;
-  /** Which tone it takes: the rock, or the foot that melts into the floor. */
-  tone: "rock" | "scree";
+  /**
+   * Which tone it takes: the rock, the foot that melts into the floor, or —
+   * on a rim stating `rolling.woods` — one of the four the trees on it wear.
+   * `MapBuilder` owns what each one is painted with.
+   */
+  tone: RidgeTone;
   data: VertexData;
 }
 
@@ -250,6 +272,38 @@ const SCREE_RING = 2;
  */
 const DOWNS_SCREE_RING = 5;
 
+/**
+ * How many rings a rolling rim cuts each span of its face into — see where
+ * `ridgeSegments` picks its profile.
+ */
+const ROLL_SPLIT = 4;
+
+/**
+ * `profile` with every span from ring 1 up to the back slope cut into `n`,
+ * interpolated linearly in both offset and height, so the surface is the
+ * same one drawn through more rings. The toe span is left alone (ring 0 to 1
+ * is the band, whose heights are special-cased) and so is the last one (the
+ * back toe's height is special-cased too, and nobody sees it). Old ring `j`
+ * lands at `1 + (j - 1) * n`; at `n = 1` this is the table itself.
+ */
+function refineProfile(
+  profile: [number, number][],
+  n: number,
+): [number, number][] {
+  if (n <= 1) return profile;
+  const last = profile.length - 1;
+  const out: [number, number][] = [profile[0], profile[1]];
+  for (let j = 1; j < last - 1; j++) {
+    const [o0, h0] = profile[j];
+    const [o1, h1] = profile[j + 1];
+    for (let k = 1; k <= n; k++) {
+      out.push([o0 + ((o1 - o0) * k) / n, h0 + ((h1 - h0) * k) / n]);
+    }
+  }
+  out.push(profile[last]);
+  return out;
+}
+
 /** One station on the boundary ring. */
 interface Station {
   /** The toe point, exactly on the boundary. */
@@ -294,6 +348,196 @@ function periodicNoise(rng: () => number, octaves: number, base: number) {
     }
     return sum / norm;
   };
+}
+
+/**
+ * Value noise over WORLD XZ, for what varies across the face rather than
+ * round the ring — the knolls and the woods' stands. Hashed rather than
+ * tabled, because the plane has no period to fill a table over; the seed is
+ * the rim's own, so nothing here draws from any stream at all.
+ *
+ * `cell` is the finest wavelength anybody may see, and the octaves only go UP
+ * from it — for the teeth reason `ridgeSegments` gives for the slope noise.
+ */
+function planeNoise(seed: number, cell: number, octaves: number) {
+  const hash = (ix: number, iz: number, k: number): number => {
+    let h = Math.imul(ix, 0x27d4eb2d) ^ Math.imul(iz, 0x165667b1);
+    h = Math.imul(h ^ (seed + k * 0x9e3779b9), 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+  return (x: number, z: number): number => {
+    let sum = 0;
+    let norm = 0;
+    for (let k = 0; k < octaves; k++) {
+      // Coarsest first: octave k is `cell * 2^(octaves-1-k)` metres.
+      const size = cell * 2 ** (octaves - 1 - k);
+      const fx = x / size;
+      const fz = z / size;
+      const ix = Math.floor(fx);
+      const iz = Math.floor(fz);
+      let tx = fx - ix;
+      let tz = fz - iz;
+      tx = tx * tx * (3 - 2 * tx);
+      tz = tz * tz * (3 - 2 * tz);
+      const a = hash(ix, iz, k);
+      const b = hash(ix + 1, iz, k);
+      const c = hash(ix, iz + 1, k);
+      const d = hash(ix + 1, iz + 1, k);
+      const amp = 1 / 2 ** k;
+      sum += (a + (b - a) * tx + (c - a) * tz + (a - b - c + d) * tx * tz) * amp;
+      norm += amp;
+    }
+    return sum / norm;
+  };
+}
+
+/** `smoothstep`, for the woods' ramps. */
+function ease(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Ground a tree needs at full cover, in square metres — crowns touching,
+ * which is what a wood reads as from three hundred metres off. `woods` spends
+ * it as a share of the face, not as a thinner spread: a hillside half wooded
+ * is stands and pasture, never every tree half as close.
+ */
+const TREE_AREA = 40;
+
+/** Sides on a far tree. Six, as on the rim's corner fans, is round at range. */
+const TREE_SIDES = 6;
+
+/** Runs the woods are cut into — see where `ridgeSegments` sows them. */
+const WOOD_RUNS = 5;
+
+/**
+ * The rim's woods, one accumulator per tone. Separate from `RingAccum`
+ * because a tree is looked at from every side and faces OUTWARD from its own
+ * axis — the rim's inward check means nothing here.
+ *
+ * **Babylon is left-handed**, and the order used is the one `RingAccum`
+ * states run the other way round: round a ring with the angle INCREASING
+ * (+X towards +Z), `(lower_k, lower_k+1, upper_k+1)` then `(lower_k,
+ * upper_k+1, upper_k)` gives an OUTWARD normal. Checked against
+ * `ComputeNormals`' `(p1 - p2) x (p3 - p2)` on the first quad of a cone.
+ */
+class TreeAccum {
+  private readonly positions: number[] = [];
+  private readonly indices: number[] = [];
+
+  private ring(
+    x: number,
+    y: number,
+    z: number,
+    r: number,
+    yaw: number,
+    sides = TREE_SIDES,
+  ): number {
+    const at = this.positions.length / 3;
+    for (let k = 0; k < sides; k++) {
+      const a = yaw + (k / sides) * Math.PI * 2;
+      this.positions.push(x + Math.cos(a) * r, y, z + Math.sin(a) * r);
+    }
+    return at;
+  }
+
+  private point(x: number, y: number, z: number): number {
+    this.positions.push(x, y, z);
+    return this.positions.length / 3 - 1;
+  }
+
+  /** A band between two rings, outward. */
+  private band(lo: number, hi: number, sides = TREE_SIDES): void {
+    for (let k = 0; k < sides; k++) {
+      const k1 = (k + 1) % sides;
+      this.indices.push(lo + k, lo + k1, hi + k1, lo + k, hi + k1, hi + k);
+    }
+  }
+
+  /** A fan from a ring up to an apex, outward. */
+  private top(ring: number, apex: number): void {
+    for (let k = 0; k < TREE_SIDES; k++) {
+      this.indices.push(ring + k, ring + ((k + 1) % TREE_SIDES), apex);
+    }
+  }
+
+  /** A fan from an apex BELOW a ring up to it, outward and down. */
+  private bottom(apex: number, ring: number): void {
+    for (let k = 0; k < TREE_SIDES; k++) {
+      this.indices.push(apex, ring + ((k + 1) % TREE_SIDES), ring + k);
+    }
+  }
+
+  /**
+   * A bole: four sides, no caps — its foot is sunk and its head is inside
+   * the crown, so neither end is ever seen. Without one a tree at 150 m is a
+   * crown hanging in the air, which is the first thing that reads as wrong.
+   */
+  trunk(x: number, y0: number, z: number, r: number, y1: number): void {
+    const foot = this.ring(x, y0, z, r, 0, 4);
+    const head = this.ring(x, y1, z, r * 0.6, 0, 4);
+    this.band(foot, head, 4);
+  }
+
+  /**
+   * One cone of a conifer, with a CAP under its skirt. The rim is seen from
+   * below — a hillside rising from the city — and an open skirt looked up
+   * into is a hole showing the hill through the tree.
+   */
+  cone(
+    x: number,
+    y0: number,
+    z: number,
+    r: number,
+    y1: number,
+    yaw: number,
+  ): void {
+    const skirt = this.ring(x, y0, z, r, yaw);
+    this.top(skirt, this.point(x, y1, z));
+    // The cap takes its own ring: sharing the skirt's would average the two
+    // normals into a sideways one and light the underside like the flank.
+    const cap = this.ring(x, y0, z, r, yaw);
+    const centre = this.point(x, y0, z);
+    for (let k = 0; k < TREE_SIDES; k++) {
+      this.indices.push(centre, cap + ((k + 1) % TREE_SIDES), cap + k);
+    }
+  }
+
+  /**
+   * A broadleaf crown: three rings, each turned half a side on the last, so
+   * six sides come out as a faceted ball rather than the diamond two rings
+   * make. Broadest a little under halfway, as a hedgerow ash is.
+   */
+  crown(x: number, y: number, z: number, h: number, yaw: number): void {
+    const step = Math.PI / TREE_SIDES;
+    const base = this.point(x, y + 0.3 * h, z);
+    const a = this.ring(x, y + 0.42 * h, z, 0.3 * h, yaw);
+    const b = this.ring(x, y + 0.6 * h, z, 0.37 * h, yaw + step);
+    const c = this.ring(x, y + 0.82 * h, z, 0.27 * h, yaw);
+    this.bottom(base, a);
+    this.band(a, b);
+    this.band(b, c);
+    this.top(c, this.point(x, y + h, z));
+  }
+
+  get empty(): boolean {
+    return this.indices.length === 0;
+  }
+
+  finish(half: number): VertexData {
+    const data = new VertexData();
+    data.positions = this.positions;
+    data.indices = this.indices;
+    const normals: number[] = [];
+    VertexData.ComputeNormals(this.positions, this.indices, normals);
+    data.normals = normals;
+    if (import.meta.env.DEV) assertOutsidePlay(this.positions, half);
+    return data;
+  }
 }
 
 /**
@@ -607,6 +851,126 @@ function assertOutsidePlay(positions: number[], half: number): void {
 }
 
 /**
+ * The trees on one segment of a rolling rim, as up to four meshes' worth of
+ * geometry — conifer skirts, conifer tops, broadleaf crowns and the boles
+ * under all of them.
+ *
+ * **Sown per QUAD of the face and weighted by its ground area**, never on a
+ * grid of stations: a corner fan is ninety-odd stations at one toe point, so
+ * anything counted per station would pile a forest into every corner. The
+ * area of the quad's plan is what a tree needs, so the density is the same on
+ * a side, in a fan and on a headland shrinking into the sea.
+ *
+ * **What makes it WOODS rather than a pile is the stand mask**: `planeNoise`
+ * at a couple of hundred metres, cut at a threshold `woods` moves, so cover
+ * comes as stands with pasture between them and raising `woods` grows the
+ * stands rather than thinning out a carpet. The tops go bald and the foot
+ * thins into the plain; broadleaf holds the lower slopes and conifer the
+ * upper, which is what a hill that has never been planted does.
+ *
+ * Its own stream, seeded per run, so a tree never moves because a different
+ * run changed.
+ */
+function sowWoods(
+  rolling: RidgeRolling,
+  rimSeed: number,
+  s: number,
+  from: number,
+  to: number,
+  count: number,
+  surface: (Float64Array | null)[],
+  profile: [number, number][],
+  crestRing: number,
+  half: number,
+): RidgeSegment[] {
+  const woods = Math.min(1, Math.max(0, rolling.woods ?? 0));
+  const shore = rolling.shore ?? -Infinity;
+  const rng = mulberry32((rimSeed ^ 0x574f4f44) + s * 0x9e3779b1);
+  const stands = planeNoise(rimSeed ^ 0x5354414e, 70, 3);
+  // The mask's midpoint moves with `woods`; the band either side of it is the
+  // woods' EDGE, where trees come out into the open one at a time rather than
+  // stopping at a line.
+  const cut = 1 - woods;
+  const needle = new TreeAccum();
+  const needleLit = new TreeAccum();
+  const leaf = new TreeAccum();
+  const bark = new TreeAccum();
+  const P = (col: Float64Array, j: number, axis: number): number =>
+    col[j * 3 + axis];
+
+  for (let k = from; k < to; k++) {
+    const a = surface[k];
+    const b = surface[(k + 1) % count];
+    if (!a || !b) continue;
+    // From the shoulder to one strip past the crest: trees standing just over
+    // the top are what break the SKYLINE, which is where a wood on a hill is
+    // read from furthest away.
+    for (let j = 1; j <= crestRing; j++) {
+      // The quad's plan area, by the shoelace over a0 b0 b1 a1.
+      const xs = [P(a, j, 0), P(b, j, 0), P(b, j + 1, 0), P(a, j + 1, 0)];
+      const zs = [P(a, j, 2), P(b, j, 2), P(b, j + 1, 2), P(a, j + 1, 2)];
+      let area = 0;
+      for (let q = 0; q < 4; q++) {
+        area += xs[q] * zs[(q + 1) % 4] - xs[(q + 1) % 4] * zs[q];
+      }
+      area = Math.abs(area) / 2;
+      const expect = area / TREE_AREA;
+      let n = Math.floor(expect);
+      if (rng() < expect - n) n++;
+      for (let t = 0; t < n; t++) {
+        const u = rng();
+        const v = rng();
+        const pick = rng();
+        const size = rng();
+        const yaw = rng() * Math.PI * 2;
+        const at = (axis: number): number => {
+          const lo = P(a, j, axis) + (P(b, j, axis) - P(a, j, axis)) * u;
+          const hi =
+            P(a, j + 1, axis) + (P(b, j + 1, axis) - P(a, j + 1, axis)) * u;
+          return lo + (hi - lo) * v;
+        };
+        const x = at(0);
+        const y = at(1);
+        const z = at(2);
+        if (y < shore) continue;
+        // How far up the hill this is, as the profile's own height fraction.
+        const f0 = j === 1 ? 0 : profile[j][1];
+        const hf = f0 + (profile[j + 1][1] - f0) * v;
+        let p = ease(cut - 0.1, cut + 0.1, stands(x, z));
+        p *= 0.35 + 0.65 * ease(0, 0.12, hf); // thinning into the plain
+        p *= 1 - 0.6 * ease(0.8, 1, hf); // bald tops
+        if (rng() >= p) continue;
+        const broad = pick < 0.12 + 0.6 * (1 - ease(0.2, 0.65, hf));
+        const h = broad ? 8 + 5 * size : 8 + 8 * size * size;
+        // Nothing the rim draws may stand where a player can: the crown's
+        // reach, not the trunk's foot, is what `assertOutsidePlay` measures.
+        const r = (broad ? 0.36 : 0.3) * h;
+        if (Math.max(Math.abs(x), Math.abs(z)) - r < half + 0.25) continue;
+        const y0 = y - 0.3; // sunk, so no downhill foot floats
+        bark.trunk(x, y0, z, 0.035 * h, y0 + (broad ? 0.5 : 0.3) * h);
+        if (broad) {
+          leaf.crown(x, y0, z, h, yaw);
+        } else {
+          needle.cone(x, y0 + 0.08 * h, z, 0.3 * h, y0 + 0.72 * h, yaw);
+          needleLit.cone(x, y0 + 0.46 * h, z, 0.2 * h, y0 + h, yaw + 0.5);
+        }
+      }
+    }
+  }
+
+  const out: RidgeSegment[] = [];
+  for (const [tone, acc] of [
+    ["needle", needle],
+    ["needleLit", needleLit],
+    ["leaf", leaf],
+    ["bark", bark],
+  ] as const) {
+    if (!acc.empty) out.push({ key: `${tone}-${s}`, tone, data: acc.finish(half) });
+  }
+  return out;
+}
+
+/**
  * Builds the rim as `SEGMENTS` runs per tone, for frustum culling and for
  * `WorldCulling`'s candidate list, both of which are answered per MESH.
  *
@@ -641,13 +1005,26 @@ export function ridgeSegments(
   // escarpment's — and the form picks the profile, the tone split and the two
   // places the shapes genuinely disagree: the basal band and the ledges.
   const downs = spec?.form === "downs";
-  const profile = downs ? DOWNS_PROFILE : PROFILE;
-  const screeRing = downs ? DOWNS_SCREE_RING : SCREE_RING;
+  // A rolling rim cuts its face FINER, and the reason is the shader. A face
+  // quad is one station wide (2.5 m) and one ring tall (~22 m), and a knoll
+  // TWISTS it — the slope along the ring differs between its lower and upper
+  // edge — so its two flat-shaded triangles lean different ways and the face
+  // comes out as a row of saw teeth. The twist per quad is the change in the
+  // knoll's weight between two rings, so splitting each span in `ROLL_SPLIT`
+  // divides it by as much. Every other rim keeps its twelve rings exactly.
+  const rolling: RidgeRolling | undefined = downs ? spec?.rolling : undefined;
+  const split = rolling ? ROLL_SPLIT : 1;
+  const profile = downs
+    ? refineProfile(DOWNS_PROFILE, split)
+    : PROFILE;
+  const ringOf = (j: number): number => (j <= 1 ? j : 1 + (j - 1) * split);
+  const crestRing = ringOf(CREST_RING);
+  const screeRing = downs ? ringOf(DOWNS_SCREE_RING) : SCREE_RING;
 
   const reach = spec?.reach ?? 1;
   const stations = ringStations(
     half,
-    cornerStations(profile[CREST_RING][0] * reach),
+    cornerStations(profile[crestRing][0] * reach),
   );
   const count = stations.length;
 
@@ -676,8 +1053,26 @@ export function ridgeSegments(
     passWindow(p, stations, count),
   );
   const depths = (spec?.passes ?? []).map((p) => p.depth ?? 0.45);
-  const arc = crestArc(stations, profile[CREST_RING][0] * reach);
+  const arc = crestArc(stations, profile[crestRing][0] * reach);
   const mouths = (spec?.mouth ?? []).map((m) => mouthWindow(m, stations, arc));
+
+  // **Rolling country, and it draws from none of the streams above.** Every
+  // table here is filled from a stream of its OWN, seeded off the rim's, so a
+  // map that states no `rolling` — every map but one — gets exactly the rim it
+  // had, to the float, and one that does can retune it without moving a
+  // single station of the slope noise under it.
+  const rimSeed = spec?.seed ?? 0x52494447;
+  const relief = rolling?.relief ?? 0.3;
+  // The summits are measured round the CREST's curve, as a mouth is, so a
+  // corner fan — ninety-odd stations at one point — is not a clump of hills.
+  // Two octaves and no more: the finest is half a hill, never a ripple.
+  const summitNoise = rolling
+    ? periodicNoise(mulberry32(rimSeed ^ 0x53554d4d), 2, rolling.summits ?? 16)
+    : null;
+  const knolls = rolling?.knolls ?? 0.1;
+  const knollNoise = rolling
+    ? planeNoise(rimSeed ^ 0x4b4e4f4c, rolling.knollSize ?? 110, 2)
+    : null;
 
   // --- per-station profile parameters -------------------------------------
   const crest: number[] = [];
@@ -714,12 +1109,17 @@ export function ridgeSegments(
       pass = Math.max(pass, w);
       slope *= 1 - depths[p] * w;
     }
+    // A summit or a saddle. Before the clamp, as a pass is, so the deepest col
+    // this can make is still a saddle against the sky and never a hole in it.
+    if (summitNoise) {
+      slope *= 1 + relief * (summitNoise(arc.at[i] / arc.total) * 2 - 1) * 1.6;
+    }
     // The clamp is what makes a pass safe: a saddle, never a hole in the sky.
     slope = Math.max(slope, MIN_SLOPE);
 
     // The crest sits further out than the toe, so its own radius is what the
     // angle is measured on — solved directly rather than iterated.
-    const crestOut = profile[CREST_RING][0] * reach;
+    const crestOut = profile[crestRing][0] * reach;
     const rCrest = st.r + crestOut;
     crest.push(rCrest * slope * left);
 
@@ -781,6 +1181,61 @@ export function ridgeSegments(
     );
   }
 
+  // --- the surface ---------------------------------------------------------
+  //
+  // Every vertex the rim will emit, solved ONCE per station rather than once
+  // per tone — the two tones share ring `screeRing`, and the woods stand on
+  // the same points the faces are drawn through. `null` where a mouth has
+  // taken the landform away outright: the column is a fan of degenerate
+  // quads, and the strips either side of it have to BREAK rather than bridge
+  // across the opening.
+  const rings = profile.length;
+  const surface: (Float64Array | null)[] = new Array(count);
+  for (let i = 0; i < count; i++) {
+    if (shrink[i] <= 1e-3) {
+      surface[i] = null;
+      continue;
+    }
+    const st = stations[i];
+    const col = new Float64Array(rings * 3);
+    for (let j = 0; j < rings; j++) {
+      const [off, frac] = profile[j];
+      let y: number;
+      if (j === 0) y = groundY[i] - 0.4;
+      else if (j === 1) y = groundY[i] + plinth[i];
+      else if (j === rings - 1) y = groundY[i] + frac * 24 * shrink[i];
+      else {
+        const wob = j === 3 || j === 5 || j === 7 ? ledge[i] : 0;
+        y = groundY[i] + (frac + wob) * crest[i];
+      }
+      // Rings 0 and 1 are the band, and the band is never bulged: on the
+      // escarpment it is the vertical face and both offsets are 0, so this
+      // changes nothing there; on the downs it keeps the shoulder's five
+      // metres the same five metres all the way round, so what varies at
+      // the foot of the hill is its height and not where it starts.
+      // They are still SHRUNK by a mouth, or the shoulder's five metres would
+      // still be five metres after everything above them had gone, and lay a
+      // strip of rock along the floor the whole length of the opening.
+      const t = off * (j <= 1 ? shrink[i] : bulge[i]);
+      const x = st.x + st.nx * t;
+      const z = st.z + st.nz * t;
+      // A knoll or a hollow. Weighted `4f(1-f)` on the ring's own height
+      // fraction, so it is nothing at the toe and nothing at the crest — the
+      // seam with the floor and the skyline are where they were — and at its
+      // strongest mid-face, where a hill has room to have a shape of its own.
+      // `f(1-f)` also keeps the ring under the crest below it at any `knolls`
+      // up to 0.25.
+      if (knollNoise && j >= 2 && j < crestRing) {
+        y += knolls * crest[i] * 4 * frac * (1 - frac) *
+          (knollNoise(x, z) * 2 - 1);
+      }
+      col[j * 3] = x;
+      col[j * 3 + 1] = y;
+      col[j * 3 + 2] = z;
+    }
+    surface[i] = col;
+  }
+
   // --- emit ---------------------------------------------------------------
   const out: RidgeSegment[] = [];
   const perSegment = Math.ceil(count / SEGMENTS);
@@ -794,44 +1249,24 @@ export function ridgeSegments(
       const acc = new RingAccum();
       // One extra station so neighbouring segments share an edge; the ring
       // wraps, so the last segment's overhang is station 0.
-      // `null` where a mouth has taken the landform away outright: the column
-      // is a fan of degenerate quads, and the strips either side of it have to
-      // BREAK rather than bridge across the opening.
       const cols: (number[] | null)[] = [];
       for (let k = from; k <= to; k++) {
-        const i = k % count;
-        const st = stations[i];
-        if (shrink[i] <= 1e-3) {
+        const src = surface[k % count];
+        if (!src) {
           cols.push(null);
           continue;
         }
         const col: number[] = [];
         for (let j = j0; j <= j1; j++) {
-          const [off, frac] = profile[j];
-          let y: number;
-          if (j === 0) y = groundY[i] - 0.4;
-          else if (j === 1) y = groundY[i] + plinth[i];
-          else if (j === profile.length - 1)
-            y = groundY[i] + frac * 24 * shrink[i];
-          else {
-            const wob = j === 3 || j === 5 || j === 7 ? ledge[i] : 0;
-            y = groundY[i] + (frac + wob) * crest[i];
-          }
-          // Rings 0 and 1 are the band, and the band is never bulged: on the
-          // escarpment it is the vertical face and both offsets are 0, so this
-          // changes nothing there; on the downs it keeps the shoulder's five
-          // metres the same five metres all the way round, so what varies at
-          // the foot of the hill is its height and not where it starts.
-          // Rings 0 and 1 are the band and are never BULGED, for the reason
-          // below — but they are still SHRUNK by a mouth, or the shoulder's
-          // five metres would still be five metres after everything above
-          // them had gone, and lay a strip of rock along the floor the whole
-          // length of the opening.
-          const t = off * (j <= 1 ? shrink[i] : bulge[i]);
           // The crest ring is shared with the first back strip, so its normal
           // is a blend — the winding check takes the rings below it only.
           col.push(
-            acc.vertex(st.x + st.nx * t, y, st.z + st.nz * t, j < CREST_RING),
+            acc.vertex(
+              src[j * 3],
+              src[j * 3 + 1],
+              src[j * 3 + 2],
+              j < crestRing,
+            ),
           );
         }
         cols.push(col);
@@ -850,6 +1285,34 @@ export function ridgeSegments(
         tone,
         data: acc.finish(half, downs ? DOWNS_INWARD_LIMIT : INWARD_LIMIT),
       });
+    }
+  }
+  // The woods are cut COARSER than the rim, and that is the frame's bill: each
+  // run is four draws (two needle tones, the leaf and the bark) where a rim
+  // run is two, and every draw costs CPU in a frame bound by them. Measured on
+  // Coldharbour at ten runs, the woods were 0.13-0.19 ms of the tick from
+  // every vantage; at five, each culled as a unit, they are 0.04-0.10, and a
+  // frustum looking into the town still drops most of them.
+  if (rolling?.woods) {
+    const perRun = Math.ceil(count / WOOD_RUNS);
+    for (let w = 0; w < WOOD_RUNS; w++) {
+      const from = w * perRun;
+      const to = Math.min(count, from + perRun);
+      if (from >= to) continue;
+      out.push(
+        ...sowWoods(
+          rolling,
+          rimSeed,
+          w,
+          from,
+          to,
+          count,
+          surface,
+          profile,
+          crestRing,
+          half,
+        ),
+      );
     }
   }
   return out;

@@ -961,6 +961,29 @@ export const ColdharbourLayout: MapLayout = {
     slope: 0.19,
     slopeVariance: 0.06,
     mouth: [{ x: 0, z: -340, width: 1151, ease: 300 }],
+    /**
+     * **Rolling country rather than one swell, and woods on it.** The downs
+     * alone are a single swept profile, so the three sides arrived as one
+     * smooth bank with a level skyline — a backdrop, whatever colour it was
+     * painted. This breaks the skyline into separate tops with saddles
+     * between them, puts knolls and hollows across the face, and sows stands
+     * of broadleaf low and pine high with pasture between them, which is what
+     * finally gives the hill a SCALE: the eye measures a hillside by the
+     * trees on it. The woods are the borderland pines' own paint, so the
+     * stands on the plain run up into the ones on the slope as one wood.
+     *
+     * All of it is visual and the rim's: no collider, nothing in the bake,
+     * and nothing drawn from the map's seeded stream. `shore` keeps the
+     * headlands' trees out of the sea at -2.2.
+     */
+    rolling: {
+      relief: 0.3,
+      summits: 16,
+      knolls: 0.14,
+      knollSize: 110,
+      woods: 0.6,
+      shore: 0.5,
+    },
     seed: 0x43484252,
   },
   // Fixed so the dressing — and the colliders blocking scatter emits, and so

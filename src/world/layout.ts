@@ -234,6 +234,55 @@ export interface RidgePass {
  * hills grow back out of the ground over `ease` rather than stopping at a
  * face, which is what a headland running down into the sea looks like.
  */
+/**
+ * What turns a `downs` rim from one swept profile into COUNTRY: separate
+ * summits and saddles along the skyline, knolls and hollows across the face,
+ * and stands of trees on it.
+ *
+ * **It is all visual and all the rim's**, which is what lets it be stated on a
+ * map at no cost to anything but the frame: the rim emits no collider, no
+ * `WorldBox` and nothing in the collision bake, and neither do the trees —
+ * they are built into the rim's own segments, so they are not scatter, draw
+ * nothing from the map's seeded stream and cannot reroll a single prop inside
+ * the play square. Every field has a default; `{}` is a sensible hillside.
+ */
+export interface RidgeRolling {
+  /**
+   * How far a summit rises over, and a saddle falls under, the crest the
+   * slope alone would give — a fraction of it. 0.3 puts neighbouring tops
+   * something like half again as high as the col between them. The crest is
+   * still clamped against the sky's floor AFTER this, so a deep saddle can
+   * never open a hole in the horizon.
+   */
+  relief?: number;
+  /**
+   * How many hills the whole ring is cut into — the lattice of the summit
+   * noise, measured round the CREST's curve. The finest octave is half this
+   * spacing, and it must stay a hill rather than a ripple: see `Ridge.ts` on
+   * what a short wavelength does under a cel terminator.
+   */
+  summits?: number;
+  /**
+   * Knolls and hollows across the FACE, as a fraction of the crest: the
+   * height a mid-slope point may swell or sink by. Zero at the toe and at the
+   * crest, so neither the seam with the floor nor the skyline moves.
+   */
+  knolls?: number;
+  /** The knolls' wavelength in metres of world. */
+  knollSize?: number;
+  /**
+   * Tree cover, 0..1 — the share of the face that is wooded. The woods come in
+   * STANDS with pasture between them rather than as an even pile, thin out
+   * towards the tops, and are broadleaf low and conifer high.
+   */
+  woods?: number;
+  /**
+   * The lowest height a tree may stand at, for a rim that runs down into
+   * water — below it is foreshore or sea. Absent, anywhere.
+   */
+  shore?: number;
+}
+
 export interface RidgeMouth {
   /**
    * A point on the boundary the mouth is centred on — the same convention
@@ -332,6 +381,12 @@ export interface RidgeSpec {
    * horizon.
    */
   mouth?: RidgeMouth[];
+  /**
+   * Rolling COUNTRY on a `downs` rim, and woods on it. See `RidgeRolling`;
+   * absent, the downs are the one smooth swell they always were and nothing
+   * is sown on them. Ignored by the escarpment.
+   */
+  rolling?: RidgeRolling;
   /**
    * The rim's own seed. Deliberately separate from `seed` below: one stream
    * serves the whole map build in authored order, so drawing from it here would
