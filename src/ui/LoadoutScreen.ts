@@ -198,7 +198,7 @@ const SIGHT_BLURBS: Record<SightId, string> = {
   prism:
     "A short prismatic body on an integral mount, with an etched chevron. Enough magnification to make a body across the square worth shooting at, and enough field left to swing onto the next one.",
   scope:
-    "Telescopic, with a duplex reticle. Slow to bring up and a tunnel to look down, and the only thing on offer that will show you a body at the far end of the valley.",
+    "Telescopic, with fine black posts around a small black dot. Slow to bring up and a tunnel to look down, and the only thing on offer that will show you a body at the far end of the valley.",
   longScope:
     "Six times, on the biggest optic in the kit. It will show you a man at three hundred metres and it will show you nothing else at all — the field is half the scope's, the slowest thing here into the shoulder, and it magnifies your own hands along with everything you are looking at.",
 };

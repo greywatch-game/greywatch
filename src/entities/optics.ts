@@ -317,19 +317,14 @@ const DOT2_CONE =
 const DOT2_DOT = 0.0016;
 const DOT2_COLOUR = "#3dff6e";
 /**
- * The black posts around the dot. `DOT2_LINE` is their weight, priced as a
- * subtense exactly as `LONG_RET_ARM` is: 0.0005 at 0.38 from the eye is
- * 1.3 mrad, about 3 px on a 1080-line display — a hairline that still survives
- * the frame. `DOT2_GAP` is where each post stops short of the axis, as a share
- * of the picture's radius; it leaves an open ring about fourteen dot-widths across
- * around the dot. `DOT2_HASHES` are where the ticks cross each post, as shares
- * of the same radius.
- *
- * Black rather than lit, and still drawn through `build.lit` so it is unlit,
- * unshaded and un-inked like every other reticle: an emissive black is a line
- * that reads as ETCHED glass, and it does not bloom.
+ * The black posts around the dot (`postReticle`). `DOT2_LINE` is their weight,
+ * priced as a subtense exactly as `LONG_RET_ARM` is: 0.0005 at 0.38 from the
+ * eye is 1.3 mrad, about 3 px on a 1080-line display — a hairline that still
+ * survives the frame. `DOT2_GAP` is where each post stops short of the axis, as
+ * a share of the picture's radius; it leaves an open ring about fourteen
+ * dot-widths across around the dot. `DOT2_HASHES` are where the ticks cross
+ * each post, as shares of the same radius.
  */
-const DOT2_POSTS = "#000000";
 const DOT2_LINE = 0.0005;
 const DOT2_GAP = 0.3;
 const DOT2_HASHES = [0.45, 0.6, 0.75] as const;
@@ -411,11 +406,28 @@ const longBore = (dz: number): number =>
  * The floor under them is the SCREEN and not the arithmetic: 5 px and 9 px on
  * a 1080-line display, and this mesh is emissive, so the glow layer carries
  * what is left of the weight the geometry has given up. Thinner than this is a
- * reticle that shimmers on a bright map rather than one that is finer — the
- * 3.5x's own arms are deliberately left at 0.0017, because a duplex is meant
- * to be seen and its picture is 1.7x as wide to spend it in.
+ * reticle that shimmers on a bright map rather than one that is finer. (The
+ * 3.5x's black posts are finer still at 1.3 mrad, and can be: a dark line on
+ * a lit picture needs no glow to hold it up.)
  */
 const LONG_RET_ARM = 0.0005;
+
+/** What `postReticle` draws in: an unlit black, the one dark reticle colour. */
+const POSTS = "#000000";
+
+/**
+ * The 3.5x's posts. The same three as the green dot's, meeting at a small
+ * gap — 0.07 of the picture's radius, 7 mrad either side of the axis, a
+ * torso's width at 70 m — with a very small BLACK dot in it. The gap alone
+ * left the aim point implied, which the eye finds but has to look for; the dot
+ * states it and, at 1.9 mrad, still covers less than a torso at 250 m. The
+ * line is the green dot's subtense, 1.3 mrad: the reticle sits 0.46 from the
+ * eye here against the green dot's 0.38, so the same weight is a longer length.
+ */
+const SCOPE_RET_LINE = 0.0006;
+const SCOPE_RET_GAP = 0.07;
+const SCOPE_RET_HASHES = [0.3, 0.45, 0.6] as const;
+const SCOPE_RET_DOT = 0.0009;
 const LONG_RET_DOT = 0.0009;
 
 /**
@@ -771,6 +783,79 @@ export function buildOptics(
   };
 
   /**
+   * Three black posts — left, right and bottom — standing in from the edge of
+   * a sight picture and stopping `gap` short of the axis, each crossed by fine
+   * hashes, merged into one mesh. The green dot and the 3.5x scope both wear it.
+   *
+   * Every length is a share of `clearR`, the CONE's radius at the reticle's own
+   * depth, as the prism's caret is sized, so the posts keep their place against
+   * the picture if a cone is ever re-solved; only `line` (a subtense, see
+   * `DOT2_LINE`) and `margin` (how far inside the cone a post stops) are
+   * lengths. The middle hash is drawn longer so a set reads as a scale rather
+   * than a comb.
+   *
+   * Black rather than lit, and still drawn through `build.lit` so it is unlit,
+   * unshaded and un-inked like every other reticle: an emissive black reads as
+   * a line ETCHED in the glass, and it does not bloom.
+   */
+  const postReticle = (
+    node: TransformNode,
+    name: string,
+    y0: number,
+    retZ: number,
+    clearR: number,
+    o: {
+      gap: number;
+      line: number;
+      hashes: readonly number[];
+      margin: number;
+      /** A black dot on the axis, by diameter; absent is none. */
+      dot?: number;
+    },
+  ): void => {
+    const armIn = clearR * o.gap;
+    const armOut = clearR - o.margin;
+    const armLen = armOut - armIn;
+    const armMid = (armIn + armOut) / 2;
+    const t = o.line;
+    const mid = Math.floor(o.hashes.length / 2);
+    const bars: Mesh[] = [];
+    const bar = (w: number, h: number, x: number, y: number): void => {
+      const m = MeshBuilder.CreateBox(
+        `${prefix}_${name}`,
+        { width: w, height: h, depth: t },
+        b.scene,
+      );
+      m.position.set(x, y0 + y, retZ);
+      bars.push(m);
+    };
+    // Directions as (x, y): left, right, down.
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1]] as const) {
+      const horizontal = dx !== 0;
+      bar(horizontal ? armLen : t, horizontal ? t : armLen, dx * armMid, dy * armMid);
+      o.hashes.forEach((at, i) => {
+        const r = clearR * at;
+        const len = clearR * (i === mid ? 0.09 : 0.055);
+        bar(horizontal ? t : len, horizontal ? len : t, dx * r, dy * r);
+      });
+    }
+    if (o.dot) {
+      const dot = MeshBuilder.CreateSphere(
+        `${prefix}_${name}Dot`,
+        { diameter: o.dot, segments: 6 },
+        b.scene,
+      );
+      dot.position.set(0, y0, retZ);
+      bars.push(dot);
+    }
+    const posts = Mesh.MergeMeshes(bars, true, true);
+    if (posts) {
+      posts.name = `${prefix}_${name}`;
+      b.lit(posts, node, POSTS);
+    }
+  };
+
+  /**
    * The 2x green dot: a stub of stepped tube on one low mount, with a single
    * green dot hung near the objective. Built as the prism is — every part sized
    * OUTWARD from its own section's radius so nothing reaches into the cone.
@@ -821,51 +906,16 @@ export function buildOptics(
     b.pin("dot2Illum", METAL, 0.026, 0.012, -(rTurret + 0.005), dot2Y, turretZ, "x");
     b.merge("greenDot", node);
 
-    // Three black posts — left, right and bottom — standing in from the edge
-    // of the picture and stopping short of the axis, with fine hashes across
-    // them. The open centre is what keeps the dot the aim point: the posts
-    // lead the eye in and the gap leaves the target clear. Sized as shares of
-    // the CONE at the reticle's depth, as the prism's caret is, so they keep
-    // their place against the picture if the cone is ever re-solved.
+    // Three black posts with fine hashes, stopping well short of the axis: the
+    // open centre is what keeps the dot the aim point.
     const retZ = objectiveZ - 0.02;
     const clearR = DOT2_CONE * (eyeDistance("greenDot") + retZ - ocularZ);
-    const armIn = clearR * DOT2_GAP;
-    const armOut = clearR - 0.002;
-    const armLen = armOut - armIn;
-    const armMid = (armIn + armOut) / 2;
-    const t = DOT2_LINE;
-    const bars: Mesh[] = [];
-    const bar = (w: number, h: number, x: number, y: number): void => {
-      const m = MeshBuilder.CreateBox(
-        `${prefix}_dot2Ret`,
-        { width: w, height: h, depth: t },
-        b.scene,
-      );
-      m.position.set(x, dot2Y + y, retZ);
-      bars.push(m);
-    };
-    // Directions as (along, across): left, right, down.
-    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1]] as const) {
-      const horizontal = dx !== 0;
-      bar(
-        horizontal ? armLen : t,
-        horizontal ? t : armLen,
-        dx * armMid,
-        dy * armMid,
-      );
-      // The hashes: fine ticks across the post, the middle one longer so the
-      // set reads as a scale rather than a comb.
-      DOT2_HASHES.forEach((at, i) => {
-        const r = clearR * at;
-        const len = clearR * (i === 1 ? 0.09 : 0.055);
-        bar(horizontal ? t : len, horizontal ? len : t, dx * r, dy * r);
-      });
-    }
-    const posts = Mesh.MergeMeshes(bars, true, true);
-    if (posts) {
-      posts.name = `${prefix}_dot2Posts`;
-      b.lit(posts, node, DOT2_POSTS);
-    }
+    postReticle(node, "dot2Posts", dot2Y, retZ, clearR, {
+      gap: DOT2_GAP,
+      line: DOT2_LINE,
+      hashes: DOT2_HASHES,
+      margin: 0.002,
+    });
 
     // The dot — green, on the axis, alone in the middle of the gap.
     const dot = b.lit(
@@ -962,7 +1012,7 @@ export function buildOptics(
     b.merge("prism", node);
 
     // The reticle: a caret and nothing else, two arms merged into one emissive
-    // mesh the way the scope's duplex is.
+    // mesh the way the scope's posts are.
     //
     // A caret rather than a cross because the TIP is the aim point, and once
     // the tip is doing the aiming every other mark is something laid over the
@@ -1009,7 +1059,7 @@ export function buildOptics(
   };
 
   /**
-   * The 3.5x scope: a long tube in two clamp rings, with a duplex reticle
+   * The 3.5x scope: a long tube in two clamp rings, with a black post reticle
    * hung near the objective end.
    *
    * There is no glass and no post-process here — the eye genuinely looks down
@@ -1087,46 +1137,20 @@ export function buildOptics(
     b.pin("scopeParallax", METAL, 0.021, 0.012, -(rTurret + 0.006), scopeY, turretZ, "x");
     b.merge("scope", node);
 
-    // Duplex reticle: four arms in from the tube wall, and a centre dot. Built
-    // as one merged emissive mesh — five separate draws for a crosshair is
-    // five too many on the one model that is always on screen.
-    // The arms run to just inside the CONE at the reticle's own depth, not to
-    // the tube wall beside it: the visible circle is the cone's, and a wall
-    // this far up the flare is well outside it.
+    // The reticle: three fine black posts with hashes, and a very small black
+    // dot in the gap where they would meet (`SCOPE_RET_GAP`). The
+    // posts run to just inside the CONE at the reticle's own depth, not to the
+    // tube wall beside it: the visible circle is the cone's, and a wall this
+    // far up the flare is well outside it.
     const retZ = objectiveZ - 0.06;
-    const armIn = 0.011;
-    const armOut = SCOPE_CONE * (eyeDistance("scope") + retZ - ocularZ) - 0.004;
-    const armLen = armOut - armIn;
-    const armMid = (armIn + armOut) / 2;
-    const bars: Mesh[] = [];
-    for (const side of [-1, 1] as const) {
-      const v = MeshBuilder.CreateBox(
-        `${prefix}_scopeRetV`,
-        { width: 0.0017, height: armLen, depth: 0.0012 },
-        b.scene,
-      );
-      v.position.set(0, scopeY + side * armMid, retZ);
-      bars.push(v);
-      const h = MeshBuilder.CreateBox(
-        `${prefix}_scopeRetH`,
-        { width: armLen, height: 0.0017, depth: 0.0012 },
-        b.scene,
-      );
-      h.position.set(side * armMid, scopeY, retZ);
-      bars.push(h);
-    }
-    const centre = MeshBuilder.CreateSphere(
-      `${prefix}_scopeRetDot`,
-      { diameter: 0.003, segments: 6 },
-      b.scene,
-    );
-    centre.position.set(0, scopeY, retZ);
-    bars.push(centre);
-    const reticle = Mesh.MergeMeshes(bars, true, true);
-    if (reticle) {
-      reticle.name = `${prefix}_scopeReticle`;
-      b.lit(reticle, node);
-    }
+    const clearR = SCOPE_CONE * (eyeDistance("scope") + retZ - ocularZ);
+    postReticle(node, "scopeReticle", scopeY, retZ, clearR, {
+      gap: SCOPE_RET_GAP,
+      line: SCOPE_RET_LINE,
+      hashes: SCOPE_RET_HASHES,
+      margin: 0.004,
+      dot: SCOPE_RET_DOT,
+    });
 
     // The eye reference is the ocular rim — a scope's eye relief is measured
     // to the glass you put your eye behind, not to the middle of the tube.

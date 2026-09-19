@@ -1608,7 +1608,7 @@ rim and the middle and nothing between. At 16 rings x 64 azimuths (1024) it
 reads **13 blocked on `longScope_metal` at the ocular**, and 0 once the lever
 is sized off `outerAt` like everything else on that tube. **Take this at 1024
 and read the MESH NAMES, never the count**: the honest floor is not zero —
-1024 rays find the reticle (52 on the 6x, 44 on the 3.5x, which is what
+1024 rays find the reticle (52 on the 6x, 39 on the 3.5x's posts, 33 on the 2x's, which is what
 thinning the reticle moved and is the only place that shows up as a number) and
 6 rays of the outermost ring find the tube itself, because a stepped tube
 circumscribes its own cone and touches it at every step's far rim. A count

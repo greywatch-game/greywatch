@@ -119,7 +119,7 @@ export const sights = {
     adsSpeedMult: 0.88,
   },
   /**
-   * A 3.5x telescopic sight with a duplex reticle. Slow to raise and a
+   * A 3.5x telescopic sight with a black post reticle. Slow to raise and a
    * tunnel to look down, and the only thing on the rifle that will show you
    * a body at the far end of the valley.
    */

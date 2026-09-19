@@ -1182,7 +1182,7 @@ is one machine's:
   clear bore and a 72-ray disc found none of it, against 13 rays at 16 rings x
   64 azimuths. Take it at 1024, and **read the mesh names rather than the
   count** — the floor is not zero. The reticle is meant to be in the picture
-  (52 rays on the 6x, 44 on the 3.5x) and 6 rays of the outermost ring land on
+  (52 rays on the 6x, 39 on the 3.5x, 33 on the 2x green dot) and 6 rays of the outermost ring land on
   the tube, because a stepped tube circumscribes its own cone and meets it at
   every step's far rim. Only a name that is neither of those is a fault. The launcher's optic read 0 clear of 313
   as a solid body and 270 of 313 as a tube; a `Ray` constructor with no import
