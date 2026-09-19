@@ -162,9 +162,15 @@ export const wind = {
     /**
      * The step, Hz, and the constraint passes per step. Explicit and fixed,
      * so a flag flies the same at 30 fps as at 144.
+     *
+     * The passes are the cost: the constraint loop is nearly all of a flag's
+     * time. Seven was the first figure and measured 0.36 ms with five flags
+     * in view; four holds the sheet to its size in this wind, and a sheet that
+     * reads as STRETCHY — a fly that lengthens in a gust — is the sign it has
+     * gone too low.
      */
     rate: 120,
-    iterations: 7,
+    iterations: 4,
     /** Bend stiffness 0..1 — cloth creases, it does not fold like paper. */
     bend: 0.22,
   },

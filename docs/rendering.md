@@ -2794,9 +2794,13 @@ about DRAWING; the meter they annotate is `ConquestSystem`'s and is in
   on `CONFIG.wind.dir`'s bearing with a gust on the foliage's own wavelength and a
   cross-flow that travels from hoist to fly. A vertex wave is what it must not become:
   every ripple the same height and nothing that droops or snaps is card, not cloth.
-  It steps at a fixed 120 Hz, only past neither the fog wall nor the edge of the view
-  (~0.15 ms a flag on the Windows box), and casts no shadow because it moves every
-  frame.
+  It steps at a fixed 120 Hz, only past neither the fog wall nor the edge of the view,
+  and casts no shadow because it moves every frame. **Its cost is the constraint
+  loop**: at 16 x 10 and seven passes, five flags in view from Harrowmead's corner
+  spawn were 0.36 ms of the frame — more than the rest of `gameplay` — so it runs four
+  passes, and a flag past 44 m (back under 40) is simulated on an 11 x 7 sheet that
+  the running one is RESAMPLED into, velocity and all, so the handover does not
+  re-settle. The profiler files all of it under `zones`.
 - **Cloth is the one thing shaded SMOOTH** (`getCloth`, `CEL_SMOOTH`): the cel
   shader's facet normal on a grid that fine is a lattice of flickering diamonds, so a
   bending sheet takes the interpolated normal and the bands still cut hard along its

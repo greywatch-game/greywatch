@@ -2,8 +2,9 @@
  * FlagCloth.ts — the flag over one control point: a pole, and a sheet of
  * cloth on it that is SIMULATED in the valley's one wind rather than posed.
  *
- * Owns: the pole mesh, the two cloth meshes (the field and the hoist band),
- * the particle state under them, and the height the flag is flown at.
+ * Owns: the pole mesh, the cloth meshes (a field and a hoist band, at two
+ * levels of detail), the particle state under them, and the height the flag
+ * is flown at.
  *
  * Invariants: annotation exactly as the ring is — never `solid`, never
  * `checkCollisions`, never pickable, never a WorldBox, so no ray, no nav
@@ -16,18 +17,27 @@
  * **Why a simulation and not a vertex wave.** A travelling sine on a sheet is
  * a sheet of card being rocked: every ripple the same height, the fly never
  * snapping, nothing that droops when the air drops. Here the flag is a
- * Verlet grid of `NU * NV` particles held by distance constraints (stretch,
- * shear and a soft bend), the hoist column pinned to the pole, and the air
- * pushes each TRIANGLE by the part of the wind it faces — so the shape is
- * the cloth's answer to the air, and the flapping is what an unsteady air
- * does to a sheet that can crease. Tunables are `CONFIG.wind.flag`.
+ * Verlet grid of particles held by distance constraints (stretch, shear and a
+ * soft bend), the hoist column pinned to the pole, and the air pushes each
+ * TRIANGLE by the part of the wind it faces — so the shape is the cloth's
+ * answer to the air, and the flapping is what an unsteady air does to a sheet
+ * that can crease. Tunables are `CONFIG.wind.flag`.
+ *
+ * **What it costs is the constraint loop**, and that is what the two levels
+ * of detail are for. Measured on the Windows box in a live Harrowmead round
+ * with all five flags in view from a corner spawn, one 16x10 sheet at seven
+ * passes each was 0.36 ms of the frame — more than the rest of `gameplay`. A
+ * flag past `LOD_FAR` is simulated on an 11x7 sheet instead, under half the
+ * constraints, and the handover RESAMPLES the running sheet into the other
+ * one (positions and the previous step both, so it keeps its velocity) —
+ * a flag that swapped to a fresh sheet would visibly re-settle.
  *
  * The cloth is two-sided by construction: every vertex exists twice, the back
  * copy with its normal negated and its triangles wound the other way, so the
  * frozen cel material needs no culling change and each face is lit from the
  * side it is seen from.
  *
- * Never disposes a material: all three are the factory's cache.
+ * Never disposes a material: all of them are the factory's cache.
  */
 import {
   BoundingInfo,
@@ -63,11 +73,22 @@ const FINIAL_RADIUS = 0.09;
 /** Flag size: hoist (height) by fly (length), metres. Three by five. */
 const FLAG_HEIGHT = 1.6;
 const FLAG_LENGTH = 2.7;
-/** Particles along the fly and down the hoist. */
-const NU = 16;
-const NV = 10;
-/** Columns from the hoist that are the band rather than the field. */
-const BAND_COLS = 3;
+/**
+ * The two sheets, as particles along the fly by particles down the hoist.
+ * Both split the fly into a multiple of five segments, so `BAND_SHARE` lands
+ * on a column in each and the band does not move at the handover.
+ */
+const NEAR_GRID: readonly [number, number] = [16, 10];
+const FAR_GRID: readonly [number, number] = [11, 7];
+/** The share of the fly, from the hoist, that is the band. */
+const BAND_SHARE = 0.2;
+/**
+ * The handover distance, metres from the eye, with a gap between the two
+ * directions so a player standing on the line does not flip it every frame.
+ * At 40 m the whole flag is about 70 px across on a 1080p frame.
+ */
+const LOD_FAR = 44;
+const LOD_NEAR = 40;
 /** Full hoist: the head of the flag this far under the finial. */
 const TOP_GAP = 0.18;
 /** Half-mast floor: the hem this far over the plinth. */
@@ -86,19 +107,238 @@ export interface FlagColours {
   band: string;
 }
 
-const N = NU * NV;
+/** What a sheet needs to know about the air and the pole for one step. */
+interface Step {
+  h: number;
+  t: number;
+  phase: number;
+  /** The bearing, unit, in XZ. */
+  wdx: number;
+  wdz: number;
+  /** The pole axis, and where the head of the hoist is on it. */
+  x: number;
+  z: number;
+  hoistY: number;
+  floorY: number;
+}
 
 export class FlagCloth {
   private pole: Mesh;
-  private field: Mesh;
-  private band: Mesh;
-  private pos = new Float32Array(N * 3);
-  private prev = new Float32Array(N * 3);
-  private force = new Float32Array(N * 3);
-  private windV = new Float32Array(N * 3);
+  private near: Sheet;
+  private far: Sheet;
+  private active: Sheet;
+  private visible = true;
+  private acc = 0;
+  private t = 0;
+  /** The head of the hoist column's world y, and the range it runs over. */
+  private hoistY: number;
+  private readonly hoistLow: number;
+  private readonly hoistHigh: number;
+  private readonly step: Step;
+  private fieldHex = "";
+  private bandHex = "";
+
+  constructor(
+    private scene: Scene,
+    private mats: CelMaterialFactory,
+    name: string,
+    x: number,
+    baseY: number,
+    z: number,
+    poleHeight: number,
+    seed: number,
+  ) {
+    const topY = baseY + poleHeight;
+    this.hoistHigh = topY - FINIAL_RADIUS - TOP_GAP;
+    this.hoistLow = baseY + PLINTH_HEIGHT / 2 + BOTTOM_GAP + FLAG_HEIGHT;
+    this.hoistY = this.hoistLow;
+    this.step = {
+      h: 1 / CONFIG.wind.flag.rate,
+      t: 0,
+      phase: seed * 2.399963,
+      wdx: 1,
+      wdz: 0,
+      x,
+      z,
+      hoistY: this.hoistY,
+      floorY: baseY + 0.04,
+    };
+    bearing(this.step);
+
+    this.pole = this.buildPole(name, x, z, baseY, topY);
+    const bounds = new BoundingInfo(
+      new Vector3(x - REACH, baseY, z - REACH),
+      new Vector3(x + REACH, topY, z + REACH),
+    );
+    this.near = new Sheet(scene, `${name}-flag`, NEAR_GRID, this.step, bounds);
+    this.far = new Sheet(scene, `${name}-flag-far`, FAR_GRID, this.step, bounds);
+    this.far.setEnabled(false);
+    this.active = this.near;
+
+    // A second of air before anybody sees it, so no flag starts flat.
+    for (let s = 0; s < CONFIG.wind.flag.rate; s++) this.substep();
+    this.active.present();
+  }
+
+  /** Paints the flag. Materials are the factory's; swapping one is a pointer. */
+  setColours(c: FlagColours): void {
+    const trans = CONFIG.graphics.translucency.awning;
+    if (c.field !== this.fieldHex) {
+      this.fieldHex = c.field;
+      const mat = this.mats.getCloth(c.field, trans);
+      this.near.field.material = mat;
+      this.far.field.material = mat;
+    }
+    if (c.band !== this.bandHex) {
+      this.bandHex = c.band;
+      const mat = this.mats.getCloth(c.band, trans);
+      this.near.band.material = mat;
+      this.far.band.material = mat;
+    }
+  }
+
+  /** Shows or hides the flag: the fog wall's cut, and nothing else. */
+  setVisible(on: boolean): void {
+    if (this.visible === on) return;
+    this.visible = on;
+    this.pole.setEnabled(on);
+    this.active.setEnabled(on);
+  }
+
+  /**
+   * Whether the flag was inside the view last frame — the planes are the
+   * render's own. A flag nobody can see is not worth stepping: it holds its
+   * shape and picks the air up again where it left off.
+   */
+  inView(): boolean {
+    const planes = this.scene.frustumPlanes;
+    return !planes || this.active.field.isInFrustum(planes);
+  }
+
+  /**
+   * Steps the cloth. `hoist` is 0 (at the foot of the pole) .. 1 (full
+   * hoist) and is where the head of the flag is TAKEN this frame; the cloth
+   * follows its own head through the constraints. `dist` is the eye's
+   * distance, which picks the sheet.
+   */
+  update(dt: number, hoist: number, dist: number): void {
+    const want =
+      this.active === this.near
+        ? dist > LOD_FAR
+          ? this.far
+          : this.near
+        : dist < LOD_NEAR
+          ? this.near
+          : this.far;
+    if (want !== this.active) {
+      want.resampleFrom(this.active);
+      this.active.setEnabled(false);
+      want.setEnabled(this.visible);
+      this.active = want;
+    }
+
+    const h = this.step.h;
+    const target = this.hoistLow + (this.hoistHigh - this.hoistLow) * hoist;
+    // A jump the halyard could not have made (the flag out past the fog while
+    // the meter moved) carries the whole sheet rather than yanking its head.
+    const jump = target - this.hoistY;
+    if (Math.abs(jump) > 0.5) {
+      this.active.lift(jump);
+      this.hoistY = target;
+    }
+    const from = this.hoistY;
+    this.acc += Math.min(dt, MAX_FRAME);
+    let n = Math.floor(this.acc / h);
+    this.acc -= n * h;
+    const total = n;
+    if (total === 0) return;
+    while (n-- > 0) {
+      // The head runs up or down the pole across the substeps, not in one.
+      this.hoistY = from + (target - from) * ((total - n) / total);
+      this.substep();
+    }
+    this.hoistY = target;
+    this.active.present();
+  }
+
+  dispose(): void {
+    this.pole.dispose();
+    this.near.dispose();
+    this.far.dispose();
+  }
+
+  private substep(): void {
+    const s = this.step;
+    this.t += s.h;
+    s.t = this.t;
+    s.hoistY = this.hoistY;
+    bearing(s);
+    this.active.substep(s);
+  }
+
+  private buildPole(
+    name: string,
+    x: number,
+    z: number,
+    baseY: number,
+    topY: number,
+  ): Mesh {
+    const shaft = MeshBuilder.CreateCylinder(
+      `${name}-pole-shaft`,
+      {
+        height: topY - baseY,
+        diameterBottom: POLE_RADIUS_BASE * 2,
+        diameterTop: POLE_RADIUS_TOP * 2,
+        tessellation: 8,
+      },
+      this.scene,
+    );
+    shaft.position.set(x, (baseY + topY) / 2, z);
+    const plinth = MeshBuilder.CreateCylinder(
+      `${name}-pole-plinth`,
+      {
+        height: PLINTH_HEIGHT,
+        diameterBottom: PLINTH_RADIUS * 2.3,
+        diameterTop: PLINTH_RADIUS * 2,
+        tessellation: 8,
+      },
+      this.scene,
+    );
+    plinth.position.set(x, baseY, z);
+    const finial = MeshBuilder.CreateSphere(
+      `${name}-pole-finial`,
+      { diameter: FINIAL_RADIUS * 2, segments: 6 },
+      this.scene,
+    );
+    finial.position.set(x, topY, z);
+    const pole = Mesh.MergeMeshes([shaft, plinth, finial], true)!;
+    pole.name = `${name}-pole`;
+    pole.material = this.mats.get(POLE_HEX);
+    annotate(pole);
+    return pole;
+  }
+}
+
+/**
+ * One level of detail: a grid of particles, its constraints, and the two
+ * meshes it is drawn as. Knows nothing about hoisting or distance — the flag
+ * hands it a `Step` and it answers to that.
+ */
+class Sheet {
+  readonly field: Mesh;
+  readonly band: Mesh;
+  private readonly nu: number;
+  private readonly nv: number;
+  private readonly n: number;
+  private readonly dy: number;
+  private readonly mass: number;
+  private pos: Float32Array;
+  private prev: Float32Array;
+  private force: Float32Array;
+  private windV: Float32Array;
   /** Both sides' positions and normals, as uploaded. */
-  private outPos = new Float32Array(N * 6);
-  private outNrm = new Float32Array(N * 6);
+  private outPos: Float32Array;
+  private outNrm: Float32Array;
   /** Constraint pairs, rest lengths and stiffnesses, flat. */
   private pairs: Uint16Array;
   private rest: Float32Array;
@@ -107,52 +347,36 @@ export class FlagCloth {
   private tris: Uint16Array;
   /** +1 or -1: which way `cross(du, dv)` points against Babylon's front. */
   private normalSign = 1;
-  private dy = FLAG_HEIGHT / (NV - 1);
-  private mass: number;
-  private acc = 0;
-  private t = 0;
-  /** The head of the hoist column's world y, and the range it runs over. */
-  private hoistY: number;
-  private readonly hoistLow: number;
-  private readonly hoistHigh: number;
-  private readonly floorY: number;
-  /** Per-flag phase, so five flags are five flags and not one flag five times. */
-  private readonly phase: number;
-  private fieldHex = "";
-  /** This substep's wind bearing, unit, in XZ — written by `bearing`. */
-  private wdx = 1;
-  private wdz = 0;
-  private bandHex = "";
 
   constructor(
-    private scene: Scene,
-    private mats: CelMaterialFactory,
+    scene: Scene,
     name: string,
-    private x: number,
-    baseY: number,
-    private z: number,
-    poleHeight: number,
-    seed: number,
+    grid: readonly [number, number],
+    s: Step,
+    bounds: BoundingInfo,
   ) {
-    const topY = baseY + poleHeight;
-    this.hoistHigh = topY - FINIAL_RADIUS - TOP_GAP;
-    this.hoistLow = baseY + PLINTH_HEIGHT / 2 + BOTTOM_GAP + FLAG_HEIGHT;
-    this.hoistY = this.hoistLow;
-    this.floorY = baseY + 0.04;
-    this.phase = seed * 2.399963;
-    this.mass = (CONFIG.wind.flag.density * FLAG_HEIGHT * FLAG_LENGTH) / N;
-
-    this.pole = this.buildPole(name, baseY, topY);
+    const [nu, nv] = grid;
+    const n = nu * nv;
+    this.nu = nu;
+    this.nv = nv;
+    this.n = n;
+    this.dy = FLAG_HEIGHT / (nv - 1);
+    this.mass = (CONFIG.wind.flag.density * FLAG_HEIGHT * FLAG_LENGTH) / n;
+    this.pos = new Float32Array(n * 3);
+    this.prev = new Float32Array(n * 3);
+    this.force = new Float32Array(n * 3);
+    this.windV = new Float32Array(n * 3);
+    this.outPos = new Float32Array(n * 6);
+    this.outNrm = new Float32Array(n * 6);
 
     // --- the grid, laid out flat and downwind so the first frame is flying ---
-    this.bearing(0);
-    const dx = FLAG_LENGTH / (NU - 1);
-    for (let j = 0; j < NV; j++) {
-      for (let i = 0; i < NU; i++) {
-        const k = (j * NU + i) * 3;
-        this.pos[k] = x + this.wdx * i * dx;
-        this.pos[k + 1] = this.hoistY - j * this.dy;
-        this.pos[k + 2] = z + this.wdz * i * dx;
+    const dx = FLAG_LENGTH / (nu - 1);
+    for (let j = 0; j < nv; j++) {
+      for (let i = 0; i < nu; i++) {
+        const k = (j * nu + i) * 3;
+        this.pos[k] = s.x + s.wdx * i * dx;
+        this.pos[k + 1] = s.hoistY - j * this.dy;
+        this.pos[k + 2] = s.z + s.wdz * i * dx;
       }
     }
     this.prev.set(this.pos);
@@ -160,22 +384,22 @@ export class FlagCloth {
     // --- constraints: stretch, shear, and a soft skip-one bend ---
     const pairs: number[] = [];
     const stiff: number[] = [];
-    const add = (a: number, b: number, s: number) => {
+    const add = (a: number, b: number, k: number) => {
       pairs.push(a, b);
-      stiff.push(s);
+      stiff.push(k);
     };
-    const v = (i: number, j: number) => j * NU + i;
-    for (let j = 0; j < NV; j++) {
-      for (let i = 0; i < NU; i++) {
-        if (i + 1 < NU) add(v(i, j), v(i + 1, j), 1);
-        if (j + 1 < NV) add(v(i, j), v(i, j + 1), 1);
-        if (i + 1 < NU && j + 1 < NV) {
+    const v = (i: number, j: number) => j * nu + i;
+    const bend = CONFIG.wind.flag.bend;
+    for (let j = 0; j < nv; j++) {
+      for (let i = 0; i < nu; i++) {
+        if (i + 1 < nu) add(v(i, j), v(i + 1, j), 1);
+        if (j + 1 < nv) add(v(i, j), v(i, j + 1), 1);
+        if (i + 1 < nu && j + 1 < nv) {
           add(v(i, j), v(i + 1, j + 1), 0.9);
           add(v(i + 1, j), v(i, j + 1), 0.9);
         }
-        const bend = CONFIG.wind.flag.bend;
-        if (i + 2 < NU) add(v(i, j), v(i + 2, j), bend);
-        if (j + 2 < NV) add(v(i, j), v(i, j + 2), bend);
+        if (i + 2 < nu) add(v(i, j), v(i + 2, j), bend);
+        if (j + 2 < nv) add(v(i, j), v(i, j + 2), bend);
       }
     }
     this.pairs = Uint16Array.from(pairs);
@@ -186,20 +410,21 @@ export class FlagCloth {
     }
 
     // --- triangles, and which side of them Babylon calls the front ---
+    const bandCols = Math.round((nu - 1) * BAND_SHARE);
     const front: number[] = [];
     const bandIdx: number[] = [];
     const fieldIdx: number[] = [];
-    for (let j = 0; j < NV - 1; j++) {
-      for (let i = 0; i < NU - 1; i++) {
+    for (let j = 0; j < nv - 1; j++) {
+      for (let i = 0; i < nu - 1; i++) {
         const a = v(i, j);
         const b = v(i + 1, j);
         const c = v(i, j + 1);
         const d = v(i + 1, j + 1);
         front.push(a, b, c, b, d, c);
-        const out = i < BAND_COLS ? bandIdx : fieldIdx;
+        const out = i < bandCols ? bandIdx : fieldIdx;
         // The front, then the back copy wound the other way.
         out.push(a, b, c, b, d, c);
-        out.push(N + a, N + c, N + b, N + b, N + c, N + d);
+        out.push(n + a, n + c, n + b, n + b, n + c, n + d);
       }
     }
     this.tris = Uint16Array.from(front);
@@ -215,110 +440,91 @@ export class FlagCloth {
         : 1;
     this.writeOut();
 
-    this.field = this.buildCloth(`${name}-flag`, fieldIdx, baseY, topY);
-    this.band = this.buildCloth(`${name}-flag-band`, bandIdx, baseY, topY);
-
-    // A second of air before anybody sees it, so no flag starts flat.
-    for (let s = 0; s < CONFIG.wind.flag.rate; s++) {
-      this.substep(1 / CONFIG.wind.flag.rate);
-    }
-    this.writeOut();
-    this.upload();
+    this.field = this.buildMesh(scene, name, fieldIdx, bounds);
+    this.band = this.buildMesh(scene, `${name}-band`, bandIdx, bounds);
   }
 
-  /** Paints the flag. Materials are the factory's; swapping one is a pointer. */
-  setColours(c: FlagColours): void {
-    if (c.field !== this.fieldHex) {
-      this.fieldHex = c.field;
-      this.field.material = this.mats.getCloth(
-        c.field,
-        CONFIG.graphics.translucency.awning,
-      );
-    }
-    if (c.band !== this.bandHex) {
-      this.bandHex = c.band;
-      this.band.material = this.mats.getCloth(
-        c.band,
-        CONFIG.graphics.translucency.awning,
-      );
-    }
-  }
-
-  /** Shows or hides all three meshes: the fog wall's cut, and nothing else. */
-  setVisible(on: boolean): void {
-    if (this.pole.isEnabled() === on) return;
-    this.pole.setEnabled(on);
+  setEnabled(on: boolean): void {
     this.field.setEnabled(on);
     this.band.setEnabled(on);
   }
 
-  /**
-   * Whether the flag was inside the view last frame — the planes are the
-   * render's own. A flag nobody can see is not worth its ~0.15 ms: it holds
-   * its shape and picks the air up again where it left off.
-   */
-  inView(): boolean {
-    const planes = this.scene.frustumPlanes;
-    return !planes || this.field.isInFrustum(planes);
+  /** Carries the whole sheet up or down, velocity and all. */
+  lift(dy: number): void {
+    for (let k = 1; k < this.n * 3; k += 3) {
+      this.pos[k] += dy;
+      this.prev[k] += dy;
+    }
   }
 
   /**
-   * Steps the cloth. `hoist` is 0 (at the foot of the pole) .. 1 (full
-   * hoist) and is where the head of the flag is TAKEN this frame; the cloth
-   * follows its own head through the constraints.
+   * Takes another sheet's state, bilinearly over the flag's own (fly, hoist)
+   * coordinates. The hoist column maps onto the hoist column exactly, so the
+   * pin does not move; the rest arrives a hair off its rest lengths and the
+   * constraints take that up in the next step.
    */
-  update(dt: number, hoist: number): void {
-    const cfg = CONFIG.wind.flag;
-    const h = 1 / cfg.rate;
-    const target = this.hoistLow + (this.hoistHigh - this.hoistLow) * hoist;
-    // A jump the halyard could not have made (the flag out past the fog while
-    // the meter moved) carries the whole sheet rather than yanking its head.
-    const jump = target - this.hoistY;
-    if (Math.abs(jump) > 0.5) {
-      for (let k = 1; k < N * 3; k += 3) {
-        this.pos[k] += jump;
-        this.prev[k] += jump;
+  resampleFrom(src: Sheet): void {
+    const su = (src.nu - 1) / (this.nu - 1);
+    const sv = (src.nv - 1) / (this.nv - 1);
+    for (let j = 0; j < this.nv; j++) {
+      const fv = j * sv;
+      const j0 = Math.min(src.nv - 2, Math.floor(fv));
+      const tv = fv - j0;
+      for (let i = 0; i < this.nu; i++) {
+        const fu = i * su;
+        const i0 = Math.min(src.nu - 2, Math.floor(fu));
+        const tu = fu - i0;
+        const a = (j0 * src.nu + i0) * 3;
+        const b = a + 3;
+        const c = a + src.nu * 3;
+        const d = c + 3;
+        const w00 = (1 - tu) * (1 - tv);
+        const w10 = tu * (1 - tv);
+        const w01 = (1 - tu) * tv;
+        const w11 = tu * tv;
+        const k = (j * this.nu + i) * 3;
+        for (let e = 0; e < 3; e++) {
+          this.pos[k + e] =
+            src.pos[a + e] * w00 +
+            src.pos[b + e] * w10 +
+            src.pos[c + e] * w01 +
+            src.pos[d + e] * w11;
+          this.prev[k + e] =
+            src.prev[a + e] * w00 +
+            src.prev[b + e] * w10 +
+            src.prev[c + e] * w01 +
+            src.prev[d + e] * w11;
+        }
       }
-      this.hoistY = target;
     }
-    const steps = Math.min(dt, MAX_FRAME);
-    const from = this.hoistY;
-    this.acc += steps;
-    let n = Math.floor(this.acc / h);
-    this.acc -= n * h;
-    const total = n;
-    while (n-- > 0) {
-      // The head runs up or down the pole across the substeps, not in one.
-      this.hoistY = from + (target - from) * ((total - n) / total);
-      this.substep(h);
-    }
-    if (total === 0) return;
-    this.hoistY = target;
+    this.present();
+  }
+
+  /** Normals, both faces, and the upload. */
+  present(): void {
     this.writeOut();
-    this.upload();
+    for (const m of [this.field, this.band]) {
+      m.updateVerticesData(VertexBuffer.PositionKind, this.outPos);
+      m.updateVerticesData(VertexBuffer.NormalKind, this.outNrm);
+    }
   }
 
   dispose(): void {
-    this.pole.dispose();
     this.field.dispose();
     this.band.dispose();
   }
 
-  // --------------------------------------------------------------------------
-
-  private substep(h: number): void {
+  substep(s: Step): void {
     const cfg = CONFIG.wind.flag;
-    this.t += h;
-    const t = this.t;
+    const { h, t, phase: ph, wdx: dx, wdz: dz } = s;
+    const n3 = this.n * 3;
+    const nu3 = this.nu * 3;
     const pos = this.pos;
     const prev = this.prev;
     const f = this.force;
     const w = this.windV;
 
     // --- the air at every particle ---
-    this.bearing(t);
-    const dx = this.wdx;
-    const dz = this.wdz;
     const px = -dz;
     const pz = dx;
     const kG = (Math.PI * 2) / CONFIG.wind.foliage.gust;
@@ -326,21 +532,21 @@ export class FlagCloth {
     const wG2 = (Math.PI * 2) / cfg.gustPeriods[1];
     const kF = (Math.PI * 2) / cfg.flutterLength;
     const wF = kF * cfg.convect * cfg.speed;
-    const ph = this.phase;
-    for (let k = 0; k < N * 3; k += 3) {
-      const s = pos[k] * dx + pos[k + 2] * dz;
+    for (let k = 0; k < n3; k += 3) {
+      const along0 = pos[k] * dx + pos[k + 2] * dz;
       const gust =
         1 +
         cfg.gust *
-          (0.62 * Math.sin(s * kG - t * wG1 + ph) +
-            0.38 * Math.sin(s * kG * 2.3 - t * wG2 + ph * 1.7));
+          (0.62 * Math.sin(along0 * kG - t * wG1 + ph) +
+            0.38 * Math.sin(along0 * kG * 2.3 - t * wG2 + ph * 1.7));
       const along = cfg.speed * gust;
-      const cross = cfg.flutter * cfg.speed * Math.sin(s * kF - t * wF + ph);
+      const cross =
+        cfg.flutter * cfg.speed * Math.sin(along0 * kF - t * wF + ph);
       const lift =
         0.5 *
         cfg.flutter *
         cfg.speed *
-        Math.sin(s * kF * 1.37 - t * wF * 1.21 + ph * 2.1);
+        Math.sin(along0 * kF * 1.37 - t * wF * 1.21 + ph * 2.1);
       w[k] = dx * along + px * cross;
       w[k + 1] = lift;
       w[k + 2] = dz * along + pz * cross;
@@ -408,18 +614,26 @@ export class FlagCloth {
     const hh = h * h;
     const im = 1 / this.mass;
     const damp = cfg.damping;
-    for (let k = 0; k < N * 3; k += 3) {
-      if (k % (NU * 3) === 0) continue; // the hoist column is the pole's
+    for (let k = 0; k < n3; k += 3) {
+      if (k % nu3 === 0) continue; // the hoist column is the pole's
       for (let e = 0; e < 3; e++) {
         const cur = pos[k + e];
-        const a = f[k + e] * im - (e === 1 ? 9.81 : 0);
-        pos[k + e] = cur + (cur - prev[k + e]) * damp + a * hh;
+        const acc = f[k + e] * im - (e === 1 ? 9.81 : 0);
+        pos[k + e] = cur + (cur - prev[k + e]) * damp + acc * hh;
         prev[k + e] = cur;
       }
     }
-    this.pin();
+    // The hoist column, on the pole axis under the head.
+    for (let j = 0; j < this.nv; j++) {
+      const k = j * nu3;
+      const y = s.hoistY - j * this.dy;
+      prev[k] = pos[k] = s.x;
+      prev[k + 1] = pos[k + 1] = y;
+      prev[k + 2] = pos[k + 2] = s.z;
+    }
 
     // --- constraints ---
+    const nu = this.nu;
     const pairs = this.pairs;
     const rest = this.rest;
     const stiff = this.stiff;
@@ -427,6 +641,9 @@ export class FlagCloth {
       for (let c = 0; c < rest.length; c++) {
         const i = pairs[c * 2];
         const j = pairs[c * 2 + 1];
+        const pinA = i % nu === 0;
+        const pinB = j % nu === 0;
+        if (pinA && pinB) continue;
         const a = i * 3;
         const b = j * 3;
         const ddx = pos[b] - pos[a];
@@ -434,24 +651,21 @@ export class FlagCloth {
         const ddz = pos[b + 2] - pos[a + 2];
         const d = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
         if (d < 1e-9) continue;
-        const pinA = i % NU === 0;
-        const pinB = j % NU === 0;
-        if (pinA && pinB) continue;
-        const s = ((d - rest[c]) / d) * stiff[c];
+        const k = ((d - rest[c]) / d) * stiff[c];
         const wa = pinA ? 0 : pinB ? 1 : 0.5;
         const wb = pinB ? 0 : pinA ? 1 : 0.5;
-        pos[a] += ddx * s * wa;
-        pos[a + 1] += ddy * s * wa;
-        pos[a + 2] += ddz * s * wa;
-        pos[b] -= ddx * s * wb;
-        pos[b + 1] -= ddy * s * wb;
-        pos[b + 2] -= ddz * s * wb;
+        pos[a] += ddx * k * wa;
+        pos[a + 1] += ddy * k * wa;
+        pos[a + 2] += ddz * k * wa;
+        pos[b] -= ddx * k * wb;
+        pos[b + 1] -= ddy * k * wb;
+        pos[b + 2] -= ddz * k * wb;
       }
     }
 
     // --- the ground, for a flag at the foot of its pole in a lull ---
-    const floor = this.floorY;
-    for (let k = 1; k < N * 3; k += 3) {
+    const floor = s.floorY;
+    for (let k = 1; k < n3; k += 3) {
       if (pos[k] < floor) {
         pos[k] = floor;
         prev[k] = floor;
@@ -462,48 +676,21 @@ export class FlagCloth {
     }
   }
 
-  /**
-   * The valley's wind bearing — `CONFIG.wind.dir`, the one every layer
-   * shares — veered a little and slowly, per flag.
-   */
-  private bearing(t: number): void {
-    const [x, z] = CONFIG.wind.dir;
-    const len = Math.hypot(x, z) || 1;
-    const ph = this.phase;
-    const veer =
-      CONFIG.wind.flag.veer *
-      (0.7 * Math.sin(t * 0.21 + ph) + 0.3 * Math.sin(t * 0.53 + ph * 1.3));
-    const c = Math.cos(veer);
-    const s = Math.sin(veer);
-    this.wdx = (x * c - z * s) / len;
-    this.wdz = (x * s + z * c) / len;
-  }
-
-  /** The hoist column, on the pole axis under the head. */
-  private pin(): void {
-    for (let j = 0; j < NV; j++) {
-      const k = j * NU * 3;
-      const y = this.hoistY - j * this.dy;
-      this.prev[k] = this.pos[k] = this.x;
-      this.prev[k + 1] = this.pos[k + 1] = y;
-      this.prev[k + 2] = this.pos[k + 2] = this.z;
-    }
-  }
-
   /** Positions and normals for both faces, into the upload buffers. */
   private writeOut(): void {
+    const { nu, nv, n } = this;
     const p = this.pos;
     const op = this.outPos;
     const on = this.outNrm;
     op.set(p, 0);
-    op.set(p, N * 3);
+    op.set(p, n * 3);
     const sign = this.normalSign;
-    for (let j = 0; j < NV; j++) {
-      for (let i = 0; i < NU; i++) {
-        const u0 = (j * NU + Math.max(0, i - 1)) * 3;
-        const u1 = (j * NU + Math.min(NU - 1, i + 1)) * 3;
-        const v0 = (Math.max(0, j - 1) * NU + i) * 3;
-        const v1 = (Math.min(NV - 1, j + 1) * NU + i) * 3;
+    for (let j = 0; j < nv; j++) {
+      for (let i = 0; i < nu; i++) {
+        const u0 = (j * nu + Math.max(0, i - 1)) * 3;
+        const u1 = (j * nu + Math.min(nu - 1, i + 1)) * 3;
+        const v0 = (Math.max(0, j - 1) * nu + i) * 3;
+        const v1 = (Math.min(nv - 1, j + 1) * nu + i) * 3;
         const ax = p[u1] - p[u0];
         const ay = p[u1 + 1] - p[u0 + 1];
         const az = p[u1 + 2] - p[u0 + 2];
@@ -518,31 +705,24 @@ export class FlagCloth {
         nx *= s;
         ny *= s;
         nz *= s;
-        const k = (j * NU + i) * 3;
+        const k = (j * nu + i) * 3;
         on[k] = nx;
         on[k + 1] = ny;
         on[k + 2] = nz;
-        on[N * 3 + k] = -nx;
-        on[N * 3 + k + 1] = -ny;
-        on[N * 3 + k + 2] = -nz;
+        on[n * 3 + k] = -nx;
+        on[n * 3 + k + 1] = -ny;
+        on[n * 3 + k + 2] = -nz;
       }
     }
   }
 
-  private upload(): void {
-    for (const m of [this.field, this.band]) {
-      m.updateVerticesData(VertexBuffer.PositionKind, this.outPos);
-      m.updateVerticesData(VertexBuffer.NormalKind, this.outNrm);
-    }
-  }
-
-  private buildCloth(
+  private buildMesh(
+    scene: Scene,
     name: string,
     indices: number[],
-    baseY: number,
-    topY: number,
+    bounds: BoundingInfo,
   ): Mesh {
-    const mesh = new Mesh(name, this.scene);
+    const mesh = new Mesh(name, scene);
     const data = new VertexData();
     data.positions = this.outPos;
     data.normals = this.outNrm;
@@ -551,57 +731,36 @@ export class FlagCloth {
     // World-space vertices under an identity transform, and bounds that hold
     // every shape the sheet can take, set once — an upload never re-measures.
     mesh.setBoundingInfo(
-      new BoundingInfo(
-        new Vector3(this.x - REACH, baseY, this.z - REACH),
-        new Vector3(this.x + REACH, topY, this.z + REACH),
-      ),
+      new BoundingInfo(bounds.minimum.clone(), bounds.maximum.clone()),
     );
-    this.annotate(mesh);
+    annotate(mesh);
     return mesh;
   }
+}
 
-  private buildPole(name: string, baseY: number, topY: number): Mesh {
-    const shaft = MeshBuilder.CreateCylinder(
-      `${name}-pole-shaft`,
-      {
-        height: topY - baseY,
-        diameterBottom: POLE_RADIUS_BASE * 2,
-        diameterTop: POLE_RADIUS_TOP * 2,
-        tessellation: 8,
-      },
-      this.scene,
-    );
-    shaft.position.set(this.x, (baseY + topY) / 2, this.z);
-    const plinth = MeshBuilder.CreateCylinder(
-      `${name}-pole-plinth`,
-      {
-        height: PLINTH_HEIGHT,
-        diameterBottom: PLINTH_RADIUS * 2.3,
-        diameterTop: PLINTH_RADIUS * 2,
-        tessellation: 8,
-      },
-      this.scene,
-    );
-    plinth.position.set(this.x, baseY, this.z);
-    const finial = MeshBuilder.CreateSphere(
-      `${name}-pole-finial`,
-      { diameter: FINIAL_RADIUS * 2, segments: 6 },
-      this.scene,
-    );
-    finial.position.set(this.x, topY, this.z);
-    const pole = Mesh.MergeMeshes([shaft, plinth, finial], true)!;
-    pole.name = `${name}-pole`;
-    pole.material = this.mats.get(POLE_HEX);
-    this.annotate(pole);
-    return pole;
-  }
+/**
+ * The valley's wind bearing — `CONFIG.wind.dir`, the one every layer
+ * shares — veered a little and slowly, per flag. Written into the step.
+ */
+function bearing(s: Step): void {
+  const [x, z] = CONFIG.wind.dir;
+  const len = Math.hypot(x, z) || 1;
+  const ph = s.phase;
+  const t = s.t;
+  const veer =
+    CONFIG.wind.flag.veer *
+    (0.7 * Math.sin(t * 0.21 + ph) + 0.3 * Math.sin(t * 0.53 + ph * 1.3));
+  const c = Math.cos(veer);
+  const sn = Math.sin(veer);
+  s.wdx = (x * c - z * sn) / len;
+  s.wdz = (x * sn + z * c) / len;
+}
 
-  private annotate(mesh: Mesh): void {
-    mesh.isPickable = false;
-    mesh.checkCollisions = false;
-    mesh.metadata = { noGlow: true, noShadowCaster: true };
-    mesh.freezeWorldMatrix();
-  }
+function annotate(mesh: Mesh): void {
+  mesh.isPickable = false;
+  mesh.checkCollisions = false;
+  mesh.metadata = { noGlow: true, noShadowCaster: true };
+  mesh.freezeWorldMatrix();
 }
 
 function dist(p: Float32Array, i: number, j: number): number {

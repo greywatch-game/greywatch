@@ -441,7 +441,7 @@ export class CaptureZoneSystem {
           ? this.coloursOf(1)
           : NEUTRAL_FLAG,
     );
-    if (zone.flag.inView()) zone.flag.update(dt, Math.abs(shown));
+    if (zone.flag.inView()) zone.flag.update(dt, Math.abs(shown), dist);
   }
 
   /** A side's cloth: its worn colour, and a darker band at the hoist. */
