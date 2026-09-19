@@ -1,22 +1,29 @@
 /**
- * CaptureZoneSystem.ts — In-world markers for the Conquest control points: a
- * terrain-following ring drawn ON the capture boundary, a skirt that rises
- * from the stretch of it you are about to cross, and a FLAG on a pole at the
- * point itself (`FlagCloth`), flown in the holding side's colours at the
- * height the capture meter stands at.
+ * CaptureZoneSystem.ts — In-world markers for the Conquest control points: the
+ * capture boundary LAID OUT on the ground the way whoever holds the place would
+ * lay it — a ring of whitewashed stones on open ground, a painted line where
+ * the ground is MADE (a carriageway, a deck, a paved slab) — and a FLAG on a
+ * pole at the point itself (`FlagCloth`), flown in the holding side's colours
+ * at the height the capture meter stands at.
  *
- * Invariants: this is annotation geometry and nothing else — never
- * `metadata.solid`, never `checkCollisions`, never pickable, and never a
- * WorldBox, so no ray test (hitscan, LOS, ground probe) and no nav consumer
- * can see it. The ring and skirt set noInk/noGlow/noShadowCaster; the bloom
- * reads `noGlow` every frame, so a marker built mid-round is out of it too.
- * The flag and its pole are the exception to `noInk` only: they are drawn in
- * the cel material like the world, so they carry its line work too.
+ * Invariants: this is dressing and nothing else — never `metadata.solid`,
+ * never `checkCollisions`, never pickable, and never a WorldBox, so no ray test
+ * (hitscan, LOS, ground probe) and no nav consumer can see it, and a body walks
+ * over a boundary stone. Everything here is drawn in the cel material like the
+ * world, so it is lit, shadowed, fogged and inked like the wall behind it and
+ * owes no fade of its own. None of it casts (`noShadowCaster`): a stone's
+ * shadow is a few centimetres, and the world's caster list is fixed before a
+ * round's markers exist.
  *
  * The ring's radius IS the capture radius — both this and
- * `ConquestSystem.pointAt` read `ControlPointDef.radius`, so the line you see
- * is the line the occupancy test uses. Colours are the HUD/minimap ones and
- * are relative to the player's team, not absolute per side.
+ * `ConquestSystem.pointAt` read `ControlPointDef.radius`, so the stones you see
+ * are the line the occupancy test uses. They are never laid inside a wall or a
+ * blocking prop (`ObstacleField.wallAt`), so where the boundary crosses a
+ * building the ring breaks, as a real one would.
+ *
+ * **Nothing on the ground says who holds the point, and that is the design**:
+ * a painted glow ring was a game element drawn over the world, and ownership
+ * is already said twice — by the HUD strip and by the flag.
  *
  * **The flag IS the meter**, which is why it is not merely dressing: it flies
  * at |meter| up the pole in the colours of the side the meter leans to, so a
@@ -30,26 +37,31 @@
  * (`ZoneState`), which `ControlPoint` satisfies, so Game can pass its points
  * straight through without this becoming a system-to-system import.
  *
- * build() once per round; update() every frame AFTER the camera has moved —
- * both the fog fade and the skirt's reveal are functions of the viewpoint.
+ * build() once per round; update() every frame — the flag's visibility and
+ * its cloth step are functions of the viewpoint.
  */
 import {
   Color3,
+  CreatePolyhedronVertexData,
+  Matrix,
   Mesh,
   Scene,
-  StandardMaterial,
   Vector3,
-  VertexBuffer,
   VertexData,
 } from "@babylonjs/core";
-import { clamp01 } from "../core/math";
 import { teamLook } from "../core/teamView";
 import type { Team } from "../entities/Combatant";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 import type { ControlPointDef } from "../world/MapBuilder";
-import type { NavGrid } from "../world/NavGrid";
+import type { ObstacleField } from "../world/ObstacleField";
 import type { RayHit, RayWorld } from "../world/RayWorld";
+import { mulberry32 } from "../world/rng";
+import {
+  ROAD_DEPTH_UNITS,
+  type RoadFootprint,
+  roadTopAt,
+} from "../world/roads";
 import type { TerrainField } from "../world/TerrainField";
 import {
   FlagCloth,
@@ -64,11 +76,8 @@ import {
  * purpose — see the header: `ConquestSystem.ControlPoint` satisfies it.
  */
 export interface ZoneState {
-  owner: Team | null;
   /** -1 (team 0 holds it) .. +1 (team 1 does). */
   meter: number;
-  contested: boolean;
-  present: readonly [number, number];
 }
 
 /*
@@ -76,43 +85,44 @@ export interface ZoneState {
  * CONFIG — the capture radius they are drawn at is the gameplay number, and
  * that comes from the layout. (Same split as HUD.ts's ARC_* box geometry.)
  */
-/** Half-width of the ground ring; it straddles the boundary. */
-const RING_HALF_WIDTH = 0.55;
-/** Clear of the floor, or the ring z-fights the surface it lies on. */
-const RING_LIFT = 0.09;
-/** The skirt above the ring: enough to read as a threshold, low enough to see over. */
-const SKIRT_HEIGHT = 1.9;
-/** Alpha at the bottom of each piece; the skirt fades out upward. */
-const RING_ALPHA = 0.8;
-const SKIRT_ALPHA = 0.42;
-/** Ring segments per metre of radius, clamped — a 12 m ring must not be a polygon. */
-const SEGMENTS_PER_M = 4;
-const MIN_SEGMENTS = 40;
-const MAX_SEGMENTS = 96;
-
+/** Metres of boundary per stone: close enough to read as a LINE, not a scatter. */
+const STONE_SPACING = 0.95;
+/** How far a stone strays either side of the boundary, and along it (in spacings). */
+const STONE_JITTER_R = 0.07;
+const STONE_JITTER_T = 0.22;
+/** A stone's half-width, and the spread above it. Fist to a loaf. */
+const STONE_SIZE = 0.13;
+const STONE_SIZE_SPREAD = 0.09;
+/** Height against width: laid stones are the flat ones, not the round ones. */
+const STONE_SQUASH = 0.5;
+const STONE_SQUASH_SPREAD = 0.25;
+/** How far off level a stone sits, in radians either way. */
+const STONE_TILT = 0.22;
+/** Share of its height a stone is bedded into the ground, so none floats. */
+const STONE_BED = 0.3;
 /**
- * How near a stretch of boundary has to be before its skirt shows: full
- * strength within `SKIRT_FULL` metres of it, gone by `SKIRT_FADE`.
+ * Whitewash, two coats' worth: limed stones are how a perimeter is marked by
+ * people who have nothing but a bucket, and pale is what reads at range.
  */
-const SKIRT_FULL = 4;
-const SKIRT_FADE = 13;
-
-/** Owner colours, matching the HUD flag strip and the minimap exactly. */
-const COLOR_MINE = "#ffc46b";
-const COLOR_THEIRS = "#ff5a4f";
-const COLOR_NEUTRAL = "#c2c7d0";
-/** The same three, parsed once — `update` runs on every flag every frame. */
-const RGB_MINE = Color3.FromHexString(COLOR_MINE);
-const RGB_THEIRS = Color3.FromHexString(COLOR_THEIRS);
-const RGB_NEUTRAL = Color3.FromHexString(COLOR_NEUTRAL);
-/** Ownership changes hands in an instant; the colour crossfades. */
-const COLOR_RATE = 5;
-
-/** Pulse: fast and deep while both teams are on it, slow while it is moving. */
-const CONTESTED_RATE = 9;
-const CONTESTED_DEPTH = 0.45;
-const CAPTURING_RATE = 3.4;
-const CAPTURING_DEPTH = 0.22;
+const STONE_HEXES = ["#d3cdbc", "#bab3a1"] as const;
+/** The painted line on made ground, and how far proud of it it is laid. */
+const PAINT_HEX = "#b9b4a2";
+const PAINT_HALF_WIDTH = 0.08;
+const PAINT_STEP = 0.4;
+const PAINT_LIFT = 0.018;
+/**
+ * A box top this far over the drawn terrain is MADE ground (a slab, a deck);
+ * one more than a step over the flag's own level is something standing on
+ * that ground rather than the ground itself; and one that does not carry on
+ * `FLOOR_SPAN` metres every way at the same height is a crate or a wall top.
+ */
+const MADE_EPS = 0.03;
+const SURFACE_REACH = 0.45;
+const FLOOR_SPAN = 0.6;
+const FLOOR_LEVEL = 0.08;
+/** The band a box has to cross to be a wall a stone may not be laid in. */
+const WALL_FLOOR = 0.12;
+const WALL_CEILING = 1.5;
 
 /**
  * The flag's cloth: a plain canvas for a point nobody leans on, and how much
@@ -147,53 +157,43 @@ const MOUNT_HIT: RayHit = {
   hull: null,
 };
 
-/** One piece of one flag's markers. */
-interface Marker {
-  mesh: Mesh;
-  mat: StandardMaterial;
-  /** Alpha at full strength — the pulse and the fog scale this. */
-  alpha: number;
-}
-
 /** One flag's markers. */
 interface Zone {
   x: number;
   z: number;
-  radius: number;
-  markers: Marker[];
-  /**
-   * The skirt's vertex colours and the ground position of each of its
-   * segments, kept for the per-frame reveal (`revealSkirt`).
-   */
-  skirt: { mesh: Mesh; colors: Float32Array; points: Float32Array };
-  /** Current colour, crossfaded toward the owner's. */
-  color: Color3;
+  /** The ring: a mesh per stone tone, and the paint. */
+  meshes: Mesh[];
   flag: FlagCloth;
   /** The meter as the flag shows it — signed, rate-limited toward the real one. */
   shown: number;
   primed: boolean;
 }
 
-/** One ring of vertices in a band: where it sits and how solid it is there. */
-interface Loop {
-  radius: number;
-  /** Height above the sampled ground. */
-  lift: number;
-  alpha: number;
+/** Where the ring lies at one point of it, and whether that ground is made. */
+interface Lay {
+  y: number;
+  made: boolean;
+}
+
+/** One mesh's worth of triangles, filled stone by stone. */
+interface Batch {
+  positions: number[];
+  normals: number[];
+  indices: number[];
 }
 
 /**
  * Draws where the control points are and, more to the point, where their edges
- * are. A flag with no geometry is invisible from the ground: the HUD says one
- * is being taken and nothing on screen says whether you are standing in it.
+ * are. A flag with no geometry around it is a flag: the HUD says one is being
+ * taken and nothing on screen says whether you are standing in it.
  */
 export class CaptureZoneSystem {
   private zones: Zone[] = [];
-  private fogStart = 0;
   private fogEnd = 1;
-  private t = 0;
   /** A side's flag colours, derived once from its worn colour. */
   private flagColours = new Map<string, FlagColours>();
+  /** Unit-radius stone shapes, made once — `CreatePolyhedronVertexData` types. */
+  private protos = new Map<number, VertexData>();
 
   constructor(
     private scene: Scene,
@@ -201,73 +201,64 @@ export class CaptureZoneSystem {
   ) {}
 
   /**
-   * Rebuilds every marker for a round. Takes the terrain AND the nav graph
-   * because a 28 m ring cannot be placed by one height sample at the flag —
-   * the same reason a road is re-cut against the ground rather than lifted
-   * rigidly. See `ground` below for which of the two wins where.
+   * Rebuilds every marker for a round. Takes the terrain AND the obstacle
+   * boxes because a 28 m ring cannot be placed by one height
+   * sample at the flag — the same reason a road is re-cut against the ground
+   * rather than lifted rigidly. See `lay` below for which of them wins where.
    */
   build(
     points: readonly ControlPointDef[],
     terrain: TerrainField,
-    nav: NavGrid,
+    obstacles: ObstacleField,
+    roads: RoadFootprint,
     rays: RayWorld,
     env: EnvironmentSpec,
   ): void {
     this.dispose();
-    this.fogStart = env.fogStart;
     this.fogEnd = env.fogEnd;
 
     for (const cp of points) {
       /**
-       * Where the ring lies at one point along its circumference: the surface
-       * you would STAND on, not the terrain.
+       * What the ring lies on at one point along its circumference: the
+       * surface you would STAND on, not the terrain.
        *
        * The terrain part uses `surfaceAt(..., true)` — the floor as drawn,
        * upper envelope — because the ground is flat triangles across a
-       * bilinear field, and following the smooth field sinks the ring under
-       * the mesh on every twisted cell. That alone is not enough: every flag
-       * but one sits on a paved square or a deck, and a slab's top face is
-       * above the terrain it stands on, so a terrain-only ring is buried by
-       * the very surface the player is walking on. The nav graph already
-       * knows those heights — resolved nearest the flag's own y, so a ring
-       * crossing a bridge takes the deck rather than the creek floor.
+       * bilinear field, and following the smooth field sinks a stone under
+       * the mesh on every twisted cell. Most flags stand on something BUILT,
+       * though — a paved square, a deck, Hollowmere's churchyard on its 2 m
+       * plinth — and that is a box top the terrain has never heard of. So the
+       * obstacle boxes are asked for the highest top up to a step over the
+       * flag's own level (or over the floor, where a hillside rises past
+       * it), and it is taken as the floor only when it is BROAD
+       * (`floorAt`): the top of a crate or a garden wall is not where anybody
+       * lays a boundary. Neither is the nav graph's height, which is sampled
+       * per cell centre and resolved the churchyard's ring to the ground
+       * under the plinth.
+       *
+       * A road is a sheet over the floor that nothing but a drawing knows is
+       * there, so it is asked separately — and it is made ground too.
        */
-      const ground = (x: number, z: number) => {
+      const lay = (x: number, z: number): Lay => {
         const floor = terrain.surfaceAt(x, z, true);
-        const surface = nav.surfaceAt(x, cp.pos.y, z);
-        return surface < 0 ? floor : Math.max(floor, nav.heightOf(surface));
+        const ceiling = Math.max(floor, cp.pos.y) + SURFACE_REACH;
+        const deck = floorAt(obstacles, x, z, ceiling, floor + MADE_EPS);
+        if (deck !== null) return { y: deck, made: true };
+        const road = roadTopAt(roads, x, z);
+        return { y: floor + road, made: road > 0 };
       };
+      const walled = (x: number, z: number, y: number) =>
+        obstacles.wallAt(x, z, y + WALL_FLOOR, y + WALL_CEILING);
 
-      const segs = Math.max(
-        MIN_SEGMENTS,
-        Math.min(MAX_SEGMENTS, Math.round(cp.radius * SEGMENTS_PER_M)),
-      );
+      const rng = mulberry32(0x57a9e + this.zones.length * 7919);
+      const meshes = [
+        ...this.stones(cp, lay, walled, rng),
+        ...this.paint(cp, lay, walled),
+      ];
 
-      // The boundary itself, as a band lying on the ground.
-      const ring = this.band(
-        `zone-${cp.id}-ring`,
-        cp,
-        { radius: cp.radius - RING_HALF_WIDTH, lift: RING_LIFT, alpha: 1 },
-        { radius: cp.radius + RING_HALF_WIDTH, lift: RING_LIFT, alpha: 1 },
-        segs,
-        ground,
-        RING_ALPHA,
-      );
-      // A skirt above it: a ring seen from ground level is a line on the floor
-      // and reads as dressing. A wall you walk through reads as a threshold.
-      const skirt = this.band(
-        `zone-${cp.id}-skirt`,
-        cp,
-        { radius: cp.radius, lift: RING_LIFT, alpha: 1 },
-        { radius: cp.radius, lift: RING_LIFT + SKIRT_HEIGHT, alpha: 0 },
-        segs,
-        ground,
-        SKIRT_ALPHA,
-        true,
-      );
       // And the flag, which is what you navigate to — stood on the surface
       // the ring is, or on the roof over it (`mount`).
-      const mount = this.mount(cp, ground(cp.pos.x, cp.pos.z), rays);
+      const mount = this.mount(cp, lay(cp.pos.x, cp.pos.z).y, rays);
       const flag = new FlagCloth(
         this.scene,
         this.mats,
@@ -285,14 +276,7 @@ export class CaptureZoneSystem {
       this.zones.push({
         x: cp.pos.x,
         z: cp.pos.z,
-        radius: cp.radius,
-        markers: [ring.marker, skirt.marker],
-        skirt: {
-          mesh: skirt.marker.mesh,
-          colors: skirt.colors,
-          points: skirt.points,
-        },
-        color: Color3.FromHexString(COLOR_NEUTRAL),
+        meshes,
         flag,
         shown: 0,
         primed: false,
@@ -301,82 +285,33 @@ export class CaptureZoneSystem {
   }
 
   /**
-   * Pushes this frame's ownership onto the markers. `points` is Game's live
-   * flag list in build order; `viewer` is the camera, for the fog fade and
-   * the skirt's reveal.
+   * Flies each flag at this frame's meter. `points` is Game's live flag list
+   * in build order; `viewer` is the camera, for the flag's fog gate and its
+   * cloth's level of detail. The ring needs nothing: it is the world's.
    */
   update(
     dt: number,
     points: readonly ZoneState[],
-    playerTeam: Team,
     viewer: { x: number; z: number },
   ): void {
-    this.t += dt;
     const n = Math.min(points.length, this.zones.length);
-    const lerp = Math.min(1, dt * COLOR_RATE);
-
     for (let i = 0; i < n; i++) {
-      const p = points[i];
       const zone = this.zones[i];
-
-      const target =
-        p.owner === null
-          ? RGB_NEUTRAL
-          : p.owner === playerTeam
-            ? RGB_MINE
-            : RGB_THEIRS;
-      Color3.LerpToRef(zone.color, target, lerp, zone.color);
-
-      // Contested beats capturing: both teams standing on it is the thing
-      // worth catching from the corner of the eye.
-      let pulse = 1;
-      if (p.contested) {
-        pulse = 1 - CONTESTED_DEPTH * wave(this.t * CONTESTED_RATE);
-      } else if (p.present[0] + p.present[1] > 0 && Math.abs(p.meter) < 1) {
-        pulse = 1 - CAPTURING_DEPTH * wave(this.t * CAPTURING_RATE);
-      }
-
       const dx = zone.x - viewer.x;
       const dz = zone.z - viewer.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      const fade =
-        1 -
-        clamp01(
-          (dist - this.fogStart) / Math.max(1, this.fogEnd - this.fogStart),
-        );
-
-      for (const m of zone.markers) {
-        const alpha = m.alpha * pulse * fade;
-        m.mat.alpha = alpha;
-        m.mat.emissiveColor.copyFrom(zone.color);
-        // Nothing to draw is worth a draw call saved: at village scale most
-        // of the flags are behind the fog wall most of the time.
-        m.mesh.setEnabled(alpha > 0.01);
-      }
-
-      // The skirt is a cylinder around the player, so from inside a zone you
-      // are always looking THROUGH its far side — at any alpha that reads as a
-      // wall, that is a white wash over the whole screen. Revealing only the
-      // stretch you are near fixes both halves of that: no wash, and the piece
-      // that does show is the piece you are about to walk through.
-      if (zone.skirt.mesh.isEnabled()) {
-        this.revealSkirt(zone, viewer);
-      }
-
-      this.flyFlag(zone, p, dt, dist);
+      this.flyFlag(zone, points[i], dt, Math.sqrt(dx * dx + dz * dz));
     }
   }
 
   dispose(): void {
     for (const zone of this.zones) {
-      for (const m of zone.markers) {
-        m.mesh.dispose();
-        m.mat.dispose();
-      }
+      // The materials are the factory's cache and shared with the world.
+      for (const m of zone.meshes) m.dispose();
       zone.flag.dispose();
     }
     this.zones = [];
   }
+
 
   /**
    * Where a flag's pole stands, and how tall it is.
@@ -458,111 +393,238 @@ export class CaptureZoneSystem {
     return c;
   }
 
+
   /**
-   * Rewrites the skirt's per-vertex alpha from the viewer's distance to each
-   * segment. Cheap by construction — one square root per segment, ~56 of them
-   * per flag, and only for flags close enough to be drawn at all.
+   * The stones: one every `STONE_SPACING` metres of boundary that is open
+   * ground, each a squashed polyhedron at its own size, yaw and lean, bedded
+   * into the floor. Merged into one mesh per tone, so a ring is two draws
+   * however many stones it has. Seeded, so a ring is the same ring every
+   * load — the same rule as the scatter.
    */
-  private revealSkirt(zone: Zone, viewer: { x: number; z: number }): void {
-    const { mesh, colors, points } = zone.skirt;
-    const segs = points.length / 2;
-    for (let i = 0; i < segs; i++) {
-      const dx = points[i * 2] - viewer.x;
-      const dz = points[i * 2 + 1] - viewer.z;
-      const d = Math.sqrt(dx * dx + dz * dz);
-      // Vertices come in (bottom, top) pairs of 4 floats; the top is always
-      // fully transparent, so only the bottom's alpha is worth writing.
-      const u = clamp01((d - SKIRT_FULL) / (SKIRT_FADE - SKIRT_FULL));
-      // Smoothstep, not linear: a linear reveal puts a visible vertical seam
-      // down the skirt where the falloff starts, which reads as a pane of
-      // glass rather than as the boundary catching the light.
-      colors[i * 8 + 3] = 1 - u * u * (3 - 2 * u);
+  private stones(
+    cp: ControlPointDef,
+    lay: (x: number, z: number) => Lay,
+    walled: (x: number, z: number, y: number) => boolean,
+    rng: () => number,
+  ): Mesh[] {
+    const batches: Batch[] = STONE_HEXES.map(() => ({
+      positions: [],
+      normals: [],
+      indices: [],
+    }));
+    const count = Math.max(
+      12,
+      Math.round((Math.PI * 2 * cp.radius) / STONE_SPACING),
+    );
+    const rot = Matrix.Identity();
+
+    for (let i = 0; i < count; i++) {
+      const th =
+        ((i + (rng() - 0.5) * 2 * STONE_JITTER_T) / count) * Math.PI * 2;
+      const r = cp.radius + (rng() - 0.5) * 2 * STONE_JITTER_R;
+      const x = cp.pos.x + Math.sin(th) * r;
+      const z = cp.pos.z + Math.cos(th) * r;
+      // Drawn before any test so a skipped stone does not reshuffle the rest
+      // of the ring: the same seed is the same stones whatever the world did.
+      const size = STONE_SIZE + rng() * STONE_SIZE_SPREAD;
+      const sx = size * (0.85 + rng() * 0.4);
+      const sz = size * (0.85 + rng() * 0.3);
+      const sy = size * (STONE_SQUASH + rng() * STONE_SQUASH_SPREAD);
+      const yaw = rng() * Math.PI * 2;
+      const pitch = (rng() - 0.5) * 2 * STONE_TILT;
+      const roll = (rng() - 0.5) * 2 * STONE_TILT;
+      const type = rng() < 0.5 ? 2 : 3;
+      const tone = rng() < 0.7 ? 0 : 1;
+
+      const ground = lay(x, z);
+      if (ground.made || walled(x, z, ground.y)) continue;
+
+      Matrix.RotationYawPitchRollToRef(yaw, pitch, roll, rot);
+      this.addStone(
+        batches[tone],
+        this.proto(type),
+        rot,
+        sx,
+        sy,
+        sz,
+        x,
+        ground.y + sy * (1 - 2 * STONE_BED),
+        z,
+      );
     }
-    mesh.updateVerticesData(VertexBuffer.ColorKind, colors);
+    return batches.flatMap((b, k) =>
+      this.finish(`zone-${cp.id}-stones-${k}`, b, STONE_HEXES[k]),
+    );
   }
 
   /**
-   * A closed band between two rings of vertices, in world space.
-   *
-   * Winding is deliberately not reasoned about: the material is unlit and
-   * two-sided, so there is no normal to get backwards and no face to cull.
-   * That is a licence this file has and the world layer does not — a
-   * hand-wound floor with downward normals is the failure `assertFacesUp`
-   * exists to catch.
-   *
-   * Vertex alpha carries the shape's own gradient (a skirt fading out at the
-   * top, and its reveal); the material's alpha carries the state (pulse and
-   * fog), so the two multiply and neither has to know about the other.
+   * The painted line: a narrow strip along the boundary wherever it crosses
+   * made ground, broken wherever it meets a wall. Stones on a carriageway or
+   * across an office floor would be somebody's barricade; paint is how a line
+   * is drawn on a surface somebody built. It is laid proud of the surface and
+   * biased toward the eye by the road's own depth offset, the problem a road
+   * has against the floor under it (`ROAD_DEPTH_UNITS`).
    */
-  private band(
-    name: string,
+  private paint(
     cp: ControlPointDef,
-    a: Loop,
-    b: Loop,
-    segs: number,
-    groundAt: (x: number, z: number) => number,
-    alpha: number,
-    updatable = false,
-  ): { marker: Marker; colors: Float32Array; points: Float32Array } {
-    const positions: number[] = [];
-    const colors = new Float32Array(segs * 8);
-    const points = new Float32Array(segs * 2);
-    const indices: number[] = [];
+    lay: (x: number, z: number) => Lay,
+    walled: (x: number, z: number, y: number) => boolean,
+  ): Mesh[] {
+    const count = Math.max(
+      24,
+      Math.round((Math.PI * 2 * cp.radius) / PAINT_STEP),
+    );
+    const ys = new Float32Array(count);
+    const on = new Uint8Array(count);
+    for (let i = 0; i < count; i++) {
+      const th = (i / count) * Math.PI * 2;
+      const x = cp.pos.x + Math.sin(th) * cp.radius;
+      const z = cp.pos.z + Math.cos(th) * cp.radius;
+      const ground = lay(x, z);
+      ys[i] = ground.y + PAINT_LIFT;
+      on[i] = ground.made && !walled(x, z, ground.y) ? 1 : 0;
+    }
 
-    for (let i = 0; i < segs; i++) {
-      const th = (i / segs) * Math.PI * 2;
-      const sin = Math.sin(th);
-      const cos = Math.cos(th);
-      const loops = [a, b];
-      for (let k = 0; k < 2; k++) {
-        const loop = loops[k];
-        const x = cp.pos.x + sin * loop.radius;
-        const z = cp.pos.z + cos * loop.radius;
-        positions.push(x, groundAt(x, z) + loop.lift, z);
-        // RGB is ignored — diffuse is black and the colour comes from the
-        // material's emissive. Only the alpha channel is doing work here.
-        colors.set([1, 1, 1, loop.alpha], i * 8 + k * 4);
+    const b: Batch = { positions: [], normals: [], indices: [] };
+    for (let i = 0; i < count; i++) {
+      const j = (i + 1) % count;
+      if (!on[i] || !on[j]) continue;
+      const base = b.positions.length / 3;
+      for (const k of [i, j]) {
+        const th = (k / count) * Math.PI * 2;
+        const sin = Math.sin(th);
+        const cos = Math.cos(th);
+        for (const r of [
+          cp.radius - PAINT_HALF_WIDTH,
+          cp.radius + PAINT_HALF_WIDTH,
+        ]) {
+          b.positions.push(cp.pos.x + sin * r, ys[k], cp.pos.z + cos * r);
+          b.normals.push(0, 1, 0);
+        }
       }
-      // The band's own ground track, at the first loop's radius: what the
-      // skirt's reveal measures its distance to.
-      points[i * 2] = cp.pos.x + sin * a.radius;
-      points[i * 2 + 1] = cp.pos.z + cos * a.radius;
+      // Both windings rather than reasoning about which one faces up: the
+      // normal is stated, so whichever face survives the cull is lit as a
+      // floor, and the other is culled rather than drawn over it.
+      b.indices.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
+      b.indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
     }
-    for (let i = 0; i < segs; i++) {
-      const j = (i + 1) % segs;
-      indices.push(i * 2, i * 2 + 1, j * 2, j * 2, i * 2 + 1, j * 2 + 1);
-    }
+    return this.finish(`zone-${cp.id}-paint`, b, PAINT_HEX, ROAD_DEPTH_UNITS);
+  }
 
+  /** A polyhedron scaled to unit radius, so a stone's size is its size. */
+  private proto(type: number): VertexData {
+    let data = this.protos.get(type);
+    if (!data) {
+      data = CreatePolyhedronVertexData({ type, size: 1 });
+      const pos = data.positions!;
+      let max = 0;
+      for (let i = 0; i < pos.length; i += 3) {
+        max = Math.max(max, Math.hypot(pos[i], pos[i + 1], pos[i + 2]));
+      }
+      data.positions = Array.from(pos, (v) => v / max);
+      this.protos.set(type, data);
+    }
+    return data;
+  }
+
+  /**
+   * One stone into a batch: scaled, turned and stood at (x, y, z). Normals go
+   * through the inverse scale, which is what keeps a squashed stone's top
+   * reading as a top rather than as a slope.
+   */
+  private addStone(
+    b: Batch,
+    proto: VertexData,
+    rot: Matrix,
+    sx: number,
+    sy: number,
+    sz: number,
+    x: number,
+    y: number,
+    z: number,
+  ): void {
+    const pos = proto.positions!;
+    const nrm = proto.normals!;
+    const base = b.positions.length / 3;
+    const m = rot.m;
+    for (let i = 0; i < pos.length; i += 3) {
+      const px = pos[i] * sx;
+      const py = pos[i + 1] * sy;
+      const pz = pos[i + 2] * sz;
+      b.positions.push(
+        px * m[0] + py * m[4] + pz * m[8] + x,
+        px * m[1] + py * m[5] + pz * m[9] + y,
+        px * m[2] + py * m[6] + pz * m[10] + z,
+      );
+      const nx = nrm[i] / sx;
+      const ny = nrm[i + 1] / sy;
+      const nz = nrm[i + 2] / sz;
+      const wx = nx * m[0] + ny * m[4] + nz * m[8];
+      const wy = nx * m[1] + ny * m[5] + nz * m[9];
+      const wz = nx * m[2] + ny * m[6] + nz * m[10];
+      const len = Math.hypot(wx, wy, wz) || 1;
+      b.normals.push(wx / len, wy / len, wz / len);
+    }
+    for (const index of proto.indices!) b.indices.push(base + index);
+  }
+
+  /**
+   * A batch as a world-space mesh in the cel material, or nothing at all for
+   * an empty one (a ring entirely indoors has no stones; one in a field has
+   * no paint).
+   */
+  private finish(
+    name: string,
+    b: Batch,
+    hex: string,
+    depthUnits = 0,
+  ): Mesh[] {
+    if (b.indices.length === 0) return [];
     const mesh = new Mesh(name, this.scene);
     const data = new VertexData();
-    data.positions = positions;
-    data.colors = Array.from(colors);
-    data.indices = indices;
-    data.applyToMesh(mesh, updatable);
-    mesh.hasVertexAlpha = true;
-
-    const mat = new StandardMaterial(`${name}-mat`, this.scene);
-    mat.emissiveColor = Color3.FromHexString(COLOR_NEUTRAL);
-    mat.diffuseColor = Color3.Black();
-    mat.specularColor = Color3.Black();
-    mat.disableLighting = true;
-    mat.backFaceCulling = false;
-    // A marker must never hide what it marks — or the other markers behind it.
-    mat.disableDepthWrite = true;
-    mat.alpha = alpha;
-    mesh.material = mat;
-
-    // Annotation, not world: out of every ray test and off the collidable list.
+    data.positions = b.positions;
+    data.normals = b.normals;
+    data.indices = b.indices;
+    data.applyToMesh(mesh);
+    mesh.material = this.mats.get(hex, depthUnits);
+    // Dressing, not world: out of every ray test and off the collidable list.
+    // The paint is `noInk` by intent only — a sheet on a floor has no depth
+    // step for the ink to find — and the stones are inked like any rock.
     mesh.isPickable = false;
     mesh.checkCollisions = false;
-    mesh.metadata = { noInk: true, noGlow: true, noShadowCaster: true };
+    mesh.metadata =
+      depthUnits === 0
+        ? { noGlow: true, noShadowCaster: true }
+        : { noInk: true, noGlow: true, noShadowCaster: true };
     mesh.freezeWorldMatrix();
-
-    return { marker: { mesh, mat, alpha }, colors, points };
+    return [mesh];
   }
 }
 
-/** 0..1 pulse; 0 at t = 0, so a marker starts at full strength. */
-function wave(t: number): number {
-  return 0.5 - 0.5 * Math.cos(t);
+/**
+ * The highest box top at (x, z) inside the band, when it is a FLOOR: the same
+ * top carries on `FLOOR_SPAN` metres along both axes either way. Four more
+ * bucket reads, once per stone at build time.
+ */
+function floorAt(
+  obstacles: ObstacleField,
+  x: number,
+  z: number,
+  ceiling: number,
+  floor: number,
+): number | null {
+  const top = obstacles.groundAt(x, z, ceiling, floor);
+  if (top === null) return null;
+  for (const [dx, dz] of FLOOR_PROBES) {
+    const there = obstacles.groundAt(x + dx, z + dz, ceiling, floor);
+    if (there === null || Math.abs(there - top) > FLOOR_LEVEL) return null;
+  }
+  return top;
 }
+
+const FLOOR_PROBES = [
+  [FLOOR_SPAN, 0],
+  [-FLOOR_SPAN, 0],
+  [0, FLOOR_SPAN],
+  [0, -FLOOR_SPAN],
+] as const;

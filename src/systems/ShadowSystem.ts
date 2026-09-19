@@ -60,10 +60,9 @@ export class ShadowSystem {
    *
    * `out.y` is the FLOOR the body came to rest on, not the body's own height:
    * a corpse moves after it dies, so neither its height nor the one it was
-   * standing at when it was shot is the answer. `Game` resolves it the same
-   * way `CaptureZoneSystem` lays a ring — the nav surface nearest the body,
-   * falling back to the drawn terrain — because a body on a deck and a body
-   * in a basin both have to be shaded.
+   * standing at when it was shot is the answer. `Game` resolves it off the
+   * nav surface nearest the body, falling back to the drawn terrain, because
+   * a body on a deck and a body in a basin both have to be shaded.
    *
    * A callback rather than an import, because a system reaching into another
    * system is the thing `Game`'s wiring exists to prevent.

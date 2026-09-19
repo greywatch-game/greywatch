@@ -4389,8 +4389,15 @@ export class Game {
     this.blastDebris.reset();
     this.conquest.start(map);
     // The flags' markers read the same radius ConquestSystem tests against,
-    // and follow the same terrain the ring is drawn across.
-    this.zones.build(map.controlPoints, map.terrain, map.nav, map.rays, env);
+    // and lay the ring's stones on the same ground a body stands on.
+    this.zones.build(
+      map.controlPoints,
+      map.terrain,
+      map.obstacles,
+      map.roads,
+      map.rays,
+      env,
+    );
     this.player.fullReset();
     // The AT slot is the MAP's and the ROUND's, not the kit screen's, so it is
     // re-decided here as well as in `applyLoadout` — a player who chose a
@@ -4788,7 +4795,6 @@ export class Game {
     this.zones.update(
       dt,
       this.conquest.points,
-      this.player.team,
       this.cameraSys.camera.position,
     );
     this.prof.end(P.zones);
@@ -7703,7 +7709,6 @@ export class Game {
     this.zones.update(
       dt,
       this.conquest.points,
-      this.player.team,
       this.cameraSys.camera.position,
     );
     this.updateHud(dt, true);
@@ -8841,10 +8846,8 @@ export class Game {
    * The surface something at (x, z) would be STANDING on, resolved nearest the
    * height `near` — the drawn terrain, or a deck or slab above it.
    *
-   * The same pair of questions `CaptureZoneSystem` asks to lay a ring on the
-   * ground, and asked here for the same reason: the terrain alone buries
-   * anything on a boathouse deck or a paved square, and the nav graph alone
-   * has nothing to say about the stretches nothing walks on. `surfaceAt(...,
+   * The terrain alone buries anything on a boathouse deck or a paved square,
+   * and the nav graph alone has nothing to say about the stretches nothing walks on. `surfaceAt(...,
    * true)` is the upper envelope, because the floor is flat triangles across a
    * bilinear field and the smooth value sits under the mesh on a twisted cell.
    */

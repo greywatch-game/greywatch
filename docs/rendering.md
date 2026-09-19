@@ -2760,29 +2760,40 @@ is either a white screen forward or nothing at all sideways, and no exposure is
 both. 0.55 is 16x, which an LDR frame can hold at both ends. Raising it is what an
 HDR chain would buy.
 
-## The capture zone: annotation drawn in the world
+## The capture zone: laid out in the world, not drawn over it
 
-`CaptureZoneSystem` is the point's ring, its skirt and its flag. The rules are
-about DRAWING; the meter they annotate is `ConquestSystem`'s and is in
+`CaptureZoneSystem` is the point's boundary and its flag. The rules are about
+DRAWING; the meter they annotate is `ConquestSystem`'s and is in
 [`CLAUDE.md`](../CLAUDE.md).
 
 - **The ring is the boundary.** It is built at `ControlPointDef.radius`, which is
   what `pointAt` tests, so the line on the floor is not an approximation of the zone —
   it is the zone. Drawing it anywhere else is worse than drawing nothing.
+- **It is a thing somebody LAID, not a light nobody could have.** It replaced an
+  emissive band with a translucent skirt over it, both in the owner's colour and
+  pulsing while contested — a game element painted over the world. Now it is
+  whitewashed stones on open ground and a painted line on MADE ground (a
+  carriageway, a deck, a plinth, a slab), both in the cel material, so they are lit,
+  shadowed, fogged and inked like the wall beside them and owe no fade of their own.
+  The stones are seeded per zone and merged one mesh per tone, so a ring is at most
+  three draws. **Nothing on the ground says who holds the point**: the flag and the
+  HUD strip already say it, and colour on the floor was the part that read as UI.
 - **It follows the surface you STAND on, not the terrain.** A 28 m ring placed by one
   height sample at the flag is buried at one end (the problem `terrainSlab` solves for
-  roads), but sampling `TerrainField` alone is still wrong, because four of the five
-  flags sit on a paved square or a deck above the ground under it. The ring takes the
-  higher of `terrain.surfaceAt(x, z, true)` and the nav graph's walkable height nearest
-  the flag's own `y`.
-- **The skirt is revealed by proximity.** It is a cylinder around the zone, so from
-  inside you are always looking through its far side; at any alpha that reads as a
-  wall, that is a white wash over the entire screen. Per-frame vertex alpha keyed to
-  the viewer's distance shows only the stretch you are about to cross.
-- **Markers are annotation.** No `solid`, no collider, no `WorldBox`, `noGlow` so
-  the bloom leaves them out. The ring and skirt are the one
-  persistent unlit `StandardMaterial` geometry in the world, so they get no shader fog
-  and have to fade themselves out at the fog wall.
+  roads), and sampling `TerrainField` alone is still wrong, because most flags sit on
+  something built. The ring takes the highest obstacle-box top up to a step over the
+  flag's own `y` (or the floor, where a hillside rises past it) — **but only when it
+  is BROAD**, the same top carrying on 0.6 m every way, so a crate or a wall top is
+  never mistaken for the floor — else the drawn terrain plus any road sheet on it.
+  **Not the nav graph**: it resolved Hollowmere's churchyard ring, flag and all, to
+  the ground under the 2 m plinth, which is where the old ring had been drawn.
+- **It breaks where it meets a wall.** A stone or a stretch of paint that would
+  stand inside a box (`ObstacleField.wallAt` over the band a stone occupies) is not
+  laid, so a boundary crossing a building stops at its walls as a real one would.
+- **Markers are dressing.** No `solid`, no collider, no `WorldBox`, `noGlow`,
+  `noShadowCaster` (the world's caster list is fixed before a round's markers exist,
+  and a stone's shadow is centimetres); a body walks over a boundary stone. The paint
+  takes `ROAD_DEPTH_UNITS` for a road's reason and is `noInk` by intent only.
 - **The flag IS the meter, and it is cloth rather than a picture of cloth.**
   `FlagCloth` replaced a translucent 20 m beacon: a pole with a flag flown at
   `|meter|` of its height in the colours of the side the meter leans to (`teamLook`'s
