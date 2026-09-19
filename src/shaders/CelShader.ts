@@ -1573,6 +1573,27 @@ export class CelMaterialFactory {
    */
   private static readonly GLASS_DEPTH_UNITS = -16;
 
+  /**
+   * The bias for an emissive plane hung in FRONT of a `backed` pane — a lit
+   * room on a tower's curtain wall or in a brick block's punched window.
+   *
+   * **It has to be MORE than the glass's, never the same.** The glow stands
+   * 4.5 cm off the sheet's face, and that is exactly the gap
+   * `GLASS_DEPTH_UNITS` exists to beat: past ~100 m sixteen units is more
+   * than 4.5 cm, so an unbiased glow LOST the depth test to the glass it was
+   * drawn over and the two fought per pixel as the eye moved. Equal units only
+   * hand the tie back to that same 4.5 cm. Measured head-on at a Coldharbour
+   * curtain wall, glass tinted and rooms keyed: unbiased, every lit room is
+   * gone by 120 m and none survive at 180-300 m; at -24 all of them are drawn
+   * at every range, bloom included. Eight past the glass is the roads' doubled
+   * margin. It lands on the -24 at which a biased SHEET started eating the
+   * trim in front of it, and that cost does not carry over: the glow is inset
+   * 0.45 m from every edge of its bay, so no fin or collar stands over it
+   * head on.
+   */
+  private static readonly OVER_GLASS_DEPTH_UNITS =
+    CelMaterialFactory.GLASS_DEPTH_UNITS - 8;
+
   private cache = new Map<string, ShaderMaterial>();
   private emissiveCache = new Map<string, StandardMaterial>();
 
@@ -2178,11 +2199,19 @@ export class CelMaterialFactory {
     return mat;
   }
 
-  /** Shared unlit emissive material (used for neon/glow/effect meshes). */
-  getEmissive(hex: string): StandardMaterial {
-    let mat = this.emissiveCache.get(hex);
+  /**
+   * Shared unlit emissive material (used for neon/glow/effect meshes).
+   * `overGlass` biases it past a `backed` pane it is hung in front of — see
+   * `OVER_GLASS_DEPTH_UNITS` — and is part of the key; `GlowPass`'s mask
+   * copies the bias so the two draws still tie.
+   */
+  getEmissive(hex: string, overGlass = false): StandardMaterial {
+    const depthUnits = overGlass ? CelMaterialFactory.OVER_GLASS_DEPTH_UNITS : 0;
+    const key = overGlass ? `${hex}-over-glass` : hex;
+    let mat = this.emissiveCache.get(key);
     if (!mat) {
-      mat = new StandardMaterial(`emissive-${hex}`, this.scene);
+      mat = new StandardMaterial(`emissive-${key}`, this.scene);
+      mat.zOffsetUnits = depthUnits;
       mat.emissiveColor = Color3.FromHexString(hex);
       mat.diffuseColor = Color3.Black();
       mat.specularColor = Color3.Black();
@@ -2191,7 +2220,7 @@ export class CelMaterialFactory {
       // through the fog wall at full saturation. The plugin has to go on before
       // anything draws with the material — hence here, not in setEnvironment.
       attachEmissiveFog(mat);
-      this.emissiveCache.set(hex, mat);
+      this.emissiveCache.set(key, mat);
     }
     return mat;
   }

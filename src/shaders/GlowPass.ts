@@ -278,7 +278,7 @@ export class GlowPass {
   private sharedFrom: object | null = null;
   private sharedTo: object | null = null;
 
-  private readonly materials: (GlowMaskMaterial | undefined)[] = [];
+  private readonly materials = new Map<number | string, GlowMaskMaterial>();
   /** What each mesh wears in the mask pass, so the override is only set when it changes. */
   private readonly worn = new WeakMap<AbstractMesh, GlowMaskMaterial>();
   /** The list handed back each frame, reused so a frame allocates nothing. */
@@ -394,10 +394,17 @@ export class GlowPass {
       (material.emissiveTexture ? EMISSIVE : 0) |
       (material.opacityTexture ? OPACITY : 0) |
       (material.needAlphaBlending() ? BLEND : 0);
-    let mat = this.materials[flags];
+    // The source's polygon offset is part of the variant: the LEQUAL tie
+    // against the frame's depth only holds if the mask is biased exactly as
+    // the draw that wrote it was (a lit room over a `backed` pane is, see
+    // `CelMaterialFactory.getEmissive`).
+    const units = material.zOffsetUnits;
+    const key = units === 0 ? flags : `${flags}@${units}`;
+    let mat = this.materials.get(key);
     if (!mat) {
       mat = new GlowMaskMaterial(this.scene, flags, (m, self, sub) => this.paint(m, self, sub));
-      this.materials[flags] = mat;
+      mat.zOffsetUnits = units;
+      this.materials.set(key, mat);
     }
     if (this.worn.get(mesh) === mat) return;
     this.worn.set(mesh, mat);
@@ -539,7 +546,7 @@ export class GlowPass {
     this.compose?.dispose();
     for (const blur of this.blurs) blur.dispose();
     this.renderer.dispose();
-    for (const mat of this.materials) mat?.dispose();
+    for (const mat of this.materials.values()) mat.dispose();
     this.mask.dispose();
     this.nearH.dispose();
     this.near.dispose();

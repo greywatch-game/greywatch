@@ -319,6 +319,9 @@ const DOORWAY = 1.8;
 /** Walked height of level `s`, 0 being the ground floor. */
 const levelY = (s: number): number => (s === 0 ? GROUND : s * STOREY);
 
+/** `Build.glow`'s option for a lit room drawn over a `backed` pane. */
+const OVER_GLASS = { overGlass: true } as const;
+
 /**
  * One storey's circulation in a stair LANE: the flight, and the landing at its
  * head. Every enterable building in this file climbs on this, and it is one
@@ -1010,11 +1013,12 @@ export function buildTower(
         // Inset well inside the sheet, so the panel keeps a frame of unlit
         // glass round it: a glow filling its own bay is a panel that HAS no
         // bay, and the grid the elevation is read by disappears wherever the
-        // lights are on.
+        // lights are on. `OVER_GLASS` because the sheet behind is biased
+        // toward the eye by more than the 4.5 cm this stands off it.
         if (bd > bw) {
-          b.glow(0.05, bh - 0.9, bd - 0.9, x + out * 0.09, y, z, ROOM_GLOW);
+          b.glow(0.05, bh - 0.9, bd - 0.9, x + out * 0.09, y, z, ROOM_GLOW, OVER_GLASS);
         } else {
-          b.glow(bw - 0.9, bh - 0.9, 0.05, x, y, z + out * 0.09, ROOM_GLOW);
+          b.glow(bw - 0.9, bh - 0.9, 0.05, x, y, z + out * 0.09, ROOM_GLOW, OVER_GLASS);
         }
       }
     };
@@ -1134,7 +1138,7 @@ export function buildTower(
             b.box(0.12, 1.66, 0.16, x + s * 0.71, y + 0.92, z + sz * 0.06, RENDER);
           }
           if (lit && towerRoll(x, y, c + r * 7, 3) < 0.22) {
-            b.glow(1.0, 1.2, 0.05, x, y + 0.9, z + sz * 0.11, ROOM_GLOW);
+            b.glow(1.0, 1.2, 0.05, x, y + 0.9, z + sz * 0.11, ROOM_GLOW, OVER_GLASS);
           }
         }
       }

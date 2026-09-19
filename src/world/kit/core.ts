@@ -1200,6 +1200,11 @@ export class Build implements Structure {
   /**
    * An unlit emissive detail — a flame, a window's glow. Tagged `noInk`
    * because the outline shell would otherwise swallow it.
+   *
+   * **`overGlass` is owed by any glow hung in front of a `backed` pane**: the
+   * sheet is biased toward the eye in the depth test, and past ~100 m that
+   * bias is more than the few centimetres the glow stands off it, so an
+   * unbiased glow z-fights the glass it was drawn over.
    */
   glow(
     w: number,
@@ -1209,6 +1214,7 @@ export class Build implements Structure {
     y: number,
     z: number,
     color: string,
+    opts?: { overGlass?: true },
   ): Mesh {
     const m = partBox(
       `${this.tag}-glow${this.meshes.length}`,
@@ -1216,7 +1222,7 @@ export class Build implements Structure {
       this.scene,
     );
     m.position.set(x, y, z);
-    m.material = this.mats.getEmissive(color);
+    m.material = this.mats.getEmissive(color, opts?.overGlass);
     m.metadata = { noInk: true };
     this.meshes.push(m);
     return m;
