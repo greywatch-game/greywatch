@@ -472,7 +472,8 @@ export function buildWatchtower(
   // HEARD as well as seen. The three lines are one object: the iron, the light
   // it throws and the noise it makes, all at the flame rather than at the bowl.
   b.cyl(0.9, 0.85, 0.7, 8, 1.4, deckTop + 0.45, 1.4, IRON);
-  b.glow(0.55, 0.5, 0.55, 1.4, deckTop + 0.9, 1.4, EMBER);
+  b.glow(0.62, 0.08, 0.62, 1.4, deckTop + 0.84, 1.4, EMBER);
+  b.flame(0.3, 0.85, 1.4, deckTop + 0.82, 1.4);
   b.light(EMBER, 22, 2.0, 0.4, 1.4, deckTop + 0.95, 1.4);
   b.sound("fire", 1.4, deckTop + 0.9, 1.4);
 

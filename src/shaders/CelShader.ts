@@ -75,6 +75,7 @@ import {
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
+import { FlameMaterial } from "./FlameShader";
 // The shared includes self-register in the IncludesShadersStoreWGSL; import
 // them explicitly so the #include<cel...> lines below can never be tree-shaken
 // away, and so registration is provably before the first effect COMPILE rather
@@ -2275,6 +2276,26 @@ export class CelMaterialFactory {
     return mat;
   }
 
+  /**
+   * The one material every open fire wears (`FlameShader`), created on first
+   * ask. Held OUTSIDE `cache` because it is not a cel material and declares
+   * none of the uniforms that cache's walks write; what it does share with it
+   * — the world clock, the fog and the frame's opaque alpha — is pushed to it
+   * by the same three methods, beside their walks, so a fire can never keep
+   * different time or weather from the wall behind it.
+   */
+  getFlame(): FlameMaterial {
+    if (!this.flame) {
+      this.flame = new FlameMaterial(this.scene);
+      this.flame.setClock(this.windTime);
+      this.flame.setFog(fogState.color, fogState.start, fogState.end);
+      this.flame.setOpaqueAlpha(this.opaqueAlpha);
+    }
+    return this.flame;
+  }
+
+  private flame: FlameMaterial | null = null;
+
   /** Applies a theme's lighting/atmosphere to every cel material. */
   setEnvironment(env: {
     lightDir: Vector3;
@@ -2311,6 +2332,7 @@ export class CelMaterialFactory {
     // And the third pass that never runs the cel shader: the unlit emissive
     // materials behind every window, flame and tracer.
     setEmissiveFog(fogState.color, fogState.start, fogState.end);
+    this.flame?.setFog(fogState.color, fogState.start, fogState.end);
     this.mistColor = env.mistColor;
     this.mistParams.set(env.mistHeight, env.mistStrength);
     this.wearColor = env.wearColor;
@@ -2423,6 +2445,7 @@ export class CelMaterialFactory {
   updateWind(dt: number): void {
     this.windTime += dt;
     this.cache.forEach((mat) => mat.setFloat("windTime", this.windTime));
+    this.flame?.setClock(this.windTime);
   }
 
   updateCamera(camPos: Vector3): void {
@@ -2449,6 +2472,7 @@ export class CelMaterialFactory {
     if (alpha === this.opaqueAlpha) return;
     this.opaqueAlpha = alpha;
     this.cache.forEach((mat) => mat.setFloat("opaqueAlpha", alpha));
+    this.flame?.setOpaqueAlpha(alpha);
   }
 
   /**

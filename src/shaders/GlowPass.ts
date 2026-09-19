@@ -54,6 +54,13 @@
  * blend onto the frame before it, so a bloom lies over the ink lines around its
  * lamp rather than under them.
  *
+ * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
+ * stock variants transform by `world` and `viewProjection` alone, so a surface
+ * displaced in its vertex stage — the fire (`FlameShader`) — would draw its
+ * rest pose into the mask and fail the LEQUAL tie everywhere it had moved. Such
+ * a material hands back a twin that runs its own vertex stage, and is painted
+ * through the same `GlowRules.colour` as everything else.
+ *
  * MESH INSTANCES ARE NOT SUPPORTED, and nothing glowing uses them: the mask
  * shader has no instance attributes, so an instanced emissive would draw one
  * copy. A DEV build says so the first time it meets one.
@@ -176,6 +183,19 @@ export interface GlowRules {
   colour(mesh: AbstractMesh, material: StandardMaterial, out: Color4): void;
 }
 
+/**
+ * A glowing material that draws its own mask — see the header. `glowMask` is
+ * asked ONCE per material; the twin it returns must write `glowColor` from
+ * the paint call after its own bind, never write depth, and test LEQUAL.
+ */
+export interface SelfMasking {
+  glowMask(paint: (mesh: AbstractMesh, sub: SubMesh) => void): ShaderMaterial;
+}
+
+function selfMasking(material: Material): material is Material & SelfMasking {
+  return typeof (material as Partial<SelfMasking>).glowMask === "function";
+}
+
 /** The emissive half of a material, as far as this pass reads it. */
 type Emissive = Material & {
   emissiveColor?: { r: number; g: number; b: number };
@@ -279,8 +299,10 @@ export class GlowPass {
   private sharedTo: object | null = null;
 
   private readonly materials = new Map<number | string, GlowMaskMaterial>();
+  /** The twins `SelfMasking` materials handed back, one per source material. */
+  private readonly ownMasks = new WeakMap<Material, ShaderMaterial>();
   /** What each mesh wears in the mask pass, so the override is only set when it changes. */
-  private readonly worn = new WeakMap<AbstractMesh, GlowMaskMaterial>();
+  private readonly worn = new WeakMap<AbstractMesh, ShaderMaterial>();
   /** The list handed back each frame, reused so a frame allocates nothing. */
   private readonly kept: AbstractMesh[] = [];
   private readonly colour = new Color4();
@@ -390,6 +412,17 @@ export class GlowPass {
 
   /** Puts the right mask variant on a mesh, touching Babylon only when it changed. */
   private dress(mesh: AbstractMesh, material: Emissive): void {
+    if (selfMasking(material)) {
+      let own = this.ownMasks.get(material);
+      if (!own) {
+        own = material.glowMask((m, sub) => this.paintColour(m, sub));
+        this.ownMasks.set(material, own);
+      }
+      if (this.worn.get(mesh) === own) return;
+      this.worn.set(mesh, own);
+      this.mask.setMaterialForRendering(mesh, own);
+      return;
+    }
     const flags =
       (material.emissiveTexture ? EMISSIVE : 0) |
       (material.opacityTexture ? OPACITY : 0) |
@@ -416,12 +449,20 @@ export class GlowPass {
     const effect = sub.effect;
     const material = mesh.material as Emissive | null;
     if (!effect || !material) return;
-    this.rules.colour(mesh, material as StandardMaterial, this.colour);
-    effect.setDirectColor4("glowColor", this.colour);
+    this.paintColour(mesh, sub);
     if (mat.samplesTextures) {
       if (material.emissiveTexture) effect.setTexture("emissiveSampler", material.emissiveTexture);
       if (material.opacityTexture) effect.setTexture("opacitySampler", material.opacityTexture);
     }
+  }
+
+  /** One draw's bloom colour, the half of `paint` every mask shares. */
+  private paintColour(mesh: AbstractMesh, sub: SubMesh): void {
+    const effect = sub.effect;
+    const material = mesh.material;
+    if (!effect || !material) return;
+    this.rules.colour(mesh, material as StandardMaterial, this.colour);
+    effect.setDirectColor4("glowColor", this.colour);
   }
 
   /**

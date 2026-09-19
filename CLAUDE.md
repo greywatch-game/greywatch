@@ -709,7 +709,8 @@ re-derived from the scaling level before every blur.
 mirror and the three ways a cube probe goes flat, the four light terms and the
 colour buffer's three further rules, the frozen define set and what it measured,
 the ground's height maps carved as a DEPTH (parallax, self-shadow) and not only a slope,
-the ink's tint and its NIB, the wind's two bounds, the muzzle-flash budget, the
+the ink's tint and its NIB, the wind's two bounds, the fire (one material, its
+UV vocabulary, and the mask twin a moving emissive owes the glow), the muzzle-flash budget, the
 fog split, the shadow window, the bodies' map (its own window, the back faces,
 the two terms' `min`, what does not cast and what it all measured), the
 reflection bake's seven load-bearing details, the candidate list's four classes

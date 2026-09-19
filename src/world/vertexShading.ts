@@ -135,6 +135,7 @@
  */
 import { Mesh, ShaderMaterial, VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { isFlame } from "../shaders/FlameShader";
 import {
   halfDepth,
   type LocalXZ,
@@ -407,6 +408,10 @@ export function bakeVertexShading(
     // correctly-coloured bloom, since the glow builds its halo from
     // `material.emissiveColor` and never saw the vertex buffer.
     if (!(mesh.material instanceof ShaderMaterial)) return;
+    // The fire is a ShaderMaterial and not a cel one: it reads no lighting
+    // term, and a colour buffer it does not declare is an attribute Babylon
+    // would bind to it anyway.
+    if (isFlame(mesh.material)) return;
 
     const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
     const normals = mesh.getVerticesData(VertexBuffer.NormalKind);

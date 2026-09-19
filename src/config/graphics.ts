@@ -46,6 +46,29 @@ export const graphics = {
    */
   glowKernel: 56,
   /**
+   * An open fire (`shaders/FlameShader.ts`, geometry in `world/flame.ts`).
+   * Distances are metres at the tip of a tongue, where the motion is whole;
+   * the root of every tongue stays planted.
+   *
+   * `fps` is how many DRAWINGS a second the boil is on — 12 is animating on
+   * twos, which is what makes it read as a drawn fire rather than a simulated
+   * one. 0 runs it on the smooth clock. The embers never step.
+   */
+  flame: {
+    fps: 12,
+    /** How far a tongue's tip writhes about its own axis. */
+    writhe: 0.1,
+    /** How far the tip leans downwind, along `CONFIG.wind.dir`. */
+    lean: 0.1,
+    /** How far a tongue's tip stretches up at the top of a lick. */
+    lick: 0.16,
+    /** How much the noise eats the tongues (0 = clean cones, ~1 = shreds). */
+    ragged: 0.95,
+    /** How fast the eating climbs, in noise cells a second. */
+    climb: 2.6,
+    embers: { rise: 1.9, rate: 0.55, drift: 0.2, radius: 0.035 },
+  },
+  /**
    * The paper grain pass (`PaperGrain`): vignette, paper grain and chromatic
    * aberration. `grain` is the paper's strength; the map may restate all three
    * (`EnvironmentSpec.grade`).

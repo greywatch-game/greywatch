@@ -750,6 +750,40 @@ so the block (its light loop included) is coherent and skipped whole on every
 matte, satin and metal material; what forces the glazing into a define instead
 is its cube SAMPLER, which a bind group cannot make conditional.
 
+## Fire: the one surface that animates its own shape
+
+Every open fire — the fire drums, the watchtower's signal brazier, a lit
+fireplace — wears ONE material, `FlameMaterial` (`shaders/FlameShader.ts`), over
+geometry from `world/flame.ts`, and a building says `b.flame(...)` beside its
+`b.light` and `b.sound`. It replaced a static emissive cone. The rules that
+reach outside it:
+
+- **It is merged like any other part, so everything it needs per vertex is in
+  its UVs** — layer in `uv.x`'s whole part (outer tongue, core, ember, bounds
+  marker), a seed in its fraction, height up the tongue in `uv.y`. The phase of
+  the motion is taken off WORLD position, which is the one thing a merge keeps,
+  so no two fires in a street move together and no rng is spent building one.
+- **It is never a shadow caster** (`noShadowCaster`), for the world shadow
+  map's rule: an animated caster is a per-frame redraw of the map.
+- **It takes no vertex colour buffer** — `vertexShading` skips it by
+  `isFlame`, because it is a `ShaderMaterial` and the bake would otherwise
+  hand it an attribute it does not declare.
+- **Its yellow is drawn over its orange by WINDING, not by depth.** The outer
+  tongues are built inside out, so only their far wall draws; the silhouette is
+  the whole tongue's and the core inside is always nearer. Nothing is biased in
+  depth, so a core can never draw through a grate or a jamb.
+- **The shape boils on TWOS** (`CONFIG.graphics.flame.fps`, 12) — it changes
+  drawing a dozen times a second, which is what reads as a drawn fire — and the
+  embers ride the smooth clock. Both clocks are the WORLD's
+  (`CelMaterialFactory.updateWind`), so a pause holds the fire with the canopy.
+- **It owes the frame what every opaque surface owes it**: the cel shader's
+  fog (same curve, same radial distance) and `opaqueAlpha` for the coverage
+  channel, both pushed by `CelMaterialFactory` beside its own walks.
+- **Its bloom is per band**, through the mask twin above, so the white heart
+  blooms and a red lick barely does — at full bloom the bands wash to one yellow.
+  With the mask that dim at the rim, the ink draws a thin contour round the
+  licks in daylight, which is the look and not a leak.
+
 ## The glazing: the one thing here that is not opaque
 
 `getGlass` is the fourth variant and the odd one out three times over, and each
@@ -2027,9 +2061,11 @@ rather than because it seemed wise.**
   the root: 0 of 20 dropped on both maps.
 - **Anything emissive.** The glow carries a sub-pixel emitter far past its own
   geometry, and this game's biggest map is a harbour town at night. The test is
-  exact rather than a guess at a name: `CelMaterialFactory.getEmissive` is the
-  only source of a `StandardMaterial` in the tree, and every lit surface wears a
-  `ShaderMaterial`, which has no `emissiveColor` property to read at all.
+  exact rather than a guess at a name: only a light source carries an
+  `emissiveColor` — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
+  or the fire's `FlameMaterial`, which declares one for exactly this test and the
+  glow's — and every lit surface wears a plain `ShaderMaterial`, which has no
+  such property to read at all.
 - **Anything outside rendering group 0**, plus `infiniteDistance`. This is the
   one that was found the expensive way. `offer` runs inside `Game.tick`, BEFORE
   `scene.render()` bakes world matrices, and the viewmodel hangs off the camera
@@ -2106,6 +2142,12 @@ does not take, both being look decisions rather than bugs.
   bloom is one rule read every frame**: an emissive colour, no `metadata.noGlow`,
   and `GlowRules.admits` (the kit screen's stage-only test) — so a mesh built at
   any time is in or out by its own metadata, and nothing excludes a mesh by hand.
+- **A material whose vertices MOVE brings its own mask** (`SelfMasking`). The
+  stock variants transform by `world` and `viewProjection` alone, so a displaced
+  surface would draw its REST pose into the mask and lose the LEQUAL tie wherever
+  it had moved. The fire is the one such material: `FlameMaterial.glowMask`
+  hands back a twin compiled from the same WGSL under `GLOW_MASK`, fed the same
+  clock, and painted through the same `GlowRules.colour`.
 - **The blur is off the backing store.** The mask stays full resolution because
   depth sharing needs it and the ink reads it as its emissive mask, but the blur
   starts from a half-resolution downsample: Babylon's own `kernelBlur`, across and

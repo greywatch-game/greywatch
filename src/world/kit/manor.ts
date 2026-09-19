@@ -455,7 +455,10 @@ function fireplace(
       b.box(openD * 0.55, 0.14, 0.14, fireX, floor + 0.16, z + s * 0.2, TEAK);
     }
     b.glow(openD * 0.6, 0.16, openW - 0.5, fireX, floor + 0.2, z, EMBER);
-    b.glow(openD * 0.4, openH * 0.42, openW * 0.55, fireX, floor + 0.2 + openH * 0.22, z, FLAME);
+    // Two fires on the one bed, because the grate is wider than it is deep and
+    // a single round flame in a long firebox reads as a candle.
+    b.flame(openD * 0.32, openH * 0.55, fireX, floor + 0.2, z - openW * 0.17, 3);
+    b.flame(openD * 0.28, openH * 0.44, fireX, floor + 0.2, z + openW * 0.17, 3);
     // In FRONT of the opening and above the bed, so the breast and the boards
     // are what the fire lights rather than the back of its own firebox. A
     // hearth is not a forge: at `buildSmithy`'s 2.3 it washed the hall's

@@ -661,6 +661,10 @@ src/
                         #   at a given height. Marks, layers, the weight ramp.
                         #   A marked group leaves Babylon's outline pass and
                         #   gets an ink twin (MapBuilder.inkTwin) instead
+    flame.ts            # An open fire's geometry — outer tongues wound inside
+                        #   out, a core, embers, a bounds marker — in one vertex
+                        #   block whose UVs FlameShader decodes. flamePart for
+                        #   the kit's Build.flame
     parts.ts            # A structure's PART meshes, built without ever reaching
                         #   the GPU: uploading geometry that a merge throws away
                         #   was half of a 1500 m build. partBox / partCylinder /
@@ -1079,6 +1083,10 @@ src/
                         #   mirror, and the hole a rotor tears in it. WGSL
     GrassShader.ts      # The blade bend: wind, and combatants pushing through.
                         #   WGSL
+    FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
+                        #   that boil on twos in hard bands, embers on the
+                        #   smooth clock, and the glow-mask TWIN that runs the
+                        #   same vertex stage so the bloom ties its depth. WGSL
     Volumetrics.ts      # Light shafts: raymarched through the shadow volume,
                         #   capped at the light's colour and SCREENED onto the
                         #   frame so a thick map's glare stays gold. WGSL

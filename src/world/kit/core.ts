@@ -53,6 +53,7 @@ import type {
 } from "../../shaders/CelShader";
 import type { AmbienceId } from "../../core/Sfx";
 import type { LightSpec } from "../environment";
+import { flamePart } from "../flame";
 import { partBox, partCylinder, partSurface } from "../parts";
 import type { TerrainField } from "../TerrainField";
 import type { RoadFootprint, RoadSurface } from "../roads";
@@ -1224,6 +1225,24 @@ export class Build implements Structure {
     m.position.set(x, y, z);
     m.material = this.mats.getEmissive(color, opts?.overGlass);
     m.metadata = { noInk: true };
+    this.meshes.push(m);
+    return m;
+  }
+
+  /**
+   * An open fire, its bed at (x, y, z): animated tongues, a core and embers
+   * (`world/flame.ts`). No light and no sound — a fire that throws either says
+   * so beside this with `light` and `sound`, at the flame, as the brazier does.
+   * Never a shadow caster: it moves.
+   */
+  flame(radius: number, height: number, x: number, y: number, z: number, embers?: number): Mesh {
+    const m = flamePart(
+      `${this.tag}-flame${this.meshes.length}`,
+      { radius, height, embers },
+      this.scene,
+      this.mats,
+    );
+    m.position.set(x, y, z);
     this.meshes.push(m);
     return m;
   }

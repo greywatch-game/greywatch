@@ -143,10 +143,11 @@ interface Pool {
  * Whether a mesh's paint EMITS light, which is the one thing a size gate must
  * never drop.
  *
- * Exact rather than a name test: `CelMaterialFactory.getEmissive` is the only
- * source of a `StandardMaterial` in this tree and it is the only material with
- * an `emissiveColor` — every lit surface wears a `ShaderMaterial`, which has no
- * such property to read.
+ * Exact rather than a name test: a material carrying an `emissiveColor` is a
+ * light source — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
+ * or the fire (`FlameMaterial`), which declares one for this test and the
+ * glow's. Every lit surface wears a plain `ShaderMaterial`, which has no such
+ * property to read.
  */
 function glows(mesh: AbstractMesh): boolean {
   const mat = mesh.material as { emissiveColor?: { r: number; g: number; b: number } } | null;
@@ -190,10 +191,8 @@ export class WorldCulling {
    * past its own geometry, and dropping one puts a lit window out on a night
    * map.
    *
-   * The emissive test is exact rather than a guess at a name:
-   * `CelMaterialFactory.getEmissive` is the only thing in the tree that makes a
-   * `StandardMaterial`, every lit cel material is a `ShaderMaterial`, and only
-   * the first kind HAS an `emissiveColor` at all.
+   * The emissive test is exact rather than a guess at a name: only a light
+   * source HAS an `emissiveColor` at all — see `glows`.
    */
   private sizeExempt = new Set<AbstractMesh>();
 

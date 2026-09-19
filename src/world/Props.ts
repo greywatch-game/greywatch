@@ -19,6 +19,7 @@
 import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { flameData } from "./flame";
 import { marksSway } from "./sway";
 
 /**
@@ -1288,15 +1289,26 @@ export function buildFireDrum(scene: Scene, mats: CelMaterialFactory): Mesh {
   rim.position.y = 0.55;
   rim.material = mats.get(DARK_METAL);
 
-  const fire = MeshBuilder.CreateCylinder(
-    "drum-fire",
-    { height: 0.95, diameterTop: 0.06, diameterBottom: 0.72, tessellation: 6 },
+  // The bed of coals the fire stands in, laid ON the drum's closed top inside
+  // the rim: what you see when you look down into it, and the root the tongues
+  // rise out of.
+  const coals = MeshBuilder.CreateCylinder(
+    "drum-coals",
+    { height: 0.03, diameter: 0.84, tessellation: 8 },
     scene,
   );
+  coals.parent = drum;
+  coals.position.y = 0.61;
+  coals.material = mats.getEmissive("#8f2610");
+  coals.metadata = { noInk: true, noShadowCaster: true };
+
+  // The fire itself — animated, so it is never a shadow caster (`flame.ts`).
+  const fire = new Mesh("drum-fire", scene);
+  flameData({ radius: 0.36, height: 0.95 }).applyToMesh(fire);
   fire.parent = drum;
-  fire.position.y = 0.9;
-  fire.material = mats.getEmissive("#ff8a2a");
-  fire.metadata = { noInk: true };
+  fire.position.y = 0.55;
+  fire.material = mats.getFlame();
+  fire.metadata = { noInk: true, noShadowCaster: true };
   return drum;
 }
 
