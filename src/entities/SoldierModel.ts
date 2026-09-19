@@ -104,7 +104,7 @@ const GUN = "#2b2b33";
  * The other three are ART and live here for the reason `RAGDOLL_BONES` does —
  * they belong with the box lists they are painted onto.
  */
-interface SoldierKit {
+export interface SoldierKit {
   /** Plate carrier, helmet and thighs: the hard shell, and most of the body. */
   armor: string;
   /** Undersuit — sleeves, gloves, shins, neck. The darkest of the three. */
@@ -143,6 +143,14 @@ const KITS: readonly SoldierKit[] = [
     face: "respirator",
   },
 ];
+
+/**
+ * The kit the VIEWER's own side wears — always view 0, whichever slot a match
+ * seated them in. Exported for the one body in the game that is not a rig: the
+ * first-person arms (`ViewModel`), which are the player's own sleeves and
+ * gloves and so have to be cut from the same cloth as their squadmates'.
+ */
+export const OWN_KIT: SoldierKit = KITS[0];
 
 /** Which joint a ragdoll bone hangs off. Keys into `SoldierRig`. */
 export type BoneJoint =

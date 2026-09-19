@@ -107,6 +107,8 @@ import { DEFAULT_SIGHT, sightSetup, type SightId, type SightSetup } from "./sigh
 import { wornSight, type GripSpec, type WeaponBuilder, type WeaponParts } from "./weaponKit";
 import { buildMine } from "./MineModel";
 import { buildRpg } from "./RpgModel";
+import { loft, type Ring } from "./facet";
+import { OWN_KIT } from "./SoldierModel";
 import {
   CARRIED_IDS,
   DEFAULT_WEAPON,
@@ -402,9 +404,6 @@ export interface ViewModelParams {
    */
   landDip: number;
 }
-
-const GLOVE = "#23262c";
-const SLEEVE = "#3d4335";
 
 /**
  * The throwing arm's geometry, in the same model units the weapons' arms are
@@ -1858,9 +1857,28 @@ function addScaled(
  * Each weapon gets its own pair, because where a hand sits is the model's
  * business and a shorter gun is held somewhere else entirely.
  *
- * The forearm is aimed with a throwaway node rather than trigonometry:
- * `lookAt` puts local +z on the elbow and the cylinders are laid along it.
- * Every part is then detached with `setParent(null)` — which folds the aim
+ * **It is cut from the soldier's own primitive and the soldier's own cloth**
+ * (`facet.loft`, `OWN_KIT`), because a box fist on two round cylinders was the
+ * one blocky body left in a game whose rigs had been re-cut as faceted
+ * sections: a player who has just watched a squadmate's tapered forearm and
+ * gloved hand close on a rifle looks down at their own and has to see the
+ * same arm. So the sleeve is the kit's `suit`, exactly as the rig's forearm
+ * is, swelling toward the elbow; the glove is wider across the knuckles than
+ * at the wrist, with a thumb laid along the grip, a proud knuckle plate and a
+ * gauntlet standing over the sleeve. What differs is the GLOVE's colour, which
+ * is the kit's `webbing` — its leather, the colour the rig's boots are —
+ * rather than `suit`: the rig keeps its forearm one colour because a second
+ * one is a draw call per arm across a whole roster, while this is one pair on
+ * screen, and a suit glove on a suit sleeve beside a near-black weapon is a
+ * single dark mass with no wrist and no hand in it.
+ *
+ * The frame is built from AXES rather than aimed with `lookAt`, because a hand
+ * has a ROLL and a forearm does not: loft +y runs from the hand to the elbow,
+ * the back of the hand faces outboard and up (away from the weapon, which is
+ * the side the camera sees of a hand on a pistol grip and of one under a
+ * handguard), and the thumb goes to whichever end of the knuckle row is nearer
+ * the muzzle and the top — the top of a pistol grip, the front of a handguard.
+ * Every part is then detached with `setParent(null)` — which folds the frame
  * node's transform into the part's own — BEFORE the merge, because
  * `bakeCurrentTransformIntoVertices` (the one-mesh path, as in MapBuilder)
  * resets the local matrix and would leave a still-parented mesh transformed
@@ -1874,48 +1892,68 @@ function buildArm(
   parent: TransformNode,
 ): Mesh[] {
   const parts = new Map<string, Mesh[]>();
-  const collect = (color: string, m: Mesh) => {
-    m.material = mats.get(color);
-    m.isPickable = false;
+  const frame = new TransformNode(`view_${name}Frame`, scene);
+  const collect = (color: string, part: string, rings: Ring[]) => {
+    const m = loft(`view_${name}${part}`, scene, rings);
+    m.parent = frame;
     const g = parts.get(color);
     if (g) g.push(m);
     else parts.set(color, [m]);
   };
 
-  // The fist: a blocky glove wrapped around the grip/handguard.
-  const fist = MeshBuilder.CreateBox(
-    `view_${name}Hand`,
-    { width: 0.09, height: 0.125, depth: 0.11 },
-    scene,
-  );
-  fist.position.copyFrom(grip.hand);
-  collect(GLOVE, fist);
+  // --- the frame: +y up the forearm, +z into the palm, x along the knuckles.
+  const toElbow = grip.elbow.subtract(grip.hand);
+  const len = toElbow.length();
+  const ay = toElbow.scale(1 / len);
+  const out = Math.sign(grip.elbow.x - grip.hand.x) || 1;
+  const back = new Vector3(out, 0.45, 0);
+  // Gram-Schmidt the back of the hand off the forearm, then flip it: +z is
+  // the PALM, so the loft's rings read "d" as back-to-palm thickness.
+  const az = back.subtract(ay.scale(Vector3.Dot(back, ay))).normalize().scaleInPlace(-1);
+  const ax = Vector3.Cross(ay, az);
+  frame.position.copyFrom(grip.hand);
+  frame.rotation = Vector3.RotationFromAxis(ax, ay, az);
+  // Which end of the knuckle row the index finger — and so the thumb — is at.
+  const tx = Math.sign(Vector3.Dot(ax, new Vector3(0, 1, 1))) || 1;
 
-  // Wrist -> elbow, tapering out to the sleeve.
-  const aim = new TransformNode(`view_${name}Aim`, scene);
-  aim.position.copyFrom(grip.hand);
-  aim.lookAt(grip.elbow);
-  const len = Vector3.Distance(grip.hand, grip.elbow);
+  const glove = OWN_KIT.webbing;
+  const sleeve = OWN_KIT.suit;
 
-  const wrist = MeshBuilder.CreateCylinder(
-    `view_${name}Wrist`,
-    { height: len * 0.28, diameterTop: 0.084, diameterBottom: 0.092, tessellation: 8 },
-    scene,
-  );
-  wrist.parent = aim;
-  wrist.rotation.x = Math.PI / 2; // +y axis -> the aim node's +z
-  wrist.position.z = len * 0.16;
-  collect(GLOVE, wrist);
-
-  const sleeve = MeshBuilder.CreateCylinder(
-    `view_${name}Sleeve`,
-    { height: len * 0.76, diameterTop: 0.096, diameterBottom: 0.13, tessellation: 8 },
-    scene,
-  );
-  sleeve.parent = aim;
-  sleeve.rotation.x = Math.PI / 2;
-  sleeve.position.z = len * 0.62;
-  collect(SLEEVE, sleeve);
+  // The fist: curled fingers at the front, widest across the knuckles, deeper
+  // on the palm side where the fingers close round whatever is held.
+  collect(glove, "Fist", [
+    { y: -0.072, w: 0.078, d: 0.056, k: 0.45, z: 0.022 },
+    { y: -0.05, w: 0.102, d: 0.1, k: 0.35, z: 0.012 },
+    { y: 0.012, w: 0.096, d: 0.088, k: 0.3, z: 0.006 },
+    { y: 0.06, w: 0.076, d: 0.07, k: 0.4 },
+  ]);
+  // The knuckle plate: proud of the back of the hand, so the ink draws the
+  // hand's shape on the side of it the camera actually sees.
+  collect(glove, "Knuckles", [
+    { y: -0.058, w: 0.08, d: 0.02, k: 0.35, z: -0.044 },
+    { y: -0.03, w: 0.088, d: 0.026, k: 0.35, z: -0.046 },
+    { y: 0.0, w: 0.07, d: 0.016, k: 0.35, z: -0.04 },
+  ]);
+  // The thumb, laid forward along the index end of the fist on the palm side.
+  collect(glove, "Thumb", [
+    { y: 0.03, w: 0.036, d: 0.04, k: 0.4, x: tx * 0.036, z: 0.014 },
+    { y: -0.018, w: 0.032, d: 0.034, k: 0.4, x: tx * 0.05, z: 0.02 },
+    { y: -0.056, w: 0.024, d: 0.026, k: 0.45, x: tx * 0.046, z: 0.03 },
+  ]);
+  // The gauntlet, flaring over the end of the sleeve.
+  collect(glove, "Gauntlet", [
+    { y: 0.05, w: 0.082, d: 0.078, k: 0.4 },
+    { y: 0.1, w: 0.1, d: 0.094, k: 0.4 },
+    { y: 0.125, w: 0.104, d: 0.098, k: 0.4 },
+  ]);
+  // The sleeve: inside the gauntlet at the wrist, swelling over the forearm's
+  // belly, and on to the elbow, which is past the edge of the frame.
+  collect(sleeve, "Sleeve", [
+    { y: 0.07, w: 0.08, d: 0.076, k: 0.4 },
+    { y: 0.2, w: 0.108, d: 0.102, k: 0.4 },
+    { y: len * 0.6, w: 0.124, d: 0.116, k: 0.4 },
+    { y: len, w: 0.13, d: 0.122, k: 0.4 },
+  ]);
 
   const merged: Mesh[] = [];
   for (const [color, group] of parts) {
@@ -1931,6 +1969,6 @@ function buildArm(
     m.isPickable = false;
     merged.push(m);
   }
-  aim.dispose();
+  frame.dispose();
   return merged;
 }

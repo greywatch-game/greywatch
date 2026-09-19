@@ -251,8 +251,8 @@ src/
                         #   belongs here
   entities/
     Player.ts           # Movement, sprint, crouch, jump, weapon state
-    ViewModel.ts        # The first-person weapon: carried gun + gloved arms on
-                        #   the camera, hip/ADS/sprint/reload/muzzle-load, sway,
+    ViewModel.ts        # The first-person weapon: carried gun + gloved arms
+                        #   (faceted, in the viewer's own kit) on the camera, hip/ADS/sprint/reload/muzzle-load, sway,
                         #   bob, and
                         #   the kit turntable with the dark card behind it,
                         #   fitted to the BAY the kit screen reports.

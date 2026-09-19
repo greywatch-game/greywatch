@@ -49,7 +49,12 @@ keys are exempt**: Shift and Ctrl are a live ask, so a Ctrl held through a sprin
 still crouches you when the sprint ends.
 
 `src/entities/ViewModel.ts` owns the weapon: the carried gun plus two gloved arms,
-parented to the camera and posed in camera space.
+parented to the camera and posed in camera space. **The arms are the player's own
+and are cut like a squadmate's**: `facet.loft` sections in `SoldierModel`'s
+`OWN_KIT` — the rig's `suit` on the sleeve, and the kit's `webbing` on the glove
+rather than the rig's `suit`, because at the lens a glove the colour of its sleeve
+on a near-black weapon has no wrist in it (`buildArm` carries the argument). Still
+two meshes an arm, one per colour.
 
 - **The aimed pose is derived, not authored.** `adsPos` cancels the FITTED sight's
   own `sightCenter` offset (times `viewmodel.scale` — the node's position is in the
