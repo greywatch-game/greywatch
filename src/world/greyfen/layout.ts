@@ -510,7 +510,7 @@ const scatter: ScatterSpec[] = [
 const controlPoints: ControlPointDef[] = [
   { id: "A", name: "Alpha", pos: new Vector3(-60, 0, 76), radius: 14 },
   { id: "B", name: "Bravo", pos: new Vector3(-97, 0, -28), radius: 13 },
-  { id: "C", name: "Charlie", pos: new Vector3(0, 0, -4), radius: 14 },
+  { id: "C", name: "Charlie", pos: new Vector3(0, 0, -4), radius: 14, poleLift: 6 },
   // On the temple's summit. Capture is horizontal only, so the ring is
   // unaffected by the height — but `pos.y` is what the flag marker and the
   // deploy map draw at, and a beacon at ground level inside a solid platform

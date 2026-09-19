@@ -42,7 +42,7 @@
 import type { MapCollision } from "../collision";
 
 export const HollowmereCollision: MapCollision = {
-  sourceHash: "334f8090069458cb",
+  sourceHash: "63491faef1f4b2a1",
   boxes: [
   [604,20,2,0,10,301,0,0],
   [604,20,2,0,10,-301,0,0],
