@@ -188,9 +188,10 @@ export class SoldierMotion {
     const run = smooth(2.2, 6.2, speed);
     const step = stepLength(speed, this.heading);
     // The hip swing that covers a step with a planted boot: half the step
-    // either side, over a leg of ~0.78 m, shortened at a run where the stance
-    // is a smaller share of the cycle, and scaled down for a shuffle.
-    const reach = Math.min(0.95, (step * (1 - 0.3 * run)) / 1.56);
+    // either side, over the rig's 0.81 m of hip to ankle, shortened at a run
+    // where the stance is a smaller share of the cycle, and scaled down for a
+    // shuffle.
+    const reach = Math.min(0.95, (step * (1 - 0.3 * run)) / 1.62);
     const shuffle = Math.min(1, Math.max(0.35, speed / 1.2));
 
     // Kick: the most recent round of the burst that has actually gone.

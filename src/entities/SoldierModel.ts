@@ -195,9 +195,19 @@ type PosedJoint = (typeof POSED_JOINTS)[number];
  * height above the ankle standing, which is what the crouch's inverse kinematics
  * solves against — it is not the leg's full length, because the boot hangs
  * below the ankle and is rigid.
+ *
+ * **The leg has to REACH THE GROUND, and nothing typed checks that it does.**
+ * The rig's root stands `centerHeight` (0.9) over the feet and the hips hang
+ * 0.02 below `body`, so a standing hip is 0.88 m up — and `LEG_SPAN` plus the
+ * sole's 0.07 under the ankle has to be exactly that. It was 0.34 + 0.32 for
+ * the whole life of the rig, and every soldier in the game stood 0.15 m off the
+ * floor (measured in a round: the lowest vertex of every standing bot, 0.11 to
+ * 0.18 above its feet). The head and the torso were right — they are where the
+ * eye and the hit sphere are — so it is the legs that were short, not the body
+ * that was high. Retune any of the four and re-measure.
  */
-const THIGH = 0.34;
-const SHIN = 0.32;
+const THIGH = 0.415;
+const SHIN = 0.395;
 const LEG_SPAN = THIGH + SHIN;
 
 /** The head joint's height above the torso joint. Moves with the box lists. */
@@ -441,11 +451,11 @@ export const RAGDOLL_BONES: readonly BoneSpec[] = [
     mass: 2,
   },
   // Thigh: hip to knee, y in [-THIGH, 0].
-  { joint: "hipL", size: [0.17, 0.34, 0.18], center: [0, -0.17, 0], mass: 8 },
-  { joint: "hipR", size: [0.17, 0.34, 0.18], center: [0, -0.17, 0], mass: 8 },
+  { joint: "hipL", size: [0.17, THIGH, 0.18], center: [0, -THIGH / 2, 0], mass: 8 },
+  { joint: "hipR", size: [0.17, THIGH, 0.18], center: [0, -THIGH / 2, 0], mass: 8 },
   // Shin: knee to ankle, y in [-SHIN, 0].
-  { joint: "kneeL", size: [0.15, 0.32, 0.15], center: [0, -0.16, 0], mass: 5 },
-  { joint: "kneeR", size: [0.15, 0.32, 0.15], center: [0, -0.16, 0], mass: 5 },
+  { joint: "kneeL", size: [0.15, SHIN, 0.15], center: [0, -SHIN / 2, 0], mass: 5 },
+  { joint: "kneeR", size: [0.15, SHIN, 0.15], center: [0, -SHIN / 2, 0], mass: 5 },
   // Boot: the one bone that is mostly forward of its joint, not below it.
   {
     joint: "ankleL",
@@ -1230,8 +1240,8 @@ export function buildSoldier(
         color: kit.armor,
         rings: [
           { y: 0.03, w: 0.19, d: 0.2, k: 0.35 },
-          { y: -0.1, w: 0.185, d: 0.2, k: 0.35, z: 0.005 },
-          { y: -0.27, w: 0.15, d: 0.16, k: 0.35, z: 0.01 },
+          { y: -0.12, w: 0.185, d: 0.2, k: 0.35, z: 0.005 },
+          { y: -0.33, w: 0.15, d: 0.16, k: 0.35, z: 0.01 },
           { y: -THIGH - 0.01, w: 0.135, d: 0.145, k: 0.4 },
         ],
       },
@@ -1239,8 +1249,8 @@ export function buildSoldier(
       {
         color: kit.armor,
         rings: [
-          { y: -0.05, w: 0.15, d: 0.04, k: 0.3, z: 0.1 },
-          { y: -0.24, w: 0.125, d: 0.04, k: 0.3, z: 0.09 },
+          { y: -0.06, w: 0.15, d: 0.04, k: 0.3, z: 0.1 },
+          { y: -0.29, w: 0.125, d: 0.04, k: 0.3, z: 0.09 },
         ],
       },
     ]);
@@ -1252,7 +1262,7 @@ export function buildSoldier(
         color: kit.suit,
         rings: [
           { y: 0.02, w: 0.13, d: 0.14, k: 0.4 },
-          { y: -0.1, w: 0.135, d: 0.15, k: 0.4, z: -0.01 },
+          { y: -0.12, w: 0.135, d: 0.15, k: 0.4, z: -0.01 },
           { y: -SHIN, w: 0.1, d: 0.11, k: 0.4 },
         ],
       },
@@ -1643,7 +1653,7 @@ function poseLegs(rig: SoldierRig, drop: number, p: Readonly<SoldierPose>, gait:
   if (drop > 0) {
     // Hip height above the ankle. Clamped off the fully-folded end, where the
     // triangle degenerates and `acos` starts returning NaN rather than an
-    // angle; at the crouch this game asks for it is 0.18 m against a floor of
+    // angle; at the crouch this game asks for it is 0.33 m against a floor of
     // 0.03, so the clamp is a guard and never a limit.
     const span = Math.max(LEG_SPAN - drop, Math.abs(THIGH - SHIN) + 0.01);
     const psi = Math.acos(
