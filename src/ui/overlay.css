@@ -214,6 +214,24 @@
 #overlay.card-menu .ui-foot {
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
 }
+/* The link to the project's source, at the far end of the foot the way the
+   other screens' Back button is (`margin-left: auto`). Same pointer-events
+   carve-out as the tier row. Sized off the caption band so it scales with
+   the hints beside it. */
+#overlay a.ov-source {
+  pointer-events: auto;
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--dimmer);
+  transition: color 0.15s ease;
+}
+#overlay a.ov-source:hover,
+#overlay a.ov-source:focus-visible { color: var(--hot); }
+#overlay a.ov-source svg {
+  width: calc(var(--ui-cap) * 2);
+  height: calc(var(--ui-cap) * 2);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9));
+}
 /* =====================================================================
    THE MENU'S RAIL — two groups, five decisions, and the button that
    spends them.
