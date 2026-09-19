@@ -408,7 +408,10 @@ new gesture over a wait belongs on that clock, not on a new one.** The reload an
 the load take the aim away with them (`aimBreak`); **the bolt cycle is the one
 that KEEPS THE SIGHT PICTURE, and it is where a gesture over an aimed weapon
 must go** — because `applyFit` puts the fitted sight's reticle on the camera
-axis, so an aimed weapon that MOVES is a reticle that lies. It therefore has
+axis, so an aimed weapon that MOVES is a reticle that lies. **An AIMED shot does
+not start it at all**: the bolt stays shut and the fire clock PARKED
+(`Player.boltHeld`) until the ADS button comes up, Battlefield's rule — so
+what the wobble below still covers is a cycle the shooter re-scopes into. It has
 **two expressions over one clock, crossed on the ADS blend**: at the hip a ROLL,
 and aimed `cycle.wobble`, the same disturbance spent on where the rifle POINTS
 as an offset that is a pure function of the phase and exactly zero at both ends

@@ -217,6 +217,13 @@ export interface PlayerEvents {
   footstep: number;
   /** Impact speed (m/s) of a landing this frame; 0 if the player didn't. */
   landed: number;
+  /**
+   * How long the bolt cycle that began THIS frame takes, or 0 — the cycle an
+   * aimed shot left owing, starting on the frame the sight came down. A cycle
+   * that starts at the shot is raised off `cycleTime` beside the report
+   * instead, so the two never both fire for one round.
+   */
+  cycleBegun: number;
 }
 
 /**
@@ -285,7 +292,12 @@ export class Player implements Combatant {
   /** Last frame's bob phase, for the footfall crossing test. */
   private prevBobPhase = 0;
   /** This frame's outgoing events; rewritten each update, never reallocated. */
-  private readonly events: PlayerEvents = { jumped: false, footstep: 0, landed: 0 };
+  private readonly events: PlayerEvents = {
+    jumped: false,
+    footstep: 0,
+    landed: 0,
+    cycleBegun: 0,
+  };
 
   health: number = CONFIG.player.maxHealth;
   alive = true;
@@ -394,6 +406,19 @@ export class Player implements Combatant {
    */
   private reloadPhase = 1;
   private fireCooldown = 0;
+  /**
+   * A bolt gun fired through the sight leaves its bolt SHUT until the sight
+   * comes down — Battlefield's rule, and the one piece of state the cycle
+   * owns. While it is set the fire clock is PARKED rather than spent, so the
+   * trigger stays refused by `fireCooldown` exactly as it is mid-cycle and
+   * `tryShot` still needs no term of its own. It is only ever read under a
+   * live cooldown, which is what keeps it from being stranded: a swap, a
+   * fresh weapon and a death all zero that clock, and the next round writes
+   * the flag afresh.
+   */
+  private boltHeld = false;
+  /** The ADS button as `update` last read it, for `tryShot`'s latch above. */
+  private adsAsked = false;
   /**
    * Whether the trigger has been down since before the last thing it asked
    * for. A semi-automatic weapon needs a release between pulls, and this is
@@ -1584,6 +1609,8 @@ export class Player implements Combatant {
     ev.jumped = false;
     ev.footstep = 0;
     ev.landed = 0;
+    ev.cycleBegun = 0;
+    this.adsAsked = input.ads;
 
     // --- stance ---
     // Sprinting is mutually exclusive with aiming, and blocks firing (see
@@ -1726,7 +1753,22 @@ export class Player implements Combatant {
     // frame later belongs to a trigger nobody pulled, and paying it would make
     // the first round of a string come early, which is the same jitter one
     // weapon further back.
-    if (this.fireCooldown > 0) this.fireCooldown -= dt;
+    //
+    // A bolt left shut by an aimed shot parks the clock until the ADS button
+    // comes up, and the cycle then starts from the top — the credit above is
+    // a fraction of one frame and means nothing after a hold of any length.
+    // A reload or an empty magazine takes the hold away without a cycle: the
+    // magazine change chambers the round, and `cycleProgress` already reads 1
+    // under it.
+    if (this.boltHeld) {
+      if (this.fireCooldown <= 0 || this.reloading || this.ammo <= 0) {
+        this.boltHeld = false;
+      } else if (!input.ads) {
+        this.boltHeld = false;
+        this.fireCooldown = this.weapon.shotInterval;
+        ev.cycleBegun = this.weapon.shotInterval;
+      }
+    } else if (this.fireCooldown > 0) this.fireCooldown -= dt;
     else this.fireCooldown = 0;
     this.throwCooldown -= dt;
     // The throw clock counts UP, and it is parked rather than clamped: the
@@ -2012,6 +2054,9 @@ export class Player implements Combatant {
     } else {
       this.fireCooldown = this.weapon.shotInterval - owed;
     }
+    // The last round is exempt: `tryShot` starts the reload below, and the
+    // reload is what chambers the next one.
+    this.boltHeld = this.weapon.boltCycle && this.adsAsked && this.ammo > 0;
     // Weapon-side recoil: the spread bloom the next shot inherits, and the
     // punch the body rides out. The aim kick itself belongs to the camera.
     // The ceiling takes the weapon's multiplier along with the per-shot term:
@@ -2313,24 +2358,26 @@ export class Player implements Combatant {
    * rocket going down a bore; this one is a shooter working an action, which is
    * the same idea one weapon further from the trigger.
    *
-   * So it needs no state of its own either: no cancel path, no eased gate, and
-   * nothing to strand. `fireCooldown` is already dropped by a swap
+   * So it needs almost no state of its own: no cancel path, no eased gate,
+   * and nothing to strand — the one flag, `boltHeld`, only PARKS that clock
+   * and is only read under a live one. `fireCooldown` is already dropped by a swap
    * (`completeSwap`), already zeroed by a fresh weapon in the hands, and already
    * the thing that stops the trigger — which is why `tryShot` needs no term
    * from this and there is nothing here that could disagree with it.
    *
-   * Three things read 1 and each is a different weapon not cycling. `boltCycle`
+   * Four things read 1 and each is a different weapon not cycling. `boltCycle`
    * is the table's own answer and is false on everything but the sniper, so
    * this is the whole of the "is this a bolt gun" test and no caller repeats
    * it. `ammo <= 0` is the round that emptied the magazine: `tryShot` has
    * already started the reload on that frame and the reload owns the weapon
    * from there — a bolt worked under a magazine change would be two gestures on
    * one pair of hands. And `reloading` covers the reload started by the key
-   * rather than by the last round.
+   * rather than by the last round. `boltHeld` is the fourth: an aimed shot's
+   * bolt stays shut, and so still, until the sight comes down.
    */
   get cycleProgress(): number {
     if (!this.alive || !this.weapon.boltCycle) return 1;
-    if (this.reloading || this.ammo <= 0) return 1;
+    if (this.reloading || this.ammo <= 0 || this.boltHeld) return 1;
     const total = this.weapon.shotInterval;
     if (this.fireCooldown <= 0 || total <= 0) return 1;
     return Math.max(0, 1 - this.fireCooldown / total);

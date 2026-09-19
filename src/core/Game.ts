@@ -4811,6 +4811,9 @@ export class Game {
     const ev = this.player.update(dt, this.input, this.cameraSys);
     if (ev.jumped) this.sfx.jump();
     if (ev.footstep > 0) this.sfx.step(ev.footstep);
+    // The bolt an aimed shot left shut, worked now the sight has come down —
+    // the other half of the `cycleTime` call beside the report.
+    if (ev.cycleBegun > 0) this.sfx.boltCycle(ev.cycleBegun, this.player.report);
     // Landing is scaled across the fall speeds that count as one at all, so a
     // hop off a kerb is a step and a drop off the terrace is not.
     if (ev.landed > 0) {
@@ -4987,8 +4990,9 @@ export class Game {
       // and which `ViewModel` is playing the gesture off at the same moment.
       // Zero on everything else, and zero on the round that empties the
       // magazine: `tryShot` has already started the reload and `Sfx.reload` is
-      // the sound of that. Exactly the shape `rpgLoad` is raised in, one
-      // weapon table over.
+      // the sound of that. Zero too on a round fired through the sight, whose
+      // bolt stays shut until the sight comes down — `ev.cycleBegun` raises it
+      // then. Exactly the shape `rpgLoad` is raised in, one weapon table over.
       const cycle = this.player.cycleTime;
       if (cycle > 0) this.sfx.boltCycle(cycle, this.player.report);
       const haptic = CONFIG.rumble;

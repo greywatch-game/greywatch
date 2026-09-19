@@ -381,8 +381,24 @@ they say what the pattern is for.
   fires, and a bolt worked under a magazine change would be two gestures on one
   pair of hands. The reload wins, because the reload is what is actually
   happening.
-- **A CYCLE NEVER TAKES THE SIGHT PICTURE AWAY, AND THE COST IS SPENT ON THE
-  AIM INSTEAD.** This is the one gesture in the file with no `aimBreak`, and
+- **A SHOT FIRED THROUGH THE SIGHT LEAVES THE BOLT SHUT UNTIL THE SIGHT COMES
+  DOWN** — Battlefield's rule. `tryShot` sets `Player.boltHeld` when the ADS
+  button is down on a bolt gun's round, and while it holds `update` PARKS the
+  fire clock rather than spending it: the trigger stays refused by
+  `fireCooldown` exactly as it is mid-cycle, `cycleProgress` reads 1 so neither
+  the roll nor the wobble moves, and the picture after an aimed shot is the
+  scope held still on where the round went. Releasing ADS restarts the clock
+  from a full `shotInterval` and raises `PlayerEvents.cycleBegun`, which is
+  where `Sfx.boltCycle` comes from for that round instead of beside the report
+  (`cycleTime` reads 0 under the hold). A reload or an empty magazine drops the
+  hold with no cycle — the magazine change chambers the round — and a swap, a
+  fresh weapon or a death zero the clock the flag is only read under, so it
+  cannot be stranded. **This is the one piece of state the cycle owns**, and it
+  moves where the wait is spent rather than adding one: the cost of the bolt
+  is now leaving the glass, and a hip shot cycles at once exactly as before.
+- **A CYCLE THAT IS RUNNING NEVER TAKES THE SIGHT PICTURE AWAY, AND THE COST IS
+  SPENT ON THE AIM INSTEAD** — which after the rule above is the shooter who
+  drops the sight and puts it straight back up. This is the one gesture in the file with no `aimBreak`, and
   the reason is that you can work a bolt with the butt in the shoulder and the
   cheek on the comb: the scope does not leave your eye. A version that swung it
   away read as animation rather than as a rifle — and the fix could not be to
