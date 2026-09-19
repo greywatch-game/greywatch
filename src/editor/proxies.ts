@@ -23,6 +23,7 @@ import {
   StandardMaterial,
   Vector3,
 } from "@babylonjs/core";
+import { flagMount } from "../systems/CaptureZoneSystem";
 import { isScatterRect, type ScatterSpec } from "../world/layout";
 import type { GameMap } from "../world/MapBuilder";
 import { waterY, type TerrainField } from "../world/TerrainField";
@@ -47,8 +48,12 @@ export class ProxyLayer {
       const ref: SelectionRef = { list: "controlPoints", index: i };
       this.ring(cp.pos, cp.radius, c.controlPoint, ref);
       // A pole as well as a ring: a 14 m ring read from inside is just a line
-      // on the floor, and the flag is the thing you fly to.
-      this.pole(cp.pos, 9, c.controlPoint, ref);
+      // on the floor, and the flag is the thing you fly to. Stood where the
+      // round will stand the real one — on the roof, for an indoor point —
+      // so `poleLift` can be judged against the building it is correcting.
+      const mount = flagMount(cp, map.terrain, map.obstacles, map.roads, map.rays);
+      const foot = new Vector3(cp.pos.x, mount.baseY, cp.pos.z);
+      this.pole(foot, mount.height, c.controlPoint, ref);
     });
 
     map.spawns.forEach((s, i) => {

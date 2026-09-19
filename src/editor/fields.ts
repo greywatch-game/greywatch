@@ -42,6 +42,7 @@ const OPTIONAL_KEYS = new Set([
   "clearance",
   "blocking",
   "scale",
+  "poleLift",
 ]);
 
 /**

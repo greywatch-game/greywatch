@@ -117,6 +117,14 @@ export interface ControlPointDef {
   name: string;
   pos: Vector3;
   radius: number;
+  /**
+   * Metres the flag's pole is moved up (or, negative, down) from where
+   * `CaptureZoneSystem` stands it — on the floor, or on the roof its one
+   * downward cast found. A correction for when that cast finds a collider a
+   * little off the drawn roof, and nothing else: the ring, the capture test
+   * and the flow field all ignore it. Absent is 0.
+   */
+  poleLift?: number;
 }
 
 /** A place a combatant can deploy to. */

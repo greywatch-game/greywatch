@@ -177,6 +177,16 @@ written**, and absent-means-default fields (`y`, `rotY`, `blocking`, `clearance`
 zero. Angles are edited in degrees and stored in radians so `Math.PI / 2` survives —
 see `qAngle`.
 
+**A flag's pole is drawn where the ROUND will stand it, not at the point's
+`pos`.** Where a pole goes is derived — on the floor, or on the roof that one
+downward cast finds over an indoor point (`flagMount` in
+`CaptureZoneSystem.ts`, which the proxy calls) — so a proxy at `pos.y` said
+nothing about the flag anybody sees. `poleLift` is the one knob on it: a RIGID
+correction to that answer, for a roof whose collider sits a little under the
+drawn one, and it moves nothing else — not the ring, not the capture test, not
+the flow field. It is a control-point field, so it buys the tier-2 rebuild and
+the proxy follows.
+
 **The map's FLOOR is edited through that same inspector, off a `SelectionRef` that
 names no layout array.** `{ list: "floor" }` is a singleton ref reached from a panel
 button — never from a pick, because the floor is under everything and picking it

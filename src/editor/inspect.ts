@@ -239,6 +239,10 @@ export function inspect(
           text("name", "name", cp.name),
           ...place(reach, cp.pos.x, cp.pos.y, cp.pos.z, false, "pos."),
           number("radius", "radius", cp.radius, 3, 40, 0.5),
+          // Where the game stood the pole is a derivation — the floor, or the
+          // roof a cast found over an indoor point — so this is a correction
+          // to that, not a height. The proxy's pole is drawn at the answer.
+          number("poleLift", "pole lift", cp.poleLift ?? null, -6, 6, 0.05, 0),
         ],
       };
     }

@@ -82,7 +82,7 @@ const KEY_ORDER: Record<string, string[]> = {
     "blocking",
     "clearance",
   ],
-  controlPoints: ["id", "name", "pos", "radius"],
+  controlPoints: ["id", "name", "pos", "radius", "poleLift"],
   spawns: ["team", "controlPoint", "pos", "yaw"],
   water: ["x", "z", "width", "depth", "y", "sound"],
   grass: ["x", "z", "width", "depth", "y", "density"],

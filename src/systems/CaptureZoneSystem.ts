@@ -218,35 +218,9 @@ export class CaptureZoneSystem {
     this.fogEnd = env.fogEnd;
 
     for (const cp of points) {
-      /**
-       * What the ring lies on at one point along its circumference: the
-       * surface you would STAND on, not the terrain.
-       *
-       * The terrain part uses `surfaceAt(..., true)` — the floor as drawn,
-       * upper envelope — because the ground is flat triangles across a
-       * bilinear field, and following the smooth field sinks a stone under
-       * the mesh on every twisted cell. Most flags stand on something BUILT,
-       * though — a paved square, a deck, Hollowmere's churchyard on its 2 m
-       * plinth — and that is a box top the terrain has never heard of. So the
-       * obstacle boxes are asked for the highest top up to a step over the
-       * flag's own level (or over the floor, where a hillside rises past
-       * it), and it is taken as the floor only when it is BROAD
-       * (`floorAt`): the top of a crate or a garden wall is not where anybody
-       * lays a boundary. Neither is the nav graph's height, which is sampled
-       * per cell centre and resolved the churchyard's ring to the ground
-       * under the plinth.
-       *
-       * A road is a sheet over the floor that nothing but a drawing knows is
-       * there, so it is asked separately — and it is made ground too.
-       */
-      const lay = (x: number, z: number): Lay => {
-        const floor = terrain.surfaceAt(x, z, true);
-        const ceiling = Math.max(floor, cp.pos.y) + SURFACE_REACH;
-        const deck = floorAt(obstacles, x, z, ceiling, floor + MADE_EPS);
-        if (deck !== null) return { y: deck, made: true };
-        const road = roadTopAt(roads, x, z);
-        return { y: floor + road, made: road > 0 };
-      };
+      // What the ring lies on — `layAt`, which the pole's foot reads too.
+      const lay = (x: number, z: number): Lay =>
+        layAt(cp, x, z, terrain, obstacles, roads);
       const walled = (x: number, z: number, y: number) =>
         obstacles.wallAt(x, z, y + WALL_FLOOR, y + WALL_CEILING);
 
@@ -257,8 +231,8 @@ export class CaptureZoneSystem {
       ];
 
       // And the flag, which is what you navigate to — stood on the surface
-      // the ring is, or on the roof over it (`mount`).
-      const mount = this.mount(cp, lay(cp.pos.x, cp.pos.z).y, rays);
+      // the ring is, or on the roof over it (`flagMount`).
+      const mount = flagMount(cp, terrain, obstacles, roads, rays);
       const flag = new FlagCloth(
         this.scene,
         this.mats,
@@ -312,43 +286,6 @@ export class CaptureZoneSystem {
     this.zones = [];
   }
 
-
-  /**
-   * Where a flag's pole stands, and how tall it is.
-   *
-   * **A control point is often INDOORS** — Hollowmere's chapel, barn and dock
-   * shed, a Greyfen house, three of Coldharbour's office floors — and a pole
-   * cannot go through a ceiling the way the translucent beacon it replaced
-   * did. So the pole asks the world, once, whether it has its height clear
-   * over the floor; if it has not, the flag is flown from the ROOF of whatever
-   * is over it, found by one cast straight down onto the point from above.
-   * Either way a pole that would still meet something is cut short under it,
-   * down to the shortest that can run the flag.
-   *
-   * `castBody`, not `castRound`: a glazed roof lets a round through and would
-   * not let a pole.
-   */
-  private mount(
-    cp: ControlPointDef,
-    floorY: number,
-    rays: RayWorld,
-  ): { baseY: number; height: number } {
-    const hit = MOUNT_HIT;
-    const clear = (from: number, want: number) => {
-      MOUNT_FROM.set(cp.pos.x, from + MOUNT_START, cp.pos.z);
-      return rays.castBody(MOUNT_FROM, UP, want, hit)
-        ? Math.max(MIN_POLE_HEIGHT, hit.distance + MOUNT_START - MOUNT_ROOM)
-        : want;
-    };
-    const open = clear(floorY, POLE_HEIGHT);
-    if (open >= POLE_HEIGHT) return { baseY: floorY, height: POLE_HEIGHT };
-    MOUNT_FROM.set(cp.pos.x, floorY + MOUNT_SKY, cp.pos.z);
-    if (!rays.castBody(MOUNT_FROM, DOWN, MOUNT_SKY, hit)) {
-      return { baseY: floorY, height: open };
-    }
-    const roofY = hit.point.y;
-    return { baseY: roofY, height: clear(roofY, ROOF_POLE_HEIGHT) };
-  }
 
   /**
    * Runs the flag toward the meter and steps its cloth. The flag's height is
@@ -620,6 +557,91 @@ function floorAt(
     if (there === null || Math.abs(there - top) > FLOOR_LEVEL) return null;
   }
   return top;
+}
+
+/**
+ * What the ring lies on at one point along its circumference: the surface you
+ * would STAND on, not the terrain.
+ *
+ * The terrain part uses `surfaceAt(..., true)` — the floor as drawn, upper
+ * envelope — because the ground is flat triangles across a bilinear field,
+ * and following the smooth field sinks a stone under the mesh on every
+ * twisted cell. Most flags stand on something BUILT, though — a paved square,
+ * a deck, Hollowmere's churchyard on its 2 m plinth — and that is a box top
+ * the terrain has never heard of. So the obstacle boxes are asked for the
+ * highest top up to a step over the flag's own level (or over the floor,
+ * where a hillside rises past it), and it is taken as the floor only when it
+ * is BROAD (`floorAt`): the top of a crate or a garden wall is not where
+ * anybody lays a boundary. Neither is the nav graph's height, which is
+ * sampled per cell centre and resolved the churchyard's ring to the ground
+ * under the plinth.
+ *
+ * A road is a sheet over the floor that nothing but a drawing knows is there,
+ * so it is asked separately — and it is made ground too.
+ */
+function layAt(
+  cp: ControlPointDef,
+  x: number,
+  z: number,
+  terrain: TerrainField,
+  obstacles: ObstacleField,
+  roads: RoadFootprint,
+): Lay {
+  const floor = terrain.surfaceAt(x, z, true);
+  const ceiling = Math.max(floor, cp.pos.y) + SURFACE_REACH;
+  const deck = floorAt(obstacles, x, z, ceiling, floor + MADE_EPS);
+  if (deck !== null) return { y: deck, made: true };
+  const road = roadTopAt(roads, x, z);
+  return { y: floor + road, made: road > 0 };
+}
+
+/**
+ * Where a flag's pole stands, and how tall it is.
+ *
+ * **A control point is often INDOORS** — Hollowmere's chapel, barn and dock
+ * shed, a Greyfen house, three of Coldharbour's office floors — and a pole
+ * cannot go through a ceiling the way the translucent beacon it replaced did.
+ * So the pole asks the world, once, whether it has its height clear over the
+ * floor; if it has not, the flag is flown from the ROOF of whatever is over
+ * it, found by one cast straight down onto the point from above. Either way a
+ * pole that would still meet something is cut short under it, down to the
+ * shortest that can run the flag.
+ *
+ * `castBody`, not `castRound`: a glazed roof lets a round through and would
+ * not let a pole.
+ *
+ * `ControlPointDef.poleLift` then moves the answer RIGIDLY — the base, never
+ * the height — so what the editor's slider does is exactly "this flag, that
+ * much higher", and a roof that the cast found a little under the drawn one is
+ * corrected without the clearance test re-running against the roof itself.
+ *
+ * Exported because the editor draws its flag proxy here: a pole it stood at
+ * the point's own `y` would say nothing about where the flag is.
+ */
+export function flagMount(
+  cp: ControlPointDef,
+  terrain: TerrainField,
+  obstacles: ObstacleField,
+  roads: RoadFootprint,
+  rays: RayWorld,
+): { baseY: number; height: number } {
+  const floorY = layAt(cp, cp.pos.x, cp.pos.z, terrain, obstacles, roads).y;
+  const lift = cp.poleLift ?? 0;
+  const hit = MOUNT_HIT;
+  const clear = (from: number, want: number) => {
+    MOUNT_FROM.set(cp.pos.x, from + MOUNT_START, cp.pos.z);
+    return rays.castBody(MOUNT_FROM, UP, want, hit)
+      ? Math.max(MIN_POLE_HEIGHT, hit.distance + MOUNT_START - MOUNT_ROOM)
+      : want;
+  };
+  const open = clear(floorY, POLE_HEIGHT);
+  if (open >= POLE_HEIGHT) return { baseY: floorY + lift, height: POLE_HEIGHT };
+  MOUNT_FROM.set(cp.pos.x, floorY + MOUNT_SKY, cp.pos.z);
+  if (!rays.castBody(MOUNT_FROM, DOWN, MOUNT_SKY, hit)) {
+    return { baseY: floorY + lift, height: open };
+  }
+  const roofY = hit.point.y;
+  return { baseY: roofY + lift, height: clear(roofY, ROOF_POLE_HEIGHT) };
 }
 
 const FLOOR_PROBES = [
