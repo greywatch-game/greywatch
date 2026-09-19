@@ -82,6 +82,24 @@ export const sights = {
     adsSpeedMult: 1,
   },
   /**
+   * A 2x magnified dot: a short tube on one low mount with a small green dot
+   * floating in it and nothing else. It sits between the holo and the prism at
+   * both ends — a little more reach than the issued sight, a little quicker up
+   * than the prism — and the green is the whole of what tells its picture
+   * apart from every red reticle in the kit.
+   */
+  greenDot: {
+    name: "Green Dot",
+    magnification: 2,
+    /**
+     * Short, for the prism's reason: the whole body is measured against it, so
+     * this is what keeps a 2x optic to a stub on the rail. The near plane is
+     * nowhere close — `zoomComp` at 2x is 0.8, so the stand-off is 0.16 m.
+     */
+    eyeRelief: 0.2,
+    adsSpeedMult: 0.94,
+  },
+  /**
    * A 2.5x prismatic sight with an etched chevron: a short one-piece body on
    * an integral mount, sitting between the holo and the scope at both ends.
    * It magnifies enough to make a body across the square a target rather

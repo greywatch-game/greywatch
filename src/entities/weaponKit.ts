@@ -508,9 +508,9 @@ export class WeaponBuild {
    * Dresses a reticle or a tritium bead: unlit, un-outlined, and deliberately
    * NOT run through `collect` — see the header.
    */
-  lit(m: Mesh, parent: TransformNode): Mesh {
+  lit(m: Mesh, parent: TransformNode, colour: string = RETICLE): Mesh {
     m.parent = parent;
-    m.material = this.mats.getEmissive(RETICLE);
+    m.material = this.mats.getEmissive(colour);
     m.metadata = { noInk: true };
     m.isPickable = false;
     return m;

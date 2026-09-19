@@ -193,6 +193,8 @@ const SIGHT_BLURBS: Record<SightId, string> = {
     "A lit dot in an open frame, and the least magnification on offer. Nothing to line up and nothing in the way — the clearest picture in the kit, a fraction slower up than the irons already standing on the rail.",
   iron: "Rear aperture over a hooded post. Nothing to switch on and the fastest to the shoulder, paid for with a post that covers whatever it is aimed at.",
   holo: "A lit ring and dot floating in a tube optic. The issued sight: enough magnification to pick a target out of the dark, little enough to swing between two.",
+  greenDot:
+    "A small green dot in a short 2x tube. A step more reach than the holo and a step quicker up than the prism, with one mark in the picture and nothing around it.",
   prism:
     "A short prismatic body on an integral mount, with an etched chevron. Enough magnification to make a body across the square worth shooting at, and enough field left to swing onto the next one.",
   scope:

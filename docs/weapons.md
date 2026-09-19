@@ -713,7 +713,7 @@ weapon read as something a long way off. **Re-run the measurement before quoting
 it**, and add the row then; the harness that produced the table is not in the
 tree, which is the actual reason this paragraph exists rather than a row.
 
-## The loadout: six weapons, six optics, sixteen finishes, and a sidearm
+## The loadout: six weapons, seven optics, sixteen finishes, and a sidearm
 
 Two tables, two slots, neither knowing about the other (a third table, the
 finishes, is below and knows about neither; a FOURTH, the anti-tank kit, is

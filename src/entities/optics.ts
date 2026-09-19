@@ -1,6 +1,6 @@
 /**
  * optics.ts — Every fittable sight, built onto whatever weapon asked for it.
- * Owns: the geometry of the irons, the two dots, the prism and the two scopes,
+ * Owns: the geometry of the irons, the three dots, the prism and the two scopes,
  * and the eye reference each one reports. Owns nothing about what a sight DOES
  * — that is `sights.ts`, from `CONFIG.sights`.
  *
@@ -289,6 +289,56 @@ const prismBore = (dz: number): number =>
   2 * PRISM_CONE * (eyeDistance("prism") + dz - PRISM_OCULAR_DZ);
 
 /**
+ * The 2x green dot. The prism's solve one size down — a stepped tube around a
+ * cone that `DOT2_RISE` pays for against `RAIL_REACH` — and shorter again, two
+ * sections rather than three, because at 2x there is little glass to carry and
+ * a short body is what keeps it reading as a dot sight rather than a small scope.
+ *
+ * The cone comes out at about 0.096, which at 2x is a circle a little over a
+ * third of the screen high: wider than the holo's window, smaller than the
+ * prism's picture, the order the magnifications are in.
+ */
+const DOT2_RISE = 0.09;
+const DOT2_WALL = 0.005;
+const DOT2_SECTIONS = 2;
+const DOT2_OCULAR_DZ = -0.04;
+const DOT2_OBJECTIVE_DZ = 0.04;
+const DOT2_FLOOR_GAP = 0.0025;
+const DOT2_CONE =
+  (DOT2_RISE - DOT2_FLOOR_GAP) /
+  (eyeDistance("greenDot") + RAIL_REACH - DOT2_OCULAR_DZ);
+/**
+ * The dot, and the one colour on any reticle here that is not `RETICLE`. Small
+ * for the reason the 6x's is small — a dot is a subtense, and this one hangs
+ * 0.38 weapon units from the eye, so it is 4.2 mrad (a torso at 120 m, ~9 px
+ * on a 1080-line display) against the holo dot's 5.2 and the reflex's 6.2 —
+ * and green so its picture is told apart from the red of every other sight.
+ */
+const DOT2_DOT = 0.0016;
+const DOT2_COLOUR = "#3dff6e";
+/**
+ * The black posts around the dot. `DOT2_LINE` is their weight, priced as a
+ * subtense exactly as `LONG_RET_ARM` is: 0.0005 at 0.38 from the eye is
+ * 1.3 mrad, about 3 px on a 1080-line display — a hairline that still survives
+ * the frame. `DOT2_GAP` is where each post stops short of the axis, as a share
+ * of the picture's radius; it leaves an open ring about fourteen dot-widths across
+ * around the dot. `DOT2_HASHES` are where the ticks cross each post, as shares
+ * of the same radius.
+ *
+ * Black rather than lit, and still drawn through `build.lit` so it is unlit,
+ * unshaded and un-inked like every other reticle: an emissive black is a line
+ * that reads as ETCHED glass, and it does not bloom.
+ */
+const DOT2_POSTS = "#000000";
+const DOT2_LINE = 0.0005;
+const DOT2_GAP = 0.3;
+const DOT2_HASHES = [0.45, 0.6, 0.75] as const;
+
+/** `scopeBore`'s twin: the clear bore a green-dot section ending at `dz` carries. */
+const dot2Bore = (dz: number): number =>
+  2 * DOT2_CONE * (eyeDistance("greenDot") + dz - DOT2_OCULAR_DZ);
+
+/**
  * The 6x long scope. Built exactly as the 3.5x is — a stepped tube
  * circumscribing the view cone, in two rings — and the one thing that is
  * genuinely different about it is which constraint the cone answers to.
@@ -439,6 +489,7 @@ export function buildOptics(
   const scopeY = mount.railTop + SCOPE_RISE;
   const reflexY = mount.railTop + REFLEX_RISE;
   const prismY = mount.railTop + PRISM_RISE;
+  const dot2Y = mount.railTop + DOT2_RISE;
   const longY = mount.railTop + LONG_RISE;
   const winZ = mount.mountZ;
 
@@ -717,6 +768,119 @@ export function buildOptics(
     glass.isPickable = false;
 
     return new Vector3(0, winY, winZ);
+  };
+
+  /**
+   * The 2x green dot: a stub of stepped tube on one low mount, with a single
+   * green dot hung near the objective. Built as the prism is — every part sized
+   * OUTWARD from its own section's radius so nothing reaches into the cone.
+   */
+  const buildGreenDot = (node: TransformNode): Vector3 => {
+    foldedIrons(false);
+    const ocularZ = winZ + DOT2_OCULAR_DZ;
+    const objectiveZ = winZ + DOT2_OBJECTIVE_DZ;
+    const seg = (DOT2_OBJECTIVE_DZ - DOT2_OCULAR_DZ) / DOT2_SECTIONS;
+    /** The radius a section carries — its FAR rim's. See `outerAt` in the scope. */
+    const outerAt = (dz: number): number => {
+      const i = Math.min(
+        DOT2_SECTIONS,
+        Math.max(1, Math.ceil((dz - DOT2_OCULAR_DZ) / seg)),
+      );
+      return dot2Bore(DOT2_OCULAR_DZ + i * seg) / 2 + DOT2_WALL;
+    };
+    for (let i = 0; i < DOT2_SECTIONS; i++) {
+      const far = DOT2_OCULAR_DZ + seg * (i + 1);
+      b.shell("dot2Tube", POLYMER, dot2Bore(far), DOT2_WALL, seg, dot2Y, winZ + far - seg / 2);
+    }
+    const rOcular = outerAt(DOT2_OCULAR_DZ);
+    const rObjective = outerAt(DOT2_OBJECTIVE_DZ);
+    // Both rims at their own section's outer radius, so neither narrows the
+    // picture; the objective's is heavier, a hood over the glass the dot sits in.
+    b.shell("dot2Ocular", POLYMER, rOcular * 2, 0.005, 0.012, dot2Y, ocularZ - 0.002);
+    b.shell("dot2Hood", POLYMER, rObjective * 2, 0.006, 0.016, dot2Y, objectiveZ + 0.006);
+    // One block from the rail to the ocular section's underside, the prism's
+    // mount — the objective end overhangs it.
+    const baseBottom = mount.railTop - 0.003;
+    const baseTop = dot2Y - rOcular - 0.004;
+    b.box(
+      "dot2Mount",
+      METAL,
+      0.046,
+      baseTop - baseBottom,
+      0.07,
+      0,
+      (baseBottom + baseTop) / 2,
+      winZ - 0.004,
+    );
+    b.box("dot2Lever", METAL, 0.012, 0.022, 0.036, 0.029, mount.railTop + 0.013, winZ - 0.012);
+    // Low capped turrets, and the brightness knob opposite them.
+    const turretZ = winZ + 0.004;
+    const rTurret = outerAt(0.004);
+    b.pin("dot2Elev", METAL, 0.02, 0.011, 0, dot2Y + rTurret + 0.004, turretZ, "y");
+    b.pin("dot2Wind", METAL, 0.02, 0.011, rTurret + 0.004, dot2Y, turretZ, "x");
+    b.pin("dot2Illum", METAL, 0.026, 0.012, -(rTurret + 0.005), dot2Y, turretZ, "x");
+    b.merge("greenDot", node);
+
+    // Three black posts — left, right and bottom — standing in from the edge
+    // of the picture and stopping short of the axis, with fine hashes across
+    // them. The open centre is what keeps the dot the aim point: the posts
+    // lead the eye in and the gap leaves the target clear. Sized as shares of
+    // the CONE at the reticle's depth, as the prism's caret is, so they keep
+    // their place against the picture if the cone is ever re-solved.
+    const retZ = objectiveZ - 0.02;
+    const clearR = DOT2_CONE * (eyeDistance("greenDot") + retZ - ocularZ);
+    const armIn = clearR * DOT2_GAP;
+    const armOut = clearR - 0.002;
+    const armLen = armOut - armIn;
+    const armMid = (armIn + armOut) / 2;
+    const t = DOT2_LINE;
+    const bars: Mesh[] = [];
+    const bar = (w: number, h: number, x: number, y: number): void => {
+      const m = MeshBuilder.CreateBox(
+        `${prefix}_dot2Ret`,
+        { width: w, height: h, depth: t },
+        b.scene,
+      );
+      m.position.set(x, dot2Y + y, retZ);
+      bars.push(m);
+    };
+    // Directions as (along, across): left, right, down.
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1]] as const) {
+      const horizontal = dx !== 0;
+      bar(
+        horizontal ? armLen : t,
+        horizontal ? t : armLen,
+        dx * armMid,
+        dy * armMid,
+      );
+      // The hashes: fine ticks across the post, the middle one longer so the
+      // set reads as a scale rather than a comb.
+      DOT2_HASHES.forEach((at, i) => {
+        const r = clearR * at;
+        const len = clearR * (i === 1 ? 0.09 : 0.055);
+        bar(horizontal ? t : len, horizontal ? len : t, dx * r, dy * r);
+      });
+    }
+    const posts = Mesh.MergeMeshes(bars, true, true);
+    if (posts) {
+      posts.name = `${prefix}_dot2Posts`;
+      b.lit(posts, node, DOT2_POSTS);
+    }
+
+    // The dot — green, on the axis, alone in the middle of the gap.
+    const dot = b.lit(
+      MeshBuilder.CreateSphere(
+        `${prefix}_greenDot`,
+        { diameter: DOT2_DOT, segments: 6 },
+        b.scene,
+      ),
+      node,
+      DOT2_COLOUR,
+    );
+    dot.position.set(0, dot2Y, retZ);
+
+    // The eye reference is the ocular rim, as on the prism and the scopes.
+    return new Vector3(0, dot2Y, ocularZ);
   };
 
   /**
@@ -1146,6 +1310,7 @@ export function buildOptics(
     reflex: buildReflex,
     iron: buildIron,
     holo: buildHolo,
+    greenDot: buildGreenDot,
     prism: buildPrism,
     scope: buildScope,
     longScope: buildLongScope,
