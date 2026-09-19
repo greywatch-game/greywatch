@@ -48,6 +48,7 @@ import {
   animateSoldier,
   buildSoldier,
   resetSoldierPose,
+  REST_POSE,
   type RagdollSubject,
   type SoldierRig,
 } from "../entities/SoldierModel";
@@ -276,7 +277,7 @@ export class DeathCam {
     // so the throw starts from the shape they were in rather than from whatever
     // the last corpse left behind.
     resetSoldierPose(rig);
-    animateSoldier(rig, 0, 0, 0, 0, crouch);
+    animateSoldier(rig, { ...REST_POSE, crouch });
     rig.root.position.set(feet.x, feet.y + rig.centerHeight, feet.z);
     rig.root.rotation.y = yaw;
     corpse.setEnabled(true);

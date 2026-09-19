@@ -625,17 +625,28 @@ spread and the straightness both. Retune one, re-measure the other. Smoothing ru
 **before** separation and the stuck watchdog, deliberately: the watchdog's sidestep
 is what frees a bot wedged behind a tree.
 
-**`Bot.yaw` is where a bot LOOKS; `Bot.bodyYaw` is where its feet point.** The rig
-hangs off a single root yaw, so before the split a bot aimed its whole body at
-whatever it was tracking and one strafing across a doorway walked visibly sideways.
-`animateSoldier` takes a `twist` for the difference, applied at `torso` with the head
-taking a share on top; the legs are `torso`'s siblings under `body`, so they are
-untouched. It costs one `rotation.y` write and fixes the walk cycle for free. Three
-rules: the twist is **clamped** to `CONFIG.bots.movement.maxTorsoTwist` and past it
-the hips come round with it, or the shoulders end up on backwards; a **stationary**
-bot's feet converge on its look direction; and **perception reads `yaw`, never
-`bodyYaw`** — `BattleSystem.inView` keys off `Bot.facing`, and where a bot points its
-feet must not change what it can see. This is still not a lean — the crouch is a stance
+**`Bot.yaw` is where a bot LOOKS; `Bot.bodyYaw` is where its feet point; and the
+legs step whichever way it is actually GOING.** The rig hangs off a single root yaw,
+so before the split a bot aimed its whole body at whatever it was tracking and one
+strafing across a doorway walked visibly sideways. `animateSoldier` takes a `twist`
+for the look-minus-feet difference, applied at `torso` with the head taking a share
+on top, and `SoldierMotion` reads the travel off the FEET's own frame, so the gait
+steps forward, sideways or back as the body really moves. **Where the feet point is
+a policy with three continuous bands** (`Bot.update`): travel within
+`movement.faceTravelArc` of the look, the feet follow travel; a sidestep, they stay
+turned `movement.strafeTurn` into it; a retreat, they come square to the look and the
+legs backpedal. They used to follow travel whatever the look, which twisted a firing
+bot to its limit and then dragged its hips round. Four rules: the twist is
+**clamped** to `CONFIG.bots.movement.maxTorsoTwist` and past it the hips come round
+with it, or the shoulders end up on backwards; a **stationary** bot's feet converge
+on its look direction; **perception reads `yaw`, never `bodyYaw`** —
+`BattleSystem.inView` keys off `Bot.facing`, and where a bot points its feet must not
+change what it can see; and **a bot and a remote person are posed by the same
+`SoldierMotion`** off the same observables (ground covered, rounds leaving, a
+magazine going in), so nothing in the animation says which slots are AI. The one
+input only a bot has is `alert` — rifle up and no sprint carry while it has a
+target or is searching — which is offline-only because over the wire every body is
+a `NetSoldier`. This is still not a lean — the crouch is a stance
 of its own and lives with the cover it is taken behind, above.
 
 **Skill is one scalar per bot** (`BotSkill.profileFor`), resolved into a `BotProfile`

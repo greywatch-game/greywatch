@@ -225,11 +225,16 @@ index.
 
 Two consequences to preserve:
 
-- **`STRIDE` is shared** (`SoldierModel.ts`). Both `Bot` and `NetSoldier`
-  advance their walk cycle by distance travelled over the same divisor. If they
-  differed, a bot and a person walking side by side at the same speed would
-  swing their legs at different rates — which is precisely the tell that would
-  give away which bodies are AI.
+- **`SoldierMotion` is shared** (`entities/SoldierMotion.ts`). Both `Bot` and
+  `NetSoldier` own one and advance its gait by distance travelled over the same
+  `stepLength(speed)`, read the travel direction off the feet the same way, and
+  kick and reload it off the same events (`fire`, `reload`). If they differed, a
+  bot and a person moving side by side at the same speed would swing their legs
+  at different rates — which is precisely the tell that would give away which
+  bodies are AI. A client kicks a body as its tracers are DRAWN
+  (`Game.drawNetShots`, on the tracers' own spacing) and starts its reload off
+  the `reload` event — a named weapon's `reloadTime`, or a default-skill bot's
+  for a slot that names none.
 - **The walk weight is derived server-side**, from ground actually covered, not
   reported by the client. An animation flag a client sets is one it can lie
   about.
@@ -751,7 +756,7 @@ no `PROTOCOL_VERSION` bump.
 **A footfall is nobody's news — it is DERIVED, on the machine that draws it.**
 `NetSoldier` already integrates its walk cycle from ground actually covered
 (that is what `EntityState.moving` is for), so a stride crossing is exactly the
-test `Bot` makes on its own phase, against the same shared `STRIDE`. Sending
+test `Bot` makes on its own phase, through the same shared `SoldierMotion`. Sending
 steps instead would be sixteen bodies' worth of event at two or three a second
 to say something both ends can already compute, for a sound the far end rejects
 on distance anyway. The one thing it needs is that a corpse's position is not

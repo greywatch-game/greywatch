@@ -1,15 +1,19 @@
 /**
  * SoldierModel.ts — The bot rig: ~40 boxes and faceted lofts (`facet.ts` — the
  * body and the rifle; the slung launcher is still boxes) merged down to twenty-one meshes, plus
- * procedural animation (animateSoldier: walk cycle, aim, upper-body twist,
- * crouch — posed TransformNode joints, never clips), plus the bone table
- * `RagdollSystem` builds a corpse's rigid bodies from.
+ * the procedural poser (animateSoldier: a `SoldierPose` — gait in any
+ * direction, aim, twist, crouch, the rifle's kick, carry and reload, with both
+ * arms solved onto it — posed TransformNode joints, never clips), plus the
+ * bone table `RagdollSystem` builds a corpse's rigid bodies from. What DRIVES
+ * a pose is `SoldierMotion`'s.
  * Invariants: merging per colour is what keeps 16 bots affordable — the outline
  * pass draws every mesh twice, so the cost of this rig is COLOURS PER SEGMENT
  * and not boxes. A box in a colour a segment already carries is free; a fifth
  * colour on the torso is 32 draw calls across a full roster. Emissive parts
  * (visor) need metadata.noInk. Rigs are built once by BattleSystem's pool
- * and re-posed on respawn, never disposed. `rig.rest` is the hierarchy as built
+ * and re-posed on respawn, never disposed. Posing allocates nothing: it runs
+ * for every drawn body every frame. Every joint a pose can reach must stay
+ * inside `RAGDOLL_LINKS`, because a body can die at any point of it. `rig.rest` is the hierarchy as built
  * and is the ONLY thing a ragdoll may restore from — see JointRest.
  */
 import {
@@ -253,71 +257,100 @@ const GUN_AT: [number, number, number] = [0.1, 0.22, 0.22];
 const GRIP_R: [number, number, number] = [0, -0.1, -0.11];
 const GRIP_L: [number, number, number] = [0, -0.07, 0.1];
 
-/** One arm's solved pose: the shoulder's Euler and the elbow's bend. */
-interface ArmPose {
-  shoulder: Vector3;
-  elbow: number;
-}
+/**
+ * The sign that turns an elbow's bend into `rotation.x`, READ off Babylon's own
+ * matrix — what `rotation.x` does to a limb hanging down its own -y — rather
+ * than argued from a handedness that is easy to get backwards.
+ */
+const ELBOW_SIGN =
+  Vector3.TransformCoordinates(new Vector3(0, -1, 0), Matrix.RotationX(1)).z > 0 ? 1 : -1;
 
 /**
- * Two-link inverse kinematics for one arm, in the torso's frame.
+ * Which way `rotation.z` on a hip carries the foot: +1 if a positive roll moves
+ * the boot toward +x. Read off the matrix for `ELBOW_SIGN`'s reason.
+ */
+const ROLL_TO_X =
+  Vector3.TransformCoordinates(new Vector3(0, -1, 0), Matrix.RotationZ(1)).x > 0 ? 1 : -1;
+
+/**
+ * The elbow poles, in the torso's frame: the right elbow back and out, tucked
+ * behind a hand on the pistol grip, and the left one down and out under a hand
+ * supporting the receiver.
+ */
+const POLE_L = new Vector3(-0.6, -1, 0);
+const POLE_R = new Vector3(0.5, -0.5, -1);
+
+// Scratch for the per-frame solve. `solveArm` runs twice per posed body per
+// frame, so it allocates nothing — see `docs/profiling.md` on why a per-frame
+// allocation is the one thing a hitch hunt cannot afford.
+const _reach = new Vector3();
+const _dn = new Vector3();
+const _side = new Vector3();
+const _u = new Vector3();
+const _f = new Vector3();
+const _ax = new Vector3();
+const _ay = new Vector3();
+const _az = new Vector3();
+const _q = new Quaternion();
+
+/**
+ * Two-link inverse kinematics for one arm, in the torso's frame: writes the
+ * shoulder's Euler into `shoulder` and returns the elbow's `rotation.x`.
  *
- * **It is solved ONCE, at module load, and that is the arm's whole
- * animation.** The rifle is a child of the torso and nothing ever moves it
- * there, and the shoulders are children of the torso too, so the grip is at
- * the same place in the shoulder's frame whatever the body is doing, and the
- * spine's aim pitch, the twist and the crouch's lean all carry the arms and the
- * rifle together for free. `animateSoldier` writes the stored pose back each
- * call because `resetSoldierPose` zeroes it.
+ * **It is solved EVERY POSE, because the rifle moves now** — it kicks, it is
+ * lowered, it is carried across the chest at a sprint, and it is canted for a
+ * magazine change while the left hand leaves it. The shoulders and the rifle
+ * both hang off the torso, so the spine's lean and twist still carry arms and
+ * rifle together for free, and what the solve has to follow is only the
+ * rifle's motion inside the torso's frame. The same solve at the carried pose
+ * is the one this used to run once at module load, which put each fist within
+ * a micron of its grip.
  *
  * The solve: the law of cosines gives the shoulder's angle off the line to the
- * grip, `pole` says which side of that line the elbow goes, and the frame is
+ * target, `pole` says which side of that line the elbow goes, and the frame is
  * built so the upper arm lies along the joint's local -y and the forearm bends
  * in its local y-z plane, the plane `elbow.rotation.x` hinges in exactly as a
- * knee does.
+ * knee does. A target out of reach is clamped to a nearly straight arm pointing
+ * at it rather than failing.
  */
 function solveArm(
   x: number,
-  grip: [number, number, number],
+  target: Vector3,
   pole: Vector3,
-): ArmPose {
-  const target = new Vector3(
-    GUN_AT[0] + grip[0],
-    GUN_AT[1] + grip[1],
-    GUN_AT[2] + grip[2],
-  );
-  const reach = target.subtract(new Vector3(x, SHOULDER_Y, 0));
+  shoulder: Vector3,
+): number {
+  _reach.set(target.x - x, target.y - SHOULDER_Y, target.z);
   const upper = UPPER_ARM;
   const lower = FOREARM + HAND;
-  const d = clamp(reach.length(), Math.abs(upper - lower) + 0.01, upper + lower - 0.001);
-  const dn = reach.normalize();
-  const side = pole.subtract(dn.scale(Vector3.Dot(pole, dn))).normalize();
+  const len = Math.max(_reach.length(), 1e-6);
+  const d = clamp(len, Math.abs(upper - lower) + 0.01, upper + lower - 0.001);
+  _dn.copyFrom(_reach).scaleInPlace(1 / len);
+  const pd = Vector3.Dot(pole, _dn);
+  _side.set(pole.x - _dn.x * pd, pole.y - _dn.y * pd, pole.z - _dn.z * pd).normalize();
   const alpha = Math.acos(clamp((upper * upper + d * d - lower * lower) / (2 * upper * d), -1, 1));
-  const u = dn.scale(Math.cos(alpha)).addInPlace(side.scale(Math.sin(alpha)));
-  const f = dn.scale(d).subtract(u.scale(upper)).normalize();
+  const ca = Math.cos(alpha);
+  const sa = Math.sin(alpha);
+  _u.set(
+    _dn.x * ca + _side.x * sa,
+    _dn.y * ca + _side.y * sa,
+    _dn.z * ca + _side.z * sa,
+  );
+  _f.set(
+    _dn.x * d - _u.x * upper,
+    _dn.y * d - _u.y * upper,
+    _dn.z * d - _u.z * upper,
+  ).normalize();
   // The joint's frame: -y down the upper arm, z toward the side the forearm
   // folds to, and x the hinge between them.
-  const yAxis = u.negate();
-  const zAxis = f.subtract(u.scale(Vector3.Dot(f, u))).normalize();
-  const xAxis = Vector3.Cross(yAxis, zAxis).normalize();
-  const q = Quaternion.RotationQuaternionFromAxis(xAxis, yAxis, zAxis);
-  // The bend, signed by what `rotation.x` actually does to a limb hanging down
-  // its own -y, rather than by a handedness argument that is easy to get
-  // backwards.
-  const bend = Math.acos(clamp(Vector3.Dot(u, f), -1, 1));
-  const probe = Vector3.TransformCoordinates(new Vector3(0, -1, 0), Matrix.RotationX(1));
-  return { shoulder: q.toEulerAngles(), elbow: probe.z > 0 ? bend : -bend };
+  _ay.copyFrom(_u).scaleInPlace(-1);
+  const fu = Vector3.Dot(_f, _u);
+  _az.set(_f.x - _u.x * fu, _f.y - _u.y * fu, _f.z - _u.z * fu).normalize();
+  Vector3.CrossToRef(_ay, _az, _ax);
+  _ax.normalize();
+  Quaternion.RotationQuaternionFromAxisToRef(_ax, _ay, _az, _q);
+  _q.toEulerAnglesToRef(shoulder);
+  return ELBOW_SIGN * Math.acos(clamp(fu, -1, 1));
 }
-
-/**
- * The arms' pose, solved once (see `solveArm`). The poles put the right elbow
- * back and out, tucked behind a hand on the pistol grip, and the left one down
- * and out under a hand supporting the receiver.
- */
-const ARM_POSE = {
-  L: solveArm(-SHOULDER_X, GRIP_L, new Vector3(-0.6, -1, 0)),
-  R: solveArm(SHOULDER_X, GRIP_R, new Vector3(0.5, -0.5, -1)),
-};
 
 /**
  * One rigid body's box, in its joint's own frame.
@@ -484,9 +517,11 @@ export const RAGDOLL_LINKS: Readonly<Partial<Record<BoneJoint, BoneLink>>> = {
     z: [-0.5, 0.5],
   },
   // The shoulders are the one pair NOT posed near zero: both hands are on the
-  // rifle, so each carries `ARM_POSE`'s solve (a twist of up to 1.3 rad), and
-  // every range here has to contain that pose with room to spare, or the arm
-  // snaps on the frame of death. The twist is where most of it goes.
+  // rifle, so each carries `solveArm`'s answer (a twist of up to 1.3 rad), and
+  // every range here has to contain every pose that solve reaches — the aim,
+  // the sprint carry, the kick and each beat of the reload — with room to
+  // spare, or the arm snaps on the frame of death. The twist is where most of
+  // it goes.
   shoulderL: {
     parent: "torso",
     pivot: [-SHOULDER_X, SHOULDER_Y, 0],
@@ -599,7 +634,7 @@ export interface SoldierRig {
   shoulderR: TransformNode;
   /**
    * Elbows. The arm is two segments hung off the shoulder, and both are solved
-   * onto the rifle — see `ARM_POSE` — so the hands are ON the weapon rather
+   * onto the rifle — see `solveArm` — so the hands are ON the weapon rather
    * than beside it. Both are ragdoll bones.
    */
   elbowL: TransformNode;
@@ -1304,16 +1339,80 @@ export function buildSoldier(
 }
 
 /**
+ * Everything a pose is a function of. `SoldierMotion` fills one per body per
+ * frame from the body's own motion; `REST_POSE` is a body standing still with
+ * the rifle up.
+ *
+ * Every field is a number a remote client can arrive at from what it is sent,
+ * which is what keeps a bot and a person drawn by the same rules: the gait from
+ * ground actually covered, the kick and the reload from the `fire` and `reload`
+ * events the authority already broadcasts. The one exception is `ready`'s
+ * `alert` input, which only an offline bot passes — see `SoldierMotion`.
+ */
+export interface SoldierPose {
+  /**
+   * Gait phase, radians, advanced by distance. The LEFT boot's place along the
+   * line of travel is `sin(phase)` — so it lands at pi/2 and the right one at
+   * 3pi/2, which is the footfall test `SoldierMotion.step` makes.
+   */
+  phase: number;
+  /** 0..1, how much of a gait to play. */
+  moving: number;
+  /** 0 walk .. 1 run: knee drive, lean, flight and cadence. */
+  run: number;
+  /**
+   * The hip's swing either side of vertical along the line of travel, radians.
+   * Sized from the step so a planted boot slides as little as a leg that is
+   * not IK'd to the ground can manage.
+   */
+  stride: number;
+  /**
+   * Which way the body is travelling, relative to where its FEET point:
+   * 0 forward, +pi/2 to its right, pi backward. What turns one gait into a
+   * strafe and a backpedal.
+   */
+  heading: number;
+  /** Aim pitch, radians, positive UP — `EntityState.pitch`'s sign. */
+  aim: number;
+  /** Upper-body yaw off the feet, radians. */
+  twist: number;
+  /** 0 standing .. 1 fully crouched. */
+  crouch: number;
+  /** 0 low ready .. 1 shouldered. */
+  ready: number;
+  /** 0..1, the rifle carried across the chest at a sprint. */
+  carry: number;
+  /** 0..1, how much of the last round's kick is still in the body. */
+  kick: number;
+  /** Progress through a magazine change, 0..1; exactly 0 when not changing one. */
+  reload: number;
+}
+
+/** A body standing still, rifle shouldered — what a reset poses. */
+export const REST_POSE: Readonly<SoldierPose> = {
+  phase: 0,
+  moving: 0,
+  run: 0,
+  stride: 0,
+  heading: 0,
+  aim: 0,
+  twist: 0,
+  crouch: 0,
+  ready: 1,
+  carry: 0,
+  kick: 0,
+  reload: 0,
+};
+
+/**
  * Puts every joint back to the transform `buildSoldier` gave it.
  *
  * This is the ONLY correct reset after anything that re-parented or
- * quaternion-posed the rig, and `animateSoldier(rig, 0, 0, 0, 0)` is not a
- * substitute for it. That call writes fourteen Euler channels — `body.x`,
- * `body.position.y`, both hips' `x`, both knees' `x`, both ankles' `x`, both
- * shoulders' `x` and `z`, `torso.x`, `torso.y`, `head.x`, `head.y` — and the rig
- * has far more than fourteen. It never touches a `parent`, a
- * `rotationQuaternion`, a `scaling`, any `position.x/z`, or anything at all on
- * `gun`. A ragdoll leaves residue in every one of those.
+ * quaternion-posed the rig, and `animateSoldier(rig, REST_POSE)` is not a
+ * substitute for it. That call writes Euler channels and the rifle's place in
+ * the torso — and nothing else. It never touches a `parent`, a
+ * `rotationQuaternion`, a `scaling`, or the position of any joint but `body`
+ * and `gun`. A ragdoll leaves residue in every one of those.
  *
  * The quaternion is the load-bearing line. While one is set Babylon ignores
  * `rotation` entirely — the trap `ViewModel`'s inspect turntable documents from
@@ -1321,24 +1420,6 @@ export function buildSoldier(
  * respawned bot in its death pose for the rest of the round, with its position
  * still updating correctly underneath.
  */
-/**
- * Metres of ground covered per radian... more precisely, the divisor that turns
- * distance travelled into walk-cycle phase: `phase += distance / STRIDE`.
- *
- * It lives here, with the rig the phase poses, because two things advance it
- * and they must agree. `Bot` integrates it from its own speed; `NetSoldier`
- * integrates it from the distance an interpolated body actually moved. If the
- * two used different strides, a bot and a remote human walking side by side at
- * the same speed would swing their legs at different rates — which is precisely
- * the tell that would give away which bodies are AI, in a game whose whole
- * roster design rests on that being invisible.
- *
- * Advancing by DISTANCE rather than by time is what makes a footfall a point on
- * the cycle instead of a timer: something slowed to a walk steps more slowly for
- * free, and something stopped stops stepping.
- */
-export const STRIDE = 0.9;
-
 export function resetSoldierPose(rig: SoldierRig): void {
   for (const { node, parent, position } of rig.rest) {
     // A direct assignment, never setParent: setParent preserves the WORLD
@@ -1349,78 +1430,172 @@ export function resetSoldierPose(rig: SoldierRig): void {
     node.position.copyFrom(position);
     node.scaling.setAll(1);
   }
-  animateSoldier(rig, 0, 0, 0, 0);
+  animateSoldier(rig, REST_POSE);
+}
+
+/**
+ * Where the left hand goes through a magazine change: `[progress, frame, x, y,
+ * z]`, with `frame` 0 for the rifle's own frame (it rides the rifle) and 1 for
+ * the torso's (it has left it). Played as one smoothstepped leg per pair.
+ *
+ * Out to the magazine's base, strip it, down and away to the left pouch on the
+ * carrier, a beat there, back up to the well, seated with a push, and home to
+ * the receiver. The right hand never leaves the grip, and the rifle is canted
+ * toward the left hand for the length of it (`animateSoldier`), which is the
+ * read at range: a body that is changing a magazine is one whose rifle has
+ * tipped over and whose left arm is working. The magazine itself is part of the
+ * rifle's one merged mesh and does not come out — at the distance a reload is
+ * worth reading, the hand and the cant are the whole of it.
+ */
+const RELOAD_KEYS: readonly (readonly [number, 0 | 1, number, number, number])[] = [
+  [0, 0, ...GRIP_L],
+  [0.12, 0, 0, -0.22, 0.12],
+  [0.24, 1, -0.06, -0.02, 0.36],
+  [0.36, 1, -0.13, 0.12, 0.25],
+  [0.48, 1, -0.13, 0.1, 0.25],
+  [0.63, 0, 0, -0.25, 0.13],
+  [0.72, 0, 0, -0.16, 0.11],
+  [0.84, 0, ...GRIP_L],
+  [1, 0, ...GRIP_L],
+];
+
+/** How far into a reload the rifle is canted and the head is down, 0..1. */
+function reloadEnvelope(p: number): number {
+  if (p <= 0 || p >= 1) return 0;
+  return smooth(p / 0.1) * (1 - smooth((p - 0.82) / 0.16));
+}
+
+/** Smoothstep on [0, 1], clamped. */
+function smooth(t: number): number {
+  const x = clamp(t, 0, 1);
+  return x * x * (3 - 2 * x);
+}
+
+const _gunM = new Matrix();
+const _handL = new Vector3();
+const _handR = new Vector3();
+const _keyA = new Vector3();
+const _keyB = new Vector3();
+
+/** A point in the rifle's frame, carried into the torso's by the pose just written. */
+function onRifle(rig: SoldierRig, x: number, y: number, z: number, out: Vector3): Vector3 {
+  Vector3.TransformCoordinatesFromFloatsToRef(x, y, z, _gunM, out);
+  return out.addInPlace(rig.gun.position);
+}
+
+/** A reload key, in the torso's frame. */
+function reloadKey(
+  rig: SoldierRig,
+  k: readonly [number, 0 | 1, number, number, number],
+  out: Vector3,
+): Vector3 {
+  return k[1] === 0 ? onRifle(rig, k[2], k[3], k[4], out) : out.set(k[2], k[3], k[4]);
 }
 
 /**
  * Poses the rig. Purely procedural, like every other animation in the game —
  * there are no clips, and a new behaviour means new numbers rather than new art.
+ * What each field means is `SoldierPose`'s; what drives them is
+ * `SoldierMotion`'s.
  *
- * @param phase  walk cycle phase, advanced by distance travelled
- * @param moving 0..1 blend between the idle and walk poses
- * @param aim    aim pitch in radians, applied at the spine
- * @param twist  upper-body yaw relative to the feet, radians
- * @param dead   collapse blend, 0 alive .. 1 fully down
- * @param crouch 0..1 stance blend, 0 standing .. 1 fully crouched
+ * **The feet point along `root`'s yaw, the torso along that plus `twist`**, and
+ * the legs step along `heading` relative to the feet, so a body can look one
+ * way, face its hips another and travel a third without any of the three being
+ * drawn wrong. That split is the whole of strafing and backpedalling: a person's
+ * feet point where they look (`Match` sends their `bodyYaw` as their yaw), so
+ * the legs are what has to step sideways and backwards.
  *
- * `crouch` defaults to zero, so a caller with no stance to pass gets a body
- * standing. Three things pass one, and they are the same stance with the same
- * geometry: a bot behind cover (`Bot.crouchBlend`), a remote body arriving from
- * the authority (`EntityState.crouch`), and the stand-in the death cam poses.
- * The local player has no body to pose — the camera is inside the head.
- *
- * `twist` is the only parameter that is not a pitch or a blend, and it is worth
- * saying why it exists. The rig's `root` carries one yaw, so before it a bot
- * pointed its whole body — feet included — at whatever it was looking at. A bot
- * strafing across a doorway while tracking you walked visibly sideways, legs
- * swinging along an axis it was not travelling on. Splitting the two lets the
- * feet follow the direction of travel and the torso (with the head, arms and
- * rifle hanging off it) turn to the target, which is most of what "soldier"
- * looks like. It costs one extra `rotation.y` write and no geometry at all —
- * `torso` was always a child of `body`, with the legs as its siblings.
+ * **The rifle is posed first and the hands follow it** — `solveArm` runs against
+ * wherever this pose put the grips — so a kick, a lowered carry and a canted
+ * reload all keep both fists where they belong without either being authored
+ * per case. The AIM is split so the bore points where the body looks: the spine
+ * takes 55% of it and the rifle the rest inside the torso's frame, and the
+ * rifle cancels the lean the spine takes for the crouch and the gait, which it
+ * used to inherit — a crouched body pointed its rifle 17 degrees into the
+ * floor, and a positive aim pitched the spine DOWN.
  */
-export function animateSoldier(
-  rig: SoldierRig,
-  phase: number,
-  moving: number,
-  aim: number,
-  twist: number,
-  crouch = 0,
-): void {
-  // This posed a DEATH too, on a `dead` progress argument every caller now
-  // passes nothing for. It pitched the body forward about one joint and sank
-  // it, unfolding a crouch on the way down — the collapse tween that stood in
-  // wherever the ragdoll pool refused a body. Havok is required and the pool
-  // refuses nothing the player can see, so the only bodies that reach a death
-  // without a solver are ones already past the fog wall, and they are not
-  // drawn. See `Bot.update`'s dead branch, which is what is left of it.
+export function animateSoldier(rig: SoldierRig, p: Readonly<SoldierPose>): void {
+  // This posed a DEATH too, on a `dead` progress argument no caller passes any
+  // more: the collapse tween that stood in wherever the ragdoll pool refused a
+  // body. Havok is required and the pool refuses nothing the player can see, so
+  // the only bodies that reach a death without a solver are ones already past
+  // the fog wall, and they are not drawn. See `Bot.update`'s dead branch.
   rig.body.rotation.x = 0;
 
-  const lean = CROUCH_LEAN * crouch;
-  const drop = crouchDrop(crouch);
-
-  // A deep squat cannot swing its legs through a stride, so the walk is damped
+  const lean = CROUCH_LEAN * p.crouch;
+  const drop = crouchDrop(p.crouch);
+  // A deep squat cannot swing its legs through a stride, so the gait is damped
   // toward a shuffle as the body folds — which is also what the stance costs in
   // speed (`player.crouchMoveMult`), arrived at from the animation side.
-  const swing = Math.sin(phase) * 0.7 * moving * (1 - 0.65 * crouch);
-  poseLegs(rig, drop, swing);
-  // Both hands are on the rifle, so the arms hold the one solved pose and ride
-  // the spine with it (see `ARM_POSE`).
-  rig.shoulderL.rotation.copyFrom(ARM_POSE.L.shoulder);
-  rig.shoulderR.rotation.copyFrom(ARM_POSE.R.shoulder);
-  rig.elbowL.rotation.x = ARM_POSE.L.elbow;
-  rig.elbowR.rotation.x = ARM_POSE.R.elbow;
-  // Lean into the run, and pitch the spine to wherever the bot is aiming.
-  rig.torso.rotation.x = aim * 0.5 + moving * 0.1 + lean;
-  // Twist the upper body off the feet. The head takes a share of it on top, so
-  // the helmet leads the shoulders rather than being welded square to them.
-  rig.torso.rotation.y = twist;
-  rig.head.rotation.y = twist * 0.35;
-  // Most of the crouch's lean is taken back at the neck, so a hunkered body
-  // still looks where it is aiming and its visor — the friend/foe read at
-  // range — still faces the way it is shooting.
-  rig.head.rotation.x = aim * 0.5 - lean * 0.6;
-  rig.body.position.y = Math.abs(Math.sin(phase)) * 0.04 * moving - drop;
+  const gait = p.moving * (1 - 0.45 * p.crouch);
+  rig.body.position.y = poseLegs(rig, drop, p, gait);
+
+  const fwd = Math.cos(p.heading);
+  const side = Math.sin(p.heading);
+  const u = Math.sin(p.phase);
+  const reload = reloadEnvelope(p.reload);
+  const carry = p.carry;
+  const low = (1 - p.ready) * (1 - carry);
+  const aim = clamp(p.aim, -1.2, 1.2);
+
+  // --- spine ---
+  // Lean into the pace (forward only: nobody leans into a backpedal), take the
+  // kick back through the chest, and pitch 55% of the aim here. Positive
+  // `rotation.x` tips the spine FORWARD — it is the crouch's lean — so an aim
+  // UP is a negative one.
+  const gaitLean = gait * (0.03 + 0.2 * p.run * Math.max(0, fwd)) + carry * 0.06;
+  rig.torso.rotation.x = -aim * 0.55 + gaitLean + lean - 0.05 * p.kick;
+  // The shoulders counter-rotate against the leading leg, and roll into a
+  // sideways step, both more at a run.
+  const counter = -0.06 * gait * (0.35 + p.run) * u * fwd;
+  rig.torso.rotation.y = p.twist + counter;
+  rig.torso.rotation.z = -side * 0.08 * gait * (0.3 + p.run);
+  // The head takes a share of the twist on top, so the helmet leads the
+  // shoulders; it holds the horizon against the gait's counter-rotation; and it
+  // takes back most of the leans, so a hunkered or running body's visor — the
+  // friend/foe read at range — still faces where it is going. It drops to look
+  // at the rifle through a reload.
+  rig.head.rotation.y = p.twist * 0.35 - counter;
+  rig.head.rotation.z = -rig.torso.rotation.z * 0.7;
+  // Clamped inside the ragdoll's neck range, which a body can die at any
+  // point of (`RAGDOLL_LINKS`).
+  rig.head.rotation.x = clamp(-aim * 0.45 - lean * 0.6 - gaitLean * 0.8 + 0.35 * reload, -0.48, 0.48);
+
+  // --- rifle, in the torso's frame ---
+  // Rest is `GUN_AT` with the bore along the torso's +z. Then: the aim's
+  // remainder and the spine's leans cancelled, so the bore holds the look;
+  // muzzle down at low ready; slung across the chest at a sprint; the kick
+  // straight back down the stock with the muzzle climbing; and canted over
+  // toward the left hand for a reload.
+  const gx = -aim * 0.45 - lean - gaitLean + 0.05 * p.kick
+    + low * 0.4 + carry * 0.55 - p.kick * 0.2 + reload * 0.5;
+  const gy = -low * 0.15 - carry * 0.75 - reload * 0.25;
+  const gz = carry * 0.35 + reload * 0.55;
+  rig.gun.rotation.set(gx, gy, gz);
+  rig.gun.position.set(
+    GUN_AT[0] - carry * 0.06 - reload * 0.04,
+    GUN_AT[1] - low * 0.02 - carry * 0.06 + reload * 0.02,
+    GUN_AT[2] - p.kick * 0.05 - carry * 0.06 - low * 0.02 - reload * 0.05,
+  );
+  // TransformNode composes its Euler as yaw-pitch-roll, and so does this.
+  Matrix.RotationYawPitchRollToRef(gy, gx, gz, _gunM);
+
+  // --- hands ---
+  onRifle(rig, GRIP_R[0], GRIP_R[1], GRIP_R[2], _handR);
+  if (p.reload > 0 && p.reload < 1) {
+    let i = 0;
+    while (i < RELOAD_KEYS.length - 2 && p.reload > RELOAD_KEYS[i + 1][0]) i++;
+    const a = RELOAD_KEYS[i];
+    const b = RELOAD_KEYS[i + 1];
+    const t = smooth((p.reload - a[0]) / (b[0] - a[0]));
+    reloadKey(rig, a, _keyA);
+    reloadKey(rig, b, _keyB);
+    Vector3.LerpToRef(_keyA, _keyB, t, _handL);
+  } else {
+    onRifle(rig, GRIP_L[0], GRIP_L[1], GRIP_L[2], _handL);
+  }
+  rig.elbowL.rotation.x = solveArm(-SHOULDER_X, _handL, POLE_L, rig.shoulderL.rotation);
+  rig.elbowR.rotation.x = solveArm(SHOULDER_X, _handR, POLE_R, rig.shoulderR.rotation);
 }
 
 /**
@@ -1439,24 +1614,29 @@ function crouchDrop(crouch: number): number {
 }
 
 /**
- * Folds both legs to carry the hips `drop` metres below where they stand, and
- * adds the walk's swing on top.
+ * Folds both legs to the stance, steps them through the gait on top, and
+ * returns where `body` has to stand for the planted boot to stay on the ground.
  *
- * Two-link inverse kinematics rather than authored angles, because the pose has
- * to hold at every point of the stance blend and not only at its ends: the
- * boots are planted, so the knee and the ankle are whatever the hip height says
- * they are, and a crouch caught halfway is as correct as one at rest. Angles
- * lerped between a standing and a squatting key instead would slide the feet
- * through the floor and back over the quarter-second the blend takes.
+ * **The stance is two-link inverse kinematics**, because it has to hold at
+ * every point of the blend and not only at its ends: the boots are planted, so
+ * the knee and the ankle are whatever the hip height says they are, and a
+ * crouch caught halfway is as correct as one at rest. `psi` is the thigh's angle
+ * off vertical from the law of cosines, the shin takes whatever angle puts the
+ * ankle back under the hip, and the ankle cancels the shin so the boot stays
+ * flat. At `drop === 0` every term is zero — the chain is straight.
  *
- * The solve is the standard one for a two-link chain reaching straight down:
- * `psi` is the thigh's angle off vertical from the law of cosines, and the shin
- * takes whatever angle puts the ankle back under the hip. The ankle then
- * cancels the shin so the boot stays flat. At `drop === 0` every term is zero
- * by construction — the chain is straight — so a standing rig is posed exactly
- * as it was before any of this existed.
+ * **The gait is per leg, off the one phase, half a turn apart** — see
+ * `stepLeg`.
+ *
+ * **The HEIGHT is read off whichever leg reaches further**, which is the
+ * planted one: `body` is set so that leg's ankle is exactly where a standing
+ * ankle is. That is the whole of the bob and no number of its own — a walk rises
+ * over the straight leg at mid-stance and dips at the double support where both
+ * legs are spread, a run sinks into the loaded knee — and on top of it a run
+ * floats a little through the flight before each strike. With no gait this is
+ * `-drop` exactly, so the crouch's head height is untouched.
  */
-function poseLegs(rig: SoldierRig, drop: number, swing: number): void {
+function poseLegs(rig: SoldierRig, drop: number, p: Readonly<SoldierPose>, gait: number): number {
   let thigh = 0;
   let knee = 0;
   let shin = 0;
@@ -1473,12 +1653,84 @@ function poseLegs(rig: SoldierRig, drop: number, swing: number): void {
     thigh = -psi;
     knee = shin + psi;
   }
-  rig.hipL.rotation.x = thigh + swing;
-  rig.hipR.rotation.x = thigh - swing;
-  rig.kneeL.rotation.x = knee;
-  rig.kneeR.rotation.x = knee;
-  rig.ankleL.rotation.x = -shin;
-  rig.ankleR.rotation.x = -shin;
+  if (gait < 1e-3) {
+    rig.hipL.rotation.set(thigh, 0, 0);
+    rig.hipR.rotation.set(thigh, 0, 0);
+    rig.kneeL.rotation.x = knee;
+    rig.kneeR.rotation.x = knee;
+    rig.ankleL.rotation.x = -shin;
+    rig.ankleR.rotation.x = -shin;
+    return -drop;
+  }
+  const fwd = Math.cos(p.heading);
+  const side = Math.sin(p.heading);
+  const reachL = stepLeg(rig.hipL, rig.kneeL, rig.ankleL, -1, p.phase, thigh, knee, fwd, side, p, gait);
+  const reachR = stepLeg(rig.hipR, rig.kneeR, rig.ankleR, 1, p.phase + Math.PI, thigh, knee, fwd, side, p, gait);
+  const u = Math.sin(p.phase);
+  return -(LEG_SPAN - Math.max(reachL, reachR)) + gait * p.run * 0.04 * u * u;
+}
+
+/**
+ * One leg through the gait at `phi`. `out` is -1 for the left leg and +1 for
+ * the right — which way is OUTBOARD. Returns the hip's height above the ankle
+ * this pose leaves, for `poseLegs`' planted-leg test.
+ *
+ * `u = sin(phi)` is the boot's place along the line of travel and
+ * `cos(phi) > 0` is its swing, when it is travelling forward through the air.
+ * Along travel the hip swings by `stride`, decomposed onto the feet's frame by
+ * `heading` — pitch for the part of the step that is forward or back, roll for
+ * the part that is sideways, and a sideways step that would cross one boot
+ * through the other is cut to a third, which is how a sidestep is taken. The
+ * knee folds through the swing to clear the ground (much further at a run,
+ * which also drives the thigh up) and gives a little under the load of the
+ * stance, and the ankle keeps a planted boot flat and pushes off the toe at the
+ * end of the stance.
+ */
+function stepLeg(
+  hip: TransformNode,
+  kneeJ: TransformNode,
+  ankle: TransformNode,
+  out: number,
+  phi: number,
+  thigh0: number,
+  knee0: number,
+  fwd: number,
+  side: number,
+  p: Readonly<SoldierPose>,
+  gait: number,
+): number {
+  const u = Math.sin(phi);
+  const c = Math.cos(phi);
+  const swing = Math.max(0, c);
+  const stance = Math.max(0, -c);
+  const run = p.run;
+  // Along travel: the stride, plus a run's knee drive carrying the thigh up
+  // through the middle of the swing. The drive is a forward thing only.
+  const along = gait * (p.stride * u + run * 0.5 * swing * swing * Math.max(0, fwd));
+  // Negative `rotation.x` carries a boot forward (it is the crouch's `-psi`).
+  const hx = thigh0 - along * fwd;
+  // Sideways: the part that would carry this boot inboard, across the other
+  // one, is cut to a third.
+  let lat = along * side;
+  if (lat * out < 0) lat *= 0.35;
+  const hz = ROLL_TO_X * clamp(lat, -0.4, 0.4);
+  // The knee and the ankle are clamped inside their ragdoll ranges
+  // (`RAGDOLL_LINKS`): a body can die at any point of a stride, and a crouch
+  // already takes both most of the way there before the gait adds its fold.
+  const kx = Math.min(2.65, knee0 + gait * (
+    (0.95 + 1.05 * run) * Math.pow(swing, 1.4) + (0.08 + 0.32 * run) * stance
+  ));
+  hip.rotation.set(hx, 0, hz);
+  kneeJ.rotation.x = kx;
+  // Flat while planted, dangling a little through the swing, and pushing off
+  // the toe as the boot leaves the ground behind the body.
+  const toe = Math.max(0, -u);
+  ankle.rotation.x = clamp(
+    -(hx + kx) * (1 - 0.35 * swing) + gait * (0.25 + 0.25 * run) * toe * toe,
+    -1.45,
+    0.55,
+  );
+  return (THIGH * Math.cos(hx) + SHIN * Math.cos(hx + kx)) * Math.cos(hz);
 }
 
 /** Merges a limb's boxes into one mesh per colour, at identity. */

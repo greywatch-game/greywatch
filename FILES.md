@@ -367,8 +367,14 @@ src/
                         #   marks its own deaths leave. Cues, never targets
     BotSkill.ts         # skill scalar -> BotProfile; difficulty tiers
     SoldierModel.ts     # Merged bot rig + the per-team kit it is painted and
-                        #   shaped in + procedural animation (walk, aim, twist,
-                        #   crouch), and the RagdollSubject interface
+                        #   shaped in + the procedural poser (a SoldierPose:
+                        #   gait any way, aim, twist, crouch, the rifle's kick,
+                        #   carry and reload, arms IK'd onto it), and the
+                        #   RagdollSubject interface
+    SoldierMotion.ts    # One body's motion turned into a SoldierPose: gait
+                        #   phase and stepLength, velocity in the feet's frame,
+                        #   kick, reload, ready. Bot and NetSoldier drive the
+                        #   same one the same way
     facet.ts            # The faceted LOFT: chamfered cross-sections joined
                         #   and shaded flat, merged beside boxes. The soldier
                         #   and its rifle are cut from it; the slung launcher

@@ -406,10 +406,11 @@ export const bots = {
      *
      * The rig's root carries one yaw, so before the split a bot pointed its
      * whole body at whatever it was looking at and a strafing bot walked
-     * visibly sideways. Now the feet follow travel and the torso twists to
-     * the look direction — but only so far. Past this the hips have to come
-     * round, which is both what a body does and what stops the shoulders
-     * ending up on backwards.
+     * visibly sideways. Now the feet point between travel and the look (see
+     * `faceTravelArc`), the legs step whichever way the body is actually
+     * going, and the torso twists the rest of the way — but only so far. Past
+     * this the hips have to come round, which is both what a body does and
+     * what stops the shoulders ending up on backwards.
      */
     maxTorsoTwist: 1.15,
     /**
@@ -418,6 +419,19 @@ export const bots = {
      * head and torso lead and the feet follow.
      */
     bodyTurnRate: 6,
+    /**
+     * How far travel may lie off the look direction, radians (~34 deg), before
+     * the feet stop following it. Inside it a bot walks forward and turns its
+     * hips into a drift; outside it the feet come back toward the look and
+     * the LEGS step sideways or back — see `Bot.update`.
+     */
+    faceTravelArc: 0.6,
+    /**
+     * How far the hips stay turned into a pure sidestep, radians (~17 deg).
+     * Nobody strafes square: the hips lead a little into the step, and that
+     * share falls to nothing by the time the step is a backpedal.
+     */
+    strafeTurn: 0.3,
   },
 
   /**

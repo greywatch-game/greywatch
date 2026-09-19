@@ -79,7 +79,7 @@ import {
   type VolumetricRung,
 } from "../shaders/Volumetrics";
 import { Bot } from "../entities/Bot";
-import { difficultyNames } from "../entities/BotSkill";
+import { difficultyNames, profileFor } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import { FrameProfile, P } from "./FrameProfile";
@@ -6730,7 +6730,17 @@ export class Game {
       case "reload": {
         if (event.slot === this.net?.slot) break;
         const who = this.net?.roster.at(event.slot);
-        if (who) this.sfx.botReload(who.position, this.netVoice(event.w));
+        if (!who) break;
+        this.sfx.botReload(who.position, this.netVoice(event.w));
+        // …and SEEN: the body's left hand goes to the magazine. A weapon named
+        // is a person's and takes that weapon's own time; none named is a bot,
+        // whose skill-drawn time this client cannot know, so it takes the one a
+        // bot of default skill would.
+        who.startReload(
+          event.w !== undefined && isWeaponId(event.w)
+            ? CONFIG.weapons[event.w].reloadTime
+            : profileFor(CONFIG.bots.skill.defaultSkill).reloadTime,
+        );
         break;
       }
 
@@ -7058,6 +7068,9 @@ export class Game {
       // A body that died between the trigger and this frame draws nothing: its
       // rig has stopped being posed, so the muzzle is wherever it fell over.
       if (!shooter || !shooter.alive) continue;
+      // The kick first, laid across the burst on the tracers' own spacing, so
+      // the rifle climbs on the frame each streak leaves it.
+      shooter.kick(shot.rounds, shot.spacing);
       const muzzle = this.netMuzzle.copyFrom(shooter.muzzleWorld());
       shooter.aimDirToRef(this.netShotDir);
       this.combat.drawRounds(

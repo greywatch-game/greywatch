@@ -33,10 +33,10 @@ import {
   animateSoldier,
   buildSoldier,
   resetSoldierPose,
-  STRIDE,
   type RagdollSubject,
   type SoldierRig,
 } from "./SoldierModel";
+import { SoldierMotion } from "./SoldierMotion";
 
 /** One received sample, with the server time it describes. */
 interface Sample {
@@ -120,10 +120,10 @@ export class NetSoldier implements Combatant, RagdollSubject {
   /**
    * Wired by `NetRoster`: a boot went down.
    *
-   * DERIVED here rather than sent, and that is the point: the walk cycle is
+   * DERIVED here rather than sent, and that is the point: the gait is
    * already integrated from ground actually covered (see `update`), so a
    * footfall is a point on it exactly as it is for a `Bot` — the same test on
-   * the same phase, because `STRIDE` is shared. A body slowed to a walk steps
+   * the same phase, because both drive a `SoldierMotion`. A body slowed to a walk steps
    * more slowly for free and a stopped one stops stepping, with nothing on the
    * wire to say any of it.
    *
@@ -142,10 +142,13 @@ export class NetSoldier implements Combatant, RagdollSubject {
 
   /** Ring of received samples, oldest first. */
   private readonly samples: Sample[] = [];
-  /** Free-running stride, integrated locally — see `EntityState.moving`. */
-  private walkPhase = 0;
-  /** Ground distance covered since the last frame, which drives the stride. */
-  private stepped = 0;
+  /**
+   * Gait, kick, reload and how far the rifle is up — the same object `Bot`
+   * drives, driven the same way. See `SoldierMotion`.
+   */
+  private readonly motion = new SoldierMotion();
+  /** The `renderTime` of the last posed frame, or null before the first. */
+  private lastRender: number | null = null;
   /** False until the first sample, so the first frame reports no travel. */
   private hasPosition = false;
   private enabled = false;
@@ -194,11 +197,13 @@ export class NetSoldier implements Combatant, RagdollSubject {
    * stopped is a body that has to be yanked back when they resume.
    *
    * Takes NO `dt`, which is worth stating because every other `update` in the
-   * game does. Nothing here integrates against time: the pose is a function of
-   * `renderTime` alone, and the one accumulator — the walk cycle — is advanced
-   * by distance covered, which already carries the time. A `dt` in this
-   * signature would be an invitation to make something here frame-dependent,
-   * and a body drawn from the wire must look the same at 30 fps and 144.
+   * game does. The only interval anything here reads is the RENDER time the
+   * samples span between two poses, and everything `SoldierMotion` does with it
+   * is frame-rate independent by construction — the gait is advanced by
+   * distance, a kick and a reload are functions of time since their event, and
+   * the rest is an exact exponential. A frame `dt` in this signature would be
+   * an invitation to make something here frame-dependent, and a body drawn from
+   * the wire must look the same at 30 fps and 144.
    */
   update(renderTime: number): void {
     if (this.samples.length === 0) return;
@@ -241,12 +246,16 @@ export class NetSoldier implements Combatant, RagdollSubject {
     // second ease over it would draw a body the server never had.
     const crouch = a.crouch + (b.crouch - a.crouch) * blend;
 
-    // Ground distance covered since the last frame, for the walk cycle. Taken
-    // before `position` is overwritten, and horizontal only — a body walking
-    // down a slope is not taking longer strides.
-    this.stepped = this.hasPosition
-      ? Math.hypot(x - this.position.x, z - this.position.z)
-      : 0;
+    // Ground covered since the last frame, for the gait. Taken before
+    // `position` is overwritten, and horizontal only — a body walking down a
+    // slope is not taking longer strides.
+    const dx = this.hasPosition ? x - this.position.x : 0;
+    const dz = this.hasPosition ? z - this.position.z : 0;
+    // …and over how long, on the clock the body is DRAWN on. Not a frame `dt`:
+    // it is the interval of render time these samples span, so the speed it
+    // gives is the authority's and not this machine's frame rate.
+    const dt = this.lastRender === null ? 0 : Math.max(0, renderTime - this.lastRender);
+    this.lastRender = renderTime;
     // Only a LIVING body's position is one the next frame may measure travel
     // from. A corpse's is wherever it fell and its respawn is somewhere else
     // entirely, so carrying the flag across a death spends the whole distance
@@ -304,31 +313,20 @@ export class NetSoldier implements Combatant, RagdollSubject {
       return;
     }
 
-    // The stride is integrated from the distance this body actually covered
-    // between frames, which is the same rule `Bot` follows (`STRIDE` is shared
-    // for exactly that reason) — so a bot and a remote human moving at the same
-    // speed swing their legs at the same rate, and nothing on screen gives away
-    // which slots are AI. `dt` is unused here on purpose: distance already
-    // carries the time.
+    // The gait is integrated from the distance this body actually covered
+    // between frames, through the same `SoldierMotion` a `Bot` drives — so a bot
+    // and a remote human moving at the same speed step at the same rate and in
+    // the same direction, and nothing on screen gives away which slots are AI.
+    // A footfall is a point on that cycle and never a timer, the same test on
+    // the same phase, which is what keeps the boots heard in step with the
+    // legs drawn.
     //
-    // A footfall is a point on that cycle and never a timer, which is `Bot`'s
-    // test copied exactly: the legs swing as sin(walkPhase), so a foot is
-    // planted forward at each half turn — pi/2 and 3pi/2, every pi offset by
-    // pi/2. Sharing the phase is what keeps the boots in step with the legs
-    // that are drawn, and sharing the test is what keeps a remote human's gait
-    // from sounding different from a bot's.
-    const wasStride = Math.floor((this.walkPhase - Math.PI / 2) / Math.PI);
-    this.walkPhase += this.stepped / STRIDE;
-    if (Math.floor((this.walkPhase - Math.PI / 2) / Math.PI) !== wasStride) {
-      this.onStep();
-    }
+    // The travel is read off the FEET: a person's `bodyYaw` is their look, so a
+    // human strafing or backpedalling is one whose legs step sideways or back.
+    if (this.motion.step(dt, dx, dz, bodyYaw)) this.onStep();
     animateSoldier(
       this.rig,
-      this.walkPhase,
-      moving,
-      pitch,
-      wrapAngle(yaw - bodyYaw),
-      crouch,
+      this.motion.fill(dt, moving, pitch, wrapAngle(yaw - bodyYaw), crouch),
     );
   }
 
@@ -400,10 +398,25 @@ export class NetSoldier implements Combatant, RagdollSubject {
     return false;
   }
 
+  /**
+   * Rounds left this body's rifle — `rounds` of them `spacing` seconds apart,
+   * starting now. Called as the burst's tracers are DRAWN (`Game.drawNetShots`),
+   * so the kick lands on the frame the streak leaves the muzzle.
+   */
+  kick(rounds: number, spacing: number): void {
+    this.motion.fire(rounds, spacing);
+  }
+
+  /** A magazine change started, taking `seconds` — the `reload` event. */
+  startReload(seconds: number): void {
+    this.motion.reload(seconds);
+  }
+
   /** Puts the rig back to its rest pose. Called when a slot's occupant changes. */
   reset(): void {
     this.samples.length = 0;
-    this.walkPhase = 0;
+    this.motion.reset();
+    this.lastRender = null;
     this.hasPosition = false;
     this.alive = false;
     this.deathDamage = 0;

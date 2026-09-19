@@ -219,9 +219,9 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   `setParent` is safe in both directions (verified: it writes Euler when there is no
   quaternion), which is what makes the hand-off and hand-back clean.
 - **`resetSoldierPose` is the authoritative restore, and `animateSoldier(rig,
-  0,0,0,0, 0)` is not a substitute.** That call writes ten Euler channels; the rig has
-  far more, and never a `parent`, a `rotationQuaternion`, a `scaling` or anything on
-  `gun`. `Bot.spawn` calls the former. Verified across three lives on one rig — a leak
+  REST_POSE)` is not a substitute.** That call writes Euler channels and the rifle's
+  place in the torso, and never a `parent`, a `rotationQuaternion`, a `scaling` or the
+  position of any joint but `body` and `gun`. `Bot.spawn` calls the former. Verified across three lives on one rig — a leak
   shows on life 2.
 - **The map is registered as one static body PER 48 m BLOCK** — a
   `PhysicsShapeContainer` per block holding that block's collider boxes plus its
@@ -256,7 +256,16 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   nothing. What a corpse does instead is let its ARMS fall off the rifle: each arm
   is two bones since the elbow went in, and the shoulders' ranges are wide because
   the carried pose (both hands solved onto the rifle) is a twist of up to 1.3 rad
-  that every range has to contain.
+  that every range has to contain. **Both arms are solved EVERY POSE now** — the rifle
+  kicks, lowers, is carried at a sprint and is canted through a reload — and the
+  poser clamps the knee, the ankle and the neck inside their ranges, because a body
+  can die at any point of a stride. Measured by killing a bot in each extreme pose
+  (strafe both ways, sprint carry, crouch run, mid-reload, aim up at full twist): no
+  joint jumps further over the first six frames of the fall than a standing death's
+  do. **The hips' ROLL ranges look inverted against Babylon's Euler** — a positive
+  `rotation.z` on the LEFT hip carries the boot INBOARD, and that side is the one
+  given 0.8 — and nobody has checked which convention Havok's 6DoF limits read in;
+  the gait keeps its sideways roll under 0.4 either way.
 - **A corpse sinks; it cannot fade.** The cel shader writes alpha 1.0 outright and
   its materials are shared per COLOUR by `CelMaterialFactory`, so an alpha write would
   dim every bot on the map.

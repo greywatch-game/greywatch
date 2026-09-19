@@ -54,9 +54,9 @@ import {
   animateSoldier,
   buildSoldier,
   resetSoldierPose,
-  STRIDE,
   type SoldierRig,
 } from "./SoldierModel";
+import { SoldierMotion } from "./SoldierMotion";
 import { profileFor, type BotProfile } from "./BotSkill";
 import { mulberry32 } from "../world/rng";
 import { BotMemory } from "./BotMemory";
@@ -300,10 +300,10 @@ export class Bot implements Combatant {
   // bot the authority is simulating rather than an impression of one.
   //
   // Accessors rather than making the fields public: these are outputs of the
-  // AI, and nothing outside this class may write them. `walkPhase` is
+  // AI, and nothing outside this class may write them. The gait phase is
   // deliberately NOT among them — it is a free-running cycle with no meaning
-  // beyond "where in a stride", so a client integrates its own from `moveAmount`
-  // and spends no bandwidth on it. See `src/net/protocol.ts`.
+  // beyond "where in a stride", so a client integrates its own from the ground
+  // the body covers and spends no bandwidth on it. See `SoldierMotion`.
 
   /** Where the bot LOOKS. What the view cone reads, and what a client aims its head with. */
   get lookYaw(): number {
@@ -520,7 +520,17 @@ export class Bot implements Combatant {
   private blockedStreak = 0;
   /** While positive, a recent hit is disrupting aim and speed. */
   private flinchT = 0;
-  private walkPhase = 0;
+  /**
+   * The body's motion, turned into a pose: gait, kick, reload and how far the
+   * rifle is up. `NetSoldier` owns the same object and drives it the same way.
+   */
+  private readonly motion = new SoldierMotion();
+  /**
+   * The slow wander a bot on a flag being taken drifts along. It used to BE
+   * the walk cycle read at a third of its rate; it is kept on the walk cycle's
+   * old accumulation so a capturing squad drifts exactly as it always did.
+   */
+  private driftPhase = 0;
   private moveBlend = 0;
   private yaw = 0;
   private deadT = 0;
@@ -607,6 +617,7 @@ export class Bot implements Combatant {
     // writes ten Euler channels and a ragdoll leaves residue in the parent,
     // the quaternion, the scaling and every channel it does not touch. See its
     // own note — a quaternion left behind freezes this bot for the round.
+    this.motion.reset();
     resetSoldierPose(this.rig);
     this.setEnabled(true);
   }
@@ -808,7 +819,7 @@ export class Bot implements Combatant {
         }
         // Still being taken: bodies in the circle are what move the meter, so
         // drift slowly rather than standing like a statue.
-        _dir.set(Math.cos(this.walkPhase * 0.3), 0, Math.sin(this.walkPhase * 0.3));
+        _dir.set(Math.cos(this.driftPhase * 0.3), 0, Math.sin(this.driftPhase * 0.3));
         speed *= 0.25;
         break;
       }
@@ -978,6 +989,12 @@ export class Bot implements Combatant {
       _dir.set(_dir.x * 0.3 + tx, 0, _dir.z * 0.3 + tz);
     }
 
+    // Where this frame's travel is measured from, for the gait: taken before
+    // the push-out below so a de-penetration is ground covered too — the body
+    // on screen moved, and a leg that did not step with it would slide.
+    const startX = this.position.x;
+    const startZ = this.position.z;
+
     // De-penetrate before anything else: a bot that ended up inside a collider
     // — spawned on a prop, shoved there by separation — has to get out even
     // when it is standing still, or it is left unshootable.
@@ -1010,16 +1027,7 @@ export class Bot implements Combatant {
         this.stuckStreak = 0;
       }
 
-      // The walk cycle is advanced by distance travelled, so a footfall is a
-      // point on it and never a timer: a bot slowed to a hunt's walk steps
-      // more slowly for free, and a stopped one stops stepping. The legs swing
-      // as sin(walkPhase), so a foot is planted forward at each half turn —
-      // pi/2 and 3pi/2, which is every pi offset by pi/2.
-      const wasStride = Math.floor((this.walkPhase - Math.PI / 2) / Math.PI);
-      this.walkPhase += (speed * dt) / STRIDE;
-      if (Math.floor((this.walkPhase - Math.PI / 2) / Math.PI) !== wasStride) {
-        this.onStep();
-      }
+      this.driftPhase += (speed * dt) / 0.9;
       this.moveBlend = Math.min(1, this.moveBlend + dt * 6);
     } else {
       this.stuckT = 0;
@@ -1076,18 +1084,37 @@ export class Bot implements Combatant {
       this.yaw += delta * Math.min(1, dt * rate);
     }
 
-    // Feet follow travel, torso twists to the look direction.
+    // Where the feet point, and the torso twists the rest of the way to the
+    // look direction.
     //
-    // The rig hangs off a single root yaw, so before this a bot pointed its
-    // whole body at whatever it was looking at: one strafing across a doorway
-    // while tracking you walked visibly sideways, legs swinging along an axis
-    // it was not travelling on. Splitting the two also fixes the walk cycle for
-    // free, since the hips now swing along the direction of travel.
+    // Near the look, the feet follow travel — a bot walking where it is looking
+    // walks forward, and one drifting off it a little turns its hips into the
+    // turn. Past `faceTravelArc` they stop following and come back toward the
+    // look instead, and the LEGS take the difference: `SoldierMotion` reads the
+    // travel off the feet's own frame, so a bot tracking you across a doorway
+    // sidesteps with its hips turned `strafeTurn` into the step, and one
+    // falling back while it fires backpedals square to you. The feet used to
+    // follow travel whatever the look, so the same bot twisted to its limit and
+    // then had its hips dragged round, walking forward at an angle to the thing
+    // it was shooting. Continuous across all three bands, so a bot whose travel
+    // swings round does not snap its hips.
     const mv = b.movement;
     const travel = Math.hypot(_dir.x, _dir.z);
     // Standing still, the feet come round to meet the eyes — nobody stands
     // indefinitely with their body square and their head over one shoulder.
-    const wantBody = travel > 1e-3 ? Math.atan2(_dir.x, _dir.z) : this.yaw;
+    let wantBody = this.yaw;
+    if (travel > 1e-3) {
+      const off = wrapAngle(Math.atan2(_dir.x, _dir.z) - this.yaw);
+      const a = Math.abs(off);
+      const half = Math.PI / 2;
+      const feet =
+        a <= mv.faceTravelArc
+          ? a
+          : a <= half
+            ? mv.faceTravelArc + (mv.strafeTurn - mv.faceTravelArc) * ((a - mv.faceTravelArc) / (half - mv.faceTravelArc))
+            : mv.strafeTurn * ((Math.PI - a) / half);
+      wantBody = this.yaw + Math.sign(off) * feet;
+    }
     this.bodyYaw += wrapAngle(wantBody - this.bodyYaw) * Math.min(1, dt * mv.bodyTurnRate);
     let twist = wrapAngle(this.yaw - this.bodyYaw);
     // Past the limit the hips have to come round with it. Without the clamp a
@@ -1102,17 +1129,28 @@ export class Bot implements Combatant {
     this.bodyYaw = wrapAngle(this.bodyYaw);
     this.torsoTwist = twist;
 
+    // The gait, off the ground this frame actually covered — so a bot grinding
+    // on a wall stops stepping — and a boot going down is a footstep.
+    if (this.motion.step(dt, this.position.x - startX, this.position.z - startZ, this.bodyYaw)) {
+      this.onStep();
+    }
+
     this.trackAim(dt);
     this.shoot(dt, ctx);
     this.syncTransform();
     if (animate) {
       animateSoldier(
         this.rig,
-        this.walkPhase,
-        this.moveBlend,
-        this.aimPitch(),
-        this.torsoTwist,
-        this.crouchBlend,
+        this.motion.fill(
+          dt,
+          this.moveBlend,
+          this.aimPitch(),
+          this.torsoTwist,
+          this.crouchBlend,
+          // Rifle up for the whole of a fight, a search included — not only
+          // while there is somebody in the sights.
+          this.target !== null || this.alerted,
+        ),
       );
     }
   }
@@ -1303,6 +1341,7 @@ export class Bot implements Combatant {
     if (this.flinchT > 0) spread += b.combat.flinchKick / Math.max(dist, 1);
 
     const blocked = ctx.fire(this, this.aimPoint, spread);
+    this.motion.fire();
 
     // The shot already paid for a wall pick inside CombatSystem; reading its
     // result back is a free line-of-sight check. A single blocked round proves
@@ -1320,6 +1359,7 @@ export class Bot implements Combatant {
     this.burstLeft -= 1;
     if (this.magLeft <= 0) {
       this.reloadT = this.profile.reloadTime;
+      this.motion.reload(this.reloadT);
       this.onReload();
     } else if (this.burstLeft <= 0) {
       this.burstLeft = this.profile.burstSize;
