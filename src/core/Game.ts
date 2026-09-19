@@ -1334,7 +1334,7 @@ export class Game {
     this.aimAssist = new AimAssistSystem();
     this.battle = new BattleSystem(this.scene, this.mats, this.combat);
     this.conquest = new ConquestSystem();
-    this.zones = new CaptureZoneSystem(this.scene);
+    this.zones = new CaptureZoneSystem(this.scene, this.mats);
     // The weapon is parented to the camera, so the camera has to exist first.
     this.player = new Player(this.scene, this.mats, this.cameraSys.camera);
     this.player.setBodyHidden(true); // hidden until a round starts
@@ -4390,7 +4390,7 @@ export class Game {
     this.conquest.start(map);
     // The flags' markers read the same radius ConquestSystem tests against,
     // and follow the same terrain the ring is drawn across.
-    this.zones.build(map.controlPoints, map.terrain, map.nav, env);
+    this.zones.build(map.controlPoints, map.terrain, map.nav, map.rays, env);
     this.player.fullReset();
     // The AT slot is the MAP's and the ROUND's, not the kit screen's, so it is
     // re-decided here as well as in `applyLoadout` — a player who chose a

@@ -2,8 +2,9 @@
  * config/wind.ts — the one wind, and what each layer that moves in it does
  * with it.
  * Owns: the air's direction and speed, and the layers keyed off it — the grass
- * field, the world's foliage, and (bearing only, amplitude its own) a tank's
- * whip antennae. Contract: `docs/rendering.md`.
+ * field, the world's foliage, the flags over the control points, and (bearing
+ * only, amplitude its own) a tank's whip antennae. Contract:
+ * `docs/rendering.md`.
  * Gotcha: `dir` is not normalised here. Every reader normalises on use, so a
  * hand-tuned pair need not be a unit vector.
  *
@@ -115,4 +116,56 @@ export const wind = {
    * shorter than the thing it moves puts opposite leans on one crown.
    */
   foliage: { travel: 0.34, speed: 0.62, gust: 26, layers: foliageLayers },
+  /**
+   * The flags over the control points (`systems/FlagCloth.ts`) — the one
+   * layer here that is SIMULATED rather than posed, and so the one that needs
+   * the air as a SPEED rather than as a travel. A flag posed by a sine is a
+   * sheet of card rocking on a hinge; what makes cloth read as cloth is that
+   * the shape is the answer to the air and the air is never quite steady.
+   *
+   * Everything below is physics, in SI units, because the cloth is: the
+   * pressure on each triangle is `air * normalDrag * area * vn|vn|` along its
+   * normal and `air * skinDrag * area * |vt| vt` along it, against a sheet of
+   * `density` kg/m². That ratio is what decides how a flag flies — a heavy
+   * sheet in a light wind hangs, a light one in a strong wind streams — so
+   * `speed` and `density` move as a PAIR, and neither means much alone.
+   */
+  flag: {
+    /** Mean air speed at the flag, m/s. A fresh breeze: streams, never stiff. */
+    speed: 6,
+    /**
+     * Gust share of `speed`, riding the foliage's own `gust` wavelength so a
+     * gust that crosses a stand of trees crosses the flag in the same beat.
+     */
+    gust: 0.4,
+    /** Seconds per gust — two incommensurate periods, so no beat repeats. */
+    gustPeriods: [6.3, 2.7],
+    /**
+     * The turbulence that makes it FLAP: a cross-flow share of `speed`,
+     * travelling downwind at `convect` of it with a `flutterLength` metre
+     * wave. It rides the along-wind coordinate, so the ripple starts at the
+     * hoist and runs out to the fly the way a real flag's does.
+     */
+    flutter: 0.3,
+    flutterLength: 1.5,
+    convect: 0.8,
+    /** How far the bearing wanders either side of `dir`, radians, slowly. */
+    veer: 0.14,
+    /** Cloth: kg/m² — a polyester bunting is about a fifth of a kilo. */
+    density: 0.2,
+    /** Air density, and the two drag coefficients above. */
+    air: 1.2,
+    normalDrag: 1,
+    skinDrag: 0.05,
+    /** Fraction of velocity kept per step: a little internal friction. */
+    damping: 0.998,
+    /**
+     * The step, Hz, and the constraint passes per step. Explicit and fixed,
+     * so a flag flies the same at 30 fps as at 144.
+     */
+    rate: 120,
+    iterations: 7,
+    /** Bend stiffness 0..1 — cloth creases, it does not fold like paper. */
+    bend: 0.22,
+  },
 } as const;

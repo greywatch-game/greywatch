@@ -1385,6 +1385,9 @@ did) silently turns the capture awards off.
 `HUD.setCapture`), and the one rule reaching outside the drawing is that **the
 ring is the boundary**: it is built at `ControlPointDef.radius`, which is what
 `pointAt` tests, so the line on the floor is not an approximation of the zone.
+**The flag over it IS the meter** — flown at `|meter|` up its pole in the
+colours of the side the meter leans to — and it is a CLOTH SIMULATION in the one
+wind, never a posed wave, flown from the roof when the point is indoors.
 
 → **[`docs/rendering.md`](docs/rendering.md)** for the ring's surface sampling
 and the markers that fade themselves out, and

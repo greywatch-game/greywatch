@@ -400,7 +400,8 @@ src/
                         #   HeadlessGame on the authority), and `awardKill` and
                         #   `awardZone` are the one place each that a payout's
                         #   shape is decided — both sides call the same two
-    CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, beacon
+    CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, flag on its pole
+    FlagCloth.ts        # One flag: the pole and a Verlet cloth flown in the wind
     BulletMarks.ts      # The holes a round leaves behind: a ring of pooled decal
                         #   quads, cel-lit so a mark belongs to the wall on
                         #   every map, and stood on the STATIC world only

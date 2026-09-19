@@ -2762,7 +2762,7 @@ HDR chain would buy.
 
 ## The capture zone: annotation drawn in the world
 
-`CaptureZoneSystem` is the flag's ring, its skirt and its beacon. The rules are
+`CaptureZoneSystem` is the point's ring, its skirt and its flag. The rules are
 about DRAWING; the meter they annotate is `ConquestSystem`'s and is in
 [`CLAUDE.md`](../CLAUDE.md).
 
@@ -2780,14 +2780,39 @@ about DRAWING; the meter they annotate is `ConquestSystem`'s and is in
   wall, that is a white wash over the entire screen. Per-frame vertex alpha keyed to
   the viewer's distance shows only the stretch you are about to cross.
 - **Markers are annotation.** No `solid`, no collider, no `WorldBox`, `noGlow` so
-  the bloom leaves them out. They are the one
+  the bloom leaves them out. The ring and skirt are the one
   persistent unlit `StandardMaterial` geometry in the world, so they get no shader fog
-  and have to fade themselves out at the fog wall — the beacon keeps a floor so a
-  distant flag still reads as a faint column in the mist.
+  and have to fade themselves out at the fog wall.
+- **The flag IS the meter, and it is cloth rather than a picture of cloth.**
+  `FlagCloth` replaced a translucent 20 m beacon: a pole with a flag flown at
+  `|meter|` of its height in the colours of the side the meter leans to (`teamLook`'s
+  worn colour, a darker hoist band), so a neutralisation is the flag coming down in
+  the owner's colours and going back up in the attacker's, and a point nobody has
+  touched flies plain canvas at the foot. The sheet is a Verlet grid (16 x 10) with
+  stretch, shear and soft bend constraints, its hoist pinned to the pole, pushed
+  **per triangle** by the part of the air it faces — `CONFIG.wind.flag`, in SI units,
+  on `CONFIG.wind.dir`'s bearing with a gust on the foliage's own wavelength and a
+  cross-flow that travels from hoist to fly. A vertex wave is what it must not become:
+  every ripple the same height and nothing that droops or snaps is card, not cloth.
+  It steps at a fixed 120 Hz, only past neither the fog wall nor the edge of the view
+  (~0.15 ms a flag on the Windows box), and casts no shadow because it moves every
+  frame.
+- **Cloth is the one thing shaded SMOOTH** (`getCloth`, `CEL_SMOOTH`): the cel
+  shader's facet normal on a grid that fine is a lattice of flickering diamonds, so a
+  bending sheet takes the interpolated normal and the bands still cut hard along its
+  folds. Nothing else may use it — a coarse primitive's facets are the look.
+- **A pole never goes through a ceiling.** Many points are INDOORS (Hollowmere's
+  chapel, barn and dock shed, a Greyfen house, three of Coldharbour's office floors),
+  so `mount` casts up from the ring's own surface once at build and, if the 10 m pole
+  is not clear, flies the flag from the ROOF over the point on a 6 m pole instead —
+  found by one `castBody` down from above. A layout that moves a point under a roof
+  owes nothing; one that stands it beside a tall wall should expect the fly to cross
+  it, because the cloth collides with nothing.
 
 The through-line is that every one of these is a case where the honest thing to
 draw is not the cheap thing to draw, and the cheap version fails in a way that
 reads as a *rules* bug rather than a drawing one: a ring that is not the zone
 makes a capture look broken, a ring buried in a slope makes it look absent, a
-skirt at a readable alpha makes the screen white, and a marker that does not fade
-makes a flag at 200 m look like a flag at 20.
+skirt at a readable alpha makes the screen white, a marker that does not fade
+makes a flag at 200 m look like a flag at 20, and a pole through a chapel roof
+makes the whole village look like a set.

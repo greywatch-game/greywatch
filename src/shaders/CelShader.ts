@@ -492,9 +492,18 @@ uniform glassBackdrop: vec3f;
 // Geometric (per-triangle) normal from the world position's screen-space
 // derivatives. The cross product's sign depends on triangle winding and
 // viewing direction, so it is flipped to agree with the interpolated normal.
+//
+// CEL_SMOOTH is the one exception, and it is for CLOTH: a sheet that bends is
+// drawn from a fine grid, and a facet per triangle of it is a lattice of
+// flickering diamonds rather than a fold. There the interpolated normal is the
+// shape, and the bands still cut it hard — they just follow the folds.
 fn facetNormal() -> vec3f {
+#ifdef CEL_SMOOTH
+  return normalize(fragmentInputs.vNormalW);
+#else
   let n = normalize(cross(dpdx(fragmentInputs.vPosW), dpdy(fragmentInputs.vPosW)));
   return select(n, -n, dot(n, fragmentInputs.vNormalW) < 0.0);
+#endif
 }
 
 #include<celBand>
@@ -1961,6 +1970,47 @@ export class CelMaterialFactory {
           attributes: [...CelMaterialFactory.ATTRIBUTES],
           uniforms: [...CelMaterialFactory.UNIFORMS],
           samplers: [...CelMaterialFactory.SAMPLERS],
+          shaderLanguage: ShaderLanguage.WGSL,
+        },
+      );
+      mat.setColor3("baseColor", Color3.FromHexString(hex));
+      this.applyCamera(mat);
+      this.applyWind(mat);
+      this.applyEnvironment(mat);
+      this.applyPointLights(mat);
+      this.applyShadow(mat);
+      this.applySpec(mat, null);
+      this.applyTranslucency(mat, trans);
+      this.remember(cacheKey, mat);
+    }
+    return mat;
+  }
+
+  /**
+   * `getTranslucent` for a sheet that BENDS — today the flags over the
+   * control points (`systems/FlagCloth.ts`) and nothing else. The one
+   * difference is `CEL_SMOOTH`: shaded off the interpolated normal rather
+   * than the per-triangle facet, because cloth is a fine grid and a facet per
+   * triangle of it reads as a lattice rather than a fold. The bands stay hard.
+   *
+   * A mesh wearing one carries no vertex colour buffer, and nothing else wears
+   * one, so the frozen define set is never shared across a disagreement.
+   * Cached under its own key and named `cel-cloth-#rrggbb`, outside the three
+   * names the merge readers parse — cloth is never merged.
+   */
+  getCloth(hex: string, trans: TranslucencySpec): ShaderMaterial {
+    const cacheKey = `\0cloth-${hex}`;
+    let mat = this.cache.get(cacheKey);
+    if (!mat) {
+      mat = new ShaderMaterial(
+        `cel-cloth-${hex}`,
+        this.scene,
+        { vertex: "cel", fragment: "cel" },
+        {
+          attributes: [...CelMaterialFactory.ATTRIBUTES],
+          uniforms: [...CelMaterialFactory.UNIFORMS],
+          samplers: [...CelMaterialFactory.SAMPLERS],
+          defines: ["#define CEL_SMOOTH"],
           shaderLanguage: ShaderLanguage.WGSL,
         },
       );
