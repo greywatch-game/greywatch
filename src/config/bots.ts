@@ -30,7 +30,7 @@ export const bots = {
    * The most a map may field a side, and the only thing this number IS is a
    * bound on `MapLayout.perTeam`.
    *
-   * It exists because a roster is spent in RIGS: a bot is nineteen merged
+   * It exists because a roster is spent in RIGS: a bot is twenty-one merged
    * meshes that Babylon's active-mesh pass walks every frame whether the body
    * is enabled or not (`WorldCulling` — a disabled mesh is skipped cheaply, not
    * skipped), so the pool is a per-frame cost on every map that carries it and

@@ -369,6 +369,10 @@ src/
     SoldierModel.ts     # Merged bot rig + the per-team kit it is painted and
                         #   shaped in + procedural animation (walk, aim, twist,
                         #   crouch), and the RagdollSubject interface
+    facet.ts            # The faceted LOFT: chamfered cross-sections joined
+                        #   and shaded flat, merged beside boxes. The soldier
+                        #   and its rifle are cut from it; the slung launcher
+                        #   is still boxes
     NetSoldier.ts       # Somebody else, drawn from the wire: one rig, the
                         #   interpolation buffer behind it, the gait its boots
                         #   are heard off, no behaviour at all

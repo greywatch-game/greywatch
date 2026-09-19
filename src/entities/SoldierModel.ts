@@ -1,5 +1,6 @@
 /**
- * SoldierModel.ts — The bot rig: ~40 boxes merged down to nineteen meshes, plus
+ * SoldierModel.ts — The bot rig: ~40 boxes and faceted lofts (`facet.ts` — the
+ * body and the rifle; the slung launcher is still boxes) merged down to twenty-one meshes, plus
  * procedural animation (animateSoldier: walk cycle, aim, upper-body twist,
  * crouch — posed TransformNode joints, never clips), plus the bone table
  * `RagdollSystem` builds a corpse's rigid bodies from.
@@ -12,8 +13,10 @@
  * and is the ONLY thing a ragdoll may restore from — see JointRest.
  */
 import {
+  Matrix,
   Mesh,
   MeshBuilder,
+  Quaternion,
   Scene,
   TransformNode,
   Vector3,
@@ -23,6 +26,7 @@ import { clamp } from "../core/math";
 import { type CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
+import { loft, type Ring } from "./facet";
 // Type-only, so no runtime edge is created — the same import `Vehicle` takes
 // for the same reason. `DamageKind` lives with the shot that carries it.
 import type { DamageKind } from "../systems/CombatSystem";
@@ -38,15 +42,17 @@ import type { DamageKind } from "../systems/CombatSystem";
  * procedural animation is unaffected — only the leaf geometry is batched.
  *
  * **What that merge means for anyone adding detail: geometry is nearly free and
- * PAINT is not.** Forty-odd boxes come out as nineteen meshes — torso (shell,
- * webbing, accent), head (shell, webbing, neck, accent, visor), two arms (suit,
- * accent), two legs (thigh, shin, boot) and the rifle — because a segment pays
- * per colour in it and not per box. The outline pass draws each of those twice
- * and a Conquest roster is sixteen bodies, so one more colour on a segment is
- * ~32 draw calls and one more box in a colour that segment already has is none.
+ * PAINT is not.** Forty-odd parts come out as twenty-one meshes — torso (shell,
+ * webbing, accent), head (shell, webbing, neck, accent, visor), two upper arms
+ * (suit, accent), two forearms (suit), two legs (thigh, shin, boot) and the
+ * rifle — because a segment pays per colour in it and not per part. The
+ * outline pass draws each of those twice and a Conquest roster is sixteen
+ * bodies, so one more colour on a segment is ~32 draw calls and one more box in a colour that segment already has is none.
  * Pouches, a bedroll, a kneepad and an antenna are all in the second category
- * on purpose; the helmet band is the only thing here that was worth paying a
- * mesh for, and it is paid because the head is what peeks over cover.
+ * on purpose; the helmet band is the only COLOUR here that was worth paying a
+ * mesh for, and it is paid because the head is what peeks over cover. The two
+ * forearms are paid for by a JOINT rather than a colour: the elbow is what puts
+ * both hands on the rifle, and a part hung off its own joint cannot merge.
  *
  * The player has no rig at all — the camera is inside the head, and there is no
  * own-body to draw. The one thing that stands a player's body up is the death
@@ -105,7 +111,7 @@ interface SoldierKit {
   accent: string;
   /** The visor's emissive, from `CONFIG.teams`. */
   visor: string;
-  /** Which head this side wears — see `faceBoxes`. */
+  /** Which head this side wears — see `faceParts`. */
   face: "brim" | "respirator";
 }
 
@@ -140,6 +146,8 @@ export type BoneJoint =
   | "head"
   | "shoulderL"
   | "shoulderR"
+  | "elbowL"
+  | "elbowR"
   | "hipL"
   | "hipR"
   | "kneeL"
@@ -160,6 +168,8 @@ const POSED_JOINTS = [
   "head",
   "shoulderL",
   "shoulderR",
+  "elbowL",
+  "elbowR",
   "hipL",
   "hipR",
   "kneeL",
@@ -218,6 +228,97 @@ const CROUCH_DROP = CONFIG.camera.eyeHeight - CONFIG.player.crouchEyeHeight;
  */
 const CROUCH_LEAN = 0.3;
 
+/** Where the shoulder joints hang off the torso joint. */
+const SHOULDER_X = 0.28;
+const SHOULDER_Y = 0.42;
+
+/**
+ * The arm, in segments: shoulder to elbow, elbow to wrist, and wrist to the
+ * middle of the fist, which is the point the solve puts on the rifle.
+ */
+const UPPER_ARM = 0.29;
+const FOREARM = 0.26;
+const HAND = 0.05;
+
+/** The rifle's joint in the torso's frame. */
+const GUN_AT: [number, number, number] = [0.1, 0.22, 0.22];
+
+/**
+ * Where each fist closes, in the RIFLE's frame: the right on the pistol grip,
+ * the left under the receiver just ahead of the magazine. The left is not on
+ * the handguard, and that is a reach rather than a style: the handguard is
+ * 0.68 m from the left shoulder and the arm is 0.60, so a hand there is a
+ * straight arm at best and an arm that cannot arrive at worst.
+ */
+const GRIP_R: [number, number, number] = [0, -0.1, -0.11];
+const GRIP_L: [number, number, number] = [0, -0.07, 0.1];
+
+/** One arm's solved pose: the shoulder's Euler and the elbow's bend. */
+interface ArmPose {
+  shoulder: Vector3;
+  elbow: number;
+}
+
+/**
+ * Two-link inverse kinematics for one arm, in the torso's frame.
+ *
+ * **It is solved ONCE, at module load, and that is the arm's whole
+ * animation.** The rifle is a child of the torso and nothing ever moves it
+ * there, and the shoulders are children of the torso too, so the grip is at
+ * the same place in the shoulder's frame whatever the body is doing, and the
+ * spine's aim pitch, the twist and the crouch's lean all carry the arms and the
+ * rifle together for free. `animateSoldier` writes the stored pose back each
+ * call because `resetSoldierPose` zeroes it.
+ *
+ * The solve: the law of cosines gives the shoulder's angle off the line to the
+ * grip, `pole` says which side of that line the elbow goes, and the frame is
+ * built so the upper arm lies along the joint's local -y and the forearm bends
+ * in its local y-z plane, the plane `elbow.rotation.x` hinges in exactly as a
+ * knee does.
+ */
+function solveArm(
+  x: number,
+  grip: [number, number, number],
+  pole: Vector3,
+): ArmPose {
+  const target = new Vector3(
+    GUN_AT[0] + grip[0],
+    GUN_AT[1] + grip[1],
+    GUN_AT[2] + grip[2],
+  );
+  const reach = target.subtract(new Vector3(x, SHOULDER_Y, 0));
+  const upper = UPPER_ARM;
+  const lower = FOREARM + HAND;
+  const d = clamp(reach.length(), Math.abs(upper - lower) + 0.01, upper + lower - 0.001);
+  const dn = reach.normalize();
+  const side = pole.subtract(dn.scale(Vector3.Dot(pole, dn))).normalize();
+  const alpha = Math.acos(clamp((upper * upper + d * d - lower * lower) / (2 * upper * d), -1, 1));
+  const u = dn.scale(Math.cos(alpha)).addInPlace(side.scale(Math.sin(alpha)));
+  const f = dn.scale(d).subtract(u.scale(upper)).normalize();
+  // The joint's frame: -y down the upper arm, z toward the side the forearm
+  // folds to, and x the hinge between them.
+  const yAxis = u.negate();
+  const zAxis = f.subtract(u.scale(Vector3.Dot(f, u))).normalize();
+  const xAxis = Vector3.Cross(yAxis, zAxis).normalize();
+  const q = Quaternion.RotationQuaternionFromAxis(xAxis, yAxis, zAxis);
+  // The bend, signed by what `rotation.x` actually does to a limb hanging down
+  // its own -y, rather than by a handedness argument that is easy to get
+  // backwards.
+  const bend = Math.acos(clamp(Vector3.Dot(u, f), -1, 1));
+  const probe = Vector3.TransformCoordinates(new Vector3(0, -1, 0), Matrix.RotationX(1));
+  return { shoulder: q.toEulerAngles(), elbow: probe.z > 0 ? bend : -bend };
+}
+
+/**
+ * The arms' pose, solved once (see `solveArm`). The poles put the right elbow
+ * back and out, tucked behind a hand on the pistol grip, and the left one down
+ * and out under a hand supporting the receiver.
+ */
+const ARM_POSE = {
+  L: solveArm(-SHOULDER_X, GRIP_L, new Vector3(-0.6, -1, 0)),
+  R: solveArm(SHOULDER_X, GRIP_R, new Vector3(0.5, -0.5, -1)),
+};
+
 /**
  * One rigid body's box, in its joint's own frame.
  *
@@ -244,7 +345,7 @@ export interface BoneSpec {
 }
 
 /**
- * The ragdoll's ten bones, derived from the segment box lists below. Extents
+ * The ragdoll's twelve bones, derived from the segment box lists below. Extents
  * are the union of a joint's boxes, trimmed inside the silhouette — see
  * `BoneSpec` for what that leaves out and why.
  *
@@ -256,39 +357,55 @@ export interface BoneSpec {
  * that could not fall over. The three boxes here are the three the leg is
  * DRAWN from, hung off the same hip, knee and ankle the crouch bends, so the
  * collider now agrees with the mesh in every pose the rig can hold rather than
- * only in the standing one. There is still no elbow and no spine — a forearm
- * is baked into the merged upper-arm mesh.
+ * only in the standing one. There is still no spine. The arm was one welded
+ * bone until it was given an elbow to put both hands on the rifle, and it is
+ * two now, upper arm and forearm, hung off the same shoulder and elbow.
  *
  * The three masses split the leg's old 15 where the leg's own weight is
- * (8/5/2), so the body still totals 80 kg and every number in
- * `CONFIG.bots.death.impulse` means what it did when it was tuned.
+ * (8/5/2), and the arm's old 5 splits 3/2, so the body still totals 80 kg and
+ * every number in `CONFIG.bots.death.impulse` means what it did when it was
+ * tuned.
  *
  * **The rifle is deliberately NOT a bone.** It stays parented to `torso` and
  * rides that body for free. Giving it one would drop it out of hands that
- * cannot open — the arm is a single welded segment with no elbow, wrist or
- * finger — so the weapon would fall away while two fists stayed cupped around
- * nothing, which reads as a bug rather than as a dropped weapon.
+ * cannot open — a fist has no finger to let go with — so the weapon would fall
+ * away while two fists stayed cupped around nothing, which reads as a bug
+ * rather than as a dropped weapon. What a corpse does instead is let its arms
+ * fall off the rifle, which is what a body does.
  */
 export const RAGDOLL_BONES: readonly BoneSpec[] = [
   // Chest: the carrier, the pack and the bandolier, y in [-0.03, 0.49]. The
   // collar reaches 0.54 and the antenna off the pack 0.79; neither is body.
   { joint: "torso", size: [0.42, 0.52, 0.3], center: [0, 0.23, -0.03], mass: 34 },
-  // Helmet, neck and visor, y in [-0.025, 0.235]. Neither side's face — a
+  // Helmet, face and visor, y in [-0.025, 0.245] with the neck trimmed off
+  // below. Neither side's face — a
   // Valeguard peak, a Redline respirator and shroud — is inside this box.
   { joint: "head", size: [0.26, 0.26, 0.27], center: [0, 0.105, 0], mass: 6 },
-  // Shoulder to hand in one piece, y in [-0.48, 0.07], the glove trimmed off
-  // the end of it.
+  // Upper arm: shoulder to elbow, the pauldron trimmed off the top of it.
   {
     joint: "shoulderL",
-    size: [0.16, 0.55, 0.18],
-    center: [0, -0.205, 0.015],
-    mass: 5,
+    size: [0.13, 0.33, 0.13],
+    center: [0, -0.14, 0],
+    mass: 3,
   },
   {
     joint: "shoulderR",
-    size: [0.16, 0.55, 0.18],
-    center: [0, -0.205, 0.015],
-    mass: 5,
+    size: [0.13, 0.33, 0.13],
+    center: [0, -0.14, 0],
+    mass: 3,
+  },
+  // Forearm and glove, y in [-0.35, 0.035], the fingertips trimmed.
+  {
+    joint: "elbowL",
+    size: [0.1, 0.36, 0.1],
+    center: [0, -0.16, 0],
+    mass: 2,
+  },
+  {
+    joint: "elbowR",
+    size: [0.1, 0.36, 0.1],
+    center: [0, -0.16, 0],
+    mass: 2,
   },
   // Thigh: hip to knee, y in [-THIGH, 0].
   { joint: "hipL", size: [0.17, 0.34, 0.18], center: [0, -0.17, 0], mass: 8 },
@@ -366,19 +483,40 @@ export const RAGDOLL_LINKS: Readonly<Partial<Record<BoneJoint, BoneLink>>> = {
     y: [-0.7, 0.7],
     z: [-0.5, 0.5],
   },
+  // The shoulders are the one pair NOT posed near zero: both hands are on the
+  // rifle, so each carries `ARM_POSE`'s solve (a twist of up to 1.3 rad), and
+  // every range here has to contain that pose with room to spare, or the arm
+  // snaps on the frame of death. The twist is where most of it goes.
   shoulderL: {
     parent: "torso",
-    pivot: [-0.28, 0.42, 0],
-    x: [-1.6, 1.2],
-    y: [-0.5, 0.5],
-    z: [-0.2, 1.7],
+    pivot: [-SHOULDER_X, SHOULDER_Y, 0],
+    x: [-1.8, 1.4],
+    y: [-1.7, 1.7],
+    z: [-0.8, 1.7],
   },
   shoulderR: {
     parent: "torso",
-    pivot: [0.28, 0.42, 0],
-    x: [-1.6, 1.2],
-    y: [-0.5, 0.5],
-    z: [-1.7, 0.2],
+    pivot: [SHOULDER_X, SHOULDER_Y, 0],
+    x: [-1.8, 1.4],
+    y: [-1.7, 1.7],
+    z: [-1.7, 0.8],
+  },
+  // The elbow is a hinge like the knee, folding the OTHER way: `rotation.x`
+  // bends a forearm forward on the negative side, and the carried pose sits at
+  // -0.7 (left) and -1.8 (right), both well inside.
+  elbowL: {
+    parent: "shoulderL",
+    pivot: [0, -UPPER_ARM, 0],
+    x: [-2.6, 0.05],
+    y: [-0.1, 0.1],
+    z: [-0.1, 0.1],
+  },
+  elbowR: {
+    parent: "shoulderR",
+    pivot: [0, -UPPER_ARM, 0],
+    x: [-2.6, 0.05],
+    y: [-0.1, 0.1],
+    z: [-0.1, 0.1],
   },
   hipL: {
     parent: "torso",
@@ -459,6 +597,13 @@ export interface SoldierRig {
   head: TransformNode;
   shoulderL: TransformNode;
   shoulderR: TransformNode;
+  /**
+   * Elbows. The arm is two segments hung off the shoulder, and both are solved
+   * onto the rifle — see `ARM_POSE` — so the hands are ON the weapon rather
+   * than beside it. Both are ragdoll bones.
+   */
+  elbowL: TransformNode;
+  elbowR: TransformNode;
   hipL: TransformNode;
   hipR: TransformNode;
   /**
@@ -557,7 +702,55 @@ type SegmentBox = [
 ];
 
 /**
- * The boxes that give one side's head a shape of its own.
+ * One faceted part in a segment: a `loft` through `rings` in the joint's own
+ * frame, optionally moved and turned as a whole. It merges beside the boxes as
+ * one more piece of its colour, so a loft costs what a box costs — nothing, in
+ * a colour the segment already carries.
+ */
+interface SegmentLoft {
+  rings: readonly Ring[];
+  color: string;
+  at?: [number, number, number];
+  rot?: [number, number, number];
+}
+
+type SegmentPart = SegmentBox | SegmentLoft;
+
+/**
+ * The rotation that lays a loft's own +y along +z — the bore — and the sign
+ * that carries a ring's `z` offset onto the part's height once it is laid
+ * down. Both are READ off Babylon's own matrix rather than argued from
+ * handedness, the same way `solveArm` signs the elbow.
+ */
+const ALONG_Z = (() => {
+  const p = Vector3.TransformCoordinates(new Vector3(0, 1, 0), Matrix.RotationX(Math.PI / 2));
+  return p.z > 0 ? Math.PI / 2 : -Math.PI / 2;
+})();
+const Z_TO_Y = Math.sign(
+  Vector3.TransformCoordinates(new Vector3(0, 0, 1), Matrix.RotationX(ALONG_Z)).y,
+);
+
+/**
+ * A part lofted ALONG the bore: each section is at `z` with a width `w`, a
+ * height `h` and a vertical offset `dy`, and the whole part sits at height
+ * `y`. It is `loft` turned on its side, which is what the long parts of a
+ * weapon are.
+ */
+function lengthwise(
+  color: string,
+  sections: readonly { z: number; w: number; h: number; k?: number; dy?: number }[],
+  y = 0,
+): SegmentLoft {
+  return {
+    color,
+    rings: sections.map((r) => ({ y: r.z, w: r.w, d: r.h, k: r.k, z: (r.dy ?? 0) * Z_TO_Y })),
+    at: [0, y, 0],
+    rot: [ALONG_Z, 0, 0],
+  };
+}
+
+/**
+ * The parts that give one side's head a shape of its own.
  *
  * Paint is the read that dies first — at dusk, in mist, or against a bright
  * Coldharbour sky a body is a value and not a hue — and a helmet is the part of
@@ -566,17 +759,31 @@ type SegmentBox = [
  * helmet with a short neck guard, Redline a respirator under a long shroud.
  * Both are drawn in `armor`, so a side pays no mesh for having a face.
  */
-function faceBoxes(kit: SoldierKit): SegmentBox[] {
+function faceParts(kit: SoldierKit): SegmentLoft[] {
+  const part = (rings: Ring[]): SegmentLoft => ({ color: kit.armor, rings });
   return kit.face === "brim"
     ? [
-        // A peak shading the visor, and the guard down the back of the neck.
-        [0.27, 0.035, 0.1, 0, 0.155, 0.15, kit.armor],
-        [0.25, 0.08, 0.07, 0, 0.06, -0.145, kit.armor],
+        // A peak off the rim shading the visor, and a guard flaring out down
+        // the back of the neck.
+        part([
+          { y: 0.08, w: 0.25, d: 0.09, k: 0.35, z: 0.175 },
+          { y: 0.1, w: 0.27, d: 0.09, k: 0.35, z: 0.165 },
+        ]),
+        part([
+          { y: 0.03, w: 0.24, d: 0.05, k: 0.3, z: -0.175 },
+          { y: 0.1, w: 0.27, d: 0.06, k: 0.3, z: -0.15 },
+        ]),
       ]
     : [
         // A filter over the mouth, under a shroud that hangs past the collar.
-        [0.16, 0.11, 0.09, 0, 0.05, 0.145, kit.armor],
-        [0.26, 0.15, 0.07, 0, 0.045, -0.15, kit.armor],
+        part([
+          { y: -0.04, w: 0.11, d: 0.1, k: 0.5, z: 0.13 },
+          { y: 0.035, w: 0.13, d: 0.12, k: 0.5, z: 0.12 },
+        ]),
+        part([
+          { y: -0.04, w: 0.28, d: 0.06, k: 0.3, z: -0.165 },
+          { y: 0.1, w: 0.27, d: 0.07, k: 0.3, z: -0.15 },
+        ]),
       ];
 }
 
@@ -611,11 +818,20 @@ export function buildSoldier(
   const segment = (
     name: string,
     parent: TransformNode,
-    boxes: SegmentBox[],
+    boxes: SegmentPart[],
   ): void => {
     const parts: Mesh[] = [];
     for (let i = 0; i < boxes.length; i++) {
-      const [w, h, d, x, y, z, color, rotZ = 0] = boxes[i];
+      const part = boxes[i];
+      if (!Array.isArray(part)) {
+        const m = loft(`${name}${i}`, scene, part.rings);
+        if (part.at) m.position.set(...part.at);
+        if (part.rot) m.rotation.set(...part.rot);
+        m.material = mats.get(part.color);
+        parts.push(m);
+        continue;
+      }
+      const [w, h, d, x, y, z, color, rotZ = 0] = part;
       const m = MeshBuilder.CreateBox(
         `${name}${i}`,
         { width: w, height: h, depth: d },
@@ -634,105 +850,298 @@ export function buildSoldier(
   };
 
   // --- torso: plate carrier, webbing, pack, and the team's bandolier ---
+  //
+  // Lofted rather than boxed: the carrier is a V from the shoulders to a
+  // narrower waist, and every corner is cut, which is what stops a body reading
+  // as a stack of cubes beside a world of faceted trees and gabled roofs. The
+  // colours per segment are unchanged — armor, webbing, accent — so the chest
+  // is still three meshes however many parts it is cut from.
   const torso = new TransformNode("bot-torso", scene);
   torso.parent = body;
   torso.position.y = 0.1;
   segment("bot-torso-m", torso, [
-    // The shell: chest, the plate over it, and a collar the neck stands out of.
-    [0.44, 0.5, 0.26, 0, 0.24, 0, kit.armor],
-    [0.36, 0.26, 0.07, 0, 0.31, 0.155, kit.armor],
-    [0.32, 0.07, 0.24, 0, 0.505, 0, kit.armor],
-    // Webbing: belt, two magazine pouches under the plate, a canteen on the
-    // right hip, the pack, its bedroll, and the radio antenna off that. All one
-    // mesh with the belt, so the whole load-out costs what the belt alone did.
-    [0.44, 0.1, 0.28, 0, 0.02, 0, kit.webbing],
-    [0.1, 0.13, 0.08, -0.12, 0.13, 0.15, kit.webbing],
-    [0.1, 0.13, 0.08, 0.12, 0.13, 0.15, kit.webbing],
-    [0.09, 0.11, 0.09, 0.21, 0.05, -0.06, kit.webbing],
-    [0.3, 0.3, 0.14, 0, 0.26, -0.19, kit.webbing],
-    [0.32, 0.08, 0.11, 0, 0.44, -0.185, kit.webbing],
+    // The shell: waist, ribs, the broad chest, and the slope into the collar.
+    {
+      color: kit.armor,
+      rings: [
+        { y: -0.02, w: 0.34, d: 0.22, k: 0.35 },
+        { y: 0.14, w: 0.38, d: 0.25, k: 0.35 },
+        { y: 0.36, w: 0.46, d: 0.28, k: 0.35 },
+        { y: 0.46, w: 0.44, d: 0.26, k: 0.45 },
+        { y: 0.51, w: 0.3, d: 0.2, k: 0.5 },
+      ],
+    },
+    // The plate, a trapezoid standing proud of the chest and leaning with it.
+    {
+      color: kit.armor,
+      rings: [
+        { y: 0.17, w: 0.3, d: 0.05, k: 0.3, z: 0.135 },
+        { y: 0.43, w: 0.36, d: 0.05, k: 0.3, z: 0.15 },
+      ],
+    },
+    // The collar the neck stands out of.
+    {
+      color: kit.armor,
+      rings: [
+        { y: 0.47, w: 0.3, d: 0.22, k: 0.5 },
+        { y: 0.55, w: 0.25, d: 0.19, k: 0.5 },
+      ],
+    },
+    // Webbing: the hips under the belt (which close the gap the old chest left
+    // above the thighs), the belt, two magazine pouches under the plate, a
+    // canteen on the right hip, the pack, its bedroll, and the antenna off
+    // that. All one mesh with the belt, so the load-out costs what the belt did.
+    {
+      color: kit.webbing,
+      rings: [
+        { y: -0.15, w: 0.32, d: 0.2, k: 0.3 },
+        { y: -0.04, w: 0.36, d: 0.24, k: 0.35 },
+      ],
+    },
+    {
+      color: kit.webbing,
+      rings: [
+        { y: -0.05, w: 0.37, d: 0.25, k: 0.35 },
+        { y: 0.06, w: 0.385, d: 0.265, k: 0.35 },
+      ],
+    },
+    ...[-0.11, 0.11].map(
+      (x): SegmentLoft => ({
+        color: kit.webbing,
+        rings: [
+          { y: 0.07, w: 0.1, d: 0.07, k: 0.25, x, z: 0.15 },
+          { y: 0.2, w: 0.1, d: 0.08, k: 0.25, x, z: 0.155 },
+        ],
+      }),
+    ),
+    {
+      color: kit.webbing,
+      rings: [
+        { y: 0.0, w: 0.09, d: 0.09, k: 0.5, x: 0.2, z: -0.06 },
+        { y: 0.11, w: 0.09, d: 0.09, k: 0.5, x: 0.2, z: -0.06 },
+      ],
+    },
+    {
+      color: kit.webbing,
+      rings: [
+        { y: 0.1, w: 0.28, d: 0.12, k: 0.3, z: -0.18 },
+        { y: 0.4, w: 0.3, d: 0.14, k: 0.3, z: -0.19 },
+      ],
+    },
+    // The bedroll is a roll: an octagon laid along x across the top of the pack.
+    {
+      color: kit.webbing,
+      rings: [
+        { y: -0.16, w: 0.1, d: 0.1, k: 0.5 },
+        { y: 0.16, w: 0.1, d: 0.1, k: 0.5 },
+      ],
+      at: [0, 0.45, -0.19],
+      rot: [0, 0, Math.PI / 2],
+    },
     // The antenna tops out 3 cm above the helmet: a soldier's tell against the
     // sky, and short enough not to read as a mast.
     [0.03, 0.34, 0.03, 0.13, 0.62, -0.19, kit.webbing],
-    // The bandolier crosses the chest and stands 1.5 cm proud of it front and
-    // back, so the body's share of the team colour is on both faces. The sash
-    // it replaces was a stripe down one side of the front, inset far enough in
-    // x that the chest occluded it the moment a body turned side-on.
-    [0.075, 0.58, 0.29, -0.02, 0.26, 0, kit.accent, 0.5],
+    // The bandolier crosses the chest and stands proud of it front and back,
+    // so the body's share of the team colour is on both faces.
+    [0.075, 0.58, 0.31, -0.02, 0.26, 0, kit.accent, 0.5],
   ]);
 
-  // --- head: helmet, the side's own face, and a glowing visor slit ---
+  // --- head: a domed helmet, the side's own face, and a glowing visor ---
+  //
+  // The helmet is a dome of five rings rather than a cube, flared at the rim,
+  // and the visor now sits UNDER that rim on a face of its own rather than
+  // being painted across the helmet's front — which is the one change that
+  // turns the head from a block into a helmet on somebody.
   const head = new TransformNode("bot-head", scene);
   head.parent = torso;
   head.position.y = 0.52;
   segment("bot-head-m", head, [
-    [0.25, 0.2, 0.26, 0, 0.125, 0, kit.armor],
-    ...faceBoxes(kit),
-    [0.27, 0.05, 0.28, 0, 0.215, 0, kit.webbing],
-    [0.26, 0.05, 0.2, 0, 0.045, -0.01, kit.webbing],
-    [0.13, 0.07, 0.13, 0, 0.01, 0, kit.suit],
-    // The helmet band, and the one mesh this rig pays for the team read. It
-    // wraps the sides and the back and its front face stops 1 cm inside the
-    // helmet's, so the helmet occludes it head-on and it can never cross the
-    // visor. Worth a draw call because the head is what clears a wall first
-    // and is often all there is to shoot at.
-    [0.265, 0.065, 0.25, 0, 0.1625, -0.005, kit.accent],
+    {
+      color: kit.armor,
+      rings: [
+        { y: 0.085, w: 0.285, d: 0.305, k: 0.4, z: -0.005 },
+        { y: 0.12, w: 0.29, d: 0.31, k: 0.4 },
+        { y: 0.185, w: 0.27, d: 0.29, k: 0.45 },
+        { y: 0.225, w: 0.21, d: 0.23, k: 0.5 },
+        { y: 0.245, w: 0.12, d: 0.13, k: 0.5 },
+      ],
+    },
+    ...faceParts(kit),
+    // Neck, and the face under the rim: the dark undersuit's balaclava.
+    {
+      color: kit.suit,
+      rings: [
+        { y: -0.07, w: 0.12, d: 0.12, k: 0.4 },
+        { y: 0.03, w: 0.12, d: 0.12, k: 0.4 },
+      ],
+    },
+    {
+      color: kit.suit,
+      rings: [
+        { y: 0.0, w: 0.15, d: 0.16, k: 0.35, z: 0.015 },
+        { y: 0.1, w: 0.19, d: 0.2, k: 0.35, z: 0.01 },
+      ],
+    },
+    // Chin straps down both cheeks.
+    [0.015, 0.09, 0.02, -0.095, 0.05, 0.02, kit.webbing],
+    [0.015, 0.09, 0.02, 0.095, 0.05, 0.02, kit.webbing],
+    // The helmet band, and the one mesh this rig pays for the team read — the
+    // head is what clears a wall first and is often all there is to shoot at.
+    // It wraps the whole dome now that the visor sits below the rim and there
+    // is nothing on the helmet's front for it to cross.
+    {
+      color: kit.accent,
+      rings: [
+        { y: 0.115, w: 0.296, d: 0.316, k: 0.4 },
+        { y: 0.16, w: 0.288, d: 0.308, k: 0.42 },
+      ],
+    },
   ]);
-  // The visor protrudes past the helmet so the outline shell can't swallow it.
+  // The visor protrudes past the face so the ink cannot swallow it.
   const visor = MeshBuilder.CreateBox(
     "bot-visor",
-    { width: 0.16, height: 0.045, depth: 0.05 },
+    { width: 0.15, height: 0.04, depth: 0.05 },
     scene,
   );
   visor.parent = head;
-  visor.position.set(0, 0.12, 0.145);
+  visor.position.set(0, 0.058, 0.118);
   visor.material = mats.getEmissive(kit.visor);
   visor.metadata = { noInk: true };
   visor.isPickable = false;
   meshes.push(visor);
 
-  // --- arms: shoulder to fist in one welded segment, with a team pauldron ---
+  // --- arms: an upper arm under a team pauldron, an elbow, a forearm and a
+  // gloved hand, both hands solved onto the rifle ---
   /**
    * The pauldron is `accent` rather than `armor`, which is what makes the
-   * shoulders a team read from every angle for no draw call at all: the arm
-   * carried two colours before and carries two now. It is also the highest
-   * thing on the body after the helmet, so it is what shows over a wall and
-   * what a rooftop looks down on.
+   * shoulders a team read from every angle for no draw call at all. It is also
+   * the highest thing on the body after the helmet, so it is what shows over a
+   * wall and what a rooftop looks down on.
+   *
+   * **The forearm is a segment of its own, and that is the one mesh per arm
+   * the elbow costs**: it hangs off a joint the upper arm does not, so it cannot
+   * merge with it. It is drawn in `suit` alone, glove included, so the elbow
+   * is exactly one mesh and not two.
    */
-  const armBoxes = (): SegmentBox[] => [
-    [0.17, 0.095, 0.17, 0, 0.025, 0, kit.accent],
-    [0.14, 0.26, 0.14, 0, -0.13, 0, kit.suit],
-    [0.145, 0.08, 0.145, 0, -0.265, 0.015, kit.suit],
-    [0.13, 0.24, 0.13, 0, -0.36, 0.05, kit.suit],
-    [0.125, 0.1, 0.14, 0, -0.475, 0.075, kit.suit],
+  const upperArm = (out: number): SegmentPart[] => [
+    {
+      // A PLATE over the shoulder rather than a knob on it: shallow, wider
+      // than it is tall, and shifted outboard so its lower edge flares off the
+      // arm. The arm is carried raised, so a tall cap here reads as a ball
+      // tipped forward at the rifle.
+      color: kit.accent,
+      rings: [
+        { y: -0.045, w: 0.2, d: 0.19, k: 0.3, x: 0.018 * out },
+        { y: 0.02, w: 0.19, d: 0.18, k: 0.35, x: 0.01 * out },
+        { y: 0.05, w: 0.12, d: 0.13, k: 0.5 },
+      ],
+    },
+    {
+      color: kit.suit,
+      rings: [
+        { y: 0.02, w: 0.13, d: 0.13, k: 0.4 },
+        { y: -0.16, w: 0.12, d: 0.125, k: 0.4 },
+        { y: -UPPER_ARM - 0.02, w: 0.1, d: 0.105, k: 0.4 },
+      ],
+    },
+  ];
+  const foreArm = (): SegmentPart[] => [
+    {
+      // The elbow pad, standing proud of the joint, into a tapering forearm.
+      color: kit.suit,
+      rings: [
+        { y: 0.035, w: 0.105, d: 0.1, k: 0.45, z: -0.005 },
+        { y: -0.05, w: 0.115, d: 0.115, k: 0.4 },
+        { y: -FOREARM, w: 0.085, d: 0.08, k: 0.4 },
+      ],
+    },
+    {
+      // The glove: wider across the knuckles than at the wrist.
+      color: kit.suit,
+      rings: [
+        { y: -FOREARM + 0.01, w: 0.085, d: 0.075, k: 0.3 },
+        { y: -FOREARM - HAND, w: 0.075, d: 0.1, k: 0.35, z: 0.005 },
+        { y: -FOREARM - HAND - 0.04, w: 0.06, d: 0.075, k: 0.4 },
+      ],
+    },
   ];
 
-  const shoulderL = new TransformNode("bot-shL", scene);
-  shoulderL.parent = torso;
-  shoulderL.position.set(-0.28, 0.42, 0);
-  segment("bot-armL", shoulderL, armBoxes());
-
-  const shoulderR = new TransformNode("bot-shR", scene);
-  shoulderR.parent = torso;
-  shoulderR.position.set(0.28, 0.42, 0);
-  segment("bot-armR", shoulderR, armBoxes());
+  const arm = (side: "L" | "R", x: number): [TransformNode, TransformNode] => {
+    const shoulder = new TransformNode(`bot-sh${side}`, scene);
+    shoulder.parent = torso;
+    shoulder.position.set(x, SHOULDER_Y, 0);
+    segment(`bot-arm${side}`, shoulder, upperArm(Math.sign(x)));
+    const elbow = new TransformNode(`bot-el${side}`, scene);
+    elbow.parent = shoulder;
+    elbow.position.y = -UPPER_ARM;
+    segment(`bot-fore${side}`, elbow, foreArm());
+    return [shoulder, elbow];
+  };
+  const [shoulderL, elbowL] = arm("L", -SHOULDER_X);
+  const [shoulderR, elbowR] = arm("R", SHOULDER_X);
 
   // --- rifle: one merged block held across the chest ---
   const gun = new TransformNode("bot-gun", scene);
   gun.parent = torso;
-  gun.position.set(0.2, 0.2, 0.2);
-  // Eight boxes and still one mesh, because they are all one colour — the
+  gun.position.set(...GUN_AT);
+  // Nine parts and still one mesh, because they are all one colour — the
   // cheapest detail on the whole model, on the part of it that is held out in
-  // front of the body and read against the sky.
+  // front of the body and read against the sky. The long parts are lofted
+  // along the bore (`lengthwise`); the magazine and the grip stand vertical,
+  // raked the way a real one is, and the grip sits where `GRIP_R` closes a
+  // fist and the magazine's front edge where `GRIP_L` does.
   segment("bot-rifle", gun, [
-    [0.08, 0.12, 0.42, 0, 0, 0.03, GUN],
-    [0.07, 0.11, 0.22, 0, -0.005, -0.24, GUN],
-    [0.06, 0.16, 0.12, 0, -0.13, 0, GUN],
-    [0.055, 0.12, 0.1, 0, -0.1, -0.11, GUN],
-    [0.065, 0.075, 0.26, 0, 0.005, 0.35, GUN],
-    [0.04, 0.04, 0.14, 0, 0.01, 0.49, GUN],
-    [0.045, 0.055, 0.16, 0, 0.09, 0.06, GUN],
-    [0.03, 0.05, 0.03, 0, 0.07, 0.44, GUN],
+    // Receiver, tapering slightly into the handguard.
+    lengthwise(GUN, [
+      { z: -0.17, w: 0.07, h: 0.11, k: 0.2 },
+      { z: 0.2, w: 0.075, h: 0.12, k: 0.2 },
+      { z: 0.235, w: 0.065, h: 0.1, k: 0.3 },
+    ]),
+    // Stock: drops a little and deepens toward the butt.
+    lengthwise(GUN, [
+      { z: -0.14, w: 0.055, h: 0.08, k: 0.3, dy: 0.005 },
+      { z: -0.3, w: 0.06, h: 0.1, k: 0.3, dy: -0.01 },
+      { z: -0.35, w: 0.065, h: 0.12, k: 0.25, dy: -0.015 },
+    ]),
+    // Handguard, octagonal, and the barrel and brake out of it.
+    lengthwise(GUN, [
+      { z: 0.22, w: 0.07, h: 0.075, k: 0.45 },
+      { z: 0.47, w: 0.06, h: 0.065, k: 0.45 },
+    ], 0.005),
+    lengthwise(GUN, [
+      { z: 0.46, w: 0.03, h: 0.03, k: 0.5 },
+      { z: 0.52, w: 0.028, h: 0.028, k: 0.5 },
+    ], 0.01),
+    lengthwise(GUN, [
+      { z: 0.515, w: 0.042, h: 0.042, k: 0.5 },
+      { z: 0.565, w: 0.038, h: 0.038, k: 0.5 },
+    ], 0.01),
+    // Magazine, curving forward as it drops.
+    {
+      color: GUN,
+      rings: [
+        { y: -0.04, w: 0.05, d: 0.09, k: 0.2 },
+        { y: -0.13, w: 0.05, d: 0.09, k: 0.2, z: 0.02 },
+        { y: -0.21, w: 0.05, d: 0.085, k: 0.2, z: 0.05 },
+      ],
+    },
+    // Pistol grip, raked back.
+    {
+      color: GUN,
+      rings: [
+        { y: -0.05, w: 0.045, d: 0.07, k: 0.35, z: -0.1 },
+        { y: -0.165, w: 0.045, d: 0.065, k: 0.35, z: -0.135 },
+      ],
+    },
+    // Optic on the top of the receiver, and the front sight post.
+    {
+      color: GUN,
+      rings: [
+        { y: 0.055, w: 0.045, d: 0.11, k: 0.3, z: 0.05 },
+        { y: 0.105, w: 0.038, d: 0.09, k: 0.4, z: 0.05 },
+      ],
+    },
+    [0.02, 0.05, 0.02, 0, 0.065, 0.44, GUN],
   ]);
   const muzzle = new TransformNode("bot-muzzle", scene);
   muzzle.parent = gun;
@@ -767,36 +1176,83 @@ export function buildSoldier(
   /**
    * Thigh, shin and boot, hung off a hip, a knee and an ankle.
    *
-   * The three SEGMENTS are the three the leg has always been and they are drawn
-   * in the same places: the knee is the bottom of the thigh box and the ankle
-   * the bottom of the shin box, so every offset here is the old hip-frame one
-   * minus the joint it now hangs from, and a rig at rest is unchanged to the
-   * micrometre. Each carries a second box — the plate above the knee, the
-   * kneepad, the toe of the boot — in the colour that segment was already
-   * drawn in, so `mergeByColor` still returns three meshes for a leg and the
-   * detail is silhouette that costs nothing.
+   * Lofted like the rest of the body: a thigh that narrows from the hip to the
+   * knee, a shin that swells at the calf and pinches at the ankle, and a boot
+   * whose instep slopes from the toe up into the shaft rather than a brick
+   * with a smaller brick in front of it. The joints are where they always were
+   * — the knee at the bottom of the thigh, the ankle at the bottom of the shin,
+   * the sole at the ankle's -0.07 — so the crouch's solve and the bone table
+   * are unchanged. Each segment still carries ONE colour (armor, suit,
+   * webbing), so the plate on the thigh, the kneepad and the toe cap are
+   * silhouette that costs nothing and a leg is still three meshes.
    */
   const leg = (
     name: string,
     hip: TransformNode,
   ): [TransformNode, TransformNode] => {
     segment(name, hip, [
-      [0.17, 0.34, 0.18, 0, -0.17, 0, kit.armor],
-      [0.175, 0.08, 0.19, 0, -0.31, 0.005, kit.armor],
+      {
+        color: kit.armor,
+        rings: [
+          { y: 0.03, w: 0.19, d: 0.2, k: 0.35 },
+          { y: -0.1, w: 0.185, d: 0.2, k: 0.35, z: 0.005 },
+          { y: -0.27, w: 0.15, d: 0.16, k: 0.35, z: 0.01 },
+          { y: -THIGH - 0.01, w: 0.135, d: 0.145, k: 0.4 },
+        ],
+      },
+      // The thigh plate, a tapered slab standing proud of the front.
+      {
+        color: kit.armor,
+        rings: [
+          { y: -0.05, w: 0.15, d: 0.04, k: 0.3, z: 0.1 },
+          { y: -0.24, w: 0.125, d: 0.04, k: 0.3, z: 0.09 },
+        ],
+      },
     ]);
     const knee = new TransformNode(`${name}-knee`, scene);
     knee.parent = hip;
     knee.position.y = -THIGH;
     segment(name, knee, [
-      [0.15, 0.32, 0.15, 0, -0.16, 0, kit.suit],
-      [0.16, 0.11, 0.17, 0, -0.055, 0.015, kit.suit],
+      {
+        color: kit.suit,
+        rings: [
+          { y: 0.02, w: 0.13, d: 0.14, k: 0.4 },
+          { y: -0.1, w: 0.135, d: 0.15, k: 0.4, z: -0.01 },
+          { y: -SHIN, w: 0.1, d: 0.11, k: 0.4 },
+        ],
+      },
+      // The kneepad, over the joint so it rides the fold.
+      {
+        color: kit.suit,
+        rings: [
+          { y: 0.06, w: 0.15, d: 0.07, k: 0.4, z: 0.055 },
+          { y: -0.06, w: 0.14, d: 0.08, k: 0.4, z: 0.06 },
+        ],
+      },
     ]);
     const ankle = new TransformNode(`${name}-ankle`, scene);
     ankle.parent = knee;
     ankle.position.y = -SHIN;
     segment(name, ankle, [
-      [0.17, 0.09, 0.22, 0, -0.025, 0.02, kit.webbing],
-      [0.15, 0.055, 0.07, 0, -0.045, 0.125, kit.webbing],
+      {
+        // Sole to shaft in one loft: the rings slide back and shorten as they
+        // rise, which is the instep.
+        color: kit.webbing,
+        rings: [
+          { y: -0.07, w: 0.14, d: 0.26, k: 0.3, z: 0.035 },
+          { y: -0.035, w: 0.135, d: 0.24, k: 0.3, z: 0.03 },
+          { y: 0.0, w: 0.125, d: 0.15, k: 0.35 },
+          { y: 0.07, w: 0.115, d: 0.125, k: 0.35, z: -0.005 },
+        ],
+      },
+      // The toe cap.
+      {
+        color: kit.webbing,
+        rings: [
+          { y: -0.07, w: 0.13, d: 0.08, k: 0.45, z: 0.125 },
+          { y: -0.03, w: 0.11, d: 0.06, k: 0.45, z: 0.12 },
+        ],
+      },
     ]);
     return [knee, ankle];
   };
@@ -819,6 +1275,8 @@ export function buildSoldier(
     head,
     shoulderL,
     shoulderR,
+    elbowL,
+    elbowR,
     hipL,
     hipR,
     kneeL,
@@ -946,11 +1404,12 @@ export function animateSoldier(
   // speed (`player.crouchMoveMult`), arrived at from the animation side.
   const swing = Math.sin(phase) * 0.7 * moving * (1 - 0.65 * crouch);
   poseLegs(rig, drop, swing);
-  // Counter-swing on the left arm; the right holds the weapon steady.
-  rig.shoulderL.rotation.x = -swing * 0.5 - 0.15;
-  rig.shoulderR.rotation.x = 0.1;
-  rig.shoulderR.rotation.z = -0.25;
-  rig.shoulderL.rotation.z = 0.2;
+  // Both hands are on the rifle, so the arms hold the one solved pose and ride
+  // the spine with it (see `ARM_POSE`).
+  rig.shoulderL.rotation.copyFrom(ARM_POSE.L.shoulder);
+  rig.shoulderR.rotation.copyFrom(ARM_POSE.R.shoulder);
+  rig.elbowL.rotation.x = ARM_POSE.L.elbow;
+  rig.elbowR.rotation.x = ARM_POSE.R.elbow;
   // Lean into the run, and pitch the spine to wherever the bot is aiming.
   rig.torso.rotation.x = aim * 0.5 + moving * 0.1 + lean;
   // Twist the upper body off the feet. The head takes a share of it on top, so

@@ -300,7 +300,7 @@ contact of 5-7 of 16 bots against 10-14 on the levels — and the same harness a
 only 17% of its ticks with nobody engaged.
 
 **What it costs is RIGS, which is why it is BOUNDED and why the pool is rebuilt
-rather than sized to the ceiling.** A bot is nineteen merged meshes, and a mesh
+rather than sized to the ceiling.** A bot is twenty-one merged meshes, and a mesh
 in the scene is in the frame's own active-mesh walk whether the body is enabled
 or not — `WorldCulling` is explicit that a disabled mesh is skipped CHEAPLY and
 not skipped, which is the whole reason that file exists. So a pool built to

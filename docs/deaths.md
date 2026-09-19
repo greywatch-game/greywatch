@@ -251,9 +251,12 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   joint somewhere the one box could not follow. The crouch bends knees and ankles, so
   they earn one each.
 - **The rifle is not a bone.** It stays parented to `torso` and rides that body.
-  Giving it one drops it out of hands that cannot open — the arm is a single welded
-  segment with no elbow, wrist or finger — so the weapon falls away while two fists
-  stay cupped around nothing.
+  Giving it one drops it out of hands that cannot open — a fist has no finger to
+  let go with — so the weapon falls away while two fists stay cupped around
+  nothing. What a corpse does instead is let its ARMS fall off the rifle: each arm
+  is two bones since the elbow went in, and the shoulders' ranges are wide because
+  the carried pose (both hands solved onto the rifle) is a twist of up to 1.3 rad
+  that every range has to contain.
 - **A corpse sinks; it cannot fade.** The cel shader writes alpha 1.0 outright and
   its materials are shared per COLOUR by `CelMaterialFactory`, so an alpha write would
   dim every bot on the map.
@@ -469,7 +472,7 @@ without that subtract turns feedback into a punishment.
 - **The body is the BOT rig**, which is why the retired GLB player body could be
   deleted outright: it hands to the pool with nothing adapted and is already what
   `RAGDOLL_BONES` is measured against. It is built at `startRound`, not at the moment
-  of death — nineteen merged meshes and their GL buffers is not a cost to pay on
+  of death — twenty-one merged meshes and their GL buffers is not a cost to pay on
   the frame the player is killed on.
 - **It is the third rig in the game and it is filed with the CULL like the other
   two.** `buildSoldier` has three callers — `Bot`, `NetSoldier` and this — and this
