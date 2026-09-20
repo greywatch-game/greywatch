@@ -440,9 +440,50 @@ const THROW_FOLLOW_FRAC = 0.28;
 /** A plain triple, which is how every pose in CONFIG is written. */
 type XYZ = { x: number; y: number; z: number };
 
+const TAU = Math.PI * 2;
+
 /** Ramp from a to b, clamped at both ends. */
 const ramp = (a: number, b: number, x: number) =>
   hermite(clamp((x - a) / (b - a), 0, 1));
+
+/**
+ * `impulse` with a REBOUND in it: an instant attack and a damped cycle, `cycles`
+ * of it spent inside `fall`, and exactly 0 at and outside both ends.
+ *
+ * **What it is for is the difference between a struck rifle and a faded
+ * offset.** `impulse` is monotone — the weapon is displaced and comes back, and
+ * never goes anywhere it was not sent — which is right for a fading level and
+ * wrong for a mass arriving against a wrist. A magazine driven into a well
+ * throws the weapon, the arm stops it, and it comes back THROUGH where it
+ * started before it settles. That reversal is most of what reads as weight, and
+ * it costs one cosine.
+ *
+ * The `(1 - t)²` envelope is `impulse`'s own, kept rather than replaced, and it
+ * is what guarantees the tail: whatever `cycles` is set to, the term is zero at
+ * `at + fall` and stays zero, so nothing can be stranded on a weapon whose
+ * phase has stopped advancing — `Player.reloadPhase` rests at 1 for as long as
+ * nothing is being reloaded.
+ *
+ * It is deliberately NOT swapped in under the per-shot kick or the other two
+ * gestures: those already ring, through the spring `Player` integrates for the
+ * kick and through the pose stack for the load and the cycle. This is for the
+ * three beats of a reload, which have neither.
+ */
+const ring = (x: number, at: number, fall: number, cycles: number) => {
+  const t = (x - at) / fall;
+  if (t < 0 || t > 1) return 0;
+  const d = 1 - t;
+  return d * d * Math.cos(2 * Math.PI * cycles * t);
+};
+
+/**
+ * Two incommensurate sines, for a wobble that never repeats and never comes
+ * back into step with the one on the axis next to it. `t` is in SECONDS and the
+ * frequencies are in Hz, because what this stands for is a property of an arm
+ * rather than of whatever gesture is being played over it.
+ */
+const wobble = (t: number, f0: number, p0: number, f1: number, p1: number) =>
+  0.6 * Math.sin(TAU * f0 * t + p0) + 0.4 * Math.sin(TAU * f1 * t + p1);
 
 /**
  * The hole in the kit screen the weapon stands in, as the DOM measured it.
@@ -636,6 +677,17 @@ export class ViewModel {
    * screen that must not step with it.
    */
   private airGive = 0;
+  /**
+   * Seconds since the live reload started, and 0 while there is none.
+   *
+   * The one thing in the gesture that is NOT read off `reloadPhase`, because
+   * `reload.tremor` stands for an arm rather than for the gesture: run on the
+   * phase, the LMG's 3.4 s magazine change would get the rifle's number of
+   * wobbles at a third of the frequency. It is held through a CANCELLED
+   * reload's easing-out as well, or the weapon would snap still halfway
+   * through leaving the pose.
+   */
+  private reloadClock = 0;
 
   /** Scratch — the pose is rebuilt every frame and must not allocate. */
   private readonly pos = new Vector3();
@@ -987,6 +1039,11 @@ export class ViewModel {
    * the magazine bug wearing a different hat.
    */
   private stow(): void {
+    // The tremor's clock goes with the gesture it belongs to. `update` already
+    // zeroes it whenever nothing is being reloaded, so this is belt and braces
+    // rather than the only path — but `stow` is where a half-finished gesture
+    // is abandoned, and a clock left running is a clock the next one inherits.
+    this.reloadClock = 0;
     for (const id of CARRIED_IDS) {
       const rig = this.rigs[id];
       rig.supportArm.position.setAll(0);
@@ -1157,10 +1214,30 @@ export class ViewModel {
     // out of the aim, the aimed reload is simply the hip reload.
     const r = v.reload;
     const rp = p.reloadPhase;
+    // `tiltIn`/`tiltOut` are the AIM's break and return and are no longer the
+    // pose's: the pose is `reload.keys` below, which has its own beats and its
+    // own easing per segment and cannot be asked to gate anything, because it
+    // deliberately goes PAST the carry near the end. This has to stay a clean
+    // 0..1 — an aim weight over 1 or under 0 would drive the hip→ADS blend past
+    // the aimed pose and take the fitted sight off the axis the rounds fly
+    // down, which is a reticle lying at the one moment it may not.
     const reloadW =
       p.reloadBlend *
       ramp(0, r.tiltIn, rp) *
       (1 - ramp(r.tiltOut[0], r.tiltOut[1], rp));
+    // How far the support hand is off the handguard, which two things read: the
+    // arm itself in `poseReload`, and the tremor below — a weapon is unsteady
+    // for exactly as long as one arm is holding it and not a moment longer.
+    const handAway =
+      p.reloadBlend *
+      ramp(0, r.magOut, rp) *
+      (1 - ramp(r.handHome[0], r.handHome[1], rp));
+    // The tremor's own clock, in SECONDS and not phase (see `reload.tremor`).
+    // It runs for as long as anything of the gesture is on the weapon, so a
+    // cancelled reload's easing-out pose keeps its unsteadiness instead of
+    // snapping still halfway through leaving.
+    this.reloadClock =
+      p.reloading || p.reloadBlend > 0.001 ? this.reloadClock + dt : 0;
     // The launcher's load is the same shape one beat further on: a weight over
     // a phase, gating the aim exactly as the reload's does. The two are never
     // both live — a weapon is loaded through a well or through the bore — so
@@ -1207,31 +1284,37 @@ export class ViewModel {
       addScaled(this.off, v.sprintPos, sprintW);
       addScaled(this.rot, v.sprintRot, sprintW);
     }
-    // The reload is a TIMELINE, not a state the weapon sits in. `reloadBlend`
-    // is only the gate — it is what eases a cancelled one back off — and the
-    // phase is the gesture: the weapon cants out of the carry as the support
-    // hand leaves the handguard, holds while the magazine is changed under it,
-    // and is level again on the bolt. The old pose was this offset held flat
-    // for the whole duration, which is why a reload read as the weapon being
-    // switched off and on rather than as anything being done to it.
-    if (reloadW > 0.001) {
-      addScaled(this.off, v.reloadPos, reloadW);
-      addScaled(this.rot, v.reloadRot, reloadW);
-    }
-    // The magazine going home and the bolt going forward, laid on top as
-    // IMPULSES rather than as poses. They are impacts, and the shape a weapon
-    // answers an impact with is the one the per-shot kick already has: all
-    // attack, then a squared decay. Sat in the pose stack as blends instead,
-    // they would be two more places the weapon leans and neither would land on
-    // the sound it belongs to.
+    // The reload is a TIMELINE, not a state the weapon sits in — and it is a
+    // KEYED one, which is the third version of this gesture rather than a
+    // tuning of the second. Both earlier ones were a sum of fixed vectors times
+    // smooth weights, which is a weapon that can only move along a handful of
+    // fixed directions and always with a continuous velocity through every one
+    // of them: the ease was the REPRESENTATION, so no number in it could take
+    // the ease out. `reload.keys` is a list of whole poses instead, each
+    // segment eased by what that segment is, with the velocity reversing at
+    // full speed where a throw meets its arrest. `reloadBlend` is still only
+    // the gate — what eases a cancelled one back off.
+    if (p.reloadBlend > 0.001) this.poseReloadTrack(rp, p.reloadBlend, handAway);
+    // The magazine coming out, the fresh one going home and the bolt going
+    // forward, laid on top as impacts. They RING rather than decay (see
+    // `ring`): a mass arriving against a wrist throws the weapon, is stopped,
+    // and comes back THROUGH where it started, which is most of what reads as
+    // weight. They are also deliberately SHORT against the keys under them —
+    // `kickFall` is 98 ms on a rifle against segments of ~150 — so each one is
+    // a snap ON a swing rather than a second swing blurred into the first.
     if (p.reloadBlend > 0.001) {
-      const seat = p.reloadBlend * impulse(rp, r.magSeat, r.kickFall);
-      if (seat > 0.001) {
+      const strip = p.reloadBlend * ring(rp, r.magOut, r.kickFall, r.kickRing);
+      if (Math.abs(strip) > 0.001) {
+        addScaled(this.off, r.stripKick.pos, strip);
+        addScaled(this.rot, r.stripKick.rot, strip);
+      }
+      const seat = p.reloadBlend * ring(rp, r.magSeat, r.kickFall, r.kickRing);
+      if (Math.abs(seat) > 0.001) {
         addScaled(this.off, r.seatKick.pos, seat);
         addScaled(this.rot, r.seatKick.rot, seat);
       }
-      const bolt = p.reloadBlend * impulse(rp, r.bolt, r.kickFall);
-      if (bolt > 0.001) {
+      const bolt = p.reloadBlend * ring(rp, r.bolt, r.kickFall, r.kickRing);
+      if (Math.abs(bolt) > 0.001) {
         addScaled(this.off, r.boltKick.pos, bolt);
         addScaled(this.rot, r.boltKick.rot, bolt);
       }
@@ -1428,8 +1511,9 @@ export class ViewModel {
       this.off.x += r.kickSide * side;
       this.rot.x -= r.kickPitch * offAxis;
       // Negative against the drift: a positive roll takes the weapon's right
-      // flank UP (see `viewmodel.reloadRot`), so a weapon walking right has to
-      // roll negative to lean into where it is going rather than away from it.
+      // flank UP (`RELOAD_CANT` in `config/viewmodel.ts` carries that
+      // convention), so a weapon walking right has to roll negative to lean
+      // into where it is going rather than away from it.
       this.rot.z -= r.kickRoll * side;
       this.rot.y += r.kickYaw * side;
     }
@@ -1468,7 +1552,7 @@ export class ViewModel {
     // both write the support arm — run together, whichever went second would
     // simply be the answer.
     if (rig.warhead) this.poseLoad(p, rig, throwing);
-    else this.poseReload(p);
+    else this.poseReload(p, handAway);
     // …and the bolt, which is neither of those and does not arbitrate with
     // them: it writes the TRIGGER arm and the bolt node, where both of the
     // above write the support arm and a round.
@@ -1554,6 +1638,66 @@ export class ViewModel {
   }
 
   /**
+   * The reload's POSE: the segment of `reload.keys` the phase is in, eased by
+   * that segment's own rule, plus the unsteadiness of a weapon held by one arm.
+   * Written into `off`/`rot` scaled by the gate, so a cancelled reload takes
+   * the whole of it back off wherever it had got to.
+   *
+   * **Why a track rather than another layer.** The two earlier versions were
+   * `Σ vectorᵢ × weightᵢ(phase)`, and the trouble with that form is not its
+   * numbers: the three Euler axes are a fixed linear combination of a few
+   * smooth scalars, so the weapon can only ever rotate about a handful of fixed
+   * axes and always with a continuous velocity through each of them. Adding a
+   * layer adds an axis and buys a smoother sum. What a hand does is a sequence
+   * of MOVES — each with its own direction, its own duration and its own
+   * easing, and with the velocity reversing at full speed where one ends and
+   * the next begins. Only a key list can hold that, and `poseThrowHand` is the
+   * same construction for the same reason.
+   *
+   * The search is a forward walk over nine keys, which is cheaper than it looks
+   * and is why the list is a plain array: one comparison per key per frame, on
+   * one weapon, on the frames a reload is actually running.
+   */
+  private poseReloadTrack(rp: number, gate: number, handAway: number): void {
+    const r = CONFIG.viewmodel.reload;
+    const keys = r.keys;
+    let i = 1;
+    while (i < keys.length - 1 && rp >= keys[i].at) i++;
+    const a = keys[i - 1];
+    const b = keys[i];
+    const x = clamp((rp - a.at) / (b.at - a.at), 0, 1);
+    // The three segment rules. `in` is fastest ON arrival and `out` fastest
+    // leaving, so an `in` into a key followed by an `out` out of it is the
+    // corner the whole list exists for; `smooth` is at rest at both ends and is
+    // spent on the two segments that genuinely are drifts.
+    const e =
+      b.ease === "in" ? x * x : b.ease === "out" ? 1 - (1 - x) * (1 - x) : hermite(x);
+    this.off.x += (a.pos.x + (b.pos.x - a.pos.x) * e) * gate;
+    this.off.y += (a.pos.y + (b.pos.y - a.pos.y) * e) * gate;
+    this.off.z += (a.pos.z + (b.pos.z - a.pos.z) * e) * gate;
+    this.rot.x += (a.rot.x + (b.rot.x - a.rot.x) * e) * gate;
+    this.rot.y += (a.rot.y + (b.rot.y - a.rot.y) * e) * gate;
+    this.rot.z += (a.rot.z + (b.rot.z - a.rot.z) * e) * gate;
+
+    // …and the tremor, which is the other half of the answer to a gesture that
+    // reads as played: the keys stop the weapon holding ONE attitude for two
+    // thirds of a reload, and this stops it being still between them. A
+    // different incommensurate pair per axis, so the three never come back into
+    // step and no part of it repeats inside one magazine change. `handAway`
+    // already carries the gate.
+    if (handAway > 0.001) {
+      const s = this.reloadClock;
+      const rot = r.tremor.rot * handAway;
+      const pos = r.tremor.pos * handAway;
+      this.rot.x += wobble(s, 6.1, 0, 3.7, 2.3) * rot;
+      this.rot.y += wobble(s, 4.3, 2.2, 7.1, 3.1) * rot;
+      this.rot.z += wobble(s, 5.3, 1.7, 2.9, 0.4) * rot;
+      this.off.x += wobble(s, 3.3, 1.1, 5.9, 4.0) * pos;
+      this.off.y += wobble(s, 4.7, 3.6, 2.3, 1.9) * pos;
+    }
+  }
+
+  /**
    * The magazine change: where the magazine is on the reload's timeline, and
    * where the hand doing it is. The half of the gesture that is not the
    * weapon's pose, and the half that says what is actually happening — a
@@ -1571,7 +1715,7 @@ export class ViewModel {
    * the grip and for a machine gun with a box under it, with no case for
    * either.
    */
-  private poseReload(p: ViewModelParams): void {
+  private poseReload(p: ViewModelParams, handAway: number): void {
     const r = CONFIG.viewmodel.reload;
     const rig = this.rigs[this.weaponFit.id];
     const ph = p.reloadPhase;
@@ -1634,9 +1778,11 @@ export class ViewModel {
     // The hand. Off the handguard by the time the magazine is released, home
     // again once it is seated, and the eased blend on top of both so a reload
     // cancelled halfway takes the arm back with the pose rather than dropping
-    // it back on the weapon in one frame.
-    const w =
-      p.reloadBlend * ramp(0, r.magOut, ph) * (1 - ramp(r.handHome[0], r.handHome[1], ph));
+    // it back on the weapon in one frame. `update` resolved it as `handAway`,
+    // because the TREMOR is gated on the same fact and the two may not
+    // disagree: a weapon is unsteady for exactly as long as one arm is holding
+    // it, so the hand leaving and the wobble starting are one event.
+    const w = handAway;
     const arm = rig.supportArm;
     if (w > 0.0001 || arm.position.lengthSquared() > 0) {
       const o = this.magHand;

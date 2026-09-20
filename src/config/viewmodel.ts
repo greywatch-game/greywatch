@@ -19,6 +19,42 @@
  * exactly on the camera axis, which is where the bullets go. Move the sight
  * off that axis and the reticle stops being the point of impact.
  */
+/**
+ * The reload's reference attitude: the weapon held at about the height it is
+ * carried at, pulled in a little, and CANTED so the magwell rolls over toward
+ * the support hand. It is `reload.keys`' `magOut` key — the one the whole
+ * gesture is built around — and it is a module constant only so that the key
+ * list can name it rather than restate it.
+ *
+ * **It is a ROTATION, not a lift, and that is the whole shape of it.** A rifle
+ * is not hoisted in front of the face to change a magazine — it is canted at
+ * the shoulder and worked by feel — so the roll is what puts the magwell where
+ * the eye can find it while the weapon stays roughly where it is being held.
+ * An earlier pass raised it far enough to frame the magazine dead centre; it
+ * looked staged at the hip and it put a receiver across the middle of the
+ * screen on an aimed reload, which is the one place a weapon must never end up.
+ * **Every other key is measured as a departure from THIS**, so that ceiling is
+ * one number to check rather than nine.
+ *
+ * **The roll's SIGN carries it, and it was once the wrong way round.** A
+ * positive `rot.z` takes the weapon's right flank UP (the +x axis rotates
+ * toward +y), which tips the top inboard and swings the underside out to the
+ * right — away from a camera that sits to the LEFT of a weapon carried at
+ * `hipPos.x`. That is a reload presenting the magwell to nobody, and it reads
+ * as the weapon being held out at an angle rather than worked on. Negative
+ * rolls the underside toward the camera and carries the magwell inboard, to the
+ * side the support hand comes from, which is the same direction a right-handed
+ * shooter cants a rifle to change magazines.
+ *
+ * The pitch is small and positive (nose-down, see `recoil.kickPitch`): a muzzle
+ * that stays level reads as the weapon being presented rather than worked on,
+ * and one much lower takes the magwell down with it.
+ */
+const RELOAD_CANT = {
+  pos: { x: 0.01, y: 0.015, z: -0.02 },
+  rot: { x: 0.12, y: -0.2, z: -0.45 },
+};
+
 export const viewmodel = {
   /**
    * Scale and stand-off together decide how much of the frame the rifle
@@ -60,35 +96,6 @@ export const viewmodel = {
   sprintPos: { x: -0.01, y: -0.05, z: -0.03 },
   sprintRot: { x: 0.2, y: -0.4, z: 0.3 },
   /**
-   * Reload: the weapon held at about the height it is carried at, pulled in a
-   * little, and CANTED so the magwell rolls over toward the support hand.
-   *
-   * **It is a ROTATION, not a lift, and that is the whole shape of it.** A
-   * rifle is not hoisted in front of the face to change a magazine — it is
-   * canted at the shoulder and worked by feel — so the roll is what puts the
-   * magwell where the eye can find it while the weapon stays roughly where it
-   * is being held. An earlier pass raised it far enough to frame the magazine
-   * dead centre; it looked staged at the hip and it put a receiver across the
-   * middle of the screen on an aimed reload, which is the one place a weapon
-   * must never end up.
-   *
-   * **The roll's SIGN carries it, and it was once the wrong way round.** A
-   * positive `rotZ` takes the weapon's right flank UP (the +x axis rotates
-   * toward +y), which tips the top inboard and swings the underside out to the
-   * right — away from a camera that sits to the LEFT of a weapon carried at
-   * `hipPos.x`. That is a reload presenting the magwell to nobody, and it reads
-   * as the weapon being held out at an angle rather than worked on. Negative
-   * rolls the underside toward the camera and carries the magwell inboard, to
-   * the side the support hand comes from, which is the same direction a
-   * right-handed shooter cants a rifle to change magazines.
-   *
-   * The pitch is small and positive (nose-down, see `recoil.kickPitch`): a
-   * muzzle that stays level reads as the weapon being presented rather than
-   * worked on, and one much lower takes the magwell down with it.
-   */
-  reloadPos: { x: 0.01, y: 0.015, z: -0.02 },
-  reloadRot: { x: 0.12, y: -0.2, z: -0.45 },
-  /**
    * The reload, as a TIMELINE rather than as a pose held for the duration.
    * Everything here is a fraction of `weapons[id].reloadTime`, which is what
    * lets one set of numbers carry a 1.05 s sidearm and a 3.4 s machine gun:
@@ -103,16 +110,47 @@ export const viewmodel = {
    * exactly what the old hold-one-pose reload looked like with the sound over
    * it. Change a fraction in either file and change it in both.
    *
-   * The order the beats run in:
-   * - `0` — the catch. The weapon tips out of the aim and the support hand
-   *   leaves the handguard for the magwell.
-   * - `magOut` — the magazine is released and falls free, out of the bottom of
-   *   the frame under `dropDist`/`dropTumble` while the hand carries on down
-   *   after a fresh one.
-   * - `[insertFrom, magSeat]` — the fresh magazine rises back into frame WITH
-   *   the hand, rocked nose-first into the well, arriving exactly on the seat.
-   * - `magSeat` — it is slapped home: `seatKick` is the weapon taking that.
-   * - `bolt` — the bolt goes forward and the weapon settles back to the carry.
+   * **The pose is a KEYED TRACK and not a stack of weights, and that is the
+   * third version of this gesture rather than a tuning of the second.** Both
+   * earlier ones were `pose = Σ vectorᵢ × weightᵢ(phase)`, which means the three
+   * Euler axes are a fixed linear combination of a handful of smooth scalars —
+   * so the weapon can only ever move along a few fixed directions in pose
+   * space, and always with a continuous velocity through every one of them. No
+   * number in that form makes it stop looking eased, because the EASE is the
+   * representation and not a setting: more layers only ever bought a smoother
+   * sum. What a hand does instead is a sequence of MOVES, each with its own
+   * start, end and easing, none of them sharing an axis with the next, and with
+   * the velocity reversing at full speed where one ends and the next begins.
+   *
+   * `keys` is therefore a list of whole poses on the phase, interpolated one
+   * segment at a time, with the easing chosen PER SEGMENT by what that segment
+   * is — which is `poseThrowHand`'s construction, and it is here for the reason
+   * given there: the phases of a gesture are not the same motion, so one curve
+   * over all of them is the thing that reads as an animation playing.
+   *
+   * The beats the keys are hung on:
+   * - `0` — the catch. The weapon comes off the shoulder.
+   * - `0.09` — the THROW's far end: past the cant, and DROPPED, because for the
+   *   first tenth of a reload the weapon is falling as much as it is being
+   *   placed. Arrived at accelerating and arrested dead, which is the corner.
+   * - `magOut` — the cant (`RELOAD_CANT`), rebounded back off that throw. The
+   *   catch is hit and `stripKick` rips the magazine out; it then falls free
+   *   out of the bottom of the frame under `dropDist`/`dropTumble` while the
+   *   hand carries on down after a fresh one.
+   * - `insertFrom` — the weapon drawn in and rolled further over with the
+   *   support hand off it. A DRIFT: the one segment that is genuinely smooth.
+   * - `magSeat` — the well presented, deepest in the gesture, arrived at
+   *   accelerating so the slap lands on a weapon that is already moving.
+   *   `seatKick` is the weapon taking that.
+   * - `0.64` — thrown back off the seat, the cant knocked out of it.
+   * - `bolt` — mostly back, the support hand home, the bolt let go.
+   * - `0.90` — hauled PAST level, arrested again.
+   * - `1` — settled onto the carry.
+   *
+   * **Nothing may be still between them either**, which is what `tremor` is
+   * for: a weapon braced by one arm while the other works it is never at rest,
+   * and the two segments in the middle of this list are otherwise a 500 ms hold
+   * with a magazine moving under them.
    */
   reload: {
     /** The magazine falls free. `Sfx.reload`'s second clack. */
@@ -130,6 +168,117 @@ export const viewmodel = {
      */
     tiltIn: 0.14,
     tiltOut: [0.8, 0.97],
+    /**
+     * The gesture itself: a whole pose per key, interpolated one segment at a
+     * time. `at` is the phase, `pos`/`rot` are the same camera-local model
+     * units every offset in this file is, and `ease` says how the weapon
+     * travels from the PREVIOUS key to this one — so the first key's `ease` is
+     * unread. `at` must rise, the first must be 0 and the last 1, and both ends
+     * must be the carry, because a phase that stops advancing at 1 would
+     * otherwise leave the last key's offset on the weapon for the rest of the
+     * round.
+     *
+     * **`ease` is the whole point of the list and is chosen per segment by
+     * what the segment IS:**
+     * - `in` — accelerating, fastest ON arrival. A throw, a haul, a magazine
+     *   driven onto its seat: the weapon is moving at its quickest on the frame
+     *   the thing at the far end happens.
+     * - `out` — decelerating, fastest LEAVING. A rebound off an arrest or an
+     *   impact: all the speed is at the start and it runs out against itself.
+     * - `smooth` — a hermite, at rest at both ends. A drift, and it is used
+     *   exactly TWICE: the fetch and the last of the return. Everywhere else it
+     *   is what makes a gesture look played rather than done.
+     *
+     * **An `in` followed by an `out` is a CORNER — the velocity reverses at
+     * full speed — and the corners are the feature.** There are three, at 0.09,
+     * `magSeat` and 0.90, which are the throw's arrest, the slap and the haul's
+     * arrest: the three moments a hand or a shoulder actually stops the weapon.
+     * `recoilCurve` makes the same argument at a higher frequency, and it is
+     * the same argument: what carries impact is the corner, not the smoothness
+     * of either side of it.
+     *
+     * **The last two keys keep the rule `tiltOut` states.** The weapon is past
+     * level at 0.90, settled on the carry by 1, and the `out` on that final
+     * segment is what takes it there without a second wobble — so nothing is
+     * still moving by the frame the magazine refills and the round is fired
+     * from a settled weapon.
+     */
+    keys: [
+      { at: 0, pos: { x: 0, y: 0, z: 0 }, rot: { x: 0, y: 0, z: 0 }, ease: "smooth" },
+      // Thrown over and FALLING. The dip is the largest in the gesture and is
+      // deliberately near `sprintPos.y`'s bound rather than past it: a weapon
+      // much lower than this sinks out of the bottom of the frame, and this one
+      // is only there for ~120 ms of a rifle's reload.
+      {
+        at: 0.09,
+        pos: { x: 0.024, y: -0.035, z: -0.052 },
+        rot: { x: 0.19, y: -0.3, z: -0.62 },
+        ease: "in",
+      },
+      // Caught, and rebounded back onto the cant — the attitude the release is
+      // hit at, and the one every other key is a departure from.
+      { at: 0.18, pos: RELOAD_CANT.pos, rot: RELOAD_CANT.rot, ease: "out" },
+      // The fetch: drawn in, rolled further over, the muzzle creeping back up
+      // toward level as the one arm left on it takes the weight.
+      {
+        at: 0.34,
+        pos: { x: 0.018, y: -0.004, z: -0.045 },
+        rot: { x: 0.05, y: -0.25, z: -0.55 },
+        ease: "smooth",
+      },
+      // The well presented, and dipped to MEET a magazine coming up from below
+      // rather than waiting level for it.
+      {
+        at: 0.55,
+        pos: { x: 0.026, y: -0.016, z: -0.058 },
+        rot: { x: 0.01, y: -0.28, z: -0.6 },
+        ease: "in",
+      },
+      // Thrown back off the slap, the cant knocked out of it.
+      {
+        at: 0.64,
+        pos: { x: 0.014, y: 0.03, z: -0.03 },
+        rot: { x: -0.07, y: -0.16, z: -0.4 },
+        ease: "out",
+      },
+      // Most of the way home, the support hand back on the handguard.
+      {
+        at: 0.8,
+        pos: { x: 0.006, y: 0.008, z: -0.012 },
+        rot: { x: 0.06, y: -0.09, z: -0.2 },
+        ease: "smooth",
+      },
+      // Hauled PAST the carry and arrested against the shoulder.
+      {
+        at: 0.9,
+        pos: { x: -0.004, y: -0.006, z: 0.008 },
+        rot: { x: -0.035, y: 0.035, z: 0.09 },
+        ease: "in",
+      },
+      { at: 1, pos: { x: 0, y: 0, z: 0 }, rot: { x: 0, y: 0, z: 0 }, ease: "out" },
+    ],
+    /**
+     * The unsteadiness of a weapon braced by ONE arm while the other is away,
+     * in radians and model units, up while the support hand is off the
+     * handguard and gone the moment it is back.
+     *
+     * **It is what stops the two long middle segments being a hold**, which is
+     * the rest of the argument for the key list: a fetch is 220 ms and the
+     * presented well another 290 ms, and a rifle that is perfectly still for
+     * half a second in the middle of its own reload is the thing the eye reads
+     * as an animation.
+     *
+     * Three details are load-bearing. It is clocked in SECONDS off
+     * `reloadClock` rather than off the phase, because a tremor is a property
+     * of the arm and not of the gesture — run on the phase, the LMG's 3.4 s
+     * reload would get the rifle's number of wobbles stretched to a third of
+     * the frequency. It is a sum of two INCOMMENSURATE sines per axis, with a
+     * different pair on each, so the three axes never come back into step and
+     * nothing in it repeats inside one reload. And the frequencies stop at
+     * ~7 Hz: higher is more accurate to a real hand and starts to strobe at the
+     * 30 fps a phone actually runs at.
+     */
+    tremor: { rot: 0.013, pos: 0.0035 },
     /**
      * How much of the AIM the gesture takes away, on the same weight as the
      * tilt: 1 puts the weapon all the way back to the carry pose for the
@@ -182,20 +331,56 @@ export const viewmodel = {
     /** The support hand's trip back to the handguard, once the mag is home. */
     handHome: [0.6, 0.82],
     /**
-     * The two impacts, as impulses on the weapon: the magazine going home
-     * under the heel of the hand, and the bolt slamming forward. Metres and
-     * radians in the camera's frame, laid on top of the tilt, with an instant
-     * attack and a squared decay over `kickFall` — the same shape as a shot's
-     * kick, because they are the same kind of event.
+     * The three impacts, laid on top of the keyed track: the magazine RIPPED
+     * out of the well, the fresh one going home under the heel of the hand, and
+     * the bolt slamming forward. Metres and radians in the camera's frame.
      *
-     * Both roll AGAINST `reloadRot.z` rather than with it: a magazine driven
-     * up into the well knocks the cant out of the weapon for a moment, and a
-     * kick that deepened the roll instead would read as the weapon flinching
-     * away from its own hand. Flip these with the cant if it is ever flipped.
+     * **They RING rather than decay, and that is the difference between a
+     * struck rifle and a faded offset.** `impulse` — what the per-shot kick and
+     * both other gestures use — is an instant attack and a squared decay, which
+     * is monotone: the weapon is displaced and comes back, and never goes
+     * anywhere it was not sent. Nothing with mass in it does that. A magazine
+     * slapped into a well throws the weapon, the wrist stops it, and it comes
+     * back THROUGH where it started before it settles, so the shape is a
+     * damped cycle: `kickRing` is how much of one is spent inside `kickFall`,
+     * and at 0.8 the rebound lands about a third of the way through and is
+     * bigger than anything the old decay reached.
+     *
+     * **`kickFall` is now short on purpose.** The keyed track carries the gross
+     * swing of each beat over ~150 ms, so these have to live at a different
+     * frequency or the two just blur into one soft motion — 0.07 of a rifle's
+     * 1.4 s is 98 ms, with the rebound at ~30 ms, which is a snap ON a swing
+     * rather than a second swing. It is the same separation the action's jolt
+     * keeps from the recoil it arrives inside.
+     *
+     * **`stripKick` is the one that was missing, and the beat it was missing
+     * from is the loudest one in the sound.** `magOut` had nothing on the
+     * weapon at all: the magazine simply began to fall, which is a magazine
+     * that was let go of rather than one pulled out of a spring-loaded catch
+     * by a fist. It is the mirror of the seat in every axis and that is the
+     * whole of its argument — the same hand, the same well, the opposite
+     * direction — so it pulls the weapon DOWN where the seat drives it up, and
+     * pitches the muzzle down about the firing hand because the well is
+     * forward of the grip.
+     *
+     * **And it is the one that rolls WITH `RELOAD_CANT.rot.z` rather than
+     * against it.** The seat and the bolt roll against the cant because a mass
+     * driven INTO the weapon knocks it out of the hand's cant; a fist pulling
+     * DOWN on a magwell the roll has already brought toward the camera pulls
+     * the weapon further over onto its side. Flip all three with the cant if it
+     * is ever flipped.
      */
-    seatKick: { pos: { x: 0, y: 0.024, z: 0.006 }, rot: { x: -0.06, y: 0, z: 0.08 } },
-    boltKick: { pos: { x: 0, y: -0.006, z: -0.016 }, rot: { x: 0.05, y: 0, z: 0.04 } },
-    kickFall: 0.12,
+    stripKick: {
+      pos: { x: 0.004, y: -0.016, z: 0.007 },
+      rot: { x: 0.045, y: 0, z: -0.055 },
+    },
+    seatKick: {
+      pos: { x: 0, y: 0.022, z: 0.008 },
+      rot: { x: -0.055, y: 0.015, z: 0.075 },
+    },
+    boltKick: { pos: { x: 0, y: -0.007, z: -0.017 }, rot: { x: 0.05, y: 0, z: 0.042 } },
+    kickFall: 0.07,
+    kickRing: 0.8,
   },
   /**
    * The LAUNCHER's load, which is not a reload and is deliberately not built
