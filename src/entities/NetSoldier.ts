@@ -254,7 +254,23 @@ export class NetSoldier implements Combatant, RagdollSubject {
     // …and over how long, on the clock the body is DRAWN on. Not a frame `dt`:
     // it is the interval of render time these samples span, so the speed it
     // gives is the authority's and not this machine's frame rate.
-    const dt = this.lastRender === null ? 0 : Math.max(0, renderTime - this.lastRender);
+    //
+    // **In SECONDS, because render time is a `Date.now()` reading and
+    // everything it is handed to is written in seconds.** Left in
+    // milliseconds it is not a slow body or a fast one — it is a body whose
+    // every quantity is out by a thousand at once, and the tell is the GAIT:
+    // `SoldierMotion` reads a 4.4 m/s run as 0.0044, which is under the floor
+    // of `stepLength`, so every remote body in the game took the shortest
+    // step it has at nearly three times the cadence it should — and, the
+    // heading never clearing 0.2, took it FORWARDS whichever way it was
+    // actually travelling. The rest went with it silently: `clock` runs a
+    // thousand times fast, so a kick decays inside a frame, a magazine change
+    // is over before it is drawn, and the rifle never stays up the three
+    // seconds `READY_HOLD` asks for.
+    const dt =
+      this.lastRender === null
+        ? 0
+        : Math.max(0, (renderTime - this.lastRender) / 1000);
     this.lastRender = renderTime;
     // Only a LIVING body's position is one the next frame may measure travel
     // from. A corpse's is wherever it fell and its respawn is somewhere else
