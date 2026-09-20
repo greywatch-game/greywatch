@@ -362,12 +362,33 @@ export class HeadlessGame {
       player.leash.setMap(this.map.size, this.map.margin);
     }
     this.conquest.start(this.map);
+    // **Everybody is put back on their feet before the fleet under them is
+    // thrown away**, which is `Game.installMap`'s own first line — "the seat,
+    // because the hull it belongs to is about to stop existing" — arriving on
+    // the side that never had it. The comment below used to ASSERT this
+    // instead, on the grounds that `Match` retires every peer across a
+    // rotation, and `retire` is exactly the half that does not do it.
+    //
+    // **What it leaves behind is a player nothing in the round can see.**
+    // Sitting in a hull takes a person OUT of `BattleSystem`'s human list —
+    // that is what makes the armour rather than its driver the thing bots
+    // shoot at — and `seat` is the only thing that ever puts them back.
+    // `retire` clears the SEAT and not the list, so a rotation caught
+    // somebody in a tank and left them out of `hittablesAgainst` and out of
+    // `acquire` for the rest of the match: no bot ever fired at them again,
+    // no round could land on them and no blast could reach them, and the only
+    // way back in was to find another hull and get out of it. It is
+    // `installMap`'s order as well as its reason — the seats are given up
+    // before the crews are disbanded and the fleet disposed, so `release`
+    // still has a live hull to hand the chair back to.
+    for (const player of this.players.values()) {
+      if (player.seat >= 0) this.seat(player, null);
+    }
     // The armour, in `installMap`'s order and for `installMap`'s reasons: the
     // crews are disbanded before the fleet under them is disposed, and the
     // fleet is rebuilt before anything is told there are hulls on the field.
-    // Everybody is out of a seat by now — `Match` retires every peer across a
-    // rotation — so there is no player to put down beside a hull that is
-    // about to stop existing.
+    // Nobody is left in a seat by the loop above, so there is no player to put
+    // down beside a hull that is about to stop existing.
     this.crew.clear();
     this.driven.clear();
     this.laid.clear();

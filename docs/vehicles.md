@@ -2876,7 +2876,20 @@ What belongs here is what a crew is to the rest of the vehicle.
 ### A crewed bot is out of the fight, exactly as a mounted player is
 
 `Game.mount` hides the player's body, makes it invulnerable and takes it out of
-`BattleSystem`'s human list. A bot goes the same way, and the machinery is the
+`BattleSystem`'s human list. **Getting out is the only thing that puts it
+back, which is what makes a ROUND START owe every seated body its feet before
+it disposes the fleet.** `Game.installMap` opens with exactly that —
+`clearVehicle` before a single thing is thrown away, "because the hull it
+belongs to is about to stop existing" — and the authority did not: it ASSERTED
+instead that a rotation had already emptied every seat, on the grounds that
+`Match` retires every peer, and `NetPlayer.retire` is exactly the half that
+clears the SEAT and not the list. What that left was a person nothing in the
+round could see: out of `hittablesAgainst` and out of `acquire` for the rest of
+the match, so no bot ever fired at them again, no round could land on them and
+no blast could reach them — and the only way back in was to find another hull
+and climb out of it. It is caught by the map rotating while somebody happens to
+be sitting in a tank, which is most rounds. A bot goes the same way, and the
+machinery is the
 BENCH's twin: `BattleSystem.crewed` is a second `Set<Bot>`, written only through
 `setCrewed`, and **`BattleSystem.aside` is the one test every loop over `bots`
 now owes** — never `benched.has` directly. Two sets rather than one because they
