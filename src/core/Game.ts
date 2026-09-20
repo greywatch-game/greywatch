@@ -3989,7 +3989,7 @@ export class Game {
     // installed, which is the shipped valleys' number.
     //
     // And it is `fogEnd` only until a map says otherwise. The fog is where the
-    // WORLD stops being worth drawing; a body is nineteen meshes wide and two
+    // WORLD stops being worth drawing; a body is fourteen meshes wide and two
     // pixels tall long before that, and a map with no fog at all had no such
     // distance to give them. See `EnvironmentSpec.bodyDrawDistance`, which is
     // `ENGINE_UPGRADE.md` S8, and note that the fourth reader below is

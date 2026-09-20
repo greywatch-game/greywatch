@@ -481,7 +481,7 @@ without that subtract turns feedback into a punishment.
 - **The body is the BOT rig**, which is why the retired GLB player body could be
   deleted outright: it hands to the pool with nothing adapted and is already what
   `RAGDOLL_BONES` is measured against. It is built at `startRound`, not at the moment
-  of death — twenty-one merged meshes and their GL buffers is not a cost to pay on
+  of death — fourteen merged meshes and their GL buffers is not a cost to pay on
   the frame the player is killed on.
 - **It is the third rig in the game and it is filed with the CULL like the other
   two.** `buildSoldier` has three callers — `Bot`, `NetSoldier` and this — and this

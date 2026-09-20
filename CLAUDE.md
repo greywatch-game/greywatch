@@ -1129,7 +1129,9 @@ push-out is a preference, never a veto.
 
 **Three things carry the frame budget and undoing any costs ~10x draw calls or a
 permanent hitch**: the rig pool is built once per roster size and never disposed
-inside a round, a rig is twenty-one merged meshes, and AI is staggered round-robin
+inside a round, a rig is fourteen merged meshes and two materials — one per
+JOINT, the albedo having moved into `uv2.x` off a kit palette exactly as the
+village's did — and AI is staggered round-robin
 at `CONFIG.bots.thinkRate`. **Everything a bot notices without seeing it is
 ray-free by construction** — cover is baked, never probed, and skill is one
 scalar drawn **per squad** from a seeded generator.

@@ -376,7 +376,7 @@ export class BattleSystem {
    * size is.
    *
    * A body is not repainted between rounds: the two kits differ in silhouette
-   * as well as in hue, so a side is chosen when nineteen meshes are merged and
+   * as well as in hue, so a side is chosen when fourteen meshes are merged and
    * cannot be argued with afterwards. A client that books a round before the
    * authority has seated it builds this pool for team 0 and then learns it is
    * on team 1, and without this the round would be fought by bodies wearing

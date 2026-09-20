@@ -64,6 +64,7 @@ import {
   type BaseTexture,
   Color3,
   Matrix,
+  Mesh,
   Scene,
   ShaderLanguage,
   ShaderMaterial,
@@ -72,6 +73,7 @@ import {
   Vector2,
   Vector3,
   Vector4,
+  VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
@@ -162,6 +164,42 @@ export const MAX_POINT_LIGHTS = 16;
  * and it has to be a compile-time literal to size the array at all.
  */
 export const MAX_PALETTE = 128;
+
+/**
+ * Stamps one source mesh's palette slot into `uv2.x`, before it is merged.
+ *
+ * **Before, because after is too late**: `MergeMeshes` concatenates vertex
+ * buffers, so the index has to already be per vertex for the merge to carry it.
+ * That is also what makes the whole scheme safe against interpolation — a merge
+ * never re-triangulates, so every corner of a triangle keeps the index of the
+ * mesh it came from.
+ *
+ * `uv2` and not the colour buffer, which has the room: the colour buffer is
+ * written by `vertexShading.ts` AFTER every merge and from scratch, so a value
+ * put there now would be overwritten by the bake, and teaching the bake to
+ * preserve a channel would couple it to this. `uv2` is untouched by all of it.
+ *
+ * The all-or-nothing rule `CLAUDE.md` records for `colors` applies here too —
+ * `VertexData.merge` throws when one mesh in a group has an attribute and
+ * another does not — and it is kept by construction rather than by a check:
+ * a mesh gets a slot exactly when it is going into the paletteised group, and
+ * every mesh in that group got one.
+ *
+ * **It lives here rather than with either caller because there are now TWO**,
+ * and the two index different tables: `MapBuilder`'s merge writes slots in the
+ * map palette `setPalette` publishes, and `SoldierModel` writes slots in the
+ * kit palette `getBodyCel` holds. What they share is this attribute and the
+ * varying that reads it, which is the shader's, so the one thing neither of
+ * them may state twice is where the index goes.
+ */
+export function writePaletteIndex(mesh: Mesh, slot: number): void {
+  const count = mesh.getTotalVertices();
+  const uv2 = new Float32Array(count * 2);
+  // Only x is read. y is left at 0 rather than given a second meaning: the
+  // slot's whole value is that it is the ONE thing this attribute says.
+  for (let i = 0; i < count; i++) uv2[i * 2] = slot;
+  mesh.setVerticesData(VertexBuffer.UV2Kind, uv2, false);
+}
 
 /**
  * The parallax box's uniform names, for a material that includes `celProbeBox`.
@@ -1718,6 +1756,19 @@ export class CelMaterialFactory {
    */
   private palette = new Float32Array(MAX_PALETTE * 3);
 
+  /**
+   * The materials that hold a palette of their OWN, and the table each holds.
+   *
+   * A palette is a property of the MATERIAL rather than of the factory, and it
+   * stopped being one number the moment a second thing wanted one: the map's
+   * is DISCOVERED by `MapBuilder`'s merge and republished on every install,
+   * while a rig's is a fixed handful of hexes that outlives any map. Holding
+   * the override here rather than branching in `setPalette`'s loop is what
+   * keeps that loop able to say "every material that reads one" and stay
+   * true — see `applyPalette`, which is the only reader.
+   */
+  private readonly ownPalettes = new Map<ShaderMaterial, Float32Array>();
+
   constructor(private scene: Scene) {}
 
   /**
@@ -1733,6 +1784,13 @@ export class CelMaterialFactory {
    * Entries past `MAX_PALETTE` are the caller's problem and it has already
    * solved it — see `MapBuilder.paletteIndex`, which stops handing out indices
    * and lets the overflow colours keep their own materials.
+   *
+   * **This is the MAP's palette and it does not reach a material holding its
+   * own** (`ownPalettes`): the rigs are built once per roster and outlive any
+   * number of installs, so a kit whose albedo was republished here would be
+   * repainted in the map's colours by the next map. The loop below still walks
+   * every material, which is what keeps this method's one job stated once —
+   * `applyPalette` is where the two tables are told apart.
    */
   setPalette(colors: readonly Color3[]): void {
     this.palette.fill(0);
@@ -1795,9 +1853,15 @@ export class CelMaterialFactory {
    * the same no-op `skyZenithColor` already rides on — so this needs no test
    * for which variant it is looking at, and gaining one would be a second list
    * to keep in step with `getWorldCel`.
+   *
+   * **Which TABLE it pushes is the material's own question**, and it is asked
+   * here rather than at the two call sites so that neither has to know the
+   * other exists: `setPalette` walks the whole cache and a material holding
+   * its own is simply re-handed what it already had.
    */
   private applyPalette(mat: ShaderMaterial): void {
-    mat.setArray3("celPalette", this.palette as unknown as number[]);
+    const table = this.ownPalettes.get(mat) ?? this.palette;
+    mat.setArray3("celPalette", table as unknown as number[]);
   }
 
   /**
@@ -1837,6 +1901,83 @@ export class CelMaterialFactory {
       // draws carries an index, because `MapBuilder` only hands a mesh to this
       // material when it has one — so the uniform path is unreachable here and
       // seeding it would only invite somebody to rely on it.
+      this.applyCamera(mat);
+      this.applyWind(mat);
+      this.applyEnvironment(mat);
+      this.applyPointLights(mat);
+      this.applyShadow(mat);
+      this.applySpec(mat, null);
+      this.applyTranslucency(mat, null);
+      this.applyPalette(mat);
+      this.remember(key, mat);
+    }
+    return mat;
+  }
+
+  /**
+   * The ONE matte cel material every SOLDIER RIG wears — `getWorldCel`'s twin
+   * for bodies, and separate from it for two reasons that are both
+   * load-bearing.
+   *
+   * **The palette is its OWN** (`ownPalettes`, and see `setPalette`). The
+   * world's is discovered by `MapBuilder`'s merge and republished per install;
+   * a kit's is nine fixed hexes that outlive every map, so folding them into
+   * the map's table would put the rigs' albedo at the mercy of a rebuild and
+   * spend map slots on colours no map paints with.
+   *
+   * **And the two could never be ONE material anyway, whatever the tables
+   * did.** The define set `ShaderMaterial.isReady` rebuilds varies with
+   * whether the MESH carries a vertex COLOUR buffer, and this cache is keyed
+   * so that no material is ever worn across a disagreement about one — see
+   * `remember`, which is where that rule and its measurement are written down.
+   * Every world mesh has a colour buffer (`vertexShading` bakes it after the
+   * merge) and no rig has one at all, so a shared material would be exactly
+   * the silent mis-draw that rule exists to prevent.
+   *
+   * What it buys is the rig's draw COUNT and its material SWITCHES together:
+   * a segment used to split once per paint colour, so a torso was three
+   * meshes and a head four. Measured on Coldharbour, per rig, **22 meshes and
+   * 6 materials against 15 and 2** — the second half mattering as much as the
+   * first, since `FINDINGS.md` 18 priced a draw that reuses a bound material
+   * at ~2.3 us against ~6.3 for one that switches. `SoldierModel` has the
+   * arithmetic.
+   *
+   * **The palette is bound at CREATION**, the first call minting it and every
+   * later one getting that material back — which is safe because the only
+   * caller hands it a module constant.
+   */
+  getBodyCel(colors: readonly Color3[]): ShaderMaterial {
+    const key = `\0body-cel`;
+    let mat = this.cache.get(key);
+    if (!mat) {
+      mat = new ShaderMaterial(
+        BODY_CEL_NAME,
+        this.scene,
+        { vertex: "cel", fragment: "cel" },
+        {
+          attributes: [...CelMaterialFactory.PALETTE_ATTRIBUTES],
+          uniforms: [...CelMaterialFactory.UNIFORMS, "celPalette"],
+          samplers: [...CelMaterialFactory.SAMPLERS],
+          defines: ["#define CEL_PALETTE"],
+          shaderLanguage: ShaderLanguage.WGSL,
+        },
+      );
+      // Its own table, filled before the first `applyPalette` below can read
+      // it. Sized like the map's so the two are the same uniform to the
+      // shader; a kit spends nine of the hundred and twenty-eight and the
+      // rest stay black, which nothing indexes.
+      const table = new Float32Array(MAX_PALETTE * 3);
+      const n = Math.min(colors.length, MAX_PALETTE);
+      for (let i = 0; i < n; i++) {
+        table[i * 3] = colors[i].r;
+        table[i * 3 + 1] = colors[i].g;
+        table[i * 3 + 2] = colors[i].b;
+      }
+      this.ownPalettes.set(mat, table);
+      // `baseColor` is deliberately NOT set, for `getWorldCel`'s reason: a
+      // part whose colour is not in the kit palette keeps its own per-hex
+      // material and never reaches this one, so the uniform path is
+      // unreachable here too.
       this.applyCamera(mat);
       this.applyWind(mat);
       this.applyEnvironment(mat);
@@ -2924,6 +3065,16 @@ const fogState = { color: new Color3(0.05, 0.06, 0.08), start: 24, end: 78 };
  * nothing.
  */
 export const WORLD_CEL_NAME = "cel-world";
+
+/**
+ * The same, for the one material every soldier rig wears (`getBodyCel`).
+ *
+ * It carries no hex for `WORLD_CEL_NAME`'s reason and answers `plainCelHex`
+ * the same way — which matters here even though no rig mesh is ever offered to
+ * `MapBuilder`'s merge, because the rule that keeps a paletteised mesh from
+ * being paletteised twice should hold for both palettes or for neither.
+ */
+export const BODY_CEL_NAME = "cel-body";
 
 const windBearing = new Vector2(
   CONFIG.wind.dir[0],

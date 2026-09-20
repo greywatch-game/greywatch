@@ -184,7 +184,7 @@ export class WorldCulling {
    * built rather than per frame.
    *
    * Two classes, and each was found by looking at what a naive gate removed.
-   * A POOLED BODY, because a rig is nineteen meshes and a per-mesh size test
+   * A POOLED BODY, because a rig is fourteen meshes and a per-mesh size test
    * takes the head off a soldier at 300 m while leaving his torso — the body is
    * already gated whole, by distance, through `bodyDrawDistanceOf`. And
    * anything EMISSIVE, because the glow makes a sub-pixel emitter visible well

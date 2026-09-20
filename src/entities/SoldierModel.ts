@@ -1,22 +1,27 @@
 /**
  * SoldierModel.ts — The bot rig: ~40 boxes and faceted lofts (`facet.ts` — the
- * body and the rifle; the slung launcher is still boxes) merged down to twenty-one meshes, plus
+ * body and the rifle; the slung launcher is still boxes) merged down to
+ * fourteen meshes and TWO materials, plus
  * the procedural poser (animateSoldier: a `SoldierPose` — gait in any
  * direction, aim, twist, crouch, the rifle's kick, carry and reload, with both
  * arms solved onto it — posed TransformNode joints, never clips), plus the
  * bone table `RagdollSystem` builds a corpse's rigid bodies from. What DRIVES
  * a pose is `SoldierMotion`'s.
- * Invariants: merging per colour is what keeps 16 bots affordable — the outline
- * pass draws every mesh twice, so the cost of this rig is COLOURS PER SEGMENT
- * and not boxes. A box in a colour a segment already carries is free; a fifth
- * colour on the torso is 32 draw calls across a full roster. Emissive parts
- * (visor) need metadata.noInk. Rigs are built once by BattleSystem's pool
+ * Invariants: merging is what keeps 16 bots affordable, and since `KIT_PALETTE`
+ * it is per SEGMENT rather than per colour — a segment is one mesh whatever it
+ * is painted, so the cost of this rig is JOINTS and no longer colours or boxes.
+ * A box is free and a COLOUR is free where the palette carries it and costs its
+ * segment a mesh where it does not, which is the one thing to know before
+ * painting a new part. Emissive parts
+ * (visor) need metadata.noInk and stay outside the palette, which may no more
+ * enrol an emissive than `MapBuilder`'s may enrol gloss. Rigs are built once by BattleSystem's pool
  * and re-posed on respawn, never disposed. Posing allocates nothing: it runs
  * for every drawn body every frame. Every joint a pose can reach must stay
  * inside `RAGDOLL_LINKS`, because a body can die at any point of it. `rig.rest` is the hierarchy as built
  * and is the ONLY thing a ragdoll may restore from — see JointRest.
  */
 import {
+  Color3,
   Matrix,
   Mesh,
   MeshBuilder,
@@ -27,7 +32,10 @@ import {
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
-import { type CelMaterialFactory } from "../shaders/CelShader";
+import {
+  writePaletteIndex,
+  type CelMaterialFactory,
+} from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import { loft, type Ring } from "./facet";
@@ -41,22 +49,25 @@ import type { DamageKind } from "../systems/CombatSystem";
  * usually shot at.
  *
  * Every limb is built from several boxes and then **merged into one mesh per
- * colour**, the same trick `RifleModel.buildRifle` uses to collapse ~50 boxes
+ * SEGMENT**, the same trick `RifleModel.buildRifle` uses to collapse ~50 boxes
  * into 3. The joints stay as `TransformNode`s above the merged meshes, so
  * procedural animation is unaffected — only the leaf geometry is batched.
  *
- * **What that merge means for anyone adding detail: geometry is nearly free and
- * PAINT is not.** Forty-odd parts come out as twenty-one meshes — torso (shell,
- * webbing, accent), head (shell, webbing, neck, accent, visor), two upper arms
- * (suit, accent), two forearms (suit), two legs (thigh, shin, boot) and the
- * rifle — because a segment pays per colour in it and not per part. The
- * outline pass draws each of those twice and a Conquest roster is sixteen
- * bodies, so one more colour on a segment is ~32 draw calls and one more box in a colour that segment already has is none.
- * Pouches, a bedroll, a kneepad and an antenna are all in the second category
- * on purpose; the helmet band is the only COLOUR here that was worth paying a
- * mesh for, and it is paid because the head is what peeks over cover. The two
- * forearms are paid for by a JOINT rather than a colour: the elbow is what puts
- * both hands on the rifle, and a part hung off its own joint cannot merge.
+ * **What that merge means for anyone adding detail: geometry is free and so,
+ * now, is PAINT.** Forty-odd parts come out as fourteen meshes — torso, head,
+ * the visor, two upper arms, two forearms, two legs of three and the rifle —
+ * one per JOINT, because `KIT_PALETTE` moved the albedo into `uv2.x` and every
+ * matte part of a segment wears one material. It used to be twenty-one, a
+ * segment splitting once per colour in it: a torso was three meshes and a head
+ * four, and the guidance here was that a fifth colour on the torso cost ~32
+ * draws across a roster. **That is no longer true and the advice has
+ * inverted** — a colour in the palette is as free as a box, and the only paint
+ * that still costs a mesh is a colour missing from `KIT_PALETTE` or an
+ * EMISSIVE, which cannot join it. Pouches, a bedroll, a kneepad, an antenna
+ * and the helmet band are now all free. The two forearms are paid for by a
+ * JOINT rather than a colour, which is the one axis the palette does not
+ * touch: the elbow is what puts both hands on the rifle, and a part hung off
+ * its own joint cannot merge with one that is not.
  *
  * The player has no rig at all — the camera is inside the head, and there is no
  * own-body to draw. The one thing that stands a player's body up is the death
@@ -151,6 +162,49 @@ const KITS: readonly SoldierKit[] = [
  * gloves and so have to be cut from the same cloth as their squadmates'.
  */
 export const OWN_KIT: SoldierKit = KITS[0];
+
+/**
+ * Every MATTE colour a rig is painted in, in slot order — the kit palette.
+ *
+ * **This is what makes a segment one mesh instead of one per colour.**
+ * `mergeByColor` groups by the `Material` INSTANCE, so a torso carrying a
+ * shell, webbing and an accent was three meshes and a head was four; with the
+ * albedo moved into `uv2.x` and read out of `celPalette` every matte part of a
+ * segment wears the one `getBodyCel` material and merges into one mesh. The
+ * rig goes from **21 meshes and 11 materials to 14 and 2**, and both halves
+ * are worth having — `FINDINGS.md` 18 measured a draw that reuses a bound
+ * material at ~2.3 us against ~6.3 for one that switches. It is exactly the
+ * trick that took the village from 416 meshes to 90, which is where the whole
+ * argument is written down.
+ *
+ * It is DECLARED rather than discovered, unlike the map's, because a kit is a
+ * fixed handful of hexes and a rig pool is built one body at a time: a palette
+ * accumulated as the merge met colours would not be complete until the last
+ * rig, and the first would already have been drawn. Declaring it also makes
+ * the failure benign — a colour missing from this list is not in `KIT_SLOT`,
+ * so that part keeps its own per-hex material and merges exactly as it did
+ * before, which is `MAX_PALETTE`'s own overflow rule arriving from the other
+ * end. **A new colour on the model therefore belongs here as well as on the
+ * part**, or it silently costs its segment a mesh again.
+ *
+ * The visor is absent on purpose: it is EMISSIVE, which is shader behaviour
+ * rather than a uniform, and the palette may no more enrol it than
+ * `MapBuilder`'s may enrol gloss or glazing.
+ */
+const KIT_PALETTE: readonly string[] = [
+  GUN,
+  ...KITS.flatMap((kit) => [kit.armor, kit.suit, kit.webbing, kit.accent]),
+];
+
+/** Hex to its 1-based slot in `KIT_PALETTE`. 0 — absent — means "own material". */
+const KIT_SLOT: ReadonlyMap<string, number> = new Map(
+  KIT_PALETTE.map((hex, i) => [hex.toLowerCase(), i + 1]),
+);
+
+/** `KIT_PALETTE` as the factory takes it. Built once: the kit never moves. */
+const KIT_COLORS: readonly Color3[] = KIT_PALETTE.map((hex) =>
+  Color3.FromHexString(hex),
+);
 
 /** Which joint a ragdoll bone hangs off. Keys into `SoldierRig`. */
 export type BoneJoint =
@@ -863,6 +917,31 @@ export function buildSoldier(
   const body = new TransformNode("bot-body", scene);
   body.parent = root;
 
+  // The one material every matte part of this rig wears, whatever colour it is
+  // painted. See `KIT_PALETTE` for what that is worth and why the list is
+  // declared rather than discovered.
+  const kitCel = mats.getBodyCel(KIT_COLORS);
+
+  /**
+   * Paints one part, through the kit palette where the colour is in it.
+   *
+   * The slot goes into `uv2.x` and the part wears the shared material, so
+   * `mergeByColor` — which groups by the material INSTANCE and is otherwise
+   * untouched by any of this — collapses every matte part of a segment into
+   * one mesh. A colour the palette does not carry keeps its own per-hex
+   * material and groups on its own, exactly as everything did before, which
+   * is what makes a missing entry cost a draw rather than a wrong colour.
+   */
+  const paint = (m: Mesh, color: string): void => {
+    const slot = KIT_SLOT.get(color.toLowerCase());
+    if (slot === undefined) {
+      m.material = mats.get(color);
+      return;
+    }
+    writePaletteIndex(m, slot);
+    m.material = kitCel;
+  };
+
   /**
    * Builds one limb from a list of boxes, merges it per colour, and parents the
    * results to a joint. Offsets are relative to the joint, so the merge can
@@ -880,7 +959,7 @@ export function buildSoldier(
         const m = loft(`${name}${i}`, scene, part.rings);
         if (part.at) m.position.set(...part.at);
         if (part.rot) m.rotation.set(...part.rot);
-        m.material = mats.get(part.color);
+        paint(m, part.color);
         parts.push(m);
         continue;
       }
@@ -892,7 +971,7 @@ export function buildSoldier(
       );
       m.position.set(x, y, z);
       m.rotation.z = rotZ;
-      m.material = mats.get(color);
+      paint(m, color);
       parts.push(m);
     }
     for (const merged of mergeByColor(parts, name)) {
@@ -906,9 +985,9 @@ export function buildSoldier(
   //
   // Lofted rather than boxed: the carrier is a V from the shoulders to a
   // narrower waist, and every corner is cut, which is what stops a body reading
-  // as a stack of cubes beside a world of faceted trees and gabled roofs. The
-  // colours per segment are unchanged — armor, webbing, accent — so the chest
-  // is still three meshes however many parts it is cut from.
+  // as a stack of cubes beside a world of faceted trees and gabled roofs. It
+  // carries three colours — armor, webbing, accent — and is ONE mesh however
+  // many parts it is cut from and however many of them it is painted in.
   const torso = new TransformNode("bot-torso", scene);
   torso.parent = body;
   torso.position.y = 0.1;
@@ -1751,7 +1830,16 @@ function stepLeg(
   return (THIGH * Math.cos(hx) + SHIN * Math.cos(hx + kx)) * Math.cos(hz);
 }
 
-/** Merges a limb's boxes into one mesh per colour, at identity. */
+/**
+ * Merges a limb's boxes into one mesh per MATERIAL, at identity.
+ *
+ * It keys on the material instance and always did; what changed under it is
+ * how many a limb has. `paint` puts every matte part on the one `getBodyCel`
+ * material, so this now yields one mesh per segment where it used to yield
+ * one per colour — which is why the palette needed no change here at all. The
+ * name is kept because the split it makes is still the one a caller reasons
+ * about: two parts merge unless something about their PAINT stops them.
+ */
 function mergeByColor(parts: Mesh[], name: string): Mesh[] {
   const groups = new Map<unknown, Mesh[]>();
   for (const m of parts) {

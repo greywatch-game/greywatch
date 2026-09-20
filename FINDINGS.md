@@ -765,8 +765,10 @@ Noted because the zeros look like the falloff reaching a floor and are a
 staging failure, which is the same shape of mistake as the revert above.
 
 **The occluder-proxy idea is what is left, and nobody has costed it.** A rig is
-nineteen meshes only because of COLOUR merging, and the glow pass does not care
-about colour — it wants one body-shaped depth write. `rig.root` is already an
+fourteen meshes because of JOINT merging — it was colour merging when this was
+written, and the kit palette has since taken the colour half away, so the prize
+here is smaller than the entry assumed by a third. The glow pass does not care
+about joints either: it wants one body-shaped depth write. `rig.root` is already an
 invisible capsule of about the right size. Making it draw in the glow pass and
 not in the main one is the "cheaper occluders rather than fewer" shape this
 entry already names, and it is a Babylon question: the layer's render list is

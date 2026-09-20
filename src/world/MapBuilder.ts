@@ -50,6 +50,7 @@ import { CONFIG } from "../config";
 import { kindOf, type VehicleKind } from "../entities/vehicleKinds";
 import {
   MAX_PALETTE,
+  writePaletteIndex,
   type CelMaterialFactory,
 } from "../shaders/CelShader";
 import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
@@ -3006,35 +3007,6 @@ type Palette = {
 function plainCelHex(materialName: string): string | null {
   const m = /^cel-(#[0-9a-fA-F]{6})$/.exec(materialName);
   return m ? m[1] : null;
-}
-
-/**
- * Stamps one source mesh's palette slot into `uv2.x`, before it is merged.
- *
- * **Before, because after is too late**: `MergeMeshes` concatenates vertex
- * buffers, so the index has to already be per vertex for the merge to carry it.
- * That is also what makes the whole scheme safe against interpolation — a merge
- * never re-triangulates, so every corner of a triangle keeps the index of the
- * mesh it came from.
- *
- * `uv2` and not the colour buffer, which has the room: the colour buffer is
- * written by `vertexShading.ts` AFTER every merge and from scratch, so a value
- * put there now would be overwritten by the bake, and teaching the bake to
- * preserve a channel would couple it to this. `uv2` is untouched by all of it.
- *
- * The all-or-nothing rule `CLAUDE.md` records for `colors` applies here too —
- * `VertexData.merge` throws when one mesh in a group has an attribute and
- * another does not — and it is kept by construction rather than by a check:
- * a mesh gets a slot exactly when it is going into the paletteised group, and
- * every mesh in that group got one.
- */
-function writePaletteIndex(mesh: Mesh, slot: number): void {
-  const count = mesh.getTotalVertices();
-  const uv2 = new Float32Array(count * 2);
-  // Only x is read. y is left at 0 rather than given a second meaning: the
-  // slot's whole value is that it is the ONE thing this attribute says.
-  for (let i = 0; i < count; i++) uv2[i * 2] = slot;
-  mesh.setVerticesData(VertexBuffer.UV2Kind, uv2, false);
 }
 
 /**

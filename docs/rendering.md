@@ -1967,7 +1967,7 @@ of one idea. The block cull is EXACT because a structure past the fog draws
 `fogColor` in front of ground that draws `fogColor`, so dropping it cannot move
 a pixel — a claim that is true of the fog and of nothing shorter. A body dropped
 inside the fog genuinely disappears, and a map states `bodyDrawDistance` having
-decided that a soldier two pixels tall is worth less than twenty-one merged meshes
+decided that a soldier two pixels tall is worth less than fourteen merged meshes
 of draw. Measured on the proving ground with the roster in view, **65% of the
 frame's active meshes were rigs** (`FINDINGS.md` 30) — so what that field
 removes is large, and it is removed from the same walk this table governs while
@@ -2038,7 +2038,7 @@ close to nothing on the small maps, which is the honest shape of it.
 **Three classes are exempt, and each one is exempt because a picture said so
 rather than because it seemed wise.**
 
-- **A pooled body.** A rig is twenty-one meshes and a per-mesh size test is not a
+- **A pooled body.** A rig is fourteen meshes and a per-mesh size test is not a
   level of detail, it is a dismemberment: the first run dropped `bot-head-m`
   x16 and `bot-legL` x16 while keeping the torsos. A body is already taken off
   whole, by distance, through `bodyDrawDistanceOf`. `poolOf` is how this file
