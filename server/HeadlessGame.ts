@@ -1144,6 +1144,27 @@ export class HeadlessGame {
   }
 
   /**
+   * The last hull state this player reported and the authority ACCEPTED, or
+   * null for anybody who is not driving one.
+   *
+   * `hullOf`'s counterpart for the validator, and the whole point of it being
+   * a second question is that the two answers are written at different
+   * MOMENTS. This is written the instant a sample is accepted; the hull is
+   * moved to it on the next TICK, by `updateRemote`. A check measured against
+   * the hull therefore measures a second sample arriving before that tick
+   * against the position of the one before it — two steps of ground over one
+   * step of time, which is exactly what the speed bound is there to refuse.
+   *
+   * The seat is asked as well as the index because `driven` is keyed by
+   * HARDSTANDING: a gunner riding in a hull somebody else is driving would
+   * otherwise be handed the driver's own sample.
+   */
+  reportedHull(player: NetPlayer): RemoteHull | null {
+    if (player.seat < 0 || player.crewSeat !== DRIVER) return null;
+    return this.driven.get(player.seat) ?? null;
+  }
+
+  /**
    * The hull a person standing at `at` could get into, by hardstanding index —
    * their own side's, alive, within reach, and either empty or holding a crew
    * that may be turned out.

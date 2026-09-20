@@ -3490,6 +3490,14 @@ because `Vehicle.updateRemote` stands the reported hull on its own ten track
 contacts on the authority's side, so a claimed height is never taken; and there
 is no solid test because a hull legitimately stands inside `map.obstacles` — it
 drives OVER the things a body walks around, which is what `climbHeight` is for.
+**And it is measured from the last sample the driver reported and the
+authority ACCEPTED rather than from where the hull has got to**, which is not
+the same position at the moment it matters: the hull is only carried to a
+sample on the following TICK, so two arrivals in one turn of the event loop
+put two steps of ground over one step of time and the bound refuses the second
+by construction — an invisible wall a tank could push through a bit at a time,
+from nothing worse than jitter. See `docs/multiplayer.md` for the measurement
+and for why the swap gives nothing away.
 
 **A REFUSED STEP HAS TO BE ANSWERED, and `Vehicle.correctTo` is the third way a
 hull's position is written.** `update` simulates it, `updateRemote` poses it off

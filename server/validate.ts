@@ -266,7 +266,14 @@ const CEILING_ALLOWANCE = 3;
  */
 export function validateDrive(
   map: GameMap,
-  from: Vector3,
+  /**
+   * Where this hull was at the START of the step — the last sample this
+   * driver reported and the authority ACCEPTED, and deliberately typed as a
+   * bare `{x, y, z}` so that the accepted REPORT can be passed rather than the
+   * hull itself. See `Match.onDrive`: the two are the same position on most
+   * ticks and come apart on exactly the samples this would then refuse.
+   */
+  from: { x: number; y: number; z: number },
   to: { x: number; y: number; z: number },
   dt: number,
   /**

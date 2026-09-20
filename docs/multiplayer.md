@@ -1603,6 +1603,37 @@ hull on its own ten track contacts, so a claimed height is never taken) and the
 solid test (a hull legitimately stands inside `map.obstacles` — it drives OVER
 what a body walks around).
 
+**EVERY ONE OF THE FOUR IS MEASURED FROM THE LAST SAMPLE THIS DRIVER
+REPORTED AND THE AUTHORITY ACCEPTED, AND NEVER FROM WHERE THE HULL HAS GOT
+TO** — which is `onMove`'s rule, and it arrived late on this half of the wire
+because a body's accepted position IS the thing the check reads. `apply`
+writes `player.position` on the tick the sample lands, so the body's bound has
+always compared one claim with the claim before it. A hull's does not work
+that way: `applyDrive` records the sample and `updateRemote` carries the hull
+to it on the next TICK, so a second sample that arrives before that tick was
+being measured against the position of the one before it — **two steps of
+ground over one step of time, which is a refusal by construction at anything
+over the 1.35x tolerance.**
+
+It needs no packet loss, no cheat and nothing wrong with the client. A sample
+goes out about every 55 ms and a tick runs every 16.7, so anything that puts
+two arrivals into one turn of the event loop does it: network jitter, a GC
+pause on the host, the 250 ms world build a rotation spends inside — and the
+round-over pause does it wholesale, since `Match.step` returns early while
+`rotating` and the hull is not carried anywhere for the length of it. Every
+refusal costs the driver a `hullcorrect`, which ARRESTS the hull, so what a
+legitimate tank felt was an invisible wall it could push through a bit at a
+time. Measured by replaying a real hull's own samples through both forms over
+an ordered network — a tank at full throttle, and the identical network for
+each: at zero jitter, 0 refusals either way; at 60 ms, 2 of 300 against the
+hull and 0 against the claim; at 80 ms on Harrowmead, 22 of 300 (21 speed, one
+climb) against 0; at 100 ms, 42 of 300 against 0. **Nothing is given away by
+it**: the chain is the body's own — each accepted sample within reach of the
+accepted sample before it, over the gap the client's own clock reports — and
+it is now the only thing the bound depends on, rather than that plus when the
+tick happened to run. What is SENT back on a refusal is still the hull's real
+position, because that is where the authority actually has it.
+
 **THOSE FOUR ARE NOT ONE KIND OF CHECK, and reading them as one cost a round.**
 Speed and climb are things no legitimate client can produce, so they are
 REFUSED. The extent and the ceiling are rules of the world the client enforces

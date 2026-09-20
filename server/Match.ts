@@ -2249,9 +2249,46 @@ export class Match {
     const tank = this.game.hullOf(player);
     if (!tank) return;
     const [x, y, z] = msg.pos;
+    // **Measured from the last sample this driver reported and the authority
+    // ACCEPTED, and never from where the hull has got to** — which is
+    // `onMove`'s rule, arriving late on the half of the wire that could not
+    // take it for granted. A body's accepted position IS `player.position`,
+    // written by `apply` on the tick it arrives, so the body check has always
+    // compared one claim with the claim before it. A hull's is not: `driven`
+    // is written here and `updateRemote` carries the hull to it on the next
+    // TICK, so any second sample that lands before that tick was measured
+    // against the position of the one before it — two steps of ground over
+    // one step of time, which is a REFUSAL by construction at anything over
+    // 1.35x.
+    //
+    // **It needs no packet loss, no cheat and nothing wrong with the client
+    // at all.** A sample goes out about every 55 ms and a tick runs every
+    // 16.7, so anything that puts two arrivals into one turn of the event
+    // loop does it: network jitter, a GC pause on the host, or the world
+    // build a rotation spends 250 ms inside — and the round-over pause does
+    // it wholesale, because `step` returns early while `rotating` and the
+    // hull is not carried anywhere for the length of it.
+    //
+    // Every refusal costs the driver a `hullcorrect`, which ARRESTS the hull
+    // (`Vehicle.correctTo` — right for the lid it was written for, and the
+    // thing itself here), so what a legitimate tank felt was an invisible
+    // wall it could push through a bit at a time. Measured by replaying a
+    // real hull's own samples through both forms over an ordered network: a
+    // tank at full throttle, zero jitter, 0 refusals either way; at 60 ms,
+    // 2 of 300 against the hull and 0 against the claim; at 80 ms on
+    // Harrowmead, 22 of 300 (21 speed, 1 climb) against 0; at 100 ms, 42 of
+    // 300 against 0. The claim form refused nothing at any jitter, because
+    // there is nothing left for jitter to disturb.
+    //
+    // **Nothing is given away by the swap.** The chain is the same one the
+    // body's check walks — each accepted sample within reach of the accepted
+    // sample before it, over the gap the client's own clock reports — and it
+    // is now the ONLY thing the bound depends on, rather than that plus when
+    // the tick happened to run.
+    const from = this.game.reportedHull(player) ?? tank.position;
     const verdict = validateDrive(
       this.game.map,
-      tank.position,
+      from,
       { x, y, z },
       dt,
       tank.spec.drive.maxSpeed,
