@@ -2035,14 +2035,43 @@ range, and on Cinderhaven that means a 16 cm helicopter antenna and a 14 cm gun
 ring at 1.4 km. Shipped at 3 px it is worth **-0.51 ms a frame** there, and
 close to nothing on the small maps, which is the honest shape of it.
 
-**Three classes are exempt, and each one is exempt because a picture said so
-rather than because it seemed wise.**
+**A BODY is measured once and drops WHOLE; two classes are exempt outright,
+and each of the three is what it is because a picture said so rather than
+because it seemed wise.**
 
-- **A pooled body.** A rig is fourteen meshes and a per-mesh size test is not a
-  level of detail, it is a dismemberment: the first run dropped `bot-head-m`
-  x16 and `bot-legL` x16 while keeping the torsos. A body is already taken off
-  whole, by distance, through `bodyDrawDistanceOf`. `poolOf` is how this file
-  knows, and it does not have to learn what a soldier is.
+- **A pooled body — measured off its ROOT, not its meshes.** A per-mesh size
+  test is not a level of detail, it is a dismemberment: the first run dropped
+  `bot-head-m` x16 and `bot-legL` x16 while keeping the torsos. So a pool was
+  EXEMPT outright for a milestone, on the grounds that a body is already taken
+  off whole by `bodyDrawDistanceOf`. It is now gated instead, once per body,
+  off the rig root `poolOf` already files — one question, one answer, read by
+  all fourteen meshes, so the dismemberment cannot occur and the body can
+  still be dropped. This file still does not have to learn what a soldier is.
+
+  **That makes it a second `bodyDrawDistance` stated in SCREEN space**, which
+  is why it needs no per-map number and loosens by itself when a sight goes
+  up. A rig root is ~2 m across, so measured on Coldharbour at the shipped
+  3 px a body drops at **810 m on a 1080-tall viewport and 290 m on a
+  384-tall one**. That map's own body distance is 480 m, so this changes
+  **nothing at all on a desktop** — the candidate list hashes identical before
+  and after — and takes half the roster out of the list on a phone. 5 px is
+  490/180 m and 6 px is 410/150.
+
+  **A body's own EMISSIVE goes with the body**, which is the one place this
+  class and the next one meet. A visor is the only emissive on a rig, and an
+  exemption would leave a pair of eyes hanging in the air where the soldier
+  was; `gateOf` files the pool first for exactly that reason.
+
+  **The root's world matrix is FORCED before it is measured, and without that
+  the drop LATCHES** — this is the paragraph below, met head on rather than
+  survived. A rig root is invisible, so `offer` has always dropped it on the
+  `isVisible` line and the walk has never computed it; it was refreshed only
+  incidentally, as the PARENT of a child that was itself a candidate, and
+  gating the children cuts that thread. Measured with the force removed: a
+  body walked out to 600 m and back came home **0 of 15 meshes offered at
+  40 m** and stayed that way for the life of the round. With it, 15 of 15.
+  One forced compose per body per frame — 48 on the densest map in the tree —
+  and it makes the reading this frame's rather than last frame's as well.
 
   **The exemption is only worth what the LIST of pooled bodies is worth, and
   the death cam's rig was missing from it.** The symptom was the player's own

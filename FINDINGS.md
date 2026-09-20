@@ -5263,7 +5263,15 @@ for the sky — it reads 2.46% at **mean 0.066/255 against a control of 1.47% at
 Both are larger than what landed, and both change what a player sees:
 
 - **`bodyDrawDistance` 420 -> 300 on Cinderhaven: +21.4% fps.** One number in
-  `environment.ts`. Bodies pop 120 m closer.
+  `environment.ts`. Bodies pop 120 m closer. **Half of this is now TAKEN, and
+  by the gate rather than by the number**: a body is measured off its rig root
+  and dropped whole, so the size gate reaches a soldier for the first time and
+  is a `bodyDrawDistance` stated in SCREEN space. It needs no per-map value
+  and it costs a desktop nothing — at the shipped 3 px a body drops at 810 m
+  on a 1080-tall viewport, past every map's own body distance — while on a
+  384-tall phone viewport it drops at 290 m and takes half a Coldharbour
+  roster out of the candidate list (688 offered -> 575). What is still open is
+  the per-map number, which is the only lever that reaches a DESKTOP.
 - **A vehicle draw distance at 420 m: +15.4% fps.** Hulls would vanish where
   bodies do. By SIZE that is the wrong number — a hull is ~4x a body, which
   puts it past `fogEnd` — so a hull's distance is its own question and nobody

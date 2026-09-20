@@ -856,12 +856,23 @@ export const graphics = {
      * takes off whole. Measured at 3440x1440 it is worth **0.49 ms a frame at
      * 2 px and 0.94 ms at 3** (`FINDINGS.md` 39).
      *
-     * **Two classes are exempt and both are exempt for a reason a screenshot
-     * shows** — see `WorldCulling.offer`: a POOLED BODY, because a rig is many
-     * meshes and dropping them one at a time decapitates a soldier rather than
-     * removing him; and anything EMISSIVE, because bloom makes a sub-pixel
-     * emitter visible far past its own size and this game has a night map full
-     * of lit windows.
+     * **A BODY is measured once off its rig ROOT and drops WHOLE**, which is
+     * what lets this reach a soldier at all — see `WorldCulling.offer`. A
+     * per-mesh verdict decapitated one instead of removing him, and a pool was
+     * exempt outright until the root answered the question once for all
+     * fourteen meshes. **Anything EMISSIVE is still exempt**, because bloom
+     * makes a sub-pixel emitter visible far past its own size and this game
+     * has a night map full of lit windows — but a body's own visor is the
+     * BODY's and goes with it.
+     *
+     * **That makes this a second `bodyDrawDistance`, stated in screen space**,
+     * and the two bite in whichever order the viewport puts them. A rig root
+     * is ~2 m across, so measured on Coldharbour a body drops at **810 m on a
+     * 1080-tall viewport and 290 m on a 384-tall one** — past that map's own
+     * 480 m on a desktop, where this therefore changes nothing at all, and
+     * well inside it on a phone, where half the roster leaves the list. Raise
+     * this number and the body distance comes down with it: 5 px is 490/180 m
+     * and 6 px is 410/150.
      *
      * **CSS pixels of the frame, not of the backing store** — `offer` scales by
      * the engine's own hardware-scaling level to get there. Stated the other

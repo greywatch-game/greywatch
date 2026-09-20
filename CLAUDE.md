@@ -680,12 +680,18 @@ or `!isEnabled()`, the two rejections that walk makes anyway — which is what
 finally reaches the EFFECT POOLS. **It also drops what is too SMALL to see**
 (`CONFIG.graphics.culling.minPixels`, a projected diameter in CSS pixels of the
 FRAME, so one number holds at every resolution, every render scale and every
-FOV). **Three classes are exempt and each is exempt because a screenshot said
-so** — a POOLED BODY, already gated whole by `bodyDrawDistance`; anything
-EMISSIVE, since bloom carries a sub-pixel emitter far past its geometry; and
-**anything outside rendering group 0**, because `offer` runs before
-`scene.render()` bakes world matrices and the VIEWMODEL reports itself at the
-distance from the world origin. **Nothing pooled may ever be block-keyed**, and
+FOV). **A BODY is measured ONCE, off its rig ROOT, and drops WHOLE** — a
+per-mesh verdict took the head off a soldier and left his torso, which is why
+a pool used to be exempt outright; asking the root asks once and answers the
+same way for all fourteen meshes, so the body can be dropped without that
+failing. It is `bodyDrawDistance` in SCREEN space rather than in metres, so it
+needs no per-map number and loosens by itself when a sight goes up. **Two
+classes are still exempt outright** — anything EMISSIVE, since bloom carries a
+sub-pixel emitter far past its geometry, and **anything outside rendering group
+0**, because `offer` runs before `scene.render()` bakes world matrices and the
+VIEWMODEL reports itself at the distance from the world origin. **A body's own
+emissive is the BODY's**, so a visor goes with the soldier rather than hanging
+in the air where he was. **Nothing pooled may ever be block-keyed**, and
 the rigs are
 **filed mesh by mesh and never by ancestry**, because `RagdollSystem` reparents
 a corpse's joints onto Havok proxies and an ancestry test would drop every body

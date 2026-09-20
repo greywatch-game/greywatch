@@ -52,13 +52,14 @@
  *   it and the merged glazing, which between them are every STRUCTURE on the
  *   map.
  * - **Pooled** — a body's rig, filed under the rig ROOT whose `setEnabled` the
- *   roster already writes, and offered only while that root is enabled. This is
- *   the one class whose switch is not a distance: a pool is built once per
- *   roster and re-posed forever, so a rig that is not in the round is twenty
+ *   roster already writes, and offered only while that root is enabled. A pool
+ *   is built once per roster and re-posed forever, so a rig that is not in the
+ *   round is fourteen
  *   meshes and a root the walk pays full price for and rejects — and a roster is the one
  *   thing on a map that a LAYOUT may triple (`MapLayout.perTeam`, 24 on Sarab
  *   against the shipped 8), which turns 336 of these nodes into **1,008**. See
- *   `setPools`.
+ *   `setPools`. It is also the one class the size gate measures ONCE, off the
+ *   root, dropping the body whole rather than mesh by mesh — see `gateOf`.
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
  *   the other pools (tracers, shards, ragdolls, grenades, rubble), the sky, the
  *   water, the grass, the viewmodel, the hulls, and every visual an EDITOR
@@ -137,6 +138,18 @@ interface Pool {
   root: AbstractMesh;
   /** Whether what was filed here is in the candidate list right now. */
   on: boolean;
+  /**
+   * Whether this body projected under the size gate THIS FRAME — one test
+   * taken off the root in `offer`, read by every mesh filed under it.
+   *
+   * On the pool rather than in a set of its own because it is per body and
+   * per frame, and the body is the thing that already exists: a set would be
+   * rebuilt every frame for the one bit it carries. It runs on a different
+   * clock from `on` — that one is the ROSTER's and marks the list dirty, this
+   * one is the CAMERA's and never does, because a body going too small to see
+   * changes nothing structural.
+   */
+  small: boolean;
 }
 
 /**
@@ -180,21 +193,35 @@ export class WorldCulling {
   private eligible: AbstractMesh[] = [];
 
   /**
-   * The meshes `offer`'s size gate may NOT drop, decided once when the list is
-   * built rather than per frame.
+   * How `offer`'s size gate treats a mesh, where the plain per-mesh test is
+   * not the answer — decided once when the list is built rather than per
+   * frame, and ABSENT for the ordinary case.
    *
    * Two classes, and each was found by looking at what a naive gate removed.
-   * A POOLED BODY, because a rig is fourteen meshes and a per-mesh size test
-   * takes the head off a soldier at 300 m while leaving his torso — the body is
-   * already gated whole, by distance, through `bodyDrawDistanceOf`. And
-   * anything EMISSIVE, because the glow makes a sub-pixel emitter visible well
-   * past its own geometry, and dropping one puts a lit window out on a night
-   * map.
    *
-   * The emissive test is exact rather than a guess at a name: only a light
-   * source HAS an `emissiveColor` at all — see `glows`.
+   * **A POOLED BODY maps to its `Pool`, and is gated WITH the body.** A rig is
+   * fourteen meshes and a per-mesh verdict takes the head off a soldier at
+   * 300 m while leaving his torso, which is what the exemption this replaced
+   * was for; measuring the ROOT instead asks the question once and answers it
+   * the same way for every mesh of that body, so the failure it guarded
+   * against cannot occur and the body can still be dropped. It is the same
+   * thing `bodyDrawDistanceOf` does, in SCREEN space rather than in metres —
+   * so it needs no per-map number, and it loosens by itself when a sight goes
+   * up and the body gets bigger.
+   *
+   * **Anything EMISSIVE maps to `null` and is never gated at all**, because
+   * the glow makes a sub-pixel emitter visible well past its own geometry and
+   * dropping one puts a lit window out on a night map. The test is exact
+   * rather than a guess at a name: only a light source HAS an `emissiveColor`
+   * at all — see `glows`.
+   *
+   * **A body's own emissive is the POOL's and not the exemption's**, which is
+   * the one place the two classes meet and the order below is what decides it.
+   * A visor is the only emissive on a rig; it belongs to a body that is being
+   * dropped whole, and an exemption would leave a pair of eyes hanging in the
+   * air where the soldier was.
    */
-  private sizeExempt = new Set<AbstractMesh>();
+  private gateOf = new Map<AbstractMesh, Pool | null>();
 
   /** The map's collider proxies: never candidates, at any distance. */
   private hidden = new Set<AbstractMesh>();
@@ -374,7 +401,11 @@ export class WorldCulling {
     this.listDirty = true;
     this.stats.pooled = 0;
     for (const body of bodies) {
-      const pool: Pool = { root: body.root, on: body.root.isEnabled(false) };
+      const pool: Pool = {
+        root: body.root,
+        on: body.root.isEnabled(false),
+        small: false,
+      };
       this.pools.push(pool);
       this.poolOf.set(body.root, pool);
       this.stats.pooled++;
@@ -487,9 +518,14 @@ export class WorldCulling {
       loose++;
       data.push(mesh);
     }
-    this.sizeExempt = new Set();
+    // The pool FIRST, because a rig's visor is both and the body wins — see
+    // `gateOf`. Everything the gate simply tests per mesh is left out, so the
+    // ordinary case is a miss rather than an entry.
+    this.gateOf = new Map();
     for (const mesh of data) {
-      if (this.poolOf.has(mesh) || glows(mesh)) this.sizeExempt.add(mesh);
+      const pool = this.poolOf.get(mesh);
+      if (pool) this.gateOf.set(mesh, pool);
+      else if (glows(mesh)) this.gateOf.set(mesh, null);
     }
     this.listDirty = false;
     let cellsOn = 0;
@@ -565,6 +601,33 @@ export class WorldCulling {
         (cam!.fov || 1)
       : 0;
     const px2 = minPx * minPx;
+    // **A BODY is measured ONCE, off its root, and drops whole.** One test per
+    // body rather than per mesh, taken before the walk so that the walk reads
+    // an answer instead of computing fourteen of them — and, far more
+    // importantly, so that every mesh of a body gets the SAME answer. See
+    // `gateOf` for why a per-mesh verdict cannot be allowed near a rig.
+    for (let i = 0; i < this.pools.length; i++) {
+      const pool = this.pools[i];
+      if (!gate || !pool.on) {
+        pool.small = false;
+        continue;
+      }
+      // **The root's matrix is FORCED, and without this the drop LATCHES.**
+      // Babylon computes a world matrix inside `_evaluateActiveMeshes` and
+      // only for CANDIDATES, and that is what refreshes the world bounding
+      // sphere `tooSmall` reads — so a body dropped on stale bounds is never
+      // handed the matrix that would correct them and can never come back,
+      // however close it walks. A rig ROOT is worse off than the meshes that
+      // failure was first found on (`docs/rendering.md`): it is invisible, so
+      // `offer` has always dropped it on the line above and the walk has
+      // never computed it at all — it was reached only incidentally, as the
+      // parent of a child that WAS a candidate, which is exactly the thread
+      // this gate would cut. One forced compose per body per frame, 48 on the
+      // densest map in the tree, also makes the measurement this frame's
+      // rather than last frame's.
+      pool.root.computeWorldMatrix(true);
+      pool.small = this.tooSmall(pool.root, eye, perRad, px2);
+    }
     let k = 0;
     for (let i = 0; i < n; i++) {
       const mesh = src[i];
@@ -579,23 +642,16 @@ export class WorldCulling {
       // distance from the origin to the player — and the gate deleted the
       // weapon out of the player's hands. `infiniteDistance` is the same
       // argument for the sky, which is nowhere at all.
-      if (
-        gate &&
-        mesh.renderingGroupId === 0 &&
-        !mesh.infiniteDistance &&
-        !this.sizeExempt.has(mesh)
-      ) {
-        const sphere = mesh.getBoundingInfo().boundingSphere;
-        const c = sphere.centerWorld;
-        const dx = c.x - eye.x;
-        const dy = c.y - eye.y;
-        const dz = c.z - eye.z;
-        const d2 = dx * dx + dy * dy + dz * dz;
-        // Projected diameter is `2r / dist * perRad`; compared SQUARED, so the
-        // per-candidate cost is multiplies and no square root. Taking the root
-        // instead measured as a LOSS at the thresholds that drop little.
-        const w = 2 * sphere.radiusWorld * perRad;
-        if (d2 > 1 && w * w < px2 * d2) continue;
+      if (gate && mesh.renderingGroupId === 0 && !mesh.infiniteDistance) {
+        // ONE lookup, which is why the two answers share a map: this runs on
+        // every candidate every frame, and the emissive exemption used to be
+        // the only question here.
+        const how = this.gateOf.get(mesh);
+        if (how === undefined) {
+          if (this.tooSmall(mesh, eye, perRad, px2)) continue;
+        } else if (how !== null && how.small) {
+          continue;
+        }
       }
       out[k++] = mesh;
     }
@@ -605,5 +661,37 @@ export class WorldCulling {
     out.length = k > out.length ? k : out.length;
     this.candidates.length = k;
     this.stats.offered = k;
+  }
+
+  /**
+   * Whether a mesh's bounding sphere projects smaller than the gate, in CSS
+   * pixels of the frame.
+   *
+   * The one place a projected size is measured, because `offer` now asks the
+   * question of two different things — a loose mesh, and a body's ROOT — and
+   * two copies of this arithmetic is two answers that can drift apart.
+   *
+   * `d2 > 1` is the guard on standing inside a thing: the projection diverges
+   * at zero distance and a metre is nearer than anything this should be
+   * dropping.
+   */
+  private tooSmall(
+    mesh: AbstractMesh,
+    eye: Vector3,
+    perRad: number,
+    px2: number,
+  ): boolean {
+    const sphere = mesh.getBoundingInfo().boundingSphere;
+    const c = sphere.centerWorld;
+    const dx = c.x - eye.x;
+    const dy = c.y - eye.y;
+    const dz = c.z - eye.z;
+    const d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 <= 1) return false;
+    // Projected diameter is `2r / dist * perRad`; compared SQUARED, so the
+    // per-candidate cost is multiplies and no square root. Taking the root
+    // instead measured as a LOSS at the thresholds that drop little.
+    const w = 2 * sphere.radiusWorld * perRad;
+    return w * w < px2 * d2;
   }
 }
