@@ -245,6 +245,25 @@ class GlowMaskMaterial extends ShaderMaterial {
     this.disableDepthWrite = true;
     this.depthFunction = Constants.LEQUAL;
     this.backFaceCulling = true;
+    // **FROZEN, like every other `ShaderMaterial` in the tree**, and this one
+    // was the exception rather than the decision — `FlameMaterial.glowMask`
+    // already freezes the twin it hands this same pass. `ShaderMaterial.isReady`
+    // runs for every submesh of every draw and rebuilds the whole define set
+    // before it can answer: two arrays, a `#define` per entry and a join, all
+    // of it thrown away against the string already on the wrapper
+    // (`FINDINGS.md` 36, where that walk is a fifth of everything this game
+    // allocates). The define set here is fixed at construction — it IS the
+    // cache key, `flags` — so there is nothing for the rebuild to discover.
+    //
+    // It is safe for the reason `CelMaterialFactory.remember` records: what
+    // `isReady` would vary the defines on is a property of the MESH (a vertex
+    // colour buffer, instancing, bones, morph targets), and this cache is
+    // keyed so that cannot differ — `flags` carries the two textures and the
+    // blend, instancing is unsupported outright (see the header), and no
+    // glowing mesh has bones or morph targets. What freezing does NOT stop is
+    // the uniform push: `_mustRebind` does not consult it, so `bindForSubMesh`
+    // and the `glowColor` every draw writes through it keep flowing.
+    this.freeze();
   }
 
   get samplesTextures(): boolean {

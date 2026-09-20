@@ -5473,3 +5473,101 @@ fade pulled to 0, standing still and after a slow strafe. On a phone, a
 `?profile&gpu` capture down Cinderhaven's harbour street with the relief on and
 with both fades pulled to zero. If either is bad, the lever is the fade
 distances and the step counts in `CONFIG.graphics.relief`, not the height maps.
+
+---
+
+## 43. The bloom is a SECOND GEOMETRY PASS over every lit window in view — 123 draws on Coldharbour, and the only lossless lever left is an EMISSIVE palette
+
+**Status:** decomposed and measured on the Windows box under a CPU throttle at
+the phone's viewport. One free lever found and **LANDED** (the mask materials
+were the only unfrozen `ShaderMaterial` in the tree). Everything else is a look
+decision or the palette below, and none of it is taken.
+
+Opened by a phone capture (832x384, Android, Chrome 153) where `glow` read
+**1.44 ms mean and 3.1 p95 of a 20.1 ms frame** — 7% — against **0.21-0.30 ms**
+on the desktop reference captures. Everything else on that device is ~2.4x its
+desktop cost, so a 5-7x gap said the glow was doing something the rest of the
+frame was not.
+
+### What it is NOT, which is most of the entry
+
+Paired and alternating in one boot, 5 reps of 260 frames each, 4x CPU throttle,
+832x384, Coldharbour, a live round. **Read the pairing and not the absolutes**
+— an unpaired first attempt drifted enough that a variant with strictly less
+work in it came out 18% SLOWER, which is the methodological half of this entry.
+
+| B against baseline A | `glow` A | `glow` B | delta |
+| --- | --- | --- | --- |
+| the mask's mesh draws removed | 5.16 | 1.10 | **-4.07** |
+| …capped at 3 meshes | 4.40 | 1.32 | -3.08 |
+| …capped at 1 mesh | 4.76 | 1.22 | -3.54 |
+
+- **Not the BLUR.** Four separable passes and the compose survive in every row
+  above and the floor is 1.10 ms.
+- **Not the per-mesh WALK.** The `list-only` row runs `buildList` in full over
+  the whole active list and throws the result away: that is the -4.07 row.
+- **Not a pathological per-DRAW cost.** 0 -> 1 -> 3 meshes is 1.10 -> 1.22 ->
+  1.32, so a mask draw is ~26 us throttled, ~6.4 unthrottled — an ordinary
+  draw. **There are simply 123 of them.**
+- **Not the mask's RESOLUTION.** It is full backing-store on purpose and pinned
+  twice: depth sharing needs it at the frame's size, and `CelInk` reads it as
+  its emissive mask. Half-resolution is not available here.
+- **Not anything that could be culled EXACTLY.** `GlowRules.colour` already
+  fades a bloom toward black with the fog, so a mesh faded out contributes
+  nothing and could be skipped for free — measured, **0 of 119 are under even
+  4/255 of peak**, the dimmest being 0.168 at 365 m. Coldharbour's fog is too
+  gentle at its own scale for this to find anything. Do not re-run it there;
+  it is worth asking again only on a map whose fog actually closes.
+
+### What it IS
+
+**123 emissive meshes in the mask on Coldharbour in a street view** — three to
+four per 48 m block, because the block merge splits once per emissive colour
+and **emissive is exactly what the albedo palette refuses** (finding 18: gloss,
+translucency, glazing and emissive are shader BEHAVIOUR, not a uniform). A
+block contributes `#ffd79a`, `#4e3a1f`, `#4e3a1f-over-glass` and `#ff5a4a` as
+four meshes, and the mask draws all four with ONE material and one
+`glowColor` apiece.
+
+**The count is a camera fact and not a map fact, which is what made this hard
+to see.** A frozen bank vantage holds five; the deploy screen holds 35; a live
+street view holds 112-123. An earlier reading of "five" is the vantage's and
+must not be quoted for a round.
+
+### What landed
+
+**`GlowMaskMaterial` was the only unfrozen `ShaderMaterial` left in the tree**,
+and it was an omission rather than a decision — `FlameMaterial.glowMask`
+already freezes the twin it hands this same pass. `ShaderMaterial.isReady`
+rebuilds the whole define set for every submesh of every draw before it can
+answer (finding 36: a fifth of everything this game allocates), and the define
+set here is fixed at construction because it IS the cache key.
+
+Paired, 5 reps, frozen against unfrozen: **`glow` 5.26 -> 5.98 ms, -0.72 ms,
+and the sign is the same in all five.** ~14% of the pass. Byte-identical
+picture — a frozen/unfrozen/frozen triple in `deploy` with 35 emissives in the
+mask reads **0.0000% of pixels and max 0** on both the control and the lever,
+which is the `glowColor` push still flowing through `_mustRebind` as
+`CelMaterialFactory.remember` says it does.
+
+### The lever that is NOT taken, and it is the big one
+
+**An EMISSIVE palette, the albedo palette's twin.** It would collapse a block's
+three or four emissive meshes into one and take Coldharbour's 123 to roughly
+40, and it pays **twice** — those meshes are drawn once into the world and
+again into the mask, so ~1 ms of `glow` and ~1.6 ms of `drawWorld` on the
+phone, ~2.6 ms of a 20.1 ms frame. It is lossless, exactly as finding 18 was.
+
+**What makes it a project rather than a change** is that an emissive is an
+unlit `StandardMaterial` and not a cel `ShaderMaterial`, so there is no vertex
+path to put a colour on: `StandardMaterial.emissiveColor` is a uniform and
+vertex colours multiply DIFFUSE. Converting it touches `getEmissive`,
+`EmissiveFog`, `GlowPass.buildList` and its mask shader, `GlowRules.colour`,
+`WorldCulling.glows` and the merge key — six readers that all ask a material
+"what colour do you emit" and would have to ask a vertex instead. Cost it
+before starting it.
+
+The two cheaper alternatives are both LOOK decisions and neither is costed: a
+bloom quality rung (the shape `volumetrics` already has, and there is no glow
+setting today), and a distance cap on the mask, which the measurement above
+says would have to be well inside the fog to remove anything.
