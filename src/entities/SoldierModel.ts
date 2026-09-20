@@ -190,6 +190,10 @@ export const OWN_KIT: SoldierKit = KITS[0];
  * The visor is absent on purpose: it is EMISSIVE, which is shader behaviour
  * rather than a uniform, and the palette may no more enrol it than
  * `MapBuilder`'s may enrol gloss or glazing.
+ *
+ * **A DEV build says so out loud** (`paint`), because the failure this list
+ * has is the quiet kind: the body is the right colour either way and all that
+ * moves is the mesh count.
  */
 const KIT_PALETTE: readonly string[] = [
   GUN,
@@ -200,6 +204,13 @@ const KIT_PALETTE: readonly string[] = [
 const KIT_SLOT: ReadonlyMap<string, number> = new Map(
   KIT_PALETTE.map((hex, i) => [hex.toLowerCase(), i + 1]),
 );
+
+/**
+ * Hexes a DEV build has already complained about, so the warning below is one
+ * line rather than one per part per rig — `buildSoldier` runs for every body
+ * in the pool and paints forty-odd parts each time.
+ */
+const warnedOffPalette = new Set<string>();
 
 /** `KIT_PALETTE` as the factory takes it. Built once: the kit never moves. */
 const KIT_COLORS: readonly Color3[] = KIT_PALETTE.map((hex) =>
@@ -931,10 +942,25 @@ export function buildSoldier(
    * one mesh. A colour the palette does not carry keeps its own per-hex
    * material and groups on its own, exactly as everything did before, which
    * is what makes a missing entry cost a draw rather than a wrong colour.
+   *
+   * **Which is exactly why a DEV build says it out loud.** The part is painted
+   * correctly either way, so nothing on screen reports this and the only
+   * symptom is a segment that splits — one more mesh per body, times the
+   * roster, on the walk `WorldCulling` exists for. Once per hex: this runs for
+   * every part of every rig in the pool.
    */
   const paint = (m: Mesh, color: string): void => {
     const slot = KIT_SLOT.get(color.toLowerCase());
     if (slot === undefined) {
+      if (import.meta.env.DEV && !warnedOffPalette.has(color.toLowerCase())) {
+        warnedOffPalette.add(color.toLowerCase());
+        console.warn(
+          `[soldier] ${color} is painted on a rig but is not in KIT_PALETTE;` +
+            " that part keeps its own material and costs its segment a mesh." +
+            " Add it to the palette, or leave it if it is meant to be an" +
+            " emissive, which cannot join one.",
+        );
+      }
       m.material = mats.get(color);
       return;
     }

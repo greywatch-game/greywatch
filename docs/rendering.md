@@ -2073,21 +2073,29 @@ because it seemed wise.**
   One forced compose per body per frame — 48 on the densest map in the tree —
   and it makes the reading this frame's rather than last frame's as well.
 
-  **The exemption is only worth what the LIST of pooled bodies is worth, and
-  the death cam's rig was missing from it.** The symptom was the player's own
-  corpse ragdolling with its head gone, most of the time, on every map — and it
-  was NOT the distance the gate is about. Nothing had ever drawn that rig, so
-  its meshes' world bounding spheres were still sitting at the world ORIGIN, and
-  the gate measured every part of the corpse from the middle of the map instead
-  of from four metres away. Measured on Hollowmere with a death at 146 m from
-  the origin, twelve of the twenty rig meshes were dropped on the first frame
-  and **six never came back**: two of the head's four merged parts, one arm each
-  side and one part of each leg. On Harrowmead at 219 m it was **twelve**,
-  including all four head parts and all six leg parts. It is the small parts
-  that go, the merge is per COLOUR so a head is four of them, and what survives
-  is whatever is big enough to pass at that range — the torso, the rifle, and
-  the visor, which is emissive and exempt already. Filing the rig fixes it at
-  the root: 0 of 20 dropped on both maps.
+  **This class is only worth what the LIST of pooled bodies is worth, and the
+  death cam's rig was missing from it.** A rig `setPools` has never been handed
+  is gated MESH BY MESH, which is not a body dropped early but the
+  dismemberment itself — so the filing is what makes every paragraph above
+  true, and it is the first thing to check when a body comes apart. The symptom
+  was the player's own corpse ragdolling with its head gone, most of the time,
+  on every map — and it was NOT the distance the gate is about. Nothing had
+  ever drawn that rig, so its meshes' world bounding spheres were still sitting
+  at the world ORIGIN, and the gate measured every part of the corpse from the
+  middle of the map instead of from four metres away.
+
+  **The figures are the PRE-PALETTE rig's**, taken while a segment still split
+  once per colour and a rig was twenty-one meshes — they are what the failure
+  looked like rather than what it would look like today. Measured on Hollowmere
+  with a death at 146 m from the origin, twelve of the twenty rig meshes were
+  dropped on the first frame and **six never came back**: two of the head's
+  four merged parts, one arm each side and one part of each leg. On Harrowmead
+  at 219 m it was **twelve**, including all four head parts and all six leg
+  parts. It is the small parts that go, and a head was four of them because the
+  merge was per COLOUR; what survived was whatever is big enough to pass at
+  that range — the torso, the rifle, and the visor, which was emissive and so
+  exempt in its own right at the time, where `gateOf` now files it with the
+  body. Filing the rig fixes it at the root: 0 of 20 dropped on both maps.
 - **Anything emissive.** The glow carries a sub-pixel emitter far past its own
   geometry, and this game's biggest map is a harbour town at night. The test is
   exact rather than a guess at a name: only a light source carries an
