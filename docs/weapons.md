@@ -1243,7 +1243,7 @@ and a spray was a straight line with jitter on it; the only shape available was
 magnitude, which can be pulled against but not learned.
 
 **The lateral itself is a SWEEP over the string now, and was an independent draw
-per round** (`pattern.sweepShots` 11, `sweepNoise` 0.3). Eight to thirteen
+per round** (`pattern.sweepShots` 17, `sweepNoise` 0.3). Eight to thirteen
 independent draws a second on one axis is a muzzle that changes its mind: the
 horizontal flipped sign on roughly a third of the rounds, and what a player
 reads is an aim jumping in random directions rather than one walking somewhere.
@@ -1262,10 +1262,55 @@ SPREAD across magazines — 0.11..0.24° where the independent draw ran
 because five rounds pulling the same way go further than five rounds arguing.
 Re-run that pair rather than scaling if `yawPerShot` or `recoverFraction` moves.
 
+### The lateral is a WALK and only a little SPRING, and it used to be the other way round
+
+**This is the one place in the kit where the footage lost an argument, and it
+lost it to the thing the footage cannot show: what a lateral feels like to
+hold.** The reference measures a horizontal that is nearly all spring — 0.40°
+of pull built through 22 rounds and given back almost entirely when the string
+ends — and `yawPerShot` 0.0109 was fitted to it. Played, that reads as the
+reticle being thrown sideways and hauled back, and **making the direction
+coherent made it worse rather than better**: five rounds pulling the same way go
+somewhere five rounds arguing never did. Measured in the client through held
+triggers at that figure, the rifle's springy lateral swung **0.67° aimed and
+1.71° at the hip** before coming home, the SMG's 1.58° at the hip.
+
+What was cut is the SPRING and not the lateral. Two numbers move as a pair:
+`yawPerShot` 0.0109 → **0.005**, and a horizontal recovery fraction of its own,
+`yawRecoverFraction` **0.905** against the vertical's 0.958 — so the share that
+never comes back rises from 4.2% to 9.5% and **their product, which is the walk,
+is where it was.** The argument for splitting them is not a knob: *a shooter
+braces against a climb they knew about before the trigger broke*, which is most
+of what a grip is and why nearly all of the vertical returns on its own; a
+lateral cannot be pre-loaded against, is not known until it has happened, and
+what a shooter does about it is re-aim. More of it is therefore aim and less of
+it is spring.
+
+Measured after, same probe, same strings:
+
+| | swing (aimed) | swing (hip) | per-round sideways step | permanent walk, 20 rd |
+| --- | ---: | ---: | ---: | ---: |
+| rifle, before | 0.67° | 1.71° | 0.073° | 0.141° |
+| rifle, after | **0.20°** | **1.00°** | **0.010°** | **0.185°** |
+| SMG hip, before | — | 1.58° | 0.079° | 0.145° |
+| SMG hip, after | — | **0.38°** | **0.020°** | **0.158°** |
+
+The vertical is identical on every row (2.44 / 4.98 / 2.96° of sustained pitch,
+before and after), which is the check that matters: **this is a change to what
+the horizontal DOES, not to how hard the kit is to hold.** `pattern.sweepShots`
+went 11 → 17 in the same pass for the same reason — at eleven a half cycle was
+five and a half rounds, so the muzzle went out and came back inside one burst,
+which is a swing however coherent it is; at seventeen a burst is most of one
+way and it takes a magazine to come back. And `shakeYaw`, the punch's own
+cosmetic sideways nudge, went 0.006 → 0.0035: it was sized against an aim whose
+lateral swung four times further, and left alone it would simply have become the
+swing — with the added insult of being one no bullet agrees with.
+
 **The pair no longer leaves the total walk alone, because the walk is what the
 reference match cut.** For the rifle's 24 rounds from the hip the per-shot
 pitch multipliers sum to 15.25 and the yaw multipliers to 21.27, so the permanent
-share is **0.70° of climb and 0.20° of drift**, against the 10.6° and 2.4° they
+share is **0.70° of climb and 0.21° of drift** (the drift off `yawPerShot` and
+`yawRecoverFraction`, which are not the vertical's pair), against the 10.6° and 2.4° they
 were before. Most of that is `recoverFraction` going 0.7 → 0.958 rather than
 anything in `pattern` — and its last step, 0.93 → 0.958, is what held the climb
 at 0.70° when `pitchSettled` went 0.25 → 0.55. `maxYaw` and `maxPitch` are untouched and
@@ -1295,7 +1340,7 @@ the two sides moving vertically against each other. The game itself rendered at
 | each round of that plateau | lifts **0.31°**, gives ~0.25° back before the next | `pattern.pitchSettled`, `settle.reachAds` |
 | per-round peak through the string | 58–70 ms after the shot | `recoil.punchLift` (0) |
 | permanent climb after a string | 0.15° | `recoverFraction` |
-| lateral, 22 rd | **0.40° RIGHT**, building, springs back to ~0 | `yawPerShot` |
+| lateral, 22 rd | **0.40° RIGHT**, building, springs back to ~0 | `yawPerShot`, until the split below overrode it |
 | roll | rises from zero to **0.86° at 58 ms**, home by ~100 ms | `recoil.rollBeat` |
 
 **Two of those rows were measured WRONG first, and both mistakes were about the

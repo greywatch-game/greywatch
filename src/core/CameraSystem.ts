@@ -749,23 +749,31 @@ export class CameraSystem {
    */
   addRecoil(pitch: number, yaw: number, opensString: boolean): void {
     const r = CONFIG.recoil;
+    // The two axes keep DIFFERENT shares, and that split is what separates the
+    // lateral's swing from its walk — see `yawRecoverFraction`. A shooter
+    // braces against a climb they knew was coming and re-aims after a lateral
+    // they did not, so more of the horizontal is aim and less of it is spring.
     const keep = 1 - r.recoverFraction;
+    const keepYaw = 1 - r.yawRecoverFraction;
     this.owedPitch += pitch * keep;
-    this.owedYaw += yaw * keep;
+    this.owedYaw += yaw * keepYaw;
     // The gain is taken for the stance the shot was FIRED in, and the bleed
     // term is the share of `owed` that will have been handed over by the time
     // the muzzle reaches the top of its travel — without it the two sum past
-    // the kick the table states.
+    // the kick the table states. It is per AXIS now for the same reason the
+    // share is: a yaw gain carrying the pitch's bleed would quietly overshoot
+    // the horizontal the table states by the difference between them.
     const shape = this.shapeAt(this.adsBlend);
     const rise = shape.riseTurns / shape.grip;
-    const bleed = keep * (1 - Math.exp(-this.drainRate(this.adsBlend) * rise));
-    const gain = recoilGain(shape, bleed);
+    const fade = 1 - Math.exp(-this.drainRate(this.adsBlend) * rise);
+    const gain = recoilGain(shape, keep * fade);
+    const gainYaw = recoilGain(shape, keepYaw * fade);
     // The rounds behind a string's first have the haul LEAN IN, which is what
     // gives a held trigger a level to settle at rather than a climb without
     // end or a sink with the trigger still held (`RecoilShape.reach`). A lone
     // round never asks, so its shape is the measured one to the number.
     this.recoilPitch.strike(pitch, gain, !opensString);
-    this.recoilYaw.strike(yaw, gain, !opensString);
+    this.recoilYaw.strike(yaw, gainYaw, !opensString);
     // Only a string's opening round disturbs the hold; the rounds behind it
     // are the settle's to charge. Raised by every round, a held automatic
     // piled this to ~1.5 and the widened, quickened sway swung the aim down

@@ -28,9 +28,11 @@
  * the impulse may ever reach `pitchPerShot`.**
  *
  * Read `docs/weapons.md` before changing any of it. Two figures in the pattern
- * comment below are DERIVED (10.6 deg of climb and 2.4 deg of drift over the
+ * comment below are DERIVED (0.70 deg of climb and 0.21 deg of drift over the
  * rifle's magazine) and have to be re-derived rather than assumed whenever
- * `pattern`, `pitchPerShot`, `yawPerShot` or `firstShotMult` moves.
+ * `pattern`, `pitchPerShot`, `yawPerShot`, `firstShotMult` or either recovery
+ * fraction moves — the climb off `recoverFraction` and the drift off
+ * `yawRecoverFraction`, which are two numbers now and not one.
  */
 /**
  * Recoil. Every shot kicks the aim up and slightly sideways and blooms the
@@ -69,9 +71,28 @@ export const recoil = {
    * a new one: a smaller permanent share takes lateral out of every round, and
    * the same Monte-Carlo puts the round-22 mean back where 0.0103 had it at the
    * old fraction. Re-run it rather than scaling if either moves again.
+   *
+   * **0.005 is a PRODUCT decision taken against that fit, and it is the one
+   * place in this file where the footage lost an argument.** What the
+   * reference measures is a lateral that is mostly SPRING: 0.40 deg of pull
+   * built through 22 rounds and given back almost entirely when the string
+   * ends. Played rather than measured, that reads as the reticle being thrown
+   * sideways and hauled back — and it got worse, not better, when
+   * `pattern.sweepShots` made the direction coherent, because five rounds
+   * pulling the same way go somewhere five rounds arguing never did. Measured
+   * in the client at the old figure, the rifle's springy lateral swung **0.67
+   * deg aimed and 1.71 at the hip** and then came home.
+   *
+   * **What was cut is the SPRING and not the lateral**, which is what
+   * `yawRecoverFraction` is for: this drops to 46% and the share of it that
+   * never comes back rises to 9.5%, so the WALK — the part that turns your
+   * aim and has to be put back by hand — is within 4% of what it was, while
+   * the swing that bounces back is about a fifth of it. The horizontal is now
+   * mostly something you correct and a little something you ride, where it
+   * used to be the other way round.
    */
   pitchPerShot: 0.0192,
-  yawPerShot: 0.0109,
+  yawPerShot: 0.005,
   /**
    * What the FIRST round of a string kicks, as a multiple of the rest.
    *
@@ -122,8 +143,11 @@ export const recoil = {
    * **The pair no longer leaves the total walk alone, because the walk itself
    * was what the reference match cut.** For the rifle at the hip (24 rounds,
    * `recoilMult` 1) the pitch multipliers sum to 15.25 and the yaw multipliers
-   * to 21.27, so the permanent share is **0.70 deg** of climb and **0.20 deg**
-   * of drift, against the 10.6 and 2.4 they were before. Most of that is
+   * to 21.27, so the permanent share is **0.70 deg** of climb and **0.21 deg**
+   * of drift, against the 10.6 and 2.4 they were before. The drift is worked
+   * against `yawRecoverFraction` and NOT `recoverFraction` — the two axes keep
+   * different shares now, and using the vertical's would under-report it by a
+   * factor of two and a quarter. Most of that is
    * `recoverFraction`, not this block: the footage shows a weapon that gives
    * back nearly everything it takes. Re-derive both figures if any of these
    * four numbers moves — the walk is quoted in `recoverFraction` and in
@@ -198,11 +222,17 @@ export const recoil = {
      * way go further than five rounds arguing. Re-run that pair rather than
      * scaling if `yawPerShot` or `recoverFraction` moves.
      *
-     * Eleven rounds is about half the rifle's magazine, so a magazine held down
-     * is two sweeps; the noise share keeps it off being a machine tracing the
-     * same figure, which is the same job the hold sway's second sine does.
+     * **Seventeen rather than the eleven it opened at, and the reason is the
+     * difference between a WALK and a JUMP.** At eleven a half cycle is five
+     * and a half rounds — 0.58 s on the rifle — so the muzzle went out and came
+     * back inside a single burst, which is a swing rather than a walk however
+     * coherent it is. At seventeen a burst of six to ten rounds is most of one
+     * way, and it is a whole magazine that sees the lateral come back: what a
+     * player has to do about it is re-aim rather than wait. The noise share
+     * keeps it off being a machine tracing the same figure, which is the same
+     * job the hold sway's second sine does.
      */
-    sweepShots: 11,
+    sweepShots: 17,
     sweepNoise: 0.3,
   },
   /** Multiplier while fully aimed down sights — a braced stance kicks less. */
@@ -246,10 +276,11 @@ export const recoil = {
    * further from the reference's 0.15, not nearer. The walk is a claim this
    * file makes on purpose and a kick change should not move it by accident.
    *
-   * **The walk is now ~0.70 deg of climb and ~0.20 deg of drift for the
+   * **The walk is now ~0.70 deg of climb and ~0.21 deg of drift for the
    * rifle's 24 rounds from the hip**, and it is derived rather than set: the
    * vertical is `pitchPerShot * (1 - recoverFraction) * sum(firstShotMult-and-
-   * taper over the magazine)`, which `pattern` works through. Re-derive both
+   * taper over the magazine)`, which `pattern` works through, and the lateral
+   * is the same product over `yawPerShot` and `yawRecoverFraction`. Re-derive both
    * when anything in `pattern`, `pitchPerShot`, `yawPerShot` or
    * `firstShotMult` moves; neither figure follows on its own.
    *
@@ -264,6 +295,28 @@ export const recoil = {
    * they are because of the fraction, not because of when it is collected.
    */
   recoverFraction: 0.958,
+  /**
+   * The same fraction for the HORIZONTAL, which is a different question about
+   * a shooter and used to be answered with the vertical's number.
+   *
+   * **A shooter hauls DOWN against a direction they knew before the trigger
+   * broke.** Muzzle rise is what a gun does, every round, and bracing against
+   * it is most of what a grip IS — so nearly all of it comes back on its own,
+   * which is `recoverFraction` at 0.958. A lateral cannot be pre-loaded
+   * against: it is not known until it has happened, so what a shooter does
+   * about it is re-aim. More of it is therefore AIM rather than spring, and
+   * at 0.905 nine and a half percent of every round's horizontal stays.
+   *
+   * **It is the lever that separates the two things a lateral does**, which
+   * were one thing while the two axes shared a number: the SWING that goes out
+   * and is hauled back — read in play as the reticle being thrown sideways —
+   * and the WALK that turns your aim and stays turned. Raising this and
+   * cutting `yawPerShot` together takes the first down by four fifths and
+   * leaves the second where it was. **They move as a PAIR and their product is
+   * the walk**: `yawPerShot * (1 - this)` is what a round permanently costs,
+   * and moving either alone moves it.
+   */
+  yawRecoverFraction: 0.905,
   /**
    * The SETTLE: how the aim comes back, and the one place a weapon's IMPULSE
    * (as against its muzzle rise) buys anything.
@@ -488,10 +541,12 @@ export const recoil = {
    *
    * **Neither of these binds on any weapon in the kit any more, and both are
    * kept for what else they catch.** They were sized as a number of ROUNDS —
-   * `maxYaw` at 0.09 bound after about seven of hard drift — and against a
-   * `yawPerShot` of 0.002 that is now some forty-five rounds, which is past
-   * every magazine here. The vertical is the same story: the reference match
-   * holds a sustained string at ~2.6 deg where `maxPitch` sits at 9.7.
+   * `maxYaw` at 0.09 bound after about seven of hard drift — and measured
+   * through held triggers in the client the worst springy lateral in the kit
+   * is now **1.0 deg at the hip and 0.20 aimed** against a ceiling of 5.16,
+   * with the haul's own lean doing the bounding long before this could. The
+   * vertical is the same story: a sustained string holds at 2.4 deg aimed and
+   * 5.0 at the hip where `maxPitch` sits at 9.7.
    *
    * They stay because **the ceilings are on the shared recoil AXES, not on
    * the weapon**: `addFlinch` queues onto the same two, so what these actually
@@ -900,7 +955,19 @@ export const recoil = {
   fovPunch: 0.025,
   camPush: 0.035,
   shakePitch: 0.007,
-  shakeYaw: 0.006,
+  /**
+   * The punch's own sideways nudge — RENDERED only, so no round and no bot
+   * ever sees it, and it is deliberately smaller than the pitch beside it.
+   *
+   * **0.0035 rather than 0.006, because it is the last thing in the picture
+   * that throws the view sideways and comes straight back.** It was sized
+   * against an aim whose own lateral swung four times further; with
+   * `yawPerShot` cut to leave the WALK and not the swing, a cosmetic of the
+   * old size would simply have become the swing, with the added insult of
+   * being one no bullet agrees with. `shakePitch` is untouched: a gunshot
+   * spends none of it (`punchLift` is 0) and a blast still wants all of it.
+   */
+  shakeYaw: 0.0035,
   /**
    * How much of `shakePitch` a GUNSHOT's punch lifts the view by — the blast
    * that shares `addPunch` lifts by all of it.

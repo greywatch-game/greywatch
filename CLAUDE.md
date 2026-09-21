@@ -1737,8 +1737,16 @@ lobby and the regions' two headers, and what is not built.
   followed** whenever `CONFIG.recoil.pattern`, `pitchPerShot`, `yawPerShot` or
   `firstShotMult` moves.
 - Recoil only partly springs back: `CONFIG.recoil.recoverFraction` (0.958)
-  returns 95.8% and pushes 4.2% permanently into the player's own `pitch`/`yaw`.
-  **It is the first number to move back if the rifle proves too easy to hold**,
+  returns 95.8% of the VERTICAL and pushes 4.2% permanently into the player's
+  own `pitch`. **The horizontal keeps its own fraction and keeps far more of
+  it** (`yawRecoverFraction`, 0.905): a shooter braces against a climb they
+  knew was coming and can only re-aim after a lateral they did not, so more of
+  the horizontal is aim and less of it is spring. That split is the lever
+  between the two things a lateral does — the SWING that is hauled back and
+  reads as the reticle being thrown sideways, and the WALK that turns your aim
+  and stays turned. **It moves as a pair with `yawPerShot`, whose product is
+  the walk**, and moving either alone moves it.
+  **`recoverFraction` is the first number to move back if the rifle proves too easy to hold**,
   0.7 having been an explicit product decision that a fully-recovering recoil is
   decoration. **That share is HANDED OVER at the haul's own rate rather than
   applied at the shot** (`CameraSystem.owedPitch`), applied whole being a step
