@@ -1172,13 +1172,14 @@ export class Player implements Combatant {
       (1 + (r.moveMult - 1) * this.moveBlend) *
       (1 + (r.airMult - 1) * this.airBlend);
     const kickMult = stance * this.weapon.recoilMult * this.recoilRamp;
+    // ONE envelope over both axes, so a string changes how HARD the weapon
+    // kicks and never which WAY. The lateral used to ramp up on an envelope of
+    // its own while this one tapered down, which rotated the kick vector
+    // through the opening of every string — see `pattern`.
+    const env = 1 + (pat.pitchSettled - 1) * into;
     return {
-      pitch: r.pitchPerShot * (1 + (pat.pitchSettled - 1) * into) * kickMult,
-      yaw:
-        this.kickDrift *
-        r.yawPerShot *
-        (pat.yawStart + (1 - pat.yawStart) * into) *
-        kickMult,
+      pitch: r.pitchPerShot * env * kickMult,
+      yaw: this.kickDrift * r.yawPerShot * env * kickMult,
       // Whether this round OPENS a string, which the camera spends twice: an
       // opening round disturbs the shooter's hold (`CONFIG.recoil.shake`) and
       // every round behind it has the haul lean in (`settle.reachAds`). A
@@ -2189,10 +2190,12 @@ export class Player implements Combatant {
     // which is `pattern.sweepShots`'s argument: eight to thirteen independent
     // draws a second on one axis is a muzzle that changes its mind, and what
     // a player reads is an aim jumping in random directions rather than one
-    // walking somewhere they can learn. The direction of the walk is the only
-    // thing drawn per STRING, and the sine starts at zero, so a string's first
-    // round still has nowhere sideways to go — the same claim `yawStart`
-    // makes, arrived at from the other side.
+    // walking somewhere they can learn. The direction of the sweep is the only
+    // thing drawn per STRING, and the sine starts at zero so a string opens on
+    // the weapon's own bias with nothing added to it. It is a NARROW band
+    // about that bias (`sweepSpan`): wide enough to keep a long string off a
+    // ruler line, and deliberately not wide enough to rotate the kick, which
+    // is `pattern`'s rule and the thing this used to break.
     const pat = CONFIG.recoil.pattern;
     if (this.stringShots === 1) this.driftSweep = Math.random() < 0.5 ? 1 : -1;
     const walk =

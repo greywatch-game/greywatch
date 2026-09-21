@@ -1233,7 +1233,9 @@ has no business being scaled by whatever the player happens to be holding.
 **The kick's DIRECTION rotates as a string runs, and `recoil.pattern` is that.**
 Two envelopes over the counter `firstShotMult` already reads: `pitchSettled`
 (0.55) takes the vertical down across `patternShots` (8) as a muzzle climbs and
-then binds, while `yawStart` (0.3) brings the horizontal up over the same span.
+then binds — and it is spent on BOTH axes, so a string changes how hard the
+weapon kicks and never which way (see the angle section below, which is where
+the second envelope this used to have died).
 **The taper is not what makes a string level off** — `settle.reachAds` is, below —
 and for one revision, at 0.25, it was, which is how the SMG came to sink.
 So the first rounds of any string go nearly straight up — which is what makes a
@@ -1250,10 +1252,11 @@ reads is an aim jumping in random directions rather than one walking somewhere.
 A muzzle walks, and the reference footage shows exactly that — 0.40° of
 rightward pull *building* through 22 rounds and springing back when the string
 ends. So the lateral is a sine over the string counter with its direction drawn
-once per string and its phase starting at ZERO, which is `yawStart`'s claim
-reached from the other side: a string's opening round still has nowhere sideways
-to go, then the muzzle peels one way for five or six rounds and comes back
-through the middle the other way. **It is not a difficulty change and that was
+once per string and its phase starting at ZERO, so a string opens on the
+weapon's own bias with nothing added to it. It is a NARROW band about that bias
+rather than a shape in its own right — see the angle section below for why a
+sweep wide enough to read as a shape is a sweep wide enough to rotate the
+kick. **It is not a difficulty change and that was
 checked rather than assumed**: `yawBias` scales and offsets the sweep exactly as
 it did the noise, so every round's mean lateral is unmoved and the rifle's
 permanent drift over 22 rounds is 0.176° under both models. What moves is the
@@ -1342,7 +1345,59 @@ A single aimed shot measures **1°** — a tap is dead vertical. At the hip it i
 9° median (16° on the SMG), and the sustained pitch plateau is 2.44° on every
 one of those rows, unchanged. **The two outliers either table shows at the last
 round of a string are the metric and not a kick**: the window for round 20 runs
-past the end of the string, so it catches the axis hauling back to centre. `pattern.sweepShots`
+past the end of the string, so it catches the axis hauling back to centre.
+
+#### The last of it was the kick vector ROTATING, and two of these mechanisms were doing it
+
+Even at a 7° median the report was that the kick *oscillated* — "it starts
+recoiling vertically, then tilts until it is kicking at 45 degrees, then tilts
+back to vertical." Measured per round and read **in round order** rather than as
+a distribution, which is the reading that shows it, the aimed rifle went:
+
+```
+2° 2° 4° 7° 9° 9° 12° 11° 10° 10° 5° 5° 2° 3° 3° 6° 5° 9° 10°
+```
+
+and the hip 1° → 16° → 6°. Two mechanisms, both mine, stacked:
+
+1. **The two ENVELOPES crossed over.** The lateral ramped 0.3 → 1.0 while the
+   vertical tapered 1.0 → 0.55, which rotates the kick vector through the
+   opening of every string by construction — a factor of six over eight rounds.
+   That was deliberate: a muzzle that can no longer rise goes sideways instead,
+   and a kick whose direction rotates is a hook you can learn where one that
+   only changes size can merely be pulled against.
+2. **The SWEEP rotated it back**, on its seventeen-round cycle, and at a span
+   of ±0.35 about a mean of 0.35 that was every round between straight up and
+   twice the weapon's own pull.
+
+**A string changes how HARD a weapon kicks and never which WAY.** There is one
+envelope now, spent on both axes, so `pattern` is a magnitude and the DIRECTION
+belongs to the weapon — `yawBias`, which is a torque and does not oscillate. The
+hook argument survives only where it was actually true: it was made when the
+lateral was symmetric NOISE, and the alternative to a rotation was a straight
+line with jitter on it. `yawBias` is what answers that now, and a straight
+diagonal whose direction belongs to the weapon is as learnable as a hook and far
+easier to read. `sweepSpan` went 0.35 → 0.15 in the same pass, because **a span
+is also an angle**: the lateral is the short side of the vector, so ± a span is
+± that many degrees off vertical.
+
+Measured after, per round, in round order:
+
+| | by round | min | median | max |
+| --- | --- | ---: | ---: | ---: |
+| rifle aimed | `4 4 3 5 5 3 5 5 6 4 5 6 5 6 6 5 6 6 5` | 3° | **5°** | 6° |
+| rifle hip | `6 6 5 4 4 5 5 4 5 4 7 6 7 6 7 5 6 5 5` | 4° | **5°** | 7° |
+| SMG hip | `9 8 9 9 9 11 10 9 10 8 8 7 7 8 7 8 9 9 10` | 7° | **9°** | 11° |
+
+Flat, with no trend and no cycle. A single aimed shot measures 5° — **the same
+as every round of a string**, which is the point: the weapon has one direction
+and it is the weapon's own. The SMG sits at 9° because its `yawBias` is 0.6
+against the rifle's 0.35, which is that weapon's character and not a defect.
+The sustained pitch plateau is unmoved on every row (2.44 / 4.98 / 2.97°), and
+the permanent walk costs 22% — 0.165° → **0.128° over twenty rounds** — because
+the lateral now tapers with the vertical instead of ramping against it. That is
+the one price of the change, it is paid in the axis nobody complained about, and
+`yawPerShot` buys it back at the cost of the angle above if it is ever wanted. `pattern.sweepShots`
 went 11 → 17 in the same pass for the same reason — at eleven a half cycle was
 five and a half rounds, so the muzzle went out and came back inside one burst,
 which is a swing however coherent it is; at seventeen a burst is most of one

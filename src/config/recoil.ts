@@ -125,38 +125,49 @@ export const recoil = {
    */
   stringResetTime: 0.35,
   /**
-   * The SHAPE of a string, as two envelopes over the same shot counter
-   * `firstShotMult` reads (`Player.stringShots`). This is what stops a spray
-   * being a straight line with jitter on it: the kick's DIRECTION rotates as
-   * the string runs, so the pattern is a hook that can be learned rather than
-   * a magnitude that can only be pulled against.
+   * The SHAPE of a string: ONE envelope over the shot counter `firstShotMult`
+   * reads (`Player.stringShots`), spent on BOTH axes. A muzzle climbs hardest
+   * at the start and then binds — the shooter is already leaning into it and
+   * the weapon has nowhere further to rotate — so a string's rounds kick less
+   * as it runs.
    *
-   * A muzzle climbs hardest at the start and then binds — the shooter is
-   * already leaning into it, and the weapon has nowhere further to rotate — so
-   * the vertical tapers off. What replaces it is horizontal: the further into a
-   * string, the more of the kick goes sideways about `yawBias`. Both envelopes
-   * are 1 and `yawStart` respectively on the FIRST round, so this composes with
-   * `firstShotMult` rather than relitigating it — shot one is still the punch
-   * that argument describes, and it is now also the straightest round in the
-   * magazine.
+   * **It was TWO envelopes, and the second one was a mistake you could see.**
+   * The lateral had a ramp of its own running the other way (`yawStart` 0.3
+   * climbing to 1 while the vertical tapered 1 to 0.55), on the theory that a
+   * muzzle which can no longer rise goes sideways instead, and that a kick
+   * whose DIRECTION rotates is a hook you can learn where a kick that only
+   * changes size can merely be pulled against. What it actually produces is a
+   * kick vector that ROTATES THROUGH THE OPENING OF EVERY STRING — measured
+   * per round in the client, the aimed rifle went 2, 2, 4, 7, 9, 9, 12, 11,
+   * 10 degrees off vertical and then back to 2 as the sweep came round, and
+   * the report was exactly that: "it starts recoiling vertically, then tilts
+   * until it is kicking at 45 degrees, then tilts back."
    *
-   * **The pair no longer leaves the total walk alone, because the walk itself
-   * was what the reference match cut.** For the rifle at the hip (24 rounds,
-   * `recoilMult` 1) the pitch multipliers sum to 15.25 and the yaw multipliers
-   * to 21.27, so the permanent share is **0.70 deg** of climb and **0.21 deg**
-   * of drift, against the 10.6 and 2.4 they were before. The drift is worked
-   * against `yawRecoverFraction` and NOT `recoverFraction` — the two axes keep
-   * different shares now, and using the vertical's would under-report it by a
-   * factor of two and a quarter. Most of that is
-   * `recoverFraction`, not this block: the footage shows a weapon that gives
-   * back nearly everything it takes. Re-derive both figures if any of these
-   * four numbers moves — the walk is quoted in `recoverFraction` and in
-   * `docs/weapons.md`, and it does not follow on its own.
+   * **A string changes how HARD a weapon kicks and never which WAY.** The
+   * direction is the weapon's — `yawBias`, which is a torque and does not
+   * oscillate — and with one envelope over both axes the vector keeps it for
+   * every round of the magazine. The hook argument survives where it was
+   * actually true: it was made when the lateral was symmetric NOISE and the
+   * only alternative to a rotation was a straight line with jitter on it.
+   * `yawBias` is what answers that now, and a straight diagonal whose
+   * direction belongs to the weapon is as learnable as a hook and far easier
+   * to read.
+   *
+   * **The walk follows this rather than leading it.** For the rifle at the hip
+   * (24 rounds, `recoilMult` 1) the multipliers now sum to 15.25 on BOTH axes,
+   * so the permanent share is **0.70 deg** of climb and **0.15 deg** of drift.
+   * The drift is worked against `yawRecoverFraction` and NOT `recoverFraction`
+   * — the two axes keep different shares, and using the vertical's would
+   * under-report it by a factor of two and a quarter — and it is down from
+   * 0.21 because the lateral now tapers with the vertical instead of ramping
+   * against it. Re-derive both figures if any of these numbers moves; the walk
+   * is quoted in `recoverFraction` and in `docs/weapons.md`, and it does not
+   * follow on its own.
    */
   pattern: {
     /**
-     * Rounds over which both envelopes travel from their first-shot value to
-     * their settled one. Eight is a third of the rifle's magazine, so the
+     * Rounds over which the envelope travels from its first-shot value to its
+     * settled one. Eight is a third of the rifle's magazine, so the
      * shape is legible inside one burst rather than being a property of a
      * whole magazine — and it is eight rather than seven because that is
      * where the reference's own climb stops: its per-round step is gone by
@@ -185,12 +196,6 @@ export const recoil = {
      */
     pitchSettled: 0.55,
     /**
-     * What the horizontal starts at. Low, because the first rounds of a string
-     * going almost straight up is the half of this that makes tapping precise —
-     * a tap is a first shot, and a first shot has nowhere sideways to go.
-     */
-    yawStart: 0.3,
-    /**
      * Rounds in one full lateral SWEEP, and how much of each round's lateral is
      * fresh noise rather than the sweep — the shape of `Player.kickDrift`,
      * which is the signed lateral the aim kick, the model's lean and the view
@@ -206,11 +211,14 @@ export const recoil = {
      * 0.40 deg of RIGHTWARD pull building through 22 rounds and springing back
      * when the string ends.
      *
-     * So the lateral is a SINE over the string counter, its direction drawn
-     * once per string, and it starts at ZERO — which is `yawStart`'s argument
-     * made a second way: the opening rounds go up, then the muzzle peels one
-     * way for five or six rounds and comes back through the middle the other
-     * way. That is a hook, and a hook can be learned.
+     * So the lateral is a SINE over the string counter with its direction
+     * drawn once per string — but it is a FAINT one now, because a sweep wide
+     * enough to be read as a shape is a sweep wide enough to be read as the
+     * kick changing direction, which is the one thing a string may not do
+     * (see `pattern` above). At `sweepSpan` 0.15 what it does is keep a long
+     * string off being a ruler-straight line; what it may not do is rotate
+     * the vector, and the measurement that proves it is the per-round angle
+     * holding flat across a magazine.
      *
      * **It is not a difficulty change, and that was checked rather than
      * assumed.** The weapon's `yawBias` scales the sweep and offsets it exactly
@@ -233,7 +241,13 @@ export const recoil = {
      * job the hold sway's second sine does.
      */
     sweepShots: 17,
-    sweepNoise: 0.3,
+    /**
+     * How much of the span is fresh per-round noise rather than the sweep.
+     * Raised with the span's cut: what is left of the slow term is small
+     * enough to be texture, and a half-and-half mix keeps even that from
+     * reading as a cycle.
+     */
+    sweepNoise: 0.5,
     /**
      * How far the sweep and its noise may carry a round off the weapon's own
      * `yawBias` — the SPREAD of the lateral, where the bias is its centre.
@@ -259,8 +273,17 @@ export const recoil = {
      *
      * The total is still clamped to -1..+1, so every ceiling documented for
      * `maxYaw` survives whatever a future weapon states for a bias.
+     *
+     * **0.15 rather than the 0.35 it opened at, because a span is also an
+     * ANGLE.** The lateral is the short side of the kick vector, so a spread
+     * of plus or minus a span is a spread of plus or minus that many degrees
+     * off vertical — at 0.35 the rifle's rounds ran 0..0.70 about a mean of
+     * 0.35, which is every round between straight up and twice the weapon's
+     * own pull, and it read as the kick tilting. At 0.15 it is 0.20..0.50:
+     * the pull is what the weapon says it is, every round, and the spread is
+     * texture on the magnitude rather than a claim about direction.
      */
-    sweepSpan: 0.35,
+    sweepSpan: 0.15,
   },
   /** Multiplier while fully aimed down sights — a braced stance kicks less. */
   adsMult: 0.55,
@@ -1046,8 +1069,11 @@ export const recoil = {
    * so every round twists it the same way; tying the roll to `kickDrift` made
    * the sign flip shot to shot, which reads as camera shake rather than as a
    * gun, and made the roll vanish altogether on the rounds whose drift came
-   * out near zero — which, with `pattern.yawStart` at 0.3, is most of the
-   * opening of every string.
+   * out near zero, which the drift no longer does at all: `yawBias` is its
+   * centre and `sweepSpan` a narrow band about it, so a rifle's rounds all
+   * pull the same way. The argument stands whatever the drift does — a bore
+   * over a shoulder twists one way, and a roll drawn against a random number
+   * is camera shake wearing a gun's clothes.
    *
    * Measured off 240 fps reference footage (`docs/weapons.md`), by tracking
    * the left and right thirds of the frame separately: what roll IS, to a

@@ -1775,7 +1775,14 @@ lobby and the regions' two headers, and what is not built.
   jumping in random directions rather than a muzzle walking somewhere that can
   be learned. `yawBias` scales and offsets it exactly as it did the noise, so
   the MEAN of every round is unmoved and this is a coherence change and not a
-  difficulty one.
+  difficulty one. **A STRING CHANGES HOW HARD A WEAPON KICKS AND NEVER WHICH
+  WAY**: `pattern` is ONE envelope spent on both axes and the direction is the
+  weapon's own `yawBias`, a torque that does not oscillate. A second envelope
+  ramping the lateral against a tapering vertical rotates the kick vector
+  through the opening of every string — measured, the aimed rifle ran 2° off
+  vertical on round one and 12° by round seven, then back — and a sweep wide
+  enough to read as a shape rotates it too, `sweepSpan` being an angle as much
+  as a magnitude.
 - **One event arrives ONCE, and a repeating one ACCUMULATES rather than
   restarting.** The view punch broke both: a countdown set to 1 on the frame
   the trigger broke put the FOV spike, the shove and the yaw nudge whole into a
