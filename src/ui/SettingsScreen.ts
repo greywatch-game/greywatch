@@ -111,12 +111,11 @@ const BINDINGS: readonly Binding[] = [
   // the table can name it here without qualification.
   ["Weapon", "Y", "Wheel 1 2"],
   ["Grenade", "RB", "G"],
-  // The one row with nothing in the pad column, and the table says so plainly
-  // rather than leaving the cell to be read as an oversight: every button is
-  // already a verb, and the two weapons with a selector both spawn on the
-  // position they were tuned in — so this is the one binding a pad player is
-  // not missing anything by not having.
-  ["Fire mode", "—", "V"],
+  // Both halves are Battlefield 6's own defaults. The d-pad's south is the
+  // one direction with nothing on it in a round — the north is the vehicle
+  // verb — and it steps a menu everywhere else, which is the same double duty
+  // the north already does.
+  ["Fire mode", "D-pad down", "B"],
   ["Sprint", "L3", "Shift"],
   // Two keys because they behave differently — Ctrl is held, C latches, and
   // on the pad B latches too. The table's grammar is one chip per key and it
@@ -694,7 +693,7 @@ export class SettingsScreen {
    * The key-cap table. Reference and nothing else: no `data-row`, so the cursor
    * steps straight past it — it is not a row, it is what the Controls page is
    * about, which is why it is in the panel beside the list rather than under
-   * it. Eleven rows under a list is the longest block on the screen and the
+   * it. A dozen rows under a list is the longest block on the screen and the
    * thing that decided its height; beside one, it costs the list nothing.
    */
   private bindingsMarkup(bindings: readonly Binding[]): string {

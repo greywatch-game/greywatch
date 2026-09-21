@@ -535,7 +535,7 @@ they say what the pattern is for.
 `CONFIG.weapons[id].modes` is a LIST of selector positions and `modes[0]` is the
 one the weapon is carried on. Six of the eight entries state one position and so
 have no selector at all; the rifle states `auto, semi` and the carbine states
-`burst, semi`, and `V` walks the list. Everything about the feature falls out of
+`burst, semi`, and `B` or the d-pad's south walks the list. Everything about the feature falls out of
 one decision: **`Player.tryShot` reads the POSITION and never the weapon.**
 
 **A position resolves to exactly four facts** (`FireMode` in
@@ -601,11 +601,27 @@ alone, being the weapon's own dwell and already earned, and so is the trigger
 latch: `auto` to `semi` under a held finger arms nothing, so the trigger has to
 come up exactly as it would after any other pull.
 
-**It is keyboard-only, and that is a statement.** Every button on the pad is
-spoken for (the table in `SettingsScreen` is the audit), the glass has no room
-for a verb used a few times a round, and **both weapons spawn on the position
-they were tuned in** — so a player who never finds the key is playing the game
-the kit was balanced for. The HUD says so in its own element rather than inside
+**Both bindings are Battlefield 6's own**, which is why they are `B` and the
+d-pad's SOUTH rather than the `V` an earlier generation of shooter would have
+used. **What that game does with them is deliberately not copied**: there the
+function shares a button with the laser, the flashlight and the scope's zeroing
+and answers only while the sights are UP — a contextual binding this game has
+nothing to put in the other contexts, since it has no laser, no torch and no
+zeroing, and one players file bug reports about. Here the same two inputs do the
+one thing, at the hip as well as aimed.
+
+**The d-pad's south is free in a ROUND and spoken for in a MENU**, exactly as
+its north already is: `InputManager` reads button 13 twice, once here and once
+as `menuDownPressed`, and the two can never collide because the selector is only
+walked from `Game.updateOnFoot`, which does not run under a lid. That is the
+same arrangement `usePressed` documents for button 12, and it is what made a
+d-pad direction available at all on a pad whose every face and shoulder button
+is a verb (the table in `SettingsScreen` is the audit).
+
+**There is deliberately no glass button.** A phone's HUD is already full of
+verbs a body needs in every round, and **both weapons spawn on the position they
+were tuned in** — so a player who never reaches this is playing the game the kit
+was balanced for. The HUD says so in its own element rather than inside
 the kit caption (`#fire-mode`, brighter than the label beside it, absent rather
 than dimmed on a weapon with one position), because the label is what you picked
 in a menu and the mode is what the trigger will do on the next pull. The kit

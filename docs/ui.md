@@ -209,7 +209,7 @@ whole reason it moved.** It hung under the menu's title and under the pause list
 drawn from one table by one loop, which was right while the settings screen was
 two toggles no pad could reach. Once that screen became a list a cursor lands on
 from both places, the table belonged in it: the menu is five decisions and a
-Deploy button, and eleven rows of reference under them made the longest block on
+Deploy button, and a dozen rows of reference under them made the longest block on
 the card the one nobody reads twice. It is one row of the menu and one item of
 the pause list away, and the settings screen opens on the page that carries it.
 
@@ -269,7 +269,7 @@ split into another heading.
 **The key-cap table is the one thing on the screen that is not a choice, and it
 is in the PANEL beside the list rather than under it.** It carries no
 `data-row`, so the cursor steps straight past it — it is not a row, it is what
-the Controls page is *about*. Eleven rows under a list of three sliders was the
+the Controls page is *about*. A dozen rows under a list of three sliders was the
 longest block on the screen and the thing that decided the panel's height;
 beside that list it costs it nothing. Its own three columns (action / keyboard /
 pad) are set independently of the list's, because an action name is short where

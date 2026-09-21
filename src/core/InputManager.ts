@@ -136,15 +136,27 @@ export class InputManager {
    */
   grenadePressed = false;
   /**
-   * Edge-triggered "walk the fire selector" (V).
+   * Edge-triggered "walk the fire selector" (B / d-pad DOWN).
    *
-   * **The one verb in this file with no pad and no glass behind it**, and
-   * that is a statement rather than an omission. Every button on the pad is
-   * spoken for — the table in `SettingsScreen` is the audit — and the two
-   * weapons that HAVE a selector both spawn on the position they were tuned
-   * in, so a player who never finds this key is playing the game the kit was
-   * balanced for. A thumb that had to give something up for it would be
-   * giving up a verb it needs in every round for one it wants in a few.
+   * **Both bindings are Battlefield 6's**, which is the whole of why they are
+   * these two and not the `V` a shooter of an earlier generation would have
+   * used. What that game does NOT do is copied deliberately: there the
+   * function shares a button with the laser, the flashlight and the scope's
+   * zeroing and only answers while the sights are UP, which is a contextual
+   * binding this game has nothing to put in the other contexts — no laser, no
+   * torch, no zeroing — and which players file bug reports about. So it is the
+   * same two inputs doing one thing, at the hip as well as aimed.
+   *
+   * **The d-pad's south is free in a ROUND and spoken for in a MENU**, exactly
+   * as its north is — see `usePressed`, which takes button 12 on the same
+   * terms. `menuDownPressed` below reads the same button, and the two can
+   * never collide because the selector is only ever walked from
+   * `Game.updateOnFoot`, which does not run under a lid.
+   *
+   * There is deliberately no glass button. A phone's HUD is already full of
+   * verbs a body needs in every round, and both weapons with a selector spawn
+   * on the position the kit was balanced in — so a player who never reaches
+   * this is playing the game as shipped.
    */
   fireModePressed = false;
   /**
@@ -840,7 +852,11 @@ export class InputManager {
     this.grenadePressed = grenadeNow && !this.prevGrenade;
     this.prevGrenade = grenadeNow;
 
-    const fireModeNow = this.keys.has("KeyV");
+    // Button 13 is the d-pad's south. It is read a second time further down
+    // as `menuDownPressed`; see the field, and `usePressed` for the north's
+    // identical arrangement.
+    const fireModeNow =
+      this.keys.has("KeyB") || (pad ? buttonHeld(pad, 13, trig) : false);
     this.fireModePressed = fireModeNow && !this.prevFireMode;
     this.prevFireMode = fireModeNow;
 
@@ -1158,7 +1174,7 @@ const BOUND_CODES = new Set([
   "KeyF",
   "KeyG",
   "KeyL",
-  "KeyV",
+  "KeyB",
   "Digit1",
   "Digit2",
   "Digit3",
