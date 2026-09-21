@@ -234,6 +234,33 @@ export const recoil = {
      */
     sweepShots: 17,
     sweepNoise: 0.3,
+    /**
+     * How far the sweep and its noise may carry a round off the weapon's own
+     * `yawBias` — the SPREAD of the lateral, where the bias is its centre.
+     *
+     * **It used to be `1 - |bias|`, which is not a decision about anything.**
+     * That form kept the total inside -1..+1 by spending whatever the bias had
+     * not, so a weapon's lateral SPREAD was decided entirely by its pull: the
+     * rifle at a bias of 0.35 wandered +-0.65, which put its worst round at
+     * 1.0 — three times its own mean, and a round that throws the sight
+     * sideways three times harder than the weapon's character says it should.
+     * Those are the rounds seen to jump. Nothing physical couples the two:
+     * torque is what the weapon does every round, and the spread is the
+     * shooter.
+     *
+     * At 0.35 the rifle's lateral is 0..0.70 about a mean of 0.35, so **every
+     * round pulls the same way** and what varies is how hard — which is what a
+     * torque IS, and what "it should pull to the right, but a round would not
+     * kick the dot at that much of an angle" is asking for. The MEAN is
+     * untouched on every weapon, so the permanent walk is exactly what it was;
+     * what goes is the tail. A zero-bias weapon (the DMR, the bolt gun) is
+     * left with +-0.35 of pure wander, which is right for a rifle fired one
+     * round at a time: there is no string for a direction to belong to.
+     *
+     * The total is still clamped to -1..+1, so every ceiling documented for
+     * `maxYaw` survives whatever a future weapon states for a bias.
+     */
+    sweepSpan: 0.35,
   },
   /** Multiplier while fully aimed down sights — a braced stance kicks less. */
   adsMult: 0.55,
@@ -955,19 +982,7 @@ export const recoil = {
   fovPunch: 0.025,
   camPush: 0.035,
   shakePitch: 0.007,
-  /**
-   * The punch's own sideways nudge — RENDERED only, so no round and no bot
-   * ever sees it, and it is deliberately smaller than the pitch beside it.
-   *
-   * **0.0035 rather than 0.006, because it is the last thing in the picture
-   * that throws the view sideways and comes straight back.** It was sized
-   * against an aim whose own lateral swung four times further; with
-   * `yawPerShot` cut to leave the WALK and not the swing, a cosmetic of the
-   * old size would simply have become the swing, with the added insult of
-   * being one no bullet agrees with. `shakePitch` is untouched: a gunshot
-   * spends none of it (`punchLift` is 0) and a blast still wants all of it.
-   */
-  shakeYaw: 0.0035,
+  shakeYaw: 0.006,
   /**
    * How much of `shakePitch` a GUNSHOT's punch lifts the view by — the blast
    * that shares `addPunch` lifts by all of it.
@@ -981,10 +996,44 @@ export const recoil = {
    * string that put every round's peak on its first frame instead of at 60
    * ms, doubled the per-round travel, and made the dominant motion of each
    * cycle the view SINKING while the aim was still rising — the other half of
-   * what a player described as downward recoil. The FOV spike, the shove, the
-   * yaw nudge and the roll are untouched, and a grenade still snaps the head.
+   * what a player described as downward recoil. The FOV spike, the shove and
+   * the roll are untouched, and a grenade still snaps the head.
    */
   punchLift: 0,
+  /**
+   * How much of `shakeYaw` a GUNSHOT's punch swings the view by — `punchLift`'s
+   * twin, and it exists because that field being ZERO turned this one into
+   * something it was never meant to be.
+   *
+   * **With no lift, the punch's only angular term is sideways, so every round
+   * got a purely HORIZONTAL jolt that rose and fell in a tenth of a second.**
+   * The report was that some rounds threw the sight up and out at about
+   * 45 degrees and came back, and the arithmetic is exactly that: measured
+   * per round through a held trigger, the aimed rifle's own aim rises
+   * **0.256 deg vertically and 0.035 sideways** — a 9 degree median, which is
+   * the "mostly up with a slight pull" this kit is meant to have — while the
+   * punch's yaw alone peaked at **0.201 deg**, five and a half times the aim's
+   * own lateral and four fifths of its vertical. The diagonal was the
+   * COSMETIC, and no round ever went where it pointed.
+   *
+   * **Zero, and read it beside `punchLift` rather than on its own: together
+   * they say a GUNSHOT'S PUNCH HAS NO DIRECTION.** Every angle in a rifle
+   * round is already stated honestly somewhere the bullets can see it — the
+   * climb in `pitchPerShot`, the pull in `yawPerShot` and `yawBias`, the twist
+   * in `rollBeat`'s fixed torque — so a cosmetic angle on top can only ever
+   * disagree with one of them, and this one disagreed with all three at once.
+   * What still sells a shot to the eye is the three terms that make no claim
+   * about direction at all: the field of view, the shove along the view axis,
+   * and the roll. Measured with it gone, the aimed rifle's per-round vector is
+   * 0.256 deg up against 0.053 across — twelve degrees off vertical, which is
+   * the slight pull this kit is meant to have.
+   *
+   * **A BLAST keeps all of it**, which is why this is per-event like `lift`
+   * rather than a smaller `shakeYaw`: a grenade HAS a bearing, throwing the
+   * view off it is the whole point, and nothing about a blast is already
+   * stated in a weapon's table.
+   */
+  punchSwing: 0,
   /**
    * The camera's ROLL after a shot: the weapon twisting in the hands, as two
    * opposite-signed beats on one clock — `core/math.ts`'s `impulse`, the same

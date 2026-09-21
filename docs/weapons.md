@@ -1297,7 +1297,52 @@ Measured after, same probe, same strings:
 
 The vertical is identical on every row (2.44 / 4.98 / 2.96° of sustained pitch,
 before and after), which is the check that matters: **this is a change to what
-the horizontal DOES, not to how hard the kit is to hold.** `pattern.sweepShots`
+the horizontal DOES, not to how hard the kit is to hold.**
+
+#### …and then the ANGLE of a single round, which was the cosmetic all along
+
+The report after that pass was that some rounds still threw the dot up and out
+at about **45°** and came back. Measured per round through a held trigger, the
+aim was not doing it: the aimed rifle's own kick rises **0.256° vertically and
+0.035° sideways**, a 9° median, which is the "mostly up with a slight pull" the
+kit is meant to have. **The punch's yaw alone peaked at 0.201°** — five and a
+half times the aim's own lateral and four fifths of its vertical rise — and
+because `punchLift` is 0 it was the punch's *only* angle, so every round carried
+a purely sideways cosmetic jolt that rose and fell in a tenth of a second.
+
+`punchSwing` is `punchLift`'s twin and **both are 0 for a gunshot, which
+together say that a gunshot's punch HAS NO DIRECTION.** Every angle in a rifle
+round is already stated where the bullets can see it — the climb in
+`pitchPerShot`, the pull in `yawPerShot` and `yawBias`, the twist in
+`rollBeat`'s fixed torque — so a cosmetic angle on top can only disagree with
+one of them, and this one disagreed with all three at once. What sells a shot to
+the eye is the three terms that make no claim about direction: the FOV spike,
+the shove along the view axis, and the roll. **A BLAST keeps both**, which is
+why they are per-event rather than smaller constants: a grenade *has* a bearing
+and throwing the view off it is the whole point.
+
+The second half was `pattern.sweepSpan`, which replaced a spread written as
+`1 - |bias|` — a form that decided a weapon's lateral SPREAD entirely by its
+pull, so the rifle at a bias of 0.35 wandered ±0.65 and its worst round landed
+at 1.0, **three times its own mean**. Nothing physical couples them: torque is
+what the weapon does every round, the spread is the shooter. At a span of 0.35
+the rifle's lateral is 0..0.70 about a mean of 0.35 — *every round pulls the
+same way and what varies is how hard* — and the mean is untouched on every
+weapon, so the walk above is exactly what it was.
+
+Per-round vector, measured, aimed rifle through a held trigger:
+
+| | rise | across | median angle off vertical | p90 | max |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| original | 0.257° | 0.635° | 72° | 74° | 77° |
+| after the walk/spring split | 0.256° | 0.354° | 59° | 63° | 63° |
+| after both of the above | 0.257° | **0.029°** | **7°** | **12°** | **14°** |
+
+A single aimed shot measures **1°** — a tap is dead vertical. At the hip it is
+9° median (16° on the SMG), and the sustained pitch plateau is 2.44° on every
+one of those rows, unchanged. **The two outliers either table shows at the last
+round of a string are the metric and not a kick**: the window for round 20 runs
+past the end of the string, so it catches the axis hauling back to centre. `pattern.sweepShots`
 went 11 → 17 in the same pass for the same reason — at eleven a half cycle was
 five and a half rounds, so the muzzle went out and came back inside one burst,
 which is a swing however coherent it is; at seventeen a burst is most of one

@@ -2178,10 +2178,12 @@ export class Player implements Combatant {
     this.stringShots += 1;
     this.sinceShot = 0;
     // Which way this round goes, drawn ONCE and read by both the aim
-    // (`recoilKick`) and the model (`ViewModel`'s kick). The bias SCALES the
-    // sweep and offsets it rather than being added to it, so the total stays
-    // inside -1..+1 whatever the bias is — which is what keeps every ceiling
-    // documented for `maxYaw` true.
+    // (`recoilKick`) and the model (`ViewModel`'s kick). The bias is the
+    // CENTRE of the draw and `sweepSpan` is how far off it a round may land,
+    // clamped so the total stays inside -1..+1 whatever the bias is — which is
+    // what keeps every ceiling documented for `maxYaw` true. The span used to
+    // be `1 - |bias|`, which made a weapon's spread a consequence of its pull
+    // and put the rifle's worst round at three times its own mean.
     //
     // **It is a SWEEP over the string and not an independent draw per round**,
     // which is `pattern.sweepShots`'s argument: eight to thirteen independent
@@ -2199,7 +2201,10 @@ export class Player implements Combatant {
     const wander =
       walk * (1 - pat.sweepNoise) + (Math.random() * 2 - 1) * pat.sweepNoise;
     const bias = this.weapon.yawBias;
-    this.kickDrift = wander * (1 - Math.abs(bias)) + bias;
+    this.kickDrift = Math.max(
+      -1,
+      Math.min(1, bias + wander * pat.sweepSpan),
+    );
     // The weapon takes a velocity, not a displacement: see `kick`. It
     // ACCUMULATES on a weapon still coming home, which is the whole reason a
     // held trigger looks different from a string of taps — and the shot also

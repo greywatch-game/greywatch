@@ -1785,7 +1785,13 @@ lobby and the regions' two headers, and what is not built.
   response now (`punchRise`/`punchFall`) peaking 46 ms after the shot, where
   the aim's kick and the roll beat already peak. **Anything new on the rendered
   camera owes both halves**; an envelope restarted per round drops to zero on
-  the frame of every round, which is the same cut inverted.
+  the frame of every round, which is the same cut inverted. **And a GUNSHOT's
+  punch has NO DIRECTION** — `punchLift` and `punchSwing` are both 0, so what
+  is left is the FOV, the shove and the roll. Every angle in a round is already
+  stated where the bullets can see it, so a cosmetic one can only disagree:
+  with no lift, the yaw alone was five times the aim's own per-round lateral
+  and threw the sight out at 45 degrees on a round that went up. A BLAST keeps
+  both, having a bearing and no table to state it in.
 - **A team's colour is WORN, not merely drawn.** `CONFIG.teams[].color` paints
   a soldier's pauldrons, bandolier and helmet band as well as the deploy map's
   markers, so it has to stay saturated enough to read at three pixels through

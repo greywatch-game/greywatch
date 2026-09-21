@@ -4986,13 +4986,16 @@ export class Game {
       // left with the clean aim. The SHOCK is the weapon's, built in `Player`
       // like the kick above it; a blast raises a punch too and passes none, so
       // the number arrives per event rather than being read off the hands.
-      // `punchLift` is the one term a gunshot drops: the aim's kick above is
-      // already the whole measured lift (`CONFIG.recoil.punchLift`).
+      // `punchLift` and `punchSwing` are the two terms a gunshot cuts: the aim's
+      // kick above is already the whole measured lift, and with no lift the
+      // yaw would be the punch's ONLY angle — a purely sideways jolt on a
+      // round that went up.
       this.cameraSys.addPunch(
         this.player.kickDrift,
         this.player.punchShock,
         1,
         CONFIG.recoil.punchLift,
+        CONFIG.recoil.punchSwing,
       );
       // Muzzle flash: a hard, very short pulse that lights whatever is in
       // front of the player — the main reason to keep shooting in the dark.
@@ -5456,6 +5459,7 @@ export class Game {
       this.player.punchShock,
       1,
       CONFIG.recoil.punchLift,
+      CONFIG.recoil.punchSwing,
     );
   }
 

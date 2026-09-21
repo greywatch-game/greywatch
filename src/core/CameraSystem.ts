@@ -701,7 +701,7 @@ export class CameraSystem {
    * the whole measured lift, and a step on top of it sank the view through
    * every round of a string), and a blast keeps all of it.
    */
-  addPunch(drift = 0, shock = 1, twist = 1, lift = 1): void {
+  addPunch(drift = 0, shock = 1, twist = 1, lift = 1, swing = 1): void {
     // A velocity into the envelope, not a level on it — the same idiom as
     // every other impact in this file, and what lets a round landing on a
     // punch still in flight add to it instead of throwing the remainder away.
@@ -714,7 +714,14 @@ export class CameraSystem {
     // redrawn per round (`recoil.pattern.sweepShots`) an even split is half
     // the punch disagreeing with the muzzle about which way the round went —
     // which is the reading "the aim jumps in random directions" describes.
-    this.punchYaw = d * 0.75 + (Math.random() * 2 - 1) * 0.25;
+    //
+    // `swing` is `lift`'s twin and a gunshot passes a tenth of it: with no
+    // lift, this is the punch's ONLY angle, so at full size it made every
+    // round a purely sideways jolt that came straight back — 0.20 deg of it
+    // against the aim's own 0.035, which is the 45-degree diagonal the sight
+    // was seen to take. A blast keeps all of it; it has a bearing to be thrown
+    // off, where a rifle's sideways component is already in `yawPerShot`.
+    this.punchYaw = (d * 0.75 + (Math.random() * 2 - 1) * 0.25) * swing;
     this.rollT = 0;
     this.rollTwist = twist;
   }

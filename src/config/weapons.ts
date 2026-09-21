@@ -249,10 +249,16 @@ export const weapons = {
      * makes the walk drift, so a burst has a direction you can pre-empt, and
      * the six weapons stop being one recoil pattern scaled six ways.
      *
-     * It scales the noise rather than adding to it (`Player.tryShot` draws
-     * `(rand * (1 - |bias|) + bias)` into `kickDrift`), so the total is still
+     * It is the CENTRE of the draw and `recoil.pattern.sweepSpan` is how far
+     * off it a round may land (`Player.tryShot` builds
+     * `clamp(bias + sweep * span)` into `kickDrift`), so the total is still
      * bounded by `yawPerShot` and every ceiling documented for `maxYaw`
-     * survives untouched. 0 is bit-for-bit the old behaviour.
+     * survives untouched. **It used to SCALE the noise by `1 - |bias|`**,
+     * which made a weapon's lateral spread a consequence of its pull and put
+     * the rifle's worst round at three times its own mean — the rounds that
+     * were seen to throw the sight sideways. At a span of 0.35 the rifle's
+     * lateral is 0..0.70: every round pulls right, and what varies is how
+     * hard, which is what a torque is.
      *
      * **The draw is made ONCE per round and read three times** — by the aim
      * (`recoilKick`), by the model's lean and roll (`recoil.kickSide`/
