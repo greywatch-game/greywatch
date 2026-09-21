@@ -262,9 +262,12 @@ src/
                         #   and the five colour groups a weapon merges into —
                         #   which are also what a finish repaints
     RifleModel.ts       # Low-poly SCAR-pattern battle rifle
-    CarbineModel.ts     # Low-poly FAMAS-pattern bullpup burst carbine —
-                        #   magazine behind the grip, carry-handle blade,
-                        #   full-hand trigger guard, folded bipod
+    CarbineModel.ts     # Low-poly polymer bullpup burst carbine —
+                        #   magazine behind the grip, the rail carried on a
+                        #   spine over an OPEN window, a skeletonised butt,
+                        #   and the one stepped square muzzle in the kit. The
+                        #   second model whose BORE is not y = 0: the barrel is
+                        #   screwed into the chamber the ejection port is cut in
     SmgModel.ts         # Low-poly compact SMG — same contract
     DmrModel.ts         # Low-poly semi-auto marksman rifle
     SniperModel.ts      # Low-poly bolt-action sniper rifle — an action wrapped

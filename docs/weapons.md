@@ -1697,17 +1697,54 @@ station is where it wins: the receiver runs to the butt pad, so the aperture sit
 sight radius out of a weapon 0.96 long, against the rifle's 0.715 out of 1.25 — the
 same trade the layout makes everywhere else on it.
 
-**Its carry handle is the same rule from the other side, and is why that handle has
-no bridge.** The model is a FAMAS, whose one unmistakable feature is a triangular
-handle over the barrel with the sights in a tunnel through it — and a tunnel is
-exactly what `RAIL_REACH` forbids, since nothing forward of the mount may stand
-above `railTop` without sitting in the middle of the scope's picture. So the handle
-is cut off at the sight line: a blade running the full depth from the barrel to the
-rail's underside, with the rail as its top face, which is what the flat-top variant
-of that weapon did for the same reason. What carries the silhouette instead is
-everything BELOW the rail, where there is no cone to answer to — the blade and the
-raked strut onto the gas block, a full-hand trigger guard drawn around the
-viewmodel's own glove, and a bipod folded down the handguard's flanks.
+**Its handle is the same rule from the other side, and is why the hole in this
+weapon is UNDER the sight line rather than around it.** A bullpup's handle wants
+to be a tunnel with the sights inside it, and a tunnel is exactly what
+`RAIL_REACH` forbids, since nothing forward of the mount may stand above
+`railTop` without sitting in the middle of the scope's picture. So the rail is the
+top face and everything structural hangs below it: forward of the receiver it is
+carried on a spine a third of its width, on two posts — one on the receiver, one
+on the gas block — with a long window of real daylight between them. That is the
+one hole through a weapon in this kit, it reads at any distance because what shows
+through it is the WORLD rather than a darker shade of gun, and the cone still sees
+an unbroken flat deck. The rest of the silhouette is everything else below the
+rail, where there is no cone to answer to: a skeletonised butt with a diamond void
+and a hook of a toe, a slotted handguard, and the one square, stepped muzzle in a
+kit whose other three end in round cages and a chambered brake. It is drawn from
+`reference-media/bullpup.png`.
+
+**It is the second weapon here whose BORE is not on y = 0, and the first whose
+reason is the ejection port.** `SniperModel` was the first — an action wrapped
+around the bore rather than a receiver sitting on one — and the rule
+`weaponKit.ts` states for its `bolt` node generalises: a barrel is screwed into
+a CHAMBER, and the chamber is whatever the port is cut into. Built on the
+origin, this weapon's barrel ran 0.032 under its own ejection port, and that is
+not a subtle fault in a side view — the port is the largest light-coloured thing
+on the flank and the barrel is the longest straight line on the weapon, so the
+eye pairs them whether or not it is told to. `BORE` is 0.02 now, everything
+forward of the receiver is written against it (the handguard, the gas block and
+its regulator, the barrel, every ring of the muzzle, and both landmarks
+`WeaponParts` hands back), and the sight height falls out at 0.066 where it was
+0.086 — the right direction anyway, since every real weapon of this layout sits
+between 0.055 and 0.070.
+
+**Raising it costs the window, and the RAIL is where that is paid back.** A
+window loses from the bottom whatever the barrel gains, so the bed and the rail
+over it are 0.018 together where they were 0.034: a spine deep enough to look
+structural closes the one hole the weapon has. The handguard is the other half —
+it is DEEPENED rather than carried up, because one that keeps its clearance
+under a raised barrel takes its belly up with it and the profile then steps two
+centimetres where it meets the receiver, which the eye reads as a mistake rather
+than as the width change the model claims.
+
+**Two more of its numbers were moved by a photograph rather than by arithmetic,
+and both are recorded in `CarbineModel.ts` beside the parts they moved.** The firing
+grip went forward 0.024 and the magazine well back 0.033, because at the authored
+positions the two met flush at the bottom and the kit stage showed a magazine
+growing out of the front of the grip — the daylight between them is the layout's
+only evidence, and it has to be spent from both ends. And the butt pad went from
+0.126 deep to 0.150, because everything in front of it is 0.146 and a weapon whose
+whole mass is behind the trigger may not taper to a sliver at the shoulder.
 
 **The LMG is the third weapon that rule has shaped, and there it took the rail
 apart.** A belt-fed carries two things on top of the barrel that nothing else here
