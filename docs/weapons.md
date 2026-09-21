@@ -116,9 +116,8 @@ two meshes an arm, one per colour.
   - **The lateral, roll and yaw take the shot's own `kickDrift`**, so the model
     leans the way the muzzle actually walked rather than picking a direction of
     its own. `kickRoll` is subtracted against it, because a positive `rot.z`
-    takes the right flank UP (see `RELOAD_CANT`) and a weapon walking right
-    has to roll negative to lean into where it is going. Flip it with that
-    convention.
+    takes the right flank UP (see `reloadRot`) and a weapon walking right has to
+    roll negative to lean into where it is going. Flip it with that convention.
   - **The off-axis terms are damped by `kick.adsMult` (0.3) and the z travel is
     not**, and that split is geometry rather than taste. The weapon carries the
     sight, so anything that rotates or laterally shifts the model while aimed
@@ -240,58 +239,10 @@ machine gun without a per-weapon number anywhere.
 
 - **It is a TIMELINE, not a pose.** `reloadBlend` is only the gate — what eases
   the weapon back out when a swap or a death cancels one — and `reloadPhase` is
-  the gesture.
-- **It is a KEYED TRACK, and that is the third version rather than a tuning of
-  the second.** `reload.keys` is a list of whole poses on the phase,
-  interpolated one segment at a time, and `poseReloadTrack` is the only thing
-  that reads it. **The two versions before it were both
-  `pose = Σ vectorᵢ × weightᵢ(phase)`, and that form cannot be tuned into
-  looking real** — the three Euler axes come out a fixed linear combination of a
-  handful of smooth scalars, so the weapon can only ever rotate about a few
-  fixed axes and always with a continuous velocity through each of them. The
-  ease is the REPRESENTATION, not a setting inside it, and every layer added to
-  fix it only ever bought a smoother sum. Measured as per-frame pixel change
-  across a rendered 1.4 s reload: version one ran 24 consecutive frames under
-  0.06 (a dead hold), and version two replaced that with a textbook bell —
-  1.03, 1.14, 1.19, 1.23, 1.26, 1.27, 1.27, 1.26, 1.25 — which is exactly what
-  "still too smooth" was describing.
-- **`ease` is per SEGMENT and is what the list is for.** `in` is accelerating
-  and fastest ON arrival (a throw, a haul, a magazine driven onto its seat);
-  `out` is decelerating and fastest LEAVING (a rebound off an arrest); `smooth`
-  is a hermite, at rest at both ends, and is spent on exactly the two segments
-  that genuinely are drifts. **An `in` into a key followed by an `out` out of it
-  is a CORNER — the velocity reverses at full speed — and there are three, at
-  0.09, `magSeat` and 0.90: the throw's arrest, the slap, and the haul's arrest
-  against the shoulder.** It is `recoilCurve`'s argument at a lower frequency,
-  and it is the same argument: what carries impact is the corner, not the
-  smoothness of either side of it.
-- **Both ends of `keys` must be the carry and `at` must reach 1**, because
-  `Player.reloadPhase` rests at 1 for as long as nothing is being reloaded — a
-  last key that was not the carry would be a permanent offset on the weapon for
-  the rest of the round. The last two keys are also what keeps `tiltOut`'s rule:
-  past level at 0.90, settled by 1, nothing still moving on the frame the
-  magazine refills.
-- **The track does NOT gate the aim, and may not be asked to.** `tiltIn`/
-  `tiltOut` are the aim's own break and return and are no longer the pose's,
-  because the track deliberately goes PAST the carry near the end: a weight over
-  1 or under 0 on the hip→ADS blend would drive it past the aimed pose and take
-  the fitted sight off the axis the rounds fly down, which is a reticle lying at
-  the one moment it may not.
-- **`tremor` is the other half of it: nothing may be STILL between the keys
-  either.** A weapon braced by one arm while the other works it is never at
-  rest, and the two middle segments are otherwise half a second of hold with a
-  magazine moving under them. Three things about it are load-bearing. It is
-  clocked in SECONDS (`ViewModel.reloadClock`) and not off the phase, because it
-  stands for an arm rather than for the gesture — on the phase, the LMG's 3.4 s
-  change would get the rifle's number of wobbles at a third of the frequency. It
-  is a different pair of INCOMMENSURATE sines per axis, so the three never come
-  back into step and nothing in it repeats inside one reload. And the
-  frequencies stop at ~7 Hz, because higher is truer to a real hand and starts
-  to strobe at the 30 fps a phone actually runs at.
-- **It is gated on `handAway`, which is the support hand's own weight** —
-  resolved once in `update` and passed to both `poseReloadTrack` and
-  `poseReload`, because the hand leaving the handguard and the weapon becoming
-  unsteady are ONE event and two copies of it could disagree.
+  the gesture. The weapon tips out of the carry over `tiltIn`, holds while the
+  magazine is changed under it, and is level again by `tiltOut`'s end, which is
+  before the magazine refills: a weapon still coming level on the frame the
+  round is available is a reload that lied about when it ended.
 - **The beats are `Sfx.reload`'s and must move with them.** That sound is four
   events — catch, magazine out, magazine seated, bolt — and
   `magOut`/`magSeat`/`bolt` are three of them to the frame. What makes the
@@ -350,22 +301,10 @@ machine gun without a per-weapon number anywhere.
   `insertFrom` the support hand rides exactly the travel the magazine rides;
   before that they part company on purpose, because a hand chasing a falling
   magazine down reads as having dropped it.
-- **The strip, the seat and the bolt are IMPULSES, not poses** — instant attack,
-  squared decay, the same shape as the per-shot kick, because they are the same
-  kind of event. In the pose stack as blends they would be three more places the
-  weapon leans and none of them would land on its sound.
-- **`stripKick` is the one that was missing and the beat it was missing from was
-  the loudest in the sound.** `magOut` had nothing on the weapon at all: the
-  magazine simply began to fall, which is a magazine let go of rather than one
-  pulled out of a spring-loaded catch by a fist. It is the seat mirrored in
-  every axis and that is the whole of its argument — same hand, same well,
-  opposite direction — so it pulls the weapon DOWN where the seat drives it up,
-  and pitches the muzzle down about the firing hand because the well is forward
-  of the grip. **It is also the one that rolls WITH the cant**: the seat and
-  the bolt roll against the cant because a mass driven INTO the weapon knocks it
-  out of the hand's cant, and a fist pulling DOWN on a magwell the roll has
-  already brought toward the camera pulls the weapon further onto its side. All
-  three flip with the cant.
+- **The seat and the bolt are IMPULSES, not poses** — instant attack, squared
+  decay, the same shape as the per-shot kick, because they are the same kind of
+  event. In the pose stack as blends they would be two more places the weapon
+  leans and neither would land on its sound.
 - **The magazine keys off `reloading`, never off the eased blend.** It has two
   places to be and no way to be between them, so a cancelled reload puts it back
   in the weapon rather than lerping it home through the receiver.
@@ -378,25 +317,22 @@ machine gun without a per-weapon number anywhere.
   so a phase that snapped to the end underneath a blend still at 1 would take
   the pose off in a single frame.
 - **The pose is a CANT, not a lift.** A rifle is not hoisted in front of the
-  face to change a magazine, so `RELOAD_CANT.pos` barely moves — the weapon
-  stays near carry height, pulled in a little — and the roll is what brings the
-  magwell where the eye can find it. **Every key is measured as a departure from
-  that one**, so the ceiling this bullet sets is one number to check rather than
-  nine. Two passes got this wrong from opposite ends. The
+  face to change a magazine, so `reloadPos` barely moves — the weapon stays near
+  carry height, pulled in a little — and the roll is what brings the magwell
+  where the eye can find it. Two passes got this wrong from opposite ends. The
   original *dipped* the weapon, which played the whole magazine change below the
   bottom edge of a frame the magwell was already hanging out of. The fix over-
   corrected and raised it far enough to frame the magazine dead centre, which
   looked staged at the hip and put a receiver across the middle of the screen on
   an aimed reload.
-- **`RELOAD_CANT.rot.z` must be negative.** A positive roll takes the right flank up
+- **`reloadRot.z` must be negative.** A positive roll takes the right flank up
   and swings the underside out to the right, away from a camera sitting to the
   LEFT of a weapon carried at `hipPos.x`: the magwell is presented to nobody and
   the weapon reads as held out at an angle rather than worked on. Negative rolls
   the underside toward the camera and carries the magwell inboard, which is both
   where the support hand comes from and the way a right-handed shooter actually
   cants a rifle to change magazines. `seatKick`/`boltKick` roll *against* that
-  cant — a magazine driven home knocks the cant out — `stripKick` rolls *with*
-  it for the reason below, and all three flip with it.
+  cant — a magazine driven home knocks the cant out — and flip with it.
 - **A reload BREAKS THE AIM (`reload.aimBreak`), and that is geometry as much as
   realism.** Nobody changes a magazine through their optic, and an aimed weapon
   is *on the camera axis*, so a reload pose applied there swings the receiver
