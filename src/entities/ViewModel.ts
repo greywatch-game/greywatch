@@ -1415,16 +1415,22 @@ export class ViewModel {
       // clunk, where a scale keeps the spring's shape and only takes amplitude
       // off it. It blends in with `t`, so hip fire is untouched.
       //
-      // The room is measured against `stackPeak`, not against one round: a
-      // burst arrives faster than the spring returns, so the displacement this
-      // is derived for is the biggest a string reaches, not 1.
+      // The room is derived against `stackCap`, not against one round: a burst
+      // arrives faster than the weapon comes home, so what has to fit is the
+      // furthest a string can be driven. That figure used to be a MEASURED
+      // `stackPeak` carrying a re-measure whenever the kick's constants moved;
+      // it is now the shoulder the axis is actually capped at, so this bound
+      // is exact rather than a report with margin on it.
       const sightDist = this.sight.eyeRelief * this.sight.zoomComp;
       const room = Math.max(0, sightDist - r.kick.adsClearance);
       const authored =
-        r.kickBack * p.kickWeight * this.sight.zoomComp * r.kick.stackPeak;
+        r.kickBack * p.kickWeight * this.sight.zoomComp * r.kick.stackCap;
       const fit = authored > 1e-6 ? Math.min(1, room / authored) : 1;
       this.off.z -= r.kickBack * k * (1 + (fit - 1) * t);
-      this.off.y += r.kickBack * 0.25 * offAxis;
+      // The rise that goes with the tip. It is off-axis rather than exempt
+      // like the travel: lifting the model while aimed lifts the SIGHT off the
+      // axis the rounds fly down, so this is hip fire's.
+      this.off.y += r.kickLift * offAxis;
       this.off.x += r.kickSide * side;
       this.rot.x -= r.kickPitch * offAxis;
       // Negative against the drift: a positive roll takes the weapon's right

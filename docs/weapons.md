@@ -118,6 +118,29 @@ two meshes an arm, one per colour.
     its own. `kickRoll` is subtracted against it, because a positive `rot.z`
     takes the right flank UP (see `reloadRot`) and a weapon walking right has to
     roll negative to lean into where it is going. Flip it with that convention.
+  - **A string cannot drive it past the SHOULDER** (`kick.stackCap`, 1.6 of the
+    weapon's own single-round travel, applied as `RecoilShape.cap`). The rest
+    of the model is an arrest and a haul, and neither is a wall: the haul is
+    gated on a reaction that every round restarts, so at an automatic's rate it
+    is barely running when a string needs it most. Measured on the shipped
+    constants, a held submachine gun reached **3.03× one round's travel — 13.3 cm
+    of receiver toward the eye** — with the muzzle flip riding the same number
+    through **23°**, and a residual at each shot frame that climbed every round
+    of the magazine. The cap is what lets `grip` and `haul` be set for how
+    the motion reads rather than against a stacking budget, and it is what
+    retired the measured `stackPeak` below.
+  - **The z travel is 3.6 cm a round and was 7.2, which is the one number a
+    shoulder argues about.** The case for making it the largest term is that in
+    first person the camera cannot move backwards visibly, so the weapon
+    arriving at the eye *is* what travel looks like from inside the head — true,
+    and it still bought 7.2 cm on the rifle and 15 on the bolt gun before any
+    stacking, on a weapon whose butt is against a shoulder that is what stops
+    it. A mounted rifle barely translates; it ROTATES about the mount. Half the
+    old travel went to `kickPitch`'s account (the flip, which this file already
+    says to spend the budget on) and the rest to **`kickLift`**, the receiver
+    coming up as the muzzle tips — stated on its own rather than as the
+    `kickBack × 0.25` it used to be written as, because a shoulder compressing
+    and a weapon pivoting in it are two things and only one of them halved.
   - **The off-axis terms are damped by `kick.adsMult` (0.3) and the z travel is
     not**, and that split is geometry rather than taste. The weapon carries the
     sight, so anything that rotates or laterally shifts the model while aimed
@@ -143,15 +166,22 @@ two meshes an arm, one per colour.
     is the tightest of the three at rest — 5.87 cm of stand-off, measured — and
     is where the rule below about `eyeRelief` rising with magnification is
     actually being paid; re-measure this set when a magnified optic is added.
+    **Those figures are a floor rather than the current reading**: `kickBack`
+    0.072 → 0.036 and `stackPeak` 2 → `stackCap` 1.6 took the travel this is
+    derived against to 40% of what it was, and since what the bound spends is
+    `min(authored, room)` the stand-off can only have grown. Every one of the
+    ten sits further from the plane than the numbers above, and a re-measure is
+    owed only if a term ever moves the other way.
   - **That damping made the aimed picture steadier than it has ever been, not
     less steady.** The kick had no ADS term at all before, which was survivable
     only because it had no lateral component either — but its `kickPitch` was
     applied at full, so an aimed shot tipped the sight **0.12 rad (6.9°)** at the
     peak. It is 0.036 rad (2.1°) now, and the lateral and roll that came with the
     drift arrive already damped rather than being added on top. Measured at full
-    aim and full kick, the terms are exactly `kickPitch/kickSide/kickRoll/kickYaw
-    × 0.3` and `kickBack × 1`; at rest all twenty-six sight pictures still read
-    zero on the camera axis.
+    aim and full kick, the off-axis terms are exactly
+    `kickPitch/kickSide/kickRoll/kickYaw/kickLift × kick.adsMult` and the travel
+    is `kickBack × 1`; at rest all twenty-six sight pictures still read zero on
+    the camera axis.
 - **The camera owns the bob phase; the weapon reads it.** Two integrators fed the
   same number drift apart and the weapon would visibly swim against the view.
   `Player` pushes the drive with `cam.setBobDrive()` and passes `cam.bobPhase`
@@ -208,9 +238,26 @@ both and must stay on.
 
 The bob and the view punch move the **rendered camera only** — `aimPitch`/`aimYaw`
 never see them, so bullets don't bob. The punch is also the one place a rendered
-angle may be *larger* than the aim's: it decays over `punchTime` (0.09 s) against
-the aim spring's `recovery` (6.5/s), roughly seven times faster, which is what
-lets the view snap harder than the aim does without costing any control.
+angle may be *larger* than the aim's: it comes and goes while the aim's own kick
+is still rising, which is what lets the view snap harder than the aim does
+without costing any control.
+
+**And it was a STEP, which measurement found to be the jumpiest single thing in
+the recoil system.** `punchT` was set to 1 on the frame the trigger broke and
+fell from there, so the FOV spike, the camera shove and the yaw nudge all
+arrived *whole* in one frame: sampled in the client at 144 fps, the field of
+view opened **1.2° between two frames on every round**, against a 95th
+percentile of 0.19° for every other frame of the same string. A cut repeated
+eight to thirteen times a second is most of what "instant motions read as
+stutter" is made of. It is a two-pole impulse response now
+(`punchRise` 0.028 / `punchFall` 0.085, normalised in `CameraSystem` so one
+round still peaks at exactly the authored amplitude), which puts its peak **46 ms
+after the shot — the same moment the aim's kick and the roll beat reach theirs**.
+One event should arrive once; three terms peaking at three different times are
+three events as far as the eye is concerned. It also **accumulates**, which a
+restarted clock cannot: a round landing on a punch still in flight adds to it,
+where an envelope restarted from its own clock would drop to zero on the frame
+of every round — the same cut with its sign flipped.
 
 **The aimed hold sway is the one thing on the camera that is not cosmetic, and it
 has to be.** An aimed weapon wanders — two sines an axis, pitch breathing at
@@ -1039,6 +1086,21 @@ about five samples or more — the aimed rifle is 0 → 85 ms now — and **a ch
 here that takes an excursion back under ~5 frames has made recoil jerkier no
 matter what it did to the arithmetic.**
 
+**The rule was stated in `settle` and broken in `kick`, which is the term it
+matters most for**, the weapon being the biggest moving thing in the frame. At
+`gripAds` 95 / `grip` 65 the rifle's whole ATTACK was 27 ms braced and 40 at the
+hip — 1.6 frames and 2.4 at 60 Hz — and measured in the client it was worse than
+the arithmetic said: **18 ms to the top aimed and 36 at the hip, whole
+excursions of 66 and 96 ms.** That is a strobe with the right curve behind it,
+and it is most of what a report of recoil feeling jumpy and jerky rather than
+heavy was describing. At 56/40, measured the same way, it is **39 ms and 56 ms
+to the top and 101 and 145 ms end to end** — two and a half to three and a half
+frames of attack, six to nine of travel. What normally makes that expensive is
+stacking, and `stackCap` is why it is not: measured through the same held
+triggers, the rifle's hip string tops out at exactly 1.60 of one round and the
+SMG's at 1.056, which are the cap times each weapon's own `kickWeight` to three
+figures.
+
 **`riseTurns` is what keeps the peak honest.** The rise gets a fixed number of
 grip time constants before the haul begins, so at 2.7 it is 93% complete at the
 handover and the peak lands ON that handover for every impulse a weapon can
@@ -1111,13 +1173,18 @@ what tells you what you are holding.
 carrier is at the back of its travel around 10 ms and in battery around 35, and
 those were the first numbers here — which put two opposite-signed peaks 1.7
 frames apart at 60 Hz, where they do not resolve as two events but alias into
-jitter. At 30 and 82 ms they are three frames apart inside a seven-frame window
-and read as what they are. Each also ARRIVES over `rise` (20 ms) rather than
+jitter. At 34 and 88 ms they are three frames apart inside a nine-frame window
+and read as what they are. Each also ARRIVES over `rise` (32 ms) rather than
 jumping: `impulse` is all attack and no ease-in, which is the right shape for
 something hitting and the wrong one at this rate, because an instantaneous jump
 to full is a step in the pose and two of them per round at eight rounds a second
 is a buzz rather than a mechanism. **A mechanism the frame cannot resolve is
-noise, and noise is not more faithful for having the right timing.**
+noise, and noise is not more faithful for having the right timing.** `rise` was
+20 ms — a little over one frame — and the amplitudes came down with it
+(`backKick` 0.2 → 0.13, `homeKick` −0.13 → −0.08) for the same reason the
+`grip` pair did: two beats a round arriving inside one frame each is a rattle
+laid over the kick rather than a mechanism working inside it, and the carrier is
+a fraction of the charge that was reading as a second recoil.
 
 **Spend recoil's visual budget on the MODEL, not on the aim** — which is what
 `kickPitch` 0.12 → 0.22 and `kick.adsMult` 0.3 → 0.16 are, as one change. Their
@@ -1139,14 +1206,19 @@ sight's own `sightCenter` node into camera space through a held burst, the bolt
 gun's scope reached **2.18 cm and its 6x 1.59 cm against a 5 cm near plane** —
 inside it, which is the eyepiece opening into a hole in the air. With the weight
 applied once the worst combination in the kit is **13.81 cm**, and nothing is
-within 2.7x of the plane. `stackPeak` is 2 and is **measured through a real held trigger
-rather than derived**, because a round landing mid-recovery restarts the
-shooter's reaction and what a string stacks to therefore depends on the haul.
-The carbine is the only weapon in the kit that stacks at all — one pull, three
-rounds inside 0.1 s, 1.73x one round aimed — and every other weapon measures
-1.00x on a sustained trigger. It is not a guarantee: at an earlier, slower
-`haul` chosen for smoothness the SMG's held trigger stacked to **5.15x** at the
-hip. **Re-measure it whenever `grip`, `haul` or `riseTurns` moves.**
+within 2.7x of the plane. The figure it is derived against used to be a
+**measured** `stackPeak` (2), because a round landing mid-recovery restarts the
+shooter's reaction and what a string stacks to therefore depends on the haul —
+so it carried a standing debt to re-measure whenever `grip`, `haul` or
+`riseTurns` moved, and it was never a bound but a report. **What it was
+reporting at the hip is why the shoulder exists**: the ADS case it had been
+measured in was honest (the carbine, 1.73×, every other weapon 1.00×), and at
+the hip the same build drove a held submachine gun to 3.03× — 13.3 cm — while a
+slower `haul` chosen for smoothness took it past 5×. `kick.stackCap` (1.6) is a
+wall instead of a report, so the string cannot pass it however fast the weapon
+cycles and this bound is exact. It is a multiple of the WEAPON's own travel and
+not an absolute, or it would clip the bolt gun's single shot (2.10 kick units),
+which is not a string and has nothing to stack against.
 
 
 **The view punch knows what is in your hands now**, which it did not: every
@@ -1169,6 +1241,26 @@ tap precise and is the reason to tap — and a held trigger walks off sideways
 about `yawBias`. Before it, the kick was the same vector on shot 1 and shot 20
 and a spray was a straight line with jitter on it; the only shape available was
 magnitude, which can be pulled against but not learned.
+
+**The lateral itself is a SWEEP over the string now, and was an independent draw
+per round** (`pattern.sweepShots` 11, `sweepNoise` 0.3). Eight to thirteen
+independent draws a second on one axis is a muzzle that changes its mind: the
+horizontal flipped sign on roughly a third of the rounds, and what a player
+reads is an aim jumping in random directions rather than one walking somewhere.
+A muzzle walks, and the reference footage shows exactly that — 0.40° of
+rightward pull *building* through 22 rounds and springing back when the string
+ends. So the lateral is a sine over the string counter with its direction drawn
+once per string and its phase starting at ZERO, which is `yawStart`'s claim
+reached from the other side: a string's opening round still has nowhere sideways
+to go, then the muzzle peels one way for five or six rounds and comes back
+through the middle the other way. **It is not a difficulty change and that was
+checked rather than assumed**: `yawBias` scales and offsets the sweep exactly as
+it did the noise, so every round's mean lateral is unmoved and the rifle's
+permanent drift over 22 rounds is 0.176° under both models. What moves is the
+SPREAD across magazines — 0.11..0.24° where the independent draw ran
+−0.01..0.37° — and the springy mid-string peak, up about 8% (0.65 → 0.72° aimed)
+because five rounds pulling the same way go further than five rounds arguing.
+Re-run that pair rather than scaling if `yawPerShot` or `recoverFraction` moves.
 
 **The pair no longer leaves the total walk alone, because the walk is what the
 reference match cut.** For the rifle's 24 rounds from the hip the per-shot

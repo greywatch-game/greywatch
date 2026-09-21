@@ -192,6 +192,10 @@ export class CameraSystem {
     haulRamp: CONFIG.recoil.settle.haulRamp,
     easeBand: CONFIG.recoil.settle.easeBand * CONFIG.recoil.pitchPerShot,
     reach: CONFIG.recoil.settle.reachHip * CONFIG.recoil.pitchPerShot,
+    // No shoulder: see `RecoilShape.cap`. The aim is a body rotating and has
+    // nowhere it must stop; what bounds it is `maxPitch`/`maxYaw`, which are
+    // about a crossfire's flinches stacking rather than about a string.
+    cap: Infinity,
   };
   private readonly shapeAds: RecoilShape = {
     grip: CONFIG.recoil.settle.gripAds,
@@ -200,14 +204,46 @@ export class CameraSystem {
     haulRamp: CONFIG.recoil.settle.haulRamp,
     easeBand: CONFIG.recoil.settle.easeBand * CONFIG.recoil.pitchPerShot,
     reach: CONFIG.recoil.settle.reachAds * CONFIG.recoil.pitchPerShot,
+    cap: Infinity,
   };
   /** Scratch for the blended shape — stepped every frame, never allocated. */
   private readonly shape: RecoilShape = { ...this.shapeHip };
   /**
-   * View punch, 1 at the shot and falling to 0 over `recoil.punchTime`.
-   * Squared before use so the spike is at the impact frame.
+   * The view punch, as a two-pole impulse response: `punchDrive` is what the
+   * shots have delivered and decays over `recoil.punchFall`, and `punchT` is
+   * the value everything reads, chasing it over `recoil.punchRise`.
+   *
+   * **It was a countdown — 1 on the frame of the shot, falling from there —
+   * and that made every term it scales a STEP.** Measured in the client, the
+   * field of view opened 1.2 degrees between two frames on every round while
+   * the 95th percentile of every other frame in the same string was 0.19. A
+   * cut eight to thirteen times a second is most of what reads as jumpy.
+   *
+   * Two poles rather than a shaped decay for one reason a shaped decay cannot
+   * cover: a round landing on a punch still in flight has to ADD to it. Any
+   * envelope restarted from its own clock drops to zero on the frame of every
+   * round instead, which is the same cut with its sign flipped. `punchGain`
+   * below is what keeps one round peaking at exactly 1 through it.
    */
+  private punchDrive = 0;
   private punchT = 0;
+  /**
+   * What one round's impulse must be worth so that the cascade above peaks at
+   * exactly 1 — analytic, not fitted, for `recoilGain`'s reason: the terms in
+   * `CONFIG.recoil` go on meaning radians and metres AT the peak, and the two
+   * time constants can move without any of them being re-measured.
+   *
+   * A unit impulse into the first pole leaves `(tf / (tf - tr)) * (e^-t/tf -
+   * e^-t/tr)` on the second, whose maximum is at `tr * tf / (tf - tr) * ln(tf
+   * / tr)`. This is the reciprocal of that maximum.
+   */
+  private static readonly punchGain = (() => {
+    const tr = CONFIG.recoil.punchRise;
+    const tf = CONFIG.recoil.punchFall;
+    const at = ((tr * tf) / (tf - tr)) * Math.log(tf / tr);
+    const peak = (tf / (tf - tr)) * (Math.exp(-at / tf) - Math.exp(-at / tr));
+    return 1 / peak;
+  })();
   /**
    * The direction this punch is throwing the view, drawn once per shot and
    * held for its life. Unit-ish: pitch is up-biased and yaw carries the shot's
@@ -225,10 +261,12 @@ export class CameraSystem {
   private punchYaw = 0;
   /**
    * Seconds since the shot the ROLL is being spent on, counting up — its own
-   * clock rather than `punchT`'s, because the twist outlives the punch. The
-   * counter-swing lands at `rollBeat.counterAt` and dies `fall` after it,
-   * which is past `punchTime`, and because this is the one punch term that is
-   * a SHAPE rather than a decay it cannot ride a value that only falls.
+   * clock rather than `punchT`'s, because the twist outlives the punch: it
+   * rises to `rollBeat.peakAt` and dies `fall` after it, which is past the
+   * envelope's own peak, and its amplitude is a fixed torque rather than
+   * something the punch's scale should be allowed to reshape. The two now
+   * peak within a dozen milliseconds of each other on purpose — one event
+   * arriving once — but they are still two clocks.
    *
    * `Infinity` is "no shot yet": `impulse` reads any argument past its own
    * window as zero, so the rest arithmetic is stateless and needs no flag.
@@ -382,6 +420,7 @@ export class CameraSystem {
     this.shape.haulRamp = a.haulRamp;
     this.shape.easeBand = a.easeBand;
     this.shape.reach = a.reach + (b.reach - a.reach) * blend;
+    this.shape.cap = a.cap;
     return this.shape;
   }
 
@@ -538,7 +577,10 @@ export class CameraSystem {
     this.owedPitch = 0;
     this.owedYaw = 0;
     this.shotShake = 0;
+    // Both poles: the value the view reads AND the charge still feeding it, or
+    // a death mid-burst spends the last life's punch on the next one's frames.
     this.punchT = 0;
+    this.punchDrive = 0;
     // Both, not just the one: `punchT` at 0 already makes them unreadable, so
     // zeroing one of a set that is written together is a half-truth for
     // whoever reads this next. The roll is parked on its own clock, which is
@@ -660,11 +702,19 @@ export class CameraSystem {
    * every round of a string), and a blast keeps all of it.
    */
   addPunch(drift = 0, shock = 1, twist = 1, lift = 1): void {
-    this.punchT = 1;
+    // A velocity into the envelope, not a level on it — the same idiom as
+    // every other impact in this file, and what lets a round landing on a
+    // punch still in flight add to it instead of throwing the remainder away.
+    this.punchDrive += CameraSystem.punchGain;
     this.punchScale = shock;
     const d = Math.max(-1, Math.min(1, drift));
     this.punchPitch = (0.6 + Math.random() * 0.4) * lift;
-    this.punchYaw = d * 0.5 + (Math.random() * 2 - 1) * 0.5;
+    // Mostly the shot's OWN lateral, with a quarter of noise on top. It was an
+    // even split, and against a `kickDrift` that now sweeps rather than being
+    // redrawn per round (`recoil.pattern.sweepShots`) an even split is half
+    // the punch disagreeing with the muzzle about which way the round went —
+    // which is the reading "the aim jumps in random directions" describes.
+    this.punchYaw = d * 0.75 + (Math.random() * 2 - 1) * 0.25;
     this.rollT = 0;
     this.rollTwist = twist;
   }
@@ -910,8 +960,32 @@ export class CameraSystem {
       if (this.shotShake < 1e-4) this.shotShake = 0;
     }
 
-    // --- view punch decays (cosmetic — safe to use a plain time decay) ---
-    this.punchT = Math.max(0, this.punchT - dt / CONFIG.recoil.punchTime);
+    // --- view punch rises and decays (cosmetic — a plain time decay is safe) ---
+    // Two poles: what the shots delivered bleeds away over `punchFall`, and
+    // what the view shows chases it over `punchRise`. Both are exact at any
+    // `dt` for the same reason the recoil model's own step is — not because
+    // this one moves any bullets, but because a cosmetic that changes size
+    // with the frame rate is the artefact it was added to remove.
+    if (this.punchDrive !== 0 || this.punchT !== 0) {
+      const tr = CONFIG.recoil.punchRise;
+      const tf = CONFIG.recoil.punchFall;
+      const a = Math.exp(-dt / tf);
+      const b = Math.exp(-dt / tr);
+      // The cascade solved over the whole step rather than chased across it.
+      // The chase is the obvious form and it is the `kick.speed` failure again
+      // in miniature: what it misses is the drive MOVING inside the step, so
+      // the punch shrinks with the frame rate — measured on it, one round
+      // peaked at 0.96 of the authored amplitude at 144 fps, 0.91 at 60 and
+      // 0.81 at 30. This form holds 1.00 at all three.
+      this.punchT = this.punchT * b + this.punchDrive * (tf / (tf - tr)) * (a - b);
+      this.punchDrive *= a;
+      // Parked exactly: it scales the FOV and the eye's own position, and a
+      // residue left running is a frame that never comes back to rest.
+      if (this.punchDrive < 1e-4 && this.punchT < 1e-4) {
+        this.punchDrive = 0;
+        this.punchT = 0;
+      }
+    }
     this.rollT += dt;
 
     // --- landing absorb settles (semi-implicit Euler on a damped spring) ---
@@ -1055,7 +1129,10 @@ export class CameraSystem {
     // metre of parallax and nothing else, so the bullets are untouched.
     this.eye.y += this.landDip;
     const r = CONFIG.recoil;
-    const punch = this.punchT * this.punchT * this.punchScale;
+    // Read straight, not squared: the envelope carries its own attack now, and
+    // squaring it was what put the spike on the impact frame when there was no
+    // attack to put it anywhere else.
+    const punch = this.punchT * this.punchScale;
     if (punch > 0) {
       this.eye.subtractInPlace(dir.scale(r.camPush * punch));
     }

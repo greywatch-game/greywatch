@@ -539,10 +539,14 @@ export class Player implements Combatant {
     riseTurns: CONFIG.recoil.kick.riseTurns,
     haulRamp: CONFIG.recoil.kick.haulRamp,
     easeBand: CONFIG.recoil.kick.easeBand,
-    // The weapon on screen never leans in: every round of every weapon is
-    // home before the next lands (`kick.stackPeak`), so a string has nothing
-    // to settle at, and that measured figure is what `adsClearance` rests on.
+    // The weapon on screen never leans in, because the lean is gated on the
+    // shooter's reaction and every round restarts that — at an automatic's
+    // rate it would be switched off exactly where a string needs it. What
+    // bounds a string here is the SHOULDER instead (`kick.stackCap`), which
+    // `kickShapeAt` writes per weapon because it is a multiple of that
+    // weapon's own travel.
     reach: Infinity,
+    cap: Infinity,
   };
   private readonly kickAds: RecoilShape = {
     grip: CONFIG.recoil.kick.gripAds,
@@ -551,6 +555,7 @@ export class Player implements Combatant {
     haulRamp: CONFIG.recoil.kick.haulRamp,
     easeBand: CONFIG.recoil.kick.easeBand,
     reach: Infinity,
+    cap: Infinity,
   };
   private readonly kickShape: RecoilShape = { ...this.kickHip };
   /**
@@ -562,6 +567,17 @@ export class Player implements Combatant {
   private adsForKick = 0;
   /** Public because `Game` throws the view punch the same way (`addPunch`). */
   kickDrift = 0;
+  /**
+   * Which way this STRING's lateral sweep is going, +1 or -1 — drawn on the
+   * round that opens a string and read by every round behind it
+   * (`CONFIG.recoil.pattern.sweepShots`).
+   *
+   * It needs no reset of its own and deliberately has none: every path that
+   * drops a string drops `stringShots`, and the next round to arrive opens a
+   * string and redraws this. A second thing to remember to clear is a second
+   * thing that can be forgotten.
+   */
+  private driftSweep = 1;
   /**
    * How far into the last frame the round `tryShot` just fired was actually
    * DUE, 0..dt — the debt `tryShot` carries, kept a second time because the
@@ -1055,6 +1071,12 @@ export class Player implements Combatant {
    * The weapon's recoil constants for the stance it is actually held in, into
    * the scratch shape. `riseTurns` and `easeBand` do not blend — they are the
    * SHAPE of the response rather than its speed, and the same at both ends.
+   *
+   * The SHOULDER does not blend either, and it is the one field here that is
+   * not a constant: it is `kick.stackCap` of THIS weapon's own travel, so the
+   * stop a string runs into is proportional to what one of its rounds does
+   * rather than an absolute that would clip the bolt gun's single shot. Stance
+   * has nothing to say about it — the butt is in the same shoulder either way.
    */
   private kickShapeAt(blend: number): RecoilShape {
     const a = this.kickHip;
@@ -1064,6 +1086,7 @@ export class Player implements Combatant {
     this.kickShape.riseTurns = a.riseTurns;
     this.kickShape.haulRamp = a.haulRamp;
     this.kickShape.easeBand = a.easeBand;
+    this.kickShape.cap = this.kickWeight * CONFIG.recoil.kick.stackCap;
     return this.kickShape;
   }
 
@@ -2156,12 +2179,27 @@ export class Player implements Combatant {
     this.sinceShot = 0;
     // Which way this round goes, drawn ONCE and read by both the aim
     // (`recoilKick`) and the model (`ViewModel`'s kick). The bias SCALES the
-    // random term and offsets it rather than being added to it, so the total
-    // stays inside -1..+1 whatever the bias is — which is what keeps every
-    // ceiling documented for `maxYaw` true, and makes a bias of 0 bit-for-bit
-    // the symmetric noise this replaced.
+    // sweep and offsets it rather than being added to it, so the total stays
+    // inside -1..+1 whatever the bias is — which is what keeps every ceiling
+    // documented for `maxYaw` true.
+    //
+    // **It is a SWEEP over the string and not an independent draw per round**,
+    // which is `pattern.sweepShots`'s argument: eight to thirteen independent
+    // draws a second on one axis is a muzzle that changes its mind, and what
+    // a player reads is an aim jumping in random directions rather than one
+    // walking somewhere they can learn. The direction of the walk is the only
+    // thing drawn per STRING, and the sine starts at zero, so a string's first
+    // round still has nowhere sideways to go — the same claim `yawStart`
+    // makes, arrived at from the other side.
+    const pat = CONFIG.recoil.pattern;
+    if (this.stringShots === 1) this.driftSweep = Math.random() < 0.5 ? 1 : -1;
+    const walk =
+      Math.sin(((this.stringShots - 1) * Math.PI * 2) / pat.sweepShots) *
+      this.driftSweep;
+    const wander =
+      walk * (1 - pat.sweepNoise) + (Math.random() * 2 - 1) * pat.sweepNoise;
     const bias = this.weapon.yawBias;
-    this.kickDrift = (Math.random() * 2 - 1) * (1 - Math.abs(bias)) + bias;
+    this.kickDrift = wander * (1 - Math.abs(bias)) + bias;
     // The weapon takes a velocity, not a displacement: see `kick`. It
     // ACCUMULATES on a weapon still coming home, which is the whole reason a
     // held trigger looks different from a string of taps — and the shot also

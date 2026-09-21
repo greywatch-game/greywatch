@@ -79,11 +79,28 @@
  * and the peak arrives late and high: a string outruns the shooter's
  * correction. That is not a defect to be normalised away — it is why a held
  * trigger walks and a tap does not.
+ *
+ * **…and on the WEAPON the same nonlinearity is a bug, which is what `cap`
+ * is for.** A string outrunning the shooter's correction is the right account
+ * of an AIM, which is a rotation with nowhere it has to stop. The thing in the
+ * hands is travelling straight back into a shoulder that is already against
+ * it, and under the same rule it walks into the eye: measured on the shipped
+ * constants a submachine gun's held trigger reached 3.0x one round's travel
+ * — 13.3 cm of receiver toward the eye, with the muzzle flip riding the same
+ * number through 23 degrees — and the residual it started each round from
+ * climbed monotonically for the whole magazine. The shoulder is a WALL rather
+ * than a stronger haul, and it has to be, because the haul is gated on a
+ * reaction that every round restarts: at an automatic's rate it is barely
+ * running at the moment it is most needed.
  */
 import { smoothstep } from "./math";
 
 
-/** The three numbers a recoil response is made of, plus its ease-out. */
+/**
+ * The numbers a recoil response is made of: the arrest, the haul and the
+ * reaction between them, then the three bounds — the ease at the bottom of the
+ * travel, the lean past `reach`, and the wall at `cap`.
+ */
 export interface RecoilShape {
   /**
    * How fast the grip ARRESTS the rotation, in reciprocal seconds. The rise's
@@ -156,6 +173,34 @@ export interface RecoilShape {
    * has climbed. Pass `Infinity` to switch it off.
    */
   reach: number;
+  /**
+   * The furthest the displacement may get, whatever is still arriving — a HARD
+   * STOP, and the one term here that is not a force.
+   *
+   * **It is the SHOULDER, and only a thing with a shoulder behind it has
+   * one.** The rest of this model is a rotation being arrested and hauled, and
+   * a rotation has nowhere it must stop: the aim passes `Infinity` and keeps
+   * the ceilings it already has (`recoil.maxPitch`/`maxYaw`) for what a
+   * crossfire's flinches could stack to. The weapon on screen is a different
+   * object — it is travelling STRAIGHT BACK into a shoulder that is already
+   * against it — and what it needs is not a stronger haul but a wall.
+   *
+   * **Why a wall rather than a bigger `reach`:** the reaction restarts on
+   * every round (`age`), so through a held trigger at an automatic's rate the
+   * haul barely runs at all, and a lean that is gated on the haul is a lean
+   * that is gated off exactly when it is needed. Measured on the shipped
+   * constants, a submachine gun's held trigger drove the weapon to 3.0x one
+   * round's travel and an earlier, smoother pair was measured past 5x — 13.3
+   * cm of receiver toward the eye at the first of those, and the muzzle flip
+   * that rides the same number through 23 degrees. A cap costs one compare
+   * and cannot be out-run.
+   *
+   * The velocity still arriving is dropped with it, or the weapon would stay
+   * pinned for as long as the charge behind it took to decay and then let go
+   * late. Below the cap nothing about the response changes, so a single round,
+   * a tap and every weapon that does not stack are the model to the number.
+   */
+  cap: number;
 }
 
 /**
@@ -248,6 +293,18 @@ export class RecoilAxis {
         if (next <= s.reach) this.leaning = false;
         this.value = this.value < 0 ? -next : next;
       }
+    }
+    // …and the shoulder, which is a wall and not a force. See `cap`: it is the
+    // weapon on screen's and the aim passes `Infinity`, so this is one compare
+    // on an axis that does not have one. The velocity goes with the
+    // displacement, or the charge still arriving holds the weapon against the
+    // stop after the string has stopped feeding it.
+    if (this.value > s.cap) {
+      this.value = s.cap;
+      if (this.vel > 0) this.vel = 0;
+    } else if (this.value < -s.cap) {
+      this.value = -s.cap;
+      if (this.vel < 0) this.vel = 0;
     }
     // Parked exactly. This is an additive offset on an aim and on a pose, and
     // a residue left running puts every sight picture in the game that far off

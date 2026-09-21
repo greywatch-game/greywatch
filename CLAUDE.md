@@ -1725,11 +1725,17 @@ lobby and the regions' two headers, and what is not built.
   rounds fly down — and the bare `kickPitch` is what hip fire takes. **`kickWeight`
   reaches the model ONCE**: `Player` strikes the kick with it and `ViewModel`
   must not multiply by it again, which SQUARED the weight and put the bolt gun's
-  6x eyepiece inside the near plane. **`stackPeak` is MEASURED through a held
-  trigger, never derived**, and so are the pattern's total walk figures —
-  **re-derive them rather than assuming they followed** whenever
-  `CONFIG.recoil.pattern`, `pitchPerShot`, `yawPerShot` or `firstShotMult`
-  moves.
+  6x eyepiece inside the near plane. **What a STRING may reach is now a WALL
+  rather than a measurement** — `kick.stackCap`, the SHOULDER, applied as
+  `RecoilShape.cap` at that weapon's own travel — which is what lets the
+  weapon's kick be timed for how it READS: the measured `stackPeak` it replaced
+  had to be re-taken whenever `grip`, `haul` or `riseTurns` moved, and it was a
+  report rather than a bound (a held SMG measured 2.9x it at the hip). **The
+  aim has no shoulder and must not be given one**; what bounds that is
+  `maxPitch`/`maxYaw`, which are about a crossfire. The pattern's total walk
+  figures are still DERIVED — **re-derive them rather than assuming they
+  followed** whenever `CONFIG.recoil.pattern`, `pitchPerShot`, `yawPerShot` or
+  `firstShotMult` moves.
 - Recoil only partly springs back: `CONFIG.recoil.recoverFraction` (0.958)
   returns 95.8% and pushes 4.2% permanently into the player's own `pitch`/`yaw`.
   **It is the first number to move back if the rifle proves too easy to hold**,
@@ -1754,7 +1760,24 @@ lobby and the regions' two headers, and what is not built.
   Every number in it is the weapon's or the body's, and the horizontal is drawn
   ONCE per shot into `Player.kickDrift` so the aim, the viewmodel's lean and the
   view punch are all the same round going the same way. `Game` wires the result
-  to the camera and does no arithmetic on it.
+  to the camera and does no arithmetic on it. **That horizontal is a SWEEP over
+  the string and never an independent draw per round**
+  (`recoil.pattern.sweepShots`): eight to thirteen independent draws a second
+  on one axis reversed the lateral on two rounds in three, which is an aim
+  jumping in random directions rather than a muzzle walking somewhere that can
+  be learned. `yawBias` scales and offsets it exactly as it did the noise, so
+  the MEAN of every round is unmoved and this is a coherence change and not a
+  difficulty one.
+- **One event arrives ONCE, and a repeating one ACCUMULATES rather than
+  restarting.** The view punch broke both: a countdown set to 1 on the frame
+  the trigger broke put the FOV spike, the shove and the yaw nudge whole into a
+  single frame — 1.2 deg of field of view between two frames against a 0.19 deg
+  95th percentile for the rest of the string, a cut repeated at the fire rate —
+  and threw away whatever the last round had left. It is a two-pole impulse
+  response now (`punchRise`/`punchFall`) peaking 46 ms after the shot, where
+  the aim's kick and the roll beat already peak. **Anything new on the rendered
+  camera owes both halves**; an envelope restarted per round drops to zero on
+  the frame of every round, which is the same cut inverted.
 - **A team's colour is WORN, not merely drawn.** `CONFIG.teams[].color` paints
   a soldier's pauldrons, bandolier and helmet band as well as the deploy map's
   markers, so it has to stay saturated enough to read at three pixels through
