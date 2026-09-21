@@ -87,7 +87,7 @@ type Binding = readonly [action: string, pad: string, keys: string];
  * screen was two toggles nobody could reach with a pad. Now that it is a screen
  * a cursor lands on from both places, a reference table belongs in it rather
  * than under the title of the screen you start a round from: the menu is five
- * decisions and a Deploy button, and eleven rows of key caps under them is the
+ * decisions and a Deploy button, and a dozen rows of key caps under them is the
  * longest block on the card and the one nobody reads twice.
  */
 const BINDINGS: readonly Binding[] = [
@@ -111,6 +111,12 @@ const BINDINGS: readonly Binding[] = [
   // the table can name it here without qualification.
   ["Weapon", "Y", "Wheel 1 2"],
   ["Grenade", "RB", "G"],
+  // The one row with nothing in the pad column, and the table says so plainly
+  // rather than leaving the cell to be read as an oversight: every button is
+  // already a verb, and the two weapons with a selector both spawn on the
+  // position they were tuned in — so this is the one binding a pad player is
+  // not missing anything by not having.
+  ["Fire mode", "—", "V"],
   ["Sprint", "L3", "Shift"],
   // Two keys because they behave differently — Ctrl is held, C latches, and
   // on the pad B latches too. The table's grammar is one chip per key and it

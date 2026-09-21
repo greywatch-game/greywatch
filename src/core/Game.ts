@@ -2780,15 +2780,23 @@ export class Game {
    * aim a pistol down a scope's FOV. `player.carriedSight` is the one answer
    * both this and the aimed pose are derived from.
    *
-   * Wired to `player.onCarryChanged`, so the three things that change the hands
-   * — a kit pick, a swap completing, and a fresh body coming up with the
-   * primary — all reach it without any of them having to remember to.
+   * Wired to `player.onCarryChanged`, so the four things that change the hands
+   * — a kit pick, a swap completing, a fresh body coming up with the primary,
+   * and the fire selector walking a position — all reach it without any of
+   * them having to remember to.
+   *
+   * The selector is the one of the four that changes nothing about the camera
+   * or the other slot, and it goes through here anyway rather than growing a
+   * push of its own: a second funnel onto the same caption is a second thing
+   * that can be forgotten, and `setLoadout` re-derived against what it is
+   * already holding is the same work a swap to the weapon already up would be
+   * — which `drawSlot` refuses, so it never happens twice in a row.
    */
   private applyCarry(): void {
     const weapon = this.player.carriedWeapon;
     const sight = this.player.carriedSight;
     this.cameraSys.setLoadout(weapon, sight);
-    this.hud.setKit(kitLabel(weapon, sight));
+    this.hud.setKit(kitLabel(weapon, sight), this.player.fireModeName);
     // …and what is NOT in them, which is the same push for the same reason:
     // the stowed row names the other slot, so it turns over exactly when this
     // one does. The short name rather than the full one — it is a caption on a
@@ -4837,6 +4845,14 @@ export class Game {
     // wired once in `wireScreens`, because the key is only one of the two ways
     // a reload begins and the other one is inside `tryShot`.
     if (this.input.reloadPressed) this.player.startReload();
+    // The fire selector. `cycleFireMode` is what refuses a weapon with one
+    // position and a body with nothing in its hands, and the caption is
+    // pushed from `onCarryChanged` inside it for the reason a swap's is — so
+    // the only thing owed here is the detent, which is the confirmation at
+    // the hip where nobody is reading the corner of the screen.
+    if (this.input.fireModePressed && this.player.cycleFireMode()) {
+      this.sfx.fireMode();
+    }
     // The weapon swap, asked for either way round: the wheel and pad Y want
     // "the other one", the number keys name a slot. Both land on the same
     // gesture, and `drawSlot` is what refuses a request for the weapon already

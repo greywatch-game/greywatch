@@ -446,6 +446,8 @@ export class HUD {
   private nadeBuilt = -1;
   private hudRight: HTMLElement;
   private weaponLabel: HTMLElement;
+  /** The selector position, on the weapons that have one. See `setKit`. */
+  private fireMode: HTMLElement;
   /** The stowed weapon's row — the slot key, its name and its magazine. */
   private stowed: HTMLElement;
   private stowedParts: {
@@ -756,6 +758,7 @@ export class HUD {
             <div id="mag-strip"></div>
             <div class="cap-row">
               <span class="cap" id="weapon-label">RIFLE &middot; AUTO</span>
+              <span class="cap hidden" id="fire-mode">AUTO</span>
               <span class="reload-note">RELOADING</span>
             </div>
           </div>
@@ -787,6 +790,7 @@ export class HUD {
     this.atPips = document.getElementById("at-pips")!;
     this.hudRight = document.getElementById("hud-right")!;
     this.weaponLabel = document.getElementById("weapon-label")!;
+    this.fireMode = document.getElementById("fire-mode")!;
     this.stowed = document.getElementById("stowed")!;
     this.stowedParts = {
       key: this.stowed.querySelector(".key") as HTMLElement,
@@ -1937,12 +1941,24 @@ export class HUD {
   }
 
   /**
-   * The kit caption over the magazine strip. Pushed when the loadout changes
-   * rather than every frame — it is one of the few strings on the HUD that
-   * only moves when the player moves it.
+   * The kit caption over the magazine strip, and the fire selector's position
+   * beside it. Pushed when the loadout changes rather than every frame — they
+   * are two of the few strings on the HUD that only move when the player
+   * moves them.
+   *
+   * **The selector is its own element and not part of the label**, and it is
+   * the brighter of the two. The label says what you chose in a menu and the
+   * mode says what the trigger will do on the next pull, which is the only
+   * thing on this row that can change without the weapon changing — so it
+   * reads at the weight of a thing you just did rather than at the weight of
+   * a caption. `mode` is null on a weapon with one position and the element
+   * goes away rather than dimming: an unswitchable weapon has no selector,
+   * and drawing one greyed out would be drawing a control that is not there.
    */
-  setKit(label: string): void {
+  setKit(label: string, mode: string | null): void {
     this.weaponLabel.textContent = label.toUpperCase();
+    this.fireMode.textContent = mode ? mode.toUpperCase() : "";
+    this.fireMode.classList.toggle("hidden", mode === null);
   }
 
   /**

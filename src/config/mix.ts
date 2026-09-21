@@ -99,6 +99,8 @@ export type MixChannel =
   | "grenadeThrow"
   | "mineSet"
   | "rpgLoad"
+  /** The fire selector walking one position. One detent, and nothing else. */
+  | "fireMode"
   /** Somebody else's reload, out in the village. Three clacks, not four beats. */
   | "botReload"
 
@@ -180,6 +182,7 @@ export const CHANNEL_GROUPS = {
   grenadeThrow: ["mechanism"],
   mineSet: ["mechanism"],
   rpgLoad: ["mechanism"],
+  fireMode: ["mechanism"],
   botReload: ["mechanism"],
 
   impactFlesh: ["impact"],
@@ -270,6 +273,7 @@ export const channels = {
   grenadeThrow: 1,
   mineSet: 1,
   rpgLoad: 1,
+  fireMode: 1,
   botReload: 1,
   impactFlesh: 1,
   impactGround: 1,

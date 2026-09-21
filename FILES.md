@@ -88,7 +88,9 @@ src/
     player.ts           # Movement, crouch, ground probe, vitals
     weapons.ts          # The weapon table, the round, gunfeel (weapons, combat,
                         #   gunfeel). `boltCycle` is the one field here that
-                        #   decides a GESTURE rather than a rule
+                        #   decides a GESTURE rather than a rule; `modes` is
+                        #   the fire selector and `modes[0]` is what every
+                        #   figure in the table is quoted in
     recoil.ts           # What a shot does to the aim: the per-shot kick, the
                         #   string's two envelopes, recovery, stance
     sights.ts           # The optic table — its ORDER is the loadout row, and
@@ -284,7 +286,8 @@ src/
                         #   OpticMount asked for them. Past ~4x the cone is
                         #   bounded by the SCREEN rather than by the rail, which
                         #   inverts how a new one is solved
-    weapons.ts          # WeaponId + WeaponSetup, + SIDEARM/PRIMARY_WEAPON_IDS
+    weapons.ts          # WeaponId + WeaponSetup + FireMode (the fire selector
+                        #   resolved), + SIDEARM/PRIMARY_WEAPON_IDS
     sights.ts           # SightId + magnification -> FOV, sensitivity, zoomComp
     equipment.ts        # EquipmentId + the resolution of an AT item into an
                         #   ordinary WeaponSetup (no fall-off, no spread, no

@@ -136,6 +136,18 @@ export class InputManager {
    */
   grenadePressed = false;
   /**
+   * Edge-triggered "walk the fire selector" (V).
+   *
+   * **The one verb in this file with no pad and no glass behind it**, and
+   * that is a statement rather than an omission. Every button on the pad is
+   * spoken for — the table in `SettingsScreen` is the audit — and the two
+   * weapons that HAVE a selector both spawn on the position they were tuned
+   * in, so a player who never finds this key is playing the game the kit was
+   * balanced for. A thumb that had to give something up for it would be
+   * giving up a verb it needs in every round for one it wants in a few.
+   */
+  fireModePressed = false;
+  /**
    * Edge-triggered "swap to the other weapon" (mouse wheel / gamepad Y).
    *
    * The wheel is where a keyboard-and-mouse player already reaches for this,
@@ -458,6 +470,7 @@ export class InputManager {
   private prevJump = false;
   private prevReload = false;
   private prevGrenade = false;
+  private prevFireMode = false;
   private prevSwap = false;
   private prevSeat = false;
   private prevSlot = -1;
@@ -827,6 +840,10 @@ export class InputManager {
     this.grenadePressed = grenadeNow && !this.prevGrenade;
     this.prevGrenade = grenadeNow;
 
+    const fireModeNow = this.keys.has("KeyV");
+    this.fireModePressed = fireModeNow && !this.prevFireMode;
+    this.prevFireMode = fireModeNow;
+
     // The weapon swap. `padLoadout` is Y, which this shares with the loadout
     // screen — see `swapPressed`. The pad half is edge-triggered because a held
     // button must not queue a second gesture behind the first; the wheel needs
@@ -1141,6 +1158,7 @@ const BOUND_CODES = new Set([
   "KeyF",
   "KeyG",
   "KeyL",
+  "KeyV",
   "Digit1",
   "Digit2",
   "Digit3",

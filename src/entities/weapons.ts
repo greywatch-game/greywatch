@@ -12,7 +12,7 @@
  * separate slots: a weapon decides what the round does, an optic decides what
  * you can see when you send it. Neither reads the other.
  */
-import { CONFIG, type MixChannel } from "../config";
+import { CONFIG, type FireModeId, type MixChannel } from "../config";
 import type { SampleId } from "../core/samples";
 import { EQUIPMENT_IDS, equipmentSetup, isEquipmentId, type EquipmentId } from "./equipment";
 
@@ -191,6 +191,73 @@ export interface ReportVoice {
 }
 
 /**
+ * One position of the fire selector, resolved into the four facts the trigger
+ * actually runs on.
+ *
+ * **`Player.tryShot` reads THIS and never the weapon**, which is the whole of
+ * how a selector works: does the trigger have to come up, how many rounds does
+ * one pull spend, what is the gap between them and what is the gap after the
+ * last — the four fields below are exactly what that method was already
+ * reading, so switching position is one index moving and no branch anywhere.
+ *
+ * `shotInterval` is the position's and not the weapon's, and the carbine is
+ * why: `CONFIG.weapons.carbine.fireRate` is the rate INSIDE its burst and was
+ * never a ceiling on a trigger finger, so its `semi` position states its own.
+ * The weapon's own figure stays on `WeaponSetup` — the authority's rate bucket
+ * wants the most permissive number there is (`server/Match.ts`), because a
+ * bucket is a refusal and a refusal has to be one no honest client can earn.
+ */
+export interface FireMode {
+  id: FireModeId;
+  /** The word for it, on the HUD's kit line and the kit screen's button. */
+  name: string;
+  /** The trigger has to come up between pulls. */
+  semiAuto: boolean;
+  /** Rounds one pull spends — 1 on everything but a `burst` position. */
+  burst: number;
+  /** Seconds after a burst's last round before the next pull may leave. */
+  burstCycle: number;
+  /** Seconds between rounds while the trigger is allowed to speak. */
+  shotInterval: number;
+}
+
+/**
+ * Resolves one selector position against the weapon carrying it.
+ *
+ * The rules of a position are the position's and the numbers under it are the
+ * weapon's: `semi` and `auto` differ only in the latch, and `burst` is the one
+ * that reaches for `burst`/`burstCycle` — which is why a weapon listing it and
+ * stating a `burst` of 1 is a bug rather than a weapon that fires one round.
+ */
+function fireMode(
+  m: { readonly id: FireModeId; readonly fireRate?: number },
+  w: (typeof CONFIG.weapons)[WeaponId],
+): FireMode {
+  const shotInterval = 1 / (m.fireRate ?? w.fireRate);
+  if (m.id === "burst") {
+    if (import.meta.env.DEV && w.burst <= 1) {
+      throw new Error(`${w.name}: a burst position needs a burst above 1`);
+    }
+    return {
+      id: "burst",
+      name: `burst ×${w.burst}`,
+      semiAuto: true,
+      burst: w.burst,
+      burstCycle: w.burstCycle,
+      shotInterval,
+    };
+  }
+  return {
+    id: m.id,
+    name: m.id === "auto" ? "auto" : "semi",
+    semiAuto: m.id === "semi",
+    burst: 1,
+    burstCycle: 0,
+    shotInterval,
+  };
+}
+
+/**
  * Everything a carried weapon decides, resolved once when it is picked up.
  *
  * Every field is a plain `number` on purpose, and the one nested block is
@@ -209,15 +276,20 @@ export interface WeaponSetup {
   damageFar: number;
   falloffNear: number;
   falloffFar: number;
-  /** Rounds per second — a ceiling on the trigger when `semiAuto`, and the
-   *  rate WITHIN a burst when `burst` > 1. */
+  /** Rounds per second — the weapon's own cycling rate, which on the carbine
+   *  is the rate WITHIN its burst and on nothing else is anything but the
+   *  ceiling. A POSITION may hold its own; see `FireMode.shotInterval`. */
   fireRate: number;
-  /** The trigger has to come up between pulls. `Player.tryShot` enforces it. */
-  semiAuto: boolean;
-  /** Rounds one pull spends; 1 for everything but the carbine. */
-  burst: number;
-  /** Seconds after a burst's last round before the next may leave. */
-  burstCycle: number;
+  /**
+   * The fire selector, in the order it walks, and `modes[0]` is what the
+   * weapon is carried on. One entry is a weapon with no selector.
+   *
+   * **The list is the weapon's and the POSITION is the holster's** — which
+   * one is selected belongs to the magazine's side of `Player`, because a
+   * weapon put away on `semi` comes back on `semi` exactly as it comes back
+   * half-empty.
+   */
+  modes: readonly FireMode[];
   /**
    * Whether this weapon's fire cooldown is a GESTURE — a bolt worked by hand
    * between rounds — rather than an action that cycles itself.
@@ -302,9 +374,7 @@ export function weaponSetup(id: WeaponId): WeaponSetup {
     falloffNear: w.falloffNear,
     falloffFar: w.falloffFar,
     fireRate: w.fireRate,
-    semiAuto: w.semiAuto,
-    burst: w.burst,
-    burstCycle: w.burstCycle,
+    modes: w.modes.map((m) => fireMode(m, w)),
     boltCycle: w.boltCycle,
     magSize: w.magSize,
     reloadTime: w.reloadTime,

@@ -1573,6 +1573,26 @@ export class Sfx {
    * one cue that matters for an incoming grenade is the blinking pip on the
    * thing itself, and sixteen bots' worth of throw noise would bury it.
    */
+  /**
+   * The fire selector walking one position: a single small detent.
+   *
+   * **The shortest gesture in the mechanism family and deliberately the
+   * quietest thing in it** — a selector is a lever under a thumb, not a
+   * magazine catch or a bolt, and it is the one mechanism sound a player can
+   * fire twice a second by leaning on the key. It is also the only
+   * confirmation the switch gives at the hip, where the kit line is at the
+   * far corner of the screen and nobody is looking at it mid-fight, so it has
+   * to be audible against a firefight while costing nothing when it is not.
+   *
+   * One clack rather than two, which is what separates it from `swap` above:
+   * a swap is two events because it is a WAIT with a middle, and a selector
+   * has no duration at all.
+   */
+  fireMode(): void {
+    const bus = this.bus("fireMode", "mechanism");
+    this.clack(bus, 2600, 0.4, 0);
+  }
+
   grenadeThrow(): void {
     const bus = this.bus("grenadeThrow", "mechanism");
     this.clack(bus, 3200, 0.55, 0);

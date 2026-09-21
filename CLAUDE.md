@@ -395,8 +395,12 @@ marker.
 
 **Springs and timelines have one owner each**: the punch spring is `Player`'s,
 the bob phase is `CameraSystem`'s, and the reload is a timeline keyed to
-`Sfx.reload`'s clacks. **The trigger is two questions** (`semiAuto`, `burst`), and
-a reload, a swap, an empty magazine or a death must ABANDON what a burst owes.
+`Sfx.reload`'s clacks. **The trigger is two questions** (must it come UP, what
+does one pull SPEND) and `CONFIG.weapons[id].modes` is a weapon's ANSWERS, worn
+one at a time and quoted throughout the table in `modes[0]`: **`tryShot` reads
+the POSITION, never the weapon**, and the position is the HOLSTER's beside the
+magazine. A reload, a swap, an empty magazine, a death **or a switch** must
+ABANDON what a burst owes.
 
 **There are THREE gestures over a weapon and only one has a clock of its own.**
 The reload runs on `reloadTime` and needs a gate, a phase and a cancel path; the
@@ -431,8 +435,9 @@ round.
 → **[`docs/weapons.md`](docs/weapons.md)** — the report's five layers, the crouch
 latch, the gloss ladder, the viewmodel's rendering group and pose stack, the
 reload's four beats, the kick spring, the recoil pattern's two envelopes, the
-bolt cycle's two expressions in full, the two slots, the head zone, eye relief,
-and the procedural-model rules.
+bolt cycle's two expressions in full, the fire selector (the four facts a
+position is, why only the carbine's `semi` states a rate), the two slots, the
+head zone, eye relief, and the procedural-model rules.
 ### Grenades
 
 Everyone carries two and there is no resupply, so the pouch is refilled by death

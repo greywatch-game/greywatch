@@ -945,6 +945,15 @@
 #stowed.ready .key { background: var(--hot); }
 #stowed.ready .cap { color: rgba(255, 255, 255, 0.7); }
 #stowed.ready .n b { color: var(--hot); }
+/* The fire selector's position, beside the kit caption it is not part of.
+   Same size and same ladder as the caption — it is a micro-caption and the
+   row has one type band — but at full white against the caption's 50%,
+   because the label is what you picked in a menu and this is what the
+   trigger will do on the next pull. It is set in `HUD.setKit` and hidden
+   outright on a weapon with one position. */
+#hud-right #fire-mode {
+  color: rgba(255, 255, 255, 0.92);
+}
 #hud-right .reload-note {
   font-size: calc(11 * var(--hud-cap));
   font-weight: 800;

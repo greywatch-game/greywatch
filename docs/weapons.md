@@ -594,6 +594,89 @@ they say what the pattern is for.
   bolt sitting at the rear stop — which is the one moment in a cycle that
   genuinely is silent.
 
+## The fire selector: two weapons carry more than one trigger
+
+`CONFIG.weapons[id].modes` is a LIST of selector positions and `modes[0]` is the
+one the weapon is carried on. Six of the eight entries state one position and so
+have no selector at all; the rifle states `auto, semi` and the carbine states
+`burst, semi`, and `V` walks the list. Everything about the feature falls out of
+one decision: **`Player.tryShot` reads the POSITION and never the weapon.**
+
+**A position resolves to exactly four facts** (`FireMode` in
+`entities/weapons.ts`): `semiAuto`, `burst`, `burstCycle` and `shotInterval` —
+which is precisely the set `tryShot` was already reading off the `WeaponSetup`.
+That is why there is no branch anywhere and no `if` on a mode id in the whole
+tree: switching is one index moving on the holster, and every rule the trigger
+obeys was already being read through one object. The three ids are three answers
+to the two questions the table's header has always asked — does the trigger have
+to come UP, and what does one pull SPEND — so `semi` is yes/one, `auto` is
+no/one and `burst` is yes/several. **There is deliberately no fourth**: a
+no/several position is an automatic with a stutter.
+
+**The position belongs to the HOLSTER, beside the magazine, and not to the
+body.** A rifle put away on `semi` comes back on `semi` exactly as it comes back
+half-empty, the sidearm keeps its own position regardless of what the primary is
+set to, and the selector mirrored on `Player` would be the second source of
+truth a swap has to remember. It also **survives a death**: `fullReset` refills
+the two magazines and leaves this alone, because a selector is a decision a player
+made about the weapon rather than a state a body was in, and one that snapped
+back every life is one nobody can use. Picking a NEW primary builds a fresh
+holster and therefore starts on `modes[0]`, which is right — it is a different
+weapon.
+
+**A position may state its own `fireRate`, and the carbine is the reason the
+field exists.** `CONFIG.weapons.carbine.fireRate` is 20/s and has never been a
+ceiling on a trigger finger — it is the rate INSIDE the burst, on a weapon that
+delivers 6.4 sustained, which is exactly what `LoadoutScreen.sustainedRate`
+exists to not chart. A `semi` position inheriting it would hand the fastest
+clicker in the room three rounds in 0.15 s with none of the `burstCycle` the
+mode is billed for, which is the best time to kill in the kit reached by
+clicking faster. It states 6/s instead: three rounds is 0.333 s to a 102 kill, a
+hair behind the rifle's 0.318 and with no dwell at the end of it, which is where
+a position that dodges `burstCycle` belongs. **Everywhere else the field is
+absent**, because the weapon's own figure already IS that ceiling — it is what
+the DMR's 3.5 and the pistol's 5.5 have always been — and nothing is stated
+twice. The weapon's figure stays on `WeaponSetup` for the two readers that want
+the most permissive number there is: the bolt cycle's clock, and **the
+authority's rate bucket** (`server/Match.ts`), where a bucket is a refusal and a
+refusal has to be one no honest client can earn. A carbine on `semi` therefore
+fires well inside a gate written for its burst, and the server needed no change
+at all.
+
+**What `semi` actually buys on the rifle is `Player.stringed` going false.** The
+rate is unchanged — 9.43/s is what the weapon cycles at and the honest ceiling
+on a finger too, so that position states no `fireRate` — and what moves is that
+`firstShotMult` and the recoil pattern's taper both stop applying, which is the
+one exclusion those two terms share. Every round is fired at full climb and
+minimum drift rather than into a pattern: a tighter group per round and a much
+worse one per second. That is the whole trade, and it is why the position is
+worth having on a weapon whose auto fire was the thing it was tuned around.
+
+**Three things are refused or abandoned, and each for a reason already written
+down elsewhere in this file.** `cycleFireMode` refuses a weapon with one
+position and a body that is dead or mid-swap — the selector being reached for
+there belongs to whichever weapon the gesture lands on. A RELOAD is deliberately
+NOT a refusal: the selector is the firing hand's and the magazine is the other
+one's. And a **burst in flight is abandoned**, the same rule `completeSwap` and
+the reload guards already apply — the rounds it still owes were promised by a
+pull under the old position, and delivering them under the new one is the
+mechanism disagreeing with the switch on top of it. The fire cooldown is left
+alone, being the weapon's own dwell and already earned, and so is the trigger
+latch: `auto` to `semi` under a held finger arms nothing, so the trigger has to
+come up exactly as it would after any other pull.
+
+**It is keyboard-only, and that is a statement.** Every button on the pad is
+spoken for (the table in `SettingsScreen` is the audit), the glass has no room
+for a verb used a few times a round, and **both weapons spawn on the position
+they were tuned in** — so a player who never finds the key is playing the game
+the kit was balanced for. The HUD says so in its own element rather than inside
+the kit caption (`#fire-mode`, brighter than the label beside it, absent rather
+than dimmed on a weapon with one position), because the label is what you picked
+in a menu and the mode is what the trigger will do on the next pull. The kit
+screen prints the whole list on the weapon's button — `auto / semi` against
+`burst x3 / semi` against a bare `semi` is three different guns, and that is a
+comparison owed before deploying rather than after.
+
 ## The report: one shape, six deviations from it
 
 The six weapons used to be one sound played six ways, and it was measurable
@@ -1277,7 +1360,9 @@ aliases against the fire interval by up to ~0.1° on the steep hip sawtooth, so
 count a round as net-down only past that.
 
 **Both string-shaped terms share one exclusion**, `Player.stringed` — whether the
-weapon HAS a cycle you can be in the middle of (`!semiAuto || burst > 1`). It has
+SELECTED POSITION has a cycle you can be in the middle of (`!semiAuto ||
+burst > 1`, asked of the `FireMode` and not of the weapon, so a rifle switched
+to `semi` leaves on the exclusion's wrong side). It has
 to be shared: applied to a string of one, `firstShotMult` is a flat 60% increase
 and the taper is a flat 20% *decrease*, and the decrease is the worse of the two
 because both those weapons' fire rates sit just inside `stringResetTime` (the
@@ -1307,10 +1392,13 @@ the feature rather than an exception to it. `Player.recoilRamp` returns 1 when
 a first shot, so the multiplier would not be texture at all — just a flat 60%
 recoil increase wearing feel's clothing, and on the DMR's 2.2 that is 6.0° on
 every deliberate scoped round. Their `recoilMult` already carries the punch a
-single shot is supposed to have. The carbine is `semiAuto` too and is
-deliberately **included**, because `burst > 1` means one pull is three rounds
-climbing as one motion, which is exactly the thing that has a first round in it;
-`burstCycle` 0.4 s exceeds the reset window, so every burst gets the punch.
+single shot is supposed to have. The carbine's `burst` position is semi-automatic
+too and is deliberately **included**, because `burst > 1` means one pull is three
+rounds climbing as one motion, which is exactly the thing that has a first round
+in it; `burstCycle` 0.4 s exceeds the reset window, so every burst gets the
+punch. Switch either weapon to `semi` and it joins the DMR and the pistol on the
+excluded side, which is most of what that position is for — see the fire
+selector's own section.
 
 **The stance is the fourth term, and it is the one a player can answer
 immediately.** `adsMult` (0.55) was on its own for a long time; `crouchMult`
@@ -1484,12 +1572,14 @@ regardless, and that is where the read actually lands: it is two sines with no
 noise in it at all, precisely so it cuts through a burst of ordinary markers
 instead of merging into them.
 
-**The carbine is the third question the trigger can be asked, and `semiAuto` and
-`burst` are why there are three.** `semiAuto` asks whether the trigger has to come
-UP between pulls; `burst` asks what one pull SPENDS. The rifle and the SMG answer
-neither, the DMR and the pistol answer only the first, and the carbine answers both
-— nothing may answer `burst` alone, because a burst weapon firing on a held trigger
-is an automatic with a stutter in it. Its three rounds at 34 are 102 against 100 HP
+**The carbine is the third answer the trigger can give, and the two questions
+under it are why there are three.** Does the trigger have to come UP between
+pulls, and what does one pull SPEND? The SMG and the LMG answer no/one, the DMR
+and the pistol yes/one, and the carbine's first position yes/three — and nothing
+may answer no/several, because a burst weapon firing on a held trigger is an
+automatic with a stutter in it. Both of the carbine's numbers below are quoted
+in that first position; the `semi` it can be switched to is the fire selector's
+section, above. Its three rounds at 34 are 102 against 100 HP
 and leave in 0.1 s, the best ideal time to kill in the game by a factor of three,
 and the whole of the price is `burstCycle`: 0.4 s in which the weapon will not
 fire, spent identically whether the burst killed, missed, or landed two of three.
@@ -1511,7 +1601,8 @@ weapon the player has since reloaded, holstered or died holding. `fullReset` cle
 it for the one case the guards cannot see — `dying` stops `tryShot` being called at
 all, so a body killed mid-burst would otherwise owe rounds to the next life.
 
-**The DMR steps outside that too, and `semiAuto` is why it can.** A head and a
+**The DMR steps outside that too, and firing `semi` and only `semi` is why it
+can.** A head and a
 body at 3.5/s is 0.286 s — faster than any automatic — and three on the body is
 0.571 s, but the rate is a *ceiling on the trigger finger* rather than a cadence,
 and the error budget pays for it: a missed rifle round costs 0.106 s, a missed DMR

@@ -90,6 +90,7 @@ const CHANNEL_LABELS: Record<MixChannel, string> = {
   grenadeThrow: "grenade throw",
   mineSet: "mine down",
   rpgLoad: "launcher load",
+  fireMode: "fire selector",
   botReload: "reload — world",
   impactFlesh: "hit — flesh",
   impactGround: "hit — ground",
@@ -644,6 +645,9 @@ const AUDITIONS: Record<MixChannel, Audition | null> = {
   },
   rpgLoad: ({ sfx }) => {
     sfx.rpgLoad(2.5);
+  },
+  fireMode: ({ sfx }) => {
+    sfx.fireMode();
   },
   botReload: ({ sfx, at }) => {
     sfx.botReload(at());

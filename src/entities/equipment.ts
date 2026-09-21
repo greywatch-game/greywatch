@@ -24,9 +24,18 @@
  * `Player.startReload` refuses this slot outright. What one life carries is
  * `CONFIG.equipment[id].carried` and there is no resupply, exactly as with the
  * grenade pouch.
+ *
+ * **Gotcha: the import from `weapons.ts` must stay TYPE-ONLY**, and the failure
+ * is a blank page rather than a compiler error. That file imports VALUES from
+ * this one (`EQUIPMENT_IDS`, `equipmentSetup`, `isEquipmentId`), so a value
+ * pulled back the other way makes the cycle a real one in the module graph and
+ * whichever side the bundler evaluates second reads a binding that does not
+ * exist yet — `Cannot access 'EQUIPMENT_IDS' before initialization`, thrown
+ * before `Game` is ever constructed. Build the literal here instead, as
+ * `SELECTOR` below does.
  */
 import { CONFIG } from "../config";
-import type { WeaponSetup } from "./weapons";
+import type { FireMode, WeaponSetup } from "./weapons";
 
 /**
  * An anti-tank item. Derived from the config table rather than written out, so
@@ -98,11 +107,29 @@ export function ordnanceEffect(id: EquipmentId): OrdnanceEffect {
  *   the HUD the number that matters.
  * - `reloadTime` is 0 and unreachable — `Player.startReload` refuses this
  *   slot, so a spent launcher is a spent launcher until the next life.
- * - `semiAuto` is true and `burst` is 1: one trigger pull is one rocket or
- *   one mine, and holding the button may never spend the second.
+ * - the selector is one `semi` position: one trigger pull is one rocket or
+ *   one mine, holding the button may never spend the second, and there is
+ *   nothing a second position could offer a tube that fires twice a life.
  * - the spreads are 0. A rocket goes where the tube points and a mine goes
  *   where the hands put it, so there is no cone for the reticle to lie about.
  */
+/**
+ * The one selector position an AT item has, spelled out here rather than built
+ * by a helper in `weapons.ts` — see the header's gotcha about that import.
+ *
+ * `shotInterval` is filled per item; everything else is what "one pull, one
+ * rocket" means, and there is nothing a second position could offer a tube
+ * that fires twice a life.
+ */
+const SELECTOR: FireMode = {
+  id: "semi",
+  name: "semi",
+  semiAuto: true,
+  burst: 1,
+  burstCycle: 0,
+  shotInterval: 0,
+};
+
 export function equipmentSetup(id: EquipmentId): WeaponSetup {
   const e = CONFIG.equipment[id];
   const c = e.carry;
@@ -115,9 +142,7 @@ export function equipmentSetup(id: EquipmentId): WeaponSetup {
     falloffNear: 1,
     falloffFar: 1,
     fireRate: c.fireRate,
-    semiAuto: true,
-    burst: 1,
-    burstCycle: 0,
+    modes: [{ ...SELECTOR, shotInterval: 1 / c.fireRate }],
     // Both AT items run a cooldown and NEITHER is a bolt. The launcher's is a
     // gesture and is played as one, but through `muzzleLoad` and
     // `Player.loadProgress` — a rocket going down a bore, which is a different

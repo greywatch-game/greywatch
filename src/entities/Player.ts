@@ -91,6 +91,7 @@ import {
   type PrimaryWeaponId,
   type ReportVoice,
   type CarriedId,
+  type FireMode,
   type WeaponId,
   type WeaponSetup,
 } from "./weapons";
@@ -139,12 +140,27 @@ interface Holster {
   setup: WeaponSetup;
   /** Rounds left in this weapon's magazine, carried across a swap. */
   ammo: number;
+  /**
+   * Which of `setup.modes` the selector is on, for the same reason the
+   * magazine is here rather than on `Player`: it is a fact about the WEAPON
+   * and not about the hands. A rifle put away on `semi` comes back on `semi`,
+   * the sidearm keeps its own position regardless, and a selector mirrored on
+   * the body would be a second source of truth a swap had to remember.
+   *
+   * It deliberately survives a DEATH as well — `fullReset` refills the two
+   * magazines and leaves this alone. A selector is a decision a player made
+   * about the weapon rather than a state a body was in, and one that snapped
+   * back every life would be one nobody could use. Picking a NEW primary
+   * builds a fresh holster and so starts on `modes[0]`, which is right: it is
+   * a different weapon.
+   */
+  mode: number;
 }
 
-/** A weapon picked up with a full magazine. */
+/** A weapon picked up with a full magazine, on the position it is carried on. */
 function holster(id: WeaponId): Holster {
   const setup = weaponSetup(id);
-  return { setup, ammo: setup.magSize };
+  return { setup, ammo: setup.magSize, mode: 0 };
 }
 
 /**
@@ -158,7 +174,7 @@ function holster(id: WeaponId): Holster {
  */
 function equipHolster(id: EquipmentId): Holster {
   const setup = equipmentSetup(id);
-  return { setup, ammo: setup.magSize };
+  return { setup, ammo: setup.magSize, mode: 0 };
 }
 
 /** Run-scoped stat modifiers granted by loot. */
@@ -723,6 +739,67 @@ export class Player implements Combatant {
   }
 
   /**
+   * The selector position the carried weapon is on — the three rules the
+   * trigger obeys, and the only thing `tryShot` reads about how this weapon
+   * fires.
+   *
+   * Clamped rather than indexed blind. Nothing writes an out-of-range index,
+   * but the two facts behind it arrive from different places — the holster
+   * remembers a number and the weapon supplies the list — so a weapon whose
+   * `modes` shortened under a remembered position would be a crash at the
+   * trigger rather than anywhere near the change that caused it.
+   */
+  private get fireMode(): FireMode {
+    const modes = this.weapon.modes;
+    const i = this.carried.mode;
+    return modes[i < modes.length ? i : 0];
+  }
+
+  /**
+   * The word for that position, or null on a weapon that has no selector.
+   *
+   * Null rather than the one word, because "this weapon has one way of
+   * firing" and "this weapon is in its first position" are different facts
+   * and the HUD draws the second and not the first: a caption on the DMR
+   * saying SEMI is a line that never changes, which on a readout whose whole
+   * job is the things that do is noise.
+   */
+  get fireModeName(): string | null {
+    return this.weapon.modes.length > 1 ? this.fireMode.name : null;
+  }
+
+  /**
+   * Walks the selector one position, wrapping. True if it moved.
+   *
+   * **It is refused rather than queued on a weapon that is not in the hands
+   * to be switched** — a body that is dead, or a swap still in flight, where
+   * the selector being reached for belongs to whichever weapon the gesture
+   * lands on. A RELOAD is deliberately not a refusal: the selector is the
+   * firing hand's and the magazine is the other one's, and a player who
+   * pressed the key mid-reload meant the weapon coming back.
+   *
+   * A burst in flight is ABANDONED, the same rule `completeSwap` and
+   * `startReload` already apply for the same reason: the rounds it still owes
+   * were promised by a trigger pull under the old position, and delivering
+   * them under the new one is the mechanism disagreeing with the switch on
+   * top of it. The fire cooldown is left alone — it is the weapon's own dwell
+   * and it has already been earned.
+   *
+   * The trigger latch is left alone too, and that is what makes going the
+   * other way honest: `auto` → `semi` under a held finger arms nothing, so
+   * the trigger has to come up exactly as it would after any other pull.
+   */
+  cycleFireMode(): boolean {
+    const modes = this.weapon.modes;
+    if (modes.length <= 1) return false;
+    if (!this.alive || this.swapping) return false;
+    this.carried.mode = (this.carried.mode + 1) % modes.length;
+    this.burstLeft = 0;
+    this.onCarryChanged();
+    return true;
+  }
+
+  /**
    * Rounds in the magazine of the weapon being held. An accessor onto the
    * holster rather than a field of its own: two slots each keep their own
    * count, and a mirrored copy here is a second source of truth that a swap
@@ -902,9 +979,9 @@ export class Player implements Combatant {
    * 2.2 multiplier that is 6.0 deg on every deliberate scoped round. Their
    * `recoilMult` already carries the punch a single shot is supposed to have.
    *
-   * The carbine is `semiAuto` too and is deliberately included: `burst > 1`
-   * means one pull is three rounds that climb as one motion, which is exactly
-   * the thing that has a first round in it.
+   * The carbine's `burst` position is semi-automatic too and is deliberately
+   * included: one pull is three rounds that climb as one motion, which is
+   * exactly the thing that has a first round in it.
    */
   private get recoilRamp(): number {
     if (!this.stringed) return 1;
@@ -912,11 +989,17 @@ export class Player implements Combatant {
   }
 
   /**
-   * Whether the carried weapon HAS a string — whether there is such a thing as
-   * being in the middle of a cycle on it. `!semiAuto` is a held trigger and
-   * `burst > 1` is one pull that climbs as a single motion; a weapon that is
-   * neither is the DMR or the pistol, where the trigger comes up between every
-   * round and every round is a first round.
+   * Whether the SELECTED POSITION has a string — whether there is such a thing
+   * as being in the middle of a cycle on it. `!semiAuto` is a held trigger and
+   * `burst > 1` is one pull that climbs as a single motion; a position that is
+   * neither is the DMR, the pistol, or the rifle switched to `semi`, where the
+   * trigger comes up between every round and every round is a first round.
+   *
+   * **It is the position's question and not the weapon's**, which is most of
+   * what a rifle switched to `semi` actually buys: the string terms below stop
+   * applying, so every round is fired at full `firstShotMult` climb and
+   * minimum drift rather than into a pattern. That is a tighter group per
+   * round and a worse one per second, which is the trade the selector is for.
    *
    * **Both string-shaped terms share this test**, and they have to. Applied to
    * a string of one, `firstShotMult` is a flat 60% increase and `pattern`'s
@@ -929,8 +1012,8 @@ export class Player implements Combatant {
    * nothing to game.
    */
   private get stringed(): boolean {
-    const w = this.weapon;
-    return !w.semiAuto || w.burst > 1;
+    const m = this.fireMode;
+    return !m.semiAuto || m.burst > 1;
   }
 
   /**
@@ -2001,9 +2084,10 @@ export class Player implements Combatant {
     // What a pull is allowed to ask for: a fresh round (or burst) needs the
     // trigger down, and needs it to have come up first on a weapon that says
     // so. A burst owed rounds asks on its own behalf.
+    const mode = this.fireMode;
     if (this.burstLeft <= 0) {
       if (!trigger) return false;
-      if (this.weapon.semiAuto && wasHeld) return false;
+      if (mode.semiAuto && wasHeld) return false;
     }
     // The cooldown is the weapon's clock and is NOT a refusal: mid-burst it is
     // the gap between the rounds, so it must be tested before anything that
@@ -2044,15 +2128,13 @@ export class Player implements Combatant {
     // A burst opens on its first round and closes on its last: within it the
     // gap is the weapon's rate, and at the end it is `burstCycle` — the dwell
     // that is the entire cost of the mode.
-    if (this.weapon.burst > 1) {
-      if (this.burstLeft <= 0) this.burstLeft = this.weapon.burst;
+    if (mode.burst > 1) {
+      if (this.burstLeft <= 0) this.burstLeft = mode.burst;
       this.burstLeft -= 1;
       this.fireCooldown =
-        (this.burstLeft > 0
-          ? this.weapon.shotInterval
-          : this.weapon.burstCycle) - owed;
+        (this.burstLeft > 0 ? mode.shotInterval : mode.burstCycle) - owed;
     } else {
-      this.fireCooldown = this.weapon.shotInterval - owed;
+      this.fireCooldown = mode.shotInterval - owed;
     }
     // The last round is exempt: `tryShot` starts the reload below, and the
     // reload is what chambers the next one.

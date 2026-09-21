@@ -78,8 +78,10 @@ What is NOT there is every field that would make it a gun, and each constant in
   launcher is a spent launcher until the next life. That is a statement about
   the AMMUNITION and not about the animation: the launcher does have a load
   gesture, and it runs on the fire cooldown rather than on this — see below.
-- **`semiAuto` is true and `burst` is 1.** One pull is one rocket or one mine,
-  and a held trigger may never spend the second.
+- **The selector is one `semi` position.** One pull is one rocket or one mine,
+  a held trigger may never spend the second, and there is nothing a second
+  position could offer a tube that fires twice a life — so `Game`'s `V` finds a
+  `modes` list of length one and `cycleFireMode` refuses it.
 - **The spreads are 0.** A rocket goes where the tube points and a mine goes
   where the hands put it, so there is no cone for the reticle to lie about.
 

@@ -41,6 +41,7 @@ import { teams } from "./teams";
 import { vehicles } from "./vehicles";
 
 export { FOG_WALL } from "./fogWall";
+export { type FireModeId } from "./weapons";
 export {
   CHANNEL_GROUPS,
   MIX_CHANNELS,

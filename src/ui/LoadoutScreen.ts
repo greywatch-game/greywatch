@@ -124,6 +124,7 @@ import type { StageBay } from "../entities/ViewModel";
 import { SIGHT_IDS, type SightId } from "../entities/sights";
 import {
   carriedSetup,
+  weaponSetup,
   PRIMARY_WEAPON_IDS,
   type CarriedId,
   type PrimaryWeaponId,
@@ -234,28 +235,44 @@ function least(pick: (w: (typeof CONFIG.weapons)[WeaponId]) => number): number {
  * sustained output in it, which is the opposite of what the bar is for. The
  * burst's own rate is not lost: it is what the damage bar is about, since the
  * three rounds arrive together.
+ *
+ * It is the FIRST position's figure, on a weapon that has more than one. The
+ * chart is what a weapon is picked on, and a weapon is picked before it is
+ * carried: the rifle's bar is its held trigger and the carbine's is its
+ * burst, which is what each of them turns up to the fight with.
  */
-function sustainedRate(w: (typeof CONFIG.weapons)[WeaponId]): number {
-  if (w.burst <= 1) return w.fireRate;
-  return w.burst / (w.burstCycle + (w.burst - 1) / w.fireRate);
+function sustainedRate(id: WeaponId): number {
+  const m = weaponSetup(id).modes[0];
+  const rate = 1 / m.shotInterval;
+  if (m.burst <= 1) return rate;
+  return m.burst / (m.burstCycle + (m.burst - 1) * m.shotInterval);
 }
 
 /**
- * How a weapon's trigger behaves, in the one word a button has room for.
+ * How a weapon's trigger behaves, in the words a button has room for — every
+ * position of the selector, in the order the switch walks them.
  *
  * The burst carries its COUNT, because that is the number the mode is about —
  * three rounds is the difference between a kill on one pull and 68 damage and
- * a wait. `semiAuto` is not mentioned for a burst weapon even though it is set:
- * "one pull, one burst" is what "burst" already means to anyone reading it.
+ * a wait. That a burst position is also semi-automatic goes unsaid: "one pull,
+ * one burst" is what "burst" already means to anyone reading it.
+ *
+ * A second position is printed rather than hidden behind the key that reaches
+ * it, because it is part of what the weapon IS and the kit screen is where a
+ * weapon is compared: "auto / semi" against "burst ×3 / semi" against a bare
+ * "semi" is three different guns, and the reader has to be able to see that
+ * before deploying rather than after.
  */
-function fireMode(w: (typeof CONFIG.weapons)[WeaponId]): string {
-  if (w.burst > 1) return `burst ×${w.burst}`;
-  // A bolt gun is `semiAuto` too and "semi" would be true and useless — it is
-  // what the DMR says, and the two weapons are as far apart as anything in the
-  // kit. What the word has to carry is that the trigger is not the thing you
-  // are waiting for, which is the same job "burst" does above.
-  if (w.boltCycle) return "bolt";
-  return w.semiAuto ? "semi" : "auto";
+function fireMode(id: WeaponId): string {
+  const w = CONFIG.weapons[id];
+  const modes = weaponSetup(id).modes;
+  // A bolt gun's first position is `semi` too and "semi" would be true and
+  // useless — it is what the DMR says, and the two weapons are as far apart as
+  // anything in the kit. What the word has to carry is that the trigger is not
+  // the thing you are waiting for, which is the same job "burst" does.
+  const word = (m: (typeof modes)[number]) =>
+    w.boltCycle && m.id === "semi" ? "bolt" : m.name;
+  return modes.map(word).join(" / ");
 }
 
 /**
@@ -294,7 +311,7 @@ function fireMode(w: (typeof CONFIG.weapons)[WeaponId]): string {
 function weaponStats(id: PrimaryWeaponId): StatRow[] {
   const w = CONFIG.weapons[id];
   const deg = (rad: number) => ((rad * 180) / Math.PI).toFixed(2);
-  const rate = sustainedRate(w);
+  const rate = sustainedRate(id);
   return [
     {
       // Both ends of the curve, because one number is now a half-truth: the
@@ -313,7 +330,7 @@ function weaponStats(id: PrimaryWeaponId): StatRow[] {
     {
       label: "Rate",
       value: `${rate % 1 === 0 ? rate : rate.toFixed(1)}/s`,
-      frac: rate / best(sustainedRate),
+      frac: rate / Math.max(...PRIMARY_WEAPON_IDS.map(sustainedRate)),
     },
     {
       label: "Magazine",
@@ -682,7 +699,7 @@ export class LoadoutScreen {
       const w = CONFIG.weapons[id];
       return `
         <button class="lo-opt lo-card${id === this.weapon ? " on" : ""}" data-weapon="${id}">
-          <b>${w.name}</b><i>${w.damage} dmg &middot; ${fireMode(w)}</i>
+          <b>${w.name}</b><i>${w.damage} dmg &middot; ${fireMode(id)}</i>
         </button>`;
     }).join("");
     // The optics, as a LIST rather than a row of six: one-word names with a

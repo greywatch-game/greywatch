@@ -81,11 +81,13 @@ export const recoil = {
    * The punch is also what makes the first round of a tap distinct from a held
    * trigger, which is the entire reason to tap.
    *
-   * It applies only where a string means something — `!semiAuto || burst > 1`,
-   * resolved in `Player.recoilRamp`. The DMR, the bolt gun and the pistol are
-   * strings of one and every shot would be a first shot; their `recoilMult`
-   * (1.35, 1.7 and 1.15) already carries the punch, and stacking this on top
-   * of the DMR's would put the multiplier on every deliberate scoped round.
+   * It applies only where a string means something — `!semiAuto || burst > 1`
+   * of the SELECTED FIRE MODE, resolved in `Player.recoilRamp`. The DMR, the
+   * bolt gun and the pistol are strings of one and every shot would be a first
+   * shot; their `recoilMult` (1.35, 1.7 and 1.15) already carries the punch,
+   * and stacking this on top of the DMR's would put the multiplier on every
+   * deliberate scoped round. A rifle switched to `semi` leaves this the same
+   * way and for the same reason, which is most of what that position buys.
    *
    * 1.25 rather than the 1.6 it was, because the reference's opening round is
    * 1.3x the ones behind it — measured as the first step of a 28-round string

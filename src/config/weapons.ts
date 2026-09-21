@@ -18,7 +18,22 @@
  * this file is the close one — `damageFar` and the two fall-off distances are
  * the rest of the weapon, and on the carbine they decide a 5x cliff whose
  * position has to be re-derived rather than assumed.
+ * Gotcha: a weapon's trigger is a `modes` LIST rather than a `semiAuto` flag,
+ * and `modes[0]` is what it is carried on — moving it re-tunes the weapon.
  */
+
+/**
+ * One position of a fire selector: what the trigger does while it is there.
+ *
+ * Three answers to two questions — whether the trigger has to come UP between
+ * pulls, and what one pull SPENDS. `semi` is yes/one, `auto` is no/one and
+ * `burst` is yes/several, and there is deliberately no fourth: a burst weapon
+ * that fired on a held trigger would be an automatic with a stutter.
+ *
+ * What a burst SPENDS is not stated here — it is the weapon's own `burst` and
+ * `burstCycle`, so a position never restates a number the row already carries.
+ */
+export type FireModeId = "semi" | "burst" | "auto";
 
 /**
  * The weapons the player can carry, and everything that differs between
@@ -77,14 +92,26 @@
  * hit is one kind of miss: 1.25 s during which you cannot see the man you
  * failed to kill.
  *
- * `semiAuto` and `burst` are two different questions and the carbine is what
- * proves it: `semiAuto` asks whether the trigger has to come UP between pulls
- * and `burst` asks what one pull SPENDS. Every weapon here but the carbine
- * answers only the first; the carbine answers both, and nothing here answers
- * `burst` without also answering `semiAuto`, because a burst weapon that fired
- * on a held trigger would be an automatic with a stutter. `boltCycle` is a
- * THIRD question over the same trigger and is asked of the frame rather than
- * of the rules — see the field on the rifle.
+ * **The trigger is a `modes` LIST, and the list is ORDERED: `modes[0]` is
+ * what the weapon is carried on, and every time-to-kill above is quoted in
+ * it.** A weapon with one entry has no selector and a second entry is one, so
+ * adding a position to a row raises the weapon's ceiling without touching its
+ * character — the rifle still spawns on `auto` and the carbine still spawns on
+ * `burst`, and `semi` beside either is a player choosing to spend the rate
+ * rather than the weapon losing it. A row listing `burst` must state a `burst`
+ * above 1, which `weaponSetup` asserts in a DEV build.
+ *
+ * **A position may state its own `fireRate`, and the carbine is why it has
+ * to.** `fireRate` on a burst weapon is the rate WITHIN the burst — 20/s on a
+ * weapon that delivers 6.4 — so it was never a ceiling on a trigger finger,
+ * and a `semi` position inheriting it would hand the fastest clicker in the
+ * room three rounds in 0.15 s with none of the dwell the mode is billed for.
+ * Everywhere else the weapon's own figure already IS that ceiling (it is what
+ * the DMR's 3.5 and the pistol's 5.5 have always been), so the field is
+ * absent and nothing is stated twice.
+ *
+ * `boltCycle` is a THIRD question over the same trigger and is asked of the
+ * frame rather than of the rules — see the field on the rifle.
  *
  * `recoilMult`, `recoilImpulse` and `bloomMult` SCALE `CONFIG.recoil` rather
  * than restating it: the shape of recoil — how much springs back, how fast,
@@ -134,14 +161,26 @@ export const weapons = {
      */
     fireRate: 9.43,
     /**
-     * Whether the trigger has to be released between pulls. Held fire is
-     * the default; see `Player.tryShot`, which owns the latch.
+     * The selector, in the order it walks. Carried on `auto` — held fire is
+     * what the four-round kill and the 264 DPS above are quoted in, and what
+     * `recoilMult`, `bloomMult` and the whole pattern were tuned against.
+     *
+     * `semi` beside it is a RANGE position and not a nerfed one: the trigger
+     * has to come up, so the rate is the finger's, and what that buys is
+     * `stringed` going false — every round becomes a first round, at full
+     * `firstShotMult` climb and minimum drift, which is a tighter group per
+     * round across the valley than a held trigger can hold. It costs the
+     * rifle's whole case in a room, which is the trade.
+     *
+     * No `fireRate` on either position: 9.43/s is what this weapon cycles at
+     * and it is the honest ceiling on a finger as well, so `semi` here buys
+     * the group and not the cadence.
      */
-    semiAuto: false,
+    modes: [{ id: "auto" }, { id: "semi" }],
     /**
-     * Rounds one trigger pull spends. 1 is a weapon that fires a round when
-     * it is asked to, which is everything here but the carbine — see the
-     * table's header for why this is a separate question from `semiAuto`.
+     * Rounds one trigger pull spends in a `burst` position. 1 is a weapon
+     * that has no such position, which is everything here but the carbine —
+     * see the table's header.
      *
      * Above 1 the rounds leave at `fireRate` and the trigger has no say once
      * the first is gone: a burst finishes itself, which is the whole point of
@@ -150,9 +189,9 @@ export const weapons = {
     burst: 1,
     /**
      * Seconds from a burst's LAST round to the earliest next one — the
-     * weapon's own dwell, not the finger's. Read only when `burst` > 1, where
-     * it replaces `shotInterval` at the end of the burst and is the entire
-     * cost of the mode.
+     * weapon's own dwell, not the finger's. Read only in a `burst` position,
+     * where it replaces `shotInterval` at the end of the burst and is the
+     * entire cost of the mode.
      */
     burstCycle: 0,
     /**
@@ -420,8 +459,29 @@ export const weapons = {
     falloffFar: 90,
     /** WITHIN the burst — 0.05 s a round, so three take 0.1 s. */
     fireRate: 20,
-    /** One pull, one burst: the trigger has to come up for the next. */
-    semiAuto: true,
+    /**
+     * Carried on `burst`: one pull, three rounds, and the trigger has to come
+     * up for the next. Everything above is quoted in it — 102 against 100 HP,
+     * the breakpoint `falloffNear` is derived from, and the `magSize` counted
+     * in bursts rather than in rounds.
+     *
+     * `semi` beside it is the position the mode's own bill buys back.
+     * `burstCycle` is 0.4 s of a weapon that will not fire whether the burst
+     * hit, missed or hit twice out of three, and a single round pays none of
+     * it: one 34 at 20/s is a finisher on a man already down to a third, and a
+     * way to answer something at 60 m without spending half a second finding
+     * out you had missed. What it cannot do is kill in one pull, which is the
+     * weapon, so this is a position to leave rather than one to live in.
+     *
+     * **6/s is a ceiling this position has to state**, and the table's header
+     * has the argument: `fireRate` here is the 20/s INSIDE the burst, which is
+     * not a rate any finger was ever being held to. Three rounds at 6 is
+     * 0.333 s to a 102 kill — a hair behind the rifle's 0.318 and with no
+     * dwell at the end of it, which is where a mode that dodges `burstCycle`
+     * belongs. At 20 it would have been 0.15, the best in the kit, and the
+     * carbine's whole bill would have been payable by clicking faster.
+     */
+    modes: [{ id: "burst" }, { id: "semi", fireRate: 6 }],
     burst: 3,
     /** The bill for the mode, and the only thing holding it in the kit. */
     burstCycle: 0.4,
@@ -529,7 +589,8 @@ export const weapons = {
     falloffNear: 15,
     falloffFar: 40,
     fireRate: 13,
-    semiAuto: false,
+    /** One position. A pistol-calibre bullet hose has nothing else to offer. */
+    modes: [{ id: "auto" }],
     burst: 1,
     burstCycle: 0,
     boltCycle: false,
@@ -603,7 +664,8 @@ export const weapons = {
    * rate and the magazine went up to pay for the third body round: 3 at 3.5/s
    * is 0.571 s, and fifteen rounds is still five kills on the body.
    *
-   * `semiAuto` is the whole design and not a detail on top of it. The other
+   * A `semi`-only selector is the whole design and not a detail on top of it.
+   * The other
    * two are held down and steered; this one is a sequence of decisions, and
    * every number here is chosen against that. The rate is a CEILING rather
    * than a cadence — nothing fires it faster than the trigger finger — so
@@ -644,11 +706,16 @@ export const weapons = {
     damageFar: 45,
     falloffNear: 40,
     falloffFar: 120,
-    /** A ceiling on the trigger finger, not a cadence — see `semiAuto`. Was
+    /** A ceiling on the trigger finger, not a cadence — see `modes`. Was
      *  3; the half round a second is what the third body round costs back. */
     fireRate: 3.5,
-    /** One round per pull. `Player.tryShot` holds the latch. */
-    semiAuto: true,
+    /**
+     * One position, and the weapon. A selector here would be asking which of
+     * two guns this is: `auto` at 45 damage is not a marksman rifle and the
+     * rate above is already the finger's ceiling, so there is nothing a
+     * second position could buy that the row has not already sold.
+     */
+    modes: [{ id: "semi" }],
     burst: 1,
     burstCycle: 0,
     boltCycle: false,
@@ -810,7 +877,9 @@ export const weapons = {
      * bolt: lifted, drawn, pushed home and turned down. See `boltCycle`.
      */
     fireRate: 0.8,
-    semiAuto: true,
+    /** One position. The bolt below is the trigger's second question and the
+     *  only one this weapon has an answer to. */
+    modes: [{ id: "semi" }],
     burst: 1,
     burstCycle: 0,
     /** The only true in this column, and see the rifle's entry for what it
@@ -987,7 +1056,9 @@ export const weapons = {
     /** 5 rounds at 10/s is 0.4 s: the worst ideal TTK of the three automatics,
      *  by a hair, and on purpose. */
     fireRate: 10,
-    semiAuto: false,
+    /** One position. Seventy-five rounds and a bloom you steer is a weapon
+     *  that is never asking to fire one round. */
+    modes: [{ id: "auto" }],
     burst: 1,
     burstCycle: 0,
     boltCycle: false,
@@ -1087,7 +1158,8 @@ export const weapons = {
    * a third of a second from a loaded weapon instead of the 1.4 s a reload
    * costs, and that trade — not damage — is the entire reason to pull it.
    *
-   * `semiAuto` is what stops it competing with the SMG: eight rounds at the
+   * Firing `semi` and only `semi` is what stops it competing with the SMG:
+   * eight rounds at the
    * trigger finger's pace is a weapon you finish a fight with, not one you
    * start one with.
    */
@@ -1114,7 +1186,9 @@ export const weapons = {
     falloffFar: 35,
     /** A ceiling on the trigger finger, as on the DMR. */
     fireRate: 5.5,
-    semiAuto: true,
+    /** One position — and it is what stops this competing with the SMG, so
+     *  an `auto` beside it would undo the weapon's whole case above. */
+    modes: [{ id: "semi" }],
     burst: 1,
     burstCycle: 0,
     boltCycle: false,
