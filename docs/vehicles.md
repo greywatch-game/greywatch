@@ -3452,9 +3452,11 @@ the other chair, and it goes through the same `HeadlessGame.seat`: the chair
 under them is released and the new one taken on the same frame, while
 everything a body owes while it is aboard — the invulnerability, the absence
 from every bot's target list — is left standing, because none of it was ever
-about which chair. It is granted only when the chair asked for is EMPTY: a swap
-is not an eviction, and turning a PERSON out is a thing no key in this game
-does.
+about which chair. It is granted unless a PERSON holds the chair asked for: a
+BOT in it is turned out, exactly as it is from the ground and exactly as
+`Game.canSwapSeat` offers, and turning a PERSON out is a thing no key in this
+game does. `Match.onMount` gated a crossing on the chair being EMPTY for a
+while, which refused every TAKE OVER the client's prompt offered.
 
 `DismountMessage` names nothing, because the server knows which seat a peer is
 in, and the position the body lands at comes back on the same event: where a

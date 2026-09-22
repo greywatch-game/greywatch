@@ -1498,7 +1498,8 @@ export interface MountMessage {
    *
    * Naming one is also how a SEAT SWAP is asked for: a peer already in this
    * hull that names the other chair is asking to cross to it, which the
-   * authority grants only when that chair is empty. One message rather than a
+   * authority grants unless a PERSON holds that chair — a bot in it is turned
+   * out, as it is from the ground. One message rather than a
    * second verb, because "put me in that seat of that hull" is the same
    * sentence whether or not you are already aboard — and a swap that went
    * through a different door would be a second place the seat rules are

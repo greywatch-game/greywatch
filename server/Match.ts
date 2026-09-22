@@ -2368,11 +2368,18 @@ export class Match {
     // `seatOffered` refuses a player who is already seated — which is right
     // for the question it answers (may this body climb aboard) and wrong for
     // this one. `HeadlessGame.seat` is still the one door: it releases the old
-    // chair, refuses if the new one is taken, and leaves everything about the
+    // chair, turns a BOT out of the new one, and leaves everything about the
     // BODY standing, because none of that was ever about which seat.
+    //
+    // **The gate is a PERSON in the other chair, never the chair being
+    // taken** — `Game.canSwapSeat`'s rule, which is what the client's key and
+    // prompt already offered. Gated on `seats[want]` it refused every crossing
+    // against a bot, so TAKE OVER GUN / TAKE OVER TANK did nothing in a match.
     if (player.seat === msg.tank && player.seat >= 0) {
       const hull = this.game.hullOf(player);
-      if (hull && want !== player.crewSeat && !hull.seats[want]) {
+      const held = hull !== null && hull.seats[want];
+      const byBot = hull !== null && this.game.crew.crewOf(hull, want) !== null;
+      if (hull && want !== player.crewSeat && (!held || byBot)) {
         this.game.seat(player, hull, want);
       }
       this.game.onSeatChanged(player, player.seat, player.position, player.yaw);
