@@ -789,6 +789,18 @@ export type ServerEvent =
    */
   | { e: "cannon"; tank: number }
   /**
+   * This hull's CUPOLA gun went off, `n` rounds of it since the last snapshot
+   * (absent reads as one). `cannon`'s twin for the second seat, and coalesced
+   * like `fire` because it is a belt at nine a second rather than a gun on a
+   * reload. A hull and no position for `cannon`'s reason: the gun's own two
+   * angles are already in the snapshot (`VehicleState.mgy`/`mgp`).
+   *
+   * Additive: an older client ignores an event it has no arm for and hears
+   * the belt as silence, which is what it heard before, so no
+   * `PROTOCOL_VERSION` bump.
+   */
+  | { e: "mg"; tank: number; n?: number }
+  /**
    * Panes of glass that just went in, by their index in `GameMap.panes`.
    *
    * **The index is the identity, and it is an identity because both sides build

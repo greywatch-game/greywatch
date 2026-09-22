@@ -877,6 +877,19 @@ showing through rather than a saving: a light is a position and a lifetime, the
 three rounds of a burst go off at one muzzle inside 50 ms, and `pulse` takes no
 delay to stagger them with. What the burst is read by is the streaks.
 
+**A hull's two guns go through the same queue, and neither is a `fire`.**
+`fire` names a SLOT and is drawn off that slot's rig, and nobody is holding a
+hull's gun — so the shell rides `cannon` and the cupola belt rides `mg`, each
+naming a HULL, the belt coalesced per snapshot exactly as `fire` is. A queued
+hull round is cast from that hull's own muzzle down the gun the snapshot laid
+(`VehicleState`'s `tyaw`/`gun` and `mgy`/`mgp`), leaving that hull's collider
+out of the cast as `ShotOptions.fromHull` does for the resolved round. **The one
+client each is skipped on is the one that PREDICTED it, which is a SEAT and not
+a hull**: the driver's seat for `cannon`, the gunner's for `mg`. Skipping on
+the hull alone is what once left a driver blind to the gunner above him, and a
+gunner deaf to the gun under him — before `mg` existed at all, the belt was on
+one screen in the match.
+
 ## Interpolation, and the clock underneath it
 
 Remote bodies are drawn `CONFIG.net.interpDelay` behind the newest snapshot, so

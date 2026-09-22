@@ -258,7 +258,14 @@ interface Seat {
  * is also where the queue itself is argued for.
  */
 interface PendingShot {
+  /** The roster slot that fired — or, when `gun` names one, the HULL index. */
   slot: number;
+  /**
+   * Which barrel: a body's weapon (`body`), or one of a hull's two guns. A
+   * hull's round is drawn off the hull the snapshot posed rather than off a
+   * rig, because nobody is holding it.
+   */
+  gun: "body" | "mg" | "cannon";
   /** Rounds that slot spent inside the snapshot interval, at least one. */
   rounds: number;
   /** Seconds between them, the interval laid back out — see `Game.onNetFire`. */
@@ -6823,7 +6830,12 @@ export class Game {
       // `fire` follows one scale down.
       case "cannon": {
         const tank = this.vehicles.hulls[event.tank];
-        if (!tank || tank === this.driving) break;
+        // Skipped only when WE pulled that trigger — the driver's seat, which
+        // predicted its own shell. A gunner sitting in the same hull did not,
+        // and is owed the report and the round like anybody else.
+        if (!tank || (tank === this.driving && this.drivingSeat === DRIVER)) break;
+        const g = tank.spec.gun;
+        if (g) this.queueNetShot(event.tank, 1, 0, g.range, "cannon");
         this.sfx.cannon(tank.muzzleToRef(this.shellFrom));
         const lc = CONFIG.lighting;
         this.lighting.pulse(
@@ -6835,6 +6847,12 @@ export class Game {
         );
         break;
       }
+
+      // A hull's cupola gun, `cannon`'s twin for the second seat: the report
+      // at its muzzle now, and the rounds queued for a frame to draw them.
+      case "mg":
+        this.onNetMg(event);
+        break;
 
       // The authority's word on the glass. It arrives for our OWN shots too,
       // and that is what completes them: `onShotPath` predicted the pane away
@@ -7009,7 +7027,15 @@ export class Game {
     for (let i = 0; i < rounds; i++) {
       this.sfx.botShot(shooter.eyePos, i * spacing, voice);
     }
-    this.queueNetShot(event.slot, rounds, spacing, event.w);
+    // The weapon the authority named, resolved exactly as the report's voice
+    // is. A slot with none is a bot, and a bot fires the flat round with the
+    // flat reach — the same fall-through `netVoice` makes, and the same number
+    // `BattleSystem.botFire` gives it.
+    const range =
+      event.w !== undefined && isWeaponId(event.w)
+        ? CONFIG.weapons[event.w].range
+        : CONFIG.bots.range;
+    this.queueNetShot(event.slot, rounds, spacing, range, "body");
     if (shooter.team !== this.player.team) this.minimap.reveal(shooter);
   }
 
@@ -7040,7 +7066,8 @@ export class Game {
     slot: number,
     rounds: number,
     spacing: number,
-    weapon: string | undefined,
+    range: number,
+    gun: PendingShot["gun"],
   ): void {
     // A frame's worth is what this holds, and a frame that did not run drops
     // its own. The cap is what makes that true of a frame that ran late as
@@ -7052,21 +7079,39 @@ export class Game {
     // and nothing on the event path allocates.
     const shot = (this.netShots[this.netShotCount++] ??= {
       slot: 0,
+      gun: "body",
       rounds: 0,
       spacing: 0,
       range: 0,
     });
     shot.slot = slot;
+    shot.gun = gun;
     shot.rounds = rounds;
     shot.spacing = spacing;
-    // The weapon the authority named, resolved exactly as the report's voice
-    // is. A slot with none is a bot, and a bot fires the flat round with the
-    // flat reach — the same fall-through `netVoice` makes, and the same number
-    // `BattleSystem.botFire` gives it.
-    shot.range =
-      weapon !== undefined && isWeaponId(weapon)
-        ? CONFIG.weapons[weapon].range
-        : CONFIG.bots.range;
+    shot.range = range;
+  }
+
+  /**
+   * A hull's cupola gun went off: `onNetFire` for the one belt nobody carries.
+   *
+   * Before the authority sent this, a gunner's rounds existed on exactly one
+   * screen — the gunner's own — so the driver underneath them, and everybody
+   * being shot at, saw and heard nothing. Skipped for the one client that
+   * predicted them: whoever is on that gun here.
+   */
+  private onNetMg(event: NetEvent<"mg">): void {
+    const tank = this.vehicles.hulls[event.tank];
+    if (!tank || !tank.alive) return;
+    if (tank === this.driving && this.drivingSeat === GUNNER) return;
+    const m = tank.spec.mg;
+    // Bounded like `fire`'s count, because it came off a socket.
+    const rounds = Math.min(Math.max(event.n ?? 1, 1), TICK_HZ / SNAPSHOT_HZ);
+    const spacing = 1 / SNAPSHOT_HZ / rounds;
+    tank.mgMuzzleToRef(this.netMuzzle);
+    for (let i = 0; i < rounds; i++) {
+      this.sfx.botShot(this.netMuzzle, i * spacing, m.report);
+    }
+    this.queueNetShot(event.tank, rounds, spacing, m.range, "mg");
   }
 
   /**
@@ -7094,6 +7139,10 @@ export class Game {
   private drawNetShots(): void {
     for (let i = 0; i < this.netShotCount; i++) {
       const shot = this.netShots[i];
+      if (shot.gun !== "body") {
+        this.drawNetHullShot(shot);
+        continue;
+      }
       const shooter = this.net?.roster.at(shot.slot);
       // A body that died between the trigger and this frame draws nothing: its
       // rig has stopped being posed, so the muzzle is wherever it fell over.
@@ -7118,6 +7167,40 @@ export class Game {
     this.netShotCount = 0;
     this.spendMuzzleLightBudget(this.netFlashes);
     this.netFlashes.length = 0;
+  }
+
+  /**
+   * One of `drawNetShots`' rounds that left a HULL rather than a body: down
+   * the gun the snapshot laid, from the muzzle the model draws, and leaving
+   * that hull's own collider out of the cast as `ShotOptions.fromHull` does
+   * for the round the authority resolved. The cannon's flash is already the
+   * `cannon` event's own pulse, so only the belt adds one to the budget.
+   */
+  private drawNetHullShot(shot: PendingShot): void {
+    const tank = this.vehicles.hulls[shot.slot];
+    if (!tank || !tank.alive || !tank.body.isEnabled()) return;
+    const muzzle = this.netMuzzle;
+    if (shot.gun === "cannon") {
+      tank.muzzleToRef(muzzle);
+      tank.gunDirToRef(this.netShotDir);
+    } else {
+      tank.mgMuzzleToRef(muzzle);
+      tank.mgDirToRef(this.netShotDir);
+    }
+    this.combat.drawRounds(
+      muzzle,
+      this.netShotDir,
+      muzzle,
+      shot.range,
+      shot.rounds,
+      shot.spacing,
+      tank,
+    );
+    if (shot.gun === "mg") {
+      const at = (this.netFlashPool[this.netFlashes.length] ??= new Vector3());
+      at.copyFrom(muzzle);
+      this.netFlashes.push(at);
+    }
   }
 
   /**

@@ -1291,6 +1291,7 @@ export class HeadlessGame {
       }
     }
     this.battle.hearGunshot(muzzle, tank.team, dir);
+    this.onMg(tank);
     return true;
   }
 
@@ -1342,6 +1343,13 @@ export class HeadlessGame {
 
   /** Wired by `Match`: a tank gun went off, for the fifteen other screens. */
   onCannon: (tank: Vehicle) => void = () => {};
+
+  /**
+   * Wired by `Match`: a cupola gun went off, for every screen but the
+   * gunner's own — `onCannon`'s twin one calibre down, and raised per ROUND
+   * because `Match` coalesces it per snapshot exactly as it does a body's.
+   */
+  onMg: (tank: Vehicle) => void = () => {};
 
   /** Scratch for the shell's muzzle and the gun's axis. Never per frame. */
   private readonly shellFrom = new Vector3();

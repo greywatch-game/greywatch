@@ -546,6 +546,18 @@ export class Match {
   private readonly firedRounds = new Map<number, number>();
 
   /**
+   * `firedRounds` for the cupola guns, keyed by HULL index rather than slot.
+   *
+   * A hull's second gun is not carried by a body, so the `fire` event — which
+   * names a slot and is drawn off that slot's rig — cannot describe it, and
+   * before this there was nothing on the wire for it at all: a gunner's belt
+   * was silent and invisible on every screen but the gunner's own, including
+   * the driver's sitting under it. Coalesced for `firedRounds`' reason, at
+   * nine rounds a second.
+   */
+  private readonly firedMg = new Map<number, number>();
+
+  /**
    * The `ScoreBook` version the clients have been told about, or -1 for "tell
    * them".
    *
@@ -734,6 +746,11 @@ export class Match {
     this.game.onCannon = (tank) => {
       const i = this.game.vehicles.hulls.indexOf(tank);
       if (i >= 0) this.queue({ e: "cannon", tank: i });
+    };
+    // …and its cupola gun, counted rather than queued — see `firedMg`.
+    this.game.onMg = (tank) => {
+      const i = this.game.vehicles.hulls.indexOf(tank);
+      if (i >= 0) this.firedMg.set(i, (this.firedMg.get(i) ?? 0) + 1);
     };
     // The answer to a mount or a dismount, addressed to the one person who
     // asked — see the `seat` event. It is raised for the hull BURNING as well,
@@ -1589,6 +1606,11 @@ export class Match {
       this.queue(n > 1 ? { e: "fire", slot, n, w } : { e: "fire", slot, w });
     }
     this.firedRounds.clear();
+    // The cupola guns, on the same message for the same reason.
+    for (const [tank, n] of this.firedMg) {
+      this.queue(n > 1 ? { e: "mg", tank, n } : { e: "mg", tank });
+    }
+    this.firedMg.clear();
 
     this.flushEvents();
   }

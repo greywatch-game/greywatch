@@ -669,9 +669,11 @@ export class CombatSystem {
     range: number,
     rounds: number,
     spacing: number,
+    fromHull: RayHull | null = null,
   ): void {
     const hitWall =
-      this.rays !== null && this.rays.castRound(origin, dir, range, this.wall);
+      this.rays !== null &&
+      this.rays.castRound(origin, dir, range, this.wall, fromHull);
     const dist = hitWall ? this.wall.distance : range;
     // Scratch, and handed straight to `spawnTracer`, which copies it — see
     // `fire`, which spends the same vector the same way.
