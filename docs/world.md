@@ -406,8 +406,9 @@ stretches by `1/sin(elevation)` along the sun's own azimuth — and along that
 axis it is `depthRange` that runs out first. At a low sun the along-sun reach
 therefore comes for free and this number only buys the across-sun half; there is
 no point raising it past where the depth volume clips, and widening `depthRange`
-to chase it is its own trap, because `shadowParams.x` is a NORMALISED bias and a
-deeper volume rescales what it means in metres.
+to chase it is not free: the bias is stated in metres now (`depthBias`), but the
+map is half-float, so a deeper volume coarsens its rounding in metres and the
+bias has to stay above that.
 
 **That ceiling is now CHECKED rather than only written down here** — a DEV
 warning in `ShadowSystem.setShadowWindow`, which is `ENGINE_UPGRADE.md` S8's

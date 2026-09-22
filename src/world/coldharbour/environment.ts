@@ -310,9 +310,9 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
      * along that axis it is `depthRange` that binds, giving ±98 m here. Setting
      * the across-sun half to match is `2 * 89.5 / cos(24) = 196`. Past that this
      * number buys nothing along the sun, and widening `depthRange` to chase it
-     * is not free: `shadowParams.x` is a NORMALISED bias, so a deeper volume
-     * silently rescales what it means in metres and the failure is peter-panning
-     * at the foot of a wall.
+     * is not free: the depth map is half-float, so a deeper volume coarsens its
+     * rounding in metres, and the bias (stated in metres, `depthBias`) has to
+     * stay above that.
      *
      * It costs texel density — `window / mapSize` goes 5.4 cm to 9.8 cm — and
      * that is the honest price of the hour. The four-tap kernel is in TEXELS so

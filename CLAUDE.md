@@ -571,9 +571,10 @@ Cel materials carry their own light as uniforms — key, ambient, sky fill and a
 packed array of up to `MAX_POINT_LIGHTS` (16) point lights — and `LightingSystem`
 is the sole owner of dynamic light. **Adding a `PointLight` or `HemisphericLight`
 to the scene will not affect any cel-shaded mesh**; the exceptions are the two
-`DirectionalLight`s, which no material reads — `ShadowSystem`'s and
-`BodyShadows`', the second pinned by `includeOnlyWithLayerMask` to a layer no
-mesh in the world carries so it cannot reach a `StandardMaterial` either.
+`DirectionalLight`s, which no material reads — `ShadowSystem`'s two (the
+world's and the foliage's) and `BodyShadows`', the last two pinned by
+`includeOnlyWithLayerMask` to layers no world mesh carries so neither can reach
+a `StandardMaterial`.
 
 **THERE ARE TWO SHADOW MAPS, AND WHICH CASTERS GO IN WHICH IS DECIDED BY REFRESH
 RATE RATHER THAN BY WHAT THEY ARE.** The world's re-renders only when its
@@ -584,8 +585,12 @@ re-rendered every frame, and two things outside that file rest on it: **a rig's
 shape is `RAGDOLL_BONES` and a hull's is its collider box**, so moving either
 moves a shadow, and **the local player casts nothing**, having no rig in first
 person. **Where a window STANDS is `core/shadowWindow.ts`** — one texel snap
-both maps place themselves with, because two copies of it is two maps looking at
-two places off one focus.
+every map places itself with, because two copies of it is two maps looking at
+two places off one focus. **The world's map records BACK faces**, so its bias is
+centimetres (stated in METRES, `depthBias`) and **every caster must be a CLOSED
+shape**; and because a back-face map cannot say how thick a crown is, a THIRD
+map — the translucent solids' front faces, `ShadowSystem`'s own — exists only so
+the translucency term can (`docs/rendering.md`).
 
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`

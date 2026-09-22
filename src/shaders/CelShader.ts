@@ -507,6 +507,18 @@ uniform specMirror: f32;
 // it — a canvas awning or a pine crown with the moon behind it. Premultiplied
 // by intensity — black (the default) is opaque.
 uniform transColor: vec3f;
+// TranslucencySpec.depth, in metres: 0 is a thin sheet, otherwise how far
+// behind the solid's lit surface a face may lie and still transmit.
+uniform transDepth: f32;
+// The FOLIAGE's own depth map, front faces of the translucent solids only,
+// owned by ShadowSystem. It exists to measure THICKNESS for the term above,
+// which the two back-face maps cannot: a face turned away from the key is its
+// own recorded surface there. x = tap radius in UV, y = 1 / the volume's depth
+// span in metres, so transDepth converts to that map's normalised depth.
+uniform foliageLightMatrix: mat4x4f;
+uniform foliageParams: vec4f;
+var foliageMapSampler: sampler;
+var foliageMap: texture_2d<f32>;
 
 #ifdef CEL_GLASS
 // Glazing. x = reflectance face-on, y = the Fresnel falloff's exponent,
@@ -1220,9 +1232,42 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // reach), and added past the soft shoulder for the same reason the specular
   // is — a lit awning is allowed to be the brightest thing in the frame.
   // Opaque materials carry transColor 0 and this contributes nothing.
+  //
+  // **A SOLID only transmits where it is THIN**, and how thin is the foliage
+  // map's to say. Both shadow maps record BACK faces, so a face turned away
+  // from the key is its own recorded surface there and the shadow can only
+  // say whether something ELSE is in front of it — never how much crown the
+  // light crossed to reach it. The foliage map records the FRONT faces of the
+  // translucent solids alone, so the same four-tap test against it, with the
+  // material's transDepth as the allowance, answers exactly that: lit where
+  // this face is within transDepth of the first lit foliage along the light.
+  // A thin sheet (an awning) states no depth and transmits across its face.
+  //
+  // **A solid is gated against the WORLD map with the same allowance, and not
+  // by the surfaces' own shadow term.** That term's 5 cm bias is tuned for
+  // faces the key LIGHTS; on a face turned away from it — a steep cone's back,
+  // compared against a back-face map that IS that surface — the four taps land
+  // on neighbouring texels of itself and it shades itself in blotches. The key
+  // is zero there so nothing else ever showed it, and this is the one term that
+  // does. At transDepth the self-comparison always passes and a wall standing
+  // between the tree and the moon, whose far side is metres nearer, still
+  // does not.
+  var transLit = shadow;
+  if (uniforms.transDepth > 0.0) {
+    let ta = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
+      * 6.2831853;
+    let tdir = vec2f(cos(ta), sin(ta));
+    let thin = shadowTap(uniforms.foliageLightMatrix, foliageMap, foliageMapSampler,
+      fragmentInputs.vPosW, tdir,
+      uniforms.transDepth * uniforms.foliageParams.y, uniforms.foliageParams.x);
+    let clear = shadowTap(uniforms.lightMatrix, shadowMap, shadowMapSampler,
+      fragmentInputs.vPosW, tdir,
+      uniforms.transDepth * uniforms.foliageParams.y, uniforms.shadowParams.w);
+    transLit = mix(uniforms.shadowParams.y, 1.0, thin * clear);
+  }
   let through = max(dot(viewDir, uniforms.lightDir), 0.0)
     * max(dot(n, uniforms.lightDir), 0.0);
-  col += uniforms.transColor * band(through, 2.0) * shadow;
+  col += uniforms.transColor * band(through, 2.0) * transLit;
 
   // Opaque unless this is glazing, and the whole of what makes a pane a pane.
   // What "opaque" WRITES is not 1 — see opaqueAlpha.
@@ -1405,6 +1450,18 @@ export interface TranslucencySpec {
    */
   color: string;
   intensity: number;
+  /**
+   * Absent for a THIN SHEET, which transmits across its whole face. Present
+   * for a SOLID — a pine's tier, a canopy's clump — as how many METRES of it
+   * the key may cross and still come out the other side: a face turned away
+   * from the light transmits only when it lies within this distance, along the
+   * light, behind the first lit surface of any solid in front of it. So a
+   * crown glows where it is thin, and one crown behind another does not.
+   *
+   * Measured against `ShadowSystem`'s foliage map, which only materials that
+   * state this are drawn into.
+   */
+  depth?: number;
 }
 
 /**
@@ -1516,6 +1573,9 @@ export class CelMaterialFactory {
     "specShininess",
     "specMirror",
     "transColor",
+    "transDepth",
+    "foliageLightMatrix",
+    "foliageParams",
     "windTime",
     "windDir",
     "windParams",
@@ -1548,8 +1608,13 @@ export class CelMaterialFactory {
     "color",
     "uv2",
   ];
-  /** Every cel material samples both shadow maps, whatever its albedo path. */
-  private static readonly SAMPLERS = ["shadowMap", "bodyShadowMap"];
+  /**
+   * Every cel material samples both shadow maps and the foliage's depth map,
+   * whatever its albedo path — and every one of them owes all three a BINDING,
+   * translucent or not, because a declared sampler with nothing behind it is a
+   * bind group that fails to build and the draw silently lost.
+   */
+  private static readonly SAMPLERS = ["shadowMap", "bodyShadowMap", "foliageMap"];
   /**
    * How far toward the eye a pane is biased in the depth test, in polygon
    * offset UNITS — one unit being the depth buffer's own smallest resolvable
@@ -1718,6 +1783,13 @@ export class CelMaterialFactory {
   private bodyShadowMap: BaseTexture | null = null;
   private bodyShadowMatrix = Matrix.Identity();
   private bodyShadowParams = new Vector4(0.0015, 0, 0, 0);
+  // The foliage's front-face map — see `setFoliageMap`. Cel materials only:
+  // grass and water have no translucency and do not declare it.
+  private foliageMap: BaseTexture | null = null;
+  private foliageMatrix = Matrix.Identity();
+  private foliageParams = new Vector4(0, 0, 0, 0);
+  /** The materials that state a `TranslucencySpec.depth` — see `isSolid`. */
+  private readonly solids = new Set<ShaderMaterial>();
 
   /**
    * What each glazing material was built FROM, so a per-probe twin of it can be
@@ -2782,6 +2854,46 @@ export class CelMaterialFactory {
   }
 
   /**
+   * The FOLIAGE's depth map: front faces of the translucent solids, and
+   * nothing else, which is what gives the translucency term a thickness to
+   * measure (see `TranslucencySpec.depth`). Bound once at startup, before any
+   * material exists, for `setBodyShadowMap`'s reason — every cel material
+   * declares the sampler, so there is no state in which it may be absent.
+   *
+   * Pushed over the CACHE and not over `eachShadowReader`: grass and water
+   * carry no translucency and do not declare it.
+   */
+  setFoliageMap(map: BaseTexture): void {
+    this.foliageMap = map;
+    this.cache.forEach((mat) => mat.setTexture("foliageMap", map));
+  }
+
+  /** The foliage light's view*projection; re-uploaded when its window moves. */
+  setFoliageMatrix(matrix: Matrix): void {
+    this.foliageMatrix = matrix;
+    this.cache.forEach((mat) => mat.setMatrix("foliageLightMatrix", matrix));
+  }
+
+  /**
+   * The foliage map's tap radius (already in UV) and the reciprocal of its
+   * depth span in metres, which is what turns a material's `depth` into that
+   * map's normalised depth in the shader.
+   */
+  setFoliageParams(radiusUV: number, perMetre: number): void {
+    this.foliageParams.set(radiusUV, perMetre, 0, 0);
+    this.cache.forEach((mat) => mat.setVector4("foliageParams", this.foliageParams));
+  }
+
+  /**
+   * Whether a material is a translucent SOLID — one that states a depth and so
+   * belongs in the foliage map. `ShadowSystem.setCasters` asks this of every
+   * caster, which is how that map stays foliage and nothing else.
+   */
+  isSolid(mat: unknown): boolean {
+    return this.solids.has(mat as ShaderMaterial);
+  }
+
+  /**
    * Depth bias, in-shadow darkness, facet-normal offset, and the depth map's
    * size — which is here because the kernel's tap offsets are in UV, and one
    * texel of UV is `1 / mapSize`. Passing the size rather than the offset keeps
@@ -2906,6 +3018,13 @@ export class CelMaterialFactory {
     }
     mat.setMatrix("bodyLightMatrix", this.bodyShadowMatrix);
     mat.setVector4("bodyShadowParams", this.bodyShadowParams);
+    // A grass or water consumer is registered BEFORE this runs, which is how
+    // this tells the two apart: only a cel material declares the foliage map.
+    if (!this.shadowConsumers.has(mat)) {
+      if (this.foliageMap) mat.setTexture("foliageMap", this.foliageMap);
+      mat.setMatrix("foliageLightMatrix", this.foliageMatrix);
+      mat.setVector4("foliageParams", this.foliageParams);
+    }
   }
 
   /**
@@ -2980,6 +3099,10 @@ export class CelMaterialFactory {
         ? Color3.FromHexString(trans.color).scale(trans.intensity)
         : Color3.Black(),
     );
+    const depth = trans?.depth ?? 0;
+    mat.setFloat("transDepth", depth);
+    if (depth > 0) this.solids.add(mat);
+    else this.solids.delete(mat);
   }
 
   /**

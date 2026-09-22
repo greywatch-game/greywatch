@@ -79,6 +79,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { depthBias } from "../core/shadowWindow";
 import type { FrameDepth } from "./FrameDepth";
 
 /** The rungs, derived from the config so the ladder is declared exactly once. */
@@ -412,8 +413,11 @@ export class Volumetrics {
       effect.setFloat3(
         "march",
         this.reach,
-        CONFIG.graphics.shadows.bias,
-        CONFIG.graphics.bodyShadows.bias,
+        depthBias(CONFIG.graphics.shadows.bias, CONFIG.graphics.shadows.depthRange),
+        depthBias(
+          CONFIG.graphics.bodyShadows.bias,
+          CONFIG.graphics.bodyShadows.depthRange,
+        ),
       );
       effect.setFloat("intensity", v.intensity * this.intensityMult);
       // A DECLARED sampler must be BOUND or the bind group fails to build and

@@ -22,6 +22,13 @@
  * - The depth map re-renders only when the snapped focus moves.
  * - The depth pass draws only the casters standing in the window (see
  *   getCustomRenderList) — Babylon culls nothing off an explicit renderList.
+ * - The depth map records BACK faces (`forceBackFacesOnly`), so every caster
+ *   must be a closed shape, and the bias is stated in metres
+ *   (`CONFIG.graphics.shadows.bias`, converted by `depthBias`).
+ * - A SECOND map, the foliage's, records the FRONT faces of the translucent
+ *   solids and nothing else (`CelMaterialFactory.isSolid`), over the same
+ *   window. It shades nothing: it is how the translucency term measures how
+ *   much crown the light crossed, which a back-face map cannot say.
  * - Meshes with metadata.noShadowCaster (flat ground sheets, roads) must
  *   never be registered — they are receivers, and casting from them is acne.
  * - Blob discs are isPickable=false, metadata.noInk, and never casters.
@@ -44,9 +51,16 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { ShadowWindow } from "../core/shadowWindow";
+import { depthBias, SHADOW_NEAR, ShadowWindow } from "../core/shadowWindow";
 import type { Combatant } from "../entities/Combatant";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+
+/**
+ * The layer the foliage light is pinned to, which no mesh carries — so the
+ * light defines a shadow frustum and lights nothing. Distinct from
+ * `BodyShadows`' proxy layer, which a mesh DOES carry.
+ */
+const FOLIAGE_LAYER = 0x20000000;
 
 export class ShadowSystem {
   private readonly light: DirectionalLight;
@@ -79,6 +93,25 @@ export class ShadowSystem {
   private readonly win = new ShadowWindow();
   /** Scratch for the cull, rebuilt on the frames the depth pass re-renders. */
   private readonly windowCasters: AbstractMesh[] = [];
+  /**
+   * The FOLIAGE's front-face map: its own light (a generator is one per light),
+   * its own window (the snap is in texels of ITS size) and its own cull
+   * scratch, over the same focus, direction and side as the world's.
+   *
+   * **Why it exists.** The world map records back faces so that a lit surface
+   * is compared against the far side of its own wall rather than against
+   * itself, which is what let its bias drop from 63 cm to 5. That same choice
+   * makes a face turned AWAY from the key its own recorded surface, so the map
+   * can no longer say how much of a pine's crown the light crossed on the way
+   * to it — and the translucency term needs exactly that to light a crown at
+   * its thin rim and not across its whole shaded side. This map is the front
+   * half of that measurement, drawn from the translucent solids alone, so it
+   * costs a handful of merged foliage draws rather than a second world.
+   */
+  private readonly foliageLight: DirectionalLight;
+  private readonly foliageGen: ShadowGenerator;
+  private readonly foliageWin = new ShadowWindow();
+  private readonly foliageCasters: AbstractMesh[] = [];
   private fogStart = 24;
   private fogEnd = 78;
   /**
@@ -123,7 +156,10 @@ export class ShadowSystem {
     return this.generator.getTransformMatrix();
   }
 
-  constructor(private scene: Scene, mats: CelMaterialFactory) {
+  constructor(
+    private scene: Scene,
+    private readonly mats: CelMaterialFactory,
+  ) {
     const c = CONFIG.graphics.shadows;
     this.light = new DirectionalLight(
       "moonShadow",
@@ -133,7 +169,7 @@ export class ShadowSystem {
     // Fixed square ortho window; auto-extends against the render list would
     // stretch the window to the whole 240 m map and halve the texel density.
     this.light.shadowFrustumSize = this.window;
-    this.light.shadowMinZ = 1;
+    this.light.shadowMinZ = SHADOW_NEAR;
     this.light.shadowMaxZ = c.depthRange;
     this.light.autoUpdateExtends = false;
 
@@ -141,6 +177,15 @@ export class ShadowSystem {
     // Bias lives consumer-side in the cel shader (shadowParams), where the
     // facet normal is known — not baked into the caster depths.
     this.generator.bias = 0;
+    // The FAR side of every caster, which is what lets the bias be
+    // centimetres rather than the 63 cm a front-face map needed. A lit face is
+    // then compared against the back of its own wall or roof — a thickness
+    // behind it — rather than against itself, so there is no acne to hide and
+    // no bias-sized band of light where an eave meets the wall under it. What
+    // it asks of the casters is that they are CLOSED, which every piece the
+    // kit builds is (boxes, capped cylinders, the gable prism): an open sheet
+    // would record only the side facing away and cast from there.
+    this.generator.forceBackFacesOnly = true;
     const map = this.generator.getShadowMap();
     if (map) {
       // Re-render only when told to (resetRefreshCounter in update/setCasters)
@@ -156,13 +201,48 @@ export class ShadowSystem {
       // window. It is called only on the frames that actually re-render,
       // which is why the cull is computed here rather than kept up to date in
       // `update`.
-      map.getCustomRenderList = () => this.cullToWindow(map.renderList ?? []);
+      map.getCustomRenderList = () =>
+        this.cullToWindow(map.renderList ?? [], this.win, this.light, this.windowCasters);
     }
     mats.setShadowMap(this.generator.getShadowMap()!);
     // The map's size goes with them: the consumer's kernel offsets are in UV,
     // and a texel of UV is 1 / mapSize. This is the only place that number is
     // known, so it is handed over rather than restated in the shader.
-    mats.setShadowParams(c.bias, c.darkness, c.normalBias, c.mapSize);
+    mats.setShadowParams(
+      depthBias(c.bias, c.depthRange),
+      c.darkness,
+      c.normalBias,
+      c.mapSize,
+    );
+
+    // The foliage's front-face map. A light of its own, because a shadow
+    // generator is one per light; pinned to a layer no mesh carries, so it can
+    // never become a lighting light for a StandardMaterial (BodyShadows' rule).
+    this.foliageLight = new DirectionalLight("foliageDepth", this.light.direction.clone(), scene);
+    this.foliageLight.includeOnlyWithLayerMask = FOLIAGE_LAYER;
+    this.foliageLight.shadowFrustumSize = this.window;
+    this.foliageLight.shadowMinZ = SHADOW_NEAR;
+    this.foliageLight.shadowMaxZ = c.depthRange;
+    this.foliageLight.autoUpdateExtends = false;
+    this.foliageGen = new ShadowGenerator(c.foliageMapSize, this.foliageLight);
+    this.foliageGen.bias = 0;
+    const fmap = this.foliageGen.getShadowMap();
+    if (fmap) {
+      fmap.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+      fmap.resetRefreshCounter();
+      fmap.getCustomRenderList = () =>
+        this.cullToWindow(
+          fmap.renderList ?? [],
+          this.foliageWin,
+          this.foliageLight,
+          this.foliageCasters,
+        );
+    }
+    mats.setFoliageMap(this.foliageGen.getShadowMap()!);
+    mats.setFoliageParams(
+      c.pcfRadiusTexels / c.foliageMapSize,
+      depthBias(1, c.depthRange),
+    );
 
     // Blob shadow: a radial-gradient disc, unlit black, depth-write off so it
     // layers over the ground without z-fighting.
@@ -206,9 +286,10 @@ export class ShadowSystem {
    * `2 * halfDepth / cos(elevation)`. With the shipped `distance` 90 and
    * `depthRange` 180 that half-depth is 89.5 m, so at 24 degrees the along-sun
    * reach is +/-98 m and matching it across-sun wants ~196. Widening
-   * `depthRange` to push past that is not free: `shadowParams.x` is a
-   * NORMALISED bias, so a deeper volume rescales what it means in metres and
-   * the failure is peter-panning at the foot of a wall.
+   * `depthRange` to push past that no longer moves the bias — it is stated in
+   * metres and converted against the volume (`depthBias`) — but it does cost
+   * depth precision: the map is half-float, so its rounding in metres grows
+   * with the volume, and the bias has to stay above it.
    *
    * Invalidating the snapped focus is not optional. The texel quantum is
    * `window / mapSize`, so changing the window changes the grid the focus is
@@ -223,7 +304,9 @@ export class ShadowSystem {
     if (metres === this.window) return;
     this.window = metres;
     this.light.shadowFrustumSize = metres;
+    this.foliageLight.shadowFrustumSize = metres;
     this.win.invalidate();
+    this.foliageWin.invalidate();
   }
 
   /**
@@ -287,8 +370,10 @@ export class ShadowSystem {
       direction[1],
       direction[2],
     ).normalize();
+    this.foliageLight.direction = this.light.direction.clone();
     // Invalidate the snapped focus so the light re-centres on next update.
     this.win.invalidate();
+    this.foliageWin.invalidate();
   }
 
   /** Blob shadows fade with the same fog wall that hides distant geometry. */
@@ -308,11 +393,20 @@ export class ShadowSystem {
     if (list) {
       for (const m of list.slice()) this.generator.removeShadowCaster(m, false);
     }
+    const fmap = this.foliageGen.getShadowMap();
+    const flist = fmap?.renderList;
+    if (flist) {
+      for (const m of flist.slice()) this.foliageGen.removeShadowCaster(m, false);
+    }
     for (const m of meshes) {
       if (m.metadata?.noShadowCaster) continue;
       this.generator.addShadowCaster(m, false);
+      // A translucent SOLID goes in both: the world's map for what it hides,
+      // and the foliage's for how thick it is.
+      if (this.mats.isSolid(m.material)) this.foliageGen.addShadowCaster(m, false);
     }
     map?.resetRefreshCounter();
+    fmap?.resetRefreshCounter();
   }
 
   /**
@@ -343,18 +437,22 @@ export class ShadowSystem {
    * Every caster's world matrix is frozen, so this is a handful of dot
    * products per caster on the frames that re-render.
    */
-  private cullToWindow(all: readonly AbstractMesh[]): AbstractMesh[] {
+  private cullToWindow(
+    all: readonly AbstractMesh[],
+    win: ShadowWindow,
+    light: DirectionalLight,
+    list: AbstractMesh[],
+  ): AbstractMesh[] {
     const c = CONFIG.graphics.shadows;
     const half = this.window / 2;
-    const dir = this.light.direction;
-    const ax = this.win.axisX;
-    const ay = this.win.axisY;
+    const dir = light.direction;
+    const ax = win.axisX;
+    const ay = win.axisY;
     // Where the light's camera sits along its own view axis. The window's
     // near and far planes are measured from there.
-    const camDepth = this.win.snapped.z - c.distance;
-    const near = camDepth + this.light.shadowMinZ;
-    const far = camDepth + this.light.shadowMaxZ;
-    const list = this.windowCasters;
+    const camDepth = win.snapped.z - c.distance;
+    const near = camDepth + light.shadowMinZ;
+    const far = camDepth + light.shadowMaxZ;
     list.length = 0;
     for (const mesh of all) {
       const box = mesh.getBoundingInfo().boundingBox;
@@ -362,10 +460,10 @@ export class ShadowSystem {
       const e = box.extendSizeWorld;
       const u = p.x * ax.x + p.y * ax.y + p.z * ax.z;
       const ru = Math.abs(e.x * ax.x) + Math.abs(e.y * ax.y) + Math.abs(e.z * ax.z);
-      if (Math.abs(u - this.win.snapped.x) > half + ru) continue;
+      if (Math.abs(u - win.snapped.x) > half + ru) continue;
       const v = p.x * ay.x + p.y * ay.y + p.z * ay.z;
       const rv = Math.abs(e.x * ay.x) + Math.abs(e.y * ay.y) + Math.abs(e.z * ay.z);
-      if (Math.abs(v - this.win.snapped.y) > half + rv) continue;
+      if (Math.abs(v - win.snapped.y) > half + rv) continue;
       const w = p.x * dir.x + p.y * dir.y + p.z * dir.z;
       const rw =
         Math.abs(e.x * dir.x) + Math.abs(e.y * dir.y) + Math.abs(e.z * dir.z);
@@ -383,6 +481,7 @@ export class ShadowSystem {
    */
   invalidate(): void {
     this.generator.getShadowMap()?.resetRefreshCounter();
+    this.foliageGen.getShadowMap()?.resetRefreshCounter();
   }
 
   /**
@@ -416,6 +515,13 @@ export class ShadowSystem {
       // why this stays a real re-upload on the frames the window moves instead
       // of being deleted outright.
       mats.setShadowMatrix(this.generator.getTransformMatrix());
+    }
+    // The foliage's window, off the same focus on its own texel grid. A
+    // separate test because the two grids are different sizes: one moving
+    // does not mean the other has.
+    if (this.foliageWin.place(this.foliageLight, focus, this.window, c.foliageMapSize, c.distance)) {
+      this.foliageGen.getShadowMap()?.resetRefreshCounter();
+      mats.setFoliageMatrix(this.foliageGen.getTransformMatrix());
     }
   }
 

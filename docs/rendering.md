@@ -1319,16 +1319,80 @@ nothing: the dither was never in the grade, and the fix is at the source. The sk
 needing it (233 runs against 229): stars, the galactic band and the halo are
 painted over the whole ramp, and the clouds stand in front of it.
 
-The exceptions are the TWO `DirectionalLight`s, which no material reads: each
+The exceptions are the THREE `DirectionalLight`s, which no material reads: each
 exists only to define a shadow camera for its `ShadowGenerator`.
-`ShadowSystem`'s is the world's; `BodyShadows`'s is the bodies', and it is
-pinned to a layer no mesh in the world carries (`includeOnlyWithLayerMask`), so
-it cannot reach a `StandardMaterial` either. The cel fragment shader samples
+`ShadowSystem`'s is the world's and it owns a second, the foliage's (see below);
+`BodyShadows`'s is the bodies'. The last two are pinned to layers no world mesh
+carries (`includeOnlyWithLayerMask`), so neither can reach a `StandardMaterial`. The cel fragment shader samples
 both depth maps as one hard two-level term gating the key light. The world's
 window follows the player (texel-snapped, re-rendered only when the snapped
 focus moves), casters are the map's merged static meshes re-registered every
 round via `shadows.setCasters(map.visuals)` (skipping anything flat with
 `metadata.noShadowCaster`).
+
+### The world's map records BACK faces, and the foliage has a map of its own
+
+**The world's depth map stores the FAR side of every caster**
+(`forceBackFacesOnly`), and its bias is **5 cm, stated in metres**
+(`CONFIG.graphics.shadows.bias`, converted to normalised depth by
+`core/shadowWindow.ts`'s `depthBias`). It used to store front faces with a bias
+of 0.0035 of normalised depth — **63 cm** over the 179 m volume, a number nobody
+would have chosen in metres — and every metre of a bias is a LEAK: a receiver
+within that distance of its occluder, along the light, tests lit. At Greyfen's
+28-degree sun that was a lit band ~30 cm deep under every eave, with a
+saw-toothed shadow edge below it that was the bias contour drawn across a depth
+map stepped per texel, not the roof's outline. It was that big to hide ACNE on
+roofs, which is a front-face map comparing a lit surface against its own depth.
+A back-face map compares it against the far side of its own wall or roof
+instead, a thickness behind it, so there is nothing to hide. Measured over every
+committed vantage and three roof views on five maps: the change is darker
+pixels (leaks closing) and **no roof went lighter by more than 0.1% of a frame**.
+
+**What it asks of the casters is that they are CLOSED.** Every piece the kit
+builds is — boxes, capped cylinders, the gable prism. An open sheet in the
+caster list would record only the side facing away and cast from there.
+
+**The sample is offset TOWARD the light, whichever way the facet faces**
+(`shadowVisibility`). On a face turned away from the key, the facet normal
+points away from it, and a back-face map records that very face — so offsetting
+along the normal steps the sample behind the surface it came from. The light's
+travel direction is row 2 of `lightMatrix`, so the flip needs no new uniform in
+any of the three consumers.
+
+**THE TRANSLUCENCY TERM IS THE ONE THING THIS BROKE, AND WHY IS WORTH KNOWING
+BEFORE TOUCHING EITHER.** A pine's lit rim and a broadleaf's backlit glow were
+never a rule: they were the 63 cm leak letting the back of a crown test lit near
+its lit face. A back-face map cannot say how much crown the light crossed —
+a face turned away from the key IS its recorded surface — so with back faces
+alone every shaded face tested lit and the crowns went blotchy (the blotches
+being the back surface's own acne, invisible under the key's zero and visible
+to this term alone). An edge rule on the facet cosine was tried first and
+failed on the broadleafs, which are BOXES: a box face has one cosine, so at a
+14.5-degree sun almost every shaded face read as the deep middle of the crown.
+
+**So the foliage has a third map** — `ShadowSystem`'s own second light and
+generator, over the same window and focus, recording the FRONT faces of the
+translucent SOLIDS and nothing else (`CelMaterialFactory.isSolid`: a
+`TranslucencySpec` that states a `depth`). A solid's translucency is lit where
+the face lies within `depth` metres behind the first lit foliage along the
+light, AND the world's map says nothing else is nearer than that same allowance
+— the loose gate, so the back surface's self-comparison always passes and a
+wall between the tree and the moon, metres nearer, still does not. A sheet (an
+awning) states no depth and keeps the surfaces' own shadow term.
+
+**`depth` is 1.5 m and not 0.63, and the difference is the map, not the trees.**
+At 1024 texels over a 200 m window a pixel is ~20 cm, and a cone's steep side
+changes depth by half a metre or more across one; the four taps read the
+nearest of those. 0.63 at 1024 left the crowns darker than they shipped; 2048
+matched at ~1.0 m; 1024 matched at 1.5 m for a quarter of the memory. **Raise
+the map and the allowance comes DOWN with it** — they are one setting read
+against the reference, not two.
+
+**What it costs**, measured on the Windows box with both maps forced to
+re-render every frame, frame limiter off: **~0.04 ms a frame on Coldharbour**
+(10 foliage casters in the window) and **~0.13 ms on Harrowmead** (58). Those
+are 2% and 7% of a bare scene-render frame of under 2 ms, and a real round's
+frame is several times that. The map is 1024² half-float RGBA, 8 MB.
 
 ### The bodies' map: why soldiers and hulls have one of their own
 
@@ -1375,9 +1439,11 @@ body would put that gap back.
 
 **None of its numbers transfer from the world's map**, which is the mistake to
 avoid when editing either: the tap radius is in UV and a UV texel is
-`1 / mapSize` (1/1024 against 1/2048), and the bias is normalised depth over a
-90 m volume against 180. Copying `shadowParams` across is a 2x-wide kernel at a
-2x-loose bias — a soft shadow floating off its own body. `bodyShadowParams`
+`1 / mapSize` (1/1024 against 1/2048), and the bias is 13 cm against the
+world's 5 — both in metres now (`depthBias`), so a number copied across at
+least means the same distance, but the two maps have different reasons for
+theirs. Copying the tap radius across is still a 2x-wide kernel — a soft shadow
+floating off its own body. `bodyShadowParams`
 carries its own pair; the DARKNESS and the facet offset are not restated,
 because a shadow is a shadow whichever map resolved it and the offset is a
 property of the receiver.

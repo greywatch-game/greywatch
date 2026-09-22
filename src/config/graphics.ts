@@ -358,12 +358,39 @@ export const graphics = {
      */
     edgeFade: 0.1,
     /**
-     * Consumer-side depth bias and facet-normal offset (metres). The
-     * faceted shader shades whole triangles at once, so the offset pushes
-     * each triangle's sample off its own plane — flat faces never
-     * self-shadow (acne) and cast shadows stay put.
+     * Resolution of the FOLIAGE's front-face map (`ShadowSystem`), over the
+     * same window as the world's. Half the world's side: it places a
+     * translucent crown's lit rim rather than drawing an edge anybody looks
+     * at, and it is 8 MB where 2048 would be 32. **It moves as a pair with
+     * `translucency.*.depth`**, which absorbs this map's own texel error.
      */
-    bias: 0.0035,
+    foliageMapSize: 1024,
+    /**
+     * Consumer-side depth bias, in METRES along the light — converted to the
+     * shader's normalised depth by `core/shadowWindow.ts`'s `depthBias`, so it
+     * means the same distance whatever `depthRange` is.
+     *
+     * **It is small because the map stores BACK faces** (`ShadowSystem`,
+     * `forceBackFacesOnly`), so a lit surface is never compared against its own
+     * depth: what it is compared against is the far side of whatever it belongs
+     * to, a wall's or a roof's thickness behind it. The bias only has to cover
+     * the half-float depth map's rounding — ~4 cm at the far half of a 180 m
+     * volume — for the thinnest board in the kit.
+     *
+     * **Every metre of it is a LEAK where a caster meets a receiver**: a
+     * receiver within this distance of the occluder, measured along the light,
+     * tests lit. It was 0.0035 of normalised depth, which is 63 cm, and at
+     * Greyfen's 28 degree sun that was a lit band ~30 cm deep under every eave
+     * with a saw-toothed shadow edge below it — the bias contour drawn across a
+     * depth map stepped per texel. It was that big to hide ACNE on roofs, which
+     * front faces produce and back faces do not.
+     */
+    bias: 0.05,
+    /**
+     * Facet-normal offset, in metres, always TOWARD the light — see
+     * `shadowVisibility`. The faceted shader shades whole triangles at once,
+     * so the offset pushes each triangle's sample off its own plane.
+     */
     normalBias: 0.06,
     /**
      * Half-width of the shadow lookup's four-tap kernel, in shadow-map texels.
@@ -386,9 +413,10 @@ export const graphics = {
      * confined to shadow BOUNDARIES has; a penumbra would have shown up as a
      * small change over a large area, and did not.
      *
-     * `bias` above went 0.0025 -> 0.0035 with it: a half-texel wider footprint
-     * is a half-texel more depth error on a sloped receiver, and the roofs are
-     * where that shows.
+     * `bias` above went 0.0025 -> 0.0035 with it, when it was still normalised
+     * depth over a front-face map: a half-texel wider footprint was a
+     * half-texel more depth error on a sloped receiver compared against its
+     * own depth. Back faces took that comparison away (see `bias`).
      */
     pcfRadiusTexels: 0.5,
     /**
@@ -473,22 +501,18 @@ export const graphics = {
      */
     depthRange: 90,
     /**
-     * Depth bias, in normalised depth units — and it is smaller than the world
-     * map's for a reason that is worth stating, because copying that number
-     * over is the obvious thing to do and wrong.
+     * Depth bias, in METRES along the light, converted by `depthBias` exactly
+     * as the world map's is.
      *
-     * `shadows.bias` is 0.0035 over a 180 m volume, which is 63 cm of slop
-     * along the light. It can afford that because the acne it exists to
-     * prevent is a receiver testing against its OWN depth, and the facet-normal
-     * offset does most of that work. **Nothing in this map is ever its own
-     * receiver**: the casters are proxy boxes that are never drawn and the
-     * receivers are the world and the bodies' visible meshes, so there is no
-     * correlated depth error to hide. What is left to beat is half-float
-     * quantisation (~5e-4 near the far plane) and the receiver's own normal
-     * offset, and 0.0015 over a 90 m volume is 13.5 cm — under a boot rather
-     * than under a body.
+     * **Nothing in this map is ever its own receiver**: the casters are proxy
+     * boxes that are never drawn and the receivers are the world and the
+     * bodies' visible meshes, so there is no correlated depth error to hide.
+     * What is left to beat is half-float quantisation (~5e-4 of the volume near
+     * the far plane, 4.5 cm of this one) and the receiver's own normal offset,
+     * and 13 cm is under a boot rather than under a body. It was 0.0015 of
+     * normalised depth, which is the same 13 cm over this 90 m volume.
      */
-    bias: 0.0015,
+    bias: 0.13,
     /**
      * Half-width of the four-tap kernel, in texels of THIS map.
      *
@@ -752,6 +776,21 @@ export const graphics = {
    * they sit on.
    */
   translucency: {
+    /*
+     * `depth` separates a SHEET from a SOLID: absent, the whole face turned
+     * away from the key transmits; present, only the part of the solid within
+     * that many metres of its lit surface does (see `TranslucencySpec.depth`,
+     * measured against `ShadowSystem`'s foliage map). The rim these trees were
+     * tuned against came from the world shadow map's old 63 cm depth bias — a
+     * leak rather than a rule, which went when that map moved to back faces.
+     *
+     * **1.5 m is that same rim read through a 1024 map, not a claim that a
+     * crown is 1.5 m thin.** A pine's steep side changes depth by half a metre
+     * or more across one ~20 cm texel and the taps read the nearest, so the
+     * allowance matched against the reference frames rises as the map
+     * coarsens: 1.0 at 2048, 1.5 at 1024. Move `shadows.foliageMapSize` and
+     * this moves with it. See `docs/rendering.md`.
+     */
     /**
      * Market-stall canvas: pale, slightly warmed by the cloth, and the
      * brightest of the two because an awning is a single thin sheet.
@@ -761,14 +800,14 @@ export const graphics = {
      * Pine needles: cold green, and dimmer — a crown is many layers deep,
      * so what comes through it is what got past all of them.
      */
-    foliage: { color: "#61906f", intensity: 0.3 },
+    foliage: { color: "#61906f", intensity: 0.3, depth: 1.5 },
     /**
      * Jungle canopy: warmer, yellower and brighter than the pine's. A frond
      * is one broad blade rather than a crown many needles deep, so far more
      * gets through it — and what gets through a leaf that size arrives
      * carrying the leaf's own colour rather than merely dimmed.
      */
-    canopy: { color: "#8fb567", intensity: 0.45 },
+    canopy: { color: "#8fb567", intensity: 0.45, depth: 1.5 },
   },
   /**
    * Glazing: what a pane of glass returns and what it lets past. One entry,

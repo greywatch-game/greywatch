@@ -7,8 +7,9 @@
  * the frustum side, the depth range and the refresh schedule all belong to
  * whoever owns the generator. Contract: `docs/rendering.md`.
  *
- * **There are TWO shadow maps in this game and this is the arithmetic they
- * share**, which is the whole reason it is a module rather than a method.
+ * **There are THREE shadow maps in this game and this is the arithmetic they
+ * share**, which is the whole reason it is a module rather than a method (the
+ * third is the foliage's, `ShadowSystem`'s own second window).
  * `ShadowSystem` carries the static world and re-renders only when this says
  * the window moved; `BodyShadows` carries soldiers and hulls and re-renders
  * every frame regardless. They disagree about the refresh, the casters, the map
@@ -31,6 +32,29 @@
  * caster depths and the hard edges crawl just the same.
  */
 import { type DirectionalLight, Vector3 } from "@babylonjs/core";
+
+/**
+ * The near plane of every shadow volume in the game, in metres along the
+ * light. Both maps stand their camera `distance` behind the focus and clip at
+ * this and at their own `depthRange`, so a volume's depth span is
+ * `depthRange - SHADOW_NEAR` — which is what `depthBias` divides by.
+ */
+export const SHADOW_NEAR = 1;
+
+/**
+ * A depth bias stated in METRES along the light, as the shader's normalised
+ * depth over a volume `depthRange` deep.
+ *
+ * **The config states metres and the shader compares normalised depth, and
+ * this is the one place the two meet.** Under WebGPU a caster's stored depth is
+ * the raw ortho clip z, linear over `[SHADOW_NEAR, depthRange]`, so a
+ * normalised bias means a different distance in every volume: 0.0035 was 63 cm
+ * on the world's 180 m one, a number nobody would have chosen in metres, and a
+ * deeper volume would have silently widened it further.
+ */
+export function depthBias(metres: number, depthRange: number): number {
+  return metres / (depthRange - SHADOW_NEAR);
+}
 
 /**
  * The basis and the snapped focus for one shadow window.

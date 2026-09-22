@@ -200,7 +200,7 @@ uniform shadowParams: vec4f;
 // **It is a different WINDOW, so it needs its own bias and its own tap radius
 // and cannot borrow either.** The radius is in UV and a UV texel is
 // 1 / mapSize, which is 1/1024 here against the world's 1/2048; the bias is
-// normalised depth over a 90 m volume against the world's 180. Copying
+// 13 cm against the world's 5 cm, over a 90 m volume against 180. Copying
 // shadowParams over would have been a 2x-wide kernel at a 2x-loose bias,
 // which is a soft shadow floating off its own body.
 uniform bodyLightMatrix: mat4x4f;
@@ -324,7 +324,20 @@ fn shadowTap(
 fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
   // Offset once, along the receiver's own facet, and spent on both maps. It is
   // a property of the surface being lit and not of what is shading it.
-  let p = posW + n * uniforms.shadowParams.z;
+  //
+  // **Always TOWARD the light**, which is the facet normal on a lit face and
+  // its reverse on a face turned away. Both maps record BACK faces, so a face
+  // turned away from the light is its own caster's recorded surface: offset
+  // along its normal it steps BEHIND itself and shades itself, which takes the
+  // translucency off every awning's underside (the one term such a face is
+  // lit by). Offset toward the light it tests lit against itself and shadowed
+  // against anything else in front of it, which is the right answer on both
+  // counts. The light's travel direction is the depth axis of its own matrix
+  // (row 2), so this needs no uniform the three consumers do not already have.
+  let lightTravel = vec3f(
+    uniforms.lightMatrix[0][2], uniforms.lightMatrix[1][2], uniforms.lightMatrix[2][2]);
+  let toward = select(1.0, -1.0, dot(n, lightTravel) > 0.0);
+  let p = posW + n * (toward * uniforms.shadowParams.z);
   let a = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
     * 6.2831853;
   let dir = vec2f(cos(a), sin(a));

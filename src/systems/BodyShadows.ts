@@ -95,7 +95,7 @@ import {
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { RAGDOLL_BONES, type SoldierRig } from "../entities/SoldierModel";
-import { ShadowWindow } from "../core/shadowWindow";
+import { depthBias, SHADOW_NEAR, ShadowWindow } from "../core/shadowWindow";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 
 /**
@@ -208,7 +208,7 @@ export class BodyShadows {
     // honest way to have one that shades nothing.
     this.light.includeOnlyWithLayerMask = PROXY_LAYER;
     this.light.shadowFrustumSize = c.window;
-    this.light.shadowMinZ = 1;
+    this.light.shadowMinZ = SHADOW_NEAR;
     this.light.shadowMaxZ = c.depthRange;
     this.light.autoUpdateExtends = false;
 
@@ -254,7 +254,10 @@ export class BodyShadows {
     this.proxy.thinInstanceCount = 0;
 
     mats.setBodyShadowMap(this.generator.getShadowMap()!);
-    mats.setBodyShadowParams(c.bias, c.pcfRadiusTexels / c.mapSize);
+    mats.setBodyShadowParams(
+      depthBias(c.bias, c.depthRange),
+      c.pcfRadiusTexels / c.mapSize,
+    );
   }
 
   /**
