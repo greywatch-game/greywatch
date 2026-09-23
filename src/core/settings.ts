@@ -43,6 +43,15 @@ export type VolumetricQuality =
 export type GiQuality = "off" | keyof typeof CONFIG.gi.tiers;
 
 /**
+ * How much shadow, as one of `CONFIG.graphics.shadowTiers` — the moon's maps
+ * and the point lights' atlas together (`CONFIG.graphics.localShadows.tiers`
+ * has a row per rung too, and the two tables must name the same rungs).
+ * `off` is a rung of its own here rather than an extra option, because the
+ * tables state what off MEANS per map.
+ */
+export type ShadowQuality = keyof typeof CONFIG.graphics.shadowTiers;
+
+/**
  * A look-sensitivity multiplier, as one of `CONFIG.camera.lookScales`. Derived
  * from that list for the same reason `RenderScale` is derived from its own: the
  * ladder is declared once, and a value that is not on it cannot be stored.
@@ -119,6 +128,11 @@ export type Settings = {
    * `defaultGiQuality`.
    */
   gi: GiQuality;
+  /**
+   * Shadows — the moon's three maps and the lamps' atlas, as one rung.
+   * Derived per MACHINE on a fresh install: see `defaultShadowQuality`.
+   */
+  shadows: ShadowQuality;
   /**
    * Mouse look speed, as a multiplier on `CONFIG.camera.sensX`/`sensY`.
    *
@@ -264,6 +278,20 @@ export function defaultGiQuality(): GiQuality {
 }
 
 /**
+ * The shadows a fresh install gets, on `defaultGiQuality`'s test and for its
+ * reason: a finger for a pointer is a phone or a tablet, whose GPU runs this
+ * frame at ~2.4x a desktop's cost, and the lamps' shadows are a depth pass per
+ * face on top of the moon's.
+ */
+export function defaultShadowQuality(): ShadowQuality {
+  const coarse =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  return coarse ? "low" : "high";
+}
+
+/**
  * What a fresh install gets.
  *
  * The blur's default is derived from `CONFIG` rather than restated, so the
@@ -289,6 +317,7 @@ export const SETTING_DEFAULTS: Settings = {
   // that the old pass was detached most of a round and this one is not.
   volumetrics: "medium",
   gi: defaultGiQuality(),
+  shadows: defaultShadowQuality(),
   renderScale: defaultRenderScale(),
   // 1 on both, and it is the one default that means "change nothing": the rates
   // in `CONFIG.camera` are what every other number there was tuned against.
@@ -417,6 +446,11 @@ const GI_QUALITIES = [
   ...(Object.keys(CONFIG.gi.tiers) as (keyof typeof CONFIG.gi.tiers)[]),
 ] as const;
 
+/** The shadow rungs, in the order the screen draws them. */
+export const SHADOW_QUALITIES = Object.keys(
+  CONFIG.graphics.shadowTiers,
+) as ShadowQuality[];
+
 /**
  * One codec per field. The mapped type is the point: a field added to
  * `Settings` without an entry here does not compile, so the store can never
@@ -429,6 +463,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   renderScale: oneOf(CONFIG.graphics.renderScales),
   volumetrics: oneOfString(VOLUMETRIC_QUALITIES),
   gi: oneOfString(GI_QUALITIES),
+  shadows: oneOfString(SHADOW_QUALITIES),
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
   stickSensitivity: oneOf(CONFIG.camera.lookScales),
   touchSensitivity: oneOf(CONFIG.camera.lookScales),

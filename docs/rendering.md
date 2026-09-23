@@ -1733,6 +1733,153 @@ analytic now and the field survives it: two callers re-deriving the floor are tw
 opinions about where it is, however cheap each one is. Anything wanting the floor
 under the player reads that field rather than probing again.
 
+### The shadow rungs: one setting, four maps
+
+**`Shadows` is one setting over all four shadow maps** — the moon's world,
+foliage and bodies maps and the lamps' atlas below — and `?shadows=` overrides
+it for a session on `?gi=`'s terms. The rungs are two tables,
+`CONFIG.graphics.shadowTiers` (the moon's three) and
+`CONFIG.graphics.localShadows.tiers` (the lamps'), and they must name the same
+rungs because `ShadowQuality` is derived from the first and indexes the second.
+A fresh install on a coarse pointer gets `low`, on `defaultGiQuality`'s test.
+
+**A map that is OFF is a bound 1x1 LIT texture, never an absent one**
+(`core/shadowWindow.ts`'s `litShadowTexture`): every `celShadow` consumer
+declares every shadow sampler, and a declared sampler with nothing behind it is
+a bind group that fails to build. It is 8-bit RGBA on purpose — 255 reads back
+as depth 1.0, past every receiver, and a 32-bit float is not filterable under
+WebGPU. A rung change REBUILDS a generator at its new size (a
+`ShadowGenerator`'s size is fixed at construction) and re-adds the casters
+`setCasters` last handed over; a map whose size did not move is left alone.
+**The sizes start at -1, not 0**, because 0 is off's own size and a first
+`setQuality("off")` that compared equal to it bound nothing at all — measured,
+every cel material's bind group failed and the round never left `loading`.
+
+What each rung spends, and why the phone's is shaped the way it is, is argued
+on `shadowTiers` in `config/graphics.ts`.
+
+### The lamps' shadows: one atlas, split by refresh rate
+
+`systems/LocalShadows.ts`. Before it the sixteen point lights had no shadow map
+at all — their only occlusion was the volume's per-probe visibility bit
+(`giPointVis`), 2–3 m coarse, blind to bodies, and gone with bounce light off.
+It still answers for every slot the atlas does not hold.
+
+**One atlas, because there is no binding left for a map per light.** The cel
+shader binds thirteen textures against WebGPU's default sixteen (the glazing
+variant fourteen), so every shadowed lamp is reached through ONE texture: a
+point light is six square cube-face tiles, a spot is one, and `celShadow`'s
+`localLayer` picks the tile off the slot's base and the face the receiver is
+on. **The face order (+X −X +Y −Y +Z −Z) and each face's frame (`faceFrame` /
+`localUp`) are written twice, in `LocalShadows` and in the include, and must
+agree** — a mismatch is a shadow drawn on the wrong side of the lamp.
+
+**The lamps are split by REFRESH RATE, which is the moon's rule.** A FIXTURE
+(`lighting.add`, `shadow: "fixture"` by default) has a STATIC layer — the map's
+real visual meshes, culled per face to the light's sphere — baked once and kept
+while the light holds its tiles, and a DYNAMIC layer of bodies and hulls,
+redrawn every frame, only while one is within reach. The shader takes the `min`
+of the two, exactly as the moon's world and body maps. A light that MOVES
+(`moving`, and `blast` on the rungs with `transients`) has nothing static to
+keep, so all of it is dynamic — and it is affordable because a moving light's
+casters are PROXIES: collider boxes, `rayGroups` struts, `RAGDOLL_BONES` and
+hull boxes (`core/proxyBoxes.ts`), all thin instances of one unit box. **Every
+dynamic tile in the frame is ONE draw**, whatever it holds. The phone rung
+bakes its fixtures from proxies too (`meshes: false`) and holds its dynamic
+tiles for two frames (`every`).
+
+**One pass fills many tiles because the projection is not Babylon's.** The
+depth vertex stage builds the face's own perspective and then SCALES AND
+OFFSETS clip space into that face's tile of the atlas — affine in `w`, so it
+commutes with the divide — and the fragment stage discards whatever fell
+outside the face's frustum, the per-tile clip the hardware can no longer do. A
+proxy's instance names its tile (`tileId`); a mesh cannot, so a static bake is
+one pass per face with the tile as a uniform, **one material per face in
+flight** (`staticFacesPerFrame`) so no uniform buffer is rewritten between two
+passes of one frame.
+
+**Nothing clears the atlas but the clear sheet.** A static tile survives every
+pass that does not redraw it, so the render target's own clear is replaced by
+an observer that clears only a NEW target; each pass's tiles are reset first
+by a sheet of one quad per tile, collapsed to nothing where its flag is 0,
+drawn at depth ALWAYS in a pass of its own. The work `update` lays out is
+CONSUMED by `render` — a state that runs no `update` must not re-bake last
+frame's queue every frame.
+
+**A tile stores RADIAL distance over the light's range, from BACK faces**, and
+the receiver is offset along its true facet toward the light — the moon map's
+two rules, for its reasons. `nearClear` (0.35 m) is every face's near plane
+and the proxy gather skips any box the light stands inside: a lantern is in its
+own housing, and recording that as an occluder puts the whole light out.
+
+**A slot is published only once its layer is DRAWN** — a static layer when its
+last face is queued (the queue is drawn in the same frame, before the main
+pass), a dynamic one after its first pass. Until then the slot keeps the
+volume's visibility, so a lamp walking into the shadowed set does not blink.
+
+**The lookup is only asked INSIDE a light's range.** It was first asked for
+every shadowed slot on every pixel, and on Hollowmere that alone was the whole
+cost of the high rung.
+
+**Ranking.** Of the slots `LightingSystem` filled, moving lights outrank
+fixtures (a moving shadow is the one being watched, and a fixture's is the one
+cheaper to lose), then distance past each light's own reach; a light already
+holding tiles keeps `keepMargin` metres of preference so two fixtures either
+side of the eye do not trade a static cache every frame. A light the atlas
+cannot fit is not shadowed that frame — never a partial one.
+
+**Cones.** `PointLightData.spot` makes a light a spot, and the cone is owed
+WHATEVER the rung — `publish` writes every slot's cone before it asks whether
+the slot casts. Grass and water read the same per-slot arrays, which the
+factory hands out by reference and `LocalShadows` rewrites in place.
+
+**What it costs.** Measured on the RTX box, uncapped, a lamp-lit street with
+eight soldiers round the lamp and a moving spot walking beside it:
+
+| map | rung | GPU frame | frame | draws |
+| --- | --- | --- | --- | --- |
+| Hollowmere | off | 2.55–2.70 ms | 2.93 ms | 187 |
+| Hollowmere | high | 2.71–2.76 ms | 3.13–3.18 ms | 190 |
+| Cinderhaven | off | 2.68 ms | 2.88 ms | 181 |
+| Cinderhaven | low | 2.77 ms | 3.08 ms | 183 |
+| Cinderhaven | high | 2.79 ms | 3.16 ms | 184 |
+
+`LocalShadows.update` is 0.06–0.07 ms of CPU. "off" there has the moon's maps
+off too, so the gap is the whole shadow budget, not only the lamps'. Nothing is
+measured on a phone — `FINDINGS.md` 45.
+
+### Lightning
+
+`systems/LightningStrikes.ts`, a map's `EnvironmentSpec.lightning` (absent is
+none; Cinderhaven's volcano is the one that has it). **A strike is a SCHEDULE
+read off a clock, never a timer**: seeded off the map's id, and the clock is
+the authority's in a match (`Connection.now`), so every client flashes
+together and nothing crosses the wire. It is pushed from `tick` in every
+state — weather does not stop for a menu.
+
+**A flash REPLACES the key light's direction for its length, rather than
+adding a second directional term** (`CelMaterialFactory.flashKey`). The shadow
+maps are aimed along the key, and a second term would want a second map the
+cel shader has no binding for; so on the frame a strike starts `Game`
+re-aims the moon's maps along it, and on the frame it ends aims them back —
+two world-map re-renders a strike. For the half second it lasts the moon is a
+tenth of the light in the frame, so where the moon seems to come from is not
+something a player can read.
+
+**The key light is held BY REFERENCE and never replaced.** `setEnvironment`
+copies into the factory's two objects rather than swapping them, and grass and
+water bind those same objects (`keyLight`) instead of their own copies, which
+is what lets a flash reach every surface without a walk.
+
+The rest of the flash: the volume's reserved `giExtra.y` is now the SKY FILL —
+`giSkySeen` reads the probes' own sky visibility, so a street goes white and
+the parlour off it does not (with no volume, everything counts as seeing the
+sky); the dome takes the flash as an emissive colour laid over its texture and
+the clouds on both lit tones. Thunder is `Sfx.thunder`, synthesized, delayed
+by the distance at the speed of sound.
+
+### The light slots
+
 Lights come in three flavors: static fixtures (`lighting.add()`, registered by
 `MapBuilder` from a builder's `LocalLight` list or a scatter prop's entry in
 `SCATTER_LIGHTS`), transient pulses (`lighting.pulse()` — muzzle flash), and carried

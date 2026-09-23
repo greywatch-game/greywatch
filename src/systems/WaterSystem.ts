@@ -164,11 +164,10 @@ export class WaterSystem {
         { foam: this.foam, depth: bed.tex },
         new Vector4(r.x - hx, r.z - hz, r.x + hx, r.z + hz),
       );
-      mat.setVector3("lightDir", new Vector3(...lit.direction).normalize());
-      mat.setColor3(
-        "lightColor",
-        Color3.FromHexString(lit.color).scale(lit.intensity),
-      );
+      // The factory's LIVE key, by reference — see GrassSystem.
+      const key = this.mats.keyLight;
+      mat.setVector3("lightDir", key.dir);
+      mat.setColor3("lightColor", key.color);
       mat.setColor3(
         "ambientColor",
         Color3.FromHexString(lit.ambientColor).scale(lit.ambientIntensity),

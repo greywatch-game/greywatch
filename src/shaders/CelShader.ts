@@ -82,7 +82,7 @@ import { FlameMaterial } from "./FlameShader";
 // them explicitly so the #include<cel...> lines below can never be tree-shaken
 // away, and so registration is provably before the first effect COMPILE rather
 // than merely before the first material.
-import "./wgsl/includes";
+import { MAX_LOCAL_SLOTS } from "./wgsl/includes";
 
 /**
  * Custom cel-shading: quantized diffuse bands, a hard stylized rim highlight,
@@ -144,6 +144,12 @@ import "./wgsl/includes";
  * braziers that actually shape the room.
  */
 export const MAX_POINT_LIGHTS = 16;
+// `celShadow`'s lamp arrays index these same slots and size themselves off
+// their own constant, because the include cannot import this one. Two numbers
+// that must be one, checked where both are in scope.
+if (MAX_LOCAL_SLOTS !== MAX_POINT_LIGHTS) {
+  throw new Error("MAX_LOCAL_SLOTS must equal MAX_POINT_LIGHTS");
+}
 
 /**
  * How many albedos one map's world geometry may carry before the merge stops
@@ -240,6 +246,13 @@ export const SHADOW_UNIFORM_NAMES = [
   "shadowParams",
   "bodyLightMatrix",
   "bodyShadowParams",
+  // The lamps' atlas (`systems/LocalShadows.ts`): per-slot cone and tiles,
+  // and the atlas's own shape. Every consumer of `celShadow` already declares
+  // the `pointPos`/`pointRange` these index beside.
+  "pointSpot",
+  "pointShade",
+  "localAtlas",
+  "localParams",
 ] as const;
 /**
  * The samplers `celShadow` declares, for a consumer's sampler list.
@@ -251,7 +264,11 @@ export const SHADOW_UNIFORM_NAMES = [
  * constructor and hands it over there, before `MapBuilder` has asked for a
  * single material: there is no state in which this one is absent.
  */
-export const SHADOW_SAMPLER_NAMES = ["shadowMap", "bodyShadowMap"] as const;
+export const SHADOW_SAMPLER_NAMES = [
+  "shadowMap",
+  "bodyShadowMap",
+  "localAtlasMap",
+] as const;
 
 /**
  * The uniforms `celGi` declares, for a consumer's uniform list — today the
@@ -812,6 +829,10 @@ fn reliefLit(uv: vec2f, h: f32, gx: vec2f, gy: vec2f, dist: f32) -> f32 {
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
   var n = facetNormal();
+  // The TRUE facet, kept for the lamps' atlas lookup in the light loop, which
+  // runs after the relief has bent n — the offset rule shadowVisibility
+  // states, applied to the other shadow.
+  let nFacet = n;
 
   // How level this facet is, read off the TRUE geometry before any bump map
   // touches it — the rim gate below keys on it, and reading it from the
@@ -939,6 +960,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   }
   light += indirect;
 
+  // LIGHTNING's fill (giExtra.y, off LightningStrikes): for a moment the whole
+  // sky is a lamp, and what it reaches is what can SEE the sky — so a street is
+  // lit and the parlour off it is not. Keyed on the facet's tilt as the sky
+  // fill is, and in the key's colour, which a flash has already been added to.
+  if (uniforms.giExtra.y > 0.0) {
+    light += uniforms.lightColor
+      * (uniforms.giExtra.y * giSkySeen(giC) * (0.35 + 0.65 * max(n.y, 0.0)));
+  }
+
   // --- point lights (3 bands, smooth inverse-square-ish falloff) ---
   for (var i = 0; i < MAX_POINT_LIGHTS; i++) {
     if (f32(i) < uniforms.pointCount) {
@@ -953,10 +983,22 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
       // no longer lights the far side of the wall it hangs on. 1 wherever the
       // volume has no answer, which is the old rule exactly.
       let ch = i32(uniforms.giSlotChannel[i]);
-      let vis = giVis[ch / 4][ch % 4];
+      // The lamps' atlas answers instead wherever it holds this light: a
+      // shadow cut per texel rather than per probe, with bodies in it. Its
+      // x is the spot's cone, 1 for a light that shines every way.
+      //
+      // Only INSIDE the range: a pixel the light cannot reach is dark whatever
+      // the atlas says, and asking anyway was eight fetches per shadowed lamp
+      // on every pixel of the frame.
+      var loc = vec2f(1.0, -1.0);
+      if (atten > 0.0) {
+        loc = pointLocal(i, fragmentInputs.vPosW, nFacet);
+      }
+      let vis = select(giVis[ch / 4][ch % 4], loc.y, loc.y >= 0.0);
       // Lift the floor a little so lit surfaces read as glowing pools of
       // light rather than only the faces pointed at the flame.
-      light += uniforms.pointColor[i] * atten * vis * (0.25 + 0.75 * band(ndl, 3.0));
+      light += uniforms.pointColor[i] * atten * vis * loc.x
+        * (0.25 + 0.75 * band(ndl, 3.0));
     }
   }
 
@@ -1502,7 +1544,39 @@ export interface PointLightData {
   /** Radius at which the contribution reaches zero. */
   range: number;
   intensity: number;
+  /**
+   * A CONE, which makes this a spot: its axis (unit, world space) and the
+   * cosines of the angles at which it is fully on and fully off. Absent is a
+   * light that shines every way — every light that existed before this did.
+   */
+  spot?: SpotCone;
+  /**
+   * What `LocalShadows` may do for it — see `ShadowIntent`. Absent is `none`,
+   * which is the old rule exactly: the volume's visibility and nothing else.
+   */
+  shadow?: ShadowIntent;
 }
+
+/** A spot light's cone. The axis is held by reference and may be moved in place. */
+export interface SpotCone {
+  dir: Vector3;
+  cosInner: number;
+  cosOuter: number;
+}
+
+/**
+ * How a light casts, which `LocalShadows` spends differently:
+ * - `fixture` — it does not move, so its world geometry is drawn ONCE into a
+ *   static tile and kept; bodies near it go in a dynamic tile beside.
+ * - `moving` — it does, so all of it is redrawn every frame from collider
+ *   proxies, which is what keeps that affordable.
+ * - `blast` — `moving`, on the rungs that shadow a transient at all
+ *   (`localShadows.tiers[].transients`): a third of a second of light that
+ *   is the brightest thing in the valley while it lasts.
+ * - `none` — it casts nothing of its own (a muzzle flash, the player's own
+ *   shoulder lamp, whose shadows fall behind everything it lights).
+ */
+export type ShadowIntent = "none" | "fixture" | "moving" | "blast";
 
 /** Toon specular settings for one glossy material (see CONFIG.graphics.spec). */
 export interface SpecSpec {
@@ -1807,8 +1881,15 @@ export class CelMaterialFactory {
   private cache = new Map<string, ShaderMaterial>();
   private emissiveCache = new Map<string, StandardMaterial>();
 
-  private lightDir = new Vector3(-0.5, -0.9, 0.4).normalize();
-  private lightColor = new Color3(0.55, 0.62, 0.8);
+  // The key light as every material HOLDS it: these two objects are handed
+  // out by reference and never replaced, only written into, so a lightning
+  // flash (`flashKey`) reaches every cel material, the grass and the water
+  // without a walk. `keyDir`/`keyColor` are the map's own, which a flash is
+  // laid over and put back to.
+  private readonly lightDir = new Vector3(-0.5, -0.9, 0.4).normalize();
+  private readonly lightColor = new Color3(0.55, 0.62, 0.8);
+  private readonly keyDir = this.lightDir.clone();
+  private readonly keyColor = this.lightColor.clone();
   private keyWrap = 0;
   private ambientColor = new Color3(0.16, 0.18, 0.24);
   private skyLightColor = new Color3(0.08, 0.11, 0.18);
@@ -1885,6 +1966,19 @@ export class CelMaterialFactory {
   private foliageMap: BaseTexture | null = null;
   private foliageMatrix = Matrix.Identity();
   private foliageParams = new Vector4(0, 0, 0, 0);
+  // The lamps' atlas — see `setLocalShadows`. The per-slot arrays are handed
+  // to every consumer BY REFERENCE and rewritten in place, so a frame's
+  // assignment reaches every material without a walk: a `ShaderMaterial`
+  // keeps the array it was given and re-reads it on every bind.
+  private localAtlasMap: BaseTexture | null = null;
+  private readonly pointSpot = new Float32Array(MAX_POINT_LIGHTS * 4).map(
+    (_, i) => (i % 4 === 3 ? -2 : 0),
+  );
+  private readonly pointShade = new Float32Array(MAX_POINT_LIGHTS * 4).map(
+    (_, i) => (i % 4 === 1 || i % 4 === 2 ? -1 : 0),
+  );
+  private readonly localAtlas = new Vector4(1, 1, 1, 1);
+  private readonly localParams = new Vector4(0, 0, 0, 0);
   /** The materials that state a `TranslucencySpec.depth` — see `isSolid`. */
   private readonly solids = new Set<ShaderMaterial>();
   /**
@@ -2640,8 +2734,10 @@ export class CelMaterialFactory {
     wearColor: Color3;
     wearAmount: number;
   }): void {
-    this.lightDir = env.lightDir.normalizeToNew();
-    this.lightColor = env.lightColor;
+    this.keyDir.copyFrom(env.lightDir).normalize();
+    this.keyColor.copyFrom(env.lightColor);
+    this.lightDir.copyFrom(this.keyDir);
+    this.lightColor.copyFrom(this.keyColor);
     this.keyWrap = env.keyWrap;
     this.ambientColor = env.ambientColor;
     this.skyLightColor = env.skyLightColor;
@@ -3026,6 +3122,69 @@ export class CelMaterialFactory {
   }
 
   /**
+   * The key light's two live objects, for a material outside the cache that
+   * is lit by the same key (the grass, the water): bind these rather than a
+   * copy, and a flash reaches it too.
+   */
+  get keyLight(): { dir: Vector3; color: Color3 } {
+    return { dir: this.lightDir, color: this.lightColor };
+  }
+
+  /**
+   * Lays a lightning flash over the key light, or takes it off (`amount` 0).
+   *
+   * **The flash REPLACES the key's direction for its length** rather than
+   * adding a second directional term: the shadow maps are aimed along the key,
+   * and a second term would need a second map the shader has no binding left
+   * for. For the half second a strike lasts the moon is a tenth of the light
+   * in the frame, so where it seems to come from is not something a player
+   * can read — and the shadows are the strike's, which is what they came for.
+   */
+  flashKey(dir: Vector3 | null, color: Color3, amount: number): void {
+    if (!dir || amount <= 0) {
+      this.lightDir.copyFrom(this.keyDir);
+      this.lightColor.copyFrom(this.keyColor);
+      return;
+    }
+    this.lightDir.copyFrom(dir).normalize();
+    this.lightColor.set(
+      this.keyColor.r + color.r * amount,
+      this.keyColor.g + color.g * amount,
+      this.keyColor.b + color.b * amount,
+    );
+  }
+
+  /**
+   * The lamps' atlas and its shape (`systems/LocalShadows.ts`). Walks the
+   * shadow readers only when the TEXTURE changes, which is a rung change;
+   * the two vectors are held by reference and are rewritten in place.
+   */
+  setLocalShadowMap(map: BaseTexture): void {
+    this.localAtlasMap = map;
+    this.eachShadowReader((mat) => mat.setTexture("localAtlasMap", map));
+  }
+
+  /**
+   * The per-slot cone and tile arrays, and the atlas's two vectors — the
+   * factory's OWN objects, which `LocalShadows` writes into every frame.
+   * Returned rather than copied so there is one set of numbers and one owner
+   * writing them.
+   */
+  get localSlots(): {
+    spot: Float32Array;
+    shade: Float32Array;
+    atlas: Vector4;
+    params: Vector4;
+  } {
+    return {
+      spot: this.pointSpot,
+      shade: this.pointShade,
+      atlas: this.localAtlas,
+      params: this.localParams,
+    };
+  }
+
+  /**
    * The FOLIAGE's depth map: front faces of the translucent solids, and
    * nothing else, which is what gives the translucency term a thickness to
    * measure (see `TranslucencySpec.depth`). Bound once at startup, before any
@@ -3190,6 +3349,11 @@ export class CelMaterialFactory {
     }
     mat.setMatrix("bodyLightMatrix", this.bodyShadowMatrix);
     mat.setVector4("bodyShadowParams", this.bodyShadowParams);
+    if (this.localAtlasMap) mat.setTexture("localAtlasMap", this.localAtlasMap);
+    mat.setArray4("pointSpot", this.pointSpot as unknown as number[]);
+    mat.setArray4("pointShade", this.pointShade as unknown as number[]);
+    mat.setVector4("localAtlas", this.localAtlas);
+    mat.setVector4("localParams", this.localParams);
     // A grass or water consumer is registered BEFORE this runs, which is how
     // this tells the two apart: only a cel material declares the foliage map.
     if (!this.shadowConsumers.has(mat)) {

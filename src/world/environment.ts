@@ -20,6 +20,30 @@ export interface LightSpec {
   flicker: number;
 }
 
+/**
+ * A storm's lightning — `systems/LightningStrikes.ts`. Absent is a map with
+ * none, which is every map that says nothing.
+ *
+ * **A flash is the key light for its length**: it takes over the key's
+ * direction and adds its colour to the key's, so the moon's shadow maps are
+ * re-aimed along the strike and every building in the window throws the
+ * strike's shadow for a quarter of a second. The volume lifts whatever can see
+ * the sky, the dome and the clouds brighten, and the thunder follows at the
+ * speed of sound off `distance`.
+ */
+export interface LightningSpec {
+  /** Seconds between strikes, drawn evenly from this range. */
+  interval: [number, number];
+  /** The flash's colour, added to the key's. */
+  color: string;
+  /** How much of `color` a first stroke adds at its peak. */
+  intensity: number;
+  /** Degrees above the horizon a flash comes from, drawn from this range. */
+  elevation: [number, number];
+  /** Metres to the strike — what delays and softens its thunder. */
+  distance: [number, number];
+}
+
 /** Drifting mote field: ash, spores, embers. */
 export interface ParticleSpec {
   color: string;
@@ -493,6 +517,8 @@ export interface EnvironmentSpec {
     lampIntensity?: number;
   };
   particles?: ParticleSpec;
+  /** A storm's lightning. See `LightningSpec`; absent is none. */
+  lightning?: LightningSpec;
   water?: WaterEnvSpec;
   grass?: GrassEnvSpec;
   sky?: SkySpec;

@@ -2062,6 +2062,51 @@ export class Sfx {
    * the report's does not — the file's own last 300 ms is what stands in for
    * it, and `BlastDebrisSystem` still draws the rubble either way.
    */
+  /**
+   * A lightning strike's thunder, `distance` metres off. Not positional: a
+   * strike's roll comes from a line kilometres long, and a panned point would
+   * put the whole storm in one ear. Delayed by the speed of sound on the
+   * audio clock, so the flash and the thunder are two events the player
+   * counts between. All of it synthesized — `CLAUDE.md`'s rule for the
+   * world's own noise: sample the guns, never the weather.
+   */
+  thunder(distance: number): void {
+    const bus = this.bus("thunder", "ambience");
+    const a = CONFIG.audio;
+    const delay = distance / a.speedOfSound;
+    // How far off, 0 for a strike on top of the valley and 1 for one on the
+    // horizon. A far strike has lost its crack to the air and is all roll.
+    const far = Math.min(1, Math.max(0, (distance - 300) / 2700));
+    // The CRACK: a near strike's tearing edge, broadband and short. Gone by
+    // a kilometre and a half, which is where a real one goes.
+    if (far < 0.5) {
+      this.burst(bus, {
+        dur: 0.35, vol: 0.55 * (1 - far * 2), type: "highpass",
+        freq: 700, q: 0.4, delay, send: 0.8, keep: true,
+      });
+    }
+    // The ROLL: the stroke is kilometres long, so its sound arrives from the
+    // near end first and the far end seconds later — laid here as overlapping
+    // lowpassed swells, each later one lower and quieter. The noise buffer is
+    // a second long, so a roll is several of them rather than one long one;
+    // the reverb send is what joins them.
+    const rolls = 6;
+    for (let i = 0; i < rolls; i++) {
+      const k = i / (rolls - 1);
+      this.burst(bus, {
+        dur: 0.95,
+        vol: (0.85 - 0.5 * k) * (1 - far * 0.35),
+        type: "lowpass",
+        freq: (420 - 220 * far) * (1 - 0.45 * k),
+        freqEnd: 55,
+        rise: 0.18 + 0.2 * far,
+        delay: delay + 0.08 + i * (0.45 + 0.25 * far),
+        send: 1.6,
+        keep: true,
+      });
+    }
+  }
+
   explosion(at: Vector3, power = 1): void {
     const bus = this.bus("blast", "explosion");
     const a = CONFIG.audio;

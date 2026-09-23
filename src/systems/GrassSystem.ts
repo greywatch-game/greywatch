@@ -162,8 +162,11 @@ export class GrassSystem {
 
     const mat = createGrassMaterial(this.scene, "grass");
     const lit = env.lighting;
-    mat.setVector3("lightDir", new Vector3(...lit.direction).normalize());
-    mat.setColor3("lightColor", Color3.FromHexString(lit.color).scale(lit.intensity));
+    // The factory's LIVE key, by reference, so a lightning flash lights the
+    // field in the same frame it lights the ground under it.
+    const key = this.mats.keyLight;
+    mat.setVector3("lightDir", key.dir);
+    mat.setColor3("lightColor", key.color);
     mat.setFloat("keyWrap", lit.keyWrap ?? 0);
     mat.setColor3(
       "ambientColor",

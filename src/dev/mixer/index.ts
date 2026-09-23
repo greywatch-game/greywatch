@@ -109,6 +109,7 @@ const CHANNEL_LABELS: Record<MixChannel, string> = {
   fire: "fire",
   stream: "stream",
   shore: "shore",
+  thunder: "thunder",
   hitmarker: "hitmarker",
   headshot: "headshot",
   enemyDie: "kill",
@@ -701,6 +702,9 @@ const AUDITIONS: Record<MixChannel, Audition | null> = {
   fire: bed(CONFIG.audio.ambience.fire),
   stream: bed(CONFIG.audio.ambience.stream),
   shore: bed(CONFIG.audio.ambience.shore),
+  thunder: ({ sfx }) => {
+    sfx.thunder(900);
+  },
 
   hitmarker: ({ sfx }) => {
     sfx.hit();

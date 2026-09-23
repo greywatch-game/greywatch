@@ -639,6 +639,22 @@ but Sarab's wadi pools are 75 m of standing water and a mountain beck would be
 narrower than either. Hollowmere's creek and Harrowmead's stream are the two
 that say so.
 
+### Thunder, which is weather and therefore synthesized
+
+A lightning strike (`systems/LightningStrikes.ts`) raises `onStrike` with its
+distance and `Sfx.thunder` answers it: a highpassed CRACK for a strike under a
+kilometre and a half, then a ROLL of six overlapping lowpassed swells, each
+later one lower and quieter, because a stroke is kilometres long and its sound
+arrives from the near end first. Six swells rather than one long layer because
+the noise buffer is one second long; the reverb send is what joins them. It is
+**not positional** — a panned point would put a storm in one ear — and it is
+delayed by `distance / speedOfSound` on the audio clock, so flash and thunder
+are two events the player counts between. It rides `keep`, like the player's
+own report, because a strike is rare and a roll refused by the voice cap in a
+firefight is the storm going silent. Its channel is `thunder`, under
+`ambience`. **It is the rule this section argues, applied**: weather is
+filtered noise and never a recording.
+
 ### What a prop owes, and what a second kind would
 
 **Three things can carry a sound, and two of them say so beside the LIGHT they
@@ -719,7 +735,7 @@ eight times as often at 240 Hz as at 30.
 `CONFIG.mix` ([`src/config/mix.ts`](../src/config/mix.ts)) is two tables that
 multiply. **`groups`** is ten FAMILIES — the weapon in your hands, gunfire out
 in the world, reloads and handling, impacts, explosions, footsteps, engines,
-ambience, hit feedback, objective stings — and **`channels`** is forty-one
+ambience, hit feedback, objective stings — and **`channels`** is forty-two
 SOUNDS inside them: the rifle, the carbine, the sniper; the reload, the bolt
 cycle, the swap; a round on glass against a round on stone. **1 is "as
 built"**, and all but two of them ship there: `reload` and `nearMiss` are the
@@ -744,7 +760,7 @@ the bolt cycle beside it is fine". Those two are one gesture apart and 0.8
 seconds apart in the same round, and no arrangement of family levels can tell
 them apart. The same is true of one weapon sitting quiet against the other six.
 
-Going the other way is no better: forty-one sliders with no family above them
+Going the other way is no better: forty-two sliders with no family above them
 means "everybody else's guns are too loud" is nine separate drags that have to
 stay in proportion afterwards.
 

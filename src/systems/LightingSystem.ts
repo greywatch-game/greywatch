@@ -15,6 +15,8 @@ import {
   CelMaterialFactory,
   MAX_POINT_LIGHTS,
   type PointLightData,
+  type ShadowIntent,
+  type SpotCone,
 } from "../shaders/CelShader";
 import { mulberry32 } from "../world/rng";
 
@@ -87,6 +89,11 @@ export class LightingSystem {
    * Registers a fixture light for the current room. `fast` is for a light
    * whose bounce must follow it frame by frame rather than be averaged — see
    * `RoomLight.fast`; a lantern on a wall is not one.
+   *
+   * A fixture CASTS by default (`shadow: "fixture"`): it stands still, which
+   * is what lets `LocalShadows` bake its world once. A light that is placed
+   * like a fixture and then moved — a thrown fire — says `moving`; one that
+   * should cast nothing says `none`. `spot` gives it a cone.
    */
   add(
     position: Vector3,
@@ -95,8 +102,9 @@ export class LightingSystem {
     intensity: number,
     flicker: number,
     fast = false,
-  ): void {
-    this.lights.push({
+    opts: { shadow?: ShadowIntent; spot?: SpotCone } = {},
+  ): RoomLight {
+    const light: RoomLight = {
       position: position.clone(),
       color: Color3.FromHexString(colorHex),
       range,
@@ -105,16 +113,34 @@ export class LightingSystem {
       flicker,
       phase: this.rand() * 100,
       fast,
-    });
+      shadow: opts.shadow ?? "fixture",
+      spot: opts.spot,
+    };
+    this.lights.push(light);
+    return light;
   }
 
-  /** Fires a short-lived light (muzzle flash, shockwave, impact). */
+  /**
+   * Takes one fixture out of the room — a thrown fire burning out. The light
+   * is the object `add` returned; nothing else about it is looked up.
+   */
+  remove(light: RoomLight): void {
+    const at = this.lights.indexOf(light);
+    if (at >= 0) this.lights.splice(at, 1);
+  }
+
+  /**
+   * Fires a short-lived light (muzzle flash, shockwave, impact). It casts
+   * nothing unless `shadow` says so — a blast says `blast`, which the rungs
+   * that shadow a transient at all honour.
+   */
   pulse(
     position: Vector3,
     colorHex: string,
     range: number,
     intensity: number,
     life: number,
+    shadow: ShadowIntent = "none",
   ): void {
     this.transient.push({
       position: position.clone(),
@@ -124,6 +150,7 @@ export class LightingSystem {
       peak: intensity,
       t: 0,
       life,
+      shadow,
     });
   }
 
@@ -131,6 +158,12 @@ export class LightingSystem {
    * Creates or moves a light attached to something that moves (the player's
    * shoulder lamp, a boss's aura). Carried lights never lose their slot —
    * they are the ones the player is actually reading the room by.
+   *
+   * Casts NOTHING by default: the two carried lights that exist ride the eye
+   * (the shoulder lamp, the kit bench), and a light at the eye throws every
+   * shadow directly behind what it lights. A torch held out front says
+   * `moving`, and `spot` gives it its cone — the cone's axis is held by
+   * reference, so a caller aims it by writing into its own vector.
    */
   setCarried(
     id: string,
@@ -139,6 +172,7 @@ export class LightingSystem {
     range: number,
     intensity: number,
     flicker = 0,
+    opts: { shadow?: ShadowIntent; spot?: SpotCone } = {},
   ): void {
     let light = this.carried.get(id);
     if (!light) {
@@ -152,6 +186,8 @@ export class LightingSystem {
         phase: this.rand() * 100,
         // Carried means it moves with a body, which is the definition.
         fast: true,
+        shadow: opts.shadow ?? "none",
+        spot: opts.spot,
       };
       this.carried.set(id, light);
       return;
@@ -159,6 +195,8 @@ export class LightingSystem {
     light.position.copyFrom(position);
     light.range = range;
     light.baseIntensity = intensity;
+    if (opts.shadow) light.shadow = opts.shadow;
+    if (opts.spot) light.spot = opts.spot;
   }
 
   removeCarried(id: string): void {

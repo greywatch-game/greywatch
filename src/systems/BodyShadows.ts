@@ -17,6 +17,10 @@
  *   the proxy layer, so no `StandardMaterial` in the tree gains a term and no
  *   cel material could read it anyway.
  * - The generator renders BACK FACES ONLY. See `forceBackFacesOnly` below.
+ * - The map may be OFF (`CONFIG.graphics.shadowTiers`): the generator is
+ *   disposed, the lit 1x1 is bound in its place and the proxy is drawn by
+ *   nothing. A rung also sets the map's SIZE and its WINDOW, so the texel
+ *   budget moves as a pair and not only the resolution.
  * - The proxy mesh's own world matrix stays IDENTITY. Thin instance matrices
  *   are absolute, and Babylon's shadow path multiplies by the mesh's world
  *   under `THIN_INSTANCES` and not under plain `INSTANCES` — identity is what
@@ -88,14 +92,19 @@ import {
   Matrix,
   Mesh,
   MeshBuilder,
-  Quaternion,
   ShadowGenerator,
   type Scene,
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { RAGDOLL_BONES, type SoldierRig } from "../entities/SoldierModel";
-import { depthBias, SHADOW_NEAR, ShadowWindow } from "../core/shadowWindow";
+import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes";
+import {
+  depthBias,
+  litShadowTexture,
+  SHADOW_NEAR,
+  ShadowWindow,
+} from "../core/shadowWindow";
+import type { ShadowQuality } from "../core/settings";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 
 /**
@@ -116,50 +125,23 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
  */
 const PROXY_LAYER = 0x10000000;
 
-/** What this needs of a soldier: a rig to read joints off. `Bot` satisfies it. */
-export interface ShadowBody {
-  readonly rig: SoldierRig;
-}
 
-/**
- * What this needs of a vehicle: its collider box and that box's size.
- *
- * The COLLIDER and not the drawn rig, which is the same substitution the rest
- * of the game already makes for a hull — it is what a round is tested against
- * and where a body may not stand, so it is also the shape the hull throws. It
- * encloses the turret on purpose (`CONFIG.vehicles.tank.hull.height` argues
- * it), which makes it a little generous as a silhouette rather than a little
- * mean. `Vehicle` satisfies this structurally.
- */
-export interface ShadowHull {
-  readonly body: Mesh;
-  readonly spec: {
-    readonly hull: {
-      readonly length: number;
-      readonly width: number;
-      readonly height: number;
-    };
-  };
-}
+export type { ShadowBody, ShadowHull };
 
 export class BodyShadows {
   private readonly light: DirectionalLight;
-  private readonly generator: ShadowGenerator;
+  /** Null while the rung has the bodies' map OFF. */
+  private generator: ShadowGenerator | null = null;
+  /** The rung's resolution (0 is off, -1 not yet set) and its window's side. */
+  private mapSize = -1;
+  private window: number = CONFIG.graphics.bodyShadows.window;
+  private readonly offMatrix = Matrix.Identity();
   /** The one mesh every proxy in the game is an instance of. */
   private readonly proxy: Mesh;
   /** Thin instance matrices, packed. Never reallocated. */
   private readonly matrices: Float32Array;
   /** How many of `matrices` are live this frame. */
   private count = 0;
-  /**
-   * `RAGDOLL_BONES` as "unit box -> this bone's box in its joint's frame",
-   * composed once at boot because none of it varies.
-   */
-  private readonly boneLocal: Matrix[];
-  /** The joint each entry of `boneLocal` hangs off, by rig field name. */
-  private readonly boneJoint: readonly (keyof SoldierRig)[];
-  /** Hull scales, one per kind met, keyed on the spec's own box. */
-  private readonly hullLocal = new Map<string, Matrix>();
   /**
    * Where this window stands — `core/shadowWindow.ts`, the same texel snap
    * `ShadowSystem` places its own window with.
@@ -172,15 +154,15 @@ export class BodyShadows {
    * rather than two copies removes.
    */
   private readonly win = new ShadowWindow();
-  /** Scratch for the one matrix multiply per instance. */
-  private readonly scratch: Matrix;
+  /** What a soldier and a hull are as boxes — shared with `LocalShadows`. */
+  private readonly boxes = new ProxyBoxes();
   /** Nearest-first selection scratch, reused frame to frame. See `packBodies`. */
   private readonly picked: (ShadowBody | null)[] = [];
   private readonly pickedDist: number[] = [];
 
   /** The bodies' depth map, for `CelMaterialFactory` and `Volumetrics`. */
   get depthMap(): BaseTexture | null {
-    return this.generator.getShadowMap();
+    return this.generator?.getShadowMap() ?? litShadowTexture(this.scene);
   }
 
   /**
@@ -189,10 +171,14 @@ export class BodyShadows {
    * caveat `ShadowSystem.lightMatrix` carries, and the same advice: re-read.
    */
   get lightMatrix(): Matrix {
-    return this.generator.getTransformMatrix();
+    return this.generator?.getTransformMatrix() ?? this.offMatrix;
   }
 
-  constructor(scene: Scene, mats: CelMaterialFactory) {
+  constructor(
+    private readonly scene: Scene,
+    private readonly mats: CelMaterialFactory,
+    quality: ShadowQuality,
+  ) {
     const c = CONFIG.graphics.bodyShadows;
     this.light = new DirectionalLight(
       "bodyShadow",
@@ -207,18 +193,10 @@ export class BodyShadows {
     // generator needs a light to define a frustum, and this is the cheapest
     // honest way to have one that shades nothing.
     this.light.includeOnlyWithLayerMask = PROXY_LAYER;
-    this.light.shadowFrustumSize = c.window;
+    this.light.shadowFrustumSize = this.window;
     this.light.shadowMinZ = SHADOW_NEAR;
     this.light.shadowMaxZ = c.depthRange;
     this.light.autoUpdateExtends = false;
-
-    this.generator = new ShadowGenerator(c.mapSize, this.light);
-    // Bias is consumer-side, as it is for the world map: the receiver knows its
-    // own facet normal and this pass does not.
-    this.generator.bias = 0;
-    // See the header. Without it every soldier and every hull is drawn inside
-    // its own caster and comes out black.
-    this.generator.forceBackFacesOnly = true;
 
     this.proxy = MeshBuilder.CreateBox("bodyShadowProxy", { size: 1 }, scene);
     this.proxy.layerMask = PROXY_LAYER;
@@ -230,22 +208,9 @@ export class BodyShadows {
     // somebody has to work out the answer for.
     this.proxy.metadata = { noInk: true, noGlow: true, noShadowCaster: true };
     this.proxy.isVisible = true;
-    this.generator.addShadowCaster(this.proxy, false);
 
-    // Every bone box as a transform from the unit cube, composed once. Scale
-    // then translate, in the joint's own frame — which is what the table
-    // means by `size` and `center`.
-    this.boneLocal = RAGDOLL_BONES.map((b) =>
-      Matrix.Compose(
-        new Vector3(b.size[0], b.size[1], b.size[2]),
-        Quaternion.Identity(),
-        new Vector3(b.center[0], b.center[1], b.center[2]),
-      ),
-    );
-    this.boneJoint = RAGDOLL_BONES.map((b) => b.joint as keyof SoldierRig);
-    this.scratch = Matrix.Identity();
 
-    const slots = c.maxBodies * this.boneLocal.length + c.maxHulls;
+    const slots = c.maxBodies * this.boxes.perBody + c.maxHulls;
     this.matrices = new Float32Array(slots * 16);
     // Established once with the buffer this will keep writing into;
     // `thinInstanceBufferUpdated` is what re-uploads it. `staticBuffer` false
@@ -253,11 +218,46 @@ export class BodyShadows {
     this.proxy.thinInstanceSetBuffer("matrix", this.matrices, 16, false);
     this.proxy.thinInstanceCount = 0;
 
-    mats.setBodyShadowMap(this.generator.getShadowMap()!);
-    mats.setBodyShadowParams(
-      depthBias(c.bias, c.depthRange),
-      c.pcfRadiusTexels / c.mapSize,
+    this.setQuality(quality);
+  }
+
+  /**
+   * Stands the map up at a rung's size and window, or takes it down.
+   *
+   * The generator is rebuilt rather than resized — a `ShadowGenerator`'s size
+   * is fixed at construction — and the proxy goes back into the new one's
+   * list. The window is invalidated because its texel snap is in texels of
+   * the size and side that just changed.
+   */
+  setQuality(quality: ShadowQuality): void {
+    const c = CONFIG.graphics.bodyShadows;
+    const tier = CONFIG.graphics.shadowTiers[quality];
+    if (tier.bodies === this.mapSize && tier.bodyWindow === this.window) return;
+    this.generator?.dispose();
+    this.generator = null;
+    this.mapSize = tier.bodies;
+    this.window = tier.bodyWindow;
+    this.light.shadowFrustumSize = this.window;
+    this.win.invalidate();
+    if (tier.bodies > 0) {
+      const gen = new ShadowGenerator(tier.bodies, this.light);
+      // Bias is consumer-side, as it is for the world map: the receiver knows
+      // its own facet normal and this pass does not.
+      gen.bias = 0;
+      // See the header. Without it every soldier and every hull is drawn
+      // inside its own caster and comes out black.
+      gen.forceBackFacesOnly = true;
+      gen.addShadowCaster(this.proxy, false);
+      this.generator = gen;
+    }
+    this.mats.setBodyShadowMap(
+      this.generator?.getShadowMap() ?? litShadowTexture(this.scene),
     );
+    this.mats.setBodyShadowParams(
+      depthBias(c.bias, c.depthRange),
+      c.pcfRadiusTexels / Math.max(1, this.mapSize),
+    );
+    this.mats.setBodyShadowMatrix(this.lightMatrix);
   }
 
   /**
@@ -298,8 +298,14 @@ export class BodyShadows {
     hulls: readonly ShadowHull[],
   ): void {
     const c = CONFIG.graphics.bodyShadows;
-    if (this.win.place(this.light, focus, c.window, c.mapSize, c.distance)) {
-      mats.setBodyShadowMatrix(this.generator.getTransformMatrix());
+    const gen = this.generator;
+    if (!gen) {
+      // Off: nothing draws the proxy, so nothing is worth packing into it.
+      this.proxy.thinInstanceCount = 0;
+      return;
+    }
+    if (this.win.place(this.light, focus, this.window, this.mapSize, c.distance)) {
+      mats.setBodyShadowMatrix(gen.getTransformMatrix());
     }
 
     this.count = 0;
@@ -332,7 +338,7 @@ export class BodyShadows {
    */
   private packBodies(focus: Vector3, bodies: readonly ShadowBody[]): void {
     const c = CONFIG.graphics.bodyShadows;
-    const reach = c.window * c.window;
+    const reach = this.window * this.window;
     const picked = this.picked;
     const dist = this.pickedDist;
     let n = 0;
@@ -368,53 +374,19 @@ export class BodyShadows {
   }
 
   /** One rig's ten boxes, each at its joint's current world transform. */
-  private packRig(rig: SoldierRig): void {
-    for (let i = 0; i < this.boneLocal.length; i++) {
-      const joint = rig[this.boneJoint[i]] as { getWorldMatrix(): Matrix };
-      // `getWorldMatrix` recomputes when the node's render id is stale, which
-      // in `updateSceneForCamera` it always is — the scene's id has advanced
-      // since this ran last frame. So these are THIS frame's poses, including
-      // for a body off screen whose meshes the render walk will never activate,
-      // which is the case the volumetric march exists for.
-      this.boneLocal[i].multiplyToRef(joint.getWorldMatrix(), this.scratch);
-      this.scratch.copyToArray(this.matrices, this.count * 16);
-      this.count++;
-    }
+  private packRig(rig: ShadowBody["rig"]): void {
+    this.count += this.boxes.writeRig(rig, this.matrices, this.count);
   }
 
   /** One box per hull, off the collider the rest of the game already uses. */
   private packHulls(hulls: readonly ShadowHull[]): void {
     const c = CONFIG.graphics.bodyShadows;
-    const cap = c.maxBodies * this.boneLocal.length + c.maxHulls;
+    const cap = c.maxBodies * this.boxes.perBody + c.maxHulls;
     for (const hull of hulls) {
       if (this.count >= cap) return;
-      const body = hull.body;
-      if (!body.isEnabled()) continue;
-      this.hullBox(hull).multiplyToRef(body.getWorldMatrix(), this.scratch);
-      this.scratch.copyToArray(this.matrices, this.count * 16);
+      if (!hull.body.isEnabled()) continue;
+      this.boxes.writeHull(hull, this.matrices, this.count);
       this.count++;
     }
-  }
-
-  /**
-   * The unit-box-to-hull scale for one kind, cached on the box's own
-   * dimensions — which is the kind's identity without this having to ask what
-   * kind it is holding. Three kinds ship and a fourth is a row in
-   * `VEHICLE_KINDS`; nothing here changes for it.
-   */
-  private hullBox(hull: ShadowHull): Matrix {
-    const h = hull.spec.hull;
-    const key = `${h.width}x${h.height}x${h.length}`;
-    let m = this.hullLocal.get(key);
-    if (!m) {
-      const pad = CONFIG.graphics.bodyShadows.hullPad;
-      m = Matrix.Compose(
-        new Vector3(h.width + pad, h.height + pad, h.length + pad),
-        Quaternion.Identity(),
-        Vector3.Zero(),
-      );
-      this.hullLocal.set(key, m);
-    }
-    return m;
   }
 }

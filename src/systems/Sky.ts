@@ -92,7 +92,34 @@ export class Sky {
   private readonly depthRay = new Vector4();
   private readonly depthLine = new Vector2();
   private readonly toLocal = new Matrix();
+  /** The dome's material, for the flash. Null on a sky with no dome. */
+  private domeMat: StandardMaterial | null = null;
+  /** The clouds' two lit tones as the map painted them, for the flash. */
+  private cloudShade = new Color3();
+  private cloudLit = new Color3();
+  private readonly flashScratch = new Color3();
   constructor(private scene: Scene) {}
+
+  /**
+   * A lightning flash over the dome and through the clouds, 0 when none is up.
+   *
+   * The DOME takes it as an emissive colour laid over its painted texture —
+   * which a `StandardMaterial` ADDS, so the whole sky lifts evenly and the
+   * stars and the halo stay painted on it. The CLOUDS take it on both lit
+   * tones, so a deck is lit from inside rather than tinted from outside.
+   */
+  setFlash(color: Color3, amount: number): void {
+    if (this.domeMat) {
+      this.domeMat.emissiveColor.copyFrom(color).scaleInPlace(amount * 0.35);
+    }
+    const mat = this.cloudMat;
+    if (mat) {
+      const f = this.flashScratch;
+      f.copyFrom(color).scaleInPlace(amount * 0.6);
+      mat.setColor3("shadeColor", this.cloudShade.add(f));
+      mat.setColor3("litColor", this.cloudLit.add(f));
+    }
+  }
 
   /**
    * Rebuilds the sky for a map's environment; a missing `sky` spec clears it.
@@ -146,6 +173,7 @@ export class Sky {
       this.scene,
     );
     dome.material = domeMat;
+    this.domeMat = domeMat;
     this.prepare(dome, true);
     this.disposables.push(domeMat, domeMat.emissiveTexture!);
 
@@ -257,6 +285,7 @@ export class Sky {
     this.disposables.length = 0;
     this.clouds = null;
     this.cloudMat = null;
+    this.domeMat = null;
     this.cloudGeo = null;
     this.sortedEye.set(Infinity, Infinity, Infinity);
     this.sortedTurn = Infinity;
@@ -427,6 +456,8 @@ export class Sky {
     this.disposables.push(mat);
     this.clouds = mesh;
     this.cloudMat = mat;
+    this.cloudShade = Color3.FromHexString(spec.cloudColor);
+    this.cloudLit = Color3.FromHexString(spec.cloudLitColor);
   }
 
   /**

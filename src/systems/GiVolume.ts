@@ -203,6 +203,16 @@ export class GiVolume {
    * the old one away — which is the one walk of the material cache this class
    * ever causes. The volume re-converges from scratch at the warm budget.
    */
+  /**
+   * The lightning's sky fill, 0 when no flash is up. Written into the binding's
+   * own vector, which every cel material holds by reference, so nothing is
+   * walked; it rides whatever the tier, `off` included — the shader answers
+   * "sees the sky" where there is no volume to ask.
+   */
+  setFlash(amount: number): void {
+    this.binding.extra.y = amount;
+  }
+
   setQuality(q: GiQuality): void {
     if (q === this.quality) return;
     this.quality = q;

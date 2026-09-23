@@ -36,6 +36,14 @@ export const lighting = {
    * to fight in between fixtures — and it gives the character a light of
    * their own to be silhouetted against.
    */
+  /**
+   * How much of a lightning flash reaches what can see the sky, as a share of
+   * the flash the key light gets (`LightningStrikes`, `celGi`'s `giSkySeen`).
+   * The key is one direction and throws the strike's shadows; this is the rest
+   * of the sky lighting the street from everywhere at once, which is why an
+   * alley under eaves stays dark while the square beside it goes white.
+   */
+  lightningFill: 0.45,
   lampColor: "#ffd9a8",
   lampRange: 18,
   lampIntensity: 1.6,
