@@ -4076,6 +4076,8 @@ export class Game {
     // The storm, seeded off the map's id so its schedule is the map's own and
     // the same on every client in a match (see `LightningStrikes`).
     this.lightning.setSpec(environment.lightning ?? null, hashId(this.mapDef.id));
+    // The last map's storm owes this one no thunder.
+    this.sfx.thunderAllOff();
     if (environment.lightning) {
       this.flashColor.copyFrom(Color3.FromHexString(environment.lightning.color));
     }
@@ -6143,26 +6145,6 @@ export class Game {
    * called `enginesOff`.
    */
   /**
-   * The world's fires, ranked and voiced — `pushHullEngines`'s neighbour, and
-   * deliberately the OPPOSITE conclusion from the same premise.
-   *
-   * Every state renders and only some of them simulate. The engines take that
-   * to mean the states that do not owe SILENCE, because a hull's voice is
-   * driven by a load a held world freezes, and one left running under the
-   * deploy card is a tank droning in a street where nothing moves. A fire is
-   * driven by nothing at all — it is a property of the map being installed and
-   * the ear being somewhere, and both of those are true of a menu over a live
-   * view. So this one is owed by every state, and a village does not go quiet
-   * because a kit screen is up.
-   *
-   * The pause is the one held world that reaches it, and not from here: the
-   * offline pause card suspends the audio context, which holds this graph
-   * exactly as it holds the tail of the last shot.
-   *
-   * After the listener above, so the ranking and the panners agree with the
-   * ear the frame has already placed.
-   */
-  /**
    * Spends this frame's flash on everything a strike lights: the lightning's
    * own key term (every cel material, the grass and the water hold its two
    * objects by reference), the volume's sky fill, the dome and the clouds —
@@ -6183,8 +6165,31 @@ export class Game {
     this.mats.setFlash(strikes.direction, this.flashColor, f);
     this.gi.setFlash(f > 0 ? CONFIG.lighting.lightningFill : 0);
     this.sky.setFlash(this.flashColor, f);
+    // The thunder owed by strikes already seen, started as each layer falls
+    // due — queued in `Sfx` rather than scheduled, so silence holds no voice.
+    this.sfx.thunderStep();
   }
 
+  /**
+   * The world's fires, ranked and voiced — `pushHullEngines`'s neighbour, and
+   * deliberately the OPPOSITE conclusion from the same premise.
+   *
+   * Every state renders and only some of them simulate. The engines take that
+   * to mean the states that do not owe SILENCE, because a hull's voice is
+   * driven by a load a held world freezes, and one left running under the
+   * deploy card is a tank droning in a street where nothing moves. A fire is
+   * driven by nothing at all — it is a property of the map being installed and
+   * the ear being somewhere, and both of those are true of a menu over a live
+   * view. So this one is owed by every state, and a village does not go quiet
+   * because a kit screen is up.
+   *
+   * The pause is the one held world that reaches it, and not from here: the
+   * offline pause card suspends the audio context, which holds this graph
+   * exactly as it holds the tail of the last shot.
+   *
+   * After the listener above, so the ranking and the panners agree with the
+   * ear the frame has already placed.
+   */
   private pushAmbience(): void {
     this.ambience.update(this.cameraSys.camera.position, this.sfx);
   }

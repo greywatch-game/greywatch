@@ -24,8 +24,10 @@
  * - **trace** — one WORKGROUP per probe and one thread per ray, re-tracing a
  *   rolling slice of the window each frame. Each ray finds what it hits, lights
  *   the hit with the sun (shadow-tested), the steady fixtures (visibility-
- *   tested) and the volume itself (the last frame's answer, which is what
- *   makes the bounce multi-bounce), and the workgroup reduces the lot to
+ *   tested) and the volume itself (its HISTORY, read from the state buffer
+ *   and never from compose's textures, which carry the fast layer — that is
+ *   what makes the bounce multi-bounce without ever remembering a flash),
+ *   and the workgroup reduces the lot to
  *   order-1 spherical harmonics blended into the probe's history.
  * - **compose** — one thread per probe, EVERY frame: the history plus the FAST
  *   layer (this frame's muzzle flashes, blasts and fires, re-bounced from
@@ -518,18 +520,23 @@ ${common()}
 const RAYS: u32 = ${rays}u;
 
 @group(0) @binding(4) var<storage, read_write> S: array<vec4f>;
-@group(0) @binding(5) var volIrr: texture_3d<f32>;
-@group(0) @binding(6) var volDir: texture_3d<f32>;
 
 var<workgroup> wA: array<vec4f, ${rays}>;
 var<workgroup> wB: array<vec4f, ${rays}>;
 var<workgroup> wPos: vec4f;
 var<workgroup> wCol: vec4f;
 
-// What the volume already says about a point — the last frame's answer, read
+// What the volume already says about a point — the HISTORY's answer, read
 // at the probe nearest the hit on its lit side. This is the bounce's second
 // bounce and every one after it. Outside the window, or where no probe has
 // an answer yet, the sky's own estimate stands in.
+//
+// Read from the state buffer and never from the composed textures: compose
+// adds the fast layer into those, so a trace reading them would bake a muzzle
+// flash's bounce into every probe it re-traced while the flash was live — the
+// fast layer is never remembered, and this is the read that would remember
+// it. A neighbour being re-traced by this same dispatch may be read before or
+// after its own write; both are history.
 fn volumeAt(p: vec3f, n: vec3f) -> vec3f {
   let sp = spacing();
   let cols = columns();
@@ -546,13 +553,15 @@ fn volumeAt(p: vec3f, n: vec3f) -> vec3f {
   if (k >= layers()) {
     return fallback;
   }
-  let at = vec3i(wrapi(ci, cols), k, wrapi(cj, cols));
-  let t0 = textureLoad(volIrr, at, 0);
-  let t1 = textureLoad(volDir, at, 0);
-  if (t1.w < 0.1) {
+  // texelOf's inverse: x across, then layer, then z.
+  let slot = u32(wrapi(ci, cols)) + u32(cols) * (u32(k) + u32(layers()) * u32(wrapi(cj, cols)));
+  let base = slot * ${GI_STATE_VEC4}u;
+  let s2 = S[base + 2u];
+  // compose's own staleness test: never traced, or traced for another column.
+  if (s2.x < 0.5 || s2.z != f32(ci) || s2.w != f32(cj) || s2.y < 0.1) {
     return fallback;
   }
-  return shIrradiance(t0.rgb / t1.w, t1.xyz / t1.w, n);
+  return shIrradiance(S[base].rgb, S[base + 1u].xyz, n);
 }
 
 // The light leaving whatever a ray from o along d meets, toward o. w is 1 for

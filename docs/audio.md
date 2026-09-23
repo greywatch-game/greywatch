@@ -648,10 +648,16 @@ later one lower and quieter, because a stroke is kilometres long and its sound
 arrives from the near end first. Six swells rather than one long layer because
 the noise buffer is one second long; the reverb send is what joins them. It is
 **not positional** — a panned point would put a storm in one ear — and it is
-delayed by `distance / speedOfSound` on the audio clock, so flash and thunder
-are two events the player counts between. It rides `keep`, like the player's
-own report, because a strike is rare and a roll refused by the voice cap in a
-firefight is the storm going silent. Its channel is `thunder`, under
+delayed by `distance / speedOfSound`, so flash and thunder are two events the
+player counts between. It rides `keep`, like the player's own report, because
+a strike is rare and a roll refused by the voice cap in a firefight is the
+storm going silent. **The delay is QUEUED in `Sfx` and not scheduled on the
+audio clock**, which is the one place a delayed layer here is: a source counts
+against `maxVoices` from the moment it is scheduled, silence included, and a
+strike 2-5 km off is 6-15 s of silence — six of twenty-four voices held
+through a firefight by a sound nobody could hear yet. `thunderStep` (pushed
+from `Game.pushLightning`, every state) starts each layer when it falls due,
+and `thunderAllOff` drops what is owed when a map is installed. Its channel is `thunder`, under
 `ambience`. **It is the rule this section argues, applied**: weather is
 filtered noise and never a recording.
 
