@@ -166,7 +166,7 @@ one optional field on a layout whose default is not "unaffected", absent meaning
 `shore` because silent water is a bug.
 
 **TWO FADERS SIT ABOVE ALL OF IT AND THEY MULTIPLY** — `CONFIG.mix.groups` is
-ten FAMILIES and `CONFIG.mix.channels` is forty-two SOUNDS inside them, 1
+ten FAMILIES and `CONFIG.mix.channels` is forty-three SOUNDS inside them, 1
 being "as built" and each set by ear in a live round through the dev-only `F4`
 panel (`src/dev/mixer/`, behind the editor's own dynamic-import gate). **A
 fader is a DEVIATION and nothing is BALANCED with one**: a sound wrong against
@@ -576,19 +576,12 @@ world's and the foliage's) and `BodyShadows`', the last two pinned by
 `includeOnlyWithLayerMask` to layers no world mesh carries so neither can reach
 a `StandardMaterial`.
 
-**The indirect light is TRACED, and nothing about it is a draw call**:
-`systems/GiVolume.ts` is a camera-centred window of probes traced in compute
-against the COLLIDERS (`RayWorld`'s query, ported), which replaces the flat
-ambient and sky fill where it has an answer — bounce, sky occlusion, and point
-lights that stop at walls. Four rules reach outside it. **Every cel material
-binds its seven 3D textures always**, published before the first material
-exists (`GI_SAMPLER_NAMES`, through `applyShadow`'s one door). **A light whose
-brightness changes faster than a sweep is registered `fast`**
-(`LightingSystem.add(..., fast)`; pulses and carried lights are fast already),
-or its bounce is frozen into a scatter of probes — a thrown fire is one flag.
-**`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`**, client-only.
-And **the same rays every update**, so a still scene converges to a fixed point
-rather than crawling: never rotate them, never blend below 1.
+**The indirect light is TRACED in compute against the COLLIDERS**
+(`systems/GiVolume.ts`) and is no draw call. **Every cel material binds its
+seven 3D textures always** (`GI_SAMPLER_NAMES`, through `applyShadow`); **a
+light whose brightness changes faster than a sweep is registered `fast`**, or
+its bounce freezes into the probes; **`GameMap.colliderAlbedo` stays parallel
+to `colliderBoxes`**; and **the same rays every update, blend 1**.
 
 **THERE ARE TWO SHADOW MAPS, AND WHICH CASTERS GO IN WHICH IS DECIDED BY REFRESH
 RATE RATHER THAN BY WHAT THEY ARE.** The world's re-renders only when its
@@ -606,19 +599,13 @@ shape**; and because a back-face map cannot say how thick a crown is, a THIRD
 map — the translucent solids' front faces, `ShadowSystem`'s own — exists only so
 the translucency term can (`docs/rendering.md`).
 
-**THE LAMPS CAST INTO ONE ATLAS, and it is split by refresh rate as the moon's
-maps are** (`systems/LocalShadows.ts`): a point light is six cube-face tiles and
-a spot one, all reached through ONE binding because the cel shader has none
-left for a map per light. A FIXTURE's world meshes are baked once into a static
-tile; bodies, hulls and every MOVING light's colliders are box proxies
-(`core/proxyBoxes.ts`) redrawn each frame in one draw. **A light casts by what
-it SAYS** (`PointLightData.shadow`: fixtures `fixture` by default, carried
-lights and pulses `none`), and a slot the atlas does not hold keeps the
-volume's visibility. **All four maps are one `Shadows` setting**, and a map
-switched off is a bound 1x1 LIT texture, never an unbound one. **A lightning
-flash is a SECOND key with a map of its own** (`setFlash`, `ShadowSystem.flash`),
-drawn once per strike — the moon's maps never move for it, because re-aiming
-them was a visible snap back after every strike.
+**THE LAMPS CAST INTO ONE ATLAS through ONE binding** (`systems/LocalShadows.ts`)
+— fixtures baked once, everything that moves redrawn from box proxies
+(`core/proxyBoxes.ts`) — and **a light casts by what it SAYS**
+(`PointLightData.shadow`). **All four maps are one `Shadows` setting**, and a
+map switched off is a bound 1x1 LIT texture, never an unbound one. **A
+lightning flash is a SECOND key with a map of its own** (`ShadowSystem.flash`):
+the moon's maps never move for it.
 
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`

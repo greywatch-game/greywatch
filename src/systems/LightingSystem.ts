@@ -80,6 +80,12 @@ export class LightingSystem {
   private lights: RoomLight[] = [];
   private transient: TransientLight[] = [];
   private carried = new Map<string, RoomLight>();
+  /**
+   * `carried`'s values as a plain list, in the same order — kept beside it so
+   * the per-frame walks (here and in `GiVolume`) iterate an array rather than
+   * minting a Map iterator each.
+   */
+  private readonly carriedList: RoomLight[] = [];
   private active: PointLightData[] = [];
   private t = 0;
   /** The flicker phases. See `FLICKER_SEED`. */
@@ -172,7 +178,9 @@ export class LightingSystem {
     range: number,
     intensity: number,
     flicker = 0,
-    opts: { shadow?: ShadowIntent; spot?: SpotCone } = {},
+    // Optional rather than defaulted to `{}`: the kit stage calls this every
+    // frame, and a default object literal is one minted per call.
+    opts?: { shadow?: ShadowIntent; spot?: SpotCone },
   ): void {
     let light = this.carried.get(id);
     if (!light) {
@@ -186,21 +194,25 @@ export class LightingSystem {
         phase: this.rand() * 100,
         // Carried means it moves with a body, which is the definition.
         fast: true,
-        shadow: opts.shadow ?? "none",
-        spot: opts.spot,
+        shadow: opts?.shadow ?? "none",
+        spot: opts?.spot,
       };
       this.carried.set(id, light);
+      this.carriedList.push(light);
       return;
     }
     light.position.copyFrom(position);
     light.range = range;
     light.baseIntensity = intensity;
-    if (opts.shadow) light.shadow = opts.shadow;
-    if (opts.spot) light.spot = opts.spot;
+    if (opts?.shadow) light.shadow = opts.shadow;
+    if (opts?.spot) light.spot = opts.spot;
   }
 
   removeCarried(id: string): void {
+    const light = this.carried.get(id);
+    if (!light) return;
     this.carried.delete(id);
+    this.carriedList.splice(this.carriedList.indexOf(light), 1);
   }
 
   /**
@@ -248,8 +260,8 @@ export class LightingSystem {
   }
 
   /** The carried lights, for the same reader. */
-  get carriedLights(): IterableIterator<RoomLight> {
-    return this.carried.values();
+  get carriedLights(): readonly RoomLight[] {
+    return this.carriedList;
   }
 
   /** One fixture's flicker for this frame. Steady fixtures sit at their base. */
@@ -271,7 +283,7 @@ export class LightingSystem {
     // runs on every frame in every state, and the two shapes it has to walk
     // (an array and a Map) do not share an iteration protocol worth a lambda.
     for (const l of this.lights) this.tickFlicker(l);
-    for (const l of this.carried.values()) this.tickFlicker(l);
+    for (const l of this.carriedList) this.tickFlicker(l);
 
     for (let i = this.transient.length - 1; i >= 0; i--) {
       const f = this.transient[i];
@@ -287,7 +299,7 @@ export class LightingSystem {
 
     this.active.length = 0;
     for (const f of this.transient) this.active.push(f);
-    for (const l of this.carried.values()) this.active.push(l);
+    for (const l of this.carriedList) this.active.push(l);
 
     if (this.lights.length <= MAX_POINT_LIGHTS - this.active.length) {
       for (const l of this.lights) this.active.push(l);

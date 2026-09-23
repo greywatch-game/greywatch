@@ -66,6 +66,7 @@ import {
   Color4,
   Constants,
   Mesh,
+  type Observer,
   MeshBuilder,
   Matrix,
   Quaternion,
@@ -225,6 +226,17 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 }
 `;
 
+/** One candidate in `choose`'s ranking. */
+interface Ranked {
+  e: PointLightData;
+  score: number;
+  moving: boolean;
+}
+
+function byRankScore(a: Ranked, b: Ranked): number {
+  return a.score - b.score;
+}
+
 /** One light holding tiles. Keyed by the light object's identity. */
 interface Entry {
   light: PointLightData;
@@ -312,6 +324,9 @@ export class LocalShadows {
   private readonly scratchR = new Vector3();
   private readonly scratchU = new Vector3();
 
+  /** `render`'s hook on the scene, for `dispose`. */
+  private readonly renderObserver: Observer<Scene>;
+
   constructor(
     private readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
@@ -361,7 +376,9 @@ export class LocalShadows {
 
     // Drawn inside the scene's render, before its own targets: nothing is
     // bound yet, and the main pass that samples the atlas comes after.
-    scene.onBeforeRenderTargetsRenderObservable.add(() => this.render());
+    this.renderObserver = scene.onBeforeRenderTargetsRenderObservable.add(() =>
+      this.render(),
+    );
 
     this.setQuality(quality);
   }
@@ -403,8 +420,7 @@ export class LocalShadows {
       tier.atlas === this.tier.atlas && tier.tile === this.tier.tile && this.atlas !== null;
     this.tier = tier;
     if (same) return;
-    for (const e of this.entries.values()) this.release(e);
-    this.entries.clear();
+    this.releaseAll();
     this.atlas?.dispose();
     this.atlas = null;
     this.clearSheet?.dispose();
@@ -513,8 +529,7 @@ export class LocalShadows {
     rayGroups: readonly (readonly WorldBox[])[],
     visuals: readonly AbstractMesh[],
   ): void {
-    for (const e of this.entries.values()) this.release(e);
-    this.entries.clear();
+    this.releaseAll();
     const kept: WorldBox[] = [];
     for (const b of boxes) if (!b.glass && !b.porous) kept.push(b);
     for (const g of rayGroups) for (const b of g) kept.push(b);
@@ -568,8 +583,7 @@ export class LocalShadows {
     this.clearFlags.fill(0);
     const tier = this.tier;
     if (!this.atlas || tier.lights === 0 || !this.index || !this.ready()) {
-      for (const e of this.entries.values()) this.release(e);
-      this.entries.clear();
+      this.releaseAll();
       this.publish(active);
       return;
     }
@@ -635,8 +649,24 @@ export class LocalShadows {
    * one to lose is the fixture's), then by distance past the light's own
    * reach, with a light already holding tiles given `keepMargin`.
    */
-  private readonly ranked: { e: PointLightData; score: number; moving: boolean }[] = [];
+  private readonly ranked: Ranked[] = [];
+  /** The records behind `ranked`, reused frame to frame. */
+  private readonly rankPool: Ranked[] = [];
   private readonly chosen: Entry[] = [];
+  /** Every light gives its tiles back. */
+  private releaseAll(): void {
+    // Skipped when empty, which is every frame on the `off` rung.
+    if (this.entries.size === 0) return;
+    this.entries.forEach(this.releaseOne);
+    this.entries.clear();
+  }
+  private readonly releaseOne = (e: Entry): void => this.release(e);
+  /** `choose`'s release walk, bound once rather than a closure per frame. */
+  private readonly dropUnwanted = (e: Entry, light: PointLightData): void => {
+    if (this.wanted.has(light)) return;
+    this.release(e);
+    this.entries.delete(light);
+  };
   /** The top of `ranked` this frame, by light — reused, never reallocated. */
   private readonly wanted = new Set<PointLightData>();
   private choose(
@@ -657,9 +687,13 @@ export class LocalShadows {
       let score = Vector3.Distance(eye, l.position) - l.range;
       if (this.entries.has(l)) score -= c.keepMargin;
       if (!moving) score += 1e4;
-      ranked.push({ e: l, score, moving });
+      const r = (this.rankPool[ranked.length] ??= { e: l, score, moving });
+      r.e = l;
+      r.score = score;
+      r.moving = moving;
+      ranked.push(r);
     }
-    ranked.sort((a, b) => a.score - b.score);
+    ranked.sort(byRankScore);
     const want = Math.min(ranked.length, tier.lights);
     // Everything outside the top `want` gives its tiles back — its static
     // cache with them, which is what `keepMargin` exists to make rare — and
@@ -669,12 +703,10 @@ export class LocalShadows {
     const wanted = this.wanted;
     wanted.clear();
     for (let i = 0; i < want; i++) wanted.add(ranked[i].e);
-    for (const [light, e] of this.entries) {
-      if (!wanted.has(light)) {
-        this.release(e);
-        this.entries.delete(light);
-      }
-    }
+    // `forEach` rather than `for…of`: no iterator, and no [key, value]
+    // tuple per entry, on a walk that runs every frame. Deleting the entry
+    // being visited is safe in a Map's `forEach`.
+    this.entries.forEach(this.dropUnwanted);
     const chosen = this.chosen;
     chosen.length = 0;
     for (let i = 0; i < want; i++) {
@@ -1182,7 +1214,9 @@ export class LocalShadows {
   }
 
   dispose(): void {
+    this.scene.onBeforeRenderTargetsRenderObservable.remove(this.renderObserver);
     this.atlas?.dispose();
+    this.atlas = null;
     this.clearSheet?.dispose();
     this.proxy.dispose();
     this.proxyMat.dispose();

@@ -58,7 +58,7 @@ export class ProxyBoxes {
   /** The joint each entry of `boneLocal` hangs off, by rig field name. */
   private readonly boneJoint = RAGDOLL_BONES.map((b) => b.joint as keyof SoldierRig);
   /** Hull scales, one per kind met, keyed on the spec's own box. */
-  private readonly hullLocal = new Map<string, Matrix>();
+  private readonly hullLocal = new Map<ShadowHull["spec"]["hull"], Matrix>();
   private readonly scratch = Matrix.Identity();
 
   /**
@@ -86,14 +86,14 @@ export class ProxyBoxes {
   }
 
   /**
-   * The unit-box-to-hull scale for one kind, cached on the box's own
-   * dimensions — the kind's identity, without this having to ask which kind
-   * it is holding.
+   * The unit-box-to-hull scale for one kind, cached on the kind's own `hull`
+   * block — the kind's identity, without this having to ask which kind it is
+   * holding, and without a string key minted per hull per frame, which is
+   * what keying on the dimensions cost (both shadow maps ask every frame).
    */
   private hullBox(hull: ShadowHull): Matrix {
     const h = hull.spec.hull;
-    const key = `${h.width}x${h.height}x${h.length}`;
-    let m = this.hullLocal.get(key);
+    let m = this.hullLocal.get(h);
     if (!m) {
       const pad = CONFIG.graphics.bodyShadows.hullPad;
       m = Matrix.Compose(
@@ -101,7 +101,7 @@ export class ProxyBoxes {
         Quaternion.Identity(),
         Vector3.Zero(),
       );
-      this.hullLocal.set(key, m);
+      this.hullLocal.set(h, m);
     }
     return m;
   }

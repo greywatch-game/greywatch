@@ -98,6 +98,9 @@ export class Sky {
   private cloudShade = new Color3();
   private cloudLit = new Color3();
   private readonly flashScratch = new Color3();
+  /** What the two tones are set to this frame — written into, never minted. */
+  private readonly shadeOut = new Color3();
+  private readonly litOut = new Color3();
   constructor(private scene: Scene) {}
 
   /**
@@ -116,8 +119,10 @@ export class Sky {
     if (mat) {
       const f = this.flashScratch;
       f.copyFrom(color).scaleInPlace(amount * 0.6);
-      mat.setColor3("shadeColor", this.cloudShade.add(f));
-      mat.setColor3("litColor", this.cloudLit.add(f));
+      // Into scratches: this runs every frame in every state on every map with
+      // clouds, lightning or none.
+      mat.setColor3("shadeColor", this.cloudShade.addToRef(f, this.shadeOut));
+      mat.setColor3("litColor", this.cloudLit.addToRef(f, this.litOut));
     }
   }
 
