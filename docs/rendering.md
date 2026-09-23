@@ -1880,7 +1880,17 @@ The rest of the flash: the volume's reserved `giExtra.y` is now the SKY FILL —
 the parlour off it does not (with no volume, everything counts as seeing the
 sky); the dome takes the flash as an emissive colour laid over its texture and
 the clouds on both lit tones. Thunder is `Sfx.thunder`, synthesized, delayed
-by the distance at the speed of sound.
+by the distance at the speed of sound (queued, not scheduled — `docs/audio.md`).
+
+**The schedule is cut into EPOCHS and a clock SEEKS into one, never replays to
+it.** Online the clock is the authority's epoch time in seconds (~1.8e9), and
+the first version replayed the sequence from zero on the first frame of a
+match: fifty million strikes, ~6 s of frozen client on the desktop. Each epoch
+(`EPOCH`, 600 s, or eight of the map's longest intervals) is seeded from the
+map's seed and its own index, so every client lands on the same strike from
+the clock alone, and a clock that steps either way costs one epoch's strikes.
+A strike's identity is its `at`, so a seek that lands mid-flash raises its
+thunder once and not again.
 
 ### The light slots
 

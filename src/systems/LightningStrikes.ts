@@ -10,9 +10,12 @@
  *   handed. Online that clock is the authority's (`Connection.now`), so every
  *   client in a match sees the same strike at the same instant and nothing
  *   crosses the wire; offline it is the game's own. Never `Math.random()`.
- * - A clock that goes BACKWARDS (a reconnect, a new round's anchor) rewinds
- *   the schedule to the start rather than skipping forward — the sequence is
- *   replayed from its seed and lands where the clock says.
+ * - The sequence is cut into EPOCHS, each seeded from the map's seed and its
+ *   own index, so the schedule at any clock is found by seeding the epoch
+ *   that clock is in — never by replaying from zero. Online the clock is
+ *   epoch time in seconds (~1.8e9), and a replay from zero was fifty million
+ *   strikes on the first frame of a match. A clock that jumps either way
+ *   costs at most one epoch's strikes.
  * - Nothing here is scheduled on a timer. `update` is pushed from `tick` in
  *   every state, the ambience's rule: weather does not stop for a menu.
  * Contract: `docs/rendering.md` (lightning).
@@ -37,6 +40,13 @@ interface Strike {
  * rather than being one frame the eye may drop.
  */
 const PULSE_DECAY = 0.055;
+
+/**
+ * The schedule's epoch, in seconds, at least: long against any interval, so
+ * the catch-up inside one is a few dozen strikes, and short against a round.
+ * `setSpec` stretches it for a map whose interval would not fit several.
+ */
+const EPOCH = 600;
 /** Past this after its last pulse a strike has nothing left to give. */
 const TAIL = 0.4;
 
@@ -44,9 +54,14 @@ export class LightningStrikes {
   private spec: LightningSpec | null = null;
   private seed = 1;
   private rand: () => number = mulberry32(1);
-  /** The strike being played or next to play, and the one after it. */
+  /** The strike being played or next to play. */
   private current: Strike | null = null;
+  /** The epoch `rand` was seeded for, and its length. */
+  private epoch = 0;
+  private epochLen = EPOCH;
   private clock = -Infinity;
+  /** `at` of the strike `onStrike` was last raised for — a strike's identity. */
+  private raisedAt = NaN;
   /** 0..~1.2: how bright the flash is right now. */
   flash = 0;
   /** Where the flash is coming from, while `flash > 0`. */
@@ -63,17 +78,43 @@ export class LightningStrikes {
   setSpec(spec: LightningSpec | null, seed: number): void {
     this.spec = spec;
     this.seed = seed;
-    this.restart();
+    this.epochLen = spec ? Math.max(EPOCH, spec.interval[1] * 8) : EPOCH;
+    this.current = null;
+    this.clock = -Infinity;
+    this.raisedAt = NaN;
     this.flash = 0;
     this.active = false;
   }
 
-  private restart(): void {
-    this.rand = mulberry32(this.seed);
-    this.current = this.spec ? this.next(0) : null;
+  /** Seeds epoch `e` and returns its first strike. */
+  private enter(e: number): Strike {
+    this.epoch = e;
+    this.rand = mulberry32((this.seed ^ Math.imul(e | 0, 0x9e3779b1)) >>> 0);
+    return this.next(e * this.epochLen);
   }
 
-  /** The strike after one ending at `after`. */
+  /** Where the schedule stands at `now`: the epoch it is in, from its start. */
+  private seek(now: number): Strike {
+    const e = Math.floor(now / this.epochLen);
+    // The epoch before, too, so a strike straddling the boundary still plays.
+    return this.advance(this.enter(e - 1), now);
+  }
+
+  /** Steps past every strike already over at `now`, crossing epochs. */
+  private advance(strike: Strike, now: number): Strike {
+    for (;;) {
+      const end = strike.at + strike.pulses[strike.pulses.length - 1].t + TAIL;
+      if (now < end) return strike;
+      strike = this.next(strike.at);
+      // A strike past its epoch's end is not one: the next epoch's own
+      // sequence owns that stretch, so every client seeks to the same one.
+      if (strike.at >= (this.epoch + 1) * this.epochLen) {
+        strike = this.enter(this.epoch + 1);
+      }
+    }
+  }
+
+  /** The strike after one starting at `after`. */
   private next(after: number): Strike {
     const s = this.spec!;
     const r = this.rand;
@@ -103,30 +144,27 @@ export class LightningStrikes {
 
   /** The flash at clock `now`, in seconds. */
   update(now: number): void {
-    if (!this.spec || !this.current) {
+    if (!this.spec) {
       this.flash = 0;
       this.active = false;
       return;
     }
-    if (now < this.clock) this.restart();
+    // A first read, or a clock that went back or leapt a whole epoch, SEEKS;
+    // anything else steps on from where the last frame left the sequence.
+    const seek =
+      !this.current || now < this.clock || now - this.clock > this.epochLen;
     this.clock = now;
-    let strike = this.current;
-    // Catch up past every strike already over — a clock that jumped forward
-    // by minutes replays no flashes, it only advances the sequence.
-    for (;;) {
-      const end = strike.at + strike.pulses[strike.pulses.length - 1].t + TAIL;
-      if (now < end) break;
-      strike = this.next(strike.at);
-      this.current = strike;
-    }
+    const strike = seek ? this.seek(now) : this.advance(this.current!, now);
+    this.current = strike;
     const since = now - strike.at;
     if (since < 0) {
       this.flash = 0;
       this.active = false;
       return;
     }
-    if (!this.active) {
-      this.active = true;
+    this.active = true;
+    if (strike.at !== this.raisedAt) {
+      this.raisedAt = strike.at;
       this.direction.copyFrom(strike.dir);
       this.onStrike(strike.distance);
     }

@@ -117,6 +117,21 @@ const BREATH_WANDER_HZ = 1;
  * is measured ONCE on decode and every shot starts at `offset` and stops
  * after `duration`, and nothing about the file's format has to be trusted.
  */
+/** One queued layer of a strike's thunder: when it starts, and `burst`'s own shape. */
+interface ThunderLayer {
+  at: number;
+  dur: number;
+  vol: number;
+  type: BiquadFilterType;
+  freq: number;
+  freqEnd?: number;
+  rise?: number;
+  q?: number;
+  send: number;
+  /** Always true: `burst`'s `keep`, which is why the queue exists — see `thunder`. */
+  keep: true;
+}
+
 interface LoadedSample {
   buffer: AudioBuffer;
   /** Seconds into the buffer where the sound actually starts. */
@@ -847,6 +862,11 @@ export class Sfx {
   private samplesRequested = false;
   /** Currently-playing one-shots, for the voice cap. */
   private voices = 0;
+  /**
+   * Thunder layers owed but not yet due, in no order — see `thunder`. Each
+   * is `burst`'s own argument plus the audio-clock time it starts at.
+   */
+  private readonly thunderQueue: ThunderLayer[] = [];
   /** True while the game is paused and the context is suspended. */
   private paused = false;
   /** Last listener position, for propagation delay and air absorption. */
@@ -2031,6 +2051,86 @@ export class Sfx {
   }
 
   /**
+   * A lightning strike's thunder, `distance` metres off. Not positional: a
+   * strike's roll comes from a line kilometres long, and a panned point would
+   * put the whole storm in one ear. Delayed by the speed of sound, so the
+   * flash and the thunder are two events the player counts between. All of it
+   * synthesized — `CLAUDE.md`'s rule for the world's own noise: sample the
+   * guns, never the weather.
+   *
+   * **The delay is QUEUED here and not on the audio clock**, which is the one
+   * difference from every other delayed layer in this file: a source is
+   * counted against `maxVoices` for as long as it is scheduled, silence
+   * included, and a strike kilometres off is ten to fifteen seconds of
+   * silence — six of the twenty-four voices, held through a firefight by a
+   * sound nobody can hear yet. `thunderStep` starts each layer when it is
+   * due, still on `keep` — a roll refused in a firefight is the storm going
+   * silent — so what the exemption costs is the second a layer SOUNDS rather
+   * than the fifteen it waits; `thunderAllOff` drops what is still owed when
+   * the map it belonged to goes.
+   */
+  thunder(distance: number): void {
+    if (!this.ctx) return;
+    const a = CONFIG.audio;
+    const due = this.ctx.currentTime + distance / a.speedOfSound;
+    // How far off, 0 for a strike on top of the valley and 1 for one on the
+    // horizon. A far strike has lost its crack to the air and is all roll.
+    const far = Math.min(1, Math.max(0, (distance - 300) / 2700));
+    // The CRACK: a near strike's tearing edge, broadband and short. Gone by
+    // a kilometre and a half, which is where a real one goes.
+    if (far < 0.5) {
+      this.thunderQueue.push({
+        at: due, dur: 0.35, vol: 0.55 * (1 - far * 2), type: "highpass",
+        freq: 700, q: 0.4, send: 0.8, keep: true,
+      });
+    }
+    // The ROLL: the stroke is kilometres long, so its sound arrives from the
+    // near end first and the far end seconds later — laid here as overlapping
+    // lowpassed swells, each later one lower and quieter. The noise buffer is
+    // a second long, so a roll is several of them rather than one long one;
+    // the reverb send is what joins them.
+    const rolls = 6;
+    for (let i = 0; i < rolls; i++) {
+      const k = i / (rolls - 1);
+      this.thunderQueue.push({
+        at: due + 0.08 + i * (0.45 + 0.25 * far),
+        dur: 0.95,
+        vol: (0.85 - 0.5 * k) * (1 - far * 0.35),
+        type: "lowpass",
+        freq: (420 - 220 * far) * (1 - 0.45 * k),
+        freqEnd: 55,
+        rise: 0.18 + 0.2 * far,
+        send: 1.6,
+        keep: true,
+      });
+    }
+  }
+
+  /**
+   * Starts every thunder layer now due. Pushed from `tick` in every state
+   * beside the strikes themselves; a suspended context holds its clock, so a
+   * pause holds the queue with it.
+   */
+  thunderStep(): void {
+    const q = this.thunderQueue;
+    if (!this.ctx || q.length === 0) return;
+    const bus = this.bus("thunder", "ambience");
+    const now = this.ctx.currentTime;
+    let w = 0;
+    for (let i = 0; i < q.length; i++) {
+      const layer = q[i];
+      if (layer.at <= now) this.burst(bus, layer);
+      else q[w++] = layer;
+    }
+    q.length = w;
+  }
+
+  /** Drops every thunder layer still owed — the map it belonged to is gone. */
+  thunderAllOff(): void {
+    this.thunderQueue.length = 0;
+  }
+
+  /**
    * A grenade going off. Spatialised like bot fire, and built the same way —
    * filtered slices of the shared noise buffer plus one pitched layer for the
    * part that genuinely is a single frequency.
@@ -2062,51 +2162,6 @@ export class Sfx {
    * the report's does not — the file's own last 300 ms is what stands in for
    * it, and `BlastDebrisSystem` still draws the rubble either way.
    */
-  /**
-   * A lightning strike's thunder, `distance` metres off. Not positional: a
-   * strike's roll comes from a line kilometres long, and a panned point would
-   * put the whole storm in one ear. Delayed by the speed of sound on the
-   * audio clock, so the flash and the thunder are two events the player
-   * counts between. All of it synthesized — `CLAUDE.md`'s rule for the
-   * world's own noise: sample the guns, never the weather.
-   */
-  thunder(distance: number): void {
-    const bus = this.bus("thunder", "ambience");
-    const a = CONFIG.audio;
-    const delay = distance / a.speedOfSound;
-    // How far off, 0 for a strike on top of the valley and 1 for one on the
-    // horizon. A far strike has lost its crack to the air and is all roll.
-    const far = Math.min(1, Math.max(0, (distance - 300) / 2700));
-    // The CRACK: a near strike's tearing edge, broadband and short. Gone by
-    // a kilometre and a half, which is where a real one goes.
-    if (far < 0.5) {
-      this.burst(bus, {
-        dur: 0.35, vol: 0.55 * (1 - far * 2), type: "highpass",
-        freq: 700, q: 0.4, delay, send: 0.8, keep: true,
-      });
-    }
-    // The ROLL: the stroke is kilometres long, so its sound arrives from the
-    // near end first and the far end seconds later — laid here as overlapping
-    // lowpassed swells, each later one lower and quieter. The noise buffer is
-    // a second long, so a roll is several of them rather than one long one;
-    // the reverb send is what joins them.
-    const rolls = 6;
-    for (let i = 0; i < rolls; i++) {
-      const k = i / (rolls - 1);
-      this.burst(bus, {
-        dur: 0.95,
-        vol: (0.85 - 0.5 * k) * (1 - far * 0.35),
-        type: "lowpass",
-        freq: (420 - 220 * far) * (1 - 0.45 * k),
-        freqEnd: 55,
-        rise: 0.18 + 0.2 * far,
-        delay: delay + 0.08 + i * (0.45 + 0.25 * far),
-        send: 1.6,
-        keep: true,
-      });
-    }
-  }
-
   explosion(at: Vector3, power = 1): void {
     const bus = this.bus("blast", "explosion");
     const a = CONFIG.audio;
@@ -3859,8 +3914,9 @@ export class Sfx {
     send?: number;
     /**
      * Exempt from the voice cap — still counted, never refused. The player's
-     * own report and nothing else; see `shoot` for the bound that makes it
-     * safe.
+     * own report, and thunder once a layer is DUE (`thunder` queues the wait
+     * rather than scheduling it, which is what bounds it); see `shoot` for the
+     * bound that makes the report safe.
      */
     keep?: boolean;
   }): void {

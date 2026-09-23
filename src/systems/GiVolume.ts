@@ -424,11 +424,7 @@ export class GiVolume {
       this.engine,
       { computeSource: giTraceSource(tier.rays) },
       {
-        bindingsMapping: {
-          ...common,
-          volIrr: { group: 0, binding: 5 },
-          volDir: { group: 0, binding: 6 },
-        },
+        bindingsMapping: common,
       },
     );
     this.compose = new ComputeShader(
@@ -475,8 +471,6 @@ export class GiVolume {
       cs.setStorageBuffer("S", state);
     }
     const t = this.textures;
-    trace.setTexture("volIrr", t.giIrr, false);
-    trace.setTexture("volDir", t.giDir, false);
     compose.setStorageTexture("outIrr", t.giIrr);
     compose.setStorageTexture("outDir", t.giDir);
     compose.setStorageTexture("outAux", t.giAux);

@@ -1042,6 +1042,15 @@ export class LocalShadows {
           meshes.push(m);
         }
         atlas.setMaterialForRendering(meshes, mat);
+        // A pass drawn before its effect has compiled draws NOTHING — the
+        // mesh skips an unready material — over a tile the clear has already
+        // reset to lit, and `update` has already counted the face. So a face
+        // whose pass is not ready is handed back to be baked again, rather
+        // than being published empty for as long as the light holds its tiles.
+        if (!this.compiled(atlas, mat, meshes)) {
+          entry.baked = Math.min(entry.baked, face);
+          continue;
+        }
       }
       this.pass(atlas, meshes);
     }
@@ -1054,6 +1063,37 @@ export class LocalShadows {
     this.bakeQueue.length = 0;
     this.clearFlags.fill(0);
     this.drawDynamic = false;
+  }
+
+  /**
+   * Whether `mat` has compiled for every mesh it is about to bake, asked in
+   * the ATLAS's render pass — the per-pass draw wrapper is what the pass will
+   * draw with, and asking in any other pass warms a different one. Every mesh
+   * is asked, not just until the first refusal, so they all start compiling
+   * together.
+   */
+  private compiled(
+    atlas: RenderTargetTexture,
+    mat: ShaderMaterial,
+    meshes: readonly AbstractMesh[],
+  ): boolean {
+    const engine = this.scene.getEngine();
+    const was = engine.currentRenderPassId;
+    engine.currentRenderPassId = atlas.renderPassId;
+    const instanced = engine.getCaps().instancedArrays;
+    let ok = true;
+    for (const m of meshes) {
+      const subs = m.subMeshes;
+      if (!subs) continue;
+      const mesh = m as Mesh;
+      const useInstances =
+        instanced && ((mesh.instances?.length ?? 0) > 0 || mesh.hasThinInstances === true);
+      for (const sm of subs) {
+        if (!mat.isReadyForSubMesh(m, sm, useInstances)) ok = false;
+      }
+    }
+    engine.currentRenderPassId = was;
+    return ok;
   }
 
   private pass(atlas: RenderTargetTexture, list: AbstractMesh[]): void {
