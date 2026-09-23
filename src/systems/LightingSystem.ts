@@ -78,6 +78,13 @@ const FLICKER_SEED = 0x1a3f;
  */
 export class LightingSystem {
   private lights: RoomLight[] = [];
+  /**
+   * Bumped whenever the fixture SET changes — an add, a remove, a clear — so a
+   * reader that caches a choice over `fixtures` can ask whether it is stale.
+   * A count cannot: a fire burning out on the frame another is lit leaves it
+   * where it was.
+   */
+  private fixtureSet = 0;
   private transient: TransientLight[] = [];
   private carried = new Map<string, RoomLight>();
   /**
@@ -123,6 +130,7 @@ export class LightingSystem {
       spot: opts.spot,
     };
     this.lights.push(light);
+    this.fixtureSet++;
     return light;
   }
 
@@ -132,7 +140,10 @@ export class LightingSystem {
    */
   remove(light: RoomLight): void {
     const at = this.lights.indexOf(light);
-    if (at >= 0) this.lights.splice(at, 1);
+    if (at >= 0) {
+      this.lights.splice(at, 1);
+      this.fixtureSet++;
+    }
   }
 
   /**
@@ -224,8 +235,14 @@ export class LightingSystem {
    */
   clear(): void {
     this.lights.length = 0;
+    this.fixtureSet++;
     this.transient.length = 0;
     this.rand = mulberry32(FLICKER_SEED);
+  }
+
+  /** See `fixtureSet`: changes whenever `fixtures` gains or loses a light. */
+  get fixtureVersion(): number {
+    return this.fixtureSet;
   }
 
   /**

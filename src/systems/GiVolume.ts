@@ -76,7 +76,7 @@ import {
 } from "../shaders/wgsl/giTrace";
 import type { GameMap, WorldBox } from "../world/MapBuilder";
 import type { RayHull } from "../world/RayWorld";
-import type { LightingSystem } from "./LightingSystem";
+import type { LightingSystem, RoomLight } from "./LightingSystem";
 
 type Tier = (typeof CONFIG.gi.tiers)[keyof typeof CONFIG.gi.tiers];
 
@@ -154,7 +154,10 @@ export class GiVolume {
   private readonly fastPool: GiLight[] = [];
   private candUsed = 0;
   private slowAt = new Vector3(Infinity, 0, Infinity);
+  /** `LightingSystem.fixtureVersion` the slow list was chosen at; -1 forces one. */
   private slowOf = -1;
+  /** The fixtures behind `slow`, entry for entry — see `slowChanged`. */
+  private slowSrc: RoomLight[] = [];
   private readonly fast: GiLight[] = [];
 
   /**
@@ -236,6 +239,15 @@ export class GiVolume {
     this.floorAlbedo.copyFrom(Color3.FromHexString(floorColor));
     this.slowOf = -1;
     this.uploadMap(map);
+  }
+
+  /**
+   * The standing map's boxes moved in place — the editor's drag, released.
+   * Re-uploads them and starts the history again, as a fresh install does;
+   * the boxes are copied to the GPU at `setMap`, so nothing else would notice.
+   */
+  worldMoved(): void {
+    if (this.map) this.uploadMap(this.map);
   }
 
   /**
@@ -634,8 +646,10 @@ export class GiVolume {
   /**
    * The steady fixtures the trace lights its hits with: every non-fast
    * fixture whose reach touches the window, nearest the window's centre
-   * first. Re-chosen when the window has moved a block or the room's fixtures
-   * have changed, not every frame — it is the input to an average.
+   * first. Re-chosen when the window has moved a block, when the fixture SET
+   * has changed (`fixtureVersion` — a count misses a fire going out on the
+   * frame another is lit), or when a chosen fixture has itself moved or been
+   * re-lit in place; not every frame — it is the input to an average.
    */
   private chooseSlow(lighting: LightingSystem, tier: Tier): void {
     const w = this.binding.window;
@@ -643,18 +657,50 @@ export class GiVolume {
     const moved =
       Math.max(Math.abs(w.x - this.slowAt.x), Math.abs(w.z - this.slowAt.z)) >
       tier.spacing * 4;
-    if (!moved && fixtures.length === this.slowOf) return;
+    if (!moved && lighting.fixtureVersion === this.slowOf && !this.slowChanged()) return;
     this.slowAt.set(w.x, 0, w.z);
-    this.slowOf = fixtures.length;
+    this.slowOf = lighting.fixtureVersion;
     const out: GiLight[] = [];
+    const src = new Map<GiLight, RoomLight>();
     for (const l of fixtures) {
       if (l.fast) continue;
       const far = Math.max(Math.abs(l.position.x - w.x), Math.abs(l.position.z - w.z));
       if (far > w.y + l.range) continue;
-      out.push(lightOf(l, l.baseIntensity, far));
+      const g = lightOf(l, l.baseIntensity, far);
+      src.set(g, l);
+      out.push(g);
     }
     out.sort(byScore);
     this.slow = out.slice(0, Math.min(CONFIG.gi.slowLights, GI_MAX_SLOW));
+    this.slowSrc = this.slow.map((g) => src.get(g)!);
+  }
+
+  /**
+   * Whether a chosen fixture no longer matches what was taken of it — moved,
+   * re-ranged or re-lit in place. Only the chosen few are compared, which is
+   * the whole of the per-frame cost; its BASE intensity, since the flicker is
+   * the fast layer's.
+   */
+  private slowChanged(): boolean {
+    const slow = this.slow;
+    const src = this.slowSrc;
+    for (let i = 0; i < slow.length; i++) {
+      const g = slow[i];
+      const l = src[i];
+      const k = l.baseIntensity;
+      if (
+        g.x !== l.position.x ||
+        g.y !== l.position.y ||
+        g.z !== l.position.z ||
+        g.range !== l.range ||
+        g.r !== l.color.r * k ||
+        g.g !== l.color.g * k ||
+        g.b !== l.color.b * k
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** The next free candidate record from the pool. */

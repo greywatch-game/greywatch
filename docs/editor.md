@@ -21,7 +21,14 @@ Things it deliberately does not do:
   and water/grass/terrain rects are visual only and never enter `colliderBoxes`.
 - **It does not re-run builders to move things.** A builder assembles at the origin
   and `MapBuilder` transforms the result, so `repositionItem()` moves the visuals, the
-  collider proxies and the `WorldBox`es directly.
+  collider proxies and the `WorldBox`es directly. **Anything that took a COPY of
+  those at install is then stale**, and the drag's release owes it a refresh
+  (`EditorDeps.worldMoved`): the bounce light uploaded the boxes to the GPU
+  (`GiVolume.worldMoved` re-uploads them and restarts its history) and the lamps'
+  atlas indexed the boxes and baked the visuals (`LocalShadows.setWorld` again).
+  Both are too heavy for every frame of a drag, so during one they trace and
+  shadow the old footprint. A new system that copies the world at install
+  belongs in that callback too.
 - **It does not bake reflections, and it registers no physics world.** Both are
   build steps that are affordable because the world is static, and this is the
   view where it is not: they are refused on the `editor` flag `installMap`

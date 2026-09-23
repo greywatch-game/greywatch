@@ -131,6 +131,13 @@ export interface EditorDeps {
    * a caster is dragged.
    */
   invalidateShadows: () => void;
+  /**
+   * The collider boxes and visuals moved IN PLACE (a drag that ended without
+   * a geometry rebuild): everything that copied them at install — the bounce
+   * light's traced boxes and the lamps' baked tiles and proxies — takes them
+   * again. Too heavy for every frame of a drag, so it is the drag's END.
+   */
+  worldMoved: () => void;
 }
 
 /**
@@ -723,6 +730,11 @@ export class EditorSession {
     const fresh = rebuildNavigation(this.map, this.deps.layout);
     this.map.nav = fresh.nav;
     this.map.obstacles = fresh.obstacles;
+    // Only a placement or a scatter region moves geometry — flags and spawns
+    // are proxies — and `repositionScene` moved it without telling anything
+    // that took a copy.
+    const list = this.selected?.list;
+    if (list === "placements" || list === "scatter") this.deps.worldMoved();
     this.afterNavigationChanged();
   }
 
