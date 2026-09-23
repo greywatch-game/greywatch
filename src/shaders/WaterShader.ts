@@ -522,7 +522,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let shade = shadowVisibility(vec3f(0.0, 1.0, 0.0), posW);
   let light = uniforms.ambientColor
     + uniforms.skyLightColor * band(0.5 + 0.5 * n.y, 3.0)
-    + uniforms.lightColor * band(max(dot(n, -uniforms.lightDir), 0.0), 3.0) * shade;
+    + uniforms.lightColor * band(max(dot(n, -uniforms.lightDir), 0.0), 3.0) * shade
+    // The lightning's key, cut off the flat up-vector for the moon's reason.
+    + flashLight(n, vec3f(0.0, 1.0, 0.0), posW);
 
   // The body: deep water, paling over a shoal, and then the bed itself in the
   // last few centimetres. \'bedColor\' is the MAP's own floor colour, so a

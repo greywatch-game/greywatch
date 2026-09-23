@@ -25,7 +25,7 @@
  *
  * ## WHY ONE ATLAS
  *
- * The cel shader binds thirteen textures against WebGPU's default sixteen, so a
+ * The cel shader binds fourteen textures against WebGPU's default sixteen, so a
  * map per light was never available: every shadowed lamp in the frame has to
  * be reachable through ONE binding. A cube face is a square tile, a spot is
  * one more, and the lookup picks the tile off the slot's base and the face

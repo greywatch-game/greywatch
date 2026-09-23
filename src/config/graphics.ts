@@ -597,7 +597,7 @@ export const graphics = {
    * **Every shadowed light is drawn into ONE atlas**: a point light is six
    * cube-face tiles, a spot is one, and the cel shader reads all of them
    * through a single texture binding. That is not tidiness — the cel shader
-   * already binds thirteen textures against WebGPU's default sixteen, so a
+   * already binds fourteen textures against WebGPU's default sixteen, so a
    * map per light was never available.
    *
    * **Split by REFRESH RATE, as the moon's shadows are.** A FIXTURE's world

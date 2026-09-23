@@ -449,6 +449,43 @@ fn localLayer(base: f32, d: vec3f, rel: f32, spot: vec4f) -> f32 {
   return smoothstep(0.25, 0.75, hits * 0.25);
 }
 
+// ---- THE LIGHTNING'S KEY (ShadowSystem.flash, LightningStrikes) ----
+//
+// A second directional light over a depth map of its own, rendered ONCE when a
+// strike starts and aimed along it — so the moon's maps never move. flashColor
+// is already times the flash's envelope and is black between strikes, which is
+// what the early-out below keys on. The map records back faces and is read
+// with the moon's kernel; a strike's shadow is fully dark, because the flash
+// is the light being taken away and nothing else is being dimmed.
+uniform flashDir: vec3f;
+uniform flashColor: vec3f;
+uniform flashLightMatrix: mat4x4f;
+// x = depth bias, y = tap radius in UV
+uniform flashParams: vec4f;
+var flashMapSampler: sampler;
+var flashMap: texture_2d<f32>;
+
+// How lit a receiver is by the flash, 0..1. The offset rule is
+// shadowVisibility's: along the TRUE facet, always toward the light.
+fn flashVisibility(n: vec3f, posW: vec3f) -> f32 {
+  let toward = select(1.0, -1.0, dot(n, uniforms.flashDir) > 0.0);
+  let p = posW + n * (toward * uniforms.shadowParams.z);
+  let a = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
+    * 6.2831853;
+  return shadowTap(uniforms.flashLightMatrix, flashMap, flashMapSampler, p,
+    vec2f(cos(a), sin(a)), uniforms.flashParams.x, uniforms.flashParams.y);
+}
+
+// The flash's whole contribution: banded like the key, cut by its own map.
+// n is the normal being LIT, facet the true one the shadow offsets along.
+fn flashLight(n: vec3f, facet: vec3f, posW: vec3f) -> vec3f {
+  if (max(uniforms.flashColor.r, max(uniforms.flashColor.g, uniforms.flashColor.b)) <= 0.0) {
+    return vec3f(0.0);
+  }
+  let ndl = clamp(dot(n, -uniforms.flashDir), 0.0, 1.0);
+  return uniforms.flashColor * band(ndl, 4.0) * flashVisibility(facet, posW);
+}
+
 // One slot's cone (x, 0..1) and its shadow (y, 0..1 — or -1 where the atlas
 // has no answer for this light and the caller keeps its own).
 //

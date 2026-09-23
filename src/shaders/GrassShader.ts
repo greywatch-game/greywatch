@@ -212,6 +212,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let lift = uniforms.keyWrap * smoothstep(0.0, 0.08, ndl) * (1.0 - max(ndl, 0.0));
   light += uniforms.lightColor * band(clamp(ndl + lift, 0.0, 1.0), 4.0)
     * shadowVisibility(n, fragmentInputs.vPosW);
+  // The lightning's own key, which the field takes as the ground under it does.
+  light += flashLight(n, n, fragmentInputs.vPosW);
 
   // --- point lights (3 bands, smooth falloff) ---
   for (var i = 0; i < MAX_POINT_LIGHTS; i++) {

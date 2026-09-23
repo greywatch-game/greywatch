@@ -1766,7 +1766,8 @@ at all — their only occlusion was the volume's per-probe visibility bit
 It still answers for every slot the atlas does not hold.
 
 **One atlas, because there is no binding left for a map per light.** The cel
-shader binds thirteen textures against WebGPU's default sixteen (the glazing
+shader bound twelve textures against WebGPU's default sixteen before it — the
+atlas is the thirteenth and the lightning's map the fourteenth (the glazing
 variant fourteen), so every shadowed lamp is reached through ONE texture: a
 point light is six square cube-face tiles, a spot is one, and `celShadow`'s
 `localLayer` picks the tile off the slot's base and the face the receiver is
@@ -1857,19 +1858,22 @@ the authority's in a match (`Connection.now`), so every client flashes
 together and nothing crosses the wire. It is pushed from `tick` in every
 state — weather does not stop for a menu.
 
-**A flash REPLACES the key light's direction for its length, rather than
-adding a second directional term** (`CelMaterialFactory.flashKey`). The shadow
-maps are aimed along the key, and a second term would want a second map the
-cel shader has no binding for; so on the frame a strike starts `Game`
-re-aims the moon's maps along it, and on the frame it ends aims them back —
-two world-map re-renders a strike. For the half second it lasts the moon is a
-tenth of the light in the frame, so where the moon seems to come from is not
-something a player can read.
-
-**The key light is held BY REFERENCE and never replaced.** `setEnvironment`
-copies into the factory's two objects rather than swapping them, and grass and
-water bind those same objects (`keyLight`) instead of their own copies, which
-is what lets a flash reach every surface without a walk.
+**A flash is a SECOND KEY with a depth map of its own, and the moon never
+moves for it** (`CelMaterialFactory.setFlash`, `ShadowSystem.flash`,
+`celShadow`'s `flashLight`). The map is the world's casters drawn ONCE along
+the strike on the frame it starts — render-once, back faces, its own window
+round the moon's focus, at most 1024 texels — and the term is banded like the
+key and black between strikes, which is its early-out. It costs one texture
+binding, which is why it was not the first design: the flash used to TAKE the
+key's direction for its length and re-aim the moon's maps along it and back.
+That was two re-renders a strike, a moon lit from the wrong side for the whole
+of the envelope's 0.4 s tail, and moon shadows visibly snapping back after the
+flash had gone — which is what a player saw. The flash's own colour and
+direction are held BY REFERENCE (like the key's, which `setEnvironment` now
+copies into rather than replaces), so nothing is walked per frame. Bodies are
+not in the flash's map: a strike is half a second, and the moon's body map
+still shades them. On the `off` rung the map is the lit 1x1 and a flash lights
+without shadows.
 
 The rest of the flash: the volume's reserved `giExtra.y` is now the SKY FILL —
 `giSkySeen` reads the probes' own sky visibility, so a street goes white and

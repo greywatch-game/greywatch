@@ -24,12 +24,11 @@ export interface LightSpec {
  * A storm's lightning — `systems/LightningStrikes.ts`. Absent is a map with
  * none, which is every map that says nothing.
  *
- * **A flash is the key light for its length**: it takes over the key's
- * direction and adds its colour to the key's, so the moon's shadow maps are
- * re-aimed along the strike and every building in the window throws the
- * strike's shadow for a quarter of a second. The volume lifts whatever can see
- * the sky, the dome and the clouds brighten, and the thunder follows at the
- * speed of sound off `distance`.
+ * **A flash is a second key light with a shadow map of its own**, drawn once
+ * along the strike, so every building in the window throws the strike's shadow
+ * for a quarter of a second and the moon's shadows never move. The volume
+ * lifts whatever can see the sky, the dome and the clouds brighten, and the
+ * thunder follows at the speed of sound off `distance`.
  */
 export interface LightningSpec {
   /** Seconds between strikes, drawn evenly from this range. */

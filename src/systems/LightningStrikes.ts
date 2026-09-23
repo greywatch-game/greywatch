@@ -3,7 +3,7 @@
  * sky is at any instant: a SCHEDULE, read off a clock.
  * Owns the seeded strike sequence and the flash envelope; owns no light, no
  * shadow, no sound and no mesh — `Game` reads `flash`/`direction` and spends
- * them on the key light, the shadow maps, the sky and the volume, and hears
+ * them on the flash's own key and map, the sky and the volume, and hears
  * `onStrike` for the thunder.
  * Invariants:
  * - The schedule is a pure function of the map's seed and the CLOCK it is
@@ -51,7 +51,7 @@ export class LightningStrikes {
   flash = 0;
   /** Where the flash is coming from, while `flash > 0`. */
   readonly direction = new Vector3(0, -1, 0);
-  /** Whether a strike is in progress — the shadows are aimed along it. */
+  /** Whether a strike is in progress; its map is drawn the frame this turns true. */
   active = false;
   /**
    * Raised once per strike, the frame it starts: its distance in metres, for

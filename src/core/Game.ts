@@ -6163,10 +6163,10 @@ export class Game {
    * ear the frame has already placed.
    */
   /**
-   * Spends this frame's flash on everything a strike lights: the key light
-   * (every cel material, the grass and the water hold it by reference), the
-   * volume's sky fill, the dome and the clouds — and, on the frames a strike
-   * starts and ends, the aim of the moon's shadow maps, which follow the key.
+   * Spends this frame's flash on everything a strike lights: the lightning's
+   * own key term (every cel material, the grass and the water hold its two
+   * objects by reference), the volume's sky fill, the dome and the clouds —
+   * and, on the frame a strike starts, its own shadow map, drawn once.
    *
    * The clock is the AUTHORITY's in a match (`Connection.now`), so every
    * client flashes together; offline it is this session's own.
@@ -6176,17 +6176,12 @@ export class Game {
     this.lightningClock += dt;
     const was = strikes.active;
     strikes.update(this.net ? this.net.conn.now() / 1000 : this.lightningClock);
-    if (strikes.active !== was) {
-      const d = strikes.active
-        ? strikes.direction
-        : Vector3.FromArray(this.mapDef.environment.lighting.direction);
-      const dir: [number, number, number] = [d.x, d.y, d.z];
-      this.shadows.setLightDirection(dir);
-      this.bodyShadows.setLightDirection(dir);
-    }
-    const f = strikes.flash;
-    this.mats.flashKey(strikes.active ? strikes.direction : null, this.flashColor, f);
-    this.gi.setFlash(f * CONFIG.lighting.lightningFill);
+    // The strike's own map, drawn once on the frame it starts. The moon's
+    // maps are never touched — see `CelMaterialFactory.setFlash`.
+    if (strikes.active && !was) this.shadows.flash(strikes.direction, this.shadowFocus);
+    const f = strikes.active ? strikes.flash : 0;
+    this.mats.setFlash(strikes.direction, this.flashColor, f);
+    this.gi.setFlash(f > 0 ? CONFIG.lighting.lightningFill : 0);
     this.sky.setFlash(this.flashColor, f);
   }
 

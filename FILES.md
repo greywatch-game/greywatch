@@ -566,8 +566,9 @@ src/
     LightningStrikes.ts # When lightning strikes, from where, how bright: a
                         #   seeded SCHEDULE read off a clock (the authority's
                         #   in a match), never a timer. Game spends the flash
-                        #   on the key light, the shadow maps' aim, the sky and
-                        #   the volume's sky fill; onStrike is the thunder
+                        #   on its own key term and shadow map (drawn once per
+                        #   strike), the sky and the volume's sky fill; onStrike
+                        #   is the thunder
     ReflectionSystem.ts # The world as glass sees it: one cube per GLAZED
                         #   BLOCK, baked from the map's own geometry per
                         #   install with whatever encloses the probe left out,

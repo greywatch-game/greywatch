@@ -253,6 +253,13 @@ export const SHADOW_UNIFORM_NAMES = [
   "pointShade",
   "localAtlas",
   "localParams",
+  // The lightning's own key: its direction, its colour (already times the
+  // flash's envelope), its map's view*projection and that map's bias and tap
+  // radius. See `ShadowSystem.flash`.
+  "flashDir",
+  "flashColor",
+  "flashLightMatrix",
+  "flashParams",
 ] as const;
 /**
  * The samplers `celShadow` declares, for a consumer's sampler list.
@@ -268,6 +275,7 @@ export const SHADOW_SAMPLER_NAMES = [
   "shadowMap",
   "bodyShadowMap",
   "localAtlasMap",
+  "flashMap",
 ] as const;
 
 /**
@@ -921,6 +929,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let lift = uniforms.keyWrap * smoothstep(0.0, 0.08, ndlGeo) * (1.0 - max(ndlGeo, 0.0));
   light += uniforms.lightColor
     * band(clamp(dot(n, -uniforms.lightDir) + lift, 0.0, 1.0), 4.0) * shadow;
+  // The LIGHTNING's key, a term of its own over a map of its own — see
+  // flashVisibility. Black whenever no flash is up, so this is one compare.
+  light += flashLight(n, nFacet, fragmentInputs.vPosW);
 
   // Sky fill: the whole dome is a dim source, so anything looking up at it
   // picks up moonlight even where the key light is blocked. Deliberately NOT
@@ -965,7 +976,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // lit and the parlour off it is not. Keyed on the facet's tilt as the sky
   // fill is, and in the key's colour, which a flash has already been added to.
   if (uniforms.giExtra.y > 0.0) {
-    light += uniforms.lightColor
+    light += uniforms.flashColor
       * (uniforms.giExtra.y * giSkySeen(giC) * (0.35 + 0.65 * max(n.y, 0.0)));
   }
 
@@ -1882,14 +1893,18 @@ export class CelMaterialFactory {
   private emissiveCache = new Map<string, StandardMaterial>();
 
   // The key light as every material HOLDS it: these two objects are handed
-  // out by reference and never replaced, only written into, so a lightning
-  // flash (`flashKey`) reaches every cel material, the grass and the water
-  // without a walk. `keyDir`/`keyColor` are the map's own, which a flash is
-  // laid over and put back to.
+  // out by reference and never replaced, only written into, so a map's key
+  // reaches the grass and the water in the same write as the cache.
   private readonly lightDir = new Vector3(-0.5, -0.9, 0.4).normalize();
   private readonly lightColor = new Color3(0.55, 0.62, 0.8);
-  private readonly keyDir = this.lightDir.clone();
-  private readonly keyColor = this.lightColor.clone();
+  // The LIGHTNING's key — a second directional term with a map of its own,
+  // so the moon never moves. Held by reference like the key; `flashColor` is
+  // black whenever no flash is up, which is the shader's early-out.
+  private readonly flashDir = new Vector3(0, -1, 0);
+  private readonly flashColor = new Color3(0, 0, 0);
+  private flashMap: BaseTexture | null = null;
+  private flashMatrix = Matrix.Identity();
+  private readonly flashParams = new Vector4(0, 0, 0, 0);
   private keyWrap = 0;
   private ambientColor = new Color3(0.16, 0.18, 0.24);
   private skyLightColor = new Color3(0.08, 0.11, 0.18);
@@ -2734,10 +2749,8 @@ export class CelMaterialFactory {
     wearColor: Color3;
     wearAmount: number;
   }): void {
-    this.keyDir.copyFrom(env.lightDir).normalize();
-    this.keyColor.copyFrom(env.lightColor);
-    this.lightDir.copyFrom(this.keyDir);
-    this.lightColor.copyFrom(this.keyColor);
+    this.lightDir.copyFrom(env.lightDir).normalize();
+    this.lightColor.copyFrom(env.lightColor);
     this.keyWrap = env.keyWrap;
     this.ambientColor = env.ambientColor;
     this.skyLightColor = env.skyLightColor;
@@ -3124,34 +3137,45 @@ export class CelMaterialFactory {
   /**
    * The key light's two live objects, for a material outside the cache that
    * is lit by the same key (the grass, the water): bind these rather than a
-   * copy, and a flash reaches it too.
+   * copy, and a map's key reaches it in the same write.
    */
   get keyLight(): { dir: Vector3; color: Color3 } {
     return { dir: this.lightDir, color: this.lightColor };
   }
 
   /**
-   * Lays a lightning flash over the key light, or takes it off (`amount` 0).
+   * This frame's lightning: where it comes from and how bright it is now, or
+   * `amount` 0 for none. Written into the objects every material holds, so
+   * nothing is walked.
    *
-   * **The flash REPLACES the key's direction for its length** rather than
-   * adding a second directional term: the shadow maps are aimed along the key,
-   * and a second term would need a second map the shader has no binding left
-   * for. For the half second a strike lasts the moon is a tenth of the light
-   * in the frame, so where it seems to come from is not something a player
-   * can read — and the shadows are the strike's, which is what they came for.
+   * **A SECOND key rather than the moon's, and that is the fix, not a
+   * refinement.** The flash used to take the key's direction for its length
+   * and re-aim the moon's maps along the strike, which meant a re-render each
+   * way and a moon lit from the wrong side for the whole of the envelope's
+   * tail — seen as the shadows snapping back well after the flash was gone.
+   * With a term and a map of its own (`ShadowSystem.flash`) the moon never
+   * moves, and a flash that has decayed to nothing is simply no light.
    */
-  flashKey(dir: Vector3 | null, color: Color3, amount: number): void {
-    if (!dir || amount <= 0) {
-      this.lightDir.copyFrom(this.keyDir);
-      this.lightColor.copyFrom(this.keyColor);
-      return;
-    }
-    this.lightDir.copyFrom(dir).normalize();
-    this.lightColor.set(
-      this.keyColor.r + color.r * amount,
-      this.keyColor.g + color.g * amount,
-      this.keyColor.b + color.b * amount,
-    );
+  setFlash(dir: Vector3, color: Color3, amount: number): void {
+    this.flashDir.copyFrom(dir).normalize();
+    this.flashColor.copyFrom(color).scaleInPlace(Math.max(0, amount));
+  }
+
+  /** The lightning's own depth map, bound once per rung like the others. */
+  setFlashMap(map: BaseTexture): void {
+    this.flashMap = map;
+    this.eachShadowReader((mat) => mat.setTexture("flashMap", map));
+  }
+
+  /** That map's view*projection, re-uploaded when a strike re-aims it. */
+  setFlashMatrix(matrix: Matrix): void {
+    this.flashMatrix = matrix;
+    this.eachShadowReader((mat) => mat.setMatrix("flashLightMatrix", matrix));
+  }
+
+  /** Its depth bias (normalised) and tap radius in UV. */
+  setFlashParams(bias: number, radiusUV: number): void {
+    this.flashParams.set(bias, radiusUV, 0, 0);
   }
 
   /**
@@ -3354,6 +3378,11 @@ export class CelMaterialFactory {
     mat.setArray4("pointShade", this.pointShade as unknown as number[]);
     mat.setVector4("localAtlas", this.localAtlas);
     mat.setVector4("localParams", this.localParams);
+    if (this.flashMap) mat.setTexture("flashMap", this.flashMap);
+    mat.setMatrix("flashLightMatrix", this.flashMatrix);
+    mat.setVector4("flashParams", this.flashParams);
+    mat.setVector3("flashDir", this.flashDir);
+    mat.setColor3("flashColor", this.flashColor);
     // A grass or water consumer is registered BEFORE this runs, which is how
     // this tells the two apart: only a cel material declares the foliage map.
     if (!this.shadowConsumers.has(mat)) {
