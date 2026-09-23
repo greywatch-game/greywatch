@@ -135,6 +135,9 @@ src/
                         #   probe depths. Nothing here decides anything about
                         #   the game — FrameProfile is the only reader
     lighting.ts         # The dynamic light budget (uniforms, not Babylon lights)
+    gi.ts               # The irradiance volume's tiers (grid, rays, budget),
+                        #   the fast layer's caps and how the traced light is
+                        #   banded back into the cel shader's indirect term
     world.ts            # Map extents, occlusion, water, grass (map, ao, water,
                         #   grass)
     sky.ts              # The sky (sky): the dome, the stars, the disc, and the
@@ -515,7 +518,16 @@ src/
                         #   armour
     AimAssistSystem.ts  # Gamepad-only: outer bubble slows the stick, inner one
                         #   rotates. Bounded by the player's own turn rate
-    LightingSystem.ts   # Dynamic point lights: fixtures, flashes, lamps
+    LightingSystem.ts   # Dynamic point lights: fixtures, flashes, lamps. A
+                        #   light is FAST (its bounce re-traced every frame)
+                        #   or slow (averaged) — see GiVolume
+    GiVolume.ts         # The irradiance volume: bounce light, sky occlusion
+                        #   and lamps that stop at walls. A camera-centred,
+                        #   toroidally scrolled window of probes traced in
+                        #   compute against the colliders; seven 3D textures
+                        #   every cel material binds, always. No draw calls.
+                        #   Same ray set every update, so a still scene
+                        #   converges to a fixed point instead of crawling
     AmbienceSystem.ts   # Where the world makes a noise on its own: the emitter
                         #   registry MapBuilder fills, and the nearest-first
                         #   ranking that spends CONFIG.audio.ambience.maxVoices
@@ -1081,10 +1093,16 @@ src/
                         #   it as celDither
     wgsl/
       includes.ts       # The shader text every surface shares, as Babylon WGSL
-                        #   includes: celBand, celShadow, celProbe, celProbeBox,
-                        #   celDither and our own celInstances pair. Registered
+                        #   includes: celBand, celShadow, celGi, celProbe,
+                        #   celProbeBox, celDither and our own celInstances
+                        #   pair. Registered
                         #   at import, so a consumer imports it for the side
                         #   effect
+      giTrace.ts        # The irradiance volume's three COMPUTE passes (trace,
+                        #   compose, vis) and the params layout they share
+                        #   with GiVolume. RayWorld's box and floor queries,
+                        #   ported: the volume traces the COLLIDERS, never a
+                        #   mesh
     WaterShader.ts      # Water ShaderMaterial: analytic wave trains, Fresnel
                         #   mirror, and the hole a rotor tears in it. WGSL
     GrassShader.ts      # The blade bend: wind, and combatants pushing through.

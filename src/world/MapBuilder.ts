@@ -434,6 +434,18 @@ export interface GameMap {
   /** The same colliders as plain boxes, for the nav grid. */
   colliderBoxes: WorldBox[];
   /**
+   * An ALBEDO per `colliderBoxes` entry, as `r, g, b` triples in the same
+   * order: the average colour of whatever the box stands in for, which is what
+   * the irradiance volume's trace bounces light off (`systems/GiVolume.ts`).
+   *
+   * **Client-only and absent on the authority**, which builds its world from
+   * the collision bake and has no materials to average — so this is kept off
+   * `WorldBox` and out of the bake, and neither `npm run collision` nor
+   * `npm run parity` has heard of it. It must stay PARALLEL to
+   * `colliderBoxes`: `MapBuilder.recordBox` is the one place either grows.
+   */
+  colliderAlbedo?: Float32Array;
+  /**
    * The `strut` boxes — ray geometry with no body behind it — grouped by the
    * collider mesh each group was merged into.
    *
@@ -834,6 +846,14 @@ export class MapBuilder {
 
   /** World-space collider boxes, accumulated by `collider()` during a build. */
   private boxes: WorldBox[] = [];
+  /**
+   * `r, g, b` per entry of `boxes`, pushed by `recordBox` beside it — see
+   * `GameMap.colliderAlbedo`. `albedoHint` is what the NEXT box recorded is
+   * painted: set per structure and per scatter prop from its own meshes, so
+   * a box answers with the colour of what it stands in for.
+   */
+  private boxAlbedo: number[] = [];
+  private albedoHint: [number, number, number] = [0.5, 0.5, 0.5];
 
   /**
    * The `strut` boxes, grouped by the placement whose collider mesh they were
@@ -994,6 +1014,10 @@ export class MapBuilder {
     // A view onto the floor's own blocks within `colliders` — see GameMap.
     const terrainColliders: Mesh[] = [];
     this.boxes = [];
+    this.boxAlbedo = [];
+    // The rim and the ground plane's stand-ins are the floor as far as a
+    // bounce is concerned, so the valley pass records its boxes in its colour.
+    this.setAlbedoHint(Color3.FromHexString(env.floorColor));
     this.rayGroups = [];
     this.boxGroups = [];
     this.pendingCluster = [];
@@ -1133,6 +1157,11 @@ export class MapBuilder {
             : undefined,
         roads: isRoad ? network.footprint : undefined,
       });
+      // What light bounces off this structure's boxes: the average of what it
+      // is painted, weighted by how much of each there is. Taken HERE, before
+      // the merge below disposes these meshes — what it hands back wears the
+      // palette material, which has no single colour to read.
+      this.albedoFromMeshes(s.meshes);
 
       for (const merged of mergeByMaterial(s.meshes, p.kind)) {
         merged.rotation.y = rotY;
@@ -1417,6 +1446,7 @@ export class MapBuilder {
       vehicleSpawns: layout.vehicles ?? [],
       colliders,
       colliderBoxes: this.boxes,
+      colliderAlbedo: Float32Array.from(this.boxAlbedo),
       rayGroups: this.rayGroups,
       boxGroups: this.boxGroups,
       panes: this.panes,
@@ -1787,7 +1817,10 @@ export class MapBuilder {
       // Bake the placement into the vertices, then hand the flattened
       // hierarchy to the merge — the same identity-transform trick the
       // structures use, applied one level up.
-      parts.push(...flatten(prop));
+      const flat = flatten(prop);
+      // Its box, if it gets one, bounces light in its own colours.
+      if (spec.blocking) this.albedoFromMeshes(flat);
+      parts.push(...flat);
 
       if (light) {
         this.lighting.add(
@@ -2141,11 +2174,47 @@ export class MapBuilder {
     const world = this.worldBoxOf(box, origin, parentRotY);
     this.item?.boxes.push(this.boxes.length);
     this.boxes.push(world);
+    // Beside the box and never anywhere else, which is what keeps the two
+    // lists parallel — see `GameMap.colliderAlbedo`.
+    this.boxAlbedo.push(this.albedoHint[0], this.albedoHint[1], this.albedoHint[2]);
     // The scatter index rides along here because this is the only place a box
     // is ever recorded — the same property that makes `boxes` complete.
     // Feeding it anywhere else would leave the two able to disagree.
     insertBox(this.boxIndex, world);
     return world;
+  }
+
+  private setAlbedoHint(c: Color3): void {
+    this.albedoHint = [c.r, c.g, c.b];
+  }
+
+  /**
+   * Sets the albedo the next boxes are recorded in to the average paint of
+   * `meshes`, each weighted by its bounding box's surface — a stand-in for
+   * how much of the structure it is, and plenty for light that is about to be
+   * averaged over a whole hemisphere. A mesh with no single colour (a ground
+   * texture, glazing) says nothing; a structure where nothing says anything
+   * keeps whatever the hint already was.
+   */
+  private albedoFromMeshes(meshes: readonly Mesh[]): void {
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let total = 0;
+    for (const m of meshes) {
+      const c = this.mats.albedoOf(m.material);
+      if (!c) continue;
+      const e = m.getBoundingInfo().boundingBox.extendSize;
+      const sx = Math.abs(m.scaling.x) * e.x;
+      const sy = Math.abs(m.scaling.y) * e.y;
+      const sz = Math.abs(m.scaling.z) * e.z;
+      const area = sx * sy + sy * sz + sx * sz + 1e-4;
+      r += c.r * area;
+      g += c.g * area;
+      b += c.b * area;
+      total += area;
+    }
+    if (total > 0) this.albedoHint = [r / total, g / total, b / total];
   }
 
   /**

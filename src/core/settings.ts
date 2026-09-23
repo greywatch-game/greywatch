@@ -35,6 +35,14 @@ export type VolumetricQuality =
   | keyof typeof CONFIG.graphics.volumetrics.rungs;
 
 /**
+ * How much bounce light, as `off` plus one of `CONFIG.gi.tiers` — derived from
+ * that table for `VolumetricQuality`'s reason. `off` takes the irradiance
+ * volume out entirely (`systems/GiVolume.ts`) and puts back the flat ambient
+ * and sky fill the cel shader always had.
+ */
+export type GiQuality = "off" | keyof typeof CONFIG.gi.tiers;
+
+/**
  * A look-sensitivity multiplier, as one of `CONFIG.camera.lookScales`. Derived
  * from that list for the same reason `RenderScale` is derived from its own: the
  * ladder is declared once, and a value that is not on it cannot be stored.
@@ -105,6 +113,12 @@ export type Settings = {
    * is not a number either — which is what `oneOfString` below exists for.
    */
   volumetrics: VolumetricQuality;
+  /**
+   * Bounce light and sky occlusion — the irradiance volume's tier, or `off`.
+   * Derived per MACHINE on a fresh install like the render scale: see
+   * `defaultGiQuality`.
+   */
+  gi: GiQuality;
   /**
    * Mouse look speed, as a multiplier on `CONFIG.camera.sensX`/`sensY`.
    *
@@ -234,6 +248,22 @@ export function defaultRenderScale(): RenderScale {
 }
 
 /**
+ * The bounce light a fresh install gets: the cheap tier on a device whose
+ * primary pointer is a finger, the full one otherwise. A phone runs GPU work at
+ * roughly 2.4x a desktop's cost (`FINDINGS.md` 43) and the volume is the one
+ * feature here whose whole cost is GPU, so it starts where it is least likely
+ * to be the thing that makes the frame late — and a player who wants more is
+ * one row away.
+ */
+export function defaultGiQuality(): GiQuality {
+  const coarse =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  return coarse ? "low" : "high";
+}
+
+/**
  * What a fresh install gets.
  *
  * The blur's default is derived from `CONFIG` rather than restated, so the
@@ -258,6 +288,7 @@ export const SETTING_DEFAULTS: Settings = {
   // have. `CONFIG.graphics.volumetrics` carries the whole table and the caveat
   // that the old pass was detached most of a round and this one is not.
   volumetrics: "medium",
+  gi: defaultGiQuality(),
   renderScale: defaultRenderScale(),
   // 1 on both, and it is the one default that means "change nothing": the rates
   // in `CONFIG.camera` are what every other number there was tuned against.
@@ -380,6 +411,12 @@ const VOLUMETRIC_QUALITIES = [
   ...(Object.keys(CONFIG.graphics.volumetrics.rungs) as (keyof typeof CONFIG.graphics.volumetrics.rungs)[]),
 ] as const;
 
+/** `off` plus the volume's tiers, in the order the screen draws them. */
+const GI_QUALITIES = [
+  "off",
+  ...(Object.keys(CONFIG.gi.tiers) as (keyof typeof CONFIG.gi.tiers)[]),
+] as const;
+
 /**
  * One codec per field. The mapped type is the point: a field added to
  * `Settings` without an entry here does not compile, so the store can never
@@ -391,6 +428,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   paperGrain: bool,
   renderScale: oneOf(CONFIG.graphics.renderScales),
   volumetrics: oneOfString(VOLUMETRIC_QUALITIES),
+  gi: oneOfString(GI_QUALITIES),
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
   stickSensitivity: oneOf(CONFIG.camera.lookScales),
   touchSensitivity: oneOf(CONFIG.camera.lookScales),

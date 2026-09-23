@@ -18,12 +18,22 @@ import {
 } from "../shaders/CelShader";
 import { mulberry32 } from "../world/rng";
 
-interface RoomLight extends PointLightData {
+export interface RoomLight extends PointLightData {
   /** 0 = steady, 1 = wild flicker. */
   flicker: number;
   /** Desyncs the flicker noise between fixtures. */
   phase: number;
   baseIntensity: number;
+  /**
+   * Whether this light's BOUNCE has to follow it frame by frame — see
+   * `GiVolume`'s two layers. A steady lantern is slow: its bounce is traced on
+   * the rolling budget and averaged. Anything that burns up, dies down or
+   * moves faster than that average can follow (a thrown fire, the carried
+   * lamp) is fast, and is re-bounced every frame near the eye.
+   *
+   * It says nothing about the DIRECT light, which every light gets the same.
+   */
+  fast: boolean;
 }
 
 interface TransientLight extends PointLightData {
@@ -73,13 +83,18 @@ export class LightingSystem {
   /** The flicker phases. See `FLICKER_SEED`. */
   private rand: () => number = mulberry32(FLICKER_SEED);
 
-  /** Registers a static fixture light for the current room. */
+  /**
+   * Registers a fixture light for the current room. `fast` is for a light
+   * whose bounce must follow it frame by frame rather than be averaged — see
+   * `RoomLight.fast`; a lantern on a wall is not one.
+   */
   add(
     position: Vector3,
     colorHex: string,
     range: number,
     intensity: number,
     flicker: number,
+    fast = false,
   ): void {
     this.lights.push({
       position: position.clone(),
@@ -89,6 +104,7 @@ export class LightingSystem {
       baseIntensity: intensity,
       flicker,
       phase: this.rand() * 100,
+      fast,
     });
   }
 
@@ -134,6 +150,8 @@ export class LightingSystem {
         baseIntensity: intensity,
         flicker,
         phase: this.rand() * 100,
+        // Carried means it moves with a body, which is the definition.
+        fast: true,
       };
       this.carried.set(id, light);
       return;
@@ -180,6 +198,20 @@ export class LightingSystem {
    */
   get activeLights(): readonly PointLightData[] {
     return this.active;
+  }
+
+  /**
+   * The live transient pulses — muzzle flashes, blasts — at this frame's
+   * decayed intensity. For `GiVolume`'s fast layer, which bounces them;
+   * read-only for the reason `fixtures` is.
+   */
+  get transients(): readonly PointLightData[] {
+    return this.transient;
+  }
+
+  /** The carried lights, for the same reader. */
+  get carriedLights(): IterableIterator<RoomLight> {
+    return this.carried.values();
   }
 
   /** One fixture's flicker for this frame. Steady fixtures sit at their base. */

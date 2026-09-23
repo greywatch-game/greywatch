@@ -576,6 +576,20 @@ world's and the foliage's) and `BodyShadows`', the last two pinned by
 `includeOnlyWithLayerMask` to layers no world mesh carries so neither can reach
 a `StandardMaterial`.
 
+**The indirect light is TRACED, and nothing about it is a draw call**:
+`systems/GiVolume.ts` is a camera-centred window of probes traced in compute
+against the COLLIDERS (`RayWorld`'s query, ported), which replaces the flat
+ambient and sky fill where it has an answer — bounce, sky occlusion, and point
+lights that stop at walls. Four rules reach outside it. **Every cel material
+binds its seven 3D textures always**, published before the first material
+exists (`GI_SAMPLER_NAMES`, through `applyShadow`'s one door). **A light whose
+brightness changes faster than a sweep is registered `fast`**
+(`LightingSystem.add(..., fast)`; pulses and carried lights are fast already),
+or its bounce is frozen into a scatter of probes — a thrown fire is one flag.
+**`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`**, client-only.
+And **the same rays every update**, so a still scene converges to a fixed point
+rather than crawling: never rotate them, never blend below 1.
+
 **THERE ARE TWO SHADOW MAPS, AND WHICH CASTERS GO IN WHICH IS DECIDED BY REFRESH
 RATE RATHER THAN BY WHAT THEY ARE.** The world's re-renders only when its
 texel-snapped focus MOVES, so **nothing that ANIMATES may be registered with
@@ -721,7 +735,9 @@ process straight after the ink**, so `CelInk` stays first in the chain and the
 bloom lies over the lines. **Its blur kernel is stated against the FRAME** and
 re-derived from the scaling level before every blur.
 
-→ **[`docs/rendering.md`](docs/rendering.md)** — the water's wave field and
+→ **[`docs/rendering.md`](docs/rendering.md)** — the irradiance volume (why
+not a port of Lumen, the two layers split by rate, why a visibility channel
+follows a light, why the blend is 1, what it costs), the water's wave field and
 mirror and the three ways a cube probe goes flat, the four light terms and the
 colour buffer's three further rules, the frozen define set and what it measured,
 the ground's height maps carved as a DEPTH (parallax, self-shadow) and not only a slope,

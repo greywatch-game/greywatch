@@ -253,6 +253,48 @@ export const SHADOW_UNIFORM_NAMES = [
  */
 export const SHADOW_SAMPLER_NAMES = ["shadowMap", "bodyShadowMap"] as const;
 
+/**
+ * The uniforms `celGi` declares, for a consumer's uniform list — today the
+ * cel materials alone. See `systems/GiVolume.ts` for what each carries and
+ * `wgsl/includes.ts` for how the fragment reads them.
+ */
+export const GI_UNIFORM_NAMES = [
+  "giGrid",
+  "giWindow",
+  "giShade",
+  "giBand",
+  "giExtra",
+  "giSlotChannel",
+] as const;
+/**
+ * The irradiance volume's seven textures, for a consumer's sampler list.
+ * **Every one must be BOUND on every material that lists them, always**, for
+ * `SHADOW_SAMPLER_NAMES`' reason — which is why `GiVolume` publishes a real
+ * set in its constructor, before `MapBuilder` has asked for a material, and
+ * keeps one published whatever the setting.
+ */
+export const GI_SAMPLER_NAMES = [
+  "giIrr",
+  "giDir",
+  "giAux",
+  "giVis0",
+  "giVis1",
+  "giVis2",
+  "giVis3",
+] as const;
+
+/** What `GiVolume` publishes to the cel materials — see `setGi`. */
+export interface GiBinding {
+  textures: Record<(typeof GI_SAMPLER_NAMES)[number], BaseTexture>;
+  grid: Vector4;
+  window: Vector4;
+  shade: Vector4;
+  band: Vector4;
+  extra: Vector4;
+  /** Slot to visibility channel, held by reference like the vectors. */
+  slotChannel: Float32Array;
+}
+
 ShaderStore.ShadersStoreWGSL["celVertexShader"] = `
 attribute position: vec3f;
 attribute normal: vec3f;
@@ -491,6 +533,7 @@ const MIRROR_GLOSS: f32 = 8.0;
 const MIRROR_HORIZON: f32 = 0.10;
 
 #include<celShadow>
+#include<celGi>
 
 // Toon specular: one hard two-band Blinn highlight from the key light.
 // specColor is premultiplied by intensity — black (the default) is matte.
@@ -775,10 +818,22 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // perturbed normal would let individual setts flick the gate on and off.
   let level = abs(n.y);
 
+  // Where this pixel reads the irradiance volume, stepped off the TRUE facet
+  // for the reason the shadow's offset is: the relief is a fiction, and a
+  // lookup pushed along it would move the light with every stone. w = 0 is
+  // "no volume here" and every GI term below falls back to the flat path.
+  let giC = giCoord(fragmentInputs.vPosW + n * uniforms.giBand.z);
+  // A var rather than a let: the light loop indexes it at run time, which
+  // WGSL allows through a reference and not on an array VALUE.
+  var giVis = giPointVis(giC);
+
   // --- directional key light (4 bands), gated by the stepped shadow ---
   // The shadow's normal-offset uses the true facet normal — the bump relief
   // is fake, and offsetting along it would leak light at stone edges.
   var shadow = shadowVisibility(n, fragmentInputs.vPosW);
+  // Past the shadow map's own window, the volume's per-probe sun test takes
+  // over rather than the ground going fully lit — see giFarShadow.
+  shadow = giFarShadow(fragmentInputs.vPosW, giC, shadow);
   // The key's cosine off the TRUE facet, before the relief touches it — what
   // the wrap below is keyed on, for the reason the rim gate reads level.
   let ndlGeo = dot(n, -uniforms.lightDir);
@@ -826,7 +881,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let ao = fragmentInputs.vBaked.w;
   #endif
 
-  var light = uniforms.ambientColor * ao;
+  var light = vec3f(0.0);
   // THE WRAP (EnvironmentSpec.lighting.keyWrap), which is how a cel painter
   // lights a low sun: everything turned toward the light is LIT, and the angle
   // only decides how lit. A facet's cosine is lifted by wrap * (1 - cosine), so
@@ -851,7 +906,38 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // gated by the shadow map — a roof in the moon's shadow still faces the sky.
   // This is what keeps roads, roofs and open ground reading as moonlit while
   // walls and undersides stay black.
-  light += uniforms.skyLightColor * band(0.5 + 0.5 * n.y, 3.0) * ao;
+  var indirect = uniforms.ambientColor * ao
+    + uniforms.skyLightColor * band(0.5 + 0.5 * n.y, 3.0) * ao;
+
+  // --- THE TRACED INDIRECT TERM (systems/GiVolume.ts) ---
+  //
+  // Where the volume has an answer it REPLACES the two terms above rather than
+  // adding to them: the flat ambient and the sky fill were always a stand-in
+  // for light arriving from everywhere that is not the key, and the volume is
+  // that light measured — the sky a street can actually see, the sunlit wall
+  // opposite handing some of it on, a lantern's pool bouncing off the cobbles.
+  //
+  // **Its LUMINANCE is banded and its HUE is not**, which is what lets colour
+  // bleed exist in a cel frame: a whitewashed wall beside a red door steps up
+  // a band warmer, rather than taking a smooth wash that reads as another
+  // game's renderer. The steps are fractions of the unoccluded sky's own
+  // brightness, so a map's bands land where its old sky fill's did.
+  //
+  // The map's flat ambient survives underneath as a FLOOR — the painter's
+  // "how black does the unlit side go" — so a closed room is dark rather than
+  // void; and the baked AO is kept at a share, for occlusion finer than the
+  // volume's own spacing.
+  let gi = giIrradiance(giC, n);
+  if (gi.w > 0.0) {
+    let lum = dot(gi.rgb, vec3f(0.2126, 0.7152, 0.0722)) * uniforms.giBand.y;
+    let stepped = giBandOpen(lum, uniforms.giBand.x);
+    let banded = gi.rgb * (stepped / max(lum, 1e-4));
+    let aoG = mix(1.0, ao, uniforms.giShade.z);
+    let traced = (banded * uniforms.giShade.x + uniforms.ambientColor * uniforms.giShade.y)
+      * aoG;
+    indirect = mix(indirect, traced, gi.w);
+  }
+  light += indirect;
 
   // --- point lights (3 bands, smooth inverse-square-ish falloff) ---
   for (var i = 0; i < MAX_POINT_LIGHTS; i++) {
@@ -863,9 +949,14 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
       var atten = clamp(1.0 - dist / range, 0.0, 1.0);
       atten *= atten;
       let ndl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
+      // Whether this slot's light can SEE here, off the volume — so a lantern
+      // no longer lights the far side of the wall it hangs on. 1 wherever the
+      // volume has no answer, which is the old rule exactly.
+      let ch = i32(uniforms.giSlotChannel[i]);
+      let vis = giVis[ch / 4][ch % 4];
       // Lift the floor a little so lit surfaces read as glowing pools of
       // light rather than only the faces pointed at the flame.
-      light += uniforms.pointColor[i] * atten * (0.25 + 0.75 * band(ndl, 3.0));
+      light += uniforms.pointColor[i] * atten * vis * (0.25 + 0.75 * band(ndl, 3.0));
     }
   }
 
@@ -1579,6 +1670,7 @@ export class CelMaterialFactory {
     "windTime",
     "windDir",
     "windParams",
+    ...GI_UNIFORM_NAMES,
   ];
   /**
    * Every cel material's vertex attributes.
@@ -1614,7 +1706,12 @@ export class CelMaterialFactory {
    * translucent or not, because a declared sampler with nothing behind it is a
    * bind group that fails to build and the draw silently lost.
    */
-  private static readonly SAMPLERS = ["shadowMap", "bodyShadowMap", "foliageMap"];
+  private static readonly SAMPLERS = [
+    "shadowMap",
+    "bodyShadowMap",
+    "foliageMap",
+    ...GI_SAMPLER_NAMES,
+  ];
   /**
    * How far toward the eye a pane is biased in the depth test, in polygon
    * offset UNITS — one unit being the depth buffer's own smallest resolvable
@@ -1790,6 +1887,19 @@ export class CelMaterialFactory {
   private foliageParams = new Vector4(0, 0, 0, 0);
   /** The materials that state a `TranslucencySpec.depth` — see `isSolid`. */
   private readonly solids = new Set<ShaderMaterial>();
+  /**
+   * The irradiance volume's textures and uniforms, as `GiVolume` last
+   * published them — see `setGi`. Null only before `GiVolume` is constructed,
+   * which is before the first material is.
+   */
+  private gi: GiBinding | null = null;
+  /**
+   * The flat albedo each single-colour material was minted with, for the one
+   * reader that needs a colour back from a MATERIAL: `MapBuilder`, which hands
+   * the GI trace a colour per collider box. Weak, because the cache is not the
+   * only thing that could ever hold a material.
+   */
+  private readonly albedos = new WeakMap<object, Color3>();
 
   /**
    * What each glazing material was built FROM, so a per-probe twin of it can be
@@ -2096,6 +2206,7 @@ export class CelMaterialFactory {
         },
       );
       mat.setColor3("baseColor", Color3.FromHexString(hex));
+      this.albedos.set(mat, Color3.FromHexString(hex));
       this.applyCamera(mat);
       this.applyWind(mat);
       this.applyEnvironment(mat);
@@ -2145,6 +2256,7 @@ export class CelMaterialFactory {
         },
       );
       mat.setColor3("baseColor", Color3.FromHexString(hex));
+      this.albedos.set(mat, Color3.FromHexString(hex));
       this.applyCamera(mat);
       this.applyWind(mat);
       this.applyEnvironment(mat);
@@ -2188,6 +2300,7 @@ export class CelMaterialFactory {
         },
       );
       mat.setColor3("baseColor", Color3.FromHexString(hex));
+      this.albedos.set(mat, Color3.FromHexString(hex));
       this.applyCamera(mat);
       this.applyWind(mat);
       this.applyEnvironment(mat);
@@ -2810,6 +2923,65 @@ export class CelMaterialFactory {
     return mat;
   }
 
+  /**
+   * The key light, the flat ambient and the sky fill exactly as the surfaces
+   * are currently lit by them — for `GiVolume`, which lights the points its
+   * rays hit with the same numbers, so a bounce can never describe different
+   * weather from the wall it came off. Live references: read, never write.
+   */
+  readLighting(): {
+    lightDir: Vector3;
+    lightColor: Color3;
+    ambient: Color3;
+    sky: Color3;
+  } {
+    return {
+      lightDir: this.lightDir,
+      lightColor: this.lightColor,
+      ambient: this.ambientColor,
+      sky: this.skyLightColor,
+    };
+  }
+
+  /**
+   * The flat albedo a material was minted with, or null for one that has no
+   * single colour (a ground texture, the palette materials, glazing). Read by
+   * `MapBuilder` to hand the irradiance volume a colour per collider box.
+   */
+  albedoOf(mat: unknown): Color3 | null {
+    if (!mat) return null;
+    return this.albedos.get(mat as object) ?? null;
+  }
+
+  /**
+   * Publishes the irradiance volume to every cel material — its seven
+   * textures and the five vectors describing the window.
+   *
+   * **The vectors are handed over BY REFERENCE and that is the design**, the
+   * same thing `applyCamera` leans on: a `ShaderMaterial` keeps the vector it
+   * is given and reads it again on every bind, so `GiVolume` moves the window
+   * by writing into its own `Vector4` and no material has to be walked. A walk
+   * happens here, when the TEXTURES change — a tier change stands up a new set
+   * — and on a material's creation (`applyShadow`), which is what lets a
+   * material minted mid-round be born holding the live volume.
+   */
+  setGi(binding: GiBinding): void {
+    this.gi = binding;
+    this.cache.forEach((mat) => this.applyGi(mat));
+  }
+
+  private applyGi(mat: ShaderMaterial): void {
+    const gi = this.gi;
+    if (!gi) return;
+    for (const name of GI_SAMPLER_NAMES) mat.setTexture(name, gi.textures[name]);
+    mat.setVector4("giGrid", gi.grid);
+    mat.setVector4("giWindow", gi.window);
+    mat.setVector4("giShade", gi.shade);
+    mat.setVector4("giBand", gi.band);
+    mat.setVector4("giExtra", gi.extra);
+    mat.setFloats("giSlotChannel", gi.slotChannel as unknown as number[]);
+  }
+
   /** The light's view*projection; re-uploaded when the shadow camera moves. */
   setShadowMatrix(matrix: Matrix): void {
     this.shadowMatrix = matrix;
@@ -3024,6 +3196,10 @@ export class CelMaterialFactory {
       if (this.foliageMap) mat.setTexture("foliageMap", this.foliageMap);
       mat.setMatrix("foliageLightMatrix", this.foliageMatrix);
       mat.setVector4("foliageParams", this.foliageParams);
+      // The irradiance volume rides the same door for the same reason: every
+      // one of the six creation paths comes through here, so no cel material
+      // can be born without the seven textures its sampler list declares.
+      this.applyGi(mat);
     }
   }
 

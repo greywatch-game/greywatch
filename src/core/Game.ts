@@ -148,6 +148,7 @@ import { ScoreBook, awardKill, awardZone, paysKiller } from "../systems/ScoreBoo
 import { LightingSystem } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
 import { BodyShadows } from "../systems/BodyShadows";
+import { GiVolume } from "../systems/GiVolume";
 import { ShadowSystem } from "../systems/ShadowSystem";
 import { Sky } from "../systems/Sky";
 import { WaterSystem } from "../systems/WaterSystem";
@@ -204,6 +205,7 @@ import {
   type StepState,
 } from "./ScreenStack";
 import {
+  type GiQuality,
   readSettings,
   writeSettings,
   type Settings,
@@ -460,6 +462,22 @@ export class Game {
    * `applyEnvironment` pushes that direction to both from one line.
    */
   private bodyShadows: BodyShadows;
+  /**
+   * The irradiance volume — bounce light, sky occlusion and point lights that
+   * stop at walls (`systems/GiVolume.ts`). Built beside the two shadow maps and
+   * for their reason: every cel material declares its seven textures, so it
+   * publishes them before the first material exists.
+   */
+  private gi: GiVolume;
+  /**
+   * `?gi=off|low|high`, which overrides the setting for the whole session —
+   * `volumetricsForced`'s relationship to its own setting, for its reason: a
+   * measurement runs in a fresh profile with nothing stored.
+   */
+  private readonly giForced: GiQuality | null = (() => {
+    const q = new URLSearchParams(location.search).get("gi");
+    return q === "off" || q === "low" || q === "high" ? q : null;
+  })();
   /**
    * The world as the glazing reflects it — one cube, baked per map install.
    * The only render target here besides the shadow map.
@@ -1068,6 +1086,15 @@ export class Game {
     // every draw using it silently lost. So this exists before the first
     // material does, and there is no state in which it does not.
     this.bodyShadows = new BodyShadows(this.scene, this.mats);
+    // The same rule again, for the irradiance volume's seven textures: every
+    // cel material declares them, so they are published before the first one
+    // exists and stay published whatever the setting says.
+    this.gi = new GiVolume(
+      this.engine,
+      this.scene,
+      this.mats,
+      this.giForced ?? this.settings.gi,
+    );
     this.input = new InputManager(canvas);
     this.cameraSys = new CameraSystem(this.scene);
 
@@ -2410,6 +2437,9 @@ export class Game {
     this.setProfiling(this.settings.profiler);
     this.applyRenderScale();
     this.setVolumetrics(this.settings.volumetrics);
+    // A no-op unless the tier moved; a change stands up a new texture set and
+    // republishes it to every cel material (`GiVolume.setQuality`).
+    this.gi.setQuality(this.giForced ?? this.settings.gi);
     this.setMotionBlurEnabled(this.settings.motionBlur);
     // After the blur, and that is the order rather than a preference: the
     // blur's own toggle takes the grade off and puts it back to keep the
@@ -3138,6 +3168,21 @@ export class Game {
       this.water.setWash(this.rotorWash.sites, this.rotorWash.siteCount);
     }
     this.prof.end(P.culling);
+    // The irradiance volume, around the eye, in EVERY state and on the cull
+    // span's terms: every state renders, so a building card, a deploy screen
+    // or a menu with the map behind it is a picture the bounce is owed — and
+    // it is also what lets the volume CONVERGE behind the loading card, while
+    // the reflection bake drains, instead of fading in across the first second
+    // of a spawn. After `lighting.update` on the frames that run one, because
+    // its point-light visibility is written per SLOT and the slots are that
+    // frame's; on the frames that do not, they are simply the last ones
+    // chosen. All compute — no draw call — so what this span measures is the
+    // CPU side of recording it, and the GPU's share is in `gpu.frame`.
+    this.prof.begin(P.gi);
+    if (this.map) {
+      this.gi.update(this.cameraSys.camera.position, this.lighting, this.map.rays.hulls);
+    }
+    this.prof.end(P.gi);
     // The engines of the hulls the player is NOT sitting in, pushed from here
     // for the shader's-eye reason and with the opposite conclusion: every
     // state renders, only some of them simulate, and the ones that do not owe
@@ -4033,6 +4078,10 @@ export class Game {
     // night village reads as a lens fault over a bright one.
     this.post.setGrade(environment.grade);
     this.shadows.setCasters(map.visuals);
+    // What the bounce light traces: the fresh map's colliders, their albedo and
+    // its floor. The volume restarts unconverged and spends its first sweeps at
+    // the warm budget; nothing it does is a draw call.
+    this.gi.setMap(map, environment.floorColor);
     // And the other thing baked off the fresh map's visuals: what its glass
     // reflects. Same reason as the line above it — last build's meshes are
     // disposed, and this one holds a render list of them until it is told.

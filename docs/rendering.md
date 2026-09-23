@@ -287,6 +287,210 @@ reproducibility floor of 0.000%.
 `FINDINGS.md` 36 carries the numbers and 1 carries what the allocation was
 costing in the first place.
 
+## The irradiance volume: bounce light, sky occlusion, lamps that stop at walls
+
+`systems/GiVolume.ts` owns it and `shaders/wgsl/giTrace.ts` holds the three
+compute passes; the cel fragment reads it through the `celGi` include. It is the
+answer to "what would Lumen do here", and the answer is **not a port of
+Lumen**, for three reasons that decided the whole shape of it:
+
+- **There is no ray-tracing hardware in a browser**, and the phones this game
+  installs onto run desktop GPU work at ~2.4x the cost (`FINDINGS.md` 43).
+- **Lumen's artefacts are the ones this look forbids.** Per-frame random rays
+  accumulated over time are light that CRAWLS while it converges — a clock you
+  can see — and a continuous per-pixel indirect term reads as another game's
+  renderer.
+- **What makes Lumen affordable is a scene the GPU can trace that is far cheaper
+  than the one it draws — and this game already has one.** Every surface a
+  round can stop on is a box in `colliderBoxes` or the heightfield, which is
+  what `RayWorld` answers every ray on the CPU off. The trace is that query
+  ported to WGSL: the same 8 m uniform grid, the same oriented-box slab test
+  (`RayWorld.boxCast` to the letter, far face and all), the same floor. Nothing
+  mesh-shaped is ever traced, and the volume's idea of where the walls are is
+  the game's.
+
+### What it is
+
+A grid of probes `columns` x `columns` across (a camera-centred WINDOW that
+scrolls with the eye, 192 m on `high` and on every map whatever its size) and
+`layers` up from the GROUND — a probe stands `(k + 0.5) * layerHeight` above
+its own column's floor, so a hillside and a harbour spend the same probes on the
+air people stand in. Each probe holds the light arriving there as **order-1
+spherical harmonics with the colour in the constant band and the DIRECTION in
+the linear band of luminance alone**: all a banded surface can show, and half
+the storage of three linear bands. Seven 3D textures carry it to the fragment:
+irradiance (with the column's floor in alpha), direction (with the probe's
+validity in w), an aux of sun and sky visibility, and four of point-light
+visibility.
+
+**The window is addressed TOROIDALLY** — world column `c` lives in texel
+`c mod columns` — and the sampler REPEATS on both horizontal axes, so the
+hardware's own trilinear filter is correct across the seam and scrolling costs
+nothing but a uniform. The pair of columns either side of the window's own edge
+are the newest and the oldest and are never read: the outer `edgeFade` of the
+window ramps back to the flat path first.
+
+**What is stored is premultiplied by each probe's validity** — 0 for a probe
+buried in a wall that the trace could not move out of, or one not yet traced
+for the column it now stands for — so dividing by the filtered weight averages
+only the valid probes among the eight. That is what keeps a buried probe from
+printing a dark halo on the face of the wall it is buried in, with no second
+fetch and no mask.
+
+### The three passes
+
+- **trace** — one WORKGROUP per probe, one thread per ray, re-tracing a rolling
+  slice of the window every frame (`probesPerFrame`). A ray finds what it hits;
+  the hit is lit by the sun (a shadow ray), by ONE of the steady fixtures that
+  reach it (see below), and by the volume itself at that point — last frame's
+  answer, which is what makes the bounce multi-bounce. A ray that escapes takes
+  the sky: the map's flat ambient as a uniform dome plus its sky fill as a lobe
+  from overhead, normalised so a surface facing straight up under an open sky
+  receives exactly what the flat path gives it. The workgroup reduces its rays
+  to the probe's harmonics.
+- **compose** — one thread per probe, every frame: the probe's history plus
+  the FAST layer, out to the textures.
+- **vis** — one thread per probe, every frame: which lights holding a slot
+  each probe can see.
+
+Three rather than one because a WebGPU stage may write at most four storage
+textures (compose writes three, vis four) and because trace's shape — a probe
+per workgroup — is the wrong one for the other two.
+
+### Why it holds still, and why the blend is 1
+
+**Every probe is traced with the SAME ray set every time** — a fixed spherical
+Fibonacci set, where DDGI rotates its rays randomly per frame. So a re-trace of
+an unchanged scene returns the same answer, and there is no noise for a history
+to average. `CONFIG.gi.blend` is therefore **1**, and the history exists only as
+the state buffer the compose reads. It was 0.25 first, DDGI-style, and what that
+bought was slowness rather than smoothness: a probe is re-traced once per
+sweep, so three sweeps in it was still 42% short, measured as **5-13% of a
+FROZEN frame's pixels still moving, by up to 52/255**, several seconds after a
+map had "converged". At 1 the only thing left moving is the multi-bounce
+iteration, which shrinks by the albedo every sweep. Measured on a frozen frame
+with the GI-off control byte-identical: Hollowmere 0.005% of pixels at 1/255;
+Sarab 0.08% at up to 13/255 four seconds in, and **0.0075% at 1/255** ten
+seconds later. That residue is a half-float settling, not a cycle.
+
+**The rolling cursor walks a PERMUTATION of the window** (`* 7919 mod total`,
+coprime to every tier's probe count), because in order a change in the light —
+a pane broken, a lamp lit — reaches the picture as a line sweeping across the
+map. Scattered, it arrives as a dissolve of 2 m probes over a sweep.
+
+### Two layers, split by how FAST a light changes
+
+A light that changes faster than a sweep would be averaged into nothing by the
+rolling trace — which at blend 1 means it would reach the picture as whatever
+it was doing when each probe happened to be traced: a muzzle flash frozen into
+a scatter of probes for a second. So lights are split by RATE, never by kind:
+
+- **Slow** — the sun, the sky, and every steady fixture (`RoomLight.fast`
+  false) at its BASE intensity. Traced on the rolling budget.
+- **Fast** — every transient pulse (muzzle flashes, blasts), every carried
+  light (the player's lamp, the kit bench), anything registered with
+  `LightingSystem.add(..., fast = true)`, and the FLICKER of the steady fires
+  within `flickerReach` of the eye, as the difference from their base (which
+  the slow layer already carries). Re-bounced from scratch every frame in
+  compose and never remembered, so the bounce rises and dies exactly with the
+  light's own envelope. Clustered (`fastCluster`), so a spreading fire costs
+  one fast light however many emitters it has, and capped (`fastLights`).
+
+**A thrown fire needs nothing new here**: register its emitters `fast` and
+they bounce. A flash is the world answering a shot, not motion that drives
+itself, so it passes the look's rule where a crawl does not.
+
+### Point lights that stop at walls, and why a channel follows a LIGHT
+
+The cel shader's point lights ignored everything between them and a surface;
+`giPointVis` multiplies each by the volume's answer to "can this light see
+here". **The answer is kept per CHANNEL, and a channel belongs to a light for
+as long as it holds a slot** (`GiVolume.assignChannels`; the shader reads
+`giSlotChannel` to find it). Per SLOT it was 0.85 ms of GPU on Coldharbour,
+because `LightingSystem` orders its slots transients first — one muzzle flash
+shifts every lantern down a slot, and every slot's answer had to be re-traced
+every frame. Per channel, a lantern is traced once, on the frame it wins a
+slot; a light is re-traced only when it is new or has MOVED (the carried lamp,
+every frame it walks), and a probe re-traces every channel only when its own
+position is new. Each probe keeps its mask in a buffer between frames for that.
+
+A visibility ray stops `lightClearance` short of the light, because fixtures
+stand IN their own props — a fire drum's flame is inside the drum's collider,
+and a ray that found the prop would black out the light it belongs to.
+
+**It is RIGHT that a light inside a solid lights nothing.** The first staged
+test of this put a blast at a point that turned out to be inside a collider:
+GI-off lit the chapel and every headstone through it, GI-high lit nothing, and
+it read as a bug for exactly as long as it took to test the point. Re-staged in
+open air, verified outside every box and in view of the camera, the two agree
+everywhere but where something genuinely stands between.
+
+### The steady fixtures: one per hit, not all of them
+
+A bounce ray landing near several lanterns lights its hit with ONE of the ones
+that reach it, chosen by the ray's own index and weighted by how many there
+were — one visibility ray per hit however dense the village. It is a function
+of the ray and nothing else, so the average over a probe's rays is the same
+every update and the fixed point survives.
+
+### How it reaches the frame
+
+Where the volume has an answer it REPLACES the flat ambient and the sky fill
+rather than adding to them — those were always a stand-in for exactly this
+light. **Its LUMINANCE is banded and its HUE is not** (`giBandOpen`, steps of the
+unoccluded sky's own brightness, allowed past it up to `bandSpan` so a sunlit
+wall's bounce steps up rather than clipping), which is what lets colour bleed
+exist in a cel frame without a smooth wash. The map's flat ambient survives
+underneath as a FLOOR (`floor`, the painter's "how black does the unlit side
+go"), and the baked vertex AO is kept at a share (`aoKeep`) for occlusion finer
+than the volume's spacing. Every pixel reads the volume stepped half a spacing
+along its TRUE facet normal, for the shadow offset's reason.
+
+**Past the shadow map's own window, the probes' sun test takes over**
+(`giFarShadow`) rather than the ground going fully lit — coarse, one answer per
+probe, but cut hard with a narrow step so what reads at that range is a
+shadow's shape rather than a lattice, and blended over the map's own edge ramp.
+It only reaches where the volume is wider than the shadow window, which is the
+small maps (110-140 m windows against 192 m); on the big ones the window is the
+wider of the two and it does nothing.
+
+### What it costs
+
+**No draw call.** Everything is compute plus three fetches (four more with
+occlusion) in a fragment that already runs; `drawCalls` is unchanged. Measured
+uncapped on the RTX box at the menu vantages, GPU time is:
+
+| map | high | low |
+| --- | --- | --- |
+| Coldharbour | ~0.05-0.55 ms | |
+| Hollowmere (21 lanterns) | ~0.4-0.7 ms | ~0.34 ms |
+| Cinderhaven | ~0.1 ms | |
+| Hollowmere under fire (4 guns, a blast a second, a fire) | +0.3 ms | |
+
+The ranges are the box's own run-to-run floor, which moves by tenths of a
+millisecond at these frame rates. The first version cost 4-5 ms, and the three
+levers that took it down are the three sections above: the channels, one
+fixture per hit, and the terrain march's two exits (a flat map is one plane in
+closed form; a ray climbing above the map's highest ground stops). The CPU side
+is the `gi` profiler phase, 0.08-0.14 ms. **Nothing here is measured on a
+phone**, which is why a coarse pointer defaults to `low` — `FINDINGS.md` 44.
+
+### Contracts that reach outside it
+
+- **Seven textures and six uniforms on every cel material, bound always**
+  (`GI_SAMPLER_NAMES`, `GI_UNIFORM_NAMES`), through `applyShadow`'s cel branch,
+  the one door all six creation paths share. `GiVolume` publishes a real set in
+  its constructor and keeps one published whatever the setting. Grass and water
+  do not declare them and keep the flat path.
+- **`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`** — `recordBox`
+  is the one place either grows. It is client-only: the collision bake, the
+  server and `npm run parity` have never heard of it.
+- **`update` runs from `tick`, in every state, after `lighting.update`** — so
+  the volume converges behind the loading card rather than fading in across a
+  spawn, and its channels are that frame's slots.
+- **The trace sees what a ROUND sees minus what light passes**: a porous box
+  (a fence's run, glass) is left out; a hull is in, rewritten every frame.
+
 ## The ink: one pass, over depth the frame already wrote
 
 `shaders/CelInk.ts` owns the argument, the mechanism and the measurements; this
