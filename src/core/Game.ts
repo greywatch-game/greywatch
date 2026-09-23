@@ -3996,6 +3996,12 @@ export class Game {
         this.celInk.applyEnvironment();
       },
       invalidateShadows: () => this.shadows.invalidate(),
+      worldMoved: () => {
+        const map = this.map;
+        if (!map) return;
+        this.gi.worldMoved();
+        this.localShadows.setWorld(map.size, map.colliderBoxes, map.rayGroups, map.visuals);
+      },
     });
     // Open where the player was standing, looking the way they were looking.
     this.editor.warpTo(
