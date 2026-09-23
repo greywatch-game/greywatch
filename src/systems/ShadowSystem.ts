@@ -32,6 +32,9 @@
  * - Meshes with metadata.noShadowCaster (flat ground sheets, roads) must
  *   never be registered — they are receivers, and casting from them is acne.
  * - Blob discs are isPickable=false, metadata.noInk, and never casters.
+ * - A THIRD directional map is the LIGHTNING's (`flash`): the world's casters
+ *   drawn once along a strike, on the frame it starts, so the moon's two maps
+ *   never move for a flash. Render-once, back faces, its own window.
  * - Either map may be OFF (`CONFIG.graphics.shadowTiers`), and off is a bound
  *   1x1 lit texture (`litShadowTexture`) rather than an absent one: every
  *   consumer declares both samplers. A rung change rebuilds a generator at the
@@ -71,6 +74,16 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
  * `BodyShadows`' proxy layer, which a mesh DOES carry.
  */
 const FOLIAGE_LAYER = 0x20000000;
+
+/** The lightning light's layer, for the same reason: it lights nothing. */
+const FLASH_LAYER = 0x40000000;
+
+/**
+ * The lightning map's largest side. A strike lasts half a second and is
+ * judged by the SHAPE of what it throws, so it never needs the moon's full
+ * resolution — and it is a whole world depth pass, once per strike.
+ */
+const FLASH_MAP_MAX = 1024;
 
 export class ShadowSystem {
   private readonly light: DirectionalLight;
@@ -133,6 +146,12 @@ export class ShadowSystem {
   private readonly foliageLight: DirectionalLight;
   private foliageGen: ShadowGenerator | null = null;
   private foliageSize = -1;
+  /** The lightning's own map — see `flash`. Null while the rung has no sun map. */
+  private readonly flashLight: DirectionalLight;
+  private flashGen: ShadowGenerator | null = null;
+  private flashSize = -1;
+  private readonly flashWin = new ShadowWindow();
+  private readonly flashCasters: AbstractMesh[] = [];
   private readonly foliageWin = new ShadowWindow();
   private readonly foliageCasters: AbstractMesh[] = [];
   private fogStart = 24;
@@ -197,7 +216,6 @@ export class ShadowSystem {
     this.light.shadowMaxZ = c.depthRange;
     this.light.autoUpdateExtends = false;
 
-    // The generators are built by `setQuality`, below, once both lights exist.
     // The foliage's front-face map. A light of its own, because a shadow
     // generator is one per light; pinned to a layer no mesh carries, so it can
     // never become a lighting light for a StandardMaterial (BodyShadows' rule).
@@ -207,6 +225,16 @@ export class ShadowSystem {
     this.foliageLight.shadowMinZ = SHADOW_NEAR;
     this.foliageLight.shadowMaxZ = c.depthRange;
     this.foliageLight.autoUpdateExtends = false;
+    // The lightning's light: pinned to a layer nothing carries, aimed per
+    // strike by `flash`, and otherwise the moon's volume exactly.
+    this.flashLight = new DirectionalLight("flashDepth", new Vector3(0, -1, 0), scene);
+    this.flashLight.includeOnlyWithLayerMask = FLASH_LAYER;
+    this.flashLight.shadowFrustumSize = this.window;
+    this.flashLight.shadowMinZ = SHADOW_NEAR;
+    this.flashLight.shadowMaxZ = c.depthRange;
+    this.flashLight.autoUpdateExtends = false;
+
+    // The generators are built here, once all three lights exist.
     this.setQuality(quality);
 
     // Blob shadow: a radial-gradient disc, unlit black, depth-write off so it
@@ -265,6 +293,18 @@ export class ShadowSystem {
       );
       this.mats.setShadowMatrix(this.lightMatrix);
     }
+    const flashSize = Math.min(tier.sun, FLASH_MAP_MAX);
+    if (flashSize !== this.flashSize) {
+      this.flashGen?.dispose();
+      this.flashGen = flashSize > 0 ? this.buildFlash(flashSize) : null;
+      this.flashSize = flashSize;
+      this.flashWin.invalidate();
+      this.mats.setFlashMap(this.flashGen?.getShadowMap() ?? litShadowTexture(this.scene));
+      this.mats.setFlashParams(
+        depthBias(c.bias, c.depthRange),
+        c.pcfRadiusTexels / Math.max(1, flashSize),
+      );
+    }
     if (tier.foliage !== this.foliageSize) {
       this.foliageGen?.dispose();
       this.foliageGen = tier.foliage > 0 ? this.buildFoliage(tier.foliage) : null;
@@ -317,6 +357,53 @@ export class ShadowSystem {
       if (!m.metadata?.noShadowCaster) gen.addShadowCaster(m, false);
     }
     return gen;
+  }
+
+  /**
+   * The lightning's generator at `size`: the world's casters, back faces,
+   * render-once and culled to its own window — `buildWorld` with a different
+   * light, because it is the same question asked from somewhere else.
+   */
+  private buildFlash(size: number): ShadowGenerator {
+    const gen = new ShadowGenerator(size, this.flashLight);
+    gen.bias = 0;
+    gen.forceBackFacesOnly = true;
+    const map = gen.getShadowMap();
+    if (map) {
+      map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+      map.getCustomRenderList = () =>
+        this.cullToWindow(map.renderList ?? [], this.flashWin, this.flashLight, this.flashCasters);
+    }
+    for (const m of this.casters) {
+      if (!m.metadata?.noShadowCaster) gen.addShadowCaster(m, false);
+    }
+    return gen;
+  }
+
+  /**
+   * Aims the lightning's map along a strike and draws it ONCE, around the same
+   * focus the moon's window follows. Called on the frame a strike starts and
+   * at no other time: a strike is half a second, and a player who crosses a
+   * texel in that time is not going to see the shadow lag him.
+   *
+   * The matrix goes to every material here, and the map renders inside this
+   * frame's `scene.render()`, before the main pass that samples it.
+   */
+  flash(direction: Vector3, focus: Vector3): void {
+    const gen = this.flashGen;
+    if (!gen) return;
+    this.flashLight.direction.copyFrom(direction).normalize();
+    this.flashLight.shadowFrustumSize = this.window;
+    this.flashWin.invalidate();
+    this.flashWin.place(
+      this.flashLight,
+      focus,
+      this.window,
+      this.flashSize,
+      CONFIG.graphics.shadows.distance,
+    );
+    gen.getShadowMap()?.resetRefreshCounter();
+    this.mats.setFlashMatrix(gen.getTransformMatrix());
   }
 
   /** The foliage's front-face generator at `size`, with its solids. */
@@ -473,9 +560,15 @@ export class ShadowSystem {
     if (fgen && fmap?.renderList) {
       for (const m of fmap.renderList.slice()) fgen.removeShadowCaster(m, false);
     }
+    const lgen = this.flashGen;
+    const lmap = lgen?.getShadowMap();
+    if (lgen && lmap?.renderList) {
+      for (const m of lmap.renderList.slice()) lgen.removeShadowCaster(m, false);
+    }
     for (const m of meshes) {
       if (m.metadata?.noShadowCaster) continue;
       gen?.addShadowCaster(m, false);
+      lgen?.addShadowCaster(m, false);
       // A translucent SOLID goes in both: the world's map for what it hides,
       // and the foliage's for how thick it is.
       if (this.mats.isSolid(m.material)) fgen?.addShadowCaster(m, false);

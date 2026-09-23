@@ -616,9 +616,9 @@ it SAYS** (`PointLightData.shadow`: fixtures `fixture` by default, carried
 lights and pulses `none`), and a slot the atlas does not hold keeps the
 volume's visibility. **All four maps are one `Shadows` setting**, and a map
 switched off is a bound 1x1 LIT texture, never an unbound one. **A lightning
-flash TAKES the key light** for its length (`flashKey`) and re-aims the moon's
-maps along it, so the key's two objects are held BY REFERENCE and never
-replaced — grass and water bind them too.
+flash is a SECOND key with a map of its own** (`setFlash`, `ShadowSystem.flash`),
+drawn once per strike — the moon's maps never move for it, because re-aiming
+them was a visible snap back after every strike.
 
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`
