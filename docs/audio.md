@@ -741,7 +741,7 @@ eight times as often at 240 Hz as at 30.
 `CONFIG.mix` ([`src/config/mix.ts`](../src/config/mix.ts)) is two tables that
 multiply. **`groups`** is ten FAMILIES — the weapon in your hands, gunfire out
 in the world, reloads and handling, impacts, explosions, footsteps, engines,
-ambience, hit feedback, objective stings — and **`channels`** is forty-two
+ambience, hit feedback, objective stings — and **`channels`** is forty-three
 SOUNDS inside them: the rifle, the carbine, the sniper; the reload, the bolt
 cycle, the swap; a round on glass against a round on stone. **1 is "as
 built"**, and all but two of them ship there: `reload` and `nearMiss` are the
@@ -766,7 +766,7 @@ the bolt cycle beside it is fine". Those two are one gesture apart and 0.8
 seconds apart in the same round, and no arrangement of family levels can tell
 them apart. The same is true of one weapon sitting quiet against the other six.
 
-Going the other way is no better: forty-two sliders with no family above them
+Going the other way is no better: forty-three sliders with no family above them
 means "everybody else's guns are too loud" is nine separate drags that have to
 stay in proportion afterwards.
 

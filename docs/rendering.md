@@ -1766,9 +1766,10 @@ at all — their only occlusion was the volume's per-probe visibility bit
 It still answers for every slot the atlas does not hold.
 
 **One atlas, because there is no binding left for a map per light.** The cel
-shader bound twelve textures against WebGPU's default sixteen before it — the
-atlas is the thirteenth and the lightning's map the fourteenth (the glazing
-variant fourteen), so every shadowed lamp is reached through ONE texture: a
+shader's heaviest variant (a ground texture with its bump) bound twelve
+textures against WebGPU's default sixteen before it — the atlas is the
+thirteenth and the lightning's map the fourteenth; the glazing variant, which
+swaps those two for its reflection cube, is at thirteen. So every shadowed lamp is reached through ONE texture: a
 point light is six square cube-face tiles, a spot is one, and `celShadow`'s
 `localLayer` picks the tile off the slot's base and the face the receiver is
 on. **The face order (+X −X +Y −Y +Z −Z) and each face's frame (`faceFrame` /

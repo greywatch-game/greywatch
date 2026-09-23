@@ -1709,6 +1709,14 @@ export interface ProbeReflection extends CubeReflection {
   boxMax: Vector3;
 }
 
+/** What `CelMaterialFactory.readLighting` hands back — live, read-only. */
+export interface LightingView {
+  readonly lightDir: Vector3;
+  readonly lightColor: Color3;
+  readonly ambient: Color3;
+  readonly sky: Color3;
+}
+
 /**
  * Creates and caches one cel ShaderMaterial per color, and keeps the shared
  * environment uniforms (light, fog, mist, camera, dynamic lights) in sync on
@@ -1786,14 +1794,15 @@ export class CelMaterialFactory {
     "uv2",
   ];
   /**
-   * Every cel material samples both shadow maps and the foliage's depth map,
-   * whatever its albedo path — and every one of them owes all three a BINDING,
-   * translucent or not, because a declared sampler with nothing behind it is a
-   * bind group that fails to build and the draw silently lost.
+   * Every cel material samples the four shadow maps (the moon's, the bodies',
+   * the lamps' atlas and the lightning's), the foliage's depth map and the
+   * irradiance volume's seven textures, whatever its albedo path — and every
+   * one of them owes each a BINDING, translucent or not, because a declared
+   * sampler with nothing behind it is a bind group that fails to build and the
+   * draw silently lost.
    */
   private static readonly SAMPLERS = [
-    "shadowMap",
-    "bodyShadowMap",
+    ...SHADOW_SAMPLER_NAMES,
     "foliageMap",
     ...GI_SAMPLER_NAMES,
   ];
@@ -3037,20 +3046,31 @@ export class CelMaterialFactory {
    * are currently lit by them — for `GiVolume`, which lights the points its
    * rays hit with the same numbers, so a bounce can never describe different
    * weather from the wall it came off. Live references: read, never write.
+   *
+   * One VIEW, built once, whose getters follow the fields — the volume asks
+   * every frame, and `setEnvironment` replaces the ambient and sky objects
+   * rather than copying into them, so a snapshot of references would go stale.
    */
-  readLighting(): {
-    lightDir: Vector3;
-    lightColor: Color3;
-    ambient: Color3;
-    sky: Color3;
-  } {
-    return {
-      lightDir: this.lightDir,
-      lightColor: this.lightColor,
-      ambient: this.ambientColor,
-      sky: this.skyLightColor,
-    };
+  readLighting(): LightingView {
+    return this.lightingView;
   }
+  private readonly lightingView: LightingView = (() => {
+    const f = this;
+    return {
+      get lightDir() {
+        return f.lightDir;
+      },
+      get lightColor() {
+        return f.lightColor;
+      },
+      get ambient() {
+        return f.ambientColor;
+      },
+      get sky() {
+        return f.skyLightColor;
+      },
+    };
+  })();
 
   /**
    * The flat albedo a material was minted with, or null for one that has no

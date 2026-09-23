@@ -809,6 +809,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     }
   }
 
+  // A steady fire's FLICKER rides the fast layer as a signed difference from
+  // its base (GiVolume.chooseFast), estimated from a handful of rays against
+  // a base the history estimated from many; where the two disagree the sum
+  // can dip below zero, and giIrradiance reads a negative constant band as
+  // no light at all — a black hole flickering over the fire. No probe holds
+  // less than no light.
+  c0 = max(c0, vec3f(0.0));
   let at = vec3u(u32(tex.x), u32(tex.y), u32(tex.z));
   textureStore(outIrr, at, vec4f(c0 * valid, floorY));
   textureStore(outDir, at, vec4f(c1 * valid, valid));

@@ -148,6 +148,11 @@ export class GiVolume {
   private warmFrames = 0;
 
   private slow: GiLight[] = [];
+  /** `chooseFast`'s candidates and the records behind them and `fast`. */
+  private readonly fastCands: GiLight[] = [];
+  private readonly candPool: GiLight[] = [];
+  private readonly fastPool: GiLight[] = [];
+  private candUsed = 0;
   private slowAt = new Vector3(Infinity, 0, Infinity);
   private slowOf = -1;
   private readonly fast: GiLight[] = [];
@@ -648,8 +653,13 @@ export class GiVolume {
       if (far > w.y + l.range) continue;
       out.push(lightOf(l, l.baseIntensity, far));
     }
-    out.sort((a, b) => a.score - b.score);
+    out.sort(byScore);
     this.slow = out.slice(0, Math.min(CONFIG.gi.slowLights, GI_MAX_SLOW));
+  }
+
+  /** The next free candidate record from the pool. */
+  private takeCand(): GiLight {
+    return (this.candPool[this.candUsed++] ??= blankLight());
   }
 
   /**
@@ -660,34 +670,42 @@ export class GiVolume {
    * nearest the eye first.
    */
   private chooseFast(eye: Vector3, lighting: LightingSystem): void {
-    const cands: GiLight[] = [];
-    const score = (l: PointLightData): number =>
-      Vector3.Distance(eye, l.position) - l.range;
-    for (const l of lighting.transients) cands.push(lightOf(l, l.intensity, score(l)));
+    // Every record here is POOLED: this runs every frame, and a candidate
+    // object, a closure and a spread per light is garbage per frame.
+    const cands = this.fastCands;
+    cands.length = 0;
+    this.candUsed = 0;
+    for (const l of lighting.transients) {
+      cands.push(lightInto(this.takeCand(), l, l.intensity, fastScore(eye, l)));
+    }
     for (const l of lighting.carriedLights) {
-      cands.push(lightOf(l, l.intensity, score(l)));
+      cands.push(lightInto(this.takeCand(), l, l.intensity, fastScore(eye, l)));
     }
     const near = this.binding.window.y;
     for (const l of lighting.fixtures) {
-      const s = score(l);
+      const s = fastScore(eye, l);
       if (s > near) continue;
-      if (l.fast) cands.push(lightOf(l, l.intensity, s));
+      if (l.fast) cands.push(lightInto(this.takeCand(), l, l.intensity, s));
       else if (
         l.flicker > 0 &&
         Vector3.Distance(eye, l.position) < CONFIG.gi.flickerReach
       ) {
-        cands.push(lightOf(l, l.intensity - l.baseIntensity, s));
+        cands.push(lightInto(this.takeCand(), l, l.intensity - l.baseIntensity, s));
       }
     }
-    cands.sort((a, b) => a.score - b.score);
+    cands.sort(byScore);
     const cluster = CONFIG.gi.fastCluster;
     const cap = Math.min(CONFIG.gi.fastLights, GI_MAX_FAST);
     const fast = this.fast;
     fast.length = 0;
     for (const c of cands) {
-      const into = fast.find(
-        (f) => Math.hypot(f.x - c.x, f.y - c.y, f.z - c.z) < cluster,
-      );
+      let into: GiLight | null = null;
+      for (const f of fast) {
+        if (Math.hypot(f.x - c.x, f.y - c.y, f.z - c.z) < cluster) {
+          into = f;
+          break;
+        }
+      }
       if (into) {
         // Weighted by how much light each carries, so the merged light stands
         // where the fire is brightest.
@@ -704,7 +722,8 @@ export class GiVolume {
         continue;
       }
       if (fast.length >= cap) continue;
-      fast.push({ ...c });
+      // A copy, because a merge writes into it and the candidate is pooled.
+      fast.push(Object.assign((this.fastPool[fast.length] ??= blankLight()), c));
     }
   }
 
@@ -835,8 +854,12 @@ export class GiVolume {
     put4(p, s + 40, this.ox, this.oz, this.refY, total);
     put4(p, s + 44, this.cursor, 0, 0, 0);
 
-    this.slow.forEach((l, i) => writeLight(p, (GI_LAYOUT.slow + i * 2) * 4, l));
-    this.fast.forEach((l, i) => writeLight(p, (GI_LAYOUT.fast + i * 2) * 4, l));
+    for (let i = 0; i < this.slow.length; i++) {
+      writeLight(p, (GI_LAYOUT.slow + i * 2) * 4, this.slow[i]);
+    }
+    for (let i = 0; i < this.fast.length; i++) {
+      writeLight(p, (GI_LAYOUT.fast + i * 2) * 4, this.fast[i]);
+    }
     // The visibility channels: where each one's light stands, whether it
     // must be re-traced this frame, and whether it has a light at all.
     for (let i = 0; i < GI_SLOTS; i++) {
@@ -868,16 +891,38 @@ function put4(p: Float32Array, o: number, a: number, b: number, c: number, d: nu
 }
 
 function lightOf(l: PointLightData, intensity: number, score: number): GiLight {
-  return {
-    x: l.position.x,
-    y: l.position.y,
-    z: l.position.z,
-    range: l.range,
-    r: l.color.r * intensity,
-    g: l.color.g * intensity,
-    b: l.color.b * intensity,
-    score,
-  };
+  return lightInto(blankLight(), l, intensity, score);
+}
+
+function blankLight(): GiLight {
+  return { x: 0, y: 0, z: 0, range: 0, r: 0, g: 0, b: 0, score: 0 };
+}
+
+/** Writes `l` into `out` and hands it back — `lightOf` without the object. */
+function lightInto(
+  out: GiLight,
+  l: PointLightData,
+  intensity: number,
+  score: number,
+): GiLight {
+  out.x = l.position.x;
+  out.y = l.position.y;
+  out.z = l.position.z;
+  out.range = l.range;
+  out.r = l.color.r * intensity;
+  out.g = l.color.g * intensity;
+  out.b = l.color.b * intensity;
+  out.score = score;
+  return out;
+}
+
+function byScore(a: GiLight, b: GiLight): number {
+  return a.score - b.score;
+}
+
+/** How far past its own reach a light is from the eye — nearest first. */
+function fastScore(eye: Vector3, l: PointLightData): number {
+  return Vector3.Distance(eye, l.position) - l.range;
 }
 
 function writeLight(p: Float32Array, o: number, l: GiLight): void {
