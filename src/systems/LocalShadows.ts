@@ -294,6 +294,9 @@ export class LocalShadows {
   /** This frame's body matrices, packed once and copied per face. */
   private readonly bodyMatrices: Float32Array;
   private readonly bodyAt: Vector3[] = [];
+  /** Nearest-a-light selection scratch, reused frame to frame. See `packBodies`. */
+  private readonly pickedBodies: (ShadowBody | null)[] = [];
+  private readonly pickedGap: number[] = [];
   /** Boxes in each packed slot: a soldier's bones, or a hull's one. */
   private readonly bodyBoxCount: number[] = [];
   private bodyCount = 0;
@@ -573,16 +576,7 @@ export class LocalShadows {
 
     const chosen = this.choose(active, eye, tier);
 
-    // Everything not chosen gives its tiles back. The static cache is lost
-    // with them, which is what `keepMargin` exists to make rare.
-    for (const [light, e] of this.entries) {
-      if (!chosen.includes(e)) {
-        this.release(e);
-        this.entries.delete(light);
-      }
-    }
-
-    this.packBodies(bodies, hulls, eye);
+    this.packBodies(bodies, hulls);
     const c = CONFIG.graphics.localShadows;
     const dynamicFrame = this.frame % tier.every === 0;
     let bakeBudget = c.staticFacesPerFrame;
@@ -643,6 +637,8 @@ export class LocalShadows {
    */
   private readonly ranked: { e: PointLightData; score: number; moving: boolean }[] = [];
   private readonly chosen: Entry[] = [];
+  /** The top of `ranked` this frame, by light — reused, never reallocated. */
+  private readonly wanted = new Set<PointLightData>();
   private choose(
     active: readonly PointLightData[],
     eye: Vector3,
@@ -664,10 +660,25 @@ export class LocalShadows {
       ranked.push({ e: l, score, moving });
     }
     ranked.sort((a, b) => a.score - b.score);
+    const want = Math.min(ranked.length, tier.lights);
+    // Everything outside the top `want` gives its tiles back — its static
+    // cache with them, which is what `keepMargin` exists to make rare — and
+    // BEFORE anything is admitted. Admitting first let a light that had lost its place keep
+    // its tiles through the frame a better one asked for them — and a blast,
+    // which lives a third of a second, never found room at all.
+    const wanted = this.wanted;
+    wanted.clear();
+    for (let i = 0; i < want; i++) wanted.add(ranked[i].e);
+    for (const [light, e] of this.entries) {
+      if (!wanted.has(light)) {
+        this.release(e);
+        this.entries.delete(light);
+      }
+    }
     const chosen = this.chosen;
     chosen.length = 0;
-    for (const r of ranked) {
-      if (chosen.length >= tier.lights) break;
+    for (let i = 0; i < want; i++) {
+      const r = ranked[i];
       let e: Entry | null | undefined = this.entries.get(r.e);
       if (e && e.moving !== r.moving) {
         this.release(e);
@@ -676,6 +687,17 @@ export class LocalShadows {
       }
       if (!e) {
         e = this.admit(r.e, r.moving);
+        // Still no room — six cube faces is a big run, and the fixtures'
+        // dynamic tiles hold the rest: the LOWEST-ranked holder below this
+        // light gives its tiles up, one at a time, until it fits. Only ever
+        // downward, so no light evicts one that outranks it.
+        for (let j = want - 1; !e && j > i; j--) {
+          const victim = this.entries.get(ranked[j].e);
+          if (!victim) continue;
+          this.release(victim);
+          this.entries.delete(ranked[j].e);
+          e = this.admit(r.e, r.moving);
+        }
         if (!e) continue;
         this.entries.set(r.e, e);
       }
@@ -807,43 +829,80 @@ export class LocalShadows {
     return true;
   }
 
-  /** This frame's soldiers and hulls, packed once. */
+  /**
+   * This frame's soldiers and hulls, packed once — the ones NEAREST a
+   * shadowed light, not the first to arrive. A body is worth a slot only
+   * while it stands inside some chosen light's reach, and on a map fielding
+   * twenty-four a side more than `maxBodies` can be; so a full frame keeps the
+   * bodies deepest inside a light, by the same replace-the-worst selection
+   * `BodyShadows` spends its budget with, and the common frame compares
+   * nothing. Hulls have their own `maxHulls` slots, as in `BodyShadows`: they
+   * came after the soldiers in one shared budget and never got one.
+   */
   private packBodies(
     bodies: readonly ShadowBody[],
     hulls: readonly ShadowHull[],
-    eye: Vector3,
   ): void {
     this.bodyCount = 0;
-    if (this.entries.size === 0) return;
-    const cap = this.bodyMatrices.length / 16;
+    if (this.chosen.length === 0) return;
+    const c = CONFIG.graphics.bodyShadows;
     const per = this.bodyBoxes.perBody;
-    // Only bodies a shadowed light could reach are worth the joint reads.
-    let reach = 0;
-    for (const e of this.entries.values()) {
-      reach = Math.max(reach, Vector3.Distance(eye, e.at) + e.range + 2);
-    }
-    let n = 0;
+    const picked = this.pickedBodies;
+    const gap = this.pickedGap;
+    let m = 0;
     for (const b of bodies) {
       const root = b.rig.root;
       if (!root.isEnabled()) continue;
-      if (Vector3.Distance(eye, root.absolutePosition) > reach) continue;
-      if ((n + 1) * per > cap) break;
-      this.bodyBoxes.writeRig(b.rig, this.bodyMatrices, n * per);
+      // The body box is 1.3 m either way of its root — see `packDynamic`.
+      const g = this.lightGap(root.absolutePosition);
+      if (g > 1.5) continue;
+      if (m < c.maxBodies) {
+        picked[m] = b;
+        gap[m] = g;
+        m++;
+        continue;
+      }
+      let worst = 0;
+      for (let i = 1; i < m; i++) if (gap[i] > gap[worst]) worst = i;
+      if (g >= gap[worst]) continue;
+      picked[worst] = b;
+      gap[worst] = g;
+    }
+    let n = 0;
+    for (let i = 0; i < m; i++) {
+      const rig = picked[i]!.rig;
+      this.bodyBoxes.writeRig(rig, this.bodyMatrices, n * per);
       this.bodyBoxCount[n] = per;
-      (this.bodyAt[n] ??= new Vector3()).copyFrom(root.absolutePosition);
+      (this.bodyAt[n] ??= new Vector3()).copyFrom(rig.root.absolutePosition);
       n++;
+      // Dropped so a pooled rig cannot be held alive by this list.
+      picked[i] = null;
     }
     // A hull takes a soldier's slot and uses one box of it, so the two
-    // index alike.
+    // index alike; `bodyMatrices` is sized for both budgets.
+    let hullsIn = 0;
     for (const h of hulls) {
+      if (hullsIn >= c.maxHulls) break;
       if (!h.body.isEnabled()) continue;
-      if ((n + 1) * per > cap) break;
+      const at = h.body.getAbsolutePosition();
+      // A hull's box is 4 m either way.
+      if (this.lightGap(at) > 4) continue;
       this.bodyBoxes.writeHull(h, this.bodyMatrices, n * per);
       this.bodyBoxCount[n] = 1;
-      (this.bodyAt[n] ??= new Vector3()).copyFrom(h.body.getAbsolutePosition());
+      (this.bodyAt[n] ??= new Vector3()).copyFrom(at);
       n++;
+      hullsIn++;
     }
     this.bodyCount = n;
+  }
+
+  /** How far `p` stands outside the nearest chosen light's reach (negative inside). */
+  private lightGap(p: Vector3): number {
+    let best = Infinity;
+    for (const e of this.chosen) {
+      best = Math.min(best, Vector3.Distance(p, e.at) - e.range);
+    }
+    return best;
   }
 
   private anyBodyWithin(at: Vector3, reach: number): boolean {
@@ -947,6 +1006,19 @@ export class LocalShadows {
         }
       }
     }
+  }
+
+  /**
+   * Re-deals the published tiles onto slots `LightingSystem` has just
+   * re-ordered, for a frame that re-ran the light choice without running
+   * `update` — the kit stage, whose lamps take the first slots. The tiles are
+   * keyed by LIGHT, so a lantern still in the list keeps its own in its new
+   * slot and a kit lamp gets none; without this, a slot keeps the tiles of
+   * whichever light held it last and is shadowed against the wrong position.
+   * Allocates, bakes and draws nothing.
+   */
+  reslot(active: readonly PointLightData[]): void {
+    this.publish(active);
   }
 
   /**

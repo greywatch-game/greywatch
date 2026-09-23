@@ -268,7 +268,8 @@ export const PARENT_OF: Readonly<
   hudDraw: "frame",
   post: "frame",
   culling: "frame",
-  localShadows: "gameplay",
+  // Bracketed inside `updateSceneForCamera`, which the `camera` span holds.
+  localShadows: "camera",
   gi: "frame",
   audio: "frame",
   render: "frame",

@@ -216,6 +216,8 @@ frame                       the whole tick, wall to wall
 │  │  ├─ combat, grenades, antiTank
 │  │  └─ physics            Havok and its three clients
 │  ├─ camera                the eye, the lights, the chase cam
+│  │  └─ localShadows       which lamps cast, their proxies packed (the passes
+│  │                        themselves are drawn inside render)
 │  ├─ zones                 the capture rings
 │  └─ hud                   what a gameplay frame pushes at the chrome
 ├─ hudDraw                  HUD.update — every state owes it

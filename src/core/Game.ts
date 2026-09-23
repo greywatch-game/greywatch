@@ -2754,6 +2754,9 @@ export class Game {
       );
     });
     this.lighting.update(dt, camera.position, this.mats);
+    // The slots were just re-dealt with no `LocalShadows.update` after them,
+    // so the published tiles follow their lights to the new slots.
+    this.localShadows.reslot(this.lighting.activeLights);
   }
 
   /**
