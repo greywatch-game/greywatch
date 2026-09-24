@@ -89,6 +89,16 @@ const SUPPORT_HAND = new Vector3(-0.02, -0.11 + BORE_Y, 0.32);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.53 + BORE_Y, 0.04);
 
 /**
+ * Where the support hand goes for the box swap: an OFFSET from its rest
+ * (`ViewModel.poseReload` blends it in from zero). The shared
+ * `CONFIG.viewmodel.magHandOffset` is sized for a rifle magazine and left the
+ * fist hanging off the box's lower back corner. This one closes it on the
+ * box's left flank, over its middle, and further outboard than a rifle hand,
+ * because the box is twice a magazine's width.
+ */
+const MAG_HAND = new Vector3(-0.052, -0.05, -0.28);
+
+/**
  * Builds a cel-styled FN M249 / Minimi. Local +z is the barrel axis, origin at
  * the receiver centre — the same frame the other weapons are built in, so the
  * viewmodel poses any of them with the same numbers — with the bore `BORE_Y`
@@ -616,8 +626,7 @@ export function buildLmg(
     ejectPort: new Vector3(0.046, 0.015, 0.03),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
-    // No `magHand`: the shared offset takes the support hand back and down to
-    // a magwell under the receiver, and this weapon's box is exactly there.
+    magHand: MAG_HAND,
     magazine,
     finish,
     sights: { kind: "fitted", assemblies: optics.sights },

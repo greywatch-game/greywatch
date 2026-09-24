@@ -91,8 +91,13 @@ const SUPPORT_ELBOW = new Vector3(-0.302, -0.478, -0.344);
  * grip, because that is where this weapon's magazine lives — the shared offset
  * in `CONFIG.viewmodel.magHandOffset` takes the hand back to a magwell under a
  * receiver, and applied here it throws the arm out behind the gun.
+ *
+ * It puts the fist's fingers at the FLOORPLATE, so the heel of the hand is
+ * what drives the magazine home. It is measured against `gripPivot` and has to
+ * move whenever that pivot moves. When the grip was raised it stayed put and
+ * left the magazine riding in three centimetres above the fist.
  */
-const MAG_HAND = new Vector3(-0.02, -0.14, -0.03);
+const MAG_HAND = new Vector3(-0.02, -0.11, -0.07);
 
 /**
  * How far the eye is held behind the notch when aimed (m) — this weapon's own,

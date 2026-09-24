@@ -72,6 +72,17 @@ const SUPPORT_HAND = new Vector3(-0.02, -0.08 + BORE_Y, 0.235);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.48 + BORE_Y, 0.0);
 
 /**
+ * Where the support hand goes for the magazine swap: an OFFSET from its rest
+ * (`ViewModel.poseReload` blends it in from zero). The shared
+ * `CONFIG.viewmodel.magHandOffset` is a rifle's trip back to a well a third of
+ * a metre behind the handguard; this weapon's handguard is short and its well
+ * is only 0.19 behind it, so the shared offset closed the fist on the air in
+ * front of the pistol grip. This one lands the hand on the upper half of the
+ * magazine's exposed body, where the rifle's does.
+ */
+const MAG_HAND = new Vector3(-0.02, -0.126, -0.185);
+
+/**
  * Builds a cel-styled SIG MPX. Local +z is the barrel axis, origin at the
  * receiver centre — the same frame the rifle is built in, so the viewmodel
  * poses either one with the same numbers — with the bore `BORE_Y` above it.
@@ -419,6 +430,7 @@ export function buildSmg(
     ejectPort: new Vector3(0.036, 0.032, -0.008),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
+    magHand: MAG_HAND,
     magazine,
     magDrop: magDropAxis(MAG_RAKE),
     finish,
