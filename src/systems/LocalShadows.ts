@@ -320,6 +320,10 @@ export class LocalShadows {
   private bakeLists: AbstractMesh[][] = [];
   private drawDynamic = false;
   private readonly proxyList: AbstractMesh[] = [];
+  /** `ready`'s latch: both passes' effects have compiled for this atlas. */
+  private warm = false;
+  /** The slots `update` last published against, for `render` to re-publish. */
+  private published: readonly PointLightData[] = [];
   private readonly clearList: AbstractMesh[] = [];
   private list: AbstractMesh[] = [];
 
@@ -438,6 +442,8 @@ export class LocalShadows {
       this.clearSheet = this.buildClearSheet();
       this.fullClear = true;
     }
+    // A new atlas is a new render pass, and `ready` asks per pass.
+    this.warm = false;
     const side = 1 / Math.max(1, this.tilesPerRow);
     this.atlasShape.set(Math.max(1, this.tilesPerRow), side, 0, 0);
     const slots = this.mats.localSlots;
@@ -584,6 +590,7 @@ export class LocalShadows {
     this.proxyCount = 0;
     this.clearFlags.fill(0);
     const tier = this.tier;
+    this.published = active;
     if (!this.atlas || tier.lights === 0 || !this.index || !this.ready()) {
       this.releaseAll();
       this.publish(active);
@@ -637,12 +644,29 @@ export class LocalShadows {
     this.publish(active);
   }
 
-  /** Whether every material this draws with has compiled. */
+  /**
+   * Whether every material this draws with has compiled — asked through
+   * `compiled`, so in the ATLAS's pass and with the instancing each is drawn
+   * with. The proxy is only ever drawn THIN-INSTANCED, and Babylon adds that
+   * define only while the count is above zero, so the count is held at one
+   * for the question: a plain `isReady(proxy)` warms the non-instanced effect
+   * the pass never uses, and answered yes while the real one was still
+   * compiling — the first dynamic pass then drew nothing over tiles already
+   * cleared to lit and published as drawn. Latched once true: the effects
+   * outlive every frame until the atlas (and its pass id) is rebuilt.
+   */
   private ready(): boolean {
-    return (
-      this.proxyMat.isReady(this.proxy) &&
-      (this.clearSheet ? this.clearMat.isReady(this.clearSheet) : false)
-    );
+    if (this.warm) return true;
+    const atlas = this.atlas;
+    if (!atlas || !this.clearSheet) return false;
+    const n = this.proxy.thinInstanceCount;
+    if (n === 0) this.proxy.thinInstanceCount = 1;
+    // Both asked, not short-circuited, so both start compiling together.
+    const proxy = this.compiled(atlas, this.proxyMat, this.proxyList);
+    const clear = this.compiled(atlas, this.clearMat, this.clearList);
+    this.proxy.thinInstanceCount = n;
+    this.warm = proxy && clear;
+    return this.warm;
   }
 
   /**
@@ -1182,6 +1206,7 @@ export class LocalShadows {
     if (any) this.pass(atlas, this.clearList);
 
     const bake = this.bakeQueue;
+    let rewound = false;
     for (let j = 0; j < bake.length; j++) {
       const { entry, face } = bake[j];
       const tile = entry.staticBase + face;
@@ -1213,11 +1238,18 @@ export class LocalShadows {
         // than being published empty for as long as the light holds its tiles.
         if (!this.compiled(atlas, mat, meshes)) {
           entry.baked = Math.min(entry.baked, face);
+          rewound = true;
           continue;
         }
       }
       this.pass(atlas, meshes);
     }
+    // `update` published this frame's slots before any of the above ran, and
+    // it counts a static layer live once its last face is QUEUED — so a face
+    // just handed back is a layer published over a tile the clear has reset
+    // to lit. Publishing again, into the arrays the main pass has not read
+    // yet, takes that layer back out until its last face really bakes.
+    if (rewound) this.publish(this.published);
 
     if (this.drawDynamic && this.proxyCount > 0) this.pass(atlas, this.proxyList);
 
