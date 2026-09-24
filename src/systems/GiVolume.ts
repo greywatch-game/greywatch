@@ -718,36 +718,40 @@ export class GiVolume {
   private chooseFast(eye: Vector3, lighting: LightingSystem): void {
     // Every record here is POOLED: this runs every frame, and a candidate
     // object, a closure and a spread per light is garbage per frame.
+    // And no DOUBLE crosses a call: a number handed to or returned from a
+    // function V8 does not inline is boxed, and `Vector3.Distance`, a score
+    // argument and `Object.assign` were ~3 kB a frame of exactly that. So the
+    // distances are inline arithmetic and `fillCand` takes objects and a flag.
     const cands = this.fastCands;
     cands.length = 0;
     this.candUsed = 0;
-    for (const l of lighting.transients) {
-      cands.push(lightInto(this.takeCand(), l, l.intensity, fastScore(eye, l)));
-    }
-    for (const l of lighting.carriedLights) {
-      cands.push(lightInto(this.takeCand(), l, l.intensity, fastScore(eye, l)));
-    }
-    const near = this.binding.window.y;
-    for (const l of lighting.fixtures) {
-      const s = fastScore(eye, l);
-      if (s > near) continue;
-      if (l.fast) cands.push(lightInto(this.takeCand(), l, l.intensity, s));
-      else if (
-        l.flicker > 0 &&
-        Vector3.Distance(eye, l.position) < CONFIG.gi.flickerReach
-      ) {
-        cands.push(lightInto(this.takeCand(), l, l.intensity - l.baseIntensity, s));
-      }
+    // Indexed loops, not `for...of`: on the tier this function runs at, an
+    // array iterator is an allocation per loop, and the cluster test's inner
+    // loop runs once per candidate.
+    const transients = lighting.transients;
+    for (let i = 0; i < transients.length; i++) this.fillCand(transients[i], eye, false);
+    const carried = lighting.carriedLights;
+    for (let i = 0; i < carried.length; i++) this.fillCand(carried[i], eye, false);
+    const fixtures = lighting.fixtures;
+    for (let i = 0; i < fixtures.length; i++) {
+      const l = fixtures[i];
+      const kind = this.fastKind(l, eye);
+      if (kind !== FAST_NONE) this.fillCand(l, eye, kind === FAST_FLICKER);
     }
     sortByScore(cands);
-    const cluster = CONFIG.gi.fastCluster;
+    const cluster2 = CONFIG.gi.fastCluster * CONFIG.gi.fastCluster;
     const cap = Math.min(CONFIG.gi.fastLights, GI_MAX_FAST);
     const fast = this.fast;
     fast.length = 0;
-    for (const c of cands) {
+    for (let i = 0; i < cands.length; i++) {
+      const c = cands[i];
       let into: GiLight | null = null;
-      for (const f of fast) {
-        if (Math.hypot(f.x - c.x, f.y - c.y, f.z - c.z) < cluster) {
+      for (let j = 0; j < fast.length; j++) {
+        const f = fast[j];
+        const dx = f.x - c.x;
+        const dy = f.y - c.y;
+        const dz = f.z - c.z;
+        if (dx * dx + dy * dy + dz * dz < cluster2) {
           into = f;
           break;
         }
@@ -769,8 +773,52 @@ export class GiVolume {
       }
       if (fast.length >= cap) continue;
       // A copy, because a merge writes into it and the candidate is pooled.
-      fast.push(Object.assign((this.fastPool[fast.length] ??= blankLight()), c));
+      fast.push(copyLight((this.fastPool[fast.length] ??= blankLight()), c));
     }
+  }
+
+  /**
+   * Whether a fixture is a fast candidate this frame, and which kind — an
+   * integer, and no double in or out. It is its own method for the JIT rather
+   * than for the reader: `chooseFast` runs once a frame and V8 leaves it on
+   * its mid tier, which does not inline `Vector3`'s getters, so every
+   * `position.x` there was a boxed number — ~6 kB a frame over Hollowmere's
+   * fixtures, measured. Called once per fixture, this reaches the top tier,
+   * where the getters inline and nothing is boxed.
+   */
+  private fastKind(l: RoomLight, eye: Vector3): number {
+    const p = l.position;
+    const dx = p.x - eye.x;
+    const dy = p.y - eye.y;
+    const dz = p.z - eye.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d - l.range > this.binding.window.y) return FAST_NONE;
+    if (l.fast) return FAST_WHOLE;
+    return l.flicker > 0 && d < CONFIG.gi.flickerReach ? FAST_FLICKER : FAST_NONE;
+  }
+
+  /**
+   * One pooled candidate for `chooseFast`, scored nearest-first past its own
+   * reach. `flicker` takes only what the flame adds over its base, which the
+   * slow layer already bounces. Computes its own distance rather than taking
+   * one, so no double is passed in (see `chooseFast`).
+   */
+  private fillCand(l: PointLightData, eye: Vector3, flicker: boolean): void {
+    const c = this.takeCand();
+    const p = l.position;
+    const dx = p.x - eye.x;
+    const dy = p.y - eye.y;
+    const dz = p.z - eye.z;
+    const k = flicker ? l.intensity - (l as RoomLight).baseIntensity : l.intensity;
+    c.x = p.x;
+    c.y = p.y;
+    c.z = p.z;
+    c.range = l.range;
+    c.r = l.color.r * k;
+    c.g = l.color.g * k;
+    c.b = l.color.b * k;
+    c.score = Math.sqrt(dx * dx + dy * dy + dz * dz) - l.range;
+    this.fastCands.push(c);
   }
 
   /**
@@ -940,8 +988,26 @@ function lightOf(l: PointLightData, intensity: number, score: number): GiLight {
   return lightInto(blankLight(), l, intensity, score);
 }
 
+/** `GiVolume.fastKind`'s answers. */
+const FAST_NONE = 0;
+const FAST_WHOLE = 1;
+const FAST_FLICKER = 2;
+
 function blankLight(): GiLight {
   return { x: 0, y: 0, z: 0, range: 0, r: 0, g: 0, b: 0, score: 0 };
+}
+
+/** `Object.assign` for a `GiLight`, field by field so nothing is boxed. */
+function copyLight(out: GiLight, src: GiLight): GiLight {
+  out.x = src.x;
+  out.y = src.y;
+  out.z = src.z;
+  out.range = src.range;
+  out.r = src.r;
+  out.g = src.g;
+  out.b = src.b;
+  out.score = src.score;
+  return out;
 }
 
 /** Writes `l` into `out` and hands it back — `lightOf` without the object. */
@@ -981,11 +1047,6 @@ function sortByScore(list: GiLight[]): void {
     }
     list[j + 1] = c;
   }
-}
-
-/** How far past its own reach a light is from the eye — nearest first. */
-function fastScore(eye: Vector3, l: PointLightData): number {
-  return Vector3.Distance(eye, l.position) - l.range;
 }
 
 function writeLight(p: Float32Array, o: number, l: GiLight): void {

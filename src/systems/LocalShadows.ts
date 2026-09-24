@@ -306,6 +306,8 @@ export class LocalShadows {
   /** This frame's body matrices, packed once and copied per face. */
   private readonly bodyMatrices: Float32Array;
   private readonly bodyAt: Vector3[] = [];
+  /** A box for `reaches` whose caller does not already hold one in an array. */
+  private readonly probe = new Float64Array(6);
   /** Nearest-a-light selection scratch, reused frame to frame. See `packBodies`. */
   private readonly pickedBodies: (ShadowBody | null)[] = [];
   private readonly pickedGap: number[] = [];
@@ -836,15 +838,27 @@ export class LocalShadows {
    * Whether an axis-aligned box (centre, half extents) can reach a tile's
    * face: inside the light's range and inside the face's four side planes,
    * each tested as a half-space through the light.
+   *
+   * The box is READ from `v` at `at` — centre then half extents, `boxBounds`'
+   * own layout — rather than passed as six numbers: this runs per box per
+   * face every frame, and a double handed to a call V8 does not inline is a
+   * boxed number. A caller whose box is not already in an array fills
+   * `probe`.
    */
-  private reaches(t: number, cx: number, cy: number, cz: number, ex: number, ey: number, ez: number): boolean {
+  private reaches(t: number, v: Float32Array | Float64Array, at: number): boolean {
+    const cx = v[at];
+    const cy = v[at + 1];
+    const cz = v[at + 2];
+    const ex = v[at + 3];
+    const ey = v[at + 4];
+    const ez = v[at + 5];
     const o = t * 16;
     const f = this.faces;
     const lx = cx - f[o];
     const ly = cy - f[o + 1];
     const lz = cz - f[o + 2];
     const range = f[o + 3];
-    const rad = Math.hypot(ex, ey, ez);
+    const rad = Math.sqrt(ex * ex + ey * ey + ez * ez);
     if (lx * lx + ly * ly + lz * lz > (range + rad) ** 2) return false;
     const th = f[o + 7];
     // Side planes: forward * tanHalf +/- right, forward * tanHalf +/- up.
@@ -980,20 +994,27 @@ export class LocalShadows {
         const o = i * 6;
         for (let f = 0; f < e.faces; f++) {
           const t = e.dynBase + f;
-          if (!this.reaches(t, bb[o], bb[o + 1], bb[o + 2], bb[o + 3], bb[o + 4], bb[o + 5])) continue;
+          if (!this.reaches(t, bb, o)) continue;
           if (!this.emit(this.boxMatrices, i, t)) return;
         }
       }
     }
     const per = this.bodyBoxes.perBody;
+    const probe = this.probe;
     for (let b = 0; b < this.bodyCount; b++) {
       const p = this.bodyAt[b];
+      // A body as a box of 1.3 m either way of its root — a hull as 4 —
+      // generous, and the fragment stage clips whatever lands outside.
+      const size = this.bodyBoxCount[b] === 1 ? 4 : 1.3;
+      probe[0] = p.x;
+      probe[1] = p.y;
+      probe[2] = p.z;
+      probe[3] = size;
+      probe[4] = size;
+      probe[5] = size;
       for (let f = 0; f < e.faces; f++) {
         const t = e.dynBase + f;
-        // A body as a box of 1.3 m either way of its root — a hull as 4 —
-        // generous, and the fragment stage clips whatever lands outside.
-        const size = this.bodyBoxCount[b] === 1 ? 4 : 1.3;
-        if (!this.reaches(t, p.x, p.y, p.z, size, size, size)) continue;
+        if (!this.reaches(t, probe, 0)) continue;
         for (let k = 0; k < this.bodyBoxCount[b]; k++) {
           if (!this.emit(this.bodyMatrices, b * per + k, t)) return;
         }
@@ -1004,7 +1025,12 @@ export class LocalShadows {
   /** Copies one matrix into the proxy buffer for tile `t`. False when full. */
   private emit(src: Float32Array, i: number, t: number): boolean {
     if (this.proxyCount >= this.proxyTiles.length) return false;
-    this.proxyMatrices.set(src.subarray(i * 16, i * 16 + 16), this.proxyCount * 16);
+    // A loop rather than `set(src.subarray(..))`: a subarray is a new view
+    // object per call, and this is per box per face — ~5 kB a frame of them.
+    const dst = this.proxyMatrices;
+    const from = i * 16;
+    const to = this.proxyCount * 16;
+    for (let k = 0; k < 16; k++) dst[to + k] = src[from + k];
     this.proxyTiles[this.proxyCount] = t;
     this.proxyCount++;
     return true;
@@ -1169,7 +1195,14 @@ export class LocalShadows {
           const bb = m.getBoundingInfo().boundingBox;
           const c = bb.centerWorld;
           const x = bb.extendSizeWorld;
-          if (!this.reaches(tile, c.x, c.y, c.z, x.x, x.y, x.z)) continue;
+          const probe = this.probe;
+          probe[0] = c.x;
+          probe[1] = c.y;
+          probe[2] = c.z;
+          probe[3] = x.x;
+          probe[4] = x.y;
+          probe[5] = x.z;
+          if (!this.reaches(tile, probe, 0)) continue;
           meshes.push(m);
         }
         atlas.setMaterialForRendering(meshes, mat);
