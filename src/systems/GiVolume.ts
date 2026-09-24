@@ -739,7 +739,7 @@ export class GiVolume {
         cands.push(lightInto(this.takeCand(), l, l.intensity - l.baseIntensity, s));
       }
     }
-    cands.sort(byScore);
+    sortByScore(cands);
     const cluster = CONFIG.gi.fastCluster;
     const cap = Math.min(CONFIG.gi.fastLights, GI_MAX_FAST);
     const fast = this.fast;
@@ -964,6 +964,23 @@ function lightInto(
 
 function byScore(a: GiLight, b: GiLight): number {
   return a.score - b.score;
+}
+
+/**
+ * `byScore` as an in-place INSERTION sort, for the per-frame list: V8's
+ * `Array.prototype.sort` allocates a work array on every call, and the fast
+ * candidates are a handful of lights. Stable, as `sort` is.
+ */
+function sortByScore(list: GiLight[]): void {
+  for (let i = 1; i < list.length; i++) {
+    const c = list[i];
+    let j = i - 1;
+    while (j >= 0 && list[j].score > c.score) {
+      list[j + 1] = list[j];
+      j--;
+    }
+    list[j + 1] = c;
+  }
 }
 
 /** How far past its own reach a light is from the eye — nearest first. */

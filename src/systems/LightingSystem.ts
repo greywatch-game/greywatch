@@ -94,6 +94,13 @@ export class LightingSystem {
    */
   private readonly carriedList: RoomLight[] = [];
   private active: PointLightData[] = [];
+  /**
+   * `update`'s nearest-first pick: a fixture is taken this frame when its
+   * entry equals `takenFrame`, so nothing is cleared or allocated per frame.
+   * Holes read `undefined`, which no stamp equals.
+   */
+  private readonly takenStamp: number[] = [];
+  private takenFrame = 0;
   private t = 0;
   /** The flicker phases. See `FLICKER_SEED`. */
   private rand: () => number = mulberry32(FLICKER_SEED);
@@ -323,13 +330,16 @@ export class LightingSystem {
     } else {
       // Partial selection: repeatedly take the nearest not-yet-taken light.
       // Cheaper than sorting the whole list and the counts here are small.
+      // `taken` is a STAMP per fixture rather than a Set built per frame: this
+      // branch runs every frame on any map with more fixtures than free slots.
       const slots = MAX_POINT_LIGHTS - this.active.length;
-      const taken = new Set<number>();
+      const taken = this.takenStamp;
+      const stamp = ++this.takenFrame;
       for (let s = 0; s < slots; s++) {
         let best = -1;
         let bestScore = Infinity;
         for (let i = 0; i < this.lights.length; i++) {
-          if (taken.has(i)) continue;
+          if (taken[i] === stamp) continue;
           const l = this.lights[i];
           // Distance beyond the light's own reach — a big bright fixture
           // outranks a dim one at the same distance.
@@ -340,7 +350,7 @@ export class LightingSystem {
           }
         }
         if (best < 0) break;
-        taken.add(best);
+        taken[best] = stamp;
         this.active.push(this.lights[best]);
       }
     }

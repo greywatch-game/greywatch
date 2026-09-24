@@ -3215,18 +3215,24 @@ export class CelMaterialFactory {
    * writing them.
    */
   get localSlots(): {
-    spot: Float32Array;
-    shade: Float32Array;
-    atlas: Vector4;
-    params: Vector4;
+    readonly spot: Float32Array;
+    readonly shade: Float32Array;
+    readonly atlas: Vector4;
+    readonly params: Vector4;
   } {
-    return {
-      spot: this.pointSpot,
-      shade: this.pointShade,
-      atlas: this.localAtlas,
-      params: this.localParams,
-    };
+    return this.localSlotsView;
   }
+  /**
+   * `localSlots`' answer, built ONCE: `LocalShadows.publish` asks for it
+   * every frame, and a fresh literal per ask is garbage per frame. Every
+   * field it points at is `readonly`, so the view can never go stale.
+   */
+  private readonly localSlotsView = {
+    spot: this.pointSpot,
+    shade: this.pointShade,
+    atlas: this.localAtlas,
+    params: this.localParams,
+  } as const;
 
   /**
    * The FOLIAGE's depth map: front faces of the translucent solids, and
