@@ -2109,7 +2109,9 @@ export class Sfx {
   /**
    * Starts every thunder layer now due. Pushed from `tick` in every state
    * beside the strikes themselves; a suspended context holds its clock, so a
-   * pause holds the queue with it.
+   * pause holds the queue with it — and `Game.pushLightning` holds the offline
+   * strike clock too, or the queue went on GROWING under a pause it could not
+   * drain.
    */
   thunderStep(): void {
     const q = this.thunderQueue;

@@ -945,6 +945,32 @@ export class LocalShadows {
     return false;
   }
 
+  /**
+   * Whether `p` is inside box `i` itself, in the box's OWN frame. The AABB in
+   * `boxBounds` is only the early-out: a 10 m wall yawed 45 degrees has a 7 m
+   * square AABB, and a lamp hung 0.3 m off that wall stands inside it — so an
+   * AABB verdict dropped the wall from the lamp's casters and lit the room
+   * behind it. The matrix's first three rows are the box's axes scaled by its
+   * size, so `p`'s coordinate along each, over that axis's squared length, is
+   * in unit-box units and inside is under a half on all three.
+   */
+  private contains(i: number, p: Vector3): boolean {
+    const m = this.boxMatrices;
+    const o = i * 16;
+    const dx = p.x - m[o + 12];
+    const dy = p.y - m[o + 13];
+    const dz = p.z - m[o + 14];
+    for (let a = 0; a < 3; a++) {
+      const ax = m[o + a * 4];
+      const ay = m[o + a * 4 + 1];
+      const az = m[o + a * 4 + 2];
+      const len2 = ax * ax + ay * ay + az * az;
+      if (len2 <= 0) return false;
+      if (Math.abs(dx * ax + dy * ay + dz * az) >= 0.5 * len2) return false;
+    }
+    return true;
+  }
+
   /** One light's dynamic layer into the proxy buffer. */
   private packDynamic(e: Entry): void {
     if (e.moving) {
@@ -1025,7 +1051,8 @@ export class LocalShadows {
           if (
             Math.abs(e.at.x - bb[o]) < bb[o + 3] &&
             Math.abs(e.at.y - bb[o + 1]) < bb[o + 4] &&
-            Math.abs(e.at.z - bb[o + 2]) < bb[o + 5]
+            Math.abs(e.at.z - bb[o + 2]) < bb[o + 5] &&
+            this.contains(i, e.at)
           ) {
             continue;
           }

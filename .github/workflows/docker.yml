@@ -6,9 +6,8 @@
 #   web     ghcr.io/greywatch-game/greywatch         nginx + dist/ — the game
 #   server  ghcr.io/greywatch-game/greywatch-server  node + dist-server/ — the authority
 #
-#   main       -> :main    + :latest
-#   develop    -> :develop
-#   feature/gi -> :feature-gi  (metadata-action turns the slash into a dash)
+#   main    -> :main    + :latest
+#   develop -> :develop
 #
 # Every push also gets an immutable :sha-<short> tag, which is what you roll
 # back to; the branch tags move. **The two images are tagged from the same
@@ -38,7 +37,7 @@ name: Docker
 
 on:
   push:
-    branches: [main, develop, feature/gi]
+    branches: [main, develop]
   workflow_dispatch:
 
 # A second push to the same branch makes the in-flight build irrelevant — the

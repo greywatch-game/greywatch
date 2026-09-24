@@ -5629,9 +5629,6 @@ with the three dispatches stubbed out of a live page:
   swims is the one artefact this look will not take — and the volume's own
   2 m spacing does not reach contact scale. Still the lever for a crate on a
   floor.
-- **Lightning is reserved, not built.** `giExtra.y` is the slot a sky flash
-  would take (probes already trace sky visibility, `giAux.g`); nothing drives
-  it.
 
 ### How to settle it
 

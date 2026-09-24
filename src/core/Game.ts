@@ -6164,7 +6164,12 @@ export class Game {
    */
   private pushLightning(dt: number): void {
     const strikes = this.lightning;
-    this.lightningClock += dt;
+    // The offline clock HOLDS with the world. The pause that holds it also
+    // suspends the audio context, so a strike raised under it queued thunder
+    // against a frozen `currentTime` — a long pause's worth of `keep` layers
+    // all falling due on the resume, over the voice cap, refusing gunfire for
+    // seconds. A match reads the authority's clock and holds nothing.
+    if (!this.worldHeld) this.lightningClock += dt;
     const was = strikes.active;
     strikes.update(this.net ? this.net.conn.now() / 1000 : this.lightningClock);
     // The strike's own map, drawn once on the frame it starts. The moon's

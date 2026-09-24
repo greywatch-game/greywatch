@@ -98,8 +98,20 @@ export class ShadowSystem {
    * next map's before anything could draw a stale one.
    */
   private casters: readonly Mesh[] = [];
-  /** What `lightMatrix` answers while the map is off — nothing reads it then. */
-  private readonly offMatrix = Matrix.Identity();
+  /**
+   * What `lightMatrix` answers while the map is off: EVERY point to the MIDDLE
+   * of the volume, (0.5, 0.5) at depth 0.5, so every reader samples the lit
+   * 1x1 texel as fully KNOWN. It is not the identity because it IS read then —
+   * `giFarShadow` hands a receiver outside the window to the volume's coarse
+   * sun test, and the identity's window is a 2 m box at the world origin, so
+   * shadows OFF drew the probes' blocky sun shadow everywhere but there.
+   */
+  private readonly offMatrix = Matrix.FromValues(
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0.5, 1,
+  );
   private readonly blobMaterial: StandardMaterial;
   private readonly blobs = new Map<Combatant, Mesh>();
   /**

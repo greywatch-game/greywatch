@@ -1857,7 +1857,11 @@ none; Cinderhaven's volcano is the one that has it). **A strike is a SCHEDULE
 read off a clock, never a timer**: seeded off the map's id, and the clock is
 the authority's in a match (`Connection.now`), so every client flashes
 together and nothing crosses the wire. It is pushed from `tick` in every
-state — weather does not stop for a menu.
+state — weather does not stop for a menu. **The one thing that stops it is a
+world that is HELD**: offline, the strike clock does not advance under
+`Game.worldHeld`, because the pause that holds the world also suspends the
+audio context, and strikes raised under it queued thunder against a frozen
+`currentTime` that all fell due on the resume, over the voice cap.
 
 **A flash is a SECOND KEY with a depth map of its own, and the moon never
 moves for it** (`CelMaterialFactory.setFlash`, `ShadowSystem.flash`,
