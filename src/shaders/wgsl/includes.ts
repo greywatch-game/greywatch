@@ -64,6 +64,14 @@ import { DITHER_WGSL } from "../Dither";
 const EDGE_FADE = Math.max(CONFIG.graphics.shadows.edgeFade, 1e-4);
 
 /**
+ * The length of `celShadow`'s per-slot lamp arrays, which index the same
+ * slots as every consumer's `pointPos`. It is `MAX_POINT_LIGHTS` and cannot
+ * import it — `CelShader` imports this module — so `CelShader` asserts the two
+ * agree at load instead of trusting a comment.
+ */
+export const MAX_LOCAL_SLOTS = 16;
+
+/**
  * Registers one include, refusing to overwrite a DIFFERENT source under a name
  * already taken. First-writer-wins is Babylon's own rule and this keeps it,
  * so a collision with the library (or with a second copy of this module) is a
@@ -350,6 +358,121 @@ fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
   // which is a black hole where a soldier stands in a doorway's shadow.
   return mix(uniforms.shadowParams.y, 1.0, min(world, bodies));
 }
+
+// ---- THE LAMPS' SHADOWS (systems/LocalShadows.ts) ----
+//
+// Every shadowed point and spot light is drawn into ONE atlas of square tiles
+// — six per point light (a cube, face by face), one per spot — which is how
+// this reaches every shadowed lamp through a single texture binding. A tile
+// holds the RADIAL distance to the nearest caster over the light's range, and
+// the atlas records BACK faces, for the moon map's reason.
+//
+// Per slot, beside the pointPos/pointRange every consumer already declares:
+//   pointSpot.xyz  the spot's axis, unit; w its outer cosine, or -2 for a
+//                  point light that shines every way
+//   pointShade.x   the spot's inner cosine
+//   pointShade.y   the first tile of the STATIC layer, or -1
+//   pointShade.z   the first tile of the DYNAMIC layer, or -1
+// Both layers at -1 is a light the atlas is not shadowing this frame, and the
+// caller falls back to whatever it had (the cel shader's volume visibility).
+uniform pointSpot: array<vec4f, ${MAX_LOCAL_SLOTS}>;
+uniform pointShade: array<vec4f, ${MAX_LOCAL_SLOTS}>;
+// x = tiles per atlas row, y = one tile's side in UV, z = one texel in UV,
+// w = taps (1 or 4)
+uniform localAtlas: vec4f;
+// x = receiver bias (m), y = facet offset (m)
+uniform localParams: vec4f;
+var localAtlasMapSampler: sampler;
+var localAtlasMap: texture_2d<f32>;
+
+// The up vector a face's frame is built from — the same rule
+// LocalShadows.faceFrame spends on the CPU side, which is the one thing the
+// two halves of this cannot disagree about: straight up, unless the face looks
+// straight up or down, where it is +Z.
+fn localUp(f: vec3f) -> vec3f {
+  return select(vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0), abs(f.y) > 0.99);
+}
+
+// How lit a receiver at d (world offset from the light) is by one LAYER of
+// one light, 0..1. rel is the receiver's radial distance over the light's
+// range, bias already taken off.
+fn localLayer(base: f32, d: vec3f, rel: f32, spot: vec4f) -> f32 {
+  var f: vec3f;
+  var face = 0.0;
+  var tanHalf = 1.0;
+  if (spot.w > -1.5) {
+    // A spot is one face down its own axis, as wide as its outer cone.
+    f = spot.xyz;
+    let c = clamp(spot.w, 0.2, 0.9999);
+    tanHalf = sqrt(1.0 - c * c) / c;
+  } else {
+    // The cube face the receiver is on, in LocalShadows' order: +X -X +Y -Y +Z -Z.
+    let a = abs(d);
+    if (a.x >= a.y && a.x >= a.z) {
+      f = vec3f(sign(d.x), 0.0, 0.0);
+      face = select(1.0, 0.0, d.x > 0.0);
+    } else if (a.y >= a.z) {
+      f = vec3f(0.0, sign(d.y), 0.0);
+      face = select(3.0, 2.0, d.y > 0.0);
+    } else {
+      f = vec3f(0.0, 0.0, sign(d.z));
+      face = select(5.0, 4.0, d.z > 0.0);
+    }
+  }
+  let r = normalize(cross(localUp(f), f));
+  let u = cross(f, r);
+  let w = dot(d, f);
+  if (w <= 1e-4) { return 1.0; }
+  let st = vec2f(dot(d, r), dot(d, u)) / (w * tanHalf);
+  // Outside a spot's square is outside its cone as well; the cone term has
+  // already taken the light away there, so lit is the honest answer.
+  if (abs(st.x) > 1.0 || abs(st.y) > 1.0) { return 1.0; }
+
+  let tile = base + face;
+  let row = floor(tile / uniforms.localAtlas.x);
+  let col = tile - row * uniforms.localAtlas.x;
+  let side = uniforms.localAtlas.y;
+  let texel = uniforms.localAtlas.z;
+  let origin = vec2f(col, row) * side;
+  // Clamped a texel inside the tile, so no tap reads its neighbour's face.
+  let uv = clamp(origin + (st * 0.5 + 0.5) * side,
+    origin + vec2f(texel), origin + vec2f(side - texel));
+  if (uniforms.localAtlas.w < 2.0) {
+    return step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv, 0.0).x);
+  }
+  let h = texel * 0.5;
+  let hits = step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv + vec2f(h, h), 0.0).x)
+    + step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv + vec2f(-h, h), 0.0).x)
+    + step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv + vec2f(h, -h), 0.0).x)
+    + step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv + vec2f(-h, -h), 0.0).x);
+  // The moon's ladder-to-decision curve, for its reason.
+  return smoothstep(0.25, 0.75, hits * 0.25);
+}
+
+// One slot's cone (x, 0..1) and its shadow (y, 0..1 — or -1 where the atlas
+// has no answer for this light and the caller keeps its own).
+//
+// The normal is the one to OFFSET along, the true facet's, for
+// shadowVisibility's reason, and the offset is always TOWARD the light, for
+// the same one.
+fn pointLocal(i: i32, posW: vec3f, n: vec3f) -> vec2f {
+  let spot = uniforms.pointSpot[i];
+  let shade = uniforms.pointShade[i];
+  let toP = posW - uniforms.pointPos[i];
+  var cone = 1.0;
+  if (spot.w > -1.5) {
+    let c = dot(toP / max(length(toP), 1e-4), spot.xyz);
+    cone = smoothstep(spot.w, max(shade.x, spot.w + 1e-4), c);
+  }
+  if (shade.y < 0.0 && shade.z < 0.0) { return vec2f(cone, -1.0); }
+  let toward = select(-1.0, 1.0, dot(n, toP) < 0.0);
+  let d = toP + n * (toward * uniforms.localParams.y);
+  let rel = (length(d) - uniforms.localParams.x) / max(uniforms.pointRange[i], 1e-3);
+  var lit = 1.0;
+  if (shade.y >= 0.0) { lit = min(lit, localLayer(shade.y, d, rel, spot)); }
+  if (shade.z >= 0.0) { lit = min(lit, localLayer(shade.z, d, rel, spot)); }
+  return vec2f(cone, lit);
+}
 `,
 );
 
@@ -424,7 +547,7 @@ uniform giShade: vec4f;
 // x = band steps per reference, y = 1 / the reference luminance, z = the
 // normal offset in metres, w = 1 when point lights are occluded
 uniform giBand: vec4f;
-// x = the band's ceiling in references, y = the lightning flash (reserved)
+// x = the band's ceiling in references, y = the lightning flash's sky fill
 uniform giExtra: vec4f;
 // Which visibility CHANNEL each point-light slot reads. A channel belongs to a
 // LIGHT for as long as it keeps a slot, so a lantern's visibility is traced
@@ -529,6 +652,17 @@ fn giFarShadow(p: vec3f, c: vec4f, mapShadow: f32) -> f32 {
   let sun = textureSampleLevel(giAux, giAuxSampler, c.xyz, 0.0).r;
   let far = mix(uniforms.shadowParams.y, 1.0, smoothstep(0.4, 0.6, sun));
   return mix(mix(1.0, far, c.w), mapShadow, known);
+}
+
+// How much of the SKY a point sees, off the probes' own sky test (aux green)
+// — what a lightning flash's fill reaches. 1 where the volume has no answer,
+// so with bounce light off a flash lights everything it would have without
+// walls, which is the old flat sky fill's rule too.
+fn giSkySeen(c: vec4f) -> f32 {
+  if (c.w <= 0.0) {
+    return 1.0;
+  }
+  return mix(1.0, textureSampleLevel(giAux, giAuxSampler, c.xyz, 0.0).g, c.w);
 }
 
 // A band whose ceiling is not 1: the indirect term is cut into steps of the

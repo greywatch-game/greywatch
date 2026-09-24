@@ -149,8 +149,10 @@ import { LightingSystem } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
 import { BodyShadows } from "../systems/BodyShadows";
 import { GiVolume } from "../systems/GiVolume";
+import { LocalShadows } from "../systems/LocalShadows";
 import { ShadowSystem } from "../systems/ShadowSystem";
 import { Sky } from "../systems/Sky";
+import { LightningStrikes } from "../systems/LightningStrikes";
 import { WaterSystem } from "../systems/WaterSystem";
 import { WorldCulling, type PooledBody } from "../systems/WorldCulling";
 import {
@@ -207,6 +209,8 @@ import {
 import {
   type GiQuality,
   readSettings,
+  SHADOW_QUALITIES,
+  type ShadowQuality,
   writeSettings,
   type Settings,
   type VolumetricQuality,
@@ -331,6 +335,16 @@ const FIRST_VOLUMETRIC_RUNG = Object.keys(
   CONFIG.graphics.volumetrics.rungs,
 )[0] as VolumetricRung;
 
+/** A 32-bit FNV-1a of a map id — the storm's seed. */
+function hashId(id: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
 export class Game {
   private engine: WebGPUEngine;
   private scene: Scene;
@@ -451,6 +465,15 @@ export class Game {
    * the hull engines beside it — see `pushAmbience`.
    */
   private ambience: AmbienceSystem;
+  /**
+   * The storm, if the map has one — a schedule read off a clock
+   * (`systems/LightningStrikes.ts`) and spent in `pushLightning`.
+   */
+  private readonly lightning = new LightningStrikes();
+  /** The offline strike clock; a match reads the authority's instead. */
+  private lightningClock = 0;
+  /** The map's flash colour, parsed once per install. */
+  private readonly flashColor = new Color3(1, 1, 1);
   private shadows: ShadowSystem;
   /**
    * The bodies' own shadow map — soldiers and hulls, and nothing static.
@@ -470,6 +493,11 @@ export class Game {
    */
   private gi: GiVolume;
   /**
+   * The lamps' shadows — one atlas, point and spot lights, fixtures baked once
+   * and everything that moves redrawn from proxies (`systems/LocalShadows.ts`).
+   */
+  private localShadows: LocalShadows;
+  /**
    * `?gi=off|low|high`, which overrides the setting for the whole session —
    * `volumetricsForced`'s relationship to its own setting, for its reason: a
    * measurement runs in a fresh profile with nothing stored.
@@ -477,6 +505,17 @@ export class Game {
   private readonly giForced: GiQuality | null = (() => {
     const q = new URLSearchParams(location.search).get("gi");
     return q === "off" || q === "low" || q === "high" ? q : null;
+  })();
+  /**
+   * `?shadows=off|low|medium|high`, overriding the setting for the session on
+   * `giForced`'s terms — a capture that compares rungs is taken in a fresh
+   * profile with nothing stored.
+   */
+  private readonly shadowsForced: ShadowQuality | null = (() => {
+    const q = new URLSearchParams(location.search).get("shadows");
+    return (SHADOW_QUALITIES as readonly string[]).includes(q ?? "")
+      ? (q as ShadowQuality)
+      : null;
   })();
   /**
    * The world as the glazing reflects it — one cube, baked per map install.
@@ -772,6 +811,10 @@ export class Game {
   ) as Record<PrimaryWeaponId, FinishId>;
   /** The display settings. Which states their screen may cover is the table's. */
   private settings: Settings = readSettings();
+  /** The shadow rung in force: the URL's for a session, else the setting. */
+  private get shadowQuality(): ShadowQuality {
+    return this.shadowsForced ?? this.settings.shadows;
+  }
   /** Reused each frame: the player plus every bot, for objective occupancy. */
   /**
    * The networked round, or null offline.
@@ -1079,13 +1122,17 @@ export class Game {
     this.mats = new CelMaterialFactory(this.scene);
     // Stepped moon shadows + contact blobs. Must exist before any cel
     // material is created so the shadow map binds on creation.
-    this.shadows = new ShadowSystem(this.scene, this.mats);
+    this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality);
     // Same rule as the line above, and it binds a sampler every cel material
     // DECLARES: `SHADOW_SAMPLER_NAMES` lists `bodyShadowMap`, and a declared
     // sampler with nothing behind it is a bind group that fails to build and
     // every draw using it silently lost. So this exists before the first
     // material does, and there is no state in which it does not.
-    this.bodyShadows = new BodyShadows(this.scene, this.mats);
+    this.bodyShadows = new BodyShadows(this.scene, this.mats, this.shadowQuality);
+    // The lamps' atlas, for the same rule: `SHADOW_SAMPLER_NAMES` lists it, so
+    // it is bound before the first material exists — the lit 1x1 on a rung
+    // that has none.
+    this.localShadows = new LocalShadows(this.scene, this.mats, this.shadowQuality);
     // The same rule again, for the irradiance volume's seven textures: every
     // cel material declares them, so they are published before the first one
     // exists and stay published whatever the setting says.
@@ -1289,6 +1336,9 @@ export class Game {
     this.profChip = new ProfileChip();
     this.lighting = new LightingSystem();
     this.ambience = new AmbienceSystem();
+    // Thunder is the strike's own event, raised the frame its flash starts;
+    // `Sfx` delays it by the distance on the audio clock.
+    this.lightning.onStrike = (distance) => this.sfx.thunder(distance);
     this.atmosphere = new Atmosphere(this.scene);
     // Beside the mote field because it is the same kind of thing — a standing
     // GPU emitter driven off where something is — and NOT beside the fleet,
@@ -2440,6 +2490,11 @@ export class Game {
     // A no-op unless the tier moved; a change stands up a new texture set and
     // republishes it to every cel material (`GiVolume.setQuality`).
     this.gi.setQuality(this.giForced ?? this.settings.gi);
+    // Each a no-op unless its own map's rung moved; a change rebuilds that
+    // generator at the new size and re-binds it to every consumer.
+    this.shadows.setQuality(this.shadowQuality);
+    this.bodyShadows.setQuality(this.shadowQuality);
+    this.localShadows.setQuality(this.shadowQuality);
     this.setMotionBlurEnabled(this.settings.motionBlur);
     // After the blur, and that is the order rather than a preference: the
     // blur's own toggle takes the grade off and puts it back to keep the
@@ -3087,6 +3142,9 @@ export class Game {
     // After every state has placed the camera: the clouds stand in the world
     // and are drawn back to front from wherever the eye is this frame.
     this.sky.update(dt, this.cameraSys.camera.position);
+    // The storm, in every state for the ambience's reason — weather does not
+    // stop for a menu — and after the sky has placed its clouds.
+    this.pushLightning(dt);
     // After every state has had its go at the camera, and before the render
     // the shafts are drawn into. The shadow map is re-read rather than held,
     // which `ShadowSystem.lightMatrix` explains — the generator mutates that
@@ -4015,6 +4073,13 @@ export class Game {
     // The shadow camera follows the environment's key light, and its casters
     // are the fresh map's visuals — last build's meshes are now disposed.
     this.shadows.setLightDirection(environment.lighting.direction);
+    // The storm, seeded off the map's id so its schedule is the map's own and
+    // the same on every client in a match (see `LightningStrikes`).
+    this.lightning.setSpec(environment.lightning ?? null, hashId(this.mapDef.id));
+    if (environment.lightning) {
+      this.flashColor.copyFrom(Color3.FromHexString(environment.lightning.color));
+    }
+    this.lightningClock = 0;
     // The bodies' map is lit from the same place, pushed on the line after so
     // the two windows cannot be pointed in different directions — which would
     // be two shadows off one soldier, and would read as the bodies' map being
@@ -4078,6 +4143,15 @@ export class Game {
     // night village reads as a lens fault over a bright one.
     this.post.setGrade(environment.grade);
     this.shadows.setCasters(map.visuals);
+    // The lamps' casters: the colliders a MOVING light's proxies are drawn
+    // from, and the visuals a fixture's static tile is baked from. Every light
+    // holding tiles loses them — they were the last map's.
+    this.localShadows.setWorld(
+      map.size,
+      map.colliderBoxes,
+      map.rayGroups,
+      map.visuals,
+    );
     // What the bounce light traces: the fresh map's colliders, their albedo and
     // its floor. The volume restarts unconverged and spends its first sweeps at
     // the warm budget; nothing it does is a draw call.
@@ -6088,6 +6162,34 @@ export class Game {
    * After the listener above, so the ranking and the panners agree with the
    * ear the frame has already placed.
    */
+  /**
+   * Spends this frame's flash on everything a strike lights: the key light
+   * (every cel material, the grass and the water hold it by reference), the
+   * volume's sky fill, the dome and the clouds — and, on the frames a strike
+   * starts and ends, the aim of the moon's shadow maps, which follow the key.
+   *
+   * The clock is the AUTHORITY's in a match (`Connection.now`), so every
+   * client flashes together; offline it is this session's own.
+   */
+  private pushLightning(dt: number): void {
+    const strikes = this.lightning;
+    this.lightningClock += dt;
+    const was = strikes.active;
+    strikes.update(this.net ? this.net.conn.now() / 1000 : this.lightningClock);
+    if (strikes.active !== was) {
+      const d = strikes.active
+        ? strikes.direction
+        : Vector3.FromArray(this.mapDef.environment.lighting.direction);
+      const dir: [number, number, number] = [d.x, d.y, d.z];
+      this.shadows.setLightDirection(dir);
+      this.bodyShadows.setLightDirection(dir);
+    }
+    const f = strikes.flash;
+    this.mats.flashKey(strikes.active ? strikes.direction : null, this.flashColor, f);
+    this.gi.setFlash(f * CONFIG.lighting.lightningFill);
+    this.sky.setFlash(this.flashColor, f);
+  }
+
   private pushAmbience(): void {
     this.ambience.update(this.cameraSys.camera.position, this.sfx);
   }
@@ -8062,6 +8164,17 @@ export class Game {
       }
     }
     this.lighting.update(dt, this.cameraSys.camera.position, this.mats);
+    // Which of this frame's winning lights cast, and what their tiles will
+    // hold. After `lighting.update`, whose slots these are; the passes
+    // themselves run inside the scene's render (`LocalShadows.render`).
+    this.prof.begin(P.localShadows);
+    this.localShadows.update(
+      this.lighting.activeLights,
+      this.cameraSys.camera.position,
+      this.battle.bots,
+      this.vehicles.hulls,
+    );
+    this.prof.end(P.localShadows);
     // Water reads the same camera and the same winning light set, so it
     // updates here too — before anything later can move the camera.
     this.water.update(
@@ -8925,6 +9038,9 @@ export class Game {
       lc.explosionRange * power,
       lc.explosionIntensity * (0.6 + 0.4 * power),
       lc.explosionLife * (0.75 + 0.25 * power),
+      // Shadowed on the rungs that shadow a transient (`localShadows.tiers`):
+      // for a third of a second it is the light the valley is lit by.
+      "blast",
     );
     // The two layers under Havok — the rubble and the mark. They are drawn from
     // here rather than from `GrenadeSystem` because that system runs on the

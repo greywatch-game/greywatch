@@ -15,7 +15,7 @@
  */
 import "./settings.css";
 import { CONFIG } from "../config";
-import type { Settings } from "../core/settings";
+import { SHADOW_QUALITIES, type Settings } from "../core/settings";
 import type { GyroStatus } from "../core/GyroInput";
 
 /**
@@ -187,7 +187,7 @@ const LOOK_SCALES = CONFIG.camera.lookScales.map((v) => ({
  */
 const PAGES: readonly Page[] = [
   {
-    label: "Controls",
+    label: "Input",
     rows: [
       {
         key: "mouseSensitivity",
@@ -271,39 +271,6 @@ const PAGES: readonly Page[] = [
         })),
       },
       {
-        key: "volumetrics",
-        label: "Light shafts",
-        hint: "Moonlight scattered by the air, marched through the shadows",
-        // Straight off the config's ladder with `off` in front, so the screen
-        // cannot offer a rung the store would refuse to remember. `off` is a
-        // real option and not a zeroed rung — it detaches the pass.
-        options: [
-          { value: "off", label: "Off" } as const,
-          ...(
-            Object.keys(CONFIG.graphics.volumetrics.rungs) as (keyof typeof CONFIG.graphics.volumetrics.rungs)[]
-          ).map((k) => ({
-            value: k,
-            label: k.charAt(0).toUpperCase() + k.slice(1),
-          })),
-        ],
-      },
-      {
-        key: "gi",
-        label: "Bounce light",
-        hint: "Light off walls and ground, sky shade in alleys, lamps that stop at walls",
-        // Off the config's tier table with `off` in front, for the shafts'
-        // reason. `off` is the flat ambient the cel shader always had.
-        options: [
-          { value: "off", label: "Off" } as const,
-          ...(Object.keys(CONFIG.gi.tiers) as (keyof typeof CONFIG.gi.tiers)[]).map(
-            (k) => ({
-              value: k,
-              label: k.charAt(0).toUpperCase() + k.slice(1),
-            }),
-          ),
-        ],
-      },
-      {
         key: "fpsCounter",
         label: "FPS counter",
         hint: "Rate, frame time and 1% low",
@@ -348,6 +315,58 @@ const PAGES: readonly Page[] = [
         ],
       ];
     },
+  },
+  {
+    // Split off Display when the shadows row made it nine, which ran under the
+    // footer at a phone's 832x384 — this list's own rule for a page that
+    // outgrows the panel. The three are the ones a slow device turns down.
+    label: "Light",
+    rows: [
+      {
+        key: "volumetrics",
+        label: "Light shafts",
+        hint: "Moonlight scattered by the air, marched through the shadows",
+        // Straight off the config's ladder with `off` in front, so the screen
+        // cannot offer a rung the store would refuse to remember. `off` is a
+        // real option and not a zeroed rung — it detaches the pass.
+        options: [
+          { value: "off", label: "Off" } as const,
+          ...(
+            Object.keys(CONFIG.graphics.volumetrics.rungs) as (keyof typeof CONFIG.graphics.volumetrics.rungs)[]
+          ).map((k) => ({
+            value: k,
+            label: k.charAt(0).toUpperCase() + k.slice(1),
+          })),
+        ],
+      },
+      {
+        key: "gi",
+        label: "Bounce light",
+        hint: "Light off walls and ground, sky shade in alleys, lamps that stop at walls",
+        // Off the config's tier table with `off` in front, for the shafts'
+        // reason. `off` is the flat ambient the cel shader always had.
+        options: [
+          { value: "off", label: "Off" } as const,
+          ...(Object.keys(CONFIG.gi.tiers) as (keyof typeof CONFIG.gi.tiers)[]).map(
+            (k) => ({
+              value: k,
+              label: k.charAt(0).toUpperCase() + k.slice(1),
+            }),
+          ),
+        ],
+      },
+      {
+        key: "shadows",
+        label: "Shadows",
+        hint: "The moon's shadows, bodies' shadows, and lamps that cast them",
+        // Off the config's tier table, which already names `off` as a rung —
+        // what off means is stated per map there rather than here.
+        options: SHADOW_QUALITIES.map((k) => ({
+          value: k,
+          label: k.charAt(0).toUpperCase() + k.slice(1),
+        })),
+      },
+    ],
   },
 ];
 

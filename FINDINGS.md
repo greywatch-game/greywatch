@@ -5639,3 +5639,33 @@ On a phone: `?profile&gpu&gi=low` and `?gi=off` captures at the same vantage
 on Hollowmere and Cinderhaven, and a sprint down a street with each. If low is
 over ~1 ms there, the first lever is the latency test above, then
 `probesPerFrame`.
+
+## 45. The lamps' shadows and the shadow rungs are priced on ONE desktop GPU, and three things about them are open
+
+`systems/LocalShadows.ts` and `CONFIG.graphics.shadowTiers` shipped measured
+only on the RTX box (`docs/rendering.md`, "The lamps' shadows"): the high rung
+is ~+0.1 ms of GPU and +3 draws over shadows off on Hollowmere and Cinderhaven,
+uncapped, at a staged street with eight soldiers round a lamp and a moving spot.
+The `low` rung was chosen for a coarse pointer on finding 43's ~2.4x ratio, not
+on a measurement.
+
+- **Nothing is measured on a phone.** `?profile&gpu&shadows=low` against
+  `?shadows=off` at the same street on Hollowmere and Cinderhaven. If low is
+  over ~1 ms there, the levers in order: `every` (hold dynamic tiles longer),
+  `taps` (already 1), the sun map's size, then `lights` to 0 on that rung.
+- **The first-bake frame is unmeasured.** A fixture's static tile is baked from
+  the real meshes over `staticFacesPerFrame` faces a frame; walking into a
+  street of lamps queues several. It has not been captured as a hitch and has
+  not been looked for — a `?profile` capture sprinting down Coldharbour's lit
+  streets would say.
+- **A fixture's static tile never learns a pane broke.** It is baked from the
+  visuals and glazing is not a caster, so this is right today; the day a
+  DESTRUCTIBLE building exists (the memory's "destruction stages" plan), a
+  fixture whose room changed owes a re-bake and nothing asks for one.
+- **The volume still traces visibility for a slot the atlas holds.** Harmless
+  (the shader picks the atlas), and the vis pass is ~0.02 ms, so it was left.
+
+Also open and not a cost: the atlas face-seam shows as a hairline where two
+faces of one cube meet at a grazing receiver, because each face clamps its taps
+a texel inside its own tile. Not seen in a screenshot yet; a filter across the
+seam is the fix if it is.

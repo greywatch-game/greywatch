@@ -166,7 +166,7 @@ one optional field on a layout whose default is not "unaffected", absent meaning
 `shore` because silent water is a bug.
 
 **TWO FADERS SIT ABOVE ALL OF IT AND THEY MULTIPLY** — `CONFIG.mix.groups` is
-ten FAMILIES and `CONFIG.mix.channels` is forty-one SOUNDS inside them, 1
+ten FAMILIES and `CONFIG.mix.channels` is forty-two SOUNDS inside them, 1
 being "as built" and each set by ear in a live round through the dev-only `F4`
 panel (`src/dev/mixer/`, behind the editor's own dynamic-import gate). **A
 fader is a DEVIATION and nothing is BALANCED with one**: a sound wrong against
@@ -606,6 +606,20 @@ shape**; and because a back-face map cannot say how thick a crown is, a THIRD
 map — the translucent solids' front faces, `ShadowSystem`'s own — exists only so
 the translucency term can (`docs/rendering.md`).
 
+**THE LAMPS CAST INTO ONE ATLAS, and it is split by refresh rate as the moon's
+maps are** (`systems/LocalShadows.ts`): a point light is six cube-face tiles and
+a spot one, all reached through ONE binding because the cel shader has none
+left for a map per light. A FIXTURE's world meshes are baked once into a static
+tile; bodies, hulls and every MOVING light's colliders are box proxies
+(`core/proxyBoxes.ts`) redrawn each frame in one draw. **A light casts by what
+it SAYS** (`PointLightData.shadow`: fixtures `fixture` by default, carried
+lights and pulses `none`), and a slot the atlas does not hold keeps the
+volume's visibility. **All four maps are one `Shadows` setting**, and a map
+switched off is a bound 1x1 LIT texture, never an unbound one. **A lightning
+flash TAKES the key light** for its length (`flashKey`) and re-aims the moon's
+maps along it, so the key's two objects are held BY REFERENCE and never
+replaced — grass and water bind them too.
+
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`
 publishes — nothing may describe different weather from the wall in front of it.
@@ -747,7 +761,9 @@ fog split, the shadow window, the bodies' map (its own window, the back faces,
 the two terms' `min`, what does not cast and what it all measured), the
 reflection bake's seven load-bearing details, the candidate list's four classes
 and what the cull measured, the glow's own measurement, the painted sky, the
-shafts and the map's own air, and the WGSL dialect's own traps.
+shafts and the map's own air, the shadow rungs, the lamps' atlas (one pass
+over many tiles, the clear sheet, the ranking, what it cost), lightning, and the
+WGSL dialect's own traps.
 ### The map is data, not code
 
 `src/world/hollowmere/layout.ts` is the entire level — placements, scatter

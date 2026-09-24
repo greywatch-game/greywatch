@@ -226,7 +226,13 @@ src/
                         #   place themselves with it — ShadowSystem's and
                         #   BodyShadows' — which is the point: two copies would
                         #   be two windows off one focus. One instance each,
-                        #   never shared, since the snap is in ITS map's texels
+                        #   never shared, since the snap is in ITS map's texels.
+                        #   Also the 1x1 LIT texture a shadow map switched OFF
+                        #   is bound as (a declared sampler must be bound)
+    proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
+                        #   packed as thin-instance matrices. RAGDOLL_BONES and
+                        #   the collider, shared by BodyShadows and LocalShadows
+                        #   so a body throws one silhouette under every light
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees
@@ -549,6 +555,19 @@ src/
                         #   faces only, or a body is drawn inside its own
                         #   caster. Read by celShadow and by the volumetric
                         #   march, which is what makes a soldier cut a beam
+    LocalShadows.ts     # The LAMPS' shadows: one depth atlas, six cube-face
+                        #   tiles per point light and one per spot, reached by
+                        #   every cel/grass/water material through ONE binding.
+                        #   A fixture's world meshes are baked once into a
+                        #   static tile; bodies, hulls and every MOVING light's
+                        #   colliders are box proxies redrawn each frame in one
+                        #   draw. The vertex stage maps each face into its own
+                        #   tile, so one pass fills many
+    LightningStrikes.ts # When lightning strikes, from where, how bright: a
+                        #   seeded SCHEDULE read off a clock (the authority's
+                        #   in a match), never a timer. Game spends the flash
+                        #   on the key light, the shadow maps' aim, the sky and
+                        #   the volume's sky fill; onStrike is the thunder
     ReflectionSystem.ts # The world as glass sees it: one cube per GLAZED
                         #   BLOCK, baked from the map's own geometry per
                         #   install with whatever encloses the probe left out,

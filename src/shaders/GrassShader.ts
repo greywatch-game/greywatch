@@ -221,7 +221,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
       var atten = clamp(1.0 - dist / max(uniforms.pointRange[i], 0.001), 0.0, 1.0);
       atten *= atten;
       let ndl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
-      light += uniforms.pointColor[i] * atten * (0.25 + 0.75 * band(ndl, 3.0));
+      // The spot's cone and the lamps' atlas, off the same slot. A blade the
+      // atlas does not hold keeps the old answer: lit.
+      var loc = vec2f(1.0, -1.0);
+      if (atten > 0.0) {
+        loc = pointLocal(i, fragmentInputs.vPosW, n);
+      }
+      let vis = select(1.0, loc.y, loc.y >= 0.0);
+      light += uniforms.pointColor[i] * atten * loc.x * vis
+        * (0.25 + 0.75 * band(ndl, 3.0));
     }
   }
 

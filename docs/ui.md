@@ -269,7 +269,7 @@ split into another heading.
 **The key-cap table is the one thing on the screen that is not a choice, and it
 is in the PANEL beside the list rather than under it.** It carries no
 `data-row`, so the cursor steps straight past it — it is not a row, it is what
-the Controls page is *about*. A dozen rows under a list of three sliders was the
+the Input page is *about*. A dozen rows under a list of three sliders was the
 longest block on the screen and the thing that decided the panel's height;
 beside that list it costs it nothing. Its own three columns (action / keyboard /
 pad) are set independently of the list's, because an action name is short where
@@ -1487,7 +1487,7 @@ What belongs *here*, with the other screens:
   reports a deflection, and aim-on-fire still reports `ads` and `fire`, so
   `InputManager` and everything after it are unchanged. The settings screen
   gives them a **Touch** page of their own, with touch look and the gyro,
-  because five phone rows under the Controls page's two would have put its
+  because five phone rows under the Input page's two would have put its
   foot off a landscape phone and nothing on these screens scrolls. Three
   rules come with them:
   - **A fixed stick's position is the SHEET's and the maths MEASURES it**

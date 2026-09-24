@@ -557,6 +557,113 @@ export const graphics = {
     hullPad: 0.05,
   },
   /**
+   * The shadow QUALITY ladder — the `Shadows` setting, `?shadows=` overriding
+   * it for a session. One row per rung, and every map in the game is sized off
+   * the row rather than off the constants above whenever the two disagree:
+   * `shadows.mapSize`, `foliageMapSize` and `bodyShadows.mapSize`/`window` are
+   * the HIGH rung's numbers and stay where they are because their arguments
+   * are about that rung.
+   *
+   * **A zero is OFF, not a tiny map**, and off is a bound 1x1 texture that
+   * reads fully lit rather than a generator with nothing in it — every
+   * material that declares a shadow sampler must still have one BOUND
+   * (`SHADOW_SAMPLER_NAMES`), and a depth pass with nothing to draw is still a
+   * pass. What each map's absence costs the picture:
+   * - `sun` 0: the moon casts nothing inside the window. Past it the volume's
+   *   own sun test still answers (`giFarShadow`) when bounce light is on.
+   * - `foliage` 0: the translucency term loses its THICKNESS measurement and
+   *   a crown transmits across its whole shaded side instead of at its rim.
+   *   The term keeps the world map's half, so a canopy behind a wall is still
+   *   dark.
+   * - `bodies` 0: soldiers and hulls throw no cast shadow. The contact disc
+   *   stays in every rung — it is the one shadow that costs no pass.
+   *
+   * **The phone rung is `low`**, and what it keeps is chosen by what reads at
+   * a phone's pixel count rather than by what costs least: the sun map at half
+   * resolution still draws every building's shadow, and a body shadow at
+   * 512 over 32 m is 6.3 cm texels — coarser than the desktop's 4.7 and still
+   * finer than the world's. The foliage map is what goes, because the effect
+   * it buys is a rim of light on a crown two hundred pixels tall.
+   */
+  shadowTiers: {
+    off: { sun: 0, foliage: 0, bodies: 0, bodyWindow: 48 },
+    low: { sun: 1024, foliage: 0, bodies: 512, bodyWindow: 32 },
+    medium: { sun: 2048, foliage: 1024, bodies: 1024, bodyWindow: 48 },
+    high: { sun: 2048, foliage: 1024, bodies: 1024, bodyWindow: 48 },
+  },
+  /**
+   * Shadows from the POINT and SPOT lights — `systems/LocalShadows.ts`.
+   *
+   * **Every shadowed light is drawn into ONE atlas**: a point light is six
+   * cube-face tiles, a spot is one, and the cel shader reads all of them
+   * through a single texture binding. That is not tidiness — the cel shader
+   * already binds thirteen textures against WebGPU's default sixteen, so a
+   * map per light was never available.
+   *
+   * **Split by REFRESH RATE, as the moon's shadows are.** A FIXTURE's world
+   * geometry is drawn into a STATIC tile once and kept until the light leaves
+   * the shadowed set; the bodies and hulls near it go in a DYNAMIC tile drawn
+   * every frame, and the two are combined with `min` exactly as the world
+   * and body maps are. A light that MOVES has nothing static to keep, so its
+   * one set of tiles is redrawn every frame from COLLIDER PROXIES — thin
+   * instances of one box, so every moving shadow in the frame is ONE draw
+   * whatever it holds.
+   */
+  localShadows: {
+    /**
+     * Per rung. `atlas`/`tile` are texels (the atlas holds `(atlas/tile)^2`
+     * tiles); `lights` is how many lights may be shadowed at once, bounded
+     * again by whether their tiles fit; `meshes` is whether a fixture's static
+     * tile is drawn from the real geometry (true) or from collider proxies;
+     * `every` is how many frames a dynamic tile is held for; `taps` is 1 or 4;
+     * `transients` is whether a blast gets a shadow.
+     *
+     * **`high` is 384-texel faces and not 512**: 64 tiles of 512 is a 4096
+     * atlas and ~100 MB with its depth, for a face whose texel at 10 m is
+     * already 4 cm at 384. The rungs spend their memory on how MANY lights
+     * rather than how sharp one is, because a lantern that stops casting is
+     * visible from across the street and a softer one is not.
+     */
+    tiers: {
+      off: { atlas: 0, tile: 0, lights: 0, meshes: false, every: 1, taps: 1, transients: false },
+      low: { atlas: 1024, tile: 256, lights: 1, meshes: false, every: 2, taps: 1, transients: false },
+      medium: { atlas: 2048, tile: 256, lights: 3, meshes: true, every: 1, taps: 4, transients: false },
+      high: { atlas: 3072, tile: 384, lights: 6, meshes: true, every: 1, taps: 4, transients: true },
+    },
+    /**
+     * Metres around a light inside which nothing casts — the near plane of
+     * every face. A lantern stands inside its own housing and a fire drum's
+     * flame inside its drum; recording that as an occluder puts the whole
+     * light out. `CONFIG.gi.lightClearance` is the volume's twin of this and
+     * is bigger because a probe is metres coarse where a texel is centimetres.
+     */
+    nearClear: 0.35,
+    /**
+     * Receiver bias in metres along the ray to the light. The atlas records
+     * BACK faces (the world map's rule, and for its reason), so a lit face is
+     * compared against the far side of its own wall and this only has to
+     * cover the half-float's rounding — which at 1/2048 of a 28 m blast is
+     * 1.4 cm.
+     */
+    bias: 0.04,
+    /** Facet-normal offset in metres, always toward the light. */
+    normalBias: 0.05,
+    /**
+     * Fixture static faces drawn per frame. Walking into a lit street hands
+     * this a queue; spending it at one light's six faces a frame would be a
+     * frame of ~100 extra draws, and three is half a lantern with no hitch.
+     */
+    staticFacesPerFrame: 3,
+    /**
+     * Metres of preference a light already holding tiles keeps over a
+     * challenger, so two fixtures either side of the eye do not trade a static
+     * cache every frame — `ambience.swapMargin`'s rule for the same reason.
+     */
+    keepMargin: 6,
+    /** Box proxies one frame may draw, across every tile. Sizes the buffer. */
+    maxProxies: 4096,
+  },
+  /**
    * The ink, as a SCREEN-SPACE edge over the depth the frame has already
    * written — `shaders/CelInk.ts`, which owns the argument. It replaced an
    * inverted-hull outline pass (`renderOutline`) plus a per-merge-group ink

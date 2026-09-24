@@ -134,6 +134,8 @@ export type MixChannel =
   | "fire"
   | "stream"
   | "shore"
+  /** A lightning strike's roll, off `LightningStrikes`. */
+  | "thunder"
 
   // --- the read
   | "hitmarker"
@@ -206,6 +208,7 @@ export const CHANNEL_GROUPS = {
   fire: ["ambience"],
   stream: ["ambience"],
   shore: ["ambience"],
+  thunder: ["ambience"],
 
   hitmarker: ["feedback"],
   headshot: ["feedback"],
@@ -292,6 +295,7 @@ export const channels = {
   fire: 1,
   stream: 1,
   shore: 1,
+  thunder: 1,
   hitmarker: 1,
   headshot: 1,
   enemyDie: 1,

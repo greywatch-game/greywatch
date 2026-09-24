@@ -635,7 +635,14 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
       let lndl = max(dot(n, ldir), 0.0);
       let lh = normalize(ldir + viewDir);
       let lspec = pow(max(dot(n, lh), 0.0), uniforms.specPower * 0.6);
-      col += uniforms.pointColor[i] * atten
+      // Cone and atlas off the flat up-vector, for the moon's reason: the
+      // waves are a fiction a shadow must not move with.
+      var loc = vec2f(1.0, -1.0);
+      if (atten > 0.0) {
+        loc = pointLocal(i, posW, vec3f(0.0, 1.0, 0.0));
+      }
+      let vis = select(1.0, loc.y, loc.y >= 0.0);
+      col += uniforms.pointColor[i] * atten * loc.x * vis
         * (body * lndl * 0.5 + smoothstep(0.2, 0.55, lspec) * 0.9);
     }
   }

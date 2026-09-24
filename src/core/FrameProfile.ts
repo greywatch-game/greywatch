@@ -160,6 +160,11 @@ export const PHASES = [
   /** The cull cells, the mote field, the rotors' dust and the shader's eye. */
   "culling",
   /**
+   * `LocalShadows.update` — which lamps cast and packing their proxies. CPU
+   * only: the atlas passes are drawn inside `render`, from the scene.
+   */
+  "localShadows",
+  /**
    * `GiVolume.update` — choosing the lights, the params upload and recording
    * the three compute passes. The GPU's share of it is in `gpu.frame`.
    */
@@ -263,6 +268,7 @@ export const PARENT_OF: Readonly<
   hudDraw: "frame",
   post: "frame",
   culling: "frame",
+  localShadows: "gameplay",
   gi: "frame",
   audio: "frame",
   render: "frame",

@@ -286,6 +286,24 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
    * argument — and 0.09 is small because these are additive against a dark
    * island, where every mote is worth several of one drawn over a lit valley.
    */
+  /**
+   * The volcano's own weather: a plume charged by the ash grinding inside it
+   * throws lightning with no storm around it, which is the one kind a clear
+   * night can have. Cold white-violet against the island's orange, so a flash
+   * reads as the SKY and never as another fire.
+   *
+   * Far and infrequent on purpose. It is weather, not an event: a strike
+   * every twenty to fifty seconds, two to five kilometres out, low in the sky
+   * so its shadows run long across the town and its thunder lands seconds
+   * after the flash.
+   */
+  lightning: {
+    interval: [20, 50],
+    color: "#c9c4ff",
+    intensity: 1.4,
+    elevation: [12, 38],
+    distance: [2000, 5000],
+  },
   particles: {
     color: "#ff9a4a",
     emissive: true,
