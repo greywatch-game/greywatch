@@ -2027,14 +2027,14 @@ whole mass is behind the trigger may not taper to a sliver at the shoulder.
 apart.** A belt-fed carries two things on top of the barrel that nothing else here
 does — a folding carry handle and a front sight standing well forward — and both
 are above `railTop` where a real one puts them, which is the middle of the scope's
-picture. So the handle is hinged at the front and folded back down the barrel's
-LEFT flank, under the sight line, and the rail is split: it runs the length of the
-feed cover and stops with it, and what bridges the gap to the front iron station is
-a tower standing on the barrel whose top face IS `RAIL_TOP` and no higher. That
-split is also the honest read of the weapon — the barrel comes off a machine gun,
-and nothing that is lifted away mid-fight may carry the optic — which is the same
-bargain the carbine's handle struck: the constraint answered by the layout instead
-of paid for.
+picture. So the handle is clamped to the barrel ahead of the receiver and folded
+down the LEFT flank, under the sight line — where a Minimi's folds anyway — and
+the rail is split: it runs the length of the feed cover and stops with it, and
+what bridges the gap to the front iron station is a tower standing on the barrel
+whose top face IS `RAIL_TOP` and no higher. That split is also the honest read of
+the weapon — the barrel comes off a machine gun, and nothing that is lifted away
+mid-fight may carry the optic — which is the same bargain the carbine's handle
+struck: the constraint answered by the layout instead of paid for.
 
 **Read from the optic's side, that is one constraint and `RAIL_REACH` is it: how
 high a sight is carried and how wide its picture is are ONE decision, not two.**

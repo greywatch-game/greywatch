@@ -298,9 +298,11 @@ src/
                         #   language — an action wrapped around the BORE, a
                         #   drilled forend, a triangulated folding stock, and
                         #   the BOLT in a node of its own so the cycle works it
-    LmgModel.ts         # Low-poly belt-fed light machine gun — feed cover and
-                        #   split rail, box under the receiver, the exposed
-                        #   brass belt, side-folded carry handle
+    LmgModel.ts         # Belt-fed light machine gun, an FN M249 / Minimi
+                        #   drawn from photos in the rifle's design language —
+                        #   stamped riveted receiver, feed cover and split
+                        #   rail, deep ribbed handguard, fixed humped stock,
+                        #   200-round box with the brass belt, folded handle
     PistolModel.ts      # 1911 sidearm — the one weapon that does not call
                         #   optics.ts: no rail, so its notch and blade are its
                         #   own and are all it ever wears
