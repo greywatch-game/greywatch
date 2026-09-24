@@ -159,6 +159,11 @@ export const PHASES = [
   "post",
   /** The cull cells, the mote field, the rotors' dust and the shader's eye. */
   "culling",
+  /**
+   * `GiVolume.update` — choosing the lights, the params upload and recording
+   * the three compute passes. The GPU's share of it is in `gpu.frame`.
+   */
+  "gi",
   /** `pushHullEngines` — the fleet's voices. */
   "audio",
   /** `scene.render()`. The big one, and see the header on why. */
@@ -258,6 +263,7 @@ export const PARENT_OF: Readonly<
   hudDraw: "frame",
   post: "frame",
   culling: "frame",
+  gi: "frame",
   audio: "frame",
   render: "frame",
   shadowPass: "render",

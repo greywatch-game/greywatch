@@ -5571,3 +5571,71 @@ The two cheaper alternatives are both LOOK decisions and neither is costed: a
 bloom quality rung (the shape `volumetrics` already has, and there is no glow
 setting today), and a distance cap on the mask, which the measurement above
 says would have to be well inside the fog to remove anything.
+
+---
+
+## 44. The irradiance volume is priced on ONE desktop GPU, its low tier is not proportionally cheaper, and contact shadows were not built
+
+**Status:** open. The volume (`docs/rendering.md`, "The irradiance volume") ships
+on by default — `high` on a fine pointer, `low` on a coarse one — and every cost
+below is the RTX box's.
+
+### What was measured
+
+Uncapped (`--disable-frame-rate-limit --disable-gpu-vsync`), headless 1920x1080,
+at each map's menu vantage in `deploy`, cost read as the frame-time difference
+with the three dispatches stubbed out of a live page:
+
+- **The first version cost 4-5 ms of GPU** (Coldharbour 1.5 → 5.5 ms
+  `gpu.frame`, ~275 → ~150 fps). Split by pass: compose 1.77 ms (two fast
+  lights live), visibility 0.85 ms, trace 0.22 ms.
+- **Three levers took it to ~0.05-0.7 ms**: visibility kept per LIGHT rather
+  than per slot, and re-traced only when a light is new or moves (0.85 →
+  ~0.02 ms); fast rays bounded by the light's own reach and the flicker of
+  fires only within `flickerReach` (compose 1.77 → ~0.03 ms); one fixture per
+  hit and the terrain march's two exits (Hollowmere's trace 1.45 → ~0.44 ms at
+  1,024 probes a frame).
+- As shipped, high: Coldharbour ~0.05-0.55 ms, Hollowmere ~0.4-0.7 ms,
+  Cinderhaven ~0.1 ms; Hollowmere under a staged firefight (four guns, a blast
+  a second, a fast fire) +0.3 ms. Low on Hollowmere ~0.34 ms. **The ranges are
+  this box's own floor**: the stubbed baseline itself moved between 729 and
+  941 fps across runs of identical configuration.
+- CPU: the `gi` phase, 0.08-0.14 ms. `drawCalls` unchanged.
+- **Stillness**, on a frozen frame against a byte-identical GI-off control:
+  Hollowmere 0.005% of pixels at 1/255; Sarab 0.0075% at 1/255 once settled
+  (0.08% at up to 13/255 four seconds after placing the camera, while the
+  multi-bounce iteration was still shrinking). At `blend` 0.25 it was 5-13% at
+  up to 52/255 — see the config field.
+
+### What is not
+
+- **A phone, at all.** Low was chosen for a coarse pointer on the ~2.4x ratio
+  in 43, not on a measurement.
+- **Why low is not proportionally cheaper.** It traces a fifth of high's rays
+  (384 probes x 32 against 1,024 x 64) for about half the time. The suspect,
+  derived and not measured, is LATENCY rather than throughput: each trace
+  workgroup relocates its probe and casts the sun ray on ONE thread with the
+  other 31-63 waiting at a barrier, so a small dispatch is as slow as its
+  slowest few workgroups. Moving the relocation to the CPU (it is a pure
+  function of the column and the boxes) and the sun ray into the ray loop
+  would test it.
+- **In a round, moving.** Every number is at a still vantage. A sprint scrolls
+  a column every ~0.3 s and a hull at speed several a second; each exposes
+  `columns x layers` probes that read as the flat path until traced (they are
+  in the edge fade, which is why nothing has been seen, but it is unmeasured).
+- **Contact shadows were NOT built.** The plan had a screen-space march along
+  the key light against the frame's depth, inside the cel fragment. It needs
+  last frame's depth, which lags a frame under a fast turn — a shadow that
+  swims is the one artefact this look will not take — and the volume's own
+  2 m spacing does not reach contact scale. Still the lever for a crate on a
+  floor.
+- **Lightning is reserved, not built.** `giExtra.y` is the slot a sky flash
+  would take (probes already trace sky visibility, `giAux.g`); nothing drives
+  it.
+
+### How to settle it
+
+On a phone: `?profile&gpu&gi=low` and `?gi=off` captures at the same vantage
+on Hollowmere and Cinderhaven, and a sprint down a street with each. If low is
+over ~1 ms there, the first lever is the latency test above, then
+`probesPerFrame`.

@@ -288,6 +288,22 @@ const PAGES: readonly Page[] = [
         ],
       },
       {
+        key: "gi",
+        label: "Bounce light",
+        hint: "Light off walls and ground, sky shade in alleys, lamps that stop at walls",
+        // Off the config's tier table with `off` in front, for the shafts'
+        // reason. `off` is the flat ambient the cel shader always had.
+        options: [
+          { value: "off", label: "Off" } as const,
+          ...(Object.keys(CONFIG.gi.tiers) as (keyof typeof CONFIG.gi.tiers)[]).map(
+            (k) => ({
+              value: k,
+              label: k.charAt(0).toUpperCase() + k.slice(1),
+            }),
+          ),
+        ],
+      },
+      {
         key: "fpsCounter",
         label: "FPS counter",
         hint: "Rate, frame time and 1% low",

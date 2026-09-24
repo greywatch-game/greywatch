@@ -1,8 +1,8 @@
 /**
  * wgsl/includes.ts — The shader text every surface in the game shares, as
  * Babylon WGSL includes.
- * Owns: the registration of `celBand`, `celShadow`, `celProbe`, `celProbeBox`,
- * `celDither` and the two `celInstances` entries into
+ * Owns: the registration of `celBand`, `celShadow`, `celGi`, `celProbe`,
+ * `celProbeBox`, `celDither` and the two `celInstances` entries into
  * `ShaderStore.IncludesShadersStoreWGSL`, and — for each of them — the
  * argument the GLSL original carried.
  * Invariants: every entry is prefixed `cel`; nothing here declares a uniform
@@ -349,6 +349,195 @@ fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
   // invent a darkness neither map claimed: multiplying two 0.15 terms is 0.0225,
   // which is a black hole where a soldier stands in a doorway's shadow.
   return mix(uniforms.shadowParams.y, 1.0, min(world, bodies));
+}
+`,
+);
+
+/**
+ * `CONFIG.gi.edgeFade`, as a literal for `celGi` — the same reasoning as
+ * `EDGE_FADE` above: it never varies, so it costs no binding.
+ */
+const GI_EDGE_FADE = Math.min(Math.max(CONFIG.gi.edgeFade, 1e-3), 0.95);
+
+/**
+ * THE IRRADIANCE VOLUME, as the cel fragment reads it — `systems/GiVolume.ts`
+ * owns the textures, the trace and every uniform named here.
+ *
+ * **Seven textures and five uniforms, and a consumer owes all of them**:
+ * `GI_UNIFORM_NAMES` and `GI_SAMPLER_NAMES` in `CelShader.ts`, pushed onto every
+ * cel material by `CelMaterialFactory` from the moment it exists. `GiVolume` is
+ * constructed before the first material is, and stands a real texture up on
+ * every one of the seven even when the setting is off, for the reason
+ * `BodyShadows` does: a declared sampler with nothing behind it is a bind group
+ * that fails to build and every draw using it lost.
+ *
+ * **The volume is a WINDOW that scrolls with the eye, addressed TOROIDALLY**:
+ * a probe column at world index `c` lives in texel `c mod columns`, and the
+ * sampler REPEATS on the two horizontal axes, so the hardware's own trilinear
+ * filter is correct across the seam with no remapping here at all. The only
+ * thing that is not is the pair of columns either side of the window's own
+ * edge — the newest and the oldest — which is why the outermost `edgeFade` of
+ * the window ramps back to the flat ambient before it can be read.
+ *
+ * **Its layers follow the GROUND**: layer `k` of a column stands `(k + 0.5) *
+ * layerHeight` above that column's floor, and the floor is carried in the
+ * irradiance texture's alpha (relative to `giWindow.w`, which keeps it inside
+ * half-float precision on a volcano). So the height lookup is one fetch before
+ * the two that read the light.
+ *
+ * **What is stored is PREMULTIPLIED by each probe's validity** (`giDir.w`: 1
+ * for a probe that traced from open air, 0 for one buried in a wall, or one not
+ * yet traced for the column it now stands for). Dividing by the filtered weight
+ * averages only the valid probes among the eight, which is what keeps a
+ * buried probe from printing a dark halo on the face of the wall it is buried
+ * in — without a second fetch or a validity mask.
+ *
+ * **The lookup returns IRRADIANCE, and the caller bands it**: what the frame
+ * holds is the cel shader's own units (a colour times a light), so the traced
+ * term can replace the flat ambient and the sky fill in place.
+ */
+register(
+  "celGi",
+  `
+var giIrrSampler: sampler;
+var giIrr: texture_3d<f32>;
+var giDirSampler: sampler;
+var giDir: texture_3d<f32>;
+var giAuxSampler: sampler;
+var giAux: texture_3d<f32>;
+var giVis0Sampler: sampler;
+var giVis0: texture_3d<f32>;
+var giVis1Sampler: sampler;
+var giVis1: texture_3d<f32>;
+var giVis2Sampler: sampler;
+var giVis2: texture_3d<f32>;
+var giVis3Sampler: sampler;
+var giVis3: texture_3d<f32>;
+// x = 1 / spacing, y = columns, z = layers, w = 1 / (layerHeight * layers)
+uniform giGrid: vec4f;
+// x, z = the window's centre in the world, y = its half side, w = the height
+// the stored floors are relative to
+uniform giWindow: vec4f;
+// x = strength, y = the unoccluded share of the flat ambient, z = how much of
+// the baked vertex AO still applies, w = 1 while a volume is live
+uniform giShade: vec4f;
+// x = band steps per reference, y = 1 / the reference luminance, z = the
+// normal offset in metres, w = 1 when point lights are occluded
+uniform giBand: vec4f;
+// x = the band's ceiling in references, y = the lightning flash (reserved)
+uniform giExtra: vec4f;
+// Which visibility CHANNEL each point-light slot reads. A channel belongs to a
+// LIGHT for as long as it keeps a slot, so a lantern's visibility is traced
+// once when it wins one rather than every frame — and a muzzle flash taking
+// slot 0 moves nobody else's answer.
+uniform giSlotChannel: array<f32, ${16}>;
+
+// Where a point reads the volume, and how much it may trust what it reads
+// there: xyz is the texture coordinate, w the window's own edge fade times the
+// fade off the top of the stack. w = 0 means "outside, use the flat path".
+fn giCoord(p: vec3f) -> vec4f {
+  if (uniforms.giShade.w < 0.5) {
+    return vec4f(0.0);
+  }
+  let spacing = 1.0 / uniforms.giGrid.x;
+  let d = abs(p.xz - vec2f(uniforms.giWindow.x, uniforms.giWindow.z));
+  let far = max(d.x, d.y);
+  let half = uniforms.giWindow.y;
+  var w = 1.0 - smoothstep(half * (1.0 - ${GI_EDGE_FADE.toFixed(4)}), half - spacing, far);
+  if (w <= 0.0) {
+    return vec4f(0.0);
+  }
+  let cols = uniforms.giGrid.y;
+  let layers = uniforms.giGrid.z;
+  let u = (p.x * uniforms.giGrid.x + 0.5) / cols;
+  let r = (p.z * uniforms.giGrid.x + 0.5) / cols;
+  let floorY = textureSampleLevel(giIrr, giIrrSampler, vec3f(u, 0.5 / layers, r), 0.0).a
+    + uniforms.giWindow.w;
+  let v = (p.y - floorY) * uniforms.giGrid.w;
+  // Off the top of the stack the column says nothing, so the flat path takes
+  // over across one layer — and under the floor, which only a probe offset
+  // along a normal pointing down can reach, the bottom layer answers.
+  w *= 1.0 - smoothstep(1.0, 1.0 + 1.0 / layers, v);
+  return vec4f(u, clamp(v, 0.0, 1.0), r, w);
+}
+
+// The traced irradiance arriving at a surface facing n, and how much of it to
+// use. Evaluated from order-1 spherical harmonics: the colour is carried in the
+// constant band, the DIRECTION in the linear band of luminance alone, which is
+// all a banded surface can show and half the storage of three linear bands.
+fn giIrradiance(c: vec4f, n: vec3f) -> vec4f {
+  if (c.w <= 0.0) {
+    return vec4f(0.0);
+  }
+  let t0 = textureSampleLevel(giIrr, giIrrSampler, c.xyz, 0.0);
+  let t1 = textureSampleLevel(giDir, giDirSampler, c.xyz, 0.0);
+  let valid = t1.w;
+  if (valid < 0.02) {
+    return vec4f(0.0);
+  }
+  let c0 = t0.rgb / valid;
+  let c1 = t1.xyz / valid;
+  // The cosine lobe's own convolution of the two bands: pi * Y0 and
+  // 2pi/3 * Y1, folded into one constant each.
+  let e0 = c0 * 0.886227;
+  let lum0 = dot(e0, vec3f(0.2126, 0.7152, 0.0722));
+  let lumN = lum0 + 1.023327 * dot(c1, n);
+  let ratio = select(0.0, clamp(lumN / lum0, 0.0, 2.5), lum0 > 1e-5);
+  return vec4f(e0 * ratio, c.w * clamp(valid * 3.0, 0.0, 1.0));
+}
+
+// The sixteen visibility channels from here, one per light holding a slot —
+// giSlotChannel says which is whose — and 1 wherever the volume has nothing to
+// say, which is the old rule (a light reaches everything in its range). Four
+// fetches ONCE per pixel, before the light loop, rather than one per light
+// inside it.
+fn giPointVis(c: vec4f) -> array<vec4f, 4> {
+  var v = array<vec4f, 4>(vec4f(1.0), vec4f(1.0), vec4f(1.0), vec4f(1.0));
+  if (c.w <= 0.0 || uniforms.giBand.w < 0.5) {
+    return v;
+  }
+  let one = vec4f(1.0);
+  v[0] = mix(one, textureSampleLevel(giVis0, giVis0Sampler, c.xyz, 0.0), c.w);
+  v[1] = mix(one, textureSampleLevel(giVis1, giVis1Sampler, c.xyz, 0.0), c.w);
+  v[2] = mix(one, textureSampleLevel(giVis2, giVis2Sampler, c.xyz, 0.0), c.w);
+  v[3] = mix(one, textureSampleLevel(giVis3, giVis3Sampler, c.xyz, 0.0), c.w);
+  return v;
+}
+
+// THE SUN PAST THE SHADOW MAP. The world's depth map covers one window and
+// answers fully lit outside it (celShadow), which on a big map is a line
+// across open ground past which no building casts anything. Every probe also
+// traced whether IT can see the sun, so where the map has run out and the
+// volume has not, the shadow is the volume's: coarse — one answer per probe —
+// but cut hard with a narrow step, so what reads at that range is a shadow's
+// shape and not a lattice. Blended over the map's own edge ramp, so the two
+// never meet at a line.
+fn giFarShadow(p: vec3f, c: vec4f, mapShadow: f32) -> f32 {
+  if (c.w <= 0.0) {
+    return mapShadow;
+  }
+  let sc4 = uniforms.lightMatrix * vec4f(p, 1.0);
+  let sc = sc4.xyz / sc4.w;
+  let uv = sc.xy * 0.5 + 0.5;
+  let edge = min(
+    min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)),
+    min(sc.z, 1.0 - sc.z));
+  let known = smoothstep(0.0, ${EDGE_FADE.toFixed(4)}, edge);
+  if (known >= 1.0) {
+    return mapShadow;
+  }
+  let sun = textureSampleLevel(giAux, giAuxSampler, c.xyz, 0.0).r;
+  let far = mix(uniforms.shadowParams.y, 1.0, smoothstep(0.4, 0.6, sun));
+  return mix(mix(1.0, far, c.w), mapShadow, known);
+}
+
+// A band whose ceiling is not 1: the indirect term is cut into steps of the
+// reference luminance and may climb past it (a sunlit wall's bounce), up to
+// giExtra.x references. The edge is the shared band's fwidth-footed one.
+fn giBandOpen(x: f32, steps: f32) -> f32 {
+  let y = x * steps;
+  let w = clamp(fwidth(y), 0.15, 0.5);
+  return min((floor(y) + smoothstep(0.5 - w, 0.5 + w, fract(y))) / steps, uniforms.giExtra.x);
 }
 `,
 );

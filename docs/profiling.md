@@ -221,6 +221,8 @@ frame                       the whole tick, wall to wall
 ├─ hudDraw                  HUD.update — every state owes it
 ├─ post                     the post chain, the sky, the shafts
 ├─ culling                  the cull cells, the motes, the rotors' dust, the shader's eye
+├─ gi                       GiVolume.update: the lights, the params, recording
+│                           three compute passes (their GPU time is gpu.frame's)
 ├─ audio                    pushHullEngines
 └─ render                   scene.render()
    ├─ shadowPass            the depth map, on the frames that re-render it

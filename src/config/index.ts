@@ -34,6 +34,7 @@ import { minimap, damageIndicator } from "./hud";
 import { net } from "./net";
 import { profiling } from "./profiling";
 import { lighting } from "./lighting";
+import { gi } from "./gi";
 import { ao, map, water, grass, wear } from "./world";
 import { sky } from "./sky";
 import { wind } from "./wind";
@@ -83,6 +84,7 @@ export const CONFIG = {
   net,
   profiling,
   lighting,
+  gi,
   water,
   grass,
   wind,
