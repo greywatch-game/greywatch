@@ -1967,31 +1967,28 @@ iron station sits no further out than the rifle's despite a longer receiver. The
 extra sight radius a marksman rifle wants comes out of the rear station instead;
 `DmrModel.ts`'s `MOUNT` documents both.
 
-**The carbine is that constraint answered by the layout rather than paid for.** A
-bullpup keeps nothing above the rail forward of the mount — no gas block standing
-proud, no folding leaf on the end of a long rail — so the cone would carry a folded
-front iron out past z = 0.5, and what stops the station short is the rail itself
-ending at the gas block because the barrel is exposed from there on. The rear
-station is where it wins: the receiver runs to the butt pad, so the aperture sits at
--0.28 where the rifle's stops at -0.185 and there is still stock behind it. 0.60 of
-sight radius out of a weapon 0.96 long, against the rifle's 0.715 out of 1.25 — the
-same trade the layout makes everywhere else on it.
+**The carbine is that constraint answered by the layout rather than paid for.**
+It is a FAMAS, drawn from photographs of the F1 and the G2, and a FAMAS carries
+its sights on a tall CARRY HANDLE — which is a tunnel with the sights inside it,
+exactly what `RAIL_REACH` forbids, since nothing forward of the mount may stand
+above `railTop` without sitting in the middle of the scope's picture. The FÉLIN
+answer is the one taken: the rail is bolted to the handle's TOP FACE, so the bar,
+both posts and the window under them are all below the sight line and the cone
+sees an unbroken rail. That puts `RAIL_TOP` 0.105 over the bore, the tallest
+sight height in the kit, and it is meant to be: lowered to a rifle's height the
+handle is a slot rather than a window. The window is the one hole through a
+weapon in this kit, and it reads at any distance because what shows through it
+is the WORLD rather than a darker shade of gun.
 
-**Its handle is the same rule from the other side, and is why the hole in this
-weapon is UNDER the sight line rather than around it.** A bullpup's handle wants
-to be a tunnel with the sights inside it, and a tunnel is exactly what
-`RAIL_REACH` forbids, since nothing forward of the mount may stand above
-`railTop` without sitting in the middle of the scope's picture. So the rail is the
-top face and everything structural hangs below it: forward of the receiver it is
-carried on a spine a third of its width, on two posts — one on the receiver, one
-on the gas block — with a long window of real daylight between them. That is the
-one hole through a weapon in this kit, it reads at any distance because what shows
-through it is the WORLD rather than a darker shade of gun, and the cone still sees
-an unbroken flat deck. The rest of the silhouette is everything else below the
-rail, where there is no cone to answer to: a skeletonised butt with a diamond void
-and a hook of a toe, a slotted handguard, and the one square, stepped muzzle in a
-kit whose other three end in round cages and a chambered brake. It is drawn from
-`reference-media/bullpup.png`.
+The rail therefore runs only the handle's length, and the irons stand on it
+(-0.14 and 0.33) rather than inside the handle where the FAMAS keeps its own —
+the rail is the one place `optics.ts` can put them. Behind the sight the stock
+top is 0.05 under the rail, so neither the aperture's cone nor any optic's has
+anything to find there. The rest of the silhouette is the FAMAS's own below the
+rail: a deep, boxy butt whose top steps down in front of the cheek and whose
+underside falls to a deep toe behind the magazine, a handguard scalloped into
+pointed finger grooves with the bipod folded along its flanks, and a muzzle
+that is a short barrel, the ribbed rifle-grenade sleeve and a slotted hider.
 
 **It is the second weapon here whose BORE is not on y = 0, and the first whose
 reason is the ejection port.** `SniperModel` was the first — an action wrapped

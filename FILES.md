@@ -277,12 +277,13 @@ src/
                         #   weapon SCULPTED rather than stacked: bevelled
                         #   profile slabs and contoured lofts, the design
                         #   language the rest of the kit is to follow
-    CarbineModel.ts     # Low-poly polymer bullpup burst carbine —
-                        #   magazine behind the grip, the rail carried on a
-                        #   spine over an OPEN window, a skeletonised butt,
-                        #   and the one stepped square muzzle in the kit. The
-                        #   second model whose BORE is not y = 0: the barrel is
-                        #   screwed into the chamber the ejection port is cut in
+    CarbineModel.ts     # Bullpup burst carbine, a FAMAS drawn from photos
+                        #   in the rifle's design language — magazine behind
+                        #   the grip, the rail on top of the carry handle over
+                        #   an OPEN window, a scalloped handguard, a grenade-
+                        #   sleeve muzzle. The second model whose BORE is not
+                        #   y = 0: the barrel is screwed into the chamber the
+                        #   ejection port is cut in
     SmgModel.ts         # Low-poly compact SMG — same contract
     DmrModel.ts         # Low-poly semi-auto marksman rifle
     SniperModel.ts      # Low-poly bolt-action sniper rifle — an action wrapped
