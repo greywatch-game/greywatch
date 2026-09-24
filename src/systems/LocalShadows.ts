@@ -746,14 +746,10 @@ export class LocalShadows {
       if (!e) {
         e = this.admit(r.e, r.moving);
         // Still no room — six cube faces is a big run, and the fixtures'
-        // dynamic tiles hold the rest: the LOWEST-ranked holder below this
-        // light gives its tiles up, one at a time, until it fits. Only ever
-        // downward, so no light evicts one that outranks it.
-        for (let j = want - 1; !e && j > i; j--) {
-          const victim = this.entries.get(ranked[j].e);
-          if (!victim) continue;
-          this.release(victim);
-          this.entries.delete(ranked[j].e);
+        // dynamic tiles hold the rest: holders ranked BELOW this light give
+        // their tiles up until it fits. Only ever downward, so no light
+        // evicts one that outranks it.
+        if (!e && this.evictFor(r.e.spot ? 1 : 6, ranked, i, want)) {
           e = this.admit(r.e, r.moving);
         }
         if (!e) continue;
@@ -763,6 +759,48 @@ export class LocalShadows {
     }
     return chosen;
   }
+
+  /**
+   * Frees a run of `n` tiles by evicting holders ranked between `above` and
+   * `want`, and reports whether it did. Nothing is released until a run is
+   * FOUND: the candidates are taken lowest rank first, and the first time the
+   * tiles that are free or held by one of them contain `n` in a row, only the
+   * holders inside that run go.
+   *
+   * Evicting one at a time and retrying — what this replaced — is exact while
+   * every block is a six-face cube, since any victim frees a run of six. A
+   * one-tile SPOT breaks that: its freed tile need not join any run, so the
+   * old loop could throw away a baked static layer and still not fit the
+   * newcomer.
+   */
+  private evictFor(n: number, ranked: readonly Ranked[], above: number, want: number): boolean {
+    const victims = this.victims;
+    victims.length = 0;
+    const owner = this.owner;
+    for (let j = want - 1; j > above; j--) {
+      const v = this.entries.get(ranked[j].e);
+      if (!v) continue;
+      victims.push(v);
+      let run = 0;
+      for (let t = 0; t < this.tileCount; t++) {
+        const o = owner[t];
+        run = !o || victims.includes(o) ? run + 1 : 0;
+        if (run < n) continue;
+        for (let k = t - n + 1; k <= t; k++) {
+          const o2 = owner[k];
+          if (!o2) continue;
+          this.release(o2);
+          this.entries.delete(o2.light);
+        }
+        victims.length = 0;
+        return true;
+      }
+    }
+    victims.length = 0;
+    return false;
+  }
+  /** `evictFor`'s candidates, reused. */
+  private readonly victims: Entry[] = [];
 
   /** A new entry with its first tiles, or null when the atlas has no room. */
   private admit(light: PointLightData, moving: boolean): Entry | null {
