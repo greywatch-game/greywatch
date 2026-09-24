@@ -1,27 +1,28 @@
 /**
- * PistolModel.ts — Builds the low-poly 1911-pattern sidearm from primitives,
- * along with the fixed notch-and-blade sight machined into its own slide.
- * Returns WeaponParts exactly as the three primaries do, so `ViewModel` carries
- * it with nothing re-tuned: the only thing that makes it a sidearm is that
+ * PistolModel.ts — Builds the sidearm, a Colt M45A1 — the Marine Corps' modern
+ * 1911 — drawn from photographs, along with the fixed notch-and-blade sight
+ * machined into its own slide.
+ * Returns WeaponParts exactly as the primaries do, so `ViewModel` carries it
+ * with nothing re-tuned: the only thing that makes it a sidearm is that
  * `weapons.ts` keeps it out of `PRIMARY_WEAPON_IDS`.
  * Invariants: assembled at the origin with the root at identity and merged
  * before it is moved — `weaponKit.ts` owns that contract and the primitives.
  *
  * It is the ONE weapon that does not call `optics.ts`, and that is the whole
- * point of `WeaponSights`' `fixed` shape rather than an oversight: a 1911 has
- * no rail, and what stands on the back of the slide is a square notch rather
- * than the rear aperture every optic set here is built around. The one rule
- * that matters is still obeyed — the assembly reports a `sightCenter`, and
- * `ViewModel.applyFit` derives the aimed pose from it the same way it does for
- * a holo — so the reticle is the point of impact here for the same reason it is
- * everywhere else. Nothing about the eye reference is duplicated; only the
- * geometry in front of it is this weapon's own.
+ * point of `WeaponSights`' `fixed` shape rather than an oversight: what stands
+ * on the back of the slide is a square notch rather than the rear aperture
+ * every optic set here is built around. The one rule that matters is still
+ * obeyed — the assembly reports a `sightCenter`, and `ViewModel.applyFit`
+ * derives the aimed pose from it the same way it does for a holo — so the
+ * reticle is the point of impact here for the same reason it is everywhere
+ * else. Nothing about the eye reference is duplicated; only the geometry in
+ * front of it is this weapon's own.
  *
  * Local +z is the barrel axis and the BORE is at y = 0, the same frame the long
  * guns are built in, so the shared helpers (`tube`, `shell`) lay rings around
  * the barrel without an offset and the viewmodel poses it with the same
  * numbers. Units are the models' throughout: ~1.4 per metre, which puts this
- * weapon at 0.30 long against the rifle's 1.27.
+ * weapon at 0.33 long against the rifle's 1.27.
  */
 import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -31,25 +32,31 @@ import {
   magDropAxis,
   POLYMER,
   RUBBER,
+  spanRing,
   WeaponBuild,
   type SightAssembly,
   type WeaponParts,
 } from "./weaponKit";
 
 /**
- * The grip's rake — the 1911's signature ~18° off vertical, and the line the
- * magazine inside it both stands and drops along.
+ * The grip's rake — the 1911's signature ~18° off vertical, measured off the
+ * front strap in a photograph, and the line the magazine inside it both stands
+ * and drops along.
  */
-const GRIP_RAKE = 0.32;
+const GRIP_RAKE = 0.31;
+
+/** The slide's flat top, and the frame's rails under it. */
+const SLIDE_TOP = 0.021;
+const SLIDE_BOTTOM = -0.02;
 
 /**
  * The line of sight: the top of the rear posts and of the front blade, which
  * are the same height by construction. This is where `sightCenter` goes, so it
  * is the height ADS puts on the camera axis — everything behind it on this
- * weapon (the hammer spur, the grip safety's tang) has to stay UNDER it, or the
- * gun stands in its own sight picture. A notch is open-topped, so unlike an
- * aperture there is no cone to clear forward of the rear sight; the slide's own
- * top deck runs along below the line and is exactly what you are meant to see.
+ * weapon (the hammer, the beavertail) has to stay UNDER it, or the gun stands
+ * in its own sight picture. A notch is open-topped, so unlike an aperture there
+ * is no cone to clear forward of the rear sight; the slide's own top deck runs
+ * along below the line and is exactly what you are meant to see.
  */
 const SIGHT_Y = 0.047;
 const REAR_SIGHT_Z = -0.116;
@@ -63,9 +70,12 @@ const FRONT_SIGHT_Z = 0.118;
  * does swallow a pistol's grip, but it means the placement is bounded by what
  * the SIGHT PICTURE can afford rather than by anatomy. Hung any higher, the
  * fist's top face is a flat lit plane sitting in the bottom of the notch.
+ * Hung LOWER, it is a fist under the gun rather than round it: the point is on
+ * the grip's own centre line, halfway down, and the support hand and both
+ * elbows moved with it so the forearms keep their angles.
  */
-const GRIP_HAND = new Vector3(0.005, -0.14, -0.103);
-const GRIP_ELBOW = new Vector3(0.24, -0.52, -0.48);
+const GRIP_HAND = new Vector3(0.002, -0.118, -0.127);
+const GRIP_ELBOW = new Vector3(0.237, -0.498, -0.504);
 /**
  * The support hand does not hold a handguard here — there is nothing to hold.
  * It wraps the firing hand instead, which is why it sits inboard of and barely
@@ -73,8 +83,8 @@ const GRIP_ELBOW = new Vector3(0.24, -0.52, -0.48);
  * from it in all three axes on purpose: level with it, the two fists read as
  * one wide slab under the weapon rather than as two hands.
  */
-const SUPPORT_HAND = new Vector3(-0.048, -0.152, -0.062);
-const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, -0.32);
+const SUPPORT_HAND = new Vector3(-0.05, -0.13, -0.086);
+const SUPPORT_ELBOW = new Vector3(-0.302, -0.478, -0.344);
 
 /**
  * Where the support hand goes for the magazine swap. Straight DOWN off the
@@ -85,16 +95,26 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, -0.32);
 const MAG_HAND = new Vector3(-0.02, -0.14, -0.03);
 
 /**
- * Builds a low-poly cel-styled 1911-pattern pistol.
+ * Builds a cel-styled Colt M45A1.
  *
- * The silhouette is the one everybody already knows and it is carried by five
- * lines: a slab slide with a flat top and cocking serrations at each end, a
- * short dust cover leaving the last of the barrel and the bushing exposed, a
- * squared trigger guard, a grip raked well back off the frame, and — the two
- * details that say 1911 rather than "pistol" — the spur hammer and the
- * beavertail tang standing off the back of the frame.
+ * The silhouette is the one everybody already knows, and what makes it this
+ * 1911 rather than the 1911 is taken from photographs:
  *
- * ~70 parts, merged to one mesh per colour like every other weapon here.
+ * - **The slide**: flat-topped with bevelled shoulders, the nose dropping over
+ *   the recoil spring, and wide cocking serrations at BOTH ends.
+ * - **The railed dust cover** under the nose, three slots long.
+ * - **The frame's back end**: an upswept beavertail over the web of the hand
+ *   and a ring hammer standing in front of it, both kept under the sight line.
+ * - **The controls**, small and dark: the slide stop, an ambidextrous thumb
+ *   safety and the round magazine catch, all where a thumb finds them.
+ * - **The grip**: raked at 18°, a checkered front strap and a flat checkered
+ *   mainspring housing, and panels with two screws each.
+ * - **The sights**: a ramped rear with a square notch and a blade up front, with
+ *   the three dots that make it usable at night.
+ *
+ * Built as the rifle is — bevelled profile slabs and contoured lofts, detail at
+ * its real scale, controls small and dark, machining as dark inlays — see
+ * `docs/weapons.md`'s procedural-models section.
  */
 export function buildPistol(
   scene: Scene,
@@ -104,94 +124,204 @@ export function buildPistol(
   const root = new TransformNode(`${prefix}_pistol`, scene);
   const b = new WeaponBuild(scene, mats, prefix, root);
 
-  // --- slide: a flat-topped slab around the bore, from the breech face to the
-  // muzzle, with the top deck stepped in to read as the flat's edge ---
-  b.box("slide", BODY, 0.034, 0.042, 0.27, 0, 0, 0.005);
-  b.box("slideTop", BODY, 0.024, 0.009, 0.27, 0, 0.0245, 0.005);
-  // Cocking serrations, rear and front. Proud of the slide rather than cut into
-  // it, the same trick the rifle's grip ribs use: additive geometry can add a
-  // ridge and never a groove.
-  for (let i = 0; i < 7; i++) {
-    b.box("serrRear", METAL, 0.036, 0.03, 0.005, 0, 0, -0.118 + i * 0.012);
+  // --- slide: flat-topped, its nose dropping over the recoil spring ---
+  b.slab("slide", BODY, [
+    [0.143, -0.032],
+    [0.143, SLIDE_TOP - 0.004],
+    [0.139, SLIDE_TOP],
+    [-0.134, SLIDE_TOP],
+    [-0.138, SLIDE_TOP - 0.004],
+    [-0.138, SLIDE_BOTTOM],
+    [0.072, SLIDE_BOTTOM],
+    [0.08, -0.025],
+    [0.09, -0.032],
+  ], 0.032, 0.005);
+  // Cocking serrations at both ends, cut as dark grooves at their real pitch
+  // and raked forward the way M45A1's are.
+  const serrations = (name: string, z0: number, n: number): void => {
+    for (let i = 0; i < n; i++) {
+      const z = z0 + i * 0.0062;
+      b.slab(name, RUBBER, [
+        [z, -0.014],
+        [z + 0.0026, -0.014],
+        [z + 0.0046, SLIDE_TOP - 0.007],
+        [z + 0.002, SLIDE_TOP - 0.007],
+      ], 0.0326, 0);
+    }
+  };
+  serrations("serrRear", -0.131, 8);
+  serrations("serrFront", 0.086, 5);
+  // Ejection port, right side, with the barrel's hood showing in it.
+  b.slab("ejectPort", RUBBER, [
+    [-0.006, 0.0],
+    [0.054, 0.0],
+    [0.054, 0.016],
+    [-0.006, 0.016],
+  ], 0.002, 0, 0.0158);
+  b.slab("barrelHood", METAL, [
+    [-0.002, 0.004],
+    [0.048, 0.004],
+    [0.048, 0.012],
+    [-0.002, 0.012],
+  ], 0.002, 0, 0.0162);
+  // The markings flat on the left, as a few fine dark lines.
+  for (const [y, len] of [[0.01, 0.07], [0.002, 0.05]] as const) {
+    b.box("stamp", RUBBER, 0.002, 0.0026, len, -0.0162, y, 0.0 + len / 2);
   }
-  for (let i = 0; i < 4; i++) {
-    b.box("serrFront", METAL, 0.036, 0.03, 0.005, 0, 0, 0.078 + i * 0.012);
-  }
-  // Ejection port and its lowered rear wall, right side.
-  b.box("ejectPort", METAL, 0.008, 0.022, 0.062, 0.019, 0.012, 0.022);
-  b.box("portRamp", METAL, 0.007, 0.012, 0.02, 0.02, -0.002, -0.014);
-  // Breech face and extractor, the flat back end of the slide.
-  b.box("breech", METAL, 0.03, 0.036, 0.008, 0, 0, -0.136);
-  b.box("extractor", METAL, 0.006, 0.01, 0.03, 0.012, 0.013, -0.118);
 
   // --- muzzle end: barrel bushing over the bore, recoil spring plug under it.
   // The dark core behind the bushing is what the bore reads against; without
   // something inside it the ring opens onto the skybox and the muzzle looks
-  // like a hole in the model, which is the same trick the rifle's birdcage
-  // plays with `mzCore`. ---
+  // like a hole in the model. ---
   b.tube("bore", RUBBER, 0.018, 0.018, 0.04, 0, 0, 0.126);
-  b.shell("bushing", METAL, 0.02, 0.006, 0.016, 0, 0.144, 12);
-  b.shell("plug", METAL, 0.011, 0.005, 0.012, -0.0155, 0.144, 10);
-  b.box("slideFace", BODY, 0.034, 0.042, 0.006, 0, 0, 0.137);
+  b.shell("bushing", METAL, 0.019, 0.006, 0.014, 0, 0.146, 12);
+  b.shell("plug", METAL, 0.008, 0.004, 0.01, -0.021, 0.146, 10);
 
-  // --- frame: the rail the slide runs on, a short dust cover under the barrel,
-  // and the trigger housing behind it ---
-  b.box("frameRail", POLYMER, 0.031, 0.02, 0.265, 0, -0.031, 0.0);
-  b.box("dustCover", POLYMER, 0.029, 0.016, 0.16, 0, -0.045, 0.055);
-  b.box("dustNose", METAL, 0.03, 0.018, 0.008, 0, -0.044, 0.132);
-  b.box("frameBlock", POLYMER, 0.032, 0.05, 0.115, 0, -0.066, -0.075);
-  // Slide stop (left) and thumb safety (left, higher and further back) — the
-  // two levers a 1911 is recognised by from the side it is carried on.
-  b.box("slideStop", METAL, 0.008, 0.014, 0.034, -0.018, -0.03, -0.008);
-  b.pin("slideStopPin", METAL, 0.009, 0.036, 0, -0.03, -0.008);
-  b.box("safetyLever", METAL, 0.009, 0.011, 0.03, -0.019, -0.028, -0.104);
-  b.box("safetyPaddle", METAL, 0.008, 0.02, 0.014, -0.02, -0.034, -0.116);
-  // Magazine catch. Left side, like the levers above it: this is the side a
-  // right-handed shooter's thumb lives on, which is why every control on a
-  // 1911 is over there.
-  b.pin("magRelease", METAL, 0.012, 0.03, -0.014, -0.056, -0.088);
+  // --- frame: rails under the slide, the railed dust cover, the beavertail ---
+  // The frame stands a millimetre inside the slide's flanks, which is the seam
+  // between the two a slide is read by.
+  b.slab("frame", POLYMER, [
+    [0.076, SLIDE_BOTTOM],
+    [-0.14, SLIDE_BOTTOM],
+    [-0.15, -0.021],
+    [-0.162, -0.022],
+    [-0.171, -0.024],
+    [-0.176, -0.029],
+    [-0.174, -0.035],
+    [-0.164, -0.04],
+    [-0.154, -0.05],
+    [-0.15, -0.064],
+    [-0.066, -0.058],
+    [-0.058, -0.04],
+    [0.076, -0.04],
+  ], 0.03, 0.003);
+  b.picatinny("rail", 0, -0.04, 0.028, 3, { width: 0.024, height: 0.008, facing: "down" });
+  // A grip safety's hinge line under the beavertail, and the pin through it.
+  b.pin("tangPin", METAL, 0.006, 0.031, 0, -0.028, -0.146);
 
   // --- trigger guard and the flat sliding trigger inside it ---
-  b.box("guardFront", POLYMER, 0.026, 0.038, 0.012, 0, -0.104, -0.026);
-  b.box("guardBottom", POLYMER, 0.026, 0.011, 0.056, 0, -0.128, -0.055);
-  b.box("guardRear", POLYMER, 0.026, 0.02, 0.012, 0, -0.113, -0.083);
-  b.box("trigger", METAL, 0.013, 0.028, 0.011, 0, -0.104, -0.046);
-  b.box("triggerFace", METAL, 0.013, 0.026, 0.005, 0, -0.104, -0.053);
+  b.slab("guard", POLYMER, [
+    [0.004, -0.04],
+    [0.004, -0.066],
+    [-0.006, -0.08],
+    [-0.02, -0.084],
+    [-0.074, -0.084],
+    [-0.074, -0.077],
+    [-0.022, -0.077],
+    [-0.008, -0.074],
+    [-0.003, -0.064],
+    [-0.003, -0.04],
+  ], 0.012, 0.002);
+  b.slab("trigger", METAL, [
+    [-0.036, -0.04],
+    [-0.044, -0.04],
+    [-0.046, -0.058],
+    [-0.045, -0.071],
+    [-0.039, -0.071],
+    [-0.037, -0.058],
+  ], 0.01, 0.0015);
 
-  // --- the back of the frame: beavertail tang over the web of the hand, and
-  // the spur hammer standing behind the slide ---
-  // Both are bounded by SIGHT_Y rather than by looks: they sit between the eye
-  // and the rear notch, so anything of either that rises past the line of sight
-  // is a bite out of the sight picture.
-  b.box("tang", POLYMER, 0.028, 0.014, 0.042, 0, -0.026, -0.152);
-  b.box("tangHump", POLYMER, 0.026, 0.016, 0.02, 0, -0.014, -0.162);
+  // --- controls, small and dark, all where a right thumb finds them ---
+  // Slide stop on the left, its thumb piece rising at the back.
+  b.slab("slideStop", BODY, [
+    [-0.012, -0.024],
+    [-0.048, -0.022],
+    [-0.06, -0.017],
+    [-0.066, -0.021],
+    [-0.058, -0.033],
+    [-0.012, -0.031],
+  ], 0.003, 0.0008, -0.0165);
+  b.pin("slideStopPin", METAL, 0.007, 0.032, 0, -0.027, -0.012);
+  // The thumb safety, ambidextrous, its paddle over the top of the grip panel.
+  for (const side of [-1, 1] as const) {
+    b.slab("safety", BODY, [
+      [-0.1, -0.021],
+      [-0.128, -0.021],
+      [-0.134, -0.026],
+      [-0.12, -0.032],
+      [-0.1, -0.028],
+    ], 0.003, 0.0008, side * 0.0165);
+  }
+  b.pin("magRelease", POLYMER, 0.011, 0.008, -0.018, -0.062, -0.075);
+
+  // --- the hammer: a ring hammer, leaned back off the frame ---
   // Negative `rotX` is what leans the hammer BACK: a point above the pivot
   // takes `-sin(rotX)` along z (see the rake on the grip below, which is the
-  // same rotation in the other direction and the other sign).
-  const hammerPivot = b.pivot("hammerPivot", 0, -0.012, -0.148, -0.55);
-  b.box("hammerBody", METAL, 0.009, 0.03, 0.011, 0, 0.015, 0, hammerPivot);
-  b.box("hammerSpur", METAL, 0.009, 0.011, 0.022, 0, 0.03, -0.008, hammerPivot);
-  b.pin("hammerPin", METAL, 0.008, 0.026, 0, -0.012, -0.148);
+  // same rotation in the other direction and the other sign). Its top stays
+  // under SIGHT_Y, since it sits between the eye and the rear notch.
+  const hammerPivot = b.pivot("hammerPivot", 0, -0.014, -0.141, -0.5);
+  b.slab("hammer", METAL, [
+    [0.005, -0.004],
+    [0.006, 0.014],
+    [0.005, 0.022],
+    [0.0, 0.029],
+    [-0.008, 0.03],
+    [-0.013, 0.025],
+    [-0.013, 0.018],
+    [-0.008, 0.01],
+    [-0.007, -0.004],
+  ], 0.01, 0.0015, 0, hammerPivot);
+  // The ring: a dark hole through the head, both faces.
+  // `pin` hangs off the root, so it is placed where the pivot puts the
+  // head: (0.022, -0.005) in the hammer's frame, leaned back with it.
+  b.pin("hammerRing", RUBBER, 0.007, 0.0105, 0, 0.0029, -0.1558);
+  b.pin("hammerPin", METAL, 0.007, 0.031, 0, -0.014, -0.141);
 
-  // --- grip: raked back off the frame, panelled, with the mainspring housing
-  // down the back strap and the magazine's floorplate under it ---
+  // --- grip: raked back off the frame ---
   // The rake is the 1911's signature and the sign is load-bearing: positive
-  // `rotX` sends everything BELOW the pivot backwards, which is the ~18° off
-  // vertical the grip is famous for. Negative would stand it out over the
-  // trigger guard, which is a Luger.
-  const gripPivot = b.pivot("gripPivot", 0, -0.078, -0.108, GRIP_RAKE);
-  b.box("grip", POLYMER, 0.03, 0.094, 0.05, 0, -0.047, 0, gripPivot);
+  // `rotX` sends everything BELOW the pivot backwards. Negative would stand it
+  // out over the trigger guard, which is a Luger.
+  const gripPivot = b.pivot("gripPivot", 0, -0.046, -0.1, GRIP_RAKE);
+  // `pin` hangs off the root rather than a pivot, so a pin on the grip is
+  // placed through this: the grip's own (y, z) turned into the weapon's.
+  const onGrip = (y: number, z: number): [number, number] => [
+    -0.046 + y * Math.cos(GRIP_RAKE) - z * Math.sin(GRIP_RAKE),
+    -0.1 + y * Math.sin(GRIP_RAKE) + z * Math.cos(GRIP_RAKE),
+  ];
+  b.upright("grip", POLYMER, [
+    spanRing(-0.14, 0.03, 0.028, -0.042, 0.3),
+    spanRing(-0.13, 0.032, 0.031, -0.044, 0.3),
+    spanRing(-0.06, 0.032, 0.034, -0.044, 0.3),
+    spanRing(-0.01, 0.032, 0.036, -0.043, 0.3),
+    spanRing(0.012, 0.03, 0.036, -0.043, 0.3),
+  ], gripPivot);
+  // Checkering down the front strap and the flat mainspring housing, as dark
+  // grooves at their real pitch.
+  for (let i = 0; i < 12; i++) {
+    const y = -0.03 - i * 0.008;
+    b.box("strapCheck", RUBBER, 0.02, 0.0026, 0.004, 0, y, 0.0345 + (y + 0.01) * 0.042, gripPivot);
+  }
+  for (let i = 0; i < 11; i++) {
+    b.box("mainspringCheck", RUBBER, 0.02, 0.0026, 0.004, 0, -0.05 - i * 0.008, -0.0425, gripPivot);
+  }
+  // The mainspring housing's pin, low across the heel.
+  b.pin("housingPin", METAL, 0.005, 0.0326, 0, ...onGrip(-0.128, -0.036));
+  // Panels, proud of the frame on both sides, each with its two screws and a
+  // few diagonal cuts across the G10 — the grip's only texture at this
+  // distance, and the only thing a closed fist leaves in view.
   for (const side of [-1, 1] as const) {
-    b.box("gripPanel", RUBBER, 0.006, 0.078, 0.046, side * 0.017, -0.046, 0, gripPivot);
-    b.box("gripScrew", METAL, 0.005, 0.007, 0.007, side * 0.019, -0.046, 0.008, gripPivot);
+    b.slab("gripPanel", RUBBER, [
+      [0.026, -0.018],
+      [0.026, -0.124],
+      [0.02, -0.13],
+      [-0.03, -0.13],
+      [-0.036, -0.124],
+      [-0.036, -0.03],
+      [-0.03, -0.018],
+    ], 0.006, 0.0015, side * 0.0175, gripPivot);
+    for (let i = 0; i < 5; i++) {
+      const y = -0.04 - i * 0.018;
+      b.slab("panelRidge", POLYMER, [
+        [0.018, y],
+        [0.022, y + 0.003],
+        [-0.028, y + 0.012],
+        [-0.03, y + 0.008],
+      ], 0.0014, 0, side * 0.0208, gripPivot);
+    }
+    for (const y of [-0.03, -0.116] as const) {
+      b.pin("gripScrew", METAL, 0.007, 0.0016, side * 0.0213, ...onGrip(y, -0.004));
+    }
   }
-  // Front strap checkering and the flat mainspring housing behind it, as bands
-  // in the lighter receiver tone — the grip's only texture at this distance.
-  for (let i = 0; i < 4; i++) {
-    b.box("strapRib", BODY, 0.026, 0.007, 0.008, 0, -0.024 - i * 0.019, 0.025, gripPivot);
-  }
-  b.box("mainspring", BODY, 0.028, 0.088, 0.011, 0, -0.047, -0.026, gripPivot);
-  b.box("lanyard", METAL, 0.012, 0.012, 0.008, 0, -0.092, -0.024, gripPivot);
 
   // The pistol itself is finished. Merged before the sight is built, so the
   // sight's parts land in their own colour groups exactly as an optic's do.
@@ -209,15 +339,24 @@ export function buildPistol(
   // Held clear of the grip's own walls on every face — a body sized flush with
   // the cavity would share its bottom plane with the grip and z-fight along it
   // the moment the floorplate below stopped covering the seam.
-  b.box("magBody", METAL, 0.022, 0.08, 0.04, 0, -0.05, 0.002, gripPivot);
-  b.box("magFloor", METAL, 0.032, 0.008, 0.056, 0, -0.096, 0.002, gripPivot);
-  b.box("magPad", RUBBER, 0.03, 0.008, 0.05, 0, -0.103, 0.002, gripPivot);
+  b.upright("magBody", METAL, [
+    { y: -0.136, w: 0.022, d: 0.05, z: -0.004, k: 0.2 },
+    { y: -0.02, w: 0.022, d: 0.05, z: -0.004, k: 0.2 },
+  ], gripPivot);
+  b.upright("magFloor", METAL, [
+    { y: -0.145, w: 0.03, d: 0.07, z: -0.006, k: 0.3 },
+    { y: -0.14, w: 0.03, d: 0.07, z: -0.006, k: 0.3 },
+  ], gripPivot);
+  b.upright("magPad", RUBBER, [
+    { y: -0.155, w: 0.028, d: 0.066, z: -0.007, k: 0.35 },
+    { y: -0.145, w: 0.03, d: 0.07, z: -0.006, k: 0.3 },
+  ], gripPivot);
   meshes.push(...b.merge("pistolMag", magazine));
 
   // Every colour group the weapon itself merged, taken before the sight is
   // built. The sidearm is offered no finishes — it is not on the kit screen —
   // so nothing ever repaints these; the list is handed back because
-  // `WeaponParts` is one shape for every weapon, not five.
+  // `WeaponParts` is one shape for every weapon, not several.
   const finish = b.takeFinish();
 
   const sight = buildFixedIrons(b, prefix, root);
@@ -227,8 +366,8 @@ export function buildPistol(
   return {
     root,
     muzzle: new Vector3(0, 0, 0.16),
-    // Matches the `ejectPort` box above: the right side of the slide, high up.
-    ejectPort: new Vector3(0.024, 0.014, 0.022),
+    // Matches the `ejectPort` inlay above: the right side of the slide.
+    ejectPort: new Vector3(0.024, 0.01, 0.024),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
     magHand: MAG_HAND,
@@ -241,8 +380,8 @@ export function buildPistol(
 }
 
 /**
- * The slide's own sights: a square notch on a dovetailed rear block, a blade up
- * front, and three tritium dots.
+ * The slide's own sights: a ramped rear with a square notch, a blade up front
+ * on its dovetail, and three tritium dots.
  *
  * Both stand to exactly `SIGHT_Y`, so lining the blade up in the notch lines
  * both up with the point ADS puts on the camera axis — the picture is right by
@@ -261,16 +400,36 @@ function buildFixedIrons(
   const node = new TransformNode(`${prefix}_sight_iron`, b.scene);
   node.parent = parent;
 
-  // Rear: a dovetail block with two posts, the notch being the gap between
-  // them. Two boxes rather than one with a cut, for the reason everything here
-  // is additive — there is no way to take a square out of a box.
-  b.box("rearBase", METAL, 0.026, 0.007, 0.014, 0, 0.0325, REAR_SIGHT_Z);
+  // Rear: a low dovetailed body ramped up from the front — snag-free, the way
+  // a carry sight is — and two posts, the notch being the gap between them.
+  // A rear face that is square to the eye is what the notch is read against.
+  b.slab("rearBase", METAL, [
+    [-0.1215, SLIDE_TOP - 0.002],
+    [-0.096, SLIDE_TOP - 0.002],
+    [-0.1, SLIDE_TOP + 0.004],
+    [-0.1215, SIGHT_Y - 0.01],
+  ], 0.028, 0.0015);
   for (const side of [-1, 1] as const) {
-    b.box("rearPost", METAL, 0.0075, 0.012, 0.011, side * 0.0083, 0.041, REAR_SIGHT_Z);
+    b.slab("rearPost", METAL, [
+      [-0.1215, SLIDE_TOP],
+      [-0.1, SLIDE_TOP + 0.004],
+      [-0.112, SIGHT_Y],
+      [-0.1215, SIGHT_Y],
+    ], 0.0078, 0.001, side * 0.0085);
   }
-  // Front: a dovetailed blade on its own base, its tip on the same line.
-  b.box("frontBase", METAL, 0.014, 0.007, 0.014, 0, 0.0325, FRONT_SIGHT_Z);
-  b.box("frontBlade", METAL, 0.006, 0.012, 0.009, 0, 0.041, FRONT_SIGHT_Z);
+  // Front: a blade on its own dovetailed base, its tip on the same line.
+  b.slab("frontBase", METAL, [
+    [FRONT_SIGHT_Z - 0.008, SLIDE_TOP - 0.002],
+    [FRONT_SIGHT_Z + 0.008, SLIDE_TOP - 0.002],
+    [FRONT_SIGHT_Z + 0.006, SLIDE_TOP + 0.005],
+    [FRONT_SIGHT_Z - 0.006, SLIDE_TOP + 0.005],
+  ], 0.014, 0.0015);
+  b.slab("frontBlade", METAL, [
+    [FRONT_SIGHT_Z - 0.0055, SLIDE_TOP],
+    [FRONT_SIGHT_Z + 0.007, SLIDE_TOP],
+    [FRONT_SIGHT_Z + 0.002, SIGHT_Y],
+    [FRONT_SIGHT_Z - 0.0055, SIGHT_Y],
+  ], 0.006, 0.001);
   b.merge("iron", node);
 
   // Three dots — two flanking the notch, one on the blade. The only thing on
@@ -278,13 +437,11 @@ function buildFixedIrons(
   // usable at night at all.
   //
   // Each stands well PROUD of the face it is set into, and that is not styling:
-  // the outline pass draws a black shell 0.004 out along every normal, so a dot
-  // sunk flush with its own post is swallowed by the post's ink and the sight
-  // goes dark exactly when it is needed. Same rule as the player's visor slit
-  // and the lamp lens.
+  // a dot sunk flush with its own post is swallowed by the post's ink and the
+  // sight goes dark exactly when it is needed.
   for (const dot of [
-    { x: -0.0083, z: REAR_SIGHT_Z - 0.011 },
-    { x: 0.0083, z: REAR_SIGHT_Z - 0.011 },
+    { x: -0.0085, z: REAR_SIGHT_Z - 0.011 },
+    { x: 0.0085, z: REAR_SIGHT_Z - 0.011 },
     { x: 0, z: FRONT_SIGHT_Z - 0.011 },
   ]) {
     const bead = b.lit(

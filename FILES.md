@@ -303,9 +303,10 @@ src/
                         #   stamped riveted receiver, feed cover and split
                         #   rail, deep ribbed handguard, fixed humped stock,
                         #   200-round box with the brass belt, folded handle
-    PistolModel.ts      # 1911 sidearm — the one weapon that does not call
-                        #   optics.ts: no rail, so its notch and blade are its
-                        #   own and are all it ever wears
+    PistolModel.ts      # Sidearm, a Colt M45A1 (the modern 1911) drawn from
+                        #   photos in the rifle's design language — the one
+                        #   weapon that does not call optics.ts: its notch and
+                        #   blade are its own and are all it ever wears
     optics.ts           # Every optic assembly, built onto whichever weapon's
                         #   OpticMount asked for them. Past ~4x the cone is
                         #   bounded by the SCREEN rather than by the rail, which
