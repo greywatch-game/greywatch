@@ -293,10 +293,11 @@ src/
                         #   from photos in the rifle's design language — long
                         #   slotted handguard, exposed buffer tube, tall stock
                         #   with a cheek flap, windowed straight magazine
-    SniperModel.ts      # Low-poly bolt-action sniper rifle — an action wrapped
-                        #   around the BORE rather than a receiver sitting on
-                        #   one, a skeletonised chassis stock, and the BOLT in a
-                        #   node of its own so the cycle can work it
+    SniperModel.ts      # Bolt-action sniper rifle, an Accuracy International
+                        #   AXMC drawn from photos in the rifle's design
+                        #   language — an action wrapped around the BORE, a
+                        #   drilled forend, a triangulated folding stock, and
+                        #   the BOLT in a node of its own so the cycle works it
     LmgModel.ts         # Low-poly belt-fed light machine gun — feed cover and
                         #   split rail, box under the receiver, the exposed
                         #   brass belt, side-folded carry handle

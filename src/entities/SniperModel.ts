@@ -1,7 +1,8 @@
 /**
- * SniperModel.ts — Builds the low-poly bolt-action sniper rifle from
- * primitives, hangs the same optics off its rail, and hands back the one part
- * of a weapon in this kit that is worked by hand.
+ * SniperModel.ts — Builds the bolt-action sniper rifle, an Accuracy
+ * International AXMC drawn from photographs, hangs the same optics off its
+ * rail, and hands back the one part of a weapon in this kit that is worked by
+ * hand.
  * Returns WeaponParts exactly as RifleModel and DmrModel do: every builder is
  * interchangeable to everything above it, which is what lets `ViewModel` carry
  * any of them.
@@ -10,38 +11,21 @@
  * The optics are `optics.ts`'s, built against `MOUNT` rather than re-tuned.
  * Invariant: the BOLT is built about the bore and merged into a node of its
  * own — see `WeaponParts.bolt`, and `CONFIG.viewmodel.cycle` for what moves it.
- * Invariant: a colour group is a ROLE, not a material, and this is the weapon
- * that had to learn it. A chassis rifle is machined where the rest of the kit
- * is moulded, so its lower, its free-float handguard, its skeleton stock and
- * its magazine were all built in METAL — honest about the alloy and wrong
- * about the paint, because METAL is the ACCENT group and `POLYMER`'s own
- * comment in `weaponKit.ts` names those four parts by role. It put **49.9% of
- * the weapon's painted area in the accent group against a kit running
- * 11.5-16.3%**, and left the furniture group at **5.2% against 27.2-46.8%**.
- * **The gloss is the half that made it read as a different gun**: six of the
- * sixteen schemes put `rifleChrome` — the MIRROR rung — on METAL, so under
- * Voltage and Frostbite half this rifle was not merely the lightest colour in
- * the scheme but the only mirrored surface at that size in the kit, and
- * photographed on the turntable it clipped to white while the DMR beside it
- * stayed teal. They are POLYMER now, part for part as the DMR's
- * `lower`/`handguard`/`stockTop`/`stockBottom`/`buttPlate`/`mag` are. What is
- * machined about this rifle is said in its SHAPE — the skeleton stock, the
- * chassis flank, the bare tube — and a finish is not the place to say it
- * twice.
- * Invariant: THE RAIL IS SUPPORTED FOR ITS WHOLE LENGTH, which on this weapon
- * is a rule rather than a consequence — it carries the DMR's 0.86 of rail over
- * the SHORTEST action in the kit. The rail runs -0.29 to 0.57 and the action is
- * 0.47 of that, so 39 cm of it is over somebody else's business: 9 cm of bolt
- * raceway behind and 30 cm of barrel in front. Both were built as AIR, and the
- * forward one read as what it was — a 30 x 4 cm window of open daylight
- * between the rail's underside and the handguard with the barrel visible
- * through it, a rail bolted to nothing for a third of its length. The DMR has
- * never had it because its upper is 0.82 long against its own 0.86 of rail: it
- * supports its own. What holds this one up is different at each end because
- * what is underneath is different — a solid `railBridge` the bolt passes under
- * behind, and the HANDGUARD raised to meet the rail's underside in front —
- * and the two are joined by a deck that spans the rail rather than the action.
- * **Anything that lengthens the rail, moves `RAIL_TOP` or drops the handguard
+ * Invariant: a colour group is a ROLE, not a material. A chassis rifle is
+ * machined where the rest of the kit is moulded, and its chassis, forend,
+ * stock and magazine were once built in METAL — honest about the alloy and
+ * wrong about the paint, since METAL is the ACCENT group and the MIRROR rung
+ * of six finishes: half the rifle clipped to white on the turntable. They are
+ * POLYMER, the furniture role, and what is machined about this rifle is said
+ * in its SHAPE (`docs/weapons.md` has the measurement).
+ * Invariant: THE RAIL IS SUPPORTED FOR ITS WHOLE LENGTH. It carries the DMR's
+ * rail over the SHORTEST action in the kit — -0.29 to 0.57 over an action
+ * 0.47 long — so 39 cm of it is over somebody else's business: 9 cm of bolt
+ * raceway behind and 30 cm of barrel in front. Built as air, the forward gap
+ * read as a rail bolted to nothing. What holds it up differs at each end
+ * because what is underneath differs — a solid `railBridge` the bolt passes
+ * under behind, and the FOREND raised to meet the rail's underside in front.
+ * **Anything that lengthens the rail, moves `RAIL_TOP` or drops the forend
  * owes the support under it**, and the failure is a hole in the weapon rather
  * than anything a build would refuse.
  */
@@ -54,6 +38,7 @@ import {
   magDropAxis,
   POLYMER,
   RUBBER,
+  spanRing,
   WeaponBuild,
   type WeaponParts,
 } from "./weaponKit";
@@ -118,29 +103,17 @@ const MOUNT: OpticMount = {
 };
 
 /**
- * The comb, derived exactly as the DMR's is and for exactly the same failure:
- * the eye behind an aperture sits BEHIND the butt, so anything back here that
- * stands over the sight line simply fills the aperture, and a precision rifle's
- * cheek riser is the tallest candidate in the game for doing it.
+ * The cheek piece's top: about level with the rail, as the AXMC's is, and never
+ * higher than the irons allow.
  *
- * `ironSightFloor` at the comb's own front edge is the lowest point of the
- * cone where the comb is nearest to it; a few millimetres of daylight under
- * that is the comb at the bottom of its travel, which is the setting a shooter
- * would have it at with the back-up irons in use. Everything behind it follows:
- * the spine runs under the comb, and the butt plate is dropped to just under
- * the cheek piece, because a butt standing proud of the comb is a stock nobody
- * can get behind.
+ * The eye behind an aperture sits BEHIND the butt, so anything back here that
+ * stands over the sight line fills the aperture, and a precision rifle's cheek
+ * piece is the tallest candidate in the game for doing it. `ironSightFloor` at
+ * the plate's front edge, less a few millimetres of daylight, is therefore the
+ * ceiling it is checked against; the rail is what sets it.
  */
 const COMB_FRONT_Z = -0.365;
-const COMB_TOP = ironSightFloor(MOUNT, COMB_FRONT_Z) - 0.006;
-const COMB_PAD_H = 0.013;
-const COMB_H = 0.036;
-const COMB_BOTTOM = COMB_TOP - COMB_PAD_H - COMB_H;
-/** Top of the chassis spine: the comb's underside, less the gap it rides on. */
-const SPINE_TOP = COMB_BOTTOM - 0.024;
-/** Centre line of the butt assembly — plate, pad, spacers, toe and sling. */
-const BUTT_H = 0.21;
-const BUTT_Y = COMB_TOP - 0.016 - BUTT_H / 2;
+const COMB_TOP = Math.min(RAIL_TOP + 0.004, ironSightFloor(MOUNT, COMB_FRONT_Z) - 0.006);
 
 /**
  * The bolt, in the frame it is built and animated in.
@@ -178,40 +151,42 @@ const BOLT_DIR = { x: Math.sin(BOLT_REST), y: Math.cos(BOLT_REST) };
 /**
  * Where each hand grips, in weapon-local units.
  *
- * The trigger hand is further BACK and lower than the DMR's: this is a
- * near-vertical chassis grip behind a trigger set well back in a long action,
- * and the wrist under it rather than behind it is most of what a precision
- * grip is. The support hand is further FORWARD than anything else in the kit
+ * The trigger hand is further BACK and lower than the DMR's: a raked chassis
+ * grip behind a trigger set well back in a long action, and the hand point
+ * rides back down the grip with its rake. The support hand is further FORWARD than anything else in the kit
  * and back from the handguard's own end for the DMR's reason — the bipod is
  * stowed under that end, and a fist closed around folded legs reads as a hand
  * pushed through the weapon.
  */
-const GRIP_HAND = new Vector3(0.02, -0.178, -0.195);
+const GRIP_HAND = new Vector3(0.02, -0.176, -0.205);
 const GRIP_ELBOW = new Vector3(0.27, -0.585, -0.575);
 const SUPPORT_HAND = new Vector3(-0.02, -0.086 + BORE_Y, 0.43);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.51 + BORE_Y, 0.14);
 
 /**
- * Builds a low-poly cel-styled bolt-action sniper rifle. Local +z is the barrel
+ * Builds a cel-styled Accuracy International AXMC. Local +z is the barrel
  * axis, origin at the action's centre — the same frame the other weapons are
  * built in, so the viewmodel poses any of them with the same numbers — with
  * the bore carried `BORE_Y` above it, and the one extra promise the bolt needs.
  *
- * The silhouette has to say "one round at a time" from across the kit screen,
- * and it says it with five things nothing else here has: a round-bodied action
- * with a bolt handle hanging off the side of it, a barrel heavy enough to be
- * the widest thing on the weapon for its whole length, a skeletonised chassis
- * stock with daylight through it, a magazine that is short and NARROW rather
- * than deep and wide, and a brake long enough to read as a device rather than
- * as a crown. Everything else is the DMR's vocabulary one size up, which is
- * what makes those five read as deliberate rather than as a different game.
+ * What makes it an AX, all taken from photographs of the AXMC and the AX338:
  *
- * Merged to one mesh per colour, plus a set for the magazine and a set for the
- * bolt — which are the two things that have to move independently. Measured
- * against the rest of the kit: **32 meshes and 11,322 triangles**, against the
- * LMG's 30 and 11,210 and the DMR's 30 and 10,602. The bolt costs exactly TWO
- * meshes over every other primary — it is METAL and BODY, and that is the whole
- * price of the animation.
+ * - **The long rectangular action** with its rail running on unbroken onto the
+ *   forend, a long ejection port on the right and the bolt channel down the
+ *   left.
+ * - **The deep flat chassis**, its keel run forward under the forend with oval
+ *   recesses, and a short deep ten-round box standing in it.
+ * - **The long squared forend** drilled with two rows of ovals.
+ * - **The folding skeleton stock**: a hinge knuckle, a frame of triangles with
+ *   daylight through it, a cheek plate carried on a post, a tall butt on
+ *   spacers and a bag rider under it.
+ * - **AI's squared brake**, its ports cut straight through the sides.
+ *
+ * Built as the rifle is — bevelled profile slabs and contoured lofts, detail at
+ * its real scale, controls small and dark, machining as dark inlays — see
+ * `docs/weapons.md`'s procedural-models section. Merged to one mesh per colour,
+ * plus a set for the magazine and a set for the bolt, the two things that have
+ * to move independently.
  */
 export function buildSniper(
   scene: Scene,
@@ -221,274 +196,352 @@ export function buildSniper(
   const root = new TransformNode(`${prefix}_sniper`, scene);
   const b = new WeaponBuild(scene, mats, prefix, root);
 
-  // --- action: a body wrapped around the BORE, not a receiver sitting on one ---
-  // This is the one structural difference from every other weapon in the kit
-  // and the reason the rail is lower than the DMR's despite the bigger gun:
-  // half of this section is under the axis, where the others have air.
-  b.box("action", BODY, 0.076, 0.09, 0.47, 0, 0.012, 0.035);
+  // --- the action: AI's long rectangular receiver, wrapped around the BORE ---
+  // Half its section is under the axis, where the other weapons have air, which
+  // is why the rail is lower than the DMR's on the bigger gun.
+  b.slab("action", BODY, [
+    [-0.2, -0.033],
+    [0.27, -0.033],
+    [0.27, 0.052],
+    [0.264, 0.058],
+    [-0.2, 0.058],
+  ], 0.076, 0.005);
   // The deck runs the RAIL's length rather than the action's, and its top face
   // IS the rail's underside — see the invariant in the header. Under its rear
   // 9 cm the action has already stopped, so the bridge below carries it there:
   // solid over the raceway, with the bolt passing under it exactly as one does
-  // under a real rear receiver bridge. Its floor clears the shroud's crown
-  // (0.021 over the bore) by 3 mm, which is what keeps the draw legible from
-  // the side — the rail over it has always hidden that travel from directly
-  // above anyway.
-  b.box("actionTop", BODY, 0.062, 0.015, 0.56, 0, 0.0645, -0.01);
+  // under a real rear receiver bridge. Its floor clears the shroud's crown by
+  // 3 mm, which is what keeps the draw legible from the side.
+  b.slab("actionTop", BODY, [
+    [-0.29, 0.056],
+    [0.27, 0.056],
+    [0.27, 0.072],
+    [-0.29, 0.072],
+  ], 0.062, 0.004);
   const bridgeFloor = BORE_Y + 0.024;
-  b.box(
-    "railBridge",
-    BODY,
-    0.056,
-    0.057 - bridgeFloor,
-    0.09,
-    0,
-    (0.057 + bridgeFloor) / 2,
-    -0.245,
-  );
-  b.box("recoilLug", METAL, 0.086, 0.026, 0.03, 0, -0.02, 0.22);
-  b.box("rail", BODY, 0.058, 0.014, 0.86, 0, 0.079, 0.14);
-  for (let i = 0; i < 12; i++) {
-    b.box("railRib", METAL, 0.062, 0.012, 0.014, 0, 0.084, -0.28 + i * 0.07);
+  b.slab("railBridge", BODY, [
+    [-0.29, bridgeFloor],
+    [-0.2, bridgeFloor],
+    [-0.2, 0.057],
+    [-0.29, 0.057],
+  ], 0.056, 0.003);
+  b.picatinny("rail", 0, 0.072, -0.28, 43, { width: 0.058, height: RAIL_TOP - 0.072 });
+  // The long ejection port on the right, and the bolt channel down the left —
+  // AI's two long slots, dark where the action is open.
+  b.slab("ejectPort", RUBBER, [
+    [0.0, 0.012],
+    [0.15, 0.012],
+    [0.15, 0.048],
+    [0.0, 0.048],
+  ], 0.003, 0, 0.0385);
+  b.slab("boltChannel", RUBBER, [
+    [-0.19, 0.03],
+    [0.06, 0.03],
+    [0.064, 0.036],
+    [0.06, 0.042],
+    [-0.19, 0.042],
+  ], 0.003, 0, -0.0385);
+  // Screws down the flank, where the action is bedded into the chassis.
+  for (const z of [-0.14, 0.02, 0.2] as const) {
+    b.pin("actionScrew", METAL, 0.008, 0.08, 0, -0.018, z);
   }
-  // A long ejection port: this cartridge is longer than anything else here and
-  // the port has to be long enough to turn one out of, which is a silhouette
-  // cue as much as a detail — a bolt gun's port is a hole in a tube.
-  // It follows the bore up only as far as the action's top edge lets it: the
-  // upper rail sits flush with that edge, since anything higher would stand
-  // out beside a deck narrower than the action.
-  b.box("ejectPort", METAL, 0.01, 0.04, 0.15, 0.041, 0.03, 0.075);
-  b.box("portRail", METAL, 0.008, 0.01, 0.15, 0.043, 0.052, 0.075);
-  b.box("portRailLow", METAL, 0.008, 0.01, 0.15, 0.043, 0.008, 0.075);
+  b.slab("plate", BODY, [
+    [0.08, 0.01],
+    [0.2, 0.01],
+    [0.2, 0.024],
+    [0.08, 0.024],
+  ], 0.003, 0, -0.0385);
+  for (const [y, len] of [[0.02, 0.1], [0.014, 0.07]] as const) {
+    b.box("stamp", RUBBER, 0.002, 0.0026, len, -0.0402, y, 0.09 + len / 2);
+  }
   // The tang, and it is UNDER the bolt line rather than around it — which is
   // the one place this model is laid out for the animation rather than for the
-  // part.
-  //
-  // A tang wrapped around the raceway is what a bolt gun has and it hides the
-  // whole of the bolt at rest: the shroud lives inside it and emerges 18 mm at
-  // full draw, which at viewmodel distance is nothing. Dropped below the line,
+  // part. Around the raceway it would hide the whole bolt at rest; below it,
   // the shroud and the cocking piece stand in OPEN AIR behind the action and
-  // the draw is 113 mm of bright metal sliding straight at the eye — and it is
-  // the cue that survives where the handle does not, because the handle is on
-  // the weapon's far flank from a camera carried to its left while this is
-  // behind everything and can be hidden by nothing.
-  b.box("tang", BODY, 0.05, 0.032, 0.1, 0, -0.024, -0.245);
-  b.box("tangShelf", BODY, 0.044, 0.014, 0.06, 0, -0.001, -0.262);
-  b.box("safetyShelf", METAL, 0.03, 0.016, 0.05, 0.03, -0.038, -0.232);
-  b.pin("safetyPin", METAL, 0.012, 0.06, 0, -0.042, -0.212);
+  // the draw is bright metal sliding straight at the eye, behind everything
+  // and hidden by nothing.
+  b.slab("tang", BODY, [
+    [-0.2, -0.04],
+    [-0.295, -0.04],
+    [-0.295, -0.01],
+    [-0.284, -0.004],
+    [-0.2, -0.004],
+  ], 0.05, 0.004);
+  b.box("safety", METAL, 0.004, 0.012, 0.022, 0.028, -0.014, -0.24);
 
-  // --- chassis: trigger housing, magwell, near-vertical grip ---
-  // Deliberately narrower than the action above it (0.07 against 0.076), which
-  // is what leaves the bolt knob somewhere to hang: see BOLT_REST.
-  b.box("chassis", POLYMER, 0.07, 0.086, 0.42, 0, -0.075, -0.04);
-  b.box("magwell", POLYMER, 0.062, 0.078, 0.135, 0, -0.098, 0.055);
-  b.box("magFlareF", POLYMER, 0.07, 0.02, 0.014, 0, -0.132, 0.116);
-  b.box("magFlareR", POLYMER, 0.07, 0.02, 0.014, 0, -0.132, -0.006);
-  for (const side of [-1, 1] as const) {
-    b.box("magFlareS", POLYMER, 0.008, 0.02, 0.135, side * 0.032, -0.132, 0.055);
-  }
-  b.box("magLatch", METAL, 0.026, 0.024, 0.018, 0, -0.118, -0.02);
-  b.box("guardFront", POLYMER, 0.044, 0.062, 0.016, 0, -0.148, -0.095);
-  b.box("guardBottom", POLYMER, 0.044, 0.014, 0.11, 0, -0.176, -0.148);
-  // A two-stage trigger with a flat shoe. It gets its own face for the DMR's
-  // reason and more so: on a weapon fired once every second and a quarter, the
-  // trigger is the only control the shooter thinks about at all.
-  const trigPivot = b.pivot("trigPivot", 0, -0.126, -0.118, 0.28);
-  b.box("trigger", METAL, 0.014, 0.036, 0.013, 0, -0.018, 0, trigPivot);
-  b.box("triggerShoe", METAL, 0.02, 0.02, 0.024, 0, -0.045, 0.003, trigPivot);
-  b.box("trigAdjust", METAL, 0.01, 0.012, 0.012, 0.024, -0.096, -0.085);
-
-  const gripPivot = b.pivot("gripPivot", 0, -0.118, -0.198, 0.13);
-  b.box("grip", POLYMER, 0.054, 0.155, 0.078, 0, -0.078, 0, gripPivot);
-  b.box("gripSwell", POLYMER, 0.062, 0.052, 0.072, 0, -0.052, -0.01, gripPivot);
-  b.box("gripShelf", POLYMER, 0.058, 0.016, 0.05, 0, 0.005, -0.032, gripPivot);
-  for (let i = 0; i < 4; i++) {
-    b.box("gripRib", BODY, 0.048, 0.011, 0.013, 0, -0.048 - i * 0.03, 0.036, gripPivot);
-  }
-  b.box("gripCap", RUBBER, 0.056, 0.018, 0.082, 0, -0.162, 0, gripPivot);
-
-  // --- handguard: a long free-float tube, slotted, carrying the bipod ---
-  // Free-float is a promise about the BARREL, so the top of the tube is free
-  // to come up to the rail — and ahead of the action it has to, because there
-  // is nothing else under 30 cm of rail (see the header). The riser's top face
-  // is the rail's underside, and it steps back down in two tiers the moment
-  // the rail has ended: the heavy barrel is what the front of this weapon is
-  // for, and a tube carried at rail height all the way to the muzzle would be
-  // the widest thing on the gun instead of the barrel.
-  //
-  // Everything here is stated against the BORE (`f` below), because the tube
-  // floats around the barrel and not around the receiver — except the riser,
-  // whose top is the rail's underside wherever the bore is.
-  const f = BORE_Y;
-  b.box("handguard", POLYMER, 0.082, 0.07, 0.5, 0, f - 0.012, 0.5);
-  const riserFloor = f + 0.019;
-  b.box("hgRiser", POLYMER, 0.066, 0.072 - riserFloor, 0.32, 0, (0.072 + riserFloor) / 2, 0.41);
-  b.box("hgStep", POLYMER, 0.066, 0.03, 0.07, 0, f + 0.034, 0.605);
-  b.box("hgTop", POLYMER, 0.066, 0.014, 0.11, 0, f + 0.026, 0.695);
-  b.box("hgBottom", POLYMER, 0.066, 0.014, 0.5, 0, f - 0.05, 0.5);
-  // The two bolts the riser hangs on. A 32 cm flank is the largest blank panel
-  // on the weapon and these are what say it is a bolted-on part rather than a
-  // slab: 0.07 of pin across 0.066 of riser stands 2 mm proud on each side,
-  // which is a bolt head at the distance this is looked at.
-  for (const dz of [0.3, 0.52] as const) {
-    b.pin("hgBolt", METAL, 0.012, 0.07, 0, (0.072 + riserFloor) / 2, dz);
-  }
-  b.box("hgCap", BODY, 0.078, 0.078, 0.014, 0, f - 0.012, 0.743);
-  for (const side of [-1, 1] as const) {
-    for (let i = 0; i < 5; i++) {
-      b.box("vent", BODY, 0.006, 0.032, 0.052, side * 0.042, f - 0.012, 0.3 + i * 0.082);
-    }
-    b.box("sideRail", METAL, 0.014, 0.026, 0.28, side * 0.044, f - 0.038, 0.5);
-  }
-  for (let i = 0; i < 5; i++) {
-    b.box("mlok", BODY, 0.03, 0.006, 0.05, 0, f - 0.056, 0.3 + i * 0.082);
-  }
-  b.box("bottomRail", METAL, 0.048, 0.016, 0.32, 0, f - 0.062, 0.5);
-  b.box("handStop", POLYMER, 0.042, 0.028, 0.028, 0, f - 0.08, 0.36);
-  b.box("slingQdF", METAL, 0.022, 0.028, 0.016, 0.042, f - 0.038, 0.345);
-  b.box("slingQdM", METAL, 0.022, 0.026, 0.016, -0.044, f - 0.05, 0.6);
-
-  // --- bipod, folded back along the underside ---
-  // Stowed for the DMR's reason: nothing in this game rests a weapon on
-  // anything, so deployed legs would be geometry the player can never use, and
-  // folded is the state it would be in while being carried anyway.
-  b.box("bipodMount", BODY, 0.036, 0.032, 0.056, 0, f - 0.062, 0.71);
-  b.pin("bipodPin", METAL, 0.012, 0.046, 0, f - 0.066, 0.71);
-  const bipodPivot = b.pivot("bipodPivot", 0, f - 0.074, 0.71, -0.1);
-  for (const side of [-1, 1] as const) {
-    b.box("bipodLeg", METAL, 0.014, 0.014, 0.16, side * 0.024, 0, -0.08, bipodPivot);
-    b.box("bipodFoot", RUBBER, 0.018, 0.016, 0.028, side * 0.024, -0.002, -0.166, bipodPivot);
-  }
-  b.box("bipodCatch", METAL, 0.05, 0.012, 0.016, 0, f - 0.08, 0.56);
-
-  // --- barrel: the heaviest in the kit, and the widest thing on the weapon ---
-  // Straight-taper heavy profile said with proud bands rather than cut flutes,
-  // for the reason the DMR's is: the vocabulary here is additive, and a groove
-  // is the one shape it cannot make.
-  b.tube("barrelShank", BODY, 0.056, 0.058, 0.1, 0, BORE_Y, 0.3);
-  // The nut, and it is the BOLT HANDLE's argument made a second time: drawn at
-  // its own size and station it was a part nobody could ever see. A free-float
-  // handguard clamps OVER the barrel nut — that is what free-float means — and
-  // this tube begins at 0.25 where the action only ends at 0.27, so there is no
-  // bare barrel between the two at all: a 0.066 nut at 0.263 sat inside two
-  // solids for its whole circumference, 40 triangles of nothing.
-  //
-  // So it is drawn against the RECEIVER instead of against the handguard, in
-  // the 20 mm the tube has not reached yet, and sized to stand 9 mm proud of
-  // the action's flanks — a faceted ring breaking the side outline, hard
-  // against `recoilLug`, which is the order those two parts come in on a real
-  // rifle. Its top stays under the deck and that is not a compromise: a
-  // barrel nut is below the sight line by nature, and there is no station on
-  // this weapon where one could be seen from above.
-  // It is boxed in on three sides — `recoilLug` ends at 0.235, the handguard
-  // begins at 0.25 and the first `vent` at 0.274 — and it is what pushed
-  // `slingQdF` forward onto the handguard, where a front swivel belongs and
-  // where it stands 12 mm proud of the tube instead of 4 mm of the action.
-  b.tube("barrelNut", METAL, 0.094, 0.094, 0.02, 0, BORE_Y, 0.245);
-  b.tube("barrel", BODY, 0.048, 0.056, 0.34, 0, BORE_Y, 0.52);
-  b.tube("barrelFwd", BODY, 0.046, 0.048, 0.13, 0, BORE_Y, 0.755);
+  // --- the chassis: trigger housing, magwell, and a deep keel run forward
+  // under the forend with its oval recesses — the AX's lower half ---
+  // Narrower than the action above it (0.066 against 0.076), which is what
+  // leaves the bolt knob somewhere to hang: see BOLT_REST.
+  b.slab("chassis", POLYMER, [
+    [-0.262, -0.03],
+    [0.3, -0.03],
+    [0.312, -0.042],
+    [0.312, -0.062],
+    [0.298, -0.078],
+    [0.132, -0.078],
+    [0.128, -0.132],
+    [0.118, -0.142],
+    [-0.012, -0.142],
+    [-0.02, -0.132],
+    [-0.024, -0.1],
+    [-0.2, -0.1],
+    [-0.24, -0.086],
+    [-0.262, -0.06],
+  ], 0.066, 0.005);
   for (let i = 0; i < 3; i++) {
-    b.tube("barrelStep", METAL, 0.052, 0.052, 0.012, 0, BORE_Y, 0.76 + i * 0.05);
+    const zc = 0.175 + i * 0.045;
+    b.slab("keelOval", RUBBER, [
+      [zc - 0.016, -0.054],
+      [zc - 0.01, -0.062],
+      [zc + 0.01, -0.062],
+      [zc + 0.016, -0.054],
+      [zc + 0.01, -0.046],
+      [zc - 0.01, -0.046],
+    ], 0.068, 0);
   }
-  b.tube("threadCollar", METAL, 0.05, 0.05, 0.02, 0, BORE_Y, 0.828);
+  b.box("magLatch", POLYMER, 0.024, 0.014, 0.012, 0, -0.14, -0.018);
+  // The guard: a rounded loop, integral, behind the magazine.
+  b.slab("guard", POLYMER, [
+    [-0.026, -0.1],
+    [-0.026, -0.16],
+    [-0.04, -0.176],
+    [-0.19, -0.178],
+    [-0.19, -0.166],
+    [-0.042, -0.164],
+    [-0.038, -0.158],
+    [-0.038, -0.1],
+  ], 0.022, 0.002);
+  // A two-stage trigger with a flat shoe: on a weapon fired once every second
+  // and a quarter, the trigger is the only control the shooter thinks about.
+  b.slab("trigger", METAL, [
+    [-0.124, -0.1],
+    [-0.113, -0.1],
+    [-0.115, -0.122],
+    [-0.112, -0.142],
+    [-0.111, -0.154],
+    [-0.12, -0.154],
+    [-0.122, -0.142],
+    [-0.124, -0.122],
+  ], 0.012, 0.0015);
 
-  // --- muzzle brake: four chambers, ported sideways and up ---
-  // Rings threaded on a dark core, so the ports ARE the gaps and the bore is
-  // open all the way through. The underside is webbed shut for the reason the
-  // rifle's birdcage is: a brake that vents downward lifts the muzzle it was
-  // fitted to hold down. Longer than the DMR's by a chamber, because on the
-  // one weapon here whose whole cost is the second shot, the device that makes
-  // the first one settle is worth putting on screen.
-  b.tube("mzCollar", BODY, 0.058, 0.052, 0.02, 0, BORE_Y, 0.848);
-  b.tube("mzCore", RUBBER, 0.028, 0.028, 0.13, 0, BORE_Y, 0.925);
-  for (let i = 0; i < 4; i++) {
-    b.shell("mzBaffle", BODY, 0.03, 0.015, 0.013, BORE_Y, 0.868 + i * 0.04, 10);
-  }
-  b.box("mzStrap", BODY, 0.052, 0.012, 0.125, 0, BORE_Y + 0.03, 0.925);
-  b.box("mzWeb", BODY, 0.042, 0.012, 0.125, 0, BORE_Y - 0.03, 0.925);
-  b.shell("crown", METAL, 0.03, 0.012, 0.014, BORE_Y, 0.996, 10);
+  // AI's grip: slender, a finger swell down the front and a thumb shelf over
+  // the web, and raked back at the rifle's angle. It stood near-vertical once,
+  // on the argument that a precision hold puts the wrist under the trigger —
+  // and read as a post stuck under the chassis rather than as AI's grip, which
+  // lays back like any other.
+  const gripPivot = b.pivot("gripPivot", 0, -0.118, -0.198, 0.3);
+  b.upright("grip", POLYMER, [
+    spanRing(-0.16, 0.05, 0.034, -0.04),
+    spanRing(-0.13, 0.05, 0.03, -0.041),
+    spanRing(-0.1, 0.052, 0.036, -0.043),
+    spanRing(-0.075, 0.052, 0.03, -0.044),
+    spanRing(-0.05, 0.052, 0.035, -0.044),
+    spanRing(-0.02, 0.05, 0.033, -0.043),
+    spanRing(0.0, 0.05, 0.034, -0.06),
+    spanRing(0.02, 0.046, 0.032, -0.05),
+  ], gripPivot);
+  b.upright("gripCap", RUBBER, [
+    spanRing(-0.172, 0.05, 0.035, -0.041),
+    spanRing(-0.158, 0.051, 0.035, -0.041),
+  ], gripPivot);
 
-  // --- chassis stock: skeletonised, with an adjustable comb and pad ---
-  // The daylight is the point. Every other stock in the kit is a solid block
-  // with details on it; this is a frame with holes through it, which is the one
-  // silhouette cue that survives being three pixels wide against a skyline.
-  // Every height is derived — see COMB_TOP, which is the sight picture's floor
-  // rather than a number anybody liked the look of.
-  b.box("stockBlock", BODY, 0.07, 0.115, 0.075, 0, 0.006, -0.335);
-  b.box("stockSpine", POLYMER, 0.05, 0.036, 0.26, 0, SPINE_TOP - 0.018, -0.455);
-  b.box("stockKeel", POLYMER, 0.048, 0.032, 0.24, 0, BUTT_Y - 0.07, -0.445);
-  // Two struts between spine and keel, leaving three windows between them.
-  for (const dz of [-0.4, -0.55] as const) {
-    b.box(
-      "stockStrut",
-      POLYMER,
-      0.042,
-      SPINE_TOP - 0.036 - (BUTT_Y - 0.054),
-      0.026,
-      0,
-      (SPINE_TOP - 0.036 + BUTT_Y - 0.054) / 2,
-      dz,
-    );
+  // --- the forend: long, squared, drilled with two rows of ovals ---
+  // Free-float is a promise about the BARREL, so the forend's top is free to
+  // come up to the rail — and ahead of the action it has to, because there is
+  // nothing else under 30 cm of rail (see the header). Past the rail's end it
+  // runs on bare, flat-topped, to its squared front.
+  const f = BORE_Y;
+  b.slab("forend", POLYMER, [
+    [0.25, 0.072],
+    [0.72, 0.072],
+    [0.728, 0.064],
+    [0.728, -0.024],
+    [0.72, -0.032],
+    [0.25, -0.032],
+  ], 0.07, 0.01);
+  for (const y of [0.046, 0.016] as const) {
+    for (let i = 0; i < 12; i++) {
+      const zc = 0.33 + i * 0.033;
+      b.slab("forendOval", RUBBER, [
+        [zc - 0.011, y],
+        [zc - 0.006, y - 0.006],
+        [zc + 0.006, y - 0.006],
+        [zc + 0.011, y],
+        [zc + 0.006, y + 0.006],
+        [zc - 0.006, y + 0.006],
+      ], 0.072, 0);
+    }
   }
-  // The comb, carried ON posts in the daylight above the spine — a cheek piece
-  // that is a part rather than a moulding, which is the read the DMR's has and
-  // this one needs more, being the taller of the two.
-  for (const dz of [-0.4, -0.51] as const) {
-    b.pin(
-      "combPost",
-      METAL,
-      0.013,
-      COMB_BOTTOM - SPINE_TOP + 0.03,
-      0,
-      (SPINE_TOP + COMB_BOTTOM) / 2,
-      dz,
-      "y",
-    );
-  }
-  b.box("comb", POLYMER, 0.056, COMB_H, 0.19, 0, COMB_TOP - COMB_PAD_H - COMB_H / 2, -0.455);
-  b.box("combPad", RUBBER, 0.058, COMB_PAD_H, 0.19, 0, COMB_TOP - COMB_PAD_H / 2, -0.455);
-  b.box("combKnob", METAL, 0.014, 0.017, 0.017, 0.03, COMB_BOTTOM + 0.015, -0.4);
-  // The pad on its own rails, with a spacer stack: length of pull is the second
-  // thing a precision stock adjusts and the second thing visible from inside
-  // the weapon's own silhouette.
+  b.picatinny("sideRail", -0.035, 0.03, 0.52, 4, { width: 0.018, height: 0.006, facing: "left" });
+  b.pin("forendBolt", METAL, 0.01, 0.074, 0, 0.03, 0.27);
+  // A hand stop on the underside, and the sling socket forward of it.
+  b.slab("handStop", POLYMER, [
+    [0.36, -0.03],
+    [0.41, -0.03],
+    [0.41, -0.042],
+    [0.39, -0.054],
+    [0.374, -0.054],
+  ], 0.026, 0.003);
+  b.box("slingQd", METAL, 0.004, 0.014, 0.014, 0.036, -0.012, 0.62);
+
+  // --- bipod, folded back along the underside of the forend's front ---
+  // Nothing in this game rests a weapon on anything, so deployed legs would be
+  // geometry the player can never use; folded is the state it is carried in.
+  b.slab("bipodMount", BODY, [
+    [0.66, -0.03],
+    [0.71, -0.03],
+    [0.71, -0.044],
+    [0.702, -0.052],
+    [0.668, -0.052],
+    [0.66, -0.044],
+  ], 0.04, 0.004);
   for (const side of [-1, 1] as const) {
-    b.tube("padRail", METAL, 0.014, 0.014, 0.11, side * 0.024, BUTT_Y - 0.03, -0.51);
+    b.tube("bipodLeg", BODY, 0.011, 0.013, 0.19, side * 0.018, -0.058, 0.6);
+    b.box("bipodFoot", RUBBER, 0.015, 0.015, 0.022, side * 0.018, -0.058, 0.5);
+    b.tube("bipodSpring", METAL, 0.006, 0.006, 0.05, side * 0.018, -0.046, 0.672);
   }
-  b.box("buttPlate", POLYMER, 0.066, BUTT_H, 0.03, 0, BUTT_Y, -0.567);
+
+  // --- barrel: heavy, the widest thing ahead of the forend ---
+  b.tube("barrel", BODY, 0.044, 0.05, 0.2, 0, f, 0.82);
+  // AI's brake: a squared block with its ports cut straight through the sides,
+  // on a threaded collar.
+  b.tube("threadCollar", BODY, 0.05, 0.05, 0.016, 0, f, 0.928);
+  b.slab("brake", BODY, [
+    [0.936, f - 0.026],
+    [1.006, f - 0.026],
+    [1.012, f - 0.02],
+    [1.012, f + 0.02],
+    [1.006, f + 0.026],
+    [0.936, f + 0.026],
+  ], 0.054, 0.006);
+  for (let i = 0; i < 3; i++) {
+    const zc = 0.952 + i * 0.02;
+    b.slab("brakePort", RUBBER, [
+      [zc - 0.005, f - 0.016],
+      [zc + 0.005, f - 0.016],
+      [zc + 0.005, f + 0.016],
+      [zc - 0.005, f + 0.016],
+    ], 0.056, 0);
+  }
+  b.tube("mzCore", RUBBER, 0.02, 0.02, 0.004, 0, f, 1.012);
+
+  // --- the folding stock: a hinge knuckle, then a skeleton of triangles ---
+  // The daylight is the point: every other stock in the kit is a body with
+  // details on it, and this is a frame with the world showing through it,
+  // which is the one cue that survives being three pixels wide. Every height
+  // at the comb is derived — see COMB_TOP.
+  b.slab("hinge", BODY, [
+    [-0.29, 0.05],
+    [-0.29, -0.046],
+    [-0.336, -0.046],
+    [-0.342, -0.04],
+    [-0.342, 0.044],
+    [-0.336, 0.05],
+  ], 0.06, 0.005);
+  b.pin("hingeKnuckle", METAL, 0.018, 0.1, 0.03, 0.002, -0.316, "y");
+  b.pin("foldButton", METAL, 0.014, 0.066, 0, 0.024, -0.316);
+  // The frame's four members, and the two diagonals that triangulate it.
+  const STOCK_W = 0.04;
+  const bar = (name: string, pts: readonly (readonly [number, number])[], w = STOCK_W) =>
+    b.slab(name, POLYMER, pts, w, 0.004);
+  bar("stockTop", [
+    [-0.34, 0.034],
+    [-0.54, 0.038],
+    [-0.54, 0.016],
+    [-0.34, 0.012],
+  ]);
+  bar("stockBottom", [
+    [-0.34, -0.024],
+    [-0.34, -0.046],
+    [-0.535, -0.118],
+    [-0.535, -0.094],
+  ]);
+  bar("strutFront", [
+    [-0.36, 0.014],
+    [-0.38, 0.014],
+    [-0.448, -0.064],
+    [-0.428, -0.064],
+  ], 0.034);
+  bar("strutRear", [
+    [-0.505, 0.018],
+    [-0.525, 0.018],
+    [-0.456, -0.068],
+    [-0.436, -0.068],
+  ], 0.034);
+  // The cheek piece on its post: a plate carried above the frame, not moulded
+  // into it, with the knob that sets its height.
+  bar("cheekPost", [
+    [-0.43, 0.034],
+    [-0.45, 0.034],
+    [-0.45, COMB_TOP - 0.012],
+    [-0.43, COMB_TOP - 0.012],
+  ], 0.022);
+  bar("cheekPlate", [
+    [COMB_FRONT_Z, COMB_TOP - 0.012],
+    [COMB_FRONT_Z - 0.012, COMB_TOP],
+    [-0.52, COMB_TOP],
+    [-0.526, COMB_TOP - 0.008],
+    [-0.526, COMB_TOP - 0.014],
+  ], 0.05);
+  b.pin("cheekKnob", METAL, 0.014, 0.034, 0.02, 0.05, -0.44);
+  // The butt: a tall plate with its pad on length-of-pull spacers.
+  bar("buttPlate", [
+    [-0.532, COMB_TOP - 0.01],
+    [-0.558, COMB_TOP - 0.01],
+    [-0.564, COMB_TOP - 0.018],
+    [-0.564, -0.128],
+    [-0.556, -0.136],
+    [-0.532, -0.136],
+  ], 0.06);
   for (let i = 0; i < 2; i++) {
-    b.box("padSpacer", BODY, 0.068, BUTT_H * 0.94, 0.008, 0, BUTT_Y, -0.585 - i * 0.009);
+    b.box("padSpacer", BODY, 0.058, COMB_TOP + 0.13, 0.006, 0, (COMB_TOP - 0.144) / 2, -0.568 - i * 0.008);
   }
-  b.box("buttPad", RUBBER, 0.07, 0.196, 0.024, 0, BUTT_Y, -0.606);
-  for (let i = 0; i < 2; i++) {
-    b.box("padGroove", BODY, 0.072, 0.008, 0.02, 0, BUTT_Y - 0.052 - i * 0.032, -0.608);
-  }
-  // The monopod under the toe — where the off hand goes on a supported shot,
-  // and the last cue that this weapon expects to be fired from the ground.
-  b.box("monopodBlock", METAL, 0.026, 0.05, 0.036, 0, BUTT_Y - 0.106, -0.54);
-  b.pin("monopodWheel", METAL, 0.03, 0.014, 0, BUTT_Y - 0.128, -0.54, "x");
-  b.box("slingRear", METAL, 0.024, 0.03, 0.014, -0.038, BUTT_Y - 0.042, -0.475);
+  b.slab("buttPad", RUBBER, [
+    [-0.578, COMB_TOP - 0.012],
+    [-0.59, COMB_TOP - 0.016],
+    [-0.594, COMB_TOP - 0.03],
+    [-0.594, -0.124],
+    [-0.588, -0.136],
+    [-0.578, -0.138],
+  ], 0.066, 0.004);
+  // The bag rider under the butt, where the off hand goes on a supported shot.
+  b.slab("bagRider", RUBBER, [
+    [-0.47, -0.1],
+    [-0.532, -0.12],
+    [-0.532, -0.146],
+    [-0.52, -0.152],
+    [-0.476, -0.134],
+  ], 0.044, 0.004);
+  b.box("slingRear", METAL, 0.004, 0.016, 0.012, -0.031, -0.06, -0.52);
 
   // Merged before the magazine, the bolt and any optic, so none of their parts
   // can end up inside the weapon's own colour groups.
   const meshes = b.merge("sniper", root);
 
-  // --- magazine: a short, NARROW single-stack box ---
-  // Five long rounds in one column is a box barely deeper than the cartridge
-  // is tall, and that is the read: it hangs 7 cm under the well — about as far
-  // as the trigger guard does — where a 20 cm stick said "twenty rounds" on
-  // the one weapon here that holds five. Narrow is the other half; a
-  // double-stack of the same depth would say "more rounds" too. Merged into a
-  // node of its own so the reload can drop it.
+  // --- magazine: AI's short, deep ten-round box ---
+  // Straight and square, and short: it hangs little further under the well
+  // than the trigger guard does, which is the read on the one weapon here that
+  // does not hold twenty. Merged into a node of its own so the reload can drop
+  // it.
   const magazine = new TransformNode(`${prefix}_magazine`, scene);
   magazine.parent = root;
   const magPivot = b.pivot("magPivot", 0, -0.135, 0.055, MAG_RAKE);
-  b.box("mag", POLYMER, 0.04, 0.05, 0.096, 0, -0.02, 0, magPivot);
-  b.box("magSpine", BODY, 0.044, 0.046, 0.016, 0, -0.022, -0.042, magPivot);
-  for (let i = 0; i < 2; i++) {
-    b.box("magWitness", BODY, 0.043, 0.006, 0.04, 0, -0.012 - i * 0.018, 0.012, magPivot);
-  }
-  b.box("magFloor", METAL, 0.046, 0.016, 0.1, 0, -0.053, 0, magPivot);
-  b.box("magBase", RUBBER, 0.044, 0.012, 0.094, 0, -0.066, 0, magPivot);
+  b.upright("mag", POLYMER, [
+    { y: -0.078, w: 0.046, d: 0.11, k: 0.12 },
+    { y: 0.03, w: 0.046, d: 0.11, k: 0.12 },
+  ], magPivot);
+  // A sunk panel down each flank, and the floor plate a little proud.
+  b.slab("magPanel", RUBBER, [
+    [-0.04, -0.066],
+    [0.04, -0.066],
+    [0.04, -0.016],
+    [-0.04, -0.016],
+  ], 0.047, 0, 0, magPivot);
+  b.upright("magFloor", POLYMER, [
+    { y: -0.09, w: 0.05, d: 0.116, k: 0.2 },
+    { y: -0.076, w: 0.05, d: 0.116, k: 0.2 },
+  ], magPivot);
   meshes.push(...b.merge("sniperMag", magazine));
 
   // --- the bolt, about the bore, in a node of its own ---
