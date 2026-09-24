@@ -1295,7 +1295,8 @@ and drawn in `VIEWMODEL_GROUP`.
 by what fits where.** Head and foot are full-bleed bands; between them, a WEAPON
 strip of six cards across the top (the decision the other three depend on, so it
 gets the width), a column of the things FITTED to it down the left (optic,
-anti-vehicle, finish), the BAY in the middle, and the CHART and the copy down the
+anti-vehicle, throwable, finish — the throwable on every map, the anti-vehicle
+row only on one with armour), the BAY in the middle, and the CHART and the copy down the
 right — the only things on this screen that are read rather than pressed. The
 three columns share one top line under the strip (`justify-content: flex-start`,
 deliberately, because two left-aligned stacks starting at two different y is the

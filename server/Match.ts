@@ -48,6 +48,12 @@ import {
   isEquipmentId,
   type EquipmentId,
 } from "../src/entities/equipment";
+import {
+  DEFAULT_THROWABLE,
+  isThrowableId,
+  throwableCarried,
+  type ThrowableId,
+} from "../src/entities/throwables";
 import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/Vehicle";
 import { MAPS } from "../src/world/maps";
 import { HeadlessGame } from "./HeadlessGame";
@@ -469,6 +475,14 @@ export class Match {
   private readonly equipment = new Map<number, EquipmentId>();
 
   /**
+   * What each seated player's POUCH holds — a frag or a molotov — resolved
+   * here for `equipment`'s reason: what leaves the hand on a `grenade` message
+   * is this side's to say, and a client naming it per throw would name
+   * whatever it liked. `onGrenade` reads it; `setKit` writes it.
+   */
+  private readonly throwables = new Map<number, ThrowableId>();
+
+  /**
    * The rate limit's state per roster slot, built on that peer's first round.
    *
    * A BUCKET rather than the timestamp of the last accepted round, because the
@@ -740,6 +754,11 @@ export class Match {
           ? { e: "explode", at: [at.x, at.y, at.z] }
           : { e: "explode", at: [at.x, at.y, at.z], power },
       );
+    // A molotov caught. Public for `explode`'s reason — every client draws the
+    // fire, the thrower included, because their own bottle lit nothing on
+    // their screen (`GrenadeSystem.predicted`). The burn is this side's and
+    // leaves as `damage`, like any other hit.
+    this.game.onBlaze = (at) => this.queue({ e: "blaze", at: [at.x, at.y, at.z] });
     // A tank gun. Public, and `fire`'s counterpart for the one weapon nobody
     // is carrying — it reaches a client no other way, because no client runs
     // the crew that pulled the trigger or resolves the round it fired.
@@ -824,6 +843,7 @@ export class Match {
     rawName: string,
     weapon?: string,
     equipment?: string,
+    throwable?: string,
   ): Promise<void> {
     const id = `p${nextPeerId++}`;
     // Cleaned HERE, at the one door into the roster, rather than at the
@@ -918,7 +938,7 @@ export class Match {
     // The kit this person named at the handshake, resolved out of this side's
     // own tables. It is the FIRST of two doors: a player picks a kit more than
     // once in a match, and the second is `onDeploy`.
-    this.setKit(slot.index, weapon, equipment);
+    this.setKit(slot.index, weapon, equipment, throwable);
     // Not spawned here: a fresh player is dead with a zero timer, which is
     // exactly the state the reinforcement pass in `HeadlessGame.step` picks up.
     // Joining and redeploying are the same act and go through the same door.
@@ -1007,17 +1027,28 @@ export class Match {
    * honest, both of which read the loadout of a player who is shooting and
    * rest on it not changing under them.
    */
-  private setKit(slot: number, weapon?: string, equipment?: string): void {
+  private setKit(
+    slot: number,
+    weapon?: string,
+    equipment?: string,
+    throwable?: string,
+  ): void {
     this.loadouts.set(
       slot,
       weaponSetup(weapon && isPrimaryWeaponId(weapon) ? weapon : DEFAULT_WEAPON),
     );
     const kit = equipment && isEquipmentId(equipment) ? equipment : DEFAULT_EQUIPMENT;
     this.equipment.set(slot, kit);
+    const pouch = isThrowableId(throwable) ? throwable : DEFAULT_THROWABLE;
+    this.throwables.set(slot, pouch);
     const player = this.game.players.get(slot);
     if (player) {
       player.ordnanceCarried = equipmentSetup(kit).magSize;
       player.ordnance = player.ordnanceCarried;
+      // The pouch on the ordnance's terms exactly: the count is this side's,
+      // the body is dead (see above), and `spawn` refills from this.
+      player.grenadesCarried = throwableCarried(pouch);
+      player.grenades = player.grenadesCarried;
     }
   }
 
@@ -1038,6 +1069,7 @@ export class Match {
     this.game.removePlayer(peer.slot);
     this.loadouts.delete(peer.slot);
     this.equipment.delete(peer.slot);
+    this.throwables.delete(peer.slot);
     delete this.fireGate[peer.slot];
     delete this.lastOrdnance[peer.slot];
     delete this.lastShell[peer.slot];
@@ -1474,13 +1506,17 @@ export class Match {
     // for the one client that must not draw this because it is already
     // watching its own copy of the same throw.
     this.grenadeScratch.length = 0;
-    this.game.grenades.forEachLive((id, at, fuse, by) => {
-      this.grenadeScratch.push({
+    this.game.grenades.forEachLive((id, at, fuse, by, kind) => {
+      const g: GrenadeState = {
         i: id,
         p: [at.x, at.y, at.z],
         by: this.slotOf(by),
         fuse,
-      });
+      };
+      // A frag says nothing — see `GrenadeState.k` — so the snapshot a round
+      // of frags sends is byte for byte the one it always sent.
+      if (kind !== "frag") g.k = kind;
+      this.grenadeScratch.push(g);
     });
 
     // Every hull the map has, whole. A hull that has been taken off the field
@@ -1898,6 +1934,7 @@ export class Match {
       peer.slot,
       msg.weapon ?? this.loadouts.get(peer.slot)?.id,
       msg.equipment ?? this.equipment.get(peer.slot),
+      msg.throwable ?? this.throwables.get(peer.slot),
     );
     player.deployRequest = msg.spawn;
   }
@@ -2198,9 +2235,16 @@ export class Match {
     SHOT_ORIGIN.set(ox, oy, oz);
     SHOT_DIR.set(nx, ny, nz);
     // Spent only if the arm accepts it — the pool refuses rather than stealing
-    // a live slot, and a refused throw must cost nothing.
+    // a live slot, and a refused throw must cost nothing. WHAT is thrown is
+    // this side's record of the kit, never anything on the message.
     if (
-      this.game.grenades.throwAlong(SHOT_ORIGIN, SHOT_DIR, player.team, player)
+      this.game.grenades.throwAlong(
+        SHOT_ORIGIN,
+        SHOT_DIR,
+        player.team,
+        player,
+        this.throwables.get(peer.slot) ?? DEFAULT_THROWABLE,
+      )
     ) {
       player.grenades--;
     }

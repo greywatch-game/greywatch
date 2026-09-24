@@ -320,9 +320,18 @@ export interface GrenadeState {
   /**
    * Seconds of fuse left, so the pip blinks in step with the thrower's own —
    * see `pipLit`. It falls linearly, which is what makes lerping it between
-   * two samples exact rather than merely close.
+   * two samples exact rather than merely close. A molotov has no fuse and
+   * sends its flight backstop instead, which nothing draws.
    */
   fuse: number;
+  /**
+   * What is flying: `"molotov"` for a bottle, ABSENT for a frag — which is
+   * what every grenade on this wire was before there was a second kind, so an
+   * older server reads as frags and an older client draws a bottle as one.
+   * Additive, and no `PROTOCOL_VERSION` bump. Anything that is not a known
+   * throwable is drawn as a frag.
+   */
+  k?: string;
 }
 
 /**
@@ -745,6 +754,18 @@ export type ServerEvent =
    * see `docs/grenades.md`.
    */
   | { e: "explode"; at: Vec3; power?: number }
+  /**
+   * A molotov broke here and the ground is burning — `explode`'s twin for the
+   * other throwable. A position and nothing else, because everything a client
+   * DRAWS of a fire is `CONFIG.molotov` and everything it DOES is the
+   * authority's: the burn arrives as `damage` like any other hit. A client
+   * that joins while one is burning simply does not see it; eight seconds is
+   * not worth a table.
+   *
+   * Named `blaze` because `fire` is a gunshot on this wire. Additive: an older
+   * client ignores it and sees a bottle vanish, and no `PROTOCOL_VERSION` bump.
+   */
+  | { e: "blaze"; at: Vec3 }
   /**
    * The authority's answer to a `MountMessage` or a `DismountMessage`, and the
    * ONLY thing that ever puts a person into a hull or takes them out of one.
@@ -1262,6 +1283,15 @@ export interface Join {
    * the field would have been carrying if it could carry one at all.
    */
   equipment?: string;
+  /**
+   * The throwable in the pouch — `"frag"` or `"molotov"`.
+   *
+   * Resolved against the server's own table for `equipment`'s reason: what
+   * leaves the hand when this player throws, and how many a life carries, are
+   * the authority's to decide. Absent means the frag, which is what every
+   * client that predates the field threw. Offered on every map.
+   */
+  throwable?: string;
 }
 
 /**
@@ -1389,6 +1419,8 @@ export interface DeployMessage {
   weapon?: string;
   /** The third slot, on `weapon`'s terms exactly. See `Join.equipment`. */
   equipment?: string;
+  /** The pouch, on `weapon`'s terms exactly. See `Join.throwable`. */
+  throwable?: string;
 }
 
 /**

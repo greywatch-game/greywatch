@@ -98,6 +98,8 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildCarbine } from "./CarbineModel";
 import { buildDmr } from "./DmrModel";
 import { buildLmg } from "./LmgModel";
+import { buildMolotov } from "./MolotovModel";
+import type { ThrowableId } from "./throwables";
 import { buildPistol } from "./PistolModel";
 import { buildRifle } from "./RifleModel";
 import { buildSmg } from "./SmgModel";
@@ -429,6 +431,14 @@ const THROW_ELBOW = new Vector3(-0.22, -0.55, -0.24);
  */
 const THROW_BALL = 0.075;
 /**
+ * The molotov in the same fist, as a uniform scale on `MolotovModel`'s bottle
+ * (which is built in metres, about 0.3 m tall) in the arm's model units — so
+ * about 0.1 m once the node's scale is applied. A third of the thrown one, for
+ * `THROW_BALL`'s reason and harder: at 0.9 the cocked bottle ran from the
+ * fist to the top of the frame, and a bottle at the lens is a wine rack.
+ */
+const THROW_BOTTLE = 0.52;
+/**
  * How far past the release the hand carries on, as a fraction of the whip it
  * just travelled, and the share of the recovery it spends getting there. An
  * arm that reversed on the release frame reads as the throw being cancelled
@@ -578,6 +588,10 @@ export class ViewModel {
   private readonly throwHand: TransformNode;
   /** Hidden the instant the real grenade leaves; back for the next wind-up. */
   private readonly throwBall: TransformNode;
+  /** The bottle, when the pouch holds molotovs. The same rule as the frag. */
+  private readonly throwBottle: TransformNode;
+  /** Which of the two the fist is closed on. */
+  private throwKind: ThrowableId = "frag";
   /**
    * The gesture as four keys — rest, cock, release, follow-through — resolved
    * once so the per-frame job is one lerp between two of them. The last is
@@ -763,6 +777,20 @@ export class ViewModel {
     this.throwBall = ball;
     this.meshes.push(...throwArm, ball, pip);
     this.arms.push(...throwArm);
+    // The bottle, held by its body with the lit rag up and leaning back over
+    // the knuckles — the wick is the one detail that has to be in frame at the
+    // cock, because it is what says this one is going to be on fire.
+    this.throwBottle = new TransformNode("view_throwBottle", scene);
+    this.throwBottle.parent = this.throwHand;
+    this.throwBottle.position.set(0, 0.05, 0.07);
+    this.throwBottle.rotation.set(-0.5, 0, 0.35);
+    this.throwBottle.scaling.setAll(THROW_BOTTLE);
+    const bottle = buildMolotov(scene, mats, "view_throwMolotov");
+    bottle.mesh.parent = this.throwBottle;
+    const bottleParts = [bottle.mesh, ...bottle.mesh.getChildMeshes<Mesh>(false)];
+    for (const m of bottleParts) m.isVisible = true;
+    this.meshes.push(...bottleParts);
+    this.throwBottle.setEnabled(false);
 
     const th = v.throw;
     const key = (pos: XYZ, rot: XYZ) => ({
@@ -1549,8 +1577,19 @@ export class ViewModel {
     // The frag is in the fist right up to the release and gone after it: the
     // one in the air from that frame on is GrenadeSystem's, thrown from this
     // hand's own position, and two of them on screen at once would give the
-    // whole thing away.
-    this.throwBall.setEnabled(t < windup);
+    // whole thing away. The bottle is the same rule, and only one of the two
+    // is ever in the hand.
+    const held = t < windup;
+    this.throwBall.setEnabled(held && this.throwKind === "frag");
+    this.throwBottle.setEnabled(held && this.throwKind === "molotov");
+  }
+
+  /**
+   * What the throwing hand closes on — the kit's throwable. Nothing about the
+   * gesture changes; only the object in the fist does.
+   */
+  setThrowable(id: ThrowableId): void {
+    this.throwKind = id;
   }
 
   /**

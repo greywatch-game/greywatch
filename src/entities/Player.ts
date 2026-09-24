@@ -54,7 +54,10 @@
  * only then does Game ask the pool to carry a grenade and `spendGrenade` book
  * it. The count is still debited last, for the reason it always was — the pool
  * may refuse, and a count spent on a grenade that never arrives is worse than
- * one not thrown.
+ * one not thrown. WHICH throwable the pouch holds (`throwable`, a frag or a
+ * molotov) is the kit's, set from the menu and the deploy screen only, and it
+ * changes nothing here but the count a life starts with and what the hand is
+ * seen holding — the gesture is the same one for both.
  */
 import {
   type AbstractMesh,
@@ -82,6 +85,11 @@ import {
 } from "./equipment";
 import type { FinishId } from "./finishes";
 import type { SightId } from "./sights";
+import {
+  DEFAULT_THROWABLE,
+  throwableCarried,
+  type ThrowableId,
+} from "./throwables";
 import {
   DEFAULT_WEAPON,
   EQUIP_SLOT,
@@ -335,10 +343,15 @@ export class Player implements Combatant {
   invulnerable = false;
   grounded = true;
   /**
-   * Grenades left this life. Refilled by `fullReset` and by nothing else —
+   * What the pouch holds — a frag or a molotov. The kit's, written only by
+   * `setThrowable`; read by `Game` for which one leaves the hand.
+   */
+  throwable: ThrowableId = DEFAULT_THROWABLE;
+  /**
+   * Throwables left this life. Refilled by `fullReset` and by nothing else —
    * there is no resupply, so two a life is the whole economy.
    */
-  grenades: number = CONFIG.grenade.carried;
+  grenades: number = throwableCarried(DEFAULT_THROWABLE);
 
   /**
    * The two things the player carries: the kit's primary, and the sidearm
@@ -1375,6 +1388,20 @@ export class Player implements Combatant {
   }
 
   /**
+   * Fills the pouch with a frag or a molotov. Reachable from the menu and the
+   * deploy screen only, exactly as `setWeapon` is, so there is never a
+   * half-spent pouch to carry across: it is refilled to the new item's count
+   * here as well as at the next `fullReset`, so the HUD is right on the deploy
+   * screen before the body exists. The viewmodel is told so the hand that
+   * cocks back is holding the thing that is about to fly.
+   */
+  setThrowable(id: ThrowableId): void {
+    this.throwable = id;
+    this.grenades = throwableCarried(id);
+    this.view.setThrowable(id);
+  }
+
+  /**
    * Fits an optic. Pure pass-through to the viewmodel — the sight changes
    * what the player can see, never what the weapon does, so nothing about
    * damage, spread or recoil is downstream of this.
@@ -1430,7 +1457,7 @@ export class Player implements Combatant {
     this.view.setWeapon(this.weapon.id);
     for (const h of this.slots) h.ammo = h.setup.magSize;
     this.ammo = this.magSize;
-    this.grenades = CONFIG.grenade.carried;
+    this.grenades = throwableCarried(this.throwable);
     this.throwCooldown = 0;
     this.throwT = -1;
     this.throwPending = false;

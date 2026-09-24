@@ -189,6 +189,13 @@ export class NetPlayer implements Combatant {
    */
   ordnanceCarried = 0;
 
+  /**
+   * How many throwables a full pouch is — two frags or two bottles, whichever
+   * this player brought. `Match` writes it off the resolved kit, on
+   * `ordnanceCarried`'s terms and for its reason.
+   */
+  grenadesCarried: number = CONFIG.grenade.carried;
+
   constructor(
     readonly slot: number,
     public team: Team,
@@ -320,7 +327,7 @@ export class NetPlayer implements Combatant {
     this.regenLockT = 0;
     // Death is the only resupply. See the fields' notes — the AT pouch follows
     // the same rule, and `Match` is what knows how many that is.
-    this.grenades = CONFIG.grenade.carried;
+    this.grenades = this.grenadesCarried;
     this.ordnance = this.ordnanceCarried;
     // A fresh body is on foot. A driver who died inside a hull was put out of
     // it by `HeadlessGame.seat` on the frame it burned, so this is belt and

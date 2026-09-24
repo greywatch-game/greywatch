@@ -93,6 +93,8 @@ export interface JoinOptions {
    * own table, exactly as `weapon` is — see `Join.equipment`.
    */
   equipment?: string;
+  /** The throwable in the pouch, on `equipment`'s terms — see `Join.throwable`. */
+  throwable?: string;
   /** A specific match from the lobby. Absent means "wherever there is room". */
   matchId?: string;
   /** Ask for a fresh match instead of filling one. Ignored with `matchId`. */
@@ -249,6 +251,7 @@ export class Connection {
         bots: this.join.bots,
         weapon: this.join.weapon,
         equipment: this.join.equipment,
+        throwable: this.join.throwable,
       });
     });
 

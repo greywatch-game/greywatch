@@ -105,13 +105,14 @@ export function readClientMessage(raw: string): ClientMessage | null {
       // `version` is compared with `!==` downstream, so a non-number is already
       // refused there; it is checked anyway so that the refusal names the
       // protocol mismatch it looks like rather than depending on a coincidence.
-      // The four ids are optional by design — a client that sends none of them
+      // The five ids are optional by design — a client that sends none of them
       // is `?mp` and every build that predates the lobby.
       return isNum(m.version) &&
         optionalString(m.matchId) &&
         optionalString(m.map) &&
         optionalString(m.weapon) &&
-        optionalString(m.equipment)
+        optionalString(m.equipment) &&
+        optionalString(m.throwable)
         ? msg
         : null;
 
@@ -209,7 +210,8 @@ export function readClientMessage(raw: string): ClientMessage | null {
       // that a field a lookup is about to be handed is a string at all.
       return Number.isInteger(m.spawn) &&
         optionalString(m.weapon) &&
-        optionalString(m.equipment)
+        optionalString(m.equipment) &&
+        optionalString(m.throwable)
         ? msg
         : null;
 

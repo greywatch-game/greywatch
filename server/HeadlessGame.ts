@@ -105,6 +105,8 @@ import { buildServerWorld } from "./world";
 export type DeathCause =
   | "round"
   | "blast"
+  /** A molotov's burn — `GrenadeSystem.onBurnHit`. */
+  | "fire"
   | "tracks"
   | "shell"
   | "mg"
@@ -746,8 +748,9 @@ export class HeadlessGame {
     };
     // A bot asking for a grenade on a position. The arm has the last word: a
     // solve it cannot make returns false and the bot spends nothing.
+    // What leaves the hand is the bot's own pouch, exactly as `Game` wires it.
     this.battle.throwGrenadeFor = (bot, from, at) =>
-      this.grenades.throwAt(from, at, bot.team, bot);
+      this.grenades.throwAt(from, at, bot.team, bot, bot.throwable);
     // A blast resolves against the THROWER's target list, the same way a bullet
     // does, so friendly fire is excluded by construction here too and this
     // system never learns what a team is.
@@ -770,6 +773,17 @@ export class HeadlessGame {
       // the time this fires. Only bots are this handler's business.
       if (victim instanceof Bot) this.onKill(victim, thrower, "blast", credited);
     };
+    // A molotov's burn, on the blast's terms exactly: the thrower's row, and a
+    // bot's death announced here while a person's already left through
+    // `NetPlayer.onDamaged`.
+    this.grenades.onBurnHit = (victim, thrower, by, killed) => {
+      if (!killed) return;
+      const credited = this.creditKill(by, victim);
+      if (victim instanceof Bot) this.onKill(victim, thrower, "fire", credited);
+    };
+    // A fire starting is news for every client, which draws it; where it burns
+    // and whom it hurts stay here.
+    this.grenades.onIgnited = (_id, at) => this.onBlaze(at);
     // A launcher bot's rocket, wired exactly as `Game` wires it: the ask is a
     // POINT and a rocket flies straight, so there is no solve to refuse and the
     // pool has the only word. `considerRocket` has already decided the target
@@ -1640,6 +1654,13 @@ export class HeadlessGame {
    * the whole size of the fireball.
    */
   onExplosion: (at: Vector3, power: number) => void = () => {};
+
+  /**
+   * Wired by `Match`: a molotov caught here. A position and nothing else — see
+   * the `blaze` event. `at` is `GrenadeSystem`'s own vector, read inside the
+   * call.
+   */
+  onBlaze: (at: Vector3) => void = () => {};
 
   /**
    * Wired by `Match`: this person got into a hull or was put out of one, and

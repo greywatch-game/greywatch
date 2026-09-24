@@ -1,8 +1,9 @@
 /**
- * GrenadeSystem.ts — Thrown grenades: the flight, the bounces, the fuse and the
- * blast, plus six of the eight layers the blast is drawn as.
- * Owns: the grenade pool, the blast pool (a flash, a cluster of fireball lobes
- * and a shock ring per slot), the ember pool, and the two `BlastDust` clouds —
+ * GrenadeSystem.ts — Thrown grenades and molotovs: the flight, the bounces, the
+ * fuse, the blast and the fire, plus six of the eight layers a blast is drawn as.
+ * Owns: the grenade pool (a frag and a bottle per slot), the blast pool (a
+ * flash, a cluster of fireball lobes and a shock ring per slot), the fire pool
+ * a broken bottle burns in, the ember pool, and the two `BlastDust` clouds —
  * the low dust and the smoke column. All FIXED SIZE and allocated once — this
  * is the same rule CombatSystem's tracers follow, and for the same reason: a
  * firefight must not allocate.
@@ -48,9 +49,30 @@
  *   rubble. It reads the same `metadata.surface` a bullet's impact reads, so a
  *   new floor material is one row in `CombatSystem`'s table and nothing here.
  *
+ * ## The molotov is the same flight and a different ending
+ *
+ * The throwable slot holds a frag OR a molotov (`entities/throwables.ts`), and
+ * both are slots in the one pool here: the same throw, the same arc, the same
+ * one ray a frame. What differs is what the first thing it touches does to
+ * it. A frag bounces and waits for its fuse; a bottle BREAKS, and where it
+ * breaks a FIRE starts — a slot in a second pool (`Fire`) that burns for
+ * `CONFIG.molotov.fire.life` and hurts whoever stands in it a few points at a
+ * time, against the thrower's target list fetched on every tick, exactly as a
+ * blast fetches it at the detonation. It is drawn in the world's one fire
+ * material (`FlameMaterial`), and its ignition is the one blast's own flash
+ * and lobes at a fraction of a frag, with the shock ring left off.
+ *
+ * **A fire drawn off the wire is a fire with no RULES** (`Fire.rules`): in a
+ * match the burn is the authority's, arrives as a `blaze` event, and a client
+ * draws it through `drawFire` exactly as it draws somebody else's blast
+ * through `drawBlast`. `predicted` is what stops the thrower's own local copy
+ * lighting a second one where their bottle landed on their screen.
+ *
  * Everything cross-system leaves through callbacks wired in `Game` —
  * `onExploded` for the light, the sound, the camera and the ground layers,
- * `onBlastHit` for the scoreboard. This system imports no other system.
+ * `onBlastHit` for the scoreboard, and `onIgnited`/`onBurntOut`/`onBurnHit`
+ * for a fire's light, noise, mark and kills. This system imports no other
+ * system.
  */
 import {
   Color3,
@@ -68,18 +90,37 @@ import {
 import { CONFIG } from "../config";
 import type { Combatant, Team } from "../entities/Combatant";
 import { buildGrenade, pipLit } from "../entities/GrenadeModel";
+import {
+  buildMolotov,
+  showMolotov,
+  type MolotovMeshes,
+} from "../entities/MolotovModel";
+import type { ThrowableId } from "../entities/throwables";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 import { TerrainField } from "../world/TerrainField";
+import { flameData } from "../world/flame";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 import { buildPuffTexture } from "./puffTexture";
 import type { DamageKind, Hittable } from "./CombatSystem";
 
-/** One grenade in flight (or resting with its fuse running). */
+/**
+ * One throwable in flight — a frag (resting with its fuse running, too) or a
+ * molotov on its way to breaking.
+ *
+ * **Both bodies are built into every slot and `kind` says which one is out**,
+ * rather than two pools: a slot is claimed by whoever throws next, the refusal
+ * rule is the pool's and has to be ONE rule, and a frag and a bottle share
+ * everything about the flight but its ending.
+ */
 interface Grenade {
   mesh: Mesh;
   /** The fuse tell — blinks faster as the fuse runs out. */
   pip: Mesh;
+  /** The bottle, when this flight is a molotov. Hidden otherwise. */
+  bottle: MolotovMeshes;
+  /** Which of the two this flight is. */
+  kind: ThrowableId;
   /**
    * What this FLIGHT is called, for anything outside that has to follow one
    * grenade across frames — today the multiplayer server, which replicates the
@@ -93,7 +134,11 @@ interface Grenade {
    */
   id: number;
   vel: Vector3;
-  /** Seconds of fuse left; <= 0 while the slot is free. */
+  /**
+   * Seconds of fuse left; <= 0 while the slot is free. A molotov has no fuse,
+   * and this counts its `maxFlight` backstop down instead — the same clock, so
+   * the wire's `fuse` needs no second field.
+   */
   fuse: number;
   live: boolean;
   team: Team;
@@ -155,6 +200,55 @@ interface Blast {
   power: number;
   /** Where it went off — the slot's own copy, since the caller's is scratch. */
   at: Vector3;
+  /**
+   * Whether the ring runs out along the ground. True for every blast; false
+   * for a molotov's ignition, which is a whoosh of petrol and not a pressure
+   * wave — and whose fire already draws its own edge.
+   */
+  shock: boolean;
+}
+
+/**
+ * One patch of burning ground, and the second pool in this file.
+ *
+ * **It is a PLACE with a clock, where a blast is an event with a picture**, so
+ * everything a blast resolves once a fire resolves every `tick` for as long as
+ * it burns: the thrower's target list, the band a victim's centre has to be
+ * in, and one line-of-sight ray per victim inside it.
+ */
+interface Fire {
+  /**
+   * What this FIRE is called, for `Game`'s light and its held-open audio
+   * graph — both keyed on it for the length of the burn. Monotonic and never
+   * reused, for `Grenade.id`'s reason: a slot is reclaimed the instant the
+   * oldest fire is put out, and a light keyed on the slot would be taken away
+   * from the new fire by the old one's burn-out.
+   */
+  id: number;
+  /** The floor it is burning on. The slot's own copy. */
+  at: Vector3;
+  /** Seconds since it started; < 0 while the slot is free. */
+  t: number;
+  team: Team;
+  by: Combatant | null;
+  /** Seconds until the next burn is resolved. */
+  tick: number;
+  /** False for a fire drawn off the wire: the authority burns, this only draws. */
+  rules: boolean;
+  /** Its flames — empty on the authority, which draws nothing. */
+  flames: Flame[];
+}
+
+/** One flame in a fire: where it stands off the fire's middle, and how big it is. */
+interface Flame {
+  mesh: Mesh;
+  /** Offset on the ground from the fire's middle, metres. */
+  dx: number;
+  dz: number;
+  /** Its own size against the rest, around 1. */
+  size: number;
+  /** Whether it is lit in THIS fire — false where a wall stands between it and the middle. */
+  on: boolean;
 }
 
 /** One ember flung out of a blast. */
@@ -290,6 +384,9 @@ const _lifted = new Vector3();
 /** `visible`'s own start point, so a fragment ray allocates nothing. */
 const _los = new Vector3();
 const _down = new Vector3(0, -1, 0);
+/** A fire's own point of view for its burn's line of sight, and a flame's floor probe. */
+const _flameTop = new Vector3();
+const _flameProbe = new Vector3();
 const _up = new Vector3(0, 1, 0);
 const _lift = new Vector3();
 
@@ -325,6 +422,21 @@ export class GrenadeSystem {
   private readonly hit = newRayHit();
   /** Names the next flight. Never reset — see `Grenade.id`. */
   private nextId = 0;
+  /** The burning ground a molotov leaves — see `Fire`. */
+  private fires: Fire[] = [];
+  /** Names the next fire. Never reset — see `Fire.id`. */
+  private nextFireId = 0;
+  /**
+   * Whether a molotov that breaks HERE lights nothing.
+   *
+   * True in a netplay client, where the burn is the authority's and arrives as
+   * a `blaze` event: the thrower's own local bottle still flies — it is what
+   * they watched leave their hand — but lighting it too would put two fires
+   * down for one bottle, one of them where it landed on this screen rather
+   * than where it landed on the server's. `Game.installMap` writes it beside
+   * `VehicleSystem.build`'s own `predicted`, for the same reason.
+   */
+  predicted = false;
   /** The map's floor, as a backstop under the collider proxies. */
   private terrain: TerrainField = new TerrainField();
 
@@ -368,6 +480,33 @@ export class GrenadeSystem {
     killed: boolean,
   ) => void = () => {};
 
+  /**
+   * Wired by Game: a fire started here, on `ground`. The light, the noise of
+   * the bottle going up, and the mark it leaves all hang off this, for
+   * `onExploded`'s reason — none of them is this system's to reach.
+   *
+   * `id` names the fire until `onBurntOut` says the same id, which is what
+   * `Game` keys the fire's light and its held-open sound on. `ground` is this
+   * system's scratch, exactly as it is on `onExploded`.
+   */
+  onIgnited: (id: number, at: Vector3, ground: BlastGround) => void = () => {};
+
+  /** Wired by Game: the fire `onIgnited` named is out. Take its light away. */
+  onBurntOut: (id: number) => void = () => {};
+
+  /**
+   * Wired by Game: a fire burned someone. `onBlastHit`'s four arguments, and a
+   * callback of its own rather than that one, because what a BURN owes the
+   * thrower is not what a blast does: it arrives four times a second for as
+   * long as somebody stands in it, so a hitmarker per tick would be a strobe.
+   */
+  onBurnHit: (
+    victim: Hittable,
+    thrower: Team,
+    by: Combatant | null,
+    killed: boolean,
+  ) => void = () => {};
+
   constructor(
     // Not a field: everything this system builds is built here, and the last
     // thing that wanted the scene afterwards was the flight's step ray.
@@ -397,6 +536,8 @@ export class GrenadeSystem {
       this.grenades.push({
         mesh,
         pip,
+        bottle: buildMolotov(scene, mats, `molotov${i}`),
+        kind: "frag",
         id: 0,
         vel: new Vector3(),
         fuse: 0,
@@ -485,6 +626,57 @@ export class GrenadeSystem {
         t: -1,
         power: 1,
         at: new Vector3(),
+        shock: true,
+      });
+    }
+
+    // The molotov's fires. The FLAMES are built only where something draws —
+    // `FlameMaterial` is a WGSL shader and the authority has no device to
+    // compile it on — but the SLOTS are built everywhere, because where a fire
+    // is and whom it burns are rules. One geometry, cloned: every flame in
+    // every fire is the same vertex data at its own scale, and the shader
+    // phases each one off its WORLD position, so no two in a street move
+    // together however many share the buffer.
+    const m = CONFIG.molotov;
+    const source = draws ? new Mesh("molotovFlameSource", scene) : null;
+    if (source) {
+      flameData({ radius: m.flameRadius, height: m.flameHeight }).applyToMesh(source);
+      source.material = mats.getFlame();
+      source.metadata = { noInk: true, noShadowCaster: true };
+      source.isPickable = false;
+      source.isVisible = false;
+    }
+    for (let i = 0; i < m.fires; i++) {
+      const flames: Flame[] = [];
+      for (let j = 0; source && j < m.flames; j++) {
+        const mesh = source.clone(`molotovFlame${i}-${j}`);
+        mesh.metadata = { noInk: true, noShadowCaster: true };
+        mesh.isPickable = false;
+        mesh.isVisible = false;
+        // The first flame stands in the middle and the rest walk out on the
+        // golden angle to most of the radius, so the disc reads as burning to
+        // its edge rather than as one fire with a halo. Deterministic, for
+        // the lobes' reason: nothing in this constructor may draw a random.
+        const r =
+          j === 0 ? 0 : m.fire.radius * (0.3 + 0.55 * Math.sqrt(j / (m.flames - 1)));
+        const a = j * 2.399963 + i * 0.7;
+        flames.push({
+          mesh,
+          dx: Math.cos(a) * r,
+          dz: Math.sin(a) * r,
+          size: j === 0 ? 1.25 : 0.7 + 0.35 * (((j * 5) % 4) / 3),
+          on: false,
+        });
+      }
+      this.fires.push({
+        id: 0,
+        at: new Vector3(),
+        t: -1,
+        team: 0,
+        by: null,
+        tick: 0,
+        rules: true,
+        flames,
       });
     }
 
@@ -541,10 +733,29 @@ export class GrenadeSystem {
    * position and is valid only for the length of the call.
    */
   forEachLive(
-    fn: (id: number, at: Vector3, fuse: number, by: Combatant | null) => void,
+    fn: (
+      id: number,
+      at: Vector3,
+      fuse: number,
+      by: Combatant | null,
+      kind: ThrowableId,
+    ) => void,
   ): void {
     for (const n of this.grenades) {
-      if (n.live) fn(n.id, n.mesh.position, n.fuse, n.by);
+      if (n.live) fn(n.id, body(n).position, n.fuse, n.by, n.kind);
+    }
+  }
+
+  /**
+   * Every fire burning right now, and how far along its own swell it is — 0
+   * as it starts and as it goes out, 1 at full height. `Game` is the caller:
+   * the fire's light and its held-open sound are keyed on `id` and eased on
+   * `strength`, and both belong to systems this one may not reach. `at` is
+   * the slot's own vector and valid only for the call, as `forEachLive`'s is.
+   */
+  forEachFire(fn: (id: number, at: Vector3, strength: number) => void): void {
+    for (const f of this.fires) {
+      if (f.t >= 0) fn(f.id, f.at, fireStrength(f.t));
     }
   }
 
@@ -561,13 +772,14 @@ export class GrenadeSystem {
     dir: Vector3,
     team: Team,
     by: Combatant | null,
+    kind: ThrowableId = "frag",
   ): boolean {
     // Tilting a unit direction up by an angle and renormalising: cheaper than
     // building a rotation, and the axis is always world up.
     _launch.copyFrom(dir).normalize();
     _launch.y += Math.tan(CONFIG.grenade.throwLift);
     _launch.normalize().scaleInPlace(CONFIG.grenade.throwSpeed);
-    return this.throwFrom(from, _launch, team, by);
+    return this.throwFrom(from, _launch, team, by, kind);
   }
 
   /**
@@ -590,6 +802,7 @@ export class GrenadeSystem {
     to: Vector3,
     team: Team,
     by: Combatant | null,
+    kind: ThrowableId = "frag",
   ): boolean {
     const cfg = CONFIG.grenade;
     const dx = to.x - from.x;
@@ -608,33 +821,46 @@ export class GrenadeSystem {
       Math.sin(angle) * cfg.throwSpeed,
       (dz / d) * horizontal,
     );
-    return this.throwFrom(from, _launch, team, by);
+    return this.throwFrom(from, _launch, team, by, kind);
   }
 
-  /** Claims a pool slot and puts the grenade in the air. */
+  /**
+   * Claims a pool slot and puts the grenade — or the bottle — in the air.
+   *
+   * Both kinds leave on the same velocity: a molotov is thrown on the frag's
+   * arc and states none of its own (see `CONFIG.molotov`'s header), so the
+   * two solves above serve both and the bots' measured band holds for both.
+   */
   private throwFrom(
     from: Vector3,
     velocity: Vector3,
     team: Team,
     by: Combatant | null,
+    kind: ThrowableId,
   ): boolean {
     const slot = this.grenades.find((n) => !n.live);
     if (!slot) return false;
     slot.id = ++this.nextId;
-    slot.mesh.position.copyFrom(from);
+    slot.kind = kind;
+    const mesh = body(slot);
+    mesh.position.copyFrom(from);
     slot.vel.copyFrom(velocity);
-    slot.fuse = CONFIG.grenade.fuse;
+    slot.fuse = kind === "molotov" ? CONFIG.molotov.maxFlight : CONFIG.grenade.fuse;
     slot.live = true;
     slot.resting = false;
     slot.team = team;
     slot.by = by;
-    slot.mesh.rotation.set(
+    mesh.rotation.set(
       Math.random() * 3,
       Math.random() * 3,
       Math.random() * 3,
     );
-    slot.mesh.isVisible = true;
-    slot.pip.isVisible = true;
+    if (kind === "molotov") {
+      showMolotov(slot.bottle, true);
+    } else {
+      slot.mesh.isVisible = true;
+      slot.pip.isVisible = true;
+    }
     return true;
   }
 
@@ -642,14 +868,22 @@ export class GrenadeSystem {
     const g = CONFIG.grenade;
     for (const n of this.grenades) {
       if (!n.live) continue;
+      const bottle = n.kind === "molotov";
+      const mesh = body(n);
+      const radius = bottle ? CONFIG.molotov.radius : g.radius;
       n.fuse -= dt;
       if (n.fuse <= 0) {
-        this.detonate(n);
+        // A frag's fuse, or a bottle that has flown its `maxFlight` without
+        // touching anything — broken where it is, which the terrain backstop
+        // below makes all but unreachable.
+        if (bottle) this.shatter(n, mesh.position, _normal.set(0, 1, 0));
+        else this.detonate(n);
         continue;
       }
       // The tell, from the model file so that a grenade drawn off the wire
-      // blinks in step with this one — see `pipLit`.
-      n.pip.isVisible = pipLit(n.fuse / g.fuse);
+      // blinks in step with this one — see `pipLit`. A bottle has no fuse to
+      // tell; its lit rag is the tell and it is always lit.
+      if (!bottle) n.pip.isVisible = pipLit(n.fuse / g.fuse);
       if (n.resting) continue;
 
       n.vel.y -= g.gravity * dt;
@@ -662,9 +896,9 @@ export class GrenadeSystem {
         _dir.copyFrom(_step).scaleInPlace(1 / travel);
         if (
           this.rays?.castRound(
-            n.mesh.position,
+            mesh.position,
             _dir,
-            travel + g.radius,
+            travel + radius,
             this.hit,
           )
         ) {
@@ -676,12 +910,18 @@ export class GrenadeSystem {
           if (Vector3.Dot(_normal, _dir) > 0) {
             _normal.scaleInPlace(-1);
           }
-          n.mesh.position
+          mesh.position
             .copyFrom(this.hit.point)
-            .addInPlace(_normal.scale(g.radius));
+            .addInPlace(_normal.scale(radius));
+          // A bottle does not bounce: the first thing it touches is where it
+          // breaks, which is the whole difference between it and a frag.
+          if (bottle) {
+            this.shatter(n, mesh.position, _normal);
+            continue;
+          }
           this.bounce(n, _normal);
         } else {
-          n.mesh.position.addInPlace(_step);
+          mesh.position.addInPlace(_step);
         }
       }
 
@@ -689,21 +929,27 @@ export class GrenadeSystem {
       // are `solid` and the ray above normally finds them, but a grenade that
       // slipped past one (a seam, a step taken from inside a face) has to end
       // up on the ground rather than falling out of the world with a live fuse.
-      const floor = this.terrain.heightAt(n.mesh.position.x, n.mesh.position.z);
-      if (n.mesh.position.y < floor + g.radius) {
-        n.mesh.position.y = floor + g.radius;
+      const floor = this.terrain.heightAt(mesh.position.x, mesh.position.z);
+      if (mesh.position.y < floor + radius) {
+        mesh.position.y = floor + radius;
+        if (bottle) {
+          this.shatter(n, mesh.position, _normal.set(0, 1, 0));
+          continue;
+        }
         this.bounce(n, _normal.set(0, 1, 0));
       }
 
       // Tumble at a rate that reads off the speed, so a rolling grenade rolls
-      // and a resting one is still.
+      // and a resting one is still. A bottle turns end over end, which is the
+      // one axis a cylinder shows it on.
       const speed = n.vel.length();
       if (!n.resting) {
-        n.mesh.rotation.x += speed * dt * 2.4;
-        n.mesh.rotation.z += speed * dt * 1.7;
+        mesh.rotation.x += speed * dt * (bottle ? 0.9 : 2.4);
+        mesh.rotation.z += speed * dt * (bottle ? 0.25 : 1.7);
       }
     }
 
+    this.updateFires(dt);
     this.updateEffects(dt);
   }
 
@@ -752,6 +998,214 @@ export class GrenadeSystem {
       // the header, and `CONFIG.grenade`'s "The blast, as a picture".
       power: 1,
     });
+  }
+
+  /**
+   * A bottle breaking: the flight is over and a fire starts under it.
+   *
+   * `at` is where it broke and `normal` the face it broke on, both the
+   * caller's and read before anything here borrows a scratch vector. **The
+   * fire is on the FLOOR under the break, not at it**: a bottle thrown into a
+   * wall breaks at head height and the petrol runs down it, so the break point
+   * is stepped off the face and a ray looks straight down for somewhere to
+   * burn (`dropReach`). Nothing found there is a bottle broken over a drop —
+   * the terrain answers, which is what the flight's own backstop does.
+   *
+   * A `predicted` client lights nothing: the bottle it drew was its own copy,
+   * and the fire is the authority's (see the field).
+   */
+  private shatter(n: Grenade, at: Vector3, normal: Vector3): void {
+    const m = CONFIG.molotov;
+    n.live = false;
+    showMolotov(n.bottle, false);
+    if (this.predicted) return;
+    _flameProbe.copyFrom(normal).scaleInPlace(m.radius * 2).addInPlace(at);
+    const floor = this.floorUnder(_flameProbe, m.dropReach);
+    this.ignite(floor, n.team, n.by, true);
+  }
+
+  /**
+   * Where the floor is under `from`, looking at most `reach` down: the
+   * colliders first, then the terrain as the backstop under them — the same
+   * pair the flight lands on. Returns `_flameTop`, overwritten per call.
+   */
+  private floorUnder(from: Vector3, reach: number): Vector3 {
+    _lifted.copyFrom(from);
+    _lifted.y += PROBE_LIFT;
+    const terrain = this.terrain.heightAt(from.x, from.z);
+    let y = terrain;
+    if (this.rays?.castRound(_lifted, _down, reach + PROBE_LIFT, this.hit)) {
+      // A collider's top face above the terrain is a floor to burn on — a
+      // roof, a landing, a pavement slab. One below it is a face the terrain
+      // is already covering, and the terrain is what the fire stands on.
+      y = Math.max(terrain, this.hit.point.y);
+    }
+    // Never above where the bottle broke: a ray that started inside something
+    // reports its far face, and a fire lifted onto a ceiling is a fire in the
+    // air.
+    return _flameTop.set(from.x, Math.min(y, from.y), from.z);
+  }
+
+  /**
+   * Starts a fire on the floor at `at`. `rules` is whether it BURNS anybody:
+   * true for a bottle that broke in this simulation, false for one drawn off
+   * the wire, whose burn is the authority's (`drawFire`).
+   *
+   * **The slot is claimed by AGE and never refused** — see `CONFIG.molotov
+   * .fires`. The fire it takes is put out first, through `onBurntOut`, so a
+   * light and a sound keyed on the old id cannot outlive it.
+   */
+  private ignite(at: Vector3, team: Team, by: Combatant | null, rules: boolean): void {
+    let slot = this.fires[0];
+    for (const f of this.fires) {
+      if (f.t < 0) {
+        slot = f;
+        break;
+      }
+      if (f.t > slot.t) slot = f;
+    }
+    if (slot.t >= 0) this.putOut(slot);
+    slot.id = ++this.nextFireId;
+    slot.at.copyFrom(at);
+    slot.t = 0;
+    slot.team = team;
+    slot.by = by;
+    slot.rules = rules;
+    // The first burn resolves on the first tick rather than on the frame the
+    // bottle broke: whoever it landed on has the length of one tick to be
+    // somewhere else, which is the flinch a whoosh of flame is.
+    slot.tick = CONFIG.molotov.fire.tick;
+    // Every flame on its own floor, found ONCE here: a fire on a slope or
+    // across a kerb that stood every flame at the middle's height would be
+    // half of it buried and half of it floating. One short ray each, at the
+    // ignition and never again.
+    //
+    // Read off `slot.at` and never `at` from here on: the caller's vector may
+    // BE `_flameTop`, which is `floorUnder`'s return and is overwritten by it.
+    //
+    // A flame the MIDDLE cannot see is not lit at all: petrol runs across a
+    // floor and not through a wall, so a bottle broken against the outside of
+    // a house burns the street and leaves the parlour behind that wall alone
+    // — which is also exactly where the burn's own line of sight stops.
+    const c = slot.at;
+    _lifted.set(c.x, c.y + 0.3, c.z);
+    for (const fl of slot.flames) {
+      _flameProbe.set(c.x + fl.dx, c.y + 0.3, c.z + fl.dz);
+      fl.on = !this.rays?.blocked(_lifted, _flameProbe);
+      if (!fl.on) continue;
+      _flameProbe.y = c.y + 1.2;
+      const floor = this.floorUnder(_flameProbe, 2.4);
+      fl.mesh.position.set(floor.x, floor.y, floor.z);
+      // `floorUnder` borrows `_lifted` for its own ray; put the middle back.
+      _lifted.set(c.x, c.y + 0.3, c.z);
+    }
+    this.poseFire(slot);
+
+    const ground = this.probeGround(c);
+    this.igniteFx(c, ground);
+    this.onIgnited(slot.id, c, ground);
+  }
+
+  /**
+   * Draws a fire the authority lit: the flames, the ignition and everything
+   * `onIgnited` hangs off it, and no burn. `drawBlast`'s twin — in a match the
+   * burn arrives as a `blaze` event with nothing but a position on it.
+   */
+  drawFire(at: Vector3): void {
+    this.ignite(at, 0, null, false);
+  }
+
+  /**
+   * The ignition: the one blast's own flash and lobes at `molotov.ignition`
+   * of a frag, the embers on the same scale, and the smoke column — but no
+   * ring and no ground dust, because petrol going up is a whoosh and not a
+   * pressure wave.
+   */
+  private igniteFx(at: Vector3, ground: BlastGround): void {
+    const m = CONFIG.molotov;
+    this.startFireball(at, m.ignition, ground, false);
+    this.smoke?.burst(at, m.smoke);
+    this.throwEmbers(at, m.ignition);
+  }
+
+  /** Takes a fire away, and tells `Game` so its light and sound go with it. */
+  private putOut(f: Fire): void {
+    f.t = -1;
+    f.by = null;
+    for (const fl of f.flames) fl.mesh.isVisible = false;
+    this.onBurntOut(f.id);
+  }
+
+  /** Ages every fire, resolves its burns, and poses its flames. */
+  private updateFires(dt: number): void {
+    const fc = CONFIG.molotov.fire;
+    for (const f of this.fires) {
+      if (f.t < 0) continue;
+      f.t += dt;
+      if (f.t >= fc.life) {
+        this.putOut(f);
+        continue;
+      }
+      this.poseFire(f);
+      if (!f.rules) continue;
+      // It stops hurting as it starts to die down: the fade is flames going
+      // out, and a fire that was still burning people while visibly
+      // guttering would be the picture lying about the rule.
+      if (f.t > fc.life - fc.fade) continue;
+      f.tick -= dt;
+      while (f.tick <= 0) {
+        f.tick += fc.tick;
+        this.burn(f, fc.dps * fc.tick);
+      }
+    }
+  }
+
+  /**
+   * One tick of a fire's burn: everybody the thrower may hurt, whose centre is
+   * inside the disc and inside the band over it, and whom the flames can see.
+   *
+   * The target list is fetched on EVERY tick, for the blast's reason made
+   * eight seconds long: the roster a fire burns among is not the one it
+   * started among. A hull is skipped outright — see `CONFIG.molotov`.
+   */
+  private burn(f: Fire, amount: number): void {
+    const fc = CONFIG.molotov.fire;
+    const r2 = fc.radius * fc.radius;
+    _flameTop.copyFrom(f.at);
+    _flameTop.y += fc.losLift;
+    for (const target of this.hittablesFor(f.team)) {
+      if (target.invulnerable || target.armoured) continue;
+      const c = target.center;
+      const dy = c.y - f.at.y;
+      if (dy < -fc.below || dy > fc.above) continue;
+      const dx = c.x - f.at.x;
+      const dz = c.z - f.at.z;
+      if (dx * dx + dz * dz > r2) continue;
+      if (!this.visible(_flameTop, c)) continue;
+      const killed = target.takeDamage(amount, f.at, "fire");
+      this.onBurnHit(target, f.team, f.by, killed);
+    }
+  }
+
+  /**
+   * The flames, at the fire's swell: grown out of the ground over `grow`,
+   * held, and sunk back into it over `fade`. Scaled rather than faded — the
+   * fire material is hard-banded and has no alpha to fade, and a flame that
+   * shrinks is what a fire going out actually looks like.
+   */
+  private poseFire(f: Fire): void {
+    const k = fireStrength(f.t);
+    for (const fl of f.flames) {
+      const s = fl.size * k;
+      if (!fl.on || s < 0.02) {
+        fl.mesh.isVisible = false;
+        continue;
+      }
+      // Width grows faster than height, so a fire starting is a spreading
+      // pool first and a wall of flame a moment later — the whoosh.
+      fl.mesh.scaling.set(fl.size * Math.sqrt(k), s, fl.size * Math.sqrt(k));
+      fl.mesh.isVisible = true;
+    }
   }
 
   /**
@@ -892,8 +1346,27 @@ export class GrenadeSystem {
    * half-second-old one cut short.
    */
   private spawnBlast(at: Vector3, power: number, ground: BlastGround): void {
-    const g = CONFIG.grenade;
+    this.startFireball(at, power, ground, true);
 
+    // The dust goes up with the flash and outlives it by a second — the
+    // fireball is the event and the cloud is what the event left behind — and
+    // the smoke column outlives THAT by another two.
+    this.dust?.burst(at, power);
+    this.smoke?.burst(at, power);
+    this.throwEmbers(at, power);
+  }
+
+  /**
+   * The blast-slot half of a blast: the flash, the lobes and — when `shock` —
+   * the ring. Split out of `spawnBlast` for the molotov's ignition, which is
+   * this same fire at a fraction of the size with the ring left off.
+   */
+  private startFireball(
+    at: Vector3,
+    power: number,
+    ground: BlastGround,
+    shock: boolean,
+  ): void {
     let slot = this.blasts[0];
     for (const b of this.blasts) {
       if (b.t < 0) {
@@ -904,6 +1377,7 @@ export class GrenadeSystem {
     }
     slot.t = 0;
     slot.power = power;
+    slot.shock = shock;
     slot.at.copyFrom(at);
 
     slot.flash.position.copyFrom(at);
@@ -933,16 +1407,15 @@ export class GrenadeSystem {
     this.poseFlash(slot);
     this.poseLobes(slot);
     this.poseRing(slot);
+  }
 
-    // The dust goes up with the flash and outlives it by a second — the
-    // fireball is the event and the cloud is what the event left behind — and
-    // the smoke column outlives THAT by another two.
-    this.dust?.burst(at, power);
-    this.smoke?.burst(at, power);
-
-    // Embers, thrown out of the blast on an even-ish spread rather than a
-    // random one — a handful of random directions clumps, and a clump reads as
-    // one lump of debris instead of as a burst.
+  /**
+   * Embers, thrown out of the blast on an even-ish spread rather than a
+   * random one — a handful of random directions clumps, and a clump reads as
+   * one lump of debris instead of as a burst.
+   */
+  private throwEmbers(at: Vector3, power: number): void {
+    const g = CONFIG.grenade;
     const wanted = Math.round(g.emberCount * power);
     let spawned = 0;
     for (const e of this.embers) {
@@ -1065,7 +1538,7 @@ export class GrenadeSystem {
   private poseRing(b: Blast): void {
     const sh = CONFIG.grenade.shock;
     const f = b.t / sh.life;
-    if (f >= 1) {
+    if (f >= 1 || !b.shock) {
       b.ring.isVisible = false;
       return;
     }
@@ -1103,12 +1576,19 @@ export class GrenadeSystem {
       n.resting = false;
       n.mesh.isVisible = false;
       n.pip.isVisible = false;
+      showMolotov(n.bottle, false);
       // Dropped rather than left to be overwritten by the next throw: a round
       // is over, and a pooled slot holding a reference to last round's thrower
       // is the one thing in here that would outlive it.
       n.by = null;
     }
     for (const b of this.blasts) this.parkBlast(b);
+    // Through `putOut`, so every fire's light and held-open sound is taken
+    // away by the same door a burn-out uses — a fire that survived a map
+    // change would light and crackle over a street that no longer exists.
+    for (const f of this.fires) {
+      if (f.t >= 0) this.putOut(f);
+    }
     for (const e of this.embers) {
       e.t = 0;
       e.mesh.isVisible = false;
@@ -1116,6 +1596,23 @@ export class GrenadeSystem {
     this.dust?.reset();
     this.smoke?.reset();
   }
+}
+
+/** Whichever body a flight is drawn with — the one its position lives on. */
+function body(n: Grenade): Mesh {
+  return n.kind === "molotov" ? n.bottle.mesh : n.mesh;
+}
+
+/**
+ * How far along its own swell a fire is, `t` seconds in: up out of the ground
+ * over `grow` on an ease-out, held at 1, and down over `fade`. A pure function
+ * of the clock, so the flames, the light and the sound all ride one curve.
+ */
+function fireStrength(t: number): number {
+  const fc = CONFIG.molotov.fire;
+  const up = Math.min(1, t / fc.grow);
+  const down = Math.min(1, Math.max(0, (fc.life - t) / fc.fade));
+  return (1 - (1 - up) * (1 - up)) * down;
 }
 
 /** One blast's dust: the GPU system holding it, and when it goes quiet. */

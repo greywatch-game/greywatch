@@ -109,6 +109,11 @@ import {
   type EquipmentId,
 } from "../entities/equipment";
 import { type SightId } from "../entities/sights";
+import {
+  throwableCarried,
+  throwableShort,
+  type ThrowableId,
+} from "../entities/throwables";
 import { VIEWMODEL_GROUP } from "../entities/ViewModel";
 import {
   carriedSetup,
@@ -145,7 +150,7 @@ import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
 import { RotorWash } from "../systems/RotorWash";
 import { ScoreBook, awardKill, awardZone, paysKiller } from "../systems/ScoreBook";
-import { LightingSystem } from "../systems/LightingSystem";
+import { LightingSystem, type RoomLight } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
 import { BodyShadows } from "../systems/BodyShadows";
 import { GiVolume } from "../systems/GiVolume";
@@ -191,6 +196,7 @@ import {
   readMap,
   readRegion,
   readSight,
+  readThrowable,
   readWeapon,
   writeDifficulty,
   writeEquipment,
@@ -198,6 +204,7 @@ import {
   writeMap,
   writeRegion,
   writeSight,
+  writeThrowable,
   writeWeapon,
 } from "./prefs";
 import {
@@ -290,6 +297,19 @@ interface PendingShot {
  * plate's size is written.
  */
 const MINE_LIFT = 0.04;
+
+/**
+ * The key a burning molotov's held-open sound is filed under in `Sfx`.
+ *
+ * NEGATIVE, and that is the whole of it: `Sfx.ambience` keys a voice on a
+ * number and `AmbienceSystem` spends 0 and up on the map's own emitters, whose
+ * index is their identity for the life of the map — so a fire keyed on its own
+ * id would take over a drum's graph the moment the two numbers met. A fire id
+ * starts at 1, so this never collides with anything the map placed.
+ */
+function fireSoundKey(id: number): number {
+  return -id;
+}
 
 /**
  * Squared eye distance to a submesh's bounding-sphere centre, for the
@@ -796,6 +816,30 @@ export class Game {
    * is the player's and not the map's.
    */
   private equipment: EquipmentId = readEquipment();
+  /**
+   * What the throwable pouch holds — a frag or a molotov. The kit's fourth
+   * pick and the one offered on every map; remembered like the rest.
+   */
+  private throwable: ThrowableId = readThrowable();
+  /**
+   * Each burning molotov's light, keyed on `GrenadeSystem`'s fire id from
+   * `onIgnited` to `onBurntOut` — the one piece of a fire this file holds,
+   * because a light is `LightingSystem`'s and that system may not be reached
+   * from the one that owns the fire. Its held-open SOUND is keyed on the same
+   * id (`fireSoundKey`) and needs no table: `Sfx` holds it.
+   */
+  private readonly fireLights = new Map<number, RoomLight>();
+  /** Scratch for a fire light's position, lifted off the floor it burns on. */
+  private readonly fireLightAt = new Vector3();
+  /**
+   * What a burning molotov SOUNDS like: the burning drum's graph with the
+   * three terms `CONFIG.molotov.sound` restates. Built once — `Sfx.ambience`
+   * is called with it every frame a fire burns.
+   */
+  private readonly fireSound = {
+    ...CONFIG.audio.ambience.fire,
+    ...CONFIG.molotov.sound,
+  };
   /**
    * What each weapon is PAINTED in — one entry per primary, because a finish
    * belongs to a gun rather than to the loadout (see `finishes.ts`). The whole
@@ -1724,10 +1768,54 @@ export class Game {
       if (byPlayer) this.hud.flashHitmarker(killed);
       if (killed) this.registerBotKill(victim, thrower, byPlayer);
     };
+    // A molotov's burn: `onBlastHit`'s shape exactly, minus the hitmarker on
+    // every tick — a fire hurts somebody four times a second for as long as
+    // they stand in it, and a marker at that rate is a strobe that says
+    // nothing the first one did not. The KILL still gets one, because a kill
+    // is the one thing about a burn the thrower cannot see from where they
+    // threw it.
+    this.grenades.onBurnHit = (victim, thrower, by, killed) => {
+      const byPlayer = by === this.player;
+      if (killed) this.creditKill(by, victim);
+      if (!(victim instanceof Bot)) return;
+      if (byPlayer && killed) this.hud.flashHitmarker(true);
+      if (killed) this.registerBotKill(victim, thrower, byPlayer);
+    };
+    // A fire starting: the bottle's noise, the mark the burn leaves, and a
+    // light that stands where it burns until `onBurntOut` takes it away.
+    // Raised on both sides of the wire — offline by the bottle breaking, in a
+    // match by the authority's `blaze` event through `drawFire` — so none of
+    // this is gated on `net` the way a blast's `onExploded` is.
+    this.grenades.onIgnited = (id, at, ground) => {
+      const lc = CONFIG.molotov.light;
+      this.sfx.molotov(at);
+      this.blastDebris.scorchAt(at, CONFIG.molotov.scorch, ground);
+      this.fireLightAt.copyFrom(at);
+      this.fireLightAt.y += lc.y;
+      // A FIXTURE, in `LightingSystem`'s own words for this case: it stands
+      // still for the whole of its life, so its shadows are baked once like a
+      // lantern's — and `fast`, because it burns up and dies down faster than
+      // the irradiance volume's averaged sweep can follow (see `RoomLight`).
+      // Its intensity starts at nothing and is eased by `pushFires`.
+      this.fireLights.set(
+        id,
+        this.lighting.add(this.fireLightAt, lc.color, lc.range, 0, lc.flicker, true),
+      );
+    };
+    this.grenades.onBurntOut = (id) => {
+      const light = this.fireLights.get(id);
+      if (light) {
+        this.lighting.remove(light);
+        this.fireLights.delete(id);
+      }
+      this.sfx.ambienceOff(fireSoundKey(id));
+    };
     // A bot asking for a grenade on a position. The arm has the last word — a
-    // solve it cannot make returns false and the bot spends nothing.
+    // solve it cannot make returns false and the bot spends nothing. What
+    // leaves the hand is the bot's own pouch (`Bot.throwable`), on the same
+    // arc either way.
     this.battle.throwGrenadeFor = (bot, from, at) =>
-      this.grenades.throwAt(from, at, bot.team, bot);
+      this.grenades.throwAt(from, at, bot.team, bot, bot.throwable);
     // A launcher bot's rocket. Flat: the ask is a POINT and a rocket flies
     // more or less straight, so unlike the grenade there is no solve to
     // refuse — the direction is the line to the hull and the pool has the only
@@ -2036,6 +2124,7 @@ export class Game {
     this.loadoutScreen.onSight = (id) => this.setSight(id);
     this.loadoutScreen.onFinish = (id) => this.setFinish(id);
     this.loadoutScreen.onEquipment = (id) => this.setEquipment(id);
+    this.loadoutScreen.onThrowable = (id) => this.setThrowable(id);
     this.loadoutScreen.onClose = () => this.closeLoadout();
     this.player.onCarryChanged = () => this.applyCarry();
     // A reload beginning, however it began — the key, or the last round leaving
@@ -2120,6 +2209,7 @@ export class Game {
           this.conquest.spawnIndex(spawn),
           this.weapon,
           this.equipment,
+          this.throwable,
         );
         this.deployScreen.setPending();
         return;
@@ -2316,6 +2406,7 @@ export class Game {
       this.finishes[this.weapon],
       this.equipment,
       this.armourOffered,
+      this.throwable,
     );
     this.loadoutScreen.show();
     // The weapon comes out to be looked at. It is the real viewmodel on the
@@ -2788,6 +2879,18 @@ export class Game {
   }
 
   /**
+   * Picks the throwable. Same reachability and same immediacy as the weapon —
+   * the kit screen is open only from the menu and the deploy screen, so the
+   * pouch it refills is never half-spent in a body that is standing up.
+   */
+  private setThrowable(id: ThrowableId): void {
+    if (id === this.throwable) return;
+    this.throwable = id;
+    writeThrowable(id);
+    this.applyLoadout();
+  }
+
+  /**
    * Whether this round has armour in it, and therefore whether the kit has a
    * third slot at all.
    *
@@ -2846,6 +2949,9 @@ export class Game {
     // primary in the hands, so a slot going away here can never be the one
     // being carried — which is the ordering, not a coincidence.
     this.player.setEquipment(this.armourOffered ? this.equipment : null);
+    // The pouch, on every map. It refills to the new item's count, which is
+    // safe for the reason every call here is: nobody is standing up.
+    this.player.setThrowable(this.throwable);
     // The paint, which is the one slot of the three that reaches nothing but
     // the model: no camera, no caption, and nothing below. Only the carried
     // weapon's is pushed — it is the only rig that can be looked at, and the
@@ -2860,6 +2966,7 @@ export class Game {
       this.finishes[this.weapon],
       this.equipment,
       this.armourOffered,
+      this.throwable,
     );
     // The menu draws the kit into its own markup, so it has to be rebuilt;
     // the other two were just patched above.
@@ -4228,6 +4335,11 @@ export class Game {
     // off `map.rays` where they take `nav`, `cover` and `obstacles`.
     this.combat.setWorld(map.rays);
     this.grenades.setWorld(map.rays);
+    // Whether a molotov that breaks on THIS screen lights anything: in a match
+    // the fire is the authority's and arrives as a `blaze` event, so the
+    // thrower's own local bottle flies and breaks and lights nothing — the
+    // hulls' `predicted` below, for the same reason one system over.
+    this.grenades.predicted = this.net !== null;
     this.antiTank.setWorld(map.rays);
     this.aimAssist.setWorld(map.rays);
     this.deathCam.setWorld(map.rays);
@@ -6824,6 +6936,9 @@ export class Game {
       // does not know which map that will be. The server resolves it once and
       // spends it whenever a round with armour in it comes round.
       equipment: this.equipment,
+      // The pouch, on the same terms: resolved by the server against its own
+      // table and spent on every throw — see `Join.throwable`.
+      throwable: this.throwable,
       matchId: opts.matchId,
       create: opts.create,
       // Sent on every join rather than only on a create, because "there is room
@@ -6965,6 +7080,14 @@ export class Game {
         this.netNearPoint.set(event.at[0], event.at[1], event.at[2]);
         this.sfx.nearMiss(this.netNearPoint);
         this.player.suppress();
+        break;
+
+      // A molotov the authority lit. `drawBlast`'s twin: the flames, the
+      // ignition, and through `onIgnited` the light, the noise and the mark —
+      // and no burn, which is the authority's and arrives as `damage`.
+      case "blaze":
+        this.netDamageFrom.set(event.at[0], event.at[1], event.at[2]);
+        this.grenades.drawFire(this.netDamageFrom);
         break;
 
       // A blast the authority resolved. The light, the noise and the
@@ -7915,8 +8038,31 @@ export class Game {
     this.prof.end(P.combat);
     this.prof.begin(P.grenades);
     this.grenades.update(dt);
+    this.pushFires();
     this.prof.end(P.grenades);
   }
+
+  /**
+   * Every burning molotov's light and sound, eased on the fire's own swell.
+   *
+   * In `stepShots`, so both worlds run it — a fire in a match is drawn off the
+   * wire and still owes its light — and straight after `grenades.update`, so a
+   * fire that went out this frame has already had `onBurntOut` take its light
+   * and is not visited. The sound is `Sfx.ambience`'s held-open graph, pushed
+   * every frame it burns exactly as `AmbienceSystem` pushes a drum's, and
+   * keyed off the drums' index space (`fireSoundKey`).
+   */
+  private pushFires(): void {
+    this.grenades.forEachFire(this.pushFire);
+  }
+
+  /** `pushFires`' visitor, bound once so a frame with a fire in it mints no closure. */
+  private readonly pushFire = (id: number, at: Vector3, strength: number): void => {
+    const light = this.fireLights.get(id);
+    if (light) light.baseIntensity = CONFIG.molotov.light.intensity * strength;
+    if (strength > 0.05) this.sfx.ambience(fireSoundKey(id), at, this.fireSound);
+    else this.sfx.ambienceOff(fireSoundKey(id));
+  };
 
   /**
    * What the frame owes once the armour has moved: the mines, the physics
@@ -8038,6 +8184,7 @@ export class Game {
         forward,
         this.player.team,
         this.player,
+        this.player.throwable,
       )
     ) {
       return;
@@ -8264,7 +8411,11 @@ export class Game {
     this.hud.setHealth(this.player.health, this.player.maxHealth);
     this.hud.setAmmo(this.player.ammo, this.player.magSize, this.player.reloading);
     this.hud.setStowedAmmo(this.player.slungAmmo, this.player.slungMagSize);
-    this.hud.setGrenades(this.player.grenades, CONFIG.grenade.carried);
+    this.hud.setGrenades(
+      this.player.grenades,
+      throwableCarried(this.player.throwable),
+      throwableShort(this.player.throwable),
+    );
     this.pushAntiTankHud();
     // The armour half of the bottom band, and the gun marker that comes up with
     // it. Pushed unconditionally like every other gauge — null is what takes

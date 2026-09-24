@@ -425,6 +425,9 @@ export class HUD {
   private ammoCap: HTMLElement;
   private magStrip: HTMLElement;
   private nadePips: HTMLElement;
+  /** The pouch row's caption, and what it last said. See `setGrenades`. */
+  private nadeCap: HTMLElement;
+  private nadeLabel = "FRAG";
   /** One pip per grenade carried; rebuilt only when the pouch size changes. */
   private nadeMarks: HTMLElement[] = [];
   /**
@@ -738,7 +741,7 @@ export class HUD {
         <div id="hud-right">
           <div id="hud-kit">
             <div class="cap-row nades">
-              <span class="cap">FRAG</span>
+              <span class="cap" id="nade-cap">FRAG</span>
               <span id="nade-pips"></span>
             </div>
             <div class="cap-row nades hidden" id="at-row">
@@ -785,6 +788,7 @@ export class HUD {
     this.ammoCap = document.getElementById("ammo-cap")!;
     this.magStrip = document.getElementById("mag-strip")!;
     this.nadePips = document.getElementById("nade-pips")!;
+    this.nadeCap = document.getElementById("nade-cap")!;
     this.atRow = document.getElementById("at-row")!;
     this.atCap = document.getElementById("at-cap")!;
     this.atPips = document.getElementById("at-pips")!;
@@ -1259,8 +1263,17 @@ export class HUD {
    * Built against `carried` rather than the live count for the same reason the
    * magazine strip is built against `magSize`: the row must not change width
    * as it empties.
+   *
+   * `label` is what the pouch HOLDS — the frag or the molotov — and is the
+   * row's caption, written only when it changes. The pips are the same shape
+   * for both: a count is a count, and the caption beside it is the one place
+   * the two differ.
    */
-  setGrenades(count: number, carried: number): void {
+  setGrenades(count: number, carried: number, label: string): void {
+    if (label !== this.nadeLabel) {
+      this.nadeLabel = label;
+      this.nadeCap.textContent = label;
+    }
     if (this.nadeBuilt !== carried) {
       this.nadePips.innerHTML = "";
       this.nadeMarks = [];

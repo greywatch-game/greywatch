@@ -2236,6 +2236,61 @@ export class Sfx {
   }
 
   /**
+   * A molotov breaking and catching: the bottle going, then the petrol going
+   * up. Two events a beat apart, and the order is the sound — a crack you
+   * recognise as glass, then a WHOOSH that swells rather than strikes.
+   *
+   * **The whoosh is the second caller of `burst`'s `rise`**, and it is the
+   * case that field's note asks a second one to be: something that ARRIVES. A
+   * fire catching is a sound that gets bigger for its first third of a second,
+   * and struck — the helper's ordinary shape — it read as a second blast. The
+   * body under it is the fire's own roar, low and long, and hands over to the
+   * burning bed (`CONFIG.molotov.sound`, `ambience`) that `Game` opens on the
+   * same frame.
+   *
+   * Synthesized with no recording behind it, for the ambience's reason: it is
+   * filtered noise, and genuinely is — a sample would be a library entry for a
+   * sound the graph already makes.
+   */
+  molotov(at: Vector3): void {
+    const bus = this.bus("molotov", "explosion");
+    const a = CONFIG.audio;
+    const dist = this.distanceToListener(at);
+    if (dist > a.maxDistance) return;
+    const panner = this.panner(bus, at);
+    if (!panner) return;
+    const far = Math.min(1, dist / a.maxDistance);
+    const delay = dist / a.speedOfSound;
+    const v = 0.9 + Math.random() * 0.2;
+    const near = 1 - far * 0.55;
+    // The bottle: a bright crack and a short scatter of pieces, the pane's two
+    // layers at a bottle's size — higher, shorter, and much less of it.
+    this.burst(bus, {
+      dur: 0.05, vol: 0.42 * near, type: "highpass",
+      freq: 4200 * v, freqEnd: 6200, q: 0.7, delay, out: panner, send: 0.3,
+    });
+    this.burst(bus, {
+      dur: 0.22, vol: 0.18 * near, type: "bandpass",
+      freq: 6000 * v, freqEnd: 3000, q: 2.2, delay: delay + 0.03,
+      out: panner, send: 0.3,
+    });
+    // The catch: a lowpass swell sweeping UP as the flame front runs across
+    // the pool — the one layer here that arrives rather than strikes.
+    this.burst(bus, {
+      dur: 0.75, vol: 0.55 * near, type: "lowpass",
+      freq: 260 * v, freqEnd: 1500 * (1 - far * 0.5), q: 0.9, rise: 0.22,
+      delay: delay + 0.06, out: panner, send: 0.9,
+    });
+    // The roar under it, the fire's own column of air, falling away into the
+    // bed that takes over from it.
+    this.burst(bus, {
+      dur: 1.2, vol: 0.4 * near, type: "lowpass",
+      freq: 220, freqEnd: 90, q: 0.7, rise: 0.12,
+      delay: delay + 0.1, out: panner, send: 1.1,
+    });
+  }
+
+  /**
    * A tank's main gun. The one report in the game that is not built from
    * `CONFIG.weapons` — it is not a weapon in that table, it has no magazine
    * and no `ReportVoice`, and shaping it as an eight-scalar deviation from a

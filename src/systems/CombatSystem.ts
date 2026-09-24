@@ -79,8 +79,14 @@ import { BulletMarks } from "./BulletMarks";
  * `RagdollSystem.applyImpulse`, whose test is "not a bullet" and which
  * therefore THROWS a crushed body clear of the hull without being taught what
  * one is.
+ *
+ * `fire` is a molotov's burn, a few points at a time while somebody stands in
+ * it (`GrenadeSystem`'s fire pool). It is the second member that DROPS a body
+ * rather than throwing it, so `RagdollSystem`'s test names both — a man who
+ * burns to death folds where he stood; nothing went off to lift him. No hull
+ * ever takes one: the burn skips `armoured` targets outright.
  */
-export type DamageKind = "bullet" | "blast" | "shell" | "crush";
+export type DamageKind = "bullet" | "blast" | "shell" | "crush" | "fire";
 
 /** Anything a hitscan shot can damage. */
 export interface Hittable {

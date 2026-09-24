@@ -521,6 +521,16 @@ export class BattleSystem {
         // round: which body carries the launcher is a fact about the roster,
         // not about the life.
         bot.launcher = i % CONFIG.bots.squadSize < CONFIG.antiTankBots.perSquad;
+        // …and the LAST `molotov.bot.perSquad` bodies carry bottles instead of
+        // frags: the launcher's fixed-slot rule from the other end of the
+        // squad, so the two never land on one body while a squad is bigger
+        // than both, and a team fields the same kit every round on both sides
+        // of the wire.
+        bot.throwable =
+          CONFIG.bots.squadSize - 1 - (i % CONFIG.bots.squadSize) <
+          CONFIG.molotov.bot.perSquad
+            ? "molotov"
+            : "frag";
         // A stream per bot, seeded off the pool slot: movement personality
         // differs between bots but is identical between runs.
         bot.seedRandom(CONFIG.bots.skill.seed + team * 131 + i * 17);

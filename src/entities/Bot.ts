@@ -63,6 +63,7 @@ import { BotMemory } from "./BotMemory";
 import type { Combatant, Team } from "./Combatant";
 // Type-only, and erased — this file still knows nothing about a system.
 import type { DamageKind } from "../systems/CombatSystem";
+import { throwableCarried, type ThrowableId } from "./throwables";
 
 /**
  * `advance` walks the flow field to the squad's objective; `engage` fights a
@@ -412,6 +413,15 @@ export class Bot implements Combatant {
   private readonly hazardFrom = new Vector3();
   private hazardW = 0;
   /**
+   * Seconds left of getting out of a fire, and the middle of the fire being
+   * got out of. Set by a burn in `takeDamage`; while it runs, `update`
+   * overrides whatever the state wanted with a run straight AWAY — steered
+   * directly, as `takeCover`'s short hops are, on `tryMove`'s sliding and the
+   * stuck watchdog. The one reflex a bot has that no state decides.
+   */
+  private burnT = 0;
+  private readonly burnFrom = new Vector3();
+  /**
    * Where the squad last said it had contact, and whether that is worth
    * looking at (0 = nothing to look at).
    *
@@ -478,8 +488,16 @@ export class Bot implements Combatant {
   private burstLeft = 0;
   private magLeft = 0;
   private reloadT = 0;
-  /** Grenades left this life — the same two-a-life pouch the player carries. */
-  private grenades = CONFIG.grenade.carried;
+  /**
+   * What this bot's pouch holds — a frag or a molotov. Written once by
+   * `BattleSystem` when the squads are cut, on the launcher's terms and for
+   * its reason: which bodies carry which is a fact about the SQUAD, and the
+   * same fact on both sides of the wire. Read by `Game` for what leaves the
+   * hand; the decision to throw is the same one for both.
+   */
+  throwable: ThrowableId = "frag";
+  /** Throwables left this life — the same two-a-life pouch the player carries. */
+  private grenades: number = CONFIG.grenade.carried;
   /** While positive, this bot will not throw another. */
   private grenadeT = 0;
   /**
@@ -596,8 +614,9 @@ export class Bot implements Combatant {
     this.magLeft = CONFIG.bots.combat.magSize;
     this.reloadT = 0;
     this.fireCooldown = 0;
-    this.grenades = CONFIG.grenade.carried;
+    this.grenades = throwableCarried(this.throwable);
     this.grenadeT = 0;
+    this.burnT = 0;
     this.rockets = CONFIG.antiTankBots.carried;
     this.rocketT = 0;
     this.stuckT = 0;
@@ -663,7 +682,16 @@ export class Bot implements Combatant {
     if (!this.alive) return false;
     this.hp -= amount;
     this.pressure = 1;
-    if (from) {
+    // A BURN is not a shooter. Where it came from is the middle of a fire, and
+    // filing that as a threat would turn the bot to face the flames and hold
+    // its ground there — which is exactly where it must not stay. It is read
+    // as a direction to LEAVE in instead (`burnT`, spent in `update`). No
+    // flinch either: the flinch is a stumble at 60% speed, and a bot stumbling
+    // through the one thing it most needs to run out of is the wrong reflex.
+    if (from && kind === "fire") {
+      this.burnFrom.copyFrom(from);
+      this.burnT = CONFIG.molotov.bot.escape;
+    } else if (from) {
       this.memory.tookHit(from);
       // A hit disrupts aim. There is no flinch pose to play — the rig has no
       // joint that could sell one — so it lands as a brief speed drop and an
@@ -952,6 +980,25 @@ export class Bot implements Combatant {
         }
         break;
       }
+    }
+
+    // On fire: out, whatever the state wanted, at a run and standing up — the
+    // corner check, the cover spot and the peek cycle all come after not
+    // burning. Straight away from the middle, which is the shortest way out of
+    // a disc from anywhere inside it. HERE, before the stance is eased and the
+    // modifiers below are applied, so the stand-up lands this frame and the
+    // per-bot pace still applies; the corner stop is cancelled outright, since
+    // a bot pausing to look round a corner inside a fire is a bot that dies
+    // there.
+    if (this.burnT > 0) {
+      this.burnT -= dt;
+      _to.set(this.position.x - this.burnFrom.x, 0, this.position.z - this.burnFrom.z);
+      const away = _to.length();
+      if (away > 1e-3) _dir.copyFrom(_to).scaleInPlace(1 / away);
+      else _dir.set(this.strafe, 0, 0);
+      speed = b.moveSpeed * b.advanceSprintMult;
+      this.wantCrouch = false;
+      this.cornerT = 0;
     }
 
     // The stance itself, eased on `player.crouchBlendSpeed` — the player's
@@ -1672,11 +1719,14 @@ export class Bot implements Combatant {
     if (this.rand() > cfg.chance * (0.4 + this.skill)) return;
     // Aimed at the ground the target is standing on, scattered — a grenade
     // thrown exactly onto someone's feet every time is a mortar, not a soldier,
-    // and the falloff is where the play is anyway.
+    // and the falloff is where the play is anyway. A bottle is scattered
+    // less: its fire has no falloff to be generous with, only an edge.
+    const scatter =
+      this.throwable === "molotov" ? CONFIG.molotov.bot.scatter : cfg.scatter;
     _nade.set(
-      t.position.x + (this.rand() * 2 - 1) * cfg.scatter,
+      t.position.x + (this.rand() * 2 - 1) * scatter,
       t.position.y,
-      t.position.z + (this.rand() * 2 - 1) * cfg.scatter,
+      t.position.z + (this.rand() * 2 - 1) * scatter,
     );
     // The arm gets the last word: a solve it cannot make spends nothing.
     if (!ctx.throwGrenade(this, _nade)) return;

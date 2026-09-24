@@ -115,6 +115,12 @@ export type MixChannel =
   // --- ordnance
   /** Every explosion in the game: `blastAt`'s one sound at whatever `power`. */
   | "blast"
+  /**
+   * A molotov breaking and catching (`Sfx.molotov`). Not `blast`: it is not
+   * an explosion, and "the petrol is too loud against the frags" is exactly a
+   * question inside this family. The fire it leaves burns on `fire`.
+   */
+  | "molotov"
   /** The shoulder tube leaving. */
   | "launcher"
 
@@ -194,6 +200,7 @@ export const CHANNEL_GROUPS = {
   nearMiss: ["impact"],
 
   blast: ["explosion"],
+  molotov: ["explosion"],
   launcher: ["explosion"],
 
   step: ["footstep"],
@@ -284,6 +291,7 @@ export const channels = {
   impactGlass: 1,
   nearMiss: 2.585,
   blast: 1,
+  molotov: 1,
   launcher: 1,
   step: 1,
   land: 1,

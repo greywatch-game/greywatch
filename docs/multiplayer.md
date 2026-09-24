@@ -1763,6 +1763,16 @@ it has already broken — which can be a street away.
 says what went off, and absent still reads as 1 — which is what every server
 before armour meant by it, and what the only blast in the game then was.
 
+**A molotov's FIRE is its own event, `blaze`, and never `explode`** (`fire` is
+already a gunshot on this wire). It carries a position and nothing else; every
+client draws it — the thrower included, because `GrenadeSystem.predicted` stops
+their own local bottle lighting anything — and the burn is the authority's,
+arriving as `damage`. WHAT a player throws rides the join and every deploy
+(`throwable`, on `equipment`'s terms exactly) and `Match.onGrenade` throws what
+it recorded, never anything on the `grenade` message; a bottle in flight is a
+`GrenadeState` with `k: "molotov"`. All of it is additive, so no
+`PROTOCOL_VERSION` bump. See [`grenades.md`](grenades.md)'s molotov section.
+
 ## The lobby, and why there is no central registry
 
 **The registry in `server/index.ts` IS the lobby.** Matches live in that

@@ -2,9 +2,10 @@
 
 One of the two things in this game that are not hitscan (the anti-tank rocket is
 the other — see [`antitank.md`](antitank.md)), and everything that follows from
-that: the pool, the bounce, the blast, the dust, the throw gesture and the bots'
-range band. Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps the summary;
-this file is the contract for `GrenadeSystem` and both throwers.
+that: the pool, the bounce, the blast, the dust, the throw gesture, the bots'
+range band, and the molotov that shares all of it but the ending. Split out of
+[`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the contract
+for `GrenadeSystem` and both throwers.
 
 Everyone carries two and there is no resupply, so the pouch is refilled by death
 and nothing else (`Player.fullReset`, `Bot.spawn`). Two a life makes each throw a
@@ -307,3 +308,177 @@ knowing nothing about sides, and friendly fire stays excluded by construction
 rather than by a check. `reset` drops the reference, because a pooled slot is
 the one thing in here that would otherwise outlive the round its thrower fought
 in.
+
+## The molotov: the same flight and a different ending
+
+**The throwable slot holds a frag OR a molotov, never both** — the anti-tank
+slot's bargain made about the off hand, because a player who could carry both
+would never have to decide which one a doorway wants. `entities/throwables.ts`
+is the union, the kit order, the default and the pouch size, and nothing else
+may decide how many a life carries: the player, the bots and the authority all
+ask `throwableCarried`. It is a kit row on EVERY map (`LoadoutScreen`'s
+`throwable` slot), remembered in `prefs` like the rest, pushed to `Player` by
+`Game.applyLoadout`, and sent to the authority on the join and on every deploy
+exactly as the weapon is (`Join.throwable`, `DeployMessage.throwable`) —
+`Match` resolves it against its own table and throws what IT recorded, never
+anything a `grenade` message says.
+
+**Where the frag is a moment, the molotov is a PLACE**, and that is the whole
+trade: it does almost nothing at the instant it lands and everything over the
+eight seconds after. `CONFIG.molotov` is its table.
+
+### It is the frag's flight, on purpose
+
+**A bottle is a slot in the same pool, thrown on the same arc and stepped by
+the same ray.** Every slot carries both bodies and `Grenade.kind` says which one
+is out, so the pool keeps ONE refusal rule. `CONFIG.molotov` states no
+`throwSpeed`, `throwLift` or `gravity` of its own: the bots' ballistic solve
+and its measured 8–30 m band were fitted against the frag's three, a bottle on
+its own arc would need that band re-measured, and a player would have two arcs
+to learn for one gesture.
+
+**It BREAKS on the first thing it touches** — a collider face the ray finds or
+the terrain backstop — with no bounce, no rest and no pip. A bottle that could
+roll through a doorway is a frag. `maxFlight` is a backstop for a bottle thrown
+at nothing, not a fuse, and it rides the slot's `fuse` field so the wire needs
+no second one.
+
+### The fire is on the FLOOR under the break
+
+A bottle thrown into a wall breaks at head height and the petrol runs down it,
+so `shatter` steps the break point off the face and `floorUnder` looks straight
+down (`dropReach`) — the colliders first, then the terrain as the backstop
+under them, the same pair the flight lands on — and never returns a floor
+ABOVE the break, because a ray starting inside a box reports its far face and a
+fire lifted onto a ceiling is a fire in the air.
+
+Each flame then finds its OWN floor, once, at the ignition, so a fire across a
+kerb or a slope is not half buried and half floating. **A flame the fire's
+middle cannot see is not lit at all**: petrol runs across a floor and not
+through a wall, so a bottle broken against the outside of a house burns the
+street and leaves the parlour alone — which is exactly where the burn's own
+line of sight stops too, so the picture and the rule end at the same wall.
+
+### The fire pool
+
+`Fire` is the second pool in `GrenadeSystem`, and **it is a place with a clock
+where a blast is an event with a picture**, so everything a blast resolves once
+a fire resolves every `tick` for as long as it burns:
+
+- **The THROWER's target list, fetched on every tick** — the blast's rule made
+  eight seconds long, because the roster a fire burns among is not the one it
+  started among. Friendly fire is excluded by construction, the thrower
+  included.
+- **A disc and a BAND**: a victim's centre inside `fire.radius` horizontally and
+  between `below` and `above` the fire's floor, so a body on the landing over a
+  burning stairwell is not in it.
+- **One line-of-sight ray per victim inside that**, from `losLift` above the
+  floor (a ray along the ground grazes every kerb it crosses) and through the
+  same `visible` the blast uses, `LOS_SKIP` and all.
+- **A hull is skipped outright** (`armoured`). A tank parked in petrol is the
+  one target this cannot touch; the anti-tank slot is where that question is
+  answered.
+- **It stops hurting as it starts to die down** — no burn inside the last
+  `fade` — because a fire still burning people while visibly guttering is the
+  picture lying about the rule.
+
+**The pool puts out the OLDEST rather than refusing**, the dust's rule and not
+the grenade pool's: the bottle is already spent and broken by the time a slot
+is wanted, so there is no count to protect, and a bottle that broke and burned
+nothing is the worse lie. The fire it takes goes out through `putOut`, which
+raises `onBurntOut`, so its light and sound cannot outlive it. `reset` puts
+every fire out through the same door.
+
+**`Fire.id` is monotonic and never reused**, for `Grenade.id`'s reason: `Game`
+keys each fire's LIGHT (`fireLights`) and its held-open SOUND on it from
+`onIgnited` to `onBurntOut`, and a key on the slot would let the old fire's
+burn-out take the new fire's light away.
+
+### What it looks like, sounds like and lights
+
+- **The flames are the world's one fire material** (`FlameMaterial` over
+  `world/flame.ts`), `CONFIG.molotov.flames` of them per fire, cloned off one
+  geometry and spread over the disc on the golden angle at construction — no
+  random in a constructor the server also runs. They grow out of the ground
+  wider-first and sink back into it (`fireStrength`, one curve that the flames,
+  the light and the sound all ride), because the material is hard-banded and
+  has no alpha to fade. **Ten, not seven**: photographed from twenty metres,
+  seven drew a cluster in the middle and not the rim — and the rim is what
+  tells a player where they may walk. **They are built only where something
+  draws** (`dust !== false`): the authority has no device to compile the WGSL
+  on, and the fire's SLOTS, which are rules, exist on both sides.
+- **The ignition is the one blast's own flash and lobes** at
+  `molotov.ignition` of a frag, with its embers and the smoke column — and no
+  ring and no ground dust, because petrol going up is a whoosh and not a
+  pressure wave. `Blast.shock` is what leaves the ring off; `spawnBlast` is now
+  `startFireball` + the two clouds + `throwEmbers`, so the ignition reuses the
+  parts rather than restating them.
+- **The light is a FIXTURE added and removed** — `LightingSystem.add`/`remove`,
+  whose own notes were written for "a thrown fire" — `fast` because it burns up
+  and dies down faster than the irradiance volume's sweep, added at zero and
+  eased to `light.intensity` on `fireStrength` by `Game.pushFires`. Checked in a
+  live round against the same frame with the light held at zero: it is what
+  puts the orange on the bodies standing round it and the wall beside it.
+- **The mark is `BlastDebrisSystem.scorchAt`** — the scorch without the rubble,
+  because petrol does not dig — at `molotov.scorch` of a frag's.
+- **The sound is two things.** The break is `Sfx.molotov` on its own mixer
+  channel (`molotov`, in the explosion family): a glass crack, then a whoosh
+  that SWELLS — the second caller of `burst`'s `rise`, which is for things that
+  arrive. The burning is the drum's ambience graph with three terms restated
+  (`molotov.sound`), pushed every frame it burns under a **NEGATIVE key**
+  (`Game.fireSoundKey`), because `AmbienceSystem` spends 0 and up on the map's
+  own emitters and an emitter's index is its identity for the life of the map.
+  It is outside the ambience RANKING on purpose: there are at most
+  `molotov.fires` of them and each lasts eight seconds.
+- **In the fist it is a third of the thrown bottle's size** (`THROW_BOTTLE` in
+  `ViewModel`), for `THROW_BALL`'s reason and harder: at 0.9 the cocked bottle
+  ran from the fist to the top of the frame.
+
+### A burn is `"fire"`, and it drops a body
+
+`DamageKind` gained `"fire"`, and it is the second kind that DROPS a body rather
+than throwing it — `RagdollSystem`'s test is "not a bullet or a burn", because a
+corpse flung out of a patch of burning road reads as an explosion nobody saw.
+The authority files it as its own `DeathCause`. A burn owes the thrower a
+different callback from a blast (`onBurnHit`, not `onBlastHit`): it arrives four
+times a second for as long as somebody stands in it, so `Game` flashes the
+hitmarker on the KILL and not on every tick.
+
+### The bots: who carries one, and the one reflex no state decides
+
+**The LAST `molotov.bot.perSquad` bodies of each squad carry bottles** — the
+launcher's fixed-slot rule from the other end of the squad, set by
+`BattleSystem.buildPool`, so the two never land on one body and a team fields
+the same kit every round on both sides of the wire. They throw on the frag's
+decision (`CONFIG.grenade.bot`) and only the scatter is their own: a fire has no
+falloff to be generous with, only an edge.
+
+**Every bot runs out of a fire**, whatever it carries. A burn in `Bot.takeDamage`
+is NOT filed as a threat — the middle of a fire is not a shooter, and filing it
+turned bots to face the flames and hold their ground in them — and sets
+`burnT` instead, which `update` spends as a run straight away from the fire's
+middle, overriding whatever the state wanted and steered directly on
+`tryMove`'s sliding the way `takeCover`'s short hops are. It sits BEFORE the
+stance is eased, so the stand-up lands the same frame (a bot pinned in a crouch
+unfolds at the ordinary blend speed, which is most of what a burn still costs
+it), it cancels a corner stop, and a burn sets no flinch — a stumble at 60%
+speed through the one thing a bot must run out of is the wrong reflex.
+Measured on the authority (`npm run simulate`, Hollowmere): before the reflex,
+36 bottles in a fourteen-minute round killed 26; with it, 29–39 bottles a round
+kill 7–9 — about a quarter of a kill a bottle against a frag's half. That is the
+intended item — it takes ground away and softens whoever crosses it — and the
+figure to re-measure if the burn numbers move.
+
+### On the wire
+
+A bottle in the air is a `GrenadeState` with `k: "molotov"` (absent is a frag,
+which is what every grenade on the wire was before), drawn by the same
+`NetGrenades` ghost with a bottle in place of the frag. **The fire is the
+AUTHORITY's**: `HeadlessGame` raises `onBlaze` from `onIgnited`, `Match` queues
+a `blaze` event with a position and nothing else, and every client — the
+thrower included — draws it through `drawFire`, a fire with no rules. The
+thrower's own local bottle still flies (it is what they watched leave their
+hand) and lights nothing, because `Game.installMap` sets
+`GrenadeSystem.predicted` in a match. The burn reaches a person as `damage`
+like any other hit. A client that joins while a fire is burning does not see
+it; eight seconds is not worth a table.

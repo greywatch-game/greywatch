@@ -1,6 +1,6 @@
 /**
- * prefs.ts — What the player picked last time: difficulty, map, loadout (both
- * slots and a finish per weapon) and region.
+ * prefs.ts — What the player picked last time: difficulty, map, loadout (every
+ * slot, the throwable, and a finish per weapon) and region.
  * Owns the localStorage round trip for each; owns nothing that applies them
  * (that is `Game.setDifficulty` / `setMap` / `applyLoadout` / `setRegion`).
  * Sibling of [`settings.ts`](settings.ts), which does the same job for the
@@ -24,6 +24,11 @@ import {
   isEquipmentId,
   type EquipmentId,
 } from "../entities/equipment";
+import {
+  DEFAULT_THROWABLE,
+  isThrowableId,
+  type ThrowableId,
+} from "../entities/throwables";
 import {
   DEFAULT_SIGHT,
   isSightId,
@@ -52,6 +57,12 @@ const WEAPON_KEY = "greywatch.weapon";
  * `Game` is where "is there a slot at all" is decided.
  */
 const EQUIPMENT_KEY = "greywatch.equipment";
+/**
+ * …and which throwable the pouch holds. Unlike the anti-tank slot this one is
+ * offered on every map, so there is no "remembered but not offered" case —
+ * but it is the same pick for the same reason: the player's, never the map's.
+ */
+const THROWABLE_KEY = "greywatch.throwable";
 /**
  * …and the finish, which is the one preference here that is remembered PER
  * WEAPON rather than once.
@@ -215,6 +226,29 @@ export function readEquipment(): EquipmentId {
 export function writeEquipment(id: EquipmentId): void {
   try {
     window.localStorage.setItem(EQUIPMENT_KEY, id);
+  } catch {
+    // As above.
+  }
+}
+
+/**
+ * The remembered throwable. Validated like the three above: it decides what
+ * the throwing hand is holding, and an id that no longer exists would build
+ * a pouch of nothing.
+ */
+export function readThrowable(): ThrowableId {
+  try {
+    const raw = window.localStorage.getItem(THROWABLE_KEY);
+    if (raw !== null && isThrowableId(raw)) return raw;
+  } catch {
+    // As above.
+  }
+  return DEFAULT_THROWABLE;
+}
+
+export function writeThrowable(id: ThrowableId): void {
+  try {
+    window.localStorage.setItem(THROWABLE_KEY, id);
   } catch {
     // As above.
   }

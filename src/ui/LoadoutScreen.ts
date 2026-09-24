@@ -40,8 +40,8 @@
  * - the WEAPON is the decision the other three depend on, so it is a strip of
  *   six cards across the top, under the head — the widest thing on the screen
  *   for the choice that changes what every other row means;
- * - the OPTIC, the ANTI-VEHICLE item and the FINISH are what is fitted to it,
- *   so they are the column down the left;
+ * - the OPTIC, the ANTI-VEHICLE item, the THROWABLE and the FINISH are what
+ *   is fitted to it, so they are the column down the left;
  * - the BAY is the middle;
  * - and the CHART and the copy are the right-hand column, because they are the
  *   only things here that are read rather than pressed.
@@ -120,6 +120,12 @@ import {
   type FinishId,
 } from "../entities/finishes";
 import { EQUIPMENT_IDS, type EquipmentId } from "../entities/equipment";
+import {
+  THROWABLE_IDS,
+  throwableCarried,
+  throwableName,
+  type ThrowableId,
+} from "../entities/throwables";
 import type { StageBay } from "../entities/ViewModel";
 import { SIGHT_IDS, type SightId } from "../entities/sights";
 import {
@@ -138,7 +144,7 @@ import {
  * optics and what finishes the other two rows are even allowed to offer, so it
  * is the one the cursor opens on and the one above the other two.
  */
-type Slot = "weapon" | "sight" | "equipment" | "finish";
+type Slot = "weapon" | "sight" | "equipment" | "throwable" | "finish";
 
 /**
  * The rows, in that order, with and without the anti-tank slot.
@@ -154,9 +160,19 @@ type Slot = "weapon" | "sight" | "equipment" | "finish";
  * may offer, the AT slot decides nothing and is decided by nothing, and the
  * finish is the row that is not a trade at all and stays at the bottom next to
  * the stage it is about.
+ *
+ * The THROWABLE sits under the AT slot, in both lists: it is decided by
+ * nothing either, but unlike the AT slot it is on every map — everybody has
+ * an off hand whether or not there is armour to point a tube at.
  */
-const SLOTS: readonly Slot[] = ["weapon", "sight", "finish"];
-const ARMED_SLOTS: readonly Slot[] = ["weapon", "sight", "equipment", "finish"];
+const SLOTS: readonly Slot[] = ["weapon", "sight", "throwable", "finish"];
+const ARMED_SLOTS: readonly Slot[] = [
+  "weapon",
+  "sight",
+  "equipment",
+  "throwable",
+  "finish",
+];
 
 /**
  * What each weapon is for, in the player's terms. Copy, not configuration —
@@ -183,6 +199,16 @@ export const WEAPON_BLURBS: Record<PrimaryWeaponId, string> = {
 const EQUIPMENT_BLURBS: Record<EquipmentId, string> = {
   rpg: "Two rockets and no way to get a third. The rocket FLIES — a second and a half across an avenue — so a moving hull has to be led and a driver who sees the smoke has that long to decide something. Both of them into the same tank is a dead tank; either of them into a doorway is most of a squad.",
   mine: "Two plates, laid on the ground and armed a beat later, and only a vehicle is heavy enough to set one off — your own infantry walk over them, and so does everybody else's. They outlive you, but you may only have two out: lay a third and the first one is lifted. It is the only weapon here that works while you are somewhere else.",
+};
+
+/**
+ * What each throwable is for. Copy, not configuration — the counts on the
+ * buttons are read off `CONFIG.grenade` and `CONFIG.molotov`.
+ */
+const THROWABLE_BLURBS: Record<ThrowableId, string> = {
+  frag: "Two frags and a fuse you cannot cook. It bounces, it rolls, and it goes off where it ends up — everything within a couple of metres is dead and everything short of eight is hurt, but only if the fragments can see them. The answer to somebody who will not come out of a room.",
+  molotov:
+    "Two bottles of petrol, and they break on the first thing they touch — no bounce, no fuse. The fire covers a doorway and the room behind it for eight seconds; running through it costs a third of a man and standing in it kills him. A frag clears a room once. This closes it.",
 };
 
 /**
@@ -415,6 +441,8 @@ export class LoadoutScreen {
   private equipment: EquipmentId = EQUIPMENT_IDS[0];
   /** Whether this map has armour on it, and therefore whether the row exists. */
   private armour = false;
+  /** What the pouch holds. Offered on every map. */
+  private throwable: ThrowableId = THROWABLE_IDS[0];
   /**
    * The bay handed back when there is nothing to measure — the screen hidden,
    * or a frame before the first layout. A full-viewport bay is the answer that
@@ -428,6 +456,7 @@ export class LoadoutScreen {
   onSight: (id: SightId) => void = () => {};
   onFinish: (id: FinishId) => void = () => {};
   onEquipment: (id: EquipmentId) => void = () => {};
+  onThrowable: (id: ThrowableId) => void = () => {};
   onClose: () => void = () => {};
 
   constructor() {
@@ -594,13 +623,15 @@ export class LoadoutScreen {
     finish: FinishId,
     equipment: EquipmentId,
     armour: boolean,
+    throwable: ThrowableId,
   ): void {
     if (
       weapon === this.weapon &&
       sight === this.sight &&
       finish === this.finish &&
       equipment === this.equipment &&
-      armour === this.armour
+      armour === this.armour &&
+      throwable === this.throwable
     )
       return;
     this.weapon = weapon;
@@ -608,6 +639,7 @@ export class LoadoutScreen {
     this.finish = finish;
     this.equipment = equipment;
     this.armour = armour;
+    this.throwable = throwable;
     // A row that has just gone away cannot keep the cursor. Sent back to the
     // top rather than to a neighbour: the weapon row is where `show` opens
     // anyway, so this is the one answer that is never a surprise.
@@ -670,6 +702,10 @@ export class LoadoutScreen {
       const n = EQUIPMENT_IDS.length;
       const i = EQUIPMENT_IDS.indexOf(this.equipment);
       this.onEquipment(EQUIPMENT_IDS[(i + delta + n) % n]);
+    } else if (this.slot === "throwable") {
+      const n = THROWABLE_IDS.length;
+      const i = THROWABLE_IDS.indexOf(this.throwable);
+      this.onThrowable(THROWABLE_IDS[(i + delta + n) % n]);
     } else {
       // Every finish there is, in the table's own order — which is the order
       // the grid is drawn in, so a key press steps to the swatch next door
@@ -720,6 +756,19 @@ export class LoadoutScreen {
       return `
         <button class="lo-opt lo-line${id === this.equipment ? " on" : ""}" data-equip="${id}">
           <b>${e.name}</b><i>&times;${e.carried} &middot; ${e.damage}</i>
+        </button>`;
+    }).join("");
+    // The throwables, in the AT row's shape: a name, and at the right-hand end
+    // how many and what one is worth — the frag's blast at its heart, the
+    // molotov's burn a second. Read off the two config modules.
+    const throwables = THROWABLE_IDS.map((id) => {
+      const worth =
+        id === "frag"
+          ? `${CONFIG.grenade.damage}`
+          : `${CONFIG.molotov.fire.dps}/s`;
+      return `
+        <button class="lo-opt lo-line${id === this.throwable ? " on" : ""}" data-throw="${id}">
+          <b>${throwableName(id)}</b><i>&times;${throwableCarried(id)} &middot; ${worth}</i>
         </button>`;
     }).join("");
     // The finish grid: sixteen swatches and not one word between them. Each is
@@ -780,6 +829,10 @@ export class LoadoutScreen {
         </section>`
             : ""
         }
+        <section class="lo-block frame${this.mark("throwable")}" data-slot="throwable">
+          <span class="lo-cap">Throwable</span>
+          <div class="lo-list">${throwables}</div>
+        </section>
       </div>
       <section class="lo-block frame lo-finish${this.mark("finish")}" data-slot="finish">
         <span class="lo-cap">Finish<em>${finishName(this.finish)}</em></span>
@@ -798,6 +851,7 @@ export class LoadoutScreen {
               ? `<p class="lo-blurb dim">${EQUIPMENT_BLURBS[this.equipment]}</p>`
               : ""
           }
+          <p class="lo-blurb dim">${THROWABLE_BLURBS[this.throwable]}</p>
         </div>
       </div>
     `;
@@ -811,9 +865,11 @@ export class LoadoutScreen {
         const w = btn.dataset.weapon;
         const f = btn.dataset.finish;
         const e = btn.dataset.equip;
+        const t = btn.dataset.throw;
         if (w) this.onWeapon(w as PrimaryWeaponId);
         else if (f) this.onFinish(f as FinishId);
         else if (e) this.onEquipment(e as EquipmentId);
+        else if (t) this.onThrowable(t as ThrowableId);
         else this.onSight(btn.dataset.sight as SightId);
       };
     });

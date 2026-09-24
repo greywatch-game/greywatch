@@ -22,6 +22,7 @@ import { sights } from "./sights";
 import { viewmodel } from "./viewmodel";
 import { glass } from "./glass";
 import { grenade } from "./grenade";
+import { molotov } from "./molotov";
 import { equipment, antiTankBots } from "./equipment";
 import { camera } from "./camera";
 import { aimAssist } from "./aimAssist";
@@ -66,6 +67,7 @@ export const CONFIG = {
   gunfeel,
   glass,
   grenade,
+  molotov,
   equipment,
   antiTankBots,
   camera,

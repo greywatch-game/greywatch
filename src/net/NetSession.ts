@@ -432,8 +432,13 @@ export class NetSession {
    * where the authority is told what the body coming back is carrying, and
    * therefore what its rounds are worth.
    */
-  sendDeploy(spawn: number, weapon: string, equipment: string): void {
-    this.pendingDeploy = { spawn, weapon, equipment };
+  sendDeploy(
+    spawn: number,
+    weapon: string,
+    equipment: string,
+    throwable: string,
+  ): void {
+    this.pendingDeploy = { spawn, weapon, equipment, throwable };
     this.flushDeploy();
   }
 
@@ -459,6 +464,7 @@ export class NetSession {
     spawn: number;
     weapon: string;
     equipment: string;
+    throwable: string;
   } | null = null;
 
   /**

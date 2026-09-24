@@ -113,6 +113,8 @@ async function runRound(mapId: string, difficulty: number) {
   const captures: string[] = [];
   let blasts = 0;
   game.onExplosion = () => blasts++;
+  let blazes = 0;
+  game.onBlaze = () => blazes++;
   // `onCapturedEvent` and NOT `conquest.onCaptured`, which is the simulation's
   // own and pays everybody standing on the flag: a callback has one owner, and
   // taking that one here would have quietly turned the capture awards off in
@@ -333,6 +335,7 @@ async function runRound(mapId: string, difficulty: number) {
     },
     captures: captures.length,
     blasts,
+    blazes,
     flagsHeld: [game.conquest.flagsHeld(0), game.conquest.flagsHeld(1)] as [number, number],
   };
   game.dispose();
@@ -431,6 +434,7 @@ for (let i = 0; i < Number(rounds); i++) {
       `  flags held at the end: ${r.flagsHeld[0]} / ${r.flagsHeld[1]}`,
       `  flag captures during the round: ${r.captures}`,
       `  grenades detonated: ${r.blasts}`,
+      `  molotovs lit: ${r.blazes}`,
     ].join("\n"),
   );
   // **A failed reconciliation is an EXIT CODE and not just a line**, so this

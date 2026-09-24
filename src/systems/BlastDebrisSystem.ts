@@ -245,6 +245,15 @@ export class BlastDebrisSystem implements PhysicsClient {
    * blast that leaves no mark is the one thing here a player can walk back and
    * check.
    */
+  /**
+   * The mark and nothing else: a molotov's fire, which blackens the ground it
+   * burns on and throws no rubble out of it — petrol does not dig. `power` is
+   * the mark's size against a frag's, exactly as `burst`'s is.
+   */
+  scorchAt(at: Vector3, power: number, ground: BlastGround): void {
+    this.scorch.mark(at, power, ground);
+  }
+
   burst(at: Vector3, power: number, ground: BlastGround, camPos: Vector3): boolean {
     const d = CONFIG.grenade.debris;
     this.scorch.mark(at, power, ground);

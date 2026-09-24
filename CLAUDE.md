@@ -166,7 +166,7 @@ one optional field on a layout whose default is not "unaffected", absent meaning
 `shore` because silent water is a bug.
 
 **TWO FADERS SIT ABOVE ALL OF IT AND THEY MULTIPLY** — `CONFIG.mix.groups` is
-ten FAMILIES and `CONFIG.mix.channels` is forty-three SOUNDS inside them, 1
+ten FAMILIES and `CONFIG.mix.channels` is forty-four SOUNDS inside them, 1
 being "as built" and each set by ear in a live round through the dev-only `F4`
 panel (`src/dev/mixer/`, behind the editor's own dynamic-import gate). **A
 fader is a DEVIATION and nothing is BALANCED with one**: a sound wrong against
@@ -447,6 +447,21 @@ frame, a pool that **refuses rather than stealing a live slot**, and a blast
 resolved against the **thrower's** target list fetched at detonation, so friendly
 fire is excluded by construction as in `CombatSystem.fire`.
 
+**The pouch holds a FRAG or a MOLOTOV, never both** (`entities/throwables.ts`,
+a kit row on every map, riding the join and the deploy like the weapon). **A
+molotov is the same pool, the same arc and the same ray** — thrown on the frag's
+`throwSpeed`/`throwLift`/`gravity`, which the bots' measured band depends on —
+and it BREAKS on first contact into a FIRE: a second pool in `GrenadeSystem`
+that burns the thrower's target list on a tick, skips hulls, and is drawn in
+the world's one `FlameMaterial`. Three rules reach outside it. **A burn is
+`DamageKind` `"fire"`, which DROPS a body** — `RagdollSystem`'s test is "not a
+bullet or a burn". **A fire's held-open sound is keyed NEGATIVE**
+(`Game.fireSoundKey`), because `AmbienceSystem` spends 0 and up and an
+emitter's index is its identity. **In a match the burn is the authority's**:
+it arrives as a `blaze` event (`fire` is a gunshot on this wire) and a client
+draws it through `drawFire`, with `GrenadeSystem.predicted` stopping the
+thrower's own local bottle lighting a second one.
+
 **There is ONE blast in the game and one set of numbers describing it.**
 `blastAt` takes a `power`, the grenade passes 1 and is the reference exactly as
 the rifle is for a weapon's `report`, and the tank shell is `blastPower` (1.85)
@@ -462,7 +477,8 @@ position on it.
 → **[`docs/grenades.md`](docs/grenades.md)** — the bounce, resting and terrain
 backstop rules, the eight layers and the four rules holding them together, the
 GPU cloud pool built twice (the one place a particle system may be spawned per
-event), the throw timeline, and the bots' range band.
+event), the throw timeline, the bots' range band, and the molotov — the break,
+the floor under it, the fire pool, the burn and the bots' reflex out of it.
 
 ### The interface is five screens and the chrome
 

@@ -103,6 +103,10 @@ src/
     grenade.ts          # The throw, bounce, fuse and blast — including the
                         #   eight layers the blast is DRAWN as, quoted for the
                         #   grenade, which every other explosion scales off
+    molotov.ts          # The other throwable: the break, the fire it leaves
+                        #   (radius, life, burn), how it is drawn, lit and
+                        #   heard, and which bots carry one. Thrown on the
+                        #   frag's arc and states none of its own
     equipment.ts        # The anti-tank slot: the launcher, the mines, and the
                         #   bots' launcher band. Two numbers per item — what
                         #   the HULL it struck takes, and the blast for
@@ -318,6 +322,9 @@ src/
                         #   ordinary WeaponSetup (no fall-off, no spread, no
                         #   reload, `magSize` IS a life's ammunition) and into
                         #   the OrdnanceEffect a detonation is spent through
+    throwables.ts       # ThrowableId (frag | molotov), the kit order, and the
+                        #   pouch size every side asks — the throwable slot's
+                        #   `equipment.ts`, with no WeaponSetup behind it
     finishes.ts         # FinishId + the sixteen colour schemes, every one of
                         #   them offered on every weapon, and the repaint over
                         #   its colour groups. The one kit table that decides
@@ -418,6 +425,9 @@ src/
     GrenadeModel.ts     # What a grenade looks like — body, fuse pip, and the
                         #   blink that reads the fuse. Built by the system that
                         #   simulates them and by the one that only draws them
+    MolotovModel.ts     # What a molotov looks like — bottle, neck, and the lit
+                        #   rag that is its tell. Built three ways: the pool, the
+                        #   wire's ghosts, and the viewmodel's fist
     RpgModel.ts         # The launcher on the shoulder and the rocket that
                         #   leaves it. Built from its VENTURI, not its middle,
                         #   the one weapon with a `hipYaw` of its own, and the

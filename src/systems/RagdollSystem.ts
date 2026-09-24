@@ -35,7 +35,7 @@
  *   number scaled.** A round is a newton-second on the chest; a blast is a SPEED
  *   spent on every bone at once, because the same throw on the 34 kg chest alone
  *   drags nine limbs through their constraints to catch up. `subject.deathKind`
- *   picks and the test is "not a bullet"; how far it flies is the falloff-scaled
+ *   picks and the test is "not a bullet or a burn"; how far it flies is the falloff-scaled
  *   `deathDamage` the corpse already recorded, so a blast's `power` is left
  *   alone. See `applyImpulse`.
  * - The sim is a FIXED step with a CARRIED remainder, so a tumble is identical
@@ -613,8 +613,11 @@ export class RagdollSystem implements PhysicsClient {
 
     // "Not a bullet" rather than a list of the two kinds that are explosions,
     // so a new one is thrown without being remembered here. `DamageKind` is
-    // the vocabulary and `CombatSystem` owns it.
-    const blast = subject.deathKind !== "bullet";
+    // the vocabulary and `CombatSystem` owns it. A BURN is the one other kind
+    // that drops a body: a molotov's fire puts nobody in the air, and a corpse
+    // flung out of a patch of burning road reads as an explosion nobody saw.
+    const blast =
+      subject.deathKind !== "bullet" && subject.deathKind !== "fire";
 
     // Direction is free: `deathFrom` is the shooter's eye or the blast centre.
     // Y is kept, so a round from a rooftop pushes a body down.

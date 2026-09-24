@@ -39,6 +39,13 @@
  * anybody wants to be in.
  */
 export const grenade = {
+  /**
+   * The loadout's name, and the HUD's caption over the pouch. The frag is one
+   * of the two throwables (`entities/throwables.ts`); the other is
+   * `CONFIG.molotov`, which is thrown on this file's arc.
+   */
+  name: "Frag Grenade",
+  short: "FRAG",
   /** Carried per life. There is no way to pick more up yet. */
   carried: 2,
   /** Seconds from leaving the hand to detonation. Not resettable, not cookable. */

@@ -98,6 +98,7 @@ const CHANNEL_LABELS: Record<MixChannel, string> = {
   impactGlass: "hit — glass",
   nearMiss: "round going past",
   blast: "blast",
+  molotov: "molotov",
   launcher: "launcher firing",
   step: "your boots",
   land: "landing",
@@ -674,6 +675,9 @@ const AUDITIONS: Record<MixChannel, Audition | null> = {
 
   blast: ({ sfx, at }) => {
     sfx.explosion(at());
+  },
+  molotov: ({ sfx, at }) => {
+    sfx.molotov(at());
   },
   launcher: ({ sfx, at }) => {
     sfx.launcher(at());

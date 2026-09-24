@@ -28,10 +28,21 @@
  * come to rest, and a stride's worth for one caught still bouncing. Playing
  * the tail out instead would draw a grenade flying through the middle of its
  * own explosion.
+ *
+ * A MOLOTOV is drawn by the same ghost with a bottle in place of the frag
+ * (`GrenadeState.k`), and it ends the same way: it stops appearing on the
+ * snapshot that carries the `blaze` event, and the fire is `GrenadeSystem`'s
+ * to draw from there.
  */
 import { Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { buildGrenade, pipLit } from "../entities/GrenadeModel";
+import {
+  buildMolotov,
+  showMolotov,
+  type MolotovMeshes,
+} from "../entities/MolotovModel";
+import type { ThrowableId } from "../entities/throwables";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Snapshot } from "./protocol";
 
@@ -51,6 +62,10 @@ const BUFFER = 8;
 interface Ghost {
   readonly mesh: Mesh;
   readonly pip: Mesh;
+  /** The bottle, for a flight the wire says is a molotov. */
+  readonly bottle: MolotovMeshes;
+  /** Which of the two this flight is — decided when it is claimed. */
+  kind: ThrowableId;
   /** The wire's flight id, or -1 while the slot is free. */
   id: number;
   readonly samples: Sample[];
@@ -78,7 +93,15 @@ export class NetGrenades {
   constructor(scene: Scene, mats: CelMaterialFactory) {
     for (let i = 0; i < CONFIG.grenade.poolSize; i++) {
       const { mesh, pip } = buildGrenade(scene, mats, `netGrenade${i}`);
-      this.pool.push({ mesh, pip, id: -1, samples: [], hasPosition: false });
+      this.pool.push({
+        mesh,
+        pip,
+        bottle: buildMolotov(scene, mats, `netMolotov${i}`),
+        kind: "frag",
+        id: -1,
+        samples: [],
+        hasPosition: false,
+      });
     }
   }
 
@@ -101,6 +124,9 @@ export class NetGrenades {
       // happen: this pool is the authority's own size, and the authority
       // cannot have more grenades in the air than its pool holds.
       if (!ghost) continue;
+      // Anything the field does not name as a bottle is a frag, which is what
+      // an older server — and a frag — sends: nothing.
+      if (ghost.samples.length === 0) ghost.kind = g.k === "molotov" ? "molotov" : "frag";
       this.present.add(g.i);
       push(ghost.samples, {
         t: snap.now,
@@ -135,21 +161,25 @@ export class NetGrenades {
       const z = a.z + (b.z - a.z) * blend;
       const fuse = a.fuse + (b.fuse - a.fuse) * blend;
 
+      const bottle = ghost.kind === "molotov";
+      const body = bottle ? ghost.bottle.mesh : ghost.mesh;
       const stepped = ghost.hasPosition
-        ? Vector3.Distance(ghost.mesh.position, TMP.set(x, y, z))
+        ? Vector3.Distance(body.position, TMP.set(x, y, z))
         : 0;
-      ghost.mesh.position.set(x, y, z);
+      body.position.set(x, y, z);
       // Shown on the frame it is first POSED and never on the one it was
       // claimed — see `Ghost.hasPosition`.
       if (!ghost.hasPosition) {
         ghost.hasPosition = true;
-        ghost.mesh.isVisible = true;
+        if (bottle) showMolotov(ghost.bottle, true);
+        else ghost.mesh.isVisible = true;
       }
       // The same rates the simulated flight tumbles at, read off distance
       // instead of speed — one is the other times the frame.
-      ghost.mesh.rotation.x += stepped * 2.4;
-      ghost.mesh.rotation.z += stepped * 1.7;
-      ghost.pip.isVisible = pipLit(fuse / g.fuse);
+      body.rotation.x += stepped * (bottle ? 0.9 : 2.4);
+      body.rotation.z += stepped * (bottle ? 0.25 : 1.7);
+      // A bottle's rag is its tell and is always lit; only a frag has a fuse.
+      if (!bottle) ghost.pip.isVisible = pipLit(fuse / g.fuse);
     }
   }
 
@@ -166,6 +196,8 @@ export class NetGrenades {
     for (const ghost of this.pool) {
       ghost.pip.dispose();
       ghost.mesh.dispose();
+      // The neck, the cloth and the wick are its children and go with it.
+      ghost.bottle.mesh.dispose();
     }
     this.pool.length = 0;
     this.live.clear();
@@ -189,6 +221,7 @@ export class NetGrenades {
       Math.random() * 3,
       Math.random() * 3,
     );
+    free.bottle.mesh.rotation.copyFrom(free.mesh.rotation);
     this.live.set(id, free);
     return free;
   }
@@ -200,6 +233,7 @@ export class NetGrenades {
     ghost.hasPosition = false;
     ghost.mesh.isVisible = false;
     ghost.pip.isVisible = false;
+    showMolotov(ghost.bottle, false);
   }
 }
 

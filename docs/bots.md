@@ -234,8 +234,9 @@ is exactly that roster rather than a ceiling every map pays for.
 `perTeamOf` is where the default and the bound live. `Game.buildRound` pushes it
 through `BattleSystem.setRoster`, which is a no-op at the same size and
 otherwise disposes the pool and builds a new one — so a map that says nothing
-gets the same sixteen bodies with the same squads, the same launchers and the
-same movement seeds it always had, bit for bit.
+gets the same sixteen bodies with the same squads, the same launchers, the same
+molotov carriers (each squad's LAST body, the launcher's rule from the other end
+— `docs/grenades.md`) and the same movement seeds it always had, bit for bit.
 
 **Rebuilding is the one place the rule above bends, and it bends because the
 alternative is a per-frame tax on the maps that did not ask for anything.** A
@@ -302,7 +303,11 @@ budget is the one thing here that does not scale.
   *acquisition* only — a bot faces its target once it has one, so you can flank an
   unaware bot, never a fighting one.
 - **Damage direction is free** — `CombatSystem.fire` has always passed the shooter's
-  origin into `takeDamage`.
+  origin into `takeDamage`. **A BURN is the one exception**: its origin is the
+  middle of a molotov's fire, which is not a shooter, so `takeDamage` does not
+  file it in `BotMemory` (that turned bots to face the flames and hold their
+  ground in them) and starts `burnT` instead — a run straight away from the fire
+  that overrides whatever the state wanted. See `docs/grenades.md`.
 - **Hearing** is a squared-distance sweep inside `BattleSystem.botFire`, with a
   jittered position so bots converge on the *sound*, not the shooter. `Game` calls
   `hearGunshot` for the player's own fire.
