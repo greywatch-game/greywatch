@@ -95,6 +95,13 @@ const SUPPORT_ELBOW = new Vector3(-0.302, -0.478, -0.344);
 const MAG_HAND = new Vector3(-0.02, -0.14, -0.03);
 
 /**
+ * How far the eye is held behind the notch when aimed (m) — this weapon's own,
+ * since the table's "iron" figure is a rifle's. The notch, the blade and the
+ * fists were all fitted against this distance.
+ */
+const PISTOL_EYE_RELIEF = 0.33;
+
+/**
  * Builds a cel-styled Colt M45A1.
  *
  * The silhouette is the one everybody already knows, and what makes it this
@@ -374,7 +381,9 @@ export function buildPistol(
     magazine,
     magDrop: magDropAxis(GRIP_RAKE),
     finish,
-    sights: { kind: "fixed", sight: "iron", assembly: sight },
+    // Held at arm's length rather than at a cheek weld: the rifle irons' eye
+    // relief would put the notch a hand's width from the face.
+    sights: { kind: "fixed", sight: "iron", assembly: sight, eyeRelief: PISTOL_EYE_RELIEF },
     meshes,
   };
 }

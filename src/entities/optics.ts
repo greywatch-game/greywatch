@@ -92,12 +92,12 @@ export const eyeDistance = (id: SightId): number =>
  *
  * These are therefore not free to be "realistic", and they are what is left of
  * the old bulk: the optics themselves came down by a third to a half, the
- * mounts under them by rather less.
+ * mounts under them by rather less. The holo's and the reflex's are not in
+ * this list at all any more: both are SOLVED from their cones, after
+ * `RAIL_REACH` (`WIN_RISE`, `REFLEX_RISE`).
  */
 const IRON_RISE = 0.036;
-const WIN_RISE = 0.078;
 const SCOPE_RISE = 0.1;
-const REFLEX_RISE = 0.072;
 const PRISM_RISE = 0.096;
 /**
  * The 6x's, and it is the ONE rise here the rail does not decide — see
@@ -151,6 +151,30 @@ const ironRiseOf = (mount: OpticMount): number => mount.ironRise ?? IRON_RISE;
 const RAIL_REACH = 0.55;
 
 /**
+ * THE SIZE OF THE THREE OPTICS AN EYE IS CLOSE TO, AS A MULTIPLE OF THE SIZE
+ * THEY WERE DRAWN AT — and the reason none of their lengths is a free number.
+ *
+ * The holo, the reflex and the irons were drawn for an eye held a rifle's
+ * length back (0.613, 0.452 and 0.532 weapon units, `DRAWN_AT`), which is what made
+ * each of them two to three times the size of the real thing against the
+ * weapon it stood on — and the weapon sat out at arm's length to be aimed.
+ * Every length in the three builders is written at that size and multiplied
+ * by its factor, so the eye relief in `CONFIG.sights` can be brought in and
+ * the sight comes down with it: the picture through it is the same angle, and
+ * the hardware is the size of an optic. The rise under each is SOLVED rather
+ * than scaled (`WIN_RISE`, `REFLEX_RISE`), because the cone it has to clear
+ * runs to the far end of a rail that did not get any shorter.
+ *
+ * The magnified sights are sized off `eyeDistance` directly and need none of
+ * this; their eye reliefs were already short, and the near plane is what
+ * stops them going shorter.
+ */
+const DRAWN_AT = { holo: 0.613, reflex: 0.452, iron: 0.532 } as const;
+const HOLO_K = eyeDistance("holo") / DRAWN_AT.holo;
+const REFLEX_K = eyeDistance("reflex") / DRAWN_AT.reflex;
+const IRON_K = eyeDistance("iron") / DRAWN_AT.iron;
+
+/**
  * The holo's clear bore and wall. The shooter looks PAST the wall, so every
  * millimetre of it costs sight picture — keep it near the outline width and
  * let the bore carry the size. Outer radius is `(BORE + WALL * 2) / 2`, which
@@ -161,15 +185,28 @@ const RAIL_REACH = 0.55;
  * high, wide enough to find a target through and small enough that the housing
  * is not the largest thing on the weapon.
  */
-const BORE = 0.072;
-const WALL = 0.007;
+const BORE = 0.072 * HOLO_K;
+const WALL = 0.007 * HOLO_K;
+
+/**
+ * The holo's rise, solved: the lowest the window can be carried with its
+ * lower edge's ray clearing the far end of the rail by `HOLO_FLOOR_GAP`. The
+ * cone is the bore's own half-angle at the eye, which does not change as the
+ * optic is scaled — so a smaller sight stands on a taller saddle, the way a
+ * real one is carried on a riser.
+ */
+const HOLO_FLOOR_GAP = 0.008;
+const WIN_RISE =
+  (BORE / 2 / eyeDistance("holo")) * (eyeDistance("holo") + RAIL_REACH) + HOLO_FLOOR_GAP;
 
 /**
  * The two iron stations share a bore, which is what gives the picture its
  * depth: the rear ring is a third of the eye's distance to the front one, so
- * it reads as twice the size and the front hood floats inside it.
+ * it reads as twice the size and the front hood floats inside it. The rise
+ * does NOT scale with it: a real aperture stands its own height over the rail
+ * however small the ring is, and the bases simply grow to meet it.
  */
-const IRON_BORE = 0.048;
+const IRON_BORE = 0.048 * IRON_K;
 
 /**
  * The reflex's window, and the frame around it. Rectangular rather than round,
@@ -177,19 +214,25 @@ const IRON_BORE = 0.048;
  * only thing between the eye and the world and it is kept to `REFLEX_FRAME`
  * either side of the glass.
  *
- * The HEIGHT is therefore not authored: it is `RAIL_REACH` solved for, the
- * tallest window this rise can carry with `REFLEX_FLOOR_GAP` of daylight left
- * under the picture, and it comes out at 0.060. Written as a number instead it
- * would go quietly wrong the first time the rise or the eye relief moved. The
+ * The HEIGHT is therefore not authored: it is `REFLEX_CONE` at the eye, and the
+ * rise under it is `RAIL_REACH` solved for with `REFLEX_FLOOR_GAP` of daylight
+ * left under the picture. Written as numbers instead they would go quietly
+ * wrong the first time the eye relief moved. The
  * WIDTH is free — nothing on a weapon stands out sideways — so it is simply
  * wider than it is tall, the way a reflex lens is.
  */
-const REFLEX_WIN_W = 0.076;
-const REFLEX_FLOOR_GAP = 0.005;
-const REFLEX_WIN_H =
-  (2 * (REFLEX_RISE - REFLEX_FLOOR_GAP) * eyeDistance("reflex")) /
-  (eyeDistance("reflex") + RAIL_REACH);
-const REFLEX_FRAME = 0.006;
+const REFLEX_WIN_W = 0.076 * REFLEX_K;
+const REFLEX_FLOOR_GAP = 0.005 * REFLEX_K;
+/**
+ * The window's half-height as an ANGLE at the eye — the one number the reflex's
+ * picture is — and the rise and the height both solved from it: the rise is
+ * the lowest that clears the rail's far end by `REFLEX_FLOOR_GAP`, and the
+ * window is that angle at the eye's own distance.
+ */
+const REFLEX_CONE = 0.0669;
+const REFLEX_RISE = REFLEX_CONE * (eyeDistance("reflex") + RAIL_REACH) + REFLEX_FLOOR_GAP;
+const REFLEX_WIN_H = 2 * REFLEX_CONE * eyeDistance("reflex");
+const REFLEX_FRAME = Math.max(0.004, 0.006 * REFLEX_K);
 
 /**
  * The 3.5x scope. A telescope here is a real tube the eye looks down — there
@@ -539,20 +582,21 @@ export function buildOptics(
     const baseH = floor - mount.railTop;
     const baseY = (mount.railTop + floor) / 2;
     // Rear: a ring standing just clear of the rail on its own base.
-    b.box("ironRearBase", METAL, 0.026, baseH, 0.026, 0, baseY, mount.ironRearZ);
-    b.shell("ironRearRing", METAL, IRON_BORE, 0.0055, 0.01, ironY, mount.ironRearZ, 10);
+    const k = IRON_K;
+    b.box("ironRearBase", METAL, 0.026 * k, baseH, 0.026 * k, 0, baseY, mount.ironRearZ);
+    b.shell("ironRearRing", METAL, IRON_BORE, 0.0055 * k, 0.01 * k, ironY, mount.ironRearZ, 10);
     // Front: the same ring as a hood, with the post rising from its floor to
     // the axis. The bead is the aim point — a tritium dot, and the only thing
     // on this sight that is visible against a dark treeline.
-    b.box("ironFrontBase", METAL, 0.028, baseH, 0.028, 0, baseY, mount.ironFrontZ);
-    b.shell("ironFrontHood", METAL, IRON_BORE, 0.005, 0.012, ironY, mount.ironFrontZ, 10);
+    b.box("ironFrontBase", METAL, 0.028 * k, baseH, 0.028 * k, 0, baseY, mount.ironFrontZ);
+    b.shell("ironFrontHood", METAL, IRON_BORE, 0.005 * k, 0.012 * k, ironY, mount.ironFrontZ, 10);
     const postH = IRON_BORE / 2;
-    b.box("ironPost", METAL, 0.005, postH, 0.007, 0, ironY - postH / 2, mount.ironFrontZ);
+    b.box("ironPost", METAL, 0.005 * k, postH, 0.007 * k, 0, ironY - postH / 2, mount.ironFrontZ);
     b.merge("iron", node);
     const bead = b.lit(
       MeshBuilder.CreateSphere(
         `${prefix}_ironBead`,
-        { diameter: 0.005, segments: 6 },
+        { diameter: 0.005 * IRON_K, segments: 6 },
         b.scene,
       ),
       node,
@@ -582,24 +626,25 @@ export function buildOptics(
     const halfW = REFLEX_WIN_W / 2;
     const halfH = REFLEX_WIN_H / 2;
     const f = REFLEX_FRAME;
+    const k = REFLEX_K;
     // The body is whatever is LEFT between the rail and the window's lower
     // rim, exactly as the holo's saddle is: the rise is the constrained
     // number, so anything with a height of its own here fights it.
     const footY = mount.railTop + 0.004;
     const bodyFrom = mount.railTop + 0.008;
     const bodyTo = reflexY - halfH;
-    b.box("reflexFoot", METAL, 0.046, 0.01, 0.064, 0, footY, winZ);
+    b.box("reflexFoot", METAL, 0.046 * k, 0.01, 0.064 * k, 0, footY, winZ);
     b.box(
       "reflexBody",
       POLYMER,
       REFLEX_WIN_W + f * 2,
       bodyTo - bodyFrom,
-      0.052,
+      0.052 * k,
       0,
       (bodyFrom + bodyTo) / 2,
       winZ,
     );
-    b.box("reflexLever", METAL, 0.012, 0.02, 0.034, 0.03, footY + 0.007, winZ - 0.012);
+    b.box("reflexLever", METAL, 0.012 * k, 0.02 * k, 0.034 * k, 0.03 * k, footY + 0.007 * k, winZ - 0.012 * k);
     // The frame: two posts and a lid, each sized OUTWARD from the window so a
     // heavier frame can never eat the picture. The bottom bar is the body's
     // own top face, which is why there are three parts here and not four.
@@ -609,7 +654,7 @@ export function buildOptics(
         POLYMER,
         f,
         REFLEX_WIN_H + f,
-        0.016,
+        0.016 * k,
         side * (halfW + f / 2),
         reflexY + f / 2,
         winZ,
@@ -620,7 +665,7 @@ export function buildOptics(
       POLYMER,
       REFLEX_WIN_W + f * 2,
       f,
-      0.018,
+      0.018 * k,
       0,
       reflexY + halfH + f / 2,
       winZ,
@@ -630,10 +675,10 @@ export function buildOptics(
     // projecting the dot has to be. It costs almost nothing: it sits at the
     // very bottom and well behind the glass, and the cone rises going back
     // toward the eye, so what it actually eats is a couple of millimetres.
-    b.box("reflexEmitter", METAL, 0.018, 0.009, 0.014, 0, bodyTo, winZ - 0.021);
-    b.pin("reflexElev", METAL, 0.011, 0.008, 0, reflexY + halfH + f + 0.004, winZ, "y");
-    b.pin("reflexWind", METAL, 0.011, 0.008, halfW + f + 0.004, reflexY, winZ, "x");
-    b.pin("reflexBattery", METAL, 0.016, 0.009, -(halfW + f + 0.004), bodyTo - 0.008, winZ, "x");
+    b.box("reflexEmitter", METAL, 0.018 * k, 0.009 * k, 0.014 * k, 0, bodyTo, winZ - 0.021 * k);
+    b.pin("reflexElev", METAL, 0.011 * k, 0.008 * k, 0, reflexY + halfH + f + 0.004 * k, winZ, "y");
+    b.pin("reflexWind", METAL, 0.011 * k, 0.008 * k, halfW + f + 0.004 * k, reflexY, winZ, "x");
+    b.pin("reflexBattery", METAL, 0.016 * k, 0.009 * k, -(halfW + f + 0.004 * k), bodyTo - 0.008 * k, winZ, "x");
     b.merge("reflex", node);
 
     // The dot IS the sight — there is nothing else to align, which is the one
@@ -642,7 +687,7 @@ export function buildOptics(
     const dot = b.lit(
       MeshBuilder.CreateSphere(
         `${prefix}_reflexDot`,
-        { diameter: 0.0028, segments: 6 },
+        { diameter: 0.0028 * REFLEX_K, segments: 6 },
         b.scene,
       ),
       node,
@@ -704,32 +749,33 @@ export function buildOptics(
     // at this rise it is a low mount rather than the riser block the old
     // shoulder-height housing needed, and hard-coding a height for it would
     // put the tube back up in the air or bury it in the receiver.
+    const k = HOLO_K;
     const footY = mount.railTop + 0.004;
     const saddleFrom = mount.railTop + 0.008;
     const saddleTo = winY - rOut;
-    b.box("opticFoot", METAL, 0.056, 0.01, 0.104, 0, footY, winZ);
+    b.box("opticFoot", METAL, 0.056 * k, 0.01, 0.104 * k, 0, footY, winZ);
     b.box(
       "opticMount",
       POLYMER,
-      0.048,
+      0.048 * k,
       saddleTo - saddleFrom,
-      0.096,
+      0.096 * k,
       0,
       (saddleFrom + saddleTo) / 2,
       winZ,
     );
-    b.box("opticLever", METAL, 0.014, 0.022, 0.038, 0.031, footY + 0.006, winZ + 0.02);
-    b.pin("opticNut", METAL, 0.01, 0.062, 0, footY + 0.006, winZ - 0.032);
+    b.box("opticLever", METAL, 0.014 * k, 0.022 * k, 0.038 * k, 0.031 * k, footY + 0.006, winZ + 0.02 * k);
+    b.pin("opticNut", METAL, 0.01, 0.062 * k, 0, footY + 0.006, winZ - 0.032 * k);
     // The housing: a shell of `FACETS` slabs about the sight axis, with a
     // heavier rim at each end. The bore is the sight picture — the rims are
     // sized OUTWARD from it so a wider rim never eats into what you can see.
-    b.shell("sightTube", POLYMER, BORE, WALL, 0.042, winY, winZ);
-    b.shell("sightRimF", POLYMER, BORE + 0.003, 0.009, 0.011, winY, winZ + 0.024);
-    b.shell("sightRimR", POLYMER, BORE + 0.003, 0.009, 0.011, winY, winZ - 0.024);
-    b.pin("elevTurret", METAL, 0.022, 0.013, 0, winY + rOut + 0.006, winZ, "y");
-    b.pin("elevCap", METAL, 0.016, 0.006, 0, winY + rOut + 0.016, winZ, "y");
-    b.pin("windTurret", METAL, 0.022, 0.013, rOut + 0.006, winY, winZ, "x");
-    b.pin("battery", METAL, 0.019, 0.012, -(rOut + 0.006), winY - 0.006, winZ, "x");
+    b.shell("sightTube", POLYMER, BORE, WALL, 0.042 * k, winY, winZ);
+    b.shell("sightRimF", POLYMER, BORE + 0.003 * k, 0.009 * k, 0.011 * k, winY, winZ + 0.024 * k);
+    b.shell("sightRimR", POLYMER, BORE + 0.003 * k, 0.009 * k, 0.011 * k, winY, winZ - 0.024 * k);
+    b.pin("elevTurret", METAL, 0.022 * k, 0.013 * k, 0, winY + rOut + 0.006 * k, winZ, "y");
+    b.pin("elevCap", METAL, 0.016 * k, 0.006 * k, 0, winY + rOut + 0.016 * k, winZ, "y");
+    b.pin("windTurret", METAL, 0.022 * k, 0.013 * k, rOut + 0.006 * k, winY, winZ, "x");
+    b.pin("battery", METAL, 0.019 * k, 0.012 * k, -(rOut + 0.006 * k), winY - 0.006 * k, winZ, "x");
     b.merge("holo", node);
 
     // Reticle: emissive ring + center dot.
@@ -739,23 +785,23 @@ export function buildOptics(
     const ring = b.lit(
       MeshBuilder.CreateTorus(
         `${prefix}_reticleRing`,
-        { diameter: 0.016, thickness: 0.002, tessellation: 24 },
+        { diameter: 0.016 * k, thickness: 0.002 * k, tessellation: 24 },
         b.scene,
       ),
       node,
     );
     ring.rotation.x = Math.PI / 2; // face down the barrel axis
-    ring.position.set(0, winY, winZ - 0.003);
+    ring.position.set(0, winY, winZ - 0.003 * k);
 
     const dot = b.lit(
       MeshBuilder.CreateSphere(
         `${prefix}_reticleDot`,
-        { diameter: 0.0032, segments: 6 },
+        { diameter: 0.0032 * k, segments: 6 },
         b.scene,
       ),
       node,
     );
-    dot.position.set(0, winY, winZ - 0.003);
+    dot.position.set(0, winY, winZ - 0.003 * k);
 
     // Faint holo glass filling the bore (own material — alpha must not leak
     // into the shared emissive cache). A disc, not a quad: the corners of a
@@ -772,7 +818,7 @@ export function buildOptics(
       b.scene,
     );
     glass.parent = node;
-    glass.position.set(0, winY, winZ + 0.009);
+    glass.position.set(0, winY, winZ + 0.009 * k);
     glass.material = glassMat;
     // noGlow: the bloom would turn the faint tint into a cyan haze that
     // obscures the sight picture.

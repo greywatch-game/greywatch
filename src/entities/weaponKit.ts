@@ -132,7 +132,20 @@ export interface SightAssembly {
  */
 export type WeaponSights =
   | { kind: "fitted"; assemblies: Record<SightId, SightAssembly> }
-  | { kind: "fixed"; sight: SightId; assembly: SightAssembly };
+  | {
+      kind: "fixed";
+      sight: SightId;
+      assembly: SightAssembly;
+      /**
+       * How far the eye is held behind THIS weapon's own sight, aimed (m), when
+       * it is not the table's figure for `sight`. A sight bolted to a rail is
+       * held at the table's eye relief because its size is drawn against it; a
+       * sight machined into a slide is held wherever the arms put it, which on
+       * a pistol is at arm's length — and the iron table's figure is a rifle's
+       * cheek weld.
+       */
+      eyeRelief?: number;
+    };
 
 /**
  * The optic actually in front of the eye on this weapon, given what the kit has

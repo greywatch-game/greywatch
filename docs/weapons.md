@@ -1893,6 +1893,26 @@ which belongs to the weapon, goes with the weapon.
   picture instead of the sight. Two floors bound it: the camera's near plane (`minZ`
   0.05 against a stand-off of `eyeRelief * zoomComp` — the scope's 0.17 buys ~0.02 m
   of margin) and the cone's clearance over the rail, which is what the rises are.
+- **The holo, the reflex and the irons are drawn at one eye distance and SCALED to
+  another** (`optics.ts`' `DRAWN_AT` and the three `_K` factors), because their
+  reliefs were a rifle's length — 0.38, 0.28 and 0.33 — and it showed twice: each
+  optic came out two to three times the real thing against the weapon it stood on
+  (a 5.6 cm holo window, a 3.8 cm aperture ring), and the weapon was aimed at arm's
+  length, the eye behind the rifle's own butt. They are 0.24, 0.18 and 0.24 now and
+  every length in the three builders follows. **The RISES do not scale**: the cone
+  they clear runs to the far end of a rail that did not get shorter, so the holo's
+  and the reflex's are SOLVED from their cones (`WIN_RISE`, `REFLEX_RISE`) and a
+  smaller sight stands on a taller saddle, as a real one stands on a riser. The
+  irons' rise is a real aperture's height and stays. **The irons stop at 0.24 and
+  not nearer because of the rifle**: at 0.2 its eye sits OVER the moulded cheek
+  riser and the riser's top is a lit shelf across the bottom of the picture. A
+  sight machined into a weapon is not held at the table's figure at all — the
+  pistol states its own (`WeaponSights`' `eyeRelief`), since its notch is at arm's
+  length and a rifle's cheek weld put it a hand from the face.
+- **The hip stand-off is 0.52, not 0.66** (`viewmodel.hipPos`). At 0.66 the rifle's
+  butt was a third of a metre in front of the face and the weapon read as held OUT
+  rather than held; at 0.52 the butt is at the shoulder and the receiver fills the
+  lower right. Nearer, it crowds the frame at a 54° vertical FOV.
 - **`eyeRelief` has to RISE with magnification or the near plane eats the
   eyepiece, and that is the least obvious rule in this file.** The stand-off is
   `eyeRelief * zoomComp` and `zoomComp` is `adsMagReference / magnification`, so

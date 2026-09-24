@@ -900,6 +900,11 @@ export class ViewModel {
     const parts = this.rigs[fitted].parts;
     const worn = wornSight(parts.sights, this.fittedSight);
     this.sight = sightSetup(worn.id);
+    // A sight machined into the weapon is held where the weapon is held, not
+    // where the table's optic of the same kind is (see `WeaponSights`).
+    if (parts.sights.kind === "fixed" && parts.sights.eyeRelief !== undefined) {
+      this.sight = { ...this.sight, eyeRelief: parts.sights.eyeRelief };
+    }
     this.muzzle.position.copyFrom(parts.muzzle);
     this.ejectPort.position.copyFrom(parts.ejectPort);
     // A pistol keeps its magazine in the grip, so the shared trip to a magwell

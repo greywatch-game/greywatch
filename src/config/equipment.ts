@@ -268,7 +268,7 @@ export const equipment = {
        * the shield, the optic and the warhead over 340 px of the lower right.
        *
        * **The sign is the counter-intuitive one.** The weapon is held to the
-       * RIGHT of the eye (`hipPos.x` is 0.184), so turning the muzzle outboard
+       * RIGHT of the eye (`hipPos.x` is 0.17), so turning the muzzle outboard
        * swings the bore ONTO the line of sight and collapses it further;
        * inboard opens it. It is the same sign, for the same reason, that
        * `viewmodel.sprintRot` documents.
@@ -390,7 +390,7 @@ export const equipment = {
        * Held out in both hands and HIGH — the opposite of the launcher's
        * numbers, because the thing is a flat plate a third of a metre across
        * and the frame sees a plate edge-on as a bar. `hipPos.y` has already
-       * spent 0.185 taking the weapon down out of the middle of the screen,
+       * spent 0.17 taking the weapon down out of the middle of the screen,
        * and most of that has to come back for a mine to be a mine.
        */
       hipZ: -0.02,

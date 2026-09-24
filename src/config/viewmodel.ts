@@ -40,8 +40,17 @@ export const viewmodel = {
    * mechanism.
    */
   adsMagReference: 1.6,
-  /** Hip-fire pose: sight ~30% right and ~22% down, muzzle turned inboard. */
-  hipPos: { x: 0.184, y: -0.185, z: 0.66 },
+  /**
+   * Hip-fire pose: sight ~30% right and ~22% down, muzzle turned inboard.
+   *
+   * The stand-off is what says whether the weapon is HELD or held OUT. At
+   * 0.66 the rifle's butt was a third of a metre in front of the face — an
+   * arm's-length carry that read as posing with the weapon rather than
+   * shouldering it. At 0.52 the butt is at the shoulder pocket and the
+   * receiver fills the lower right, which is where a braced weapon sits; much
+   * nearer and the receiver crowds the frame at this FOV.
+   */
+  hipPos: { x: 0.17, y: -0.17, z: 0.52 },
   hipRot: { x: 0.03, y: -0.08, z: 0.06 },
   /**
    * Sprint: the rifle carried ACROSS the body, muzzle swung inboard and
@@ -53,7 +62,7 @@ export const viewmodel = {
    * reads as broken rather than as running, and it swings the weapon off
    * the edge of the screen so only the optic is left. Inboard is negative.
    *
-   * The drop is small on purpose. `hipPos.y` is already -0.185, so an
+   * The drop is small on purpose. `hipPos.y` is already -0.17, so an
    * offset much past this lands near -0.3 and sinks the whole weapon out
    * of frame — the same symptom, from the other axis.
    */
@@ -532,9 +541,9 @@ export const viewmodel = {
    * `weapons[id].drawTime`.
    *
    * The drop has to be enough to take the weapon fully OFF the screen, not
-   * merely low, and that is what sizes it: at the hip stand-off of ~0.66 m a
-   * 54° vertical FOV puts the bottom edge 0.336 m below the axis, and
-   * `hipPos.y` has already spent 0.185 of that. The switch is hidden behind
+   * merely low, and that is what sizes it: at the hip stand-off of ~0.52 m a
+   * 54° vertical FOV puts the bottom edge 0.265 m below the axis, and
+   * `hipPos.y` has already spent 0.17 of that. The switch is hidden behind
    * the frame's edge or it is a model popping into another one — which is
    * exactly what a swap with a shallow dip looks like.
    *

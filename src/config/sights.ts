@@ -53,11 +53,20 @@ export const sights = {
      * that the optics came out wider than the receiver they stood on.
      * Changing one of the two alone re-sizes the picture instead.
      *
+     * **It was done a second time to this sight, the irons and the holo**,
+     * whose reliefs were a rifle's length (0.28, 0.33 and 0.38): the optics
+     * came out two to three times the size of the real thing against the
+     * weapon, and the weapon was aimed at arm's length. `optics.ts` scales
+     * those three off these numbers (`DRAWN_AT`), so moving one of them now
+     * moves the sight with it and leaves the picture alone. The irons stop at
+     * 0.24 for a reason of their own: nearer, the rifle's eye sits OVER its
+     * moulded cheek riser, and the riser's top is a lit shelf under the ring.
+     *
      * The shortest here, and that is what makes this a mini dot rather than
      * a small holo: the whole assembly is measured against it, so an eye
      * held closer buys the same window on a smaller sight.
      */
-    eyeRelief: 0.28,
+    eyeRelief: 0.18,
     adsSpeedMult: 1.15,
   },
   /**
@@ -70,7 +79,7 @@ export const sights = {
     name: "Iron",
     magnification: 1.35,
     /** See `reflex.eyeRelief` — the pairing every dimension is measured against. */
-    eyeRelief: 0.33,
+    eyeRelief: 0.24,
     /** Multiplier on `camera.adsBlendSpeed` — how fast it comes up. */
     adsSpeedMult: 1.2,
   },
@@ -78,7 +87,7 @@ export const sights = {
   holo: {
     name: "Holo",
     magnification: 1.6,
-    eyeRelief: 0.38,
+    eyeRelief: 0.24,
     adsSpeedMult: 1,
   },
   /**
