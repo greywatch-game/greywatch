@@ -1,6 +1,6 @@
 /**
- * DmrModel.ts — Builds the low-poly semi-automatic marksman rifle from
- * primitives, and hangs the same optics off its rail.
+ * DmrModel.ts — Builds the semi-automatic marksman rifle, an HK G28 / M110A1
+ * drawn from photographs, and hangs the same optics off its rail.
  * Returns WeaponParts, exactly as RifleModel and SmgModel do: every builder is
  * interchangeable to everything above it, which is what lets `ViewModel` carry
  * any of them.
@@ -13,10 +13,12 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
   BODY,
+  BRASS,
   METAL,
   magDropAxis,
   POLYMER,
   RUBBER,
+  spanRing,
   WeaponBuild,
   type WeaponParts,
 } from "./weaponKit";
@@ -25,9 +27,8 @@ import {
  * The magazine's rake, which is also the line it drops out along. NEGATIVE for
  * the reason the rifle's is: a box magazine leans toward the MUZZLE, and a
  * pivot's positive `rotX` sends everything below it backwards (see
- * `magDropAxis`). Shallower than the rifle's, because this one is a straight
- * box — the lean is all the curve it gets, and past a few degrees a straight
- * stick raked hard reads as a magazine that has been knocked out of true.
+ * `magDropAxis`). Shallow, because HK's 20-round 7.62 box is straight — the
+ * lean is all the curve it gets.
  */
 const MAG_RAKE = -0.06;
 
@@ -38,15 +39,13 @@ const MAG_RAKE = -0.06;
  */
 const RAIL_TOP = 0.09;
 
+/** The upper's flat, and the handguard's: the rail's spine stands on it. */
+const DECK = 0.076;
+
 /**
  * Height of the bore above the origin: in the upper receiver, level with the
- * bottom of the ejection port.
- *
- * It was on y = 0, which is the seam between the upper and the lower — a
- * chamber in the trigger housing. The free-float tube is a sleeve around the
- * barrel, so it comes up with it, and so do the bipod and the hand stop hung
- * under it and the hand that holds it; the tube's top now runs just under the
- * upper's own deck, which is where an AR-pattern rail-height handguard sits.
+ * bottom of the ejection port. The handguard floats around the barrel, so its
+ * heights are written against this.
  */
 const BORE_Y = 0.03;
 
@@ -58,10 +57,9 @@ const BORE_Y = 0.03;
  * what stops it is `optics.ts`: with a holo fitted the FOLDED front leaf still
  * stands on the rail, and the holo's view cone spreads until it runs onto it.
  * At this rail height the cone reaches the leaf's top at z = 0.53, which is
- * therefore where the station goes — a longer receiver buys a longer sight
- * radius at the rear (-0.22 against the rifle's -0.185) and nothing at all at
- * the front. The rail itself stops at 0.57 for the same reason one step up:
- * past that its ribs are inside the SCOPE's cone.
+ * therefore where the station goes. The rail itself stops at 0.57 for the same
+ * reason one step up — past that its teeth are inside the SCOPE's cone — so
+ * the M110A1's handguard runs on past the rail's end as a bare flat top.
  */
 const MOUNT: OpticMount = {
   railTop: RAIL_TOP,
@@ -71,48 +69,26 @@ const MOUNT: OpticMount = {
 };
 
 /**
- * The stock's heights, and only the first of them is a choice.
+ * The comb's top: the rail's height, and never higher than the irons allow.
  *
  * The eye behind this weapon sits BEHIND its own butt — an aperture's eye
- * relief is over half a receiver's length — so the comb, the butt plate and
- * everything else back here stands between the eye and the rear sight, in the
- * one part of the sight picture the shooter cannot look around. A comb over
- * the line simply fills the aperture, and a marksman rifle wearing a scope's
- * cheek riser does exactly that: this comb topped out ABOVE the sight axis
- * rather than under it, and the irons showed a wall of polymer and nothing
- * else.
- *
- * So the comb's top is not authored, it is `ironSightFloor` at the comb's own
- * front edge — the lowest point of the aperture's cone where the comb is
- * nearest to it — less a few millimetres of daylight. That is the honest
- * reading of the part as well as the workable one: a comb is adjustable
- * because irons and glass want the cheek at different heights, and this is it
- * at the bottom of its travel, which is the setting the back-up irons are for.
- * The posts, the gap under them and the locking knob all survive, so the
- * silhouette cue survives with it.
- *
- * Everything else follows from that one number, in this order: the comb's
- * underside sets where the stock's spine can run, and the butt is dropped to
- * just under the comb, because a butt standing proud of the cheek piece is a
- * stock nobody could get behind. Raise the rail or re-rise the irons and the
- * whole assembly comes with them.
+ * relief is over half a receiver's length — so the comb stands between the eye
+ * and the rear sight, in the one part of the sight picture the shooter cannot
+ * look around. `ironSightFloor` at the comb's front edge is the highest it may
+ * stand (less a few millimetres of daylight); the M110A1's own cheek piece sits
+ * about level with the rail, which comes in under that, so the rail is what
+ * sets it and the floor is the ceiling it is checked against.
  */
-const COMB_FRONT_Z = -0.345;
-const COMB_TOP = ironSightFloor(MOUNT, COMB_FRONT_Z) - 0.006;
-const COMB_PAD_H = 0.012;
-const COMB_H = 0.032;
-const COMB_BOTTOM = COMB_TOP - COMB_PAD_H - COMB_H;
-/** Top of the stock's spine: the comb's underside, less the gap it rides on. */
-const SPINE_TOP = COMB_BOTTOM - 0.02;
-/** Centre line of the butt assembly — plate, pad, grooves, toe and sling. */
-const BUTT_H = 0.2;
-const BUTT_Y = COMB_TOP - 0.014 - BUTT_H / 2;
+const COMB_FRONT_Z = -0.352;
+const COMB_TOP = Math.min(RAIL_TOP, ironSightFloor(MOUNT, COMB_FRONT_Z) - 0.006);
+/** The stock body's own top, under the cheek flap that rides on it. */
+const STOCK_TOP = COMB_TOP - 0.012;
+/** The butt's toe, a stock's depth under the comb. */
+const TOE = COMB_TOP - 0.21;
 
 /**
- * Where each hand grips, in weapon-local units. The support hand sits further
- * out than the rifle's and further BACK than the handguard's front, because
- * the bipod is stowed under that end — a fist closed around the folded legs
- * reads as a hand pushed through the weapon.
+ * Where each hand grips, in weapon-local units. The support hand sits well
+ * out along the handguard, short of the bipod stowed under its far end.
  */
 const GRIP_HAND = new Vector3(0.02, -0.164, -0.166);
 const GRIP_ELBOW = new Vector3(0.26, -0.564, -0.541);
@@ -120,23 +96,28 @@ const SUPPORT_HAND = new Vector3(-0.02, -0.08 + BORE_Y, 0.38);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.5 + BORE_Y, 0.1);
 
 /**
- * Builds a low-poly cel-styled semi-automatic marksman rifle. Local +z is the
- * barrel axis, origin at the receiver centre — the same frame the other two
- * weapons are built in, so the viewmodel poses any of them with the same
- * numbers — with the bore `BORE_Y` above it.
+ * Builds a cel-styled HK G28 / M110A1. Local +z is the barrel axis, origin at
+ * the receiver centre — the same frame the other weapons are built in, so the
+ * viewmodel poses any of them with the same numbers — with the bore `BORE_Y`
+ * above it.
  *
- * The silhouette is the argument for the weapon, and it is made of four things
- * the other two do not have: a long stepped heavy barrel ending in a chambered
- * brake rather than a birdcage, a bipod folded back along the underside of the
- * handguard, a fixed stock carrying an adjustable comb on posts, and a
- * straight twenty-round magazine deep enough to say the cartridge is bigger.
- * Everything else — receiver, rail, grip, trigger group — is the rifle's
- * vocabulary at a larger size, which is what makes those four read as
- * deliberate instead of as a different gun entirely.
+ * An HK417 at heart, and what makes it the marksman's version rather than a
+ * big rifle is five things, all taken from photographs:
  *
- * ~120 parts, merged to one mesh per colour. The merge is what makes the
- * detail free and what keeps the outline pass drawing one border per colour
- * group instead of a black shell around every rib.
+ * - **The long slim handguard** — octagonal, slotted for M-LOK down its whole
+ *   length, its top a continuation of the upper's rail.
+ * - **The exposed buffer tube** between the lower and the stock, which is the
+ *   AR-pattern's tell and the reason the stock is a separate thing that slides.
+ * - **The stock**: a tall adjustable body with a cheek flap on top, a hooked
+ *   underside falling to a deep toe, and a ribbed pad.
+ * - **HK's lower**: a flared magwell, an oversized flared guard for a gloved
+ *   finger, and a near-vertical grip with finger grooves.
+ * - **HK's 20-round magazine**: straight, ribbed, and windowed, with the brass
+ *   showing through it.
+ *
+ * Built as the rifle is — bevelled profile slabs and contoured lofts, detail at
+ * its real scale, controls small and dark, machining as dark inlays — see
+ * `docs/weapons.md`'s procedural-models section.
  */
 export function buildDmr(
   scene: Scene,
@@ -146,185 +127,299 @@ export function buildDmr(
   const root = new TransformNode(`${prefix}_dmr`, scene);
   const b = new WeaponBuild(scene, mats, prefix, root);
 
-  // --- upper receiver: one long run under a continuous ribbed rail ---
-  // Same two-slab construction as the rifle (the narrow top deck is the
-  // chamfer additive geometry cannot cut), one size up in every direction.
-  b.box("upper", BODY, 0.086, 0.062, 0.82, 0, 0.028, 0.15);
-  b.box("upperDeck", BODY, 0.072, 0.014, 0.82, 0, 0.066, 0.15);
-  b.box("rail", BODY, 0.06, 0.014, 0.86, 0, 0.083, 0.14);
-  for (let i = 0; i < 11; i++) {
-    b.box("railRib", METAL, 0.064, 0.012, 0.014, 0, 0.088, -0.25 + i * 0.07);
+  // --- upper receiver: the HK417 upper, one size up from an AR's ---
+  b.slab("upper", BODY, [
+    [-0.27, -0.004],
+    [0.142, -0.004],
+    [0.142, 0.064],
+    [-0.27, 0.064],
+  ], 0.082, 0.005);
+  b.slab("upperDeck", BODY, [
+    [-0.262, 0.06],
+    [0.142, 0.06],
+    [0.142, DECK],
+    [-0.256, DECK],
+    [-0.262, 0.07],
+  ], 0.068, 0.004);
+  b.picatinny("rail", 0, DECK, -0.25, 42, { width: 0.06, height: RAIL_TOP - DECK });
+  // A long-cartridge port with its cover swung down under it, and the big
+  // swept deflector behind it.
+  b.slab("ejectPort", RUBBER, [
+    [0.02, 0.024],
+    [0.14, 0.024],
+    [0.14, 0.054],
+    [0.02, 0.054],
+  ], 0.003, 0, 0.0415);
+  b.box("portCover", BODY, 0.003, 0.014, 0.12, 0.0425, 0.014, 0.08);
+  b.slab("deflector", BODY, [
+    [-0.04, 0.026],
+    [0.016, 0.026],
+    [0.016, 0.034],
+    [-0.006, 0.06],
+    [-0.04, 0.06],
+  ], 0.012, 0.003, 0.046);
+  // The markings flat on the left, and the pins through the receiver.
+  b.slab("plate", BODY, [
+    [-0.2, 0.02],
+    [-0.06, 0.02],
+    [-0.06, 0.05],
+    [-0.2, 0.05],
+  ], 0.003, 0, -0.0415);
+  for (const [y, len] of [[0.042, 0.11], [0.034, 0.08], [0.026, 0.05]] as const) {
+    b.box("stamp", RUBBER, 0.002, 0.0028, len, -0.043, y, -0.19 + len / 2);
   }
-  b.pin("pinFront", METAL, 0.016, 0.092, 0, 0.014, 0.13);
-  b.pin("pinRear", METAL, 0.016, 0.092, 0, 0.014, -0.2);
-  // A long-cartridge port: taller than the rifle's, and further forward.
-  b.box("ejectPort", METAL, 0.01, 0.036, 0.125, 0.046, 0.042, 0.08);
-  b.box("portCover", METAL, 0.008, 0.028, 0.118, 0.048, 0.014, 0.078);
-  b.box("deflector", BODY, 0.018, 0.032, 0.055, 0.047, 0.056, -0.02);
+  b.pin("pinFront", METAL, 0.01, 0.086, 0, -0.012, 0.13);
+  b.pin("pinRear", METAL, 0.01, 0.086, 0, -0.012, -0.24);
+  // The T-handle at the back of the upper, its latch on the left.
+  b.slab("chHandle", POLYMER, [
+    [-0.288, 0.046],
+    [-0.27, 0.046],
+    [-0.27, 0.066],
+    [-0.288, 0.066],
+  ], 0.066, 0.003);
+  b.box("chLatch", POLYMER, 0.01, 0.014, 0.016, -0.038, 0.056, -0.282);
 
-  // Charging handle, left side, on its own slot — non-reciprocating here, so
-  // it sits well forward and stays put while the action runs under the optic.
-  b.box("chSlot", POLYMER, 0.008, 0.016, 0.2, -0.045, 0.05, 0.2);
-  b.box("chArm", METAL, 0.056, 0.016, 0.034, -0.074, 0.05, 0.27);
-  b.box("chKnob", METAL, 0.022, 0.028, 0.05, -0.098, 0.05, 0.275);
-  b.box("chLatch", METAL, 0.014, 0.014, 0.016, -0.098, 0.067, 0.262);
-  b.box("slingQd", METAL, 0.024, 0.03, 0.016, 0.046, 0.0, -0.24);
+  // --- handguard: long, slim and octagonal, slotted its whole length ---
+  // Its top is the upper's flat carried on, so the rail runs unbroken from the
+  // charging handle to where the scope's cone says it must stop, and the
+  // handguard carries on past that bare.
+  b.slab("handguard", POLYMER, [
+    [0.14, DECK],
+    [0.7, DECK],
+    [0.708, 0.068],
+    [0.708, -0.012],
+    [0.7, -0.02],
+    [0.14, -0.02],
+  ], 0.07, 0.013);
+  for (let i = 0; i < 6; i++) {
+    const z0 = 0.19 + i * 0.083;
+    b.slab("mlok", RUBBER, [
+      [z0, 0.028],
+      [z0 + 0.006, 0.022],
+      [z0 + 0.058, 0.022],
+      [z0 + 0.064, 0.028],
+      [z0 + 0.058, 0.034],
+      [z0 + 0.006, 0.034],
+    ], 0.072, 0);
+  }
+  for (let i = 0; i < 5; i++) {
+    b.box("mlokBottom", RUBBER, 0.012, 0.002, 0.05, 0, -0.0205, 0.22 + i * 0.09);
+  }
+  b.pin("hgScrew", METAL, 0.008, 0.072, 0, 0.004, 0.16);
+  b.box("slingQd", METAL, 0.004, 0.014, 0.014, -0.036, 0.0, 0.66);
+  // A hand stop on the underside rather than a vertical grip: the support
+  // hand's job on this weapon is to hold a position, not to steer between two.
+  b.slab("handStop", POLYMER, [
+    [0.3, -0.018],
+    [0.35, -0.018],
+    [0.35, -0.03],
+    [0.33, -0.042],
+    [0.314, -0.042],
+  ], 0.026, 0.003);
 
-  // --- lower receiver: trigger group, magwell, near-vertical grip ---
-  b.box("lower", POLYMER, 0.078, 0.1, 0.44, 0, -0.05, -0.06);
-  b.box("magwell", POLYMER, 0.086, 0.09, 0.15, 0, -0.086, 0.05);
-  b.box("magFlareF", POLYMER, 0.092, 0.022, 0.014, 0, -0.124, 0.118);
-  b.box("magFlareR", POLYMER, 0.092, 0.022, 0.014, 0, -0.124, -0.018);
-  for (const side of [-1, 1] as const) {
-    b.box("magFlareS", POLYMER, 0.008, 0.022, 0.15, side * 0.044, -0.124, 0.05);
-  }
-  b.box("magRelease", METAL, 0.012, 0.03, 0.03, 0.046, -0.058, -0.03);
-  b.box("boltRelease", METAL, 0.012, 0.022, 0.05, -0.046, -0.052, -0.06);
-  b.pin("safetyPin", METAL, 0.013, 0.092, 0, -0.032, -0.13);
-  for (const side of [-1, 1] as const) {
-    b.box("safetyLever", METAL, 0.012, 0.04, 0.014, side * 0.05, -0.05, -0.13);
-  }
-  b.box("guardFront", POLYMER, 0.05, 0.058, 0.018, 0, -0.13, -0.085);
-  b.box("guardBottom", POLYMER, 0.05, 0.016, 0.1, 0, -0.157, -0.135);
-  // A single-stage trigger with a wide flat shoe: the one control on the
-  // weapon a shooter thinks about between rounds, so it gets its own face.
-  const trigPivot = b.pivot("trigPivot", 0, -0.11, -0.106, 0.3);
-  b.box("trigger", METAL, 0.016, 0.034, 0.014, 0, -0.017, 0, trigPivot);
-  b.box("triggerShoe", METAL, 0.018, 0.02, 0.02, 0, -0.042, 0.004, trigPivot);
-
-  // The grip stands closer to vertical than the rifle's. A precision grip puts
-  // the wrist under the trigger rather than behind it, which is the difference
-  // between squeezing a shot and holding a burst on target.
-  const gripPivot = b.pivot("gripPivot", 0, -0.105, -0.165, 0.18);
-  b.box("grip", POLYMER, 0.056, 0.15, 0.082, 0, -0.075, 0, gripPivot);
-  b.box("gripSwell", POLYMER, 0.062, 0.05, 0.074, 0, -0.05, -0.008, gripPivot);
-  b.box("gripShelf", POLYMER, 0.06, 0.016, 0.05, 0, 0.006, -0.03, gripPivot);
-  for (let i = 0; i < 3; i++) {
-    b.box("gripRib", BODY, 0.05, 0.011, 0.014, 0, -0.05 - i * 0.032, 0.038, gripPivot);
-  }
-  b.box("gripCap", RUBBER, 0.058, 0.018, 0.086, 0, -0.155, 0, gripPivot);
-
-  // --- handguard: a long free-float tube, slotted, running past the receiver
-  // to carry the bipod at its far end ---
-  // Every height here is stated against the bore (`f`): the tube floats
-  // around the barrel, not around the receiver.
-  const f = BORE_Y;
-  b.box("handguard", POLYMER, 0.088, 0.062, 0.42, 0, f - 0.015, 0.42);
-  b.box("hgTop", POLYMER, 0.07, 0.014, 0.42, 0, f + 0.019, 0.42);
-  b.box("hgBottom", POLYMER, 0.07, 0.014, 0.42, 0, f - 0.049, 0.42);
-  b.box("hgCap", BODY, 0.084, 0.07, 0.014, 0, f - 0.015, 0.623);
-  for (const side of [-1, 1] as const) {
-    for (let i = 0; i < 4; i++) {
-      b.box("vent", BODY, 0.006, 0.03, 0.05, side * 0.045, f - 0.015, 0.27 + i * 0.08);
-    }
-    b.box("sideRail", METAL, 0.014, 0.026, 0.24, side * 0.047, f - 0.04, 0.42);
-  }
-  for (let i = 0; i < 4; i++) {
-    b.box("mlok", BODY, 0.03, 0.006, 0.05, 0, f - 0.054, 0.27 + i * 0.08);
-  }
-  b.box("bottomRail", METAL, 0.05, 0.016, 0.26, 0, f - 0.06, 0.42);
-  // Hand stop rather than a vertical foregrip: the support hand's job on this
-  // weapon is to hold a position, not to steer between two of them.
-  b.box("handStop", POLYMER, 0.044, 0.028, 0.028, 0, f - 0.078, 0.315);
-
-  // --- bipod, folded back along the underside ---
+  // --- bipod, folded forward along the underside under the handguard's end ---
   // Deployed legs would be geometry the player can never use — nothing here
   // rests a weapon on anything — so it is stowed, which is also the only state
   // it would be in while the weapon is being carried.
-  b.box("bipodMount", BODY, 0.036, 0.03, 0.05, 0, f - 0.058, 0.6);
-  b.pin("bipodPin", METAL, 0.012, 0.044, 0, f - 0.062, 0.6);
-  const bipodPivot = b.pivot("bipodPivot", 0, f - 0.07, 0.6, -0.12);
+  b.slab("bipodMount", BODY, [
+    [0.6, -0.018],
+    [0.66, -0.018],
+    [0.66, -0.032],
+    [0.652, -0.04],
+    [0.608, -0.04],
+    [0.6, -0.032],
+  ], 0.04, 0.004);
   for (const side of [-1, 1] as const) {
-    b.box("bipodLeg", METAL, 0.014, 0.014, 0.14, side * 0.024, 0, -0.07, bipodPivot);
-    b.box("bipodFoot", RUBBER, 0.018, 0.016, 0.026, side * 0.024, -0.002, -0.145, bipodPivot);
-  }
-  b.box("bipodCatch", METAL, 0.05, 0.012, 0.016, 0, f - 0.076, 0.47);
-
-  // --- barrel: heavy, stepped, and long ---
-  b.box("gasBlock", BODY, 0.05, 0.05, 0.06, 0, f, 0.665);
-  b.box("gasPort", METAL, 0.022, 0.014, 0.026, 0, f + 0.03, 0.665);
-  b.tube("gasTube", METAL, 0.012, 0.012, 0.05, 0, f + 0.022, 0.645);
-  b.tube("barrel", BODY, 0.046, 0.046, 0.2, 0, f, 0.72);
-  b.tube("barrelNut", METAL, 0.054, 0.054, 0.016, 0, f, 0.638);
-  // Steps, not flutes. A flute is a groove and this vocabulary is additive —
-  // the same reason the rifle's receiver chamfer is a narrower slab on top —
-  // so the heavy profile is said with proud bands instead of cut ones.
-  for (let i = 0; i < 2; i++) {
-    b.tube("barrelStep", METAL, 0.052, 0.052, 0.012, 0, f, 0.7 + i * 0.06);
+    b.tube("bipodLeg", BODY, 0.01, 0.012, 0.17, side * 0.017, -0.046, 0.55);
+    b.box("bipodFoot", RUBBER, 0.014, 0.014, 0.02, side * 0.017, -0.046, 0.46);
+    b.tube("bipodSpring", METAL, 0.006, 0.006, 0.05, side * 0.017, -0.036, 0.62);
   }
 
-  // --- muzzle brake: three chambers, ported sideways and up ---
-  // Built as rings threaded on a dark core rather than as a block: the ports
-  // ARE the gaps between the rings, so the bore stays open all the way through
-  // and the device reads as chambered instead of as a can. The bottom is
-  // webbed shut for the same reason the rifle's birdcage is — a brake that
-  // vents downward lifts the muzzle it is fitted to fight.
-  b.tube("mzCollar", BODY, 0.056, 0.05, 0.018, 0, f, 0.828);
-  b.tube("mzCore", RUBBER, 0.028, 0.028, 0.1, 0, f, 0.885);
-  for (let i = 0; i < 3; i++) {
-    b.shell("mzBaffle", BODY, 0.03, 0.014, 0.012, f, 0.845 + i * 0.04, 10);
-  }
-  b.box("mzStrap", BODY, 0.05, 0.012, 0.095, 0, f + 0.029, 0.885);
-  b.box("mzWeb", BODY, 0.04, 0.012, 0.095, 0, f - 0.029, 0.885);
-  b.shell("crown", METAL, 0.03, 0.011, 0.012, f, 0.944, 10);
+  // --- barrel: a medium contour out of the handguard, into HK's hider ---
+  const f = BORE_Y;
+  b.tube("barrel", BODY, 0.032, 0.034, 0.2, 0, f, 0.8);
+  b.tube("mzCollar", BODY, 0.042, 0.04, 0.016, 0, f, 0.908);
+  b.tube("mzCore", RUBBER, 0.024, 0.024, 0.044, 0, f, 0.935);
+  b.shell("mzProng", BODY, 0.026, 0.008, 0.04, f, 0.936, 4, Math.PI / 4, 0.55);
+  b.shell("crown", BODY, 0.026, 0.009, 0.008, f, 0.956, 10);
 
-  // --- fixed stock: adjustable comb on posts, adjustable pad on rails ---
-  // Fixed rather than folding, and that is the point of it: the two things a
-  // marksman rifle adjusts are where the cheek sits and how far back the pad
-  // is, and both are visible from inside the weapon's own silhouette. Every
-  // height here is derived — see COMB_TOP, which is the sight picture's floor
-  // rather than a number anybody liked the look of.
-  b.box("stockBlock", BODY, 0.08, 0.105, 0.07, 0, 0.012, -0.31);
-  b.box("stockTop", POLYMER, 0.06, 0.04, 0.24, 0, SPINE_TOP - 0.02, -0.42);
-  b.box("stockBottom", POLYMER, 0.058, 0.04, 0.22, 0, BUTT_Y - 0.065, -0.41);
-  // The posts stand in the daylight between the spine and the comb, which is
-  // the whole read: a cheek piece carried ON something, not moulded into the
-  // stock. Long enough at each end to be housed rather than balanced.
-  for (const dz of [-0.385, -0.49] as const) {
-    b.pin(
-      "combPost",
-      METAL,
-      0.012,
-      COMB_BOTTOM - SPINE_TOP + 0.028,
-      0,
-      (SPINE_TOP + COMB_BOTTOM) / 2,
-      dz,
-      "y",
-    );
-  }
-  b.box("comb", POLYMER, 0.056, COMB_H, 0.175, 0, COMB_TOP - COMB_PAD_H - COMB_H / 2, -0.4325);
-  b.box("combPad", RUBBER, 0.058, COMB_PAD_H, 0.175, 0, COMB_TOP - COMB_PAD_H / 2, -0.4325);
-  b.box("combKnob", METAL, 0.014, 0.016, 0.016, 0.03, COMB_BOTTOM + 0.014, -0.385);
+  // --- lower receiver: HK's, with its flared magwell and guard ---
+  b.slab("lower", POLYMER, [
+    [-0.27, -0.002],
+    [0.14, -0.002],
+    [0.14, -0.03],
+    [0.128, -0.048],
+    [0.128, -0.128],
+    [0.118, -0.14],
+    [-0.018, -0.14],
+    [-0.028, -0.128],
+    [-0.03, -0.085],
+    [-0.21, -0.085],
+    [-0.245, -0.07],
+    [-0.27, -0.04],
+  ], 0.074, 0.005);
+  b.slab("magwellLip", POLYMER, [
+    [-0.022, -0.146],
+    [0.124, -0.146],
+    [0.132, -0.132],
+    [-0.028, -0.132],
+  ], 0.082, 0.003);
+  // Small, dark controls.
+  b.box("magRelease", POLYMER, 0.006, 0.014, 0.016, 0.04, -0.07, -0.014);
+  b.box("boltCatch", POLYMER, 0.006, 0.014, 0.034, -0.04, -0.05, -0.04);
+  b.pin("selPin", METAL, 0.011, 0.084, 0, -0.035, -0.13);
   for (const side of [-1, 1] as const) {
-    b.tube("padRail", METAL, 0.014, 0.014, 0.1, side * 0.026, BUTT_Y - 0.025, -0.48);
+    b.box("selLever", METAL, 0.004, 0.026, 0.01, side * 0.043, -0.024, -0.13);
   }
-  b.box("buttPlate", POLYMER, 0.072, BUTT_H, 0.04, 0, BUTT_Y, -0.53);
-  b.box("buttPad", RUBBER, 0.074, 0.185, 0.022, 0, BUTT_Y, -0.558);
-  for (let i = 0; i < 2; i++) {
-    b.box("padGroove", BODY, 0.076, 0.008, 0.02, 0, BUTT_Y - 0.05 - i * 0.03, -0.56);
+  // The guard, oversized and flared for a gloved finger — HK's own.
+  b.slab("guard", POLYMER, [
+    [-0.03, -0.085],
+    [-0.03, -0.14],
+    [-0.042, -0.156],
+    [-0.16, -0.158],
+    [-0.16, -0.146],
+    [-0.046, -0.144],
+    [-0.042, -0.138],
+    [-0.042, -0.085],
+  ], 0.024, 0.002);
+  // A single-stage trigger with a flat shoe: the one control on the weapon a
+  // shooter thinks about between rounds.
+  b.slab("trigger", METAL, [
+    [-0.112, -0.086],
+    [-0.102, -0.086],
+    [-0.104, -0.104],
+    [-0.101, -0.122],
+    [-0.1, -0.134],
+    [-0.108, -0.134],
+    [-0.11, -0.122],
+    [-0.112, -0.104],
+  ], 0.012, 0.0015);
+
+  // The grip stands closer to vertical than the rifle's. A precision grip puts
+  // the wrist under the trigger rather than behind it, which is the difference
+  // between squeezing a shot and holding a burst on target. HK's: finger
+  // grooves down the front, a palm swell, a shelf under the web.
+  const gripPivot = b.pivot("gripPivot", 0, -0.105, -0.165, 0.18);
+  b.upright("grip", POLYMER, [
+    spanRing(-0.15, 0.056, 0.036, -0.042),
+    spanRing(-0.125, 0.056, 0.031, -0.043),
+    spanRing(-0.108, 0.058, 0.038, -0.045),
+    spanRing(-0.088, 0.058, 0.031, -0.046),
+    spanRing(-0.068, 0.058, 0.038, -0.047),
+    spanRing(-0.048, 0.057, 0.031, -0.047),
+    spanRing(-0.028, 0.056, 0.036, -0.046),
+    spanRing(-0.004, 0.056, 0.036, -0.058),
+    spanRing(0.02, 0.052, 0.034, -0.05),
+  ], gripPivot);
+  b.upright("gripCap", RUBBER, [
+    spanRing(-0.162, 0.056, 0.037, -0.043),
+    spanRing(-0.148, 0.057, 0.037, -0.043),
+  ], gripPivot);
+
+  // --- the buffer tube and the stock that slides on it ---
+  b.tube("bufferTube", BODY, 0.034, 0.034, 0.27, 0, 0.018, -0.405);
+  b.tube("castleNut", METAL, 0.042, 0.042, 0.012, 0, 0.018, -0.278);
+  b.slab("endPlate", BODY, [
+    [-0.27, 0.05],
+    [-0.286, 0.05],
+    [-0.286, -0.012],
+    [-0.27, -0.03],
+  ], 0.05, 0.003);
+  // The stock body: tall, flat on top under the cheek flap, its underside a
+  // hook falling from the tube to a deep toe.
+  b.slab("stockBody", POLYMER, [
+    [-0.35, -0.004],
+    [-0.35, STOCK_TOP - 0.01],
+    [-0.36, STOCK_TOP],
+    [-0.54, STOCK_TOP],
+    [-0.548, STOCK_TOP - 0.008],
+    [-0.548, TOE + 0.01],
+    [-0.54, TOE],
+    [-0.52, TOE],
+    [-0.47, TOE + 0.07],
+    [-0.44, -0.012],
+    [-0.4, -0.012],
+  ], 0.06, 0.006);
+  // Sunk panels on each flank, the rifle's trick: a rim round a dark web.
+  b.slab("stockRecess", RUBBER, [
+    [-0.37, STOCK_TOP - 0.018],
+    [-0.525, STOCK_TOP - 0.018],
+    [-0.525, 0.004],
+    [-0.37, 0.004],
+  ], 0.062, 0);
+  b.slab("stockRecessLow", RUBBER, [
+    [-0.49, -0.02],
+    [-0.528, -0.02],
+    [-0.528, TOE + 0.02],
+    [-0.51, TOE + 0.02],
+  ], 0.062, 0);
+  // The cheek flap, level with the rail, with the button that frees it.
+  b.slab("cheekFlap", POLYMER, [
+    [COMB_FRONT_Z, STOCK_TOP - 0.002],
+    [COMB_FRONT_Z - 0.01, COMB_TOP],
+    [-0.47, COMB_TOP],
+    [-0.478, STOCK_TOP - 0.002],
+  ], 0.054, 0.005);
+  b.pin("flapButton", METAL, 0.01, 0.064, 0, STOCK_TOP - 0.01, -0.49);
+  b.box("stockLever", POLYMER, 0.024, 0.008, 0.03, 0, -0.016, -0.37);
+  b.slab("buttPad", RUBBER, [
+    [-0.548, STOCK_TOP + 0.002],
+    [-0.562, STOCK_TOP],
+    [-0.566, STOCK_TOP - 0.014],
+    [-0.566, TOE + 0.014],
+    [-0.56, TOE],
+    [-0.548, TOE - 0.002],
+  ], 0.066, 0.004);
+  for (let i = 0; i < 8; i++) {
+    b.box("padRib", RUBBER, 0.068, 0.004, 0.006, 0, STOCK_TOP - 0.02 - i * 0.022, -0.566);
   }
-  // Toe hook under the butt — where the off hand goes on a supported shot, and
-  // the last silhouette cue that this weapon expects to be shot from prone.
-  b.box("toeHook", METAL, 0.02, 0.052, 0.032, 0, BUTT_Y - 0.101, -0.5);
-  b.box("slingRear", METAL, 0.026, 0.03, 0.014, -0.042, BUTT_Y - 0.037, -0.45);
+  b.box("slingRear", METAL, 0.004, 0.016, 0.012, -0.031, -0.04, -0.44);
 
   // Merged before any optic is built, so a sight's parts can never end up
   // inside the weapon's colour groups.
   const meshes = b.merge("dmr", root);
 
-  // --- magazine: a deep straight twenty-round box ---
+  // --- magazine: HK's straight twenty-round box ---
   // Straight rather than curved, and it is the read: the rifle's banana under
-  // the same receiver would say "same cartridge, longer barrel". Merged into a
+  // the same receiver would say "same cartridge, longer barrel". Its window
+  // shows the brass stacked inside, which is what HK's is for. Merged into a
   // node of its own so the reload can drop it (see `WeaponParts.magazine`).
   const magazine = new TransformNode(`${prefix}_magazine`, scene);
   magazine.parent = root;
   const magPivot = b.pivot("magPivot", 0, -0.125, 0.05, MAG_RAKE);
-  b.box("mag", POLYMER, 0.06, 0.215, 0.108, 0, -0.108, 0, magPivot);
-  for (let i = 0; i < 4; i++) {
-    b.box("magRib", BODY, 0.063, 0.008, 0.11, 0, -0.05 - i * 0.05, 0, magPivot);
+  b.upright("mag", POLYMER, [
+    { y: -0.2, w: 0.05, d: 0.1, k: 0.15 },
+    { y: 0.03, w: 0.05, d: 0.1, k: 0.15 },
+  ], magPivot);
+  // Ribs down the front and back edges, a band at the top.
+  for (const [front, back] of [[0.052, 0.042], [-0.042, -0.052]] as const) {
+    b.slab("magEdge", POLYMER, [
+      [back, -0.2],
+      [front, -0.2],
+      [front, -0.02],
+      [back, -0.02],
+    ], 0.054, 0.0015, 0, magPivot);
   }
-  b.box("magFloor", METAL, 0.064, 0.02, 0.112, 0, -0.225, 0, magPivot);
-  b.box("magBase", RUBBER, 0.06, 0.014, 0.104, 0, -0.242, 0, magPivot);
+  // The window: a narrow slot down each flank, the width HK's actually is,
+  // with a sliver of each round's case showing in it. Wider, the brass was a
+  // bright ladder painted on the magazine rather than rounds seen through it.
+  b.slab("magWindow", RUBBER, [
+    [-0.006, -0.166],
+    [0.006, -0.166],
+    [0.008, -0.162],
+    [0.008, -0.046],
+    [0.006, -0.042],
+    [-0.006, -0.042],
+    [-0.008, -0.046],
+    [-0.008, -0.162],
+  ], 0.052, 0, 0, magPivot);
+  for (let i = 0; i < 7; i++) {
+    b.box("magRound", BRASS, 0.0525, 0.007, 0.012, 0, -0.052 - i * 0.017, 0, magPivot);
+  }
+  b.upright("magFloor", POLYMER, [
+    { y: -0.216, w: 0.056, d: 0.108, k: 0.25 },
+    { y: -0.198, w: 0.056, d: 0.108, k: 0.25 },
+  ], magPivot);
   meshes.push(...b.merge("dmrMag", magazine));
 
   // Every colour group the WEAPON itself merged, taken before the optics are
@@ -338,8 +433,8 @@ export function buildDmr(
   return {
     root,
     muzzle: new Vector3(0, BORE_Y, 0.96),
-    // Matches the `ejectPort` box above — the right side of the receiver.
-    ejectPort: new Vector3(0.05, 0.044, 0.08),
+    // The port on the right of the receiver.
+    ejectPort: new Vector3(0.046, 0.04, 0.08),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
     magazine,

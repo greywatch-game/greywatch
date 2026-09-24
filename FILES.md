@@ -289,7 +289,10 @@ src/
                         #   handguard to the hider, flared magwell ahead of
                         #   the guard, slim 9mm magazine, and SIG's long
                         #   minimalist folding stock (reference-media/smg.png)
-    DmrModel.ts         # Low-poly semi-auto marksman rifle
+    DmrModel.ts         # Semi-auto marksman rifle, an HK G28 / M110A1 drawn
+                        #   from photos in the rifle's design language — long
+                        #   slotted handguard, exposed buffer tube, tall stock
+                        #   with a cheek flap, windowed straight magazine
     SniperModel.ts      # Low-poly bolt-action sniper rifle — an action wrapped
                         #   around the BORE rather than a receiver sitting on
                         #   one, a skeletonised chassis stock, and the BOLT in a

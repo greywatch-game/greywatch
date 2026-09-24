@@ -974,8 +974,8 @@ and its magazine, before any optic. So the parts list a finish is handed is the
 weapon and nothing else: an optic on a rail is a separate piece of kit and
 stays black on a chrome carbine, the way one does. Two groups are out of scope
 for their own reasons: **BRASS** has no key in the table at all, because the
-LMG's exposed belt is ammunition rather than weapon and stays cartridge-coloured
-under every scheme; and the emissive reticle never went through `collect` in the
+LMG's exposed belt and the rounds seen through the DMR's magazine window are
+ammunition rather than weapon and stay cartridge-coloured under every scheme; and the emissive reticle never went through `collect` in the
 first place.
 
 The repaint itself is a handful of material-pointer writes over shared cached
@@ -2334,8 +2334,9 @@ SHAPE** — the skeletonised stock, the chassis flank, the bare tube — and a
 finish is not the place to say it a second time.
 
 **A colour group is free where it is unused, which is why BRASS is one.** `merge`
-skips a group with nothing in it, so the LMG's exposed belt costs the other four
-weapons nothing at all — and the belt has to be its own group rather than METAL,
+skips a group with nothing in it, so the LMG's exposed belt and the DMR's
+windowed rounds cost the weapons without any nothing at all — and brass has to
+be its own group rather than METAL,
 because brass is the one thing on a weapon that is not part of the weapon and
 merged into the fittings it would come out steel-coloured and steel-glossy along
 with the rails.
