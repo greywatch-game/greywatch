@@ -51,13 +51,6 @@ export interface OpticMount {
   ironRearZ: number;
   ironFrontZ: number;
   /**
-   * How high this weapon carries its irons above the rail, when `IRON_RISE` is
-   * not enough — see that constant, and `ironRiseClearing`, which is how the
-   * one weapon that states it works the number out rather than authoring it.
-   * Absent is the shared rise, so a weapon saying nothing is unaffected.
-   */
-  ironRise?: number;
-  /**
    * How far past `mountZ` this weapon's top deck stands at rail height — the
    * far end of its rail, or whatever is as high beyond it — when that is short
    * of `RAIL_REACH`. Every sight whose rise is SOLVED against the rail is
@@ -100,7 +93,9 @@ export const eyeDistance = (id: SightId): number =>
  * a folded iron leaf standing on the end of it. A sight lower than this puts
  * the gun in its own picture. The irons have no such floor, because what you
  * see under the front post through a rear aperture IS the weapon — theirs is
- * BEHIND them instead, and it is the one a weapon may override (`ironRiseOf`).
+ * BEHIND them instead: the aperture's cone runs back over the stock, and every
+ * weapon here brings its comb DOWN under it (`ironSightFloor`) rather than
+ * carrying its irons up.
  *
  * These are therefore not free to be "realistic", and they are what is left of
  * the old bulk: the optics themselves came down by a third to a half, the
@@ -119,19 +114,6 @@ const PRISM_RISE = 0.096;
  * solving. The cone clears the rail with 0.023 to spare as a side effect.
  */
 const LONG_RISE = 0.098;
-
-/**
- * The irons' rise, which is the one a weapon may raise for itself. Their floor
- * is not the rail ahead of them but the STOCK behind them: the aperture's cone
- * runs back over the comb, and a comb standing into it fills the picture
- * (`ironSightFloor`). There are exactly two ways out of that and both are in
- * the tree — bring the comb DOWN, which is what the DMR, the LMG and the
- * sniper do, a comb being adjustable and this being it at the bottom of its
- * travel; or carry the SIGHTS up, which is what is left for a weapon whose
- * riser is moulded into the stock. The rifle is the only one of the second
- * kind, and `ironRiseClearing` is how it works the number out.
- */
-const ironRiseOf = (mount: OpticMount): number => mount.ironRise ?? IRON_RISE;
 
 /**
  * The far end of the longest rail any weapon here offers, as a depth past the
@@ -218,7 +200,8 @@ const winRiseOf = (mount: OpticMount): number =>
 /**
  * The two iron stations share a bore, which is what gives the picture its
  * depth: the rear ring is a third of the eye's distance to the front one, so
- * it reads as twice the size and the front hood floats inside it. The rise
+ * it reads as twice the size and the front sight's three prongs stand inside
+ * it with room around them. The rise
  * does NOT scale with it: a real aperture stands its own height over the rail
  * however small the ring is, and the bases simply grow to meet it.
  */
@@ -540,33 +523,7 @@ export function ironSightFloor(mount: OpticMount, z: number): number {
   const eyeBack = eyeDistance("iron");
   return (
     mount.railTop +
-    ironRiseOf(mount) -
-    (IRON_BORE / 2) * ((z - mount.ironRearZ + eyeBack) / eyeBack)
-  );
-}
-
-/**
- * The inverse, and the other answer to the same problem: the `ironRise` that
- * puts the cone's lower edge `gap` above a part whose top is `top` at depth
- * `z`. Solve it at the part's FRONT edge, which is where the cone is lowest
- * over it.
- *
- * It takes the mount's two relevant numbers rather than the mount itself
- * because a weapon that needs this is computing a FIELD of that mount, and the
- * whole point is that the answer does not depend on the rise it is producing —
- * the cone's edge is `railTop + rise - <spread at z>`, linear in the rise.
- */
-export function ironRiseClearing(
-  mount: Pick<OpticMount, "railTop" | "ironRearZ">,
-  z: number,
-  top: number,
-  gap: number,
-): number {
-  const eyeBack = eyeDistance("iron");
-  return (
-    top +
-    gap -
-    mount.railTop +
+    IRON_RISE -
     (IRON_BORE / 2) * ((z - mount.ironRearZ + eyeBack) / eyeBack)
   );
 }
@@ -584,7 +541,7 @@ export function buildOptics(
   prefix: string,
 ): { sights: Record<SightId, SightAssembly>; meshes: Mesh[] } {
   const b = build;
-  const ironY = mount.railTop + ironRiseOf(mount);
+  const ironY = mount.railTop + IRON_RISE;
   const winY = mount.railTop + winRiseOf(mount);
   const scopeY = mount.railTop + SCOPE_RISE;
   const reflexY = mount.railTop + reflexRiseOf(mount);
@@ -613,7 +570,9 @@ export function buildOptics(
   };
 
   /**
-   * Irons: a rear aperture on a low block and a hooded front post. The post's
+   * Irons: a rear aperture on a low block and a three-pronged front sight — a
+   * post between two protective ears on one fork, rather than a second ring,
+   * so the picture is ONE circle with the front sight standing in it. The post's
    * TIP and the aperture's centre both sit on `ironY`, which is where the
    * sight centre goes — so aiming lines all three up at once and the picture
    * is right by construction.
@@ -630,13 +589,52 @@ export function buildOptics(
     const k = IRON_K;
     b.box("ironRearBase", METAL, 0.026 * k, baseH, 0.026 * k, 0, baseY, mount.ironRearZ);
     b.shell("ironRearRing", METAL, IRON_BORE, 0.0055 * k, 0.01 * k, ironY, mount.ironRearZ, 10);
-    // Front: the same ring as a hood, with the post rising from its floor to
-    // the axis. The bead is the aim point — a tritium dot, and the only thing
-    // on this sight that is visible against a dark treeline.
-    b.box("ironFrontBase", METAL, 0.028 * k, baseH, 0.028 * k, 0, baseY, mount.ironFrontZ);
-    b.shell("ironFrontHood", METAL, IRON_BORE, 0.005 * k, 0.012 * k, ironY, mount.ironFrontZ, 10);
-    const postH = IRON_BORE / 2;
-    b.box("ironPost", METAL, 0.005 * k, postH, 0.007 * k, 0, ironY - postH / 2, mount.ironFrontZ);
+    // Front: a fork on its base, and three prongs standing from it. The ears
+    // stand well proud of the post and flare outward so they read as a guard
+    // around it, and
+    // well inside the bore's radius so the rear ring frames all three with
+    // daylight to spare. The post rises to the axis; the bead on its tip is
+    // the aim point — a tritium dot, and the only thing on this sight that is
+    // visible against a dark treeline.
+    const frontZ = mount.ironFrontZ;
+    const earX = 0.017 * k;
+    const earW = 0.0055 * k;
+    const forkH = 0.005 * k;
+    b.box("ironFrontBase", METAL, 0.028 * k, baseH, 0.028 * k, 0, baseY, frontZ);
+    b.box("ironFork", METAL, 2 * earX + earW, forkH, 0.012 * k, 0, floor - forkH / 2, frontZ);
+    // Each ear is a chain of straight segments, each leaning further out than
+    // the last, so it rises past the post's tip and then curls away from it —
+    // a curve in the only primitive that does not need a new mesh builder.
+    // Every segment runs on by half a wall so the joints overlap and close.
+    const earRun: readonly (readonly [number, number])[] = [
+      [0.022 * k, 0],
+      [0.009 * k, 0.3],
+      [0.009 * k, 0.65],
+    ];
+    for (const side of [-1, 1] as const) {
+      let x = side * earX;
+      let y = floor;
+      for (const [len, lean] of earRun) {
+        const dx = side * Math.sin(lean);
+        const dy = Math.cos(lean);
+        b.box(
+          "ironEar",
+          METAL,
+          earW,
+          len + earW / 2,
+          0.01 * k,
+          x + (dx * len) / 2,
+          y + (dy * len) / 2,
+          frontZ,
+          b.root,
+          -side * lean,
+        );
+        x += dx * len;
+        y += dy * len;
+      }
+    }
+    const postH = ironY - floor;
+    b.box("ironPost", METAL, 0.005 * k, postH, 0.007 * k, 0, floor + postH / 2, frontZ);
     b.merge("iron", node);
     const bead = b.lit(
       MeshBuilder.CreateSphere(

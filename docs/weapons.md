@@ -2079,19 +2079,19 @@ with; a comb is adjustable precisely because irons and glass want different heig
 and this is it at the bottom of its travel. Forward of the rear station the cone
 runs onto the rail and the front sight's base, and that is correct.
 
-**There are TWO answers to that constraint and the second is the rifle's, because a
-moulded riser cannot be adjusted down.** The DMR, the LMG and the sniper drop the
-comb to `ironSightFloor`; the rifle's comb is a rounded riser cast into a
-side-folding stock, so dropping it drops the whole stock and puts the shooter's face
-on the receiver. It carries the SIGHTS up instead — `OpticMount.ironRise`, absent on
-every other weapon and therefore the shared `IRON_RISE` there, and DERIVED on the
-rifle rather than authored: `ironRiseClearing` is `ironSightFloor` solved the other
-way round, and the rifle asks it for the rise that puts the cone's lower edge 6 mm
-over the riser's FRONT edge, which is where the cone is lowest over it. Measured
-through VERIFYING.md's cone of rays: 38 of 193 looked at the riser at the shared
-rise, and 0 of 193 do now, with every other weapon unmoved at 0. Nothing downstream
-had to be told — the bases, the hood and the post are all built off the rise, and
-`ViewModel.applyFit` re-derives the aimed pose from `sightCenter`.
+**The cone is not the only bound on a comb, and on the rifle it is not the one that
+binds.** The eye is BEHIND the butt, so everything on a stock that stands up toward
+it is on screen as well as in the aperture — and near enough that the camera's
+near plane cuts it. The rifle used to answer the cone the other way round, carrying
+its SIGHTS up (`OpticMount.ironRise`, derived by `ironRiseClearing`) so the cone
+cleared a moulded riser at 0.108 rather than dropping the riser: the aperture came
+out clean, and the riser was a slab filling the bottom half of the aimed view,
+sliced open by the near plane. Both are gone. The rifle takes the DMR's way out —
+irons at the shared `IRON_RISE`, riser `min(0.082, ironSightFloor − 6 mm)` — and
+the 0.082 is the aimed VIEW's bound: the riser's rear top corner has to sit under
+the frustum's lower edge at the distance it stands from the eye, which the cone
+alone never asked. **A comb that stands closer than ~5 cm below the aimed eye owes
+a look through the sight in a round**, not only the ray cone.
 
 ### The sidearm
 

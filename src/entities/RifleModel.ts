@@ -10,7 +10,7 @@
  */
 import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { buildOptics, ironRiseClearing, type OpticMount } from "./optics";
+import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
   BODY,
   METAL,
@@ -41,27 +41,12 @@ const RAIL_TOP = 0.084;
 const IRON_REAR_Z = -0.185;
 
 /**
- * The cheek riser, authored here rather than at the build site because the
- * irons are solved against it.
- *
- * This is a side-folding stock with the comb MOULDED INTO IT — there is no
- * adjustment, so the way out the DMR, the LMG and the sniper take (drop the
- * comb to `ironSightFloor`) is not available: dropping this one drops the
- * whole stock, and a face on the rifle would be a face on the receiver. The
- * riser stays where the stock wants it and the SIGHTS clear it instead.
- *
- * `CHEEK_TOP` is the comb's flat top, and `CHEEK_FRONT_Z` where that flat
- * begins, which is where the aperture's cone is lowest over it — spreading
- * with distance, the cone is at its tightest nearest the eye. The ramp ahead
- * of it is lower than the top everywhere, so solving against the top there is
- * a few millimetres of margin rather than an approximation.
+ * Where the cheek riser's flat top begins, and the daylight left under the
+ * iron sight picture over it. The riser's HEIGHT is `CHEEK_TOP`, below the
+ * mount, because it is solved against the mount's irons.
  */
-const CHEEK_TOP = 0.108;
 const CHEEK_FRONT_Z = -0.36;
 const CHEEK_WIDTH = 0.048;
-
-/** Daylight left under the sight picture, over the comb. The DMR's number,
- *  solved from the other side. */
 const CHEEK_GAP = 0.006;
 
 /**
@@ -90,23 +75,27 @@ const MOUNT: OpticMount = {
   mountZ: 0.02,
   ironRearZ: IRON_REAR_Z,
   ironFrontZ: 0.53,
-  /**
-   * Raised off the shared rise, and DERIVED rather than authored: the cheek
-   * riser stands into the shared cone by 13 mm, which reads as an aperture
-   * with the bottom third bitten out of it. This is the rise that puts the
-   * cone's lower edge `CHEEK_GAP` over the riser's front edge instead — the
-   * inverse of what `DmrModel` does with the same line. Move the riser and the
-   * sights follow it; the front post, the hood and both bases come with them,
-   * and `ViewModel.applyFit` re-derives the aimed pose off `sightCenter`, so
-   * nothing has to be told twice.
-   */
-  ironRise: ironRiseClearing(
-    { railTop: RAIL_TOP, ironRearZ: IRON_REAR_Z },
-    CHEEK_FRONT_Z,
-    CHEEK_TOP,
-    CHEEK_GAP,
-  ),
 };
+
+/**
+ * The cheek riser's flat top — and it answers to the aimed EYE before it
+ * answers to the sight picture.
+ *
+ * Aimed through the irons, the eye sits a few centimetres behind the riser
+ * (`eyeRelief` behind the rear aperture), so everything the riser stands up
+ * into is on screen, and it is so close that the camera's near plane cuts
+ * through it. At 0.108, with the irons raised to clear it, it was a slab that
+ * filled the bottom half of the aimed view, sliced open by the near plane.
+ * Held under 0.082, its rear top corner stays below the aimed view's lower edge
+ * at the distance it stands from the eye, and the stock drops out of the
+ * picture the way it does when a cheek is actually on it.
+ *
+ * So the rifle takes the DMR's way out rather than raising its sights: the
+ * irons stand at the shared rise, and the riser is whichever is lower of that
+ * and the line `ironSightFloor` draws for the aperture's cone. At these
+ * numbers the eye decides it with about 2 cm to spare over the cone.
+ */
+const CHEEK_TOP = Math.min(0.082, ironSightFloor(MOUNT, CHEEK_FRONT_Z) - CHEEK_GAP);
 
 /** Where each hand grips, in rifle-local units. */
 const GRIP_HAND = new Vector3(0.02, -0.16, -0.165);
@@ -406,8 +395,8 @@ export function buildRifle(
   // Cheek riser — the one part of the weapon a face actually rests on, and the
   // last place a square edge belongs, hence the deepest bevel on the rifle.
   // Moulded into the top bar rather than bolted on: it ramps up out of the
-  // stock ahead of `CHEEK_FRONT_Z`, so the cone the irons are solved against
-  // passes over the ramp with more room than it has at the riser itself.
+  // stock ahead of `CHEEK_FRONT_Z`, so the ramp stands lower than the top
+  // everywhere the top's own bound is argued.
   b.slab("cheekRiser", POLYMER, [
     [-0.336, 0.062],
     [CHEEK_FRONT_Z, CHEEK_TOP - 0.004],

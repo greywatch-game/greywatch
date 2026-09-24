@@ -70,7 +70,7 @@ export const sights = {
     adsSpeedMult: 1.15,
   },
   /**
-   * Irons: a rear aperture and a hooded front post. No glass at all, and
+   * Irons: a rear aperture and a three-pronged front post. No glass at all, and
    * still the fastest to the shoulder — there is nothing to raise, which is
    * the one thing the reflex cannot match. What it costs is the picture: a
    * post that covers what it is aimed at and a ring around everything else.
