@@ -6,6 +6,9 @@
  * volume".
  * Gotcha: a tier's `rays` is a WORKGROUP SIZE, compiled into the trace shader,
  * so it must be a power of two no larger than 256 — the reduction halves it.
+ * And `columns^2 * layers` must not be a multiple of 7919 or over ~542k, or
+ * the rolling sweep stops visiting every probe. `GiVolume` throws on either
+ * in a DEV build.
  */
 
 export const gi = {

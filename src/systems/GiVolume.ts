@@ -94,6 +94,32 @@ const GRID_REACH = 300;
 const GROUP = 64;
 /** `CONFIG.gi.hullAlbedo`, parsed once. */
 const HULL_ALBEDO = Color3.FromHexString(CONFIG.gi.hullAlbedo);
+/** The trace's permutation stride — `giTrace.ts`'s `7919u`, which see. */
+const PERMUTE = 7919;
+
+// What the shaders assume about a tier and nothing typed can see. Each one
+// fails SILENTLY — a wrong average, probes that are never traced — so a DEV
+// build refuses the config outright rather than let it reach a picture.
+if (import.meta.env.DEV) {
+  for (const [name, t] of Object.entries(CONFIG.gi.tiers)) {
+    const at = `CONFIG.gi.tiers.${name}`;
+    // A WORKGROUP SIZE, halved by the reduction: anything but a power of two
+    // drops rays from the sum, and WebGPU's default limit is 256.
+    if (!(t.rays >= 1 && t.rays <= 256 && (t.rays & (t.rays - 1)) === 0)) {
+      throw new Error(`${at}.rays is ${t.rays}: must be a power of two, 1-256`);
+    }
+    const total = t.columns * t.columns * t.layers;
+    // The rolling cursor is `(i * 7919) % total`, a permutation only while
+    // 7919 (prime) does not divide the total — and computed in u32, so the
+    // product must not wrap either.
+    if (total % PERMUTE === 0) {
+      throw new Error(`${at}: ${total} probes is a multiple of ${PERMUTE}, so the sweep skips most of them`);
+    }
+    if (total * PERMUTE > 0xffffffff) {
+      throw new Error(`${at}: ${total} probes x ${PERMUTE} overflows the trace's u32 cursor`);
+    }
+  }
+}
 
 type TextureName = (typeof GI_SAMPLER_NAMES)[number];
 
@@ -130,6 +156,10 @@ export class GiVolume {
   private heights: StorageBuffer | null = null;
   /** The hull slots' scratch, rewritten into the box buffer every frame. */
   private readonly hullData = new Float32Array(GI_HULL_SLOTS * 16);
+  /** `writeHulls`' scratch: which hulls hold the slots, nearest first, and how far. */
+  private readonly hullPick = new Int32Array(GI_HULL_SLOTS);
+  private readonly hullDist = new Float64Array(GI_HULL_SLOTS);
+  private warnedHulls = false;
 
   private map: GameMap | null = null;
   /** The scene half of the params — fixed per map; see `writeScene`. */
@@ -288,14 +318,14 @@ export class GiVolume {
 
     this.chooseSlow(lighting, tier);
     this.chooseFast(eye, lighting);
-    this.writeHulls(hulls);
+    const hullCount = this.writeHulls(hulls, eye);
     this.assignChannels(lighting.activeLights);
     const budget = Math.min(
       total,
       this.warmFrames > 0 ? tier.warmProbesPerFrame : tier.probesPerFrame,
     );
     if (this.warmFrames > 0) this.warmFrames--;
-    this.writeParams(tier, total, hulls.length);
+    this.writeParams(tier, total, hullCount);
 
     // Nothing is advanced until the three pipelines exist: a dispatch before
     // its shader has compiled returns false and did nothing, and a cursor
@@ -901,22 +931,57 @@ export class GiVolume {
     this.chanSeen.fill(0);
   }
 
-  /** Rewrites the hull slots at the front of the box buffer. */
-  private writeHulls(hulls: readonly RayHull[]): void {
-    if (!this.boxes) return;
+  /**
+   * Rewrites the hull slots at the front of the box buffer and returns how
+   * many it filled.
+   *
+   * There are `GI_HULL_SLOTS` of them, so a map fielding more hulls than that
+   * keeps the NEAREST the eye — the ones whose shadow and bounce are on
+   * screen — rather than whichever the list happens to hold first. A hull with
+   * no box (nothing to trace) takes no slot.
+   */
+  private writeHulls(hulls: readonly RayHull[], eye: Vector3): number {
+    if (!this.boxes) return 0;
+    const pick = this.hullPick;
+    const dist = this.hullDist;
+    let count = 0;
+    for (let i = 0; i < hulls.length; i++) {
+      const box = hulls[i].rayBox();
+      if (!box) continue;
+      const dx = box.cx - eye.x;
+      const dz = box.cz - eye.z;
+      const d = dx * dx + dz * dz;
+      if (count === GI_HULL_SLOTS && d >= dist[count - 1]) continue;
+      // Insertion into a list held sorted nearest first; the farthest falls
+      // off the end once it is full.
+      let j = count < GI_HULL_SLOTS ? count++ : count - 1;
+      while (j > 0 && dist[j - 1] > d) {
+        dist[j] = dist[j - 1];
+        pick[j] = pick[j - 1];
+        j--;
+      }
+      dist[j] = d;
+      pick[j] = i;
+    }
+    if (import.meta.env.DEV && hulls.length > GI_HULL_SLOTS && !this.warnedHulls) {
+      this.warnedHulls = true;
+      console.warn(
+        `GiVolume: ${hulls.length} hulls against ${GI_HULL_SLOTS} slots; ` +
+          "the farthest are left out of the bounce (GI_HULL_SLOTS)",
+      );
+    }
+
     const data = this.hullData;
     data.fill(0);
     const albedo = HULL_ALBEDO;
-    const count = Math.min(hulls.length, GI_HULL_SLOTS);
-    for (let i = 0; i < count; i++) {
-      const box = hulls[i].rayBox();
-      if (!box) continue;
-      writeBox(data, i, box);
-      data[i * 16 + 12] = albedo.r;
-      data[i * 16 + 13] = albedo.g;
-      data[i * 16 + 14] = albedo.b;
+    for (let k = 0; k < count; k++) {
+      writeBox(data, k, hulls[pick[k]].rayBox()!);
+      data[k * 16 + 12] = albedo.r;
+      data[k * 16 + 13] = albedo.g;
+      data[k * 16 + 14] = albedo.b;
     }
     this.boxes.update(data, 0);
+    return count;
   }
 
   /**
