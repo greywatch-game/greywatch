@@ -154,6 +154,11 @@ export class ReflectionSystem {
    */
   private readonly inFlight: { probe: ReflectionProbe; draws: number }[] = [];
   /**
+   * Whether a queued probe may be released yet — see `setBakeGate`. Open by
+   * default, so a caller that wires nothing bakes exactly as before.
+   */
+  private bakeGate: () => boolean = () => true;
+  /**
    * The list one FACE of one probe is actually drawn from — `renderList`
    * minus whatever that face cannot see. See `faceOf`, which is the only
    * thing that writes it, and which hands it straight to Babylon: it is
@@ -229,6 +234,22 @@ export class ReflectionSystem {
    * allocates nothing and walks at most the pool, so it is free to ask every
    * frame.
    */
+  /**
+   * Holds the queue until `gate` says the scene is worth baking. A cube is
+   * baked ONCE per install and every cel surface in it reads the irradiance
+   * volume, which `installMap` has just cleared: released on the first frame,
+   * as the queue otherwise is, every glazing cube and water mirror froze the
+   * volume's first unconverged pass for the whole round. `Game` wires it to
+   * `GiVolume.converged` — injected rather than imported, the wiring rule.
+   *
+   * Only RELEASING waits. A probe already in flight is re-baking a list that
+   * was not ready, and is let finish; and `bakePending` still counts the
+   * queue, so the building card stays up across the wait.
+   */
+  setBakeGate(gate: () => boolean): void {
+    this.bakeGate = gate;
+  }
+
   get bakePending(): number {
     let pending = this.queue.length;
     for (const held of this.inFlight) {
@@ -540,6 +561,7 @@ export class ReflectionSystem {
       spent += held.draws;
     }
     let taken = 0;
+    if (this.queue.length > 0 && !this.bakeGate()) return;
     for (const next of this.queue) {
       // One probe goes through on an EMPTY frame however fat it is, or a queue
       // whose head costs more than the whole budget would never drain. On a

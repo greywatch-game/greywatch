@@ -1353,6 +1353,9 @@ export class Game {
     // this one PUBLISHES to it — the cube the glazing samples, baked from the
     // map itself. Built here so a pane material is born holding the sampler.
     this.reflections = new ReflectionSystem(this.scene, this.mats);
+    // A cube is baked once per install and keeps the bounce it was baked
+    // under, so the bake waits for the volume `installMap` has just cleared.
+    this.reflections.setBakeGate(() => this.gi.converged);
     // Takes over `scene.getActiveMeshCandidates`, and offers the WHOLE scene
     // until a map is installed — so where in this constructor it stands
     // decides nothing: it rebuilds its list off `scene.meshes` wholesale the

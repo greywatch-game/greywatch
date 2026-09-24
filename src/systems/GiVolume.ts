@@ -324,7 +324,6 @@ export class GiVolume {
       total,
       this.warmFrames > 0 ? tier.warmProbesPerFrame : tier.probesPerFrame,
     );
-    if (this.warmFrames > 0) this.warmFrames--;
     this.writeParams(tier, total, hullCount);
 
     // Nothing is advanced until the three pipelines exist: a dispatch before
@@ -335,6 +334,10 @@ export class GiVolume {
     }
     this.trace.dispatch(budget, 1, 1);
     this.cursor = (this.cursor + budget) % total;
+    // Counted down only on a frame that TRACED: a warm-up spent while the
+    // pipelines compiled would report a volume converged that had never run —
+    // and `converged` is what the reflection bake waits on.
+    if (this.warmFrames > 0) this.warmFrames--;
     const groups = Math.ceil(total / GROUP);
     this.compose.dispatch(groups, 1, 1);
     this.vis.dispatch(groups, 1, 1);
@@ -342,6 +345,18 @@ export class GiVolume {
     // above leaves its dirty channels dirty for the next one.
     this.chanDirty.fill(0);
     this.binding.shade.w = 1;
+  }
+
+  /**
+   * Whether the window has had its warm-up — two full sweeps traced since the
+   * map, the setting or a jump across the map last cleared it — so what the
+   * cel shader reads through the textures is the volume's answer rather than
+   * its first pass at one. True with the setting off: there is nothing to
+   * wait for. `Game` holds the reflection bake on it, since a cube is baked
+   * once and keeps whatever bounce it was baked under for the round.
+   */
+  get converged(): boolean {
+    return !this.tier || (this.placed && this.warmFrames === 0);
   }
 
   dispose(): void {
