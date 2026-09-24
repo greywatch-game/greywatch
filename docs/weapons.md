@@ -1974,14 +1974,15 @@ is sized off `outerAt` like everything else on that tube. **Take this at 1024
 and read the MESH NAMES, never the count**: the honest floor is not zero —
 1024 rays find the reticle (52 on the 6x, 39 on the 3.5x's posts, 33 on the 2x's, which is what
 thinning the reticle moved and is the only place that shows up as a number) and
-6 rays of the outermost ring find the tube itself, because a stepped tube
+a handful of rays of the outermost ring find the tube itself (6 on the 3.5x,
+8 on the octagonal prism, 10 on the 6x, and only ever on that ring), because a stepped tube
 circumscribes its own cone and touches it at every step's far rim. A count
 compared against a remembered number would have called both of those a
 regression and the lever nothing at all.
 
 **The mount is not free, and the DMR is where that shows.** Two of the four numbers
 are bounded by the optics rather than the receiver: the scope's cone reaches the
-rail's ribs at about z = 0.59 and the holo's reaches the FOLDED front iron leaf at
+rail's ribs at about z = 0.61 and the holo's reaches the FOLDED front iron leaf at
 about z = 0.53, which is why the DMR's rail stops where it does and why its front
 iron station sits no further out than the rifle's despite a longer receiver. The
 extra sight radius a marksman rifle wants comes out of the rear station instead;

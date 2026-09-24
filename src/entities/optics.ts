@@ -104,7 +104,13 @@ export const eyeDistance = (id: SightId): number =>
  * `RAIL_REACH` (`winRiseOf`, `reflexRiseOf`).
  */
 const IRON_RISE = 0.036;
-const SCOPE_RISE = 0.1;
+/**
+ * The 3.5x's, and lower than it was (0.1) because the tube got SHORTER: the
+ * ocular moved forward, so the eye did too, and the same cone reaches rail
+ * height further out. `cone * (eyeDistance + RAIL_REACH - ocular)` is 0.0905
+ * now, which leaves 3.5 mm of daylight under the picture.
+ */
+const SCOPE_RISE = 0.094;
 const PRISM_RISE = 0.096;
 /**
  * The 6x's, and it is the ONE rise here the rail does not decide — see
@@ -252,7 +258,16 @@ const REFLEX_FRAME = Math.max(0.004, 0.006 * REFLEX_K);
  */
 const SCOPE_CONE = 0.099;
 const SCOPE_WALL = 0.007;
-const SCOPE_SECTIONS = 3;
+const SCOPE_SECTIONS = 4;
+/**
+ * Facets round the 3.5x's and the 6x's tubes, against `FACETS`' 14. Each step
+ * of a stepped tube stands `cone * seg` proud of the next, and at four or five
+ * steps over the body that is a few millimetres — so the staircase reads as a TAPER,
+ * and a taper drawn in fourteen flats reads as a pencil. Eighteen is the count
+ * at which the silhouette stops being a polygon at hip distance; it costs
+ * vertices in a mesh that is merged anyway, not draw calls.
+ */
+const TUBE_SIDES = 18;
 /**
  * Ocular and objective, relative to `mountZ`. The tube's height and length are
  * set by ONE constraint, and it is not appearance: the view cone runs onto the
@@ -263,13 +278,15 @@ const SCOPE_SECTIONS = 3;
  * front iron is the same constraint again. Lower the rings and the weapon
  * appears in its own scope.
  *
- * Length is the one dimension that is NOT free to shrink with the rest: the
- * far rim's distance from the eye is what the bore is divided by, so a shorter
- * tube is a wider one. This is as long as it can be without reaching past the
- * charging handle.
+ * LENGTH is what makes this compact, and it costs the picture nothing: every
+ * bore here is `SCOPE_CONE` times the distance from the eye, so a shorter tube
+ * at the same cone is a NARROWER objective and the same circle on the screen.
+ * It is 0.16 long, an ACOG's proportions, against the 0.25 it was — the far
+ * rim's bore is 0.086 rather than 0.104 — and the ocular moved forward to
+ * buy most of it, which is also what let `SCOPE_RISE` come down.
  */
-const SCOPE_OCULAR_DZ = -0.13;
-const SCOPE_OBJECTIVE_DZ = 0.12;
+const SCOPE_OCULAR_DZ = -0.09;
+const SCOPE_OBJECTIVE_DZ = 0.07;
 
 /**
  * The clear bore a scope section ending `dz` from the sight centre must carry,
@@ -306,8 +323,8 @@ const scopeBore = (dz: number): number =>
  * screen. Two things set its width, and only one of them is the wall: a section
  * carries its FAR rim's radius all the way back, so the ocular end stands
  * `cone * seg` proud of the cone whatever the wall does. Halving the step
- * length is therefore worth more than halving the wall — three sections over a
- * body this short is still a fine staircase.
+ * length is therefore worth more than halving the wall — four sections over a
+ * body this short is a fine staircase.
  *
  * Measured on the rifle at full ADS, against the flush rims below: the
  * housing's outer edge came in from 97% of the half-screen to 81% while the
@@ -319,7 +336,16 @@ const scopeBore = (dz: number): number =>
  * shell `renderOutline` extrudes reads as a line rather than a rim.
  */
 export const PRISM_WALL = 0.005;
-const PRISM_SECTIONS = 3;
+const PRISM_SECTIONS = 4;
+/**
+ * The prism is the one housing here that is NOT round: an octagon, flat on
+ * top, bottom and both flanks. A prism sight carries a glass block, and a
+ * faceted body is what says so at a glance — beside two round scopes it is the
+ * silhouette, before any colour is read. The bore is still the cone's: `shell`
+ * stands every slab off the bore's radius, so the octagon's INSCRIBED circle
+ * is the one the picture needs and the corners are all extra.
+ */
+const PRISM_SIDES = 8;
 const PRISM_OCULAR_DZ = -0.06;
 const PRISM_OBJECTIVE_DZ = 0.05;
 const PRISM_FLOOR_GAP = 0.0025;
@@ -436,7 +462,7 @@ const LONG_CONE = 0.072;
  * sight in the kit, which reads as a bigger tube made of foil.
  */
 const LONG_WALL = 0.008;
-const LONG_SECTIONS = 3;
+const LONG_SECTIONS = 5;
 /**
  * Ocular and objective, relative to `mountZ` — 0.32 of body, the longest thing
  * bolted to any weapon here and 28% longer than the 3.5x's.
@@ -483,6 +509,25 @@ const longBore = (dz: number): number =>
  */
 const LONG_RET_ARM = 0.0005;
 
+/**
+ * THE MAGNIFIED OPTICS' BLACK, and the one accent that is not a fitting. Every
+ * magnified housing — the green dot, the prism, the 3.5x and the 6x — is this
+ * black, and every accent on them is a NEUTRAL: an optic stands on sixteen
+ * finishes it cannot be repainted to match (see `WeaponBuild.paint`), so a
+ * housing with a hue of its own clashes with most of them. What tells the four
+ * apart is their SHAPE — a short taper, an octagon, a slant-fronted compact
+ * and a long tube with a sunshade.
+ *
+ * Deeper than `POLYMER`, which the kit screen's lamps lift to a slate blue; the
+ * eyepieces and lips stay `POLYMER` and `RUBBER`, so the black body still reads
+ * as a separate part from its trim. `OPTIC_SILVER` is the 6x's accent — the
+ * turret caps, the throw lever and the band behind the bell — and glossy, since
+ * an accent that does not catch the light is only a grey ring. The others
+ * take their accents from `METAL`, the fittings every weapon already wears.
+ */
+const OPTIC_BLACK = "#121417";
+const OPTIC_SILVER = "#6c7075";
+
 /** What `postReticle` draws in: an unlit black, the one dark reticle colour. */
 const POSTS = "#000000";
 
@@ -492,13 +537,16 @@ const POSTS = "#000000";
  * torso's width at 70 m — with a very small BLACK dot in it. The gap alone
  * left the aim point implied, which the eye finds but has to look for; the dot
  * states it and, at 1.9 mrad, still covers less than a torso at 250 m. The
- * line is the green dot's subtense, 1.3 mrad: the reticle sits 0.46 from the
- * eye here against the green dot's 0.38, so the same weight is a longer length.
+ * line is the green dot's subtense, 1.3 mrad: the reticle sits 0.40 from the
+ * eye here against the green dot's 0.38, so the weights are nearly the same
+ * length. Both came down with the tube — the reticle sat 0.46 from the eye in
+ * the long one, and a mark hung nearer the eye at the same length is a HEAVIER
+ * mark, which is the subtense argument `LONG_RET_ARM` makes.
  */
-const SCOPE_RET_LINE = 0.0006;
+const SCOPE_RET_LINE = 0.00052;
 const SCOPE_RET_GAP = 0.07;
 const SCOPE_RET_HASHES = [0.3, 0.45, 0.6] as const;
-const SCOPE_RET_DOT = 0.0009;
+const SCOPE_RET_DOT = 0.00078;
 const LONG_RET_DOT = 0.0009;
 
 /**
@@ -541,6 +589,8 @@ export function buildOptics(
   prefix: string,
 ): { sights: Record<SightId, SightAssembly>; meshes: Mesh[] } {
   const b = build;
+  const black = b.paint("black", OPTIC_BLACK);
+  const silver = b.paint("silver", OPTIC_SILVER, true);
   const ironY = mount.railTop + IRON_RISE;
   const winY = mount.railTop + winRiseOf(mount);
   const scopeY = mount.railTop + SCOPE_RISE;
@@ -970,7 +1020,7 @@ export function buildOptics(
     };
     for (let i = 0; i < DOT2_SECTIONS; i++) {
       const far = DOT2_OCULAR_DZ + seg * (i + 1);
-      b.shell("dot2Tube", POLYMER, dot2Bore(far), DOT2_WALL, seg, dot2Y, winZ + far - seg / 2);
+      b.shell("dot2Tube", black, dot2Bore(far), DOT2_WALL, seg, dot2Y, winZ + far - seg / 2);
     }
     const rOcular = outerAt(DOT2_OCULAR_DZ);
     const rObjective = outerAt(DOT2_OBJECTIVE_DZ);
@@ -978,7 +1028,7 @@ export function buildOptics(
     // picture, and both thin lips: the ocular's a rubber ring, the objective's
     // a short bevel over the glass the dot sits in.
     b.shell("dot2Ocular", RUBBER, rOcular * 2, 0.004, 0.01, dot2Y, ocularZ + 0.001);
-    b.shell("dot2Bevel", POLYMER, rObjective * 2, 0.0035, 0.01, dot2Y, objectiveZ - 0.001);
+    b.shell("dot2Bevel", black, rObjective * 2, 0.0035, 0.01, dot2Y, objectiveZ - 0.001);
     // A narrow block from a wider clamp foot to the ocular section's underside,
     // spanning the rear two sections — the objective overhangs it.
     const baseZ = winZ - 0.014;
@@ -1034,13 +1084,13 @@ export function buildOptics(
   };
 
   /**
-   * The 2.5x prism: a short stepped body on ONE integral mount, with an etched
-   * chevron hung near the objective.
+   * The 2.5x prism: a short OCTAGONAL black body on ONE integral
+   * mount, with an etched chevron hung near the objective.
    *
    * The mount is what tells it apart from the scope at a glance, and it is not
    * decoration: a prism carries its glass in a single block and is bolted down
-   * as one piece, where a scope is a tube borrowed by two rings. It also earns
-   * its keep — a body this short in two rings would be rings end to end.
+   * as one piece, where a scope is a tube borrowed by rings. The faceted
+   * housing (`PRISM_SIDES`) is the other half of that silhouette.
    */
   const buildPrism = (node: TransformNode): Vector3 => {
     // No front leaf, for the scope's reason: this cone is wider still.
@@ -1060,55 +1110,66 @@ export function buildOptics(
       const far = PRISM_OCULAR_DZ + seg * (i + 1);
       b.shell(
         "prismTube",
-        POLYMER,
+        black,
         prismBore(far),
         PRISM_WALL,
         seg,
         prismY,
         winZ + far - seg / 2,
+        PRISM_SIDES,
       );
     }
     const rOcular = outerAt(PRISM_OCULAR_DZ);
     const rObjective = outerAt(PRISM_OBJECTIVE_DZ);
-    // The two rims are the near end of the sight and therefore the widest thing
-    // in the frame — the eyecup more so than the ocular, since it is nearer the
-    // eye again. They are given the SAME outer radius rather than each standing
-    // proud of the last, so the near end is one diameter instead of a stack of
-    // three — a stack reads as detail on a bench and as a wider black band in
-    // the one place this sight is actually looked through.
-    b.shell("prismOcular", POLYMER, rOcular * 2, 0.005, 0.014, prismY, ocularZ - 0.003);
-    // A rubber eyecup, which is the one part of this sight that is about the
-    // eye relief rather than about the picture: it is short and unforgiving,
-    // and a cup is what a shooter finds the box behind. Sized off the ocular's
-    // OUTER radius, so it stands around the tube and never inside the cone.
-    b.shell("prismCup", RUBBER, rOcular * 2, 0.005, 0.013, prismY, ocularZ - 0.014);
-    b.shell("prismBell", POLYMER, rObjective * 2, 0.006, 0.022, prismY, objectiveZ + 0.01);
-    // The mount: one block from the rail to the OCULAR section's underside, so
-    // the wider objective end overhangs it rather than the block having to
-    // clear the fattest part of a body that changes width along its length.
+    // The near end is the widest thing in the frame, since it is nearest the
+    // eye, so it is ONE diameter rather than a stack: a thin black lip flush
+    // with the housing, and a round rubber cup behind it — the one part of this
+    // sight about the eye relief rather than the picture, since a short,
+    // unforgiving eye box is what a shooter finds a cup for. Both stand
+    // AROUND the housing's outer radius and never inside the cone, and they
+    // butt end to end rather than overlapping, so no two end faces share a
+    // plane the eye looks straight down.
+    b.shell("prismOcular", POLYMER, rOcular * 2, 0.004, 0.01, prismY, ocularZ - 0.001, PRISM_SIDES);
+    b.shell("prismCup", RUBBER, rOcular * 2, 0.004, 0.012, prismY, ocularZ - 0.012);
+    // A short octagonal hood past the objective, and a steel lip on its mouth
+    // so the front reads as a finished edge rather than a cut tube.
+    b.shell("prismHood", black, rObjective * 2, 0.004, 0.016, prismY, objectiveZ + 0.008, PRISM_SIDES);
+    b.shell("prismHoodLip", METAL, rObjective * 2, 0.0045, 0.004, prismY, objectiveZ + 0.018, PRISM_SIDES);
+    // The mount: one slab from the rail up to the housing, its top a straight
+    // line that FOLLOWS the taper — at each end it meets the underside of the
+    // section standing there. That line cannot reach into the cone: both ends
+    // stand a wall's thickness outside it and both are straight lines in z, so
+    // the gap between them is too everywhere in between. The ends are raked,
+    // which is most of what makes it read as a machined part rather than a
+    // block the housing was set down on.
     const baseBottom = mount.railTop - 0.003;
-    const baseTop = prismY - rOcular - 0.004;
-    b.box(
+    const rearZ = winZ - 0.05;
+    const frontZ = winZ + 0.034;
+    const topRearZ = rearZ + 0.012;
+    const topFrontZ = frontZ - 0.012;
+    b.slab(
       "prismMount",
-      METAL,
-      0.05,
-      baseTop - baseBottom,
-      0.088,
-      0,
-      (baseBottom + baseTop) / 2,
-      winZ - 0.008,
+      black,
+      [
+        [rearZ, baseBottom],
+        [frontZ, baseBottom],
+        [topFrontZ, prismY - outerAt(topFrontZ - winZ)],
+        [topRearZ, prismY - outerAt(topRearZ - winZ)],
+      ],
+      0.03,
+      0.003,
     );
-    b.box("prismLever", METAL, 0.013, 0.024, 0.044, 0.031, mount.railTop + 0.014, winZ - 0.02);
-    b.pin("prismBolt", METAL, 0.011, 0.06, 0, mount.railTop + 0.014, winZ + 0.024);
-    // Capped turrets, low against the body — a prism is zeroed once and left.
-    // The wider knob opposite them is the reticle's illumination, which is the
-    // part of this sight that gets used mid-round.
+    b.box("prismLever", METAL, 0.006, 0.018, 0.034, 0.018, mount.railTop + 0.011, winZ - 0.022);
+    b.pin("prismBolt", METAL, 0.009, 0.038, 0, mount.railTop + 0.008, winZ + 0.018);
+    // Low caps on the flats, a prism being zeroed once and left. The wider,
+    // black knob opposite them is the reticle's illumination, which is the part
+    // of this sight that gets used mid-round.
     const turretZ = winZ + 0.005;
     const rTurret = outerAt(0.005);
-    b.pin("prismElev", METAL, 0.022, 0.012, 0, prismY + rTurret + 0.005, turretZ, "y");
-    b.pin("prismElevCap", METAL, 0.017, 0.005, 0, prismY + rTurret + 0.0145, turretZ, "y");
-    b.pin("prismWind", METAL, 0.022, 0.012, rTurret + 0.005, prismY, turretZ, "x");
-    b.pin("prismIllum", METAL, 0.03, 0.013, -(rTurret + 0.006), prismY, turretZ, "x");
+    b.pin("prismElev", METAL, 0.018, 0.007, 0, prismY + rTurret + 0.0035, turretZ, "y");
+    b.pin("prismWind", METAL, 0.018, 0.007, rTurret + 0.0035, prismY, turretZ, "x");
+    b.pin("prismIllum", POLYMER, 0.024, 0.009, -(rTurret + 0.0045), prismY, turretZ, "x");
+    b.pin("prismIllumCap", METAL, 0.015, 0.003, -(rTurret + 0.0105), prismY, turretZ, "x");
     b.merge("prism", node);
 
     // The reticle: a caret and nothing else, two arms merged into one emissive
@@ -1159,14 +1220,21 @@ export function buildOptics(
   };
 
   /**
-   * The 3.5x scope: a long tube in two clamp rings, with a black post reticle
-   * hung near the objective end.
+   * The 3.5x scope: a compact black tube in an ACOG's proportions, on a flat
+   * integral base, with a SLANT-CUT hood over the objective and a black post
+   * reticle hung near the objective end.
    *
    * There is no glass and no post-process here — the eye genuinely looks down
    * a hollow tube, and what it can see through it is set by the far rim. That
    * is why the bore is half again the holo's: at 3.5x a narrow tube is a
    * keyhole. The reticle's arms are cut to just inside that far rim, so they
    * run out to the edge of the visible circle and stop.
+   *
+   * The slanted front is the silhouette: the prism is an octagon, the 6x a long
+   * tube with a sunshade, and this a short body whose hood reaches furthest
+   * over the TOP of the glass and hardly at all under it — what an ACOG is at
+   * a glance. The narrow rib along its crown is the fibre housing that feeds
+   * the reticle's illumination, standing forward of the elevation cap.
    */
   const buildScope = (node: TransformNode): Vector3 => {
     foldedIrons(false);
@@ -1192,49 +1260,104 @@ export function buildOptics(
       const far = SCOPE_OCULAR_DZ + seg * (i + 1);
       b.shell(
         "scopeTube",
-        POLYMER,
+        black,
         scopeBore(far),
         SCOPE_WALL,
         seg,
         scopeY,
         winZ + far - seg / 2,
+        TUBE_SIDES,
       );
     }
     const rOcular = outerAt(SCOPE_OCULAR_DZ);
     const rObjective = outerAt(SCOPE_OBJECTIVE_DZ);
-    // Eyepiece and objective bell, both sized outward from their own section's
-    // bore so neither can narrow the sight picture.
-    b.shell("scopeOcular", POLYMER, rOcular * 2, 0.012, 0.016, scopeY, ocularZ - 0.004);
-    b.shell("scopeDiopter", METAL, rOcular * 2, 0.009, 0.01, scopeY, ocularZ + 0.026, 10);
-    b.shell("scopeBell", POLYMER, rObjective * 2, 0.009, 0.026, scopeY, objectiveZ + 0.012);
-    // Two clamp rings, each around the section it lands on, on bases tall
-    // enough to bridge the gap the cone needs (see SCOPE_RISE) — clearing the
-    // weapon's own rail is why a scope stands off as far as this one does.
-    // A base runs from a hair under the rail to the underside of its own clamp
-    // ring, so the two meet with no seam and no overlap however high this
-    // weapon carries its rail.
-    const baseBottom = mount.railTop - 0.003;
-    for (const dz of [-0.02, 0.085] as const) {
-      const rRing = outerAt(dz);
-      const baseTop = scopeY - rRing - 0.007;
+    // The eyepiece: a rubber lip, a short sleeve and a fine steel line where
+    // it meets the body, all sized outward from the ocular section so none can
+    // narrow the picture. They butt end to end rather than overlapping, and
+    // nothing reaches further back than the lip — that end is what the near
+    // plane is arguing with.
+    b.shell("scopeEyeLip", RUBBER, rOcular * 2, 0.008, 0.004, scopeY, ocularZ - 0.01, TUBE_SIDES);
+    b.shell("scopeOcular", POLYMER, rOcular * 2, 0.006, 0.016, scopeY, ocularZ, TUBE_SIDES);
+    b.shell("scopeEyeTrim", METAL, rOcular * 2, 0.004, 0.004, scopeY, ocularZ + 0.01, TUBE_SIDES);
+    b.shell("scopeBellTrim", METAL, rObjective * 2, 0.003, 0.004, scopeY, objectiveZ - 0.003, TUBE_SIDES);
+    // The slant-cut hood: the objective section's wall carried forward, each
+    // facet as long as its height on the ring asks — `hoodTop` over the crown,
+    // `hoodFoot` under it, and a cosine between — so its mouth is one raked
+    // plane stepped in eighteen. It stands off the objective's OUTER radius,
+    // and at its longest the cone has only reached 3.8 mm short of that.
+    const hoodTop = 0.032;
+    const hoodFoot = 0.006;
+    const hoodWall = 0.005;
+    const hoodMid = rObjective + hoodWall / 2;
+    const hoodFacet = 2 * (rObjective + hoodWall) * Math.tan(Math.PI / TUBE_SIDES);
+    for (let i = 0; i < TUBE_SIDES; i++) {
+      const a = (i / TUBE_SIDES) * Math.PI * 2;
+      const len = hoodFoot + ((hoodTop - hoodFoot) * (1 + Math.cos(a))) / 2;
       b.box(
-        "scopeRingBase",
-        METAL,
-        0.042,
-        baseTop - baseBottom,
-        0.024,
-        0,
-        (baseBottom + baseTop) / 2,
-        winZ + dz,
+        "scopeHood",
+        black,
+        hoodFacet,
+        hoodWall,
+        len,
+        Math.sin(a) * hoodMid,
+        scopeY + Math.cos(a) * hoodMid,
+        objectiveZ + len / 2,
+        b.root,
+        -a,
       );
-      b.shell("scopeRing", METAL, rRing * 2, 0.007, 0.02, scopeY, winZ + dz, 10);
     }
+    // The fibre rib along the crown, from just forward of the elevation cap to
+    // the hood. Its underside is a straight line from one section's top to the
+    // next section's — the prism mount's argument upside down: both ends stand
+    // a wall outside the cone and both are straight in z, so all of it does.
+    const ribRear = 0.018;
+    const ribFront = SCOPE_OBJECTIVE_DZ - 0.004;
+    const ribUnder = (dz: number): number => scopeY + outerAt(dz) - 0.0005;
+    const ribH = 0.007;
+    b.slab(
+      "scopeRib",
+      black,
+      [
+        [winZ + ribRear, ribUnder(ribRear)],
+        [winZ + ribFront, ribUnder(ribFront)],
+        [winZ + ribFront - 0.006, ribUnder(ribFront) + ribH],
+        [winZ + ribRear + 0.004, ribUnder(ribRear) + ribH],
+      ],
+      0.012,
+      0.002,
+    );
+    // The base: one flat-bottomed slab whose top follows the taper exactly as
+    // the prism's does, and for the same reason can never reach into the cone.
+    // Two thumb nuts on the left, which is what clamps an ACOG to its rail.
+    const baseBottom = mount.railTop - 0.003;
+    const rearDz = -0.045;
+    const frontDz = 0.045;
+    const topRearDz = rearDz + 0.01;
+    const topFrontDz = frontDz - 0.01;
+    b.slab(
+      "scopeMount",
+      black,
+      [
+        [winZ + rearDz, baseBottom],
+        [winZ + frontDz, baseBottom],
+        [winZ + topFrontDz, scopeY - outerAt(topFrontDz)],
+        [winZ + topRearDz, scopeY - outerAt(topRearDz)],
+      ],
+      0.028,
+      0.003,
+    );
+    for (const dz of [-0.024, 0.024] as const) {
+      b.pin("scopeThumbNut", METAL, 0.013, 0.008, -0.018, mount.railTop + 0.009, winZ + dz);
+      b.pin("scopeCrossBolt", METAL, 0.006, 0.034, 0, mount.railTop + 0.004, winZ + dz);
+    }
+    // Low caps on the crown and the right flank — a combat optic is zeroed and
+    // left, and an ACOG's adjusters sit under caps rather than in turrets.
     const turretZ = winZ + 0.005;
     const rTurret = outerAt(0.005);
-    b.pin("scopeElev", METAL, 0.026, 0.015, 0, scopeY + rTurret + 0.007, turretZ, "y");
-    b.pin("scopeElevCap", METAL, 0.018, 0.006, 0, scopeY + rTurret + 0.018, turretZ, "y");
-    b.pin("scopeWind", METAL, 0.026, 0.015, rTurret + 0.007, scopeY, turretZ, "x");
-    b.pin("scopeParallax", METAL, 0.021, 0.012, -(rTurret + 0.006), scopeY, turretZ, "x");
+    b.pin("scopeElev", black, 0.018, 0.008, 0, scopeY + rTurret + 0.004, turretZ, "y");
+    b.pin("scopeElevCap", METAL, 0.013, 0.003, 0, scopeY + rTurret + 0.0095, turretZ, "y");
+    b.pin("scopeWind", black, 0.018, 0.008, rTurret + 0.004, scopeY, turretZ, "x");
+    b.pin("scopeWindCap", METAL, 0.013, 0.003, rTurret + 0.0095, scopeY, turretZ, "x");
     b.merge("scope", node);
 
     // The reticle: three fine black posts with hashes, and a very small black
@@ -1242,7 +1365,7 @@ export function buildOptics(
     // posts run to just inside the CONE at the reticle's own depth, not to the
     // tube wall beside it: the visible circle is the cone's, and a wall this
     // far up the flare is well outside it.
-    const retZ = objectiveZ - 0.06;
+    const retZ = objectiveZ - 0.035;
     const clearR = SCOPE_CONE * (eyeDistance("scope") + retZ - ocularZ);
     postReticle(node, "scopeReticle", scopeY, retZ, clearR, {
       gap: SCOPE_RET_GAP,
@@ -1258,15 +1381,16 @@ export function buildOptics(
   };
 
   /**
-   * The 6x long scope: the 3.5x one size up and one constraint different, with
-   * a floating dot in a fine crosshair and two holdover ticks under it.
+   * The 6x long scope: a matte black tube with silver accents, in two tall
+   * separate rings, with a floating dot in a fine crosshair and two holdover
+   * ticks under it.
    *
    * Everything structural is `buildScope`'s — a stepped tube that circumscribes
-   * its own view cone, two clamp rings, an eyepiece and a bell — and what is
-   * added is the two things a long-range optic has that a general-purpose one
-   * does not: a SUNSHADE past the objective, and turrets tall enough to be
-   * turned rather than capped and forgotten. Both are sized OUTWARD from their
-   * own section's outer radius, so neither can reach into the picture.
+   * its own view cone, an eyepiece and a bell — and what is added is the two
+   * things a long-range optic has that a general-purpose one does not: a
+   * SUNSHADE past the objective, and turrets tall enough to be turned rather
+   * than capped and forgotten. Both are sized OUTWARD from their own section's
+   * outer radius, so neither can reach into the picture.
    */
   const buildLongScope = (node: TransformNode): Vector3 => {
     // The rear leaf only, exactly as the scope and the prism do: at this rise a
@@ -1288,82 +1412,92 @@ export function buildOptics(
       const far = LONG_OCULAR_DZ + seg * (i + 1);
       b.shell(
         "longTube",
-        POLYMER,
+        black,
         longBore(far),
         LONG_WALL,
         seg,
         longY,
         winZ + far - seg / 2,
+        TUBE_SIDES,
       );
     }
     const rOcular = outerAt(LONG_OCULAR_DZ);
     const rObjective = outerAt(LONG_OBJECTIVE_DZ);
-    // Eyepiece, diopter ring and a rubber cup. The cup is the prism's part for
-    // the opposite reason: there it stands for an eye box a shooter has to
-    // find, and here it stands for the longest relief in the table — a cup is
-    // what says the weapon is meant to be fired from behind the glass rather
-    // than pressed against it.
-    b.shell("longOcular", POLYMER, rOcular * 2, 0.013, 0.016, longY, ocularZ - 0.004);
-    b.shell("longDiopter", METAL, rOcular * 2, 0.009, 0.011, longY, ocularZ + 0.028, 10);
-    b.shell("longCup", RUBBER, rOcular * 2, 0.006, 0.014, longY, ocularZ - 0.016);
-    b.shell("longBell", POLYMER, rObjective * 2, 0.01, 0.028, longY, objectiveZ + 0.013);
-    // The sunshade: a plain tube standing off the BELL's outer radius and
+    // Rubber cup, eyepiece sleeve and the magnification ring, butted end to
+    // end. The cup is the prism's part for the opposite reason: there it
+    // stands for an eye box a shooter has to find, and here for the longest
+    // relief in the table — a cup is what says the weapon is meant to be fired
+    // from behind the glass rather than pressed against it. It reaches no
+    // further back than it always did, which is the near plane's business.
+    b.shell("longCup", RUBBER, rOcular * 2, 0.005, 0.01, longY, ocularZ - 0.017, TUBE_SIDES);
+    b.shell("longOcular", black, rOcular * 2, 0.008, 0.03, longY, ocularZ + 0.003, TUBE_SIDES);
+    b.shell("longPower", METAL, rOcular * 2, 0.005, 0.012, longY, ocularZ + 0.028, TUBE_SIDES);
+    // The bell, with a silver band behind it — the accent that reads first.
+    b.shell("longBell", black, rObjective * 2, 0.007, 0.026, longY, objectiveZ + 0.013, TUBE_SIDES);
+    b.shell("longBand", silver, rObjective * 2, 0.003, 0.005, longY, objectiveZ - 0.0035, TUBE_SIDES);
+    // The sunshade: a plain thin tube standing off the BELL's outer radius and
     // reaching forward past it. It is the one part of this sight that is not
     // about what the shooter sees through it — it is about what the sun does to
     // the glass — and it is the cue that reads at a glance as an optic set up
     // for one shot at long range.
     b.shell(
       "longShade",
-      POLYMER,
+      black,
       rObjective * 2 + 0.004,
-      0.006,
+      0.004,
       0.05,
       longY,
       objectiveZ + 0.052,
+      TUBE_SIDES,
     );
-    // Two clamp rings, straddling the mount. Taller bases than the scope's: the
-    // bell is the widest thing in the kit and the tube has to stand clear of
-    // the receiver at its fattest, not at its thinnest.
+    // Two separate rings, each on a tapered tower: the tube has to stand clear
+    // of the receiver at its fattest, not at its thinnest, so these are the
+    // tallest mounts in the kit — and a tower that narrows toward its ring is
+    // what keeps that height from reading as a block.
+    const ringWall = 0.006;
     const baseBottom = mount.railTop - 0.003;
     for (const dz of [-0.05, 0.075] as const) {
+      const z = winZ + dz;
       const rRing = outerAt(dz);
-      const baseTop = longY - rRing - 0.008;
-      b.box(
+      const baseTop = longY - rRing - ringWall + 0.0005;
+      b.slab(
         "longRingBase",
         METAL,
-        0.046,
-        baseTop - baseBottom,
-        0.028,
-        0,
-        (baseBottom + baseTop) / 2,
-        winZ + dz,
+        [
+          [z - 0.017, baseBottom],
+          [z + 0.017, baseBottom],
+          [z + 0.009, baseTop],
+          [z - 0.009, baseTop],
+        ],
+        0.03,
+        0.003,
       );
-      b.shell("longRing", METAL, rRing * 2, 0.008, 0.024, longY, winZ + dz, 10);
+      b.pin("longRingBolt", METAL, 0.007, 0.036, 0, mount.railTop + 0.006, z);
+      b.shell("longRing", METAL, rRing * 2, ringWall, 0.018, longY, z, TUBE_SIDES);
     }
-    // Exposed target turrets — tall and knurled, which is the one place this
-    // differs from the scope in KIND rather than in size. A capped turret is a
-    // sight zeroed once and left; these are the marks a shooter dials a drop
-    // into between shots, which is exactly the tempo the weapon this was drawn
-    // for is fired at.
+    // Exposed target turrets — tall, slim and silver-capped, which is the one
+    // place this differs from the scope in KIND rather than in size. A capped
+    // turret is a sight zeroed once and left; these are the marks a shooter
+    // dials a drop into between shots, which is exactly the tempo the weapon
+    // this was drawn for is fired at.
     const turretZ = winZ + 0.012;
     const rTurret = outerAt(0.012);
-    b.pin("longElev", METAL, 0.03, 0.026, 0, longY + rTurret + 0.013, turretZ, "y");
-    b.pin("longElevCap", METAL, 0.022, 0.007, 0, longY + rTurret + 0.0295, turretZ, "y");
-    b.pin("longWind", METAL, 0.03, 0.026, rTurret + 0.013, longY, turretZ, "x");
-    b.pin("longFocus", METAL, 0.034, 0.016, -(rTurret + 0.008), longY, turretZ, "x");
+    b.pin("longElev", black, 0.026, 0.02, 0, longY + rTurret + 0.01, turretZ, "y");
+    b.pin("longElevCap", silver, 0.022, 0.006, 0, longY + rTurret + 0.023, turretZ, "y");
+    b.pin("longWind", black, 0.026, 0.02, rTurret + 0.01, longY, turretZ, "x");
+    b.pin("longWindCap", silver, 0.022, 0.006, rTurret + 0.023, longY, turretZ, "x");
+    b.pin("longFocus", black, 0.032, 0.012, -(rTurret + 0.006), longY, turretZ, "x");
+    b.pin("longFocusCap", silver, 0.014, 0.004, -(rTurret + 0.014), longY, turretZ, "x");
     // A throw lever on the magnification ring — the one control on this sight a
     // shooter reaches for with the weapon still shouldered. Sized OUTWARD from
-    // the ocular section's own outer radius, exactly as the turrets and the
-    // sunshade are, and for the reason those say so out loud: authored at a
-    // fixed x it stood at r = 0.0222 against a clear bore of 0.0332 and a view
-    // cone of 0.0276, so its inner corner hung THROUGH the tube wall and into
-    // the sight picture — a block of metal jutting in from the right, on the
-    // one optic whose whole job is an uncluttered field. Its inner face is now
-    // 2 mm inside the wall, which is a lever bolted to the ring rather than a
-    // lever floating beside it, and 6 mm clear of the bore.
+    // the ring's own outer radius, exactly as the turrets and the sunshade
+    // are, and for the reason those say so out loud: authored at a fixed x it
+    // once hung THROUGH the tube wall and into the sight picture — a block of
+    // metal jutting in from the right, on the one optic whose whole job is an
+    // uncluttered field. Its inner face is now a millimetre outside the ring.
     const leverZ = ocularZ + 0.028;
-    const rLever = outerAt(LONG_OCULAR_DZ + 0.028);
-    b.box("longLever", METAL, 0.014, 0.026, 0.014, rLever + 0.005, longY + 0.006, leverZ);
+    const rLever = outerAt(LONG_OCULAR_DZ + 0.028) + 0.005;
+    b.box("longLever", silver, 0.01, 0.022, 0.01, rLever + 0.006, longY + 0.006, leverZ);
     b.merge("longScope", node);
 
     // The reticle: a fine full crosshair, a floating centre dot, and two

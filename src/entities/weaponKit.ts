@@ -19,7 +19,9 @@
  *   that is fat on the squashed axis. Round shells are faceted slab rings
  *   (`shell`) for exactly that reason.
  * - A colour absent from `SECTIONS` is silently never merged: anything handed
- *   to `collect` has to appear there.
+ *   to `collect` has to appear there, or have been named by `paint` first.
+ *   `paint` is for OPTICS — a colour an optic wears that no weapon does — and
+ *   a painted group is never a finish part, so no finish can reach it.
  * - A colour group is also the unit a FINISH repaints, so `merge` records
  *   which group each merged mesh came from and `takeFinish` hands the list
  *   back at the seam between the weapon and its optics. What `collect`
@@ -315,6 +317,11 @@ export class WeaponBuild {
   private readonly pivots: TransformNode[] = [];
   /** Merged colour groups since the last `takeFinish()` — see there. */
   private finish: FinishPart[] = [];
+  /**
+   * Colours outside `SECTIONS`, by hex, with the group name `merge` gives
+   * them and whether they take the fittings' gloss — see `paint`.
+   */
+  private readonly paints = new Map<string, { name: string; glossy: boolean }>();
 
   constructor(
     readonly scene: Scene,
@@ -328,7 +335,7 @@ export class WeaponBuild {
     // glint on the rails/fittings sells them as steel against the matte
     // receiver and polymer.
     m.material =
-      color === METAL
+      color === METAL || this.paints.get(color)?.glossy
         ? this.mats.getGlossy(color, CONFIG.graphics.spec.rifle)
         : this.mats.get(color);
     m.isPickable = false;
@@ -336,6 +343,23 @@ export class WeaponBuild {
     if (g) g.push(m);
     else this.target.set(color, [m]);
     return m;
+  }
+
+  /**
+   * Names a colour outside `SECTIONS` so `merge` will merge it, and returns the
+   * colour so a builder can hold it as a constant. What it is FOR is the
+   * optics: each sight wears a housing colour of its own so the kit's glass
+   * is not five tubes in the rifle's black, and those colours are no weapon's.
+   *
+   * A painted group is merged into one mesh per colour like any other, but it
+   * is NOT a `FinishPart` — an optic is never repainted by a finish, and this
+   * keeps that true by construction rather than by where `takeFinish` is
+   * called. A colour already in `SECTIONS` is ignored here, so it can never be
+   * merged twice.
+   */
+  paint(name: string, color: string, glossy = false): string {
+    if (!SECTIONS.some(([, c]) => c === color)) this.paints.set(color, { name, glossy });
+    return color;
   }
 
   /** `rotZ` cants a part in the xy plane; `pivot` is the rotX equivalent. */
@@ -585,7 +609,9 @@ export class WeaponBuild {
     const groups = this.target;
     this.target = new Map();
     const out: Mesh[] = [];
-    for (const [name, color] of SECTIONS) {
+    const painted = [...this.paints].map(([color, p]) => [p.name, color, false] as const);
+    const all = [...SECTIONS.map(([name, color]) => [name, color, true] as const), ...painted];
+    for (const [name, color, finished] of all) {
       const parts = groups.get(color);
       if (!parts || parts.length === 0) continue;
       // A colour group of ONE is the case MergeMeshes will not do for you —
@@ -601,7 +627,7 @@ export class WeaponBuild {
       merged.name = `${this.prefix}_${suffix}_${name}`;
       merged.parent = parent;
       merged.isPickable = false;
-      this.finish.push({ mesh: merged, group: name });
+      if (finished) this.finish.push({ mesh: merged, group: name as FinishGroup });
       out.push(merged);
     }
     return out;
