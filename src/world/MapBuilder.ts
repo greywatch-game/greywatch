@@ -805,6 +805,12 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
 };
 
 /**
+ * What a collider box bounces when nothing it stands in for has a single
+ * colour to read — mid grey, claiming nothing about the structure.
+ */
+const NEUTRAL_ALBEDO: readonly [number, number, number] = [0.5, 0.5, 0.5];
+
+/**
  * Builds a map from the `MapLayout` and `EnvironmentSpec` it is handed — the
  * pair `world/maps.ts` keeps together. No map is named here.
  *
@@ -853,7 +859,7 @@ export class MapBuilder {
    * a box answers with the colour of what it stands in for.
    */
   private boxAlbedo: number[] = [];
-  private albedoHint: [number, number, number] = [0.5, 0.5, 0.5];
+  private albedoHint: [number, number, number] = [...NEUTRAL_ALBEDO];
 
   /**
    * The `strut` boxes, grouped by the placement whose collider mesh they were
@@ -2194,7 +2200,8 @@ export class MapBuilder {
    * how much of the structure it is, and plenty for light that is about to be
    * averaged over a whole hemisphere. A mesh with no single colour (a ground
    * texture, glazing) says nothing; a structure where nothing says anything
-   * keeps whatever the hint already was.
+   * is `NEUTRAL_ALBEDO`. It must never KEEP the hint, which is whatever the
+   * last structure or prop was painted — or the floor, for the first one.
    */
   private albedoFromMeshes(meshes: readonly Mesh[]): void {
     let r = 0;
@@ -2214,7 +2221,8 @@ export class MapBuilder {
       b += c.b * area;
       total += area;
     }
-    if (total > 0) this.albedoHint = [r / total, g / total, b / total];
+    this.albedoHint =
+      total > 0 ? [r / total, g / total, b / total] : [...NEUTRAL_ALBEDO];
   }
 
   /**
