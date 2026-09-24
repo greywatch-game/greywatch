@@ -284,7 +284,11 @@ src/
                         #   sleeve muzzle. The second model whose BORE is not
                         #   y = 0: the barrel is screwed into the chamber the
                         #   ejection port is cut in
-    SmgModel.ts         # Low-poly compact SMG — same contract
+    SmgModel.ts         # The SMG, a SIG MPX drawn from photos in the
+                        #   rifle's design language — AR flat-top, M-LOK
+                        #   handguard to the hider, flared magwell ahead of
+                        #   the guard, slim 9mm magazine, and SIG's long
+                        #   minimalist folding stock (reference-media/smg.png)
     DmrModel.ts         # Low-poly semi-auto marksman rifle
     SniperModel.ts      # Low-poly bolt-action sniper rifle — an action wrapped
                         #   around the BORE rather than a receiver sitting on
