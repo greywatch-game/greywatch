@@ -1520,7 +1520,9 @@ build's nesting.
 → **[`docs/profiling.md`](docs/profiling.md)** — the phases and what each one
 covers, how to take and read a capture, the viewer and the three rules for
 editing it, the relative hitch bar and what it was measured against, the
-sentinel and the heap probe and how to read a hitch against them, the three
+sentinel and the heap probe and how to read a hitch against them, how to find
+WHO allocates (the sampler's collected-object flags, and why a once-a-frame
+function on V8's mid tier boxes every `Vector3` read), the three
 limits recorded into every capture, the trace export and Perfetto, what
 `frame`'s own share means, the three-rung clipboard ladder, `?gpu` and the two
 ways its two counters are attributed, and the levers (cross-origin isolation, a

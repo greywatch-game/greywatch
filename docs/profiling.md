@@ -524,6 +524,57 @@ session before this was fixed should be re-taken.
 `memory.gcPerSec` also rides on the **flash line**, because under a pointer lock
 that is the only channel back to the player and "is it GC" is the whole question.
 
+### Finding WHO allocates, which the capture cannot say
+
+**`allocMbPerSec` says how much and never where**, and it is too coarse to see a
+fix: removing ~350 B a frame from a 385 kB frame is inside its run-to-run
+spread. The instrument that names the allocator is not in the profiler and
+should not be — it is the DevTools protocol's sampling heap profiler, driven
+from a Playwright script over a CDP session:
+
+- **`HeapProfiler.startSampling` drops COLLECTED objects by default**, and
+  per-frame garbage is exactly the collected kind. Pass
+  `includeObjectsCollectedByMinorGC` and `includeObjectsCollectedByMajorGC`, or
+  a function allocating kilobytes a frame reads as zero in BOTH builds of an
+  A/B — which looks like a fix that did nothing rather than an instrument that
+  saw nothing.
+- **Attribute each sample to the innermost frame under `/src/`**, and keep the
+  innermost frame of all beside it: a builtin (`subarray`, `Set`, `add`,
+  `assign`, `hypot`) or a Babylon getter there IS the answer. A
+  `samplingInterval` of 16 bytes over ten seconds of a round resolves tens of
+  bytes a frame. Always run the parent commit the same way — a row present in
+  both builds is not the change's.
+
+**A function that runs ONCE A FRAME never reaches V8's top tier, and that
+changes what allocates in it.** Measured in a live round with
+`--js-flags=--allow-natives-syntax` and `%GetOptimizationStatus`:
+`GiVolume.chooseFast` and `LocalShadows.packDynamic` were still on MAGLEV a
+minute in, while `LocalShadows.reaches` — called per box per face, thousands of
+times a second — was on TurboFan. **Calibrate the status bits before reading
+them**, against a throwaway function forced with `%OptimizeFunctionOnNextCall`
+and one forced with `%OptimizeMaglevOnNextCall`; the layout moves between V8
+versions and a bit read from memory was wrong here. On the mid tier:
+
+- **Every `Vector3` `.x`/`.y`/`.z` read is a boxed number**, because Maglev does
+  not inline Babylon's getters. Hand-inlining `Vector3.Distance` into
+  `chooseFast` as `p.x - eye.x` arithmetic took it from 3.3 kB to 6 kB a frame:
+  it traded one boxed return per fixture for six boxed getter reads.
+- **A double passed to or returned from a call it does not inline is boxed** —
+  `Vector3.Distance`'s result, a `score` argument, six box extents as
+  parameters.
+- **`for...of` over an array allocates an iterator per loop**, and an inner loop
+  runs once per outer element (~1.7 kB a frame in `chooseFast`'s cluster test).
+- **`Object.assign`, `subarray` and `Math.hypot` allocate** on every call.
+
+What works is to put the per-ELEMENT work in a small method that the loop calls
+often enough to reach TurboFan, with no double crossing its boundary — objects
+in, an integer or a boolean out (`GiVolume.fastKind`, `LocalShadows.reaches`
+reading its box from an array and offset) — and to write the rest as indexed
+loops over typed arrays and field-by-field copies. Measured on Hollowmere:
+`packDynamic` 7,117 → 155 B/frame, `chooseFast` 3,293 → 76. **Check a rewrite
+with the sampler rather than by reading it**: which tier a function lands on is
+decided by its call count, not by how the code looks.
+
 ---
 
 ## Reading a capture
