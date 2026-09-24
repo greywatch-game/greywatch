@@ -43,6 +43,7 @@ import {
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { extrude, loft, type ProfilePoint, type Ring } from "./facet";
 import type { SightId } from "./sights";
 
 export const BODY = "#2b2b33"; // aluminium upper receiver, barrel, hinge block
@@ -163,6 +164,16 @@ export function wornSight(
  */
 export function magDropAxis(rake: number): Vector3 {
   return new Vector3(0, -Math.cos(rake), -Math.sin(rake));
+}
+
+/**
+ * A loft section stated by where its FRONT and BACK faces are rather than by
+ * a centre and a depth — which is how a grip is drawn: a finger groove moves
+ * the front face and nothing else, and a palm swell the back. `front` is the
+ * larger z. `k` is the corner cut, as on any `Ring`.
+ */
+export function spanRing(y: number, w: number, front: number, back: number, k = 0.4): Ring {
+  return { y, w, d: front - back, z: (front + back) / 2, k };
 }
 
 /** Where one hand grips, and where its elbow trails, in weapon-local units. */
@@ -382,6 +393,44 @@ export class WeaponBuild {
   }
 
   /**
+   * A SLAB: a side profile (`[z, y]` points, either winding, concave allowed)
+   * extruded `width` across the weapon about `x`, every long edge bevelled back
+   * by `bevel` — `facet.extrude`, which carries the argument. This is the
+   * primitive for anything whose character is its outline from the side: a
+   * receiver, a stock, a trigger guard.
+   */
+  slab(
+    name: string,
+    color: string,
+    profile: readonly ProfilePoint[],
+    width: number,
+    bevel: number,
+    x = 0,
+    parent: TransformNode = this.root,
+  ): Mesh {
+    const m = extrude(`${this.prefix}_${name}`, this.scene, profile, width, bevel, x);
+    m.parent = parent;
+    return this.collect(color, m);
+  }
+
+  /**
+   * A faceted LOFT standing up its parent's y — `facet.loft` — for the parts a
+   * hand closes round: grips, foregrips, the magazine. Hung off a raking
+   * `pivot`, its rings are in the pivot's frame, so a grip's swell and grooves
+   * are authored straight and the rake is the pivot's job.
+   */
+  upright(
+    name: string,
+    color: string,
+    rings: readonly Ring[],
+    parent: TransformNode = this.root,
+  ): Mesh {
+    const m = loft(`${this.prefix}_${name}`, this.scene, rings);
+    m.parent = parent;
+    return this.collect(color, m);
+  }
+
+  /**
    * A round shell around an axis parallel to the bore: `sides` slabs, each
    * turned to face its own facet. Used for optic housings and muzzle cages.
    *
@@ -434,6 +483,60 @@ export class WeaponBuild {
         this.root,
         -a,
       );
+    }
+  }
+
+  /**
+   * A PICATINNY rail: a narrow spine with a run of separate dovetailed teeth
+   * stood on it, and real slots between them that go down to the spine.
+   *
+   * A rail modelled as a bar with ribs laid over its top reads as SOLID —
+   * the ribs are proud by a couple of millimetres and the bar is as wide as
+   * they are, so the eye sees a plank with a pattern on it. What makes a rail
+   * read as one is that you can see INTO the slots and under the flare: the
+   * teeth are wider at the shoulder than at the neck, so each carries a shadow
+   * line down both flanks, and each gap is a genuine step in depth that
+   * `CelInk` draws as a silhouette.
+   *
+   * `(x, y, z0)` is the base of the rail and the centre of its first tooth;
+   * the rail runs `count` teeth at `pitch` along +z, standing `height` off its
+   * base toward `facing`, `width` across the flare. The spine is `BODY` and
+   * the teeth `METAL`, so the rail stays a receiver-dark bar whose lands catch
+   * the light — and so a finish repaints them as the fittings they are.
+   */
+  picatinny(
+    name: string,
+    x: number,
+    y: number,
+    z0: number,
+    count: number,
+    {
+      width,
+      height,
+      pitch = 0.02,
+      facing = "up",
+    }: { width: number; height: number; pitch?: number; facing?: "up" | "down" | "left" | "right" },
+  ): void {
+    const rotZ = { up: 0, down: Math.PI, left: Math.PI / 2, right: -Math.PI / 2 }[facing];
+    const n = new TransformNode(`${this.prefix}_${name}`, this.scene);
+    n.parent = this.root;
+    n.position.set(x, y, z0);
+    n.rotation.z = rotZ;
+    this.pivots.push(n);
+    const len = (count - 1) * pitch;
+    const tooth = pitch * 0.55;
+    const neck = height * 0.4;
+    // The spine: continuous under the whole run, as deep as the slots are cut.
+    this.box(`${name}Spine`, BODY, width * 0.62, neck, len + tooth, 0, neck / 2, len / 2, n);
+    for (let i = 0; i < count; i++) {
+      const m = loft(`${this.prefix}_${name}Tooth`, this.scene, [
+        { y: neck * 0.8, w: width * 0.66, d: tooth, z: i * pitch },
+        { y: height * 0.55, w: width, d: tooth, z: i * pitch },
+        { y: height * 0.8, w: width, d: tooth, z: i * pitch },
+        { y: height, w: width * 0.86, d: tooth, z: i * pitch },
+      ]);
+      m.parent = n;
+      this.collect(METAL, m);
     }
   }
 

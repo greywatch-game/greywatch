@@ -2202,7 +2202,57 @@ already applied, so there is nothing for a confirm and a cancel to disagree abou
 
 ## Procedural models
 
-`RifleModel.buildRifle()` merges its ~150 static parts into one mesh per colour
+**A weapon is SCULPTED, not stacked, and the rifle is the reference for what
+that means.** What made the kit read as toys was never the box count but that
+every side of every part was parallel to its opposite — a receiver the same
+depth end to end, a grip as square at the toe as at the web, a magazine that is
+two bricks with a kink. Two primitives in `facet.ts`, both reached through
+`WeaponBuild`, replace the box wherever a part has a character:
+
+| primitive | `WeaponBuild` | for |
+| --- | --- | --- |
+| the SLAB — a side profile extruded across x, every long edge bevelled (`extrude`) | `slab` | anything whose character is its OUTLINE from the side: receiver, deck, stock struts and butt, handguard, gas block, trigger guard (a U), trigger (a hook), vent slots |
+| the LOFT — chamfered sections stacked up a pivot (`loft`) | `upright` | anything a hand closes round or that CURVES along its length: grip, foregrip, magwell, magazine |
+
+**A rail is `picatinny`, never a bar with ribs laid on it.** Ribs proud by a
+couple of millimetres over a bar as wide as they are read as a plank with a
+pattern on it; what reads as a RAIL is that you can see into the slots and
+under the dovetail's flare, so the helper stands separate teeth on a narrow
+spine, each gap a real depth step the ink draws. It faces any of four ways,
+so a weapon's side and bottom rails are the same call as its top one.
+
+Three habits make the difference and each is cheap. **Draw the side view
+first**, the way a gun is drawn on paper — a profile point costs nothing and a
+slope is what a box cannot give. **State a grip by its two FACES**
+(`spanRing(y, w, front, back)`) rather than a centre and a depth, because a
+finger groove moves the front face and a palm swell the back, and nothing else.
+**Step a width down as the part rises** (the rifle's body, deck and rail are
+80, 68 and 58 mm), because the shelf that makes is the line a real receiver
+has and one slab cannot. **Sink a panel by building its RIM** — the stock is a
+thin web with a frame stood proud of it on both faces, since a slab cannot be
+cut into and a recess is most of what makes a moulded part read as moulded.
+
+**What reads as a TOY rather than a stylised weapon is scale and value, not
+style**, and the rifle's second pass was almost entirely this list. Take the
+proportions from PHOTOGRAPHS of the real weapon (the SCAR-H: a long, deep,
+even upper; a shallow lower under its rear half; a barrel standing well out;
+a straight 7.62 magazine) rather than from memory. Put detail at its REAL
+pitch — a rail slotted every 7.5 cm is a toy and one slotted every 2.5 is a
+rail. Keep controls SMALL and in the furniture's own dark: a bright steel
+block the size of a finger (a port, a lever, a floorplate) is the single
+quickest giveaway, and `METAL` is for thin repeated detail that catches light,
+not for slabs. Put the machining on the flat faces as dark inlays a hair
+proud of them (`RUBBER`, the charging-handle channel, the lightening slots,
+the port), which breaks a large plane without adding a silhouette. The
+hand-drawn read survives all of it, because it comes from the flat bands and
+the ink, not from exaggeration. Boxes stay where a box is honest: rails and their
+ribs, pins, buttons, levers. A bevel must stay under half the thinnest wall in
+its profile or the inset outline folds through itself, and every bevel is two
+crease strokes for `CelInk` — at the near band's weight that is a fine line
+inside the contour, which is the hand-drawn read; do not bevel parts so small
+the two strokes merge into a smudge.
+
+`RifleModel.buildRifle()` merges its static parts into one mesh per colour
 (BODY/POLYMER/METAL/RUBBER/BRASS) — that merge is what makes the outline pass draw
 one border per colour group instead of a black shell around every screw, and it is
 what makes detail nearly free: one draw per colour however many boxes go in. A

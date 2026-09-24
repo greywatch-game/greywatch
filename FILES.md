@@ -271,8 +271,12 @@ src/
     weaponKit.ts        # The build accumulator every weapon model is written
                         #   in + WeaponParts and WeaponSights (rail, or fixed),
                         #   and the five colour groups a weapon merges into —
-                        #   which are also what a finish repaints
-    RifleModel.ts       # Low-poly SCAR-pattern battle rifle
+                        #   which are also what a finish repaints — and the
+                        #   primitives: box, slab, upright, picatinny, shell
+    RifleModel.ts       # Low-poly SCAR-H battle rifle — the first
+                        #   weapon SCULPTED rather than stacked: bevelled
+                        #   profile slabs and contoured lofts, the design
+                        #   language the rest of the kit is to follow
     CarbineModel.ts     # Low-poly polymer bullpup burst carbine —
                         #   magazine behind the grip, the rail carried on a
                         #   spine over an OPEN window, a skeletonised butt,
@@ -390,10 +394,12 @@ src/
                         #   phase and stepLength, velocity in the feet's frame,
                         #   kick, reload, ready. Bot and NetSoldier drive the
                         #   same one the same way
-    facet.ts            # The faceted LOFT: chamfered cross-sections joined
-                        #   and shaded flat, merged beside boxes. The soldier
-                        #   and its rifle are cut from it; the slung launcher
-                        #   is still boxes
+    facet.ts            # The faceted LOFT (chamfered cross-sections joined)
+                        #   and the bevelled SLAB (a side profile extruded,
+                        #   concave allowed), both shaded flat and merged
+                        #   beside boxes. The soldier and its rifle are cut
+                        #   from the loft, the first-person rifle from both;
+                        #   the slung launcher is still boxes
     NetSoldier.ts       # Somebody else, drawn from the wire: one rig, the
                         #   interpolation buffer behind it, the gait its boots
                         #   are heard off, no behaviour at all
