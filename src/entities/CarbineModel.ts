@@ -60,6 +60,9 @@ const MOUNT: OpticMount = {
   mountZ: 0.08,
   ironRearZ: -0.14,
   ironFrontZ: 0.33,
+  // The handle's rail ends at 0.356 and nothing forward of it stands as high:
+  // the barrel is a handle's depth under it.
+  reach: 0.28,
 };
 
 /**

@@ -61,6 +61,8 @@ const MOUNT: OpticMount = {
   mountZ: 0,
   ironRearZ: -0.14,
   ironFrontZ: 0.26,
+  // The rail ends at 0.386, and the handguard and muzzle past it are lower.
+  reach: 0.39,
 };
 
 /** Where each hand grips, in weapon-local units. */

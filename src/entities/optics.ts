@@ -57,6 +57,18 @@ export interface OpticMount {
    * Absent is the shared rise, so a weapon saying nothing is unaffected.
    */
   ironRise?: number;
+  /**
+   * How far past `mountZ` this weapon's top deck stands at rail height — the
+   * far end of its rail, or whatever is as high beyond it — when that is short
+   * of `RAIL_REACH`. Every sight whose rise is SOLVED against the rail is
+   * carried on it (`reachOf`) — the holo, the reflex, the green dot and the
+   * prism — so a short rail buys lower sights instead of ones solved against a
+   * rail the weapon does not have. The picture through each is unchanged: its
+   * cone is fixed against `RAIL_REACH`, and only the height it stands at moves.
+   * The folded front leaf counts — it stands on the rail. Absent is `RAIL_REACH`, so a weapon saying nothing is
+   * unaffected; stating one LONGER than the rail runs is always safe.
+   */
+  reach?: number;
 }
 
 /**
@@ -94,7 +106,7 @@ export const eyeDistance = (id: SightId): number =>
  * the old bulk: the optics themselves came down by a third to a half, the
  * mounts under them by rather less. The holo's and the reflex's are not in
  * this list at all any more: both are SOLVED from their cones, after
- * `RAIL_REACH` (`WIN_RISE`, `REFLEX_RISE`).
+ * `RAIL_REACH` (`winRiseOf`, `reflexRiseOf`).
  */
 const IRON_RISE = 0.036;
 const SCOPE_RISE = 0.1;
@@ -150,6 +162,9 @@ const ironRiseOf = (mount: OpticMount): number => mount.ironRise ?? IRON_RISE;
  */
 const RAIL_REACH = 0.55;
 
+/** This weapon's own reach — see `OpticMount.reach`. */
+const reachOf = (mount: OpticMount): number => mount.reach ?? RAIL_REACH;
+
 /**
  * THE SIZE OF THE THREE OPTICS AN EYE IS CLOSE TO, AS A MULTIPLE OF THE SIZE
  * THEY WERE DRAWN AT — and the reason none of their lengths is a free number.
@@ -162,7 +177,7 @@ const RAIL_REACH = 0.55;
  * by its factor, so the eye relief in `CONFIG.sights` can be brought in and
  * the sight comes down with it: the picture through it is the same angle, and
  * the hardware is the size of an optic. The rise under each is SOLVED rather
- * than scaled (`WIN_RISE`, `REFLEX_RISE`), because the cone it has to clear
+ * than scaled (`winRiseOf`, `reflexRiseOf`), because the cone it has to clear
  * runs to the far end of a rail that did not get any shorter.
  *
  * The magnified sights are sized off `eyeDistance` directly and need none of
@@ -190,14 +205,15 @@ const WALL = 0.007 * HOLO_K;
 
 /**
  * The holo's rise, solved: the lowest the window can be carried with its
- * lower edge's ray clearing the far end of the rail by `HOLO_FLOOR_GAP`. The
+ * lower edge's ray clearing the far end of THIS weapon's rail (`reachOf`) by
+ * `HOLO_FLOOR_GAP`. The
  * cone is the bore's own half-angle at the eye, which does not change as the
  * optic is scaled — so a smaller sight stands on a taller saddle, the way a
  * real one is carried on a riser.
  */
 const HOLO_FLOOR_GAP = 0.008;
-const WIN_RISE =
-  (BORE / 2 / eyeDistance("holo")) * (eyeDistance("holo") + RAIL_REACH) + HOLO_FLOOR_GAP;
+const winRiseOf = (mount: OpticMount): number =>
+  (BORE / 2 / eyeDistance("holo")) * (eyeDistance("holo") + reachOf(mount)) + HOLO_FLOOR_GAP;
 
 /**
  * The two iron stations share a bore, which is what gives the picture its
@@ -230,7 +246,8 @@ const REFLEX_FLOOR_GAP = 0.005 * REFLEX_K;
  * window is that angle at the eye's own distance.
  */
 const REFLEX_CONE = 0.0669;
-const REFLEX_RISE = REFLEX_CONE * (eyeDistance("reflex") + RAIL_REACH) + REFLEX_FLOOR_GAP;
+const reflexRiseOf = (mount: OpticMount): number =>
+  REFLEX_CONE * (eyeDistance("reflex") + reachOf(mount)) + REFLEX_FLOOR_GAP;
 const REFLEX_WIN_H = 2 * REFLEX_CONE * eyeDistance("reflex");
 const REFLEX_FRAME = Math.max(0.004, 0.006 * REFLEX_K);
 
@@ -328,28 +345,56 @@ export const PRISM_CONE =
   (eyeDistance("prism") + RAIL_REACH - PRISM_OCULAR_DZ);
 
 /** `scopeBore`'s twin: the clear bore a prism section ending at `dz` carries. */
+/**
+ * The prism's rise on this weapon: `PRISM_RISE` is the rise on the longest
+ * rail and what fixes the cone, and this is the same inequality solved against
+ * the weapon's own reach — `dot2RiseOf`'s reasoning exactly.
+ */
+const prismRiseOf = (mount: OpticMount): number =>
+  PRISM_CONE * (eyeDistance("prism") + reachOf(mount) - PRISM_OCULAR_DZ) + PRISM_FLOOR_GAP;
+
 const prismBore = (dz: number): number =>
   2 * PRISM_CONE * (eyeDistance("prism") + dz - PRISM_OCULAR_DZ);
 
 /**
  * The 2x green dot. The prism's solve one size down — a stepped tube around a
- * cone that `DOT2_RISE` pays for against `RAIL_REACH` — and shorter again, two
- * sections rather than three, because at 2x there is little glass to carry and
- * a short body is what keeps it reading as a dot sight rather than a small scope.
+ * cone that `DOT2_RISE` pays for against `RAIL_REACH` — and shorter again,
+ * because at 2x there is little glass to carry and a short body is what keeps
+ * it reading as a dot sight rather than a small scope.
  *
- * The cone comes out at about 0.096, which at 2x is a circle a little over a
- * third of the screen high: wider than the holo's window, smaller than the
- * prism's picture, the order the magnifications are in.
+ * The cone comes out at about 0.083, which at 2x is a circle about three
+ * tenths of the screen high: wider than the holo's window, smaller than the
+ * prism's picture, the order the magnifications are in. It was 0.096 once, and
+ * that bought a picture a little over a third of the screen at the price of a
+ * tube and a riser big enough to read as a scope standing on a post — this is
+ * the number to move if the sight is ever to come down again, because the rise
+ * and the tube's girth both scale with it.
+ *
+ * `DOT2_RISE` is the rise on the LONGEST rail, and it is what fixes the cone —
+ * the picture — for every weapon. What a weapon actually carries it at is
+ * `dot2RiseOf`, the same inequality solved against that weapon's own
+ * `OpticMount.reach`: on a short rail the cone reaches nothing at rail height
+ * until much nearer the eye, so the sight comes down by the difference. On the
+ * rifle, the DMR, the sniper and the LMG the binding part is the muzzle device
+ * or the front sight base, not the rail, and none of them has any to give.
+ *
+ * Three sections rather than two, for the prism's reason (`PRISM_WALL`): each
+ * step is only as proud of the cone as its own length, so the eyepiece end is
+ * the slim end of a taper rather than a can the width of the objective.
  */
-const DOT2_RISE = 0.09;
+const DOT2_RISE = 0.078;
 const DOT2_WALL = 0.005;
-const DOT2_SECTIONS = 2;
+const DOT2_SECTIONS = 3;
 const DOT2_OCULAR_DZ = -0.04;
 const DOT2_OBJECTIVE_DZ = 0.04;
 const DOT2_FLOOR_GAP = 0.0025;
 const DOT2_CONE =
   (DOT2_RISE - DOT2_FLOOR_GAP) /
   (eyeDistance("greenDot") + RAIL_REACH - DOT2_OCULAR_DZ);
+/** The green dot's rise on this weapon — see `DOT2_RISE`. */
+const dot2RiseOf = (mount: OpticMount): number =>
+  DOT2_CONE * (eyeDistance("greenDot") + reachOf(mount) - DOT2_OCULAR_DZ) +
+  DOT2_FLOOR_GAP;
 /**
  * The dot, and the one colour on any reticle here that is not `RETICLE`. Small
  * for the reason the 6x's is small — a dot is a subtense, and this one hangs
@@ -540,11 +585,11 @@ export function buildOptics(
 ): { sights: Record<SightId, SightAssembly>; meshes: Mesh[] } {
   const b = build;
   const ironY = mount.railTop + ironRiseOf(mount);
-  const winY = mount.railTop + WIN_RISE;
+  const winY = mount.railTop + winRiseOf(mount);
   const scopeY = mount.railTop + SCOPE_RISE;
-  const reflexY = mount.railTop + REFLEX_RISE;
-  const prismY = mount.railTop + PRISM_RISE;
-  const dot2Y = mount.railTop + DOT2_RISE;
+  const reflexY = mount.railTop + reflexRiseOf(mount);
+  const prismY = mount.railTop + prismRiseOf(mount);
+  const dot2Y = mount.railTop + dot2RiseOf(mount);
   const longY = mount.railTop + LONG_RISE;
   const winZ = mount.mountZ;
 
@@ -902,9 +947,15 @@ export function buildOptics(
   };
 
   /**
-   * The 2x green dot: a stub of stepped tube on one low mount, with a single
+   * The 2x green dot: a short tapered tube on one slim mount, with a single
    * green dot hung near the objective. Built as the prism is — every part sized
    * OUTWARD from its own section's radius so nothing reaches into the cone.
+   *
+   * Kept SLEEK on purpose, because the tube itself is as small as the picture
+   * allows and everything bolted to it is what reads as bulk: the rims are thin
+   * lips rather than a hood, the caps stand a few millimetres proud rather than
+   * a turret's height, and the mount is a narrow block on a wider clamp foot
+   * with the objective overhanging it.
    */
   const buildGreenDot = (node: TransformNode): Vector3 => {
     foldedIrons(false);
@@ -926,30 +977,35 @@ export function buildOptics(
     const rOcular = outerAt(DOT2_OCULAR_DZ);
     const rObjective = outerAt(DOT2_OBJECTIVE_DZ);
     // Both rims at their own section's outer radius, so neither narrows the
-    // picture; the objective's is heavier, a hood over the glass the dot sits in.
-    b.shell("dot2Ocular", POLYMER, rOcular * 2, 0.005, 0.012, dot2Y, ocularZ - 0.002);
-    b.shell("dot2Hood", POLYMER, rObjective * 2, 0.006, 0.016, dot2Y, objectiveZ + 0.006);
-    // One block from the rail to the ocular section's underside, the prism's
-    // mount — the objective end overhangs it.
-    const baseBottom = mount.railTop - 0.003;
-    const baseTop = dot2Y - rOcular - 0.004;
+    // picture, and both thin lips: the ocular's a rubber ring, the objective's
+    // a short bevel over the glass the dot sits in.
+    b.shell("dot2Ocular", RUBBER, rOcular * 2, 0.004, 0.01, dot2Y, ocularZ + 0.001);
+    b.shell("dot2Bevel", POLYMER, rObjective * 2, 0.0035, 0.01, dot2Y, objectiveZ - 0.001);
+    // A narrow block from a wider clamp foot to the ocular section's underside,
+    // spanning the rear two sections — the objective overhangs it.
+    const baseZ = winZ - 0.014;
+    const footH = 0.008;
+    const baseBottom = mount.railTop - 0.002;
+    const baseTop = dot2Y - rOcular - 0.002;
+    b.box("dot2Foot", METAL, 0.04, footH, 0.05, 0, baseBottom + footH / 2, baseZ);
     b.box(
       "dot2Mount",
       METAL,
-      0.046,
+      0.03,
       baseTop - baseBottom,
-      0.07,
+      0.044,
       0,
       (baseBottom + baseTop) / 2,
-      winZ - 0.004,
+      baseZ,
     );
-    b.box("dot2Lever", METAL, 0.012, 0.022, 0.036, 0.029, mount.railTop + 0.013, winZ - 0.012);
-    // Low capped turrets, and the brightness knob opposite them.
-    const turretZ = winZ + 0.004;
-    const rTurret = outerAt(0.004);
-    b.pin("dot2Elev", METAL, 0.02, 0.011, 0, dot2Y + rTurret + 0.004, turretZ, "y");
-    b.pin("dot2Wind", METAL, 0.02, 0.011, rTurret + 0.004, dot2Y, turretZ, "x");
-    b.pin("dot2Illum", METAL, 0.026, 0.012, -(rTurret + 0.005), dot2Y, turretZ, "x");
+    b.box("dot2Lever", METAL, 0.007, 0.012, 0.03, 0.0235, baseBottom + footH / 2, baseZ - 0.004);
+    // Flat caps standing a few millimetres proud, and the brightness dial
+    // opposite the windage one.
+    const turretZ = winZ;
+    const rTurret = outerAt(0);
+    b.pin("dot2Elev", METAL, 0.016, 0.008, 0, dot2Y + rTurret + 0.0025, turretZ, "y");
+    b.pin("dot2Wind", METAL, 0.016, 0.008, rTurret + 0.0025, dot2Y, turretZ, "x");
+    b.pin("dot2Illum", METAL, 0.02, 0.008, -(rTurret + 0.0025), dot2Y, turretZ, "x");
     b.merge("greenDot", node);
 
     // Three black posts with fine hashes, stopping well short of the axis: the
