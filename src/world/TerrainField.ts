@@ -103,8 +103,11 @@ export class TerrainField {
    */
   readonly margin: number;
 
-  /** Peak-to-trough of the borderland's roll; see `Borderland.roll`. */
-  private readonly roll: number;
+  /**
+   * Peak-to-trough of the borderland's roll; see `Borderland.roll`. Public
+   * only so `GiVolume` can hand the GPU's copy of `borderRoll` the same shape.
+   */
+  readonly roll: number;
 
   /**
    * How far out the roll takes to reach full amplitude, in metres — the map's
@@ -117,8 +120,10 @@ export class TerrainField {
    * twenty-seven and a third of six hundred is two hundred, so a map that
    * grows its margin to put the horizon past the fog would, on the fraction
    * alone, flatten the one strip of it a living player ever stands in.
+   *
+   * Public for the same reason as `roll`.
    */
-  private readonly ease: number;
+  readonly ease: number;
 
   constructor(
     readonly field?: Heightfield,
@@ -193,7 +198,8 @@ export class TerrainField {
    *   again, wearing grass.
    * - **Pure, and closed form.** No table, no seed and no state: the client,
    *   the authority and the collision bake all evaluate it and all have to
-   *   agree to the float. A noise lattice would agree too and would have to be
+   *   agree to the float. The GI trace carries a WGSL copy (`giTrace.ts`'s
+   *   `borderRoll`), so a change here owes that one too. A noise lattice would agree too and would have to be
    *   built, carried and kept in step for a shape nobody fights over.
    */
   private borderRoll(x: number, z: number): number {

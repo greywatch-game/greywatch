@@ -608,7 +608,10 @@ export class GiVolume {
     const hData = f ? Float32Array.from(f.heights) : new Float32Array(4);
     let top = 0;
     for (let i = 0; i < hData.length; i++) if (hData[i] > top) top = hData[i];
-    this.topY = top;
+    // The borderland rolls up to half its peak-to-trough over the clamped
+    // edge, and the march's "above the highest ground" exit must not skip it.
+    const t = map.terrain;
+    this.topY = f && t.margin > 0 ? top + t.roll / 2 : top;
     this.heights = new StorageBuffer(
       this.engine,
       hData.byteLength,
@@ -625,6 +628,7 @@ export class GiVolume {
       f ? [f.size, f.cell, (f.size * f.cell) / 2, 0] : [1, 1, map.size / 2, 1],
       8,
     );
+    rows.set(f ? [t.margin, t.roll, t.ease, 0] : [0, 0, 1, 0], 48);
 
     // A fresh history: every probe starts unconverged, and so stale.
     this.state?.clear();

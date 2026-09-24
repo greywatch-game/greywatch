@@ -76,6 +76,7 @@ export const GI_STATE_VEC4 = 4;
  *  6: sky fill, blend                      7: floor albedo, highest ground
  *  8: spacing, columns, layers, layer h    9: slow, fast, -, hull counts
  * 10: window origin column x, z, ref y, probe total    11: cursor
+ * 12: borderland margin, roll, ease, -
  */
 function common(): string {
   const L = GI_LAYOUT;
@@ -128,9 +129,10 @@ fn texelOf(slot: u32) -> vec3i {
   return vec3i(i32(tx), i32(k), i32(tz));
 }
 
-// The floor under a point, bilinear over the heightfield the terrain was cut
-// from. Clamped at the grid's edge: past it the volume is looking at ground it
-// will fade out before anybody sees the difference.
+// The floor under a point: bilinear over the heightfield the terrain was cut
+// from, clamped at the grid's edge, plus the borderland's roll past it —
+// TerrainField.heightAt exactly, so a probe in the margin stands over the
+// ground that is drawn there rather than up to roll/2 inside it.
 fn heightAt(x: f32, z: f32) -> f32 {
   let hf = P[SC + 2u];
   if (hf.w > 0.5) {
@@ -149,7 +151,24 @@ fn heightAt(x: f32, z: f32) -> f32 {
   let h10 = H[j0 * row + i0 + 1u];
   let h01 = H[(j0 + 1u) * row + i0];
   let h11 = H[(j0 + 1u) * row + i0 + 1u];
-  return mix(mix(h00, h10, tx), mix(h01, h11, tx), tz);
+  return mix(mix(h00, h10, tx), mix(h01, h11, tx), tz) + borderRoll(x, z, hf.z);
+}
+
+// TerrainField.borderRoll, line for line: zero inside the play square,
+// eased in over ease, two long sines past it. A change there owes this.
+fn borderRoll(x: f32, z: f32, half: f32) -> f32 {
+  let b = P[SC + 12u];
+  if (b.x <= 0.0) {
+    return 0.0;
+  }
+  let beyond = max(max(abs(x) - half, abs(z) - half), 0.0);
+  if (beyond <= 0.0) {
+    return 0.0;
+  }
+  let t = min(1.0, beyond / b.z);
+  let ramp = t * t * (3.0 - 2.0 * t);
+  let wave = sin(x / 74.0 + z / 96.0) * 0.62 + sin(z / 31.0 - x / 44.0) * 0.38;
+  return wave * ramp * b.y * 0.5;
 }
 
 fn terrainNormal(x: f32, z: f32) -> vec3f {
