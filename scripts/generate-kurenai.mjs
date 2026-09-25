@@ -631,29 +631,56 @@ section(placements, "A: Koyo-ji Temple");
   const W = east - west;
   const north = 108;
   const D = north - gateZ;
-  const wall = (x, z, turn, len) =>
+  // One run: CLAIMED along [from, to] and DRAWN along [drawFrom, drawTo].
+  // **The two differ only where a run meets the gate or a corner**, and there
+  // the drawing has to go further than the claim: a run that stops where its
+  // neighbour's claim starts leaves a slit a round and a look go through (the
+  // gate's collider is 9.4 m wide against the 10 m it claims, and a side run
+  // stopping at the end wall's claim left 0.6 m at every corner). The ground
+  // it reaches into is its neighbour's claim, so nothing else can stand there;
+  // the claims are the ones the precinct always made, so the rest of the
+  // seeded layout is unmoved.
+  const wall = (turn, at, from, to, drawFrom = from, drawTo = to) => {
+    const span = (a, b) => (turn === 0 ? [(a + b) / 2, at] : [at, (a + b) / 2]);
+    const foot = (len) => (turn === 0 ? [len, 1] : [1, len]);
     // Claimed a hair short, so two runs laid end to end do not collide in
     // the last bit of a float.
-    must("gardenWall", x, z, turn, len - 0.05, 1, { length: Number(len.toFixed(2)) }, { pad: 0, flat: 0.5 });
-  const gateHalf = 5;
+    const [x, z] = span(from, to);
+    const [fw, fd] = foot(to - from - 0.05);
+    const [dx, dz] = span(drawFrom, drawTo);
+    const [dw, dd] = foot(drawTo - drawFrom);
+    const len = drawTo - drawFrom;
+    if (!free(x, z, fw, fd, 0) || relief(dx, dz, dw, dd) > 0.5 || wet(dx, dz)) {
+      throw new Error(`set piece: the precinct wall at (${dx.toFixed(0)}, ${dz.toFixed(0)}) does not fit`);
+    }
+    claim(x, z, fw, fd, 0, "solid");
+    place("gardenWall", dx, dz, turn, len, 1, { length: Number(len.toFixed(2)) }, { force: true, noClaim: true });
+  };
+  // What the claims leave clear of the gate, and what the gate's own collider
+  // reaches: its wings end at half its width (`buildTempleGate`, 4.6 + 2 x 2.4).
+  const gateClear = 5.2;
+  const gateWing = 4.7;
+  // Half a wall's collider (`buildGardenWall`), which a side run reaches past
+  // an end wall's line to meet its outer face.
+  const wallHalf = 0.4;
   {
-    const wRun = (cx - gateHalf - 0.2 - west) / 2;
-    const eRun = (east - cx - gateHalf - 0.2) / 2;
-    wall(cx - gateHalf - 0.2 - wRun / 2, gateZ, 0, wRun);
-    wall(cx - gateHalf - 0.2 - wRun * 1.5, gateZ, 0, wRun);
-    wall(cx + gateHalf + 0.2 + eRun / 2, gateZ, 0, eRun);
-    wall(cx + gateHalf + 0.2 + eRun * 1.5, gateZ, 0, eRun);
+    const wRun = (cx - gateClear - west) / 2;
+    const eRun = (east - cx - gateClear) / 2;
+    wall(0, gateZ, cx - gateClear - wRun, cx - gateClear, cx - gateClear - wRun, cx - gateWing);
+    wall(0, gateZ, west, cx - gateClear - wRun);
+    wall(0, gateZ, cx + gateClear, cx + gateClear + eRun, cx + gateWing, cx + gateClear + eRun);
+    wall(0, gateZ, cx + gateClear + eRun, east);
   }
   for (const x of [west, east]) {
     // Two runs a side with a 6 m gap between them.
     const run = (D - 6) / 2;
-    wall(x, gateZ + run / 2 + 0.5, 1, run - 1);
-    wall(x, north - run / 2 - 0.5, 1, run - 1);
+    wall(1, x, gateZ + 1, gateZ + run, gateZ - wallHalf, gateZ + run);
+    wall(1, x, north - run, north - 1, north - run, north + wallHalf);
   }
   {
     const run = (W - 6) / 2;
-    wall(west + run / 2, north, 0, run);
-    wall(east - run / 2, north, 0, run);
+    wall(0, north, west, west + run);
+    wall(0, north, east - run, east);
   }
   // The hall at the back of the court, facing the gate.
   must("templeHall", cx, 96, 0, 19.2, 15.2, { width: 16, depth: 12, litWindows: true }, { pad: 0.5 });
