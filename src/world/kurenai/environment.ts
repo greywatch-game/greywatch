@@ -57,13 +57,15 @@ export const KurenaiEnvironment: EnvironmentSpec = {
    */
   floorColor: "#3f3526",
   /**
-   * FLAT — the plain cel colour with the world-space drift over it — and it is
-   * the only one of the five that is this place. `dirt` and `turf` both carve
-   * plates, which under a raking sun read as a cracked desert pan, and `sand`
-   * is dunes; the reference frame's ground is soft brown earth that carries
-   * its detail in what lies ON it (the leaf drifts, the stones, the paths).
+   * LOAM — soft earth under a canopy, moss in the hollows and last week's
+   * leaves gone to rust in drifts — and it is the one surface in the roster
+   * made for this place. `dirt` and `turf` both carve plates, which under a
+   * raking sun read as a cracked desert pan, and `sand` is dunes; `flat` was
+   * honest but read as one dead brown sheet between the leaf drifts. Loam's
+   * soil has no cell field in it at all, so the ground stays soft and the
+   * bright red on it is still the drifts' (`leafLitter`), not the texture's.
    */
-  floorSurface: "flat",
+  floorSurface: "loam",
   /**
    * The mountains: cedar-dark slopes a long way into a peach haze. Pulled
    * toward `fogColor` already, because at this range a saturated hill fights

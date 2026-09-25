@@ -263,8 +263,13 @@ engine. Seven things came out of building it and all of them outlive it:
   `npm run parity` and a live round all pass with it, so a blocking prop may be.
 - **A floor surface is judged under the map's own sun.** At 14.5 degrees
   `dirt` and `turf` both carve plates that read as a cracked desert pan, and
-  `sand` reads as dunes; a valley whose ground carries its detail in what lies
-  ON it (the drifts, the stones, the paths) is `flat`.
+  `sand` reads as dunes. Kurenai was `flat` for that reason and read as one
+  dead brown sheet, so it got a pattern of its own — `loam`, rounded mounds
+  of earth with NO cell field in the soil, moss pillowed over the hollows and
+  decayed leaves in drifts — rather than a retune of one that carves. It
+  carves deep all the same (`bumpScale` 0.08): a mound spends its depth on a
+  slope where a plate spends it on a step, and at 0.025 it read as a painted
+  sheet.
 - **A plot levelled at its natural height is only honest on gentle ground.**
   A farm's district flattened on the temple mountain's flank made a skirt at a
   0.6 gradient, and the fix was to move the mountain into the corner so the
@@ -542,7 +547,7 @@ otherwise be born with the shipped night sheen and never revisited.
 **What the floor is MADE of is a second per-map choice, and it owns no colour.**
 `EnvironmentSpec.floorSurface` names a pattern out of `src/world/floorSurfaces.ts`
 — `flat` (the default, and the plain cel colour the floor has always been), `dirt`,
-`gravel`, `sand` or `turf` — and every tone that pattern paints is *derived* from
+`gravel`, `sand`, `turf` or `loam` — and every tone that pattern paints is *derived* from
 `floorColor` by `ramp`, which quantizes the pattern's tone field onto a handful of
 flat multiples of it. That is the rule holding the two apart: `floorColor` is
 already what the untextured floor is, what `ridgeScreeColor` is asked to melt into
@@ -796,8 +801,8 @@ it texel for texel, a tile and a relief:
 
 Three of those rows are load-bearing beyond their own map.
 
-- **A road may not share a tile size with a floor pattern** (2.5, 4, 4.5 and
-  5 m — `floorSurfaces.ts`). Every ground texture in the tree is sampled at
+- **A road may not share a tile size with a floor pattern** (2.5, 4, 4.5, 5
+  and 5.5 m — `floorSurfaces.ts`). Every ground texture in the tree is sampled at
   `vPosW.xz`, so a track drawn with the floor's own field at the floor's own
   scale is in PHASE with the soil it crosses, grain for grain, and reads as a
   tint laid over the ground rather than as a surface laid on it. Hollowmere and

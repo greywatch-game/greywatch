@@ -67,6 +67,11 @@ const SURFACES: Record<FloorPatternId, FloorSurface> = {
   gravel: { label: "gravel", metersPerTile: 2.5, bumpScale: 0.03 },
   sand: { label: "sand", metersPerTile: 5, bumpScale: 0.015 },
   turf: { label: "turf", metersPerTile: 4.5, bumpScale: 0.03 },
+  // Settled clods ~46 cm across, carved ~4 cm deep between their crowns, and
+  // moss pillowed over them. Deeper than `dirt` because a mound spends its
+  // depth on a slope where a plate spends it on a step: at 0.025 this was a
+  // centimetre of parallax and read as a painted sheet.
+  loam: { label: "forest loam", metersPerTile: 5.5, bumpScale: 0.08 },
 };
 
 /** What a map may state for its floor. `flat` is the shipped, untextured one. */

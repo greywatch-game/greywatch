@@ -366,6 +366,31 @@ function shadeRgb(hex: string, mul: number, warm = 0): Rgb {
 }
 
 /**
+ * A tone derived from a base colour by scaling each channel on its own, then
+ * the whole by `mul`. `shadeRgb`'s warm axis trades red against blue and
+ * leaves green alone, which reaches rust and slate but never OLIVE — and a
+ * surface whose ladder has to hold moss as well as soil needs the green
+ * channel moved.
+ */
+function tintRgb(hex: string, mul: number, [kr, kg, kb]: Rgb): Rgb {
+  const [r, g, b] = rgbOf(hex);
+  const c = (v: number) => Math.round(Math.min(255, Math.max(0, v)));
+  return [c(r * kr * mul), c(g * kg * mul), c(b * kb * mul)];
+}
+
+/**
+ * A tone placed inside one BAND of a ladder that is several ladders laid end
+ * to end: `t` (0..1) picks a level among `count` starting at `first`, of
+ * `total` in the whole palette. What `paintAlbedo` does with it is exactly
+ * `first + floor(t * count)`, so a texel given a band can never posterize
+ * into its neighbour's — the grain that stipples a band's own boundaries
+ * stays inside it.
+ */
+function inBand(t: number, first: number, count: number, total: number): number {
+  return (first + clamp01(t) * count * 0.999) / total;
+}
+
+/**
  * The posterized ladder a tone field is quantized onto: `levels` flat tones
  * running from `lo` to `hi` times the base colour, warming (or cooling) as
  * they lighten.
@@ -586,7 +611,7 @@ export type RoadPatternId = Exclude<RoadSurface, "cobble">;
 interface RoadPattern {
   /**
    * Metres spanned by one texture repeat. Both are deliberately unequal to
-   * every floor pattern's (`floorSurfaces.ts`: 2.5, 4, 4.5 and 5) so a road can
+   * every floor pattern's (`floorSurfaces.ts`: 2.5, 4, 4.5, 5 and 5.5) so a road can
    * never come into phase with the ground it is lying on.
    */
   metersPerTile: number;
@@ -1156,6 +1181,182 @@ const FIELDS = {
     }
     return field;
   },
+
+  /**
+   * A woodland floor under maples: soft earth, moss in the damp, and the
+   * leaves that fell last week gone to rust in drifts across it.
+   *
+   * **There is no cell field in the SOIL, and that is the surface.** `dirt`
+   * is ground that has dried and pulled apart into plates, and under a low
+   * sun those plates are what a player sees — a cracked pan, which is not
+   * what the ground under a canopy is. Earth that is shaded, damp and
+   * covered every autumn stays soft: its relief is smooth undulation with a
+   * fine crumb over it, and nothing in it has an edge.
+   *
+   * **The ladder is three ladders end to end** (`inBand`): five levels of
+   * soil, two of moss, two of litter, each derived from the map's own
+   * `floorColor` — a surface still owns no colour, only which way each of its
+   * three materials moves away from the one it is given. So the tone written
+   * here is a band first and a level inside it second.
+   *
+   * The tile is 5.5 m, so the scales below read against ~1.07 cm per texel.
+   */
+  loam: (): Field => {
+    const field = blankField();
+    const { tone, height } = field;
+    const warpU = lattice(8, 0x10a1);
+    const warpV = lattice(8, 0x10a2);
+    // The undulation: six cells over the tile is a ~90 cm swell, three
+    // octaves down to ~23 cm. Plain fBm, not folded — folding is what creases
+    // soil into crumb with a groove round every lump, and this has none.
+    const swell = octaves(0x10a3, 3, 6);
+    // The CLODS: twelve cells over the tile, three octaves, lands them at 46,
+    // 23 and 11 cm — turned earth that has settled, which is the relief this
+    // surface is carved from. See where it is shaped, below, for why these
+    // are mounds and not plates.
+    const clods = octaves(0x10aa, 3, 12);
+    // The crumb over it, folded and quiet: 11 and 6 cm.
+    const crumb = octaves(0x10a4, 2, 48);
+    // Grain for the stipple, 4 and 2 cm.
+    const grit = octaves(0x10a5, 2, 128);
+    // Where the moss is: a ~80 cm field, so a cushion is a patch at the
+    // player's feet and a mottle across a court. At 1.4 m the cushions were
+    // a scatter of same-sized spots that advertised the tile from anywhere
+    // further than ten metres off: a tile cannot carry a feature much past a
+    // sixth of itself on open ground.
+    const mossField = octaves(0x10a6, 3, 7);
+    // The moss's own nap, 3 and 1.5 cm — velvet rather than crumb.
+    const nap = octaves(0x10a7, 2, 180);
+    // Leaves — the one place this file draws a SHAPE on purpose, because a
+    // leaf is an object and is meant to be read as one; the no-silhouettes
+    // rule is about soil that came back as pancakes, not about litter.
+    // Forty cells over the tile is a 14 cm cell, and a leaf fills
+    // most of one: a maple leaf is 8–12 cm across, and at this tile that is
+    // ~20 texels, which is enough for the five lobes to survive filtering at
+    // the player's feet. The jitter is held under 1 so neighbouring sites keep
+    // their distance and a leaf is not clipped by the next cell's border more
+    // than an overlap would clip it anyway.
+    const leaves = cells(40, 0x10a8, 0.7);
+    // Where they have DRIFTED: leaves on a floor are wind-sorted into
+    // windrows and pockets, and an even scatter is the one arrangement no
+    // autumn produces — the argument `dirt` makes about its grit.
+    const drift = octaves(0x10a9, 2, 5);
+
+    for (let y = 0; y < SIZE; y++) {
+      const v = y / SIZE;
+      for (let x = 0; x < SIZE; x++) {
+        const u = x / SIZE;
+        const i = y * SIZE + x;
+
+        const wu = u + (latticeAt(warpU, u, v) - 0.5) * 0.05;
+        const wv = v + (latticeAt(warpV, u, v) - 0.5) * 0.05;
+
+        const soft = spread(fbmAt(swell, wu, wv), 1.5);
+        const lump = billowAt(crumb, wu, wv);
+        const g = fbmAt(grit, u, v);
+
+        // **The soil is MOUNDS, and their shape is the whole difference from
+        // `dirt`.** A clod field is gently spread fBm bent by a smoothstep,
+        // which has no slope at EITHER end: a crest is a rounded shoulder and
+        // a hollow is a rounded dish between two of them — lumps a low sun
+        // lights on one side and shades on the other, with nothing in it that
+        // runs on as a groove. `dirt` gets the same read out of tilted PLATES,
+        // and a plate has an edge; a mound does not, which is what keeps this
+        // earth rather than a dried pan.
+        //
+        // **The dish is load-bearing.** Bent by `1 - (1 - m)^2` instead —
+        // round on top, steep at the bottom — and spread hard enough to clamp,
+        // every minimum of the noise became a narrow flat-floored pit, and the
+        // relief's own shadow and cavity filled each one black: a lawn of
+        // holes. A hollow may be deep; it may not be narrow at the bottom.
+        //
+        // The range is spent deliberately all the same. The relief is carved
+        // as a DEPTH (`CONFIG.graphics.relief`), so a field held in a narrow
+        // band in the middle — which this first was — is a centimetre of
+        // parallax at any `bumpScale`: the crests here reach ~0.85, the moss's
+        // crowns above them ~0.9, and the hollows bottom out near 0.3.
+        const m = spread(fbmAt(clods, wu, wv), 1.45);
+        const mound = m * m * (3 - 2 * m);
+        const bed = 0.3 + mound * 0.52 + (soft - 0.5) * 0.12;
+        let h = bed + (lump - 0.5) * 0.09 + (g - 0.5) * 0.04;
+
+        // MOSS holds the damp, so it favours the hollows: the mask is biased
+        // by how low the swell is. Its edge is dithered by the grain, which is
+        // what turns the band boundary into a stipple rather than a contour.
+        // The crumb frays the edge, so no two cushions share a silhouette.
+        const damp =
+          fbmAt(mossField, wu, wv) + (0.5 - soft) * 0.22 + (lump - 0.5) * 0.14;
+        const mossy = damp + (g - 0.5) * 0.06 > 0.6;
+        // The cushion rises softly over its last few centimetres rather than
+        // standing up as a step, which carved would read as a kerb.
+        //
+        // A cushion is a PILLOW over the clods rather than a coat on them: it
+        // fills the hollows and rounds over the crests, crowning just over the
+        // highest soil so the moss is the top of the relief wherever it grows
+        // and its edge is a soft shoulder the self-shadow can find.
+        const cushion = smoothstep(0.55, 0.68, damp);
+        const velvet = fbmAt(nap, u, v);
+        const pillow = Math.max(
+          0.8 + (soft - 0.5) * 0.14 + (velvet - 0.5) * 0.06,
+          bed + 0.06,
+        );
+        h = h * (1 - cushion) + pillow * cushion;
+
+        // A LEAF: a five-lobed star about its site, turned by its own roll.
+        // Only a share of the cells carry one, set by the drift — a quarter in
+        // a windrow, almost none on the open floor.
+        cellsAt(leaves, u, v, hitB);
+        const drifted = smoothstep(0.42, 0.7, fbmAt(drift, u, v));
+        const keep = 0.996 - drifted * 0.24;
+        let leaf = 0;
+        let leafLevel = 0;
+        if (hitB.roll > keep) {
+          // The one roll is spent three ways; the fractions of its multiples
+          // are as good as three draws for a pattern nobody inspects that
+          // closely, and they stay tied to the cell by construction.
+          const r2 = (hitB.roll * 7.31) % 1;
+          const r3 = (hitB.roll * 13.7) % 1;
+          const turn = r2 * Math.PI * 2;
+          const ang = Math.atan2(hitB.dy, hitB.dx) - turn;
+          // Pointed lobes with deep sinuses between them: a rounded lobe
+          // reads as a PETAL, and a floor of those is a flower bed.
+          const lobes = 0.5 + 0.5 * Math.abs(Math.cos(2.5 * ang)) ** 1.6;
+          const reach = (0.28 + r3 * 0.18) * lobes;
+          leaf = smoothstep(reach, reach - 0.06, hitB.f1);
+          leafLevel = (hitB.roll * 29.3) % 1;
+          // A leaf lies ON the soil: it covers the crumb under it and stands
+          // no higher than the bed does, so it drops no shadow speck.
+          const under = bed * (1 - cushion) + pillow * cushion;
+          h = h * (1 - leaf) + (under + 0.02) * leaf;
+        }
+
+        height[i] = clamp01(h);
+
+        if (leaf > 0.5) {
+          tone[i] = inBand(leafLevel + (g - 0.5) * 0.3, 7, 2, 9);
+        } else if (mossy) {
+          tone[i] = inBand(
+            0.5 + (velvet - 0.5) * 1.1 + (soft - 0.5) * 0.4,
+            5,
+            2,
+            9,
+          );
+        } else {
+          // The soil keeps `dirt`'s ordering for `dirt`'s reason: the grain
+          // is the loudest term, and the mound only tips it — dark in the
+          // hollows, dry on the crowns — so damp and dry read as a tendency
+          // rather than as blotches.
+          tone[i] = inBand(
+            0.46 + (mound - 0.5) * 0.36 + (lump - 0.5) * 0.2 + (g - 0.5) * 0.7,
+            0,
+            5,
+            9,
+          );
+        }
+      }
+    }
+    return field;
+  },
 } as const;
 
 /**
@@ -1186,6 +1387,15 @@ const PALETTES: Record<FloorPatternId, (base: string) => Rgb[]> = {
   gravel: (base) => ramp(base, 6, 0.58, 1.3),
   sand: (base) => ramp(base, 5, 0.86, 1.22, 0, 0.02),
   turf: (base) => ramp(base, 6, 0.68, 1.24, 0.01, -0.05),
+  // Soil, then moss (green up, blue down: olive, not teal), then litter
+  // (red up, green and blue down: rust). Nine levels, banded by the field.
+  loam: (base) => [
+    ...ramp(base, 5, 0.74, 1.2, -0.01, 0.025),
+    tintRgb(base, 0.9, [0.94, 1.18, 0.72]),
+    tintRgb(base, 1.04, [0.94, 1.18, 0.72]),
+    tintRgb(base, 0.92, [1.6, 0.96, 0.72]),
+    tintRgb(base, 1.08, [1.6, 0.96, 0.72]),
+  ],
 };
 
 /* ------------------------------------------------------------------------ *
