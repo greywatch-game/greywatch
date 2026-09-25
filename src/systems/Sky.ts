@@ -13,10 +13,12 @@
 import {
   Camera,
   Color3,
+  Constants,
   DynamicTexture,
   Mesh,
   MeshBuilder,
   Matrix,
+  RawTexture,
   Scene,
   type ShaderMaterial,
   StandardMaterial,
@@ -32,6 +34,7 @@ import { createCloudMaterial } from "../shaders/CloudShader";
 import { mulberry32 } from "../world/rng";
 import type { EnvironmentSpec, SkySpec } from "../world/environment";
 import { buildCloudRing, type CloudGeometry } from "./cloudMasses";
+import { type CloudShadowArea, CloudShadowRaster, LOBE_STRIDE } from "./cloudShadow";
 
 /**
  * The sky: a gradient dome with the galactic band, the stars and the moon's
@@ -97,6 +100,42 @@ export class Sky {
   private readonly depthRay = new Vector4();
   private readonly depthLine = new Vector2();
   private readonly toLocal = new Matrix();
+
+  /**
+   * The clouds' shadow on the ground (`cloudShadow.ts`, read by `celCloud`):
+   * two fields in the R and G of one texture, the ring's drift crossfading
+   * between them, and a third being written for the position after.
+   * `Game` binds the texture once and pushes the two vectors every frame.
+   */
+  readonly cloudShadowMap: RawTexture;
+  /** x, y the field's key-space corner, z 1 / its side, w how lit its inside is (1 = off). */
+  readonly cloudShadowArea = new Vector4(0, 0, 0, 1);
+  /** x, y the light's s.xz / s.y, z the crossfade from R to G. */
+  readonly cloudShadowRay = new Vector4(0, 0, 0, 0);
+  private readonly shadowFields = [0, 1, 2].map(
+    () => new CloudShadowRaster(CONFIG.sky.clouds.shadow.size),
+  );
+  /** Which raster is in R, which in G, and which is being written. */
+  private shadowR = 0;
+  private shadowG = 1;
+  private shadowNext = 2;
+  /** The ring's turn the R field was written at, and the turn between fields. */
+  private shadowTurn = 0;
+  private shadowStep = 0;
+  private shadowOn = false;
+  private readonly shadowToLight = new Vector3();
+  private shadowArea: CloudShadowArea = { originX: 0, originZ: 0, extent: 1 };
+  private shadowLobes = new Float32Array(0);
+  private readonly shadowUpload = new Uint8Array(
+    CONFIG.sky.clouds.shadow.size * CONFIG.sky.clouds.shadow.size * 2,
+  );
+  /** The same bytes a texel at a time, R in the low byte — see `stageCloudShadow`. */
+  private readonly shadowTexels = new Uint16Array(this.shadowUpload.buffer);
+  /** How many texels of the NEXT upload are staged; the roll waits for all of them. */
+  private shadowStaged = 0;
+  private readonly turnMatrix = new Matrix();
+  private readonly turnScratch = new Vector3();
+
   /** The dome's material, for the flash. Null on a sky with no dome. */
   private domeMat: StandardMaterial | null = null;
   /** The clouds' two lit tones as the map painted them, for the flash. */
@@ -106,7 +145,25 @@ export class Sky {
   /** What the two tones are set to this frame — written into, never minted. */
   private readonly shadeOut = new Color3();
   private readonly litOut = new Color3();
-  constructor(private scene: Scene) {}
+  constructor(private scene: Scene) {
+    const n = CONFIG.sky.clouds.shadow.size;
+    // One texture for the life of the process, so the materials are bound to
+    // it once: what changes is its contents and the vectors that place it.
+    this.cloudShadowMap = new RawTexture(
+      this.shadowUpload,
+      n,
+      n,
+      Constants.TEXTUREFORMAT_RG,
+      scene,
+      false,
+      false,
+      Constants.TEXTURE_BILINEAR_SAMPLINGMODE,
+      Constants.TEXTURETYPE_UNSIGNED_BYTE,
+    );
+    this.cloudShadowMap.name = "cloudShadow";
+    this.cloudShadowMap.wrapU = Constants.TEXTURE_CLAMP_ADDRESSMODE;
+    this.cloudShadowMap.wrapV = Constants.TEXTURE_CLAMP_ADDRESSMODE;
+  }
 
   /**
    * A lightning flash over the dome and through the clouds, 0 when none is up.
@@ -240,6 +297,7 @@ export class Sky {
 
     // --- cloud masses: one merged mesh, one draw, the whole ring ---
     this.buildClouds(spec, moonDir, rand, mapSize);
+    this.startCloudShadow(moonDir, env.fogEnd, mapSize);
   }
 
   /**
@@ -252,6 +310,7 @@ export class Sky {
     if (!clouds || !this.cloudMat) return;
     const c = CONFIG.sky.clouds;
     clouds.rotation.y += c.driftDegPerSec * (Math.PI / 180) * dt;
+    if (this.shadowOn) this.stepCloudShadow(clouds.rotation.y);
     this.cloudMat.setVector3("camPos", eye);
     // What the fragment needs to write the depth of a point `depthMetres` out
     // ALONG ITS OWN PIXEL'S RAY (see `CloudShader`'s fragment for why along the
@@ -299,6 +358,152 @@ export class Sky {
     this.cloudGeo = null;
     this.sortedEye.set(Infinity, Infinity, Infinity);
     this.sortedTurn = Infinity;
+    this.shadowOn = false;
+    this.cloudShadowArea.w = 1;
+  }
+
+  /**
+   * Starts the clouds' shadow for a freshly built ring: where the field lies,
+   * the light's slope, and the first two fields written whole so the first
+   * frame already has both halves of its crossfade.
+   *
+   * **The field is laid over the ground a player can SEE**, the play square
+   * and `reach` past it or the map's fog, whichever is nearer — past the fog a
+   * shadow is only `fogColor` — and it is a fixed number of texels, so a big
+   * map's shadow is coarser in metres. What keeps a coarse field's outline
+   * clean is that it is a field (`cloudShadow.ts`).
+   *
+   * **A light too low to reach the ring's underside casts nothing**: under
+   * `minElevation` the key's slope is too long to be a sound projection, and
+   * there is no cloud down there to cast anything anyway.
+   */
+  private startCloudShadow(toLight: Vector3, fogEnd: number, mapSize: number): void {
+    const geo = this.cloudGeo;
+    const cfg = CONFIG.sky.clouds;
+    const minUp = Math.sin((cfg.shadow.minElevation * Math.PI) / 180);
+    if (!geo || !this.clouds || toLight.y < minUp || cfg.shadow.lit >= 1) return;
+    this.shadowToLight.copyFrom(toLight);
+    const half = mapSize / 2 + Math.min(cfg.shadow.reach, fogEnd);
+    this.shadowArea = { originX: -half, originZ: -half, extent: half * 2 };
+    this.cloudShadowArea.set(-half, -half, 1 / (half * 2), cfg.shadow.lit);
+    this.cloudShadowRay.set(toLight.x / toLight.y, toLight.z / toLight.y, 0, 0);
+    this.shadowLobes = new Float32Array(geo.lumpFirst.length * LOBE_STRIDE);
+    this.shadowStep = cfg.driftDegPerSec * (Math.PI / 180) * cfg.shadow.stepSeconds;
+    this.shadowOn = true;
+    this.primeCloudShadow(this.clouds.rotation.y);
+  }
+
+  /** Writes R and G whole at `turn` and one step on, and starts the next. */
+  private primeCloudShadow(turn: number): void {
+    this.shadowTurn = turn;
+    this.writeField(this.shadowFields[this.shadowR], turn, true);
+    this.writeField(this.shadowFields[this.shadowG], turn + this.shadowStep, true);
+    this.stageCloudShadow(this.shadowR, this.shadowG, 0, this.shadowTexels.length);
+    this.cloudShadowMap.update(this.shadowUpload);
+    this.shadowStaged = 0;
+    this.writeField(this.shadowFields[this.shadowNext], turn + 2 * this.shadowStep, false);
+    this.cloudShadowRay.z = 0;
+  }
+
+  /**
+   * Moves the crossfade on with the ring, writes a slice of the next field,
+   * and rolls the three over when the ring has reached the G field's turn.
+   *
+   * **The next field is written AHEAD and a slice a frame**, so no frame pays
+   * for a whole one (`CloudShadowRaster`), and its upload is staged the same
+   * way. If either is not finished by the time it is wanted, the crossfade
+   * waits at G — the shadow holds still for the frames that takes, rather than
+   * any frame taking longer.
+   */
+  private stepCloudShadow(turn: number): void {
+    const step = this.shadowStep;
+    let t = step > 0 ? (turn - this.shadowTurn) / step : 0;
+    // A turn the fields cannot bridge — the ring set by hand, or a frame long
+    // enough to skip two steps — starts over rather than sliding across it.
+    if (t < 0 || t >= 2) {
+      this.primeCloudShadow(turn);
+      return;
+    }
+    const cfg = CONFIG.sky.clouds.shadow;
+    const next = this.shadowFields[this.shadowNext];
+    const all = this.shadowTexels.length;
+    // Written first, then STAGED — the next upload interleaved a slice a frame
+    // too, because that loop was two thirds of a roll-over's cost — and only
+    // then rolled, so the roll-over frame pays for the upload alone.
+    if (!next.done) {
+      next.step(cfg.texelsPerFrame);
+    } else if (this.shadowStaged < all) {
+      const to = Math.min(all, this.shadowStaged + cfg.texelsPerFrame);
+      this.stageCloudShadow(this.shadowG, this.shadowNext, this.shadowStaged, to);
+      this.shadowStaged = to;
+    }
+    if (t >= 1 && this.shadowStaged >= all) {
+      this.cloudShadowMap.update(this.shadowUpload);
+      const was = this.shadowR;
+      this.shadowR = this.shadowG;
+      this.shadowG = this.shadowNext;
+      this.shadowNext = was;
+      this.shadowTurn += step;
+      t -= 1;
+      this.shadowStaged = 0;
+      this.writeField(this.shadowFields[this.shadowNext], this.shadowTurn + 2 * step, false);
+    }
+    this.cloudShadowRay.z = clamp(t, 0, 1);
+  }
+
+  /**
+   * Hands `field` every lobe as it will stand with the ring turned to `turn`,
+   * and writes it whole if `now`. The lobes are the mesh's own frame turned
+   * by the same matrix the mesh wears, so the shadow cannot disagree with the
+   * cloud about which way the ring went.
+   */
+  private writeField(field: CloudShadowRaster, turn: number, now: boolean): void {
+    const geo = this.cloudGeo;
+    if (!geo) return;
+    const m = Matrix.RotationYToRef(turn, this.turnMatrix);
+    const out = this.shadowLobes;
+    const v = this.turnScratch;
+    const n = geo.lumpFirst.length;
+    for (let i = 0; i < n; i++) {
+      const o = i * LOBE_STRIDE;
+      Vector3.TransformCoordinatesFromFloatsToRef(
+        geo.lumpCentres[i * 3],
+        geo.lumpCentres[i * 3 + 1],
+        geo.lumpCentres[i * 3 + 2],
+        m,
+        v,
+      );
+      out[o] = v.x;
+      out[o + 1] = v.y;
+      out[o + 2] = v.z;
+      Vector3.TransformNormalFromFloatsToRef(
+        geo.lumpTangents[i * 2],
+        0,
+        geo.lumpTangents[i * 2 + 1],
+        m,
+        v,
+      );
+      out[o + 3] = v.x;
+      out[o + 4] = v.z;
+      out[o + 5] = geo.lumpRadii[i * 3];
+      out[o + 6] = geo.lumpRadii[i * 3 + 1];
+      out[o + 7] = geo.lumpRadii[i * 3 + 2];
+    }
+    field.begin(out, n, this.shadowToLight, this.shadowArea);
+    if (now) field.step(Infinity);
+  }
+
+  /**
+   * Interleaves texels `from` to `to` of fields `r` and `g` into the upload's
+   * R and G, one 16-bit write a texel (R the low byte: every WebGPU device is
+   * little-endian). The texture holds its own copy once uploaded, so staging
+   * the next one here cannot disturb what is on screen.
+   */
+  private stageCloudShadow(r: number, g: number, from: number, to: number): void {
+    const a = this.shadowFields[r].field;
+    const b = this.shadowFields[g].field;
+    const out = this.shadowTexels;
+    for (let i = from; i < to; i++) out[i] = a[i] | (b[i] << 8);
   }
 
   /**

@@ -1,7 +1,7 @@
 /**
  * wgsl/includes.ts — The shader text every surface in the game shares, as
  * Babylon WGSL includes.
- * Owns: the registration of `celBand`, `celShadow`, `celGi`, `celProbe`,
+ * Owns: the registration of `celBand`, `celCloud`, `celShadow`, `celGi`, `celProbe`,
  * `celProbeBox`, `celDither` and the two `celInstances` entries into
  * `ShaderStore.IncludesShadersStoreWGSL`, and — for each of them — the
  * argument the GLSL original carried.
@@ -137,6 +137,75 @@ fn band(ndl: f32, steps: f32) -> f32 {
 );
 
 /**
+ * `celCloud` — the CLOUDS' shadow on the ground: the field `Sky` writes
+ * (`systems/cloudShadow.ts`) and the two ways of reading it. Included by
+ * `celShadow`, so every consumer of that owes its names too — they are in
+ * `SHADOW_UNIFORM_NAMES` and `SHADOW_SAMPLER_NAMES` — and by `Volumetrics`,
+ * which lists them itself.
+ *
+ * **A lookup and not a shadow map**, because a cloud is kilometres away and
+ * what it hides is the SKY: the field is laid in KEY space, where a point's key
+ * is where its ray toward the light crosses y = 0, so one 2D texture answers
+ * for a roof and the street under it alike. See `cloudShadow.ts` for why what
+ * is stored is a field rather than coverage.
+ *
+ * **Two fields, crossfaded**, because the ring drifts and a field rewritten on
+ * a clock would step the shadow's edge forward on that clock — the "low frame
+ * rate" the water's twinkle was taken out for. `Sky` writes the field for the
+ * ring's NEXT position while this blends the two before it; a moving outline
+ * is the zero of a moving blend, so it slides.
+ *
+ * **It MINS with the other shadows and never multiplies**: a wall's shadow
+ * under a cloud's is the same shade as either alone, because either is enough
+ * to take the key away, and `w` — how lit a point inside a cloud's shadow is —
+ * is a floor at or above the maps' own darkness.
+ */
+register(
+  "celCloud",
+  `
+// ---- THE CLOUDS' SHADOW (systems/cloudShadow.ts, driven by Sky) ----
+// x, y: the key-space corner of the field, z: 1 / its side in metres,
+// w: how LIT a point wholly inside a cloud's shadow is; 1 turns the term off.
+uniform cloudShadow: vec4f;
+// x, y: the light's toward vector as s.xz / s.y, so a point's key is
+// posW.xz - xy * posW.y; z: the crossfade from the field in R to the one in G.
+uniform cloudShadowRay: vec4f;
+var cloudShadowMapSampler: sampler;
+var cloudShadowMap: texture_2d<f32>;
+
+// x: how far inside a cloud's shadow p is — the crossfaded field less its 0.5
+// outline, positive inside. y: 1 over the field, falling to 0 over its last
+// twentieth, so a shadow runs out at the edge of what is known rather than
+// being cut off there by a straight line. Branch-free and derivative-free, so
+// the air's march can call it from a loop.
+fn cloudShadowAt(p: vec3f) -> vec2f {
+  let key = p.xz - uniforms.cloudShadowRay.xy * p.y;
+  let uv = (key - uniforms.cloudShadow.xy) * uniforms.cloudShadow.z;
+  let two = textureSampleLevel(cloudShadowMap, cloudShadowMapSampler, uv, 0.0).rg;
+  let field = mix(two.x, two.y, uniforms.cloudShadowRay.z) - 0.5;
+  let edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+  return vec2f(field, smoothstep(0.0, 0.05, edge));
+}
+
+// How lit a SURFACE is by the clouds: 1 in the open, cloudShadow.w inside a
+// cloud's shadow, and the outline one pixel wide at every distance — the cel
+// cut every other edge in the frame has. Branch-free, so the derivative is
+// taken in whatever control flow its caller is in.
+fn cloudLit(p: vec3f) -> f32 {
+  let c = cloudShadowAt(p);
+  let w = max(fwidth(c.x), 1e-4);
+  return mix(1.0, uniforms.cloudShadow.w, smoothstep(-w, w, c.x) * c.y);
+}
+
+// The same for the AIR: a hard step, no derivative — the march integrates it.
+fn cloudLitAir(p: vec3f) -> f32 {
+  let c = cloudShadowAt(p);
+  return mix(1.0, uniforms.cloudShadow.w, step(0.0, c.x) * c.y);
+}
+`,
+);
+
+/**
  * The stepped shadow lookup, and the uniforms it reads. Included by the cel,
  * grass and water fragment shaders so all three sample the SAME depth maps with
  * the SAME kernel.
@@ -171,6 +240,8 @@ fn band(ndl: f32, steps: f32) -> f32 {
 register(
   "celShadow",
   `
+#include<celCloud>
+
 // Stepped directional shadows. lightMatrix is the ShadowGenerator's
 // view*projection with no [0,1] bias baked in, so the XY remap below is the
 // usual uv = clip.xy*0.5+0.5.

@@ -519,7 +519,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // along the swell would slide the shadow's edge back and forth with the
   // chop — the water's version of the bump-map problem the cel shader solves
   // by offsetting along the facet rather than the perturbed normal.
-  let shade = shadowVisibility(vec3f(0.0, 1.0, 0.0), posW);
+  // And the clouds', which is what takes the glare off the water under one.
+  let shade = min(shadowVisibility(vec3f(0.0, 1.0, 0.0), posW), cloudLit(posW));
   let light = uniforms.ambientColor
     + uniforms.skyLightColor * band(0.5 + 0.5 * n.y, 3.0)
     + uniforms.lightColor * band(max(dot(n, -uniforms.lightDir), 0.0), 3.0) * shade

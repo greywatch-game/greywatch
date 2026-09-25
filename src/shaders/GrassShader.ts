@@ -211,7 +211,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let ndl = dot(n, -uniforms.lightDir);
   let lift = uniforms.keyWrap * smoothstep(0.0, 0.08, ndl) * (1.0 - max(ndl, 0.0));
   light += uniforms.lightColor * band(clamp(ndl + lift, 0.0, 1.0), 4.0)
-    * shadowVisibility(n, fragmentInputs.vPosW);
+    * min(shadowVisibility(n, fragmentInputs.vPosW), cloudLit(fragmentInputs.vPosW));
   // The lightning's own key, which the field takes as the ground under it does.
   light += flashLight(n, n, fragmentInputs.vPosW);
 

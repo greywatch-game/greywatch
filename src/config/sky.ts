@@ -216,6 +216,43 @@ export const sky = {
      */
     resortSlack: 6,
     /**
+     * The clouds' SHADOW on the ground (`systems/cloudShadow.ts`, `Sky`,
+     * `celCloud`): each cloud's lobes cast along the key light onto a field
+     * the lit shaders cut, so a shadow the shape of the cloud crossing the
+     * sun slides across the map as the ring drifts.
+     */
+    shadow: {
+      /**
+       * Texels a side of the field. It covers the ground a player can see, so
+       * this is a few metres a texel on the small maps and about nine on the
+       * biggest.
+       */
+      size: 256,
+      /**
+       * Metres past the play square's edge the field reaches, when the map's
+       * fog does not stop sight sooner.
+       */
+      reach: 450,
+      /**
+       * How LIT a point wholly inside a cloud's shadow is, as a share of the
+       * key. Not the maps' own shadow darkness (0.15): a cloud's shadow is the
+       * whole street rather than one side of it, and at that darkness a
+       * passing cloud turns a village to night. 1 turns the shadows off.
+       */
+      lit: 0.45,
+      /**
+       * How far ahead, in seconds of drift, each field is written: the
+       * crossfade runs between two fields this far apart, and the next is
+       * written a slice a frame over this long. At 0.15 degrees a second a
+       * shadow 1.2 km out moves about 4 m in that time.
+       */
+      stepSeconds: 1.5,
+      /** Texels the next field may visit per frame; its whole cost is spread over these. */
+      texelsPerFrame: 12000,
+      /** Degrees. A key light lower than this casts no cloud shadow. */
+      minElevation: 4,
+    },
+    /**
      * The distance whose depth every cloud fragment writes, measured ALONG the
      * pixel's ray — not where a cloud is but where the depth test is told it is
      * (`Sky.buildClouds`). A RADIAL distance like `moonDepthDistance`, which is

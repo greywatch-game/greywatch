@@ -1472,6 +1472,10 @@ export class Game {
     // The sky hangs behind every state (menu included), so it is dressed
     // once here and re-applied per round alongside the environment.
     this.sky = new Sky(this.scene);
+    // The clouds' shadow field, bound once: `Sky` keeps one texture for the
+    // life of the process and rewrites it as the ring drifts. Until now every
+    // material held the factory's own "no cloud" texel.
+    this.mats.setCloudShadowMap(this.sky.cloudShadowMap);
     this.applySky();
 
     // Everything above is CONSTRUCTION, and stays here because the fields it
@@ -3255,6 +3259,10 @@ export class Game {
     // After every state has placed the camera: the clouds stand in the world
     // and are drawn back to front from wherever the eye is this frame.
     this.sky.update(dt, this.cameraSys.camera.position);
+    // Where the clouds' shadow lies and how far the crossfade has run, pushed
+    // in every state for the drift's reason: the sky moves behind a menu too,
+    // and a shadow held still under a moving cloud is the tell.
+    this.mats.setCloudShadow(this.sky.cloudShadowArea, this.sky.cloudShadowRay);
     // The storm, in every state for the ambience's reason — weather does not
     // stop for a menu — and after the sky has placed its clouds.
     this.pushLightning(dt);
@@ -3274,6 +3282,13 @@ export class Game {
       if (bodyMap) {
         this.volumetrics.setBodyShadow(bodyMap, this.bodyShadows.lightMatrix);
       }
+      // And the clouds', so a beam stops where the ground under it goes into
+      // a cloud's shadow.
+      this.volumetrics.setCloudShadow(
+        this.sky.cloudShadowMap,
+        this.sky.cloudShadowArea,
+        this.sky.cloudShadowRay,
+      );
     }
     this.syncVolumetrics();
     // Every frame in every state, so the basis it reprojects against can never

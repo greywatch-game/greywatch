@@ -3180,6 +3180,79 @@ shape) and `shaders/CloudShader.ts` is the light.
   gradient, not the village's fog wall. On Hollowmere and Greyfen a 78 m fog would
   otherwise erase the sky entirely.
 
+### The clouds cast shadows
+
+**The ring is laid out in real metres a few hundred up, so a cloud between the
+map and a low sun really does stand in the light's path** — and its shadow is
+computed rather than faked: a patch the shape of the cloud, crisp-edged like
+every other cel edge, sliding over fields and rooftops at the ring's drift (a
+few metres a second). The cloud a player sees crossing the disc is the one
+whose shadow they are standing in, because it is the same ray.
+`systems/cloudShadow.ts` is the arithmetic, `Sky` drives it, and `celCloud`
+(`wgsl/includes.ts`) is how every lit surface reads it.
+
+- **A lookup in KEY space, not a shadow map.** A point's key is where its ray
+  toward the light crosses y = 0 (`p.xz - s.xz * p.y / s.y`), so one 2D field
+  answers for a roof and the street under it alike. Each lobe's shadow on that
+  plane is an ellipse in closed form — the ellipsoid's quadratic form with the
+  light's direction projected out — so nothing is rendered to make it.
+- **What is stored is a FIELD, not coverage** — 0.5 on each lobe's outline,
+  rising inside, MAX over lobes — so a 2-9 m texel still cuts a clean outline:
+  bilinear interpolation of a smooth field moves the 0.5 contour smoothly, and
+  the shader cuts it one pixel wide with `fwidth` like every other edge.
+  Coverage would have been a staircase at the texel's scale.
+- **The field covers the ground a player can SEE**, the play square plus
+  `shadow.reach` (450 m) or the map's `fogEnd`, whichever is nearer, at a
+  fixed 256 texels — so 2 m a texel on Greyfen and 9 m on Cinderhaven — and
+  its last twentieth fades to lit, so a shadow runs out rather than stopping on
+  a straight line.
+- **TWO fields crossfaded, never one rewritten on a clock.** A field rewritten
+  every step would move the outline in steps, which is the "low frame rate"
+  complaint the water's twinkle was taken out for. R holds the field at the
+  ring's turn now, G the field one `stepSeconds` (1.5 s) of drift later, and
+  `cloudShadowRay.z` blends them; the outline is the zero of a moving blend, so
+  it slides — measured, it never moved more than 0.8 m (Harrowmead) or 2 m
+  (Cinderhaven) in a tenth of a second across a 30 s drift. A third field is
+  written for the position after, a slice a frame (`texelsPerFrame`), and its
+  upload is STAGED a slice a frame too, so the frame that rolls R/G/next over
+  pays only for the texture copy. If either is late, the crossfade waits at G.
+- **It MINS with the shadows and never multiplies**, and `lit` (0.45) is a floor
+  above the maps' own 0.15: a wall's shadow under a cloud's is the same shade as
+  either alone, and a cloud's shadow is the whole street rather than one side of
+  it — at the maps' darkness a passing cloud turned a village to night.
+- **In the cel shader it joins AFTER `giFarShadow`**, because past the shadow
+  map's window that function REPLACES the map's answer with the probes' sun
+  test; joined before it, a cloud's shadow stopped at the window's edge. The
+  foliage's translucency takes it too. Grass and water take it beside their
+  `shadowVisibility`, and water's glints are all gated by that same value.
+  **The shafts take it per march step** (`cloudLitAir`, derivative-free for
+  the loop), so a beam stops where the ground under it goes into shade and
+  the gaps between two clouds' shadows are where the shafts are.
+- **A reflection bake HOLDS it off** (`CelMaterialFactory.holdCloudShadow`, on
+  the hooks that move the eye into a probe and back): a cube is baked once and
+  the shadow moves, so one caught in a bake would stay painted into every pane
+  and pond for the round.
+- **The texture is one more sampler on every cel material, and the bumped
+  ground variant is now at 15 of WebGPU's 16 sampled textures per stage** — two
+  ground textures, five shadow samplers, the foliage map and seven irradiance
+  textures. A sixteenth fits; a seventeenth is a bind group that fails to build
+  and a draw silently lost, so the next texture any cel variant gains owes a
+  look at that count (or a packing) first.
+- **Not in it:** the irradiance volume's sun bounce, which is baked per probe
+  and so stays sunlit under a cloud — a shaded patch reads a little brighter
+  than a real overcast one. And a light under `minElevation` (4 degrees) or a
+  sky with no cloud turns the whole term off (`cloudShadow.w` = 1).
+- **Cost**, measured with CPU throttled as a phone stand-in: the typical frame
+  is under the 0.1 ms timer grain at any throttle; the worst 1% of frames
+  1.5 ms and a roll-over 1.4-1.6 ms at 6x; the material walk that pushes the
+  crossfade every frame 0.025 ms (0.25 ms at 6x) on Coldharbour's 222
+  materials, the same shape as `updateCamera`'s.
+- **In a match each client's clouds are wherever its own boot left the ring**,
+  so two players may disagree about who is in a cloud's shadow. Cosmetic, and
+  syncing the drift to the server clock would fix it.
+
+### The light shafts
+
 `Volumetrics` (`src/shaders/Volumetrics.ts`) is the game's ONLY light-shaft
 effect. It raymarches the air: step along each pixel's view ray in world space,
 ask the moon's shadow map whether each step is lit, weight it by a height-falloff

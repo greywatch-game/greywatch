@@ -77,8 +77,13 @@ import {
   ShaderLanguage,
   ShaderStore,
   Vector3,
+  Vector4,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+// celCloud is included by the march; imported for the side effect so the
+// include is provably registered before this effect compiles — an include
+// missing from the store is fetched off Babylon's CDN instead.
+import "./wgsl/includes";
 import { depthBias } from "../core/shadowWindow";
 import type { FrameDepth } from "./FrameDepth";
 
@@ -130,6 +135,11 @@ var shadowMap: texture_2d<f32>;
 // will be, so the bodies got a map of their own and this asks both.
 var bodyShadowMapSampler: sampler;
 var bodyShadowMap: texture_2d<f32>;
+
+// The CLOUDS' shadow, the same field and the same uniforms every lit surface
+// reads, so a beam stops where the ground under it goes into a cloud's shadow
+// and the gaps between two clouds are where the shafts are.
+#include<celCloud>
 
 // Ordered widest-first: these are collected into the auto-generated LeftOver
 // UBO, and a std140 layout is least surprising when the big alignments come
@@ -208,7 +218,7 @@ fn shadowAt(p: vec3f) -> f32 {
     uniforms.march.y);
   let bodies = litIn(uniforms.bodyLightMatrix, bodyShadowMap, bodyShadowMapSampler,
     p, uniforms.march.z);
-  return min(world, bodies);
+  return min(min(world, bodies), cloudLitAir(p));
 }
 
 // Henyey-Greenstein, carrying its own 1/4pi — intensity absorbs it, which is
@@ -346,6 +356,10 @@ export class Volumetrics {
   /** The BODIES' depth map and ITS view*projection — `BodyShadows`, via `Game`. */
   private bodyShadowMap: BaseTexture | null = null;
   private bodyLightMatrix: Matrix = Matrix.Identity();
+  /** The clouds' shadow field and how it is read — `Sky`'s, via `Game`. */
+  private cloudShadowMap: BaseTexture | null = null;
+  private readonly cloudArea = new Vector4(0, 0, 0, 1);
+  private readonly cloudRay = new Vector4(0, 0, 0, 0);
   /** The map's own air, as multipliers on the config. See `setEnv`. */
   private densityMult = 1;
   private intensityMult = 1;
@@ -377,8 +391,10 @@ export class Volumetrics {
         "nearFar",
         "march",
         "intensity",
+        "cloudShadow",
+        "cloudShadowRay",
       ],
-      samplers: ["depthTexture", "shadowMap", "bodyShadowMap"],
+      samplers: ["depthTexture", "shadowMap", "bodyShadowMap", "cloudShadowMap"],
       size: 1.0,
       camera: null,
       engine: scene.getEngine(),
@@ -430,6 +446,9 @@ export class Volumetrics {
       if (this.bodyShadowMap) {
         effect.setTexture("bodyShadowMap", this.bodyShadowMap);
       }
+      if (this.cloudShadowMap) effect.setTexture("cloudShadowMap", this.cloudShadowMap);
+      effect.setVector4("cloudShadow", this.cloudArea);
+      effect.setVector4("cloudShadowRay", this.cloudRay);
     };
   }
 
@@ -448,6 +467,7 @@ export class Volumetrics {
     return (
       this.shadowMap !== null &&
       this.bodyShadowMap !== null &&
+      this.cloudShadowMap !== null &&
       this.depth.texture !== null
     );
   }
@@ -468,6 +488,17 @@ export class Volumetrics {
   setBodyShadow(map: BaseTexture, matrix: Matrix): void {
     this.bodyShadowMap = map;
     this.bodyLightMatrix = matrix;
+  }
+
+  /**
+   * The clouds' shadow field and the two vectors that read it — `Sky`'s, via
+   * `Game`, on the line after `setBodyShadow` and every frame, because the
+   * crossfade moves with the drift. See `celCloud`.
+   */
+  setCloudShadow(map: BaseTexture, area: Vector4, ray: Vector4): void {
+    this.cloudShadowMap = map;
+    this.cloudArea.copyFrom(area);
+    this.cloudRay.copyFrom(ray);
   }
 
   /** The moon's own colour, pushed when the map's environment is applied. */

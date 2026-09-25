@@ -63,8 +63,10 @@
 import {
   type BaseTexture,
   Color3,
+  Constants,
   Matrix,
   Mesh,
+  RawTexture,
   Scene,
   ShaderLanguage,
   ShaderMaterial,
@@ -260,6 +262,11 @@ export const SHADOW_UNIFORM_NAMES = [
   "flashColor",
   "flashLightMatrix",
   "flashParams",
+  // The clouds' shadow on the ground (`celCloud`, which `celShadow` includes):
+  // where the field lies and how lit its inside is, and the light's slope and
+  // the crossfade between the field's two halves. See `setCloudShadow`.
+  "cloudShadow",
+  "cloudShadowRay",
 ] as const;
 /**
  * The samplers `celShadow` declares, for a consumer's sampler list.
@@ -276,6 +283,7 @@ export const SHADOW_SAMPLER_NAMES = [
   "bodyShadowMap",
   "localAtlasMap",
   "flashMap",
+  "cloudShadowMap",
 ] as const;
 
 /**
@@ -863,6 +871,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // Past the shadow map's own window, the volume's per-probe sun test takes
   // over rather than the ground going fully lit — see giFarShadow.
   shadow = giFarShadow(fragmentInputs.vPosW, giC, shadow);
+  // The clouds' shadow joins AFTER the far test, because past the map's window
+  // that test REPLACES the map's answer — mixed in before it, a cloud's shadow
+  // would stop at the window's edge. min, not a product: either is enough to
+  // take the key away. See celCloud.
+  let cloudLitHere = cloudLit(fragmentInputs.vPosW);
+  shadow = min(shadow, cloudLitHere);
   // The key's cosine off the TRUE facet, before the relief touches it — what
   // the wrap below is keyed on, for the reason the rim gate reads level.
   let ndlGeo = dot(n, -uniforms.lightDir);
@@ -1409,6 +1423,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
       uniforms.transDepth * uniforms.foliageParams.y, uniforms.shadowParams.w);
     transLit = mix(uniforms.shadowParams.y, 1.0, thin * clear);
   }
+  // Leaves are lit THROUGH by the light a cloud has already taken.
+  transLit = min(transLit, cloudLitHere);
   let through = max(dot(viewDir, uniforms.lightDir), 0.0)
     * max(dot(n, uniforms.lightDir), 0.0);
   col += uniforms.transColor * band(through, 2.0) * transLit;
@@ -1985,6 +2001,16 @@ export class CelMaterialFactory {
   private bodyShadowMap: BaseTexture | null = null;
   private bodyShadowMatrix = Matrix.Identity();
   private bodyShadowParams = new Vector4(0.0015, 0, 0, 0);
+  // The clouds' shadow — see `setCloudShadow`. The texture is the factory's
+  // own "no cloud anywhere" until `Sky` hands over its field, and `w` = 1 in
+  // the area switches the term off whatever the texture holds.
+  private cloudShadowMap: BaseTexture;
+  private readonly cloudShadowArea = new Vector4(0, 0, 0, 1);
+  private readonly cloudShadowRay = new Vector4(0, 0, 0, 0);
+  // What the materials actually hold: the area with `w` forced to 1 while a
+  // reflection bake holds the term off — see `holdCloudShadow`.
+  private readonly cloudShadowPushed = new Vector4(0, 0, 0, 1);
+  private cloudShadowHeld = false;
   // The foliage's front-face map — see `setFoliageMap`. Cel materials only:
   // grass and water have no translucency and do not declare it.
   private foliageMap: BaseTexture | null = null;
@@ -2069,7 +2095,24 @@ export class CelMaterialFactory {
    */
   private readonly ownPalettes = new Map<ShaderMaterial, Float32Array>();
 
-  constructor(private scene: Scene) {}
+  constructor(private scene: Scene) {
+    // **Bound from the first material, and it has to be**: the rigs, the
+    // capture rings and the viewmodel are all built before `Sky`, and a
+    // declared sampler with nothing behind it is a bind group that fails to
+    // build. One RG texel of zero is a field with no cloud in it.
+    this.cloudShadowMap = new RawTexture(
+      new Uint8Array(2),
+      1,
+      1,
+      Constants.TEXTUREFORMAT_RG,
+      scene,
+      false,
+      false,
+      Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+      Constants.TEXTURETYPE_UNSIGNED_BYTE,
+    );
+    this.cloudShadowMap.name = "noCloudShadow";
+  }
 
   /**
    * Publishes the palette `MapBuilder` assembled while it merged, and pushes it
@@ -2968,6 +3011,55 @@ export class CelMaterialFactory {
   }
 
   /**
+   * The clouds' shadow field (`Sky.cloudShadowMap`), bound to every material
+   * that reads the key's shadow. Called once, after `Sky` exists — the texture
+   * object is stable even though its contents are rewritten as the ring drifts.
+   */
+  setCloudShadowMap(map: BaseTexture): void {
+    this.cloudShadowMap = map;
+    this.eachShadowReader((mat) => mat.setTexture("cloudShadowMap", map));
+  }
+
+  /**
+   * Where the clouds' shadow field lies and how it is read this frame — see
+   * `celCloud` for what each component is. Pushed from `tick` in EVERY state,
+   * after `Sky.update`, because the crossfade moves with the drift and the
+   * drift does not stop for a menu. Guarded like `updateCamera`: a sky with no
+   * cloud never changes either and never walks the cache.
+   */
+  setCloudShadow(area: Vector4, ray: Vector4): void {
+    if (area.equals(this.cloudShadowArea) && ray.equals(this.cloudShadowRay)) return;
+    this.cloudShadowArea.copyFrom(area);
+    this.cloudShadowRay.copyFrom(ray);
+    this.pushCloudShadow();
+  }
+
+  /**
+   * Holds the clouds' shadow OFF for a reflection bake, and lets it go again.
+   *
+   * **A cube is baked once and the shadow moves**, so a cloud's shadow caught
+   * in a bake would stay painted into every pane and pond that reflects it for
+   * the rest of the round while the real one drifted off. `ReflectionSystem`
+   * holds it on the hook that moves the eye into the probe and lets it go on
+   * the one that moves it back, so the main pass of the same frame finds it
+   * as it was. Guarded, so the six faces of one probe cost one walk.
+   */
+  holdCloudShadow(held: boolean): void {
+    if (held === this.cloudShadowHeld) return;
+    this.cloudShadowHeld = held;
+    this.pushCloudShadow();
+  }
+
+  private pushCloudShadow(): void {
+    this.cloudShadowPushed.copyFrom(this.cloudShadowArea);
+    if (this.cloudShadowHeld) this.cloudShadowPushed.w = 1;
+    this.eachShadowReader((mat) => {
+      mat.setVector4("cloudShadow", this.cloudShadowPushed);
+      mat.setVector4("cloudShadowRay", this.cloudShadowRay);
+    });
+  }
+
+  /**
    * Binds the ShadowSystem's depth map to every cel material. Called once at
    * startup — the texture object is stable even though its contents re-render.
    */
@@ -3392,6 +3484,9 @@ export class CelMaterialFactory {
 
   private applyShadow(mat: ShaderMaterial): void {
     if (this.shadowMap) mat.setTexture("shadowMap", this.shadowMap);
+    mat.setTexture("cloudShadowMap", this.cloudShadowMap);
+    mat.setVector4("cloudShadow", this.cloudShadowPushed);
+    mat.setVector4("cloudShadowRay", this.cloudShadowRay);
     mat.setMatrix("lightMatrix", this.shadowMatrix);
     mat.setVector4("shadowParams", this.shadowParams);
     if (this.bodyShadowMap) {

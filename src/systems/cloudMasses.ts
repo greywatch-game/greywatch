@@ -94,6 +94,18 @@ export interface CloudGeometry {
   smoothNormals: Float32Array;
   /** Each lump's centre, xyz packed, in the same metres as `positions`. */
   lumpCentres: Float32Array;
+  /**
+   * Each lump's three radii (along its cloud's horizon tangent, up, and away
+   * from the ring's centre), packed, before the jitter and the belly squash —
+   * the ellipsoid the ground's cloud shadow is cast from (`cloudShadow.ts`).
+   */
+  lumpRadii: Float32Array;
+  /**
+   * Each lump's cloud's horizon TANGENT, x and z packed, in the ring's frame.
+   * The radial axis is that turned a quarter about y — (z, -x) — so it is not
+   * stored twice.
+   */
+  lumpTangents: Float32Array;
   /** Each lump's first vertex, and how many vertices it owns (a multiple of 3). */
   lumpFirst: Uint32Array;
   lumpCount: Uint32Array;
@@ -114,6 +126,8 @@ export function buildCloudRing(
 ): CloudGeometry {
   const out: Soup = { pos: [], nrm: [], smooth: [] };
   const centres: number[] = [];
+  const radii: number[] = [];
+  const tangents: number[] = [];
   const firsts: number[] = [];
   const counts: number[] = [];
   const unit = icosphere(o.subdivisions);
@@ -181,6 +195,8 @@ export function buildCloudRing(
     for (const lump of lumps) {
       const first = out.pos.length / 3;
       centres.push(...emitLump(unit, lump, lumps, dome, o, rand, place, orient, out));
+      radii.push(lump.sx, lump.sy, lump.sz);
+      tangents.push(tx, tz);
       firsts.push(first);
       counts.push(out.pos.length / 3 - first);
     }
@@ -191,6 +207,8 @@ export function buildCloudRing(
     normals: new Float32Array(out.nrm),
     smoothNormals: new Float32Array(out.smooth),
     lumpCentres: new Float32Array(centres),
+    lumpRadii: new Float32Array(radii),
+    lumpTangents: new Float32Array(tangents),
     lumpFirst: new Uint32Array(firsts),
     lumpCount: new Uint32Array(counts),
   };

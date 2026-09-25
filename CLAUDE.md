@@ -621,7 +621,10 @@ the translucency term can (`docs/rendering.md`).
 (`PointLightData.shadow`). **All four maps are one `Shadows` setting**, and a
 map switched off is a bound 1x1 LIT texture, never an unbound one. **A
 lightning flash is a SECOND key with a map of its own** (`ShadowSystem.flash`):
-the moon's maps never move for it.
+the moon's maps never move for it. **The CLOUDS cast a fifth, which is a field
+in key space and not a map** (`celCloud`), MINNED with the rest — and it put the
+bumped ground variant at **15 of WebGPU's 16 sampled textures per stage**, so a
+texture added to any cel variant owes that count first.
 
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`

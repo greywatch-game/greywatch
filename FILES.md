@@ -612,11 +612,15 @@ src/
                         #   one merged mesh of faceted masses standing in the
                         #   world over the map, drawn back to front at one
                         #   shared depth 7 km out (the disc stands at 9 km)
-    cloudMasses.ts      # The cloud ring's SHAPE: long, flat-bellied banks of
-                        #   flattened icosphere lumps with a sheared upper tier
-                        #   and a tail, as one triangle soup carrying both the
-                        #   facet normal and the lump's smooth one.
-                        #   Pure arithmetic — no Babylon, no state
+    cloudMasses.ts      # The cloud ring's SHAPE: cumulus heaps, banks and
+                        #   puffs of round lobes on flat bellies, buried facets
+                        #   dropped, as one triangle soup carrying the facet
+                        #   normal and a smooth one blended toward the whole
+                        #   cloud's dome. Pure arithmetic — no Babylon, no state
+    cloudShadow.ts      # The clouds' SHADOW on the ground: each lobe cast along
+                        #   the key onto one plane in KEY space, written as a
+                        #   field a slice at a time for Sky to crossfade and
+                        #   celCloud to cut. Pure arithmetic — no Babylon
     WorldCulling.ts     # How much of the map the frame's own mesh walk is
                         #   offered. Replaces scene.getActiveMeshCandidates and
                         #   writes NOTHING onto a mesh, which is what leaves
