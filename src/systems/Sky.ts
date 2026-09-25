@@ -82,8 +82,13 @@ export class Sky {
   private cloudGeo: CloudGeometry | null = null;
   /** The index buffer the ring is drawn from, rewritten back to front. */
   private cloudIndices = new Uint32Array(0);
-  /** Lump ids in the order last written, and each lump's distance scratch. */
+  /**
+   * Lump ids in the order last written, the scratch the next order is sorted
+   * in (the two swap, so a re-sort allocates nothing), and each lump's
+   * distance scratch.
+   */
   private cloudOrder = new Uint32Array(0);
+  private cloudNext = new Uint32Array(0);
   private cloudDist = new Float32Array(0);
   /** Where the eye stood, and the ring's turn, when the order was last taken. */
   private readonly sortedEye = new Vector3(Infinity, Infinity, Infinity);
@@ -322,31 +327,80 @@ export class Sky {
       const dx = geo.lumpCentres[i * 3] - e.x;
       const dy = geo.lumpCentres[i * 3 + 1] - e.y;
       const dz = geo.lumpCentres[i * 3 + 2] - e.z;
-      dist[i] = dx * dx + dy * dy + dz * dz;
+      dist[i] = Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
-    const order = this.cloudOrder.slice();
-    order.sort((a, b) => dist[b] - dist[a]);
-    let same = true;
-    for (let i = 0; i < n; i++) {
-      if (order[i] !== this.cloudOrder[i]) {
-        same = false;
-        break;
+    // An INSERTION sort of the last order, which moves a lump past its
+    // neighbour only when it is farther by more than `resortSlack` — and that
+    // is what makes the upload below small. A full sort reshuffled every
+    // near-tie on every re-sort: lobes of one cloud whose centres sit within a
+    // metre or two of each other traded places for two metres of walking, and
+    // two thirds of the buffer went up three times a second while the player
+    // ran. Their order was never information — a lobe is tens to hundreds of
+    // metres across, and ordering by centre is a heuristic at that scale — so
+    // a tie is left where it stands. On nearly sorted input the pass is linear,
+    // and it allocates nothing.
+    const slack = CONFIG.sky.clouds.resortSlack;
+    const prev = this.cloudOrder;
+    const order = this.cloudNext;
+    order.set(prev);
+    for (let i = 1; i < n; i++) {
+      const lump = order[i];
+      const d = dist[lump];
+      let j = i;
+      while (j > 0 && dist[order[j - 1]] < d - slack) {
+        order[j] = order[j - 1];
+        j--;
       }
+      order[j] = lump;
     }
-    if (same) return;
-    this.cloudOrder = order;
+    // Then only the RUNS that moved are rewritten and uploaded. A position keeps its
+    // indices when it holds the same lump at the same offset as last time —
+    // the offsets are running sums of lump sizes, so that is a test of the
+    // bytes themselves and holds for any permutation, not only a neighbour
+    // swap. A single span from the first difference to the last was tried
+    // first and covered 94% of the buffer on average: swaps happen all round
+    // the ring at once, so the first and the last are nearly always near the
+    // two ends.
+    //
+    // **Straight to the engine, and never through `Mesh.updateIndices`.** That
+    // takes no span — its `offset` is a BYTE offset at which it writes the
+    // WHOLE array — and it keeps a CPU copy by `slice()`ing the whole array
+    // first: 600 kB allocated per re-sort, three times a second while the
+    // player runs. The geometry holds `idx` itself by reference (it was handed
+    // it by `setIndices`), so its CPU side is already this array and only the
+    // GPU needs telling.
+    const buffer = clouds.geometry?.getIndexBuffer();
+    if (!buffer) return;
+    const engine = this.scene.getEngine();
+    const bytes = buffer.is32Bits ? 4 : 2;
     const idx = this.cloudIndices;
-    let k = 0;
+    let kOld = 0;
+    let kNew = 0;
+    let runStart = -1;
+    let changed = false;
     for (let i = 0; i < n; i++) {
-      const first = geo.lumpFirst[order[i]];
-      const end = first + geo.lumpCount[order[i]];
-      for (let v = first; v < end; v += 3) {
-        idx[k++] = v;
-        idx[k++] = v + 1;
-        idx[k++] = v + 2;
+      const lump = order[i];
+      const count = geo.lumpCount[lump];
+      if (lump === prev[i] && kOld === kNew) {
+        if (runStart >= 0) {
+          engine.updateDynamicIndexBuffer(buffer, idx.subarray(runStart, kNew), runStart * bytes);
+          runStart = -1;
+        }
+      } else {
+        if (runStart < 0) runStart = kNew;
+        changed = true;
+        const first = geo.lumpFirst[lump];
+        for (let v = 0; v < count; v++) idx[kNew + v] = first + v;
       }
+      kOld += geo.lumpCount[prev[i]];
+      kNew += count;
     }
-    clouds.updateIndices(idx);
+    if (runStart >= 0) {
+      engine.updateDynamicIndexBuffer(buffer, idx.subarray(runStart, kNew), runStart * bytes);
+    }
+    if (!changed) return;
+    this.cloudOrder = order;
+    this.cloudNext = prev;
   }
 
   /**
@@ -404,12 +458,18 @@ export class Sky {
       elevationBias: c.elevationBias,
       minWidth: c.minWidth * deg,
       maxWidth: c.maxWidth * deg,
-      minFlatness: c.minFlatness,
-      maxFlatness: c.maxFlatness,
       depth: c.depth,
       minLumps: c.minLumps,
       maxLumps: c.maxLumps,
       jitter: c.jitter,
+      subdivisions: c.subdivisions,
+      minRise: c.minRise,
+      maxRise: c.maxRise,
+      bankRise: c.bankRise,
+      cumulusShare: c.cumulusShare,
+      bankShare: c.bankShare,
+      maxTiers: c.maxTiers,
+      proxyShare: c.proxyShare,
     });
 
     const mesh = new Mesh("sky-clouds", this.scene);
@@ -425,6 +485,7 @@ export class Sky {
     mesh.setIndices(this.cloudIndices, null, true);
     this.cloudOrder = new Uint32Array(lumps);
     for (let i = 0; i < lumps; i++) this.cloudOrder[i] = i;
+    this.cloudNext = new Uint32Array(lumps);
     this.cloudDist = new Float32Array(lumps);
     this.cloudGeo = ring;
 
@@ -445,6 +506,8 @@ export class Sky {
       air: c.air,
       litStep: c.litStep,
       highlight: c.highlight,
+      skyFill: c.skyFill,
+      litAir: c.litAir,
     });
     mesh.material = mat;
     // **Group 0, on its ALPHA-TEST list** (`createCloudMaterial` sets that):

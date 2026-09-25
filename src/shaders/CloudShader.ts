@@ -94,6 +94,9 @@ uniform form: vec4f;
 // x how far toward the lit tone the first cut goes, y where the second cut
 // (the highlight) sits, as a cosine to the light.
 uniform tones: vec2f;
+// x how far the shadow side's upper facets go toward the sky above, y how much
+// of the air the lit side sheds.
+uniform fill: vec2f;
 // Where a cloud's depth is written from: x, y the tangents of the half field of
 // view, z, w two over the target's width and height (pixel -> NDC).
 uniform depthRay: vec4f;
@@ -172,7 +175,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // cut out of it. The lit side is that tone carried toward the light's colour.
   let shade = mix(uniforms.shadeColor, dome, uniforms.form.y);
   let lit = mix(shade, uniforms.litColor, uniforms.look.x);
-  var col = mix(shade, lit, key);
+  // THE SKY FILL: the shadow side's UPPER facets are lit by the dome over
+  // them, so they are a lighter, sky-tinted tone above a darker foot — the
+  // middle tone every painted cloud has between its light and its belly. Cut
+  // on the blended normal like the key, so its edge breaks along the facets.
+  let skyAbove = mix(dome, uniforms.zenithColor, 0.5);
+  let fill = mix(shade, skyAbove, uniforms.fill.x * cut(n.y - 0.3));
+  var col = mix(fill, lit, key);
 
   // The belly. Nothing lights the underside of a cloud but the ground, so the
   // flat base is a third, darker tone — asked of the SMOOTH normal, so it is
@@ -203,8 +212,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // away through the same haze that paints the dome — and a low one takes much
   // more, on the dome's own schedule: most of the way at the rim, the floor by
   // 30 degrees up. This is what sets a far bank back behind a near one.
+  //
+  // **The LIT side sheds part of it** (\`fill.y\`), and that is what keeps a
+  // lit face the one thing in the sky PALER than the air around it. Hazed as
+  // hard as the shade, a sunlit face landed on the sky's own value, a little
+  // greyer — measured on Harrowmead, #ecc793 against an #e9be80 sky — and a
+  // cloud no brighter than its sky is a pale stone hung in it. The shade keeps
+  // the full share, so the haze still sets a far bank back behind a near one.
   let low = 1.0 - smoothstep(0.06, 0.5, v.y);
-  col = mix(col, dome, clamp(uniforms.form.w + low * uniforms.look.y, 0.0, 1.0));
+  let air = clamp(uniforms.form.w + low * uniforms.look.y, 0.0, 1.0);
+  col = mix(col, dome, air * (1.0 - uniforms.fill.y * key));
 
   // ONE DEPTH PER PIXEL FOR EVERY CLOUD, written here rather than interpolated.
   // It is the depth of a point 7 km out along THIS PIXEL'S RAY, which is behind
@@ -263,6 +280,10 @@ export interface CloudLook {
   litStep: number;
   /** Where the highlight's cut sits, as a cosine to the light. */
   highlight: number;
+  /** How far the shadow side's upper facets go toward the sky above them. */
+  skyFill: number;
+  /** How much of the air's share the LIT side sheds, 0..1. */
+  litAir: number;
 }
 
 /**
@@ -299,6 +320,7 @@ export function createCloudMaterial(scene: Scene, look: CloudLook): ShaderMateri
         "look",
         "form",
         "tones",
+        "fill",
       ],
       shaderLanguage: ShaderLanguage.WGSL,
       // Nothing is alpha-TESTED here, and this is not a claim that anything
@@ -331,6 +353,7 @@ export function createCloudMaterial(scene: Scene, look: CloudLook): ShaderMateri
     new Vector4(look.facetShare, look.shadeSky, look.belly, look.air),
   );
   mat.setVector2("tones", new Vector2(look.litStep, look.highlight));
+  mat.setVector2("fill", new Vector2(look.skyFill, look.litAir));
   mat.depthFunction = Constants.LEQUAL;
   mat.backFaceCulling = true;
   mat.freeze();

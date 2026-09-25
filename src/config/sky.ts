@@ -143,28 +143,56 @@ export const sky = {
     /** Angular width of a cloud, narrowest and widest. */
     minWidth: 16,
     maxWidth: 42,
-    /**
-     * Height as a fraction of width — a long flat bank to a low heap. Kept
-     * LOW, and that was a photograph rather than a preference: at a quarter of
-     * the width the piles read as a range of pale rocks hanging in the air,
-     * because a tall faceted mass is a mountain before it is a cloud.
-     */
-    minFlatness: 0.1,
-    maxFlatness: 0.2,
     /** Depth along the line of sight, as a fraction of width. */
     depth: 0.4,
     /**
-     * Lumps in a cloud's base row; the upper tier and the tail are added on top
-     * of these. FEW and long: thirteen beads a cloud was the popcorn.
+     * Lobes in a cumulus's base row (a bank carries `maxLumps` and up, a puff
+     * two or three); the tiers and the side lobes are added on top of these.
      */
-    minLumps: 4,
-    maxLumps: 8,
+    minLumps: 3,
+    maxLumps: 6,
     /**
      * Radial jitter on every lump vertex. This is what makes a facet read as a
-     * cut stone rather than as a panel of a geodesic ball — and, past about
-     * 0.15, as a SPIKE, which is the same rock problem as the flatness above.
+     * cut face rather than as a panel of a geodesic ball — and, past about
+     * 0.15, as a SPIKE, which is a rock before it is a cloud.
      */
-    jitter: 0.12,
+    jitter: 0.045,
+    /**
+     * Subdivisions of each lobe's icosahedron. Two, not one: at one a round
+     * lobe is a polygon with a few big facets across it, and a heap of those
+     * is a heap of rocks. See `cloudMasses.ts`'s `icosphere`.
+     */
+    subdivisions: 2,
+    /**
+     * A cumulus lobe's height against its own half-width. ROUNDER than the
+     * 0.38 cap the old piles carried, and what makes that safe is that no lobe
+     * is ever seen whole: it overlaps its neighbours by most of its width and
+     * its buried facets are dropped (`cloudMasses.ts`), so a row of them is a
+     * scalloped top over one mass rather than the heap of pale boulders the
+     * cap was put there against.
+     */
+    minRise: 0.55,
+    maxRise: 0.78,
+    /** The same for a bank's lobes — the long flat stratocumulus rows. */
+    bankRise: 0.45,
+    /**
+     * What the ring is made of: towering cumulus, long banks, and the rest
+     * small puffs scattered between them. A sky of one kind of cloud reads as a
+     * stamp repeated round the horizon.
+     */
+    cumulusShare: 0.5,
+    bankShare: 0.3,
+    /** Most tiers a cumulus piles over its base row; each is fewer and smaller lobes. */
+    maxTiers: 3,
+    /**
+     * How much of the normal the light is asked of is the whole CLOUD's dome
+     * rather than the lobe's own — the stylised painter's normal transfer. Lit
+     * per lobe, every billow in the crown turned its own small terminator to
+     * the light and a sunlit face came out spotted with dark crescents, a heap
+     * of stones; toward the cloud, the light is one big shape across the mass
+     * with a scalloped edge, and the billows are left to break the silhouette.
+     */
+    proxyShare: 0.75,
     /**
      * Drift, in degrees per second, as a turn of the whole ring about the map.
      * About forty minutes a circuit: a cloud crossing the sun takes the better
@@ -179,6 +207,14 @@ export const sky = {
      */
     resortMetres: 2,
     resortTurn: 0.002,
+    /**
+     * How much farther, in metres, a lump must be than the one ahead of it in
+     * the painter's order before the re-sort moves it (`Sky.sortClouds`). A
+     * near-tie between two lobes a few hundred metres across says nothing
+     * about which covers which, and re-deciding every one of them was two
+     * thirds of the index buffer uploaded on every re-sort.
+     */
+    resortSlack: 6,
     /**
      * The distance whose depth every cloud fragment writes, measured ALONG the
      * pixel's ray — not where a cloud is but where the depth test is told it is
@@ -205,7 +241,7 @@ export const sky = {
      * crystal; at 0 the terminator is an airbrushed curve. Between, it is one
      * line across the lump that breaks along the facets.
      */
-    facetShare: 0.45,
+    facetShare: 0.1,
     /**
      * How far the shadow side is pulled toward the sky behind it: a cloud's
      * shade is lit by the dome all round it, so it is a darker patch OF the
@@ -218,8 +254,8 @@ export const sky = {
      * first cut goes, and the facets square to the light take the rest. One
      * cut left a flat bank's whole top a single cream shape with nothing in it.
      */
-    litStep: 0.6,
-    highlight: 0.45,
+    litStep: 0.8,
+    highlight: 0.6,
     /** How much darker the flat belly's tone is than the shadow side. */
     belly: 0.12,
     /**
@@ -227,5 +263,20 @@ export const sky = {
      * floor under `hazeAtHorizon`'s ramp.
      */
     air: 0.15,
+    /**
+     * How far the shadow side's UPPER facets go toward the sky above them. A
+     * cloud's shade is lit by the whole dome, and most by the part overhead, so
+     * the top of the dark side is a lighter, sky-tinted tone than its foot —
+     * the third tone every painted cloud has between its light and its belly.
+     */
+    skyFill: 0.4,
+    /**
+     * How much of the air's share the LIT side sheds. The haze above sets a far
+     * bank back behind a near one, but hazed as hard as the shade a sunlit face
+     * lands on its sky's own value, and a cloud no brighter than the sky it
+     * stands in is a pale stone. At 0.6 the lit face stays the palest thing
+     * in its part of the sky and the shade still recedes.
+     */
+    litAir: 0.6,
   },
 } as const;

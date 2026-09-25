@@ -3028,26 +3028,45 @@ shape) and `shaders/CloudShader.ts` is the light.
 
 - **One mesh, one material, one draw.** The whole ring is a flat-shaded triangle
   soup — every triangle owns its three corners, which is what gives each facet its
-  own normal — merged once when the sky is applied. Measured: 12,640 triangles
-  on Harrowmead (`cloudCover` 0.55) and 14,080 on Coldharbour (0.62), measured
-  when Hollowmere still carried 16,640 at 0.72. Hollowmere is 0 now, and a cover
-  of 0 builds no ring, no material and no draw at all.
-- **A cloud is a long BANK of flattened icosphere lumps with a flat BELLY.** One
-  subdivision, because the facet is the look; four to eight lumps a row, swelling
-  toward the middle and thinning to the ends, a thinner tier SLID one way along the
-  top rather than a crown sat square on it, and on most clouds a short tail off the
-  end the tier shears toward. Five things were each photographed the wrong way first
-  and are now rules in the file: a lump may never rise more than `MAX_LUMP_RISE`
-  (0.38) of its own half-width — at three quarters every lump was a faceted BALL,
-  and six to thirteen of them a cloud read as popcorn, or as pale boulders hung in
-  the sky, which is what the player called "too 3D and solid"; the belly is PRESSED
-  toward the base plane (`BELLY_SQUASH`) rather than clamped onto it (a clamp gave
-  every cloud one smooth slab of floor that the haze shaded like sheet metal); the
-  whole pile stays LOW against its width, because a tall faceted mass is a rock
-  before it is a cloud; a tail many times longer than it is tall ends in a POINT and
-  read as a blade; and every corner carries the lump's SMOOTH normal (the unjittered
-  ellipsoid's gradient, the squash dividing its y) beside the facet's, for the
-  shading below.
+  own normal — merged once when the sky is applied. Measured: 46k triangles on
+  Harrowmead (`cloudCover` 0.55) and 50k on Coldharbour (0.62), 52k on
+  Cinderhaven, built in ~40 ms once per sky and re-sorted in 0.3-0.5 ms
+  (index upload included) — against 12.6k and 14.1k for the flat piles this
+  replaced. Hollowmere is 0, and a cover of 0 builds no ring, no material and no
+  draw at all.
+- **A cloud is a HEAP OF ROUND LOBES on one flat BELLY, and three kinds make a
+  sky** (`cumulusShare`, `bankShare`, the rest puffs): a CUMULUS is a row of dome
+  lobes swelling toward an off-centre peak, tiers of smaller lobes leaning one way
+  over it and a CROWN of little billows set into its upper surface; a BANK is a
+  long low row of small round lobes; a PUFF is a cumulus at a third of the width.
+  Two subdivisions per lobe, not one. What was photographed the wrong way first,
+  and is now a rule in the file:
+  - **A lobe is never seen WHOLE.** The flat piles before this capped a lump at
+    0.38 of its half-width because separate faceted balls read as "too 3D and
+    solid" — pale boulders hung in the sky. These rise 0.55-0.78, and what makes
+    that safe is that each overlaps its neighbours by most of its width and **every
+    facet buried in another lobe of the same cloud is DROPPED** (`emitLump`,
+    tested against the neighbour's smallest possible surface, `1 - jitter`). All
+    clouds write one depth, so the painter's order alone says which lobe covers
+    which, and a lobe drawn after the one it rose out of painted its buried
+    underside over it: a hard SHELF across the cloud at every tier, which is what
+    made the old piles read as stacked plates.
+  - **One subdivision is a ROCK.** At one, a round lobe draws a polygon for a
+    silhouette and a few big facets across its face, and a heap of those is a
+    heap of stones. At two the outline is a curve with a hand-cut edge, like the
+    canopy's; the jitter is 0.045 for the same reason.
+  - **The crown is what stops a tall cumulus reading as a CLIFF** — without it a
+    tower is two or three smooth domes with straight flanks, a sandstone butte.
+  - **A bank is a ROW OF ROUND LOBES and never a few long ones**, and its ends
+    thin but not to nothing: an ellipsoid many times longer than it is tall ends
+    in a POINT, a row tapering to its last small lobe is a WEDGE, and either one
+    seen end-on is a blade across the sky.
+  - The belly is PRESSED toward the base plane (`BELLY_SQUASH`) rather than
+    clamped onto it (a clamp gave every cloud one smooth slab of floor that the
+    haze shaded like sheet metal).
+  - **A CREASE between lobes was built and taken out.** A baked shadowed seam
+    where one billow meets the next read, photographed, as the STRATA of a rock;
+    each lobe's own terminator separates the billows cleanly without it.
 - **The clouds stand IN THE WORLD, over the map — and that is the rule the first
   version broke.** It rode at `infiniteDistance` like the dome, and a player
   walking across Harrowmead watched every cloud walk with them. The ring is now
@@ -3085,7 +3104,19 @@ shape) and `shaders/CloudShader.ts` is the light.
 - **One shared depth is why the lumps are drawn back to front.** The buffer cannot
   say which lump is in front, so `Sky.sortClouds` rewrites the index buffer
   farthest lump first whenever the eye has walked `resortMetres` or the ring has
-  turned `resortTurn`, and the test is LEQUAL so a later tie wins. Back-face
+  turned `resortTurn`, and the test is LEQUAL so a later tie wins. **The re-sort
+  is an insertion sort of the last order with `resortSlack` (6 m) of tolerance,
+  and only the RUNS of the index buffer that moved are uploaded** — straight to
+  the engine's dynamic index buffer, never through `Mesh.updateIndices`, which
+  writes the whole array at a BYTE offset and `slice()`s a 600 kB CPU copy first.
+  An exact sort reshuffled every near-tie between lobes of one cloud on every
+  re-sort, so even uploading only what moved sent 68% of the buffer; with the
+  slack it is 30-40%, and on a CPU throttled 6x as a phone stand-in a sprint's
+  re-sorts went from 1.4 ms each (4.8 ms a second) to 0.2-0.4 ms (0.8-1.2 ms a
+  second). A tie's order was never information: at a frozen vantage the slack
+  and an exact sort differ in 0.26% of pixels, a few lobes trading which is on
+  top, and neither picture is the right one. Partial and whole uploads were
+  checked pixel-identical. Back-face
   culling makes each closed lump right on its own. The depth is written per PIXEL
   rather than interpolated because a per-vertex z/w in float32 near 1
   wobbles by about one 24-bit LSB, which would speckle every overlap.
@@ -3103,18 +3134,30 @@ shape) and `shaders/CloudShader.ts` is the light.
   it.** The key is asked of the world normal in the shader, so a cloud coming round
   into the sun lights on its sun side. A baked colour would carry its lit face away
   with it, which is the trap the old second shell existed to dodge.
-- **The light is asked MOSTLY OF THE LUMP and only partly of the facet**
-  (`CONFIG.sky.clouds.facetShare`, 0.45). Lit per facet alone, every triangle took
-  a tone of its own and a cloud was a crystal of forty greys; lit off the smooth
-  normal alone, the terminator is an airbrushed curve. Between, it is one cut line
-  across the lump that breaks along the facets — the frame's own hand-cut edge.
+- **The light is asked of the CLOUD more than of the lobe, and barely of the
+  facet.** The smooth normal every corner carries is its lobe's gradient turned
+  `proxyShare` (0.75) of the way toward the gradient of ONE DOME standing over the
+  whole cloud — the stylised painter's normal transfer. Lit per lobe, every
+  billow in the crown turned its own little terminator to the light and a sunlit
+  face came out spotted with dark crescents, which on Harrowmead's low sun was a
+  heap of stones again; off the dome, the light falls across the mass as one big
+  shape with a scalloped edge, and the billows only break the silhouette. The
+  facet's own normal keeps `facetShare` (0.1) of it, so that one edge still breaks
+  along the facets rather than running as an airbrushed curve.
 - **The shading is cel TONES, every edge a one-pixel `fwidth` cut:** the key cut
-  once just past the equator (`wrap`, -0.1) and again at `highlight` (0.45), so the
-  lit side is two tones (`litStep`) and a flat bank's top has a broken bright ridge
-  rather than one cream shape; a belly a tone darker where the SMOOTH normal faces
-  down, so it is one band along the base; a SILVER LINING on the RIM, looking
-  toward the light; and the dome's colour over everything (`air`) and much more over
-  the low ones on the dome's own schedule (`hazeAtHorizon`).
+  once just past the equator (`wrap`, -0.1) and again at `highlight` (0.6), so the
+  lit side is two tones (`litStep` 0.8) with a small bright cap where a dome faces
+  the light square; the shadow side split by a SKY FILL (`skyFill`) — its upper
+  facets pulled toward the sky over them, the middle tone every painted cloud has
+  between its light and its belly; a belly a tone darker where the SMOOTH normal
+  faces down, so it is one band along the base; a SILVER LINING on the RIM,
+  looking toward the light; and the dome's colour over everything (`air`) and much
+  more over the low ones on the dome's own schedule (`hazeAtHorizon`).
+- **The LIT side sheds part of that air** (`litAir`, 0.6), and that is what keeps
+  a sunlit face the one thing in its part of the sky PALER than the air round it.
+  Hazed as hard as the shade, Harrowmead's lit face measured #ecc793 against an
+  #e9be80 sky — the sky's own value a little greyer, a pale stone hung in it. The
+  shade keeps the full share, so the haze still sets a far bank behind a near one.
 - **The shadow side is pulled toward the DOME'S GRADIENT behind the pixel**
   (`shadeSky`), which the fragment rebuilds stop for stop from `zenithColor` and
   `horizonColor` — a cloud's shade is lit by the sky all round it, so it is a darker
