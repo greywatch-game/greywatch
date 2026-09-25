@@ -19,8 +19,10 @@ import {
   roadTop,
   type RoadFootprint,
 } from "../roads";
-import { stripSections, type RoadJoin } from "../roadPaths";
+import { stripSections, type RoadJoin, type RoadSection } from "../roadPaths";
 import {
+  type DrapeFrame,
+  type DrapeSection,
   type TerrainField,
   terrainFan,
   terrainRibbon,
@@ -121,6 +123,12 @@ export function buildRamp(
  * adding a fourth carriageway is a row in `ROAD_PATTERNS`, a field and a
  * palette — still not a code path here.
  *
+ * **The fourth is the one exception, because it is not a texture.** `candy` is
+ * a board game's path: a cream strip with coloured SPACES laid on it, and a
+ * space is a thing with an ORIENTATION — it is cut across the strip at a point
+ * along it, which no world-mapped field can know. So it branches here, into
+ * `candyStrip`, and draws in flat palette colours with `Build.surface`.
+ *
  * **How far proud is the SURFACE's, and it is what settles a junction**
  * (`roadTop`, `world/roads.ts`). Two roads that cross are two coplanar sheets
  * in two different merged meshes — one per material — and coplanar is a tie
@@ -174,7 +182,15 @@ export function buildRoad(
     if (!ctx?.road) return b;
     const frame = { x: ctx.x, z: ctx.z, rotY: ctx.rotY, originY: ctx.y };
     const { strip, joins } = ctx.road;
-    if (strip) {
+    if (strip && surface === "candy") {
+      // The spaces and the pitfalls are drawn by builders of their own,
+      // biased further toward the eye than the cream — see `CANDY_TILE_UNITS`
+      // — and handed back as this road's meshes.
+      const spaces = new Build(scene, mats, "road-spaces", ROAD_DEPTH_UNITS + CANDY_TILE_UNITS);
+      const pits = new Build(scene, mats, "road-pits", ROAD_DEPTH_UNITS + 2 * CANDY_TILE_UNITS);
+      candyStrip(b, spaces, pits, ctx.terrain, frame, stripSections(strip), top, h, [strip.free0, strip.free1], p);
+      b.meshes.push(...spaces.meshes, ...pits.meshes);
+    } else if (strip) {
       b.groundSurface(
         terrainRibbon(ctx.terrain, frame, stripSections(strip), top, h, [strip.free0, strip.free1]),
         surface,
@@ -182,10 +198,11 @@ export function buildRoad(
     }
     for (const j of joins) {
       const jh = 0.08 + (j.top - ROAD_TOP);
-      b.groundSurface(
-        terrainFan(ctx.terrain, frame, j.x, j.z, j.xs, j.zs, j.kerb, j.top, jh),
-        j.surface,
-      );
+      const fan = terrainFan(ctx.terrain, frame, j.x, j.z, j.xs, j.zs, j.kerb, j.top, jh);
+      // A junction on the candy path is paved in its cream: the spaces run on
+      // through it, and what the patch adds is the fillet out to the track.
+      if (j.surface === "candy") b.surface(fan, CANDY_GROUT);
+      else b.groundSurface(fan, j.surface);
     }
     const site = kerbSite(ctx, frame.x, frame.z, frame.rotY);
     if (site) {
@@ -224,6 +241,14 @@ export function buildRoad(
       top,
       thickness: h,
     });
+  if (surface === "candy") {
+    // A rectangle of the candy path is a plain cream apron — a square at the
+    // path's end, say. The spaces are a PATH's, because a space needs a way
+    // along to be cut across.
+    if (contoured) b.surface(contoured, CANDY_GROUT);
+    else b.box(w, h, len, 0, top - h / 2, 0, CANDY_GROUT);
+    return b;
+  }
   if (contoured) b.groundSurface(contoured, surface);
   else b.groundBox(w, h, len, 0, top - h / 2, 0, surface);
 
@@ -313,6 +338,181 @@ export function buildRoad(
     }
   }
   return b;
+}
+
+// --- the candy path ----------------------------------------------------------
+
+/**
+ * The board's six colours and its lavender picture space, keyed by the
+ * characters `BuildParams.tiles` is written in. Saturated, and a shade under
+ * the swatch for the khaki clamp's reason: they are seen under a high sun on a
+ * lawn, and a primary at full value clips flat against the shoulder.
+ */
+const CANDY_SPACES: Readonly<Record<string, string>> = {
+  r: "#cf2a33",
+  o: "#e9761e",
+  y: "#eec21f",
+  g: "#2d9446",
+  b: "#2c68cf",
+  p: "#7a3aa6",
+  l: "#b49fd8",
+};
+/** The cream the spaces are laid on — the board's white outline and grout. */
+const CANDY_GROUT = "#efe5d2";
+/** A pitfall: the black dot in a space where you stay until your colour comes up. */
+const CANDY_PIT = "#1e1719";
+/** What a candy strip lays when `tiles` says nothing: the board's own order. */
+const CANDY_CYCLE = "pybogr";
+/**
+ * How far a space rides over the cream, and a pitfall over the space.
+ *
+ * **Not the road ladder's millimetres, and the difference is the drape.** Two
+ * crossing roads are coplanar sheets, which any lift settles. A space and the
+ * cream under it are two DIFFERENT drapes of one floor — each ribbon's
+ * vertices sit exactly on the ground, but a space is inset from the kerbs and
+ * cut at its own arc lengths, so its vertices are not the cream's, and
+ * between vertices each triangle stands off the floor's own creases by
+ * whatever that crease bends. Measured on this map's rolling lawn that is
+ * several millimetres, and at 1.5 mm the cream came through every space in
+ * blotches. Twelve clears it. What it costs is the dust disc (20 mm over the
+ * floor a round hit), which is now under a space's top on the path — a hit on
+ * the path is a spark without the dust ring.
+ */
+const CANDY_TILE_LIFT = 0.012;
+const CANDY_PIT_LIFT = 0.02;
+/**
+ * …and what settles the same question at RANGE, which no lift can: the road
+ * ladder's own finding (`ROAD_DEPTH_UNITS`), that millimetres of geometry are
+ * below what the depth buffer tells apart a couple of hundred metres out.
+ * A space is biased this many polygon-offset units further toward the eye
+ * than the cream it lies on, and a pitfall as many again — a step the buffer
+ * resolves at every distance by construction, and a fraction of a millimetre
+ * in the space under your feet, where the lift is doing the work.
+ */
+const CANDY_TILE_UNITS = -4;
+/** The cream left showing: a margin to each kerb and a gap between spaces. */
+const CANDY_MARGIN = 0.35;
+const CANDY_GAP = 0.3;
+
+/**
+ * A candy path's strip: the cream ribbon, and on it the spaces — or, with
+ * `stripes`, lengthwise bands — each its own ribbon inset from the kerbs and
+ * cut at an arc length along the line, so a space is square to the path
+ * however it bends. Every piece is draped by `terrainRibbon`, so it rides the
+ * ground exactly as the cream does, a millimetre and a half over it.
+ */
+function candyStrip(
+  b: Build,
+  spaces: Build,
+  pits: Build,
+  terrain: TerrainField,
+  frame: DrapeFrame,
+  sec: readonly RoadSection[],
+  top: number,
+  thickness: number,
+  caps: readonly [boolean, boolean],
+  p: BuildParams,
+): void {
+  b.surface(terrainRibbon(terrain, frame, sec, top, thickness, caps), CANDY_GROUT);
+  const n = sec.length;
+  if (n < 2) return;
+  // Arc length along the centreline, section by section.
+  const s: number[] = [0];
+  for (let k = 1; k < n; k++) {
+    s.push(s[k - 1] + Math.hypot(sec[k].cx - sec[k - 1].cx, sec[k].cz - sec[k - 1].cz));
+  }
+  const len = s[n - 1];
+  const width = Math.hypot(sec[0].lx - sec[0].rx, sec[0].lz - sec[0].rz);
+  if (len < 1 || width < 2 * CANDY_MARGIN + 0.5) return;
+
+  // The section at arc length t, lerped kerb to kerb between its neighbours —
+  // what `terrainRibbon` itself does between the sections it is handed.
+  const at = (t: number): RoadSection => {
+    let k = 0;
+    while (k < n - 2 && s[k + 1] < t) k++;
+    const span = s[k + 1] - s[k];
+    const f = span > 1e-9 ? Math.min(1, Math.max(0, (t - s[k]) / span)) : 0;
+    const a = sec[k];
+    const c = sec[k + 1];
+    const mix = (u: number, v: number): number => u + (v - u) * f;
+    return {
+      cx: mix(a.cx, c.cx),
+      cz: mix(a.cz, c.cz),
+      lx: mix(a.lx, c.lx),
+      lz: mix(a.lz, c.lz),
+      rx: mix(a.rx, c.rx),
+      rz: mix(a.rz, c.rz),
+    };
+  };
+  // The run of sections from t0 to t1: its two cut ends and every section of
+  // the line between them.
+  const run = (t0: number, t1: number): RoadSection[] => {
+    const out = [at(t0)];
+    for (let k = 0; k < n; k++) if (s[k] > t0 + 1e-6 && s[k] < t1 - 1e-6) out.push(sec[k]);
+    out.push(at(t1));
+    return out;
+  };
+  // A section narrowed to the band between fractions f0 and f1 of its width,
+  // measured from the left kerb.
+  const band = (q: RoadSection, f0: number, f1: number): DrapeSection => ({
+    lx: q.lx + (q.rx - q.lx) * f0,
+    lz: q.lz + (q.rz - q.lz) * f0,
+    rx: q.lx + (q.rx - q.lx) * f1,
+    rz: q.lz + (q.rz - q.lz) * f1,
+  });
+  const lay = (rows: DrapeSection[], color: string): void => {
+    spaces.surface(
+      terrainRibbon(terrain, frame, rows, top + CANDY_TILE_LIFT, CANDY_TILE_LIFT + 0.01, [true, true]),
+      color,
+    );
+  };
+  const colorOf = (ch: string): string => CANDY_SPACES[ch.toLowerCase()] ?? CANDY_GROUT;
+  const edge = CANDY_MARGIN / width;
+
+  if (p.stripes) {
+    // The Rainbow Trail: bands laid the whole length, shoulder to shoulder.
+    const body = run(CANDY_MARGIN, len - CANDY_MARGIN);
+    const m = p.stripes.length;
+    for (let i = 0; i < m; i++) {
+      const f0 = edge + ((1 - 2 * edge) * i) / m;
+      const f1 = edge + ((1 - 2 * edge) * (i + 1)) / m;
+      lay(body.map((q) => band(q, f0, f1)), colorOf(p.stripes[i]));
+    }
+    return;
+  }
+
+  let tiles = p.tiles;
+  if (!tiles) {
+    const count = Math.max(1, Math.round(len / width));
+    tiles = "";
+    for (let i = 0; i < count; i++) tiles += CANDY_CYCLE[i % CANDY_CYCLE.length];
+  }
+  const pitch = len / tiles.length;
+  for (let k = 0; k < tiles.length; k++) {
+    const ch = tiles[k];
+    const t0 = k * pitch + CANDY_GAP / 2;
+    const t1 = (k + 1) * pitch - CANDY_GAP / 2;
+    if (t1 - t0 < 0.2) continue;
+    lay(run(t0, t1).map((q) => band(q, edge, 1 - edge)), colorOf(ch));
+    // A capital is a pitfall: a black disc in the middle of the space, draped
+    // as a fan.
+    if (ch === ch.toLowerCase()) continue;
+    const mid = at((t0 + t1) / 2);
+    const r = Math.min(pitch, width) * 0.17;
+    const xs: number[] = [];
+    const zs: number[] = [];
+    const kerb: boolean[] = [];
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      xs.push(mid.cx + Math.cos(a) * r);
+      zs.push(mid.cz + Math.sin(a) * r);
+      kerb.push(true);
+    }
+    pits.surface(
+      terrainFan(terrain, frame, mid.cx, mid.cz, xs, zs, kerb, top + CANDY_PIT_LIFT, CANDY_PIT_LIFT + 0.01),
+      CANDY_PIT,
+    );
+  }
 }
 
 // --- the kerb --------------------------------------------------------------

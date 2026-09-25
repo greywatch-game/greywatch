@@ -29,8 +29,9 @@ The shipped maps are **Hollowmere** (night), **Greyfen** (a jungle morning, sun
 through the canopy), **Coldharbour** (a city before dusk), **Harrowmead** (a
 farming vale at sunset in high summer), **Sarab** (a desert town an hour
 before noon), **Cinderhaven** (a harbour town on a volcanic island, at
-night) and **Kurenai** (a temple town in a mountain valley as the maples turn,
-forty minutes before sunset). Greyfen
+night), **Kurenai** (a temple town in a mountain valley as the maples turn,
+forty minutes before sunset) and **Candy Land** (the 1962 board game's board,
+on a bright spring afternoon). Greyfen
 was forked from Hollowmere's layout, cleared back to a blank valley, and is
 now being rebuilt as a jungle one: what stands is the **manor** on flag C, the
 districts around the other four flags, and the forest itself — ~1,390 canopy
@@ -279,6 +280,47 @@ engine. Seven things came out of building it and all of them outlive it:
   core by a few metres, because a wall on the core's edge is a wall on the
   skirt and `FLAT` refuses it (`npm run kurenai -- --probe` prints the floor
   as a plan, `-- --plan` the claim list).
+
+**Candy Land is the eighth: 300 m of PLAY inside 500 m of ground**, seeded by
+`npm run candyland`, eight a side and infantry only. It is the second map built
+against a reference and the first whose reference is a PLAN rather than a
+view: the 1962 Milton Bradley board (`reference-media/candyland-board.jpg`,
+gitignored), read in its own pixels. What it took was a kit (`kit/candy.ts`),
+six props, a geometry module (`candyShapes.ts`) and one engine change — a
+fourth road surface. Four things came out of building it:
+
+- **A board game's path is a ROAD, and the fourth surface is the one that is
+  not a texture.** The rainbow path is one `road` placement 1,657 m long with
+  `surface: "candy"`, so it is in the footprint (nothing grows through it, no
+  grass tuft stands in it), rides the road merge (no shadow, no block key) and
+  carries `ROAD_DEPTH_UNITS` — everything the carriageways already solved. What
+  a texture cannot do is a SPACE: a thing cut across the strip at a point along
+  it. So `buildRoad` branches for it (`candyStrip`): a cream ribbon, and each
+  space its own ribbon inset from the kerbs and cut at its arc length, in the
+  colour `BuildParams.tiles` names — one character a space, the board's cycle,
+  lavender picture spaces and capitals for the three sticky spaces' black dots.
+  `stripes` lays the colours lengthwise instead: the Rainbow Trail.
+- **Two drapes of one floor are not coplanar and not parallel either**, and
+  that is what the road ladder's millimetres do not cover. A space's vertices
+  are not the cream's, and each ribbon's triangles stand off the floor's own
+  creases by whatever the crease bends, so at 1.5 mm the cream came through
+  every space in blotches. A space rides 12 mm up and 4 polygon-offset units
+  further toward the eye than the cream (`CANDY_TILE_UNITS`): the lift settles
+  it under your feet and the bias settles it at 300 m, where millimetres are
+  below what the depth buffer tells apart.
+- **The path is TRACED, and everything else is placed against the trace.** The
+  generator holds the board's centreline in the photograph's own pixels and one
+  mapping (0.245 m a pixel) onto the map; every landmark is written at the pixel
+  the board draws it at, and every piece of cover is `placeNear` — tried where
+  the board has it and then on rings round it, because a sweet authored off a
+  picture lands on the path about half the time.
+- **A sign's words are geometry** (`blockText`): runs of a 5x5 font as boxes
+  standing off the face. No texture means nothing for the server's missing
+  canvas to trip on, and the ink outlines each letter like any other shape. A
+  conversation heart says I LOVE YOU the same way — and faces the SUN as well as
+  the reader, because a motto in its own shadow is unreadable: the hearts along
+  the board's bottom edge are turned north-east, toward the path they are read
+  from and into a south-east key.
 
 No two maps share a module in any direction.
 
@@ -798,6 +840,7 @@ it texel for texel, a tile and a relief:
 | `cobble` | 1.5 m | 0.1 | five authored stone tones, setts as warped Voronoi cells in a mortar groove. The one that is WET: it opts into the map's `groundSpec` |
 | `dirt` | 3.5 m | 0.026 | a ladder over `DIRT`: hardpan under a fine dust, shallow worn hollows, stones pressed flush. Matte |
 | `asphalt` | 3 m | 0.02 | a ladder over `ASPHALT`: aggregate coming through the binder, crazed in patches where it has stood longest. Matte |
+| `candy` | — | — | NOT a texture: a cream strip with flat-coloured spaces cut across it (`candyStrip`), or bands along it (`stripes`). Candy Land's path — see that map's paragraph above |
 
 Three of those rows are load-bearing beyond their own map.
 
@@ -847,6 +890,7 @@ junction. `world/roads.ts` decides it once instead, off the surface —
 | `dirt` — a scraped track | 0 | 10 mm above the floor |
 | `cobble` — a laid street (the default) | 1 | 12 mm |
 | `asphalt` — poured blacktop | 2 | 14 mm |
+| `candy` — a board game's path | 3 | 16 mm, its spaces 12 mm over that |
 
 — which is the order the ground was actually built in, and therefore the order a
 person reads a junction in. `roadTop` is the whole of the mechanism: `buildRoad` cuts

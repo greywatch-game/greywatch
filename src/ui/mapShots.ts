@@ -38,6 +38,7 @@ import harrowmeadShot from "../../shots/harrowmead.jpg?url";
 import greyfenShot from "../../shots/greyfen.jpg?url";
 import hollowmereShot from "../../shots/hollowmere.jpg?url";
 import kurenaiShot from "../../shots/kurenai.jpg?url";
+import candylandShot from "../../shots/candyland.jpg?url";
 
 /**
  * Where the camera stood for one of these pictures.
@@ -166,6 +167,18 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
   kurenai: {
     url: kurenaiShot,
     vantage: { pos: [-59, 2.2, 65], target: [-96, 10, 74], fov: 62 },
+  },
+  // Across the board from Gumdrop Mountains' foot, a storey up: the rainbow
+  // path winding away in the foreground with a chocolate bar and spilt jelly
+  // beans beside it, the Gingerbread Plum Tree in the middle of the picture,
+  // the Peanut Brittle House on its left and Home Sweet Home on its right with
+  // the Lollypop Woods beyond. The board's own view, from a little way in.
+  //
+  // **The frame to preserve is the PATH LEADING TO THE TREE** — the one shape
+  // that says which board game this is before anything else has been read.
+  candyland: {
+    url: candylandShot,
+    vantage: { pos: [40, 9, -80], target: [-3, 9, 10], fov: 60 },
   },
 };
 

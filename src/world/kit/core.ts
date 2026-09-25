@@ -220,8 +220,37 @@ export interface BuildParams {
   rampSide?: -1 | 1;
   /** Gatehouse: banner colour identifying the owning team. */
   teamColor?: string;
-  /** Road: cobblestone street (default), the flat dirt track, or blacktop. */
-  surface?: "cobble" | "dirt" | "asphalt";
+  /**
+   * Road: cobblestone street (default), the flat dirt track, blacktop, or the
+   * board game's path — `candy`, a cream strip with its coloured spaces laid
+   * on it (see `tiles` and `stripes`).
+   */
+  surface?: "cobble" | "dirt" | "asphalt" | "candy";
+  /**
+   * Candy road: the SPACES, one character each, laid end to end in order
+   * along the strip and sharing its length equally. `r o y g b p` are red,
+   * orange, yellow, green, blue and purple, `l` is a lavender picture space,
+   * and a capital is the same colour with a black PITFALL dot in it — the
+   * board's cherry pitfalls and the molasses swamp's sticky space. Absent is
+   * the six colours cycling at about a width apart.
+   *
+   * A string rather than a list because a layout entry is one line
+   * (`src/editor/sourceScan.ts`) and a board's worth of spaces is a couple of
+   * hundred of them.
+   */
+  tiles?: string;
+  /**
+   * Candy road: lay the colours LENGTHWISE instead — one band per character
+   * across the width, running the whole strip, in `tiles`' alphabet. The
+   * board's Rainbow Trail. Wins over `tiles` when both are given.
+   */
+  stripes?: string;
+  /**
+   * Words a structure carries in block letters — a signpost's board, a
+   * conversation heart's motto (`kit/candy.ts`). A `|` breaks the line.
+   * Uppercase A–Z, digits, `!` and `♥`; anything else is a space.
+   */
+  text?: string;
   /**
    * Road: the carriageway's CENTRELINE, as points in the placement's own frame
    * — which makes it a PATH road rather than a `width` x `length` rectangle,
@@ -972,6 +1001,12 @@ export class Build implements Structure {
    * sun on the stated premise that it never reaches an avenue.
    */
   private groundMaterial(paving: RoadSurface): ShaderMaterial {
+    if (paving === "candy") {
+      // Not a texture: the candy path is flat colours cut along the strip,
+      // drawn with `surface` in `buildRoad`, and nothing may ask for it as a
+      // ground material.
+      throw new Error("groundMaterial: the candy path is drawn in colours, not a texture");
+    }
     if (paving === "cobble") {
       return this.mats.getGroundTextured(
         "cobble",

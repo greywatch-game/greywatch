@@ -3,8 +3,9 @@
 A browser-based **Conquest** shooter built with **Babylon.js** and
 **TypeScript**, played in **first person** against bots — alone, or with other
 people on a match server. Two sides fight over five control points on one of
-seven maps, from a fog-drowned village at night to a volcanic island fifteen
-hundred metres across, eight a side or twenty-four on the two biggest. The look
+eight maps, from a fog-drowned village at night to a volcanic island fifteen
+hundred metres across (and the Candy Land board itself), eight a side or
+twenty-four on the two biggest. The look
 is low-poly and cel-shaded, with ink lines, and the scene is lit by what is
 actually in it: lanterns, fires, muzzle flashes, a moon or a low sun, and the
 light that bounces between them.
@@ -336,6 +337,7 @@ the throwable, and on maps with armour the anti-tank item.
 | **Sarab**       | A desert town an hour before noon, inside a kilometre and a half of sand.                                   | 900 m     | 24     | tank, truck, helicopter  |
 | **Cinderhaven** | A harbour town on a volcanic island at night, lit by the burning mountain, with a bay you wade to cross.    | 1,500 m   | 24     | tank, truck, helicopter  |
 | **Kurenai**     | A temple town in a mountain valley as the maples turn, forty minutes before sunset.                         | 240 m     | 8      | —                        |
+| **Candy Land**  | The 1962 board game's board on a spring lawn: the rainbow path from START to Home Sweet Home, gumdrops and all. | 300 m     | 8      | —                        |
 
 Hollowmere, the first of them: the **Chapel** is on a terrace with a single
 ramp — hard to take, easy to hold. The **Mill** stands on the embankment over a

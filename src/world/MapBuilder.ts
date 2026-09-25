@@ -90,6 +90,12 @@ import { mulberry32 } from "./rng";
 import {
   buildAshTree,
   buildBamboo,
+  buildCattail,
+  buildGumdropSmall,
+  buildJellyBeans,
+  buildLollipop,
+  buildMintLeaf,
+  buildPeppermint,
   buildLeafLitter,
   buildMaple,
   buildBarrel,
@@ -609,6 +615,12 @@ const SCATTER_BUILDERS: Record<ScatterSpec["prop"], ScatterBuilder> = {
   maple: buildMaple,
   leafLitter: buildLeafLitter,
   bamboo: buildBamboo,
+  lollipop: buildLollipop,
+  peppermint: buildPeppermint,
+  mintLeaf: buildMintLeaf,
+  gumdropSmall: buildGumdropSmall,
+  cattail: buildCattail,
+  jellyBeans: buildJellyBeans,
 };
 
 /**
@@ -759,6 +771,24 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // Never blocking: a clump is ten-centimetre culms and air (see
   // `buildBamboo`). Filled honestly for the fern's reason.
   bamboo: { w: 1.6, d: 1.6, h: 8, visualTop: 10.5, rooted: true },
+  // Candy Land's. A lollipop is the maple in sugar: the stick is the body
+  // (0.13 m at its foot, to 3.2 m — the shortest stick in `buildLollipop`, so
+  // it bakes as hard cover past CoverMap's 1.7 m) and the candy is a crown
+  // from 2.8 m up that a round passes under.
+  lollipop: { w: 0.2, d: 0.2, h: 3.2, visualTop: 5.6, rooted: true },
+  // The shaft to where the hook starts (2.6 - 0.42 at the shortest), at the
+  // cane's 0.22 m. The hook is drawn only.
+  peppermint: { w: 0.24, d: 0.24, h: 2.2, visualTop: 3.8, rooted: true },
+  // Never blocking — knee-high sugar leaves. Filled honestly for the fern's
+  // reason.
+  mintLeaf: { w: 1.4, d: 1.4, h: 0.6, visualTop: 0.8, rooted: true },
+  // The bell inside its outline at chest height is ~1.0 m across and it is
+  // 1.2 m tall: a crouch behind it is cover. NOT rooted: a sweet is dropped.
+  gumdropSmall: { w: 1.0, d: 1.0, h: 1.1, visualTop: 1.25 },
+  // Never blocking: reeds and air, bamboo's rule.
+  cattail: { w: 1.0, d: 1.0, h: 2.2, visualTop: 2.6, rooted: true },
+  // Never blocking, and lands rather than grows — the leaf drift's rules.
+  jellyBeans: { w: 2.8, d: 2.8, h: 0.26, visualTop: 0.3 },
   // Trunk plus its buttress core: the fins reach 0.97 m from the axis at their
   // widest, so a 1.0 m box is the flare you can see rather than a margin around
   // it. The canopy is 4 m of frond starting nine metres up and is not in this —

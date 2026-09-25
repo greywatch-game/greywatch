@@ -728,6 +728,10 @@ const FOLIAGE = new Set([
   "palm",
   "maple",
   "bamboo",
+  "lollipop",
+  "peppermint",
+  "mintLeaf",
+  "cattail",
 ]);
 
 /**

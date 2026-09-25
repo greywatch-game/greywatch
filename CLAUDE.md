@@ -132,7 +132,7 @@ exception to it: the magazine change, the bolt's four and the grenade's one have
 said nothing about what they are going into, so the scalars ARE spent on them.
 And **a sample is the DIRECT sound; the ROOM is the game's** — `Sfx` answers
 every gunshot with one shared `ConvolverNode`, so a baked tail double-reverbs
-the shot, puts one room on seven maps and holds a voice for the length of it.
+the shot, puts one room on eight maps and holds a voice for the length of it.
 
 **The world also makes a noise on its own, and that half is the one place the
 recording boundary was never even close.** A burning drum is a SUSTAINED voice
@@ -267,6 +267,11 @@ npm run kurenai    # RE-SEED the temple valley's layout and heights (committed
                    #   `-- --probe` prints the floor as a plan and writes
                    #   nothing; `-- --plan` prints the claim list and
                    #   `-- --refusals` every plot that did not fit
+npm run candyland  # RE-SEED Candy Land's layout and heights (committed
+                   #   source) off the traced 1962 board. Same one-shot rule
+                   #   and warning as `sarab`; owes `npm run collision --
+                   #   candyland` after it. `-- --probe`, `--plan` and
+                   #   `--refusals` as kurenai's
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -526,7 +531,7 @@ veil whatever its z-index. **A map with no row in `mapShots.ts` is not broken.**
 shell's ellipse cannot be because the two demands are in different places; **the
 dossier is therefore the one `.ui-panel` that is a BOX**, and **the menu is the
 one screen with a one-column threshold of its own**. **The map row is a
-STEPPER**, seven maps in a segmented row of equal shares being `HOLLO…`, `GREYF…`,
+STEPPER**, eight maps in a segmented row of equal shares being `HOLLO…`, `GREYF…`,
 `COLDH…` at every viewport a player has. **The entrance animation is keyed to
 the card being RAISED** (`setCardClass`'s `raised`), never to its markup
 existing — `showMenu` rewrites this card on every map step.
@@ -861,12 +866,15 @@ the biggest map in the tree) **and Kurenai** (`size: 240` inside 440 m of
 ground — a temple town in a mountain valley as the maples turn, built against
 a reference frame, `reference-media/new-map.jpg`; infantry only, and cut
 down from 750 m because the same kit over three times the side read as
-sparse and cost 88 fps where it now runs 154). **Coldharbour, Harrowmead,
+sparse and cost 88 fps where it now runs 154) **and Candy Land** (`size:
+300` inside 500 m of ground — the 1962 board game's board on a spring lawn,
+its rainbow path TRACED off a photograph of the board,
+`reference-media/candyland-board.jpg`; infantry only). **Coldharbour, Harrowmead,
 Sarab and Cinderhaven are the four with vehicles on them**; **Sarab and
 Cinderhaven are the two with all THREE KINDS and the two that are not 8v8** —
-24 a side, online and off. Those two and Kurenai were
+24 a side, online and off. Those two, Kurenai and Candy Land were
 **SEEDED by a generator** (`npm run sarab`, `npm run cinderhaven`,
-`npm run kurenai`) rather than typed, and the emitted `layout.ts` is an
+`npm run kurenai`, `npm run candyland`) rather than typed, and the emitted `layout.ts` is an
 ordinary layout file the editor opens, patches and saves like any other —
 re-running the generator discards editor edits. **Sarab is the map that SPENDS
 the levers**, stating six of the eight rows above, and the first to state a
@@ -907,7 +915,10 @@ parity` — the staleness guard hashes the LAYOUT and this kind of change is in
 the BUILDER. **A cobbled carriageway ends in a KERB COURSE, laid wherever
 exactly one side of its edge is paved** (`BuildCtx.roads`, `docs/world.md`) —
 visual only like the road, so a kerb is one more thing no ray and no body can
-see. **All three carriageways are world-mapped ground textures**, and
+see. **Three of the four carriageways are world-mapped ground textures** —
+`candy`, Candy Land's board path, is flat-coloured SPACES cut across the strip
+in `buildRoad`, each 12 mm and 4 polygon-offset units over the cream it lies
+on, because two drapes of one floor are neither coplanar nor parallel — and
 the one rule that reaches outside them is that **a road's tile may not equal a
 FLOOR pattern's** — every ground texture in the tree is sampled at `vPosW.xz`,
 so a track at the soil's own scale is in phase with the soil it crosses and
@@ -916,7 +927,7 @@ reads as a tint over the ground rather than a surface on it. A new
 against the other floors.
 
 **Where two roads CROSS, the SURFACE decides which one is the ground, and it
-decides by HEIGHT**: `ROAD_RANK` (dirt < cobble < asphalt) lifts a carriageway
+decides by HEIGHT**: `ROAD_RANK` (dirt < cobble < asphalt < candy) lifts a carriageway
 two millimetres per rank, because coplanar sheets in two meshes are a per-pixel
 tie whose winner changes as the camera moves. **The rungs are tiny because a
 road is a sheet OVER the floor and almost nothing else knows it is there** — a

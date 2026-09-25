@@ -747,6 +747,13 @@ src/
                         #   partSurface, and uploadPart, which every path out of
                         #   a merge owes. Colliders are NOT parts — a part has no
                         #   submeshes and would stop nothing
+    candyShapes.ts      # Vertex data for the candy kit's four shapes a box and a
+                        #   cylinder are not: a surface of revolution (gumdrop,
+                        #   cupcake), a TWISTED tube whose stripes are whole
+                        #   columns (a candy cane), a bevelled prism of any
+                        #   star-shaped outline (a heart, a star of leaves), and
+                        #   a 5x5 block font as box runs. Every triangle wound
+                        #   against an outward hint by Babylon's own formula
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
                         #   palette, builder contract
@@ -780,6 +787,15 @@ src/
                         #   triangle against an outward hint), the shoji
                         #   lattice, and the rule that vermilion is spent on
                         #   the sacred and the crossed alone
+    kit/candy.ts        #   gingerbreadHouse, brittleHouse, plumTree, gumdrop,
+                        #   candyCane, candyCorn, candyHeart, iceCreamFloat,
+                        #   popsicle, signpost, molasses, chocolateBar,
+                        #   gingerbreadMan, cupcake, iceCreamCone, candyFence —
+                        #   Candy Land's set. Owns why round things are round
+                        #   (shared-vertex revolutions), why a stripe is WOUND
+                        #   (candyShapes' twisted tube) and why words are
+                        #   geometry (block letters on a sign or a heart, never
+                        #   a texture)
     kit/city.ts         #   tower, office, shophouse, depot, parkade, planter,
                         #   barrier, car, streetLight, monument — the downtown
                         #   set, and the first builders that stack WALKED floors.
@@ -949,6 +965,22 @@ src/
                               #   peach haze that starts close, mauve cloud, and
                               #   falling red leaves as the particle field
     kurenai/collision.ts      # GENERATED collider boxes (`npm run collision`)
+    candyland/layout.ts       # The eighth map: the 1962 Candy Land board on a
+                              #   lawn, 300 m of play inside 500 m of ground,
+                              #   infantry only, 8 a side. SEEDED by `npm run
+                              #   candyland`, which TRACES the board's rainbow
+                              #   path off a photograph of it
+                              #   (`reference-media/candyland-board.jpg`) into
+                              #   one `candy` road of 230 spaces and stands every
+                              #   landmark where the board draws it
+    candyland/heights.ts      # GENERATED with it — a rolling lawn, the plum
+                              #   tree's knoll, Gumdrop Mountains' plateau, the
+                              #   plots levelled, the Ice Cream Sea dug off the
+                              #   path's shore and the Molasses Swamp cut. LAZY
+    candyland/environment.ts  # Palette, sky and light: a white 42-degree sun in
+                              #   the south-east, a cotton-candy haze, lavender
+                              #   clouds, a spring lawn and a bright blue sea
+    candyland/collision.ts    # GENERATED collider boxes (`npm run collision`)
     proving/layout.ts         # DEV ONLY, and NOT a level: the proving ground
                               #   ENGINE_UPGRADE.md S0 measures against. A city
                               #   block grid at Coldharbour's collider density

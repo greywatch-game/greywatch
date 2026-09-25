@@ -63,12 +63,12 @@ export const ROAD_LENGTH = 40;
  * What a road is PAVED with, and — through `roadTop` below — which of two
  * roads owns the ground where they cross.
  *
- * The same three the `road` builder draws (`BuildParams.surface`), named here
+ * The same four the `road` builder draws (`BuildParams.surface`), named here
  * because the ORDER of them is a road fact rather than a builder's: a layout
  * states the surface and nothing else, and the junction has to fall out of
  * that.
  */
-export type RoadSurface = "dirt" | "cobble" | "asphalt";
+export type RoadSurface = "dirt" | "cobble" | "asphalt" | "candy";
 
 /**
  * Which surface trumps which where two roads cross, low to high.
@@ -89,6 +89,12 @@ export const ROAD_RANK: Record<RoadSurface, number> = {
   dirt: 0,
   cobble: 1,
   asphalt: 2,
+  // The board game's path, and the top of the ladder because it is the one
+  // thing on its map that everything else leads to: a track arriving at it
+  // stops at its edge, the way a lane stops at a street. 16 mm, which is
+  // still inside the dust disc's 20 (`CONFIG.effects.discLift`) with the
+  // spaces laid on it — see `buildRoad`'s candy branch for their lift.
+  candy: 3,
 };
 
 /**
@@ -222,7 +228,9 @@ export const ROAD_RANK_STEP = 0.002;
 
 /** The surface a road placement asks for, defaulting as `buildRoad` does. */
 export function roadSurface(surface?: string): RoadSurface {
-  return surface === "dirt" || surface === "asphalt" ? surface : "cobble";
+  return surface === "dirt" || surface === "asphalt" || surface === "candy"
+    ? surface
+    : "cobble";
 }
 
 /**
