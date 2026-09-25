@@ -3257,8 +3257,14 @@ export class Game {
     this.prof.begin(P.post);
     this.post.update(dt);
     // After every state has placed the camera: the clouds stand in the world
-    // and are drawn back to front from wherever the eye is this frame.
-    this.sky.update(dt, this.cameraSys.camera.position);
+    // and are drawn back to front from wherever the eye is this frame. In a
+    // match the ring's turn is read off the AUTHORITY's clock, as the
+    // lightning is, so every client's clouds — and their shadows — agree.
+    this.sky.update(
+      dt,
+      this.cameraSys.camera.position,
+      this.net ? this.net.conn.now() / 1000 : null,
+    );
     // Where the clouds' shadow lies and how far the crossfade has run, pushed
     // in every state for the drift's reason: the sky moves behind a menu too,
     // and a shadow held still under a moving cloud is the tell.

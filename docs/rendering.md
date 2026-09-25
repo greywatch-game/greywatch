@@ -3238,18 +3238,40 @@ whose shadow they are standing in, because it is the same ray.
   textures. A sixteenth fits; a seventeenth is a bind group that fails to build
   and a draw silently lost, so the next texture any cel variant gains owes a
   look at that count (or a packing) first.
-- **Not in it:** the irradiance volume's sun bounce, which is baked per probe
-  and so stays sunlit under a cloud — a shaded patch reads a little brighter
-  than a real overcast one. And a light under `minElevation` (4 degrees) or a
-  sky with no cloud turns the whole term off (`cloudShadow.w` = 1).
+- **The BOUNCE takes it too, at the hit and not at the probe.** A traced ray
+  lights what it hits with the sun (`giTrace.ts`'s `radiance`), and that sun
+  is scaled by `cloudLitAt` — `cloudLitAir` to the letter, read off params rows
+  13 and 14 with the field bound into the trace pass alone — so a wall under a
+  cloud hands on the key it is actually lit by, and the patch it shades stops
+  reading brighter than a real overcast one. It reaches the volume through
+  `LightingView` (`cloudMap`, `cloudArea`, `cloudRay`) beside the key itself,
+  the UNHELD area, because a reflection bake's hold is about the cube. It
+  follows the drift a sweep late (about a second), which at a few metres a
+  second is inside a probe's spacing. Measured with the cloud field pinned and
+  the camera over the window: turning the GI's cloud term off brightened
+  shadowed pixels 0.11/255 on Harrowmead's dim dusk key and 0.79 on
+  Coldharbour, against controls of 0.001-0.004 — small, as the bounce is small,
+  and banded, so it moves a pixel a whole band or not at all.
+- A light under `minElevation` (4 degrees) or a sky with no cloud turns the
+  whole term off (`cloudShadow.w` = 1).
 - **Cost**, measured with CPU throttled as a phone stand-in: the typical frame
   is under the 0.1 ms timer grain at any throttle; the worst 1% of frames
   1.5 ms and a roll-over 1.4-1.6 ms at 6x; the material walk that pushes the
   crossfade every frame 0.025 ms (0.25 ms at 6x) on Coldharbour's 222
   materials, the same shape as `updateCamera`'s.
-- **In a match each client's clouds are wherever its own boot left the ring**,
-  so two players may disagree about who is in a cloud's shadow. Cosmetic, and
-  syncing the drift to the server clock would fix it.
+- **In a match the ring's TURN is the authority's clock** (`Sky.update`'s
+  `clock`, `Connection.now` in seconds, as the lightning is), so every client
+  stands its clouds — and their shadows — in the same place, and two players
+  cannot disagree about who is in shade. The shape was already the same
+  everywhere, seeded off the map's sky; the turn was the one thing each client
+  accumulated from its own boot. It is kept on `Sky` rather than the mesh so a
+  ring built mid-match is stood at the match's turn, and the shadow's fields
+  are primed on a GRID of whole steps (`primeCloudShadow`) rather than wherever
+  a client first primed, because a crossfade only approximates the field
+  between its two — two clients a step apart in anchor would draw outlines
+  that crossfade's error apart. Measured with two clients joined seven seconds
+  apart: the same turn, the same field pair and the same blend. Offline the
+  turn still accumulates `dt`, in every state.
 
 ### The light shafts
 

@@ -81,6 +81,13 @@ export class Sky {
   private disposables: { dispose(): void }[] = [];
   /** The cloud ring, which `update` turns; null on a sky with no cover. */
   private clouds: Mesh | null = null;
+  /**
+   * How far the ring has turned, in radians. Kept here rather than on the
+   * mesh because the mesh is rebuilt with every map and the TURN is not the
+   * map's: in a match it is a function of the authority's clock (`update`),
+   * so a ring built mid-match must be stood where every other client's is.
+   */
+  private turn = 0;
   private cloudMat: ShaderMaterial | null = null;
   private cloudGeo: CloudGeometry | null = null;
   /** The index buffer the ring is drawn from, rewritten back to front. */
@@ -304,12 +311,25 @@ export class Sky {
    * Turns the cloud ring about the map's centre, hands the shader the eye, and
    * re-orders the lumps back to front when either has moved enough to matter.
    * Runs in every game state, after the camera has been placed for the frame.
+   *
+   * **`clock` is the AUTHORITY's time in seconds in a match, and null
+   * offline.** Given one, the turn is a pure function of it, so every client
+   * in a match stands the ring — and therefore every cloud's SHADOW — in the
+   * same place, and two players never disagree about who is standing in one.
+   * The shape is already the same everywhere (seeded from the map's sky); the
+   * turn was the one thing each client accumulated from its own boot.
+   * Offline it accumulates `dt` as before, in every state.
    */
-  update(dt: number, eye: Vector3): void {
+  update(dt: number, eye: Vector3, clock: number | null): void {
+    const c = CONFIG.sky.clouds;
+    const rate = c.driftDegPerSec * (Math.PI / 180);
+    // Unwrapped on purpose: an epoch in seconds times this rate is a few
+    // million radians, far inside a double's exact range, and a wrap would be
+    // a jump the shadow's crossfade has to re-prime across.
+    this.turn = clock !== null ? rate * clock : this.turn + rate * dt;
     const clouds = this.clouds;
     if (!clouds || !this.cloudMat) return;
-    const c = CONFIG.sky.clouds;
-    clouds.rotation.y += c.driftDegPerSec * (Math.PI / 180) * dt;
+    clouds.rotation.y = this.turn;
     if (this.shadowOn) this.stepCloudShadow(clouds.rotation.y);
     this.cloudMat.setVector3("camPos", eye);
     // What the fragment needs to write the depth of a point `depthMetres` out
@@ -393,16 +413,28 @@ export class Sky {
     this.primeCloudShadow(this.clouds.rotation.y);
   }
 
-  /** Writes R and G whole at `turn` and one step on, and starts the next. */
+  /**
+   * Writes R and G whole at the whole step at or before `turn` and the one
+   * after it, and starts the next.
+   *
+   * **The fields stand on a GRID of whole steps, never where this client
+   * happened to prime.** A crossfade between two fields only approximates the
+   * field at the turn between them, so two clients at one turn whose pairs
+   * were anchored apart would draw an outline up to a crossfade's error apart.
+   * On the grid, one turn is one pair and one blend on every client in a
+   * match (`update`'s clock), and the roll-over's `+= step` keeps it there.
+   */
   private primeCloudShadow(turn: number): void {
-    this.shadowTurn = turn;
-    this.writeField(this.shadowFields[this.shadowR], turn, true);
-    this.writeField(this.shadowFields[this.shadowG], turn + this.shadowStep, true);
+    const step = this.shadowStep;
+    const from = step > 0 ? Math.floor(turn / step) * step : turn;
+    this.shadowTurn = from;
+    this.writeField(this.shadowFields[this.shadowR], from, true);
+    this.writeField(this.shadowFields[this.shadowG], from + step, true);
     this.stageCloudShadow(this.shadowR, this.shadowG, 0, this.shadowTexels.length);
     this.cloudShadowMap.update(this.shadowUpload);
     this.shadowStaged = 0;
-    this.writeField(this.shadowFields[this.shadowNext], turn + 2 * this.shadowStep, false);
-    this.cloudShadowRay.z = 0;
+    this.writeField(this.shadowFields[this.shadowNext], from + 2 * step, false);
+    this.cloudShadowRay.z = step > 0 ? clamp((turn - from) / step, 0, 1) : 0;
   }
 
   /**
@@ -725,6 +757,9 @@ export class Sky {
     // The ring spans kilometres around the map and the eye is always inside
     // it, so it is always in the frustum; saying so spares the bounding test.
     mesh.alwaysSelectAsActiveMesh = true;
+    // Stood at the turn the ring has already reached, so the shadow is primed
+    // where the next `update` will find it rather than at zero.
+    mesh.rotation.y = this.turn;
     this.prepare(mesh, true, false);
     this.disposables.push(mat);
     this.clouds = mesh;

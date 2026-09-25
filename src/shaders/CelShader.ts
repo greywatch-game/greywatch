@@ -1731,6 +1731,15 @@ export interface LightingView {
   readonly lightColor: Color3;
   readonly ambient: Color3;
   readonly sky: Color3;
+  /**
+   * The clouds' shadow field and the two vectors that place and read it — see
+   * `celCloud` — so the sun a traced ray finds on a wall is the sun the wall
+   * itself is lit by. The area is the UNHELD one: a reflection bake's hold is
+   * about the cube, not the bounce.
+   */
+  readonly cloudMap: BaseTexture;
+  readonly cloudArea: Vector4;
+  readonly cloudRay: Vector4;
 }
 
 /**
@@ -3160,6 +3169,15 @@ export class CelMaterialFactory {
       },
       get sky() {
         return f.skyLightColor;
+      },
+      get cloudMap() {
+        return f.cloudShadowMap;
+      },
+      get cloudArea() {
+        return f.cloudShadowArea;
+      },
+      get cloudRay() {
+        return f.cloudShadowRay;
       },
     };
   })();

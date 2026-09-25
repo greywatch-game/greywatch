@@ -77,6 +77,8 @@ export const GI_STATE_VEC4 = 4;
  *  8: spacing, columns, layers, layer h    9: slow, fast, -, hull counts
  * 10: window origin column x, z, ref y, probe total    11: cursor
  * 12: borderland margin, roll, ease, -
+ * 13: the clouds' shadow area (celCloud's `cloudShadow`)
+ * 14: the clouds' shadow ray (celCloud's `cloudShadowRay`)
  */
 function common(): string {
   const L = GI_LAYOUT;
@@ -539,6 +541,10 @@ ${common()}
 const RAYS: u32 = ${rays}u;
 
 @group(0) @binding(4) var<storage, read_write> S: array<vec4f>;
+// The clouds' shadow field — trace only. The sampler sits one binding below
+// its texture, which is where Babylon's compute binding puts it.
+@group(0) @binding(5) var cloudFieldSampler: sampler;
+@group(0) @binding(6) var cloudField: texture_2d<f32>;
 
 var<workgroup> wA: array<vec4f, ${rays}>;
 var<workgroup> wB: array<vec4f, ${rays}>;
@@ -583,6 +589,26 @@ fn volumeAt(p: vec3f, n: vec3f) -> vec3f {
   return shIrradiance(S[base].rgb, S[base + 1u].xyz, n);
 }
 
+// How much of the SUN reaches p past the clouds: celCloud's cloudLitAir to the
+// letter, read off rows 13 and 14 rather than uniforms, so a wall a probe sees
+// under a cloud hands on the key it is actually lit by — without it a patch
+// under a cloud's shadow read a bounce off sunlit walls that were not sunlit.
+// A hard step, as the air's march takes it: a hit is one sample of many, and
+// the probe's average is what softens it.
+fn cloudLitAt(p: vec3f) -> f32 {
+  let area = P[SC + 13u];
+  if (area.w >= 1.0) {
+    return 1.0;
+  }
+  let ray = P[SC + 14u];
+  let key = p.xz - ray.xy * p.y;
+  let uv = (key - area.xy) * area.z;
+  let two = textureSampleLevel(cloudField, cloudFieldSampler, uv, 0.0).rg;
+  let field = mix(two.x, two.y, ray.z) - 0.5;
+  let edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+  return mix(1.0, area.w, step(0.0, field) * smoothstep(0.0, 0.05, edge));
+}
+
 // The light leaving whatever a ray from o along d meets, toward o. w is 1 for
 // a ray that escaped upward — the probe's view of the sky, kept for later.
 fn radiance(o: vec3f, d: vec3f, pick: u32) -> vec4f {
@@ -598,7 +624,7 @@ fn radiance(o: vec3f, d: vec3f, pick: u32) -> vec4f {
   let ndl = dot(n, -sunTravel);
   if (ndl > 0.0) {
     if (castScene(p, -sunTravel, P[SC + 4u].w, true) < 0.0) {
-      direct = direct + P[SC + 4u].rgb * ndl;
+      direct = direct + P[SC + 4u].rgb * (ndl * cloudLitAt(p));
     }
   }
   // The steady fixtures: ONE of the ones that reach this hit, chosen by the

@@ -486,7 +486,9 @@ export class GiVolume {
       this.engine,
       { computeSource: giTraceSource(tier.rays) },
       {
-        bindingsMapping: common,
+        // The clouds' field is the trace's alone: it lights a hit with the
+        // sun, and neither other pass does. Its sampler takes binding 5.
+        bindingsMapping: { ...common, cloudField: { group: 0, binding: 6 } },
       },
     );
     this.compose = new ComputeShader(
@@ -1031,6 +1033,16 @@ export class GiVolume {
     );
     put4(p, s + 40, this.ox, this.oz, this.refY, total);
     put4(p, s + 44, this.cursor, 0, 0, 0);
+    // The clouds' shadow, read off the factory like the key itself, so a wall
+    // under a cloud bounces the key it is lit by (`cloudLitAt`). The texture
+    // is bound here rather than in `bindShaders` because the factory swaps its
+    // own "no cloud" texel for `Sky`'s field after the volume exists; binding
+    // the same texture again is a no-op.
+    const ca = lit.cloudArea;
+    const cr = lit.cloudRay;
+    put4(p, s + 52, ca.x, ca.y, ca.z, ca.w);
+    put4(p, s + 56, cr.x, cr.y, cr.z, cr.w);
+    this.trace?.setTexture("cloudField", lit.cloudMap);
 
     for (let i = 0; i < this.slow.length; i++) {
       writeLight(p, (GI_LAYOUT.slow + i * 2) * 4, this.slow[i]);
