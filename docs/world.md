@@ -28,8 +28,9 @@ reads both halves off it. Nothing outside `maps.ts` may import a map's own modul
 The shipped maps are **Hollowmere** (night), **Greyfen** (a jungle morning, sun
 through the canopy), **Coldharbour** (a city before dusk), **Harrowmead** (a
 farming vale at sunset in high summer), **Sarab** (a desert town an hour
-before noon) and **Cinderhaven** (a harbour town on a volcanic island, at
-night). Greyfen
+before noon), **Cinderhaven** (a harbour town on a volcanic island, at
+night) and **Kurenai** (a temple town in a mountain valley as the maples turn,
+forty minutes before sunset). Greyfen
 was forked from Hollowmere's layout, cleared back to a blank valley, and is
 now being rebuilt as a jungle one: what stands is the **manor** on flag C, the
 districts around the other four flags, and the forest itself — ~1,390 canopy
@@ -208,6 +209,52 @@ new here rather than borrowed, and each is written up where it belongs:
   which leaves 5.2 m between two rows of doors — a gun truck's
   `drive.collideRadius` is 1.6 and a tank's 2.2, so the trade those two hulls
   exist for is bought without a single rule that knows a vehicle exists.
+
+**Kurenai is the seventh: 750 m of PLAY inside 950 m of ground**, seeded by
+`npm run kurenai`, twenty a side and all three vehicle kinds. It is the first
+map built against a REFERENCE FRAME rather than against a place
+(`reference-media/new-map.jpg`: a stone path under red maples, a torii, a
+stone lantern and a paper-walled hall glowing in a peach haze), and what that
+took was a kit (`kit/japan.ts`) and three props, and nothing else in the
+engine. Six things came out of building it and all of them outlive it:
+
+- **A Japanese roof cannot be slabs, so the kit grew a CURVED one**
+  (`curvedRoof`): rings from the eave to the ridge on a power curve, the eave
+  ring swept up at its corners, a thickness under it and a band closing the
+  edge — a closed solid, because every caster must be one, and every triangle
+  wound against an outward HINT with Babylon's own face-normal formula so no
+  ring order can turn it inside out. Its collider is `gableRoof`'s flat slab.
+- **Scatter knows nothing about water, and the generator has to.**
+  `MapBuilder.scatterRegion` stands a prop on the floor wherever it samples,
+  river bed included, so every grove the generator emits was checked DRY round
+  its whole disc (`groveOk`). And **a basin's shore is not its radius**: a cut
+  that eases out over a skirt puts the waterline well past the core, so the
+  pond's rocks, placed on the radius, were all under the water until the
+  generator marched outward to the real shore and stood them there.
+- **A layout's scatter array has a SIZE CEILING, and it is the compiler's.**
+  At 1,306 region literals `tsc` gives up with TS2590 ("a union type that is
+  too complex to represent") — the prop union times two region shapes times
+  the entry count. The fix was the better map anyway: FEW, LARGE regions
+  (620, a 38 m lattice of 19 m discs) that may stand over buildings, because
+  `findSpot` already keeps every trunk out of every collider and a road
+  already refuses what grows; what a big region still owes a check against is
+  water, a pad and a flag's ring.
+- **A prop a map sows by the thousand is built from PARTS**
+  (`world/parts.ts`), which the older props are not. The maple, the leaf drift
+  and the bamboo clump were first built with `MeshBuilder` like everything else
+  in `Props.ts`, and some 130,000 small meshes, each uploaded to the device on the
+  way to being merged away took this map's build from 15 s to 86 s; as parts it
+  is 11-13 s. The maple is BLOCKING and built this way, and the collision bake,
+  `npm run parity` and a live round all pass with it, so a blocking prop may be.
+- **A floor surface is judged under the map's own sun.** At 14.5 degrees
+  `dirt` and `turf` both carve plates that read as a cracked desert pan, and
+  `sand` reads as dunes; a valley whose ground carries its detail in what lies
+  ON it (the drifts, the stones, the paths) is `flat`.
+- **A plot levelled at its natural height is only honest on gentle ground.**
+  A farm's district flattened on the temple mountain's flank made a skirt at a
+  0.6 gradient; the generator now drops any farm whose ground falls more than
+  four metres across it, and the temple's own mountain was moved into the
+  corner so the precinct's skirt was not fighting a 20 m rise.
 
 No two maps share a module in any direction.
 

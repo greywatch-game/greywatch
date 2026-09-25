@@ -37,6 +37,7 @@ import sarabShot from "../../shots/sarab.jpg?url";
 import harrowmeadShot from "../../shots/harrowmead.jpg?url";
 import greyfenShot from "../../shots/greyfen.jpg?url";
 import hollowmereShot from "../../shots/hollowmere.jpg?url";
+import kurenaiShot from "../../shots/kurenai.jpg?url";
 
 /**
  * Where the camera stood for one of these pictures.
@@ -152,6 +153,19 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
   cinderhaven: {
     url: cinderhavenShot,
     vantage: { pos: [372, 11, -128], target: [-340, 48, -320], fov: 60 },
+  },
+  // KOYO-JI's court from beside the gate, looking north-west into the sun:
+  // the stone path and its lanterns in the near ground, the maples along the
+  // precinct wall, the pagoda against the low sun with the mountain behind it
+  // and the hall's paper walls glowing on the right. It is the reference frame
+  // this map was built from (`reference-media/new-map.jpg`), taken in the map.
+  //
+  // **The frame to preserve is the PAGODA AGAINST THE SUN** — the landmark,
+  // the hour and the haze in one shape — and the paper walls beside it, which
+  // are what says there is anybody here at all.
+  kurenai: {
+    url: kurenaiShot,
+    vantage: { pos: [-194, 2.2, 122], target: [-238, 9, 172], fov: 62 },
   },
 };
 

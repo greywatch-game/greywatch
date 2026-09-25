@@ -33,6 +33,8 @@ import { HarrowmeadEnvironment } from "./harrowmead/environment";
 import { HarrowmeadLayout } from "./harrowmead/layout";
 import { HollowmereEnvironment } from "./hollowmere/environment";
 import { HollowmereLayout } from "./hollowmere/layout";
+import { KurenaiEnvironment } from "./kurenai/environment";
+import { KurenaiLayout } from "./kurenai/layout";
 import { ProvingEnvironment } from "./proving/environment";
 import { ProvingLayout } from "./proving/layout";
 import { SarabEnvironment } from "./sarab/environment";
@@ -260,6 +262,35 @@ export const CINDERHAVEN: MapDef = {
 };
 
 /**
+ * Kurenai: a temple town in a mountain valley, in the last week of the maples,
+ * forty minutes before sunset. **750 m of play inside 950 m of ground**, with
+ * all three kinds of vehicle and twenty bodies a side.
+ *
+ * It is the first map built against a REFERENCE FRAME rather than against a
+ * place (`reference-media/new-map.jpg`): a stone path under red maples, a
+ * torii, a stone lantern and a paper-walled hall glowing in a peach haze. What
+ * it needed for that is a kit of its own (`kit/japan.ts`, whose curved roof is
+ * the one new shape) and three props (`buildMaple`, `buildLeafLitter`,
+ * `buildBamboo`), and nothing else about the engine.
+ *
+ * Its layout was SEEDED by `scripts/generate-kurenai.mjs` on Sarab's
+ * precedent, and it is an ordinary layout file in every other way. It shares
+ * no module with the other six and must not.
+ */
+export const KURENAI: MapDef = {
+  id: "kurenai",
+  name: "Kurenai",
+  blurb:
+    "A temple town in a mountain valley as the maples turn, an hour before " +
+    "dusk. A river through the middle, a pagoda on the hill, and a shrine " +
+    "at the top of a thousand vermilion gates.",
+  layout: KurenaiLayout,
+  environment: KurenaiEnvironment,
+  heights: () => import("./kurenai/heights"),
+  collision: () => import("./kurenai/collision"),
+};
+
+/**
  * The proving ground: not a level, and DEV ONLY.
  *
  * `ENGINE_UPGRADE.md` S0 is what it exists for — a generated city block grid at
@@ -340,8 +371,8 @@ const PROVING: MapDef = {
  * filtering it at runtime, would keep both in the bundle.
  */
 export const MAPS: readonly MapDef[] = import.meta.env.DEV
-  ? [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN, PROVING]
-  : [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN];
+  ? [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN, KURENAI, PROVING]
+  : [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN, KURENAI];
 
 /** What a round starts on with nothing chosen. */
 export const DEFAULT_MAP: MapDef = HOLLOWMERE;

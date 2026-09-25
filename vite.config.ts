@@ -107,6 +107,18 @@ const WRITABLE = {
     min: 1200,
     marker: "export const HarrowmeadEnvironment",
   },
+  "src/world/kurenai/layout.ts": {
+    min: 4000,
+    marker: "export const KurenaiLayout",
+  },
+  "src/world/kurenai/heights.ts": {
+    min: 500,
+    marker: "export const KurenaiHeights",
+  },
+  "src/world/kurenai/environment.ts": {
+    min: 1200,
+    marker: "export const KurenaiEnvironment",
+  },
   // Not a map's file, and the one entry here a map does not add: the audio
   // mixer (F4) patches the eleven numbers in `CONFIG.mix` in place, which is
   // the same bargain the layout patcher makes — everything that is not one of

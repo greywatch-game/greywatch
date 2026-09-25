@@ -28,6 +28,7 @@ export const MAPS = [
   { id: "harrowmead", constant: "HarrowmeadCollision" },
   { id: "sarab", constant: "SarabCollision" },
   { id: "cinderhaven", constant: "CinderhavenCollision" },
+  { id: "kurenai", constant: "KurenaiCollision" },
 ];
 
 /**

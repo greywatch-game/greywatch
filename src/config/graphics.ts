@@ -915,6 +915,15 @@ export const graphics = {
      * carrying the leaf's own colour rather than merely dimmed.
      */
     canopy: { color: "#8fb567", intensity: 0.45, depth: 1.5 },
+    /**
+     * An autumn maple: what comes through a red leaf is RED, and brighter than
+     * the canopy's green because a maple's leaf is thinner and the hour it is
+     * seen at puts the sun behind it. It is the whole of what makes the
+     * reference frame's crowns glow at their edges against a low sun, so it is
+     * warm enough to read as light and not so bright it clips on a crown's
+     * shaded side — judged from under a stand looking toward the sun.
+     */
+    maple: { color: "#ff5a30", intensity: 0.5, depth: 1.5 },
   },
   /**
    * Glazing: what a pane of glass returns and what it lets past. One entry,

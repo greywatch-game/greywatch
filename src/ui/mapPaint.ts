@@ -726,6 +726,8 @@ const FOLIAGE = new Set([
   "fungus",
   "deadTree",
   "palm",
+  "maple",
+  "bamboo",
 ]);
 
 /**

@@ -89,6 +89,9 @@ import { uploadPart } from "./parts";
 import { mulberry32 } from "./rng";
 import {
   buildAshTree,
+  buildBamboo,
+  buildLeafLitter,
+  buildMaple,
   buildBarrel,
   buildBinPair,
   buildBoulder,
@@ -603,6 +606,9 @@ const SCATTER_BUILDERS: Record<ScatterSpec["prop"], ScatterBuilder> = {
   trafficCone: buildTrafficCone,
   litter: buildLitter,
   palm: buildPalm,
+  maple: buildMaple,
+  leafLitter: buildLeafLitter,
+  bamboo: buildBamboo,
 };
 
 /**
@@ -740,6 +746,19 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // height, so a hedgerow standard bakes as hard cover (CoverMap's 1.7 m) the
   // way a wall does. `visualTop` clears the cap plate.
   ashTree: { w: 0.68, d: 0.68, h: 8.6, visualTop: 9.9, rooted: true },
+  // The bole to the fork, at its width around chest height (0.52 -> 0.28 over
+  // 3.4 m). The crown is three and a half metres of leaf from 2.3 m up and is
+  // outside this for the ash's reason. 3.4 m clears CoverMap's 1.7 m, so a
+  // maple bakes as hard cover the way every other tree does.
+  maple: { w: 0.46, d: 0.46, h: 3.4, visualTop: 7.2, rooted: true },
+  // Never blocking — a drift of leaves is 3 cm deep — so w/d/h are never read
+  // and are filled honestly for the fern's reason. `visualTop` IS read. NOT
+  // rooted: leaves are something that LANDS, and a stone path under the
+  // maples with the leaves on it is the reference frame's whole foreground.
+  leafLitter: { w: 1.7, d: 1.7, h: 0.04, visualTop: 0.05 },
+  // Never blocking: a clump is ten-centimetre culms and air (see
+  // `buildBamboo`). Filled honestly for the fern's reason.
+  bamboo: { w: 1.6, d: 1.6, h: 8, visualTop: 10.5, rooted: true },
   // Trunk plus its buttress core: the fins reach 0.97 m from the axis at their
   // widest, so a 1.0 m box is the flare you can see rather than a margin around
   // it. The canopy is 4 m of frond starting nine metres up and is not in this —

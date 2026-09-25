@@ -433,7 +433,84 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     num("depth", "depth", 14, 5, 40, 1),
   ],
 
+  // The temple town — kit/japan.ts.
+  templeHall: [
+    num("width", "width", 20, 10, 30),
+    num("depth", "depth", 15, 8, 24),
+    bool("litWindows", "lit paper"),
+  ],
+  templeGate: [
+    {
+      key: "tint",
+      type: "choice",
+      label: "posts",
+      def: "#5c4332",
+      options: ["#5c4332", "#b23a22"],
+    },
+  ],
+  machiya: [
+    num("width", "width", 7, 5, 10),
+    num("depth", "depth", 11, 7, 16),
+    bool("enterable", "enterable"),
+    bool("litWindows", "lit windows"),
+    {
+      key: "tint",
+      type: "choice",
+      label: "plaster",
+      def: "#b3aa97",
+      options: ["#b3aa97", "#8f7552", "#a39478"],
+    },
+  ],
+  minka: [
+    num("width", "width", 12, 7, 18),
+    num("depth", "depth", 8, 6, 12),
+    num("height", "wall height", 3, 2.4, 4, 0.1),
+    bool("enterable", "enterable"),
+    bool("litWindows", "lit paper"),
+  ],
+  teahouse: [
+    num("width", "width", 7, 4, 12),
+    num("depth", "depth", 6, 4, 10),
+    bool("litWindows", "lit paper"),
+    bool("lit", "carries a light"),
+  ],
+  kura: [
+    num("width", "width", 6, 4, 10),
+    num("depth", "depth", 5, 4, 9),
+    num("height", "height", 5.4, 4, 8, 0.1),
+  ],
+  torii: [
+    num("width", "span", 4.6, 2.4, 10, 0.1),
+    num("height", "height", 6, 3, 12, 0.1),
+    {
+      key: "tint",
+      type: "choice",
+      label: "timber",
+      def: "#b23a22",
+      options: ["#b23a22", "#2f2620", "#7a766d"],
+    },
+  ],
+  toro: [num("height", "height", 2.3, 1.2, 3.5, 0.1), bool("litWindows", "lit")],
+  stonePagoda: [num("height", "height", 4.4, 2, 7, 0.1)],
+  gardenWall: [
+    num("length", "length", 12, 2, 40, 0.5),
+    num("height", "height", 2.4, 1.4, 3.2, 0.1),
+    {
+      key: "tint",
+      type: "choice",
+      label: "plaster",
+      def: "#8f7552",
+      options: ["#8f7552", "#b3aa97"],
+    },
+  ],
+  archBridge: [
+    num("length", "water span", 10, 4, 24, 0.5),
+    num("width", "width", 3, 2, 5, 0.1),
+  ],
+
   // Fixed-geometry kinds: placed, rotated, and otherwise not configurable.
+  pagoda: [],
+  bellTower: [],
   // The smelter is the one in this group that is a whole COMPOSITION rather
   // than a shape: its charging deck, the flight that reaches it and the three
   // doors it serves are solved against one plan, so a `width` here would move
@@ -576,6 +653,14 @@ export const SCATTER_DEFAULTS: Record<ScatterProp, ScatterDefaults> = {
   // not from above. Count is low for the same reason: a grove is a screen you
   // walk in among, not a wood.
   palm: { radius: 14, count: 8, scale: [0.85, 1.2], blocking: true, clearance: 2.6 },
+  // The temple valley's. The maple's clearance is set from its crown, the
+  // ash's rule: ~3.5 m of reach at scale 1, so 1.9 puts two boles about five
+  // metres apart and the crowns overlapping into one red canopy with a path
+  // under it. Its scale floor is 0.85, because the skirt's lowest leaf is at
+  // 2.3 m x scale and the hit sphere is 1.7.
+  maple: { radius: 12, count: 6, scale: [0.85, 1.2], blocking: true, clearance: 1.9 },
+  leafLitter: { radius: 8, count: 6, scale: [0.9, 1.3], clearance: 0.6 },
+  bamboo: { radius: 8, count: 6, scale: [0.85, 1.15], clearance: 0.9 },
 };
 
 export const SCATTER_PROPS = Object.keys(SCATTER_DEFAULTS).sort() as ScatterProp[];

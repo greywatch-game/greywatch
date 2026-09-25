@@ -20,6 +20,7 @@ import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { flameData } from "./flame";
+import { partBox, partCylinder } from "./parts";
 import { marksSway } from "./sway";
 
 /**
@@ -1840,4 +1841,247 @@ export function buildPalm(
     marksSway(bunch, "canopy");
   }
   return trunk;
+}
+
+// The temple valley's three, and every one is set against the MAPLE rather
+// than against the other trees in this file: Kurenai is a valley where the
+// red is the point, so the bark is dark enough to draw every crown on a
+// stroke, the bamboo is the one cool green for a hundred metres, and what lies
+// on the ground is the crown's own colour gone a shade browner.
+const MAPLE_BARK = "#3b2d26";
+/**
+ * Four crowns, each a SHADE and a LIT tone: crimson, scarlet, flame and a
+ * deep oxblood. One valley's maples do not turn together, and a hillside of
+ * them in a single red reads as a flat colour rather than as trees — so each
+ * tree draws one of these. Four is the budget rather than a taste: a merged
+ * block carries a draw per material, and eight tones is eight draws a block.
+ */
+const MAPLE_CROWNS: readonly [string, string][] = [
+  ["#6a1410", "#a61e17"],
+  ["#7d1d12", "#b8301a"],
+  ["#86300f", "#c4521c"],
+  ["#5c1512", "#931b1a"],
+];
+/** What the maples have dropped — the crowns' tones, browned and dulled. */
+const FALLEN = ["#8e2a1b", "#b33c20", "#c9602a", "#6f2a1d"];
+const BAMBOO_CULM = "#71803e";
+const BAMBOO_OLD = "#8f8b4c";
+const BAMBOO_LEAF = "#4b682b";
+const BAMBOO_LEAF_LIT = "#789441";
+
+/**
+ * Japanese maple: a short dark bole that forks at head height into three or
+ * four limbs, and a broad crown of JAGGED CLUMPS — the tree the whole map is
+ * named for and the one the reference frame is made of.
+ *
+ * **The crown is a cloud of tilted clumps and not a stack of tiers**, and that
+ * was measured by eye rather than argued: built the ash's way, round the axis
+ * in four tiers, the maple came back as a pile of red boards — a tier is a
+ * rosette of boxes at one height, so its silhouette is horizontal edges one
+ * over another. A maple's crown is separate masses of leaf at every height and
+ * bearing with sky between them, and twenty clumps sown through a flattened
+ * dome, each turned and tipped its own way, is that — thirty-odd of them,
+ * a metre or so across, because at the size of a limb's cloud the clumps
+ * read as boards again from underneath: every edge in the
+ * silhouette runs a different way, which is what reads as LEAF.
+ *
+ * Three things about the shape are load-bearing:
+ *
+ * - **Wider than it is tall.** The dome is ~7 m across on a tree ~6.5 m high
+ *   at scale 1; what reads at a distance is a red cloud on a dark stroke.
+ * - **The lowest leaf is at ~2.6 m at scale 1**, clear of the 1.7 m hit
+ *   sphere at any scale over 0.65. That is the worst CORNER: a clump's centre
+ *   is never under 3.3 m, and at the tilt cap (0.45 rad) and its largest size
+ *   a corner dips 0.7 m under it. The collider is the bole only (see
+ *   `PROP_BODIES`), so everything above is leaf a round passes through.
+ * - **The limbs end INSIDE the crown**, the ash's rule and for its reason: the
+ *   crown sways and the limb does not, so a limb tip outside the leaf would
+ *   show the join moving.
+ *
+ * Built from parts (`world/parts.ts`) rather than `MeshBuilder`: a map sows
+ * thousands of these and every part is merged away, so uploading each clump
+ * to the device on the way was most of the build.
+ */
+export function buildMaple(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  rng: () => number = Math.random,
+): Mesh {
+  const bark = mats.get(MAPLE_BARK);
+  const trunk = partCylinder(
+    "maple-trunk",
+    { height: 3.4, diameterTop: 0.28, diameterBottom: 0.52, tessellation: 6 },
+    scene,
+  );
+  trunk.position.y = 1.7;
+  trunk.material = bark;
+  // A maple leans more than a standard does — it is a garden tree, grown for
+  // its habit — but the crown is still the silhouette, so not by much.
+  trunk.rotation.z = (rng() - 0.5) * 0.14;
+  trunk.rotation.x = (rng() - 0.5) * 0.1;
+
+  const [shade, lit] = MAPLE_CROWNS[Math.floor(rng() * MAPLE_CROWNS.length)];
+  const leaf = (hex: string) =>
+    mats.getTranslucent(hex, CONFIG.graphics.translucency.maple);
+
+  // The limbs, reaching up and out into the crown.
+  const limbs = 3 + Math.floor(rng() * 2);
+  const turn = rng() * Math.PI * 2;
+  for (let i = 0; i < limbs; i++) {
+    const a = (i / limbs) * Math.PI * 2 + turn + (rng() - 0.5) * 0.4;
+    const tilt = 0.6 + rng() * 0.25;
+    const len = 2.4 + rng() * 0.4;
+    const limb = partBox(
+      `maple-limb${i}`,
+      { width: 0.2, height: len, depth: 0.18 },
+      scene,
+    );
+    limb.parent = trunk;
+    const rc = 0.08 + Math.sin(tilt) * (len / 2);
+    // Local to the trunk's centre (1.7 m): the fork is at 2.9 m.
+    limb.position.set(
+      Math.sin(a) * rc,
+      1.2 + Math.cos(tilt) * (len / 2),
+      Math.cos(a) * rc,
+    );
+    limb.rotation.y = a;
+    limb.rotation.x = tilt;
+    limb.material = bark;
+  }
+
+  // The crown: clumps through a flattened dome, lowest at 3.4 m and none
+  // above 5.8, widest a third of the way up.
+  const clumps = 30 + Math.floor(rng() * 8);
+  for (let i = 0; i < clumps; i++) {
+    const t = Math.pow(rng(), 1.25);
+    const y = 3.3 + 2.5 * t;
+    const reach = 3.4 * (1 - 0.8 * t * t) * Math.sqrt(rng());
+    const a = rng() * Math.PI * 2;
+    // A five-sided plate rather than a box: turned and tipped, its points are
+    // what make the silhouette read as LEAF rather than as boards.
+    const w = 1.2 + rng() * 0.8;
+    const clump = partCylinder(
+      `maple-clump${i}`,
+      {
+        height: 0.4 + rng() * 0.3,
+        diameterTop: w * 0.8,
+        diameterBottom: w,
+        tessellation: 5,
+      },
+      scene,
+    );
+    clump.parent = trunk;
+    clump.position.set(Math.sin(a) * reach, y - 1.7, Math.cos(a) * reach);
+    clump.rotation.y = rng() * Math.PI * 2;
+    clump.rotation.x = (rng() - 0.5) * 0.9;
+    clump.rotation.z = (rng() - 0.5) * 0.9;
+    // The sun is on the top and the outside; the heart and the underside are
+    // the shade — with a few exceptions, because a real crown is not banded.
+    const sunny = t > 0.45 || (reach > 2.2 && rng() < 0.5);
+    clump.material = leaf(sunny !== rng() < 0.15 ? lit : shade);
+    marksSway(clump, "canopy");
+  }
+  return trunk;
+}
+
+/**
+ * Fallen leaves: a drift of red chips lying flat on the ground under the
+ * maples, the other half of the reference frame's red. Non-blocking, casts
+ * nothing (a 3 cm chip in the sun's map is acne and not a shadow), and inked,
+ * which is what makes a drift read as leaves rather than as a stain.
+ *
+ * It lies LEVEL at the height of the prop's own centre, so a region of it is
+ * only honest on gentle ground — the generator sows it where the gradient is
+ * under 0.05 and nowhere else — and a drift is 1.6 m across so the error at
+ * its edge is about the chip's own thickness.
+ */
+export function buildLeafLitter(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  rng: () => number = Math.random,
+): Mesh {
+  const chip = (i: number): Mesh => {
+    const m = partBox(
+      `leaves${i}`,
+      { width: 0.15 + rng() * 0.12, height: 0.025, depth: 0.12 + rng() * 0.1 },
+      scene,
+    );
+    m.material = mats.get(FALLEN[Math.floor(rng() * FALLEN.length)]);
+    m.rotation.y = rng() * Math.PI * 2;
+    m.rotation.z = (rng() - 0.5) * 0.1;
+    m.metadata = { noShadowCaster: true };
+    return m;
+  };
+  const root = chip(0);
+  root.position.y = 0.02;
+  const n = 24 + Math.floor(rng() * 14);
+  for (let i = 1; i < n; i++) {
+    const m = chip(i);
+    m.parent = root;
+    const a = rng() * Math.PI * 2;
+    const r = Math.sqrt(rng()) * 0.8;
+    m.position.set(Math.cos(a) * r, (rng() - 0.5) * 0.008, Math.sin(a) * r);
+  }
+  return root;
+}
+
+/**
+ * A clump of bamboo: eight to eleven culms nine metres high, leaning out from
+ * the clump a little, with the leaf carried in tufts over the top half — the
+ * one cool green in a red valley, and the thing a hillside path is walked
+ * between.
+ *
+ * NON-BLOCKING, the bramble's rule and for the fern's reason: a culm is ten
+ * centimetres thick and a clump is mostly air at head height, so a box round
+ * one would stop rounds through a metre of daylight. The tufts start at half
+ * the height, far clear of the hit sphere.
+ */
+export function buildBamboo(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  rng: () => number = Math.random,
+): Mesh {
+  let root: Mesh | null = null;
+  const culms = 8 + Math.floor(rng() * 4);
+  for (let i = 0; i < culms; i++) {
+    const h = 7.5 + rng() * 3;
+    const a = rng() * Math.PI * 2;
+    const r = i === 0 ? 0 : 0.2 + rng() * 0.7;
+    const culm = partCylinder(
+      `bamboo${i}`,
+      { height: h, diameterTop: 0.07, diameterBottom: 0.12 + rng() * 0.05, tessellation: 5 },
+      scene,
+    );
+    culm.material = mats.get(rng() < 0.3 ? BAMBOO_OLD : BAMBOO_CULM);
+    const lean = 0.03 + r * 0.06;
+    if (!root) {
+      root = culm;
+      culm.position.y = h / 2;
+    } else {
+      culm.parent = root;
+      // Relative to the root culm's centre.
+      culm.position.set(Math.cos(a) * r, h / 2 - root.position.y, Math.sin(a) * r);
+    }
+    culm.rotation.z = -Math.cos(a) * lean;
+    culm.rotation.x = Math.sin(a) * lean;
+    const tufts = 3;
+    for (let k = 0; k < tufts; k++) {
+      const tuft = partBox(
+        `bamboo-leaf${i}-${k}`,
+        { width: 1.5 + rng() * 0.6, height: 0.4, depth: 0.8 + rng() * 0.4 },
+        scene,
+      );
+      tuft.parent = culm;
+      const f = 0.55 + (k / tufts) * 0.42;
+      tuft.position.set(0, h * f - h / 2, 0);
+      tuft.rotation.y = rng() * Math.PI * 2;
+      tuft.rotation.z = (rng() - 0.5) * 0.5;
+      tuft.material = mats.getTranslucent(
+        k === tufts - 1 ? BAMBOO_LEAF_LIT : BAMBOO_LEAF,
+        CONFIG.graphics.translucency.canopy,
+      );
+      marksSway(tuft, "canopy");
+    }
+  }
+  return root!;
 }

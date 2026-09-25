@@ -24,6 +24,7 @@
     "proving": "node scripts/generate-proving-ground.mjs",
     "sarab": "node scripts/generate-sarab.mjs",
     "cinderhaven": "node scripts/generate-cinderhaven.mjs",
+    "kurenai": "node scripts/generate-kurenai.mjs",
     "audio": "node scripts/encode-audio.mjs",
     "audio:measure": "node scripts/measure-audio.mjs"
   },

@@ -765,6 +765,15 @@ src/
                         #   owns why a landmark has to be worth walking INTO,
                         #   the three materials the whole set is made of, and
                         #   why nothing else in it is climbable
+    kit/japan.ts        #   pagoda, templeHall, templeGate, bellTower, machiya,
+                        #   minka, teahouse, kura, torii, toro, stonePagoda,
+                        #   gardenWall, archBridge — the temple-town set, built
+                        #   for Kurenai. Owns the kit's one CURVED ROOF
+                        #   (`curvedRoof`: rings from eave to ridge on a power
+                        #   curve, corners swept up, a closed solid wound per
+                        #   triangle against an outward hint), the shoji
+                        #   lattice, and the rule that vermilion is spent on
+                        #   the sacred and the crossed alone
     kit/city.ts         #   tower, office, shophouse, depot, parkade, planter,
                         #   barrier, car, streetLight, monument — the downtown
                         #   set, and the first builders that stack WALKED floors.
@@ -807,7 +816,10 @@ src/
                         #   the mid-story, the liana veil, which is NOT a
                         #   scatter prop: the jungle tree hangs it off its own
                         #   fronds, because scatter placement is what pushed it
-                        #   away from every crown on the map
+                        #   away from every crown on the map. The temple
+                        #   valley's three (maple, leafLitter, bamboo) are the
+                        #   only props built from upload-free PARTS, because a
+                        #   map sows thousands of them
     textures.ts         # Generated canvas textures: the cobbles, and the floor
                         #   surfaces — noise fields posterized onto a ramp of
                         #   the map's floorColor, albedo and height in one pass
@@ -913,6 +925,24 @@ src/
                               #   the disc, the halo and every god ray hang
                               #   over the crater
     cinderhaven/collision.ts  # GENERATED collider boxes (`npm run collision`)
+    kurenai/layout.ts         # The seventh map: a temple town in a mountain
+                              #   valley as the maples turn, 750 m of play
+                              #   inside 950 m of ground, all three vehicle
+                              #   kinds, 20 a side. SEEDED by `npm run kurenai`
+                              #   on Sarab's precedent, against a REFERENCE
+                              #   FRAME (`reference-media/new-map.jpg`): a
+                              #   river through the town, a pagoda precinct on
+                              #   the temple mountain's flank, a shrine at the
+                              #   top of a tunnel of torii
+    kurenai/heights.ts        # GENERATED with it — rolling ground, four hills,
+                              #   the districts levelled by a weighted average,
+                              #   the river's corridor, then the channel, the
+                              #   koi pond and the hot spring cut. LAZY
+    kurenai/environment.ts    # Palette, sky and light: a 14.5-degree gold sun in
+                              #   the north-west (Harrowmead's derivation), a
+                              #   peach haze that starts close, mauve cloud, and
+                              #   falling red leaves as the particle field
+    kurenai/collision.ts      # GENERATED collider boxes (`npm run collision`)
     proving/layout.ts         # DEV ONLY, and NOT a level: the proving ground
                               #   ENGINE_UPGRADE.md S0 measures against. A city
                               #   block grid at Coldharbour's collider density

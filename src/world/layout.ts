@@ -79,7 +79,12 @@ interface ScatterBase {
     // The desert's own, and the only tree that grows on a map with no water in
     // it: a bole that screens nothing at head height and a crown that screens
     // everything at fifteen metres. See `buildPalm`.
-    | "palm";
+    | "palm"
+    // The temple valley's: the red maple the map is named for, the drifts of
+    // leaf it drops, and the bamboo that is its one cool green.
+    | "maple"
+    | "leafLitter"
+    | "bamboo";
   x: number;
   z: number;
   count: number;

@@ -2,7 +2,8 @@
  * BuildingKit.ts — Facade for the parametric structure builders. Re-exports
  * the shared types and the BUILDERS registry; the implementation lives in
  * kit/ (core.ts = Build accumulator + palette + contract, buildings.ts,
- * city.ts, manor.ts, structures.ts, terrain.ts).
+ * city.ts, desert.ts, harbour.ts, japan.ts, manor.ts, structures.ts,
+ * terrain.ts).
  * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER set
  * metadata.solid, checkCollisions, or isPickable — MapBuilder owns the
  * visual/collider split. A builder may take a BuildCtx to read the world it is
@@ -73,6 +74,21 @@ import {
   buildSaltPan,
   buildSmelter,
 } from "./kit/harbour";
+import {
+  buildArchBridge,
+  buildBellTower,
+  buildGardenWall,
+  buildKura,
+  buildMachiya,
+  buildMinka,
+  buildPagoda,
+  buildStonePagoda,
+  buildTeahouse,
+  buildTempleGate,
+  buildTempleHall,
+  buildToro,
+  buildTorii,
+} from "./kit/japan";
 import { buildJungleManor } from "./kit/manor";
 import {
   buildSilo,
@@ -179,6 +195,21 @@ export const BUILDERS = {
   careenedHull: buildCareenedHull,
   netLoft: buildNetLoft,
   saltPan: buildSaltPan,
+  // The temple town — see kit/japan.ts, whose header owns the curved roof and
+  // the rule that vermilion is spent on the sacred and the crossed alone.
+  pagoda: buildPagoda,
+  templeHall: buildTempleHall,
+  templeGate: buildTempleGate,
+  bellTower: buildBellTower,
+  machiya: buildMachiya,
+  minka: buildMinka,
+  teahouse: buildTeahouse,
+  kura: buildKura,
+  torii: buildTorii,
+  toro: buildToro,
+  stonePagoda: buildStonePagoda,
+  gardenWall: buildGardenWall,
+  archBridge: buildArchBridge,
 } as const;
 
 export type BuilderKind = keyof typeof BUILDERS;
