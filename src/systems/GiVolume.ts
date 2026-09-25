@@ -44,6 +44,7 @@
  * never remembered, so their bounce rises and dies exactly with the light.
  */
 import {
+  type BaseTexture,
   Color3,
   ComputeShader,
   Constants,
@@ -143,6 +144,9 @@ export class GiVolume {
   private readonly binding: GiBinding;
 
   private trace: ComputeShader | null = null;
+  /** The cloud field last bound to `trace`, and the `trace` it went to — see `writeParams`. */
+  private cloudBound: BaseTexture | null = null;
+  private cloudBoundOn: ComputeShader | null = null;
   private compose: ComputeShader | null = null;
   private vis: ComputeShader | null = null;
 
@@ -1036,13 +1040,20 @@ export class GiVolume {
     // The clouds' shadow, read off the factory like the key itself, so a wall
     // under a cloud bounces the key it is lit by (`cloudLitAt`). The texture
     // is bound here rather than in `bindShaders` because the factory swaps its
-    // own "no cloud" texel for `Sky`'s field after the volume exists; binding
-    // the same texture again is a no-op.
+    // own "no cloud" texel for `Sky`'s field after the volume exists — and
+    // only when it or the shader CHANGED, because binding the same texture
+    // again is not free: `ComputeShader.setTexture` mints a binding record on
+    // every call, which was an allocation a frame for nothing.
     const ca = lit.cloudArea;
     const cr = lit.cloudRay;
     put4(p, s + 52, ca.x, ca.y, ca.z, ca.w);
     put4(p, s + 56, cr.x, cr.y, cr.z, cr.w);
-    this.trace?.setTexture("cloudField", lit.cloudMap);
+    const cloud = lit.cloudMap;
+    if (this.trace && (this.trace !== this.cloudBoundOn || cloud !== this.cloudBound)) {
+      this.trace.setTexture("cloudField", cloud);
+      this.cloudBoundOn = this.trace;
+      this.cloudBound = cloud;
+    }
 
     for (let i = 0; i < this.slow.length; i++) {
       writeLight(p, (GI_LAYOUT.slow + i * 2) * 4, this.slow[i]);

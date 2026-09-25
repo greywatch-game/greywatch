@@ -130,6 +130,8 @@ export class Sky {
   private shadowTurn = 0;
   private shadowStep = 0;
   private shadowOn = false;
+  /** False until the first `update` of a ring primes the fields — see `startCloudShadow`. */
+  private shadowPrimed = false;
   private readonly shadowToLight = new Vector3();
   private shadowArea: CloudShadowArea = { originX: 0, originZ: 0, extent: 1 };
   private shadowLobes = new Float32Array(0);
@@ -379,13 +381,18 @@ export class Sky {
     this.sortedEye.set(Infinity, Infinity, Infinity);
     this.sortedTurn = Infinity;
     this.shadowOn = false;
+    this.shadowPrimed = false;
     this.cloudShadowArea.w = 1;
   }
 
   /**
-   * Starts the clouds' shadow for a freshly built ring: where the field lies,
-   * the light's slope, and the first two fields written whole so the first
-   * frame already has both halves of its crossfade.
+   * Starts the clouds' shadow for a freshly built ring: where the field lies
+   * and the light's slope. **The fields are primed by the first `update`, not
+   * here**, because only `update` knows the turn: in a match it is the
+   * AUTHORITY's, millions of radians from the offline turn a ring is built at,
+   * and priming here as well made every match's map install write the fields
+   * twice. `update` runs before the frame renders and `Game` pushes the area
+   * after it, so no frame shows the new area over the old fields.
    *
    * **The field is laid over the ground a player can SEE**, the play square
    * and `reach` past it or the map's fog, whichever is nearer — past the fog a
@@ -410,12 +417,22 @@ export class Sky {
     this.shadowLobes = new Float32Array(geo.lumpFirst.length * LOBE_STRIDE);
     this.shadowStep = cfg.driftDegPerSec * (Math.PI / 180) * cfg.shadow.stepSeconds;
     this.shadowOn = true;
-    this.primeCloudShadow(this.clouds.rotation.y);
+    this.shadowPrimed = false;
   }
 
   /**
    * Writes R and G whole at the whole step at or before `turn` and the one
    * after it, and starts the next.
+   *
+   * **Both are written in this frame, and that is the budget's doing rather
+   * than an oversight.** Writing only R and building G a slice a frame was
+   * tried: it leaves two fields to finish before the crossfade reaches 2 where
+   * this leaves one, and a field on Kurenai's low sun is 48 frames at
+   * `texelsPerFrame` against a step of 45 at 30 fps — measured off the default
+   * ring — so a phone would re-prime every two steps and never catch up. A
+   * prime runs on a ring's first frame
+   * and on a turn the fields cannot bridge (in a match, the clock's offset
+   * arriving or re-anchoring), so it is a hitch at a moment that has one.
    *
    * **The fields stand on a GRID of whole steps, never where this client
    * happened to prime.** A crossfade between two fields only approximates the
@@ -428,6 +445,7 @@ export class Sky {
     const step = this.shadowStep;
     const from = step > 0 ? Math.floor(turn / step) * step : turn;
     this.shadowTurn = from;
+    this.shadowPrimed = true;
     this.writeField(this.shadowFields[this.shadowR], from, true);
     this.writeField(this.shadowFields[this.shadowG], from + step, true);
     this.stageCloudShadow(this.shadowR, this.shadowG, 0, this.shadowTexels.length);
@@ -450,9 +468,10 @@ export class Sky {
   private stepCloudShadow(turn: number): void {
     const step = this.shadowStep;
     let t = step > 0 ? (turn - this.shadowTurn) / step : 0;
-    // A turn the fields cannot bridge — the ring set by hand, or a frame long
-    // enough to skip two steps — starts over rather than sliding across it.
-    if (t < 0 || t >= 2) {
+    // A ring's first frame, or a turn the fields cannot bridge — the ring set
+    // by hand, the match clock's offset arriving, or a frame long enough to
+    // skip two steps — starts over rather than sliding across it.
+    if (!this.shadowPrimed || t < 0 || t >= 2) {
       this.primeCloudShadow(turn);
       return;
     }
@@ -1067,6 +1086,9 @@ export class Sky {
 
   dispose(): void {
     this.clear();
+    // Not one of `disposables`: it outlives every ring, bound once for the
+    // life of the process — so it goes only with the sky itself.
+    this.cloudShadowMap.dispose();
   }
 }
 

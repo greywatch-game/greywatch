@@ -1102,16 +1102,24 @@ export function buildOptics(
     // A collar round the middle section, and the caps on it: black bodies with
     // steel tops for elevation and windage, and the wider brightness dial
     // opposite — the one part of this sight that gets turned mid-round.
+    //
+    // **The caps' height is set by the EYEPIECE, not by the collar**: aimed,
+    // the eye is `eyeDistance` behind the ocular and sees past the rubber's
+    // rim, and anything on the tube subtending more than that rim (0.119 rad
+    // at its flats) stands out round the picture. So each stack is 3 mm proud
+    // of the collar and tops out at 0.118 — body and cap from the tube's own
+    // radius — where 6 mm had put three knobs outside the ring at 12, 3 and 9.
     const turretZ = winZ;
     const rCollar = outerAt(0);
     b.shell("dot2Collar", black, rCollar * 2, 0.003, 0.02, dot2Y, turretZ);
-    const rTurret = rCollar + 0.003;
-    b.pin("dot2Elev", black, 0.016, 0.008, 0, dot2Y + rTurret + 0.003, turretZ, "y");
-    b.pin("dot2ElevCap", METAL, 0.011, 0.002, 0, dot2Y + rTurret + 0.008, turretZ, "y");
-    b.pin("dot2Wind", black, 0.016, 0.008, rTurret + 0.003, dot2Y, turretZ, "x");
-    b.pin("dot2WindCap", METAL, 0.011, 0.002, rTurret + 0.008, dot2Y, turretZ, "x");
-    b.pin("dot2Illum", POLYMER, 0.021, 0.008, -(rTurret + 0.003), dot2Y, turretZ, "x");
-    b.pin("dot2IllumCap", METAL, 0.013, 0.003, -(rTurret + 0.0085), dot2Y, turretZ, "x");
+    const body = 0.0045;
+    const cap = 0.0015;
+    b.pin("dot2Elev", black, 0.016, body, 0, dot2Y + rCollar + body / 2, turretZ, "y");
+    b.pin("dot2ElevCap", METAL, 0.011, cap, 0, dot2Y + rCollar + body + cap / 2, turretZ, "y");
+    b.pin("dot2Wind", black, 0.016, body, rCollar + body / 2, dot2Y, turretZ, "x");
+    b.pin("dot2WindCap", METAL, 0.011, cap, rCollar + body + cap / 2, dot2Y, turretZ, "x");
+    b.pin("dot2Illum", POLYMER, 0.021, body, -(rCollar + body / 2), dot2Y, turretZ, "x");
+    b.pin("dot2IllumCap", METAL, 0.013, cap, -(rCollar + body + cap / 2), dot2Y, turretZ, "x");
     b.merge("greenDot", node);
 
     // Three black posts with fine hashes, stopping well short of the axis: the

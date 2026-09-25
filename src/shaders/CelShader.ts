@@ -2014,6 +2014,8 @@ export class CelMaterialFactory {
   // own "no cloud anywhere" until `Sky` hands over its field, and `w` = 1 in
   // the area switches the term off whatever the texture holds.
   private cloudShadowMap: BaseTexture;
+  /** That "no cloud anywhere" texel, kept to know it when it is replaced. */
+  private readonly noCloudShadow: BaseTexture;
   private readonly cloudShadowArea = new Vector4(0, 0, 0, 1);
   private readonly cloudShadowRay = new Vector4(0, 0, 0, 0);
   // What the materials actually hold: the area with `w` forced to 1 while a
@@ -2109,7 +2111,7 @@ export class CelMaterialFactory {
     // capture rings and the viewmodel are all built before `Sky`, and a
     // declared sampler with nothing behind it is a bind group that fails to
     // build. One RG texel of zero is a field with no cloud in it.
-    this.cloudShadowMap = new RawTexture(
+    this.noCloudShadow = new RawTexture(
       new Uint8Array(2),
       1,
       1,
@@ -2120,7 +2122,8 @@ export class CelMaterialFactory {
       Constants.TEXTURE_NEAREST_SAMPLINGMODE,
       Constants.TEXTURETYPE_UNSIGNED_BYTE,
     );
-    this.cloudShadowMap.name = "noCloudShadow";
+    this.noCloudShadow.name = "noCloudShadow";
+    this.cloudShadowMap = this.noCloudShadow;
   }
 
   /**
@@ -3025,8 +3028,13 @@ export class CelMaterialFactory {
    * object is stable even though its contents are rewritten as the ring drifts.
    */
   setCloudShadowMap(map: BaseTexture): void {
+    const was = this.cloudShadowMap;
     this.cloudShadowMap = map;
     this.eachShadowReader((mat) => mat.setTexture("cloudShadowMap", map));
+    // The factory's own "no cloud" texel is nobody's once every reader holds
+    // the field. `Game` swaps it in its constructor, before any frame — the
+    // only other holder, the irradiance volume, binds per frame off `lit`.
+    if (was !== map && was === this.noCloudShadow) was.dispose();
   }
 
   /**
