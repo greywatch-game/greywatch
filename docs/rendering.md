@@ -3266,9 +3266,12 @@ whose shadow they are standing in, because it is the same ray.
   whole term off (`cloudShadow.w` = 1).
 - **Cost**, measured with CPU throttled as a phone stand-in: the typical frame
   is under the 0.1 ms timer grain at any throttle; the worst 1% of frames
-  1.5 ms and a roll-over 1.4-1.6 ms at 6x; the material walk that pushes the
-  crossfade every frame 0.025 ms (0.25 ms at 6x) on Coldharbour's 222
-  materials, the same shape as `updateCamera`'s.
+  1.5 ms and a roll-over 1.4-1.6 ms at 6x. **The crossfade is pushed WITHOUT
+  a material walk**: every reader was handed the two vectors by reference in
+  `applyShadow`, so `setCloudShadow` rewrites them in place and touches no
+  material. It walked the cache every frame once — 0.025 ms (0.25 ms at 6x) on
+  Coldharbour's 222 materials — handing each material the object it already
+  held.
 - **In a match the ring's TURN is the authority's clock** (`Sky.update`'s
   `clock`, `Connection.now` in seconds, as the lightning is), so every client
   stands its clouds — and their shadows — in the same place, and two players

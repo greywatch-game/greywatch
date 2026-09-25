@@ -3033,11 +3033,17 @@ export class CelMaterialFactory {
    * Where the clouds' shadow field lies and how it is read this frame — see
    * `celCloud` for what each component is. Pushed from `tick` in EVERY state,
    * after `Sky.update`, because the crossfade moves with the drift and the
-   * drift does not stop for a menu. Guarded like `updateCamera`: a sky with no
-   * cloud never changes either and never walks the cache.
+   * drift does not stop for a menu.
+   *
+   * **It walks no material**: `applyShadow` hands every reader
+   * `cloudShadowPushed` and `cloudShadowRay` BY REFERENCE, as `pointSpot` is
+   * handed, and a `ShaderMaterial` re-reads the object it was given on every
+   * bind, so rewriting the two in place is the whole of the push. The crossfade
+   * moves every frame the clouds drift, so a walk here was a walk every frame —
+   * two uniform-list scans a material across the whole cache, to hand each one
+   * the object it already held.
    */
   setCloudShadow(area: Vector4, ray: Vector4): void {
-    if (area.equals(this.cloudShadowArea) && ray.equals(this.cloudShadowRay)) return;
     this.cloudShadowArea.copyFrom(area);
     this.cloudShadowRay.copyFrom(ray);
     this.pushCloudShadow();
@@ -3051,7 +3057,8 @@ export class CelMaterialFactory {
    * the rest of the round while the real one drifted off. `ReflectionSystem`
    * holds it on the hook that moves the eye into the probe and lets it go on
    * the one that moves it back, so the main pass of the same frame finds it
-   * as it was. Guarded, so the six faces of one probe cost one walk.
+   * as it was. One write into the vector every reader holds (see
+   * `setCloudShadow`), so it walks nothing either.
    */
   holdCloudShadow(held: boolean): void {
     if (held === this.cloudShadowHeld) return;
@@ -3059,13 +3066,10 @@ export class CelMaterialFactory {
     this.pushCloudShadow();
   }
 
+  /** Rewrites what every reader holds by reference — see `setCloudShadow`. */
   private pushCloudShadow(): void {
     this.cloudShadowPushed.copyFrom(this.cloudShadowArea);
     if (this.cloudShadowHeld) this.cloudShadowPushed.w = 1;
-    this.eachShadowReader((mat) => {
-      mat.setVector4("cloudShadow", this.cloudShadowPushed);
-      mat.setVector4("cloudShadowRay", this.cloudShadowRay);
-    });
   }
 
   /**
