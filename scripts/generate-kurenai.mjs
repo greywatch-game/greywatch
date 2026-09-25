@@ -239,6 +239,36 @@ const ONSEN = { x: 44, z: 92, rx: 4, rz: 3, skirt: 6, depth: 1.5, level: 1 };
 const basinW = (b) => b.rx * 2 + b.skirt * 2;
 const basinD = (b) => b.rz * 2 + b.skirt * 2;
 
+/**
+ * How far past its claim (`basinW` x `basinD`) a basin's ground is held at its
+ * `level`, and how far it then takes to ease back to the land. A BOX and not
+ * the basin's ellipse, because what has to be dry is the water's RECT and its
+ * corners: the rect is the wet box plus `waterRect`'s margin, and it is judged
+ * on 3 m cells, so a vertex out on the ease drags the rect's edge under.
+ * `waterRect` throws if this is too tight; the ease is what the walkable
+ * gradient check holds it to.
+ */
+const BASIN_RIM = 2;
+const BASIN_RIM_EASE = 5;
+
+/**
+ * The ground a basin is dug INTO: never below the basin's `level` out to the
+ * rim. **A basin has to be dug into level ground or its water has no edge** —
+ * both of these sit at the lip of their district's terrace, where the land
+ * falls toward the town, and a surface 0.3 m under `level` was over the town
+ * side's skirt as well as over the basin: the hot spring ran out west into the
+ * garden and the koi pond stood a second sheet outside the precinct wall. Only
+ * ever LIFTS, so inside a district already at `level` it changes nothing.
+ */
+function basinRim(h, x, z, b) {
+  if (h >= b.level) return h;
+  const box = { x: b.x, z: b.z, hw: basinW(b) / 2 + BASIN_RIM, hd: basinD(b) / 2 + BASIN_RIM };
+  const d = rectDist(x, z, box);
+  if (d >= BASIN_RIM_EASE) return h;
+  const w = d <= 0 ? 1 : 1 - smooth(d / BASIN_RIM_EASE);
+  return h + (b.level - h) * w;
+}
+
 function heightAt(x, z) {
   let h = land(x, z);
   const rd = riverDist(x, z);
@@ -247,7 +277,27 @@ function heightAt(x, z) {
     const w = rd <= RIVER_BED ? 1 : 1 - smooth((rd - RIVER_BED) / (RIVER_LIP - RIVER_BED));
     h += (bed - h) * w;
   }
+  h = basinRim(basinRim(h, x, z, POND), x, z, ONSEN);
   return h - basinCut(x, z, POND) - basinCut(x, z, ONSEN);
+}
+
+/**
+ * The floor as the GAME has it: `heightAt` at the four surrounding vertices,
+ * rounded as the heightfield is written, and blended bilinearly between them.
+ * Inside the play square only — the vertex grid does not reach the margin.
+ */
+function floorAt(x, z) {
+  const fx = Math.max(0, Math.min(CELLS - 1e-9, (x + HALF) / CELL));
+  const fz = Math.max(0, Math.min(CELLS - 1e-9, (z + HALF) / CELL));
+  const i = Math.floor(fx);
+  const j = Math.floor(fz);
+  const tx = fx - i;
+  const tz = fz - j;
+  const v = (a, c) => Math.round(heightAt(-HALF + a * CELL, -HALF + c * CELL) * 100) / 100;
+  return (
+    (v(i, j) * (1 - tx) + v(i + 1, j) * tx) * (1 - tz) +
+    (v(i, j + 1) * (1 - tx) + v(i + 1, j + 1) * tx) * tz
+  );
 }
 
 /** The steeper of the two axial slopes at a point. */
@@ -1056,26 +1106,74 @@ for (let k = 0; k < 56; k++) {
 // --- the water, the grass, the flags and the spawns ----------------------------
 
 /**
- * One water body's rect, measured off the floor: the wet bounding box at the
- * stated surface, plus a margin of dry ground for the shoreline to be drawn
- * on. See Sarab's `waterBody`, which carries the argument.
+ * One water body's rect, measured off the floor: the bounding box of the wet
+ * ground CONNECTED to the basin's middle at the stated surface, plus a margin
+ * of dry ground for the shoreline to be drawn on. See Sarab's `waterBody`,
+ * which carries the argument.
+ *
+ * **Connected, and then checked**: a water plane is drawn over every point of
+ * its rect that is under its surface, so wet ground inside the rect that is
+ * not the basin is a second sheet of water, and wet ground the fill reaches at
+ * the edge of the search is a basin with no rim. Both throw rather than emit.
+ * Measured on the EMITTED floor (`floorAt`), not on `heightAt`: the game draws
+ * the water against 3 m cells, and a rim narrower than a cell is not there.
  */
 function waterRect(cx, cz, halfW, halfD, y, margin = 6) {
   const step = 0.75;
+  const nx = Math.floor((2 * halfW) / step) + 1;
+  const nz = Math.floor((2 * halfD) / step) + 1;
+  const xAt = (i) => cx - halfW + i * step;
+  const zAt = (j) => cz - halfD + j * step;
+  const depthAt = (i, j) => y - floorAt(xAt(i), zAt(j));
+  const inBody = new Uint8Array(nx * nz);
+  const i0 = Math.round(halfW / step);
+  const j0 = Math.round(halfD / step);
+  if (depthAt(i0, j0) <= 0) {
+    throw new Error(`water: the basin at (${cx}, ${cz}) is dry in the middle`);
+  }
   let x0 = Infinity;
   let x1 = -Infinity;
   let z0 = Infinity;
   let z1 = -Infinity;
   let deepest = 0;
-  for (let x = cx - halfW; x <= cx + halfW; x += step) {
-    for (let z = cz - halfD; z <= cz + halfD; z += step) {
-      const d = y - heightAt(x, z);
-      if (d <= 0) continue;
-      deepest = Math.max(deepest, d);
-      x0 = Math.min(x0, x);
-      x1 = Math.max(x1, x);
-      z0 = Math.min(z0, z);
-      z1 = Math.max(z1, z);
+  const stack = [[i0, j0]];
+  inBody[j0 * nx + i0] = 1;
+  while (stack.length) {
+    const [i, j] = stack.pop();
+    const x = xAt(i);
+    const z = zAt(j);
+    deepest = Math.max(deepest, depthAt(i, j));
+    x0 = Math.min(x0, x);
+    x1 = Math.max(x1, x);
+    z0 = Math.min(z0, z);
+    z1 = Math.max(z1, z);
+    for (const [a, c] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]) {
+      if (a < 0 || c < 0 || a >= nx || c >= nz) {
+        throw new Error(`water: the basin at (${cx}, ${cz}) spills past its search box`);
+      }
+      if (inBody[c * nx + a] || depthAt(a, c) <= 0) continue;
+      inBody[c * nx + a] = 1;
+      stack.push([a, c]);
+    }
+  }
+  for (let x = x0 - margin; x <= x1 + margin; x += step / 2) {
+    for (let z = z0 - margin; z <= z1 + margin; z += step / 2) {
+      if (y - floorAt(x, z) <= 0) continue;
+      const i = Math.round((x - cx + halfW) / step);
+      const j = Math.round((z - cz + halfD) / step);
+      if (i >= 0 && j >= 0 && i < nx && j < nz && inBody[j * nx + i]) continue;
+      // A sample between two body cells is the same water at a finer grain.
+      let near = false;
+      for (let a = i - 1; a <= i + 1 && !near; a++) {
+        for (let c = j - 1; c <= j + 1 && !near; c++) {
+          near = a >= 0 && c >= 0 && a < nx && c < nz && inBody[c * nx + a] === 1;
+        }
+      }
+      if (!near) {
+        throw new Error(
+          `water: the rect for the basin at (${cx}, ${cz}) covers other wet ground at (${x.toFixed(1)}, ${z.toFixed(1)})`,
+        );
+      }
     }
   }
   return {
