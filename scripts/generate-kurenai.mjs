@@ -2,32 +2,45 @@
  * generate-kurenai.mjs — SEEDS Kurenai, the temple valley: writes
  * `src/world/kurenai/{layout,heights}.ts`.
  *
- * Run with `npm run kurenai`. Committed output, like every `heights.ts` and
- * every collision bake, and re-running it with the tree unchanged must produce
- * the same bytes.
+ * Run with `npm run kurenai`, and owe `npm run collision -- kurenai` after it.
+ * Committed output, like every `heights.ts` and every collision bake, and
+ * re-running it with the tree unchanged must produce the same bytes.
+ *
+ * Three flags for iterating on it: `--probe` prints the floor as a plan and
+ * writes nothing, `--plan` prints the claim list as a plan, and `--refusals`
+ * lists every plot that was refused and what refused it.
  *
  * ## Why it is seeded, on Sarab's precedent
  *
- * The floor is forty thousand numbers and a river that meanders across a
- * kilometre of ground, which is a FUNCTION; and a 750 m valley dressed the way
- * the reference frame is dressed is two thousand trees whose only interesting
- * property is that none of them stands in the river, on a road or through a
- * roof. So the DESIGN is authored here — the flags, the town's streets, every
- * set piece, the recipe the woods are sown from — and the TRANSCRIPTION is
- * mechanical. The output is an ordinary layout file the editor opens, patches
- * and saves; re-running this discards those edits.
+ * The floor is a function — a river meandering through a 240 m square, two
+ * hills, five terraces levelled into them — and the dressing is a few hundred
+ * maples whose only interesting property is that none of them stands in the
+ * river, on a road or through a roof. So the DESIGN is authored here — the
+ * flags, the town's streets, every set piece, the recipe the woods are sown
+ * from — and the TRANSCRIPTION is mechanical. The output is an ordinary layout
+ * file the editor opens, patches and saves; re-running this discards those
+ * edits.
+ *
+ * ## Why it is 240 m and not 750
+ *
+ * It was first built at 750 m with vehicles and twenty a side, and it read as
+ * sparse and ran slowly for one reason: the same few hundred buildings spread
+ * over 56 hectares (6 placements a hectare, against Hollowmere's 34), under a
+ * 620 m fog that put nearly all of it — and 2,400 maples of thirty-odd leaf
+ * plates each — in front of the camera every frame. Density and frame cost
+ * both scale with AREA, so the map that fixes one fixes the other: the same
+ * kit on Hollowmere's footprint, infantry only, eight a side.
  *
  * ## What lives here rather than in the layout's own header
  *
- * - **The floor is five passes, in order**: rolling ground; four hills (the
- *   temple mountain in the north-west, the shrine hill in the south-east and a
- *   low shoulder behind each home yard); every district flattened toward its
- *   own level by a weighted AVERAGE (Sarab's `land`, and for its reason — a
- *   sequence lets a later district lift an earlier one's core); the river's
- *   corridor flattened to the valley floor; and the channel, the temple's koi
- *   pond and the inn's hot spring cut last. The gradient of the result is
- *   checked against `MAX_WALKABLE_GRADE` and the script REFUSES to write a
- *   floor it cannot walk.
+ * - **The floor is five passes, in order**: rolling ground; two hills (the
+ *   temple's in the north-west corner, the shrine's in the south-east);
+ *   every district flattened toward its own level by a weighted AVERAGE
+ *   (Sarab's `land`, and for its reason — a sequence lets a later district
+ *   lift an earlier one's core); the river's corridor flattened to the valley
+ *   floor; and the channel, the temple's koi pond and the inn's hot spring cut
+ *   last. The gradient of the result is checked against `MAX_WALKABLE_GRADE`
+ *   and the script REFUSES to write a floor it cannot walk.
  * - **Nothing overlaps anything**, by the claim list Sarab's generator uses,
  *   and **nothing is built on a slope**: `place` samples the floor at the
  *   footprint's corners and refuses a plot that falls more than `FLAT` across
@@ -50,14 +63,16 @@ const out = join(root, "src", "world", "kurenai");
 // --- the extent --------------------------------------------------------------
 
 /** The PLAY square. */
-const PLAY = 750;
+const PLAY = 240;
 /** Ground past it — the horizon's floor; see the layout's `borderland` note. */
 const MARGIN = 100;
 /** Metres per heightfield cell. `CELLS * CELL` must equal `PLAY`. */
-const CELL = 3.75;
+const CELL = 3;
 const CELLS = PLAY / CELL;
 const HALF = PLAY / 2;
 const MAX_GRADE = 0.4;
+/** The merge block's side — see the layout's `blockSize` note. */
+const BLOCK = 120;
 /**
  * How far the floor may fall across a building's footprint before the plot is
  * refused. A plinth is 0.25-0.55 m; this is what it hides.
@@ -114,113 +129,71 @@ function vnoise(x, z, scale, seed) {
 const bell = (d, radius) => (d >= radius ? 0 : (Math.cos((Math.PI * d) / radius) + 1) / 2);
 
 /**
- * The hills. The temple mountain is the big one and stands in the north-west
- * corner with the precinct cut into its south-eastern flank; the shrine hill
- * is the south-east's, with the shrine on a terrace at its crown. The two low
- * shoulders are there so the home yards are not on a table.
+ * The hills. The temple's stands in the north-west corner behind the
+ * precinct's terrace, the shrine's in the south-east with the shrine on a
+ * terrace on its flank. The home yards are in the other two corners, low.
  *
- * Peak over radius is the steepest the bell makes: 26 over 175 is 0.23.
+ * Peak over radius is the steepest the bell makes: 13 over 70 is 0.29.
  */
 const HILLS = [
-  { x: -330, z: 330, peak: 26, r: 200 },
-  { x: 238, z: -210, peak: 18, r: 125 },
-  { x: -340, z: -40, peak: 9, r: 110 },
-  { x: 340, z: 40, peak: 9, r: 110 },
+  { x: -130, z: 130, peak: 9, r: 66 },
+  { x: 118, z: -118, peak: 10, r: 64 },
 ];
 
 /** Rolling ground and the hills, before anything is levelled. */
 function natural(x, z) {
-  let h = 2.2 * vnoise(x, z, 170, 11) + 0.8 * vnoise(x, z, 64, 12) + 0.25 * vnoise(x, z, 23, 13);
+  let h = 1.4 * vnoise(x, z, 120, 11) + 0.5 * vnoise(x, z, 48, 12) + 0.2 * vnoise(x, z, 19, 13);
   for (const k of HILLS) h += k.peak * bell(Math.hypot(x - k.x, z - k.z), k.r);
   return h;
 }
 
 // The river: a centreline, and the channel cut to a constant bed along it so
-// ONE flat water rect is wet along its whole run (Harrowmead's mill stream,
-// at twice the length).
-const zr = (x) => -12 + 22 * Math.sin((x + 40) / 130);
-const zrSlope = (x) => (22 / 130) * Math.cos((x + 40) / 130);
+// ONE flat water rect is wet along its whole run (Harrowmead's mill stream).
+const zr = (x) => -6 + 6 * Math.sin((x + 20) / 38);
+const zrSlope = (x) => (6 / 38) * Math.cos((x + 20) / 38);
 /** Perpendicular distance to the river's centreline, near enough. */
 const riverDist = (x, z) => Math.abs(z - zr(x)) / Math.sqrt(1 + zrSlope(x) ** 2);
 /** Flat bed half-width, and where the bank reaches the valley floor. */
-const RIVER_BED = 4;
-const RIVER_LIP = 12;
+const RIVER_BED = 3;
+const RIVER_LIP = 9;
 const RIVER_DEPTH = 1.2;
 /** The river's surface. The bed is 0.7 m under it. */
 const RIVER_Y = -0.5;
 /** The flat valley floor either side of it, and its skirt. */
-const CORRIDOR = 34;
-const CORRIDOR_SKIRT = 50;
+const CORRIDOR = 14;
+const CORRIDOR_SKIRT = 16;
 
 /**
  * The places that have to be LEVEL: every flag's precinct, the town, the home
- * yards and the farms. `level` is what the ground reads inside the core,
- * `skirt` how far it takes to get back to the hills. Farms are added below at
- * their own natural height.
+ * yards and the farm. `level` is what the ground reads inside the core,
+ * `skirt` how far it takes to get back to the hills.
  */
 const DISTRICTS = [
-  // C — the town, both banks. Short skirt: it sits beside the temple's
-  // terrace, which is seven metres up, and must not dilute it.
-  { name: "town", x: 2.5, z: 10, hw: 117.5, hd: 125, level: 0, skirt: 32 },
-  // A — the temple precinct, cut into the mountain's flank.
-  { name: "temple", x: -205, z: 160, hw: 50, hd: 50, level: 6, skirt: 60 },
+  // C — the town, both banks.
+  { name: "town", x: 0, z: 18, hw: 30, hd: 70, level: 0, skirt: 14 },
+  // A — the temple precinct, a terrace in front of its hill.
+  { name: "temple", x: -73, z: 77, hw: 33, hd: 31, level: 3, skirt: 26 },
   // B — the brewery.
-  { name: "brewery", x: -205, z: -150, hw: 46, hd: 36, level: 1, skirt: 45 },
-  // D — the shrine, at the hill's crown.
-  { name: "shrine", x: 222, z: -184, hw: 26, hd: 24, level: 15, skirt: 72 },
+  { name: "brewery", x: -72, z: -66, hw: 34, hd: 24, level: 0.5, skirt: 20 },
+  // D — the shrine, on a terrace up the hill's flank.
+  { name: "shrine", x: 72, z: -86, hw: 20, hd: 18, level: 5, skirt: 30 },
   // E — the inn.
-  { name: "inn", x: 205, z: 170, hw: 46, hd: 46, level: 2, skirt: 45 },
-  { name: "home sw", x: -300, z: -300, hw: 44, hd: 44, level: 1.5, skirt: 45 },
-  { name: "home ne", x: 300, z: 300, hw: 44, hd: 44, level: 1.5, skirt: 45 },
+  { name: "inn", x: 72, z: 80, hw: 32, hd: 26, level: 1, skirt: 20 },
+  { name: "home sw", x: -102, z: -102, hw: 14, hd: 14, level: 0.5, skirt: 18 },
+  { name: "home ne", x: 102, z: 102, hw: 14, hd: 14, level: 1, skirt: 18 },
 ];
 
-/** Farmsteads, each a small level plot at its own natural height. */
-const FARMS = [
-  [-60, -235],
-  [95, -250],
-  [-330, 110],
-  [-110, 270],
-  [70, 285],
-  [330, -95],
-  [-300, -150],
-  [300, 150],
-  [-20, -330],
-  [30, 335],
-  [330, -260],
-  [160, -300],
-  [-160, 320],
-];
-/**
- * A farm is levelled at its own natural height, so it only goes where that is
- * a meaningful thing to say — ground that falls under four metres across the
- * plot and its yard. On the mountain's flank a level plot is a cut and a fill
- * whose skirt is steeper than the nav graph links.
- */
-const farmOk = ([x, z]) => {
-  let a = Infinity;
-  let b = -Infinity;
-  for (const dx of [-32, 0, 32]) {
-    for (const dz of [-32, 0, 32]) {
-      const h = natural(x + dx, z + dz);
-      a = Math.min(a, h);
-      b = Math.max(b, h);
-    }
-  }
-  if (b - a > 4) console.log(`  farm at (${x}, ${z}) dropped: ${(b - a).toFixed(1)} m of fall`);
-  return b - a <= 4;
-};
-for (let i = FARMS.length - 1; i >= 0; i--) if (!farmOk(FARMS[i])) FARMS.splice(i, 1);
-for (const [x, z] of FARMS) {
-  DISTRICTS.push({
-    name: "farm",
-    x,
-    z,
-    hw: 17,
-    hd: 14,
-    level: Math.round(natural(x, z) * 4) / 4,
-    skirt: 42,
-  });
-}
+/** The one farmstead, between the brewery and the shrine. */
+const FARM = { x: 0, z: -96 };
+DISTRICTS.push({
+  name: "farm",
+  x: FARM.x,
+  z: FARM.z,
+  hw: 18,
+  hd: 12,
+  level: Math.round(natural(FARM.x, FARM.z) * 4) / 4,
+  skirt: 18,
+});
 
 function rectDist(x, z, r) {
   const dx = Math.max(Math.abs(x - r.x) - r.hw, 0);
@@ -259,9 +232,12 @@ function basinCut(x, z, b) {
   return b.depth * (1 - smooth(d / b.skirt));
 }
 
-/** The temple's koi pond and the inn's hot spring. */
-const POND = { x: -176, z: 151, rx: 7.5, rz: 5.5, skirt: 7, depth: 1.5 };
-const ONSEN = { x: 176, z: 150, rx: 6, rz: 4.5, skirt: 6, depth: 1.4 };
+/** The temple's koi pond and the inn's hot spring, each with its surface level. */
+const POND = { x: -52.5, z: 94, rx: 4, rz: 3, skirt: 6, depth: 1.5, level: 3 };
+const ONSEN = { x: 44, z: 92, rx: 4, rz: 3, skirt: 6, depth: 1.5, level: 1 };
+/** Ground a basin's claim covers: the water and its skirt. */
+const basinW = (b) => b.rx * 2 + b.skirt * 2;
+const basinD = (b) => b.rz * 2 + b.skirt * 2;
 
 function heightAt(x, z) {
   let h = land(x, z);
@@ -287,11 +263,29 @@ function grade(x, z) {
 function wet(x, z, margin = 0.25) {
   if (riverDist(x, z) < RIVER_LIP + 1 && heightAt(x, z) < RIVER_Y + margin) return true;
   for (const b of [POND, ONSEN]) {
-    if (Math.hypot((x - b.x) / (b.rx + b.skirt + 2), (z - b.z) / (b.rz + b.skirt + 2)) < 1) {
+    if (Math.hypot((x - b.x) / (b.rx + b.skirt), (z - b.z) / (b.rz + b.skirt)) < 1) {
       return true;
     }
   }
   return false;
+}
+
+// `--probe` prints the floor as a plan, one height every 8 m, and writes
+// nothing: how the terraces meet the town is the thing that needs looking at.
+if (process.argv.includes("--probe")) {
+  const step = 8;
+  const cols = [];
+  for (let x = -HALF; x <= HALF; x += step) cols.push(String(x).padStart(5));
+  console.log("  z|x " + cols.join(""));
+  for (let z = HALF; z >= -HALF; z -= step) {
+    let line = String(z).padStart(5) + " ";
+    for (let x = -HALF; x <= HALF; x += step) {
+      const g = grade(x, z);
+      line += (heightAt(x, z).toFixed(1) + (g > 0.3 ? "!" : " ")).padStart(5);
+    }
+    console.log(line);
+  }
+  process.exit(0);
 }
 
 // --- what is already there ---------------------------------------------------
@@ -300,7 +294,7 @@ function wet(x, z, margin = 0.25) {
  * Everything that has claimed ground, as axis-aligned rectangles. `type` is
  * "solid" for a building, "road" for a carriageway (which refuses a building
  * and nothing that grows, since a road already does that itself) and "low"
- * for a flag ring, a spawn or a hardstanding — which refuse everything.
+ * for a flag ring, a spawn or a basin — which refuse everything.
  */
 const claimed = [];
 const refused = [];
@@ -318,8 +312,8 @@ function free(x, z, w, d, pad = 1.2) {
   const x1 = x + w / 2 + pad;
   const z0 = z - d / 2 - pad;
   const z1 = z + d / 2 + pad;
-  if (Math.max(Math.abs(x0), Math.abs(x1)) > HALF - 10) return false;
-  if (Math.max(Math.abs(z0), Math.abs(z1)) > HALF - 10) return false;
+  if (Math.max(Math.abs(x0), Math.abs(x1)) > HALF - 6) return false;
+  if (Math.max(Math.abs(z0), Math.abs(z1)) > HALF - 6) return false;
   return !overlaps(x0, x1, z0, z1);
 }
 
@@ -380,7 +374,9 @@ function place(kind, x, z, turn, w, d, params, opts = {}) {
   const pad = opts.pad ?? 1.2;
   if (!opts.force) {
     if (!free(x, z, fw, fd, pad)) {
-      refused.push(`${kind} at (${x.toFixed(0)}, ${z.toFixed(0)}) claim`);
+      const hit = claimed.find((c) => x + fw / 2 + pad > c.x0 && x - fw / 2 - pad < c.x1 && z + fd / 2 + pad > c.z0 && z - fd / 2 - pad < c.z1);
+      const by = hit ? ` by a ${hit.type} claim x ${hit.x0.toFixed(1)}..${hit.x1.toFixed(1)} z ${hit.z0.toFixed(1)}..${hit.z1.toFixed(1)}` : " at the edge";
+      refused.push(`${kind} at (${x.toFixed(0)}, ${z.toFixed(0)}) claim${by}`);
       return false;
     }
     if (!opts.anySlope && relief(x, z, fw, fd) > (opts.flat ?? FLAT)) {
@@ -411,7 +407,7 @@ function must(kind, x, z, turn, w, d, params, opts = {}) {
     `set piece: ${kind} at (${x.toFixed(0)}, ${z.toFixed(0)}) was refused — ` +
       refused[refused.length - 1] +
       ". Move the piece; the claim list is in authored order and the flags, " +
-      "spawns and hardstandings claim first.",
+      "spawns and basins claim first.",
   );
 }
 
@@ -423,17 +419,18 @@ function section(list, title) {
 // --- the flags and the homes -------------------------------------------------
 
 const FLAGS = [
-  { id: "A", name: "Koyo-ji Temple", x: -205, z: 150, r: 16 },
-  { id: "B", name: "The Sake Brewery", x: -205, z: -150, r: 15 },
-  { id: "C", name: "Hashimoto", x: 0, z: 42, r: 16 },
-  { id: "D", name: "Inari Shrine", x: 222, z: -178, r: 14 },
-  { id: "E", name: "The Hot Spring Inn", x: 205, z: 162, r: 15 },
+  { id: "A", name: "Koyo-ji Temple", x: -74, z: 72, r: 13 },
+  { id: "B", name: "The Sake Brewery", x: -72, z: -66, r: 13 },
+  { id: "C", name: "Hashimoto", x: 0, z: 28, r: 13 },
+  { id: "D", name: "Inari Shrine", x: 72, z: -80, r: 12 },
+  { id: "E", name: "The Hot Spring Inn", x: 72, z: 66, r: 13 },
 ];
 const byId = Object.fromEntries(FLAGS.map((f) => [f.id, f]));
 
+/** `s` points from the yard toward the middle of the map. */
 const HOMES = [
-  { team: 0, x: -300, z: -300, s: 1, yaw: "Math.PI / 4" },
-  { team: 1, x: 300, z: 300, s: -1, yaw: "-Math.PI * 0.75" },
+  { team: 0, x: -104, z: -104, s: 1, yaw: "Math.PI / 4" },
+  { team: 1, x: 104, z: 104, s: -1, yaw: "-Math.PI * 0.75" },
 ];
 
 // --- the roads, first, because everything else dodges them -------------------
@@ -443,8 +440,8 @@ placements.push(
   "  // Visual only: a road carries no collider, stops no round and is in no",
   "  // baked structure. The town's streets are COBBLE — the reference frame's",
   "  // stone path is exactly this texture — and everything that leaves the",
-  "  // town is a dirt lane. No road crosses the river: the bridges do, and a",
-  "  // hull fords it anywhere, the banks being a 0.15 gradient the whole run.",
+  "  // town is a dirt lane. No road crosses the river: the bridges do, and",
+  "  // anybody fords it anywhere, the banks being a gentle grade the whole run.",
 );
 
 /** An axis-aligned rectangle road. */
@@ -491,85 +488,79 @@ function pathRoad(points, w, surface) {
   );
 }
 
-// The bridges' landings, which the roads run to.
+// The bridges' landings, which the roads run to. The plank bridges stand on
+// the straight lines between the flags either side of the water.
 const BRIDGE_C = { x: 0, span: 18 };
-const BRIDGE_W = { x: -150, span: 26 };
-const BRIDGE_E = { x: 150, span: 26 };
+const BRIDGE_W = { x: -72, span: 22 };
+const BRIDGE_E = { x: 72, span: 22 };
 /** Where an arch bridge's ramps meet the bank (`buildArchBridge`: 2.3 / 0.3). */
 const ARCH_REACH = BRIDGE_C.span / 2 + (1.7 + 0.6) / 0.3;
 const zC = zr(BRIDGE_C.x);
 const zW = zr(BRIDGE_W.x);
 const zE = zr(BRIDGE_E.x);
 
-// The main street, both banks of it, stopping at the arch bridge's feet.
+/** The plaza, north of the arch bridge's foot. */
+const PLAZA = { z0: zC + ARCH_REACH + 0.5, z1: 42, hw: 16 };
+/** The town's two east-west streets north of the plaza. */
+const MIDDLE_Z = 58;
+const CROSS_Z = 84;
+/** The south lane, the south bank's one street. */
+const SOUTH_Z = -52;
+
+// The main street, both banks, stopping at the arch bridge's feet; north of
+// the plaza it runs on to the cross street.
 {
   const southEnd = zC - ARCH_REACH - 0.5;
-  const northEnd = zC + ARCH_REACH + 0.5;
-  rectRoad(0, (-118 + southEnd) / 2, 0, southEnd + 118, 8, "cobble");
-  rectRoad(0, (northEnd + 150) / 2, 0, 150 - northEnd, 8, "cobble");
+  rectRoad(0, (SOUTH_Z - 3 + southEnd) / 2, 0, southEnd - SOUTH_Z + 3, 7, "cobble");
+  rectRoad(0, (PLAZA.z1 + CROSS_Z) / 2, 0, CROSS_Z - PLAZA.z1, 7, "cobble");
 }
-// The north cross street, the plaza's back, the south lane and the back lane.
-rectRoad(0, 68, 1, 250, 7, "cobble");
-rectRoad(0, -72, 1, 226, 6, "cobble");
-rectRoad(0, 122, 1, 226, 6, "dirt");
-rectRoad(-68, 95, 0, 48, 5, "dirt");
-rectRoad(68, 95, 0, 48, 5, "dirt");
 // The plaza: paved, with the flag in it.
-rectRoad(0, 41, 1, 44, 30, "cobble");
+rectRoad(0, (PLAZA.z0 + PLAZA.z1) / 2, 1, PLAZA.hw * 2, PLAZA.z1 - PLAZA.z0, "cobble");
+// The middle street and the cross street.
+rectRoad(0, MIDDLE_Z, 1, 66, 6, "cobble");
+rectRoad(0, CROSS_Z, 1, 70, 7, "cobble");
 
-// The lanes out of town.
-pathRoad([[-125, 68], [-150, 76], [-178, 88], [-205, 100]], 6, "dirt"); // to the temple
-pathRoad([[125, 68], [150, 90], [178, 118], [205, 134]], 6, "dirt"); // to the inn
-pathRoad([[0, -118], [-40, -130], [-100, -142], [-150, -150], [-168, -150]], 6, "dirt"); // to the brewery
-pathRoad([[113, -72], [150, -82], [190, -92], [222, -98]], 6, "dirt"); // to the shrine's foot
-// The west bridge's two lanes, and the east's.
-pathRoad([[-172, -128], [-160, -90], [-150, zW - BRIDGE_W.span / 2 - 1]], 5, "dirt");
-pathRoad([[-150, zW + BRIDGE_W.span / 2 + 1], [-150, 20], [-140, 50], [-125, 64]], 5, "dirt");
-pathRoad([[150, -78], [150, zE - BRIDGE_E.span / 2 - 1]], 5, "dirt");
-pathRoad([[150, zE + BRIDGE_E.span / 2 + 1], [140, 50], [128, 64]], 5, "dirt");
+// The lanes out of town. Where a lane's end meets another's the network
+// paves the junction (`world/roadPaths.ts`), so ends are stated to meet.
+const TEMPLE_FOOT = [-72, 36];
+const INN_FOOT = [62, 50];
+pathRoad([[-16, 32], [-34, 33], [-54, 35], TEMPLE_FOOT], 6, "dirt"); // to the temple
+pathRoad([[16, 32], [34, 35], [50, 42], INN_FOOT], 6, "dirt"); // to the inn
+// The west bridge's two lanes: the temple's foot to the brewery's yard.
+pathRoad([[BRIDGE_W.x, zW + BRIDGE_W.span / 2 + 1], [-73, 18], TEMPLE_FOOT], 5, "dirt");
+pathRoad([[BRIDGE_W.x, zW - BRIDGE_W.span / 2 - 1], [-72, -40], [-72, -50]], 5, "dirt");
+// The east bridge's north lane, to the inn's; its south end is the sando.
+pathRoad([[BRIDGE_E.x, zE + BRIDGE_E.span / 2 + 1], [71, 30], INN_FOOT], 5, "dirt");
+// The south lane: from the brewery's gate along the town's south edge to the
+// foot of the shrine's stair.
+const BREWERY_GATE = [-38, -58];
+pathRoad([BREWERY_GATE, [-30, SOUTH_Z], [30, SOUTH_Z], [52, -46], [66, -44]], 6, "dirt");
 // The home yards' lanes.
-pathRoad([[-262, -262], [-250, -225], [-225, -185]], 7, "dirt");
-pathRoad([[262, 262], [252, 236], [234, 216]], 7, "dirt");
-// The farm tracks: a few, so the countryside has somewhere to go.
-pathRoad([[-100, -142], [-80, -190], [-62, -222]], 4, "dirt");
-pathRoad([[40, -130], [80, -200], [95, -236]], 4, "dirt");
-pathRoad([[-100, 122], [-108, 200], [-110, 256]], 4, "dirt");
-pathRoad([[60, 122], [68, 200], [70, 270]], 4, "dirt");
-// The shrine's approach: a stone sando straight up the hill, under the torii.
-const SANDO = { x: 222, z0: -100, z1: -160 };
+pathRoad([[-94, -98], [-44, -96], [-34, -80], BREWERY_GATE], 6, "dirt");
+pathRoad([[96, 96], [90, 80], [80, 76]], 6, "dirt");
+// The farm track.
+pathRoad([[0, SOUTH_Z - 3], [0, -86]], 4, "dirt");
+// The shrine's approach: a stone sando straight up the hill from the east
+// bridge, under the torii.
+const SANDO = { x: BRIDGE_E.x, z0: zE - BRIDGE_E.span / 2 - 1, z1: -66 };
 rectRoad(SANDO.x, (SANDO.z0 + SANDO.z1) / 2, 0, SANDO.z0 - SANDO.z1, 3.6, "cobble");
-// The temple's approach through its gate, and inside the precinct to the hall.
-rectRoad(-205, 103, 0, 12, 5, "cobble");
-rectRoad(-205, 137, 0, 40, 4, "cobble");
+// The temple's approach through its gate, and inside the court to the flag.
+rectRoad(-74, 44, 0, 12, 5, "cobble");
+rectRoad(-74, 55, 0, 8, 4, "cobble");
 
-// The flags, the homes and the hardstandings claim before any building does.
+// The flags, the homes and the basins claim before any building does.
 for (const f of FLAGS) claim(f.x, f.z, 24, 24, 0, "low");
+for (const b of [POND, ONSEN]) claim(b.x, b.z, basinW(b), basinD(b), 0, "low");
 
 const spawns = [];
-const vehicles = [];
 for (const h of HOMES) {
   for (let i = 0; i < 3; i++) {
-    const x = h.x + h.s * (20 + i * 7);
-    const z = h.z + h.s * (22 - i * 7);
+    const x = h.x + h.s * (i * 6 - 2);
+    const z = h.z + h.s * (10 - i * 6);
     claim(x, z, 7, 7, 0, "low");
     spawns.push(
       `  { team: ${h.team}, pos: new Vector3(${n2(x)}, ` +
         `${n2(Number(heightAt(x, z).toFixed(2)))}, ${n2(z)}), yaw: ${h.yaw} },`,
-    );
-  }
-  // The tank, the truck and the helicopter — Sarab's three pads, one yard.
-  const pads = [
-    { dx: 30, dz: -6, size: 16, kind: "" },
-    { dx: 12, dz: 10, size: 12, kind: ', kind: "truck"' },
-    { dx: -8, dz: 30, size: 18, kind: ', kind: "heli"' },
-  ];
-  for (const p of pads) {
-    const x = h.x + h.s * p.dx;
-    const z = h.z + h.s * p.dz;
-    claim(x, z, p.size, p.size, 0, "low");
-    vehicles.push(
-      `  { team: ${h.team}, pos: new Vector3(${n2(x)}, ` +
-        `${n2(Number(heightAt(x, z).toFixed(2)))}, ${n2(z)}), yaw: ${h.yaw}${p.kind} },`,
     );
   }
 }
@@ -578,28 +569,31 @@ for (const h of HOMES) {
 
 section(placements, "A: Koyo-ji Temple");
 {
-  const cx = -205;
-  const gateZ = 116;
+  const cx = -74;
+  const gateZ = 50;
   // The gate on the precinct's south wall, the torii before it on the lane.
-  // The pond's basin first: nothing may stand on its lip.
-  claim(POND.x, POND.z, POND.rx * 2 + POND.skirt * 2 + 2, POND.rz * 2 + POND.skirt * 2 + 2, 0, "low");
-  must("torii", cx, 97, 0, 9, 1, { width: 4.8, height: 6 }, { force: true });
+  must("torii", cx, 40, 0, 9, 1, { width: 4.8, height: 6 }, { force: true });
   must("templeGate", cx, gateZ, 0, 10, 4.4, null, { force: true });
   // The precinct wall: south either side of the gate, and round the other
   // three sides with a way through on each.
-  const W = 96;
-  const D = 86;
-  const west = cx - W / 2;
-  const east = cx + W / 2;
-  const north = gateZ + D;
+  const west = -106;
+  const east = -41;
+  const W = east - west;
+  const north = 108;
+  const D = north - gateZ;
   const wall = (x, z, turn, len) =>
-    must("gardenWall", x, z, turn, len, 1, { length: len }, { pad: 0, flat: 0.5 });
+    // Claimed a hair short, so two runs laid end to end do not collide in
+    // the last bit of a float.
+    must("gardenWall", x, z, turn, len - 0.05, 1, { length: Number(len.toFixed(2)) }, { pad: 0, flat: 0.5 });
   const gateHalf = 5;
-  const southRun = (W / 2 - gateHalf - 0.2) / 2;
-  wall(cx - gateHalf - 0.2 - southRun / 2, gateZ, 0, southRun);
-  wall(cx - gateHalf - 0.2 - southRun * 1.5, gateZ, 0, southRun);
-  wall(cx + gateHalf + 0.2 + southRun / 2, gateZ, 0, southRun);
-  wall(cx + gateHalf + 0.2 + southRun * 1.5, gateZ, 0, southRun);
+  {
+    const wRun = (cx - gateHalf - 0.2 - west) / 2;
+    const eRun = (east - cx - gateHalf - 0.2) / 2;
+    wall(cx - gateHalf - 0.2 - wRun / 2, gateZ, 0, wRun);
+    wall(cx - gateHalf - 0.2 - wRun * 1.5, gateZ, 0, wRun);
+    wall(cx + gateHalf + 0.2 + eRun / 2, gateZ, 0, eRun);
+    wall(cx + gateHalf + 0.2 + eRun * 1.5, gateZ, 0, eRun);
+  }
   for (const x of [west, east]) {
     // Two runs a side with a 6 m gap between them.
     const run = (D - 6) / 2;
@@ -608,24 +602,24 @@ section(placements, "A: Koyo-ji Temple");
   }
   {
     const run = (W - 6) / 2;
-    wall(cx - 3 - run / 2, north, 0, run);
-    wall(cx + 3 + run / 2, north, 0, run);
+    wall(west + run / 2, north, 0, run);
+    wall(east - run / 2, north, 0, run);
   }
   // The hall at the back of the court, facing the gate.
-  must("templeHall", cx, 178, 0, 23.2, 18.2, { width: 20, depth: 15, litWindows: true }, { pad: 0.5 });
+  must("templeHall", cx, 96, 0, 19.2, 15.2, { width: 16, depth: 12, litWindows: true }, { pad: 0.5 });
   // The pagoda on the west side of the court, the bell on the east.
-  must("pagoda", -237, 150, 0, 10.6, 10.6, null, { pad: 0.5 });
-  must("bellTower", -172, 130, 0, 5.2, 5.2, null, { pad: 0.5 });
+  must("pagoda", -96, 70, 0, 10.6, 10.6, null, { pad: 0.5 });
+  must("bellTower", -52, 62, 0, 5.2, 5.2, null, { pad: 0.5 });
   // The garden by the pond, with its own stone pagoda and lanterns.
-  must("stonePagoda", -164, 168, 0, 1.6, 1.6, null, { pad: 0.3 });
-  must("teahouse", -238, 190, 3, 9.4, 8.4, { width: 7, depth: 6, litWindows: true }, { pad: 0.3 });
+  must("stonePagoda", -57, 79, 0, 1.6, 1.6, null, { pad: 0.3 });
+  must("teahouse", -97, 96, 3, 9.4, 8.4, { width: 7, depth: 6, litWindows: true }, { pad: 0.3 });
   // Lanterns lining the court's path, in pairs.
-  for (const z of [122, 130, 165]) {
+  for (const z of [55, 58.5]) {
     for (const s of [-1, 1]) {
       place("toro", cx + s * 4.2, z, 0, 1.1, 1.1, { litWindows: true }, { pad: 0.2, flat: 0.3 });
     }
   }
-  for (const [x, z] of [[-180, 196], [-168, 196], [-230, 176], [-225, 128], [-186, 136]]) {
+  for (const [x, z] of [[-86, 90], [-62, 90], [-96, 82], [-88, 56], [-60, 56], [-45, 84]]) {
     place("toro", x, z, 0, 1.1, 1.1, { litWindows: true }, { pad: 0.2, flat: 0.3 });
   }
 }
@@ -635,22 +629,24 @@ section(placements, "A: Koyo-ji Temple");
 section(placements, "B: The Sake Brewery");
 {
   const { x: cx, z: cz } = byId.B;
-  // The storehouses round the yard: a row on the north, a row on the south.
-  for (let i = 0; i < 5; i++) {
-    must("kura", cx - 34 + i * 10, cz + 24, 0, 6.8, 5.6, { width: 6.4, depth: 5.2, height: 5.6 }, { pad: 0.3 });
+  // The storehouses round the yard: a row on the north with the lane from the
+  // bridge coming in through a gap in it, a row on the south.
+  for (const dx of [-26, -16, 10, 20]) {
+    must("kura", cx + dx, cz + 18, 0, 6.8, 5.6, { width: 6.4, depth: 5.2, height: 5.6 }, { pad: 0.3 });
   }
-  for (let i = 0; i < 4; i++) {
-    must("kura", cx - 28 + i * 11, cz - 24, 2, 7.2, 6, { width: 7, depth: 5.6, height: 6.2 }, { pad: 0.3 });
+  for (const dx of [-21, -10, 1, 12]) {
+    must("kura", cx + dx, cz - 18, 2, 7.2, 6, { width: 7, depth: 5.6, height: 6.2 }, { pad: 0.3 });
   }
   // The brewer's house on the west, the shop on the east.
-  must("minka", cx - 36, cz, 3, 14.6, 10.9, { width: 14, depth: 9, enterable: true, litWindows: true }, { pad: 0.5 });
-  must("machiya", cx + 29, cz + 13, 1, 7.2, 11.2, { width: 7, depth: 11, enterable: true, litWindows: true }, { pad: 0.3 });
-  must("machiya", cx + 29, cz - 13, 1, 6.6, 11.2, { width: 6.4, depth: 11, litWindows: true }, { pad: 0.3 });
+  must("minka", cx - 28, cz, 3, 14.6, 10.9, { width: 14, depth: 9, enterable: true, litWindows: true }, { pad: 0.5 });
+  must("machiya", cx + 26, cz - 9, 1, 7.2, 11.2, { width: 7, depth: 11, enterable: true, litWindows: true }, { pad: 0.3 });
+  place("machiya", cx + 26, cz + 3, 1, 6.6, 11.2, { width: 6.4, depth: 11, litWindows: true }, { pad: 0.3 });
   place("well", cx - 16, cz - 8, 0, 2, 2, null, { pad: 0.3 });
-  place("woodpile", cx + 16, cz + 12, 0, 3, 1.5, null, { pad: 0.3 });
-  place("cart", cx - 18, cz + 12, 1, 1.8, 3.6, null, { pad: 0.3 });
-  place("crates", cx + 14, cz - 12, 0, 2, 2, null, { pad: 0.3 });
-  for (const [x, z] of [[cx - 8, cz + 17], [cx + 8, cz - 17]]) {
+  place("woodpile", cx + 16, cz + 10, 0, 3, 1.5, null, { pad: 0.3 });
+  place("cart", cx - 17, cz + 9, 1, 1.8, 3.6, null, { pad: 0.3 });
+  place("crates", cx + 15, cz - 11, 0, 2, 2, null, { pad: 0.3 });
+  place("crates", cx - 5, cz - 13, 0, 2, 2, null, { pad: 0.3 });
+  for (const [x, z] of [[cx - 5, cz + 14], [cx + 5, cz + 14]]) {
     place("toro", x, z, 0, 1.1, 1.1, { litWindows: true }, { pad: 0.2 });
   }
 }
@@ -665,14 +661,12 @@ section(placements, "C: Hashimoto");
   must("archBridge", BRIDGE_C.x, zC, 0, 3.6, BRIDGE_C.span + 2 * (ARCH_REACH - BRIDGE_C.span / 2), { length: BRIDGE_C.span, width: 3.2 }, { force: true, y: -heightAt(BRIDGE_C.x, zC) });
   must("bridge", BRIDGE_W.x, zW, 0, 3.6, BRIDGE_W.span, { length: BRIDGE_W.span, width: 3.2 }, { force: true, y: -heightAt(BRIDGE_W.x, zW) });
   must("bridge", BRIDGE_E.x, zE, 0, 3.6, BRIDGE_E.span, { length: BRIDGE_E.span, width: 3.2 }, { force: true, y: -heightAt(BRIDGE_E.x, zE) });
-  // The plaza's furniture: a torii at its river side, lanterns at the
-  // corners, and the bell tower on its east flank.
-  must("torii", 0, 23, 0, 7, 1, { width: 5.4, height: 5.4 }, { force: true });
-  for (const [x, z] of [[-19, 28], [19, 28], [-19, 54], [19, 54]]) {
+  // The plaza's furniture: a torii at its river side and lanterns at the
+  // corners.
+  must("torii", 0, PLAZA.z0 + 1.5, 0, 7, 1, { width: 5.4, height: 5.4 }, { force: true });
+  for (const [x, z] of [[-14, PLAZA.z0 + 2], [14, PLAZA.z0 + 2], [-14, PLAZA.z1 - 2], [14, PLAZA.z1 - 2]]) {
     must("toro", x, z, 0, 1.1, 1.1, { litWindows: true }, { force: true });
   }
-  must("bellTower", 30, 44, 0, 5.2, 5.2, null, { pad: 0.3 });
-  must("teahouse", -34, 42, 3, 8.4, 9.4, { width: 7, depth: 6, litWindows: true, lit: true }, { pad: 0.3 });
 }
 
 // --- D — the Inari shrine ---------------------------------------------------------
@@ -680,20 +674,21 @@ section(placements, "C: Hashimoto");
 section(placements, "D: Inari Shrine");
 {
   const { x: cx, z: cz } = byId.D;
-  // The shrine hall at the back of the crown, facing down the sando.
+  // The shrine hall at the back of the terrace, facing down the sando.
   must("templeHall", cx, cz - 20, 2, 15.2, 12.2, { width: 12, depth: 9, litWindows: true }, { pad: 0.4 });
   // The tunnel of torii: close-set gates up the whole of the stone approach.
   // Each straddles the path across the slope, so both posts stand on one
   // contour whatever the grade is.
-  for (let z = SANDO.z0 - 2; z >= SANDO.z1 + 1; z -= 3.2) {
+  for (let z = SANDO.z0 - 3; z >= SANDO.z1 + 1; z -= 3.2) {
     must("torii", cx, z, 0, 5.6, 0.8, { width: 3.4, height: 4.2 }, { force: true, noClaim: true });
   }
-  must("torii", cx, SANDO.z1 - 3, 0, 9, 1, { width: 5.2, height: 6.4 }, { force: true });
-  for (const [x, z] of [[cx - 6, cz + 8], [cx + 6, cz + 8], [cx - 9, cz - 8], [cx + 9, cz - 8]]) {
+  must("torii", cx, SANDO.z1 - 1.5, 0, 9, 1, { width: 5.2, height: 6.4 }, { force: true });
+  for (const [x, z] of [[cx - 6, cz + 9], [cx + 6, cz + 9], [cx - 9, cz - 9], [cx + 9, cz - 9]]) {
     must("toro", x, z, 0, 1.1, 1.1, { litWindows: true }, { force: true });
   }
-  place("teahouse", cx + 20, cz - 4, 3, 8.4, 9.4, { width: 7, depth: 6, litWindows: true }, { pad: 0.3 });
-  place("stonePagoda", cx - 18, cz - 6, 0, 1.6, 1.6, null, { pad: 0.3 });
+  place("teahouse", cx + 21, cz - 4, 3, 8.4, 9.4, { width: 7, depth: 6, litWindows: true }, { pad: 0.3 });
+  place("stonePagoda", cx - 16, cz - 8, 0, 1.6, 1.6, null, { pad: 0.3 });
+  place("kura", cx - 20, cz + 6, 1, 6.8, 5.6, null, { pad: 0.3 });
 }
 
 // --- E — the hot spring inn -------------------------------------------------------
@@ -701,17 +696,15 @@ section(placements, "D: Inari Shrine");
 section(placements, "E: The Hot Spring Inn");
 {
   const { x: cx, z: cz } = byId.E;
-  must("minka", cx, cz + 30, 0, 18.6, 12.6, { width: 18, depth: 11, height: 3.2, enterable: true, litWindows: true }, { pad: 0.5 });
-  must("teahouse", cx - 30, cz + 8, 3, 9.4, 8.4, { width: 7, depth: 6, litWindows: true, lit: true }, { pad: 0.3 });
-  must("teahouse", cx + 30, cz + 6, 1, 10.4, 9.4, { width: 8, depth: 7, litWindows: true }, { pad: 0.3 });
-  must("teahouse", ONSEN.x, ONSEN.z - 19, 2, 8.4, 8.4, { width: 6, depth: 6, litWindows: true }, { pad: 0.3 });
-  must("kura", cx + 28, cz + 30, 0, 6.8, 5.6, null, { pad: 0.3 });
+  must("minka", cx, cz + 27, 0, 18.6, 12.6, { width: 18, depth: 11, height: 3.2, enterable: true, litWindows: true }, { pad: 0.5 });
+  must("teahouse", cx + 22, cz + 2, 1, 10.4, 9.4, { width: 8, depth: 7, litWindows: true, lit: true }, { pad: 0.3 });
+  must("teahouse", ONSEN.x, ONSEN.z - 16, 2, 8.4, 8.4, { width: 6, depth: 6, litWindows: true }, { pad: 0.3 });
+  place("kura", cx + 32, cz + 20, 0, 6.8, 5.6, null, { pad: 0.3 });
   // The garden wall round the back of the inn.
-  must("gardenWall", cx - 2, cz + 44, 0, 36, 1, { length: 36, tint: "#b3aa97" }, { pad: 0, flat: 0.5 });
-  for (const [x, z] of [[ONSEN.x - 13, ONSEN.z + 2], [ONSEN.x + 2, ONSEN.z + 12], [cx - 10, cz + 20], [cx + 10, cz + 20]]) {
+  must("gardenWall", cx - 2, cz + 38, 0, 30, 1, { length: 30, tint: "#b3aa97" }, { pad: 0, flat: 0.5 });
+  for (const [x, z] of [[ONSEN.x + 11, ONSEN.z + 2], [ONSEN.x - 11, ONSEN.z - 2], [cx - 9, cz + 17], [cx + 9, cz + 17]]) {
     place("toro", x, z, 0, 1.1, 1.1, { litWindows: true }, { pad: 0.2 });
   }
-  claim(ONSEN.x, ONSEN.z, ONSEN.rx * 2 + ONSEN.skirt * 2 + 2, ONSEN.rz * 2 + ONSEN.skirt * 2 + 2, 0, "low");
 }
 
 // --- the town's fabric -----------------------------------------------------------
@@ -727,9 +720,10 @@ function machiyaRow(edge, a, b, face, opts = {}) {
   const alongX = face === "north" || face === "south";
   let t = Math.min(a, b);
   const end = Math.max(a, b);
+  const [dLo, dHi] = opts.depth ?? [10, 13];
   while (t < end) {
     const w = Number(rand(5.8, 7.6).toFixed(1));
-    const d = Number(rand(10, 13).toFixed(1));
+    const d = Number(rand(dLo, dHi).toFixed(1));
     const mid = t + w / 2;
     if (mid + w / 2 > end) break;
     // Depth is measured away from the street.
@@ -757,68 +751,104 @@ function machiyaRow(edge, a, b, face, opts = {}) {
         }
       }
     }
-    if (place("machiya", x, z, turn, w + 0.2, d + 0.2, params, { pad: 0.15 })) {
-      t += w + rand(0.1, 0.5);
+    // Row houses stand shoulder to shoulder: a claim a hair wider than the
+    // house and a gap wider than two pads, or every other house is refused.
+    if (place("machiya", x, z, turn, w + 0.2, d + 0.2, params, { pad: 0.05 })) {
+      t += w + 0.2 + rand(0.15, 0.6);
     } else {
-      t += 2;
+      t += 1;
     }
   }
 }
 
-// The main street, both sides, both banks.
-for (const [a, b] of [[-114, zC - 24], [zC + 22, 148]]) {
-  machiyaRow(-4, a, b, "east");
-  machiyaRow(4, a, b, "west");
+// The riverside rows first — the town's face to the water on both banks, the
+// reference frame's lattice fronts over the stream — then the streets.
+machiyaRow(13, -44, -9, "south", { depth: [9, 11] });
+machiyaRow(13, 9, 40, "south", { depth: [9, 11] });
+machiyaRow(-17, -44, -8, "north", { depth: [9, 11] });
+machiyaRow(-17, 8, 44, "north", { depth: [9, 11] });
+// The plaza's two sides.
+machiyaRow(-PLAZA.hw, PLAZA.z0, PLAZA.z1, "east");
+machiyaRow(PLAZA.hw, PLAZA.z0, PLAZA.z1, "west");
+// The main street, both sides, both banks, in the runs between the streets
+// that cross it (each street's claim carries a metre's pad).
+for (const [a, b] of [
+  [PLAZA.z1 + 1.2, MIDDLE_Z - 4.2],
+  [MIDDLE_Z + 4.2, CROSS_Z - 4.7],
+  [SOUTH_Z + 3.8, zC - ARCH_REACH - 1],
+]) {
+  machiyaRow(-3.5, a, b, "east");
+  machiyaRow(3.5, a, b, "west");
 }
-// The north cross street.
-machiyaRow(71.5, -124, 124, "south");
-machiyaRow(64.5, -124, 124, "north");
+// The middle street and the cross street.
+machiyaRow(MIDDLE_Z + 3, -33, 33, "south");
+machiyaRow(MIDDLE_Z - 3, -33, 33, "north");
+machiyaRow(CROSS_Z + 3.5, -35, 35, "south", { minka: 0.3 });
+machiyaRow(CROSS_Z - 3.5, -35, 35, "north");
 // The south lane.
-machiyaRow(-69, -112, 112, "south");
-machiyaRow(-75, -112, 112, "north", { minka: 0.25 });
-// The back lane, looser.
-machiyaRow(125, -112, 112, "south", { minka: 0.4 });
-machiyaRow(119, -112, 112, "north", { minka: 0.3 });
-// The two short lanes between them.
-for (const x of [-68, 68]) {
-  machiyaRow(x - 2.5, 74, 116, "east");
-  machiyaRow(x + 2.5, 74, 116, "west");
-}
+machiyaRow(SOUTH_Z + 3, -30, 30, "south");
+machiyaRow(SOUTH_Z - 3, -30, 30, "north", { minka: 0.35 });
 // Kura in the back plots, where the rows left room.
-for (let i = 0; i < 60; i++) {
-  const x = rand(-115, 115);
-  const z = rand(-115, 135);
-  place("kura", Number(x.toFixed(1)), Number(z.toFixed(1)), Math.floor(rng() * 4), 6.8, 5.6, null, { pad: 1.5 });
+for (let i = 0; i < 120; i++) {
+  const x = rand(-40, 40);
+  const z = rand(-66, 100);
+  place("kura", Number(x.toFixed(1)), Number(z.toFixed(1)), Math.floor(rng() * 4), 6.8, 5.6, null, { pad: 1.2 });
 }
-// Lanterns down the main street.
-for (let z = -110; z < 145; z += 18) {
-  if (Math.abs(z - zC) < 26) continue;
-  place("toro", -5.2, z, 0, 1.1, 1.1, { litWindows: true }, { pad: 0.1, flat: 0.3 });
+// Lanterns along the riverside walks.
+for (let x = -40; x <= 40; x += 10) {
+  if (Math.abs(x) < 10) continue;
+  place("toro", x, 11.2, 0, 1.1, 1.1, { litWindows: true }, { pad: 0.1, flat: 0.3 });
+  place("toro", x, -15.2, 0, 1.1, 1.1, { litWindows: true }, { pad: 0.1, flat: 0.3 });
 }
 
 // --- the countryside ---------------------------------------------------------------
 
-section(placements, "the farms");
-for (const [x, z] of FARMS) {
-  const turn = Math.floor(rng() * 4);
-  const w = Number(rand(11, 14).toFixed(1));
-  const d = Number(rand(7.5, 9).toFixed(1));
-  place("minka", x, z, turn, w + 2.6, d + 3.8, { width: w, depth: d, enterable: chance(0.5), litWindows: chance(0.6) }, { pad: 1 });
-  const k = turn % 2 === 0 ? [x + (w / 2 + 6) * (chance(0.5) ? 1 : -1), z + rand(-3, 3)] : [x + rand(-3, 3), z + (w / 2 + 6) * (chance(0.5) ? 1 : -1)];
-  place("kura", Number(k[0].toFixed(1)), Number(k[1].toFixed(1)), Math.floor(rng() * 4), 6.8, 5.6, null, { pad: 1 });
-  place("woodpile", Number((x + rand(-10, 10)).toFixed(1)), Number((z + rand(-10, 10)).toFixed(1)), Math.floor(rng() * 4), 3, 1.5, null, { pad: 0.5 });
-  if (chance(0.5)) place("toro", Number((x + rand(-12, 12)).toFixed(1)), Number((z + rand(-12, 12)).toFixed(1)), 0, 1.1, 1.1, { litWindows: true }, { pad: 0.5 });
+section(placements, "the farm");
+{
+  const { x, z } = FARM;
+  must("minka", x - 6, z - 4, 0, 14.6, 11.8, { width: 12, depth: 8, enterable: true, litWindows: true }, { pad: 1 });
+  place("kura", x + 12, z - 4, 1, 6.8, 5.6, null, { pad: 1 });
+  place("woodpile", x - 16, z + 4, 1, 3, 1.5, null, { pad: 0.5 });
+  place("cart", x + 7, z + 7, 0, 1.8, 3.6, null, { pad: 0.5 });
+  place("toro", x - 2, z + 8, 0, 1.1, 1.1, { litWindows: true }, { pad: 0.5 });
 }
-// Wayside torii and lanterns on the lanes into the hills.
-for (const [x, z] of [[-108, 205], [68, 205], [-80, -190], [80, -200]]) {
-  place("torii", x, z, 0, 7, 1, { width: 5.4, height: 4.6 }, { force: true });
+// Two hamlets on the flanks, where the lanes from the plank bridges run up
+// past them: a handful of farmhouses and storehouses each, the cover a flank
+// route is fought through.
+section(placements, "the hamlets");
+/** A hamlet: a lattice of plots over a rectangle, each a farmhouse, a storehouse or a yard. */
+function hamlet(x0, x1, z0, z1) {
+  for (let z = z0; z <= z1; z += 14) {
+    for (let x = x0; x <= x1; x += 16) {
+      const px = Number((x + rand(-2, 2)).toFixed(1));
+      const pz = Number((z + rand(-2, 2)).toFixed(1));
+      const turn = Math.floor(rng() * 4);
+      const w = Number(rand(10, 12.5).toFixed(1));
+      const d = Number(rand(7, 8.5).toFixed(1));
+      if (chance(0.6) && place("minka", px, pz, turn, w + 2.6, d + 3.8, { width: w, depth: d, ...(chance(0.5) ? { enterable: true } : {}), ...(chance(0.6) ? { litWindows: true } : {}) }, { pad: 1.2 })) {
+        continue;
+      }
+      if (place("kura", px, pz, turn, 6.8, 5.6, null, { pad: 1.2 })) {
+        place(pick(["woodpile", "cart", "crates"]), px + rand(-6, 6), pz + rand(-6, 6), Math.floor(rng() * 4), 3, 3, null, { pad: 0.6 });
+      }
+    }
+  }
+}
+hamlet(-104, -86, 14, 42);
+hamlet(86, 104, 12, 40);
+hamlet(-56, -30, -104, -70);
+hamlet(-34, 30, 100, 108);
+
+// Wayside torii on the lanes out of town.
+for (const [x, z, turn] of [[-40, 33.5, 1], [40, 37, 1]]) {
+  place("torii", x, z, turn, 7, 1, { width: 5.4, height: 4.6 }, { force: true, noClaim: true });
 }
 
-// The home yards: a storehouse and a farmhouse each, clear of the pads.
+// The home yards: a storehouse and a farmhouse each, clear of the spawns.
 section(placements, "the home yards");
 for (const h of HOMES) {
-  place("kura", h.x - h.s * 18, h.z - h.s * 20, h.s > 0 ? 0 : 2, 6.8, 5.6, null, { pad: 1 });
-  place("minka", h.x - h.s * 22, h.z + h.s * 8, h.s > 0 ? 1 : 3, 13.8, 11.9, { width: 12, depth: 8, enterable: true }, { pad: 1 });
+  place("kura", h.x + h.s * 16, h.z - h.s * 6, h.s > 0 ? 3 : 1, 6.8, 5.6, null, { pad: 1 });
+  place("woodpile", h.x + h.s * 14, h.z + h.s * 2, 0, 3, 1.5, null, { pad: 0.5 });
 }
 
 // --- the woods ----------------------------------------------------------------------
@@ -828,10 +858,10 @@ for (const h of HOMES) {
  * clear of every claim that is not a road, and under `maxGrade`.
  */
 function groveOk(x, z, r, maxGrade = 0.3, overBuildings = false) {
-  if (Math.abs(x) + r > HALF - 4 || Math.abs(z) + r > HALF - 4) return false;
+  if (Math.abs(x) + r > HALF - 3 || Math.abs(z) + r > HALF - 3) return false;
   // A big region may stand over buildings: `findSpot` keeps a trunk out of
   // every collider, and a crown over a roof is a garden. What it may not
-  // stand over is a pad, a spawn or a flag's ring.
+  // stand over is a spawn, a basin or a flag's ring.
   const skip = overBuildings ? (c) => c.type !== "low" : (c) => c.type === "road";
   if (overlaps(x - r, x + r, z - r, z + r, skip)) return false;
   const ring = r > 8 ? 16 : 8;
@@ -846,7 +876,7 @@ function groveOk(x, z, r, maxGrade = 0.3, overBuildings = false) {
   return true;
 }
 
-const GROVE = 19;
+const GROVE = 10;
 let trees = 0;
 let drifts = 0;
 
@@ -860,66 +890,68 @@ function grove(prop, x, z, r, count, extra = "") {
 const MAPLE = ", scale: [1.1, 1.55], blocking: true, clearance: 1.8";
 const CEDAR = ", scale: [0.95, 1.4], blocking: true, clearance: 1.3";
 
-/** How wooded a point is meant to be, 0..1 — the hills and the riverbanks. */
+/** How wooded a point is meant to be, 0..1 — the hills, the banks, the edges. */
 function woodiness(x, z) {
   const h = natural(x, z);
-  let w = smooth((h - 3) / 10) * 0.9;
+  let w = smooth((h - 2) / 7) * 0.9;
   const rd = riverDist(x, z);
-  if (rd > RIVER_LIP + 2 && rd < 34) w = Math.max(w, 0.75);
+  if (rd > RIVER_LIP + 2 && rd < 22) w = Math.max(w, 0.7);
   // The margins of the square: woods closing the valley in.
   const edge = Math.max(Math.abs(x), Math.abs(z));
-  w = Math.max(w, smooth((edge - 290) / 60) * 0.8);
+  w = Math.max(w, smooth((edge - 88) / 24) * 0.85);
   // A broken field of noise, so the woods come as stands.
-  w += 0.35 * vnoise(x, z, 55, 31);
+  w += 0.3 * vnoise(x, z, 34, 31);
   return Math.max(0, Math.min(1, w));
 }
 
 section(scatter, "the precincts");
-// The temple court and the gardens: maples round the pond and in the corners.
+// The temple court and its gardens: maples round the pond and along the
+// walls, where the reference frame's path runs under them.
 for (const [x, z, r, n] of [
-  [-240, 204, 5, 2], [-172, 200, 5, 2], [-244, 126, 6, 3], [-228, 164, 4, 2],
-  [-165, 182, 4, 2], [-190, 126, 4, 1], [-150, 100, 8, 4], [-262, 100, 8, 4],
-  [-222, 200, 4, 2], [-196, 202, 3, 1], [-248, 150, 3, 1], [-226, 134, 3, 1],
-  [-162, 124, 4, 2], [-218, 104, 6, 3], [-192, 104, 6, 3], [-240, 90, 8, 4],
-  [-170, 90, 8, 4], [-205, 222, 10, 5], [-150, 222, 10, 5], [-260, 222, 10, 5],
+  [-100, 58, 3, 1], [-100, 84, 4, 2], [-88, 102, 4, 2], [-60, 102, 4, 2],
+  [-48, 70, 4, 2], [-84, 58, 3, 1], [-64, 58, 3, 1], [-45, 55, 3, 1],
+  [-108, 30, 7, 4], [-88, 30, 6, 3], [-56, 22, 6, 3],
 ]) {
-  if (groveOk(x, z, r, 0.2)) {
+  if (groveOk(x, z, r, 0.25)) {
     grove("maple", x, z, r, n, MAPLE);
     trees += n;
   }
 }
-// The shrine's crown and the sando's flanks — maples first, cedar behind.
-for (let z = -106; z > -162; z -= 9) {
+// The sando's flanks, the length of the stair: maples tight to the gates.
+for (let z = SANDO.z0 - 4; z > SANDO.z1 + 2; z -= 8) {
   for (const s of [-1, 1]) {
-    const x = SANDO.x + s * 9;
-    if (groveOk(x, z, 5)) {
-      grove("maple", x, z, 5, 3, MAPLE);
-      trees += 3;
+    const x = SANDO.x + s * 7.5;
+    if (groveOk(x, z, 4, 0.38)) {
+      grove("maple", x, z, 4, 2, MAPLE);
+      trees += 2;
     }
   }
 }
-// The inn's garden.
-for (const [x, z, r, n] of [[160, 170, 8, 4], [246, 170, 8, 4], [180, 205, 7, 3], [232, 205, 7, 3], [168, 132, 6, 2]]) {
-  if (groveOk(x, z, r, 0.2)) {
+// The shrine's terrace and the inn's garden.
+for (const [x, z, r, n] of [
+  [56, -98, 5, 2], [90, -98, 5, 2], [56, -64, 4, 2],
+  [52, 78, 4, 2], [92, 84, 4, 2], [58, 104, 4, 2], [86, 104, 4, 2],
+]) {
+  if (groveOk(x, z, r, 0.25)) {
     grove("maple", x, z, r, n, MAPLE);
     trees += n;
   }
 }
-// Bamboo behind the inn and the brewery, and on the temple mountain's foot.
-for (const [x, z] of [[235, 228], [175, 228], [-250, -182], [-170, -190], [-255, 232], [-150, 240], [262, -150], [180, -214]]) {
-  if (groveOk(x, z, 10)) grove("bamboo", x, z, 10, 7, ", scale: [0.85, 1.15], clearance: 0.9");
+// Bamboo behind the inn and the brewery, and on the temple hill's foot.
+for (const [x, z] of [[104, 60], [30, 104], [-104, -40], [-40, -100], [-112, 50], [104, -40]]) {
+  if (groveOk(x, z, 7)) grove("bamboo", x, z, 7, 5, ", scale: [0.85, 1.15], clearance: 0.9");
 }
 
 section(scatter, "the woods");
 // A lattice over the whole square, jittered, sown by how wooded each point is
 // — and nowhere is bare: the open ground between the flags carries a maple in
-// one plot in four, because the reference frame has no field without a tree.
-// A region that fails its checks is tried again smaller, so the woods run up
-// to the river and the pads rather than stopping a lattice cell short.
-for (let gz = -HALF + 20; gz < HALF - 10; gz += 38) {
-  for (let gx = -HALF + 20; gx < HALF - 10; gx += 38) {
-    const x = gx + rand(-5, 5);
-    const z = gz + rand(-5, 5);
+// most plots, because the reference frame has no field without a tree. A
+// region that fails its checks is tried again smaller, so the woods run up to
+// the river and the walls rather than stopping a lattice cell short.
+for (let gz = -HALF + 12; gz < HALF - 6; gz += 20) {
+  for (let gx = -HALF + 12; gx < HALF - 6; gx += 20) {
+    const x = gx + rand(-4, 4);
+    const z = gz + rand(-4, 4);
     const w = woodiness(x, z);
     let r = 0;
     for (const tryR of [GROVE, GROVE * 0.6, GROVE * 0.35]) {
@@ -929,79 +961,68 @@ for (let gz = -HALF + 20; gz < HALF - 10; gz += 38) {
       }
     }
     if (!r) continue;
-    const high = natural(x, z) > 15;
-    const cedar = high && chance(0.5);
+    const high = natural(x, z) > 8;
+    const cedar = high && chance(0.4);
     // Trees per region by area and by how wooded the point is — and a floor
     // under it, because no field in the reference frame is without a maple.
-    const count = Math.max(2, Math.round((0.2 + w * 0.8) * (r * r) / 22));
+    const count = Math.max(1, Math.round((0.2 + w * 0.8) * (r * r) / 16));
     grove(cedar ? "pine" : "maple", x, z, r, count, cedar ? CEDAR : MAPLE);
     trees += count;
   }
 }
 
-section(scatter, "the town's trees");
-// A maple in the back plots and on the verges, where the rows left room.
-for (let i = 0; i < 60; i++) {
-  const x = rand(-120, 125);
-  const z = rand(-118, 140);
-  if (!groveOk(x, z, 9, 0.2, true)) continue;
-  grove("maple", x, z, 9, 3, MAPLE);
-  trees += 3;
-}
-
 section(scatter, "the fallen leaves");
 // Drifts under the trees and along the paths — only where the ground is
 // flat enough for a level drift to lie on it (`buildLeafLitter`).
-for (let gz = -HALF + 18; gz < HALF - 10; gz += 36) {
-  for (let gx = -HALF + 18; gx < HALF - 10; gx += 36) {
-    const x = gx + rand(-8, 8);
-    const z = gz + rand(-8, 8);
+for (let gz = -HALF + 10; gz < HALF - 6; gz += 18) {
+  for (let gx = -HALF + 10; gx < HALF - 6; gx += 18) {
+    const x = gx + rand(-5, 5);
+    const z = gz + rand(-5, 5);
     const w = woodiness(x, z);
-    const near = Math.abs(riverDist(x, z) - 20) < 10 || Math.abs(x) < 125 && Math.abs(z - 10) < 130;
+    const near = Math.abs(riverDist(x, z) - 14) < 6 || (Math.abs(x) < 40 && z > -60 && z < 95);
     if (!near && rng() > w) continue;
-    if (Math.abs(x) + 6 > HALF - 4 || Math.abs(z) + 6 > HALF - 4) continue;
+    if (Math.abs(x) + 6 > HALF - 3 || Math.abs(z) + 6 > HALF - 3) continue;
     let ok = true;
     for (let k = 0; k < 9; k++) {
-      const px = x + (k === 0 ? 0 : Math.cos(k * 0.785) * 13);
-      const pz = z + (k === 0 ? 0 : Math.sin(k * 0.785) * 13);
+      const px = x + (k === 0 ? 0 : Math.cos(k * 0.785) * 8);
+      const pz = z + (k === 0 ? 0 : Math.sin(k * 0.785) * 8);
       if (wet(px, pz, 0.4) || grade(px, pz) > 0.05) ok = false;
     }
     if (!ok) continue;
-    grove("leafLitter", x, z, 12, 18, ", scale: [0.9, 1.3], clearance: 0.6");
-    drifts += 18;
+    grove("leafLitter", x, z, 7, 8, ", scale: [0.9, 1.3], clearance: 0.6");
+    drifts += 8;
   }
 }
 // And on the stone paths the reference frame is made of.
 for (const [x, z] of [
-  [-205, 128], [-205, 146], [-205, 100], [0, 36], [0, 48], [-8, 90], [6, -40],
-  [222, -120], [222, -140], [205, 150], [-205, -140],
+  [-74, 44], [-74, 55], [0, 20], [0, 36], [-8, 50], [6, -30], [0, 70],
+  [72, -30], [72, -50], [72, 60], [-72, -56],
   // The courts: under the precinct's maples and round the pond.
-  [-235, 195], [-225, 130], [-185, 172], [-240, 160], [-176, 132], [-160, 170],
-  [-220, 185], [-190, 200], [-232, 116], [-178, 120],
-  [212, -186], [232, -170], [190, 176], [226, 150], [-185, -160], [-215, -140],
-  [-14, 30], [14, 52], [0, 100], [0, -90],
+  [-96, 90], [-90, 58], [-56, 70], [-86, 84], [-60, 86], [-100, 60],
+  [60, -92], [86, -70], [58, 80], [88, 76], [-86, -60], [-58, -72],
+  [-14, 34], [14, 18], [24, MIDDLE_Z], [-24, CROSS_Z],
 ]) {
-  grove("leafLitter", x, z, 5, 3, ", scale: [0.9, 1.3], clearance: 0.6");
+  grove("leafLitter", x, z, 4, 3, ", scale: [0.9, 1.3], clearance: 0.6");
   drifts += 3;
 }
 
 section(scatter, "the riverbanks");
 // Boulders along the channel, where the water breaks round them.
-for (let x = -360; x <= 360; x += 30) {
-  const z = zr(x) + (chance(0.5) ? 1 : -1) * rand(5, 9);
-  if (Math.abs(x - BRIDGE_C.x) < 25 || Math.abs(x - BRIDGE_W.x) < 22 || Math.abs(x - BRIDGE_E.x) < 22) continue;
-  scatter.push(`  { prop: "boulder", x: ${n2(x)}, z: ${n2(Number(z.toFixed(1)))}, radius: 4, count: 2, scale: [0.5, 0.9], blocking: true, clearance: 1.0 },`);
+for (let x = -114; x <= 114; x += 16) {
+  const z = zr(x) + (chance(0.5) ? 1 : -1) * rand(4, 7);
+  if (Math.abs(x - BRIDGE_C.x) < 20 || Math.abs(x - BRIDGE_W.x) < 12 || Math.abs(x - BRIDGE_E.x) < 12) continue;
+  scatter.push(`  { prop: "boulder", x: ${n2(x)}, z: ${n2(Number(z.toFixed(1)))}, radius: 3, count: 2, scale: [0.5, 0.9], blocking: true, clearance: 1.0 },`);
 }
 // Rocks round the koi pond and the hot spring — the reference frame's pond.
 // Each is stood on the WATERLINE, found by marching out from the middle —
 // the basin's skirt puts the shore well past its core radius, and a rock
 // placed on the radius is a rock under the water.
-for (const [b, level] of [[POND, 6], [ONSEN, 2]]) {
-  const surface = level - 0.3;
-  for (let k = 0; k < 9; k++) {
-    const a = (k / 9) * Math.PI * 2 + 0.3;
+for (const b of [POND, ONSEN]) {
+  const surface = b.level - 0.3;
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2 + 0.3;
     let r = 0;
-    while (r < 30 && heightAt(b.x + Math.cos(a) * r, b.z + Math.sin(a) * r) < surface + 0.05) r += 0.25;
+    while (r < 20 && heightAt(b.x + Math.cos(a) * r, b.z + Math.sin(a) * r) < surface + 0.05) r += 0.25;
     const x = b.x + Math.cos(a) * (r + 0.6);
     const z = b.z + Math.sin(a) * (r + 0.6);
     scatter.push(`  { prop: "boulder", x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, radius: 1.2, count: 1, scale: [0.45, 0.75], blocking: true, clearance: 0.4 },`);
@@ -1010,23 +1031,26 @@ for (const [b, level] of [[POND, 6], [ONSEN, 2]]) {
 
 section(scatter, "the borderland");
 // Past the square: non-blocking trees on the ground the leash runs you out
-// over, so the woods do not stop at a line. Appended LAST — one seeded stream
-// serves the whole build in authored order.
-for (let k = 0; k < 64; k++) {
+// over, so the woods do not stop at a line. Thickest in the first forty
+// metres, which is all of the borderland the haze lets anybody see as trees
+// rather than as a tint. Appended LAST — one seeded stream serves the whole
+// build in authored order.
+for (let k = 0; k < 56; k++) {
   const side = k % 4;
-  const along = -HALF - 40 + (Math.floor(k / 4) / 15) * (PLAY + 80);
-  const out = HALF + rand(18, MARGIN - 8);
+  const along = -HALF - 40 + (Math.floor(k / 4) / 13) * (PLAY + 80);
+  const out = HALF + rand(12, 60);
   const [x, z] = [
     [along, out],
     [along, -out],
     [out, along],
     [-out, along],
   ][side];
-  if (riverDist(x, z) < 26) continue;
-  const prop = natural(x, z) > 12 && chance(0.5) ? "pine" : "maple";
+  if (riverDist(x, z) < 16) continue;
+  const prop = natural(x, z) > 8 && chance(0.5) ? "pine" : "maple";
   scatter.push(
-    `  { prop: "${prop}", x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, radius: 14, count: 7, scale: [0.9, 1.3] },`,
+    `  { prop: "${prop}", x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, radius: 12, count: 5, scale: [0.9, 1.3] },`,
   );
+  trees += 5;
 }
 
 // --- the water, the grass, the flags and the spawns ----------------------------
@@ -1037,7 +1061,7 @@ for (let k = 0; k < 64; k++) {
  * on. See Sarab's `waterBody`, which carries the argument.
  */
 function waterRect(cx, cz, halfW, halfD, y, margin = 6) {
-  const step = 1.5;
+  const step = 0.75;
   let x0 = Infinity;
   let x1 = -Infinity;
   let z0 = Infinity;
@@ -1072,8 +1096,9 @@ const water = [];
   let lo = Infinity;
   let hi = -Infinity;
   for (let x = -HALF - MARGIN; x <= HALF + MARGIN; x += 2) {
-    lo = Math.min(lo, zr(x));
-    hi = Math.max(hi, zr(x));
+    const zc = zr(Math.max(-HALF, Math.min(HALF, x)));
+    lo = Math.min(lo, zc);
+    hi = Math.max(hi, zc);
   }
   const z0 = lo - RIVER_LIP - 4;
   const z1 = hi + RIVER_LIP + 4;
@@ -1088,19 +1113,19 @@ const water = [];
   waterBodies.push(body);
   water.push(
     "  // The river, one rect the whole run: the channel is cut to one bed so a",
-    "  // single level surface is wet along all of it (Harrowmead's stream at",
-    "  // twice the length), and it runs out through the borderland into the",
-    "  // hills. A rect this deep is mostly dry bank — the floor decides where",
-    "  // the water is, and the rect is only where it may be.",
+    "  // single level surface is wet along all of it (Harrowmead's stream), and",
+    "  // it runs out through the borderland into the hills. A rect this deep is",
+    "  // mostly dry bank — the floor decides where the water is, and the rect is",
+    "  // only where it may be.",
     `  { x: ${n2(body.x)}, z: ${n2(body.z)}, width: ${n2(body.width)}, depth: ${n2(body.depth)}, y: ${n2(body.y)}, sound: "stream" },`,
   );
 }
-for (const [b, level, note] of [
-  [POND, 6, "The temple's koi pond, dug into the court beside the hall."],
-  [ONSEN, 2, "The inn's hot spring, dug into its garden."],
+for (const [b, note] of [
+  [POND, "The temple's koi pond, dug into the court beside the hall."],
+  [ONSEN, "The inn's hot spring, dug into its garden."],
 ]) {
-  const y = level - 0.3;
-  const body = waterRect(b.x, b.z, b.rx + b.skirt + 3, b.rz + b.skirt + 3, y, 4);
+  const y = b.level - 0.3;
+  const body = waterRect(b.x, b.z, b.rx + b.skirt + 3, b.rz + b.skirt + 3, y, 3);
   if (body.deepest < 1.0) {
     throw new Error(`water: the basin at (${b.x}, ${b.z}) is only ${body.deepest} m deep`);
   }
@@ -1115,28 +1140,27 @@ const grass = [
   "  // Autumn grass: gold-tipped, and a BUDGET rather than a blanket (the",
   "  // field is one mesh of thin instances with no culling inside it). What it",
   "  // is for is the ground that is not wood or town — the meadows between the",
-  "  // flags, the riverbanks and the courts' margins — and it sums to about",
-  "  // fifteen thousand tufts.",
+  "  // flags, the riverbanks and the courts' margins.",
 ];
 {
   let tufts = 0;
-  for (let gz = -HALF + 40; gz < HALF - 30; gz += 70) {
-    for (let gx = -HALF + 40; gx < HALF - 30; gx += 70) {
-      const x = gx + rand(-12, 12);
-      const z = gz + rand(-12, 12);
-      if (Math.abs(x) < 120 && Math.abs(z - 10) < 125) continue;
+  for (let gz = -HALF + 20; gz < HALF - 10; gz += 36) {
+    for (let gx = -HALF + 20; gx < HALF - 10; gx += 36) {
+      const x = gx + rand(-6, 6);
+      const z = gz + rand(-6, 6);
+      if (Math.abs(x) < 40 && z > -64 && z < 98) continue;
       const w = woodiness(x, z);
-      if (w > 0.6 || chance(0.5)) continue;
-      const density = Number(rand(0.1, 0.18).toFixed(2));
-      grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 56, depth: 48, density: ${density} },`);
-      tufts += 56 * 48 * density;
+      if (w > 0.75 || chance(0.3)) continue;
+      const density = Number(rand(0.14, 0.22).toFixed(2));
+      grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 30, depth: 26, density: ${density} },`);
+      tufts += 30 * 26 * density;
     }
   }
   // The riverbanks, where it is lush.
-  for (let x = -330; x <= 330; x += 66) {
-    if (Math.abs(x) < 130) continue;
-    grass.push(`  { x: ${n2(x)}, z: ${n2(Number(zr(x).toFixed(1)))}, width: 60, depth: 44, density: 0.25 },`);
-    tufts += 60 * 44 * 0.25;
+  for (let x = -104; x <= 104; x += 26) {
+    if (Math.abs(x) < 44) continue;
+    grass.push(`  { x: ${n2(x)}, z: ${n2(Number(zr(x).toFixed(1)))}, width: 26, depth: 30, density: 0.28 },`);
+    tufts += 26 * 30 * 0.28;
   }
   console.log(`  grass: ~${Math.round(tufts)} tufts`);
 }
@@ -1149,11 +1173,11 @@ const NAMED = FLAGS.map(
 
 /** One spawn per objective, outside its ring, on open ground. */
 const FLAG_SPAWNS = [
-  ["A", 0, -26, "0"],
-  ["B", 0, 14, "Math.PI"],
-  ["C", 0, 24, "Math.PI"],
-  ["D", 0, 18, "Math.PI"],
-  ["E", -8, -22, "0"],
+  ["A", 0, -17, "0"],
+  ["B", 0, 17, "Math.PI"],
+  ["C", 0, 18, "Math.PI"],
+  ["D", 0, 17, "Math.PI"],
+  ["E", -12, -12, "Math.PI / 4"],
 ];
 for (const [id, dx, dz, yaw] of FLAG_SPAWNS) {
   const f = byId[id];
@@ -1167,6 +1191,21 @@ for (const [id, dx, dz, yaw] of FLAG_SPAWNS) {
     `  { team: null, controlPoint: "${id}", pos: new Vector3(${n2(x)}, ` +
       `${n2(Number(heightAt(x, z).toFixed(2)))}, ${n2(z)}), yaw: ${yaw} },`,
   );
+}
+
+// `--plan` prints the claim list as a plan, a character every 3 m: `#` a
+// building, `=` a road, `o` a flag's ring, a spawn or a basin, `~` water.
+if (process.argv.includes("--plan")) {
+  const step = 3;
+  for (let z = HALF - step / 2; z > -HALF; z -= step) {
+    let line = String(Math.round(z)).padStart(5) + " ";
+    for (let x = -HALF + step / 2; x < HALF; x += step) {
+      const at = claimed.filter((c) => x >= c.x0 && x < c.x1 && z >= c.z0 && z < c.z1);
+      line += at.some((c) => c.type === "solid") ? "#" : at.some((c) => c.type === "low") ? "o" :
+        at.some((c) => c.type === "road") ? "=" : wet(x, z) ? "~" : ".";
+    }
+    console.log(line);
+  }
 }
 
 // --- the heightfield ---------------------------------------------------------
@@ -1240,13 +1279,12 @@ writeFileSync(
  * vertices. \`size * cell\` must equal \`MapLayout.size\`.
  *
  * **The shape is five passes laid over one another IN ORDER** (see
- * \`heightAt\` in the generator): rolling ground; the temple mountain in the
- * north-west, the shrine hill in the south-east and a shoulder behind each
- * home yard; every district levelled by a weighted average; the river's
- * corridor levelled to the valley floor; and the channel, the koi pond and the
- * hot spring cut last. The river's bed is a constant ${-RIVER_DEPTH} m so one
- * level rect at ${RIVER_Y} is wet along its whole run, and its banks grade at
- * 0.15, so it is waded and driven anywhere.
+ * \`heightAt\` in the generator): rolling ground; the temple's hill in the
+ * north-west corner and the shrine's in the south-east; every district
+ * levelled by a weighted average; the river's corridor levelled to the valley
+ * floor; and the channel, the koi pond and the hot spring cut last. The
+ * river's bed is a constant ${-RIVER_DEPTH} m so one level rect at ${RIVER_Y} is wet
+ * along its whole run, and its banks are gentle enough to wade anywhere.
  */
 import type { Heightfield } from "../layout";
 
@@ -1272,8 +1310,8 @@ writeFileSync(
   join(out, "layout.ts"),
   `/**
  * kurenai/layout.ts — THE MAP, as data: structure placements, scatter regions,
- * control points, spawns, the hardstandings, the grass and the three bodies of
- * water. The water rects are MEASURED off the floor by the generator.
+ * control points, spawns, the grass and the three bodies of water. The water
+ * rects are MEASURED off the floor by the generator.
  * The floor's shape is generated data and lives in heights.ts. Consumed by
  * MapBuilder; nothing here is code to special-case.
  * Gotchas that have already cost time: collider top faces within
@@ -1297,7 +1335,6 @@ import type {
   Placement,
   ScatterSpec,
   SpawnPointDef,
-  VehicleSpawnDef,
   WaterRect,
 } from "../layout";
 
@@ -1305,42 +1342,35 @@ import type {
  * KURENAI — a temple town in a mountain valley, in the last week of the
  * maples, an hour before sunset.
  *
- * **${PLAY} x ${PLAY} m of PLAY inside ${PLAY + 2 * MARGIN} m of ground**, origin at the town's
- * plaza, +Z north. The third-largest map in the tree, with all three kinds of
- * vehicle and twenty bodies a side.
+ * **${PLAY} x ${PLAY} m of PLAY inside ${PLAY + 2 * MARGIN} m of ground**, origin at the arch
+ * bridge, +Z north. Hollowmere's footprint, infantry only, eight a side.
  *
  * \`\`\`
- *                                     N
- *   +-------------------------------------------------------------+  z 375
- *   |  the temple mountain                        x T1 HOME YARD   |
- *   |    [A] KOYO-JI (-205,150) +7m          [E] THE INN (205,162) |
- *   |     pagoda, hall, koi pond               teahouses, onsen    |
- *   |               ----- back lane -----                          |
- *   |               ----- north street -----                       |
- *   |                  [C] HASHIMOTO (0,42)                        |
- *   |  ~~~~~ bridge ~~~~~~~~~~~ ARCH BRIDGE ~~~~~~~~~ bridge ~~~~~ |  the river
- *   |               ----- south lane -----                         |
- *   |  [B] THE BREWERY (-205,-150)          [D] INARI SHRINE +15m   |
- *   |      kura round a yard                (222,-178) up the torii |
- *   |  x T0 HOME YARD                             the shrine hill   |
- *   +-------------------------------------------------------------+  z -375
+ *                                N
+ *   +-----------------------------------------------------+  z 120
+ *   | temple hill                           x T1 HOME YARD |
+ *   |  [A] KOYO-JI (-74,72) +3m        [E] THE INN (72,66) |
+ *   |   pagoda, hall, koi pond  cross st  hot spring       |
+ *   |            -- middle st --                           |
+ *   |              [C] HASHIMOTO (0,28)                    |
+ *   |  ~~ bridge ~~~~~~~~~ ARCH BRIDGE ~~~~~~~~~ bridge ~~ |  the river
+ *   |               -- south lane --        torii stair    |
+ *   |  [B] THE BREWERY (-72,-66)      [D] INARI SHRINE +5m |
+ *   | x T0 HOME YARD          farm          (72,-80)       |
+ *   +-----------------------------------------------------+  z -120
  * \`\`\`
  *
  * ## The ground, which is what makes it read
  *
  * **The RIVER** runs west to east across the middle, a shallow stream in a
- * channel 24 m lip to lip, cut to one bed so a single rect is wet the whole
- * way: waded anywhere, driven anywhere (the banks are a 0.15 gradient), and
- * crossed on foot dry at three bridges — the vermilion ARCH on the main
- * street, and two plank bridges up and down stream. It separates the three
- * northern flags from the two southern ones without walling them off.
- * **The TEMPLE MOUNTAIN** stands 26 m over the north-west corner with the
- * precinct cut into its flank on a terrace seven metres over the town, and
- * **the SHRINE HILL** stands 18 m over the south-east with the shrine on its
- * crown and a tunnel of vermilion torii up the stone approach to it.
- * Everything else rolls a couple of metres, and the woods — maples, a few
- * thousand of them, with cedar on the high ground and bamboo in the hollows —
- * are sown by how HIGH the ground is and how near the river.
+ * channel 18 m lip to lip, cut to one bed so a single rect is wet the whole
+ * way: waded anywhere, and crossed dry at three bridges — the vermilion ARCH
+ * on the main street, and two plank bridges on the lines between the flags
+ * either side of it. It separates the three northern flags from the two
+ * southern ones without walling them off. **The TEMPLE's terrace** stands
+ * three metres over the town in front of its hill in the
+ * north-west, and **the SHRINE's** five up the south-east hill's flank, at the
+ * top of a tunnel of vermilion torii climbing straight from the east bridge.
  *
  * ## Design intent per flag
  *
@@ -1348,17 +1378,16 @@ import type {
  *   before it, the pagoda on one side and the bell on the other, the hall at
  *   the back and the koi pond beside it. The reference frame is its garden.
  *   The pagoda is the map's landmark and is not climbable.
- * - **B The Sake Brewery** — nine white storehouses round a working yard: the
+ * - **B The Sake Brewery** — eight white storehouses round a working yard: the
  *   flag in the open between two rows of solid cover, with the brewer's house
- *   and the shop at the ends.
+ *   and the shop at the ends. The closest flag to T0's yard.
  * - **C Hashimoto** — the plaza at the north end of the arch bridge, in the
- *   middle of the town and the middle of the map; every other flag is 200 to
- *   300 m away. Streets of machiya on four sides, the river across the fifth.
- * - **D Inari Shrine** — fifteen metres up, at the top of a stone path under
- *   eighteen torii. The high ground on the south side, and the one flag a
- *   hull cannot easily take.
- * - **E The Hot Spring Inn** — an inn and its teahouses round a hot spring in
- *   a walled garden, the closest flag to T1 as the brewery is to T0.
+ *   middle of the town and the middle of the map; lattice-fronted townhouses
+ *   on both banks of the river and down every street.
+ * - **D Inari Shrine** — five metres up, at the top of a stone stair under a
+ *   tunnel of torii. The high ground on the south side.
+ * - **E The Hot Spring Inn** — an inn and its teahouses round a hot spring
+ *   behind a garden wall, the closest flag to T1 as the brewery is to T0.
  */
 
 const placements: Placement[] = [
@@ -1381,16 +1410,6 @@ const spawns: SpawnPointDef[] = [
 ${spawns.join("\n")}
 ];
 
-/**
- * THREE hardstandings a side, in each home yard: a tank, a gun truck and a
- * helicopter — Sarab's arrangement and for Sarab's reasons (docs/vehicles.md).
- * The river is the map's answer to armour: fordable everywhere, fast nowhere,
- * and the town's streets are eight metres between two rows of doors.
- */
-const vehicles: VehicleSpawnDef[] = [
-${vehicles.join("\n")}
-];
-
 const water: WaterRect[] = [
 ${water.join("\n")}
 ];
@@ -1404,7 +1423,6 @@ export const KurenaiLayout: MapLayout = {
   scatter,
   controlPoints,
   spawns,
-  vehicles,
   water,
   grass,
   /** The play square. \`heights.size * heights.cell\` equals it (${CELLS} x ${CELL}). */
@@ -1416,23 +1434,25 @@ export const KurenaiLayout: MapLayout = {
    */
   surfaces: 4,
   /**
-   * Twenty a side: ${PLAY * PLAY} m^2 of play is between Harrowmead's and Sarab's,
-   * and contact is bodies per square metre (see Sarab's note).
+   * Two and a half times the default, which is DRAW CALLS and nothing else:
+   * under a 280 m haze the whole square is in view from anywhere in it, so a
+   * merge block never leaves the frame for being far away and a fine grid
+   * buys the cull nothing. Every block carries a draw per material — the
+   * maples alone are eight — so the count of blocks in view is the draw
+   * count. Measured warm at the centre flag: 48 m ran 118 fps on 445 draws,
+   * 96 m 148, 120 m 154, 160 m 160; this is the play square in 2 x 2.
    */
-  perTeam: 20,
-  /** Sarab's S6 number for the merge; the floor's block is a whole number of cells. */
-  blockSize: 96,
-  terrainBlock: 75,
+  blockSize: ${BLOCK},
   /**
    * No wall: the valley carries on for ${MARGIN} m past the play square and the
    * leash is what stops you. The margin is the leash's floor with room over,
    * and no more, because what closes this horizon is the MOUNTAINS standing
    * on it — the rim below — and a landform closes a horizon at any distance
-   * (Coldharbour's argument). Kept short so the ridges stand inside the haze
-   * rather than past it: seen from the plaza they are the reference frame's
-   * pale mountains, a silhouette two thirds of the way into the fog.
-   * \`roll\` is bounded by the river running out through the margin (Greyfen's
-   * rule): its bed is ${RIVER_DEPTH} m down and the roll may not lift it dry.
+   * (Coldharbour's argument). Kept short so the ridges' feet stand inside the
+   * haze rather than past it: seen from the play square they are the
+   * reference frame's pale mountains, a silhouette most of the way into the
+   * fog. \`roll\` is bounded by the river running out through the margin
+   * (Greyfen's rule): its bed is ${RIVER_DEPTH} m down and the roll may not lift it dry.
    */
   borderland: { margin: ${MARGIN}, roll: 1.2, ease: 40 },
   /**
@@ -1446,10 +1466,10 @@ export const KurenaiLayout: MapLayout = {
     slope: 0.19,
     slopeVariance: 0.04,
     passes: [
-      { x: -${HALF + MARGIN}, z: ${n2(Number(zr(-HALF - MARGIN).toFixed(1)))}, width: 90, depth: 0.7 },
-      { x: ${HALF + MARGIN}, z: ${n2(Number(zr(HALF + MARGIN).toFixed(1)))}, width: 90, depth: 0.7 },
+      { x: -${HALF + MARGIN}, z: ${n2(Number(zr(-HALF).toFixed(1)))}, width: 80, depth: 0.7 },
+      { x: ${HALF + MARGIN}, z: ${n2(Number(zr(HALF).toFixed(1)))}, width: 80, depth: 0.7 },
     ],
-    rolling: { relief: 0.35, summits: 16, knolls: 0.18, woods: 0.55 },
+    rolling: { relief: 0.35, summits: 10, knolls: 0.18, woods: 0.55 },
     seed: 0x4b555246,
   },
   seed: 0x4b555245,
@@ -1469,6 +1489,7 @@ for (const r of refused) {
 }
 console.log("  placed:  " + JSON.stringify(byKind));
 console.log("  refused: " + JSON.stringify(refusedByKind));
+if (process.argv.includes("--refusals")) for (const r of refused) console.log("    " + r);
 console.log(
   `kurenai: ${PLAY} m play + ${MARGIN} m margin = ${PLAY + 2 * MARGIN} m across\n` +
     `  ${placementCount} placements, ${scatterCount} scatter regions (~${trees} trees, ~${drifts} drifts), ${claimed.length} claims\n` +

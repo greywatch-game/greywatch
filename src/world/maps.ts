@@ -263,8 +263,9 @@ export const CINDERHAVEN: MapDef = {
 
 /**
  * Kurenai: a temple town in a mountain valley, in the last week of the maples,
- * forty minutes before sunset. **750 m of play inside 950 m of ground**, with
- * all three kinds of vehicle and twenty bodies a side.
+ * forty minutes before sunset. **240 m of play inside 440 m of ground**,
+ * infantry only, eight a side — Hollowmere's footprint, having first been
+ * built at 750 m and read as sparse there (`docs/world.md`).
  *
  * It is the first map built against a REFERENCE FRAME rather than against a
  * place (`reference-media/new-map.jpg`): a stone path under red maples, a
@@ -282,8 +283,8 @@ export const KURENAI: MapDef = {
   name: "Kurenai",
   blurb:
     "A temple town in a mountain valley as the maples turn, an hour before " +
-    "dusk. A river through the middle, a pagoda on the hill, and a shrine " +
-    "at the top of a thousand vermilion gates.",
+    "dusk. A river through the middle, a pagoda behind the temple wall, and " +
+    "a shrine at the top of a tunnel of vermilion gates.",
   layout: KurenaiLayout,
   environment: KurenaiEnvironment,
   heights: () => import("./kurenai/heights"),

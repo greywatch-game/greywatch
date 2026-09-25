@@ -210,13 +210,28 @@ new here rather than borrowed, and each is written up where it belongs:
   `drive.collideRadius` is 1.6 and a tank's 2.2, so the trade those two hulls
   exist for is bought without a single rule that knows a vehicle exists.
 
-**Kurenai is the seventh: 750 m of PLAY inside 950 m of ground**, seeded by
-`npm run kurenai`, twenty a side and all three vehicle kinds. It is the first
-map built against a REFERENCE FRAME rather than against a place
+**Kurenai is the seventh: 240 m of PLAY inside 440 m of ground**, seeded by
+`npm run kurenai`, eight a side and infantry only. It is the first map built
+against a REFERENCE FRAME rather than against a place
 (`reference-media/new-map.jpg`: a stone path under red maples, a torii, a
 stone lantern and a paper-walled hall glowing in a peach haze), and what that
 took was a kit (`kit/japan.ts`) and three props, and nothing else in the
-engine. Six things came out of building it and all of them outlive it:
+engine. Seven things came out of building it and all of them outlive it:
+
+- **A map's SIZE is its density and its frame cost at once, and both are
+  priced on AREA.** It was first built at 750 m with all three vehicle kinds
+  and twenty a side, and it read as sparse and ran slowly for one reason: 338
+  placements over 56 hectares is 6 a hectare against Hollowmere's 34, and a
+  620 m fog put nearly all of it — 2,400 maples of thirty-odd leaf plates
+  each — in front of the camera every frame. No lever fixes one of those
+  without the other: five times the buildings is five times the draw calls.
+  Cut to Hollowmere's footprint with the same kit it went from 88 fps to 154
+  (warm, at the centre flag, the Windows box), level with Coldharbour, and
+  its build from 12.7 s to 4. **Under a haze that puts the whole square in
+  view the merge block is the draw count**, so this map states `blockSize:
+  120` (the play square in 2 x 2): at the default 48 it drew 445 calls at 118
+  fps, at 120 it draws ~290 at 154, and neither `fogEnd` (220 against 280)
+  nor `bodyDrawDistance` moved the frame at all at this size.
 
 - **A Japanese roof cannot be slabs, so the kit grew a CURVED one**
   (`curvedRoof`): rings from the eave to the ridge on a power curve, the eave
@@ -232,7 +247,7 @@ engine. Six things came out of building it and all of them outlive it:
   pond's rocks, placed on the radius, were all under the water until the
   generator marched outward to the real shore and stood them there.
 - **A layout's scatter array has a SIZE CEILING, and it is the compiler's.**
-  At 1,306 region literals `tsc` gives up with TS2590 ("a union type that is
+  At 1,306 region literals (the 750 m version) `tsc` gives up with TS2590 ("a union type that is
   too complex to represent") — the prop union times two region shapes times
   the entry count. The fix was the better map anyway: FEW, LARGE regions
   (620, a 38 m lattice of 19 m discs) that may stand over buildings, because
@@ -252,9 +267,13 @@ engine. Six things came out of building it and all of them outlive it:
   ON it (the drifts, the stones, the paths) is `flat`.
 - **A plot levelled at its natural height is only honest on gentle ground.**
   A farm's district flattened on the temple mountain's flank made a skirt at a
-  0.6 gradient; the generator now drops any farm whose ground falls more than
-  four metres across it, and the temple's own mountain was moved into the
-  corner so the precinct's skirt was not fighting a 20 m rise.
+  0.6 gradient, and the fix was to move the mountain into the corner so the
+  precinct's skirt was not fighting a 20 m rise. At 240 m the same rule is
+  what places the hills at all: each stands just outside the play square's
+  corner behind its terrace, and a TERRACE's wall stands inside its district's
+  core by a few metres, because a wall on the core's edge is a wall on the
+  skirt and `FLAT` refuses it (`npm run kurenai -- --probe` prints the floor
+  as a plan, `-- --plan` the claim list).
 
 No two maps share a module in any direction.
 

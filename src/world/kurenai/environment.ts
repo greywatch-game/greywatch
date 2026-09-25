@@ -30,10 +30,13 @@ import type { EnvironmentSpec } from "../environment";
  * clear to the far hedge. So the haze starts CLOSE (`fogStart` 45) and is thick
  * (a third again Harrowmead's volumetric density), and its colour is a
  * PEACH, pinker than Harrowmead's amber, because a maple valley's evening is
- * lit through red leaves as well as through dust. What does not move with it is
- * the gameplay reach: `fogEnd` is set by how far the ridges stand (see the
- * layout's `borderland`), and at 620 the valley floor is fighting range at
- * every distance a bot engages from.
+ * lit through red leaves as well as through dust. `fogEnd` is set by the
+ * valley, which is 240 m of play inside 440 m of ground: at 280 the whole
+ * play square is in view from anywhere in it, the ridges' feet stand in the
+ * last third of the haze as pale shapes, and their crests go to `fogColor` —
+ * the reference frame's mountains, and not a metre of ground drawn past them.
+ * It was 620 when this map was 750 m across, and that reach, over that area,
+ * was most of what the frame cost.
  *
  * **The SKY.** A dusky mauve overhead going to gold at the horizon, with the
  * clouds' shadow sides a lavender grey and their lit faces a pale apricot — the
@@ -78,13 +81,7 @@ export const KurenaiEnvironment: EnvironmentSpec = {
    */
   fogColor: "#dca888",
   fogStart: 45,
-  fogEnd: 620,
-  /**
-   * Bodies are drawn out to where they are more than half fog — past that a
-   * soldier is two pixels of `fogColor`. Sarab's field, and for its reason: the
-   * roster is twenty a side on a map this size.
-   */
-  bodyDrawDistance: 340,
+  fogEnd: 280,
   /**
    * Ground mist in the hollows at sunset, lit from behind — the river valley
    * breathing out. Thin, and held under the shaft threshold so it does not
@@ -124,17 +121,19 @@ export const KurenaiEnvironment: EnvironmentSpec = {
   /**
    * FALLING LEAVES: red, drifting down and downwind, the air of a maple valley
    * in the week this is. Not emissive — a leaf is a thing the light is ON —
-   * and emitted round the eye, Sarab's `volume`, because a map this size
-   * spread thin over the whole square is air nobody can see.
+   * and emitted round the eye, Sarab's `volume`, so the count is a density
+   * where anybody is standing rather than a budget spread over the margin.
+   * The box is well past `fogStart` and past what a player crosses in a
+   * leaf's life; the count is the 750 m map's density at this box's size.
    */
   particles: {
     color: "#c8482a",
     emissive: false,
-    count: 2600,
+    count: 1600,
     size: 0.13,
     riseSpeed: -0.35,
     drift: [0.3, 0.24],
-    volume: 180,
+    volume: 140,
   },
   sky: {
     zenithColor: "#8a7496",

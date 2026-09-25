@@ -926,15 +926,15 @@ src/
                               #   over the crater
     cinderhaven/collision.ts  # GENERATED collider boxes (`npm run collision`)
     kurenai/layout.ts         # The seventh map: a temple town in a mountain
-                              #   valley as the maples turn, 750 m of play
-                              #   inside 950 m of ground, all three vehicle
-                              #   kinds, 20 a side. SEEDED by `npm run kurenai`
-                              #   on Sarab's precedent, against a REFERENCE
-                              #   FRAME (`reference-media/new-map.jpg`): a
-                              #   river through the town, a pagoda precinct on
-                              #   the temple mountain's flank, a shrine at the
+                              #   valley as the maples turn, 240 m of play
+                              #   inside 440 m of ground, infantry only, 8 a
+                              #   side. SEEDED by `npm run kurenai` on Sarab's
+                              #   precedent, against a REFERENCE FRAME
+                              #   (`reference-media/new-map.jpg`): a river
+                              #   through the town under an arched bridge, a
+                              #   pagoda precinct on a terrace, a shrine at the
                               #   top of a tunnel of torii
-    kurenai/heights.ts        # GENERATED with it — rolling ground, four hills,
+    kurenai/heights.ts        # GENERATED with it — rolling ground, two hills,
                               #   the districts levelled by a weighted average,
                               #   the river's corridor, then the channel, the
                               #   koi pond and the hot spring cut. LAZY

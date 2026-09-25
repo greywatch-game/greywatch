@@ -154,7 +154,7 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
     url: cinderhavenShot,
     vantage: { pos: [372, 11, -128], target: [-340, 48, -320], fov: 60 },
   },
-  // KOYO-JI's court from beside the gate, looking north-west into the sun:
+  // KOYO-JI's court from inside the gate, looking north-west into the sun:
   // the stone path and its lanterns in the near ground, the maples along the
   // precinct wall, the pagoda against the low sun with the mountain behind it
   // and the hall's paper walls glowing on the right. It is the reference frame
@@ -165,7 +165,7 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
   // are what says there is anybody here at all.
   kurenai: {
     url: kurenaiShot,
-    vantage: { pos: [-194, 2.2, 122], target: [-238, 9, 172], fov: 62 },
+    vantage: { pos: [-59, 2.2, 65], target: [-96, 10, 74], fov: 62 },
   },
 };
 

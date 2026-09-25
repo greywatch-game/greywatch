@@ -263,7 +263,10 @@ npm run cinderhaven# RE-SEED the volcanic island's layout and heights
                    #   it has no symptom in a screenshot
 npm run kurenai    # RE-SEED the temple valley's layout and heights (committed
                    #   source). Same one-shot rule and warning as `sarab`;
-                   #   owes `npm run collision -- kurenai` after it
+                   #   owes `npm run collision -- kurenai` after it.
+                   #   `-- --probe` prints the floor as a plan and writes
+                   #   nothing; `-- --plan` prints the claim list and
+                   #   `-- --refusals` every plot that did not fit
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -851,12 +854,14 @@ into the fog), **Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
 `ENGINE_UPGRADE.md` exists for), **Cinderhaven** (`size: 1500` inside 2000 m
 of ground and 4,600 m of sea — a harbour town on a volcanic island, at night,
-the biggest map in the tree) **and Kurenai** (`size: 750` inside 950 m of
+the biggest map in the tree) **and Kurenai** (`size: 240` inside 440 m of
 ground — a temple town in a mountain valley as the maples turn, built against
-a reference frame, `reference-media/new-map.jpg`). **The last
-five are the five with vehicles on them**; **Sarab, Cinderhaven and Kurenai
-are the three with all THREE KINDS and the three that are not 8v8** — 24 a
-side on the first two and 20 on Kurenai, online and off. All three were
+a reference frame, `reference-media/new-map.jpg`; infantry only, and cut
+down from 750 m because the same kit over three times the side read as
+sparse and cost 88 fps where it now runs 154). **Coldharbour, Harrowmead,
+Sarab and Cinderhaven are the four with vehicles on them**; **Sarab and
+Cinderhaven are the two with all THREE KINDS and the two that are not 8v8** —
+24 a side, online and off. Those two and Kurenai were
 **SEEDED by a generator** (`npm run sarab`, `npm run cinderhaven`,
 `npm run kurenai`) rather than typed, and the emitted `layout.ts` is an
 ordinary layout file the editor opens, patches and saves like any other —
@@ -1163,7 +1168,7 @@ misbehaves silently:
 ### Bots: navigation, scaling, perception and squads
 
 **How many bots there ARE is the MAP's on both sides** (`MapLayout.perTeam`, 8
-on the four smaller maps, 24 on Sarab and Cinderhaven, 20 on Kurenai), and the two sides spend it differently. On a CLIENT
+on the five smaller maps, 24 on Sarab and Cinderhaven), and the two sides spend it differently. On a CLIENT
 the rig pool IS that roster and `BattleSystem.setRoster` rebuilds it when the
 number moves — from `buildRound`, never from `installMap` — which is the one
 place "built once and never disposed" bends. **The AUTHORITY builds the ceiling
@@ -1256,7 +1261,7 @@ death cam's camera hand-off.
 ### Vehicles: three kinds, one hull, and the exceptions it is
 
 **A vehicle is a `Combatant` you get INSIDE, and TWO people fit.**
-`MapLayout.vehicles` is one hardstanding per vehicle — absent on two of the seven
+`MapLayout.vehicles` is one hardstanding per vehicle — absent on three of the seven
 maps — and `Game.driving` plus `Game.drivingSeat` are the two facts the feature
 turns on. **There are THREE KINDS and no code that knows it**: a fourth is a row
 in `VEHICLE_KINDS`, a block of numbers and a model file, and **no `if`
