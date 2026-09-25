@@ -1613,10 +1613,10 @@ map's 5.4 at a quarter of the area, so a body's shadow is drawn finer than the
 wall it falls on. And it can cull front faces without the world having to.
 
 **ONE DRAW CALL carries every body in the game**, because every proxy is a thin
-instance of one unit box: a soldier is ten instances and a hull is one. So the
+instance of one unit box: a soldier is twelve instances and a hull is one. So the
 pass costs the same at 8v8 and at 24v24, and what scales is the matrices.
 
-**A soldier's ten boxes are `RAGDOLL_BONES`, and that is load-bearing rather
+**A soldier's twelve boxes are `RAGDOLL_BONES`, and that is load-bearing rather
 than convenient.** They are already measured against the drawn geometry ("the
 glove trimmed off the end") and already hang off the joints the pose drives, so
 the shadow follows a crouch, a stance, a turn and a RAGDOLL for free —

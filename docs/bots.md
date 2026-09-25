@@ -268,8 +268,8 @@ rotates onto, because a slot index IS a bot index and a table that grew and
 shrank under the humans sitting in it would take `ScoreBook`'s rows, the wire's
 identities and the bench with it. `HeadlessGame`'s constructor sizes the pool to
 `CONFIG.bots.maxPerTeam` and `startRound` calls **`BattleSystem.setFielded`**
-with the map's own `perTeamOf` — so a match on Sarab is 24v24 and a match
-anywhere else is 8v8 out of the same pool.
+with the map's own `perTeamOf` — so a match on Sarab or Cinderhaven is 24v24
+and a match anywhere else is 8v8 out of the same pool.
 
 `setFielded` is the third member of `aside`, and a body it sets aside is set
 aside exactly as a benched one is: dead, off the field, no ticket, no target, no

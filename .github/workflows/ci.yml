@@ -51,10 +51,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # The floor `README.md` states. `npm ci` is the slow step and the
-          # lockfile rarely moves, so it is worth caching here as it is in the
-          # image build.
-          node-version: 20
+          # The floor `package.json`'s `engines` states, and `README.md` with
+          # it: the map generators load TypeScript through Node 24's type
+          # stripping. `npm ci` is the slow step and the lockfile rarely moves,
+          # so it is worth caching here as it is in the image build.
+          node-version: 24
           cache: npm
 
       - run: npm ci

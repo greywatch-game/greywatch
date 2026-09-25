@@ -48,7 +48,7 @@
  *
  * The FINISH is a placeable block of its own rather than a third block inside
  * that column, and it earns the extra element on a landscape PHONE: the
- * fitting column there is six optics and two anti-tank items in about 215 px,
+ * fitting column there is seven optics and two anti-tank items in about 215 px,
  * so sixteen swatches under them fell below the fold on a screen with no
  * obvious way to scroll — while the chart's column is six bars and nothing
  * else. Given a grid area, the swatches move under the chart on exactly that

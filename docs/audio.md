@@ -977,6 +977,13 @@ recording as delivered; what ships is a `trim` of start, end and fade stated as
 numbers a reviewer reads in a diff. A trim baked into a binary is a decision
 nobody can see, re-run or argue with — and the trims here are load-bearing.
 
+**Every master in `audio/src/` was GENERATED, with Adobe Firefly on a paid
+account**, and "as delivered" means as Firefly delivered it. That is the
+provenance the README's license section rests on when it puts these files under
+the repository's one license, so **a new master states where it came from**,
+here, in the commit that adds it — a sound nobody can say the source of is one
+the license cannot be said to cover.
+
 `npm run audio` cuts and encodes every row and writes `sourceHash` and
 `decoded` back. `npm run build` runs `scripts/check-audio.mjs`, which refuses:
 

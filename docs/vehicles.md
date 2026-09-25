@@ -3555,8 +3555,8 @@ ray happened to find, which can be a street away.
 
 - **~~Netplay.~~ Built** — see "Armour in a match" above, which is where this
   entry used to say a hull could not cross the wire.
-- **~~One kind.~~ Two** — see "Two kinds, and the ONE branch between them"
-  above. The entry that used to stand here said that nothing in the code was
+- **~~One kind.~~ Three** — see "Three kinds, and the TWO capabilities between
+  them" above. The entry that used to stand here said that nothing in the code was
   special-cased to a tank but that nothing had been designed for two either,
   and that "the plural in these file names is aspirational as to KINDS". It is
   not any more: `Tank.ts` is `Vehicle.ts`, `TankCrew.ts` is `VehicleCrew.ts`,
@@ -3596,10 +3596,15 @@ ray happened to find, which can be a street away.
   hardstanding is, and that is a layout entry. A solid, pickable mesh with no
   `SelectionRef` behind it is also something the centre-screen pick can land on
   and fail to resolve.
-- **No shadow.** A hull is not registered with `ShadowSystem`, for the reason
-  characters are not: the depth map re-renders only when the texel-snapped focus
-  moves, so a tank driving past a stationary observer would drag a stale shadow.
-  Characters get blob discs instead; a vehicle gets nothing yet.
+- **~~No shadow.~~ Built** — in a map of its own, not the world's. The entry
+  that used to stand here gave the right reason a hull is not registered with
+  `ShadowSystem` — that depth map re-renders only when the texel-snapped focus
+  moves, so a tank driving past a stationary observer would drag a stale
+  shadow — and that is still why it is not. What answered it is
+  `systems/BodyShadows.ts`, re-rendered every frame and carrying soldiers and
+  hulls and nothing static, where a hull is one instance of the proxy box: its
+  collider box, so moving that box moves the shadow. See "The bodies' map" in
+  `docs/rendering.md`.
 - **~~No third kind, and in particular nothing that FLIES or FLOATS.~~ Three,
   and the third one flies** — see "Flying, and what `standOnGround` turned out
   to be" above. The entry that used to stand here said that both kinds stand on

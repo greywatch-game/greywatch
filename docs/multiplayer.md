@@ -122,9 +122,9 @@ can disagree with itself.
 
 ### The table is the ceiling and the round is the map's
 
-`MapLayout.perTeam` is how many bodies a side a map fields — Sarab is 24 and
-every other map is 8 — and **a match fields it too**. What it does NOT do is
-size the slot table.
+`MapLayout.perTeam` is how many bodies a side a map fields — Sarab and
+Cinderhaven are 24 and every other map is 8 — and **a match fields it too**.
+What it does NOT do is size the slot table.
 
 - **The TABLE is `CONFIG.bots.maxPerTeam` a side (24, so 48 slots), on every
   map, for the life of the process.** `HeadlessGame`'s constructor calls

@@ -43,7 +43,7 @@
  *
  * ## ONE DRAW CALL, WHATEVER THE ROSTER
  *
- * Every proxy is a thin instance of ONE unit box. A soldier is ten instances —
+ * Every proxy is a thin instance of ONE unit box. A soldier is twelve instances —
  * `RAGDOLL_BONES`, which is the shape of a body already measured against the
  * drawn boxes and already driven by the joints the pose drives — and a hull is
  * one, its own collider box. So the pass is one draw at 8v8 and one draw at
@@ -373,7 +373,7 @@ export class BodyShadows {
     for (let i = 0; i < n; i++) picked[i] = null;
   }
 
-  /** One rig's ten boxes, each at its joint's current world transform. */
+  /** One rig's twelve boxes, each at its joint's current world transform. */
   private packRig(rig: ShadowBody["rig"]): void {
     this.count += this.boxes.writeRig(rig, this.matrices, this.count);
   }

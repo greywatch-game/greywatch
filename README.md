@@ -1,12 +1,13 @@
 # GREYWATCH — Cel-Shaded Conquest
 
-A browser-based, single-player **Conquest** shooter built with **Babylon.js** and
-**TypeScript**. Eight-a-side against bots — twenty-four on the desert town —
-over five control points in a
-fog-drowned horror village, in **first person** (aiming down sights brings the
-fitted sight onto the centre of the screen and zooms the view) with a low-poly
-cel-shaded look: a near-black valley lit by guttering lanterns, burning
-braziers, muzzle flashes, and your own shoulder lamp.
+A browser-based **Conquest** shooter built with **Babylon.js** and
+**TypeScript**, played in **first person** against bots — alone, or with other
+people on a match server. Two sides fight over five control points on one of
+seven maps, from a fog-drowned village at night to a volcanic island fifteen
+hundred metres across, eight a side or twenty-four on the two biggest. The look
+is low-poly and cel-shaded, with ink lines, and the scene is lit by what is
+actually in it: lanterns, fires, muzzle flashes, a moon or a low sun, and the
+light that bounces between them.
 
 ## Setup
 
@@ -18,17 +19,23 @@ npm run dev      # start the dev server (Vite), open the printed URL
 Other scripts:
 
 ```bash
-npm run build    # typecheck + production build to dist/
-npm run preview  # serve the production build
-npm run icons    # regenerate the install icons under public/icons (committed)
-npm run shots    # re-photograph each map for the menu backdrop (committed)
+npm run typecheck  # tsc over the client and the server — the only automated gate
+npm run build      # the gates + typecheck + production build to dist/
+npm run preview    # serve the production build
+npm run icons      # regenerate the install icons under public/icons (committed)
+npm run shots      # re-photograph each map for the menu backdrop (committed)
+npm run audio      # re-cut and re-encode audio/ from its masters (needs ffmpeg)
+npm run collision  # re-bake each map's colliders for the server (committed)
+npm run parity     # prove the server's world matches the browser's
+npm run simulate   # play a whole round headless: `-- [map] [difficulty] [rounds]`
 ```
 
 Requires Node 24+ and a **WebGPU-capable browser**: Chrome or Edge on any
 platform, Safari 18 or later, and Firefox on Windows. Firefox on Linux and
 macOS cannot run it, and neither can an older Android or iOS. There is no
 WebGL fallback — the boot screen checks for a GPU adapter and says so rather
-than showing a black page.
+than showing a black page. WebGPU also needs a secure context, so the page has
+to be served over HTTPS or from `localhost`.
 
 `npm run shots` is the one script here that needs a machine with a real GPU;
 everything else, the build included, runs anywhere.
@@ -37,15 +44,26 @@ everything else, the build included, runs anywhere.
 
 Single player needs nothing but the page. Multiplayer needs a second process —
 an authoritative server that runs the real simulation and hands clients what
-moves — and **Multiplayer** on the main menu is the way to it: a list of the
-matches that server is running, with a row per match and a button to start a
-fresh one. A match is always 8v8; every seat nobody is sitting in is a bot, so a
-round starts with one person in it and fills up as people arrive.
+moves — and **Multiplayer** on the main menu (or **M**) is the way to it: a list
+of the matches that server is running, with a row per match and a button to
+start a fresh one.
+
+A match has **sixteen seats for people**, eight a side, on every map, and every
+seat nobody is sitting in is a bot — so a round starts with one person in it and
+fills up as people arrive. The map decides how big the fight is: Sarab and
+Cinderhaven field twenty-four a side, online as well as off, of whom sixteen at
+most are people. A match can also be created with **bots off**, and then it is
+people and nobody else.
 
 **A new match is started on the map you pick in that screen's Map row; joining
 one puts you on the map it is already running**, whichever map the menu happens
-to be showing. Every row names its match's map, and the server rotates to the
-next one when a round ends.
+to be showing. Every row names its match's map. When a round ends, the
+eight-second pause before the next one is a **vote between three maps**: the
+first is the one the rotation would have picked anyway, and it wins if nobody
+votes or the vote ties.
+
+A dropped connection retries into the same match, but into whatever slot is
+free rather than the seat you left — possibly on the other side.
 
 Locally:
 
@@ -57,7 +75,8 @@ npm run dev            # the client, in another terminal
 
 The dev client is on a different origin from the server, so point it at one:
 `http://localhost:5173/?server=ws://localhost:8080/ws`. Deployed, the game and
-the server share an origin and the menu needs no help.
+the server share an origin and the menu needs no help. `?name=` on the URL sets
+the name the scoreboard shows; there is no box for it in the interface yet.
 
 Everything wired up, in two containers:
 
@@ -68,8 +87,10 @@ open http://localhost:8080
 
 ## Hosting it
 
-The deployment is those same two containers from published images, behind
-whatever already terminates HTTPS for the domain:
+The deployment is those same two containers from published images
+(`ghcr.io/greywatch-game/greywatch` and `ghcr.io/greywatch-game/greywatch-server`,
+`:latest` being `main`), behind whatever already terminates HTTPS for the
+domain:
 
 ```bash
 docker compose -f docker-compose.prod.yml pull
@@ -102,9 +123,14 @@ Caddy carries WebSockets by itself, so it is one line:
 
 Nothing else needs configuring: the client asks its own origin for the match
 list and opens the socket there, so the game does not know or care what the
-domain is. Two settings are worth a look — `MAX_MATCHES` on the server (default
-4, and one process's matches all share one core) and `MATCH_SERVER` on `web`
-(default `match-server:8080`, the compose service name).
+domain is. The settings worth a look:
+
+| Setting | On | Default | What it is |
+| --- | --- | --- | --- |
+| `MAX_MATCHES` | server | 4 | matches one process runs; they all share one core |
+| `MAX_SOCKETS_PER_IP` | server | 16 | open sockets per address; 0 turns the cap off |
+| `TRUST_PROXY` | server | auto | `1`/`0` forces whether a proxy's forwarded address is believed |
+| `MATCH_SERVER` | `web` | `match-server:8080` | where nginx sends `/ws` — the compose service name |
 
 ### More than one region
 
@@ -131,6 +157,7 @@ one — is an edit on the box rather than a rebuild. Create it before the first
 `up`, or Docker makes a directory where the file should be. `host` is an
 authority and never a URL: the scheme comes from the page. Leave the file alone
 and the game behaves exactly as it always has, as one server on its own origin.
+A player who has not chosen gets the fastest region that answers.
 
 Serve the page from **one** of the boxes rather than round-robin across them:
 the client reads the region list from its own origin, and one hostname resolving
@@ -170,37 +197,51 @@ either way round, with no setting to find.
 
 ## Controls
 
-| Action     | Gamepad (Xbox / PS) | Keyboard / Mouse |
-| ---------- | ------------------- | ---------------- |
-| Move       | Left stick          | WASD             |
-| Look       | Right stick         | Mouse            |
-| Sprint     | L3 (toggle)         | Shift (hold)     |
-| Crouch     | B / ○ (hold)        | Ctrl or C (hold) |
-| ADS        | LT / L2             | Right-click      |
-| Shoot      | RT / R2             | Left-click       |
-| Jump       | A / ✕               | Space            |
-| Reload     | X / ▢               | R                |
-| Grenade    | RB / R1             | G                |
-| Draw slot  | —                   | 1 / 2 / 3        |
-| Use (tank) | D-pad Up            | E                |
-| Scoreboard | Back / Share        | Tab              |
-| Loadout    | Y / △ (menus)       | L (menus)        |
-| Confirm    | A or Start          | Enter / Click    |
+| Action              | Gamepad (Xbox / PS)         | Keyboard / Mouse       |
+| ------------------- | --------------------------- | ---------------------- |
+| Move                | Left stick                  | WASD                   |
+| Look                | Right stick                 | Mouse                  |
+| Sprint              | L3 (toggle)                 | Shift (hold)           |
+| Crouch              | B / ○ (toggle)              | Ctrl (hold), C (toggle) |
+| ADS                 | LT / L2                     | Right-click            |
+| Shoot               | RT / R2                     | Left-click             |
+| Jump                | A / ✕                       | Space                  |
+| Reload              | X / ▢                       | R                      |
+| Throw               | RB / R1                     | G                      |
+| Swap weapon         | Y / △                       | Mouse wheel            |
+| Draw slot           | —                           | 1 / 2 / 3              |
+| Fire mode           | D-pad Down                  | B                      |
+| Board / leave       | X / ▢ when offered, D-pad Up | E                    |
+| Change seat         | Y / △ (in a vehicle)        | F                      |
+| Climb / descend     | A / B (flying)              | Space / Ctrl (flying)  |
+| Scoreboard          | Back / Share                | Tab                    |
+| Loadout             | Y / △ (menus)               | L (menus)              |
+| Settings            | —                           | O                      |
+| Pause               | Start / Options             | Esc                    |
+| Confirm             | A or Start                  | Enter / Click          |
+| Back                | B / ○                       | Backspace              |
+
+Bindings are fixed; the Settings screen lists them but cannot change them.
+
+**There is no crosshair, and that is the aiming model rather than a missing
+gauge.** Aiming down sights brings the fitted sight onto the centre of the
+screen and zooms the view, and that sight is the only mark in the game that says
+where your rounds go. Hip fire is unaimed: the spread is real, it is just not
+drawn.
 
 On a phone, the same actions are on the glass: **drag the left of the screen**
 to move (push to the edge to sprint), **drag the right** to look, and the
-buttons over them are fire, ADS, jump, crouch, reload, grenade and swap, with
-the scoreboard and the pause menu in the top corner. The trigger also steers —
-press it and keep sliding, and the view follows your thumb, so you never have
-to choose between shooting and aiming. ADS and the scoreboard are taps rather
-than holds; the second, smaller fire button on the left edge is for a claw
-grip. They are drawn only while a finger is what is playing, and the HUD's own
-gauges shrink out of the corners while they are up. Touch look speed has its
-own row in Settings.
-
-**Use** is how you get into a tank and out of it again, and on a map with no
-armour it does nothing. Slot **3** is the anti-tank item, and it is only in the
-kit on the maps that have armour — see the map notes below.
+buttons over them are fire, ADS, jump, crouch, reload, throw and swap, with
+the scoreboard and the pause menu in the top corner. A **use** button appears
+when there is something to get into, and a helicopter's pilot gets **up** and
+**down**. The trigger also steers — press it and keep sliding, and the view
+follows your thumb, so you never have to choose between shooting and aiming.
+ADS and the scoreboard are taps rather than holds; the second, smaller fire
+button on the left edge is for a claw grip. They are drawn only while a finger
+is what is playing, and the HUD's own gauges shrink out of the corners while
+they are up. Settings has a **Touch** page: look speed, a fixed or floating
+stick, fire-to-aim, and **gyro aim** (off, only while aiming, or always) with a
+speed of its own.
 
 Click the page once to capture the mouse (pointer lock). Gamepads use the
 browser's standard mapping and are hot-pluggable — press any button after
@@ -221,144 +262,204 @@ a committed swipe cancels the pull exactly as a committed stick does.
 
 ### How a round works
 
-- Two teams of eight — **Valeguard** (warm amber) and **Redline** (cold
-  crimson) — fight over **five control points** across a 240 × 240 m village.
-  How many a side is the map's: Sarab is 900 m of desert town and Cinderhaven
-  1,500 m of volcanic island, and both field twenty-four, because a fight is
-  made of contact and contact is bodies per square metre. A multiplayer match is always sixteen slots, on every map.
-  A side is told apart three ways, so the read survives losing any one of
-  them: the whole kit is warm or cold, the team colour is worn on pauldrons,
-  bandolier and helmet band where some of it faces every direction, and each
-  side wears a helmet of its own shape — a peak against a respirator — for
-  when a body is backlit, in fog, or too far away to have a colour at all.
+- Two teams — **Valeguard** (warm amber) and **Redline** (cold crimson) — fight
+  over **five control points**. How many a side is the map's: eight on most,
+  and twenty-four on Sarab and Cinderhaven, because a fight is made of contact
+  and contact is bodies per square metre. A side is told apart three ways, so
+  the read survives losing any one of them: the whole kit is warm or cold, the
+  team colour is worn on pauldrons, bandolier and helmet band where some of it
+  faces every direction, and each side wears a helmet of its own shape — a peak
+  against a respirator — for when a body is backlit, in fog, or too far away to
+  have a colour at all.
 - Stand inside a zone to capture it. More bodies capture faster, with
   diminishing returns; if both teams are inside, the meter freezes. A flag has
   to be swept through **neutral** before it changes hands, so you cannot steal
   one by briefly outnumbering the defender.
-- Every zone is **drawn in the world**: a coloured ring on the ground marking
-  the exact capture boundary, a low glow that rises from the stretch of it you
-  are walking up to, and a beacon over the flag you can see across the village.
-  They carry the owner's colour and pulse while the flag is being taken. Step
-  inside and a panel names the point and shows the meter running.
+- Every zone is **marked in the world**: its exact capture boundary is laid on
+  the ground, as whitewashed stones on open ground and a painted line on a road
+  or a deck, and the flag over it **is** the meter — a cloth flag in the map's
+  wind, run up its pole as the meter fills, in the colours of the side it leans
+  to. Step inside and a panel names the point and shows the meter running.
 - Each team starts with **400 reinforcements**. Every death costs one, and
   whichever side holds **fewer flags bleeds** tickets steadily on top. Winning
   fights while ignoring objectives still loses the round.
-- Everyone — you and every bot — spawns with **two frag grenades** and no way
-  to get more. They arc, bounce off walls and roll, go off on a fuse rather
-  than on impact, and are lethal at the centre and survivable at the edge.
-  Fragments do not go through walls, so a corner is real cover. The blinking
-  red pip on one that has landed near you is the only warning you get.
-- Death opens the **deploy screen**: a top-down map of the village where you
-  pick a spawn from the flags you hold, or fall back to your home gatehouse.
-  Health regenerates a few seconds after you stop taking fire.
+- Everyone — you and every bot — spawns with **two throwables** and no way to
+  get more. The kit picks which: **frag grenades**, which arc, bounce off walls
+  and roll, go off on a fuse, and are lethal at the centre and survivable at the
+  edge — fragments do not go through walls, so a corner is real cover — or
+  **molotovs**, which break on the first thing they touch and leave the ground
+  burning for a few seconds.
+- Death opens the **deploy screen**: a top-down map where you pick a spawn from
+  the flags you hold, or fall back to your side's home base. Health regenerates
+  a few seconds after you stop taking fire.
 - The round ends when one side hits zero.
 
-Map notes: the **Mill** sits down in a creek 1.5 m below the embankments on
-either side, so whoever holds the banks shoots into it. The **Barn**'s hayloft
-is the best perch on the map and the ramp up to it is fully exposed. The
-**Chapel** is on a terrace with a single ramp — hard to take, easy to hold. The
-**Bog Docks** are mist-choked and cramped by design. The **Square** has four
-road approaches and almost no cover.
+### The kit
 
-## Tech in one paragraph
+Six primaries and a sidearm, each modelled on a real weapon. The **Loadout**
+screen (L, or from the deploy screen) picks the primary, its sight, its finish,
+the throwable, and on maps with armour the anti-tank item.
 
-Everything you see and hear is generated at runtime: every mesh is built from
-Babylon primitives and merged per colour, all audio is synthesized WebAudio,
-the cel look is a custom `ShaderMaterial` with 16 dynamic point-light slots,
-and the bots — sixteen of them, or forty-eight on the desert town — steer on a
-precomputed nav grid with one flow field per objective, no pathfinding at all. The one engine in the tree is Havok, which
-does nothing but drop the dead and scatter broken glass. It is required — the
-boot screen waits for it, beside the GPU adapter — and nothing falls any other
-way. Every shader in the tree is hand-written WGSL; there is no GLSL left and
-no transpiler in the bundle.
+| Weapon          | Modelled on                       | Trigger                |
+| --------------- | --------------------------------- | ---------------------- |
+| Assault Rifle   | FN SCAR-H                         | auto / semi            |
+| Burst Carbine   | FAMAS                             | 3-round burst / semi   |
+| Submachine Gun  | SIG MPX                           | auto                   |
+| Marksman Rifle  | HK G28                            | semi                   |
+| Sniper Rifle    | Accuracy International AXMC       | bolt action            |
+| Machine Gun     | FN Minimi                         | auto                   |
+| Sidearm         | Colt M45A1                        | semi                   |
 
-**Contributor/agent documentation lives in [`CLAUDE.md`](CLAUDE.md)** —
-architecture, load-bearing invariants, and conventions, with one contract per
-subsystem under [`docs/`](docs/). Every source file also has a contract header at
-the top.
-
-## Known limitations
-
-- Characters (bots) are primitive assemblies, not modeled/rigged meshes; all
-  "animation" is procedural (posed joint hierarchies, walk cycles driven by
-  travel speed). The rig has seven joints and no knees, so a bot can neither
-  crouch nor lean — its cover is corners, not waist-high walls.
-- Only the moon casts shadows. Its key light has a real shadow map, but the
-  **point lights cast none** — lanterns, braziers and muzzle flashes light
-  without occluding — and characters get blob-shadow discs rather than casting.
-  Most of the darkness is fog, ambient and falloff.
-- **Ragdolls are cosmetic.** Havok runs the fall and nothing else: a corpse is
-  absent from navigation, cover and hit detection, so bots walk through bodies
-  and rounds pass through them.
-- Five primaries, a fixed sidearm and five optics — but **no classes**, and the
-  sidearm is not a choice.
-- **There is one vehicle, on the two maps that state one, online and off.**
-  Coldharbour and Harrowmead give each side a tank on a hardstanding in its home
-  yard: walk up, press **E**, drive it in third person, and put shells down the
-  avenues. Destroy one and a fresh hull arrives at that side's hardstanding after
-  45 seconds, with the burnt-out one standing as cover for the first sixteen. In
-  a match the authority owns the hull exactly as it owns everything else — a
-  driver simulates their own tank and reports it, the way they already do their
-  own legs, and getting in and out are asks the server answers. Bots crew one
-  too: a body that walks past its own side's hardstanding climbs in and takes
-  the tank to its squad's objective, and if you want it back, walk up to it and
-  press **E** — the crew gets out. One thing about it is honestly unfinished:
-  **bots do not route around a parked one**, and walk through hulls exactly as
-  they walk through corpses.
+- **Seven sights**, any of them on any primary: reflex, irons, holographic, a 2x
+  green dot, a 2.5x prism, a 3.5x scope and a 6x long scope.
+- **Sixteen finishes**, remembered per weapon. They are paint and nothing else.
+- Damage falls off with range, and no single round to the body kills — the
+  sniper rifle included. Fire a bolt gun through its sight and the bolt stays
+  shut until the sight comes down.
 - **A map with armour on it puts a third slot in the kit**, and a map without
   one does not have the slot at all. It holds a rocket launcher or two mines,
   never both, because choosing is the point: two rockets are 1240 against a
-  hull's 1200, so one launcher is one dead tank provided both land, and a mine
+  tank's 1200, so one launcher is one dead tank provided both land, and a mine
   is 800 that a driver never sees coming. Neither resupplies — the pouch is
-  refilled by dying, like the grenades — and a mine is set off by vehicles
-  only, so everybody's infantry walks over them.
+  refilled by dying, like the throwables — and a mine is set off by vehicles
+  only, so everybody's infantry walks over them. One bot in every squad carries
+  a launcher and uses it on armour and nothing else.
+
+### The maps
+
+| Map             | What it is                                                                                                  | Play area | A side | Vehicles                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------- | --------- | ------ | ------------------------ |
+| **Hollowmere**  | A drowned village at night, under fog. Lanes and walled yards make every flag a short fight.                | 240 m     | 8      | —                        |
+| **Greyfen**     | The same valley two hours after sunrise, gone to jungle, with the sun coming down through the canopy.       | 240 m     | 8      | —                        |
+| **Coldharbour** | A business district an hour before dusk, the sea at the end of every avenue. Three floors, glass to break.   | 320 m     | 8      | tank                     |
+| **Harrowmead**  | A farming vale at sunset. No wall around it at all: the floor carries on and a leash counts you back.       | 400 m     | 8      | tank                     |
+| **Sarab**       | A desert town an hour before noon, inside a kilometre and a half of sand.                                   | 900 m     | 24     | tank, truck, helicopter  |
+| **Cinderhaven** | A harbour town on a volcanic island at night, lit by the burning mountain, with a bay you wade to cross.    | 1,500 m   | 24     | tank, truck, helicopter  |
+| **Kurenai**     | A temple town in a mountain valley as the maples turn, forty minutes before sunset.                         | 240 m     | 8      | —                        |
+
+Hollowmere, the first of them: the **Chapel** is on a terrace with a single
+ramp — hard to take, easy to hold. The **Mill** stands on the embankment over a
+sunken creek, so whoever holds the banks shoots down into it. The
+**Farmstead**'s barn has a hayloft, the best perch on the map, and the ramp up
+to it is fully exposed. The **Bog Docks** are low and cramped by the
+boathouses. The **Square** is a crossroads with four road approaches and almost
+no cover.
+
+### Vehicles
+
+Four maps put armour on the field, one of each kind the map states per side,
+parked on a hardstanding in each home yard. Walk up and press **E** (X on a
+pad) to get in; the first person aboard drives, the second takes the gun, and
+**F** (Y) crosses between the two seats.
+
+- **Tank** — the driver steers and fires the main gun, the gunner has the
+  cupola machine gun.
+- **Gun truck** — lighter and quicker; the gunner has the remote machine gun,
+  and there is no main gun.
+- **Helicopter** — a gunship. The pilot flies it, climbing and descending on
+  Space and Ctrl (A and B), and the gunner has the chin turret.
+
+Every hull runs people over, and every hull can be killed. A destroyed one
+stands as a wreck — and as cover — for sixteen seconds, and a fresh one arrives
+at that side's hardstanding after forty-five. **Bots crew all three**, both
+seats, and fly the helicopter; if you want one they are sitting in, walk up and
+press **E** — the crew gets out. A vehicle belongs to its side. In a match the
+server owns every hull exactly as it owns everything else: a driver simulates
+their own and reports it, the way they already do their own legs, and getting
+in and out are asks the server answers.
+
+## Settings and performance
+
+Settings (**O**) has four pages: **Input** (mouse and stick look speed, and the
+bindings), **Touch** (see above), **Display** (render scale at 50, 75 or 100%,
+an FPS counter, motion blur, paper grain, and the frame profiler), and
+**Light** (light shafts, bounce light and shadows, each with rungs down to
+off). A phone starts on low shadows.
+
+**The frame profiler ships in the production build**, because the devices
+worth measuring are the ones that will never run a dev server. Turn it on under
+Display (or add `?profile` to the URL) and a chip appears in the corner. It
+records continuously, so play until something stutters and then press **VIEW**:
+the report opens at `/profile_viewer.html` on the same origin, offline
+included, and nothing leaves the device. **KEEP** copies a compact report (**F3**
+does the same mid-round), **SAVE** downloads the full one, and **TRACE** exports
+the last 600 frames for [Perfetto](https://ui.perfetto.dev). `?gpu` adds GPU
+timing where the adapter supports it. See
+[`docs/profiling.md`](docs/profiling.md) for how to read one.
+
+## Tech in one paragraph
+
+Every mesh is built from Babylon primitives at runtime and merged into blocks;
+the cel look is hand-written WGSL — there is no GLSL left and no transpiler in
+the bundle — with sixteen dynamic point lights that cast into one shadow atlas,
+a sun or moon with its own maps, shadows from the clouds, and bounce light
+traced in compute against the colliders. Nearly all audio is synthesized
+WebAudio; seventeen short samples — one report per weapon, the vehicle guns,
+the reload, the bolt and one explosion — are laid over it, and the game is
+still whole without them. The bots — sixteen of them, or forty-eight on Sarab
+and Cinderhaven — steer on a precomputed nav grid with one flow field per
+objective, no pathfinding at all, and plan as squads. The one physics engine in
+the tree is Havok, which drops the dead and scatters broken glass and blast
+rubble. It is required — the boot screen waits for it, beside the GPU adapter —
+and nothing falls any other way.
+
+**Contributor/agent documentation lives in [`CLAUDE.md`](CLAUDE.md)** —
+architecture, load-bearing invariants, and conventions, with one contract per
+subsystem under [`docs/`](docs/) and a one-line-per-file module map in
+[`FILES.md`](FILES.md). Every source file also has a contract header at the top.
+
+## Known limitations
+
+- Characters are primitive assemblies, not modelled or rigged meshes, and all
+  animation is procedural. Bots have knees and crouch behind cover, but nobody
+  leans.
+- **Ragdolls are cosmetic.** Havok runs the fall and nothing else: a corpse is
+  absent from navigation, cover and hit detection, so bots walk through bodies
+  and rounds pass through them.
+- **Bots do not route around a parked vehicle**, and walk through hulls exactly
+  as they walk through corpses. The nav grid, the cover map and the obstacle
+  field are all baked once from the finished collider set, and a hull moves.
+- A vehicle has two seats and no passengers.
+- There are **no classes**, and the sidearm is not a choice.
 - Nav cells hold a few surfaces each — three by default, and a map states its
   own where it stacks floors (Coldharbour's offices are three deep). Unusually
   deep stacks still need that number raised, and overflow is silent.
-- Six maps: **Hollowmere**, a fog-drowned village at night; **Greyfen**, a
-  jungle valley two hours after sunrise, with the sun coming down through the
-  canopy in shafts; **Coldharbour**, a city's business district before dusk —
-  with no fog wall and with buildings you can fight through on three floors;
-  **Harrowmead**, a farming vale at sunset with no wall around it at all, where
-  the floor simply carries on and a leash counts you back; **Sarab**, a desert
-  town an hour before noon, nine hundred metres of it inside a kilometre and a
-  half of sand; and **Cinderhaven**, the biggest — a harbour town on a volcanic
-  island at night, fifteen hundred metres square, lit by the mountain standing
-  over it and cut in two by an inlet with one ford across it. The last four are
-  the four with vehicles on them. The system supports more; a seventh is one
-  layout file plus an environment.
-- **Multiplayer is one server process, and the lobby lists only that one.**
-  Matches live in its memory, so it cannot be scaled by running a second copy
-  behind the same address — that needs a shared matchmaker, which is not built.
-  There is also no way to choose your name in the interface yet (`?name=` on the
-  URL), and no reconnecting into the seat you left.
+- **Multiplayer:** there is no name entry in the interface (`?name=` on the
+  URL), a dropped player comes back in a fresh slot rather than the one they
+  left, and there are no kill assists. One process's matches live in its own
+  memory, so a region is scaled by adding a box behind a hostname of its own,
+  never by putting a second process behind the same one.
+- **Bindings are fixed**, and there is no audio settings page.
 - **The touch controls are not customisable.** The layout is fixed — no drag to
   reposition, no size or opacity sliders, and no left-handed mirror, all of
   which every shipped mobile shooter has. Nor is there an auto-fire mode (CoD
-  Mobile's "Simple"), a gyro aim, or a lean button. What is there is the shape
-  those games agree on, at one size per screen height.
+  Mobile's "Simple") or a lean button. What is there is the shape those games
+  agree on, at one size per screen height.
 
 ## Next steps for expansion
 
-- A fifth map: one new `layout.ts` plus an `EnvironmentSpec`.
+- An eighth map: one new `layout.ts` plus an `EnvironmentSpec`.
 - Player-issued squad orders. Bots already plan their objectives as squads;
   what is missing is a way for you to tell one which flag to take.
-- A sixth weapon or a sixth optic — both are a config entry plus a builder.
+- Another weapon or optic — both are a config entry plus a builder.
 - **Bots that route around a parked hull.** `NavGrid`, `CoverMap` and
-  `ObstacleField` are all baked once from the finished collider set, and a tank
+  `ObstacleField` are all baked once from the finished collider set, and a hull
   moves — so armour is invisible to every one of them, exactly as a corpse is.
-- **A second vehicle.** Nothing in the code is special-cased to a tank, but
-  nothing has been designed for two either: a second one is a model, a `CONFIG`
-  block and a hard look at everything in `docs/vehicles.md` that says "the hull".
+- A fourth vehicle kind: a row in `VEHICLE_KINDS`, a block of numbers and a
+  model file.
+- A name box in the lobby, and rejoining the seat you dropped out of.
 
 ## License
 
 [MIT](LICENSE) — do what you like with it, including commercially, as long as
 the copyright notice travels with the copy.
 
-One license covers the whole repository, which is only possible because there
-are no authored assets to license separately: every mesh is built from Babylon
-primitives at runtime and all audio is synthesized. The dependencies are
-permissive and compatible — Babylon.js is Apache-2.0, and the Havok physics
-build pulled in by `@babylonjs/havok` (the one binary that ships, for the
-ragdolls) carries its own MIT terms from Babylon.js.
+One license covers the whole repository. Almost nothing in it is art: every
+mesh is built from Babylon primitives at runtime and nearly all audio is
+synthesized. The exception is the seventeen samples in `audio/` and the masters
+they are cut from in `audio/src/`, which were generated with Adobe Firefly on a
+paid account and are distributed under the same license.
+The dependencies are permissive and compatible — Babylon.js is Apache-2.0, and
+the Havok physics build pulled in by `@babylonjs/havok` (the one binary that
+ships, for the ragdolls, glass and rubble) carries its own MIT terms from
+Babylon.js.
