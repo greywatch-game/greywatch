@@ -3196,6 +3196,16 @@ whose shadow they are standing in, because it is the same ray.
   answers for a roof and the street under it alike. Each lobe's shadow on that
   plane is an ellipse in closed form — the ellipsoid's quadratic form with the
   light's direction projected out — so nothing is rendered to make it.
+- **The ellipsoid is the lobe AS DRAWN, belly squash included**
+  (`CloudGeometry.lumpShadowY`). The lobe it was built from hangs up to
+  two-thirds of its own height under the belly the squash presses flat, and a
+  lower point's key lies further toward the sun, so casting from it put a strip
+  of shadow on the SUN side that no drawn cloud cast — a player could see the
+  disc clear under a belly while standing in its shadow. Measured over the 34
+  clouds of the default ring, that ellipsoid reached 29-49% of each cloud's
+  drawn height below its lowest facet; the fitted one is within 0.6% at both
+  belly and crown, the jitter's width. Between the two it is an ellipse fitted
+  to a blunter shape, so a flat belly's corners are the one part it rounds.
 - **What is stored is a FIELD, not coverage** — 0.5 on each lobe's outline,
   rising inside, MAX over lobes — so a 2-9 m texel still cuts a clean outline:
   bilinear interpolation of a smooth field moves the 0.5 contour smoothly, and

@@ -96,10 +96,22 @@ export interface CloudGeometry {
   lumpCentres: Float32Array;
   /**
    * Each lump's three radii (along its cloud's horizon tangent, up, and away
-   * from the ring's centre), packed, before the jitter and the belly squash —
-   * the ellipsoid the ground's cloud shadow is cast from (`cloudShadow.ts`).
+   * from the ring's centre), packed, before the jitter and the belly squash.
+   * The ground's cloud shadow (`cloudShadow.ts`) takes the two HORIZONTAL
+   * radii from here and its vertical from `lumpShadowY`.
    */
   lumpRadii: Float32Array;
+  /**
+   * Each lump's shadow ellipsoid in y — the world height of its centre and its
+   * vertical radius, packed — spanning the lump AS DRAWN, from its crown down
+   * to its belly after the squash. **The squash is what this is for**: the
+   * ellipsoid before it hangs up to two-thirds of a lobe's height under the
+   * belly the eye sees, and a lower point's shadow lands further toward the
+   * sun, so the ground was shaded on the sun side under clear sky. Top and
+   * bottom are exact; between them it is an ellipse fitted to a blunter shape,
+   * so the corners of a flat belly are the one part it rounds off.
+   */
+  lumpShadowY: Float32Array;
   /**
    * Each lump's cloud's horizon TANGENT, x and z packed, in the ring's frame.
    * The radial axis is that turned a quarter about y — (z, -x) — so it is not
@@ -127,6 +139,7 @@ export function buildCloudRing(
   const out: Soup = { pos: [], nrm: [], smooth: [] };
   const centres: number[] = [];
   const radii: number[] = [];
+  const shadowY: number[] = [];
   const tangents: number[] = [];
   const firsts: number[] = [];
   const counts: number[] = [];
@@ -196,6 +209,12 @@ export function buildCloudRing(
       const first = out.pos.length / 3;
       centres.push(...emitLump(unit, lump, lumps, dome, o, rand, place, orient, out));
       radii.push(lump.sx, lump.sy, lump.sz);
+      // Its drawn span, in the cloud's frame and then `place`'s y: the crown
+      // is never under the base, and the bottom is pressed as `place` presses it.
+      const low = lump.y - lump.sy;
+      const top = lump.y + lump.sy;
+      const bottom = low < 0 ? low * BELLY_SQUASH : low;
+      shadowY.push(cy + (top + bottom) / 2, (top - bottom) / 2);
       tangents.push(tx, tz);
       firsts.push(first);
       counts.push(out.pos.length / 3 - first);
@@ -208,6 +227,7 @@ export function buildCloudRing(
     smoothNormals: new Float32Array(out.smooth),
     lumpCentres: new Float32Array(centres),
     lumpRadii: new Float32Array(radii),
+    lumpShadowY: new Float32Array(shadowY),
     lumpTangents: new Float32Array(tangents),
     lumpFirst: new Uint32Array(firsts),
     lumpCount: new Uint32Array(counts),

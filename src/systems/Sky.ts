@@ -505,8 +505,10 @@ export class Sky {
         m,
         v,
       );
+      // The turn is about y, so the height is the shadow's own fit and not
+      // the lobe's centre — see `CloudGeometry.lumpShadowY`.
       out[o] = v.x;
-      out[o + 1] = v.y;
+      out[o + 1] = geo.lumpShadowY[i * 2];
       out[o + 2] = v.z;
       Vector3.TransformNormalFromFloatsToRef(
         geo.lumpTangents[i * 2],
@@ -518,7 +520,7 @@ export class Sky {
       out[o + 3] = v.x;
       out[o + 4] = v.z;
       out[o + 5] = geo.lumpRadii[i * 3];
-      out[o + 6] = geo.lumpRadii[i * 3 + 1];
+      out[o + 6] = geo.lumpShadowY[i * 2 + 1];
       out[o + 7] = geo.lumpRadii[i * 3 + 2];
     }
     field.begin(out, n, this.shadowToLight, this.shadowArea);
