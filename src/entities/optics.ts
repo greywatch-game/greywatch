@@ -995,15 +995,17 @@ export function buildOptics(
   };
 
   /**
-   * The 2x green dot: a short tapered tube on one slim mount, with a single
-   * green dot hung near the objective. Built as the prism is — every part sized
-   * OUTWARD from its own section's radius so nothing reaches into the cone.
+   * The 2x green dot: a short tapered tube held in two rings on a BLACK RISER,
+   * with a single green dot hung near the objective. Built as the prism is —
+   * every part sized OUTWARD from its own section's radius so nothing reaches
+   * into the cone.
    *
-   * Kept SLEEK on purpose, because the tube itself is as small as the picture
-   * allows and everything bolted to it is what reads as bulk: the rims are thin
-   * lips rather than a hood, the caps stand a few millimetres proud rather than
-   * a turret's height, and the mount is a narrow block on a wider clamp foot
-   * with the objective overhanging it.
+   * The riser is what tells it apart from the prism, which is bolted down as
+   * one block: a dot sight is a tube ringed onto a mount, and a riser with a
+   * window cut through its waist is that at a glance. Everything else is small
+   * — thin lips rather than a hood, caps a few millimetres proud on a collar
+   * rather than turrets — because the tube itself is as small as the picture
+   * allows, and the bulk is where a 2x stops reading as a dot sight.
    */
   const buildGreenDot = (node: TransformNode): Vector3 => {
     foldedIrons(false);
@@ -1024,36 +1026,92 @@ export function buildOptics(
     }
     const rOcular = outerAt(DOT2_OCULAR_DZ);
     const rObjective = outerAt(DOT2_OBJECTIVE_DZ);
-    // Both rims at their own section's outer radius, so neither narrows the
-    // picture, and both thin lips: the ocular's a rubber ring, the objective's
-    // a short bevel over the glass the dot sits in.
+    // The eyepiece: a rubber lip and a fine steel line where it meets the
+    // body. The front: a short black shade over the glass the dot sits in,
+    // with a steel lip on its mouth — standing off the objective's OUTER
+    // radius, where the cone is still a few millimetres short of it at the
+    // shade's far end, so the picture is the last section's as it always was.
     b.shell("dot2Ocular", RUBBER, rOcular * 2, 0.004, 0.01, dot2Y, ocularZ + 0.001);
-    b.shell("dot2Bevel", black, rObjective * 2, 0.0035, 0.01, dot2Y, objectiveZ - 0.001);
-    // A narrow block from a wider clamp foot to the ocular section's underside,
-    // spanning the rear two sections — the objective overhangs it.
-    const baseZ = winZ - 0.014;
+    b.shell("dot2EyeTrim", METAL, rOcular * 2, 0.003, 0.003, dot2Y, ocularZ + 0.0075);
+    b.shell("dot2Shade", black, rObjective * 2, 0.0035, 0.014, dot2Y, objectiveZ + 0.006);
+    b.shell("dot2ShadeLip", METAL, rObjective * 2, 0.004, 0.003, dot2Y, objectiveZ + 0.0145);
+
+    // The riser: a flat clamp foot on the rail, and one black slab from it up
+    // to the tube whose top FOLLOWS the taper — the prism mount's argument, so
+    // it can never reach into the cone. A window is cut up through its waist,
+    // scaled to the height this weapon's rail leaves it, so it stays a waist
+    // on the carbine's short rise rather than cutting the riser in two.
+    const baseBottom = mount.railTop - 0.003;
     const footH = 0.008;
-    const baseBottom = mount.railTop - 0.002;
-    const baseTop = dot2Y - rOcular - 0.002;
-    b.box("dot2Foot", METAL, 0.04, footH, 0.05, 0, baseBottom + footH / 2, baseZ);
-    b.box(
-      "dot2Mount",
-      METAL,
-      0.03,
-      baseTop - baseBottom,
-      0.044,
-      0,
-      (baseBottom + baseTop) / 2,
-      baseZ,
+    const baseTop = baseBottom + footH;
+    const rearDz = -0.04;
+    const frontDz = 0.03;
+    const topRearDz = rearDz + 0.008;
+    const topFrontDz = frontDz - 0.01;
+    const yRear = dot2Y - outerAt(topRearDz);
+    const yFront = dot2Y - outerAt(topFrontDz);
+    const riserBottom = baseTop - 0.001;
+    const notchTop = riserBottom + 0.45 * (yFront - riserBottom);
+    const notchRear = winZ - 0.018;
+    const notchFront = winZ + 0.006;
+    b.slab(
+      "dot2Foot",
+      black,
+      [
+        [winZ + rearDz - 0.004, baseBottom],
+        [winZ + frontDz + 0.004, baseBottom],
+        [winZ + frontDz, baseTop],
+        [winZ + rearDz, baseTop],
+      ],
+      0.038,
+      0.0015,
     );
-    b.box("dot2Lever", METAL, 0.007, 0.012, 0.03, 0.0235, baseBottom + footH / 2, baseZ - 0.004);
-    // Flat caps standing a few millimetres proud, and the brightness dial
-    // opposite the windage one.
+    b.slab(
+      "dot2Riser",
+      black,
+      [
+        [winZ + rearDz, riserBottom],
+        [notchRear, riserBottom],
+        [notchRear + 0.004, notchTop],
+        [notchFront - 0.004, notchTop],
+        [notchFront, riserBottom],
+        [winZ + frontDz, riserBottom],
+        [winZ + topFrontDz, yFront],
+        [winZ + topRearDz, yRear],
+      ],
+      0.028,
+      0.002,
+    );
+    // The clamp: a throw lever on the right, a thumb nut on the left and the
+    // two cross-bolts through the foot between them.
+    b.box("dot2Lever", METAL, 0.006, 0.012, 0.03, 0.0225, baseBottom + footH / 2, winZ - 0.008);
+    b.pin("dot2Nut", METAL, 0.012, 0.005, -0.0215, baseBottom + footH / 2, winZ - 0.008);
+    for (const dz of [rearDz + 0.01, frontDz - 0.01] as const) {
+      b.pin("dot2Bolt", METAL, 0.005, 0.042, 0, baseBottom + footH / 2, winZ + dz);
+    }
+    // Two rings where the riser meets the tube, each standing a wall proud of
+    // its own section and bolted up on both flanks. Neither reaches the
+    // collar the caps stand on.
+    for (const dz of [-0.03, 0.02] as const) {
+      const rRing = outerAt(dz);
+      b.shell("dot2Ring", black, rRing * 2, 0.004, 0.007, dot2Y, winZ + dz);
+      for (const side of [-1, 1] as const) {
+        b.pin("dot2RingBolt", METAL, 0.005, 0.003, side * (rRing + 0.0055), dot2Y, winZ + dz);
+      }
+    }
+    // A collar round the middle section, and the caps on it: black bodies with
+    // steel tops for elevation and windage, and the wider brightness dial
+    // opposite — the one part of this sight that gets turned mid-round.
     const turretZ = winZ;
-    const rTurret = outerAt(0);
-    b.pin("dot2Elev", METAL, 0.016, 0.008, 0, dot2Y + rTurret + 0.0025, turretZ, "y");
-    b.pin("dot2Wind", METAL, 0.016, 0.008, rTurret + 0.0025, dot2Y, turretZ, "x");
-    b.pin("dot2Illum", METAL, 0.02, 0.008, -(rTurret + 0.0025), dot2Y, turretZ, "x");
+    const rCollar = outerAt(0);
+    b.shell("dot2Collar", black, rCollar * 2, 0.003, 0.02, dot2Y, turretZ);
+    const rTurret = rCollar + 0.003;
+    b.pin("dot2Elev", black, 0.016, 0.008, 0, dot2Y + rTurret + 0.003, turretZ, "y");
+    b.pin("dot2ElevCap", METAL, 0.011, 0.002, 0, dot2Y + rTurret + 0.008, turretZ, "y");
+    b.pin("dot2Wind", black, 0.016, 0.008, rTurret + 0.003, dot2Y, turretZ, "x");
+    b.pin("dot2WindCap", METAL, 0.011, 0.002, rTurret + 0.008, dot2Y, turretZ, "x");
+    b.pin("dot2Illum", POLYMER, 0.021, 0.008, -(rTurret + 0.003), dot2Y, turretZ, "x");
+    b.pin("dot2IllumCap", METAL, 0.013, 0.003, -(rTurret + 0.0085), dot2Y, turretZ, "x");
     b.merge("greenDot", node);
 
     // Three black posts with fine hashes, stopping well short of the axis: the
