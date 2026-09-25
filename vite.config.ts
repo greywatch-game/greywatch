@@ -119,6 +119,18 @@ const WRITABLE = {
     min: 1200,
     marker: "export const KurenaiEnvironment",
   },
+  "src/world/candyland/layout.ts": {
+    min: 4000,
+    marker: "export const CandylandLayout",
+  },
+  "src/world/candyland/heights.ts": {
+    min: 500,
+    marker: "export const CandylandHeights",
+  },
+  "src/world/candyland/environment.ts": {
+    min: 1200,
+    marker: "export const CandylandEnvironment",
+  },
   // Not a map's file, and the one entry here a map does not add: the audio
   // mixer (F4) patches the eleven numbers in `CONFIG.mix` in place, which is
   // the same bargain the layout patcher makes — everything that is not one of

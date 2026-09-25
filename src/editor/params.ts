@@ -143,7 +143,7 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
   road: [
     num("width", "width", 8, 2, 20, 0.5),
     num("length", "length", 40, 4, 160, 1),
-    { key: "surface", type: "choice", label: "surface", def: "cobble", options: ["cobble", "dirt", "asphalt"] },
+    { key: "surface", type: "choice", label: "surface", def: "cobble", options: ["cobble", "dirt", "asphalt", "candy"] },
   ],
   jetty: [num("length", "length", 18, 4, 60, 1)],
   boardwalk: [
@@ -508,6 +508,94 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     num("width", "width", 3, 2, 5, 0.1),
   ],
 
+  // Candy Land — kit/candy.ts. The tints offered are the board's own.
+  gingerbreadHouse: [
+    num("width", "width", 16, 8, 24),
+    num("depth", "depth", 12, 7, 18),
+    bool("enterable", "enterable"),
+    {
+      key: "tint",
+      type: "choice",
+      label: "frosting",
+      def: "#e6769e",
+      options: ["#e6769e", "#f3ece4", "#9fd4ef", "#c9a8e8", "#f6d27a"],
+    },
+  ],
+  brittleHouse: [
+    num("width", "width", 10, 7, 16),
+    num("depth", "depth", 9, 6, 14),
+    bool("enterable", "enterable"),
+  ],
+  plumTree: [num("height", "height", 26, 12, 34, 0.5)],
+  gumdrop: [
+    num("height", "height", 9, 1, 16, 0.25),
+    {
+      key: "tint",
+      type: "choice",
+      label: "colour",
+      def: "#d3263a",
+      options: ["#d3263a", "#ef7b22", "#efbd2a", "#3d9e48", "#7a3aa6"],
+    },
+  ],
+  candyCane: [num("height", "height", 10, 2, 16, 0.25)],
+  candyCorn: [num("height", "height", 2.6, 1, 5, 0.1)],
+  candyHeart: [
+    num("width", "size", 3.4, 1.5, 6, 0.1),
+    {
+      key: "tint",
+      type: "choice",
+      label: "colour",
+      def: "#f28bb0",
+      options: ["#f28bb0", "#f4d257", "#8fdc98", "#c3a0ee", "#f9ad74", "#f7f1ec"],
+    },
+  ],
+  iceCreamFloat: [
+    num("length", "length", 7, 3, 12, 0.5),
+    num("width", "width", 3, 1.5, 5, 0.1),
+    num("height", "height", 1.8, 1, 3, 0.1),
+  ],
+  popsicle: [num("height", "height", 6, 3, 10, 0.25)],
+  signpost: [],
+  molasses: [
+    num("width", "width", 24, 6, 60),
+    num("depth", "depth", 18, 6, 60),
+  ],
+  chocolateBar: [
+    num("length", "length", 6, 2, 12, 0.5),
+    num("height", "height", 1.3, 0.8, 2, 0.1),
+  ],
+  gingerbreadMan: [
+    num("height", "height", 3.2, 1.5, 6, 0.1),
+    {
+      key: "tint",
+      type: "choice",
+      label: "cookie",
+      def: "#c7864a",
+      options: ["#c7864a", "#c8323a", "#3d9e48", "#efbd2a", "#3a6fd0"],
+    },
+  ],
+  cupcake: [
+    num("height", "height", 2.6, 1, 5, 0.1),
+    {
+      key: "tint",
+      type: "choice",
+      label: "case",
+      def: "#7cc5e8",
+      options: ["#7cc5e8", "#f39ab5", "#f6d27a", "#bfe6c2"],
+    },
+  ],
+  iceCreamCone: [
+    num("height", "height", 3.2, 1.5, 6, 0.1),
+    {
+      key: "tint",
+      type: "choice",
+      label: "scoop",
+      def: "#ee8da4",
+      options: ["#ee8da4", "#6e3f22", "#bfe6c2", "#efe0b6"],
+    },
+  ],
+  candyFence: [num("length", "length", 10, 2, 30, 0.5)],
+
   // Fixed-geometry kinds: placed, rotated, and otherwise not configurable.
   pagoda: [],
   bellTower: [],
@@ -662,6 +750,14 @@ export const SCATTER_DEFAULTS: Record<ScatterProp, ScatterDefaults> = {
   maple: { radius: 12, count: 6, scale: [0.85, 1.2], blocking: true, clearance: 1.9 },
   leafLitter: { radius: 8, count: 6, scale: [0.9, 1.3], clearance: 0.6 },
   bamboo: { radius: 8, count: 6, scale: [0.85, 1.15], clearance: 0.9 },
+  // Candy Land's. A lollipop's candy is a metre and a half across, so 1.6 of
+  // clearance lets two stand close enough to overlap into a wood of them.
+  lollipop: { radius: 12, count: 8, scale: [0.85, 1.2], blocking: true, clearance: 1.6 },
+  peppermint: { radius: 10, count: 8, scale: [0.85, 1.25], blocking: true, clearance: 1.2 },
+  mintLeaf: { radius: 8, count: 6, scale: [0.9, 1.3], clearance: 0.8 },
+  gumdropSmall: { radius: 10, count: 4, scale: [0.8, 1.3], blocking: true, clearance: 1.2 },
+  cattail: { radius: 8, count: 6, scale: [0.85, 1.2], clearance: 0.7 },
+  jellyBeans: { radius: 10, count: 4, scale: [0.9, 1.2], clearance: 1.2 },
 };
 
 export const SCATTER_PROPS = Object.keys(SCATTER_DEFAULTS).sort() as ScatterProp[];

@@ -601,11 +601,15 @@ const COBBLE_PALETTE: Rgb[] = [
 
 /**
  * Which road surfaces are painted from a base colour — every one but the
- * street, which is five authored stone tones and not a tint of anything.
+ * street, which is five authored stone tones and not a tint of anything, and
+ * the candy path, which is not a texture at all but a run of flat-coloured
+ * SPACES cut along the strip (`buildRoad`'s candy branch) — a world-mapped
+ * texture knows nothing about which way the path runs, and a board game's
+ * squares are nothing but that.
  * Derived from `RoadSurface` so a fourth carriageway is a compile error here
  * until it has been given a field, a palette and a tile.
  */
-export type RoadPatternId = Exclude<RoadSurface, "cobble">;
+export type RoadPatternId = Exclude<RoadSurface, "cobble" | "candy">;
 
 /** One carriageway's world scale and relief, exactly as `FloorSurface` is. */
 interface RoadPattern {

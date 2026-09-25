@@ -84,7 +84,16 @@ interface ScatterBase {
     // leaf it drops, and the bamboo that is its one cool green.
     | "maple"
     | "leafLitter"
-    | "bamboo";
+    | "bamboo"
+    // Candy Land's: the Lollypop Woods, the Peppermint Stick Forest and the
+    // spearmint at its feet, the lawn's gumdrops, the swamp's cattails and
+    // the jelly beans spilled everywhere.
+    | "lollipop"
+    | "peppermint"
+    | "mintLeaf"
+    | "gumdropSmall"
+    | "cattail"
+    | "jellyBeans";
   x: number;
   z: number;
   count: number;

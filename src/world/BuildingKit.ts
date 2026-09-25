@@ -2,8 +2,8 @@
  * BuildingKit.ts — Facade for the parametric structure builders. Re-exports
  * the shared types and the BUILDERS registry; the implementation lives in
  * kit/ (core.ts = Build accumulator + palette + contract, buildings.ts,
- * city.ts, desert.ts, harbour.ts, japan.ts, manor.ts, structures.ts,
- * terrain.ts).
+ * candy.ts, city.ts, desert.ts, harbour.ts, japan.ts, manor.ts,
+ * structures.ts, terrain.ts).
  * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER set
  * metadata.solid, checkCollisions, or isPickable — MapBuilder owns the
  * visual/collider split. A builder may take a BuildCtx to read the world it is
@@ -90,6 +90,24 @@ import {
   buildTorii,
 } from "./kit/japan";
 import { buildJungleManor } from "./kit/manor";
+import {
+  buildBrittleHouse,
+  buildCandyCane,
+  buildCandyCorn,
+  buildCandyFence,
+  buildCandyHeart,
+  buildChocolateBar,
+  buildCupcake,
+  buildGingerbreadHouse,
+  buildGingerbreadMan,
+  buildGumdrop,
+  buildIceCreamCone,
+  buildIceCreamFloat,
+  buildMolasses,
+  buildPlumTree,
+  buildPopsicle,
+  buildSignpost,
+} from "./kit/candy";
 import {
   buildSilo,
   buildWell,
@@ -210,6 +228,24 @@ export const BUILDERS = {
   stonePagoda: buildStonePagoda,
   gardenWall: buildGardenWall,
   archBridge: buildArchBridge,
+  // Candy Land — see kit/candy.ts, whose header owns why round things are
+  // round, why a stripe is wound and why words are geometry.
+  gingerbreadHouse: buildGingerbreadHouse,
+  brittleHouse: buildBrittleHouse,
+  plumTree: buildPlumTree,
+  gumdrop: buildGumdrop,
+  candyCane: buildCandyCane,
+  candyCorn: buildCandyCorn,
+  candyHeart: buildCandyHeart,
+  iceCreamFloat: buildIceCreamFloat,
+  popsicle: buildPopsicle,
+  signpost: buildSignpost,
+  molasses: buildMolasses,
+  chocolateBar: buildChocolateBar,
+  gingerbreadMan: buildGingerbreadMan,
+  cupcake: buildCupcake,
+  iceCreamCone: buildIceCreamCone,
+  candyFence: buildCandyFence,
 } as const;
 
 export type BuilderKind = keyof typeof BUILDERS;

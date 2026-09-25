@@ -1,6 +1,7 @@
 /**
  * Props.ts — Scatter prop factories (trees, gravestones, lanterns, fungus,
- * logs, fire drums, rubble, boulders, brambles, barrels, jungle trees). Pure
+ * logs, fire drums, rubble, boulders, brambles, barrels, jungle trees, and
+ * Candy Land's lollipops, peppermint sticks and sweets). Pure
  * mesh builders: each assembles at the origin and returns a
  * hierarchy; placement/merging/colliders are the caller's job.
  * Invariants: emissive parts (lantern glow, fire, fungus) MUST set
@@ -16,11 +17,20 @@
  * curtain has to hang from a crown and scatter placement is what pushed it
  * away from every crown on the map. Its own header carries the measurement.
  */
-import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
+import {
+  CreateSphereVertexData,
+  CreateTorusVertexData,
+  Matrix,
+  Mesh,
+  MeshBuilder,
+  Scene,
+  type VertexData,
+} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { flameData } from "./flame";
-import { partBox, partCylinder } from "./parts";
+import { canePath, ovalOutline, prism, revolve, stripedTube } from "./candyShapes";
+import { partBox, partCylinder, partSurface } from "./parts";
 import { marksSway } from "./sway";
 
 /**
@@ -2084,4 +2094,269 @@ export function buildBamboo(
     }
   }
   return root!;
+}
+
+// Candy Land's six, and every one is set against the LAWN rather than against
+// the other props in this file: the map is a green board with a rainbow road
+// on it, so what grows there is the brightest thing on the grass and what is
+// dropped there is a sweet a player can tell from a stone at forty metres.
+// Every one is built from parts and from `candyShapes.ts`, the maple's rule —
+// a wood of lollipops is sown by the hundred.
+
+/** A lollipop's colours: the candy, and the swirl a round one carries. */
+const LOLLIPOPS: readonly [string, string][] = [
+  ["#d3263a", "#f6d0d6"],
+  ["#ef7b22", "#fbe3c4"],
+  ["#efbd2a", "#fff3c8"],
+  ["#3d9e48", "#d8f0d0"],
+  ["#7a3aa6", "#e6d4f2"],
+  ["#2e3a8c", "#d4daf6"],
+  ["#e05aa0", "#fbe0ee"],
+];
+const LOLLI_STICK = "#efe6d6";
+const CANE_RED = "#cc2230";
+const CANE_WHITE = "#f2ece5";
+const SPEARMINT = "#3f9f55";
+const SPEARMINT_LIT = "#76c46a";
+const REED = "#5f7c3a";
+const REED_HEAD = "#5a3620";
+/** Jelly bean colours, the whole bag. */
+const JELLY = ["#d3263a", "#ef7b22", "#efbd2a", "#3d9e48", "#7a3aa6", "#e05aa0", "#f3ece4", "#2a1d22"];
+
+/**
+ * A LOLLIPOP as tall as a small tree: a paper stick and a hard candy on it,
+ * most of them the board's glossy ovals and some round with a swirl. The
+ * Lollypop Woods are a stand of these.
+ *
+ * **Nothing soft is at chest height**: the candy's lowest edge is 2.8 m at
+ * scale 1 and 2.2 at the 0.8 the woods are sown down to, clear of the 1.7 m
+ * hit sphere, so the stick is the collider and the candy is a crown a round
+ * passes under — the maple's argument about a crown, in sugar.
+ */
+export function buildLollipop(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  rng: () => number = Math.random,
+): Mesh {
+  const h = 3.2 + rng() * 1.2;
+  const stick = partCylinder(
+    "lolli-stick",
+    { height: h, diameterTop: 0.11, diameterBottom: 0.13, tessellation: 6 },
+    scene,
+  );
+  stick.position.y = h / 2;
+  stick.material = mats.get(LOLLI_STICK);
+  stick.rotation.z = (rng() - 0.5) * 0.08;
+  const [candy, swirl] = LOLLIPOPS[Math.floor(rng() * LOLLIPOPS.length)];
+  const round = rng() < 0.3;
+  const rx = round ? 0.85 + rng() * 0.2 : 0.75 + rng() * 0.3;
+  const rz = round ? rx : 1.05 + rng() * 0.45;
+  const thick = 0.32;
+  const disc = partSurface(
+    "lolli-candy",
+    prism(ovalOutline(rx, rz, 24), -thick / 2, thick / 2, 0.11),
+    scene,
+  );
+  disc.parent = stick;
+  // Stood up (rotX takes the oval's long axis to +Y), sitting on the stick's
+  // top with a quarter of itself over it.
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.y = h / 2 + rz * 0.75;
+  disc.material = mats.get(candy);
+  const yaw = rng() * Math.PI;
+  stick.rotation.y = yaw;
+  if (round) {
+    // The swirl: two rings on each face.
+    for (const sz of [-1, 1]) {
+      for (const [d, t] of [[rx * 1.2, 0.09], [rx * 0.6, 0.08]] as const) {
+        const ring = partSurface(
+          "lolli-swirl",
+          CreateTorusVertexData({ diameter: d, thickness: t, tessellation: 20 }),
+          scene,
+        );
+        ring.parent = stick;
+        ring.rotation.x = Math.PI / 2;
+        ring.position.set(0, h / 2 + rz * 0.75, sz * (thick / 2 - 0.01));
+        ring.material = mats.get(swirl);
+      }
+    }
+  }
+  return stick;
+}
+
+/**
+ * A PEPPERMINT STICK the height of a man and a half: a candy cane planted
+ * hook-up in the lawn, its stripes wound round it. The Peppermint Stick Forest
+ * is a stand of these, leaning a little every way.
+ */
+export function buildPeppermint(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  rng: () => number = Math.random,
+): Mesh {
+  const h = 2.6 + rng() * 1.0;
+  const [red, white] = stripedTube(canePath(h, 0.42, 0.12), 0.11, { seg: 12, bands: 3, twist: 3.2 });
+  const root = partSurface("cane-red", red, scene);
+  root.material = mats.get(CANE_RED);
+  const w = partSurface("cane-white", white, scene);
+  w.parent = root;
+  w.material = mats.get(CANE_WHITE);
+  root.rotation.y = rng() * Math.PI * 2;
+  root.rotation.z = (rng() - 0.5) * 0.12;
+  root.rotation.x = (rng() - 0.5) * 0.12;
+  return root;
+}
+
+/**
+ * SPEARMINT LEAVES: a low clump of sugared mint-leaf sweets, sown at the feet
+ * of the peppermint sticks the way the board draws them. Knee-high and
+ * non-blocking — nothing about it is at chest height.
+ *
+ * The leaves are laid into ONE vertex buffer per tone rather than parented to
+ * each other: a child inherits its parent's tilt, and a clump of leaves each
+ * tipped its own way has no leaf that is the others' frame.
+ */
+export function buildMintLeaf(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  rng: () => number = Math.random,
+): Mesh {
+  const n = 5 + Math.floor(rng() * 4);
+  const turn = rng() * Math.PI * 2;
+  const tones: [VertexData | null, VertexData | null] = [null, null];
+  for (let i = 0; i < n; i++) {
+    const len = 0.45 + rng() * 0.3;
+    // A leaf: an oval drawn to a point at both ends.
+    const outline = ovalOutline(0.18 + rng() * 0.06, len, 18).map(
+      ([x, z]): [number, number] => [x * Math.pow(1 - Math.abs(z / len), 0.35), z],
+    );
+    const leaf = prism(outline, -0.06, 0.06, 0.04);
+    const a = turn + (i / n) * Math.PI * 2 + (rng() - 0.5) * 0.5;
+    const tilt = 0.6 + rng() * 0.5;
+    // Its base to the middle, tipped up about its cross axis, aimed outward.
+    leaf.transform(
+      Matrix.Translation(0, 0, len * 0.85)
+        .multiply(Matrix.RotationYawPitchRoll(a, -tilt, 0))
+        .multiply(Matrix.Translation(0, 0.08, 0)),
+    );
+    const k = rng() < 0.55 ? 0 : 1;
+    const held = tones[k];
+    if (held) held.merge(leaf);
+    else tones[k] = leaf;
+  }
+  const [lit, shade] = tones;
+  const root = partSurface("mint-leaves", (lit ?? shade)!, scene);
+  root.material = mats.get(lit ? SPEARMINT_LIT : SPEARMINT);
+  marksSway(root, "understory");
+  if (lit && shade) {
+    const other = partSurface("mint-leaves-shade", shade, scene);
+    other.parent = root;
+    other.material = mats.get(SPEARMINT);
+    marksSway(other, "understory");
+  }
+  return root;
+}
+
+/**
+ * A GUMDROP small enough to crouch behind: the big ones' moulded bell at a
+ * metre and a bit, in one of the board's five colours. The lawn's cover.
+ */
+export function buildGumdropSmall(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  rng: () => number = Math.random,
+): Mesh {
+  const h = 1.2;
+  const r = h * 0.62;
+  const prof: [number, number][] = [];
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10;
+    prof.push([r * Math.sqrt(Math.max(0, 1 - Math.pow(t, 2.6))) * (1 - 0.4 * t), h * t]);
+  }
+  const m = partSurface("gumdrop", revolve(prof, 24, { flutes: 9, fluteDepth: 0.06 }), scene);
+  m.material = mats.get(GUMDROP_COLORS[Math.floor(rng() * GUMDROP_COLORS.length)]);
+  m.rotation.y = rng() * Math.PI * 2;
+  return m;
+}
+const GUMDROP_COLORS = ["#d3263a", "#ef7b22", "#efbd2a", "#3d9e48", "#7a3aa6"];
+
+/**
+ * CATTAILS: a clump of reeds with their brown heads, round the Molasses Swamp
+ * where the board plants them. Thin, mostly air, and non-blocking — bamboo's
+ * rule, at a quarter of the height.
+ */
+export function buildCattail(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  rng: () => number = Math.random,
+): Mesh {
+  let root: Mesh | null = null;
+  const n = 6 + Math.floor(rng() * 5);
+  for (let i = 0; i < n; i++) {
+    const h = 1.5 + rng() * 1.0;
+    const a = rng() * Math.PI * 2;
+    const r = i === 0 ? 0 : 0.1 + rng() * 0.45;
+    const reed = partCylinder("reed", { height: h, diameterTop: 0.03, diameterBottom: 0.06, tessellation: 4 }, scene);
+    reed.material = mats.get(REED);
+    if (!root) {
+      root = reed;
+      reed.position.y = h / 2;
+    } else {
+      reed.parent = root;
+      reed.position.set(Math.cos(a) * r, h / 2 - root.position.y, Math.sin(a) * r);
+    }
+    reed.rotation.z = -Math.cos(a) * (0.05 + r * 0.12);
+    reed.rotation.x = Math.sin(a) * (0.05 + r * 0.12);
+    marksSway(reed, "understory");
+    if (rng() < 0.65) {
+      const head = partCylinder("reed-head", { height: 0.34, diameterTop: 0.13, diameterBottom: 0.13, tessellation: 7 }, scene);
+      head.parent = reed;
+      head.position.y = h / 2 - 0.3;
+      head.material = mats.get(REED_HEAD);
+      marksSway(head, "understory");
+    } else {
+      const blade = partBox("reed-blade", { width: 0.07, height: h * 0.7, depth: 0.012 }, scene);
+      blade.parent = reed;
+      blade.position.y = -h * 0.12;
+      blade.rotation.z = 0.25;
+      blade.material = mats.get(REED);
+      marksSway(blade, "understory");
+    }
+  }
+  return root!;
+}
+
+/**
+ * JELLY BEANS spilled on the lawn: a scatter of beans the size of a loaf,
+ * every colour in the bag, lying where they fell. Non-blocking and casting
+ * nothing, the leaf drift's rules; NOT rooted, because a bean is a thing that
+ * lands, and a bean on the candy path is exactly where a bean belongs.
+ */
+export function buildJellyBeans(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  rng: () => number = Math.random,
+): Mesh {
+  const bean = (i: number): Mesh => {
+    const m = partSurface(
+      `bean${i}`,
+      CreateSphereVertexData({ diameterX: 0.52, diameterY: 0.26, diameterZ: 0.3, segments: 8 }),
+      scene,
+    );
+    m.material = mats.get(JELLY[Math.floor(rng() * JELLY.length)]);
+    m.rotation.y = rng() * Math.PI * 2;
+    m.metadata = { noShadowCaster: true };
+    return m;
+  };
+  const root = bean(0);
+  root.position.y = 0.1;
+  const n = 5 + Math.floor(rng() * 6);
+  for (let i = 1; i < n; i++) {
+    const m = bean(i);
+    m.parent = root;
+    const a = rng() * Math.PI * 2;
+    const r = 0.3 + Math.sqrt(rng()) * 1.1;
+    m.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+  }
+  return root;
 }

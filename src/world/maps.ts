@@ -23,6 +23,8 @@
 import type { MapCollision } from "./collision";
 import type { EnvironmentSpec } from "./environment";
 import type { Heightfield, MapLayout } from "./layout";
+import { CandylandEnvironment } from "./candyland/environment";
+import { CandylandLayout } from "./candyland/layout";
 import { CinderhavenEnvironment } from "./cinderhaven/environment";
 import { CinderhavenLayout } from "./cinderhaven/layout";
 import { ColdharbourEnvironment } from "./coldharbour/environment";
@@ -292,6 +294,37 @@ export const KURENAI: MapDef = {
 };
 
 /**
+ * Candy Land: the 1962 Milton Bradley board, laid out on a lawn on a bright
+ * spring afternoon. **300 m of play inside 500 m of ground**, infantry only,
+ * eight a side.
+ *
+ * It is the second map built against a REFERENCE FRAME, and the first whose
+ * reference is a PLAN rather than a view: the board photograph
+ * (`reference-media/candyland-board.jpg`) is read in its own pixels by
+ * `scripts/generate-candyland.mjs`, which traces the rainbow path off it space
+ * by space and stands every landmark where the board draws it. What that took
+ * is a kit (`kit/candy.ts`), six props, and one engine change — the `candy`
+ * road surface, a cream strip with coloured SPACES cut across it, which is
+ * the only carriageway that is not a world-mapped texture (`buildRoad`).
+ *
+ * Its layout was SEEDED by that script on Sarab's precedent, and it is an
+ * ordinary layout file in every other way. It shares no module with the other
+ * seven and must not.
+ */
+export const CANDYLAND: MapDef = {
+  id: "candyland",
+  name: "Candy Land",
+  blurb:
+    "The board game's board, on a bright spring afternoon. Follow the rainbow " +
+    "path from START past Gumdrop Mountains and the Gingerbread Plum Tree to " +
+    "Home Sweet Home — and hold it.",
+  layout: CandylandLayout,
+  environment: CandylandEnvironment,
+  heights: () => import("./candyland/heights"),
+  collision: () => import("./candyland/collision"),
+};
+
+/**
  * The proving ground: not a level, and DEV ONLY.
  *
  * `ENGINE_UPGRADE.md` S0 is what it exists for — a generated city block grid at
@@ -372,8 +405,8 @@ const PROVING: MapDef = {
  * filtering it at runtime, would keep both in the bundle.
  */
 export const MAPS: readonly MapDef[] = import.meta.env.DEV
-  ? [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN, KURENAI, PROVING]
-  : [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN, KURENAI];
+  ? [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN, KURENAI, CANDYLAND, PROVING]
+  : [HOLLOWMERE, GREYFEN, COLDHARBOUR, HARROWMEAD, SARAB, CINDERHAVEN, KURENAI, CANDYLAND];
 
 /** What a round starts on with nothing chosen. */
 export const DEFAULT_MAP: MapDef = HOLLOWMERE;
