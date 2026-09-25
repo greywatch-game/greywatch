@@ -395,10 +395,10 @@ function shoji(
  * up — the one shape on this map that tells a player they have crossed from
  * the town into the sacred without a word on screen.
  *
- * Solid posts (a body walks into one and a round stops on it) and the two
- * beams are `strut`s: ray geometry and nothing else, because they are four
- * metres over anybody's head and a nav surface up there is a surface nobody
- * can reach. `width` is the span between the posts, `height` the lintel's
+ * Solid posts (a body walks into one and a round stops on it) and the beams —
+ * the tie, and the lintel's coloured beam and black cap — are `strut`s: ray
+ * geometry and nothing else, because they are four metres over anybody's head
+ * and a nav surface up there is a surface nobody can reach. `width` is the span between the posts, `height` the lintel's
  * underside; `tint` recolours the timber, and the cap on the lintel stays
  * black whatever it is.
  */
@@ -426,8 +426,11 @@ export function buildTorii(
   // The tablet between the beams.
   b.box(postD * 0.7, h - tie - 0.1, postD * 0.4, 0, (h + tie) / 2, 0, color);
   // The lintel: a coloured beam under a black cap, and the cap's ends swept.
+  // Both beams of it are struts — the coloured one is the thicker half of
+  // what a round aimed at the lintel meets. The swept ends are drawn only: a
+  // collider carries no roll, and they are the last half-metre of the span.
   const reach = span / 2 + postD * 2.4;
-  b.box(reach * 2 - 0.4, postD * 0.62, postD * 0.95, 0, h + postD * 0.31, 0, color);
+  b.strut(reach * 2 - 0.4, postD * 0.62, postD * 0.95, 0, h + postD * 0.31, 0, color);
   b.strut(reach * 2 - 1.2, postD * 0.62, postD * 1.15, 0, h + postD * 0.93, 0, SUMI);
   for (const sx of [-1, 1]) {
     b.box(1.1, postD * 0.62, postD * 1.15, sx * (reach - 0.55), h + postD * 1.05, 0, SUMI, {
