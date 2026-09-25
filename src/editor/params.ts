@@ -656,8 +656,9 @@ export const SCATTER_DEFAULTS: Record<ScatterProp, ScatterDefaults> = {
   // The temple valley's. The maple's clearance is set from its crown, the
   // ash's rule: ~3.5 m of reach at scale 1, so 1.9 puts two boles about five
   // metres apart and the crowns overlapping into one red canopy with a path
-  // under it. Its scale floor is 0.85, because the skirt's lowest leaf is at
-  // 2.3 m x scale and the hit sphere is 1.7.
+  // under it. Its scale floor of 0.85 is well over the 0.65 the crown needs:
+  // the lowest leaf is at ~2.6 m x scale (`buildMaple`) and the hit sphere is
+  // 1.7.
   maple: { radius: 12, count: 6, scale: [0.85, 1.2], blocking: true, clearance: 1.9 },
   leafLitter: { radius: 8, count: 6, scale: [0.9, 1.3], clearance: 0.6 },
   bamboo: { radius: 8, count: 6, scale: [0.85, 1.15], clearance: 0.9 },

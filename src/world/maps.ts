@@ -282,8 +282,8 @@ export const KURENAI: MapDef = {
   id: "kurenai",
   name: "Kurenai",
   blurb:
-    "A temple town in a mountain valley as the maples turn, an hour before " +
-    "dusk. A river through the middle, a pagoda behind the temple wall, and " +
+    "A temple town in a mountain valley as the maples turn, forty minutes " +
+    "before sunset. A river through the middle, a pagoda behind the temple wall, and " +
     "a shrine at the top of a tunnel of vermilion gates.",
   layout: KurenaiLayout,
   environment: KurenaiEnvironment,

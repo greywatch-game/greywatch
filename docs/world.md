@@ -1228,7 +1228,7 @@ would end its shadow in a hard line sliding across open ground as you walk.
 ## The other way to close a map: a borderland and a leash
 
 **No shipped map has a wall around it any more.** The ground carries on past
-the play square on all six, and what stops a player leaving is a countdown
+the play square on all seven, and what stops a player leaving is a countdown
 rather than a face of rock. It is declared by `MapLayout.borderland` — absent
 on nothing now, Coldharbour having been the last to state nothing and being the
 map that shows the field has a THIRD reason to be sized — and it is three

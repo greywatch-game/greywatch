@@ -157,7 +157,7 @@ export const KurenaiEnvironment: EnvironmentSpec = {
      * Thick air: the reference frame's garden is full of it, and the maples'
      * crowns are what the shafts come through. A third again Harrowmead's
      * density at the same intensity — 5 was tried and washed the town out
-     * from a helicopter's height.
+     * seen from above.
      */
     air: { density: 4, intensity: 1.2 },
   },

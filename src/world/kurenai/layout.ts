@@ -30,7 +30,7 @@ import type {
 
 /**
  * KURENAI — a temple town in a mountain valley, in the last week of the
- * maples, an hour before sunset.
+ * maples, forty minutes before sunset.
  *
  * **240 x 240 m of PLAY inside 440 m of ground**, origin at the arch
  * bridge, +Z north. Hollowmere's footprint, infantry only, eight a side.

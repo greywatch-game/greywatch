@@ -132,7 +132,7 @@ exception to it: the magazine change, the bolt's four and the grenade's one have
 said nothing about what they are going into, so the scalars ARE spent on them.
 And **a sample is the DIRECT sound; the ROOM is the game's** — `Sfx` answers
 every gunshot with one shared `ConvolverNode`, so a baked tail double-reverbs
-the shot, puts one room on six maps and holds a voice for the length of it.
+the shot, puts one room on seven maps and holds a voice for the length of it.
 
 **The world also makes a noise on its own, and that half is the one place the
 recording boundary was never even close.** A burning drum is a SUSTAINED voice
@@ -526,7 +526,7 @@ veil whatever its z-index. **A map with no row in `mapShots.ts` is not broken.**
 shell's ellipse cannot be because the two demands are in different places; **the
 dossier is therefore the one `.ui-panel` that is a BOX**, and **the menu is the
 one screen with a one-column threshold of its own**. **The map row is a
-STEPPER**, six maps in a segmented row of equal shares being `HOLLO…`, `GREYF…`,
+STEPPER**, seven maps in a segmented row of equal shares being `HOLLO…`, `GREYF…`,
 `COLDH…` at every viewport a player has. **The entrance animation is keyed to
 the card being RAISED** (`setCardClass`'s `raised`), never to its markup
 existing — `showMenu` rewrites this card on every map step.
@@ -938,7 +938,7 @@ network's on both sides (`GameMap.roads`), and **a map GENERATOR imports
 and `roads.ts` by type stripping, so a value import in either names its `.ts`
 and neither may hold syntax that must be compiled rather than erased.
 
-**There is a sixth entry in `MAPS` and it is DEV-ONLY and not a level.**
+**There is an eighth entry in `MAPS` and it is DEV-ONLY and not a level.**
 `src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
 against, written by `npm run proving`. **`MAPS` is an `import.meta.env.DEV`
 ternary and must stay one**: that fold is the only thing keeping 900 kB of it
